@@ -7,9 +7,48 @@ body { background: #07090f; font-family: 'Sora', system-ui, sans-serif; color: #
 input[type=number]::-webkit-inner-spin-button,
 input[type=number]::-webkit-outer-spin-button { opacity: 0.3; }
 
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: #0d1017; }
-::-webkit-scrollbar-thumb { background: #1c2333; border-radius: 10px; }
+:root {
+	--scroll-track: #0d1017;
+	--scroll-thumb: #24314a;
+	--scroll-thumb-hover: #365079;
+}
+
+* {
+	scrollbar-width: thin;
+	scrollbar-color: var(--scroll-thumb) var(--scroll-track);
+}
+
+@supports selector(::-webkit-scrollbar) {
+	::-webkit-scrollbar { width: 8px; height: 8px; }
+	::-webkit-scrollbar-track { background: var(--scroll-track); }
+	::-webkit-scrollbar-thumb {
+		background: var(--scroll-thumb);
+		border-radius: 999px;
+		border: 2px solid var(--scroll-track);
+	}
+	::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
+}
+
+.scrollable-x {
+	overflow-y: hidden;
+	cursor: grab;
+	-webkit-user-select: auto;
+	user-select: auto;
+	touch-action: pan-y;
+	scroll-behavior: smooth;
+}
+
+.scrollable-x.is-dragging {
+	cursor: grabbing;
+	-webkit-user-select: none;
+	user-select: none;
+}
+
+.scrollable-x:focus-visible {
+	outline: 2px solid #2d8af0;
+	outline-offset: 2px;
+	border-radius: 6px;
+}
 
 @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
