@@ -15,6 +15,16 @@ import {
 import './App.css'
 
 type ThemeMode = 'light' | 'dark'
+type EntryKind = 'tt1' | 'tt2' | 'quiz' | 'assignment' | 'attendance' | 'finals'
+type EntryLockMap = Record<EntryKind, boolean>
+type SharedTask = Task & {
+  createdAt: number
+  escalated?: boolean
+  sourceRole?: Role | 'Auto' | 'System'
+  manual?: boolean
+}
+
+const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000
 
 const THEME_PRESETS: Record<ThemeMode, typeof T> = {
   light: {
@@ -35,6 +45,26 @@ const THEME_PRESETS: Record<ThemeMode, typeof T> = {
 
 function applyThemePreset(mode: ThemeMode) {
   Object.assign(T, THEME_PRESETS[mode])
+}
+
+function toCellKey(offId: string, kind: EntryKind, studentId: string, field: string) {
+  return `${offId}::${kind}::${studentId}::${field}`
+}
+
+function clampNumber(v: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, v))
+}
+
+function parseInputValue(raw: string, min: number, max: number): number | undefined {
+  if (raw.trim() === '') return undefined
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed)) return undefined
+  return clampNumber(Math.round(parsed), min, max)
+}
+
+function shouldBlockNumericKey(e: React.KeyboardEvent<HTMLInputElement>) {
+  const blocked = ['e', 'E', '+', '-', '.', ',']
+  if (blocked.includes(e.key)) e.preventDefault()
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -88,7 +118,7 @@ const StagePips = ({ current }: { current: Stage }) => (
    STUDENT DRAWER — SHAP, What-If, CO, Interventions
    ══════════════════════════════════════════════════════════════ */
 
-function StudentDrawer({ student, offering, role, onClose }: { student: Student | null; offering?: Offering; role: Role; onClose: () => void }) {
+function StudentDrawer({ student, offering, role, onClose, onEscalate, onAssignRemedial, onAddManualTask }: { student: Student | null; offering?: Offering; role: Role; onClose: () => void; onEscalate: (s: Student, o?: Offering) => void; onAssignRemedial: (s: Student, o?: Offering) => void; onAddManualTask: (s: Student, o?: Offering) => void }) {
   if (!student) return null
   const s = student
   const attPct = Math.round(s.present / s.totalClasses * 100)
@@ -245,9 +275,9 @@ function StudentDrawer({ student, offering, role, onClose }: { student: Student 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <Btn size="sm" onClick={() => navigator.clipboard.writeText(s.phone)}><Phone size={12} /> Call</Btn>
           <Btn size="sm" variant="ghost"><Mail size={12} /> Email</Btn>
-          <Btn size="sm" variant="ghost"><MessageSquare size={12} /> Log Meeting</Btn>
-          <Btn size="sm" variant="ghost"><BookOpen size={12} /> Assign Remedial</Btn>
-          <Btn size="sm" variant="danger"><AlertTriangle size={12} /> Escalate to HoD</Btn>
+          <Btn size="sm" variant="ghost" onClick={() => onAddManualTask(s, offering)}><MessageSquare size={12} /> Add Task</Btn>
+          <Btn size="sm" variant="ghost" onClick={() => onAssignRemedial(s, offering)}><BookOpen size={12} /> Assign Remedial</Btn>
+          <Btn size="sm" variant="danger" onClick={() => onEscalate(s, offering)}><AlertTriangle size={12} /> Escalate to HoD</Btn>
         </div>
       </motion.div>
     </div>
@@ -258,9 +288,9 @@ function StudentDrawer({ student, offering, role, onClose }: { student: Student 
    ACTION QUEUE (Right Sidebar)
    ══════════════════════════════════════════════════════════════ */
 
-function ActionQueue({ tasks, resolvedTaskIds, onResolveTask, onOpenStudent }: { tasks: Task[]; resolvedTaskIds: Set<string>; onResolveTask: (id: string) => void; onOpenStudent: (id: string) => void }) {
-  const active = tasks.filter(t => !resolvedTaskIds.has(t.id))
-  const done = tasks.filter(t => resolvedTaskIds.has(t.id))
+function ActionQueue({ tasks, resolvedTaskIds, onResolveTask, onUndoTask, onOpenStudent }: { tasks: SharedTask[]; resolvedTaskIds: Record<string, number>; onResolveTask: (id: string) => void; onUndoTask: (id: string) => void; onOpenStudent: (id: string) => void }) {
+  const active = tasks.filter(t => !resolvedTaskIds[t.id])
+  const done = tasks.filter(t => !!resolvedTaskIds[t.id])
 
   return (
     <div style={{ width: 310, flexShrink: 0, background: T.surface, borderLeft: `1px solid ${T.border}`, position: 'sticky', top: 0, height: '100vh', overflowY: 'auto', padding: '18px 16px' }}>
@@ -283,6 +313,7 @@ function ActionQueue({ tasks, resolvedTaskIds, onResolveTask, onOpenStudent }: {
           <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 8 }}>{t.actionHint}</div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <Chip color={t.status === 'New' ? T.danger : T.warning} size={9}>{t.status}</Chip>
+            {t.escalated && <Chip color={T.danger} size={9}>Escalated</Chip>}
             <Chip color={T.dim} size={9}>Due: {t.due}</Chip>
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
               <button aria-label="Open student details" title="Open student" onClick={() => onOpenStudent(t.studentId)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent, padding: 2 }}><Eye size={13} /></button>
@@ -297,8 +328,13 @@ function ActionQueue({ tasks, resolvedTaskIds, onResolveTask, onOpenStudent }: {
           <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 16, marginBottom: 8, textTransform: 'uppercase' as const, letterSpacing: '0.1em' }}>Done — awaiting next assessment</div>
           {done.map(t => (
             <div key={t.id} style={{ background: `${T.success}08`, border: `1px solid ${T.success}20`, borderRadius: 8, padding: '8px 12px', marginBottom: 6, opacity: 0.6 }}>
-              <div style={{ ...mono, fontSize: 11, color: T.success, textDecoration: 'line-through' }}>{t.title}</div>
-              <div style={{ ...mono, fontSize: 9, color: T.dim, marginTop: 2 }}>Risk unchanged until new data</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ ...mono, fontSize: 11, color: T.success, textDecoration: 'line-through', flex: 1 }}>{t.title}</div>
+                {Date.now() - (resolvedTaskIds[t.id] ?? 0) < TWO_DAYS_MS && (
+                  <button aria-label="Undo resolved task" title="Undo" onClick={() => onUndoTask(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent, ...mono, fontSize: 10 }}>Undo</button>
+                )}
+              </div>
+              <div style={{ ...mono, fontSize: 9, color: T.dim, marginTop: 2 }}>Auto-removes permanently after 2 days</div>
             </div>
           ))}
         </>
@@ -1253,7 +1289,7 @@ function MentorView({ onOpenMentee }: { onOpenMentee: (m: Mentee) => void }) {
    HOD VIEW — Teacher-centric with drill-down
    ══════════════════════════════════════════════════════════════ */
 
-function HodView({ onOpenUpload }: { onOpenUpload: (o?: Offering, kind?: EntryKind) => void }) {
+function HodView({ onOpenUpload, onOpenCourse, onOpenStudent, tasks }: { onOpenUpload: (o?: Offering, kind?: EntryKind) => void; onOpenCourse: (o: Offering) => void; onOpenStudent: (s: Student, o?: Offering) => void; tasks: SharedTask[] }) {
   const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null)
 
   const teacherCourseMap: Record<string, string[]> = {
@@ -1291,7 +1327,6 @@ function HodView({ onOpenUpload }: { onOpenUpload: (o?: Offering, kind?: EntryKi
   }, [teacherOfferingsById])
 
   const selectedTeacher = useMemo(() => teacherStats.find(t => t.id === selectedTeacherId) ?? null, [teacherStats, selectedTeacherId])
-  const allTasks = useMemo(() => generateTasks(), [])
   const mentorTasks = useMemo(() => {
     return MENTEES
       .filter(m => m.avs >= 0.5)
@@ -1299,14 +1334,20 @@ function HodView({ onOpenUpload }: { onOpenUpload: (o?: Offering, kind?: EntryKi
         .filter(cr => cr.risk >= 0.5)
         .map(cr => ({
           id: `mentor-${m.id}-${cr.code}`,
+          studentId: `mentee-${m.id}`,
           offeringId: OFFERINGS.find(o => o.code === cr.code)?.offId ?? '',
           studentName: m.name,
           studentUsn: m.usn,
           courseCode: cr.code,
+          courseName: cr.title,
+          year: m.year,
+          riskBand: cr.risk >= 0.7 ? 'High' as RiskBand : cr.risk >= 0.35 ? 'Medium' as RiskBand : 'Low' as RiskBand,
           title: `Mentor follow-up: ${Math.round(cr.risk * 100)}% vulnerability in ${cr.code}`,
           due: 'This week',
           status: m.interventions.length > 0 ? 'In Progress' : 'New',
           riskProb: cr.risk,
+          actionHint: 'Mentor-generated follow-up task',
+          priority: Math.round(cr.risk * 100),
         })))
   }, [])
 
@@ -1314,15 +1355,15 @@ function HodView({ onOpenUpload }: { onOpenUpload: (o?: Offering, kind?: EntryKi
     if (!selectedTeacher) return []
     const offIds = new Set(selectedTeacher.offerings.map(o => o.offId))
     const courseCodes = new Set(selectedTeacher.offerings.map(o => o.code))
-    const courseLeaderTasks = allTasks.filter(t => offIds.has(t.offeringId))
+    const courseLeaderTasks = tasks.filter(t => offIds.has(t.offeringId))
     const mentorLinked = mentorTasks.filter(t => courseCodes.has(t.courseCode))
     return [...courseLeaderTasks, ...mentorLinked]
       .sort((a, b) => b.riskProb - a.riskProb)
       .slice(0, 8)
-  }, [allTasks, mentorTasks, selectedTeacher])
+  }, [tasks, mentorTasks, selectedTeacher])
 
   const escalations = useMemo(() => {
-    const fromCourseLeader = allTasks.slice(0, 2).map(t => ({
+    const fromCourseLeader = tasks.filter(t => t.escalated).slice(0, 4).map(t => ({
       key: `cl-${t.id}`,
       name: t.studentName,
       usn: t.studentUsn,
@@ -1331,6 +1372,8 @@ function HodView({ onOpenUpload }: { onOpenUpload: (o?: Offering, kind?: EntryKi
       source: 'Course Leader',
       reason: t.actionHint,
       status: t.status,
+      studentId: t.studentId,
+      offeringId: t.offeringId,
     }))
 
     const fromMentor = MENTEES
@@ -1361,8 +1404,8 @@ function HodView({ onOpenUpload }: { onOpenUpload: (o?: Offering, kind?: EntryKi
         status: 'Auto-flagged',
       }))
 
-    return [...fromAuto, ...fromCourseLeader, ...fromMentor].slice(0, 4)
-  }, [allTasks, teacherOfferingsById, teacherStats])
+    return [...fromAuto, ...fromCourseLeader, ...fromMentor].slice(0, 6)
+  }, [tasks, teacherOfferingsById, teacherStats])
 
   const totalStudents = teacherStats.reduce((a, t) => a + t.students, 0)
   const totalHighRisk = teacherStats.reduce((a, t) => a + t.highRisk, 0)
@@ -1442,7 +1485,7 @@ function HodView({ onOpenUpload }: { onOpenUpload: (o?: Offering, kind?: EntryKi
           
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 20 }}>
             {selectedTeacher.offerings.map(o => (
-              <div key={`${o.code}-${o.section}`} style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: '12px' }}>
+              <div key={`${o.code}-${o.section}`} style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: '12px', cursor: 'pointer' }} onClick={() => onOpenCourse(o)}>
                 <div style={{ ...sora, fontWeight: 600, fontSize: 13, color: T.text, marginBottom: 4 }}>{o.code} - Sec {o.section}</div>
                 <div style={{ ...mono, fontSize: 10, color: T.muted, marginBottom: 8 }}>{o.title}</div>
                 <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
@@ -1451,7 +1494,7 @@ function HodView({ onOpenUpload }: { onOpenUpload: (o?: Offering, kind?: EntryKi
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ ...mono, fontSize: 10, color: T.danger }}>{getStudents(o).filter(s => s.riskBand === 'High').length} High Risk</span>
-                  <span style={{ ...mono, fontSize: 10, color: T.text }}>{o.attendance}% Avg Att</span>
+                  <span style={{ ...mono, fontSize: 10, color: T.text }}>{o.attendance}% Avg Att · Open →</span>
                 </div>
               </div>
             ))}
@@ -1463,7 +1506,7 @@ function HodView({ onOpenUpload }: { onOpenUpload: (o?: Offering, kind?: EntryKi
           <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 12 }}>Top Assigned Tasks (Overdue)</div>
           <div style={{ background: T.surface2, borderRadius: 8, overflow: 'hidden' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr>{['Student', 'Course', 'Task', 'Due', 'Status'].map(h => <TH key={h}>{h}</TH>)}</tr></thead>
+              <thead><tr>{['Student', 'Course', 'Task', 'Due', 'Status', ''].map(h => <TH key={h}>{h}</TH>)}</tr></thead>
               <tbody>
                 {selectedTeacherTasks.map(task => (
                   <tr key={task.id}>
@@ -1472,11 +1515,17 @@ function HodView({ onOpenUpload }: { onOpenUpload: (o?: Offering, kind?: EntryKi
                     <TD style={{ ...mono, fontSize: 11 }}>{task.title}</TD>
                     <TD style={{ ...mono, fontSize: 11, color: task.due === 'Today' ? T.danger : T.warning }}>{task.due}</TD>
                     <TD><Chip color={task.status === 'New' ? T.danger : task.status === 'In Progress' ? T.warning : T.blue} size={9}>{task.status}</Chip></TD>
+                    <TD><button aria-label={`View ${task.studentName} profile`} title="View profile" onClick={() => {
+                      const off = OFFERINGS.find(o => o.offId === task.offeringId)
+                      if (!off) return
+                      const s = getStudents(off).find(st => st.id === task.studentId)
+                      if (s) onOpenStudent(s, off)
+                    }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Eye size={13} /></button></TD>
                   </tr>
                 ))}
                 {selectedTeacherTasks.length === 0 && (
                   <tr>
-                    <TD colSpan={5} style={{ ...mono, fontSize: 11, color: T.muted, textAlign: 'center' }}>No overdue tasks for mapped offerings.</TD>
+                    <TD colSpan={6} style={{ ...mono, fontSize: 11, color: T.muted, textAlign: 'center' }}>No overdue tasks for mapped offerings.</TD>
                   </tr>
                 )}
               </tbody>
@@ -1485,12 +1534,12 @@ function HodView({ onOpenUpload }: { onOpenUpload: (o?: Offering, kind?: EntryKi
         </Card>
       )}
 
-      {/* Escalation Queue */}
+      {/* Escalation Queue (mirrors escalated tasks in Action Queue) */}
       <div style={{ ...sora, fontWeight: 700, fontSize: 15, color: T.text, marginTop: 22, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
         <AlertTriangle size={16} color={T.danger} /> Escalation Queue
       </div>
       <Card style={{ padding: '14px 18px' }}>
-        <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 10 }}>Students escalated by faculty, mentors, or auto-flagged (risk &gt; 90% + no intervention in 7 days)</div>
+        <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 10 }}>Escalations are now first-class tasks in the common Action Queue for all roles.</div>
         {escalations.map((e, i) => (
           <div key={e.key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: i < escalations.length - 1 ? `1px solid ${T.border}` : 'none', flexWrap: 'wrap' }}>
             <div style={{ flex: 1 }}>
@@ -1506,7 +1555,13 @@ function HodView({ onOpenUpload }: { onOpenUpload: (o?: Offering, kind?: EntryKi
                <div style={{ ...mono, fontSize: 9, color: T.muted }}>Risk</div>
             </div>
             <div style={{ display: 'flex', gap: 6, marginLeft: 16 }}>
-               <Btn size="sm" variant="ghost">View Profile</Btn>
+              <Btn size="sm" variant="ghost" onClick={() => {
+                if (!('studentId' in e) || !('offeringId' in e)) return
+                const off = OFFERINGS.find(o => o.offId === (e as any).offeringId)
+                if (!off) return
+                const s = getStudents(off).find(st => st.id === (e as any).studentId)
+                if (s) onOpenStudent(s, off)
+              }}>View Profile</Btn>
                <Btn size="sm" variant="primary">Message {e.source === 'Auto' ? 'Mentor' : 'Sender'}</Btn>
             </div>
           </div>
@@ -1546,8 +1601,6 @@ function CalendarPage() {
   )
 }
 
-type EntryKind = 'tt1' | 'tt2' | 'quiz' | 'assignment' | 'attendance' | 'finals'
-
 const ENTRY_CATALOG: { kind: EntryKind; icon: string; title: string; desc: string; tabId: string }[] = [
   { kind: 'tt1', icon: '📝', title: 'TT1 Marks', desc: 'Question-wise marks entry and final submit/lock for TT1.', tabId: 'tt1' },
   { kind: 'tt2', icon: '📝', title: 'TT2 Marks', desc: 'Question-wise marks entry and final submit/lock for TT2.', tabId: 'tt2' },
@@ -1570,7 +1623,7 @@ const getEntryLockMap = (o: Offering) => ({
    UPLOAD PAGE
    ══════════════════════════════════════════════════════════════ */
 
-function UploadPage({ role, offering, defaultKind, onOpenWorkspace }: { role: Role; offering: Offering | null; defaultKind: EntryKind; onOpenWorkspace: (offeringId: string, kind: EntryKind) => void }) {
+function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOffering }: { role: Role; offering: Offering | null; defaultKind: EntryKind; onOpenWorkspace: (offeringId: string, kind: EntryKind) => void; lockByOffering: Record<string, EntryLockMap> }) {
   const [selectedKind, setSelectedKind] = useState<EntryKind>(defaultKind)
   const [selectedOffId, setSelectedOffId] = useState<string>(offering?.offId ?? OFFERINGS[0].offId)
   const [unlockRequested, setUnlockRequested] = useState<EntryKind | null>(null)
@@ -1581,7 +1634,7 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace }: { role: Ro
 
   const selected = ENTRY_CATALOG.find(x => x.kind === selectedKind) ?? ENTRY_CATALOG[0]
   const selectedOffering = OFFERINGS.find(o => o.offId === selectedOffId) ?? offering ?? OFFERINGS[0]
-  const lockMap = getEntryLockMap(selectedOffering)
+  const lockMap = lockByOffering[selectedOffering.offId] ?? getEntryLockMap(selectedOffering)
   const stageRequired: Record<EntryKind, number> = { tt1: 1, tt2: 2, quiz: 2, assignment: 2, attendance: 1, finals: 3 }
   const isApplicableForStage = selectedOffering.stageInfo.stage >= stageRequired[selectedKind]
 
@@ -1640,12 +1693,12 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace }: { role: Ro
   )
 }
 
-function EntryWorkspacePage({ role, offeringId, kind, onBack }: { role: Role; offeringId: string; kind: EntryKind; onBack: () => void }) {
+function EntryWorkspacePage({ role, offeringId, kind, onBack, lockByOffering, draftBySection, onSaveDraft, onSubmitLock, cellValues, onCellValueChange, onOpenStudent }: { role: Role; offeringId: string; kind: EntryKind; onBack: () => void; lockByOffering: Record<string, EntryLockMap>; draftBySection: Record<string, number>; onSaveDraft: (offId: string, kind: EntryKind) => void; onSubmitLock: (offId: string, kind: EntryKind) => void; cellValues: Record<string, number>; onCellValueChange: (key: string, value: number | undefined) => void; onOpenStudent: (s: Student, o: Offering) => void }) {
   const [unlockRequested, setUnlockRequested] = useState(false)
   const selectedOffering = OFFERINGS.find(o => o.offId === offeringId) ?? OFFERINGS[0]
   const groupedSections = OFFERINGS.filter(o => o.code === selectedOffering.code && o.year === selectedOffering.year)
   const selected = ENTRY_CATALOG.find(x => x.kind === kind) ?? ENTRY_CATALOG[0]
-  const lockMap = getEntryLockMap(selectedOffering)
+  const lockMap = lockByOffering[selectedOffering.offId] ?? getEntryLockMap(selectedOffering)
   const isLockedForCourseLeader = role === 'Course Leader' && lockMap[kind]
   const canEdit = (role === 'Course Leader' || role === 'HoD') && !isLockedForCourseLeader
   const stageRequired: Record<EntryKind, number> = { tt1: 1, tt2: 2, quiz: 2, assignment: 2, attendance: 1, finals: 3 }
@@ -1672,6 +1725,10 @@ function EntryWorkspacePage({ role, offeringId, kind, onBack }: { role: Role; of
         {groupedSections.map(sec => {
           const students = getStudents(sec)
           const paper = PAPER_MAP[sec.code] || PAPER_MAP.default
+          const secLocks = lockByOffering[sec.offId] ?? getEntryLockMap(sec)
+          const secLockedForCourseLeader = role === 'Course Leader' && secLocks[kind]
+          const canEditSection = (role === 'Course Leader' || role === 'HoD') && !secLockedForCourseLeader && isApplicableForStage
+          const draftKey = `${sec.offId}::${kind}`
           return (
             <Card key={sec.offId} style={{ padding: 0, overflow: 'hidden' }}>
               <div style={{ padding: '12px 14px', borderBottom: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1681,8 +1738,9 @@ function EntryWorkspacePage({ role, offeringId, kind, onBack }: { role: Role; of
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <Chip color={isApplicableForStage ? T.blue : T.dim} size={9}>{isApplicableForStage ? 'Stage Applicable' : 'Locked by Stage'}</Chip>
-                  <Btn size="sm" onClick={() => {}} variant="ghost">Save Draft</Btn>
-                  <Btn size="sm" onClick={() => {}}>{canEdit ? 'Submit & Lock' : 'View Only'}</Btn>
+                  {draftBySection[draftKey] && <Chip color={T.success} size={9}>Draft saved</Chip>}
+                  <Btn size="sm" onClick={() => onSaveDraft(sec.offId, kind)} variant="ghost">Save Draft</Btn>
+                  <Btn size="sm" onClick={() => onSubmitLock(sec.offId, kind)}>{canEditSection ? 'Submit & Lock' : 'View Only'}</Btn>
                 </div>
               </div>
               <div style={{ overflowX: 'auto' }}>
@@ -1695,6 +1753,7 @@ function EntryWorkspacePage({ role, offeringId, kind, onBack }: { role: Role; of
                       {kind === 'assignment' && <TH>Asgn 1 /10</TH>}
                       {kind === 'attendance' && <TH>Present /45</TH>}
                       {kind === 'finals' && <TH>SEE /50</TH>}
+                      <TH>Profile</TH>
                     </tr>
                   </thead>
                   <tbody>
@@ -1704,14 +1763,15 @@ function EntryWorkspacePage({ role, offeringId, kind, onBack }: { role: Role; of
                         <TD style={{ ...sora, fontSize: 11, color: T.text }}>{s.name}</TD>
                         {(kind === 'tt1' || kind === 'tt2') && paper.map(q => (
                           <TD key={q.id}>
-                            <input aria-label={`${kind.toUpperCase()} marks for ${s.name}, ${q.id}`} title={`Enter ${kind.toUpperCase()} marks for ${s.name}, ${q.id}`} placeholder="0" type="number" min={0} max={q.maxMarks} disabled={!canEdit || !isApplicableForStage} defaultValue={(kind === 'tt1' ? s.tt1Score : s.tt2Score) != null ? Math.round(((kind === 'tt1' ? s.tt1Score! : s.tt2Score!) / paper.length)) : ''}
+                            <input aria-label={`${kind.toUpperCase()} marks for ${s.name}, ${q.id}`} title={`Enter ${kind.toUpperCase()} marks for ${s.name}, ${q.id}`} placeholder="0" type="number" inputMode="numeric" min={0} max={q.maxMarks} disabled={!canEditSection} value={cellValues[toCellKey(sec.offId, kind, s.id, q.id)] ?? ((kind === 'tt1' ? s.tt1Score : s.tt2Score) != null ? Math.round(((kind === 'tt1' ? s.tt1Score! : s.tt2Score!) / paper.length)) : '')} onKeyDown={shouldBlockNumericKey} onChange={(e) => onCellValueChange(toCellKey(sec.offId, kind, s.id, q.id), parseInputValue(e.target.value, 0, q.maxMarks))}
                               style={{ width: 52, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} />
                           </TD>
                         ))}
-                        {kind === 'quiz' && <TD><input aria-label={`Quiz 1 marks for ${s.name}`} title={`Enter Quiz 1 marks for ${s.name}`} placeholder="0" type="number" min={0} max={10} disabled={!canEdit || !isApplicableForStage} defaultValue={s.quiz1 ?? ''} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
-                        {kind === 'assignment' && <TD><input aria-label={`Assignment 1 marks for ${s.name}`} title={`Enter Assignment 1 marks for ${s.name}`} placeholder="0" type="number" min={0} max={10} disabled={!canEdit || !isApplicableForStage} defaultValue={s.asgn1 ?? ''} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
-                        {kind === 'attendance' && <TD><input aria-label={`Attendance present classes for ${s.name}`} title={`Enter attendance present count for ${s.name}`} placeholder="0" type="number" min={0} max={45} disabled={!canEdit || !isApplicableForStage} defaultValue={s.present} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
-                        {kind === 'finals' && <TD><input aria-label={`SEE marks for ${s.name}`} title={`Enter SEE marks for ${s.name}`} type="number" min={0} max={50} disabled={!canEdit || !isApplicableForStage} defaultValue="" placeholder="Enter" style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
+                        {kind === 'quiz' && <TD><input aria-label={`Quiz 1 marks for ${s.name}`} title={`Enter Quiz 1 marks for ${s.name}`} placeholder="0" type="number" inputMode="numeric" min={0} max={10} disabled={!canEditSection} value={cellValues[toCellKey(sec.offId, kind, s.id, 'quiz1')] ?? (s.quiz1 ?? '')} onKeyDown={shouldBlockNumericKey} onChange={(e) => onCellValueChange(toCellKey(sec.offId, kind, s.id, 'quiz1'), parseInputValue(e.target.value, 0, 10))} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
+                        {kind === 'assignment' && <TD><input aria-label={`Assignment 1 marks for ${s.name}`} title={`Enter Assignment 1 marks for ${s.name}`} placeholder="0" type="number" inputMode="numeric" min={0} max={10} disabled={!canEditSection} value={cellValues[toCellKey(sec.offId, kind, s.id, 'asgn1')] ?? (s.asgn1 ?? '')} onKeyDown={shouldBlockNumericKey} onChange={(e) => onCellValueChange(toCellKey(sec.offId, kind, s.id, 'asgn1'), parseInputValue(e.target.value, 0, 10))} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
+                        {kind === 'attendance' && <TD><input aria-label={`Attendance present classes for ${s.name}`} title={`Enter attendance present count for ${s.name}`} placeholder="0" type="number" inputMode="numeric" min={0} max={45} disabled={!canEditSection} value={cellValues[toCellKey(sec.offId, kind, s.id, 'present')] ?? s.present} onKeyDown={shouldBlockNumericKey} onChange={(e) => onCellValueChange(toCellKey(sec.offId, kind, s.id, 'present'), parseInputValue(e.target.value, 0, 45))} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
+                        {kind === 'finals' && <TD><input aria-label={`SEE marks for ${s.name}`} title={`Enter SEE marks for ${s.name}`} type="number" inputMode="numeric" min={0} max={50} disabled={!canEditSection} value={cellValues[toCellKey(sec.offId, kind, s.id, 'see')] ?? ''} onKeyDown={shouldBlockNumericKey} onChange={(e) => onCellValueChange(toCellKey(sec.offId, kind, s.id, 'see'), parseInputValue(e.target.value, 0, 50))} placeholder="Enter" style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
+                        <TD><button aria-label={`Open ${s.name} profile`} title="Open profile" onClick={() => onOpenStudent(s, sec)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Eye size={13} /></button></TD>
                       </tr>
                     ))}
                   </tbody>
@@ -1759,23 +1819,68 @@ export default function App() {
   const [entryKind, setEntryKind] = useState<EntryKind>('tt1')
   const [courseInitialTab, setCourseInitialTab] = useState<string | undefined>(undefined)
 
-  // -- Tasks State & Persistence --
-  const [resolvedTasks, setResolvedTasks] = useState<Set<string>>(() => {
+  const [lockByOffering, setLockByOffering] = useState<Record<string, EntryLockMap>>(() => {
+    try {
+      const saved = localStorage.getItem('airmentor-locks')
+      if (saved) return JSON.parse(saved)
+    } catch {
+      // ignore
+    }
+    return Object.fromEntries(OFFERINGS.map(o => [o.offId, getEntryLockMap(o)])) as Record<string, EntryLockMap>
+  })
+  const [draftBySection, setDraftBySection] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem('airmentor-drafts')
+      return saved ? JSON.parse(saved) : {}
+    } catch {
+      return {}
+    }
+  })
+  const [cellValues, setCellValues] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem('airmentor-cell-values')
+      return saved ? JSON.parse(saved) : {}
+    } catch {
+      return {}
+    }
+  })
+  const [allTasksList, setAllTasksList] = useState<SharedTask[]>(() => {
+    try {
+      const saved = localStorage.getItem('airmentor-all-tasks')
+      if (saved) return JSON.parse(saved)
+    } catch {
+      // ignore
+    }
+    return generateTasks().map(t => ({ ...t, createdAt: Date.now() }))
+  })
+  const [resolvedTasks, setResolvedTasks] = useState<Record<string, number>>(() => {
     try {
       const saved = localStorage.getItem('airmentor-resolved-tasks')
-      return saved ? new Set(JSON.parse(saved)) : new Set()
+      return saved ? JSON.parse(saved) : {}
     } catch {
-      return new Set()
+      return {}
     }
   })
 
+  useEffect(() => { localStorage.setItem('airmentor-locks', JSON.stringify(lockByOffering)) }, [lockByOffering])
+  useEffect(() => { localStorage.setItem('airmentor-drafts', JSON.stringify(draftBySection)) }, [draftBySection])
+  useEffect(() => { localStorage.setItem('airmentor-cell-values', JSON.stringify(cellValues)) }, [cellValues])
+  useEffect(() => { localStorage.setItem('airmentor-all-tasks', JSON.stringify(allTasksList)) }, [allTasksList])
+  useEffect(() => { localStorage.setItem('airmentor-resolved-tasks', JSON.stringify(resolvedTasks)) }, [resolvedTasks])
+
   useEffect(() => {
-    localStorage.setItem('airmentor-resolved-tasks', JSON.stringify(Array.from(resolvedTasks)))
+    const cutoff = Date.now() - TWO_DAYS_MS
+    const expiredResolved = Object.entries(resolvedTasks).filter(([, ts]) => ts < cutoff).map(([id]) => id)
+    if (expiredResolved.length === 0) return
+    setResolvedTasks(prev => {
+      const next = { ...prev }
+      expiredResolved.forEach(id => delete next[id])
+      return next
+    })
+    setAllTasksList(prev => prev.filter(t => !expiredResolved.includes(t.id)))
   }, [resolvedTasks])
 
-  const allTasksList = useMemo(() => generateTasks(), [])
-  const tasks = useMemo(() => allTasksList.filter(t => !resolvedTasks.has(t.id)), [allTasksList, resolvedTasks])
-  const pendingActionCount = tasks.length
+  const pendingActionCount = allTasksList.filter(t => !resolvedTasks[t.id]).length
   
   const navItems = role === 'Course Leader' ? CL_NAV : role === 'Mentor' ? MENTOR_NAV : HOD_NAV
 
@@ -1791,7 +1896,11 @@ export default function App() {
     setCourseInitialTab(undefined)
     setPage('course')
   }, [])
-  const handleBack = useCallback(() => { setOffering(null); setCourseInitialTab(undefined); setPage('dashboard') }, [])
+  const handleBack = useCallback(() => {
+    setOffering(null)
+    setCourseInitialTab(undefined)
+    setPage(role === 'HoD' ? 'department' : 'dashboard')
+  }, [role])
   const handleOpenStudent = useCallback((s: Student, o?: Offering) => { setSelectedStudent(s); setSelectedOffering(o || null) }, [])
   const handleOpenEntryHub = useCallback((o: Offering, kind: EntryKind) => {
     setUploadOffering(o)
@@ -1816,6 +1925,78 @@ export default function App() {
     setSelectedStudent(null)
     setCourseInitialTab(undefined)
   }, [])
+
+  const handleSaveDraft = useCallback((offId: string, kind: EntryKind) => {
+    setDraftBySection(prev => ({ ...prev, [`${offId}::${kind}`]: Date.now() }))
+  }, [])
+
+  const handleSubmitLock = useCallback((offId: string, kind: EntryKind) => {
+    setLockByOffering(prev => ({
+      ...prev,
+      [offId]: { ...(prev[offId] ?? getEntryLockMap(OFFERINGS.find(o => o.offId === offId) ?? OFFERINGS[0])), [kind]: true },
+    }))
+  }, [])
+
+  const handleCellValueChange = useCallback((key: string, value: number | undefined) => {
+    setCellValues(prev => {
+      const next = { ...prev }
+      if (value === undefined) delete next[key]
+      else next[key] = value
+      return next
+    })
+  }, [])
+
+  const handleResolveTask = useCallback((id: string) => {
+    setResolvedTasks(prev => ({ ...prev, [id]: Date.now() }))
+  }, [])
+
+  const handleUndoTask = useCallback((id: string) => {
+    setResolvedTasks(prev => {
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+  }, [])
+
+  const upsertTaskFromStudent = useCallback((s: Student, o: Offering | undefined, mode: 'escalate' | 'remedial' | 'manual') => {
+    const off = o ?? OFFERINGS.find(x => getStudents(x).some(st => st.id === s.id))
+    const offId = off?.offId ?? ''
+    const code = off?.code ?? 'GEN'
+    const name = off?.title ?? 'General Follow-up'
+    const riskProb = s.riskProb ?? 0.5
+    const id = `${mode}-${s.id}-${offId || 'na'}`
+    const title = mode === 'escalate'
+      ? `Escalated: ${s.name.split(' ')[0]} requires HoD intervention`
+      : mode === 'remedial'
+        ? `Assign remedial plan to ${s.name.split(' ')[0]}`
+        : `Manual follow-up for ${s.name.split(' ')[0]}`
+
+    setAllTasksList(prev => {
+      if (prev.some(t => t.id === id)) return prev
+      const next: SharedTask = {
+        id,
+        studentId: s.id,
+        studentName: s.name,
+        studentUsn: s.usn,
+        offeringId: offId,
+        courseCode: code,
+        courseName: name,
+        year: off?.year ?? 'N/A',
+        riskProb,
+        riskBand: (s.riskBand ?? 'Medium') as RiskBand,
+        title,
+        due: mode === 'escalate' ? 'Today' : 'This week',
+        status: 'New',
+        actionHint: mode === 'escalate' ? 'Escalation raised and visible across all role queues' : 'User-generated action item',
+        priority: Math.round(riskProb * 100),
+        createdAt: Date.now(),
+        escalated: mode === 'escalate',
+        sourceRole: role,
+        manual: mode !== 'escalate',
+      }
+      return [next, ...prev]
+    })
+  }, [role])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: T.bg, color: T.text }}>
@@ -1925,26 +2106,28 @@ export default function App() {
           {role === 'Course Leader' && page === 'dashboard' && <CLDashboard onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} />}
           {role === 'Course Leader' && page === 'course' && offering && <CourseDetail offering={offering} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} initialTab={courseInitialTab} />}
           {role === 'Course Leader' && page === 'calendar' && <CalendarPage />}
-          {role === 'Course Leader' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} />}
-          {role === 'Course Leader' && page === 'entry-workspace' && <EntryWorkspacePage role={role} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} />}
+          {role === 'Course Leader' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} />}
+          {role === 'Course Leader' && page === 'entry-workspace' && <EntryWorkspacePage role={role} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} />}
 
           {role === 'Mentor' && page === 'mentees' && <MentorView onOpenMentee={() => {}} />}
           {role === 'Mentor' && page === 'calendar' && <CalendarPage />}
 
-          {role === 'HoD' && page === 'department' && <HodView onOpenUpload={handleOpenUpload} />}
-          {role === 'HoD' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} />}
-          {role === 'HoD' && page === 'entry-workspace' && <EntryWorkspacePage role={role} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} />}
+          {role === 'HoD' && page === 'department' && <HodView onOpenUpload={handleOpenUpload} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} tasks={allTasksList} />}
+          {role === 'HoD' && page === 'course' && offering && <CourseDetail offering={offering} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} initialTab={courseInitialTab} />}
+          {role === 'HoD' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} />}
+          {role === 'HoD' && page === 'entry-workspace' && <EntryWorkspacePage role={role} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} />}
           {role === 'HoD' && page === 'calendar' && <CalendarPage />}
         </div>
 
         {/* Right Sidebar — Action Queue */}
-        {(role === 'Course Leader' || role === 'Mentor') && page !== 'course' && showActionQueue && (
-          <ActionQueue tasks={allTasksList} resolvedTaskIds={resolvedTasks} onResolveTask={(id) => setResolvedTasks(prev => new Set([...prev, id]))} onOpenStudent={(id) => {
-            const all = getAllAtRiskStudents()
-            const s = all.find(x => x.id === id)
-            if (s) {
-              const off = OFFERINGS.find(o => o.offId === s.offId)
-              handleOpenStudent(s as unknown as Student, off)
+        {showActionQueue && (
+          <ActionQueue tasks={allTasksList} resolvedTaskIds={resolvedTasks} onResolveTask={handleResolveTask} onUndoTask={handleUndoTask} onOpenStudent={(id) => {
+            for (const off of OFFERINGS) {
+              const s = getStudents(off).find(st => st.id === id)
+              if (s) {
+                handleOpenStudent(s, off)
+                return
+              }
             }
           }} />
         )}
@@ -1953,7 +2136,7 @@ export default function App() {
       {/* ═══ STUDENT DRAWER ═══ */}
       <AnimatePresence>
         {selectedStudent && (
-          <StudentDrawer student={selectedStudent} offering={selectedOffering || undefined} role={role} onClose={() => { setSelectedStudent(null); setSelectedOffering(null) }} />
+          <StudentDrawer student={selectedStudent} offering={selectedOffering || undefined} role={role} onClose={() => { setSelectedStudent(null); setSelectedOffering(null) }} onEscalate={(s, o) => upsertTaskFromStudent(s, o, 'escalate')} onAssignRemedial={(s, o) => upsertTaskFromStudent(s, o, 'remedial')} onAddManualTask={(s, o) => upsertTaskFromStudent(s, o, 'manual')} />
         )}
       </AnimatePresence>
     </div>
