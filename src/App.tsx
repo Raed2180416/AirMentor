@@ -44,6 +44,16 @@ const TEACHER_ACCOUNTS: TeacherAccount[] = [
   { teacherId: 't6', name: 'Dr. Vikram Nair', initials: 'VN', permissions: ['Mentor'], courseCodes: ['CS603', 'MA301'] },
 ]
 
+const MENTOR_TEACHER_IDS = TEACHER_ACCOUNTS.filter(t => t.permissions.includes('Mentor')).map(t => t.teacherId)
+const MENTEE_ASSIGNMENTS: Record<string, string[]> = (() => {
+  const buckets: Record<string, string[]> = Object.fromEntries(MENTOR_TEACHER_IDS.map(id => [id, []]))
+  MENTEES.forEach((m, i) => {
+    const tid = MENTOR_TEACHER_IDS[i % MENTOR_TEACHER_IDS.length]
+    buckets[tid].push(m.id)
+  })
+  return buckets
+})()
+
 const THEME_PRESETS: Record<ThemeMode, typeof T> = {
   light: {
     ...T,
@@ -1248,11 +1258,11 @@ function GradeBookTab({ students, onOpenEntryHub }: { o: Offering; students: Stu
    MENTOR VIEW — Student-centric, cross-subject risk
    ══════════════════════════════════════════════════════════════ */
 
-function MentorView({ onOpenMentee }: { onOpenMentee: (m: Mentee) => void }) {
-  const sorted = [...MENTEES].sort((a, b) => b.avs - a.avs)
-  const highRisk = MENTEES.filter(m => m.avs >= 0.6).length
-  const medRisk = MENTEES.filter(m => m.avs >= 0.35 && m.avs < 0.6).length
-  const noData = MENTEES.filter(m => m.avs < 0).length
+function MentorView({ mentees, onOpenMentee }: { mentees: Mentee[]; onOpenMentee: (m: Mentee) => void }) {
+  const sorted = [...mentees].sort((a, b) => b.avs - a.avs)
+  const highRisk = mentees.filter(m => m.avs >= 0.6).length
+  const medRisk = mentees.filter(m => m.avs >= 0.35 && m.avs < 0.6).length
+  const noData = mentees.filter(m => m.avs < 0).length
 
   return (
     <div style={{ padding: '28px 32px', maxWidth: 1100, animation: 'fadeUp 0.35s ease' }}>
@@ -1266,7 +1276,7 @@ function MentorView({ onOpenMentee }: { onOpenMentee: (m: Mentee) => void }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 22 }}>
         {[
-          { lbl: 'Total Mentees', val: MENTEES.length, col: T.accent },
+          { lbl: 'Total Mentees', val: mentees.length, col: T.accent },
           { lbl: 'High Vulnerability', val: highRisk, col: T.danger },
           { lbl: 'Medium Risk', val: medRisk, col: T.warning },
           { lbl: 'Awaiting Data', val: noData, col: T.dim },
@@ -1827,6 +1837,11 @@ export default function App() {
     if (currentTeacher.permissions.includes('HoD')) return OFFERINGS
     return OFFERINGS.filter(o => currentTeacher.courseCodes.includes(o.code))
   }, [currentTeacher])
+  const assignedMentees = useMemo(() => {
+    if (!currentTeacherId) return MENTEES
+    const ids = new Set(MENTEE_ASSIGNMENTS[currentTeacherId] ?? [])
+    return MENTEES.filter(m => ids.has(m.id))
+  }, [currentTeacherId])
 
   const [lockByOffering, setLockByOffering] = useState<Record<string, EntryLockMap>>(() => {
     try {
@@ -2188,7 +2203,7 @@ export default function App() {
           {role === 'Course Leader' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} availableOfferings={assignedOfferings} />}
           {role === 'Course Leader' && page === 'entry-workspace' && <EntryWorkspacePage role={role} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} />}
 
-          {role === 'Mentor' && page === 'mentees' && <MentorView onOpenMentee={() => {}} />}
+          {role === 'Mentor' && page === 'mentees' && <MentorView mentees={assignedMentees} onOpenMentee={() => {}} />}
           {role === 'Mentor' && page === 'calendar' && <CalendarPage />}
 
           {role === 'HoD' && page === 'department' && <HodView onOpenUpload={handleOpenUpload} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} tasks={allTasksList} />}
