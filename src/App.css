@@ -30,6 +30,44 @@ body,
 	scrollbar-width: auto;
 }
 
+.app-content {
+	--page-shell-wide: 1180px;
+	--page-shell-standard: 1050px;
+	--page-shell-narrow: 860px;
+}
+
+.app-content--split {
+	--page-shell-wide: 1360px;
+	--page-shell-standard: 1180px;
+	--page-shell-narrow: 920px;
+}
+
+.app-content--focus {
+	--page-shell-wide: 1520px;
+	--page-shell-standard: 1280px;
+	--page-shell-narrow: 980px;
+}
+
+.page-shell {
+	width: 100%;
+	max-width: var(--page-shell-max, var(--page-shell-standard));
+	margin: 0 auto;
+	padding: 28px 32px;
+	transition: max-width 220ms ease, padding 220ms ease;
+}
+
+.page-shell--wide {
+	--page-shell-max: var(--page-shell-wide);
+}
+
+.page-shell--standard {
+	--page-shell-max: var(--page-shell-standard);
+}
+
+.page-shell--narrow {
+	--page-shell-max: var(--page-shell-narrow);
+}
+
 @supports selector(::-webkit-scrollbar) {
 	html::-webkit-scrollbar,
 	body::-webkit-scrollbar,
@@ -95,3 +133,16 @@ body,
 
 .fade-up { animation: fadeUp 0.35s ease; }
 .fade-in { animation: fadeIn 0.3s ease; }
+
+@media (max-width: 1100px) {
+	.page-shell {
+		max-width: none;
+		padding: 24px 20px;
+	}
+}
+
+@media (max-width: 720px) {
+	.page-shell {
+		padding: 20px 16px;
+	}
+}

@@ -68,6 +68,7 @@ What works:
 
 - active-role switching is explicit and central to the product model
 - page context is now reset more safely when the active role changes
+- the main content shell now recenters and expands correctly when the left sidebar and right queue are hidden
 
 Current caveat:
 
@@ -204,6 +205,7 @@ Current caveat:
 - TT raw-paper modeling now reflects the MSRUAS `25 + 25 -> 30` term-test foundation more accurately.
 - data entry edits now update shared mock-local state instead of staying trapped inside one panel.
 - the right action queue now animates cleanly and uses themed scrollbars aligned with the rest of the UI.
+- the center-page shell now responds properly to hidden side panels instead of leaving visually dead space.
 
 ## Remaining Mock Caveats
 
