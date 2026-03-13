@@ -1572,8 +1572,8 @@ function UploadPage({ role, offering, defaultKind }: { role: Role; offering: Off
       <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 6 }}>Single consistent entry route from dashboard. CSV import is disabled in v1.</div>
       <div style={{ ...mono, fontSize: 11, color: T.accent, marginBottom: 12 }}>{selectedOffering.code} · {selectedOffering.title} · {selectedOffering.year} · Stage {selectedOffering.stageInfo.stage}</div>
       <div style={{ marginBottom: 18 }}>
-        <label style={{ ...mono, fontSize: 10, color: T.muted, marginRight: 8 }}>Course / Section:</label>
-        <select value={selectedOffId} onChange={e => setSelectedOffId(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 10px' }}>
+        <label htmlFor="entry-offering-select" style={{ ...mono, fontSize: 10, color: T.muted, marginRight: 8 }}>Course / Section:</label>
+        <select id="entry-offering-select" aria-label="Select course and section" title="Select course and section" value={selectedOffId} onChange={e => setSelectedOffId(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 10px' }}>
           {OFFERINGS.map(o => <option key={o.offId} value={o.offId}>{o.code} · {o.title} · {o.year} · Sec {o.section}</option>)}
         </select>
       </div>
@@ -1631,14 +1631,14 @@ function UploadPage({ role, offering, defaultKind }: { role: Role; offering: Off
                         <TD style={{ ...sora, fontSize: 11, color: T.text }}>{s.name}</TD>
                         {(selectedKind === 'tt1' || selectedKind === 'tt2') && paper.map(q => (
                           <TD key={q.id}>
-                            <input type="number" min={0} max={q.maxMarks} disabled={!canEdit || !isApplicableForStage} defaultValue={(selectedKind === 'tt1' ? s.tt1Score : s.tt2Score) != null ? Math.round(((selectedKind === 'tt1' ? s.tt1Score! : s.tt2Score!) / paper.length)) : ''}
+                            <input aria-label={`${selectedKind.toUpperCase()} marks for ${s.name}, ${q.id}`} title={`Enter ${selectedKind.toUpperCase()} marks for ${s.name}, ${q.id}`} placeholder="0" type="number" min={0} max={q.maxMarks} disabled={!canEdit || !isApplicableForStage} defaultValue={(selectedKind === 'tt1' ? s.tt1Score : s.tt2Score) != null ? Math.round(((selectedKind === 'tt1' ? s.tt1Score! : s.tt2Score!) / paper.length)) : ''}
                               style={{ width: 52, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} />
                           </TD>
                         ))}
-                        {selectedKind === 'quiz' && <TD><input type="number" min={0} max={10} disabled={!canEdit || !isApplicableForStage} defaultValue={s.quiz1 ?? ''} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
-                        {selectedKind === 'assignment' && <TD><input type="number" min={0} max={10} disabled={!canEdit || !isApplicableForStage} defaultValue={s.asgn1 ?? ''} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
-                        {selectedKind === 'attendance' && <TD><input type="number" min={0} max={45} disabled={!canEdit || !isApplicableForStage} defaultValue={s.present} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
-                        {selectedKind === 'finals' && <TD><input type="number" min={0} max={50} disabled={!canEdit || !isApplicableForStage} defaultValue="" placeholder="Enter" style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
+                        {selectedKind === 'quiz' && <TD><input aria-label={`Quiz 1 marks for ${s.name}`} title={`Enter Quiz 1 marks for ${s.name}`} placeholder="0" type="number" min={0} max={10} disabled={!canEdit || !isApplicableForStage} defaultValue={s.quiz1 ?? ''} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
+                        {selectedKind === 'assignment' && <TD><input aria-label={`Assignment 1 marks for ${s.name}`} title={`Enter Assignment 1 marks for ${s.name}`} placeholder="0" type="number" min={0} max={10} disabled={!canEdit || !isApplicableForStage} defaultValue={s.asgn1 ?? ''} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
+                        {selectedKind === 'attendance' && <TD><input aria-label={`Attendance present classes for ${s.name}`} title={`Enter attendance present count for ${s.name}`} placeholder="0" type="number" min={0} max={45} disabled={!canEdit || !isApplicableForStage} defaultValue={s.present} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
+                        {selectedKind === 'finals' && <TD><input aria-label={`SEE marks for ${s.name}`} title={`Enter SEE marks for ${s.name}`} type="number" min={0} max={50} disabled={!canEdit || !isApplicableForStage} defaultValue="" placeholder="Enter" style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
                       </tr>
                     ))}
                   </tbody>
