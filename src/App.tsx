@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, type CSSProperties, type ReactNode } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef, type CSSProperties, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   ArrowUpRight, Bell, Calendar, CheckCircle, Filter,
@@ -257,6 +257,71 @@ function computeEvaluation(s: Student, scheme: EvaluationScheme) {
 const Chip = ({ children, color = T.muted, size = 11 }: { children: ReactNode; color?: string; size?: number }) => (
   <span style={{ ...mono, fontSize: size, padding: '2px 8px', borderRadius: 4, background: `${color}12`, color, border: `1px solid ${color}26`, whiteSpace: 'nowrap' as const, display: 'inline-block' }}>{children}</span>
 )
+
+function HScrollArea({ children, style }: { children: ReactNode; style?: CSSProperties }) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  const drag = useRef({ pointerId: -1, startX: 0, startScrollLeft: 0, active: false })
+  const [dragging, setDragging] = useState(false)
+
+  const endDrag = useCallback(() => {
+    drag.current.active = false
+    drag.current.pointerId = -1
+    setDragging(false)
+  }, [])
+
+  const onPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'touch') return
+    if (e.button !== 0) return
+    if ((e.target as HTMLElement).closest('button, input, select, textarea, a, [data-no-drag-scroll="true"]')) return
+    const el = ref.current
+    if (!el) return
+    drag.current = { pointerId: e.pointerId, startX: e.clientX, startScrollLeft: el.scrollLeft, active: true }
+    setDragging(true)
+    el.setPointerCapture(e.pointerId)
+  }, [])
+
+  const onPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const el = ref.current
+    if (!el || !drag.current.active || drag.current.pointerId !== e.pointerId) return
+    const delta = e.clientX - drag.current.startX
+    el.scrollLeft = drag.current.startScrollLeft - delta
+  }, [])
+
+  const onPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (drag.current.pointerId !== e.pointerId) return
+    const el = ref.current
+    if (el?.hasPointerCapture(e.pointerId)) {
+      el.releasePointerCapture(e.pointerId)
+    }
+    endDrag()
+  }, [endDrag])
+
+  const onKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    const el = ref.current
+    if (!el) return
+    if (e.key === 'ArrowRight') {
+      el.scrollBy({ left: 80, behavior: 'smooth' })
+    } else if (e.key === 'ArrowLeft') {
+      el.scrollBy({ left: -80, behavior: 'smooth' })
+    }
+  }, [])
+
+  return (
+    <div
+      ref={ref}
+      className={`scrollable-x${dragging ? ' is-dragging' : ''}`}
+      style={{ overflowX: 'auto', ...style }}
+      tabIndex={0}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={endDrag}
+      onKeyDown={onKeyDown}
+    >
+      {children}
+    </div>
+  )
+}
 
 const Bar = ({ val, max = 100, color, h = 5 }: { val: number; max?: number; color: string; h?: number }) => (
   <div style={{ background: T.border, borderRadius: 99, height: h, overflow: 'hidden', flex: 1 }}>
@@ -590,9 +655,9 @@ function ActionQueue({ role, tasks, offerings, resolvedTaskIds, onResolveTask, o
   const active = tasks.filter(t => !resolvedTaskIds[t.id])
   const done = tasks.filter(t => !!resolvedTaskIds[t.id])
   const [showComposer, setShowComposer] = useState(false)
-  const [selectedYear, setSelectedYear] = useState<string>(offerings[0]?.year ?? '')
-  const [selectedDept, setSelectedDept] = useState<string>(offerings[0]?.dept ?? '')
-  const [selectedOffId, setSelectedOffId] = useState<string>(offerings[0]?.offId ?? '')
+  const [selectedYear, setSelectedYear] = useState<string>('')
+  const [selectedDept, setSelectedDept] = useState<string>('')
+  const [selectedOffId, setSelectedOffId] = useState<string>('')
   const [query, setQuery] = useState('')
   const [selectedStudentId, setSelectedStudentId] = useState('')
   const [taskType, setTaskType] = useState<TaskType>('Follow-up')
@@ -618,17 +683,19 @@ function ActionQueue({ role, tasks, offerings, resolvedTaskIds, onResolveTask, o
   const classOfferings = useMemo(() => offerings.filter(o => (!selectedYear || o.year === selectedYear) && (!selectedDept || o.dept === selectedDept)), [offerings, selectedYear, selectedDept])
 
   useEffect(() => {
-    if (!yearOptions.includes(selectedYear)) setSelectedYear(yearOptions[0] ?? '')
-    if (!deptOptions.includes(selectedDept)) setSelectedDept(deptOptions[0] ?? '')
-  }, [yearOptions, deptOptions, selectedYear, selectedDept])
-
-  useEffect(() => {
-    if (!classOfferings.some(o => o.offId === selectedOffId)) {
-      setSelectedOffId(classOfferings[0]?.offId ?? '')
+    if (selectedOffId && !classOfferings.some(o => o.offId === selectedOffId)) {
+      setSelectedOffId('')
     }
   }, [classOfferings, selectedOffId])
 
-  const selectedOffering = classOfferings.find(o => o.offId === selectedOffId) ?? classOfferings[0]
+  const selectedOffering = offerings.find(o => o.offId === selectedOffId)
+  const hasScopedFilters = !!selectedYear || !!selectedDept || !!selectedOffId
+  const searchScopeOfferings = selectedOffId
+    ? offerings.filter(o => o.offId === selectedOffId)
+    : hasScopedFilters
+      ? classOfferings
+      : offerings
+
   const filteredStudents = (selectedOffering ? getStudentsPatched(selectedOffering) : []).filter(s => {
     const q = query.trim().toLowerCase()
     if (!q) return true
@@ -639,13 +706,16 @@ function ActionQueue({ role, tasks, offerings, resolvedTaskIds, onResolveTask, o
   const searchHits = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return [] as Array<{ offering: Offering; student: Student }>
-    return classOfferings
+    return searchScopeOfferings
       .flatMap(o => getStudentsPatched(o).filter(s => s.name.toLowerCase().includes(q) || s.usn.toLowerCase().includes(q)).map(student => ({ offering: o, student })))
       .slice(0, 12)
-  }, [query, classOfferings])
+  }, [query, searchScopeOfferings])
 
   useEffect(() => {
-    if (!selectedOffering) return
+    if (!selectedOffering) {
+      setSelectedStudentId('')
+      return
+    }
     const available = getStudentsPatched(selectedOffering).filter(s => {
       const q = query.trim().toLowerCase()
       if (!q) return true
@@ -761,33 +831,42 @@ function ActionQueue({ role, tasks, offerings, resolvedTaskIds, onResolveTask, o
             </div>
             <div style={{ display: 'grid', gap: 7 }}>
               <select aria-label="Select class" value={selectedOffId} onChange={e => { setSelectedOffId(e.target.value); setQuery('') }} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
+                <option value="">All Classes</option>
                 {classOfferings.map(o => <option key={o.offId} value={o.offId}>{o.code} · {o.year} · {o.dept} · Sec {o.section}</option>)}
               </select>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
                 <select aria-label="Select year" value={selectedYear} onChange={e => setSelectedYear(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
+                  <option value="">All Years</option>
                   {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
                 </select>
                 <select aria-label="Select branch" value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
+                  <option value="">All Branches</option>
                   {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
               <input aria-label="Search student" placeholder="Search student / USN" value={query} onChange={e => setQuery(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }} />
-              {searchHits.length > 0 && (
-                <select aria-label="Search results" value="" onChange={e => {
-                  const val = e.target.value
-                  if (!val) return
-                  const [offId, sid] = val.split('::')
-                  const hit = searchHits.find(h => h.offering.offId === offId && h.student.id === sid)
-                  if (!hit) return
-                  setSelectedYear(hit.offering.year)
-                  setSelectedDept(hit.offering.dept)
-                  setSelectedOffId(hit.offering.offId)
-                  setSelectedStudentId(hit.student.id)
-                  setQuery(hit.student.name)
-                }} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
-                  <option value="">Select matching result</option>
-                  {searchHits.map(hit => <option key={`${hit.offering.offId}-${hit.student.id}`} value={`${hit.offering.offId}::${hit.student.id}`}>{hit.student.name} · {hit.student.usn} · {hit.offering.code} Sec {hit.offering.section}</option>)}
-                </select>
+              {query.trim() !== '' && (
+                <div style={{ border: `1px solid ${T.border2}`, borderRadius: 6, background: T.surface2, maxHeight: 168, overflowY: 'auto' }}>
+                  {searchHits.length === 0 && <div style={{ ...mono, fontSize: 10, color: T.dim, padding: '8px 10px' }}>No matching students</div>}
+                  {searchHits.map(hit => (
+                    <button
+                      key={`${hit.offering.offId}-${hit.student.id}`}
+                      aria-label={`Select ${hit.student.name}`}
+                      title={`Select ${hit.student.name}`}
+                      onClick={() => {
+                        setSelectedYear(hit.offering.year)
+                        setSelectedDept(hit.offering.dept)
+                        setSelectedOffId(hit.offering.offId)
+                        setSelectedStudentId(hit.student.id)
+                        setQuery(hit.student.name)
+                      }}
+                      style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', cursor: 'pointer', borderBottom: `1px solid ${T.border}`, padding: '8px 10px' }}
+                    >
+                      <div style={{ ...sora, fontWeight: 600, fontSize: 11, color: T.text }}>{hit.student.name}</div>
+                      <div style={{ ...mono, fontSize: 9, color: T.muted }}>{hit.student.usn} · {hit.offering.code} · {hit.offering.year} · {hit.offering.dept} · Sec {hit.offering.section}</div>
+                    </button>
+                  ))}
+                </div>
               )}
               <select aria-label="Select student" value={selectedStudentId} onChange={e => setSelectedStudentId(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
                 <option value="">Select student</option>
@@ -798,14 +877,20 @@ function ActionQueue({ role, tasks, offerings, resolvedTaskIds, onResolveTask, o
               </select>
               <input aria-label="Due date" type="date" value={dueDateISO} onChange={e => setDueDateISO(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }} />
               <input aria-label="Task note" value={note} onChange={e => setNote(e.target.value)} placeholder="Task note" style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }} />
-              <div style={{ display: 'flex', gap: 6 }}>
+              <div style={{ display: 'flex', gap: 6, minHeight: 30 }}>
                 <Btn size="sm" onClick={() => submitQuickTask(false)}>Add</Btn>
                 {role !== 'HoD' && <Btn size="sm" variant="danger" onClick={() => submitQuickTask(true)}>Defer to HoD</Btn>}
-                {(taskType === 'Remedial' || selectedStudent?.riskBand === 'High') && <Btn size="sm" variant="ghost" onClick={() => {
-                  if (!selectedOffering || !selectedStudentId) return
-                  onOpenRemedialPlanner({ offeringId: selectedOffering.offId, studentId: selectedStudentId, deferToHod: false })
-                  setShowComposer(false)
-                }}>Build Plan</Btn>}
+                {(taskType === 'Remedial' || selectedStudent?.riskBand === 'High') ? (
+                  <Btn size="sm" variant="ghost" onClick={() => {
+                    if (!selectedOffering || !selectedStudentId) return
+                    onOpenRemedialPlanner({ offeringId: selectedOffering.offId, studentId: selectedStudentId, deferToHod: false })
+                    setShowComposer(false)
+                  }}>
+                    Build Plan
+                  </Btn>
+                ) : (
+                  <div style={{ visibility: 'hidden' }}><Btn size="sm" variant="ghost">Build Plan</Btn></div>
+                )}
               </div>
             </div>
           </Card>
@@ -1002,7 +1087,7 @@ function SummaryTable({ offerings, onOpenCourse, onOpenUpload }: { offerings: Of
       <div style={{ padding: '14px 18px', borderBottom: `1px solid ${T.border}` }}>
         <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text }}>All Assigned Classes — Quick View</div>
       </div>
-      <div style={{ overflowX: 'auto' }}>
+      <HScrollArea>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>{['Year', 'Code', 'Course', 'Sec', 'Students', 'Attendance', 'Stage', 'TT1', 'TT2', 'High Risk', 'Action', 'Entry'].map(h => <TH key={h}>{h}</TH>)}</tr>
@@ -1038,7 +1123,7 @@ function SummaryTable({ offerings, onOpenCourse, onOpenUpload }: { offerings: Of
             })}
           </tbody>
         </table>
-      </div>
+      </HScrollArea>
     </Card>
   )
 }
@@ -1102,7 +1187,7 @@ function CourseDetail({ offering: o, onBack, onOpenStudent, onOpenEntryHub, init
           ))}
         </div>
         {/* Tab bar */}
-        <div style={{ display: 'flex', gap: 0, marginTop: 14, borderBottom: `1px solid ${T.border}`, marginBottom: -17, marginLeft: -32, marginRight: -32, paddingLeft: 32, overflowX: 'auto' }}>
+        <HScrollArea style={{ display: 'flex', gap: 0, marginTop: 14, borderBottom: `1px solid ${T.border}`, marginBottom: -17, marginLeft: -32, marginRight: -32, paddingLeft: 32 }}>
           {TAB_DEFS.map(t => {
             const locked = tabLocked(t.id)
             return (
@@ -1112,7 +1197,7 @@ function CourseDetail({ offering: o, onBack, onOpenStudent, onOpenEntryHub, init
               </button>
             )
           })}
-        </div>
+        </HScrollArea>
       </div>
 
       {/* Tab content */}
@@ -1274,7 +1359,7 @@ function RiskTab({ o, students, onOpenStudent }: { o: Offering; students: Studen
             ))}
           </div>
         </div>
-        <div style={{ overflowX: 'auto' }}>
+        <HScrollArea>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>{['USN', 'Student', 'Risk', 'Attendance', 'TT1', 'Top Driver', 'What-If', ''].map(h => <TH key={h}>{h}</TH>)}</tr></thead>
             <tbody>
@@ -1301,7 +1386,7 @@ function RiskTab({ o, students, onOpenStudent }: { o: Offering; students: Studen
               })}
             </tbody>
           </table>
-        </div>
+        </HScrollArea>
       </Card>
     </div>
   )
@@ -1327,7 +1412,7 @@ function AttendanceTab({ o, students, onOpenStudent, onOpenEntryHub }: { o: Offe
         ))}
       </div>
       <Card style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto' }}>
+        <HScrollArea>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>{['#', 'USN', 'Name', 'Present / 45', 'Attendance', 'Risk', 'Status'].map(h => <TH key={h}>{h}</TH>)}</tr></thead>
             <tbody>
@@ -1349,7 +1434,7 @@ function AttendanceTab({ o, students, onOpenStudent, onOpenEntryHub }: { o: Offe
               })}
             </tbody>
           </table>
-        </div>
+        </HScrollArea>
       </Card>
     </div>
   )
@@ -1428,7 +1513,7 @@ function TTTab({ o, ttNum, cos, paper, students, onOpenEntryHub }: { o: Offering
           </div>
           {isLocked && <div style={{ marginBottom: 14, padding: '10px 14px', background: T.success + '1a', color: T.success, ...mono, fontSize: 11, borderRadius: 6, display: 'flex', gap: 6, alignItems: 'center' }}><Shield size={14} /> Data Locked. ML Risk predictions updated.</div>}
           <Card style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{ overflowX: 'auto' }}>
+            <HScrollArea>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
@@ -1463,7 +1548,7 @@ function TTTab({ o, ttNum, cos, paper, students, onOpenEntryHub }: { o: Offering
                   })}
                 </tbody>
               </table>
-            </div>
+            </HScrollArea>
             {students.length > 20 && <div style={{ ...mono, fontSize: 11, color: T.muted, padding: '12px 18px', textAlign: 'center' }}>Showing 20 of {students.length} · Scroll or export for full list</div>}
           </Card>
           {/* Live CO Preview */}
@@ -1508,7 +1593,7 @@ function QuizzesTab({ students, tt1Done, onOpenEntryHub }: { students: Student[]
         ))}
       </div>
       <Card style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto' }}>
+        <HScrollArea>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>{['#', 'USN', 'Name', 'Quiz 1', 'Quiz 2', 'Quiz 3', 'Best 2 Avg'].map(h => <TH key={h}>{h}</TH>)}</tr></thead>
             <tbody>
@@ -1525,7 +1610,7 @@ function QuizzesTab({ students, tt1Done, onOpenEntryHub }: { students: Student[]
               ))}
             </tbody>
           </table>
-        </div>
+        </HScrollArea>
       </Card>
     </div>
   )
@@ -1549,7 +1634,7 @@ function AssignmentsTab({ students, tt1Done, onOpenEntryHub }: { students: Stude
         ))}
       </div>
       <Card style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto' }}>
+        <HScrollArea>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>{['#', 'USN', 'Name', 'Asgn 1 /10', 'Asgn 2 /10'].map(h => <TH key={h}>{h}</TH>)}</tr></thead>
             <tbody>
@@ -1564,7 +1649,7 @@ function AssignmentsTab({ students, tt1Done, onOpenEntryHub }: { students: Stude
               ))}
             </tbody>
           </table>
-        </div>
+        </HScrollArea>
       </Card>
     </div>
   )
@@ -1664,7 +1749,7 @@ function GradeBookTab({ students, onOpenEntryHub }: { o: Offering; students: Stu
         </div>
       </Card>
       <Card style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto' }}>
+        <HScrollArea>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>{['USN', 'Name', 'TT1 /15', 'TT2 /15', `Quiz /${quizWeight}`, `Asgn /${assignmentWeight}`, 'CE /60', 'Overall /40', `SEE /${finalsMax}`, 'Risk'].map(h => <TH key={h}>{h}</TH>)}</tr></thead>
             <tbody>
@@ -1687,7 +1772,7 @@ function GradeBookTab({ students, onOpenEntryHub }: { o: Offering; students: Stu
               })}
             </tbody>
           </table>
-        </div>
+        </HScrollArea>
       </Card>
     </div>
   )
@@ -2192,7 +2277,7 @@ function EntryWorkspacePage({ role, offeringId, kind, onBack, lockByOffering, dr
                   <Btn size="sm" onClick={() => onSubmitLock(sec.offId, kind)}>{canEditSection ? 'Submit & Lock' : 'View Only'}</Btn>
                 </div>
               </div>
-              <div style={{ overflowX: 'auto' }}>
+              <HScrollArea>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr>
@@ -2241,7 +2326,7 @@ function EntryWorkspacePage({ role, offeringId, kind, onBack, lockByOffering, dr
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </HScrollArea>
             </Card>
           )
         })}
