@@ -19,6 +19,7 @@ type EntryKind = 'tt1' | 'tt2' | 'quiz' | 'assignment' | 'attendance' | 'finals'
 type EntryLockMap = Record<EntryKind, boolean>
 type SharedTask = Task & {
   createdAt: number
+  assignedTo: Role
   escalated?: boolean
   sourceRole?: Role | 'Auto' | 'System'
   manual?: boolean
@@ -1847,11 +1848,41 @@ export default function App() {
   const [allTasksList, setAllTasksList] = useState<SharedTask[]>(() => {
     try {
       const saved = localStorage.getItem('airmentor-all-tasks')
-      if (saved) return JSON.parse(saved)
+      if (saved) {
+        const parsed = JSON.parse(saved) as Array<SharedTask | (Task & { createdAt?: number })>
+        return parsed.map(t => ({
+          ...t,
+          createdAt: 'createdAt' in t && typeof t.createdAt === 'number' ? t.createdAt : Date.now(),
+          assignedTo: 'assignedTo' in t && (t as SharedTask).assignedTo ? (t as SharedTask).assignedTo : 'Course Leader',
+        }))
+      }
     } catch {
       // ignore
     }
-    return generateTasks().map(t => ({ ...t, createdAt: Date.now() }))
+    const courseLeaderTasks: SharedTask[] = generateTasks().map(t => ({ ...t, createdAt: Date.now(), assignedTo: 'Course Leader' }))
+    const mentorTasks: SharedTask[] = MENTEES
+      .filter(m => m.avs >= 0.5)
+      .slice(0, 8)
+      .map((m, i) => ({
+        id: `mentor-seed-${m.id}-${i}`,
+        studentId: `mentee-${m.id}`,
+        studentName: m.name,
+        studentUsn: m.usn,
+        offeringId: '',
+        courseCode: m.courseRisks[0]?.code ?? 'GEN',
+        courseName: m.courseRisks[0]?.title ?? 'Mentor Follow-up',
+        year: m.year,
+        riskProb: m.avs,
+        riskBand: m.avs >= 0.7 ? 'High' : m.avs >= 0.35 ? 'Medium' : 'Low',
+        title: `Mentor follow-up with ${m.name.split(' ')[0]}`,
+        due: 'This week',
+        status: m.interventions.length > 0 ? 'In Progress' : 'New',
+        actionHint: 'Mentor intervention and counselling review',
+        priority: Math.round(m.avs * 100),
+        createdAt: Date.now(),
+        assignedTo: 'Mentor',
+      }))
+    return [...courseLeaderTasks, ...mentorTasks]
   })
   const [resolvedTasks, setResolvedTasks] = useState<Record<string, number>>(() => {
     try {
@@ -1880,7 +1911,8 @@ export default function App() {
     setAllTasksList(prev => prev.filter(t => !expiredResolved.includes(t.id)))
   }, [resolvedTasks])
 
-  const pendingActionCount = allTasksList.filter(t => !resolvedTasks[t.id]).length
+  const roleTasks = useMemo(() => allTasksList.filter(t => t.assignedTo === role), [allTasksList, role])
+  const pendingActionCount = roleTasks.filter(t => !resolvedTasks[t.id]).length
   
   const navItems = role === 'Course Leader' ? CL_NAV : role === 'Mentor' ? MENTOR_NAV : HOD_NAV
 
@@ -1990,6 +2022,7 @@ export default function App() {
         actionHint: mode === 'escalate' ? 'Escalation raised and visible across all role queues' : 'User-generated action item',
         priority: Math.round(riskProb * 100),
         createdAt: Date.now(),
+        assignedTo: mode === 'escalate' ? 'HoD' : role,
         escalated: mode === 'escalate',
         sourceRole: role,
         manual: mode !== 'escalate',
@@ -2121,7 +2154,7 @@ export default function App() {
 
         {/* Right Sidebar — Action Queue */}
         {showActionQueue && (
-          <ActionQueue tasks={allTasksList} resolvedTaskIds={resolvedTasks} onResolveTask={handleResolveTask} onUndoTask={handleUndoTask} onOpenStudent={(id) => {
+          <ActionQueue tasks={roleTasks} resolvedTaskIds={resolvedTasks} onResolveTask={handleResolveTask} onUndoTask={handleUndoTask} onOpenStudent={(id) => {
             for (const off of OFFERINGS) {
               const s = getStudents(off).find(st => st.id === id)
               if (s) {
