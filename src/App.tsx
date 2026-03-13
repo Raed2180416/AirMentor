@@ -258,10 +258,9 @@ function StudentDrawer({ student, offering, role, onClose }: { student: Student 
    ACTION QUEUE (Right Sidebar)
    ══════════════════════════════════════════════════════════════ */
 
-function ActionQueue({ tasks, onOpenStudent }: { tasks: Task[]; onOpenStudent: (id: string) => void }) {
-  const [resolved, setResolved] = useState<Set<string>>(new Set())
-  const active = tasks.filter(t => !resolved.has(t.id))
-  const done = tasks.filter(t => resolved.has(t.id))
+function ActionQueue({ tasks, resolvedTaskIds, onResolveTask, onOpenStudent }: { tasks: Task[]; resolvedTaskIds: Set<string>; onResolveTask: (id: string) => void; onOpenStudent: (id: string) => void }) {
+  const active = tasks.filter(t => !resolvedTaskIds.has(t.id))
+  const done = tasks.filter(t => resolvedTaskIds.has(t.id))
 
   return (
     <div style={{ width: 310, flexShrink: 0, background: T.surface, borderLeft: `1px solid ${T.border}`, position: 'sticky', top: 0, height: '100vh', overflowY: 'auto', padding: '18px 16px' }}>
@@ -287,7 +286,7 @@ function ActionQueue({ tasks, onOpenStudent }: { tasks: Task[]; onOpenStudent: (
             <Chip color={T.dim} size={9}>Due: {t.due}</Chip>
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
               <button aria-label="Open student details" title="Open student" onClick={() => onOpenStudent(t.studentId)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent, padding: 2 }}><Eye size={13} /></button>
-              <button aria-label="Mark task as resolved" title="Resolve task" onClick={() => setResolved(s => new Set([...s, t.id]))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.success, padding: 2 }}><CheckCircle size={13} /></button>
+              <button aria-label="Mark task as resolved" title="Resolve task" onClick={() => onResolveTask(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.success, padding: 2 }}><CheckCircle size={13} /></button>
             </div>
           </div>
         </div>
@@ -1760,12 +1759,30 @@ export default function App() {
   const [entryKind, setEntryKind] = useState<EntryKind>('tt1')
   const [courseInitialTab, setCourseInitialTab] = useState<string | undefined>(undefined)
 
-  const tasks = useMemo(() => generateTasks(), [])
-  const pendingActionCount = tasks.length
-  const navItems = role === 'Course Leader' ? CL_NAV : role === 'Mentor' ? MENTOR_NAV : HOD_NAV
+  // -- Tasks State & Persistence --
+  const [resolvedTasks, setResolvedTasks] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('airmentor-resolved-tasks')
+      return saved ? new Set(JSON.parse(saved)) : new Set()
+    } catch {
+      return new Set()
+    }
+  })
 
   useEffect(() => {
-    applyThemePreset(themeMode)
+    localStorage.setItem('airmentor-resolved-tasks', JSON.stringify(Array.from(resolvedTasks)))
+  }, [resolvedTasks])
+
+  const allTasksList = useMemo(() => generateTasks(), [])
+  const tasks = useMemo(() => allTasksList.filter(t => !resolvedTasks.has(t.id)), [allTasksList, resolvedTasks])
+  const pendingActionCount = tasks.length
+  
+  const navItems = role === 'Course Leader' ? CL_NAV : role === 'Mentor' ? MENTOR_NAV : HOD_NAV
+
+  // IMMEDIATELY apply the theme *before* rendering any components so child elements pick up the correct T colors
+  applyThemePreset(themeMode)
+
+  useEffect(() => {
     localStorage.setItem('airmentor-theme', themeMode)
   }, [themeMode])
 
@@ -1922,7 +1939,7 @@ export default function App() {
 
         {/* Right Sidebar — Action Queue */}
         {(role === 'Course Leader' || role === 'Mentor') && page !== 'course' && showActionQueue && (
-          <ActionQueue tasks={tasks} onOpenStudent={(id) => {
+          <ActionQueue tasks={allTasksList} resolvedTaskIds={resolvedTasks} onResolveTask={(id) => setResolvedTasks(prev => new Set([...prev, id]))} onOpenStudent={(id) => {
             const all = getAllAtRiskStudents()
             const s = all.find(x => x.id === id)
             if (s) {
