@@ -79,7 +79,7 @@ export const T = {
   bg: '#07090f', surface: '#0d1017', surface2: '#111520', surface3: '#161b28',
   border: '#1c2333', border2: '#242d40',
   text: '#e2e8f4', muted: '#8892a4', dim: '#3d4a60',
-  accent: '#6366f1', accentLight: '#818cf8',
+  accent: '#006DDD', accentLight: '#2D8AF0',
   success: '#10b981', warning: '#f59e0b', danger: '#ef4444',
   pink: '#ec4899', purple: '#a855f7', orange: '#f97316', blue: '#3b82f6',
 }

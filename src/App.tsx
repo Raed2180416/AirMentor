@@ -14,6 +14,29 @@ import {
 } from './data'
 import './App.css'
 
+type ThemeMode = 'light' | 'dark'
+
+const THEME_PRESETS: Record<ThemeMode, typeof T> = {
+  light: {
+    ...T,
+    bg: '#f5f8fc', surface: '#ffffff', surface2: '#f1f6fd', surface3: '#e9f0fa',
+    border: '#dbe5f1', border2: '#c9d8ea',
+    text: '#0f172a', muted: '#475569', dim: '#94a3b8',
+    accent: '#006DDD', accentLight: '#1F7FE0',
+  },
+  dark: {
+    ...T,
+    bg: '#07090f', surface: '#0d1017', surface2: '#111520', surface3: '#161b28',
+    border: '#1c2333', border2: '#242d40',
+    text: '#e2e8f4', muted: '#8892a4', dim: '#3d4a60',
+    accent: '#006DDD', accentLight: '#2D8AF0',
+  },
+}
+
+function applyThemePreset(mode: ThemeMode) {
+  Object.assign(T, THEME_PRESETS[mode])
+}
+
 /* ══════════════════════════════════════════════════════════════
    PRIMITIVES
    ══════════════════════════════════════════════════════════════ */
@@ -36,14 +59,14 @@ const Btn = ({ children, onClick, variant = 'primary', size = 'md' }: { children
   const p = size === 'sm' ? '6px 14px' : '10px 22px'
   const fs = size === 'sm' ? 11 : 13
   const base: CSSProperties = { ...sora, fontWeight: 600, fontSize: fs, padding: p, borderRadius: 7, cursor: 'pointer', border: 'none', transition: 'all 0.15s', display: 'inline-flex', alignItems: 'center', gap: 5 }
-  if (variant === 'primary') return <button onClick={onClick} style={{ ...base, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff' }}>{children}</button>
+  if (variant === 'primary') return <button onClick={onClick} style={{ ...base, background: T.accent, color: '#fff' }}>{children}</button>
   if (variant === 'ghost') return <button onClick={onClick} style={{ ...base, background: 'transparent', color: T.muted, border: `1px solid ${T.border2}` }}>{children}</button>
   if (variant === 'danger') return <button onClick={onClick} style={{ ...base, background: '#ef444418', color: '#ef4444', border: '1px solid #ef444435' }}>{children}</button>
   return <button onClick={onClick} style={{ ...base, background: T.surface3, color: T.text, border: `1px solid ${T.border2}` }}>{children}</button>
 }
 
 const TH = ({ children }: { children: ReactNode }) => (
-  <th style={{ ...mono, fontSize: 9, color: '#6366f1', letterSpacing: '0.1em', textTransform: 'uppercase' as const, padding: '11px 12px', textAlign: 'left' as const, background: T.surface2, borderBottom: `1px solid ${T.border}`, whiteSpace: 'nowrap' as const }}>{children}</th>
+  <th style={{ ...mono, fontSize: 9, color: T.accent, letterSpacing: '0.1em', textTransform: 'uppercase' as const, padding: '11px 12px', textAlign: 'left' as const, background: T.surface2, borderBottom: `1px solid ${T.border}`, whiteSpace: 'nowrap' as const }}>{children}</th>
 )
 const TD = ({ children, style = {}, ...rest }: { children: ReactNode; style?: CSSProperties; colSpan?: number }) => (
   <td style={{ padding: '9px 12px', borderBottom: `1px solid ${T.border}`, ...style }} {...rest}>{children}</td>
@@ -318,7 +341,7 @@ function CLDashboard({ onOpenCourse, onOpenStudent, onOpenUpload }: { onOpenCour
     <div style={{ padding: '28px 32px', maxWidth: 1100, animation: 'fadeUp 0.35s ease' }}>
       {/* Greeting */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
-        <div style={{ width: 50, height: 50, borderRadius: 14, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 18, color: '#fff' }}>{PROFESSOR.initials}</div>
+        <div style={{ width: 50, height: 50, borderRadius: 14, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 18, color: '#fff' }}>{PROFESSOR.initials}</div>
         <div>
           <div style={{ ...sora, fontWeight: 700, fontSize: 20, color: T.text }}>Good morning, {PROFESSOR.name.split(' ')[0]}</div>
           <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 2 }}>{PROFESSOR.dept} · {PROFESSOR.role}</div>
@@ -1380,7 +1403,7 @@ function HodView({ onOpenUpload }: { onOpenUpload: (o?: Offering, kind?: EntryKi
           return (
             <Card key={t.id} glow={isSelected ? T.accent : undefined} style={{ padding: '16px 18px', cursor: 'pointer' }} onClick={() => setSelectedTeacherId(isSelected ? null : t.id)}>
               <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 10 }}>
-                <div style={{ width: 38, height: 38, borderRadius: 10, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 13, color: '#fff' }}>{t.initials}</div>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 13, color: '#fff' }}>{t.initials}</div>
                 <div>
                   <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text }}>{t.name}</div>
                   <div style={{ ...mono, fontSize: 10, color: T.muted }}>{t.role}</div>
@@ -1539,7 +1562,7 @@ const ENTRY_CATALOG: { kind: EntryKind; icon: string; title: string; desc: strin
    UPLOAD PAGE
    ══════════════════════════════════════════════════════════════ */
 
-function UploadPage({ role, offering, defaultKind }: { role: Role; offering: Offering | null; defaultKind: EntryKind }) {
+function UploadPage({ role, offering, defaultKind, onOpenWorkspace }: { role: Role; offering: Offering | null; defaultKind: EntryKind; onOpenWorkspace: (offeringId: string, kind: EntryKind) => void }) {
   const [selectedKind, setSelectedKind] = useState<EntryKind>(defaultKind)
   const [selectedOffId, setSelectedOffId] = useState<string>(offering?.offId ?? OFFERINGS[0].offId)
   useEffect(() => setSelectedKind(defaultKind), [defaultKind])
@@ -1548,9 +1571,7 @@ function UploadPage({ role, offering, defaultKind }: { role: Role; offering: Off
   }, [offering])
 
   const selected = ENTRY_CATALOG.find(x => x.kind === selectedKind) ?? ENTRY_CATALOG[0]
-  const canEdit = role === 'Course Leader' || role === 'HoD'
   const selectedOffering = OFFERINGS.find(o => o.offId === selectedOffId) ?? offering ?? OFFERINGS[0]
-  const groupedSections = OFFERINGS.filter(o => o.code === selectedOffering.code && o.year === selectedOffering.year)
   const stageRequired: Record<EntryKind, number> = { tt1: 1, tt2: 2, quiz: 2, assignment: 2, attendance: 1, finals: 3 }
   const isApplicableForStage = selectedOffering.stageInfo.stage >= stageRequired[selectedKind]
 
@@ -1579,7 +1600,7 @@ function UploadPage({ role, offering, defaultKind }: { role: Role; offering: Off
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         {ENTRY_CATALOG.map((x) => (
-          <Card key={x.kind} glow={selectedKind === x.kind ? T.accent : undefined} style={{ padding: '18px 20px', cursor: 'pointer' }} onClick={() => setSelectedKind(x.kind)}>
+          <Card key={x.kind} glow={selectedKind === x.kind ? T.accent : undefined} style={{ padding: '18px 20px', cursor: 'pointer' }} onClick={() => { setSelectedKind(x.kind); onOpenWorkspace(selectedOffId, x.kind) }}>
             <div style={{ fontSize: 28, marginBottom: 10 }}>{x.icon}</div>
             <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 4 }}>{x.title}</div>
             <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 12, lineHeight: 1.5 }}>{x.desc}</div>
@@ -1591,9 +1612,31 @@ function UploadPage({ role, offering, defaultKind }: { role: Role; offering: Off
       <Card style={{ marginTop: 14, padding: '14px 16px' }}>
         <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 6 }}>Selected: {selected.title}</div>
         <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 10 }}>{selected.desc}</div>
-        {!canEdit && <div style={{ ...mono, fontSize: 11, color: T.warning }}>Read-only for this role. Only Course Leaders and HoD can edit marks.</div>}
+        {role === 'Mentor' && <div style={{ ...mono, fontSize: 11, color: T.warning }}>Read-only for this role. Only Course Leaders and HoD can edit marks.</div>}
         {!isApplicableForStage && <div style={{ ...mono, fontSize: 11, color: T.warning, marginTop: 6 }}>Not applicable at current stage ({selectedOffering.stageInfo.stage}).</div>}
+        <div style={{ marginTop: 10 }}>
+          <Btn size="sm" onClick={() => onOpenWorkspace(selectedOffId, selectedKind)}>Open dedicated {selected.title} page →</Btn>
+        </div>
       </Card>
+    </div>
+  )
+}
+
+function EntryWorkspacePage({ role, offeringId, kind, onBack }: { role: Role; offeringId: string; kind: EntryKind; onBack: () => void }) {
+  const canEdit = role === 'Course Leader' || role === 'HoD'
+  const selectedOffering = OFFERINGS.find(o => o.offId === offeringId) ?? OFFERINGS[0]
+  const groupedSections = OFFERINGS.filter(o => o.code === selectedOffering.code && o.year === selectedOffering.year)
+  const selected = ENTRY_CATALOG.find(x => x.kind === kind) ?? ENTRY_CATALOG[0]
+  const stageRequired: Record<EntryKind, number> = { tt1: 1, tt2: 2, quiz: 2, assignment: 2, attendance: 1, finals: 3 }
+  const isApplicableForStage = selectedOffering.stageInfo.stage >= stageRequired[kind]
+
+  return (
+    <div style={{ padding: '28px 32px', maxWidth: 1100, animation: 'fadeUp 0.35s ease' }}>
+      <button onClick={onBack} style={{ ...mono, fontSize: 11, color: T.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 10 }}>← Back to Data Entry Hub</button>
+      <div style={{ ...sora, fontWeight: 700, fontSize: 20, color: T.text, marginBottom: 4 }}>{selected.title} — Dedicated Entry</div>
+      <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 6 }}>{selectedOffering.code} · {selectedOffering.title} · {selectedOffering.year} · Stage {selectedOffering.stageInfo.stage}</div>
+      {!canEdit && <div style={{ ...mono, fontSize: 11, color: T.warning, marginBottom: 10 }}>Read-only for this role. Only Course Leaders and HoD can edit marks.</div>}
+      {!isApplicableForStage && <div style={{ ...mono, fontSize: 11, color: T.warning, marginBottom: 10 }}>Not applicable at current stage ({selectedOffering.stageInfo.stage}).</div>}
 
       <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
         {groupedSections.map(sec => {
@@ -1617,11 +1660,11 @@ function UploadPage({ role, offering, defaultKind }: { role: Role; offering: Off
                   <thead>
                     <tr>
                       <TH>USN</TH><TH>Name</TH>
-                      {(selectedKind === 'tt1' || selectedKind === 'tt2') && paper.map((q, i) => <TH key={q.id}>Q{i + 1}/{q.maxMarks}</TH>)}
-                      {selectedKind === 'quiz' && <TH>Quiz 1 /10</TH>}
-                      {selectedKind === 'assignment' && <TH>Asgn 1 /10</TH>}
-                      {selectedKind === 'attendance' && <TH>Present /45</TH>}
-                      {selectedKind === 'finals' && <TH>SEE /50</TH>}
+                      {(kind === 'tt1' || kind === 'tt2') && paper.map((q, i) => <TH key={q.id}>Q{i + 1}/{q.maxMarks}</TH>)}
+                      {kind === 'quiz' && <TH>Quiz 1 /10</TH>}
+                      {kind === 'assignment' && <TH>Asgn 1 /10</TH>}
+                      {kind === 'attendance' && <TH>Present /45</TH>}
+                      {kind === 'finals' && <TH>SEE /50</TH>}
                     </tr>
                   </thead>
                   <tbody>
@@ -1629,16 +1672,16 @@ function UploadPage({ role, offering, defaultKind }: { role: Role; offering: Off
                       <tr key={s.id}>
                         <TD style={{ ...mono, fontSize: 10, color: T.accent }}>{s.usn}</TD>
                         <TD style={{ ...sora, fontSize: 11, color: T.text }}>{s.name}</TD>
-                        {(selectedKind === 'tt1' || selectedKind === 'tt2') && paper.map(q => (
+                        {(kind === 'tt1' || kind === 'tt2') && paper.map(q => (
                           <TD key={q.id}>
-                            <input aria-label={`${selectedKind.toUpperCase()} marks for ${s.name}, ${q.id}`} title={`Enter ${selectedKind.toUpperCase()} marks for ${s.name}, ${q.id}`} placeholder="0" type="number" min={0} max={q.maxMarks} disabled={!canEdit || !isApplicableForStage} defaultValue={(selectedKind === 'tt1' ? s.tt1Score : s.tt2Score) != null ? Math.round(((selectedKind === 'tt1' ? s.tt1Score! : s.tt2Score!) / paper.length)) : ''}
+                            <input aria-label={`${kind.toUpperCase()} marks for ${s.name}, ${q.id}`} title={`Enter ${kind.toUpperCase()} marks for ${s.name}, ${q.id}`} placeholder="0" type="number" min={0} max={q.maxMarks} disabled={!canEdit || !isApplicableForStage} defaultValue={(kind === 'tt1' ? s.tt1Score : s.tt2Score) != null ? Math.round(((kind === 'tt1' ? s.tt1Score! : s.tt2Score!) / paper.length)) : ''}
                               style={{ width: 52, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} />
                           </TD>
                         ))}
-                        {selectedKind === 'quiz' && <TD><input aria-label={`Quiz 1 marks for ${s.name}`} title={`Enter Quiz 1 marks for ${s.name}`} placeholder="0" type="number" min={0} max={10} disabled={!canEdit || !isApplicableForStage} defaultValue={s.quiz1 ?? ''} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
-                        {selectedKind === 'assignment' && <TD><input aria-label={`Assignment 1 marks for ${s.name}`} title={`Enter Assignment 1 marks for ${s.name}`} placeholder="0" type="number" min={0} max={10} disabled={!canEdit || !isApplicableForStage} defaultValue={s.asgn1 ?? ''} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
-                        {selectedKind === 'attendance' && <TD><input aria-label={`Attendance present classes for ${s.name}`} title={`Enter attendance present count for ${s.name}`} placeholder="0" type="number" min={0} max={45} disabled={!canEdit || !isApplicableForStage} defaultValue={s.present} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
-                        {selectedKind === 'finals' && <TD><input aria-label={`SEE marks for ${s.name}`} title={`Enter SEE marks for ${s.name}`} type="number" min={0} max={50} disabled={!canEdit || !isApplicableForStage} defaultValue="" placeholder="Enter" style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
+                        {kind === 'quiz' && <TD><input aria-label={`Quiz 1 marks for ${s.name}`} title={`Enter Quiz 1 marks for ${s.name}`} placeholder="0" type="number" min={0} max={10} disabled={!canEdit || !isApplicableForStage} defaultValue={s.quiz1 ?? ''} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
+                        {kind === 'assignment' && <TD><input aria-label={`Assignment 1 marks for ${s.name}`} title={`Enter Assignment 1 marks for ${s.name}`} placeholder="0" type="number" min={0} max={10} disabled={!canEdit || !isApplicableForStage} defaultValue={s.asgn1 ?? ''} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
+                        {kind === 'attendance' && <TD><input aria-label={`Attendance present classes for ${s.name}`} title={`Enter attendance present count for ${s.name}`} placeholder="0" type="number" min={0} max={45} disabled={!canEdit || !isApplicableForStage} defaultValue={s.present} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
+                        {kind === 'finals' && <TD><input aria-label={`SEE marks for ${s.name}`} title={`Enter SEE marks for ${s.name}`} type="number" min={0} max={50} disabled={!canEdit || !isApplicableForStage} defaultValue="" placeholder="Enter" style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
                       </tr>
                     ))}
                   </tbody>
@@ -1672,18 +1715,28 @@ const HOD_NAV = [
 ]
 
 export default function App() {
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => (localStorage.getItem('airmentor-theme') as ThemeMode) || 'light')
   const [role, setRole] = useState<Role>('Course Leader')
   const [page, setPage] = useState('dashboard')
   const [offering, setOffering] = useState<Offering | null>(null)
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
   const [selectedOffering, setSelectedOffering] = useState<Offering | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [showActionQueue, setShowActionQueue] = useState(true)
   const [uploadOffering, setUploadOffering] = useState<Offering | null>(null)
   const [uploadKind, setUploadKind] = useState<EntryKind>('tt1')
+  const [entryOfferingId, setEntryOfferingId] = useState<string>(OFFERINGS[0].offId)
+  const [entryKind, setEntryKind] = useState<EntryKind>('tt1')
   const [courseInitialTab, setCourseInitialTab] = useState<string | undefined>(undefined)
 
   const tasks = useMemo(() => generateTasks(), [])
+  const pendingActionCount = tasks.length
   const navItems = role === 'Course Leader' ? CL_NAV : role === 'Mentor' ? MENTOR_NAV : HOD_NAV
+
+  useEffect(() => {
+    applyThemePreset(themeMode)
+    localStorage.setItem('airmentor-theme', themeMode)
+  }, [themeMode])
 
   const handleOpenCourse = useCallback((o: Offering) => {
     setOffering(o)
@@ -1702,6 +1755,11 @@ export default function App() {
     setUploadKind(kind)
     setPage('upload')
   }, [])
+  const handleOpenWorkspace = useCallback((offeringId: string, kind: EntryKind) => {
+    setEntryOfferingId(offeringId)
+    setEntryKind(kind)
+    setPage('entry-workspace')
+  }, [])
 
   const handleRoleChange = useCallback((r: Role) => {
     setRole(r)
@@ -1714,10 +1772,10 @@ export default function App() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: T.bg, color: T.text }}>
       {/* ═══ TOP BAR ═══ */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 50, display: 'flex', alignItems: 'center', gap: 16, padding: '10px 20px', background: 'rgba(7,9,15,0.92)', backdropFilter: 'blur(12px)', borderBottom: `1px solid ${T.border}` }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 50, display: 'flex', alignItems: 'center', gap: 16, padding: '10px 20px', background: themeMode === 'light' ? 'rgba(255,255,255,0.92)' : 'rgba(7,9,15,0.92)', backdropFilter: 'blur(12px)', borderBottom: `1px solid ${T.border}` }}>
         {/* Brand */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 34, height: 34, borderRadius: 10, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 13, color: '#fff' }}>AM</div>
+          <div style={{ width: 34, height: 34, borderRadius: 10, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 13, color: '#fff' }}>AM</div>
           <div>
             <div style={{ ...sora, fontWeight: 800, fontSize: 14, color: T.text }}>AirMentor</div>
             <div style={{ ...mono, fontSize: 9, color: T.dim }}>AI Mentor Intelligence</div>
@@ -1735,12 +1793,13 @@ export default function App() {
         </div>
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button aria-label={themeMode === 'light' ? 'Switch to dark mode' : 'Switch to light mode'} title={themeMode === 'light' ? 'Dark mode' : 'Light mode'} onClick={() => setThemeMode(m => m === 'light' ? 'dark' : 'light')} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', cursor: 'pointer', color: T.muted }}>{themeMode === 'light' ? '🌙' : '☀️'}</button>
           <button aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={() => setSidebarCollapsed(c => !c)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', cursor: 'pointer', color: T.muted }}><Filter size={14} /></button>
-          <button aria-label="Notifications" title="Notifications" style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', cursor: 'pointer', color: T.muted, position: 'relative' }}>
+          <button aria-label={showActionQueue ? 'Hide action queue' : 'Show action queue'} title={showActionQueue ? 'Hide action queue' : 'Show action queue'} onClick={() => setShowActionQueue(v => !v)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', cursor: 'pointer', color: T.muted, position: 'relative' }}>
             <Bell size={14} />
-            {tasks.length > 0 && <div style={{ position: 'absolute', top: -2, right: -2, width: 8, height: 8, borderRadius: '50%', background: T.danger }} />}
+            {pendingActionCount > 0 && <div style={{ position: 'absolute', top: -6, right: -6, minWidth: 16, height: 16, borderRadius: 8, background: T.danger, color: '#fff', ...mono, fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>{pendingActionCount}</div>}
           </button>
-          <div style={{ width: 30, height: 30, borderRadius: 8, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 10, color: '#fff' }}>{PROFESSOR.initials}</div>
+          <div style={{ width: 30, height: 30, borderRadius: 8, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 10, color: '#fff' }}>{PROFESSOR.initials}</div>
         </div>
       </div>
 
@@ -1754,7 +1813,7 @@ export default function App() {
               <div style={{ padding: '10px 12px', minWidth: 210 }}>
                 {/* Profile */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 8px', marginBottom: 10 }}>
-                  <div style={{ width: 28, height: 28, borderRadius: 7, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 10, color: '#fff', flexShrink: 0 }}>{PROFESSOR.initials}</div>
+                  <div style={{ width: 28, height: 28, borderRadius: 7, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 10, color: '#fff', flexShrink: 0 }}>{PROFESSOR.initials}</div>
                   <div style={{ overflow: 'hidden' }}>
                     <div style={{ ...sora, fontWeight: 600, fontSize: 11, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{PROFESSOR.name}</div>
                     <div style={{ ...mono, fontSize: 9, color: T.dim }}>{role}</div>
@@ -1818,18 +1877,20 @@ export default function App() {
           {role === 'Course Leader' && page === 'dashboard' && <CLDashboard onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} />}
           {role === 'Course Leader' && page === 'course' && offering && <CourseDetail offering={offering} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} initialTab={courseInitialTab} />}
           {role === 'Course Leader' && page === 'calendar' && <CalendarPage />}
-          {role === 'Course Leader' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} />}
+          {role === 'Course Leader' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} />}
+          {role === 'Course Leader' && page === 'entry-workspace' && <EntryWorkspacePage role={role} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} />}
 
           {role === 'Mentor' && page === 'mentees' && <MentorView onOpenMentee={() => {}} />}
           {role === 'Mentor' && page === 'calendar' && <CalendarPage />}
 
           {role === 'HoD' && page === 'department' && <HodView onOpenUpload={handleOpenUpload} />}
-          {role === 'HoD' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} />}
+          {role === 'HoD' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} />}
+          {role === 'HoD' && page === 'entry-workspace' && <EntryWorkspacePage role={role} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} />}
           {role === 'HoD' && page === 'calendar' && <CalendarPage />}
         </div>
 
         {/* Right Sidebar — Action Queue */}
-        {(role === 'Course Leader' || role === 'Mentor') && page !== 'course' && (
+        {(role === 'Course Leader' || role === 'Mentor') && page !== 'course' && showActionQueue && (
           <ActionQueue tasks={tasks} onOpenStudent={(id) => {
             const all = getAllAtRiskStudents()
             const s = all.find(x => x.id === id)
