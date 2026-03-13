@@ -241,16 +241,16 @@ export const CO_MAP: Record<string, CODef[]> = {
 
 export const PAPER_MAP: Record<string, PaperQ[]> = {
   CS401: [
-    { id: 'q1', text: 'Prove Big-O complexity of Merge Sort; compare with Quick Sort', maxMarks: 8, cos: ['CO1'] },
-    { id: 'q2', text: 'Design a greedy solution for Activity Selection Problem', maxMarks: 8, cos: ['CO2'] },
-    { id: 'q3', text: 'Apply DP to 0/1 Knapsack problem with full derivation', maxMarks: 7, cos: ['CO3'] },
-    { id: 'q4', text: 'Recurrence relation for D&C; apply Master Theorem', maxMarks: 7, cos: ['CO1', 'CO2'] },
+    { id: 'q1', text: 'Prove Big-O complexity of Merge Sort; compare with Quick Sort', maxMarks: 7, cos: ['CO1'] },
+    { id: 'q2', text: 'Design a greedy solution for Activity Selection Problem', maxMarks: 6, cos: ['CO2'] },
+    { id: 'q3', text: 'Apply DP to 0/1 Knapsack problem with full derivation', maxMarks: 6, cos: ['CO3'] },
+    { id: 'q4', text: 'Recurrence relation for D&C; apply Master Theorem', maxMarks: 6, cos: ['CO1', 'CO2'] },
   ],
   default: [
-    { id: 'q1', text: 'Answer question 1 — Unit 1 concepts', maxMarks: 8, cos: ['CO1'] },
-    { id: 'q2', text: 'Answer question 2 — Unit 2 concepts', maxMarks: 8, cos: ['CO2'] },
-    { id: 'q3', text: 'Answer question 3 — applied problem', maxMarks: 7, cos: ['CO3'] },
-    { id: 'q4', text: 'Answer question 4 — mixed concepts', maxMarks: 7, cos: ['CO1', 'CO2'] },
+    { id: 'q1', text: 'Answer question 1 — Unit 1 concepts', maxMarks: 7, cos: ['CO1'] },
+    { id: 'q2', text: 'Answer question 2 — Unit 2 concepts', maxMarks: 6, cos: ['CO2'] },
+    { id: 'q3', text: 'Answer question 3 — applied problem', maxMarks: 6, cos: ['CO3'] },
+    { id: 'q4', text: 'Answer question 4 — mixed concepts', maxMarks: 6, cos: ['CO1', 'CO2'] },
   ],
 }
 

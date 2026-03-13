@@ -9,11 +9,12 @@ It now combines:
 - rendered audit findings from Playwright screenshots
 - code inspection notes from `src/App.tsx` and `src/data.ts`
 - product-rule alignment against the rest of the `docs/airmentor/` pack
+- the 2026-03-14 mock-UX stabilization pass that focused on lock governance, note capture, TT blueprint editing, and shared runtime updates
 
 ## Audit Method
 
 - Rendered screenshots were captured from the live Vite app with the Nix-backed Playwright CLI.
-- Screenshots live under `output/playwright/audit/final/`.
+- Screenshots live under `output/playwright/audit/final/` and `output/playwright/stabilization/`.
 - Audit-specific query params were used to deep-link into mock states for repeatable review:
   - `mockTeacher`
   - `mockRole`
@@ -34,9 +35,9 @@ It now combines:
 | Course Leader dashboard | Walkable | Still strong as the main operational home |
 | Course detail tabs | Walkable | Overview, risk, attendance, and gradebook are strong; TT, quiz, assignment, and CO remain mock-backed |
 | Scheme setup | Implemented | Explicit page now exists and blocks entry changes after entry starts |
-| Data entry hub | Walkable | Now shows scheme gating and lock-state messaging more explicitly |
-| Entry workspace | Walkable | Lock workflow no longer silently bypassed by HoD |
-| Student drawer | Walkable | Now links to student history and supports defer-to-Mentor without HoD self-escalation |
+| Data entry hub | Walkable | Now shows scheme gating, class selection, and self-govern unlock messaging for faculty who also hold HoD permission |
+| Entry workspace | Walkable | Lock workflow no longer silently bypassed by HoD and entry edits now update shared mock runtime state |
+| Student drawer | Walkable | Now links to student history and routes all task/remedial creation through one working composer |
 | Student history | Implemented | Transcript and prior-semester context are now first-class in the mock |
 | Action queue sidebar | Walkable | Single-owner model is now visible through owner chips and reassignment actions |
 | Queue history page | Implemented | Transition trail and resolved history are now inspectable in a dedicated page |
@@ -112,8 +113,13 @@ Current caveat:
 What works:
 
 - one consistent route still works well for all entry kinds
+- course-tab CTAs now deep-link directly into the exact entry workspace instead of bouncing through a second manual selection step
 - scheme gating is now explicit
 - HoD no longer silently edits locked data without unlock/reset context
+- a Course Leader who also has HoD permission can self-govern unlock/reset in the mock
+- TT1 and TT2 now use editable blueprint builders whose raw total must equal `25`
+- quiz, assignment, attendance, and SEE entry now share the same class-aware direct-entry pattern
+- edited marks, attendance, and SEE values now propagate across dashboard, tabs, drawer, queue context, and history summaries within the mock runtime
 
 Current caveat:
 
@@ -125,7 +131,8 @@ What works:
 
 - mentor now sees summary academics instead of a hard wall
 - student history entry point is present
-- defer-to-Mentor and defer-to-HoD are separated correctly
+- add-task and remedial creation now live in one fixed-size two-step composer
+- defer-to-Mentor and defer-to-HoD now require sender notes
 - HoD self-escalation affordance is gone
 
 Current caveat:
@@ -150,9 +157,11 @@ What works:
 
 - owner is visible on active cards
 - reassignment is explicit
+- reassignment, defer, and unlock flows now require and retain sender notes
 - transition history is retained
 - resolved items are no longer purged after two days
-- unlock tasks now have a visible review entry point
+- unlock tasks now have a visible review entry point and are actionable directly from the active queue
+- queue open/close motion is now consistent with the left sidebar instead of snapping closed
 
 Current caveat:
 
@@ -191,12 +200,16 @@ Current caveat:
 - Mentor summary academics now match the documented visibility intent more closely.
 - HoD no longer bypasses lock state silently in entry pages.
 - resolved queue items are retained for history instead of disappearing on a timer.
+- unlock, defer, and reassignment actions now capture mandatory sender notes.
+- TT raw-paper modeling now reflects the MSRUAS `25 + 25 -> 30` term-test foundation more accurately.
+- data entry edits now update shared mock-local state instead of staying trapped inside one panel.
+- the right action queue now animates cleanly and uses themed scrollbars aligned with the rest of the UI.
 
 ## Remaining Mock Caveats
 
 - The mock still relies on `localStorage` for persistence.
 - Transcript, queue, and lock history are still frontend-owned, not backend-owned.
-- Gradebook still shows SEE as placeholder until real SEE entry and grade computation are wired.
+- Final subject grading and predicted CGPA are now provisional and live-updating, but they are still mock-local calculations rather than a final backend-owned academic engine.
 - Mobile is now usable for core top-level flows, but the header and some dense data views still need polish.
 - No import validation, transcript ingestion UI, or real notification channels exist yet.
 

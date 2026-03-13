@@ -8,20 +8,61 @@ input[type=number]::-webkit-inner-spin-button,
 input[type=number]::-webkit-outer-spin-button { opacity: 0.3; }
 
 :root {
-	--scroll-track: #0d1017;
-	--scroll-thumb: #24314a;
-	--scroll-thumb-hover: #365079;
+	--scroll-track: rgba(100, 116, 139, 0.12);
+	--scroll-thumb: rgba(37, 99, 235, 0.38);
+	--scroll-thumb-hover: rgba(37, 99, 235, 0.56);
+	--scrollbar-size: 10px;
+	--scrollbar-size-dense: 12px;
+}
+
+html,
+body,
+.scroll-pane {
+	scrollbar-width: thin;
+	scrollbar-color: var(--scroll-thumb) var(--scroll-track);
+}
+
+.scroll-pane {
+	scrollbar-gutter: stable;
+}
+
+.scroll-pane--dense {
+	scrollbar-width: auto;
 }
 
 @supports selector(::-webkit-scrollbar) {
-	::-webkit-scrollbar { width: 8px; height: 8px; }
-	::-webkit-scrollbar-track { background: var(--scroll-track); }
-	::-webkit-scrollbar-thumb {
+	html::-webkit-scrollbar,
+	body::-webkit-scrollbar,
+	.scroll-pane::-webkit-scrollbar {
+		width: var(--scrollbar-size);
+		height: var(--scrollbar-size);
+	}
+
+	.scroll-pane--dense::-webkit-scrollbar {
+		width: var(--scrollbar-size-dense);
+		height: var(--scrollbar-size-dense);
+	}
+
+	html::-webkit-scrollbar-track,
+	body::-webkit-scrollbar-track,
+	.scroll-pane::-webkit-scrollbar-track {
+		background: var(--scroll-track);
+		border-radius: 999px;
+	}
+
+	html::-webkit-scrollbar-thumb,
+	body::-webkit-scrollbar-thumb,
+	.scroll-pane::-webkit-scrollbar-thumb {
 		background: var(--scroll-thumb);
 		border-radius: 999px;
 		border: 2px solid var(--scroll-track);
 	}
-	::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
+
+	html::-webkit-scrollbar-thumb:hover,
+	body::-webkit-scrollbar-thumb:hover,
+	.scroll-pane::-webkit-scrollbar-thumb:hover {
+		background: var(--scroll-thumb-hover);
+	}
 }
 
 .scrollable-x {

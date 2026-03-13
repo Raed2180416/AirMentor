@@ -14,6 +14,10 @@ Audit method:
 
 The audit uses URL-driven mock state so the screenshots are reproducible without backend dependencies.
 
+Stabilization re-check:
+
+- A second rendered pass on 2026-03-14 validated the lock-governance and entry-workspace fixes under `output/playwright/stabilization/`.
+
 ## Screenshot Index
 
 - [login.png](../../output/playwright/audit/final/login.png)
@@ -34,6 +38,11 @@ The audit uses URL-driven mock state so the screenshots are reproducible without
 - [calendar.png](../../output/playwright/audit/final/calendar.png)
 - [mobile-dashboard.png](../../output/playwright/audit/final/mobile-dashboard.png)
 - [mobile-mentor-detail.png](../../output/playwright/audit/final/mobile-mentor-detail.png)
+- [course-tt2-firefox.png](../../output/playwright/stabilization/course-tt2-firefox.png)
+- [entry-tt2-firefox.png](../../output/playwright/stabilization/entry-tt2-firefox.png)
+- [upload-lock-firefox.png](../../output/playwright/stabilization/upload-lock-firefox.png)
+- [unlock-review-firefox.png](../../output/playwright/stabilization/unlock-review-firefox.png)
+- [student-history-firefox.png](../../output/playwright/stabilization/student-history-firefox.png)
 
 ## Summary
 
@@ -50,6 +59,9 @@ The biggest blockers from the earlier review are now resolved in the UI:
 - unlock review exists
 - queue history exists
 - scheme setup exists
+- course tabs now deep-link into the exact entry workspace
+- self-govern unlock appears for faculty who also hold HoD permission
+- note-required handoff and unlock flows are represented in the UI contract
 
 ## Findings
 
@@ -61,11 +73,11 @@ No current rendered blockers were found in the primary faculty flows.
 
 - Narrow-width layout is now usable, but the top bar remains visually crowded and some dense pages still feel compressed rather than designed-for-mobile.
 - Scheme setup is fully represented, but the seeded Course Leader offerings mostly show the post-entry lock scenario; the pristine pre-entry course-leader setup case is better represented conceptually than operationally in current seed data.
-- Gradebook still shows SEE as placeholder because the mock has not yet been upgraded into a full subject-score engine.
+- The mock now computes provisional subject score, band, and predicted CGPA live, but the final academic engine is still frontend-owned and should not be treated as backend-ready truth.
 
 ### Polish Issues
 
-- Queue sidebar remains dense on pages with many active tasks.
+- Queue sidebar remains dense on pages with many active tasks, even though the open/close motion is now cleaner.
 - Some academic tabs remain obviously mock-representational compared with the more complete queue, history, and unlock flows.
 - The mobile screenshots show the content correctly after side panels collapse, but the product still needs a more intentional small-screen top-bar layout.
 
@@ -123,7 +135,10 @@ Status:
 Observation:
 
 - scheme gating and lock messaging are visible
+- self-govern unlock appears correctly for multi-role faculty
+- term-test entry now matches the editable `25`-mark blueprint model more closely
 - HoD no longer reads as a silent override role
+- shared runtime propagation means entry edits now affect downstream summaries inside the mock
 
 ### Student Drawer
 
@@ -179,6 +194,7 @@ Observation:
 
 - transition trail makes the single-owner model legible
 - resolved history retention is a meaningful improvement over the earlier disappearing-task behavior
+- sender-note retention now makes queue handoff intent auditable
 
 ### Calendar
 

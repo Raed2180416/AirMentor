@@ -18,6 +18,72 @@ type ThemeMode = 'light' | 'dark'
 type EntryKind = 'tt1' | 'tt2' | 'quiz' | 'assignment' | 'attendance' | 'finals'
 type EntryLockMap = Record<EntryKind, boolean>
 type TaskType = 'Follow-up' | 'Remedial' | 'Attendance' | 'Academic'
+type TTKind = 'tt1' | 'tt2'
+type AssessmentComponentKind = 'quiz' | 'assignment'
+
+type FacultyCapabilitySet = {
+  canSelfGovernLock: boolean
+  canApproveUnlock: boolean
+  canEditMarks: boolean
+}
+
+type AssessmentComponentDefinition = {
+  id: string
+  label: string
+  rawMax: number
+}
+
+type TermTestNode = {
+  id: string
+  label: string
+  text: string
+  maxMarks: number
+  cos: string[]
+  children?: TermTestNode[]
+}
+
+type TermTestBlueprint = {
+  kind: TTKind
+  totalMarks: number
+  nodes: TermTestNode[]
+  updatedAt: number
+}
+
+type DerivedAcademicProjection = {
+  attendancePct: number
+  tt1Raw: number | null
+  tt2Raw: number | null
+  tt1Scaled: number
+  tt2Scaled: number
+  quizRawTotal: number
+  assignmentRawTotal: number
+  quizScaled: number
+  asgnScaled: number
+  ce60: number
+  seeRaw: number | null
+  seeScaled40: number
+  finalScore100: number
+  bandLabel: 'O' | 'A+' | 'A' | 'B+' | 'B' | 'C' | 'P' | 'F'
+  gradePoint: 0 | 4 | 5 | 6 | 7 | 8 | 9 | 10
+  predictedCgpa: number
+}
+
+type TaskComposerState = {
+  isOpen: boolean
+  step: 'details' | 'remedial'
+  offeringId?: string
+  studentId?: string
+  taskType: TaskType
+  dueDateISO: string
+  note: string
+  search: string
+}
+
+type NoteActionState =
+  | { type: 'unlock-request'; offeringId: string; kind: EntryKind }
+  | { type: 'self-govern-unlock'; offeringId: string; kind: EntryKind }
+  | { type: 'reassign-task'; taskId: string; toRole: Role; title: string }
+  | { type: 'student-handoff'; mode: 'escalate' | 'mentor'; studentId: string; offeringId: string; title: string }
 
 type RemedialPlanStep = {
   id: string
@@ -42,7 +108,6 @@ type TaskCreateInput = {
   due?: string
   dueDateISO?: string
   note?: string
-  deferToHod?: boolean
   remedialPlan?: RemedialPlan
 }
 
@@ -57,6 +122,7 @@ type BackendTaskUpsertPayload = {
   dueLabel: string
   note: string
   escalated: boolean
+  requestNote?: string
   remedialPlan?: RemedialPlan
   createdAt: number
   updatedAt: number
@@ -74,6 +140,9 @@ type SharedTask = Task & {
   manual?: boolean
   transitionHistory?: QueueTransition[]
   unlockRequest?: UnlockRequest
+  requestNote?: string
+  handoffNote?: string
+  resolvedByFacultyId?: string
 }
 
 type TeacherAccount = {
@@ -90,6 +159,8 @@ type EvaluationScheme = {
   assignmentWeight: number
   quizCount: 0 | 1 | 2
   assignmentCount: 0 | 1 | 2
+  quizComponents: AssessmentComponentDefinition[]
+  assignmentComponents: AssessmentComponentDefinition[]
 }
 
 type PageId = 'dashboard' | 'course' | 'calendar' | 'upload' | 'entry-workspace' | 'mentees' | 'department' | 'mentee-detail' | 'student-history' | 'unlock-review' | 'scheme-setup' | 'queue-history'
@@ -98,6 +169,7 @@ type QueueTransition = {
   id: string
   at: number
   actorRole: Role | 'System' | 'Auto'
+  actorTeacherId?: string
   action: string
   fromOwner?: Role
   toOwner: Role
@@ -108,9 +180,12 @@ type UnlockRequest = {
   kind: EntryKind
   status: 'Pending' | 'Approved' | 'Rejected' | 'Reset Completed'
   requestedBy: Role
+  requestedByFacultyId?: string
   requestedAt: number
   reviewedAt?: number
   reviewNote?: string
+  requestNote?: string
+  handoffNote?: string
 }
 
 type SchemeState = EvaluationScheme & {
@@ -123,11 +198,20 @@ type SchemeState = EvaluationScheme & {
 type StudentRuntimePatch = {
   present?: number
   totalClasses?: number
+  tt1LeafScores?: Record<string, number>
+  tt2LeafScores?: Record<string, number>
+  quizScores?: Record<string, number>
+  assignmentScores?: Record<string, number>
+  seeScore?: number
 }
 
 const STUDENT_PATCHES_KEY = 'airmentor-student-patches'
 const SCHEME_STATE_KEY = 'airmentor-schemes'
+const BLUEPRINT_STATE_KEY = 'airmentor-tt-blueprints'
+const LOCK_AUDIT_KEY = 'airmentor-lock-audit'
 let runtimeStudentPatches: Record<string, StudentRuntimePatch> = {}
+let runtimeSchemesByOffering: Record<string, SchemeState> = {}
+let runtimeBlueprintsByOffering: Record<string, Record<TTKind, TermTestBlueprint>> = {}
 
 const TEACHER_ACCOUNTS: TeacherAccount[] = [
   { teacherId: 't1', name: 'Dr. Kavitha Rao', initials: 'KR', permissions: ['Course Leader', 'Mentor', 'HoD'], courseCodes: ['CS401', 'CS403'] },
@@ -197,16 +281,215 @@ function setRuntimeStudentPatches(next: Record<string, StudentRuntimePatch>) {
   runtimeStudentPatches = next
 }
 
+function setRuntimeSchemes(next: Record<string, SchemeState>) {
+  runtimeSchemesByOffering = next
+}
+
+function setRuntimeBlueprints(next: Record<string, Record<TTKind, TermTestBlueprint>>) {
+  runtimeBlueprintsByOffering = next
+}
+
+function buildDefaultAssessmentComponents(kind: AssessmentComponentKind, count: 0 | 1 | 2) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `${kind}-${index + 1}`,
+    label: `${kind === 'quiz' ? 'Quiz' : 'Assignment'} ${index + 1}`,
+    rawMax: 10,
+  }))
+}
+
+function sanitizeAssessmentComponents(kind: AssessmentComponentKind, count: 0 | 1 | 2, components?: AssessmentComponentDefinition[]) {
+  const base = components && components.length > 0 ? components.slice(0, count) : buildDefaultAssessmentComponents(kind, count)
+  return Array.from({ length: count }, (_, index) => ({
+    id: base[index]?.id ?? `${kind}-${index + 1}`,
+    label: base[index]?.label?.trim() || `${kind === 'quiz' ? 'Quiz' : 'Assignment'} ${index + 1}`,
+    rawMax: clampNumber(Math.round(base[index]?.rawMax ?? 10), 1, 100),
+  }))
+}
+
+function normalizeSchemeState(input: Partial<SchemeState> | undefined, offering: Offering): SchemeState {
+  const defaults = defaultSchemeForOffering(offering)
+  const quizCount = (input?.quizCount ?? defaults.quizCount) as 0 | 1 | 2
+  const assignmentCount = (input?.assignmentCount ?? defaults.assignmentCount) as 0 | 1 | 2
+  return {
+    finalsMax: (input?.finalsMax ?? defaults.finalsMax) as 50 | 100,
+    quizWeight: input?.quizWeight ?? defaults.quizWeight,
+    assignmentWeight: input?.assignmentWeight ?? defaults.assignmentWeight,
+    quizCount,
+    assignmentCount,
+    quizComponents: sanitizeAssessmentComponents('quiz', quizCount, input?.quizComponents ?? defaults.quizComponents),
+    assignmentComponents: sanitizeAssessmentComponents('assignment', assignmentCount, input?.assignmentComponents ?? defaults.assignmentComponents),
+    status: input?.status ?? defaults.status,
+    configuredAt: input?.configuredAt,
+    lockedAt: input?.lockedAt,
+    lastEditedBy: input?.lastEditedBy,
+  }
+}
+
+function toLeafId(kind: TTKind, questionIndex: number, partIndex: number) {
+  return `${kind}-q${questionIndex + 1}-p${partIndex + 1}`
+}
+
+function splitMarks(total: number) {
+  if (total <= 4) return [total]
+  const first = Math.ceil(total / 2)
+  const second = total - first
+  return second > 0 ? [first, second] : [first]
+}
+
+function seedBlueprintFromPaper(kind: TTKind, paper: PaperQ[]): TermTestBlueprint {
+  return {
+    kind,
+    totalMarks: paper.reduce((acc, item) => acc + item.maxMarks, 0),
+    updatedAt: Date.now(),
+    nodes: paper.map((question, questionIndex) => {
+      const parts = splitMarks(question.maxMarks)
+      return {
+        id: `${kind}-q${questionIndex + 1}`,
+        label: `Q${questionIndex + 1}`,
+        text: question.text,
+        maxMarks: question.maxMarks,
+        cos: [],
+        children: parts.map((marks, partIndex) => ({
+          id: toLeafId(kind, questionIndex, partIndex),
+          label: `Q${questionIndex + 1}${String.fromCharCode(97 + partIndex)}`,
+          text: partIndex === 0 ? question.text : `Part ${String.fromCharCode(65 + partIndex)}`,
+          maxMarks: marks,
+          cos: question.cos.length > 0 ? [question.cos[Math.min(partIndex, question.cos.length - 1)]] : [],
+        })),
+      }
+    }),
+  }
+}
+
+function sumQuestionMarks(node: TermTestNode): number {
+  if (!node.children || node.children.length === 0) return node.maxMarks
+  return node.children.reduce((acc, child) => acc + sumQuestionMarks(child), 0)
+}
+
+function normalizeBlueprint(kind: TTKind, blueprint: TermTestBlueprint): TermTestBlueprint {
+  const nodes = blueprint.nodes.map((node, index) => {
+    const children = (node.children && node.children.length > 0 ? node.children : [{
+      id: `${node.id}-p1`,
+      label: `${node.label}a`,
+      text: node.text,
+      maxMarks: node.maxMarks,
+      cos: node.cos,
+    }]).map((child, childIndex) => ({
+      ...child,
+      id: child.id || toLeafId(kind, index, childIndex),
+      label: child.label || `${node.label}${String.fromCharCode(97 + childIndex)}`,
+      text: child.text || `Part ${childIndex + 1}`,
+      maxMarks: clampNumber(Math.round(child.maxMarks), 1, 25),
+      cos: child.cos.length > 0 ? child.cos : node.cos,
+    }))
+    return {
+      ...node,
+      id: node.id || `${kind}-q${index + 1}`,
+      label: node.label || `Q${index + 1}`,
+      text: node.text || `Question ${index + 1}`,
+      cos: [],
+      children,
+      maxMarks: children.reduce((acc, child) => acc + child.maxMarks, 0),
+    }
+  })
+  return {
+    kind,
+    totalMarks: nodes.reduce((acc, node) => acc + sumQuestionMarks(node), 0),
+    updatedAt: blueprint.updatedAt ?? Date.now(),
+    nodes,
+  }
+}
+
+function flattenBlueprintLeaves(nodes: TermTestNode[]) {
+  return nodes.flatMap(node => (node.children && node.children.length > 0 ? node.children : [node]).map(child => ({
+    ...child,
+    parentLabel: node.label,
+  })))
+}
+
+function sumScores(values?: Record<string, number>) {
+  if (!values) return 0
+  return Object.values(values).reduce((acc, value) => acc + value, 0)
+}
+
+function pruneScoreMap(values?: Record<string, number>) {
+  if (!values) return undefined
+  const entries = Object.entries(values).filter(([, value]) => Number.isFinite(value))
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined
+}
+
+function isPatchEmpty(patch: StudentRuntimePatch) {
+  return patch.present === undefined
+    && patch.totalClasses === undefined
+    && patch.seeScore === undefined
+    && !pruneScoreMap(patch.tt1LeafScores)
+    && !pruneScoreMap(patch.tt2LeafScores)
+    && !pruneScoreMap(patch.quizScores)
+    && !pruneScoreMap(patch.assignmentScores)
+}
+
+function getSubjectBand(score: number): DerivedAcademicProjection['bandLabel'] {
+  if (score > 90) return 'O'
+  if (score > 74) return 'A+'
+  if (score > 60) return 'A'
+  if (score >= 55) return 'B+'
+  if (score >= 50) return 'B'
+  if (score > 44) return 'C'
+  if (score >= 40) return 'P'
+  return 'F'
+}
+
+function getGradePointFromBand(band: DerivedAcademicProjection['bandLabel']): DerivedAcademicProjection['gradePoint'] {
+  return band === 'O' ? 10
+    : band === 'A+' ? 9
+    : band === 'A' ? 8
+    : band === 'B+' ? 7
+    : band === 'B' ? 6
+    : band === 'C' ? 5
+    : band === 'P' ? 4
+    : 0
+}
+
+function projectPredictedCgpa(baseCgpa: number, gradePoint: DerivedAcademicProjection['gradePoint']) {
+  const base = baseCgpa > 0 ? baseCgpa : 6
+  return Math.round((((base * 5) + gradePoint) / 6) * 100) / 100
+}
+
 function getStudentsPatched(offering: Offering): Student[] {
+  const scheme = runtimeSchemesByOffering[offering.offId] ?? defaultSchemeForOffering(offering)
+  const blueprints = runtimeBlueprintsByOffering[offering.offId] ?? {
+    tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default),
+    tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default),
+  }
+  const tt1Leaves = flattenBlueprintLeaves(blueprints.tt1.nodes)
+  const tt2Leaves = flattenBlueprintLeaves(blueprints.tt2.nodes)
   return getStudents(offering).map(s => {
     const p = runtimeStudentPatches[toStudentPatchKey(offering.offId, s.id)]
-    if (!p) return s
+    if (!p) {
+      return {
+        ...s,
+        tt1Max: blueprints.tt1.totalMarks,
+        tt2Max: blueprints.tt2.totalMarks,
+      }
+    }
     const totalClasses = p.totalClasses ?? s.totalClasses
     const present = clampNumber(p.present ?? s.present, 0, Math.max(1, totalClasses))
+    const tt1Score = p.tt1LeafScores ? clampNumber(sumScores(p.tt1LeafScores), 0, blueprints.tt1.totalMarks) : s.tt1Score
+    const tt2Score = p.tt2LeafScores ? clampNumber(sumScores(p.tt2LeafScores), 0, blueprints.tt2.totalMarks) : s.tt2Score
+    const quizScores = scheme.quizComponents.map((component, index) => p.quizScores?.[component.id] ?? (index === 0 ? s.quiz1 : index === 1 ? s.quiz2 : s.quiz3) ?? null)
+    const assignmentScores = scheme.assignmentComponents.map((component, index) => p.assignmentScores?.[component.id] ?? (index === 0 ? s.asgn1 : s.asgn2) ?? null)
     return {
       ...s,
       present,
       totalClasses,
+      tt1Score,
+      tt2Score,
+      tt1Max: blueprints.tt1.totalMarks || (tt1Leaves.length > 0 ? tt1Leaves.reduce((acc, leaf) => acc + leaf.maxMarks, 0) : s.tt1Max),
+      tt2Max: blueprints.tt2.totalMarks || (tt2Leaves.length > 0 ? tt2Leaves.reduce((acc, leaf) => acc + leaf.maxMarks, 0) : s.tt2Max),
+      quiz1: quizScores[0] ?? null,
+      quiz2: quizScores[1] ?? null,
+      asgn1: assignmentScores[0] ?? null,
+      asgn2: assignmentScores[1] ?? null,
     }
   })
 }
@@ -241,6 +524,7 @@ function toBackendTaskPayload(task: SharedTask): BackendTaskUpsertPayload {
     dueLabel: task.due,
     note: task.actionHint,
     escalated: !!task.escalated,
+    requestNote: task.requestNote ?? task.unlockRequest?.requestNote,
     remedialPlan: task.remedialPlan,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt ?? task.createdAt,
@@ -259,24 +543,53 @@ function getRemedialProgress(plan?: RemedialPlan) {
 }
 
 function computeEvaluation(s: Student, scheme: EvaluationScheme) {
-  const tt1Scaled = s.tt1Score !== null ? clampNumber(Math.round((s.tt1Score / s.tt1Max) * 15), 0, 15) : 0
-  const tt2Scaled = s.tt2Score !== null ? clampNumber(Math.round((s.tt2Score / s.tt2Max) * 15), 0, 15) : 0
-
-  const quizVals = [s.quiz1 ?? null, s.quiz2 ?? null, s.quiz3 ?? null].filter((x): x is number => x !== null)
-  const asgnVals = [s.asgn1 ?? null, s.asgn2 ?? null].filter((x): x is number => x !== null)
-
-  const bestQuiz = quizVals.sort((a, b) => b - a).slice(0, Math.max(1, scheme.quizCount))
-  const bestAsgn = asgnVals.sort((a, b) => b - a).slice(0, Math.max(1, scheme.assignmentCount))
-
-  const quizAvg10 = bestQuiz.length > 0 ? bestQuiz.reduce((a, b) => a + b, 0) / bestQuiz.length : 0
-  const asgnAvg10 = bestAsgn.length > 0 ? bestAsgn.reduce((a, b) => a + b, 0) / bestAsgn.length : 0
-
-  const quizScaled = scheme.quizCount === 0 || scheme.quizWeight === 0 ? 0 : Math.round((quizAvg10 / 10) * scheme.quizWeight)
-  const asgnScaled = scheme.assignmentCount === 0 || scheme.assignmentWeight === 0 ? 0 : Math.round((asgnAvg10 / 10) * scheme.assignmentWeight)
-
+  const tt1Scaled = s.tt1Score !== null && s.tt1Max > 0 ? (s.tt1Score / s.tt1Max) * 15 : 0
+  const tt2Scaled = s.tt2Score !== null && s.tt2Max > 0 ? (s.tt2Score / s.tt2Max) * 15 : 0
+  const quizVals = scheme.quizComponents.map((component, index) => ({
+    score: index === 0 ? s.quiz1 : index === 1 ? s.quiz2 : s.quiz3,
+    max: component.rawMax,
+  })).filter(item => item.score !== null)
+  const asgnVals = scheme.assignmentComponents.map((component, index) => ({
+    score: index === 0 ? s.asgn1 : s.asgn2,
+    max: component.rawMax,
+  })).filter(item => item.score !== null)
+  const quizPct = quizVals.length > 0 ? quizVals.reduce((acc, item) => acc + ((item.score ?? 0) / Math.max(1, item.max)), 0) / quizVals.length : 0
+  const assignmentPct = asgnVals.length > 0 ? asgnVals.reduce((acc, item) => acc + ((item.score ?? 0) / Math.max(1, item.max)), 0) / asgnVals.length : 0
+  const quizScaled = scheme.quizCount === 0 || scheme.quizWeight === 0 ? 0 : quizPct * scheme.quizWeight
+  const asgnScaled = scheme.assignmentCount === 0 || scheme.assignmentWeight === 0 ? 0 : assignmentPct * scheme.assignmentWeight
   const ce60 = tt1Scaled + tt2Scaled + quizScaled + asgnScaled
-  const overall40 = Math.round((ce60 / 60) * 40)
+  const overall40 = (ce60 / 60) * 40
   return { tt1Scaled, tt2Scaled, quizScaled, asgnScaled, ce60, overall40 }
+}
+
+function deriveAcademicProjection(input: { offering: Offering; student: Student; scheme: SchemeState; history?: StudentHistoryRecord | null }): DerivedAcademicProjection {
+  const patch = runtimeStudentPatches[toStudentPatchKey(input.offering.offId, input.student.id)] ?? {}
+  const evaluation = computeEvaluation(input.student, input.scheme)
+  const attendancePct = Math.round((input.student.present / Math.max(1, input.student.totalClasses)) * 100)
+  const seeRaw = typeof patch.seeScore === 'number' ? patch.seeScore : null
+  const seeScaled40 = seeRaw !== null ? (seeRaw / Math.max(1, input.scheme.finalsMax)) * 40 : 0
+  const finalScore100 = evaluation.ce60 + seeScaled40
+  const bandLabel = getSubjectBand(finalScore100)
+  const gradePoint = getGradePointFromBand(bandLabel)
+  const baseCgpa = input.history?.currentCgpa ?? input.student.prevCgpa
+  return {
+    attendancePct,
+    tt1Raw: input.student.tt1Score,
+    tt2Raw: input.student.tt2Score,
+    tt1Scaled: evaluation.tt1Scaled,
+    tt2Scaled: evaluation.tt2Scaled,
+    quizRawTotal: input.scheme.quizComponents.reduce((acc, _component, index) => acc + ((index === 0 ? input.student.quiz1 : index === 1 ? input.student.quiz2 : input.student.quiz3) ?? 0), 0),
+    assignmentRawTotal: input.scheme.assignmentComponents.reduce((acc, _component, index) => acc + ((index === 0 ? input.student.asgn1 : input.student.asgn2) ?? 0), 0),
+    quizScaled: evaluation.quizScaled,
+    asgnScaled: evaluation.asgnScaled,
+    ce60: evaluation.ce60,
+    seeRaw,
+    seeScaled40,
+    finalScore100,
+    bandLabel,
+    gradePoint,
+    predictedCgpa: projectPredictedCgpa(baseCgpa, gradePoint),
+  }
 }
 
 function getHomePage(role: Role): PageId {
@@ -303,6 +616,8 @@ function defaultSchemeForOffering(offering: Offering): SchemeState {
     assignmentWeight,
     quizCount: quizWeight === 0 ? 0 : offering.code === 'CS401' ? 2 : 1,
     assignmentCount: assignmentWeight === 0 ? 0 : offering.code === 'CS401' ? 2 : 1,
+    quizComponents: sanitizeAssessmentComponents('quiz', quizWeight === 0 ? 0 : offering.code === 'CS401' ? 2 : 1),
+    assignmentComponents: sanitizeAssessmentComponents('assignment', assignmentWeight === 0 ? 0 : offering.code === 'CS401' ? 2 : 1),
     status: 'Needs Setup',
   }
 }
@@ -312,11 +627,12 @@ function formatDateTime(timestamp?: number) {
   return new Date(timestamp).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
-function createTransition(input: { action: string; actorRole: QueueTransition['actorRole']; toOwner: Role; note: string; fromOwner?: Role }): QueueTransition {
+function createTransition(input: { action: string; actorRole: QueueTransition['actorRole']; toOwner: Role; note: string; fromOwner?: Role; actorTeacherId?: string }): QueueTransition {
   return {
     id: `transition-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     at: Date.now(),
     actorRole: input.actorRole,
+    actorTeacherId: input.actorTeacherId,
     action: input.action,
     fromOwner: input.fromOwner,
     toOwner: input.toOwner,
@@ -410,7 +726,7 @@ function HScrollArea({ children, style }: { children: ReactNode; style?: CSSProp
   return (
     <div
       ref={ref}
-      className={`scrollable-x${dragging ? ' is-dragging' : ''}`}
+      className={`scrollable-x scroll-pane scroll-pane--dense${dragging ? ' is-dragging' : ''}`}
       style={{ overflowX: 'auto', ...style }}
       tabIndex={0}
       onPointerDown={onPointerDown}
@@ -500,77 +816,216 @@ function LoginPage({ onLogin }: { onLogin: (teacherId: string) => void }) {
   )
 }
 
-function RemedialPlanModal({ role, context, onClose, onSubmit }: { role: Role; context: { student: Student; offering: Offering; deferToHod?: boolean } | null; onClose: () => void; onSubmit: (input: TaskCreateInput) => void }) {
-  const [title, setTitle] = useState('')
-  const [dueDateISO, setDueDateISO] = useState('')
+function suggestTaskForStudent(s?: Student) {
+  const toISO = (daysFromNow: number) => new Date(Date.now() + daysFromNow * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  if (!s) return { taskType: 'Follow-up' as TaskType, dueDateISO: toISO(7), note: '' }
+  const attPct = Math.round((s.present / s.totalClasses) * 100)
+  if (s.riskBand === 'High') return { taskType: 'Remedial' as TaskType, dueDateISO: toISO(3), note: 'High-risk case. Add a structured remedial plan with check-ins.' }
+  if (attPct < 65 || s.flags.lowAttendance) return { taskType: 'Attendance' as TaskType, dueDateISO: toISO(2), note: 'Attendance intervention and follow-up required.' }
+  if (s.riskBand === 'Medium') return { taskType: 'Academic' as TaskType, dueDateISO: toISO(5), note: 'Academic follow-up for medium-risk trend.' }
+  return { taskType: 'Follow-up' as TaskType, dueDateISO: toISO(7), note: `General follow-up with ${s.name.split(' ')[0]}.` }
+}
+
+function RequiredNoteModal({ title, description, submitLabel, onClose, onSubmit }: { title: string; description: string; submitLabel: string; onClose: () => void; onSubmit: (note: string) => void }) {
+  const [note, setNote] = useState('')
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 520, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: 18 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: T.text }}>{title}</div>
+          <button aria-label="Close note modal" title="Close" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.muted }}><X size={16} /></button>
+        </div>
+        <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 10 }}>{description}</div>
+        <textarea aria-label="Required note" value={note} onChange={e => setNote(e.target.value)} rows={5} placeholder="Enter the required note" style={{ width: '100%', resize: 'none', ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 8, padding: '10px 12px' }} />
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+          <Btn size="sm" variant="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn size="sm" onClick={() => {
+            if (!note.trim()) return
+            onSubmit(note.trim())
+          }}>{submitLabel}</Btn>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }: { role: Role; offerings: Offering[]; initialState: TaskComposerState; onClose: () => void; onSubmit: (input: TaskCreateInput) => void }) {
+  const [selectedYear, setSelectedYear] = useState<string>('')
+  const [selectedDept, setSelectedDept] = useState<string>('')
+  const [selectedOffId, setSelectedOffId] = useState<string>(initialState.offeringId ?? '')
+  const [query, setQuery] = useState(initialState.search)
+  const [selectedStudentId, setSelectedStudentId] = useState<string>(initialState.studentId ?? '')
+  const [taskType, setTaskType] = useState<TaskType>(initialState.taskType)
+  const [dueDateISO, setDueDateISO] = useState(initialState.dueDateISO)
+  const [note, setNote] = useState(initialState.note)
+  const [step, setStep] = useState<'details' | 'remedial'>(initialState.step)
+  const [planTitle, setPlanTitle] = useState('')
   const [checkIn1, setCheckIn1] = useState('')
   const [checkIn2, setCheckIn2] = useState('')
-  const [steps, setSteps] = useState<string[]>(['', '', ''])
+  const [planSteps, setPlanSteps] = useState<string[]>(['Target weak CO topics', 'Solve supervised practice set', 'Mentor check-in and reflection'])
+
+  const yearOptions = useMemo(() => Array.from(new Set(offerings.map(o => o.year))), [offerings])
+  const deptOptions = useMemo(() => Array.from(new Set(offerings.map(o => o.dept))), [offerings])
+  const classOfferings = useMemo(() => offerings.filter(o => (!selectedYear || o.year === selectedYear) && (!selectedDept || o.dept === selectedDept)), [offerings, selectedYear, selectedDept])
 
   useEffect(() => {
-    if (!context) return
-    setTitle(`Remedial support plan for ${context.student.name.split(' ')[0]}`)
-    setDueDateISO('')
-    setCheckIn1('')
-    setCheckIn2('')
-    setSteps(['Target weak CO topics', 'Solve supervised practice set', 'Mentor check-in and reflection'])
-  }, [context])
+    if (selectedOffId && !classOfferings.some(o => o.offId === selectedOffId)) setSelectedOffId('')
+  }, [classOfferings, selectedOffId])
 
-  if (!context) return null
+  const selectedOffering = offerings.find(o => o.offId === selectedOffId)
+  const filteredStudents = (selectedOffering ? getStudentsPatched(selectedOffering) : []).filter(student => {
+    const q = query.trim().toLowerCase()
+    if (!q) return true
+    return student.name.toLowerCase().includes(q) || student.usn.toLowerCase().includes(q)
+  })
+  const selectedStudent = filteredStudents.find(student => student.id === selectedStudentId) ?? (selectedOffering ? getStudentsPatched(selectedOffering).find(student => student.id === selectedStudentId) : undefined)
+  const searchHits = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return [] as Array<{ offering: Offering; student: Student }>
+    const scope = selectedOffId ? offerings.filter(o => o.offId === selectedOffId) : classOfferings
+    return scope.flatMap(o => getStudentsPatched(o).filter(student => student.name.toLowerCase().includes(q) || student.usn.toLowerCase().includes(q)).map(student => ({ offering: o, student }))).slice(0, 10)
+  }, [classOfferings, offerings, query, selectedOffId])
+
+  useEffect(() => {
+    if (!selectedStudent) return
+    const suggestion = suggestTaskForStudent(selectedStudent)
+    setTaskType(current => initialState.studentId ? suggestion.taskType : current)
+    setDueDateISO(current => current || suggestion.dueDateISO)
+    setNote(current => current || suggestion.note)
+    setPlanTitle(`Remedial support plan for ${selectedStudent.name.split(' ')[0]}`)
+  }, [initialState.studentId, selectedStudent])
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 620, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: 18 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 130, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 760, minHeight: 620, maxHeight: '82vh', display: 'flex', flexDirection: 'column', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, overflow: 'hidden' }}>
+        <div style={{ padding: '16px 18px', borderBottom: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: T.text }}>Remedial Plan Builder</div>
-            <div style={{ ...mono, fontSize: 10, color: T.muted }}>{context.student.name} · {context.student.usn} · {context.offering.code} Sec {context.offering.section}</div>
+            <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: T.text }}>{step === 'details' ? 'Add Task' : 'Build Remedial Plan'}</div>
+            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 3 }}>{step === 'details' ? 'One unified task flow for follow-up, attendance, academic, and remedial actions.' : 'Step 2 of 2 · leaf tasks stay tied to the same queue item.'}</div>
           </div>
-          <button aria-label="Close remedial planner" title="Close" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.muted }}><X size={16} /></button>
+          <button aria-label="Close task composer" title="Close" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.muted }}><X size={16} /></button>
         </div>
 
-        <div style={{ display: 'grid', gap: 8 }}>
-          <input aria-label="Remedial plan title" value={title} onChange={e => setTitle(e.target.value)} placeholder="Plan title" style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-            <input aria-label="Plan due date" type="date" value={dueDateISO} onChange={e => setDueDateISO(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
-            <input aria-label="Check-in date 1" type="date" value={checkIn1} onChange={e => setCheckIn1(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
-            <input aria-label="Check-in date 2" type="date" value={checkIn2} onChange={e => setCheckIn2(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
-          </div>
+        <div className="scroll-pane scroll-pane--dense" style={{ flex: 1, overflowY: 'auto', padding: 18, display: 'grid', gap: 12 }}>
+          {step === 'details' && (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <select aria-label="Select year" value={selectedYear} onChange={e => setSelectedYear(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
+                  <option value="">All Years</option>
+                  {yearOptions.map(year => <option key={year} value={year}>{year}</option>)}
+                </select>
+                <select aria-label="Select branch" value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
+                  <option value="">All Branches</option>
+                  {deptOptions.map(dept => <option key={dept} value={dept}>{dept}</option>)}
+                </select>
+              </div>
+              <select aria-label="Select class" value={selectedOffId} onChange={e => { setSelectedOffId(e.target.value); setQuery('') }} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
+                <option value="">Select class</option>
+                {classOfferings.map(offering => <option key={offering.offId} value={offering.offId}>{offering.code} · {offering.year} · Sec {offering.section} · {offering.count} students</option>)}
+              </select>
+              <input aria-label="Search student" placeholder="Search student / USN" value={query} onChange={e => setQuery(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
+              <div className="scroll-pane scroll-pane--dense" style={{ minHeight: 140, maxHeight: 140, overflowY: 'auto', border: `1px solid ${T.border2}`, borderRadius: 6, background: T.surface2 }}>
+                {query.trim() === '' && <div style={{ ...mono, fontSize: 10, color: T.dim, padding: '10px 12px' }}>Start typing a student name or USN to refine the list.</div>}
+                {query.trim() !== '' && searchHits.length === 0 && <div style={{ ...mono, fontSize: 10, color: T.dim, padding: '10px 12px' }}>No matching students.</div>}
+                {query.trim() !== '' && searchHits.map(hit => (
+                  <button key={`${hit.offering.offId}-${hit.student.id}`} onClick={() => {
+                    setSelectedYear(hit.offering.year)
+                    setSelectedDept(hit.offering.dept)
+                    setSelectedOffId(hit.offering.offId)
+                    setSelectedStudentId(hit.student.id)
+                    setQuery(hit.student.name)
+                  }} style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', borderBottom: `1px solid ${T.border}`, cursor: 'pointer', padding: '8px 10px' }}>
+                    <div style={{ ...sora, fontWeight: 600, fontSize: 11, color: T.text }}>{hit.student.name}</div>
+                    <div style={{ ...mono, fontSize: 9, color: T.muted }}>{hit.student.usn} · {hit.offering.code} · Sec {hit.offering.section}</div>
+                  </button>
+                ))}
+              </div>
+              <select aria-label="Select student" value={selectedStudentId} onChange={e => setSelectedStudentId(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
+                <option value="">Select student</option>
+                {filteredStudents.map(student => <option key={student.id} value={student.id}>{student.name} · {student.usn}</option>)}
+              </select>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <select aria-label="Task type" value={taskType} onChange={e => setTaskType(e.target.value as TaskType)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
+                  <option>Follow-up</option>
+                  <option>Remedial</option>
+                  <option>Attendance</option>
+                  <option>Academic</option>
+                </select>
+                <input aria-label="Due date" type="date" value={dueDateISO} onChange={e => setDueDateISO(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
+              </div>
+              <textarea aria-label="Task note" value={note} onChange={e => setNote(e.target.value)} rows={4} placeholder="Task note" style={{ width: '100%', resize: 'none', ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
+              {selectedStudent && (
+                <Card style={{ padding: '10px 12px' }}>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted }}>Selected student</div>
+                  <div style={{ ...sora, fontWeight: 600, fontSize: 13, color: T.text, marginTop: 4 }}>{selectedStudent.name}</div>
+                  <div style={{ ...mono, fontSize: 10, color: T.accent, marginTop: 2 }}>{selectedStudent.usn} · {selectedOffering?.code} Sec {selectedOffering?.section}</div>
+                </Card>
+              )}
+            </>
+          )}
 
-          <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>Plan steps (checklist)</div>
-          {steps.map((step, idx) => (
-            <input key={idx} aria-label={`Plan step ${idx + 1}`} value={step} onChange={e => setSteps(prev => prev.map((x, i) => i === idx ? e.target.value : x))} placeholder={`Step ${idx + 1}`} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
-          ))}
+          {step === 'remedial' && (
+            <>
+              <div style={{ ...mono, fontSize: 10, color: T.muted }}>{selectedStudent?.name} · {selectedOffering?.code} Sec {selectedOffering?.section}</div>
+              <input aria-label="Remedial plan title" value={planTitle} onChange={e => setPlanTitle(e.target.value)} placeholder="Plan title" style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                <input aria-label="Plan due date" type="date" value={dueDateISO} onChange={e => setDueDateISO(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
+                <input aria-label="Check-in date 1" type="date" value={checkIn1} onChange={e => setCheckIn1(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
+                <input aria-label="Check-in date 2" type="date" value={checkIn2} onChange={e => setCheckIn2(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
+              </div>
+              <div style={{ ...mono, fontSize: 10, color: T.muted }}>Plan steps (checklist)</div>
+              {planSteps.map((stepLabel, index) => (
+                <input key={index} aria-label={`Plan step ${index + 1}`} value={stepLabel} onChange={e => setPlanSteps(prev => prev.map((item, itemIndex) => itemIndex === index ? e.target.value : item))} placeholder={`Step ${index + 1}`} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
+              ))}
+            </>
+          )}
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 }}>
+        <div style={{ padding: '14px 18px', borderTop: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
           <Chip color={T.accent} size={9}>Owner: {role}</Chip>
           <div style={{ display: 'flex', gap: 8 }}>
+            {step === 'remedial' && <Btn size="sm" variant="ghost" onClick={() => setStep('details')}>Back</Btn>}
             <Btn size="sm" variant="ghost" onClick={onClose}>Cancel</Btn>
-            <Btn size="sm" onClick={() => {
-              const sanitized = steps.map(s => s.trim()).filter(Boolean)
-              if (!title.trim() || !dueDateISO || sanitized.length === 0) return
+            {step === 'details' && taskType === 'Remedial' && <Btn size="sm" onClick={() => {
+              if (!selectedOffering || !selectedStudentId) return
+              setStep('remedial')
+            }}>Build Plan</Btn>}
+            {step === 'details' && taskType !== 'Remedial' && <Btn size="sm" onClick={() => {
+              if (!selectedOffering || !selectedStudentId) return
+              onSubmit({
+                offeringId: selectedOffering.offId,
+                studentId: selectedStudentId,
+                taskType,
+                dueDateISO,
+                due: toDueLabel(dueDateISO),
+                note,
+              })
+              onClose()
+            }}>Create Task</Btn>}
+            {step === 'remedial' && <Btn size="sm" onClick={() => {
+              if (!selectedOffering || !selectedStudentId) return
+              const sanitized = planSteps.map(item => item.trim()).filter(Boolean)
+              if (!planTitle.trim() || !dueDateISO || sanitized.length === 0) return
               const plan: RemedialPlan = {
-                planId: `plan-${context.student.id}-${Date.now()}`,
-                title: title.trim(),
+                planId: `plan-${selectedStudentId}-${Date.now()}`,
+                title: planTitle.trim(),
                 createdAt: Date.now(),
                 ownerRole: role,
                 dueDateISO,
                 checkInDatesISO: [checkIn1, checkIn2].filter(Boolean),
-                steps: sanitized.map((label, idx) => ({ id: `step-${idx + 1}`, label })),
+                steps: sanitized.map((label, index) => ({ id: `step-${index + 1}`, label })),
               }
               onSubmit({
-                offeringId: context.offering.offId,
-                studentId: context.student.id,
+                offeringId: selectedOffering.offId,
+                studentId: selectedStudentId,
                 taskType: 'Remedial',
                 dueDateISO,
                 due: toDueLabel(dueDateISO),
-                note: title.trim(),
-                deferToHod: context.deferToHod,
+                note: note.trim() || planTitle.trim(),
                 remedialPlan: plan,
               })
               onClose()
-            }}>Create Remedial Task</Btn>
+            }}>Create Remedial Task</Btn>}
           </div>
         </div>
       </div>
@@ -582,18 +1037,20 @@ function RemedialPlanModal({ role, context, onClose, onSubmit }: { role: Role; c
    STUDENT DRAWER — SHAP, What-If, CO, Interventions
    ══════════════════════════════════════════════════════════════ */
 
-function StudentDrawer({ student, offering, role, onClose, onEscalate, onAssignRemedial, onAddManualTask, onAssignToMentor, onOpenHistory }: { student: Student | null; offering?: Offering; role: Role; onClose: () => void; onEscalate: (s: Student, o?: Offering) => void; onAssignRemedial: (s: Student, o?: Offering) => void; onAddManualTask: (s: Student, o?: Offering) => void; onAssignToMentor: (s: Student, o?: Offering) => void; onOpenHistory: (s: Student, o?: Offering) => void }) {
+function StudentDrawer({ student, offering, role, onClose, onEscalate, onOpenTaskComposer, onAssignToMentor, onOpenHistory }: { student: Student | null; offering?: Offering; role: Role; onClose: () => void; onEscalate: (s: Student, o?: Offering) => void; onOpenTaskComposer: (s: Student, o?: Offering, taskType?: TaskType) => void; onAssignToMentor: (s: Student, o?: Offering) => void; onOpenHistory: (s: Student, o?: Offering) => void }) {
   if (!student) return null
   const s = student
   const attPct = Math.round(s.present / s.totalClasses * 100)
   const riskCol = s.riskBand === 'High' ? T.danger : s.riskBand === 'Medium' ? T.warning : T.success
   const canSeeDetailedMarks = role !== 'Mentor'
-  const ceSummary = computeEvaluation(s, { finalsMax: 50, quizWeight: 10, assignmentWeight: 20, quizCount: 1, assignmentCount: 1 })
+  const drawerHistory = buildHistoryProfile({ student: s, offering: offering ?? null })
+  const ceSummary = offering ? deriveAcademicProjection({ offering, student: s, scheme: runtimeSchemesByOffering[offering.offId] ?? defaultSchemeForOffering(offering), history: drawerHistory }) : null
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 100, display: 'flex', justifyContent: 'flex-end' }}>
       <motion.div initial={{ x: 320, opacity: 1 }} animate={{ x: 0, opacity: 1 }} transition={{ duration: 0.12, ease: 'easeOut' }}
         onClick={e => e.stopPropagation()}
+        className="scroll-pane scroll-pane--dense"
         style={{ width: 520, maxWidth: '100vw', height: '100vh', overflowY: 'auto', background: T.surface, borderLeft: `1px solid ${T.border}`, padding: '24px 28px' }}>
 
         {/* Header */}
@@ -706,11 +1163,11 @@ function StudentDrawer({ student, offering, role, onClose, onEscalate, onAssignR
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
             {[
               { lbl: 'Attendance', val: `${attPct}%`, col: attPct >= 75 ? T.success : attPct >= 65 ? T.warning : T.danger },
-              { lbl: 'TT Summary', val: canSeeDetailedMarks ? `${s.tt1Score ?? '—'} / ${s.tt2Score ?? '—'}` : `${ceSummary.tt1Scaled + ceSummary.tt2Scaled}/30`, col: ceSummary.tt1Scaled + ceSummary.tt2Scaled >= 15 ? T.success : T.warning },
-              { lbl: 'CE Signal', val: `${ceSummary.ce60}/60`, col: ceSummary.ce60 >= 30 ? T.success : ceSummary.ce60 >= 24 ? T.warning : T.danger },
+              { lbl: 'TT Summary', val: canSeeDetailedMarks ? `${s.tt1Score ?? '—'} / ${s.tt2Score ?? '—'}` : ceSummary ? `${(ceSummary.tt1Scaled + ceSummary.tt2Scaled).toFixed(1)}/30` : '—', col: ceSummary && ceSummary.tt1Scaled + ceSummary.tt2Scaled >= 15 ? T.success : T.warning },
+              { lbl: 'CE Signal', val: ceSummary ? `${ceSummary.ce60.toFixed(1)}/60` : '—', col: ceSummary ? (ceSummary.ce60 >= 30 ? T.success : ceSummary.ce60 >= 24 ? T.warning : T.danger) : T.warning },
               { lbl: 'Weak Component', val: s.reasons[0]?.feature?.toUpperCase() ?? 'None', col: s.reasons[0] ? T.warning : T.success },
               { lbl: 'SEE Readiness', val: s.riskBand === 'High' ? 'Needs support' : s.riskBand === 'Medium' ? 'Watch' : 'On track', col: s.riskBand === 'High' ? T.danger : s.riskBand === 'Medium' ? T.warning : T.success },
-              { lbl: 'Prev CGPA', val: s.prevCgpa > 0 ? s.prevCgpa.toFixed(1) : '—', col: s.prevCgpa >= 7 ? T.success : s.prevCgpa >= 6 ? T.warning : T.danger },
+              { lbl: 'Pred CGPA', val: ceSummary ? ceSummary.predictedCgpa.toFixed(2) : (s.prevCgpa > 0 ? s.prevCgpa.toFixed(1) : '—'), col: (ceSummary?.predictedCgpa ?? s.prevCgpa) >= 7 ? T.success : (ceSummary?.predictedCgpa ?? s.prevCgpa) >= 6 ? T.warning : T.danger },
             ].map((x, i) => (
               <div key={i} style={{ background: T.surface2, borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
                 <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: x.col }}>{x.val}</div>
@@ -740,10 +1197,9 @@ function StudentDrawer({ student, offering, role, onClose, onEscalate, onAssignR
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <Btn size="sm" onClick={() => navigator.clipboard.writeText(s.phone)}><Phone size={12} /> Call</Btn>
           <Btn size="sm" variant="ghost"><Mail size={12} /> Email</Btn>
-          <Btn size="sm" variant="ghost" onClick={() => onAddManualTask(s, offering)}><MessageSquare size={12} /> Add Task</Btn>
-          <Btn size="sm" variant="ghost" onClick={() => onAssignRemedial(s, offering)}><BookOpen size={12} /> Assign Remedial</Btn>
+          <Btn size="sm" variant="ghost" onClick={() => onOpenTaskComposer(s, offering, s.riskBand === 'High' ? 'Remedial' : 'Follow-up')}><MessageSquare size={12} /> Add Task</Btn>
           {(role === 'Course Leader' || role === 'HoD') && <Btn size="sm" variant="ghost" onClick={() => onAssignToMentor(s, offering)}><Users size={12} /> Defer to Mentor</Btn>}
-          <Btn size="sm" variant="ghost" onClick={() => onOpenHistory(s, offering)}><Eye size={12} /> View History</Btn>
+          <Btn size="sm" variant="ghost" onClick={() => onOpenHistory(s, offering)}><Eye size={12} /> Open Full Profile</Btn>
           {role !== 'HoD' && <Btn size="sm" variant="danger" onClick={() => onEscalate(s, offering)}><AlertTriangle size={12} /> Escalate to HoD</Btn>}
         </div>
       </motion.div>
@@ -755,108 +1211,12 @@ function StudentDrawer({ student, offering, role, onClose, onEscalate, onAssignR
    ACTION QUEUE (Right Sidebar)
    ══════════════════════════════════════════════════════════════ */
 
-function ActionQueue({ role, tasks, offerings, resolvedTaskIds, onResolveTask, onUndoTask, onOpenStudent, onCreateTask, onOpenRemedialPlanner, onRemedialCheckIn, onReassignTask, onOpenUnlockReview, onOpenQueueHistory }: { role: Role; tasks: SharedTask[]; offerings: Offering[]; resolvedTaskIds: Record<string, number>; onResolveTask: (id: string) => void; onUndoTask: (id: string) => void; onOpenStudent: (task: SharedTask) => void; onCreateTask: (input: TaskCreateInput) => void; onOpenRemedialPlanner: (input: { offeringId: string; studentId: string; deferToHod?: boolean }) => void; onRemedialCheckIn: (taskId: string) => void; onReassignTask: (taskId: string, toRole: Role, note?: string) => void; onOpenUnlockReview: (taskId: string) => void; onOpenQueueHistory: () => void }) {
+function ActionQueue({ role, tasks, resolvedTaskIds, onResolveTask, onUndoTask, onOpenStudent, onOpenTaskComposer, onRemedialCheckIn, onReassignTask, onOpenUnlockReview, onOpenQueueHistory, onApproveUnlock, onRejectUnlock, onResetComplete }: { role: Role; tasks: SharedTask[]; resolvedTaskIds: Record<string, number>; onResolveTask: (id: string) => void; onUndoTask: (id: string) => void; onOpenStudent: (task: SharedTask) => void; onOpenTaskComposer: (input?: { offeringId?: string; studentId?: string; taskType?: TaskType }) => void; onRemedialCheckIn: (taskId: string) => void; onReassignTask: (taskId: string, toRole: Role) => void; onOpenUnlockReview: (taskId: string) => void; onOpenQueueHistory: () => void; onApproveUnlock: (taskId: string) => void; onRejectUnlock: (taskId: string) => void; onResetComplete: (taskId: string) => void }) {
   const active = tasks.filter(t => !resolvedTaskIds[t.id]).sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt))
   const done = tasks.filter(t => !!resolvedTaskIds[t.id]).sort((a, b) => (resolvedTaskIds[b.id] ?? 0) - (resolvedTaskIds[a.id] ?? 0))
-  const [showComposer, setShowComposer] = useState(false)
-  const [selectedYear, setSelectedYear] = useState<string>('')
-  const [selectedDept, setSelectedDept] = useState<string>('')
-  const [selectedOffId, setSelectedOffId] = useState<string>('')
-  const [query, setQuery] = useState('')
-  const [selectedStudentId, setSelectedStudentId] = useState('')
-  const [taskType, setTaskType] = useState<TaskType>('Follow-up')
-  const [dueDateISO, setDueDateISO] = useState('')
-  const [note, setNote] = useState('')
-
-  const toISO = (daysFromNow: number) => {
-    const d = new Date(Date.now() + daysFromNow * 24 * 60 * 60 * 1000)
-    return d.toISOString().slice(0, 10)
-  }
-
-  const suggestForStudent = (s?: Student) => {
-    if (!s) return { taskType: 'Follow-up' as TaskType, dueDateISO: toISO(7), note: '' }
-    const attPct = Math.round((s.present / s.totalClasses) * 100)
-    if (s.riskBand === 'High') return { taskType: 'Remedial' as TaskType, dueDateISO: toISO(3), note: 'High risk: assign remedial plan and check-in dates.' }
-    if (attPct < 65 || s.flags.lowAttendance) return { taskType: 'Attendance' as TaskType, dueDateISO: toISO(2), note: 'Attendance intervention and parent contact follow-up.' }
-    if (s.riskBand === 'Medium') return { taskType: 'Academic' as TaskType, dueDateISO: toISO(5), note: 'Academic follow-up for medium-risk trends.' }
-    return { taskType: 'Follow-up' as TaskType, dueDateISO: toISO(7), note: `General follow-up with ${s.name.split(' ')[0]}.` }
-  }
-
-  const yearOptions = useMemo(() => Array.from(new Set(offerings.map(o => o.year))), [offerings])
-  const deptOptions = useMemo(() => Array.from(new Set(offerings.map(o => o.dept))), [offerings])
-  const classOfferings = useMemo(() => offerings.filter(o => (!selectedYear || o.year === selectedYear) && (!selectedDept || o.dept === selectedDept)), [offerings, selectedYear, selectedDept])
-
-  useEffect(() => {
-    if (selectedOffId && !classOfferings.some(o => o.offId === selectedOffId)) {
-      setSelectedOffId('')
-    }
-  }, [classOfferings, selectedOffId])
-
-  const selectedOffering = offerings.find(o => o.offId === selectedOffId)
-  const hasScopedFilters = !!selectedYear || !!selectedDept || !!selectedOffId
-  const searchScopeOfferings = selectedOffId
-    ? offerings.filter(o => o.offId === selectedOffId)
-    : hasScopedFilters
-      ? classOfferings
-      : offerings
-
-  const filteredStudents = (selectedOffering ? getStudentsPatched(selectedOffering) : []).filter(s => {
-    const q = query.trim().toLowerCase()
-    if (!q) return true
-    return s.name.toLowerCase().includes(q) || s.usn.toLowerCase().includes(q)
-  })
-  const selectedStudent = filteredStudents.find(s => s.id === selectedStudentId)
-
-  const searchHits = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (!q) return [] as Array<{ offering: Offering; student: Student }>
-    return searchScopeOfferings
-      .flatMap(o => getStudentsPatched(o).filter(s => s.name.toLowerCase().includes(q) || s.usn.toLowerCase().includes(q)).map(student => ({ offering: o, student })))
-      .slice(0, 12)
-  }, [query, searchScopeOfferings])
-
-  useEffect(() => {
-    if (!selectedOffering) {
-      setSelectedStudentId('')
-      return
-    }
-    const available = getStudentsPatched(selectedOffering).filter(s => {
-      const q = query.trim().toLowerCase()
-      if (!q) return true
-      return s.name.toLowerCase().includes(q) || s.usn.toLowerCase().includes(q)
-    })
-    if (available.length === 0) {
-      setSelectedStudentId('')
-      return
-    }
-    if (!available.some(s => s.id === selectedStudentId)) {
-      setSelectedStudentId(available[0].id)
-    }
-  }, [selectedOffering, selectedOffId, query, selectedStudentId])
-
-  useEffect(() => {
-    const suggested = suggestForStudent(selectedStudent)
-    setTaskType(suggested.taskType)
-    setDueDateISO(suggested.dueDateISO)
-    setNote(suggested.note)
-  }, [selectedStudentId, selectedOffId])
-
-  const submitQuickTask = (mode: 'add' | 'mentor' | 'hod') => {
-    if (!selectedOffering || !selectedStudentId) return
-    onCreateTask({
-      offeringId: selectedOffering.offId,
-      studentId: selectedStudentId,
-      taskType,
-      dueDateISO,
-      due: toDueLabel(dueDateISO),
-      note,
-      deferToHod: mode === 'hod',
-    })
-    setShowComposer(false)
-  }
 
   return (
-    <div style={{ width: 320, flexShrink: 0, background: T.surface, borderLeft: `1px solid ${T.border}`, position: 'sticky', top: 0, height: '100vh', overflowY: 'auto', padding: '18px 16px' }}>
+    <div className="scroll-pane scroll-pane--dense" style={{ width: 320, flexShrink: 0, background: T.surface, borderLeft: `1px solid ${T.border}`, position: 'sticky', top: 0, height: '100vh', overflowY: 'auto', padding: '18px 16px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
         <ListTodo size={16} color={T.accent} />
         <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text }}>Action Queue</div>
@@ -886,8 +1246,11 @@ function ActionQueue({ role, tasks, offerings, resolvedTaskIds, onResolveTask, o
               {t.unlockRequest && <Chip color={t.unlockRequest.status === 'Rejected' ? T.danger : t.unlockRequest.status === 'Reset Completed' ? T.success : T.warning} size={9}>Unlock: {t.unlockRequest.status}</Chip>}
             </div>
             {latestTransition && (
-              <div style={{ ...mono, fontSize: 9, color: T.muted, marginBottom: 8 }}>
-                Last transition: {latestTransition.action} · {formatDateTime(latestTransition.at)}
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ ...mono, fontSize: 9, color: T.muted }}>
+                  Last transition: {latestTransition.action} · {formatDateTime(latestTransition.at)}
+                </div>
+                <div style={{ ...mono, fontSize: 9, color: T.dim, marginTop: 3 }}>{latestTransition.note}</div>
               </div>
             )}
             {hasRemedialFlow && (
@@ -900,11 +1263,16 @@ function ActionQueue({ role, tasks, offerings, resolvedTaskIds, onResolveTask, o
               {(t.taskType === 'Remedial' || !!t.remedialPlan) && <button aria-label="Log remedial check-in" title="Check-in" onClick={() => onRemedialCheckIn(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.warning, padding: 2 }}><Activity size={13} /></button>}
               <button aria-label="Open task student details" title="Open student" onClick={() => onOpenStudent(t)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent, padding: 2 }}><Eye size={13} /></button>
               {t.unlockRequest && role === 'HoD' && (
-                <button aria-label="Review unlock request" title="Review unlock" onClick={() => onOpenUnlockReview(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.warning, ...mono, fontSize: 10 }}>Unlock</button>
+                <>
+                  <button aria-label="Review unlock request" title="Review unlock" onClick={() => onOpenUnlockReview(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.warning, ...mono, fontSize: 10 }}>Review</button>
+                  {t.unlockRequest.status === 'Pending' && <button aria-label="Approve unlock request" title="Approve unlock" onClick={() => onApproveUnlock(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.success, ...mono, fontSize: 10 }}>Approve</button>}
+                  {t.unlockRequest.status === 'Pending' && <button aria-label="Reject unlock request" title="Reject unlock" onClick={() => onRejectUnlock(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.danger, ...mono, fontSize: 10 }}>Reject</button>}
+                  {t.unlockRequest.status === 'Approved' && <button aria-label="Reset and unlock dataset" title="Reset and unlock" onClick={() => onResetComplete(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.success, ...mono, fontSize: 10 }}>Reset</button>}
+                </>
               )}
-              {role === 'Course Leader' && !t.unlockRequest && <button aria-label="Reassign task to mentor" title="Defer to Mentor" onClick={() => onReassignTask(t.id, 'Mentor', 'Course Leader deferred to Mentor for follow-up ownership.')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.blue, ...mono, fontSize: 10 }}>Mentor</button>}
-              {role !== 'HoD' && <button aria-label="Reassign task to hod" title="Defer to HoD" onClick={() => onReassignTask(t.id, 'HoD', `${role} deferred this case to HoD.`)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.danger, ...mono, fontSize: 10 }}>HoD</button>}
-              {role === 'HoD' && !t.unlockRequest && <button aria-label="Return task to course leader" title="Return to Course Leader" onClick={() => onReassignTask(t.id, 'Course Leader', 'HoD reviewed and returned the case to Course Leader.')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.blue, ...mono, fontSize: 10 }}>CL</button>}
+              {role === 'Course Leader' && !t.unlockRequest && <button aria-label="Reassign task to mentor" title="Defer to Mentor" onClick={() => onReassignTask(t.id, 'Mentor')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.blue, ...mono, fontSize: 10 }}>Mentor</button>}
+              {role !== 'HoD' && !t.unlockRequest && <button aria-label="Reassign task to hod" title="Defer to HoD" onClick={() => onReassignTask(t.id, 'HoD')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.danger, ...mono, fontSize: 10 }}>HoD</button>}
+              {role === 'HoD' && !t.unlockRequest && <button aria-label="Return task to course leader" title="Return to Course Leader" onClick={() => onReassignTask(t.id, 'Course Leader')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.blue, ...mono, fontSize: 10 }}>CL</button>}
               <button aria-label="Mark task as resolved" title="Resolve task" onClick={() => onResolveTask(t.id)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: T.success, padding: 2 }}><CheckCircle size={13} /></button>
             </div>
           </div>
@@ -935,89 +1303,11 @@ function ActionQueue({ role, tasks, offerings, resolvedTaskIds, onResolveTask, o
       )}
 
       <div style={{ position: 'sticky', bottom: 0, paddingTop: 10, background: `linear-gradient(180deg, rgba(0,0,0,0) 0%, ${T.surface} 35%)` }}>
-        <button aria-label="Add quick task" title="Add quick task" onClick={() => setShowComposer(true)} style={{ width: '100%', border: 'none', borderRadius: 10, cursor: 'pointer', background: T.accent, color: '#fff', padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, ...sora, fontWeight: 700, fontSize: 12 }}>
+        <button aria-label="Add quick task" title="Add quick task" onClick={() => onOpenTaskComposer()} style={{ width: '100%', border: 'none', borderRadius: 10, cursor: 'pointer', background: T.accent, color: '#fff', padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, ...sora, fontWeight: 700, fontSize: 12 }}>
           <span style={{ fontSize: 16, lineHeight: 1 }}>+</span>
           Quick Add Task
         </button>
       </div>
-
-      {showComposer && (
-        <div onClick={() => setShowComposer(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 130, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-          <div onClick={e => e.stopPropagation()}>
-            <Card style={{ width: '100%', maxWidth: 480, padding: 14 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text }}>Quick Add Task</div>
-                <button aria-label="Close quick add" title="Close" onClick={() => setShowComposer(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.muted }}><X size={15} /></button>
-              </div>
-              <div style={{ display: 'grid', gap: 7 }}>
-                <select aria-label="Select class" value={selectedOffId} onChange={e => { setSelectedOffId(e.target.value); setQuery('') }} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
-                  <option value="">All Classes</option>
-                  {classOfferings.map(o => <option key={o.offId} value={o.offId}>{o.code} · {o.year} · {o.dept} · Sec {o.section}</option>)}
-                </select>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                  <select aria-label="Select year" value={selectedYear} onChange={e => setSelectedYear(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
-                    <option value="">All Years</option>
-                    {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
-                  </select>
-                  <select aria-label="Select branch" value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
-                    <option value="">All Branches</option>
-                    {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                </div>
-                <input aria-label="Search student" placeholder="Search student / USN" value={query} onChange={e => setQuery(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }} />
-                {query.trim() !== '' && (
-                  <div style={{ border: `1px solid ${T.border2}`, borderRadius: 6, background: T.surface2, maxHeight: 168, overflowY: 'auto' }}>
-                    {searchHits.length === 0 && <div style={{ ...mono, fontSize: 10, color: T.dim, padding: '8px 10px' }}>No matching students</div>}
-                    {searchHits.map(hit => (
-                      <button
-                        key={`${hit.offering.offId}-${hit.student.id}`}
-                        aria-label={`Select ${hit.student.name}`}
-                        title={`Select ${hit.student.name}`}
-                        onClick={() => {
-                          setSelectedYear(hit.offering.year)
-                          setSelectedDept(hit.offering.dept)
-                          setSelectedOffId(hit.offering.offId)
-                          setSelectedStudentId(hit.student.id)
-                          setQuery(hit.student.name)
-                        }}
-                        style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', cursor: 'pointer', borderBottom: `1px solid ${T.border}`, padding: '8px 10px' }}
-                      >
-                        <div style={{ ...sora, fontWeight: 600, fontSize: 11, color: T.text }}>{hit.student.name}</div>
-                        <div style={{ ...mono, fontSize: 9, color: T.muted }}>{hit.student.usn} · {hit.offering.code} · {hit.offering.year} · {hit.offering.dept} · Sec {hit.offering.section}</div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <select aria-label="Select student" value={selectedStudentId} onChange={e => setSelectedStudentId(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
-                  <option value="">Select student</option>
-                  {filteredStudents.map(s => <option key={s.id} value={s.id}>{s.name} · {s.usn}</option>)}
-                </select>
-                <select aria-label="Task type" value={taskType} onChange={e => setTaskType(e.target.value as TaskType)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
-                  <option>Follow-up</option><option>Remedial</option><option>Attendance</option><option>Academic</option>
-                </select>
-                <input aria-label="Due date" type="date" value={dueDateISO} onChange={e => setDueDateISO(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }} />
-                <input aria-label="Task note" value={note} onChange={e => setNote(e.target.value)} placeholder="Task note" style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }} />
-                <div style={{ display: 'flex', gap: 6, minHeight: 30, flexWrap: 'wrap' }}>
-                  <Btn size="sm" onClick={() => submitQuickTask('add')}>Add</Btn>
-                  {role === 'Course Leader' && <Btn size="sm" variant="ghost" onClick={() => submitQuickTask('mentor')}>Track in CL queue first</Btn>}
-                  {role !== 'HoD' && <Btn size="sm" variant="danger" onClick={() => submitQuickTask('hod')}>Defer to HoD</Btn>}
-                  {(taskType === 'Remedial' || selectedStudent?.riskBand === 'High') ? (
-                    <Btn size="sm" variant="ghost" onClick={() => {
-                      if (!selectedOffering || !selectedStudentId) return
-                      onOpenRemedialPlanner({ offeringId: selectedOffering.offId, studentId: selectedStudentId, deferToHod: false })
-                      setShowComposer(false)
-                    }}>
-                      Build Plan
-                    </Btn>
-                  ) : (
-                    <div style={{ visibility: 'hidden' }}><Btn size="sm" variant="ghost">Build Plan</Btn></div>
-                  )}
-                </div>
-              </div>
-            </Card>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -1265,12 +1555,11 @@ const TAB_DEFS = [
   { id: 'gradebook', icon: '📊', label: 'Grade Book' },
 ]
 
-function CourseDetail({ offering: o, onBack, onOpenStudent, onOpenEntryHub, onOpenSchemeSetup, initialTab, scheme }: { offering: Offering; onBack: () => void; onOpenStudent: (s: Student) => void; onOpenEntryHub: (kind: EntryKind) => void; onOpenSchemeSetup: () => void; initialTab?: string; scheme: SchemeState }) {
+function CourseDetail({ offering: o, onBack, onOpenStudent, onOpenEntryHub, onOpenSchemeSetup, initialTab, scheme, lockMap, blueprints, onUpdateBlueprint }: { offering: Offering; onBack: () => void; onOpenStudent: (s: Student) => void; onOpenEntryHub: (kind: EntryKind) => void; onOpenSchemeSetup: () => void; initialTab?: string; scheme: SchemeState; lockMap: EntryLockMap; blueprints: Record<TTKind, TermTestBlueprint>; onUpdateBlueprint: (kind: TTKind, next: TermTestBlueprint) => void }) {
   const [tab, setTab] = useState(initialTab ?? 'overview')
   const yc = yearColor(o.year)
   const students = useMemo(() => getStudentsPatched(o), [o.offId])
   const cos = CO_MAP[o.code] || CO_MAP['default']
-  const paper = PAPER_MAP[o.code] || PAPER_MAP['default']
   const tabLocked = (t: string) => (t === 'tt2' && o.stageInfo.stage < 2) || (t === 'risk' && o.stage < 2)
 
   useEffect(() => {
@@ -1326,12 +1615,12 @@ function CourseDetail({ offering: o, onBack, onOpenStudent, onOpenEntryHub, onOp
         {tab === 'overview' && <OverviewTab o={o} cos={cos} students={students} setTab={setTab} />}
         {tab === 'risk' && <RiskTab o={o} students={students} onOpenStudent={onOpenStudent} />}
         {tab === 'attendance' && <AttendanceTab o={o} students={students} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('attendance')} />}
-        {tab === 'tt1' && <TTTab o={o} ttNum={1} cos={cos} paper={paper} students={students} onOpenEntryHub={onOpenEntryHub} />}
-        {tab === 'tt2' && <TTTab o={o} ttNum={2} cos={cos} paper={paper} students={students} onOpenEntryHub={onOpenEntryHub} />}
-        {tab === 'quizzes' && <QuizzesTab students={students} tt1Done={o.tt1Done} onOpenEntryHub={() => onOpenEntryHub('quiz')} />}
-        {tab === 'assignments' && <AssignmentsTab students={students} tt1Done={o.tt1Done} onOpenEntryHub={() => onOpenEntryHub('assignment')} />}
+        {tab === 'tt1' && <TTTab ttNum={1} cos={cos} blueprint={blueprints.tt1} isLocked={lockMap.tt1} onChangeBlueprint={next => onUpdateBlueprint('tt1', next)} students={students} onOpenEntryHub={onOpenEntryHub} onOpenStudent={onOpenStudent} />}
+        {tab === 'tt2' && <TTTab ttNum={2} cos={cos} blueprint={blueprints.tt2} isLocked={lockMap.tt2} onChangeBlueprint={next => onUpdateBlueprint('tt2', next)} students={students} onOpenEntryHub={onOpenEntryHub} onOpenStudent={onOpenStudent} />}
+        {tab === 'quizzes' && <QuizzesTab students={students} scheme={scheme} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('quiz')} />}
+        {tab === 'assignments' && <AssignmentsTab students={students} scheme={scheme} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('assignment')} />}
         {tab === 'co' && <COTab cos={cos} />}
-        {tab === 'gradebook' && <GradeBookTab students={students} scheme={scheme} onOpenEntryHub={() => onOpenEntryHub('finals')} onOpenSchemeSetup={onOpenSchemeSetup} />}
+        {tab === 'gradebook' && <GradeBookTab offering={o} students={students} scheme={scheme} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('finals')} onOpenSchemeSetup={onOpenSchemeSetup} />}
       </div>
     </div>
   )
@@ -1562,153 +1851,183 @@ function AttendanceTab({ o, students, onOpenStudent, onOpenEntryHub }: { o: Offe
 }
 
 /* ─── TT Tab ─── */
-function TTTab({ o, ttNum, cos, paper, students, onOpenEntryHub }: { o: Offering; ttNum: number; cos: CODef[]; paper: PaperQ[]; students: Student[]; onOpenEntryHub: (kind: EntryKind) => void }) {
-  const [step, setStep] = useState<'paper' | 'marks'>('paper')
-  const [isLocked, setIsLocked] = useState(ttNum === 1 ? !!o.tt1Locked : !!o.tt2Locked)
-  const prePopulated = ttNum === 1 ? o.tt1Done : o.tt2Done
-  const totalMax = paper.reduce((a, q) => a + q.maxMarks, 0)
-  const coColorMap = Object.fromEntries(cos.map((c, i) => [c.id, CO_COLORS[i % CO_COLORS.length]]))
-  const coIds = [...new Set(paper.flatMap(q => q.cos))]
+function TTTab({ ttNum, cos, blueprint, isLocked, onChangeBlueprint, students, onOpenEntryHub, onOpenStudent }: { ttNum: number; cos: CODef[]; blueprint: TermTestBlueprint; isLocked: boolean; onChangeBlueprint: (next: TermTestBlueprint) => void; students: Student[]; onOpenEntryHub: (kind: EntryKind) => void; onOpenStudent: (s: Student) => void }) {
+  const kind: TTKind = ttNum === 1 ? 'tt1' : 'tt2'
+  const totalMax = blueprint.totalMarks
+  const canEdit = !isLocked
+  const normalized = normalizeBlueprint(kind, blueprint)
 
-  const handleLock = () => {
-    if (confirm('Are you sure you want to Submit & Lock? This cannot be undone and will trigger ML Risk analysis updating.')) {
-      setIsLocked(true)
+  const commitBlueprint = (nextNodes: TermTestNode[]) => {
+    onChangeBlueprint(normalizeBlueprint(kind, { ...blueprint, nodes: nextNodes, updatedAt: Date.now() }))
+  }
+
+  const updateQuestion = (questionId: string, updater: (question: TermTestNode) => TermTestNode) => {
+    commitBlueprint(normalized.nodes.map(node => node.id === questionId ? updater(node) : node))
+  }
+
+  const addQuestion = () => {
+    const nextIndex = normalized.nodes.length
+    const nextQuestion: TermTestNode = {
+      id: `${kind}-q${nextIndex + 1}`,
+      label: `Q${nextIndex + 1}`,
+      text: `Question ${nextIndex + 1}`,
+      maxMarks: 5,
+      cos: [],
+      children: [{
+        id: toLeafId(kind, nextIndex, 0),
+        label: `Q${nextIndex + 1}a`,
+        text: 'Part A',
+        maxMarks: 5,
+        cos: cos[0] ? [cos[0].id] : [],
+      }],
     }
+    commitBlueprint([...normalized.nodes, nextQuestion])
   }
 
   return (
     <div style={{ padding: '24px 32px' }}>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
-        {([{ id: 'paper' as const, lbl: '① Question Paper & CO Map' }, { id: 'marks' as const, lbl: '② Marks Entry' }]).map(s => (
-          <button key={s.id} onClick={() => s.id === 'marks' ? onOpenEntryHub(ttNum === 1 ? 'tt1' : 'tt2') : setStep('paper')} style={{ ...mono, fontSize: 11, padding: '7px 14px', borderRadius: 7, cursor: 'pointer', background: step === s.id ? T.accent + '18' : 'transparent', border: `1px solid ${step === s.id ? T.accent : T.border}`, color: step === s.id ? T.accentLight : T.muted }}>{s.lbl}</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: T.text }}>TT{ttNum} Blueprint Builder</div>
+          <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 4 }}>Raw total must equal 25. Marks are entered only at the leaf subquestion level and TT{ttNum} is later normalized to 15/30.</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Chip color={totalMax === 25 ? T.success : T.danger} size={9}>Total {totalMax}/25</Chip>
+          {isLocked && <Chip color={T.warning} size={9}>Locked</Chip>}
+          {!isLocked && <Btn size="sm" variant="ghost" onClick={addQuestion}>Add Question</Btn>}
+          <Btn size="sm" onClick={() => onOpenEntryHub(kind)}>Proceed to TT{ttNum} Entry →</Btn>
+        </div>
+      </div>
+
+      <Card glow={totalMax === 25 ? T.success : T.warning} style={{ marginBottom: 14 }}>
+        <div style={{ ...mono, fontSize: 11, color: totalMax === 25 ? T.success : T.warning }}>
+          {totalMax === 25 ? 'Blueprint valid for university raw TT total of 25.' : 'Adjust question parts so the total raw marks equal 25 before entry.'}
+        </div>
+      </Card>
+
+      <div style={{ display: 'grid', gap: 12 }}>
+        {normalized.nodes.map((question, questionIndex) => (
+          <Card key={question.id}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <input disabled={!canEdit} value={question.label} onChange={e => updateQuestion(question.id, current => ({ ...current, label: e.target.value }))} style={{ width: 70, ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }} />
+                <input disabled={!canEdit} value={question.text} onChange={e => updateQuestion(question.id, current => ({ ...current, text: e.target.value }))} style={{ minWidth: 260, flex: 1, ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }} />
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <Chip color={T.accent} size={9}>{question.maxMarks} marks</Chip>
+                {canEdit && <Btn size="sm" variant="ghost" onClick={() => updateQuestion(question.id, current => ({
+                  ...current,
+                  children: [...(current.children ?? []), {
+                    id: toLeafId(kind, questionIndex, (current.children ?? []).length),
+                    label: `${current.label}${String.fromCharCode(97 + (current.children ?? []).length)}`,
+                    text: `Part ${String.fromCharCode(65 + (current.children ?? []).length)}`,
+                    maxMarks: 1,
+                    cos: current.children?.[0]?.cos ?? (cos[0] ? [cos[0].id] : []),
+                  }],
+                }))}>Add Part</Btn>}
+                {canEdit && normalized.nodes.length > 1 && <Btn size="sm" variant="danger" onClick={() => commitBlueprint(normalized.nodes.filter(node => node.id !== question.id))}>Remove</Btn>}
+              </div>
+            </div>
+            <div style={{ display: 'grid', gap: 8 }}>
+              {(question.children ?? []).map((leaf, leafIndex) => (
+                <div key={leaf.id} style={{ background: T.surface2, borderRadius: 8, padding: '10px 12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 88px auto', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                    <input disabled={!canEdit} value={leaf.label} onChange={e => updateQuestion(question.id, current => ({
+                      ...current,
+                      children: (current.children ?? []).map((child, childIdx) => childIdx === leafIndex ? { ...child, label: e.target.value } : child),
+                    }))} style={{ ...mono, fontSize: 11, background: T.bg, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }} />
+                    <input disabled={!canEdit} value={leaf.text} onChange={e => updateQuestion(question.id, current => ({
+                      ...current,
+                      children: (current.children ?? []).map((child, childIdx) => childIdx === leafIndex ? { ...child, text: e.target.value } : child),
+                    }))} style={{ ...mono, fontSize: 11, background: T.bg, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }} />
+                    <input disabled={!canEdit} type="number" min={1} max={25} value={leaf.maxMarks} onChange={e => updateQuestion(question.id, current => ({
+                      ...current,
+                      children: (current.children ?? []).map((child, childIdx) => childIdx === leafIndex ? { ...child, maxMarks: clampNumber(Number(e.target.value) || 1, 1, 25) } : child),
+                    }))} style={{ ...mono, fontSize: 11, background: T.bg, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }} />
+                    {canEdit && (question.children?.length ?? 0) > 1 && <Btn size="sm" variant="ghost" onClick={() => updateQuestion(question.id, current => ({
+                      ...current,
+                      children: (current.children ?? []).filter((_, childIdx) => childIdx !== leafIndex),
+                    }))}>Remove</Btn>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {cos.map((co, coIndex) => {
+                      const active = leaf.cos.includes(co.id)
+                      return (
+                        <button
+                          key={co.id}
+                          disabled={!canEdit}
+                          onClick={() => updateQuestion(question.id, current => ({
+                            ...current,
+                            children: (current.children ?? []).map((child, childIdx) => childIdx === leafIndex ? {
+                              ...child,
+                              cos: active ? child.cos.filter(id => id !== co.id) : [...child.cos, co.id],
+                            } : child),
+                          }))}
+                          style={{ ...mono, fontSize: 9, padding: '4px 8px', borderRadius: 999, border: `1px solid ${active ? CO_COLORS[coIndex % CO_COLORS.length] : T.border}`, background: active ? `${CO_COLORS[coIndex % CO_COLORS.length]}18` : 'transparent', color: active ? CO_COLORS[coIndex % CO_COLORS.length] : T.muted, cursor: canEdit ? 'pointer' : 'default' }}
+                        >
+                          {co.id}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
         ))}
       </div>
 
-      {step === 'paper' && (
-        <div style={{ maxWidth: 700 }}>
-          <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: T.text, marginBottom: 4 }}>TT{ttNum} — Question Paper & CO Mapping</div>
-          <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 14 }}>Each question is mapped to COs. Total must equal 30.</div>
-          {isLocked && <div style={{ marginBottom: 12, padding: '10px 14px', background: T.success + '1a', color: T.success, ...mono, fontSize: 11, borderRadius: 6, display: 'flex', gap: 6, alignItems: 'center' }}><Shield size={14} /> Data Locked. ML Risk predictions updated.</div>}
-          <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 12 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr>{['Q#', 'Question', 'Max', 'Mapped COs'].map(h => <TH key={h}>{h}</TH>)}</tr></thead>
-              <tbody>
-                {paper.map((q, i) => (
-                  <tr key={q.id}>
-                    <TD style={{ ...mono, fontSize: 12, color: T.accent, fontWeight: 700 }}>Q{i + 1}</TD>
-                    <TD style={{ ...sora, fontSize: 12, color: T.text }}>{q.text}</TD>
-                    <TD style={{ ...mono, fontSize: 13, fontWeight: 700, color: T.text }}>{q.maxMarks}</TD>
-                    <TD><div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{q.cos.map(co => <Chip key={co} color={coColorMap[co] || T.muted} size={9}>{co}</Chip>)}</div></TD>
-                  </tr>
-                ))}
-                <tr style={{ background: T.surface2 }}>
-                  <TD colSpan={2} style={{ ...mono, fontSize: 11, color: T.muted }}>Total</TD>
-                  <TD style={{ ...mono, fontSize: 13, fontWeight: 800, color: totalMax === 30 ? T.success : T.danger }}>{totalMax} / 30</TD>
-                  <TD>&nbsp;</TD>
-                </tr>
-              </tbody>
-            </table>
-          </Card>
-          {totalMax === 30 ? <Btn onClick={() => onOpenEntryHub(ttNum === 1 ? 'tt1' : 'tt2')}>Proceed to Data Entry Hub →</Btn> : <div style={{ ...mono, fontSize: 11, color: T.danger }}>⚠ Total must be 30</div>}
+      <Card style={{ marginTop: 14, padding: 0, overflow: 'hidden' }}>
+        <div style={{ padding: '12px 16px', borderBottom: `1px solid ${T.border}` }}>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text }}>Current TT{ttNum} Student Snapshot</div>
+          <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>Each student can be opened directly from here, and entry will use the leaf parts defined above.</div>
         </div>
-      )}
-
-      {step === 'marks' && (
-        <>
-          <Card style={{ marginBottom: 14, padding: '16px 18px' }}>
-            <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 6 }}>Marks entry is routed through Data Entry Hub in v1.</div>
-            <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 10 }}>Use one consistent workflow for TT, quizzes, assignments, attendance, and finals.</div>
-            <Btn size="sm" onClick={() => onOpenEntryHub(ttNum === 1 ? 'tt1' : 'tt2')}>Open Data Entry Hub</Btn>
-          </Card>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-            <div>
-              <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: T.text }}>TT{ttNum} Marks Entry</div>
-              <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 2 }}>{o.count} students · {isLocked ? 'Submitted & Locked' : prePopulated ? 'Draft' : 'Not Started'}</div>
-            </div>
-            {!isLocked && (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Btn variant="ghost" size="sm">💾 Save Draft</Btn>
-                <Btn size="sm" onClick={handleLock}>Submit & Lock 🔒</Btn>
-              </div>
-            )}
-          </div>
-          {isLocked && <div style={{ marginBottom: 14, padding: '10px 14px', background: T.success + '1a', color: T.success, ...mono, fontSize: 11, borderRadius: 6, display: 'flex', gap: 6, alignItems: 'center' }}><Shield size={14} /> Data Locked. ML Risk predictions updated.</div>}
-          <Card style={{ padding: 0, overflow: 'hidden' }}>
-            <HScrollArea>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    <TH>USN</TH><TH>Name</TH>
-                    {paper.map((q, i) => (
-                      <th key={q.id} style={{ ...mono, fontSize: 9, color: T.accent, textAlign: 'center' as const, padding: '10px 6px', background: T.surface2, borderBottom: `1px solid ${T.border}` }}>
-                        Q{i + 1} /{q.maxMarks}
-                        <div style={{ display: 'flex', gap: 2, justifyContent: 'center', marginTop: 2 }}>{q.cos.map(co => <Chip key={co} color={coColorMap[co]} size={8}>{co}</Chip>)}</div>
-                      </th>
-                    ))}
-                    <TH>Total</TH><TH>Risk</TH>
-                  </tr>
-                </thead>
-                <tbody>
-                  {students.slice(0, 20).map(s => {
-                    const tt = ttNum === 1 ? s.tt1Score : s.tt2Score
-                    return (
-                      <tr key={s.id}>
-                        <TD style={{ ...mono, fontSize: 10, color: T.accent }}>{s.usn}</TD>
-                        <TD style={{ ...sora, fontSize: 11, color: T.text, whiteSpace: 'nowrap' }}>{s.name}</TD>
-                        {paper.map(q => (
-                          <td key={q.id} style={{ padding: '4px 6px', textAlign: 'center', borderBottom: `1px solid ${T.border}` }}>
-                            <input aria-label={`Marks for ${s.name}, question ${q.id}`} title={`Enter marks for ${q.id}`} type="number" min={0} max={q.maxMarks} defaultValue={prePopulated && tt !== null ? Math.min(q.maxMarks, Math.max(0, Math.round(tt / paper.length))) : undefined}
-                              disabled={isLocked}
-                              style={{ width: 42, textAlign: 'center', borderRadius: 4, background: T.surface2, border: `1px solid ${T.border2}`, color: T.text, opacity: isLocked ? 0.6 : 1, ...mono, fontSize: 12, padding: '3px', outline: 'none' }} />
-                          </td>
-                        ))}
-                        <TD style={{ ...mono, fontSize: 12, fontWeight: 700, textAlign: 'center', color: tt !== null && tt >= totalMax * 0.5 ? T.success : T.danger }}>{tt ?? '—'}</TD>
-                        <TD><RiskBadge band={s.riskBand} prob={s.riskProb} /></TD>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </HScrollArea>
-            {students.length > 20 && <div style={{ ...mono, fontSize: 11, color: T.muted, padding: '12px 18px', textAlign: 'center' }}>Showing 20 of {students.length} · Scroll or export for full list</div>}
-          </Card>
-          {/* Live CO Preview */}
-          <Card style={{ marginTop: 14 }}>
-            <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text, marginBottom: 10 }}>Live CO Attainment Preview</div>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              {coIds.map((co) => {
-                const col = coColorMap[co] || T.muted
-                const att = 40 + Math.round(Math.random() * 40)
+        <HScrollArea>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr>{['USN', 'Name', 'Raw Total', 'Scaled /15', 'Risk', ''].map(header => <TH key={header}>{header}</TH>)}</tr></thead>
+            <tbody>
+              {students.slice(0, 12).map(student => {
+                const raw = ttNum === 1 ? student.tt1Score : student.tt2Score
+                const scaled = raw !== null ? ((raw / Math.max(1, totalMax || 25)) * 15) : null
                 return (
-                  <div key={co} style={{ background: T.surface2, borderRadius: 8, padding: '10px 14px', flex: '1 1 80px', textAlign: 'center' }}>
-                    <div style={{ ...mono, fontSize: 10, color: col }}>{co}</div>
-                    <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: att >= 60 ? T.success : T.danger }}>{att}%</div>
-                    <Bar val={att} color={att >= 60 ? T.success : T.danger} h={5} />
-                  </div>
+                  <tr key={student.id}>
+                    <TD style={{ ...mono, fontSize: 10, color: T.accent }}>{student.usn}</TD>
+                    <TD style={{ ...sora, fontSize: 11, color: T.text }}>{student.name}</TD>
+                    <TD style={{ ...mono, fontSize: 11, color: raw !== null ? T.text : T.dim }}>{raw !== null ? `${raw}/${Math.max(1, totalMax || 25)}` : '—'}</TD>
+                    <TD style={{ ...mono, fontSize: 11, color: scaled !== null && scaled >= 7.5 ? T.success : T.warning }}>{scaled !== null ? scaled.toFixed(1) : '—'}</TD>
+                    <TD><RiskBadge band={student.riskBand} prob={student.riskProb} /></TD>
+                    <TD><button aria-label={`Open ${student.name} drawer`} title="Open student" onClick={() => onOpenStudent(student)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Eye size={13} /></button></TD>
+                  </tr>
                 )
               })}
-            </div>
-          </Card>
-        </>
-      )}
+            </tbody>
+          </table>
+        </HScrollArea>
+      </Card>
     </div>
   )
 }
 
 /* ─── Quizzes Tab ─── */
-function QuizzesTab({ students, tt1Done, onOpenEntryHub }: { students: Student[]; tt1Done: boolean; onOpenEntryHub: () => void }) {
-  const quizzes = [{ id: 'q1', name: 'Quiz 1', entered: tt1Done }, { id: 'q2', name: 'Quiz 2', entered: false }, { id: 'q3', name: 'Quiz 3', entered: false }]
+function QuizzesTab({ students, scheme, onOpenStudent, onOpenEntryHub }: { students: Student[]; scheme: SchemeState; onOpenStudent: (s: Student) => void; onOpenEntryHub: () => void }) {
+  const quizzes = scheme.quizComponents.map((component, index) => ({
+    id: component.id,
+    name: component.label,
+    rawMax: component.rawMax,
+    entered: students.some(student => (index === 0 ? student.quiz1 : student.quiz2) !== null),
+  }))
   return (
     <div style={{ padding: '24px 32px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <div style={{ ...sora, fontWeight: 700, fontSize: 17, color: T.text }}>Quizzes <span style={{ ...mono, fontSize: 11, color: T.muted }}>— Best 2 of 3 counted</span></div>
-        <Btn size="sm" onClick={onOpenEntryHub}>Enter Quiz Scores via Data Entry Hub →</Btn>
+        <div style={{ ...sora, fontWeight: 700, fontSize: 17, color: T.text }}>Quizzes <span style={{ ...mono, fontSize: 11, color: T.muted }}>— Dynamic scheme-aware components</span></div>
+        <Btn size="sm" onClick={onOpenEntryHub}>Proceed to Quiz Entry →</Btn>
       </div>
       <div style={{ display: 'flex', gap: 12, marginBottom: 18 }}>
+        {quizzes.length === 0 && <Card style={{ flex: 1, padding: '14px 16px' }}><div style={{ ...mono, fontSize: 11, color: T.dim }}>No quiz components configured for this offering.</div></Card>}
         {quizzes.map(q => (
           <Card key={q.id} style={{ flex: 1, padding: '14px 16px' }}>
             <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text }}>{q.name}</div>
-            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>Max: 10 marks</div>
+            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>Raw max: {q.rawMax}</div>
             <div style={{ marginTop: 8 }}><Chip color={q.entered ? T.success : T.warning}>{q.entered ? 'Entered' : 'Pending'}</Chip></div>
           </Card>
         ))}
@@ -1716,17 +2035,19 @@ function QuizzesTab({ students, tt1Done, onOpenEntryHub }: { students: Student[]
       <Card style={{ padding: 0, overflow: 'hidden' }}>
         <HScrollArea>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr>{['#', 'USN', 'Name', 'Quiz 1', 'Quiz 2', 'Quiz 3', 'Best 2 Avg'].map(h => <TH key={h}>{h}</TH>)}</tr></thead>
+            <thead><tr>{['#', 'USN', 'Name', ...quizzes.map(quiz => `${quiz.name} /${quiz.rawMax}`), `Normalized /${scheme.quizWeight}`, ''].map(h => <TH key={h}>{h}</TH>)}</tr></thead>
             <tbody>
               {students.slice(0, 15).map((s, i) => (
                 <tr key={s.id}>
                   <TD style={{ ...mono, fontSize: 10, color: T.dim }}>{i + 1}</TD>
                   <TD style={{ ...mono, fontSize: 10, color: T.accent }}>{s.usn}</TD>
                   <TD style={{ ...sora, fontSize: 12, color: T.text }}>{s.name}</TD>
-                  <TD style={{ ...mono, fontSize: 12, color: s.quiz1 !== null ? T.text : T.dim }}>{s.quiz1 ?? '—'}</TD>
-                  <TD style={{ ...mono, fontSize: 12, color: T.dim }}>—</TD>
-                  <TD style={{ ...mono, fontSize: 12, color: T.dim }}>—</TD>
-                  <TD style={{ ...mono, fontSize: 12, color: T.muted }}>{s.quiz1 !== null ? s.quiz1 : '—'}</TD>
+                  {quizzes.map((quiz, index) => {
+                    const score = index === 0 ? s.quiz1 : s.quiz2
+                    return <TD key={quiz.id} style={{ ...mono, fontSize: 12, color: score !== null ? T.text : T.dim }}>{score ?? '—'}</TD>
+                  })}
+                  <TD style={{ ...mono, fontSize: 12, color: T.muted }}>{computeEvaluation(s, scheme).quizScaled.toFixed(1)}</TD>
+                  <TD><button aria-label={`Open ${s.name} drawer`} title="Open student" onClick={() => onOpenStudent(s)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Eye size={13} /></button></TD>
                 </tr>
               ))}
             </tbody>
@@ -1738,34 +2059,45 @@ function QuizzesTab({ students, tt1Done, onOpenEntryHub }: { students: Student[]
 }
 
 /* ─── Assignments Tab ─── */
-function AssignmentsTab({ students, tt1Done, onOpenEntryHub }: { students: Student[]; tt1Done: boolean; onOpenEntryHub: () => void }) {
+function AssignmentsTab({ students, scheme, onOpenStudent, onOpenEntryHub }: { students: Student[]; scheme: SchemeState; onOpenStudent: (s: Student) => void; onOpenEntryHub: () => void }) {
+  const assignments = scheme.assignmentComponents.map((component, index) => ({
+    id: component.id,
+    label: component.label,
+    rawMax: component.rawMax,
+    entered: students.some(student => (index === 0 ? student.asgn1 : student.asgn2) !== null),
+  }))
   return (
     <div style={{ padding: '24px 32px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div style={{ ...sora, fontWeight: 700, fontSize: 17, color: T.text }}>Assignments</div>
-        <Btn size="sm" onClick={onOpenEntryHub}>Enter Assignment Scores via Data Entry Hub →</Btn>
+        <Btn size="sm" onClick={onOpenEntryHub}>Proceed to Assignment Entry →</Btn>
       </div>
       <div style={{ display: 'flex', gap: 12, marginBottom: 18 }}>
-        {[{ name: 'Assignment 1', topic: 'Complexity Analysis', entered: tt1Done, cos: ['CO1'] }, { name: 'Assignment 2', topic: 'DP and Graphs', entered: false, cos: ['CO3', 'CO4'] }].map((a, i) => (
-          <Card key={i} style={{ flex: 1, padding: '14px 16px' }}>
-            <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text }}>{a.name}</div>
-            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>{a.topic}</div>
-            <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>{a.cos.map(c => <Chip key={c} color={T.accent} size={9}>{c}</Chip>)}<Chip color={a.entered ? T.success : T.warning}>{a.entered ? 'Entered' : 'Pending'}</Chip></div>
+        {assignments.length === 0 && <Card style={{ flex: 1, padding: '14px 16px' }}><div style={{ ...mono, fontSize: 11, color: T.dim }}>No assignment components configured for this offering.</div></Card>}
+        {assignments.map((a) => (
+          <Card key={a.id} style={{ flex: 1, padding: '14px 16px' }}>
+            <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text }}>{a.label}</div>
+            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>Raw max: {a.rawMax}</div>
+            <div style={{ display: 'flex', gap: 4, marginTop: 6 }}><Chip color={a.entered ? T.success : T.warning}>{a.entered ? 'Entered' : 'Pending'}</Chip></div>
           </Card>
         ))}
       </div>
       <Card style={{ padding: 0, overflow: 'hidden' }}>
         <HScrollArea>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr>{['#', 'USN', 'Name', 'Asgn 1 /10', 'Asgn 2 /10'].map(h => <TH key={h}>{h}</TH>)}</tr></thead>
+            <thead><tr>{['#', 'USN', 'Name', ...assignments.map(item => `${item.label} /${item.rawMax}`), `Normalized /${scheme.assignmentWeight}`, ''].map(h => <TH key={h}>{h}</TH>)}</tr></thead>
             <tbody>
               {students.slice(0, 15).map((s, i) => (
                 <tr key={s.id}>
                   <TD style={{ ...mono, fontSize: 10, color: T.dim }}>{i + 1}</TD>
                   <TD style={{ ...mono, fontSize: 10, color: T.accent }}>{s.usn}</TD>
                   <TD style={{ ...sora, fontSize: 12, color: T.text }}>{s.name}</TD>
-                  <TD style={{ ...mono, fontSize: 12, color: s.asgn1 !== null ? T.text : T.dim }}>{s.asgn1 ?? '—'}</TD>
-                  <TD style={{ ...mono, fontSize: 12, color: T.dim }}>—</TD>
+                  {assignments.map((assignment, index) => {
+                    const score = index === 0 ? s.asgn1 : s.asgn2
+                    return <TD key={assignment.id} style={{ ...mono, fontSize: 12, color: score !== null ? T.text : T.dim }}>{score ?? '—'}</TD>
+                  })}
+                  <TD style={{ ...mono, fontSize: 12, color: T.muted }}>{computeEvaluation(s, scheme).asgnScaled.toFixed(1)}</TD>
+                  <TD><button aria-label={`Open ${s.name} drawer`} title="Open student" onClick={() => onOpenStudent(s)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Eye size={13} /></button></TD>
                 </tr>
               ))}
             </tbody>
@@ -1826,7 +2158,7 @@ function COTab({ cos }: { cos: CODef[] }) {
 }
 
 /* ─── Grade Book Tab ─── */
-function GradeBookTab({ students, scheme, onOpenEntryHub, onOpenSchemeSetup }: { students: Student[]; scheme: SchemeState; onOpenEntryHub: () => void; onOpenSchemeSetup: () => void }) {
+function GradeBookTab({ offering, students, scheme, onOpenStudent, onOpenEntryHub, onOpenSchemeSetup }: { offering: Offering; students: Student[]; scheme: SchemeState; onOpenStudent: (s: Student) => void; onOpenEntryHub: () => void; onOpenSchemeSetup: () => void }) {
   const schemeReady = scheme.status !== 'Needs Setup'
   return (
     <div style={{ padding: '24px 32px' }}>
@@ -1834,7 +2166,7 @@ function GradeBookTab({ students, scheme, onOpenEntryHub, onOpenSchemeSetup }: {
         <div style={{ ...sora, fontWeight: 700, fontSize: 17, color: T.text }}>Grade Book — CE Marks</div>
         <div style={{ display: 'flex', gap: 8 }}>
           <Btn size="sm" variant="ghost" onClick={onOpenSchemeSetup}>Open Scheme Setup</Btn>
-          <Btn size="sm" onClick={onOpenEntryHub}>Enter SEE/Finals via Data Entry Hub →</Btn>
+          <Btn size="sm" onClick={onOpenEntryHub}>Proceed to SEE Entry →</Btn>
         </div>
       </div>
       <Card style={{ marginBottom: 12, padding: '10px 12px' }}>
@@ -1843,8 +2175,8 @@ function GradeBookTab({ students, scheme, onOpenEntryHub, onOpenSchemeSetup }: {
           <Chip color={schemeReady ? T.success : T.warning} size={9}>Scheme: {scheme.status}</Chip>
           <Chip color={T.accent} size={9}>Quiz {scheme.quizWeight}</Chip>
           <Chip color={T.accent} size={9}>Assignment {scheme.assignmentWeight}</Chip>
-          <Chip color={T.dim} size={9}>Quiz count {scheme.quizCount}</Chip>
-          <Chip color={T.dim} size={9}>Assignment count {scheme.assignmentCount}</Chip>
+          <Chip color={T.dim} size={9}>Quiz count {scheme.quizComponents.length}</Chip>
+          <Chip color={T.dim} size={9}>Assignment count {scheme.assignmentComponents.length}</Chip>
           <Chip color={T.blue} size={9}>SEE raw max {scheme.finalsMax}</Chip>
         </div>
       </Card>
@@ -1852,22 +2184,25 @@ function GradeBookTab({ students, scheme, onOpenEntryHub, onOpenSchemeSetup }: {
       <Card style={{ padding: 0, overflow: 'hidden' }}>
         <HScrollArea>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr>{['USN', 'Name', 'TT1 /15', 'TT2 /15', `Quiz /${scheme.quizWeight}`, `Asgn /${scheme.assignmentWeight}`, 'CE /60', 'Overall /40', `SEE /${scheme.finalsMax}`, 'Risk'].map(h => <TH key={h}>{h}</TH>)}</tr></thead>
+            <thead><tr>{['USN', 'Name', 'TT1 /15', 'TT2 /15', `Quiz /${scheme.quizWeight}`, `Asgn /${scheme.assignmentWeight}`, 'CE /60', `SEE /${scheme.finalsMax}`, 'Final /100', 'Band', 'Pred CGPA', 'Risk', ''].map(h => <TH key={h}>{h}</TH>)}</tr></thead>
             <tbody>
               {students.slice(0, 20).map(s => {
-                const ev = computeEvaluation(s, scheme)
+                const projection = deriveAcademicProjection({ offering, student: s, scheme })
                 return (
                   <tr key={s.id}>
                     <TD style={{ ...mono, fontSize: 10, color: T.accent }}>{s.usn}</TD>
                     <TD style={{ ...sora, fontSize: 11, color: T.text, whiteSpace: 'nowrap' }}>{s.name}</TD>
-                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: s.tt1Score !== null ? T.text : T.dim }}>{s.tt1Score !== null ? ev.tt1Scaled : '—'}</TD>
-                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: s.tt2Score !== null ? T.text : T.dim }}>{s.tt2Score !== null ? ev.tt2Scaled : '—'}</TD>
-                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: scheme.quizWeight === 0 ? T.dim : T.text }}>{scheme.quizWeight === 0 ? '—' : ev.quizScaled}</TD>
-                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: scheme.assignmentWeight === 0 ? T.dim : T.text }}>{scheme.assignmentWeight === 0 ? '—' : ev.asgnScaled}</TD>
-                    <TD style={{ ...mono, fontSize: 12, fontWeight: 700, textAlign: 'center', color: ev.ce60 >= 30 ? T.success : ev.ce60 >= 24 ? T.warning : T.danger }}>{ev.ce60}</TD>
-                    <TD style={{ ...mono, fontSize: 12, fontWeight: 700, textAlign: 'center', color: ev.overall40 >= 20 ? T.success : ev.overall40 >= 16 ? T.warning : T.danger }}>{ev.overall40}</TD>
-                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: T.dim }}>—</TD>
+                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: s.tt1Score !== null ? T.text : T.dim }}>{s.tt1Score !== null ? projection.tt1Scaled.toFixed(1) : '—'}</TD>
+                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: s.tt2Score !== null ? T.text : T.dim }}>{s.tt2Score !== null ? projection.tt2Scaled.toFixed(1) : '—'}</TD>
+                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: scheme.quizWeight === 0 ? T.dim : T.text }}>{scheme.quizWeight === 0 ? '—' : projection.quizScaled.toFixed(1)}</TD>
+                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: scheme.assignmentWeight === 0 ? T.dim : T.text }}>{scheme.assignmentWeight === 0 ? '—' : projection.asgnScaled.toFixed(1)}</TD>
+                    <TD style={{ ...mono, fontSize: 12, fontWeight: 700, textAlign: 'center', color: projection.ce60 >= 30 ? T.success : projection.ce60 >= 24 ? T.warning : T.danger }}>{projection.ce60.toFixed(1)}</TD>
+                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: projection.seeRaw !== null ? T.text : T.dim }}>{projection.seeRaw !== null ? projection.seeRaw.toFixed(1) : '—'}</TD>
+                    <TD style={{ ...mono, fontSize: 12, fontWeight: 700, textAlign: 'center', color: projection.finalScore100 >= 60 ? T.success : projection.finalScore100 >= 40 ? T.warning : T.danger }}>{projection.finalScore100.toFixed(1)}</TD>
+                    <TD><Chip color={projection.gradePoint >= 8 ? T.success : projection.gradePoint >= 4 ? T.warning : T.danger} size={9}>{projection.bandLabel}</Chip></TD>
+                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: T.blue }}>{projection.predictedCgpa.toFixed(2)}</TD>
                     <TD><RiskBadge band={s.riskBand} prob={s.riskProb} /></TD>
+                    <TD><button aria-label={`Open ${s.name} drawer`} title="Open student" onClick={() => onOpenStudent(s)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Eye size={13} /></button></TD>
                   </tr>
                 )
               })}
@@ -2165,6 +2500,8 @@ function SchemeSetupPage({ role, offering, scheme, hasEntryStarted, onSave, onBa
   const [quizCount, setQuizCount] = useState<0 | 1 | 2>(scheme.quizCount)
   const [assignmentCount, setAssignmentCount] = useState<0 | 1 | 2>(scheme.assignmentCount)
   const [finalsMax, setFinalsMax] = useState<50 | 100>(scheme.finalsMax)
+  const [quizComponents, setQuizComponents] = useState<AssessmentComponentDefinition[]>(scheme.quizComponents)
+  const [assignmentComponents, setAssignmentComponents] = useState<AssessmentComponentDefinition[]>(scheme.assignmentComponents)
   const canEdit = !hasEntryStarted && scheme.status !== 'Locked'
 
   useEffect(() => {
@@ -2173,7 +2510,17 @@ function SchemeSetupPage({ role, offering, scheme, hasEntryStarted, onSave, onBa
     setQuizCount(scheme.quizCount)
     setAssignmentCount(scheme.assignmentCount)
     setFinalsMax(scheme.finalsMax)
+    setQuizComponents(scheme.quizComponents)
+    setAssignmentComponents(scheme.assignmentComponents)
   }, [scheme])
+
+  useEffect(() => {
+    setQuizComponents(prev => sanitizeAssessmentComponents('quiz', quizCount, prev))
+  }, [quizCount])
+
+  useEffect(() => {
+    setAssignmentComponents(prev => sanitizeAssessmentComponents('assignment', assignmentCount, prev))
+  }, [assignmentCount])
 
   return (
     <div style={{ padding: '28px 32px', maxWidth: 760, animation: 'fadeUp 0.35s ease' }}>
@@ -2207,7 +2554,7 @@ function SchemeSetupPage({ role, offering, scheme, hasEntryStarted, onSave, onBa
 
         <Card>
           <div style={{ ...sora, fontWeight: 700, fontSize: 15, color: T.text, marginBottom: 12 }}>Configurable CE / SEE Inputs</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginBottom: 12 }}>
             <select aria-label="Quiz weight" value={quizWeight} disabled={!canEdit} onChange={e => setQuizWeight(Number(e.target.value))} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
               <option value={0}>Quiz weight 0</option>
               <option value={10}>Quiz weight 10</option>
@@ -2238,6 +2585,62 @@ function SchemeSetupPage({ role, offering, scheme, hasEntryStarted, onSave, onBa
               Remaining CE split: {quizWeight + assignmentWeight}/30
             </div>
           </div>
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div>
+              <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text, marginBottom: 8 }}>Quiz Components</div>
+              <div style={{ display: 'grid', gap: 8 }}>
+                {quizComponents.length === 0 && <div style={{ ...mono, fontSize: 11, color: T.dim }}>No quiz components in this scheme.</div>}
+                {quizComponents.map((component, index) => (
+                  <div key={component.id} style={{ display: 'grid', gridTemplateColumns: '1.3fr 0.7fr', gap: 8 }}>
+                    <input
+                      aria-label={`Quiz component ${index + 1} label`}
+                      disabled={!canEdit}
+                      value={component.label}
+                      onChange={e => setQuizComponents(prev => prev.map((item, itemIndex) => itemIndex === index ? { ...item, label: e.target.value } : item))}
+                      style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}
+                    />
+                    <input
+                      aria-label={`Quiz component ${index + 1} raw max`}
+                      disabled={!canEdit}
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={component.rawMax}
+                      onChange={e => setQuizComponents(prev => prev.map((item, itemIndex) => itemIndex === index ? { ...item, rawMax: clampNumber(Number(e.target.value) || 1, 1, 100) } : item))}
+                      style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text, marginBottom: 8 }}>Assignment Components</div>
+              <div style={{ display: 'grid', gap: 8 }}>
+                {assignmentComponents.length === 0 && <div style={{ ...mono, fontSize: 11, color: T.dim }}>No assignment components in this scheme.</div>}
+                {assignmentComponents.map((component, index) => (
+                  <div key={component.id} style={{ display: 'grid', gridTemplateColumns: '1.3fr 0.7fr', gap: 8 }}>
+                    <input
+                      aria-label={`Assignment component ${index + 1} label`}
+                      disabled={!canEdit}
+                      value={component.label}
+                      onChange={e => setAssignmentComponents(prev => prev.map((item, itemIndex) => itemIndex === index ? { ...item, label: e.target.value } : item))}
+                      style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}
+                    />
+                    <input
+                      aria-label={`Assignment component ${index + 1} raw max`}
+                      disabled={!canEdit}
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={component.rawMax}
+                      onChange={e => setAssignmentComponents(prev => prev.map((item, itemIndex) => itemIndex === index ? { ...item, rawMax: clampNumber(Number(e.target.value) || 1, 1, 100) } : item))}
+                      style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </Card>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
@@ -2250,6 +2653,8 @@ function SchemeSetupPage({ role, offering, scheme, hasEntryStarted, onSave, onBa
               assignmentWeight,
               quizCount,
               assignmentCount,
+              quizComponents: sanitizeAssessmentComponents('quiz', quizCount, quizComponents),
+              assignmentComponents: sanitizeAssessmentComponents('assignment', assignmentCount, assignmentComponents),
               status: 'Configured',
               configuredAt: Date.now(),
               lastEditedBy: role,
@@ -2285,6 +2690,8 @@ function UnlockReviewPage({ task, offering, onBack, onApprove, onReject, onReset
             <div style={{ ...mono, fontSize: 11, color: T.muted }}>Offering: {offering?.code ?? task.courseCode} · Sec {offering?.section ?? '—'}</div>
             <div style={{ ...mono, fontSize: 11, color: T.muted }}>Current owner: {task.assignedTo}</div>
             <div style={{ ...mono, fontSize: 11, color: T.muted }}>Reason: {task.actionHint}</div>
+            <div style={{ ...mono, fontSize: 11, color: T.muted }}>Teacher note: {task.unlockRequest?.requestNote ?? task.requestNote ?? 'No request note captured'}</div>
+            {task.unlockRequest?.handoffNote && <div style={{ ...mono, fontSize: 11, color: T.muted }}>Handoff note: {task.unlockRequest.handoffNote}</div>}
             <div style={{ ...mono, fontSize: 11, color: T.muted }}>Latest review note: {task.unlockRequest?.reviewNote ?? 'No review note yet'}</div>
           </div>
         </Card>
@@ -2637,7 +3044,7 @@ const getEntryLockMap = (o: Offering) => ({
    UPLOAD PAGE
    ══════════════════════════════════════════════════════════════ */
 
-function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOffering, onRequestUnlock, availableOfferings, scheme, onOpenSchemeSetup }: { role: Role; offering: Offering | null; defaultKind: EntryKind; onOpenWorkspace: (offeringId: string, kind: EntryKind) => void; lockByOffering: Record<string, EntryLockMap>; onRequestUnlock: (offeringId: string, kind: EntryKind) => void; availableOfferings?: Offering[]; scheme: SchemeState; onOpenSchemeSetup: (offering?: Offering) => void }) {
+function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOffering, onRequestUnlock, onSelfGovernUnlock, capabilities, availableOfferings, scheme, onOpenSchemeSetup }: { role: Role; offering: Offering | null; defaultKind: EntryKind; onOpenWorkspace: (offeringId: string, kind: EntryKind) => void; lockByOffering: Record<string, EntryLockMap>; onRequestUnlock: (offeringId: string, kind: EntryKind) => void; onSelfGovernUnlock: (offeringId: string, kind: EntryKind) => void; capabilities: FacultyCapabilitySet; availableOfferings?: Offering[]; scheme: SchemeState; onOpenSchemeSetup: (offering?: Offering) => void }) {
   const visibleOfferings = (availableOfferings && availableOfferings.length > 0 ? availableOfferings : OFFERINGS)
   const [selectedKind, setSelectedKind] = useState<EntryKind>(defaultKind)
   const [selectedOffId, setSelectedOffId] = useState<string>(offering?.offId ?? visibleOfferings[0].offId)
@@ -2680,12 +3087,16 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOfferi
       <div style={{ ...sora, fontWeight: 700, fontSize: 20, color: T.text, marginBottom: 4 }}>Data Entry Hub</div>
       <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 6 }}>Single consistent entry route from dashboard. CSV import is disabled in v1.</div>
       <div style={{ ...mono, fontSize: 11, color: T.accent, marginBottom: 12 }}>{selectedOffering.code} · {selectedOffering.title} · {selectedOffering.year} · Stage {selectedOffering.stageInfo.stage}</div>
-      {role === 'Course Leader' && lockMap[selectedKind] && (
+      {role !== 'Mentor' && lockMap[selectedKind] && (
         <Card style={{ marginBottom: 12, padding: '12px 14px' }} glow={T.warning}>
           <div style={{ ...mono, fontSize: 11, color: T.warning }}>This entry is locked. You cannot modify {selected.title}.</div>
           <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
-            <Btn size="sm" variant="ghost" onClick={() => { setUnlockRequested(selectedKind); onRequestUnlock(selectedOffering.offId, selectedKind) }}>Request unlock from HoD</Btn>
-            {unlockRequested === selectedKind && <Chip color={T.success} size={9}>Request submitted</Chip>}
+            {capabilities.canSelfGovernLock ? (
+              <Btn size="sm" variant="ghost" onClick={() => { setUnlockRequested(selectedKind); onSelfGovernUnlock(selectedOffering.offId, selectedKind) }}>Unlock from current faculty authority</Btn>
+            ) : (
+              <Btn size="sm" variant="ghost" onClick={() => { setUnlockRequested(selectedKind); onRequestUnlock(selectedOffering.offId, selectedKind) }}>Request unlock from HoD</Btn>
+            )}
+            {unlockRequested === selectedKind && <Chip color={T.success} size={9}>Governance action recorded</Chip>}
           </div>
         </Card>
       )}
@@ -2749,50 +3160,76 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOfferi
   )
 }
 
-function EntryWorkspacePage({ role, offeringId, kind, onBack, lockByOffering, draftBySection, onSaveDraft, onSubmitLock, onRequestUnlock, cellValues, onCellValueChange, onOpenStudent, onCreateTask, onUpdateStudentAttendance }: { role: Role; offeringId: string; kind: EntryKind; onBack: () => void; lockByOffering: Record<string, EntryLockMap>; draftBySection: Record<string, number>; onSaveDraft: (offId: string, kind: EntryKind) => void; onSubmitLock: (offId: string, kind: EntryKind) => void; onRequestUnlock: (offeringId: string, kind: EntryKind) => void; cellValues: Record<string, number>; onCellValueChange: (key: string, value: number | undefined) => void; onOpenStudent: (s: Student, o: Offering) => void; onCreateTask: (input: TaskCreateInput) => void; onUpdateStudentAttendance: (offeringId: string, studentId: string, patch: StudentRuntimePatch) => void }) {
-  const [unlockRequested, setUnlockRequested] = useState(false)
+function EntryWorkspacePage({ capabilities, offeringId, kind, onBack, lockByOffering, draftBySection, onSaveDraft, onSubmitLock, onRequestUnlock, onSelfGovernUnlock, cellValues, onCellValueChange, onOpenStudent, onOpenTaskComposer, onUpdateStudentAttendance, schemeByOffering, ttBlueprintsByOffering, lockAuditByTarget }: { capabilities: FacultyCapabilitySet; offeringId: string; kind: EntryKind; onBack: () => void; lockByOffering: Record<string, EntryLockMap>; draftBySection: Record<string, number>; onSaveDraft: (offId: string, kind: EntryKind) => void; onSubmitLock: (offId: string, kind: EntryKind) => void; onRequestUnlock: (offeringId: string, kind: EntryKind) => void; onSelfGovernUnlock: (offeringId: string, kind: EntryKind) => void; cellValues: Record<string, number>; onCellValueChange: (key: string, value: number | undefined) => void; onOpenStudent: (s: Student, o: Offering) => void; onOpenTaskComposer: (input?: { offeringId?: string; studentId?: string; taskType?: TaskType }) => void; onUpdateStudentAttendance: (offeringId: string, studentId: string, patch: StudentRuntimePatch) => void; schemeByOffering: Record<string, SchemeState>; ttBlueprintsByOffering: Record<string, Record<TTKind, TermTestBlueprint>>; lockAuditByTarget: Record<string, QueueTransition[]> }) {
   const selectedOffering = OFFERINGS.find(o => o.offId === offeringId) ?? OFFERINGS[0]
   const groupedSections = OFFERINGS.filter(o => o.code === selectedOffering.code && o.year === selectedOffering.year)
+  const [selectedClassOffId, setSelectedClassOffId] = useState<string>('all')
   const selected = ENTRY_CATALOG.find(x => x.kind === kind) ?? ENTRY_CATALOG[0]
   const lockMap = lockByOffering[selectedOffering.offId] ?? getEntryLockMap(selectedOffering)
   const isLocked = lockMap[kind]
-  const canEdit = (role === 'Course Leader' || role === 'HoD') && !isLocked
+  const canEdit = capabilities.canEditMarks && !isLocked
   const stageRequired: Record<EntryKind, number> = { tt1: 1, tt2: 2, quiz: 2, assignment: 2, attendance: 1, finals: 3 }
   const isApplicableForStage = selectedOffering.stageInfo.stage >= stageRequired[kind]
+  const visibleSections = selectedClassOffId === 'all' ? groupedSections : groupedSections.filter(sec => sec.offId === selectedClassOffId)
+  const latestAudit = lockAuditByTarget[`${selectedOffering.offId}::${kind}`]?.at(-1)
+
+  useEffect(() => {
+    setSelectedClassOffId(offeringId)
+  }, [offeringId])
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 1100, animation: 'fadeUp 0.35s ease' }}>
+    <div style={{ padding: '28px 32px', maxWidth: 1180, animation: 'fadeUp 0.35s ease' }}>
       <button onClick={onBack} style={{ ...mono, fontSize: 11, color: T.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 10 }}>← Back to Data Entry Hub</button>
-      <div style={{ ...sora, fontWeight: 700, fontSize: 20, color: T.text, marginBottom: 4 }}>{selected.title} — Dedicated Entry</div>
-      <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 6 }}>{selectedOffering.code} · {selectedOffering.title} · {selectedOffering.year} · Stage {selectedOffering.stageInfo.stage}</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
+        <div>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 20, color: T.text, marginBottom: 4 }}>{selected.title} — Direct Entry Workspace</div>
+          <div style={{ ...mono, fontSize: 11, color: T.muted }}>{selectedOffering.code} · {selectedOffering.title} · {selectedOffering.year} · Stage {selectedOffering.stageInfo.stage}</div>
+        </div>
+        <div style={{ minWidth: 280 }}>
+          <label htmlFor="entry-workspace-class" style={{ ...mono, fontSize: 10, color: T.muted, display: 'block', marginBottom: 4 }}>Class</label>
+          <select id="entry-workspace-class" value={selectedClassOffId} onChange={e => setSelectedClassOffId(e.target.value)} style={{ width: '100%', ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
+            <option value="all">All mapped classes for {selectedOffering.code}</option>
+            {groupedSections.map(section => <option key={section.offId} value={section.offId}>{section.year} · Sec {section.section} · {section.count} students</option>)}
+          </select>
+        </div>
+      </div>
       {!canEdit && <div style={{ ...mono, fontSize: 11, color: T.warning, marginBottom: 10 }}>Read-only for this role. Only Course Leaders and HoD can edit marks.</div>}
       {isLocked && (
         <Card style={{ marginBottom: 10, padding: '10px 12px' }} glow={T.warning}>
-          <div style={{ ...mono, fontSize: 11, color: T.warning }}>This dataset is locked. HoD must explicitly review and reset it before anyone edits again.</div>
-          <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
-            {role !== 'HoD' && <Btn size="sm" variant="ghost" onClick={() => { setUnlockRequested(true); onRequestUnlock(selectedOffering.offId, kind) }}>Defer unlock request to HoD</Btn>}
-            {unlockRequested && <Chip color={T.success} size={9}>Request sent</Chip>}
+          <div style={{ ...mono, fontSize: 11, color: T.warning }}>This dataset is locked. Corrections require a governed unlock flow.</div>
+          {latestAudit && <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6 }}>Latest audit note: {latestAudit.note}</div>}
+          <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {capabilities.canSelfGovernLock ? (
+              <Btn size="sm" variant="ghost" onClick={() => onSelfGovernUnlock(selectedOffering.offId, kind)}>Unlock from current faculty authority</Btn>
+            ) : (
+              <Btn size="sm" variant="ghost" onClick={() => onRequestUnlock(selectedOffering.offId, kind)}>Request unlock from HoD</Btn>
+            )}
           </div>
         </Card>
       )}
       {!isApplicableForStage && <div style={{ ...mono, fontSize: 11, color: T.warning, marginBottom: 10 }}>Not applicable at current stage ({selectedOffering.stageInfo.stage}).</div>}
 
       <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
-        {groupedSections.map(sec => {
+        {visibleSections.map(sec => {
           const students = getStudentsPatched(sec)
-          const paper = PAPER_MAP[sec.code] || PAPER_MAP.default
           const secLocks = lockByOffering[sec.offId] ?? getEntryLockMap(sec)
           const secLocked = secLocks[kind]
-          const canEditSection = (role === 'Course Leader' || role === 'HoD') && !secLocked && isApplicableForStage
+          const currentScheme = schemeByOffering[sec.offId] ?? defaultSchemeForOffering(sec)
+          const blueprint = kind === 'tt1' || kind === 'tt2'
+            ? (ttBlueprintsByOffering[sec.offId]?.[kind] ?? seedBlueprintFromPaper(kind, PAPER_MAP[sec.code] || PAPER_MAP.default))
+            : null
+          const leaves = blueprint ? flattenBlueprintLeaves(blueprint.nodes) : []
+          const dynamicComponents = kind === 'quiz' ? currentScheme.quizComponents : kind === 'assignment' ? currentScheme.assignmentComponents : []
+          const canEditSection = capabilities.canEditMarks && !secLocked && isApplicableForStage
           const draftKey = `${sec.offId}::${kind}`
           return (
             <Card key={sec.offId} style={{ padding: 0, overflow: 'hidden' }}>
-              <div style={{ padding: '12px 14px', borderBottom: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ padding: '12px 14px', borderBottom: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <div>
                   <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text }}>{sec.code} · Sec {sec.section}</div>
                   <div style={{ ...mono, fontSize: 10, color: T.muted }}>{students.length} students</div>
                 </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <Chip color={isApplicableForStage ? T.blue : T.dim} size={9}>{isApplicableForStage ? 'Stage Applicable' : 'Locked by Stage'}</Chip>
                   {draftBySection[draftKey] && <Chip color={T.success} size={9}>Draft saved</Chip>}
                   <Btn size="sm" onClick={() => onSaveDraft(sec.offId, kind)} variant="ghost">Save Draft</Btn>
@@ -2804,48 +3241,58 @@ function EntryWorkspacePage({ role, offeringId, kind, onBack, lockByOffering, dr
                   <thead>
                     <tr>
                       <TH>USN</TH><TH>Name</TH>
-                      {(kind === 'tt1' || kind === 'tt2') && paper.map((q, i) => <TH key={q.id}>Q{i + 1}/{q.maxMarks}</TH>)}
-                      {kind === 'quiz' && <TH>Quiz 1 /10</TH>}
-                      {kind === 'assignment' && <TH>Asgn 1 /10</TH>}
+                      {(kind === 'tt1' || kind === 'tt2') && leaves.map(leaf => <TH key={leaf.id}>{leaf.label}/{leaf.maxMarks}</TH>)}
+                      {(kind === 'quiz' || kind === 'assignment') && dynamicComponents.map(component => <TH key={component.id}>{component.label} /{component.rawMax}</TH>)}
                       {kind === 'attendance' && <TH>Present</TH>}
                       {kind === 'attendance' && <TH>Total Classes</TH>}
-                      {kind === 'finals' && <TH>SEE /50</TH>}
-                      <TH>Profile</TH><TH>Task</TH>
+                      {kind === 'finals' && <TH>SEE /{currentScheme.finalsMax}</TH>}
+                      <TH>Current</TH><TH>Profile</TH><TH>Task</TH>
                     </tr>
                   </thead>
                   <tbody>
-                    {students.slice(0, 25).map(s => (
-                      <tr key={s.id}>
-                        <TD style={{ ...mono, fontSize: 10, color: T.accent }}>{s.usn}</TD>
-                        <TD style={{ ...sora, fontSize: 11, color: T.text }}>{s.name}</TD>
-                        {(kind === 'tt1' || kind === 'tt2') && paper.map(q => (
-                          <TD key={q.id}>
-                            <input aria-label={`${kind.toUpperCase()} marks for ${s.name}, ${q.id}`} title={`Enter ${kind.toUpperCase()} marks for ${s.name}, ${q.id}`} placeholder="0" type="number" inputMode="numeric" min={0} max={q.maxMarks} disabled={!canEditSection} value={cellValues[toCellKey(sec.offId, kind, s.id, q.id)] ?? ((kind === 'tt1' ? s.tt1Score : s.tt2Score) != null ? Math.round(((kind === 'tt1' ? s.tt1Score! : s.tt2Score!) / paper.length)) : '')} onKeyDown={shouldBlockNumericKey} onChange={(e) => onCellValueChange(toCellKey(sec.offId, kind, s.id, q.id), parseInputValue(e.target.value, 0, q.maxMarks))}
-                              style={{ width: 52, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} />
-                          </TD>
-                        ))}
-                        {kind === 'quiz' && <TD><input aria-label={`Quiz 1 marks for ${s.name}`} title={`Enter Quiz 1 marks for ${s.name}`} placeholder="0" type="number" inputMode="numeric" min={0} max={10} disabled={!canEditSection} value={cellValues[toCellKey(sec.offId, kind, s.id, 'quiz1')] ?? (s.quiz1 ?? '')} onKeyDown={shouldBlockNumericKey} onChange={(e) => onCellValueChange(toCellKey(sec.offId, kind, s.id, 'quiz1'), parseInputValue(e.target.value, 0, 10))} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
-                        {kind === 'assignment' && <TD><input aria-label={`Assignment 1 marks for ${s.name}`} title={`Enter Assignment 1 marks for ${s.name}`} placeholder="0" type="number" inputMode="numeric" min={0} max={10} disabled={!canEditSection} value={cellValues[toCellKey(sec.offId, kind, s.id, 'asgn1')] ?? (s.asgn1 ?? '')} onKeyDown={shouldBlockNumericKey} onChange={(e) => onCellValueChange(toCellKey(sec.offId, kind, s.id, 'asgn1'), parseInputValue(e.target.value, 0, 10))} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
-                        {kind === 'attendance' && <TD><input aria-label={`Attendance present classes for ${s.name}`} title={`Enter attendance present count for ${s.name}`} placeholder="0" type="number" inputMode="numeric" min={0} max={999} disabled={!canEditSection} value={cellValues[toCellKey(sec.offId, kind, s.id, 'present')] ?? s.present} onKeyDown={shouldBlockNumericKey} onChange={(e) => {
-                          const next = parseInputValue(e.target.value, 0, 999)
-                          onCellValueChange(toCellKey(sec.offId, kind, s.id, 'present'), next)
-                          onUpdateStudentAttendance(sec.offId, s.id, { present: next })
-                        }} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
-                        {kind === 'attendance' && <TD><input aria-label={`Total classes for ${s.name}`} title={`Enter total classes conducted for ${s.name}`} placeholder="0" type="number" inputMode="numeric" min={1} max={999} disabled={!canEditSection} value={cellValues[toCellKey(sec.offId, kind, s.id, 'total')] ?? s.totalClasses} onKeyDown={shouldBlockNumericKey} onChange={(e) => {
-                          const nextTotal = parseInputValue(e.target.value, 1, 999)
-                          onCellValueChange(toCellKey(sec.offId, kind, s.id, 'total'), nextTotal)
-                          onUpdateStudentAttendance(sec.offId, s.id, { totalClasses: nextTotal })
-                        }} style={{ width: 84, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
-                        {kind === 'finals' && <TD><input aria-label={`SEE marks for ${s.name}`} title={`Enter SEE marks for ${s.name}`} type="number" inputMode="numeric" min={0} max={50} disabled={!canEditSection} value={cellValues[toCellKey(sec.offId, kind, s.id, 'see')] ?? ''} onKeyDown={shouldBlockNumericKey} onChange={(e) => onCellValueChange(toCellKey(sec.offId, kind, s.id, 'see'), parseInputValue(e.target.value, 0, 50))} placeholder="Enter" style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
-                        <TD><button aria-label={`Open ${s.name} profile`} title="Open profile" onClick={() => onOpenStudent(s, sec)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Eye size={13} /></button></TD>
-                        <TD>
-                          <div style={{ display: 'flex', gap: 4 }}>
-                            <button aria-label={`Add follow-up task for ${s.name}`} title="Add task" onClick={() => onCreateTask({ offeringId: sec.offId, studentId: s.id, taskType: 'Follow-up', due: 'This week' })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.success, ...mono, fontSize: 11 }}>+Task</button>
-                            {role !== 'HoD' && <button aria-label={`Defer ${s.name} to HoD`} title="Defer to HoD" onClick={() => onCreateTask({ offeringId: sec.offId, studentId: s.id, taskType: 'Academic', due: 'Today', deferToHod: true })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.danger, ...mono, fontSize: 11 }}>↗HoD</button>}
-                          </div>
-                        </TD>
-                      </tr>
-                    ))}
+                    {students.slice(0, 25).map(s => {
+                      const projection = deriveAcademicProjection({ offering: sec, student: s, scheme: currentScheme })
+                      return (
+                        <tr key={s.id}>
+                          <TD style={{ ...mono, fontSize: 10, color: T.accent }}>{s.usn}</TD>
+                          <TD style={{ ...sora, fontSize: 11, color: T.text }}>{s.name}</TD>
+                          {(kind === 'tt1' || kind === 'tt2') && leaves.map(leaf => {
+                            const rawTotal = kind === 'tt1' ? s.tt1Score : s.tt2Score
+                            const maxTotal = kind === 'tt1' ? s.tt1Max : s.tt2Max
+                            const fallbackValue = rawTotal !== null ? clampNumber(Math.round((rawTotal / Math.max(1, maxTotal)) * leaf.maxMarks), 0, leaf.maxMarks) : undefined
+                            return (
+                              <TD key={leaf.id}>
+                                <input aria-label={`${kind.toUpperCase()} marks for ${s.name}, ${leaf.label}`} title={`Enter ${kind.toUpperCase()} marks for ${s.name}, ${leaf.label}`} placeholder="0" type="number" inputMode="numeric" min={0} max={leaf.maxMarks} disabled={!canEditSection} value={cellValues[toCellKey(sec.offId, kind, s.id, leaf.id)] ?? fallbackValue ?? ''} onKeyDown={shouldBlockNumericKey} onChange={(e) => onCellValueChange(toCellKey(sec.offId, kind, s.id, leaf.id), parseInputValue(e.target.value, 0, leaf.maxMarks))}
+                                  style={{ width: 58, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} />
+                              </TD>
+                            )
+                          })}
+                          {(kind === 'quiz' || kind === 'assignment') && dynamicComponents.map((component, index) => {
+                            const max = component.rawMax
+                            const currentScore = kind === 'quiz' ? (index === 0 ? s.quiz1 : s.quiz2) : (index === 0 ? s.asgn1 : s.asgn2)
+                            return (
+                              <TD key={component.id}>
+                                <input aria-label={`${component.label} marks for ${s.name}`} title={`Enter ${component.label} marks for ${s.name}`} placeholder="0" type="number" inputMode="numeric" min={0} max={max} disabled={!canEditSection} value={cellValues[toCellKey(sec.offId, kind, s.id, component.id)] ?? (currentScore ?? '')} onKeyDown={shouldBlockNumericKey} onChange={(e) => onCellValueChange(toCellKey(sec.offId, kind, s.id, component.id), parseInputValue(e.target.value, 0, max))} style={{ width: 72, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} />
+                              </TD>
+                            )
+                          })}
+                          {kind === 'attendance' && <TD><input aria-label={`Attendance present classes for ${s.name}`} title={`Enter attendance present count for ${s.name}`} placeholder="0" type="number" inputMode="numeric" min={0} max={999} disabled={!canEditSection} value={cellValues[toCellKey(sec.offId, kind, s.id, 'present')] ?? s.present} onKeyDown={shouldBlockNumericKey} onChange={(e) => {
+                            const next = parseInputValue(e.target.value, 0, 999)
+                            onCellValueChange(toCellKey(sec.offId, kind, s.id, 'present'), next)
+                            onUpdateStudentAttendance(sec.offId, s.id, { present: next })
+                          }} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
+                          {kind === 'attendance' && <TD><input aria-label={`Total classes for ${s.name}`} title={`Enter total classes conducted for ${s.name}`} placeholder="0" type="number" inputMode="numeric" min={1} max={999} disabled={!canEditSection} value={cellValues[toCellKey(sec.offId, kind, s.id, 'total')] ?? s.totalClasses} onKeyDown={shouldBlockNumericKey} onChange={(e) => {
+                            const nextTotal = parseInputValue(e.target.value, 1, 999)
+                            onCellValueChange(toCellKey(sec.offId, kind, s.id, 'total'), nextTotal)
+                            onUpdateStudentAttendance(sec.offId, s.id, { totalClasses: nextTotal })
+                          }} style={{ width: 84, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
+                          {kind === 'finals' && <TD><input aria-label={`SEE marks for ${s.name}`} title={`Enter SEE marks for ${s.name}`} type="number" inputMode="numeric" min={0} max={currentScheme.finalsMax} disabled={!canEditSection} value={cellValues[toCellKey(sec.offId, kind, s.id, 'see')] ?? ''} onKeyDown={shouldBlockNumericKey} onChange={(e) => onCellValueChange(toCellKey(sec.offId, kind, s.id, 'see'), parseInputValue(e.target.value, 0, currentScheme.finalsMax))} placeholder="Enter" style={{ width: 72, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
+                          <TD><div style={{ ...mono, fontSize: 10, color: T.muted }}>CE {projection.ce60.toFixed(1)}/60<br />CGPA {projection.predictedCgpa.toFixed(2)}</div></TD>
+                          <TD><button aria-label={`Open ${s.name} profile`} title="Open profile" onClick={() => onOpenStudent(s, sec)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Eye size={13} /></button></TD>
+                          <TD><button aria-label={`Add task for ${s.name}`} title="Add task" onClick={() => onOpenTaskComposer({ offeringId: sec.offId, studentId: s.id, taskType: 'Follow-up' })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.success, ...mono, fontSize: 11 }}>+Task</button></TD>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </HScrollArea>
@@ -2900,7 +3347,8 @@ export default function App() {
   const [entryOfferingId, setEntryOfferingId] = useState<string>(OFFERINGS[0].offId)
   const [entryKind, setEntryKind] = useState<EntryKind>('tt1')
   const [courseInitialTab, setCourseInitialTab] = useState<string | undefined>(undefined)
-  const [remedialContext, setRemedialContext] = useState<{ student: Student; offering: Offering; deferToHod?: boolean } | null>(null)
+  const [taskComposer, setTaskComposer] = useState<TaskComposerState>({ isOpen: false, step: 'details', taskType: 'Follow-up', dueDateISO: '', note: '', search: '' })
+  const [pendingNoteAction, setPendingNoteAction] = useState<NoteActionState | null>(null)
   const [studentPatches, setStudentPatches] = useState<Record<string, StudentRuntimePatch>>(() => {
     try {
       const saved = localStorage.getItem(STUDENT_PATCHES_KEY)
@@ -2912,14 +3360,55 @@ export default function App() {
   const [schemeByOffering, setSchemeByOffering] = useState<Record<string, SchemeState>>(() => {
     try {
       const saved = localStorage.getItem(SCHEME_STATE_KEY)
-      if (saved) return JSON.parse(saved)
+      if (saved) {
+        const parsed = JSON.parse(saved) as Record<string, Partial<SchemeState>>
+        return Object.fromEntries(OFFERINGS.map(item => [item.offId, normalizeSchemeState(parsed[item.offId], item)])) as Record<string, SchemeState>
+      }
     } catch {
       // ignore
     }
-    return Object.fromEntries(OFFERINGS.map(item => [item.offId, defaultSchemeForOffering(item)])) as Record<string, SchemeState>
+    return Object.fromEntries(OFFERINGS.map(item => [item.offId, normalizeSchemeState(defaultSchemeForOffering(item), item)])) as Record<string, SchemeState>
+  })
+  const [ttBlueprintsByOffering, setTtBlueprintsByOffering] = useState<Record<string, Record<TTKind, TermTestBlueprint>>>(() => {
+    try {
+      const saved = localStorage.getItem(BLUEPRINT_STATE_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved) as Record<string, Record<TTKind, TermTestBlueprint>>
+        return Object.fromEntries(OFFERINGS.map(item => {
+          const source = parsed[item.offId]
+          const basePaper = PAPER_MAP[item.code] || PAPER_MAP.default
+          return [item.offId, {
+            tt1: normalizeBlueprint('tt1', source?.tt1 ?? seedBlueprintFromPaper('tt1', basePaper)),
+            tt2: normalizeBlueprint('tt2', source?.tt2 ?? seedBlueprintFromPaper('tt2', basePaper)),
+          }]
+        })) as Record<string, Record<TTKind, TermTestBlueprint>>
+      }
+    } catch {
+      // ignore
+    }
+    return Object.fromEntries(OFFERINGS.map(item => {
+      const basePaper = PAPER_MAP[item.code] || PAPER_MAP.default
+      return [item.offId, {
+        tt1: seedBlueprintFromPaper('tt1', basePaper),
+        tt2: seedBlueprintFromPaper('tt2', basePaper),
+      }]
+    })) as Record<string, Record<TTKind, TermTestBlueprint>>
+  })
+  const [lockAuditByTarget, setLockAuditByTarget] = useState<Record<string, QueueTransition[]>>(() => {
+    try {
+      const saved = localStorage.getItem(LOCK_AUDIT_KEY)
+      return saved ? JSON.parse(saved) : {}
+    } catch {
+      return {}
+    }
   })
 
   const allowedRoles = currentTeacher?.permissions ?? []
+  const capabilities = useMemo<FacultyCapabilitySet>(() => ({
+    canSelfGovernLock: !!currentTeacher?.permissions.includes('HoD'),
+    canApproveUnlock: role === 'HoD' || !!currentTeacher?.permissions.includes('HoD'),
+    canEditMarks: role === 'Course Leader' || role === 'HoD',
+  }), [currentTeacher, role])
   const assignedOfferings = useMemo(() => {
     if (!currentTeacher) return OFFERINGS
     if (role === 'HoD') return OFFERINGS
@@ -3074,11 +3563,16 @@ export default function App() {
       escalated: true,
       sourceRole: 'Course Leader',
       manual: true,
+      requestNote: 'Late moderation issue was discovered after TT1 lock. Need controlled correction for a small set of students.',
+      handoffNote: 'Please unlock TT1 once moderation discrepancy is verified.',
       unlockRequest: {
         kind: 'tt1',
         status: 'Pending',
         requestedBy: 'Course Leader',
+        requestedByFacultyId: 't1',
         requestedAt: Date.now(),
+        requestNote: 'Late moderation issue was discovered after TT1 lock. Need controlled correction for a small set of students.',
+        handoffNote: 'Please unlock TT1 once moderation discrepancy is verified.',
       },
       transitionHistory: [createTransition({ action: 'Unlock requested', actorRole: 'Course Leader', fromOwner: 'Course Leader', toOwner: 'HoD', note: 'Seeded pending unlock example for mock review flow.' })],
     }
@@ -3105,11 +3599,16 @@ export default function App() {
       escalated: true,
       sourceRole: 'Course Leader',
       manual: true,
+      requestNote: 'Requested TT1 unlock for a re-evaluation challenge, but the sheet had already been ratified.',
+      handoffNote: 'Please review whether this ratified sheet can be reopened.',
       unlockRequest: {
         kind: 'tt1',
         status: 'Rejected',
         requestedBy: 'Course Leader',
+        requestedByFacultyId: 't1',
         requestedAt: Date.now() - 86_400_000,
+        requestNote: 'Requested TT1 unlock for a re-evaluation challenge, but the sheet had already been ratified.',
+        handoffNote: 'Please review whether this ratified sheet can be reopened.',
         reviewedAt: Date.now() - 43_200_000,
         reviewNote: 'Ratified score sheet should not be reopened.',
       },
@@ -3136,7 +3635,11 @@ export default function App() {
   useEffect(() => { localStorage.setItem('airmentor-resolved-tasks', JSON.stringify(resolvedTasks)) }, [resolvedTasks])
   useEffect(() => { localStorage.setItem(STUDENT_PATCHES_KEY, JSON.stringify(studentPatches)) }, [studentPatches])
   useEffect(() => { localStorage.setItem(SCHEME_STATE_KEY, JSON.stringify(schemeByOffering)) }, [schemeByOffering])
+  useEffect(() => { localStorage.setItem(BLUEPRINT_STATE_KEY, JSON.stringify(ttBlueprintsByOffering)) }, [ttBlueprintsByOffering])
+  useEffect(() => { localStorage.setItem(LOCK_AUDIT_KEY, JSON.stringify(lockAuditByTarget)) }, [lockAuditByTarget])
   useEffect(() => { setRuntimeStudentPatches(studentPatches) }, [studentPatches])
+  useEffect(() => { setRuntimeSchemes(schemeByOffering) }, [schemeByOffering])
+  useEffect(() => { setRuntimeBlueprints(ttBlueprintsByOffering) }, [ttBlueprintsByOffering])
 
   const supervisedOfferingIds = useMemo(() => new Set(assignedOfferings.map(o => o.offId)), [assignedOfferings])
   const supervisedMenteeIds = useMemo(() => new Set(assignedMentees.map(m => m.id)), [assignedMentees])
@@ -3302,7 +3805,9 @@ export default function App() {
   const handleOpenEntryHub = useCallback((o: Offering, kind: EntryKind) => {
     setUploadOffering(o)
     setUploadKind(kind)
-    setPage('upload')
+    setEntryOfferingId(o.offId)
+    setEntryKind(kind)
+    setPage('entry-workspace')
   }, [])
   const handleOpenUpload = useCallback((o?: Offering, kind: EntryKind = 'tt1') => {
     if (o) setUploadOffering(o)
@@ -3327,6 +3832,19 @@ export default function App() {
     setPage('unlock-review')
   }, [])
 
+  const handleUpdateBlueprint = useCallback((offId: string, kind: TTKind, next: TermTestBlueprint) => {
+    setTtBlueprintsByOffering(prev => ({
+      ...prev,
+      [offId]: {
+        ...(prev[offId] ?? {
+          tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[(OFFERINGS.find(item => item.offId === offId)?.code ?? OFFERINGS[0].code)] || PAPER_MAP.default),
+          tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[(OFFERINGS.find(item => item.offId === offId)?.code ?? OFFERINGS[0].code)] || PAPER_MAP.default),
+        }),
+        [kind]: normalizeBlueprint(kind, next),
+      },
+    }))
+  }, [])
+
   const handleRoleChange = useCallback((r: Role) => {
     if (!allowedRoles.includes(r)) return
     setRole(r)
@@ -3338,6 +3856,8 @@ export default function App() {
     setSelectedUnlockTaskId(null)
     setSchemeOfferingId(null)
     setCourseInitialTab(undefined)
+    setTaskComposer(prev => ({ ...prev, isOpen: false }))
+    setPendingNoteAction(null)
   }, [allowedRoles])
 
   const handleSaveDraft = useCallback((offId: string, kind: EntryKind) => {
@@ -3370,7 +3890,41 @@ export default function App() {
       else next[key] = value
       return next
     })
-  }, [])
+    const [offeringId, kind, studentId, field] = key.split('::') as [string, EntryKind, string, string]
+    if (!offeringId || !kind || !studentId || !field) return
+    commitStudentPatch(offeringId, studentId, existing => {
+      if (kind === 'attendance') {
+        return {
+          ...existing,
+          present: field === 'present' ? value : existing.present,
+          totalClasses: field === 'total' ? value : existing.totalClasses,
+        }
+      }
+      if (kind === 'finals') {
+        return {
+          ...existing,
+          seeScore: field === 'see' ? value : existing.seeScore,
+        }
+      }
+      if (kind === 'tt1' || kind === 'tt2') {
+        const nextScores = { ...((kind === 'tt1' ? existing.tt1LeafScores : existing.tt2LeafScores) ?? {}) }
+        if (value === undefined) delete nextScores[field]
+        else nextScores[field] = value
+        return kind === 'tt1'
+          ? { ...existing, tt1LeafScores: nextScores }
+          : { ...existing, tt2LeafScores: nextScores }
+      }
+      if (kind === 'quiz' || kind === 'assignment') {
+        const nextScores = { ...((kind === 'quiz' ? existing.quizScores : existing.assignmentScores) ?? {}) }
+        if (value === undefined) delete nextScores[field]
+        else nextScores[field] = value
+        return kind === 'quiz'
+          ? { ...existing, quizScores: nextScores }
+          : { ...existing, assignmentScores: nextScores }
+      }
+      return existing
+    })
+  }, [commitStudentPatch])
 
   const handleResolveTask = useCallback((id: string) => {
     setResolvedTasks(prev => ({ ...prev, [id]: Date.now() }))
@@ -3378,9 +3932,10 @@ export default function App() {
       ...task,
       status: 'Resolved',
       updatedAt: Date.now(),
-      transitionHistory: [...(task.transitionHistory ?? []), createTransition({ action: 'Resolved', actorRole: role, fromOwner: task.assignedTo, toOwner: task.assignedTo, note: `${role} marked this queue item as resolved.` })],
+      resolvedByFacultyId: currentTeacherId ?? undefined,
+      transitionHistory: [...(task.transitionHistory ?? []), createTransition({ action: 'Resolved', actorRole: role, actorTeacherId: currentTeacherId ?? undefined, fromOwner: task.assignedTo, toOwner: task.assignedTo, note: `${role} marked this queue item as resolved.` })],
     }) : task))
-  }, [role])
+  }, [currentTeacherId, role])
 
   const handleUndoTask = useCallback((id: string) => {
     setResolvedTasks(prev => {
@@ -3392,67 +3947,66 @@ export default function App() {
       ...task,
       status: 'In Progress',
       updatedAt: Date.now(),
-      transitionHistory: [...(task.transitionHistory ?? []), createTransition({ action: 'Reopened', actorRole: role, fromOwner: task.assignedTo, toOwner: task.assignedTo, note: `${role} reopened the resolved queue item.` })],
+      transitionHistory: [...(task.transitionHistory ?? []), createTransition({ action: 'Reopened', actorRole: role, actorTeacherId: currentTeacherId ?? undefined, fromOwner: task.assignedTo, toOwner: task.assignedTo, note: `${role} reopened the resolved queue item.` })],
     }) : task))
-  }, [role])
+  }, [currentTeacherId, role])
 
-  const handleUpdateStudentAttendance = useCallback((offeringId: string, studentId: string, patch: StudentRuntimePatch) => {
+  function commitStudentPatch(offeringId: string, studentId: string, updater: (existing: StudentRuntimePatch) => StudentRuntimePatch) {
     setStudentPatches(prev => {
       const key = toStudentPatchKey(offeringId, studentId)
       const existing = prev[key] ?? {}
-      const next: Record<string, StudentRuntimePatch> = {
-        ...prev,
-        [key]: {
-          ...existing,
-          ...patch,
-        },
+      const updated = updater(existing)
+      const cleaned: StudentRuntimePatch = {
+        ...updated,
+        tt1LeafScores: pruneScoreMap(updated.tt1LeafScores),
+        tt2LeafScores: pruneScoreMap(updated.tt2LeafScores),
+        quizScores: pruneScoreMap(updated.quizScores),
+        assignmentScores: pruneScoreMap(updated.assignmentScores),
       }
+      const next = { ...prev }
+      if (isPatchEmpty(cleaned)) delete next[key]
+      else next[key] = cleaned
       setRuntimeStudentPatches(next)
       return next
     })
+  }
+
+  const appendLockAudit = useCallback((offeringId: string, kind: EntryKind, transition: QueueTransition) => {
+    setLockAuditByTarget(prev => ({
+      ...prev,
+      [`${offeringId}::${kind}`]: [...(prev[`${offeringId}::${kind}`] ?? []), transition],
+    }))
   }, [])
 
-  const handleRequestUnlock = useCallback((offeringId: string, kind: EntryKind) => {
-    const off = OFFERINGS.find(o => o.offId === offeringId)
-    if (!off) return
-    const id = `unlock-${offeringId}-${kind}`
-    setAllTasksList(prev => {
-      if (prev.some(t => t.id === id)) return prev
-      const next: SharedTask = {
-        id,
-        studentId: `${offeringId}-${kind}-lock`,
-        studentName: 'Class Data Lock',
-        studentUsn: 'N/A',
-        offeringId,
-        courseCode: off.code,
-        courseName: off.title,
-        year: off.year,
-        riskProb: 0.5,
-        riskBand: 'Medium',
-        title: `Unlock request: ${off.code} Sec ${off.section} · ${kind.toUpperCase()}`,
-        due: 'Today',
-        status: 'New',
-        actionHint: `${role} requested HoD unlock for ${kind.toUpperCase()} data entry`,
-        priority: 80,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        assignedTo: 'HoD',
-        taskType: 'Academic',
-        escalated: true,
-        sourceRole: role,
-        manual: true,
-        unlockRequest: {
-          kind,
-          status: 'Pending',
-          requestedBy: role,
-          requestedAt: Date.now(),
-        },
-        transitionHistory: [createTransition({ action: 'Unlock requested', actorRole: role, fromOwner: role, toOwner: 'HoD', note: `${role} requested unlock for ${kind.toUpperCase()} entry.` })],
-      }
-      syncTaskToBackend(toBackendTaskPayload(next))
-      return [next, ...prev]
+  const handleUpdateStudentAttendance = useCallback((offeringId: string, studentId: string, patch: StudentRuntimePatch) => {
+    commitStudentPatch(offeringId, studentId, existing => ({ ...existing, ...patch }))
+  }, [])
+
+  const handleOpenTaskComposer = useCallback((input?: { offeringId?: string; studentId?: string; taskType?: TaskType }) => {
+    const fallbackOffering = (input?.offeringId ? OFFERINGS.find(item => item.offId === input.offeringId) : null) ?? uploadOffering ?? offering ?? assignedOfferings[0] ?? OFFERINGS[0]
+    const selectedStudent = input?.studentId && fallbackOffering
+      ? getStudentsPatched(fallbackOffering).find(student => student.id === input.studentId)
+      : undefined
+    const suggested = suggestTaskForStudent(selectedStudent)
+    setTaskComposer({
+      isOpen: true,
+      step: 'details',
+      offeringId: fallbackOffering?.offId,
+      studentId: input?.studentId,
+      taskType: input?.taskType ?? suggested.taskType,
+      dueDateISO: suggested.dueDateISO,
+      note: suggested.note,
+      search: selectedStudent?.name ?? '',
     })
-  }, [role])
+  }, [assignedOfferings, offering, uploadOffering])
+
+  const handleRequestUnlock = useCallback((offeringId: string, kind: EntryKind) => {
+    setPendingNoteAction({ type: 'unlock-request', offeringId, kind })
+  }, [])
+
+  const handleSelfGovernUnlock = useCallback((offeringId: string, kind: EntryKind) => {
+    setPendingNoteAction({ type: 'self-govern-unlock', offeringId, kind })
+  }, [])
 
   const handleCreateTask = useCallback((input: TaskCreateInput) => {
     const off = OFFERINGS.find(o => o.offId === input.offeringId)
@@ -3462,7 +4016,6 @@ export default function App() {
     const id = `manual-${input.taskType}-${s.id}-${Date.now()}`
     const riskProb = s.riskProb ?? 0.45
     const title = `${input.taskType}: ${s.name.split(' ')[0]} (${off.code} Sec ${off.section})`
-    const assignedTo: Role = input.deferToHod ? 'HoD' : role
     const next: SharedTask = {
       id,
       studentId: s.id,
@@ -3484,29 +4037,23 @@ export default function App() {
       updatedAt: Date.now(),
       taskType: input.taskType,
       remedialPlan: input.remedialPlan,
-      assignedTo,
-      escalated: !!input.deferToHod,
+      assignedTo: role,
+      escalated: false,
       sourceRole: role,
       manual: true,
+      requestNote: input.note,
       transitionHistory: [createTransition({
-        action: input.deferToHod ? 'Created and deferred to HoD' : 'Created',
+        action: 'Created',
         actorRole: role,
+        actorTeacherId: currentTeacherId ?? undefined,
         fromOwner: role,
-        toOwner: assignedTo,
+        toOwner: role,
         note: input.note || `${role} created ${input.taskType.toLowerCase()} queue item.`,
       })],
     }
     syncTaskToBackend(toBackendTaskPayload(next))
     setAllTasksList(prev => [next, ...prev])
-  }, [role])
-
-  const handleOpenRemedialPlanner = useCallback((input: { offeringId: string; studentId: string; deferToHod?: boolean }) => {
-    const off = OFFERINGS.find(o => o.offId === input.offeringId)
-    if (!off) return
-    const student = getStudentsPatched(off).find(st => st.id === input.studentId)
-    if (!student) return
-    setRemedialContext({ student, offering: off, deferToHod: input.deferToHod })
-  }, [])
+  }, [currentTeacherId, role])
 
   const handleRemedialCheckIn = useCallback((taskId: string) => {
     setAllTasksList(prev => prev.map(task => {
@@ -3527,6 +4074,7 @@ export default function App() {
         transitionHistory: [...(task.transitionHistory ?? []), createTransition({
           action: progress.completed === progress.total ? 'Remedial plan completed' : 'Remedial check-in logged',
           actorRole: role,
+          actorTeacherId: currentTeacherId ?? undefined,
           fromOwner: task.assignedTo,
           toOwner: task.assignedTo,
           note: progress.completed === progress.total ? 'All remedial steps have been completed.' : 'One remedial step was marked complete.',
@@ -3535,62 +4083,192 @@ export default function App() {
       syncTaskToBackend(toBackendTaskPayload(updatedTask))
       return updatedTask
     }))
-  }, [role])
+  }, [currentTeacherId, role])
 
-  const upsertTaskFromStudent = useCallback((s: Student, o: Offering | undefined, mode: 'escalate' | 'remedial' | 'manual' | 'mentor') => {
-    const off = o ?? OFFERINGS.find(x => getStudentsPatched(x).some(st => st.id === s.id))
-    const offId = off?.offId ?? ''
-    const code = off?.code ?? 'GEN'
-    const name = off?.title ?? 'General Follow-up'
-    const riskProb = s.riskProb ?? 0.5
-    const id = `${mode}-${s.id}-${offId || 'na'}`
-    const title = mode === 'escalate'
-      ? `Escalated: ${s.name.split(' ')[0]} requires HoD intervention`
-      : mode === 'mentor'
-        ? `Mentor follow-up needed for ${s.name.split(' ')[0]}`
-      : mode === 'remedial'
-        ? `Assign remedial plan to ${s.name.split(' ')[0]}`
-        : `Manual follow-up for ${s.name.split(' ')[0]}`
-
+  const submitUnlockRequest = useCallback((offeringId: string, kind: EntryKind, note: string) => {
+    const off = OFFERINGS.find(o => o.offId === offeringId)
+    if (!off) return
+    const id = `unlock-${offeringId}-${kind}`
+    const requestedAt = Date.now()
+    const transition = createTransition({
+      action: 'Unlock requested',
+      actorRole: role,
+      actorTeacherId: currentTeacherId ?? undefined,
+      fromOwner: role,
+      toOwner: 'HoD',
+      note,
+    })
+    appendLockAudit(offeringId, kind, transition)
+    setResolvedTasks(prev => {
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
     setAllTasksList(prev => {
-      if (prev.some(t => t.id === id)) return prev
-      const next: SharedTask = {
+      const existing = prev.find(task => task.id === id)
+      const nextTask: SharedTask = existing ? {
+        ...existing,
+        updatedAt: requestedAt,
+        due: 'Today',
+        status: 'New',
+        assignedTo: 'HoD',
+        taskType: 'Academic',
+        escalated: true,
+        sourceRole: role,
+        actionHint: note,
+        requestNote: note,
+        handoffNote: note,
+        unlockRequest: {
+          kind,
+          status: 'Pending',
+          requestedBy: role,
+          requestedByFacultyId: currentTeacherId ?? undefined,
+          requestedAt,
+          requestNote: note,
+          handoffNote: note,
+        },
+        transitionHistory: [...(existing.transitionHistory ?? []), transition],
+      } : {
         id,
-        studentId: s.id,
-        studentName: s.name,
-        studentUsn: s.usn,
-        offeringId: offId,
-        courseCode: code,
-        courseName: name,
-        year: off?.year ?? 'N/A',
-        riskProb,
-        riskBand: (s.riskBand ?? 'Medium') as RiskBand,
+        studentId: `${offeringId}-${kind}-lock`,
+        studentName: 'Class Data Lock',
+        studentUsn: 'N/A',
+        offeringId,
+        courseCode: off.code,
+        courseName: off.title,
+        year: off.year,
+        riskProb: 0.5,
+        riskBand: 'Medium',
+        title: `Unlock request: ${off.code} Sec ${off.section} · ${kind.toUpperCase()}`,
+        due: 'Today',
+        status: 'New',
+        actionHint: note,
+        priority: 80,
+        createdAt: requestedAt,
+        updatedAt: requestedAt,
+        assignedTo: 'HoD',
+        taskType: 'Academic',
+        escalated: true,
+        sourceRole: role,
+        manual: true,
+        requestNote: note,
+        handoffNote: note,
+        unlockRequest: {
+          kind,
+          status: 'Pending',
+          requestedBy: role,
+          requestedByFacultyId: currentTeacherId ?? undefined,
+          requestedAt,
+          requestNote: note,
+          handoffNote: note,
+        },
+        transitionHistory: [transition],
+      }
+      syncTaskToBackend(toBackendTaskPayload(nextTask))
+      return existing ? prev.map(task => task.id === id ? nextTask : task) : [nextTask, ...prev]
+    })
+  }, [appendLockAudit, currentTeacherId, role])
+
+  const submitSelfGovernUnlock = useCallback((offeringId: string, kind: EntryKind, note: string) => {
+    const transition = createTransition({
+      action: 'Self-governed unlock',
+      actorRole: role,
+      actorTeacherId: currentTeacherId ?? undefined,
+      fromOwner: role,
+      toOwner: role,
+      note,
+    })
+    appendLockAudit(offeringId, kind, transition)
+    setLockByOffering(prev => ({
+      ...prev,
+      [offeringId]: {
+        ...(prev[offeringId] ?? getEntryLockMap(OFFERINGS.find(o => o.offId === offeringId) ?? OFFERINGS[0])),
+        [kind]: false,
+      },
+    }))
+    setSchemeByOffering(prev => prev[offeringId] ? ({
+      ...prev,
+      [offeringId]: {
+        ...prev[offeringId],
+        status: 'Configured',
+      },
+    }) : prev)
+  }, [appendLockAudit, currentTeacherId, role])
+
+  const submitStudentHandoff = useCallback((studentId: string, offeringId: string, mode: 'escalate' | 'mentor', note: string) => {
+    const off = OFFERINGS.find(item => item.offId === offeringId)
+    if (!off) return
+    const student = getStudentsPatched(off).find(item => item.id === studentId)
+    if (!student) return
+    const id = `${mode}-${student.id}-${off.offId}`
+    const createdAt = Date.now()
+    const assignedTo: Role = mode === 'escalate' ? 'HoD' : 'Mentor'
+    const title = mode === 'escalate'
+      ? `Escalated: ${student.name.split(' ')[0]} requires HoD intervention`
+      : `Mentor follow-up needed for ${student.name.split(' ')[0]}`
+    const transition = createTransition({
+      action: mode === 'escalate' ? 'Created and escalated to HoD' : 'Created and deferred to Mentor',
+      actorRole: role,
+      actorTeacherId: currentTeacherId ?? undefined,
+      fromOwner: role,
+      toOwner: assignedTo,
+      note,
+    })
+    setResolvedTasks(prev => {
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+    setAllTasksList(prev => {
+      const existing = prev.find(task => task.id === id)
+      const nextTask: SharedTask = existing ? {
+        ...existing,
+        updatedAt: createdAt,
+        assignedTo,
+        escalated: mode === 'escalate',
+        status: 'New',
+        actionHint: note,
+        requestNote: mode === 'escalate' ? note : existing.requestNote,
+        handoffNote: note,
+        transitionHistory: [...(existing.transitionHistory ?? []), transition],
+      } : {
+        id,
+        studentId: student.id,
+        studentName: student.name,
+        studentUsn: student.usn,
+        offeringId: off.offId,
+        courseCode: off.code,
+        courseName: off.title,
+        year: off.year,
+        riskProb: student.riskProb ?? 0.5,
+        riskBand: (student.riskBand ?? 'Medium') as RiskBand,
         title,
         due: mode === 'escalate' ? 'Today' : 'This week',
         status: 'New',
-        actionHint: mode === 'escalate' ? 'Escalation raised and visible across all role queues' : mode === 'mentor' ? 'Deferred to mentor queue for student-level follow-up' : 'User-generated action item',
-        priority: Math.round(riskProb * 100),
-        createdAt: Date.now(),
-        assignedTo: mode === 'escalate' ? 'HoD' : mode === 'mentor' ? 'Mentor' : role,
-        taskType: mode === 'remedial' ? 'Remedial' : 'Follow-up',
+        actionHint: note,
+        priority: Math.round((student.riskProb ?? 0.5) * 100),
+        createdAt,
+        updatedAt: createdAt,
+        assignedTo,
+        taskType: mode === 'escalate' ? 'Academic' : 'Follow-up',
         escalated: mode === 'escalate',
         sourceRole: role,
-        manual: mode !== 'escalate',
-        updatedAt: Date.now(),
-        transitionHistory: [createTransition({
-          action: mode === 'escalate' ? 'Created and escalated to HoD' : mode === 'mentor' ? 'Created and deferred to Mentor' : 'Created',
-          actorRole: role,
-          fromOwner: role,
-          toOwner: mode === 'escalate' ? 'HoD' : mode === 'mentor' ? 'Mentor' : role,
-          note: mode === 'mentor' ? 'Single-owner handoff from student drawer to mentor queue.' : mode === 'escalate' ? 'Escalation raised from student drawer.' : 'Created from student drawer quick action.',
-        })],
+        manual: true,
+        requestNote: mode === 'escalate' ? note : undefined,
+        handoffNote: note,
+        transitionHistory: [transition],
       }
-      syncTaskToBackend(toBackendTaskPayload(next))
-      return [next, ...prev]
+      syncTaskToBackend(toBackendTaskPayload(nextTask))
+      return existing ? prev.map(task => task.id === id ? nextTask : task) : [nextTask, ...prev]
     })
-  }, [role])
+  }, [currentTeacherId, role])
 
-  const handleReassignTask = useCallback((taskId: string, toRole: Role, note?: string) => {
+  const commitTaskReassignment = useCallback((taskId: string, toRole: Role, note: string) => {
+    setResolvedTasks(prev => {
+      const next = { ...prev }
+      delete next[taskId]
+      return next
+    })
     setAllTasksList(prev => prev.map(task => {
       if (task.id !== taskId) return task
       const nextTask: SharedTask = {
@@ -3598,28 +4276,78 @@ export default function App() {
         assignedTo: toRole,
         escalated: toRole === 'HoD',
         updatedAt: Date.now(),
-        status: 'In Progress',
+        status: 'New',
+        actionHint: note,
+        requestNote: toRole === 'HoD' ? note : task.requestNote,
+        handoffNote: note,
         transitionHistory: [...(task.transitionHistory ?? []), createTransition({
-          action: `Reassigned to ${toRole}`,
+          action: toRole === 'HoD' ? 'Deferred to HoD' : toRole === 'Mentor' ? 'Deferred to Mentor' : `Returned to ${toRole}`,
           actorRole: role,
+          actorTeacherId: currentTeacherId ?? undefined,
           fromOwner: task.assignedTo,
           toOwner: toRole,
-          note: note ?? `${role} reassigned the queue item to ${toRole}.`,
+          note,
         })],
       }
       syncTaskToBackend(toBackendTaskPayload(nextTask))
       return nextTask
     }))
-  }, [role])
+  }, [currentTeacherId, role])
+
+  const handleReassignTask = useCallback((taskId: string, toRole: Role) => {
+    const task = allTasksList.find(item => item.id === taskId)
+    if (!task) return
+    setPendingNoteAction({
+      type: 'reassign-task',
+      taskId,
+      toRole,
+      title: task.title,
+    })
+  }, [allTasksList])
+
+  const handleOpenStudentEscalation = useCallback((student: Student, currentOffering?: Offering) => {
+    const resolvedOffering = currentOffering ?? OFFERINGS.find(item => getStudentsPatched(item).some(candidate => candidate.id === student.id))
+    if (!resolvedOffering) return
+    setPendingNoteAction({
+      type: 'student-handoff',
+      mode: 'escalate',
+      studentId: student.id,
+      offeringId: resolvedOffering.offId,
+      title: `Escalate ${student.name} to HoD`,
+    })
+  }, [])
+
+  const handleOpenStudentMentorHandoff = useCallback((student: Student, currentOffering?: Offering) => {
+    const resolvedOffering = currentOffering ?? OFFERINGS.find(item => getStudentsPatched(item).some(candidate => candidate.id === student.id))
+    if (!resolvedOffering) return
+    setPendingNoteAction({
+      type: 'student-handoff',
+      mode: 'mentor',
+      studentId: student.id,
+      offeringId: resolvedOffering.offId,
+      title: `Defer ${student.name} to Mentor`,
+    })
+  }, [])
+
+  const handleSubmitRequiredNote = useCallback((note: string) => {
+    const action = pendingNoteAction
+    if (!action) return
+    if (action.type === 'unlock-request') submitUnlockRequest(action.offeringId, action.kind, note)
+    if (action.type === 'self-govern-unlock') submitSelfGovernUnlock(action.offeringId, action.kind, note)
+    if (action.type === 'reassign-task') commitTaskReassignment(action.taskId, action.toRole, note)
+    if (action.type === 'student-handoff') submitStudentHandoff(action.studentId, action.offeringId, action.mode, note)
+    setPendingNoteAction(null)
+  }, [commitTaskReassignment, pendingNoteAction, submitSelfGovernUnlock, submitStudentHandoff, submitUnlockRequest])
 
   const handleSaveScheme = useCallback((offId: string, next: SchemeState) => {
+    const offeringForScheme = OFFERINGS.find(item => item.offId === offId) ?? OFFERINGS[0]
     setSchemeByOffering(prev => ({
       ...prev,
-      [offId]: {
+      [offId]: normalizeSchemeState({
         ...next,
         status: hasEntryStartedForOffering(offId) ? 'Locked' : next.status,
         lastEditedBy: role,
-      },
+      }, offeringForScheme),
     }))
     setPage('upload')
   }, [hasEntryStartedForOffering, role])
@@ -3629,36 +4357,46 @@ export default function App() {
       ...task,
       updatedAt: Date.now(),
       status: 'In Progress',
+      resolvedByFacultyId: currentTeacherId ?? undefined,
       unlockRequest: task.unlockRequest ? {
         ...task.unlockRequest,
         status: 'Approved',
         reviewedAt: Date.now(),
         reviewNote: 'HoD approved a controlled correction cycle.',
       } : task.unlockRequest,
-      transitionHistory: [...(task.transitionHistory ?? []), createTransition({ action: 'Unlock approved', actorRole: 'HoD', fromOwner: 'HoD', toOwner: 'HoD', note: 'Request approved pending explicit reset/unlock.' })],
+      transitionHistory: [...(task.transitionHistory ?? []), createTransition({ action: 'Unlock approved', actorRole: 'HoD', actorTeacherId: currentTeacherId ?? undefined, fromOwner: 'HoD', toOwner: 'HoD', note: 'Request approved pending explicit reset/unlock.' })],
     }) : task))
-  }, [])
+  }, [currentTeacherId])
 
   const handleRejectUnlock = useCallback((taskId: string) => {
     setAllTasksList(prev => prev.map(task => task.id === taskId ? ({
       ...task,
       updatedAt: Date.now(),
       status: 'Resolved',
+      resolvedByFacultyId: currentTeacherId ?? undefined,
       unlockRequest: task.unlockRequest ? {
         ...task.unlockRequest,
         status: 'Rejected',
         reviewedAt: Date.now(),
         reviewNote: 'HoD rejected the unlock request.',
       } : task.unlockRequest,
-      transitionHistory: [...(task.transitionHistory ?? []), createTransition({ action: 'Unlock rejected', actorRole: 'HoD', fromOwner: 'HoD', toOwner: 'HoD', note: 'Lock remains in effect.' })],
+      transitionHistory: [...(task.transitionHistory ?? []), createTransition({ action: 'Unlock rejected', actorRole: 'HoD', actorTeacherId: currentTeacherId ?? undefined, fromOwner: 'HoD', toOwner: 'HoD', note: 'Lock remains in effect.' })],
     }) : task))
     setResolvedTasks(prev => ({ ...prev, [taskId]: Date.now() }))
-  }, [])
+  }, [currentTeacherId])
 
   const handleResetComplete = useCallback((taskId: string) => {
     const task = allTasksList.find(item => item.id === taskId)
     if (!task?.unlockRequest) return
     const unlockKind = task.unlockRequest.kind
+    appendLockAudit(task.offeringId, unlockKind, createTransition({
+      action: 'Reset completed and unlocked',
+      actorRole: 'HoD',
+      actorTeacherId: currentTeacherId ?? undefined,
+      fromOwner: 'HoD',
+      toOwner: task.sourceRole === 'Mentor' ? 'Mentor' : 'Course Leader',
+      note: 'Entry dataset is unlocked for correction.',
+    }))
     setLockByOffering(prev => ({
       ...prev,
       [task.offeringId]: {
@@ -3677,16 +4415,17 @@ export default function App() {
       ...item,
       updatedAt: Date.now(),
       status: 'Resolved',
+      resolvedByFacultyId: currentTeacherId ?? undefined,
       unlockRequest: item.unlockRequest ? {
         ...item.unlockRequest,
         status: 'Reset Completed',
         reviewedAt: Date.now(),
         reviewNote: 'Reset completed and entry unlocked for correction.',
       } : item.unlockRequest,
-      transitionHistory: [...(item.transitionHistory ?? []), createTransition({ action: 'Reset completed and unlocked', actorRole: 'HoD', fromOwner: 'HoD', toOwner: item.sourceRole === 'Mentor' ? 'Mentor' : 'Course Leader', note: 'Entry dataset is unlocked for correction.' })],
+      transitionHistory: [...(item.transitionHistory ?? []), createTransition({ action: 'Reset completed and unlocked', actorRole: 'HoD', actorTeacherId: currentTeacherId ?? undefined, fromOwner: 'HoD', toOwner: item.sourceRole === 'Mentor' ? 'Mentor' : 'Course Leader', note: 'Entry dataset is unlocked for correction.' })],
     }) : item))
     setResolvedTasks(prev => ({ ...prev, [taskId]: Date.now() }))
-  }, [allTasksList])
+  }, [allTasksList, appendLockAudit, currentTeacherId])
 
   const handleOpenTaskStudent = useCallback((task: SharedTask) => {
     const mentorMatch = assignedMentees.find(mentee => mentee.usn === task.studentUsn || mentee.id === task.studentId) ?? MENTEES.find(mentee => mentee.usn === task.studentUsn || mentee.id === task.studentId)
@@ -3711,6 +4450,39 @@ export default function App() {
       }
     }
   }, [assignedMentees, assignedOfferings, handleOpenStudent, role])
+
+  const pendingNoteMeta = useMemo(() => {
+    if (!pendingNoteAction) return null
+    if (pendingNoteAction.type === 'unlock-request') {
+      const off = OFFERINGS.find(item => item.offId === pendingNoteAction.offeringId)
+      return {
+        title: `Request unlock for ${off?.code ?? 'offering'} ${pendingNoteAction.kind.toUpperCase()}`,
+        description: 'Add the teacher note that should travel with this unlock request to the HoD queue.',
+        submitLabel: 'Send Unlock Request',
+      }
+    }
+    if (pendingNoteAction.type === 'self-govern-unlock') {
+      const off = OFFERINGS.find(item => item.offId === pendingNoteAction.offeringId)
+      return {
+        title: `Unlock ${off?.code ?? 'offering'} from current authority`,
+        description: 'Record the note explaining why this self-governed unlock/reset is being performed.',
+        submitLabel: 'Unlock Now',
+      }
+    }
+    if (pendingNoteAction.type === 'reassign-task') {
+      return {
+        title: `Reassign queue item to ${pendingNoteAction.toRole}`,
+        description: `Add the handoff note that the next owner should see for "${pendingNoteAction.title}".`,
+        submitLabel: 'Confirm Reassignment',
+      }
+    }
+    const off = OFFERINGS.find(item => item.offId === pendingNoteAction.offeringId)
+    return {
+      title: pendingNoteAction.mode === 'escalate' ? 'Escalate student to HoD' : 'Defer student to Mentor',
+      description: `Add the sender note for ${off?.code ?? 'the selected class'} so the receiving owner sees the full context.`,
+      submitLabel: pendingNoteAction.mode === 'escalate' ? 'Escalate with Note' : 'Defer with Note',
+    }
+  }, [pendingNoteAction])
 
   if (!currentTeacher) {
     return <LoginPage onLogin={(teacherId) => {
@@ -3769,6 +4541,8 @@ export default function App() {
             setSelectedUnlockTaskId(null)
             setSchemeOfferingId(null)
             setCourseInitialTab(undefined)
+            setTaskComposer(prev => ({ ...prev, isOpen: false }))
+            setPendingNoteAction(null)
           }} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', cursor: 'pointer', color: T.muted, ...mono, fontSize: 10 }}>Logout</button>
           <div style={{ width: 30, height: 30, borderRadius: 8, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 10, color: '#fff' }}>{currentTeacher.initials}</div>
         </div>
@@ -3848,13 +4622,13 @@ export default function App() {
         </AnimatePresence>
 
         {/* Center Content */}
-        <div style={{ flex: 1, overflowY: 'auto', height: 'calc(100vh - 54px)' }}>
+        <div className="scroll-pane" style={{ flex: 1, overflowY: 'auto', height: 'calc(100vh - 54px)' }}>
           {role === 'Course Leader' && page === 'dashboard' && <CLDashboard offerings={assignedOfferings} pendingTaskCount={pendingActionCount} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} />}
-          {role === 'Course Leader' && page === 'course' && offering && <CourseDetail offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
+          {role === 'Course Leader' && page === 'course' && offering && <CourseDetail offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? { tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default), tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default) }} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
           {role === 'Course Leader' && page === 'scheme-setup' && selectedSchemeOffering && <SchemeSetupPage role={role} offering={selectedSchemeOffering} scheme={schemeByOffering[selectedSchemeOffering.offId] ?? defaultSchemeForOffering(selectedSchemeOffering)} hasEntryStarted={hasEntryStartedForOffering(selectedSchemeOffering.offId)} onSave={(next) => handleSaveScheme(selectedSchemeOffering.offId, next)} onBack={() => setPage('upload')} />}
           {role === 'Course Leader' && page === 'calendar' && <CalendarPage />}
-          {role === 'Course Leader' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} onRequestUnlock={handleRequestUnlock} availableOfferings={assignedOfferings} scheme={schemeByOffering[(uploadOffering ?? assignedOfferings[0] ?? OFFERINGS[0]).offId] ?? defaultSchemeForOffering(uploadOffering ?? assignedOfferings[0] ?? OFFERINGS[0])} onOpenSchemeSetup={handleOpenSchemeSetup} />}
-          {role === 'Course Leader' && page === 'entry-workspace' && <EntryWorkspacePage role={role} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} onRequestUnlock={handleRequestUnlock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onCreateTask={handleCreateTask} onUpdateStudentAttendance={handleUpdateStudentAttendance} />}
+          {role === 'Course Leader' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} onRequestUnlock={handleRequestUnlock} onSelfGovernUnlock={handleSelfGovernUnlock} capabilities={capabilities} availableOfferings={assignedOfferings} scheme={schemeByOffering[(uploadOffering ?? assignedOfferings[0] ?? OFFERINGS[0]).offId] ?? defaultSchemeForOffering(uploadOffering ?? assignedOfferings[0] ?? OFFERINGS[0])} onOpenSchemeSetup={handleOpenSchemeSetup} />}
+          {role === 'Course Leader' && page === 'entry-workspace' && <EntryWorkspacePage capabilities={capabilities} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} onRequestUnlock={handleRequestUnlock} onSelfGovernUnlock={handleSelfGovernUnlock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onOpenTaskComposer={handleOpenTaskComposer} onUpdateStudentAttendance={handleUpdateStudentAttendance} schemeByOffering={schemeByOffering} ttBlueprintsByOffering={ttBlueprintsByOffering} lockAuditByTarget={lockAuditByTarget} />}
           {role === 'Course Leader' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} />}
 
           {role === 'Mentor' && page === 'mentees' && <MentorView mentees={assignedMentees} onOpenMentee={handleOpenMentee} />}
@@ -3863,10 +4637,10 @@ export default function App() {
           {role === 'Mentor' && page === 'calendar' && <CalendarPage />}
 
           {role === 'HoD' && page === 'department' && <HodView onOpenUpload={handleOpenUpload} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} tasks={allTasksList} />}
-          {role === 'HoD' && page === 'course' && offering && <CourseDetail offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
+          {role === 'HoD' && page === 'course' && offering && <CourseDetail offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? { tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default), tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default) }} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
           {role === 'HoD' && page === 'scheme-setup' && selectedSchemeOffering && <SchemeSetupPage role={role} offering={selectedSchemeOffering} scheme={schemeByOffering[selectedSchemeOffering.offId] ?? defaultSchemeForOffering(selectedSchemeOffering)} hasEntryStarted={hasEntryStartedForOffering(selectedSchemeOffering.offId)} onSave={(next) => handleSaveScheme(selectedSchemeOffering.offId, next)} onBack={() => setPage('upload')} />}
-          {role === 'HoD' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} onRequestUnlock={handleRequestUnlock} availableOfferings={assignedOfferings} scheme={schemeByOffering[(uploadOffering ?? assignedOfferings[0] ?? OFFERINGS[0]).offId] ?? defaultSchemeForOffering(uploadOffering ?? assignedOfferings[0] ?? OFFERINGS[0])} onOpenSchemeSetup={handleOpenSchemeSetup} />}
-          {role === 'HoD' && page === 'entry-workspace' && <EntryWorkspacePage role={role} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} onRequestUnlock={handleRequestUnlock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onCreateTask={handleCreateTask} onUpdateStudentAttendance={handleUpdateStudentAttendance} />}
+          {role === 'HoD' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} onRequestUnlock={handleRequestUnlock} onSelfGovernUnlock={handleSelfGovernUnlock} capabilities={capabilities} availableOfferings={assignedOfferings} scheme={schemeByOffering[(uploadOffering ?? assignedOfferings[0] ?? OFFERINGS[0]).offId] ?? defaultSchemeForOffering(uploadOffering ?? assignedOfferings[0] ?? OFFERINGS[0])} onOpenSchemeSetup={handleOpenSchemeSetup} />}
+          {role === 'HoD' && page === 'entry-workspace' && <EntryWorkspacePage capabilities={capabilities} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} onRequestUnlock={handleRequestUnlock} onSelfGovernUnlock={handleSelfGovernUnlock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onOpenTaskComposer={handleOpenTaskComposer} onUpdateStudentAttendance={handleUpdateStudentAttendance} schemeByOffering={schemeByOffering} ttBlueprintsByOffering={ttBlueprintsByOffering} lockAuditByTarget={lockAuditByTarget} />}
           {role === 'HoD' && page === 'unlock-review' && selectedUnlockTask && <UnlockReviewPage task={selectedUnlockTask} offering={OFFERINGS.find(item => item.offId === selectedUnlockTask.offeringId) ?? null} onBack={() => setPage('queue-history')} onApprove={() => handleApproveUnlock(selectedUnlockTask.id)} onReject={() => handleRejectUnlock(selectedUnlockTask.id)} onResetComplete={() => handleResetComplete(selectedUnlockTask.id)} />}
           {role === 'HoD' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} />}
           {role === 'HoD' && page === 'calendar' && <CalendarPage />}
@@ -3875,25 +4649,40 @@ export default function App() {
         </div>
 
         {/* Right Sidebar — Action Queue */}
-        {showActionQueue && (
-          <ActionQueue role={role} tasks={roleTasks} offerings={assignedOfferings} resolvedTaskIds={resolvedTasks} onResolveTask={handleResolveTask} onUndoTask={handleUndoTask} onCreateTask={handleCreateTask} onOpenRemedialPlanner={handleOpenRemedialPlanner} onRemedialCheckIn={handleRemedialCheckIn} onOpenStudent={handleOpenTaskStudent} onReassignTask={handleReassignTask} onOpenUnlockReview={handleOpenUnlockReview} onOpenQueueHistory={handleOpenQueueHistory} />
-        )}
+        <AnimatePresence>
+          {showActionQueue && (
+            <motion.div
+              initial={{ width: 0, opacity: 0, x: 24 }}
+              animate={{ width: 320, opacity: 1, x: 0 }}
+              exit={{ width: 0, opacity: 0, x: 24 }}
+              transition={{ duration: 0.22, ease: 'easeOut' }}
+              style={{ overflow: 'hidden', flexShrink: 0 }}
+            >
+              <ActionQueue role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onResolveTask={handleResolveTask} onUndoTask={handleUndoTask} onOpenTaskComposer={handleOpenTaskComposer} onRemedialCheckIn={handleRemedialCheckIn} onOpenStudent={handleOpenTaskStudent} onReassignTask={handleReassignTask} onOpenUnlockReview={handleOpenUnlockReview} onOpenQueueHistory={handleOpenQueueHistory} onApproveUnlock={handleApproveUnlock} onRejectUnlock={handleRejectUnlock} onResetComplete={handleResetComplete} />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* ═══ STUDENT DRAWER ═══ */}
       <AnimatePresence>
         {selectedStudent && (
-          <StudentDrawer student={selectedStudent} offering={selectedOffering || undefined} role={role} onClose={() => { setSelectedStudent(null); setSelectedOffering(null) }} onEscalate={(s, o) => upsertTaskFromStudent(s, o, 'escalate')} onAssignRemedial={(s, o) => {
-            const off = o ?? OFFERINGS.find(x => getStudentsPatched(x).some(st => st.id === s.id))
-            if (!off) return
-            setRemedialContext({ student: s, offering: off, deferToHod: role !== 'HoD' ? false : undefined })
-          }} onAddManualTask={(s, o) => upsertTaskFromStudent(s, o, 'manual')} onAssignToMentor={(s, o) => upsertTaskFromStudent(s, o, 'mentor')} onOpenHistory={handleOpenHistoryFromStudent} />
+          <StudentDrawer student={selectedStudent} offering={selectedOffering || undefined} role={role} onClose={() => { setSelectedStudent(null); setSelectedOffering(null) }} onEscalate={handleOpenStudentEscalation} onOpenTaskComposer={(s, o, taskType) => {
+            const resolvedOffering = o ?? OFFERINGS.find(item => getStudentsPatched(item).some(candidate => candidate.id === s.id))
+            handleOpenTaskComposer({ offeringId: resolvedOffering?.offId, studentId: s.id, taskType })
+          }} onAssignToMentor={handleOpenStudentMentorHandoff} onOpenHistory={handleOpenHistoryFromStudent} />
         )}
       </AnimatePresence>
 
       <AnimatePresence>
-        {remedialContext && (
-          <RemedialPlanModal role={role} context={remedialContext} onClose={() => setRemedialContext(null)} onSubmit={handleCreateTask} />
+        {taskComposer.isOpen && (
+          <TaskComposerModal role={role} offerings={role === 'HoD' ? OFFERINGS : (assignedOfferings.length > 0 ? assignedOfferings : OFFERINGS)} initialState={taskComposer} onClose={() => setTaskComposer(prev => ({ ...prev, isOpen: false }))} onSubmit={handleCreateTask} />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {pendingNoteAction && pendingNoteMeta && (
+          <RequiredNoteModal title={pendingNoteMeta.title} description={pendingNoteMeta.description} submitLabel={pendingNoteMeta.submitLabel} onClose={() => setPendingNoteAction(null)} onSubmit={handleSubmitRequiredNote} />
         )}
       </AnimatePresence>
 
