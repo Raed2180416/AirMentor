@@ -33,6 +33,14 @@ type TeacherAccount = {
   courseCodes: string[]
 }
 
+type EvaluationScheme = {
+  finalsMax: 50 | 100
+  quizWeight: number
+  assignmentWeight: number
+  quizCount: 0 | 1 | 2
+  assignmentCount: 0 | 1 | 2
+}
+
 const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000
 
 const TEACHER_ACCOUNTS: TeacherAccount[] = [
@@ -93,6 +101,27 @@ function parseInputValue(raw: string, min: number, max: number): number | undefi
 function shouldBlockNumericKey(e: React.KeyboardEvent<HTMLInputElement>) {
   const blocked = ['e', 'E', '+', '-', '.', ',']
   if (blocked.includes(e.key)) e.preventDefault()
+}
+
+function computeEvaluation(s: Student, scheme: EvaluationScheme) {
+  const tt1Scaled = s.tt1Score !== null ? clampNumber(Math.round((s.tt1Score / s.tt1Max) * 15), 0, 15) : 0
+  const tt2Scaled = s.tt2Score !== null ? clampNumber(Math.round((s.tt2Score / s.tt2Max) * 15), 0, 15) : 0
+
+  const quizVals = [s.quiz1 ?? null, s.quiz2 ?? null, s.quiz3 ?? null].filter((x): x is number => x !== null)
+  const asgnVals = [s.asgn1 ?? null, s.asgn2 ?? null].filter((x): x is number => x !== null)
+
+  const bestQuiz = quizVals.sort((a, b) => b - a).slice(0, Math.max(1, scheme.quizCount))
+  const bestAsgn = asgnVals.sort((a, b) => b - a).slice(0, Math.max(1, scheme.assignmentCount))
+
+  const quizAvg10 = bestQuiz.length > 0 ? bestQuiz.reduce((a, b) => a + b, 0) / bestQuiz.length : 0
+  const asgnAvg10 = bestAsgn.length > 0 ? bestAsgn.reduce((a, b) => a + b, 0) / bestAsgn.length : 0
+
+  const quizScaled = scheme.quizCount === 0 || scheme.quizWeight === 0 ? 0 : Math.round((quizAvg10 / 10) * scheme.quizWeight)
+  const asgnScaled = scheme.assignmentCount === 0 || scheme.assignmentWeight === 0 ? 0 : Math.round((asgnAvg10 / 10) * scheme.assignmentWeight)
+
+  const ce60 = tt1Scaled + tt2Scaled + quizScaled + asgnScaled
+  const overall40 = Math.round((ce60 / 60) * 40)
+  return { tt1Scaled, tt2Scaled, quizScaled, asgnScaled, ce60, overall40 }
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -353,9 +382,21 @@ function StudentDrawer({ student, offering, role, onClose, onEscalate, onAssignR
    ACTION QUEUE (Right Sidebar)
    ══════════════════════════════════════════════════════════════ */
 
-function ActionQueue({ tasks, resolvedTaskIds, onResolveTask, onUndoTask, onOpenStudent }: { tasks: SharedTask[]; resolvedTaskIds: Record<string, number>; onResolveTask: (id: string) => void; onUndoTask: (id: string) => void; onOpenStudent: (id: string) => void }) {
+function ActionQueue({ role, tasks, offerings, resolvedTaskIds, onResolveTask, onUndoTask, onOpenStudent, onCreateTask }: { role: Role; tasks: SharedTask[]; offerings: Offering[]; resolvedTaskIds: Record<string, number>; onResolveTask: (id: string) => void; onUndoTask: (id: string) => void; onOpenStudent: (id: string) => void; onCreateTask: (input: { offeringId: string; studentId: string; taskType: 'Follow-up' | 'Remedial' | 'Attendance' | 'Academic'; due: string; note?: string; deferToHod?: boolean }) => void }) {
   const active = tasks.filter(t => !resolvedTaskIds[t.id])
   const done = tasks.filter(t => !!resolvedTaskIds[t.id])
+  const [selectedOffId, setSelectedOffId] = useState<string>(offerings[0]?.offId ?? '')
+  const [query, setQuery] = useState('')
+  const [selectedStudentId, setSelectedStudentId] = useState('')
+  const [taskType, setTaskType] = useState<'Follow-up' | 'Remedial' | 'Attendance' | 'Academic'>('Follow-up')
+  const [due, setDue] = useState('')
+  const [note, setNote] = useState('')
+  const selectedOffering = offerings.find(o => o.offId === selectedOffId) ?? offerings[0]
+  const filteredStudents = (selectedOffering ? getStudents(selectedOffering) : []).filter(s => {
+    const q = query.trim().toLowerCase()
+    if (!q) return true
+    return s.name.toLowerCase().includes(q) || s.usn.toLowerCase().includes(q)
+  })
 
   return (
     <div style={{ width: 310, flexShrink: 0, background: T.surface, borderLeft: `1px solid ${T.border}`, position: 'sticky', top: 0, height: '100vh', overflowY: 'auto', padding: '18px 16px' }}>
@@ -365,6 +406,35 @@ function ActionQueue({ tasks, resolvedTaskIds, onResolveTask, onUndoTask, onOpen
         <div style={{ marginLeft: 'auto' }}><Chip color={T.danger} size={10}>{active.length} pending</Chip></div>
       </div>
       <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 14 }}>Priority = risk × urgency × opportunity</div>
+
+      <Card style={{ padding: '10px 10px', marginBottom: 10 }}>
+        <div style={{ ...mono, fontSize: 10, color: T.muted, marginBottom: 6 }}>Quick Add Task</div>
+        <div style={{ display: 'grid', gap: 6 }}>
+          <select aria-label="Select class" value={selectedOffId} onChange={e => { setSelectedOffId(e.target.value); setSelectedStudentId('') }} style={{ ...mono, fontSize: 10, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '6px 8px' }}>
+            {offerings.map(o => <option key={o.offId} value={o.offId}>{o.code} · {o.year} · Sec {o.section}</option>)}
+          </select>
+          <input aria-label="Search student" placeholder="Search student/USN" value={query} onChange={e => setQuery(e.target.value)} style={{ ...mono, fontSize: 10, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '6px 8px' }} />
+          <select aria-label="Select student" value={selectedStudentId} onChange={e => setSelectedStudentId(e.target.value)} style={{ ...mono, fontSize: 10, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '6px 8px' }}>
+            <option value="">Select student</option>
+            {filteredStudents.map(s => <option key={s.id} value={s.id}>{s.name} · {s.usn}</option>)}
+          </select>
+          <select aria-label="Task type" value={taskType} onChange={e => setTaskType(e.target.value as 'Follow-up' | 'Remedial' | 'Attendance' | 'Academic')} style={{ ...mono, fontSize: 10, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '6px 8px' }}>
+            <option>Follow-up</option><option>Remedial</option><option>Attendance</option><option>Academic</option>
+          </select>
+          <input aria-label="Due date" type="date" value={due} onChange={e => setDue(e.target.value)} style={{ ...mono, fontSize: 10, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '6px 8px' }} />
+          <input aria-label="Task note" placeholder="Remedial tasks / note" value={note} onChange={e => setNote(e.target.value)} style={{ ...mono, fontSize: 10, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '6px 8px' }} />
+          <div style={{ display: 'flex', gap: 6 }}>
+            <Btn size="sm" onClick={() => {
+              if (!selectedOffering || !selectedStudentId) return
+              onCreateTask({ offeringId: selectedOffering.offId, studentId: selectedStudentId, taskType, due, note })
+            }}>Add</Btn>
+            {role !== 'HoD' && <Btn size="sm" variant="danger" onClick={() => {
+              if (!selectedOffering || !selectedStudentId) return
+              onCreateTask({ offeringId: selectedOffering.offId, studentId: selectedStudentId, taskType, due, note, deferToHod: true })
+            }}>Defer to HoD</Btn>}
+          </div>
+        </div>
+      </Card>
 
       {active.map(t => (
         <div key={t.id} style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 10, padding: '12px 14px', marginBottom: 8 }}>
@@ -431,11 +501,17 @@ function inferKindFromPendingAction(pending: string | null): EntryKind {
   return 'tt1'
 }
 
-function CLDashboard({ onOpenCourse, onOpenStudent, onOpenUpload }: { onOpenCourse: (o: Offering) => void; onOpenStudent: (s: Student, o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void }) {
-  const total = OFFERINGS.reduce((a, o) => a + o.count, 0)
+function CLDashboard({ offerings, onOpenCourse, onOpenStudent, onOpenUpload }: { offerings: Offering[]; onOpenCourse: (o: Offering) => void; onOpenStudent: (s: Student, o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void }) {
+  const total = offerings.reduce((a, o) => a + o.count, 0)
   const allAtRisk = useMemo(() => getAllAtRiskStudents(), [])
   const highRiskCount = allAtRisk.filter(s => s.riskBand === 'High').length
-  const pending = OFFERINGS.filter(o => o.pendingAction).length
+  const pending = offerings.filter(o => o.pendingAction).length
+  const yearGroups = useMemo(() => {
+    return Array.from(new Set(offerings.map(o => o.year))).map(year => {
+      const sample = offerings.find(o => o.year === year) ?? offerings[0]
+      return { year, color: yearColor(year), stageInfo: sample.stageInfo, offerings: offerings.filter(o => o.year === year) }
+    })
+  }, [offerings])
 
   return (
     <div style={{ padding: '28px 32px', maxWidth: 1100, animation: 'fadeUp 0.35s ease' }}>
@@ -507,10 +583,10 @@ function CLDashboard({ onOpenCourse, onOpenStudent, onOpenUpload }: { onOpenCour
       )}
 
       {/* Year Sections */}
-      {YEAR_GROUPS.map(g => <YearSection key={g.year} group={g} onOpenCourse={onOpenCourse} onOpenUpload={onOpenUpload} />)}
+      {yearGroups.map(g => <YearSection key={g.year} group={g} onOpenCourse={onOpenCourse} onOpenUpload={onOpenUpload} />)}
 
       {/* Summary Table */}
-      <SummaryTable onOpenCourse={onOpenCourse} onOpenUpload={onOpenUpload} />
+      <SummaryTable offerings={offerings} onOpenCourse={onOpenCourse} onOpenUpload={onOpenUpload} />
     </div>
   )
 }
@@ -590,7 +666,7 @@ function OfferingCard({ o, yc, onOpen, onOpenUpload }: { o: Offering; yc: string
   )
 }
 
-function SummaryTable({ onOpenCourse, onOpenUpload }: { onOpenCourse: (o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void }) {
+function SummaryTable({ offerings, onOpenCourse, onOpenUpload }: { offerings: Offering[]; onOpenCourse: (o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void }) {
   return (
     <Card style={{ marginTop: 8, padding: 0, overflow: 'hidden' }}>
       <div style={{ padding: '14px 18px', borderBottom: `1px solid ${T.border}` }}>
@@ -602,7 +678,7 @@ function SummaryTable({ onOpenCourse, onOpenUpload }: { onOpenCourse: (o: Offeri
             <tr>{['Year', 'Code', 'Course', 'Sec', 'Students', 'Attendance', 'Stage', 'TT1', 'TT2', 'High Risk', 'Action', 'Entry'].map(h => <TH key={h}>{h}</TH>)}</tr>
           </thead>
           <tbody>
-            {OFFERINGS.map(o => {
+            {offerings.map(o => {
               const ac = o.attendance >= 75 ? T.success : o.attendance >= 65 ? T.warning : T.danger
               const yc = yearColor(o.year)
               const hr = o.stage >= 2 ? getStudents(o).filter(s => s.riskBand === 'High').length : 0
@@ -1214,33 +1290,65 @@ function COTab({ cos }: { cos: CODef[] }) {
 
 /* ─── Grade Book Tab ─── */
 function GradeBookTab({ students, onOpenEntryHub }: { o: Offering; students: Student[]; onOpenEntryHub: () => void }) {
+  const [schemePreset, setSchemePreset] = useState<'10-20' | '20-10' | '30-0' | '0-30'>('10-20')
+  const [finalsMax, setFinalsMax] = useState<50 | 100>(50)
+  const [quizCount, setQuizCount] = useState<0 | 1 | 2>(1)
+  const [assignmentCount, setAssignmentCount] = useState<0 | 1 | 2>(1)
+
+  const [quizWeight, assignmentWeight] = schemePreset === '10-20'
+    ? [10, 20]
+    : schemePreset === '20-10'
+      ? [20, 10]
+      : schemePreset === '30-0'
+        ? [30, 0]
+        : [0, 30]
+
+  const scheme: EvaluationScheme = { finalsMax, quizWeight, assignmentWeight, quizCount, assignmentCount }
+
   return (
     <div style={{ padding: '24px 32px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div style={{ ...sora, fontWeight: 700, fontSize: 17, color: T.text }}>Grade Book — CE Marks</div>
         <Btn size="sm" onClick={onOpenEntryHub}>Enter SEE/Finals via Data Entry Hub →</Btn>
       </div>
+      <Card style={{ marginBottom: 12, padding: '10px 12px' }}>
+        <div style={{ ...mono, fontSize: 10, color: T.muted, marginBottom: 8 }}>CE model: TT1+TT2 = 30/60 fixed. Quiz+Assignment = 30/60 variable. CE contributes 40% overall.</div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <select aria-label="Quiz assignment split" value={schemePreset} onChange={e => setSchemePreset(e.target.value as '10-20' | '20-10' | '30-0' | '0-30')} style={{ ...mono, fontSize: 10, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '5px 8px' }}>
+            <option value="10-20">Quiz 10 · Asgn 20</option>
+            <option value="20-10">Quiz 20 · Asgn 10</option>
+            <option value="30-0">Quiz 30 · Asgn 0</option>
+            <option value="0-30">Quiz 0 · Asgn 30</option>
+          </select>
+          <select aria-label="Quiz count" value={quizCount} onChange={e => setQuizCount(Number(e.target.value) as 0 | 1 | 2)} style={{ ...mono, fontSize: 10, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '5px 8px' }}>
+            <option value={0}>Quiz count: 0</option><option value={1}>Quiz count: 1</option><option value={2}>Quiz count: 2</option>
+          </select>
+          <select aria-label="Assignment count" value={assignmentCount} onChange={e => setAssignmentCount(Number(e.target.value) as 0 | 1 | 2)} style={{ ...mono, fontSize: 10, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '5px 8px' }}>
+            <option value={0}>Assignment count: 0</option><option value={1}>Assignment count: 1</option><option value={2}>Assignment count: 2</option>
+          </select>
+          <select aria-label="Finals max marks" value={finalsMax} onChange={e => setFinalsMax(Number(e.target.value) as 50 | 100)} style={{ ...mono, fontSize: 10, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '5px 8px' }}>
+            <option value={50}>Finals max: 50</option>
+            <option value={100}>Finals max: 100</option>
+          </select>
+        </div>
+      </Card>
       <Card style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr>{['USN', 'Name', 'Att /10', 'TT1 /15', 'TT2 /15', 'Quiz /10', 'Asgn /10', 'CE /50', 'SEE', 'Risk'].map(h => <TH key={h}>{h}</TH>)}</tr></thead>
+            <thead><tr>{['USN', 'Name', 'TT1 /15', 'TT2 /15', `Quiz /${quizWeight}`, `Asgn /${assignmentWeight}`, 'CE /60', 'Overall /40', `SEE /${finalsMax}`, 'Risk'].map(h => <TH key={h}>{h}</TH>)}</tr></thead>
             <tbody>
               {students.slice(0, 20).map(s => {
-                const attPct = Math.round(s.present / s.totalClasses * 100)
-                const attM = attPct >= 75 ? 10 : attPct >= 65 ? Math.round((attPct - 65) / 10 * 10) : 0
-                const tt1s = s.tt1Score !== null ? Math.round(s.tt1Score / s.tt1Max * 15) : null
-                const tt2s = s.tt2Score !== null ? Math.round(s.tt2Score / s.tt2Max * 15) : null
-                const ce = attM + (tt1s ?? 0) + (tt2s ?? 0) + (s.quiz1 ?? 0) + (s.asgn1 ?? 0)
+                const ev = computeEvaluation(s, scheme)
                 return (
                   <tr key={s.id}>
                     <TD style={{ ...mono, fontSize: 10, color: T.accent }}>{s.usn}</TD>
                     <TD style={{ ...sora, fontSize: 11, color: T.text, whiteSpace: 'nowrap' }}>{s.name}</TD>
-                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: attM >= 8 ? T.success : T.warning }}>{attM}</TD>
-                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: tt1s !== null ? T.text : T.dim }}>{tt1s ?? '—'}</TD>
-                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: tt2s !== null ? T.text : T.dim }}>{tt2s ?? '—'}</TD>
-                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: s.quiz1 !== null ? T.text : T.dim }}>{s.quiz1 ?? '—'}</TD>
-                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: s.asgn1 !== null ? T.text : T.dim }}>{s.asgn1 ?? '—'}</TD>
-                    <TD style={{ ...mono, fontSize: 12, fontWeight: 700, textAlign: 'center', color: ce >= 25 ? T.success : ce >= 20 ? T.warning : T.danger }}>{ce}</TD>
+                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: s.tt1Score !== null ? T.text : T.dim }}>{s.tt1Score !== null ? ev.tt1Scaled : '—'}</TD>
+                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: s.tt2Score !== null ? T.text : T.dim }}>{s.tt2Score !== null ? ev.tt2Scaled : '—'}</TD>
+                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: quizWeight === 0 ? T.dim : T.text }}>{quizWeight === 0 ? '—' : ev.quizScaled}</TD>
+                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: assignmentWeight === 0 ? T.dim : T.text }}>{assignmentWeight === 0 ? '—' : ev.asgnScaled}</TD>
+                    <TD style={{ ...mono, fontSize: 12, fontWeight: 700, textAlign: 'center', color: ev.ce60 >= 30 ? T.success : ev.ce60 >= 24 ? T.warning : T.danger }}>{ev.ce60}</TD>
+                    <TD style={{ ...mono, fontSize: 12, fontWeight: 700, textAlign: 'center', color: ev.overall40 >= 20 ? T.success : ev.overall40 >= 16 ? T.warning : T.danger }}>{ev.overall40}</TD>
                     <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: T.dim }}>—</TD>
                     <TD><RiskBadge band={s.riskBand} prob={s.riskProb} /></TD>
                   </tr>
@@ -1423,9 +1531,9 @@ function HodView({ onOpenUpload, onOpenCourse, onOpenStudent, tasks }: { onOpenU
       .slice(0, 8)
   }, [tasks, mentorTasks, selectedTeacher])
 
-  const totalStudents = teacherStats.reduce((a, t) => a + t.students, 0)
-  const totalHighRisk = teacherStats.reduce((a, t) => a + t.highRisk, 0)
-  const avgAttendance = teacherStats.length > 0 ? Math.round(teacherStats.reduce((a, t) => a + t.avgAtt, 0) / teacherStats.length) : 0
+  const totalStudents = OFFERINGS.reduce((a, o) => a + o.count, 0)
+  const totalHighRisk = OFFERINGS.reduce((a, o) => a + getStudents(o).filter(s => s.riskBand === 'High').length, 0)
+  const avgAttendance = OFFERINGS.length > 0 ? Math.round(OFFERINGS.reduce((a, o) => a + o.attendance, 0) / OFFERINGS.length) : 0
 
   return (
     <div style={{ padding: '28px 32px', maxWidth: 1100, animation: 'fadeUp 0.35s ease' }}>
@@ -1703,7 +1811,7 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOfferi
   )
 }
 
-function EntryWorkspacePage({ role, offeringId, kind, onBack, lockByOffering, draftBySection, onSaveDraft, onSubmitLock, cellValues, onCellValueChange, onOpenStudent }: { role: Role; offeringId: string; kind: EntryKind; onBack: () => void; lockByOffering: Record<string, EntryLockMap>; draftBySection: Record<string, number>; onSaveDraft: (offId: string, kind: EntryKind) => void; onSubmitLock: (offId: string, kind: EntryKind) => void; cellValues: Record<string, number>; onCellValueChange: (key: string, value: number | undefined) => void; onOpenStudent: (s: Student, o: Offering) => void }) {
+function EntryWorkspacePage({ role, offeringId, kind, onBack, lockByOffering, draftBySection, onSaveDraft, onSubmitLock, cellValues, onCellValueChange, onOpenStudent, onCreateTask }: { role: Role; offeringId: string; kind: EntryKind; onBack: () => void; lockByOffering: Record<string, EntryLockMap>; draftBySection: Record<string, number>; onSaveDraft: (offId: string, kind: EntryKind) => void; onSubmitLock: (offId: string, kind: EntryKind) => void; cellValues: Record<string, number>; onCellValueChange: (key: string, value: number | undefined) => void; onOpenStudent: (s: Student, o: Offering) => void; onCreateTask: (input: { offeringId: string; studentId: string; taskType: 'Follow-up' | 'Remedial' | 'Attendance' | 'Academic'; due: string; note?: string; deferToHod?: boolean }) => void }) {
   const [unlockRequested, setUnlockRequested] = useState(false)
   const selectedOffering = OFFERINGS.find(o => o.offId === offeringId) ?? OFFERINGS[0]
   const groupedSections = OFFERINGS.filter(o => o.code === selectedOffering.code && o.year === selectedOffering.year)
@@ -1763,7 +1871,7 @@ function EntryWorkspacePage({ role, offeringId, kind, onBack, lockByOffering, dr
                       {kind === 'assignment' && <TH>Asgn 1 /10</TH>}
                       {kind === 'attendance' && <TH>Present /45</TH>}
                       {kind === 'finals' && <TH>SEE /50</TH>}
-                      <TH>Profile</TH>
+                      <TH>Profile</TH><TH>Task</TH>
                     </tr>
                   </thead>
                   <tbody>
@@ -1782,6 +1890,12 @@ function EntryWorkspacePage({ role, offeringId, kind, onBack, lockByOffering, dr
                         {kind === 'attendance' && <TD><input aria-label={`Attendance present classes for ${s.name}`} title={`Enter attendance present count for ${s.name}`} placeholder="0" type="number" inputMode="numeric" min={0} max={45} disabled={!canEditSection} value={cellValues[toCellKey(sec.offId, kind, s.id, 'present')] ?? s.present} onKeyDown={shouldBlockNumericKey} onChange={(e) => onCellValueChange(toCellKey(sec.offId, kind, s.id, 'present'), parseInputValue(e.target.value, 0, 45))} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
                         {kind === 'finals' && <TD><input aria-label={`SEE marks for ${s.name}`} title={`Enter SEE marks for ${s.name}`} type="number" inputMode="numeric" min={0} max={50} disabled={!canEditSection} value={cellValues[toCellKey(sec.offId, kind, s.id, 'see')] ?? ''} onKeyDown={shouldBlockNumericKey} onChange={(e) => onCellValueChange(toCellKey(sec.offId, kind, s.id, 'see'), parseInputValue(e.target.value, 0, 50))} placeholder="Enter" style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
                         <TD><button aria-label={`Open ${s.name} profile`} title="Open profile" onClick={() => onOpenStudent(s, sec)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Eye size={13} /></button></TD>
+                        <TD>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button aria-label={`Add follow-up task for ${s.name}`} title="Add task" onClick={() => onCreateTask({ offeringId: sec.offId, studentId: s.id, taskType: 'Follow-up', due: 'This week' })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.success, ...mono, fontSize: 11 }}>+Task</button>
+                            {role !== 'HoD' && <button aria-label={`Defer ${s.name} to HoD`} title="Defer to HoD" onClick={() => onCreateTask({ offeringId: sec.offId, studentId: s.id, taskType: 'Academic', due: 'Today', deferToHod: true })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.danger, ...mono, fontSize: 11 }}>↗HoD</button>}
+                          </div>
+                        </TD>
                       </tr>
                     ))}
                   </tbody>
@@ -2029,6 +2143,39 @@ export default function App() {
     })
   }, [])
 
+  const handleCreateTask = useCallback((input: { offeringId: string; studentId: string; taskType: 'Follow-up' | 'Remedial' | 'Attendance' | 'Academic'; due: string; note?: string; deferToHod?: boolean }) => {
+    const off = OFFERINGS.find(o => o.offId === input.offeringId)
+    if (!off) return
+    const s = getStudents(off).find(st => st.id === input.studentId)
+    if (!s) return
+    const id = `manual-${input.taskType}-${s.id}-${Date.now()}`
+    const riskProb = s.riskProb ?? 0.45
+    const title = `${input.taskType}: ${s.name.split(' ')[0]} (${off.code} Sec ${off.section})`
+    const assignedTo: Role = input.deferToHod ? 'HoD' : role
+    setAllTasksList(prev => [{
+      id,
+      studentId: s.id,
+      studentName: s.name,
+      studentUsn: s.usn,
+      offeringId: off.offId,
+      courseCode: off.code,
+      courseName: off.title,
+      year: off.year,
+      riskProb,
+      riskBand: (s.riskBand ?? 'Medium') as RiskBand,
+      title,
+      due: input.due || 'This week',
+      status: 'New',
+      actionHint: input.note || `${input.taskType} task created from quick panel`,
+      priority: Math.round(riskProb * 100),
+      createdAt: Date.now(),
+      assignedTo,
+      escalated: !!input.deferToHod,
+      sourceRole: role,
+      manual: true,
+    }, ...prev])
+  }, [role])
+
   const upsertTaskFromStudent = useCallback((s: Student, o: Offering | undefined, mode: 'escalate' | 'remedial' | 'manual') => {
     const off = o ?? OFFERINGS.find(x => getStudents(x).some(st => st.id === s.id))
     const offId = off?.offId ?? ''
@@ -2197,11 +2344,11 @@ export default function App() {
 
         {/* Center Content */}
         <div style={{ flex: 1, overflowY: 'auto', height: 'calc(100vh - 54px)' }}>
-          {role === 'Course Leader' && page === 'dashboard' && <CLDashboard onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} />}
+          {role === 'Course Leader' && page === 'dashboard' && <CLDashboard offerings={assignedOfferings} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} />}
           {role === 'Course Leader' && page === 'course' && offering && <CourseDetail offering={offering} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} initialTab={courseInitialTab} />}
           {role === 'Course Leader' && page === 'calendar' && <CalendarPage />}
           {role === 'Course Leader' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} availableOfferings={assignedOfferings} />}
-          {role === 'Course Leader' && page === 'entry-workspace' && <EntryWorkspacePage role={role} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} />}
+          {role === 'Course Leader' && page === 'entry-workspace' && <EntryWorkspacePage role={role} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onCreateTask={handleCreateTask} />}
 
           {role === 'Mentor' && page === 'mentees' && <MentorView mentees={assignedMentees} onOpenMentee={() => {}} />}
           {role === 'Mentor' && page === 'calendar' && <CalendarPage />}
@@ -2209,13 +2356,13 @@ export default function App() {
           {role === 'HoD' && page === 'department' && <HodView onOpenUpload={handleOpenUpload} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} tasks={allTasksList} />}
           {role === 'HoD' && page === 'course' && offering && <CourseDetail offering={offering} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} initialTab={courseInitialTab} />}
           {role === 'HoD' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} availableOfferings={assignedOfferings} />}
-          {role === 'HoD' && page === 'entry-workspace' && <EntryWorkspacePage role={role} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} />}
+          {role === 'HoD' && page === 'entry-workspace' && <EntryWorkspacePage role={role} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onCreateTask={handleCreateTask} />}
           {role === 'HoD' && page === 'calendar' && <CalendarPage />}
         </div>
 
         {/* Right Sidebar — Action Queue */}
         {showActionQueue && (
-          <ActionQueue tasks={roleTasks} resolvedTaskIds={resolvedTasks} onResolveTask={handleResolveTask} onUndoTask={handleUndoTask} onOpenStudent={(id) => {
+          <ActionQueue role={role} tasks={roleTasks} offerings={assignedOfferings} resolvedTaskIds={resolvedTasks} onResolveTask={handleResolveTask} onUndoTask={handleUndoTask} onCreateTask={handleCreateTask} onOpenStudent={(id) => {
             for (const off of OFFERINGS) {
               const s = getStudents(off).find(st => st.id === id)
               if (s) {
