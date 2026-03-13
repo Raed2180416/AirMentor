@@ -13,11 +13,6 @@ input[type=number]::-webkit-outer-spin-button { opacity: 0.3; }
 	--scroll-thumb-hover: #365079;
 }
 
-* {
-	scrollbar-width: thin;
-	scrollbar-color: var(--scroll-thumb) var(--scroll-track);
-}
-
 @supports selector(::-webkit-scrollbar) {
 	::-webkit-scrollbar { width: 8px; height: 8px; }
 	::-webkit-scrollbar-track { background: var(--scroll-track); }
