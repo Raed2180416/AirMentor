@@ -25,7 +25,24 @@ type SharedTask = Task & {
   manual?: boolean
 }
 
+type TeacherAccount = {
+  teacherId: string
+  name: string
+  initials: string
+  permissions: Role[]
+  courseCodes: string[]
+}
+
 const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000
+
+const TEACHER_ACCOUNTS: TeacherAccount[] = [
+  { teacherId: 't1', name: 'Dr. Kavitha Rao', initials: 'KR', permissions: ['Course Leader', 'Mentor', 'HoD'], courseCodes: ['CS401', 'CS403'] },
+  { teacherId: 't2', name: 'Dr. Arvind Kumar', initials: 'AK', permissions: ['Course Leader'], courseCodes: ['CS601'] },
+  { teacherId: 't3', name: 'Prof. Sneha Nair', initials: 'SN', permissions: ['Mentor'], courseCodes: ['MA101'] },
+  { teacherId: 't4', name: 'Dr. Rajesh Bhat', initials: 'RB', permissions: ['Course Leader', 'Mentor'], courseCodes: ['CS702'] },
+  { teacherId: 't5', name: 'Prof. Ananya Iyer', initials: 'AI', permissions: ['Course Leader'], courseCodes: ['CS101'] },
+  { teacherId: 't6', name: 'Dr. Vikram Nair', initials: 'VN', permissions: ['Mentor'], courseCodes: ['CS603', 'MA301'] },
+]
 
 const THEME_PRESETS: Record<ThemeMode, typeof T> = {
   light: {
@@ -114,6 +131,43 @@ const StagePips = ({ current }: { current: Stage }) => (
     {([1, 2, 3] as Stage[]).map(s => <div key={s} style={{ flex: 1, height: 4, borderRadius: 2, background: s <= current ? stageColor(s) : T.border }} />)}
   </div>
 )
+
+function LoginPage({ onLogin }: { onLogin: (teacherId: string) => void }) {
+  const [teacherId, setTeacherId] = useState<string>(TEACHER_ACCOUNTS[0].teacherId)
+  const [password, setPassword] = useState('')
+  const [err, setErr] = useState('')
+
+  return (
+    <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <Card style={{ width: '100%', maxWidth: 420, padding: 24 }} glow={T.accent}>
+        <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: T.text, marginBottom: 6 }}>AirMentor Login</div>
+        <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 16 }}>Use password <span style={{ color: T.accent }}>1234</span> for mock flow.</div>
+
+        <div style={{ marginBottom: 10 }}>
+          <label htmlFor="teacher-login" style={{ ...mono, fontSize: 10, color: T.muted, display: 'block', marginBottom: 5 }}>Teacher</label>
+          <select id="teacher-login" value={teacherId} onChange={e => setTeacherId(e.target.value)} style={{ width: '100%', ...mono, fontSize: 12, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 7, padding: '9px 10px' }}>
+            {TEACHER_ACCOUNTS.map(t => <option key={t.teacherId} value={t.teacherId}>{t.name}</option>)}
+          </select>
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <label htmlFor="teacher-password" style={{ ...mono, fontSize: 10, color: T.muted, display: 'block', marginBottom: 5 }}>Password</label>
+          <input id="teacher-password" type="password" value={password} onChange={e => setPassword(e.target.value)} style={{ width: '100%', ...mono, fontSize: 12, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 7, padding: '9px 10px' }} />
+        </div>
+
+        {err && <div style={{ ...mono, fontSize: 11, color: T.danger, marginBottom: 10 }}>{err}</div>}
+        <Btn onClick={() => {
+          if (password !== '1234') {
+            setErr('Invalid password')
+            return
+          }
+          setErr('')
+          onLogin(teacherId)
+        }}><Shield size={14} /> Login</Btn>
+      </Card>
+    </div>
+  )
+}
 
 /* ══════════════════════════════════════════════════════════════
    STUDENT DRAWER — SHAP, What-If, CO, Interventions
@@ -1293,14 +1347,10 @@ function MentorView({ onOpenMentee }: { onOpenMentee: (m: Mentee) => void }) {
 function HodView({ onOpenUpload, onOpenCourse, onOpenStudent, tasks }: { onOpenUpload: (o?: Offering, kind?: EntryKind) => void; onOpenCourse: (o: Offering) => void; onOpenStudent: (s: Student, o?: Offering) => void; tasks: SharedTask[] }) {
   const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null)
 
-  const teacherCourseMap: Record<string, string[]> = {
-    t1: ['CS401', 'CS403', 'MA101'],
-    t2: ['CS601', 'CS603'],
-    t3: ['CS101', 'MA301'],
-    t4: ['CS702'],
-    t5: ['CS401', 'CS702'],
-    t6: ['CS603'],
-  }
+  const teacherCourseMap: Record<string, string[]> = useMemo(
+    () => Object.fromEntries(TEACHER_ACCOUNTS.map(t => [t.teacherId, t.courseCodes])) as Record<string, string[]>,
+    []
+  )
 
   const teacherOfferingsById = useMemo(() => {
     const map: Record<string, Offering[]> = Object.fromEntries(TEACHERS.map(t => [t.id, [] as Offering[]]))
@@ -1362,51 +1412,6 @@ function HodView({ onOpenUpload, onOpenCourse, onOpenStudent, tasks }: { onOpenU
       .sort((a, b) => b.riskProb - a.riskProb)
       .slice(0, 8)
   }, [tasks, mentorTasks, selectedTeacher])
-
-  const escalations = useMemo(() => {
-    const fromCourseLeader = tasks.filter(t => t.escalated).slice(0, 4).map(t => ({
-      key: `cl-${t.id}`,
-      name: t.studentName,
-      usn: t.studentUsn,
-      risk: Math.round(t.riskProb * 100),
-      teacher: teacherStats.find(ts => (teacherOfferingsById[ts.id] ?? []).some(o => o.offId === t.offeringId))?.name ?? 'Course Leader',
-      source: 'Course Leader',
-      reason: t.actionHint,
-      status: t.status,
-      studentId: t.studentId,
-      offeringId: t.offeringId,
-    }))
-
-    const fromMentor = MENTEES
-      .filter(m => m.avs >= 0.55)
-      .slice(0, 1)
-      .map(m => ({
-        key: `mentor-${m.id}`,
-        name: m.name,
-        usn: m.usn,
-        risk: Math.round(m.avs * 100),
-        teacher: 'Mentor referral',
-        source: 'Mentor',
-        reason: `Cross-subject vulnerability ${Math.round(m.avs * 100)}% — ${m.interventions.length > 0 ? 'intervention underway' : 'no intervention logged'}`,
-        status: m.interventions.length > 0 ? 'In Progress' : 'Escalated',
-      }))
-
-    const fromAuto = MENTEES
-      .filter(m => m.avs >= 0.75 && m.interventions.length === 0)
-      .slice(0, 1)
-      .map(m => ({
-        key: `auto-${m.id}`,
-        name: m.name,
-        usn: m.usn,
-        risk: Math.round(m.avs * 100),
-        teacher: 'System',
-        source: 'Auto',
-        reason: 'Risk > 75% with no interventions in mentor log',
-        status: 'Auto-flagged',
-      }))
-
-    return [...fromAuto, ...fromCourseLeader, ...fromMentor].slice(0, 6)
-  }, [tasks, teacherOfferingsById, teacherStats])
 
   const totalStudents = teacherStats.reduce((a, t) => a + t.students, 0)
   const totalHighRisk = teacherStats.reduce((a, t) => a + t.highRisk, 0)
@@ -1535,40 +1540,7 @@ function HodView({ onOpenUpload, onOpenCourse, onOpenStudent, tasks }: { onOpenU
         </Card>
       )}
 
-      {/* Escalation Queue (mirrors escalated tasks in Action Queue) */}
-      <div style={{ ...sora, fontWeight: 700, fontSize: 15, color: T.text, marginTop: 22, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-        <AlertTriangle size={16} color={T.danger} /> Escalation Queue
-      </div>
-      <Card style={{ padding: '14px 18px' }}>
-        <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 10 }}>Escalations are now first-class tasks in the common Action Queue for all roles.</div>
-        {escalations.map((e, i) => (
-          <div key={e.key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: i < escalations.length - 1 ? `1px solid ${T.border}` : 'none', flexWrap: 'wrap' }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                <div style={{ ...sora, fontWeight: 600, fontSize: 14, color: T.text }}>{e.name} <span style={{ ...mono, fontSize: 10, color: T.accent }}>{e.usn}</span></div>
-                <Chip color={e.source === 'Auto' ? T.danger : T.blue} size={9}>{e.source}</Chip>
-              </div>
-              <div style={{ ...mono, fontSize: 11, color: T.text }}>{e.reason}</div>
-              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>From: {e.teacher}</div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-               <div style={{ ...sora, fontWeight: 800, fontSize: 18, color: T.danger }}>{e.risk}%</div>
-               <div style={{ ...mono, fontSize: 9, color: T.muted }}>Risk</div>
-            </div>
-            <div style={{ display: 'flex', gap: 6, marginLeft: 16 }}>
-              <Btn size="sm" variant="ghost" onClick={() => {
-                if (!('studentId' in e) || !('offeringId' in e)) return
-                const off = OFFERINGS.find(o => o.offId === (e as any).offeringId)
-                if (!off) return
-                const s = getStudents(off).find(st => st.id === (e as any).studentId)
-                if (s) onOpenStudent(s, off)
-              }}>View Profile</Btn>
-               <Btn size="sm" variant="primary">Message {e.source === 'Auto' ? 'Mentor' : 'Sender'}</Btn>
-            </div>
-          </div>
-        ))}
-        {escalations.length === 0 && <div style={{ ...mono, fontSize: 11, color: T.muted }}>No escalations right now.</div>}
-      </Card>
+
     </div>
   )
 }
@@ -1624,17 +1596,27 @@ const getEntryLockMap = (o: Offering) => ({
    UPLOAD PAGE
    ══════════════════════════════════════════════════════════════ */
 
-function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOffering }: { role: Role; offering: Offering | null; defaultKind: EntryKind; onOpenWorkspace: (offeringId: string, kind: EntryKind) => void; lockByOffering: Record<string, EntryLockMap> }) {
+function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOffering, availableOfferings }: { role: Role; offering: Offering | null; defaultKind: EntryKind; onOpenWorkspace: (offeringId: string, kind: EntryKind) => void; lockByOffering: Record<string, EntryLockMap>; availableOfferings?: Offering[] }) {
+  const visibleOfferings = (availableOfferings && availableOfferings.length > 0 ? availableOfferings : OFFERINGS)
   const [selectedKind, setSelectedKind] = useState<EntryKind>(defaultKind)
-  const [selectedOffId, setSelectedOffId] = useState<string>(offering?.offId ?? OFFERINGS[0].offId)
+  const [selectedOffId, setSelectedOffId] = useState<string>(offering?.offId ?? visibleOfferings[0].offId)
+  const [selectedCourseCode, setSelectedCourseCode] = useState<string>(offering?.code ?? visibleOfferings[0].code)
+  const [selectedClassOffId, setSelectedClassOffId] = useState<string>(offering?.offId ?? visibleOfferings[0].offId)
   const [unlockRequested, setUnlockRequested] = useState<EntryKind | null>(null)
   useEffect(() => setSelectedKind(defaultKind), [defaultKind])
   useEffect(() => {
     if (offering?.offId) setSelectedOffId(offering.offId)
   }, [offering])
+  useEffect(() => {
+    const selected = visibleOfferings.find(o => o.offId === selectedOffId) ?? visibleOfferings[0]
+    if (!selected) return
+    setSelectedCourseCode(selected.code)
+    setSelectedClassOffId(selected.offId)
+  }, [selectedOffId, visibleOfferings])
 
   const selected = ENTRY_CATALOG.find(x => x.kind === selectedKind) ?? ENTRY_CATALOG[0]
-  const selectedOffering = OFFERINGS.find(o => o.offId === selectedOffId) ?? offering ?? OFFERINGS[0]
+  const selectedOffering = visibleOfferings.find(o => o.offId === selectedOffId) ?? offering ?? visibleOfferings[0]
+  const classOfferings = visibleOfferings.filter(o => o.code === selectedCourseCode)
   const lockMap = lockByOffering[selectedOffering.offId] ?? getEntryLockMap(selectedOffering)
   const stageRequired: Record<EntryKind, number> = { tt1: 1, tt2: 2, quiz: 2, assignment: 2, attendance: 1, finals: 3 }
   const isApplicableForStage = selectedOffering.stageInfo.stage >= stageRequired[selectedKind]
@@ -1665,11 +1647,28 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOfferi
           </div>
         </Card>
       )}
-      <div style={{ marginBottom: 18 }}>
-        <label htmlFor="entry-offering-select" style={{ ...mono, fontSize: 10, color: T.muted, marginRight: 8 }}>Course / Section:</label>
-        <select id="entry-offering-select" aria-label="Select course and section" title="Select course and section" value={selectedOffId} onChange={e => setSelectedOffId(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 10px' }}>
-          {OFFERINGS.map(o => <option key={o.offId} value={o.offId}>{o.code} · {o.title} · {o.year} · Sec {o.section}</option>)}
-        </select>
+      <div style={{ marginBottom: 18, display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'end' }}>
+        <div>
+          <label htmlFor="entry-course-select" style={{ ...mono, fontSize: 10, color: T.muted, marginRight: 8 }}>Course:</label>
+          <select id="entry-course-select" aria-label="Select course" title="Select course" value={selectedCourseCode} onChange={e => {
+            const code = e.target.value
+            setSelectedCourseCode(code)
+            const firstClass = visibleOfferings.find(o => o.code === code)
+            if (firstClass) setSelectedClassOffId(firstClass.offId)
+          }} style={{ width: '100%', ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 10px' }}>
+            {Array.from(new Set(visibleOfferings.map(o => o.code))).map(code => {
+              const first = visibleOfferings.find(o => o.code === code)
+              return <option key={code} value={code}>{code} · {first?.title ?? 'Course'}</option>
+            })}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="entry-class-select" style={{ ...mono, fontSize: 10, color: T.muted, marginRight: 8 }}>Class:</label>
+          <select id="entry-class-select" aria-label="Select class" title="Select class" value={selectedClassOffId} onChange={e => setSelectedClassOffId(e.target.value)} style={{ width: '100%', ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 10px' }}>
+            {classOfferings.map(o => <option key={o.offId} value={o.offId}>{o.year} · Sec {o.section} · {o.count} students</option>)}
+          </select>
+        </div>
+        <Btn size="sm" onClick={() => setSelectedOffId(selectedClassOffId)}>Select Class</Btn>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         {ENTRY_CATALOG.map((x) => (
@@ -1807,6 +1806,8 @@ const HOD_NAV = [
 
 export default function App() {
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => (localStorage.getItem('airmentor-theme') as ThemeMode) || 'light')
+  const [currentTeacherId, setCurrentTeacherId] = useState<string | null>(() => localStorage.getItem('airmentor-current-teacher-id'))
+  const currentTeacher = useMemo(() => currentTeacherId ? (TEACHER_ACCOUNTS.find(t => t.teacherId === currentTeacherId) ?? null) : null, [currentTeacherId])
   const [role, setRole] = useState<Role>('Course Leader')
   const [page, setPage] = useState('dashboard')
   const [offering, setOffering] = useState<Offering | null>(null)
@@ -1819,6 +1820,13 @@ export default function App() {
   const [entryOfferingId, setEntryOfferingId] = useState<string>(OFFERINGS[0].offId)
   const [entryKind, setEntryKind] = useState<EntryKind>('tt1')
   const [courseInitialTab, setCourseInitialTab] = useState<string | undefined>(undefined)
+
+  const allowedRoles = currentTeacher?.permissions ?? []
+  const assignedOfferings = useMemo(() => {
+    if (!currentTeacher) return OFFERINGS
+    if (currentTeacher.permissions.includes('HoD')) return OFFERINGS
+    return OFFERINGS.filter(o => currentTeacher.courseCodes.includes(o.code))
+  }, [currentTeacher])
 
   const [lockByOffering, setLockByOffering] = useState<Record<string, EntryLockMap>>(() => {
     try {
@@ -1923,6 +1931,20 @@ export default function App() {
     localStorage.setItem('airmentor-theme', themeMode)
   }, [themeMode])
 
+  useEffect(() => {
+    if (currentTeacherId) localStorage.setItem('airmentor-current-teacher-id', currentTeacherId)
+    else localStorage.removeItem('airmentor-current-teacher-id')
+  }, [currentTeacherId])
+
+  useEffect(() => {
+    if (!currentTeacher) return
+    if (!currentTeacher.permissions.includes(role)) {
+      const nextRole = currentTeacher.permissions[0]
+      setRole(nextRole)
+      setPage(nextRole === 'Course Leader' ? 'dashboard' : nextRole === 'Mentor' ? 'mentees' : 'department')
+    }
+  }, [currentTeacher, role])
+
   const handleOpenCourse = useCallback((o: Offering) => {
     setOffering(o)
     setCourseInitialTab(undefined)
@@ -1941,9 +1963,10 @@ export default function App() {
   }, [])
   const handleOpenUpload = useCallback((o?: Offering, kind: EntryKind = 'tt1') => {
     if (o) setUploadOffering(o)
+    else setUploadOffering(assignedOfferings[0] ?? OFFERINGS[0])
     setUploadKind(kind)
     setPage('upload')
-  }, [])
+  }, [assignedOfferings])
   const handleOpenWorkspace = useCallback((offeringId: string, kind: EntryKind) => {
     setEntryOfferingId(offeringId)
     setEntryKind(kind)
@@ -1951,12 +1974,13 @@ export default function App() {
   }, [])
 
   const handleRoleChange = useCallback((r: Role) => {
+    if (!allowedRoles.includes(r)) return
     setRole(r)
     setPage(r === 'Course Leader' ? 'dashboard' : r === 'Mentor' ? 'mentees' : 'department')
     setOffering(null)
     setSelectedStudent(null)
     setCourseInitialTab(undefined)
-  }, [])
+  }, [allowedRoles])
 
   const handleSaveDraft = useCallback((offId: string, kind: EntryKind) => {
     setDraftBySection(prev => ({ ...prev, [`${offId}::${kind}`]: Date.now() }))
@@ -2031,13 +2055,27 @@ export default function App() {
     })
   }, [role])
 
+  if (!currentTeacher) {
+    return <LoginPage onLogin={(teacherId) => {
+      const account = TEACHER_ACCOUNTS.find(t => t.teacherId === teacherId)
+      if (!account) return
+      setCurrentTeacherId(account.teacherId)
+      const firstRole = account.permissions[0]
+      setRole(firstRole)
+      setPage(firstRole === 'Course Leader' ? 'dashboard' : firstRole === 'Mentor' ? 'mentees' : 'department')
+      setOffering(null)
+      setSelectedStudent(null)
+      setCourseInitialTab(undefined)
+    }} />
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: T.bg, color: T.text }}>
       {/* ═══ TOP BAR ═══ */}
       <div style={{ position: 'sticky', top: 0, zIndex: 50, display: 'flex', alignItems: 'center', gap: 16, padding: '10px 20px', background: themeMode === 'light' ? 'rgba(255,255,255,0.92)' : 'rgba(7,9,15,0.92)', backdropFilter: 'blur(12px)', borderBottom: `1px solid ${T.border}` }}>
         {/* Brand */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 34, height: 34, borderRadius: 10, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 13, color: '#fff' }}>AM</div>
+          <div style={{ width: 34, height: 34, borderRadius: 10, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 13, color: '#fff' }}>{currentTeacher.initials}</div>
           <div>
             <div style={{ ...sora, fontWeight: 800, fontSize: 14, color: T.text }}>AirMentor</div>
             <div style={{ ...mono, fontSize: 9, color: T.dim }}>AI Mentor Intelligence</div>
@@ -2046,7 +2084,7 @@ export default function App() {
 
         {/* Role Switcher */}
         <div style={{ display: 'flex', gap: 0, marginLeft: 32, background: T.surface2, borderRadius: 8, padding: 2, border: `1px solid ${T.border}` }}>
-          {(['Course Leader', 'Mentor', 'HoD'] as Role[]).map(r => (
+          {allowedRoles.map(r => (
             <button key={r} onClick={() => handleRoleChange(r)}
               style={{ ...sora, fontWeight: 600, fontSize: 11, padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer', background: role === r ? T.accent : 'transparent', color: role === r ? '#fff' : T.muted, transition: 'all 0.15s' }}>
               {r}
@@ -2061,7 +2099,15 @@ export default function App() {
             <Bell size={14} />
             {pendingActionCount > 0 && <div style={{ position: 'absolute', top: -6, right: -6, minWidth: 16, height: 16, borderRadius: 8, background: T.danger, color: '#fff', ...mono, fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>{pendingActionCount}</div>}
           </button>
-          <div style={{ width: 30, height: 30, borderRadius: 8, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 10, color: '#fff' }}>{PROFESSOR.initials}</div>
+          <button aria-label="Logout" title="Logout" onClick={() => {
+            setCurrentTeacherId(null)
+            setRole('Course Leader')
+            setPage('dashboard')
+            setOffering(null)
+            setSelectedStudent(null)
+            setCourseInitialTab(undefined)
+          }} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', cursor: 'pointer', color: T.muted, ...mono, fontSize: 10 }}>Logout</button>
+          <div style={{ width: 30, height: 30, borderRadius: 8, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 10, color: '#fff' }}>{currentTeacher.initials}</div>
         </div>
       </div>
 
@@ -2077,7 +2123,7 @@ export default function App() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 8px', marginBottom: 10 }}>
                   <div style={{ width: 28, height: 28, borderRadius: 7, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 10, color: '#fff', flexShrink: 0 }}>{PROFESSOR.initials}</div>
                   <div style={{ overflow: 'hidden' }}>
-                    <div style={{ ...sora, fontWeight: 600, fontSize: 11, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{PROFESSOR.name}</div>
+                    <div style={{ ...sora, fontWeight: 600, fontSize: 11, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentTeacher.name}</div>
                     <div style={{ ...mono, fontSize: 9, color: T.dim }}>{role}</div>
                   </div>
                 </div>
@@ -2139,7 +2185,7 @@ export default function App() {
           {role === 'Course Leader' && page === 'dashboard' && <CLDashboard onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} />}
           {role === 'Course Leader' && page === 'course' && offering && <CourseDetail offering={offering} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} initialTab={courseInitialTab} />}
           {role === 'Course Leader' && page === 'calendar' && <CalendarPage />}
-          {role === 'Course Leader' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} />}
+          {role === 'Course Leader' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} availableOfferings={assignedOfferings} />}
           {role === 'Course Leader' && page === 'entry-workspace' && <EntryWorkspacePage role={role} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} />}
 
           {role === 'Mentor' && page === 'mentees' && <MentorView onOpenMentee={() => {}} />}
@@ -2147,7 +2193,7 @@ export default function App() {
 
           {role === 'HoD' && page === 'department' && <HodView onOpenUpload={handleOpenUpload} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} tasks={allTasksList} />}
           {role === 'HoD' && page === 'course' && offering && <CourseDetail offering={offering} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} initialTab={courseInitialTab} />}
-          {role === 'HoD' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} />}
+          {role === 'HoD' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} availableOfferings={assignedOfferings} />}
           {role === 'HoD' && page === 'entry-workspace' && <EntryWorkspacePage role={role} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} />}
           {role === 'HoD' && page === 'calendar' && <CalendarPage />}
         </div>
