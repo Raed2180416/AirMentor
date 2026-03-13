@@ -15,6 +15,7 @@ import {
 import './App.css'
 
 type ThemeMode = 'light' | 'dark'
+type LayoutMode = 'three-column' | 'split' | 'focus'
 type EntryKind = 'tt1' | 'tt2' | 'quiz' | 'assignment' | 'attendance' | 'finals'
 type EntryLockMap = Record<EntryKind, boolean>
 type TaskType = 'Follow-up' | 'Remedial' | 'Attendance' | 'Academic'
@@ -750,6 +751,12 @@ const Card = ({ children, style = {}, glow, onClick }: { children: ReactNode; st
   <div onClick={onClick} style={{ background: T.surface, border: `1px solid ${glow ? glow + '24' : T.border}`, borderRadius: 12, padding: 20, boxShadow: glow ? `0 4px 16px ${glow}0f` : 'none', cursor: onClick ? 'pointer' : undefined, ...style }}>{children}</div>
 )
 
+const PageShell = ({ size, children, style = {} }: { size: 'wide' | 'standard' | 'narrow'; children: ReactNode; style?: CSSProperties }) => (
+  <div className={`page-shell page-shell--${size}`} style={{ animation: 'fadeUp 0.35s ease', ...style }}>
+    {children}
+  </div>
+)
+
 const Btn = ({ children, onClick, variant = 'primary', size = 'md' }: { children: ReactNode; onClick?: () => void; variant?: string; size?: string }) => {
   const p = size === 'sm' ? '6px 14px' : '10px 22px'
   const fs = size === 'sm' ? 11 : 13
@@ -1339,7 +1346,7 @@ function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent,
   }, [offerings])
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 1100, animation: 'fadeUp 0.35s ease' }}>
+    <PageShell size="wide">
       {/* Greeting */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
         <div style={{ width: 50, height: 50, borderRadius: 14, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 18, color: '#fff' }}>{PROFESSOR.initials}</div>
@@ -1412,7 +1419,7 @@ function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent,
 
       {/* Summary Table */}
       <SummaryTable offerings={offerings} onOpenCourse={onOpenCourse} onOpenUpload={onOpenUpload} />
-    </div>
+    </PageShell>
   )
 }
 
@@ -1567,7 +1574,7 @@ function CourseDetail({ offering: o, onBack, onOpenStudent, onOpenEntryHub, onOp
   }, [initialTab])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <PageShell size="wide" style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', padding: 0 }}>
       {/* Header */}
       <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: '16px 32px' }}>
         <button onClick={onBack} style={{ ...mono, fontSize: 11, color: T.accent, background: 'none', border: 'none', cursor: 'pointer', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 4, padding: 0 }}>← Back to Dashboard</button>
@@ -1622,7 +1629,7 @@ function CourseDetail({ offering: o, onBack, onOpenStudent, onOpenEntryHub, onOp
         {tab === 'co' && <COTab cos={cos} />}
         {tab === 'gradebook' && <GradeBookTab offering={o} students={students} scheme={scheme} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('finals')} onOpenSchemeSetup={onOpenSchemeSetup} />}
       </div>
-    </div>
+    </PageShell>
   )
 }
 
@@ -2225,7 +2232,7 @@ function MentorView({ mentees, onOpenMentee }: { mentees: Mentee[]; onOpenMentee
   const noData = mentees.filter(m => m.avs < 0).length
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 1100, animation: 'fadeUp 0.35s ease' }}>
+    <PageShell size="standard">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Users size={22} color={T.accent} />
         <div>
@@ -2306,7 +2313,7 @@ function MentorView({ mentees, onOpenMentee }: { mentees: Mentee[]; onOpenMentee
           )
         })}
       </div>
-    </div>
+    </PageShell>
   )
 }
 
@@ -2316,7 +2323,7 @@ function MenteeDetailPage({ mentee, tasks, onBack, onOpenHistory }: { mentee: Me
   const avgCourseRisk = mentee.avs >= 0 ? Math.round(mentee.courseRisks.filter(r => r.risk >= 0).reduce((acc, risk) => acc + risk.risk, 0) / Math.max(1, mentee.courseRisks.filter(r => r.risk >= 0).length) * 100) : null
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 980, animation: 'fadeUp 0.35s ease' }}>
+    <PageShell size="standard">
       <button onClick={onBack} style={{ ...mono, fontSize: 11, color: T.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 10 }}>← Back to Mentees</button>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 22 }}>
         <div>
@@ -2412,7 +2419,7 @@ function MenteeDetailPage({ mentee, tasks, onBack, onOpenHistory }: { mentee: Me
           </Card>
         </div>
       </div>
-    </div>
+    </PageShell>
   )
 }
 
@@ -2421,7 +2428,7 @@ function StudentHistoryPage({ role, history, onBack }: { role: Role; history: St
   const totalBacklogs = history.terms.reduce((acc, term) => acc + term.backlogCount, 0)
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 1080, animation: 'fadeUp 0.35s ease' }}>
+    <PageShell size="standard">
       <button onClick={onBack} style={{ ...mono, fontSize: 11, color: T.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 10 }}>← Back</button>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 18, marginBottom: 18 }}>
         <div>
@@ -2490,7 +2497,7 @@ function StudentHistoryPage({ role, history, onBack }: { role: Role; history: St
           </Card>
         ))}
       </div>
-    </div>
+    </PageShell>
   )
 }
 
@@ -2523,7 +2530,7 @@ function SchemeSetupPage({ role, offering, scheme, hasEntryStarted, onSave, onBa
   }, [assignmentCount])
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 760, animation: 'fadeUp 0.35s ease' }}>
+    <PageShell size="narrow">
       <button onClick={onBack} style={{ ...mono, fontSize: 11, color: T.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 10 }}>← Back</button>
       <div style={{ marginBottom: 18 }}>
         <div style={{ ...sora, fontWeight: 700, fontSize: 21, color: T.text }}>Evaluation Scheme Setup</div>
@@ -2662,13 +2669,13 @@ function SchemeSetupPage({ role, offering, scheme, hasEntryStarted, onSave, onBa
           }}>Save Scheme</Btn>
         </div>
       </div>
-    </div>
+    </PageShell>
   )
 }
 
 function UnlockReviewPage({ task, offering, onBack, onApprove, onReject, onResetComplete }: { task: SharedTask; offering: Offering | null; onBack: () => void; onApprove: () => void; onReject: () => void; onResetComplete: () => void }) {
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 860, animation: 'fadeUp 0.35s ease' }}>
+    <PageShell size="narrow">
       <button onClick={onBack} style={{ ...mono, fontSize: 11, color: T.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 10 }}>← Back</button>
       <div style={{ marginBottom: 16 }}>
         <div style={{ ...sora, fontWeight: 700, fontSize: 21, color: T.text }}>Unlock Review</div>
@@ -2725,7 +2732,7 @@ function UnlockReviewPage({ task, offering, onBack, onApprove, onReject, onReset
           ))}
         </div>
       </Card>
-    </div>
+    </PageShell>
   )
 }
 
@@ -2736,7 +2743,7 @@ function QueueHistoryPage({ role, tasks, resolvedTaskIds, onOpenTaskStudent, onO
     .sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt))
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 1050, animation: 'fadeUp 0.35s ease' }}>
+    <PageShell size="standard">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <div>
           <div style={{ ...sora, fontWeight: 700, fontSize: 21, color: T.text }}>Queue History</div>
@@ -2784,7 +2791,7 @@ function QueueHistoryPage({ role, tasks, resolvedTaskIds, onOpenTaskStudent, onO
           </Card>
         ))}
       </div>
-    </div>
+    </PageShell>
   )
 }
 
@@ -2866,7 +2873,7 @@ function HodView({ onOpenUpload, onOpenCourse, onOpenStudent, tasks }: { onOpenU
   const avgAttendance = OFFERINGS.length > 0 ? Math.round(OFFERINGS.reduce((a, o) => a + getOfferingAttendancePatched(o), 0) / OFFERINGS.length) : 0
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 1100, animation: 'fadeUp 0.35s ease' }}>
+    <PageShell size="wide">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Shield size={22} color={T.accent} />
         <div>
@@ -2988,8 +2995,7 @@ function HodView({ onOpenUpload, onOpenCourse, onOpenStudent, tasks }: { onOpenU
         </Card>
       )}
 
-
-    </div>
+    </PageShell>
   )
 }
 
@@ -3001,7 +3007,7 @@ function CalendarPage() {
   const tCol: Record<string, string> = { tt: T.accent, quiz: T.warning, asgn: T.success, att: T.pink, see: T.danger }
   const tLbl: Record<string, string> = { tt: 'Term Test', quiz: 'Quiz', asgn: 'Assignment', att: 'Attendance', see: 'Finals' }
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 800, animation: 'fadeUp 0.35s ease' }}>
+    <PageShell size="narrow">
       <div style={{ ...sora, fontWeight: 700, fontSize: 20, color: T.text, marginBottom: 4 }}>Academic Calendar</div>
       <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 20 }}>Odd Semester 2025–26</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -3018,7 +3024,7 @@ function CalendarPage() {
           )
         })}
       </div>
-    </div>
+    </PageShell>
   )
 }
 
@@ -3083,7 +3089,7 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOfferi
   }, [selectedOffering])
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 800, animation: 'fadeUp 0.35s ease' }}>
+    <PageShell size="narrow">
       <div style={{ ...sora, fontWeight: 700, fontSize: 20, color: T.text, marginBottom: 4 }}>Data Entry Hub</div>
       <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 6 }}>Single consistent entry route from dashboard. CSV import is disabled in v1.</div>
       <div style={{ ...mono, fontSize: 11, color: T.accent, marginBottom: 12 }}>{selectedOffering.code} · {selectedOffering.title} · {selectedOffering.year} · Stage {selectedOffering.stageInfo.stage}</div>
@@ -3156,7 +3162,7 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOfferi
       </div>
       {role === 'Mentor' && <div style={{ ...mono, fontSize: 11, color: T.warning, marginTop: 12 }}>Read-only role. Only Course Leaders and HoD can edit marks.</div>}
       {!isApplicableForStage && <div style={{ ...mono, fontSize: 11, color: T.warning, marginTop: 8 }}>Current selected type is not applicable at stage {selectedOffering.stageInfo.stage}.</div>}
-    </div>
+    </PageShell>
   )
 }
 
@@ -3178,7 +3184,7 @@ function EntryWorkspacePage({ capabilities, offeringId, kind, onBack, lockByOffe
   }, [offeringId])
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 1180, animation: 'fadeUp 0.35s ease' }}>
+    <PageShell size="wide">
       <button onClick={onBack} style={{ ...mono, fontSize: 11, color: T.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 10 }}>← Back to Data Entry Hub</button>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
         <div>
@@ -3300,7 +3306,7 @@ function EntryWorkspacePage({ capabilities, offeringId, kind, onBack, lockByOffe
           )
         })}
       </div>
-    </div>
+    </PageShell>
   )
 }
 
@@ -3654,6 +3660,9 @@ export default function App() {
   }, [allTasksList, role, supervisedOfferingIds, supervisedMenteeIds, supervisedMenteeUsns])
 
   const pendingActionCount = roleTasks.filter(t => !resolvedTasks[t.id]).length
+  const layoutMode: LayoutMode = !sidebarCollapsed && showActionQueue
+    ? 'three-column'
+    : (!sidebarCollapsed || showActionQueue ? 'split' : 'focus')
   
   const navItems = role === 'Course Leader' ? CL_NAV : role === 'Mentor' ? MENTOR_NAV : HOD_NAV
   const hasEntryStartedForOffering = useCallback((offId: string) => {
@@ -4549,7 +4558,7 @@ export default function App() {
       </div>
 
       {/* ═══ MAIN LAYOUT ═══ */}
-      <div style={{ display: 'flex', flex: 1 }}>
+      <div className="app-main" style={{ display: 'flex', flex: 1, minWidth: 0 }}>
         {/* Left Sidebar */}
         <AnimatePresence>
           {!sidebarCollapsed && (
@@ -4622,7 +4631,7 @@ export default function App() {
         </AnimatePresence>
 
         {/* Center Content */}
-        <div className="scroll-pane" style={{ flex: 1, overflowY: 'auto', height: 'calc(100vh - 54px)' }}>
+        <div className={`scroll-pane app-content app-content--${layoutMode}`} style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: 'calc(100vh - 54px)' }}>
           {role === 'Course Leader' && page === 'dashboard' && <CLDashboard offerings={assignedOfferings} pendingTaskCount={pendingActionCount} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} />}
           {role === 'Course Leader' && page === 'course' && offering && <CourseDetail offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? { tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default), tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default) }} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
           {role === 'Course Leader' && page === 'scheme-setup' && selectedSchemeOffering && <SchemeSetupPage role={role} offering={selectedSchemeOffering} scheme={schemeByOffering[selectedSchemeOffering.offId] ?? defaultSchemeForOffering(selectedSchemeOffering)} hasEntryStarted={hasEntryStartedForOffering(selectedSchemeOffering.offId)} onSave={(next) => handleSaveScheme(selectedSchemeOffering.offId, next)} onBack={() => setPage('upload')} />}
