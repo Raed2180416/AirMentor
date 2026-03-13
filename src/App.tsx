@@ -42,7 +42,7 @@ function applyThemePreset(mode: ThemeMode) {
    ══════════════════════════════════════════════════════════════ */
 
 const Chip = ({ children, color = T.muted, size = 11 }: { children: ReactNode; color?: string; size?: number }) => (
-  <span style={{ ...mono, fontSize: size, padding: '2px 8px', borderRadius: 4, background: `${color}18`, color, border: `1px solid ${color}35`, whiteSpace: 'nowrap' as const, display: 'inline-block' }}>{children}</span>
+  <span style={{ ...mono, fontSize: size, padding: '2px 8px', borderRadius: 4, background: `${color}12`, color, border: `1px solid ${color}26`, whiteSpace: 'nowrap' as const, display: 'inline-block' }}>{children}</span>
 )
 
 const Bar = ({ val, max = 100, color, h = 5 }: { val: number; max?: number; color: string; h?: number }) => (
@@ -52,7 +52,7 @@ const Bar = ({ val, max = 100, color, h = 5 }: { val: number; max?: number; colo
 )
 
 const Card = ({ children, style = {}, glow, onClick }: { children: ReactNode; style?: CSSProperties; glow?: string; onClick?: () => void }) => (
-  <div onClick={onClick} style={{ background: T.surface, border: `1px solid ${glow ? glow + '35' : T.border}`, borderRadius: 12, padding: 20, boxShadow: glow ? `0 0 24px ${glow}10` : 'none', cursor: onClick ? 'pointer' : undefined, ...style }}>{children}</div>
+  <div onClick={onClick} style={{ background: T.surface, border: `1px solid ${glow ? glow + '24' : T.border}`, borderRadius: 12, padding: 20, boxShadow: glow ? `0 4px 16px ${glow}0f` : 'none', cursor: onClick ? 'pointer' : undefined, ...style }}>{children}</div>
 )
 
 const Btn = ({ children, onClick, variant = 'primary', size = 'md' }: { children: ReactNode; onClick?: () => void; variant?: string; size?: string }) => {
@@ -1558,6 +1558,15 @@ const ENTRY_CATALOG: { kind: EntryKind; icon: string; title: string; desc: strin
   { kind: 'finals', icon: '🎓', title: 'SEE / Finals', desc: 'Final exam marks and gradebook completion flow.', tabId: 'gradebook' },
 ]
 
+const getEntryLockMap = (o: Offering) => ({
+  tt1: !!o.tt1Locked,
+  tt2: !!o.tt2Locked,
+  quiz: !!o.quizLocked,
+  assignment: !!o.asgnLocked,
+  attendance: false,
+  finals: false,
+})
+
 /* ══════════════════════════════════════════════════════════════
    UPLOAD PAGE
    ══════════════════════════════════════════════════════════════ */
@@ -1565,6 +1574,7 @@ const ENTRY_CATALOG: { kind: EntryKind; icon: string; title: string; desc: strin
 function UploadPage({ role, offering, defaultKind, onOpenWorkspace }: { role: Role; offering: Offering | null; defaultKind: EntryKind; onOpenWorkspace: (offeringId: string, kind: EntryKind) => void }) {
   const [selectedKind, setSelectedKind] = useState<EntryKind>(defaultKind)
   const [selectedOffId, setSelectedOffId] = useState<string>(offering?.offId ?? OFFERINGS[0].offId)
+  const [unlockRequested, setUnlockRequested] = useState<EntryKind | null>(null)
   useEffect(() => setSelectedKind(defaultKind), [defaultKind])
   useEffect(() => {
     if (offering?.offId) setSelectedOffId(offering.offId)
@@ -1572,6 +1582,7 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace }: { role: Ro
 
   const selected = ENTRY_CATALOG.find(x => x.kind === selectedKind) ?? ENTRY_CATALOG[0]
   const selectedOffering = OFFERINGS.find(o => o.offId === selectedOffId) ?? offering ?? OFFERINGS[0]
+  const lockMap = getEntryLockMap(selectedOffering)
   const stageRequired: Record<EntryKind, number> = { tt1: 1, tt2: 2, quiz: 2, assignment: 2, attendance: 1, finals: 3 }
   const isApplicableForStage = selectedOffering.stageInfo.stage >= stageRequired[selectedKind]
 
@@ -1592,6 +1603,15 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace }: { role: Ro
       <div style={{ ...sora, fontWeight: 700, fontSize: 20, color: T.text, marginBottom: 4 }}>Data Entry Hub</div>
       <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 6 }}>Single consistent entry route from dashboard. CSV import is disabled in v1.</div>
       <div style={{ ...mono, fontSize: 11, color: T.accent, marginBottom: 12 }}>{selectedOffering.code} · {selectedOffering.title} · {selectedOffering.year} · Stage {selectedOffering.stageInfo.stage}</div>
+      {role === 'Course Leader' && lockMap[selectedKind] && (
+        <Card style={{ marginBottom: 12, padding: '12px 14px' }} glow={T.warning}>
+          <div style={{ ...mono, fontSize: 11, color: T.warning }}>This entry is locked. You cannot modify {selected.title}.</div>
+          <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
+            <Btn size="sm" variant="ghost" onClick={() => setUnlockRequested(selectedKind)}>Request unlock from HoD</Btn>
+            {unlockRequested === selectedKind && <Chip color={T.success} size={9}>Request submitted</Chip>}
+          </div>
+        </Card>
+      )}
       <div style={{ marginBottom: 18 }}>
         <label htmlFor="entry-offering-select" style={{ ...mono, fontSize: 10, color: T.muted, marginRight: 8 }}>Course / Section:</label>
         <select id="entry-offering-select" aria-label="Select course and section" title="Select course and section" value={selectedOffId} onChange={e => setSelectedOffId(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 10px' }}>
@@ -1600,33 +1620,35 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace }: { role: Ro
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         {ENTRY_CATALOG.map((x) => (
-          <Card key={x.kind} glow={selectedKind === x.kind ? T.accent : undefined} style={{ padding: '18px 20px', cursor: 'pointer' }} onClick={() => { setSelectedKind(x.kind); onOpenWorkspace(selectedOffId, x.kind) }}>
+          <Card key={x.kind} glow={selectedKind === x.kind ? T.accent : undefined} style={{ padding: '18px 20px', cursor: 'pointer', opacity: role === 'Course Leader' && lockMap[x.kind] ? 0.8 : 1 }} onClick={() => {
+            setSelectedKind(x.kind)
+            if (role === 'Course Leader' && lockMap[x.kind]) return
+            onOpenWorkspace(selectedOffId, x.kind)
+          }}>
             <div style={{ fontSize: 28, marginBottom: 10 }}>{x.icon}</div>
             <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 4 }}>{x.title}</div>
             <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 12, lineHeight: 1.5 }}>{x.desc}</div>
-            <Chip color={completion[x.kind] ? T.success : T.warning} size={10}>{completion[x.kind] ? 'Completed / Locked' : 'Pending Entry'}</Chip>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <Chip color={completion[x.kind] ? T.success : T.warning} size={10}>{completion[x.kind] ? 'Completed' : 'Pending Entry'}</Chip>
+              {lockMap[x.kind] && <Chip color={T.danger} size={10}>Locked</Chip>}
+            </div>
           </Card>
         ))}
       </div>
-
-      <Card style={{ marginTop: 14, padding: '14px 16px' }}>
-        <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 6 }}>Selected: {selected.title}</div>
-        <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 10 }}>{selected.desc}</div>
-        {role === 'Mentor' && <div style={{ ...mono, fontSize: 11, color: T.warning }}>Read-only for this role. Only Course Leaders and HoD can edit marks.</div>}
-        {!isApplicableForStage && <div style={{ ...mono, fontSize: 11, color: T.warning, marginTop: 6 }}>Not applicable at current stage ({selectedOffering.stageInfo.stage}).</div>}
-        <div style={{ marginTop: 10 }}>
-          <Btn size="sm" onClick={() => onOpenWorkspace(selectedOffId, selectedKind)}>Open dedicated {selected.title} page →</Btn>
-        </div>
-      </Card>
+      {role === 'Mentor' && <div style={{ ...mono, fontSize: 11, color: T.warning, marginTop: 12 }}>Read-only role. Only Course Leaders and HoD can edit marks.</div>}
+      {!isApplicableForStage && <div style={{ ...mono, fontSize: 11, color: T.warning, marginTop: 8 }}>Current selected type is not applicable at stage {selectedOffering.stageInfo.stage}.</div>}
     </div>
   )
 }
 
 function EntryWorkspacePage({ role, offeringId, kind, onBack }: { role: Role; offeringId: string; kind: EntryKind; onBack: () => void }) {
-  const canEdit = role === 'Course Leader' || role === 'HoD'
+  const [unlockRequested, setUnlockRequested] = useState(false)
   const selectedOffering = OFFERINGS.find(o => o.offId === offeringId) ?? OFFERINGS[0]
   const groupedSections = OFFERINGS.filter(o => o.code === selectedOffering.code && o.year === selectedOffering.year)
   const selected = ENTRY_CATALOG.find(x => x.kind === kind) ?? ENTRY_CATALOG[0]
+  const lockMap = getEntryLockMap(selectedOffering)
+  const isLockedForCourseLeader = role === 'Course Leader' && lockMap[kind]
+  const canEdit = (role === 'Course Leader' || role === 'HoD') && !isLockedForCourseLeader
   const stageRequired: Record<EntryKind, number> = { tt1: 1, tt2: 2, quiz: 2, assignment: 2, attendance: 1, finals: 3 }
   const isApplicableForStage = selectedOffering.stageInfo.stage >= stageRequired[kind]
 
@@ -1636,6 +1658,15 @@ function EntryWorkspacePage({ role, offeringId, kind, onBack }: { role: Role; of
       <div style={{ ...sora, fontWeight: 700, fontSize: 20, color: T.text, marginBottom: 4 }}>{selected.title} — Dedicated Entry</div>
       <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 6 }}>{selectedOffering.code} · {selectedOffering.title} · {selectedOffering.year} · Stage {selectedOffering.stageInfo.stage}</div>
       {!canEdit && <div style={{ ...mono, fontSize: 11, color: T.warning, marginBottom: 10 }}>Read-only for this role. Only Course Leaders and HoD can edit marks.</div>}
+      {isLockedForCourseLeader && (
+        <Card style={{ marginBottom: 10, padding: '10px 12px' }} glow={T.warning}>
+          <div style={{ ...mono, fontSize: 11, color: T.warning }}>This dataset is locked. You cannot edit it as Course Leader.</div>
+          <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
+            <Btn size="sm" variant="ghost" onClick={() => setUnlockRequested(true)}>Defer unlock request to HoD</Btn>
+            {unlockRequested && <Chip color={T.success} size={9}>Request sent</Chip>}
+          </div>
+        </Card>
+      )}
       {!isApplicableForStage && <div style={{ ...mono, fontSize: 11, color: T.warning, marginBottom: 10 }}>Not applicable at current stage ({selectedOffering.stageInfo.stage}).</div>}
 
       <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
