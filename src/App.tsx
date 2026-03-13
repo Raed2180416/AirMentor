@@ -8,9 +8,9 @@ import {
 import {
   T, mono, sora, yearColor, stageColor, CO_COLORS,
   PROFESSOR, OFFERINGS, YEAR_GROUPS, CO_MAP, PAPER_MAP,
-  getStudents, generateTasks, MENTEES, TEACHERS, CALENDAR_EVENTS,
+  getStudents, generateTasks, MENTEES, TEACHERS, CALENDAR_EVENTS, getStudentHistoryRecord,
   type Offering, type Student, type Role, type Stage, type Task, type YearGroup,
-  type Mentee, type RiskBand, type CODef, type PaperQ,
+  type Mentee, type RiskBand, type CODef, type PaperQ, type StudentHistoryRecord, type TranscriptTerm,
 } from './data'
 import './App.css'
 
@@ -72,6 +72,8 @@ type SharedTask = Task & {
   escalated?: boolean
   sourceRole?: Role | 'Auto' | 'System'
   manual?: boolean
+  transitionHistory?: QueueTransition[]
+  unlockRequest?: UnlockRequest
 }
 
 type TeacherAccount = {
@@ -90,15 +92,42 @@ type EvaluationScheme = {
   assignmentCount: 0 | 1 | 2
 }
 
+type PageId = 'dashboard' | 'course' | 'calendar' | 'upload' | 'entry-workspace' | 'mentees' | 'department' | 'mentee-detail' | 'student-history' | 'unlock-review' | 'scheme-setup' | 'queue-history'
+
+type QueueTransition = {
+  id: string
+  at: number
+  actorRole: Role | 'System' | 'Auto'
+  action: string
+  fromOwner?: Role
+  toOwner: Role
+  note: string
+}
+
+type UnlockRequest = {
+  kind: EntryKind
+  status: 'Pending' | 'Approved' | 'Rejected' | 'Reset Completed'
+  requestedBy: Role
+  requestedAt: number
+  reviewedAt?: number
+  reviewNote?: string
+}
+
+type SchemeState = EvaluationScheme & {
+  status: 'Needs Setup' | 'Configured' | 'Locked'
+  configuredAt?: number
+  lockedAt?: number
+  lastEditedBy?: Role
+}
+
 type StudentRuntimePatch = {
   present?: number
   totalClasses?: number
 }
 
 const STUDENT_PATCHES_KEY = 'airmentor-student-patches'
+const SCHEME_STATE_KEY = 'airmentor-schemes'
 let runtimeStudentPatches: Record<string, StudentRuntimePatch> = {}
-
-const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000
 
 const TEACHER_ACCOUNTS: TeacherAccount[] = [
   { teacherId: 't1', name: 'Dr. Kavitha Rao', initials: 'KR', permissions: ['Course Leader', 'Mentor', 'HoD'], courseCodes: ['CS401', 'CS403'] },
@@ -248,6 +277,78 @@ function computeEvaluation(s: Student, scheme: EvaluationScheme) {
   const ce60 = tt1Scaled + tt2Scaled + quizScaled + asgnScaled
   const overall40 = Math.round((ce60 / 60) * 40)
   return { tt1Scaled, tt2Scaled, quizScaled, asgnScaled, ce60, overall40 }
+}
+
+function getHomePage(role: Role): PageId {
+  return role === 'Course Leader' ? 'dashboard' : role === 'Mentor' ? 'mentees' : 'department'
+}
+
+function canAccessPage(role: Role, page: PageId) {
+  if (page === 'student-history' || page === 'queue-history') return true
+  if (page === 'scheme-setup') return role === 'Course Leader' || role === 'HoD'
+  if (page === 'unlock-review') return role === 'HoD'
+  if (page === 'mentee-detail') return role === 'Mentor'
+  if (role === 'Course Leader') return ['dashboard', 'course', 'calendar', 'upload', 'entry-workspace'].includes(page)
+  if (role === 'Mentor') return ['mentees', 'calendar'].includes(page)
+  return ['department', 'course', 'upload', 'entry-workspace', 'calendar'].includes(page)
+}
+
+function defaultSchemeForOffering(offering: Offering): SchemeState {
+  const finalsMax = offering.code === 'CS702' ? 100 : 50
+  const quizWeight: number = offering.stageInfo.stage >= 2 ? (offering.code === 'CS401' ? 20 : 10) : 10
+  const assignmentWeight: number = 30 - quizWeight
+  return {
+    finalsMax,
+    quizWeight,
+    assignmentWeight,
+    quizCount: quizWeight === 0 ? 0 : offering.code === 'CS401' ? 2 : 1,
+    assignmentCount: assignmentWeight === 0 ? 0 : offering.code === 'CS401' ? 2 : 1,
+    status: 'Needs Setup',
+  }
+}
+
+function formatDateTime(timestamp?: number) {
+  if (!timestamp) return 'Pending'
+  return new Date(timestamp).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+}
+
+function createTransition(input: { action: string; actorRole: QueueTransition['actorRole']; toOwner: Role; note: string; fromOwner?: Role }): QueueTransition {
+  return {
+    id: `transition-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    at: Date.now(),
+    actorRole: input.actorRole,
+    action: input.action,
+    fromOwner: input.fromOwner,
+    toOwner: input.toOwner,
+    note: input.note,
+  }
+}
+
+function getLatestTransition(task: SharedTask) {
+  const history = task.transitionHistory ?? []
+  return history[history.length - 1]
+}
+
+function buildHistoryProfile(input: { student?: Student | null; mentee?: Mentee | null; offering?: Offering | null }): StudentHistoryRecord | null {
+  if (input.student) {
+    return getStudentHistoryRecord({
+      usn: input.student.usn,
+      studentName: input.student.name,
+      dept: input.offering?.dept ?? 'CSE',
+      yearLabel: input.offering?.year,
+      prevCgpa: input.student.prevCgpa,
+    })
+  }
+  if (input.mentee) {
+    return getStudentHistoryRecord({
+      usn: input.mentee.usn,
+      studentName: input.mentee.name,
+      dept: input.mentee.dept,
+      yearLabel: input.mentee.year,
+      prevCgpa: input.mentee.prevCgpa,
+    })
+  }
+  return null
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -481,12 +582,13 @@ function RemedialPlanModal({ role, context, onClose, onSubmit }: { role: Role; c
    STUDENT DRAWER — SHAP, What-If, CO, Interventions
    ══════════════════════════════════════════════════════════════ */
 
-function StudentDrawer({ student, offering, role, onClose, onEscalate, onAssignRemedial, onAddManualTask }: { student: Student | null; offering?: Offering; role: Role; onClose: () => void; onEscalate: (s: Student, o?: Offering) => void; onAssignRemedial: (s: Student, o?: Offering) => void; onAddManualTask: (s: Student, o?: Offering) => void }) {
+function StudentDrawer({ student, offering, role, onClose, onEscalate, onAssignRemedial, onAddManualTask, onAssignToMentor, onOpenHistory }: { student: Student | null; offering?: Offering; role: Role; onClose: () => void; onEscalate: (s: Student, o?: Offering) => void; onAssignRemedial: (s: Student, o?: Offering) => void; onAddManualTask: (s: Student, o?: Offering) => void; onAssignToMentor: (s: Student, o?: Offering) => void; onOpenHistory: (s: Student, o?: Offering) => void }) {
   if (!student) return null
   const s = student
   const attPct = Math.round(s.present / s.totalClasses * 100)
   const riskCol = s.riskBand === 'High' ? T.danger : s.riskBand === 'Medium' ? T.warning : T.success
-  const canSeeMarks = role !== 'Mentor'
+  const canSeeDetailedMarks = role !== 'Mentor'
+  const ceSummary = computeEvaluation(s, { finalsMax: 50, quizWeight: 10, assignmentWeight: 20, quizCount: 1, assignmentCount: 1 })
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 100, display: 'flex', justifyContent: 'flex-end' }}>
@@ -598,16 +700,16 @@ function StudentDrawer({ student, offering, role, onClose, onEscalate, onAssignR
           <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
             <BookOpen size={14} color={T.accent} /> Academic Snapshot
           </div>
-          {!canSeeMarks && (
-            <div style={{ ...mono, fontSize: 11, color: T.warning, marginBottom: 8 }}>Marks visibility is restricted for Mentor role.</div>
+          {!canSeeDetailedMarks && (
+            <div style={{ ...mono, fontSize: 11, color: T.warning, marginBottom: 8 }}>Mentor view shows summary academics only. Raw entry fields remain restricted.</div>
           )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
             {[
               { lbl: 'Attendance', val: `${attPct}%`, col: attPct >= 75 ? T.success : attPct >= 65 ? T.warning : T.danger },
-              { lbl: 'TT1', val: canSeeMarks && s.tt1Score !== null ? `${s.tt1Score}/${s.tt1Max}` : 'Restricted', col: canSeeMarks && s.tt1Score !== null ? (s.tt1Score / s.tt1Max >= 0.5 ? T.success : T.danger) : T.dim },
-              { lbl: 'TT2', val: canSeeMarks && s.tt2Score !== null ? `${s.tt2Score}/${s.tt2Max}` : 'Restricted', col: canSeeMarks && s.tt2Score !== null ? (s.tt2Score / s.tt2Max >= 0.5 ? T.success : T.danger) : T.dim },
-              { lbl: 'Quiz 1', val: canSeeMarks && s.quiz1 !== null ? `${s.quiz1}/10` : 'Restricted', col: canSeeMarks && s.quiz1 !== null ? (s.quiz1 >= 5 ? T.success : T.warning) : T.dim },
-              { lbl: 'Assignment 1', val: canSeeMarks && s.asgn1 !== null ? `${s.asgn1}/10` : 'Restricted', col: canSeeMarks && s.asgn1 !== null ? (s.asgn1 >= 6 ? T.success : T.warning) : T.dim },
+              { lbl: 'TT Summary', val: canSeeDetailedMarks ? `${s.tt1Score ?? '—'} / ${s.tt2Score ?? '—'}` : `${ceSummary.tt1Scaled + ceSummary.tt2Scaled}/30`, col: ceSummary.tt1Scaled + ceSummary.tt2Scaled >= 15 ? T.success : T.warning },
+              { lbl: 'CE Signal', val: `${ceSummary.ce60}/60`, col: ceSummary.ce60 >= 30 ? T.success : ceSummary.ce60 >= 24 ? T.warning : T.danger },
+              { lbl: 'Weak Component', val: s.reasons[0]?.feature?.toUpperCase() ?? 'None', col: s.reasons[0] ? T.warning : T.success },
+              { lbl: 'SEE Readiness', val: s.riskBand === 'High' ? 'Needs support' : s.riskBand === 'Medium' ? 'Watch' : 'On track', col: s.riskBand === 'High' ? T.danger : s.riskBand === 'Medium' ? T.warning : T.success },
               { lbl: 'Prev CGPA', val: s.prevCgpa > 0 ? s.prevCgpa.toFixed(1) : '—', col: s.prevCgpa >= 7 ? T.success : s.prevCgpa >= 6 ? T.warning : T.danger },
             ].map((x, i) => (
               <div key={i} style={{ background: T.surface2, borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
@@ -640,7 +742,9 @@ function StudentDrawer({ student, offering, role, onClose, onEscalate, onAssignR
           <Btn size="sm" variant="ghost"><Mail size={12} /> Email</Btn>
           <Btn size="sm" variant="ghost" onClick={() => onAddManualTask(s, offering)}><MessageSquare size={12} /> Add Task</Btn>
           <Btn size="sm" variant="ghost" onClick={() => onAssignRemedial(s, offering)}><BookOpen size={12} /> Assign Remedial</Btn>
-          <Btn size="sm" variant="danger" onClick={() => onEscalate(s, offering)}><AlertTriangle size={12} /> Escalate to HoD</Btn>
+          {(role === 'Course Leader' || role === 'HoD') && <Btn size="sm" variant="ghost" onClick={() => onAssignToMentor(s, offering)}><Users size={12} /> Defer to Mentor</Btn>}
+          <Btn size="sm" variant="ghost" onClick={() => onOpenHistory(s, offering)}><Eye size={12} /> View History</Btn>
+          {role !== 'HoD' && <Btn size="sm" variant="danger" onClick={() => onEscalate(s, offering)}><AlertTriangle size={12} /> Escalate to HoD</Btn>}
         </div>
       </motion.div>
     </div>
@@ -651,9 +755,9 @@ function StudentDrawer({ student, offering, role, onClose, onEscalate, onAssignR
    ACTION QUEUE (Right Sidebar)
    ══════════════════════════════════════════════════════════════ */
 
-function ActionQueue({ role, tasks, offerings, resolvedTaskIds, onResolveTask, onUndoTask, onOpenStudent, onCreateTask, onOpenRemedialPlanner, onRemedialCheckIn }: { role: Role; tasks: SharedTask[]; offerings: Offering[]; resolvedTaskIds: Record<string, number>; onResolveTask: (id: string) => void; onUndoTask: (id: string) => void; onOpenStudent: (id: string) => void; onCreateTask: (input: TaskCreateInput) => void; onOpenRemedialPlanner: (input: { offeringId: string; studentId: string; deferToHod?: boolean }) => void; onRemedialCheckIn: (taskId: string) => void }) {
-  const active = tasks.filter(t => !resolvedTaskIds[t.id])
-  const done = tasks.filter(t => !!resolvedTaskIds[t.id])
+function ActionQueue({ role, tasks, offerings, resolvedTaskIds, onResolveTask, onUndoTask, onOpenStudent, onCreateTask, onOpenRemedialPlanner, onRemedialCheckIn, onReassignTask, onOpenUnlockReview, onOpenQueueHistory }: { role: Role; tasks: SharedTask[]; offerings: Offering[]; resolvedTaskIds: Record<string, number>; onResolveTask: (id: string) => void; onUndoTask: (id: string) => void; onOpenStudent: (task: SharedTask) => void; onCreateTask: (input: TaskCreateInput) => void; onOpenRemedialPlanner: (input: { offeringId: string; studentId: string; deferToHod?: boolean }) => void; onRemedialCheckIn: (taskId: string) => void; onReassignTask: (taskId: string, toRole: Role, note?: string) => void; onOpenUnlockReview: (taskId: string) => void; onOpenQueueHistory: () => void }) {
+  const active = tasks.filter(t => !resolvedTaskIds[t.id]).sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt))
+  const done = tasks.filter(t => !!resolvedTaskIds[t.id]).sort((a, b) => (resolvedTaskIds[b.id] ?? 0) - (resolvedTaskIds[a.id] ?? 0))
   const [showComposer, setShowComposer] = useState(false)
   const [selectedYear, setSelectedYear] = useState<string>('')
   const [selectedDept, setSelectedDept] = useState<string>('')
@@ -737,70 +841,86 @@ function ActionQueue({ role, tasks, offerings, resolvedTaskIds, onResolveTask, o
     setNote(suggested.note)
   }, [selectedStudentId, selectedOffId])
 
-  const submitQuickTask = (deferToHod?: boolean) => {
+  const submitQuickTask = (mode: 'add' | 'mentor' | 'hod') => {
     if (!selectedOffering || !selectedStudentId) return
-    onCreateTask({ offeringId: selectedOffering.offId, studentId: selectedStudentId, taskType, dueDateISO, due: toDueLabel(dueDateISO), note, deferToHod })
+    onCreateTask({
+      offeringId: selectedOffering.offId,
+      studentId: selectedStudentId,
+      taskType,
+      dueDateISO,
+      due: toDueLabel(dueDateISO),
+      note,
+      deferToHod: mode === 'hod',
+    })
     setShowComposer(false)
   }
 
   return (
-    <div style={{ width: 310, flexShrink: 0, background: T.surface, borderLeft: `1px solid ${T.border}`, position: 'sticky', top: 0, height: '100vh', overflowY: 'auto', padding: '18px 16px' }}>
+    <div style={{ width: 320, flexShrink: 0, background: T.surface, borderLeft: `1px solid ${T.border}`, position: 'sticky', top: 0, height: '100vh', overflowY: 'auto', padding: '18px 16px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
         <ListTodo size={16} color={T.accent} />
         <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text }}>Action Queue</div>
-        <div style={{ marginLeft: 'auto' }}><Chip color={T.danger} size={10}>{active.length} pending</Chip></div>
+        <button aria-label="Open queue history" title="Open queue history" onClick={onOpenQueueHistory} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: T.accent, ...mono, fontSize: 10 }}>History</button>
+        <Chip color={T.danger} size={10}>{active.length} pending</Chip>
       </div>
-      <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 14 }}>Priority = risk × urgency × opportunity</div>
+      <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 14 }}>Single-owner queue with visible reassignment trail.</div>
 
-      {active.map(t => (
-        <div key={t.id} style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 10, padding: '12px 14px', marginBottom: 8 }}>
-          {(() => {
-            const progress = getRemedialProgress(t.remedialPlan)
-            const hasRemedialFlow = (t.taskType === 'Remedial' || !!t.remedialPlan) && progress.total > 0
-            return (
-              <>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
-            <div>
-              <div style={{ ...sora, fontWeight: 600, fontSize: 12, color: T.text, lineHeight: 1.3 }}>{t.title}</div>
-              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>{t.courseCode} · {t.year}</div>
+      {active.map(t => {
+        const progress = getRemedialProgress(t.remedialPlan)
+        const hasRemedialFlow = (t.taskType === 'Remedial' || !!t.remedialPlan) && progress.total > 0
+        const latestTransition = getLatestTransition(t)
+        return (
+          <div key={t.id} style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 10, padding: '12px 14px', marginBottom: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+              <div>
+                <div style={{ ...sora, fontWeight: 600, fontSize: 12, color: T.text, lineHeight: 1.3 }}>{t.title}</div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>{t.courseCode || 'Mentor'} · {t.year}</div>
+              </div>
+              <RiskBadge band={t.riskBand} prob={t.riskProb} />
             </div>
-            <RiskBadge band={t.riskBand} prob={t.riskProb} />
-          </div>
-          <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 8 }}>{t.actionHint}</div>
-          {hasRemedialFlow && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-              <Chip color={progress.completed === progress.total ? T.success : T.warning} size={9}>Plan {progress.completed}/{progress.total}</Chip>
-              <span style={{ ...mono, fontSize: 9, color: T.dim }}>Next check-in: {t.remedialPlan?.checkInDatesISO.find(d => new Date(`${d}T00:00:00`).getTime() >= Date.now()) ?? 'Schedule pending'}</span>
+            <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 8 }}>{t.actionHint}</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+              <Chip color={t.status === 'New' ? T.danger : T.warning} size={9}>{t.status}</Chip>
+              <Chip color={T.accent} size={9}>Owner: {t.assignedTo}</Chip>
+              <Chip color={T.dim} size={9}>Due: {t.due}</Chip>
+              {t.unlockRequest && <Chip color={t.unlockRequest.status === 'Rejected' ? T.danger : t.unlockRequest.status === 'Reset Completed' ? T.success : T.warning} size={9}>Unlock: {t.unlockRequest.status}</Chip>}
             </div>
-          )}
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <Chip color={t.status === 'New' ? T.danger : T.warning} size={9}>{t.status}</Chip>
-            {t.escalated && <Chip color={T.danger} size={9}>Escalated</Chip>}
-            <Chip color={T.dim} size={9}>Due: {t.due}</Chip>
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+            {latestTransition && (
+              <div style={{ ...mono, fontSize: 9, color: T.muted, marginBottom: 8 }}>
+                Last transition: {latestTransition.action} · {formatDateTime(latestTransition.at)}
+              </div>
+            )}
+            {hasRemedialFlow && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <Chip color={progress.completed === progress.total ? T.success : T.warning} size={9}>Plan {progress.completed}/{progress.total}</Chip>
+                <span style={{ ...mono, fontSize: 9, color: T.dim }}>Next check-in: {t.remedialPlan?.checkInDatesISO.find(d => new Date(`${d}T00:00:00`).getTime() >= Date.now()) ?? 'Schedule pending'}</span>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
               {(t.taskType === 'Remedial' || !!t.remedialPlan) && <button aria-label="Log remedial check-in" title="Check-in" onClick={() => onRemedialCheckIn(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.warning, padding: 2 }}><Activity size={13} /></button>}
-              <button aria-label="Open student details" title="Open student" onClick={() => onOpenStudent(t.studentId)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent, padding: 2 }}><Eye size={13} /></button>
-              <button aria-label="Mark task as resolved" title="Resolve task" onClick={() => onResolveTask(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.success, padding: 2 }}><CheckCircle size={13} /></button>
+              <button aria-label="Open task student details" title="Open student" onClick={() => onOpenStudent(t)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent, padding: 2 }}><Eye size={13} /></button>
+              {t.unlockRequest && role === 'HoD' && (
+                <button aria-label="Review unlock request" title="Review unlock" onClick={() => onOpenUnlockReview(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.warning, ...mono, fontSize: 10 }}>Unlock</button>
+              )}
+              {role === 'Course Leader' && !t.unlockRequest && <button aria-label="Reassign task to mentor" title="Defer to Mentor" onClick={() => onReassignTask(t.id, 'Mentor', 'Course Leader deferred to Mentor for follow-up ownership.')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.blue, ...mono, fontSize: 10 }}>Mentor</button>}
+              {role !== 'HoD' && <button aria-label="Reassign task to hod" title="Defer to HoD" onClick={() => onReassignTask(t.id, 'HoD', `${role} deferred this case to HoD.`)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.danger, ...mono, fontSize: 10 }}>HoD</button>}
+              {role === 'HoD' && !t.unlockRequest && <button aria-label="Return task to course leader" title="Return to Course Leader" onClick={() => onReassignTask(t.id, 'Course Leader', 'HoD reviewed and returned the case to Course Leader.')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.blue, ...mono, fontSize: 10 }}>CL</button>}
+              <button aria-label="Mark task as resolved" title="Resolve task" onClick={() => onResolveTask(t.id)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: T.success, padding: 2 }}><CheckCircle size={13} /></button>
             </div>
           </div>
-              </>
-            )
-          })()}
-        </div>
-      ))}
+        )
+      })}
 
       {done.length > 0 && (
         <>
-          <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 16, marginBottom: 8, textTransform: 'uppercase' as const, letterSpacing: '0.1em' }}>Done — awaiting next assessment</div>
-          {done.map(t => (
-            <div key={t.id} style={{ background: `${T.success}08`, border: `1px solid ${T.success}20`, borderRadius: 8, padding: '8px 12px', marginBottom: 6, opacity: 0.6 }}>
+          <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 16, marginBottom: 8, textTransform: 'uppercase' as const, letterSpacing: '0.1em' }}>Resolved history</div>
+          {done.slice(0, 6).map(t => (
+            <div key={t.id} style={{ background: `${T.success}08`, border: `1px solid ${T.success}20`, borderRadius: 8, padding: '8px 12px', marginBottom: 6, opacity: 0.75 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={{ ...mono, fontSize: 11, color: T.success, textDecoration: 'line-through', flex: 1 }}>{t.title}</div>
-                {Date.now() - (resolvedTaskIds[t.id] ?? 0) < TWO_DAYS_MS && (
-                  <button aria-label="Undo resolved task" title="Undo" onClick={() => onUndoTask(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent, ...mono, fontSize: 10 }}>Undo</button>
-                )}
+                <button aria-label="Undo resolved task" title="Undo" onClick={() => onUndoTask(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent, ...mono, fontSize: 10 }}>Undo</button>
               </div>
-              <div style={{ ...mono, fontSize: 9, color: T.dim, marginTop: 2 }}>Auto-removes permanently after 2 days</div>
+              <div style={{ ...mono, fontSize: 9, color: T.dim, marginTop: 2 }}>Kept in queue history for audit continuity.</div>
             </div>
           ))}
         </>
@@ -824,76 +944,77 @@ function ActionQueue({ role, tasks, offerings, resolvedTaskIds, onResolveTask, o
       {showComposer && (
         <div onClick={() => setShowComposer(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 130, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
           <div onClick={e => e.stopPropagation()}>
-          <Card style={{ width: '100%', maxWidth: 480, padding: 14 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text }}>Quick Add Task</div>
-              <button aria-label="Close quick add" title="Close" onClick={() => setShowComposer(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.muted }}><X size={15} /></button>
-            </div>
-            <div style={{ display: 'grid', gap: 7 }}>
-              <select aria-label="Select class" value={selectedOffId} onChange={e => { setSelectedOffId(e.target.value); setQuery('') }} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
-                <option value="">All Classes</option>
-                {classOfferings.map(o => <option key={o.offId} value={o.offId}>{o.code} · {o.year} · {o.dept} · Sec {o.section}</option>)}
-              </select>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                <select aria-label="Select year" value={selectedYear} onChange={e => setSelectedYear(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
-                  <option value="">All Years</option>
-                  {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
-                </select>
-                <select aria-label="Select branch" value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
-                  <option value="">All Branches</option>
-                  {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
+            <Card style={{ width: '100%', maxWidth: 480, padding: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text }}>Quick Add Task</div>
+                <button aria-label="Close quick add" title="Close" onClick={() => setShowComposer(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.muted }}><X size={15} /></button>
               </div>
-              <input aria-label="Search student" placeholder="Search student / USN" value={query} onChange={e => setQuery(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }} />
-              {query.trim() !== '' && (
-                <div style={{ border: `1px solid ${T.border2}`, borderRadius: 6, background: T.surface2, maxHeight: 168, overflowY: 'auto' }}>
-                  {searchHits.length === 0 && <div style={{ ...mono, fontSize: 10, color: T.dim, padding: '8px 10px' }}>No matching students</div>}
-                  {searchHits.map(hit => (
-                    <button
-                      key={`${hit.offering.offId}-${hit.student.id}`}
-                      aria-label={`Select ${hit.student.name}`}
-                      title={`Select ${hit.student.name}`}
-                      onClick={() => {
-                        setSelectedYear(hit.offering.year)
-                        setSelectedDept(hit.offering.dept)
-                        setSelectedOffId(hit.offering.offId)
-                        setSelectedStudentId(hit.student.id)
-                        setQuery(hit.student.name)
-                      }}
-                      style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', cursor: 'pointer', borderBottom: `1px solid ${T.border}`, padding: '8px 10px' }}
-                    >
-                      <div style={{ ...sora, fontWeight: 600, fontSize: 11, color: T.text }}>{hit.student.name}</div>
-                      <div style={{ ...mono, fontSize: 9, color: T.muted }}>{hit.student.usn} · {hit.offering.code} · {hit.offering.year} · {hit.offering.dept} · Sec {hit.offering.section}</div>
-                    </button>
-                  ))}
+              <div style={{ display: 'grid', gap: 7 }}>
+                <select aria-label="Select class" value={selectedOffId} onChange={e => { setSelectedOffId(e.target.value); setQuery('') }} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
+                  <option value="">All Classes</option>
+                  {classOfferings.map(o => <option key={o.offId} value={o.offId}>{o.code} · {o.year} · {o.dept} · Sec {o.section}</option>)}
+                </select>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                  <select aria-label="Select year" value={selectedYear} onChange={e => setSelectedYear(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
+                    <option value="">All Years</option>
+                    {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                  <select aria-label="Select branch" value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
+                    <option value="">All Branches</option>
+                    {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
                 </div>
-              )}
-              <select aria-label="Select student" value={selectedStudentId} onChange={e => setSelectedStudentId(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
-                <option value="">Select student</option>
-                {filteredStudents.map(s => <option key={s.id} value={s.id}>{s.name} · {s.usn}</option>)}
-              </select>
-              <select aria-label="Task type" value={taskType} onChange={e => setTaskType(e.target.value as TaskType)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
-                <option>Follow-up</option><option>Remedial</option><option>Attendance</option><option>Academic</option>
-              </select>
-              <input aria-label="Due date" type="date" value={dueDateISO} onChange={e => setDueDateISO(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }} />
-              <input aria-label="Task note" value={note} onChange={e => setNote(e.target.value)} placeholder="Task note" style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }} />
-              <div style={{ display: 'flex', gap: 6, minHeight: 30 }}>
-                <Btn size="sm" onClick={() => submitQuickTask(false)}>Add</Btn>
-                {role !== 'HoD' && <Btn size="sm" variant="danger" onClick={() => submitQuickTask(true)}>Defer to HoD</Btn>}
-                {(taskType === 'Remedial' || selectedStudent?.riskBand === 'High') ? (
-                  <Btn size="sm" variant="ghost" onClick={() => {
-                    if (!selectedOffering || !selectedStudentId) return
-                    onOpenRemedialPlanner({ offeringId: selectedOffering.offId, studentId: selectedStudentId, deferToHod: false })
-                    setShowComposer(false)
-                  }}>
-                    Build Plan
-                  </Btn>
-                ) : (
-                  <div style={{ visibility: 'hidden' }}><Btn size="sm" variant="ghost">Build Plan</Btn></div>
+                <input aria-label="Search student" placeholder="Search student / USN" value={query} onChange={e => setQuery(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }} />
+                {query.trim() !== '' && (
+                  <div style={{ border: `1px solid ${T.border2}`, borderRadius: 6, background: T.surface2, maxHeight: 168, overflowY: 'auto' }}>
+                    {searchHits.length === 0 && <div style={{ ...mono, fontSize: 10, color: T.dim, padding: '8px 10px' }}>No matching students</div>}
+                    {searchHits.map(hit => (
+                      <button
+                        key={`${hit.offering.offId}-${hit.student.id}`}
+                        aria-label={`Select ${hit.student.name}`}
+                        title={`Select ${hit.student.name}`}
+                        onClick={() => {
+                          setSelectedYear(hit.offering.year)
+                          setSelectedDept(hit.offering.dept)
+                          setSelectedOffId(hit.offering.offId)
+                          setSelectedStudentId(hit.student.id)
+                          setQuery(hit.student.name)
+                        }}
+                        style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', cursor: 'pointer', borderBottom: `1px solid ${T.border}`, padding: '8px 10px' }}
+                      >
+                        <div style={{ ...sora, fontWeight: 600, fontSize: 11, color: T.text }}>{hit.student.name}</div>
+                        <div style={{ ...mono, fontSize: 9, color: T.muted }}>{hit.student.usn} · {hit.offering.code} · {hit.offering.year} · {hit.offering.dept} · Sec {hit.offering.section}</div>
+                      </button>
+                    ))}
+                  </div>
                 )}
+                <select aria-label="Select student" value={selectedStudentId} onChange={e => setSelectedStudentId(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
+                  <option value="">Select student</option>
+                  {filteredStudents.map(s => <option key={s.id} value={s.id}>{s.name} · {s.usn}</option>)}
+                </select>
+                <select aria-label="Task type" value={taskType} onChange={e => setTaskType(e.target.value as TaskType)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
+                  <option>Follow-up</option><option>Remedial</option><option>Attendance</option><option>Academic</option>
+                </select>
+                <input aria-label="Due date" type="date" value={dueDateISO} onChange={e => setDueDateISO(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }} />
+                <input aria-label="Task note" value={note} onChange={e => setNote(e.target.value)} placeholder="Task note" style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }} />
+                <div style={{ display: 'flex', gap: 6, minHeight: 30, flexWrap: 'wrap' }}>
+                  <Btn size="sm" onClick={() => submitQuickTask('add')}>Add</Btn>
+                  {role === 'Course Leader' && <Btn size="sm" variant="ghost" onClick={() => submitQuickTask('mentor')}>Track in CL queue first</Btn>}
+                  {role !== 'HoD' && <Btn size="sm" variant="danger" onClick={() => submitQuickTask('hod')}>Defer to HoD</Btn>}
+                  {(taskType === 'Remedial' || selectedStudent?.riskBand === 'High') ? (
+                    <Btn size="sm" variant="ghost" onClick={() => {
+                      if (!selectedOffering || !selectedStudentId) return
+                      onOpenRemedialPlanner({ offeringId: selectedOffering.offId, studentId: selectedStudentId, deferToHod: false })
+                      setShowComposer(false)
+                    }}>
+                      Build Plan
+                    </Btn>
+                  ) : (
+                    <div style={{ visibility: 'hidden' }}><Btn size="sm" variant="ghost">Build Plan</Btn></div>
+                  )}
+                </div>
               </div>
-            </div>
-          </Card>
+            </Card>
           </div>
         </div>
       )}
@@ -944,7 +1065,7 @@ function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent,
       </div>
 
       {/* Stat Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
         {[
           { icon: '📚', label: 'Assigned Classes', val: offerings.length, color: T.accent },
           { icon: '👥', label: 'Total Students', val: total, color: T.success },
@@ -1144,7 +1265,7 @@ const TAB_DEFS = [
   { id: 'gradebook', icon: '📊', label: 'Grade Book' },
 ]
 
-function CourseDetail({ offering: o, onBack, onOpenStudent, onOpenEntryHub, initialTab }: { offering: Offering; onBack: () => void; onOpenStudent: (s: Student) => void; onOpenEntryHub: (kind: EntryKind) => void; initialTab?: string }) {
+function CourseDetail({ offering: o, onBack, onOpenStudent, onOpenEntryHub, onOpenSchemeSetup, initialTab, scheme }: { offering: Offering; onBack: () => void; onOpenStudent: (s: Student) => void; onOpenEntryHub: (kind: EntryKind) => void; onOpenSchemeSetup: () => void; initialTab?: string; scheme: SchemeState }) {
   const [tab, setTab] = useState(initialTab ?? 'overview')
   const yc = yearColor(o.year)
   const students = useMemo(() => getStudentsPatched(o), [o.offId])
@@ -1210,7 +1331,7 @@ function CourseDetail({ offering: o, onBack, onOpenStudent, onOpenEntryHub, init
         {tab === 'quizzes' && <QuizzesTab students={students} tt1Done={o.tt1Done} onOpenEntryHub={() => onOpenEntryHub('quiz')} />}
         {tab === 'assignments' && <AssignmentsTab students={students} tt1Done={o.tt1Done} onOpenEntryHub={() => onOpenEntryHub('assignment')} />}
         {tab === 'co' && <COTab cos={cos} />}
-        {tab === 'gradebook' && <GradeBookTab o={o} students={students} onOpenEntryHub={() => onOpenEntryHub('finals')} />}
+        {tab === 'gradebook' && <GradeBookTab students={students} scheme={scheme} onOpenEntryHub={() => onOpenEntryHub('finals')} onOpenSchemeSetup={onOpenSchemeSetup} />}
       </div>
     </div>
   )
@@ -1705,53 +1826,33 @@ function COTab({ cos }: { cos: CODef[] }) {
 }
 
 /* ─── Grade Book Tab ─── */
-function GradeBookTab({ students, onOpenEntryHub }: { o: Offering; students: Student[]; onOpenEntryHub: () => void }) {
-  const [schemePreset, setSchemePreset] = useState<'10-20' | '20-10' | '30-0' | '0-30'>('10-20')
-  const [finalsMax, setFinalsMax] = useState<50 | 100>(50)
-  const [quizCount, setQuizCount] = useState<0 | 1 | 2>(1)
-  const [assignmentCount, setAssignmentCount] = useState<0 | 1 | 2>(1)
-
-  const [quizWeight, assignmentWeight] = schemePreset === '10-20'
-    ? [10, 20]
-    : schemePreset === '20-10'
-      ? [20, 10]
-      : schemePreset === '30-0'
-        ? [30, 0]
-        : [0, 30]
-
-  const scheme: EvaluationScheme = { finalsMax, quizWeight, assignmentWeight, quizCount, assignmentCount }
-
+function GradeBookTab({ students, scheme, onOpenEntryHub, onOpenSchemeSetup }: { students: Student[]; scheme: SchemeState; onOpenEntryHub: () => void; onOpenSchemeSetup: () => void }) {
+  const schemeReady = scheme.status !== 'Needs Setup'
   return (
     <div style={{ padding: '24px 32px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div style={{ ...sora, fontWeight: 700, fontSize: 17, color: T.text }}>Grade Book — CE Marks</div>
-        <Btn size="sm" onClick={onOpenEntryHub}>Enter SEE/Finals via Data Entry Hub →</Btn>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Btn size="sm" variant="ghost" onClick={onOpenSchemeSetup}>Open Scheme Setup</Btn>
+          <Btn size="sm" onClick={onOpenEntryHub}>Enter SEE/Finals via Data Entry Hub →</Btn>
+        </div>
       </div>
       <Card style={{ marginBottom: 12, padding: '10px 12px' }}>
-        <div style={{ ...mono, fontSize: 10, color: T.muted, marginBottom: 8 }}>CE model: TT1+TT2 = 30/60 fixed. Quiz+Assignment = 30/60 variable. CE contributes 40% overall.</div>
+        <div style={{ ...mono, fontSize: 10, color: T.muted, marginBottom: 8 }}>CE model: TT1+TT2 = 30/60 fixed. Quiz+Assignment = 30/60 variable. Final subject score uses exact score out of 100 before band mapping.</div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <select aria-label="Quiz assignment split" value={schemePreset} onChange={e => setSchemePreset(e.target.value as '10-20' | '20-10' | '30-0' | '0-30')} style={{ ...mono, fontSize: 10, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '5px 8px' }}>
-            <option value="10-20">Quiz 10 · Asgn 20</option>
-            <option value="20-10">Quiz 20 · Asgn 10</option>
-            <option value="30-0">Quiz 30 · Asgn 0</option>
-            <option value="0-30">Quiz 0 · Asgn 30</option>
-          </select>
-          <select aria-label="Quiz count" value={quizCount} onChange={e => setQuizCount(Number(e.target.value) as 0 | 1 | 2)} style={{ ...mono, fontSize: 10, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '5px 8px' }}>
-            <option value={0}>Quiz count: 0</option><option value={1}>Quiz count: 1</option><option value={2}>Quiz count: 2</option>
-          </select>
-          <select aria-label="Assignment count" value={assignmentCount} onChange={e => setAssignmentCount(Number(e.target.value) as 0 | 1 | 2)} style={{ ...mono, fontSize: 10, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '5px 8px' }}>
-            <option value={0}>Assignment count: 0</option><option value={1}>Assignment count: 1</option><option value={2}>Assignment count: 2</option>
-          </select>
-          <select aria-label="Finals max marks" value={finalsMax} onChange={e => setFinalsMax(Number(e.target.value) as 50 | 100)} style={{ ...mono, fontSize: 10, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '5px 8px' }}>
-            <option value={50}>Finals max: 50</option>
-            <option value={100}>Finals max: 100</option>
-          </select>
+          <Chip color={schemeReady ? T.success : T.warning} size={9}>Scheme: {scheme.status}</Chip>
+          <Chip color={T.accent} size={9}>Quiz {scheme.quizWeight}</Chip>
+          <Chip color={T.accent} size={9}>Assignment {scheme.assignmentWeight}</Chip>
+          <Chip color={T.dim} size={9}>Quiz count {scheme.quizCount}</Chip>
+          <Chip color={T.dim} size={9}>Assignment count {scheme.assignmentCount}</Chip>
+          <Chip color={T.blue} size={9}>SEE raw max {scheme.finalsMax}</Chip>
         </div>
       </Card>
+      {!schemeReady && <Card glow={T.warning} style={{ marginBottom: 12, padding: '10px 12px' }}><div style={{ ...mono, fontSize: 11, color: T.warning }}>Configure the evaluation scheme before starting marks entry. The current gradebook remains preview-only until then.</div></Card>}
       <Card style={{ padding: 0, overflow: 'hidden' }}>
         <HScrollArea>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr>{['USN', 'Name', 'TT1 /15', 'TT2 /15', `Quiz /${quizWeight}`, `Asgn /${assignmentWeight}`, 'CE /60', 'Overall /40', `SEE /${finalsMax}`, 'Risk'].map(h => <TH key={h}>{h}</TH>)}</tr></thead>
+            <thead><tr>{['USN', 'Name', 'TT1 /15', 'TT2 /15', `Quiz /${scheme.quizWeight}`, `Asgn /${scheme.assignmentWeight}`, 'CE /60', 'Overall /40', `SEE /${scheme.finalsMax}`, 'Risk'].map(h => <TH key={h}>{h}</TH>)}</tr></thead>
             <tbody>
               {students.slice(0, 20).map(s => {
                 const ev = computeEvaluation(s, scheme)
@@ -1761,8 +1862,8 @@ function GradeBookTab({ students, onOpenEntryHub }: { o: Offering; students: Stu
                     <TD style={{ ...sora, fontSize: 11, color: T.text, whiteSpace: 'nowrap' }}>{s.name}</TD>
                     <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: s.tt1Score !== null ? T.text : T.dim }}>{s.tt1Score !== null ? ev.tt1Scaled : '—'}</TD>
                     <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: s.tt2Score !== null ? T.text : T.dim }}>{s.tt2Score !== null ? ev.tt2Scaled : '—'}</TD>
-                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: quizWeight === 0 ? T.dim : T.text }}>{quizWeight === 0 ? '—' : ev.quizScaled}</TD>
-                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: assignmentWeight === 0 ? T.dim : T.text }}>{assignmentWeight === 0 ? '—' : ev.asgnScaled}</TD>
+                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: scheme.quizWeight === 0 ? T.dim : T.text }}>{scheme.quizWeight === 0 ? '—' : ev.quizScaled}</TD>
+                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: scheme.assignmentWeight === 0 ? T.dim : T.text }}>{scheme.assignmentWeight === 0 ? '—' : ev.asgnScaled}</TD>
                     <TD style={{ ...mono, fontSize: 12, fontWeight: 700, textAlign: 'center', color: ev.ce60 >= 30 ? T.success : ev.ce60 >= 24 ? T.warning : T.danger }}>{ev.ce60}</TD>
                     <TD style={{ ...mono, fontSize: 12, fontWeight: 700, textAlign: 'center', color: ev.overall40 >= 20 ? T.success : ev.overall40 >= 16 ? T.warning : T.danger }}>{ev.overall40}</TD>
                     <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: T.dim }}>—</TD>
@@ -1798,7 +1899,7 @@ function MentorView({ mentees, onOpenMentee }: { mentees: Mentee[]; onOpenMentee
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 22 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 22 }}>
         {[
           { lbl: 'Total Mentees', val: mentees.length, col: T.accent },
           { lbl: 'High Vulnerability', val: highRisk, col: T.danger },
@@ -1874,6 +1975,412 @@ function MentorView({ mentees, onOpenMentee }: { mentees: Mentee[]; onOpenMentee
   )
 }
 
+function MenteeDetailPage({ mentee, tasks, onBack, onOpenHistory }: { mentee: Mentee; tasks: SharedTask[]; onBack: () => void; onOpenHistory: (mentee: Mentee) => void }) {
+  const activeTasks = tasks.filter(task => task.studentUsn === mentee.usn)
+  const latestIntervention = mentee.interventions[mentee.interventions.length - 1]
+  const avgCourseRisk = mentee.avs >= 0 ? Math.round(mentee.courseRisks.filter(r => r.risk >= 0).reduce((acc, risk) => acc + risk.risk, 0) / Math.max(1, mentee.courseRisks.filter(r => r.risk >= 0).length) * 100) : null
+
+  return (
+    <div style={{ padding: '28px 32px', maxWidth: 980, animation: 'fadeUp 0.35s ease' }}>
+      <button onClick={onBack} style={{ ...mono, fontSize: 11, color: T.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 10 }}>← Back to Mentees</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 22 }}>
+        <div>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 22, color: T.text }}>{mentee.name}</div>
+          <div style={{ ...mono, fontSize: 11, color: T.accent, marginTop: 3 }}>{mentee.usn} · {mentee.year} · Sec {mentee.section} · {mentee.dept}</div>
+          <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 6 }}>Mentor workspace with intervention context, summary academics, and transcript entry point.</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <Btn size="sm" variant="ghost" onClick={() => navigator.clipboard.writeText(mentee.phone)}><Phone size={12} /> Copy Phone</Btn>
+          <Btn size="sm" onClick={() => onOpenHistory(mentee)}><Eye size={12} /> View Student History</Btn>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 18 }}>
+        {[
+          { lbl: 'Aggregate Risk', val: mentee.avs >= 0 ? `${Math.round(mentee.avs * 100)}%` : 'Awaiting TT1', col: mentee.avs >= 0.6 ? T.danger : mentee.avs >= 0.35 ? T.warning : T.success },
+          { lbl: 'Prev CGPA', val: mentee.prevCgpa > 0 ? mentee.prevCgpa.toFixed(1) : '—', col: mentee.prevCgpa >= 7 ? T.success : mentee.prevCgpa >= 6 ? T.warning : T.danger },
+          { lbl: 'Tracked Courses', val: mentee.courseRisks.length, col: T.accent },
+          { lbl: 'Open Queue Items', val: activeTasks.length, col: activeTasks.length > 0 ? T.warning : T.success },
+        ].map((metric, index) => (
+          <Card key={index} glow={metric.col} style={{ padding: '12px 16px' }}>
+            <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: metric.col }}>{metric.val}</div>
+            <div style={{ ...mono, fontSize: 9, color: T.muted }}>{metric.lbl}</div>
+          </Card>
+        ))}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, alignItems: 'start' }}>
+        <Card>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 15, color: T.text, marginBottom: 10 }}>Current Course Risk Map</div>
+          <div style={{ display: 'grid', gap: 10 }}>
+            {mentee.courseRisks.map(risk => {
+              const color = risk.risk >= 0.7 ? T.danger : risk.risk >= 0.35 ? T.warning : risk.risk >= 0 ? T.success : T.dim
+              return (
+                <div key={risk.code} style={{ background: T.surface2, borderRadius: 8, padding: '10px 12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
+                    <div>
+                      <div style={{ ...sora, fontWeight: 600, fontSize: 13, color: T.text }}>{risk.code}</div>
+                      <div style={{ ...mono, fontSize: 10, color: T.muted }}>{risk.title}</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ ...sora, fontWeight: 800, fontSize: 18, color }}>{risk.risk >= 0 ? `${Math.round(risk.risk * 100)}%` : '—'}</div>
+                      <div style={{ ...mono, fontSize: 9, color: T.dim }}>{risk.risk >= 0 ? `${risk.band} vulnerability` : 'Awaiting data'}</div>
+                    </div>
+                  </div>
+                  <Bar val={risk.risk >= 0 ? risk.risk * 100 : 0} color={color} h={5} />
+                </div>
+              )
+            })}
+          </div>
+        </Card>
+
+        <div style={{ display: 'grid', gap: 14 }}>
+          <Card>
+            <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 8 }}>Mentor Summary</div>
+            <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.6 }}>
+              {avgCourseRisk !== null ? `Average course risk is ${avgCourseRisk}%.` : 'No score-based risk yet.'}
+              {' '}Previous-semester CGPA is {mentee.prevCgpa > 0 ? mentee.prevCgpa.toFixed(1) : 'not yet available'}.
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+              {mentee.courseRisks.filter(r => r.risk >= 0.5).map(r => <Chip key={r.code} color={r.risk >= 0.7 ? T.danger : T.warning} size={9}>{r.code}</Chip>)}
+              {mentee.courseRisks.every(r => r.risk < 0.5) && <Chip color={T.success} size={9}>No current high-risk courses</Chip>}
+            </div>
+          </Card>
+
+          <Card>
+            <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 8 }}>Intervention Timeline</div>
+            {mentee.interventions.length > 0 ? mentee.interventions.map((entry, index) => (
+              <div key={`${entry.date}-${index}`} style={{ display: 'flex', gap: 10, padding: '8px 0', borderBottom: index < mentee.interventions.length - 1 ? `1px solid ${T.border}` : 'none' }}>
+                <div style={{ ...mono, fontSize: 10, color: T.dim, minWidth: 56 }}>{entry.date}</div>
+                <Chip color={T.warning} size={9}>{entry.type}</Chip>
+                <div style={{ ...mono, fontSize: 11, color: T.muted }}>{entry.note}</div>
+              </div>
+            )) : (
+              <div style={{ ...mono, fontSize: 11, color: T.dim }}>No interventions logged for this mentee yet.</div>
+            )}
+          </Card>
+
+          <Card>
+            <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 8 }}>Queue Ownership Snapshot</div>
+            {activeTasks.length > 0 ? activeTasks.map(task => (
+              <div key={task.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '8px 0', borderBottom: `1px solid ${T.border}` }}>
+                <div>
+                  <div style={{ ...mono, fontSize: 11, color: T.text }}>{task.title}</div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted }}>{getLatestTransition(task)?.action ?? 'Created'} · {task.due}</div>
+                </div>
+                <Chip color={task.assignedTo === 'Mentor' ? T.warning : task.assignedTo === 'HoD' ? T.danger : T.accent} size={9}>{task.assignedTo}</Chip>
+              </div>
+            )) : (
+              <div style={{ ...mono, fontSize: 11, color: T.dim }}>No active queue items for this mentee.</div>
+            )}
+            {latestIntervention && <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 10 }}>Latest intervention: {latestIntervention.note}</div>}
+          </Card>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function StudentHistoryPage({ role, history, onBack }: { role: Role; history: StudentHistoryRecord; onBack: () => void }) {
+  const latestTerm = history.terms[history.terms.length - 1]
+  const totalBacklogs = history.terms.reduce((acc, term) => acc + term.backlogCount, 0)
+
+  return (
+    <div style={{ padding: '28px 32px', maxWidth: 1080, animation: 'fadeUp 0.35s ease' }}>
+      <button onClick={onBack} style={{ ...mono, fontSize: 11, color: T.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 10 }}>← Back</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 18, marginBottom: 18 }}>
+        <div>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 22, color: T.text }}>Student History</div>
+          <div style={{ ...mono, fontSize: 11, color: T.accent, marginTop: 3 }}>{history.studentName} · {history.usn} · {history.program}</div>
+          <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 6 }}>Semester-wise history for mentor review, academic follow-up, and later risk-model inputs.</div>
+        </div>
+        <Chip color={history.trend === 'Improving' ? T.success : history.trend === 'Declining' ? T.danger : T.warning} size={10}>{history.trend} trend</Chip>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 18 }}>
+        {[
+          { lbl: 'Current CGPA', val: history.currentCgpa.toFixed(2), col: history.currentCgpa >= 7 ? T.success : history.currentCgpa >= 6 ? T.warning : T.danger },
+          { lbl: 'Latest SGPA', val: latestTerm?.sgpa.toFixed(2) ?? '—', col: (latestTerm?.sgpa ?? 0) >= 7 ? T.success : (latestTerm?.sgpa ?? 0) >= 6 ? T.warning : T.danger },
+          { lbl: 'Backlog Count', val: totalBacklogs, col: totalBacklogs > 0 ? T.danger : T.success },
+          { lbl: 'Repeated Subjects', val: history.repeatSubjects.length, col: history.repeatSubjects.length > 0 ? T.warning : T.success },
+        ].map((metric, index) => (
+          <Card key={index} glow={metric.col} style={{ padding: '12px 16px' }}>
+            <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: metric.col }}>{metric.val}</div>
+            <div style={{ ...mono, fontSize: 9, color: T.muted }}>{metric.lbl}</div>
+          </Card>
+        ))}
+      </div>
+
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 8 }}>History Notes</div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {history.advisoryNotes.map(note => <Chip key={note} color={T.blue} size={9}>{note}</Chip>)}
+          {history.repeatSubjects.map(note => <Chip key={note} color={T.warning} size={9}>Repeat: {note}</Chip>)}
+          {history.repeatSubjects.length === 0 && <Chip color={T.success} size={9}>No repeated subjects in transcript history</Chip>}
+        </div>
+      </Card>
+
+      <div style={{ display: 'grid', gap: 14 }}>
+        {history.terms.map((term: TranscriptTerm) => (
+          <Card key={term.termId}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 10, flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ ...sora, fontWeight: 700, fontSize: 15, color: T.text }}>{term.label}</div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted }}>{term.academicYear} · Registered credits: {term.registeredCredits} · Earned credits: {term.earnedCredits}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <Chip color={term.sgpa >= 7 ? T.success : term.sgpa >= 6 ? T.warning : T.danger} size={9}>SGPA {term.sgpa.toFixed(2)}</Chip>
+                <Chip color={term.backlogCount > 0 ? T.danger : T.success} size={9}>{term.backlogCount} backlogs</Chip>
+              </div>
+            </div>
+            <HScrollArea>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead><tr>{['Code', 'Subject', 'Credits', role === 'Mentor' ? 'Grade' : 'Score', 'Grade Point', 'Result'].map(header => <TH key={header}>{header}</TH>)}</tr></thead>
+                <tbody>
+                  {term.subjects.map(subject => (
+                    <tr key={`${term.termId}-${subject.code}`}>
+                      <TD style={{ ...mono, fontSize: 10, color: T.accent }}>{subject.code}</TD>
+                      <TD style={{ ...sora, fontSize: 11, color: T.text }}>{subject.title}</TD>
+                      <TD style={{ ...mono, fontSize: 11, color: T.text }}>{subject.credits}</TD>
+                      <TD style={{ ...mono, fontSize: 11, color: subject.gradePoint >= 7 ? T.success : subject.gradePoint >= 4 ? T.warning : T.danger }}>
+                        {role === 'Mentor' ? subject.gradeLabel : `${subject.score}`}
+                      </TD>
+                      <TD style={{ ...mono, fontSize: 11, color: subject.gradePoint >= 7 ? T.success : subject.gradePoint >= 4 ? T.warning : T.danger }}>{subject.gradePoint}</TD>
+                      <TD><Chip color={subject.result === 'Failed' ? T.danger : subject.result === 'Repeated' ? T.warning : T.success} size={9}>{subject.result}</Chip></TD>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </HScrollArea>
+          </Card>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function SchemeSetupPage({ role, offering, scheme, hasEntryStarted, onSave, onBack }: { role: Role; offering: Offering; scheme: SchemeState; hasEntryStarted: boolean; onSave: (next: SchemeState) => void; onBack: () => void }) {
+  const [quizWeight, setQuizWeight] = useState(scheme.quizWeight)
+  const [assignmentWeight, setAssignmentWeight] = useState(scheme.assignmentWeight)
+  const [quizCount, setQuizCount] = useState<0 | 1 | 2>(scheme.quizCount)
+  const [assignmentCount, setAssignmentCount] = useState<0 | 1 | 2>(scheme.assignmentCount)
+  const [finalsMax, setFinalsMax] = useState<50 | 100>(scheme.finalsMax)
+  const canEdit = !hasEntryStarted && scheme.status !== 'Locked'
+
+  useEffect(() => {
+    setQuizWeight(scheme.quizWeight)
+    setAssignmentWeight(scheme.assignmentWeight)
+    setQuizCount(scheme.quizCount)
+    setAssignmentCount(scheme.assignmentCount)
+    setFinalsMax(scheme.finalsMax)
+  }, [scheme])
+
+  return (
+    <div style={{ padding: '28px 32px', maxWidth: 760, animation: 'fadeUp 0.35s ease' }}>
+      <button onClick={onBack} style={{ ...mono, fontSize: 11, color: T.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 10 }}>← Back</button>
+      <div style={{ marginBottom: 18 }}>
+        <div style={{ ...sora, fontWeight: 700, fontSize: 21, color: T.text }}>Evaluation Scheme Setup</div>
+        <div style={{ ...mono, fontSize: 11, color: T.accent, marginTop: 4 }}>{offering.code} · {offering.title} · Sec {offering.section}</div>
+        <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 6 }}>TT1 and TT2 stay fixed at raw 25 + 25 normalised to 30. Configure the remaining CE split and SEE raw max before entry begins.</div>
+      </div>
+
+      <Card glow={canEdit ? T.accent : T.warning} style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+          <Chip color={scheme.status === 'Locked' ? T.danger : scheme.status === 'Configured' ? T.success : T.warning} size={9}>Status: {scheme.status}</Chip>
+          <Chip color={T.accent} size={9}>Role: {role}</Chip>
+          <Chip color={hasEntryStarted ? T.danger : T.success} size={9}>{hasEntryStarted ? 'Entry already started' : 'No entry started yet'}</Chip>
+        </div>
+        {!canEdit && <div style={{ ...mono, fontSize: 11, color: T.warning }}>Scheme changes are blocked after entry begins. Use HoD unlock/reset flow if a reset is required.</div>}
+      </Card>
+
+      <div style={{ display: 'grid', gap: 12 }}>
+        <Card>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 15, color: T.text, marginBottom: 12 }}>Fixed University Rules</div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            <div style={{ ...mono, fontSize: 11, color: T.muted }}>TT1 raw max: 25</div>
+            <div style={{ ...mono, fontSize: 11, color: T.muted }}>TT2 raw max: 25</div>
+            <div style={{ ...mono, fontSize: 11, color: T.muted }}>TT1 + TT2 contribution inside CE: 30</div>
+            <div style={{ ...mono, fontSize: 11, color: T.muted }}>Quiz + Assignment contribution inside CE: 30</div>
+            <div style={{ ...mono, fontSize: 11, color: T.muted }}>SEE contribution in final subject score: 40</div>
+          </div>
+        </Card>
+
+        <Card>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 15, color: T.text, marginBottom: 12 }}>Configurable CE / SEE Inputs</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+            <select aria-label="Quiz weight" value={quizWeight} disabled={!canEdit} onChange={e => setQuizWeight(Number(e.target.value))} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
+              <option value={0}>Quiz weight 0</option>
+              <option value={10}>Quiz weight 10</option>
+              <option value={20}>Quiz weight 20</option>
+              <option value={30}>Quiz weight 30</option>
+            </select>
+            <select aria-label="Assignment weight" value={assignmentWeight} disabled={!canEdit} onChange={e => setAssignmentWeight(Number(e.target.value))} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
+              <option value={0}>Assignment weight 0</option>
+              <option value={10}>Assignment weight 10</option>
+              <option value={20}>Assignment weight 20</option>
+              <option value={30}>Assignment weight 30</option>
+            </select>
+            <select aria-label="Quiz count" value={quizCount} disabled={!canEdit} onChange={e => setQuizCount(Number(e.target.value) as 0 | 1 | 2)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
+              <option value={0}>Quiz count 0</option>
+              <option value={1}>Quiz count 1</option>
+              <option value={2}>Quiz count 2</option>
+            </select>
+            <select aria-label="Assignment count" value={assignmentCount} disabled={!canEdit} onChange={e => setAssignmentCount(Number(e.target.value) as 0 | 1 | 2)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
+              <option value={0}>Assignment count 0</option>
+              <option value={1}>Assignment count 1</option>
+              <option value={2}>Assignment count 2</option>
+            </select>
+            <select aria-label="Finals max" value={finalsMax} disabled={!canEdit} onChange={e => setFinalsMax(Number(e.target.value) as 50 | 100)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
+              <option value={50}>SEE raw max 50</option>
+              <option value={100}>SEE raw max 100</option>
+            </select>
+            <div style={{ ...mono, fontSize: 11, color: quizWeight + assignmentWeight === 30 ? T.success : T.danger, display: 'flex', alignItems: 'center' }}>
+              Remaining CE split: {quizWeight + assignmentWeight}/30
+            </div>
+          </div>
+        </Card>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+          <Btn size="sm" variant="ghost" onClick={onBack}>Cancel</Btn>
+          <Btn size="sm" onClick={() => {
+            if (quizWeight + assignmentWeight !== 30) return
+            onSave({
+              finalsMax,
+              quizWeight,
+              assignmentWeight,
+              quizCount,
+              assignmentCount,
+              status: 'Configured',
+              configuredAt: Date.now(),
+              lastEditedBy: role,
+            })
+          }}>Save Scheme</Btn>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function UnlockReviewPage({ task, offering, onBack, onApprove, onReject, onResetComplete }: { task: SharedTask; offering: Offering | null; onBack: () => void; onApprove: () => void; onReject: () => void; onResetComplete: () => void }) {
+  return (
+    <div style={{ padding: '28px 32px', maxWidth: 860, animation: 'fadeUp 0.35s ease' }}>
+      <button onClick={onBack} style={{ ...mono, fontSize: 11, color: T.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 10 }}>← Back</button>
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ ...sora, fontWeight: 700, fontSize: 21, color: T.text }}>Unlock Review</div>
+        <div style={{ ...mono, fontSize: 11, color: T.accent, marginTop: 4 }}>{task.courseCode} · {offering?.title ?? task.courseName} · {task.unlockRequest?.kind.toUpperCase()}</div>
+      </div>
+      <Card glow={task.unlockRequest?.status === 'Rejected' ? T.danger : T.warning} style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+          <Chip color={T.accent} size={9}>Requested by: {task.unlockRequest?.requestedBy ?? task.sourceRole}</Chip>
+          <Chip color={task.unlockRequest?.status === 'Rejected' ? T.danger : task.unlockRequest?.status === 'Reset Completed' ? T.success : T.warning} size={9}>Status: {task.unlockRequest?.status ?? 'Pending'}</Chip>
+          <Chip color={T.dim} size={9}>Submitted: {formatDateTime(task.unlockRequest?.requestedAt)}</Chip>
+        </div>
+        <div style={{ ...mono, fontSize: 11, color: T.muted }}>{task.actionHint}</div>
+      </Card>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: 16 }}>
+        <Card>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 10 }}>Request Details</div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            <div style={{ ...mono, fontSize: 11, color: T.muted }}>Offering: {offering?.code ?? task.courseCode} · Sec {offering?.section ?? '—'}</div>
+            <div style={{ ...mono, fontSize: 11, color: T.muted }}>Current owner: {task.assignedTo}</div>
+            <div style={{ ...mono, fontSize: 11, color: T.muted }}>Reason: {task.actionHint}</div>
+            <div style={{ ...mono, fontSize: 11, color: T.muted }}>Latest review note: {task.unlockRequest?.reviewNote ?? 'No review note yet'}</div>
+          </div>
+        </Card>
+        <Card>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 10 }}>Decision Flow</div>
+          <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 10 }}>Approve to allow a correction cycle, reject if the lock should stand, and then complete reset/unlock explicitly.</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {task.unlockRequest?.status === 'Pending' && (
+              <>
+                <Btn size="sm" onClick={onApprove}>Approve</Btn>
+                <Btn size="sm" variant="danger" onClick={onReject}>Reject</Btn>
+              </>
+            )}
+            {task.unlockRequest?.status === 'Approved' && <Btn size="sm" onClick={onResetComplete}>Reset & Unlock</Btn>}
+            {(task.unlockRequest?.status === 'Rejected' || task.unlockRequest?.status === 'Reset Completed') && <Chip color={task.unlockRequest.status === 'Rejected' ? T.danger : T.success} size={9}>Decision completed</Chip>}
+          </div>
+        </Card>
+      </div>
+
+      <Card style={{ marginTop: 16 }}>
+        <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 10 }}>Transition History</div>
+        <div style={{ display: 'grid', gap: 8 }}>
+          {(task.transitionHistory ?? []).map(transition => (
+            <div key={transition.id} style={{ display: 'flex', gap: 10, borderBottom: `1px solid ${T.border}`, paddingBottom: 8 }}>
+              <div style={{ ...mono, fontSize: 10, color: T.dim, minWidth: 112 }}>{formatDateTime(transition.at)}</div>
+              <div>
+                <div style={{ ...mono, fontSize: 11, color: T.text }}>{transition.action}</div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted }}>{transition.note}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  )
+}
+
+function QueueHistoryPage({ role, tasks, resolvedTaskIds, onOpenTaskStudent, onOpenUnlockReview }: { role: Role; tasks: SharedTask[]; resolvedTaskIds: Record<string, number>; onOpenTaskStudent: (task: SharedTask) => void; onOpenUnlockReview: (taskId: string) => void }) {
+  const [filter, setFilter] = useState<'all' | 'active' | 'resolved'>('all')
+  const visible = tasks
+    .filter(task => filter === 'all' ? true : filter === 'active' ? !resolvedTaskIds[task.id] : !!resolvedTaskIds[task.id])
+    .sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt))
+
+  return (
+    <div style={{ padding: '28px 32px', maxWidth: 1050, animation: 'fadeUp 0.35s ease' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 21, color: T.text }}>Queue History</div>
+          <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 4 }}>{role} view of active, resolved, and reassigned items.</div>
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {(['all', 'active', 'resolved'] as const).map(option => (
+            <button key={option} onClick={() => setFilter(option)} style={{ ...mono, fontSize: 10, padding: '5px 8px', borderRadius: 4, border: `1px solid ${filter === option ? T.accent : T.border}`, background: filter === option ? T.accent + '18' : 'transparent', color: filter === option ? T.accentLight : T.muted, cursor: 'pointer' }}>
+              {option.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gap: 12 }}>
+        {visible.map(task => (
+          <Card key={task.id}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', marginBottom: 10, flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text }}>{task.title}</div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 3 }}>{task.studentName} · {task.studentUsn} · {task.courseCode || 'Mentor context'}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <Chip color={resolvedTaskIds[task.id] ? T.success : T.warning} size={9}>{resolvedTaskIds[task.id] ? 'Resolved' : 'Active'}</Chip>
+                <Chip color={task.assignedTo === 'HoD' ? T.danger : task.assignedTo === 'Mentor' ? T.warning : T.accent} size={9}>{task.assignedTo}</Chip>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gap: 8, marginBottom: 10 }}>
+              {(task.transitionHistory ?? []).map(transition => (
+                <div key={transition.id} style={{ display: 'flex', gap: 10, borderBottom: `1px solid ${T.border}`, paddingBottom: 8 }}>
+                  <div style={{ ...mono, fontSize: 10, color: T.dim, minWidth: 112 }}>{formatDateTime(transition.at)}</div>
+                  <div>
+                    <div style={{ ...mono, fontSize: 11, color: T.text }}>{transition.action}</div>
+                    <div style={{ ...mono, fontSize: 10, color: T.muted }}>{transition.note}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Btn size="sm" variant="ghost" onClick={() => onOpenTaskStudent(task)}>Open Student</Btn>
+              {task.unlockRequest && role === 'HoD' && <Btn size="sm" onClick={() => onOpenUnlockReview(task.id)}>Open Unlock Review</Btn>}
+            </div>
+          </Card>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /* ══════════════════════════════════════════════════════════════
    HOD VIEW — Teacher-centric with drill-down
    ══════════════════════════════════════════════════════════════ */
@@ -1919,7 +2426,7 @@ function HodView({ onOpenUpload, onOpenCourse, onOpenStudent, tasks }: { onOpenU
         .filter(cr => cr.risk >= 0.5)
         .map(cr => ({
           id: `mentor-${m.id}-${cr.code}`,
-          studentId: `mentee-${m.id}`,
+          studentId: m.id,
           offeringId: OFFERINGS.find(o => o.code === cr.code)?.offId ?? '',
           studentName: m.name,
           studentUsn: m.usn,
@@ -1964,7 +2471,7 @@ function HodView({ onOpenUpload, onOpenCourse, onOpenStudent, tasks }: { onOpenU
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 22 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 22 }}>
         {[
           { lbl: 'Faculty', val: teacherStats.length, col: T.accent },
           { lbl: 'Total Students', val: totalStudents, col: T.success },
@@ -2130,7 +2637,7 @@ const getEntryLockMap = (o: Offering) => ({
    UPLOAD PAGE
    ══════════════════════════════════════════════════════════════ */
 
-function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOffering, onRequestUnlock, availableOfferings }: { role: Role; offering: Offering | null; defaultKind: EntryKind; onOpenWorkspace: (offeringId: string, kind: EntryKind) => void; lockByOffering: Record<string, EntryLockMap>; onRequestUnlock: (offeringId: string, kind: EntryKind) => void; availableOfferings?: Offering[] }) {
+function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOffering, onRequestUnlock, availableOfferings, scheme, onOpenSchemeSetup }: { role: Role; offering: Offering | null; defaultKind: EntryKind; onOpenWorkspace: (offeringId: string, kind: EntryKind) => void; lockByOffering: Record<string, EntryLockMap>; onRequestUnlock: (offeringId: string, kind: EntryKind) => void; availableOfferings?: Offering[]; scheme: SchemeState; onOpenSchemeSetup: (offering?: Offering) => void }) {
   const visibleOfferings = (availableOfferings && availableOfferings.length > 0 ? availableOfferings : OFFERINGS)
   const [selectedKind, setSelectedKind] = useState<EntryKind>(defaultKind)
   const [selectedOffId, setSelectedOffId] = useState<string>(offering?.offId ?? visibleOfferings[0].offId)
@@ -2154,6 +2661,7 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOfferi
   const lockMap = lockByOffering[selectedOffering.offId] ?? getEntryLockMap(selectedOffering)
   const stageRequired: Record<EntryKind, number> = { tt1: 1, tt2: 2, quiz: 2, assignment: 2, attendance: 1, finals: 3 }
   const isApplicableForStage = selectedOffering.stageInfo.stage >= stageRequired[selectedKind]
+  const schemeReady = scheme.status !== 'Needs Setup'
 
   const completion = useMemo(() => {
     if (!selectedOffering) return { tt1: false, tt2: false, quiz: false, assignment: false, attendance: true, finals: false }
@@ -2179,6 +2687,12 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOfferi
             <Btn size="sm" variant="ghost" onClick={() => { setUnlockRequested(selectedKind); onRequestUnlock(selectedOffering.offId, selectedKind) }}>Request unlock from HoD</Btn>
             {unlockRequested === selectedKind && <Chip color={T.success} size={9}>Request submitted</Chip>}
           </div>
+        </Card>
+      )}
+      {!schemeReady && (
+        <Card style={{ marginBottom: 12, padding: '12px 14px' }} glow={T.warning}>
+          <div style={{ ...mono, fontSize: 11, color: T.warning }}>Evaluation scheme is not locked in yet for this offering. Configure it before starting marks entry.</div>
+          <div style={{ marginTop: 8 }}><Btn size="sm" variant="ghost" onClick={() => onOpenSchemeSetup(selectedOffering)}>Open Scheme Setup</Btn></div>
         </Card>
       )}
       <div style={{ marginBottom: 18, display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'end' }}>
@@ -2208,7 +2722,14 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOfferi
         {ENTRY_CATALOG.map((x) => (
           <Card key={x.kind} glow={selectedKind === x.kind ? T.accent : undefined} style={{ padding: '18px 20px', cursor: 'pointer', opacity: role === 'Course Leader' && lockMap[x.kind] ? 0.8 : 1 }} onClick={() => {
             setSelectedKind(x.kind)
-            if (role === 'Course Leader' && lockMap[x.kind]) return
+            if (!schemeReady) {
+              onOpenSchemeSetup(selectedOffering)
+              return
+            }
+            if (lockMap[x.kind]) {
+              if (role === 'Course Leader') return
+              if (role === 'HoD') return
+            }
             onOpenWorkspace(selectedOffId, x.kind)
           }}>
             <div style={{ fontSize: 28, marginBottom: 10 }}>{x.icon}</div>
@@ -2217,6 +2738,7 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOfferi
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               <Chip color={completion[x.kind] ? T.success : T.warning} size={10}>{completion[x.kind] ? 'Completed' : 'Pending Entry'}</Chip>
               {lockMap[x.kind] && <Chip color={T.danger} size={10}>Locked</Chip>}
+              {!schemeReady && <Chip color={T.warning} size={10}>Scheme required</Chip>}
             </div>
           </Card>
         ))}
@@ -2233,8 +2755,8 @@ function EntryWorkspacePage({ role, offeringId, kind, onBack, lockByOffering, dr
   const groupedSections = OFFERINGS.filter(o => o.code === selectedOffering.code && o.year === selectedOffering.year)
   const selected = ENTRY_CATALOG.find(x => x.kind === kind) ?? ENTRY_CATALOG[0]
   const lockMap = lockByOffering[selectedOffering.offId] ?? getEntryLockMap(selectedOffering)
-  const isLockedForCourseLeader = role === 'Course Leader' && lockMap[kind]
-  const canEdit = (role === 'Course Leader' || role === 'HoD') && !isLockedForCourseLeader
+  const isLocked = lockMap[kind]
+  const canEdit = (role === 'Course Leader' || role === 'HoD') && !isLocked
   const stageRequired: Record<EntryKind, number> = { tt1: 1, tt2: 2, quiz: 2, assignment: 2, attendance: 1, finals: 3 }
   const isApplicableForStage = selectedOffering.stageInfo.stage >= stageRequired[kind]
 
@@ -2244,11 +2766,11 @@ function EntryWorkspacePage({ role, offeringId, kind, onBack, lockByOffering, dr
       <div style={{ ...sora, fontWeight: 700, fontSize: 20, color: T.text, marginBottom: 4 }}>{selected.title} — Dedicated Entry</div>
       <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 6 }}>{selectedOffering.code} · {selectedOffering.title} · {selectedOffering.year} · Stage {selectedOffering.stageInfo.stage}</div>
       {!canEdit && <div style={{ ...mono, fontSize: 11, color: T.warning, marginBottom: 10 }}>Read-only for this role. Only Course Leaders and HoD can edit marks.</div>}
-      {isLockedForCourseLeader && (
+      {isLocked && (
         <Card style={{ marginBottom: 10, padding: '10px 12px' }} glow={T.warning}>
-          <div style={{ ...mono, fontSize: 11, color: T.warning }}>This dataset is locked. You cannot edit it as Course Leader.</div>
+          <div style={{ ...mono, fontSize: 11, color: T.warning }}>This dataset is locked. HoD must explicitly review and reset it before anyone edits again.</div>
           <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
-            <Btn size="sm" variant="ghost" onClick={() => { setUnlockRequested(true); onRequestUnlock(selectedOffering.offId, kind) }}>Defer unlock request to HoD</Btn>
+            {role !== 'HoD' && <Btn size="sm" variant="ghost" onClick={() => { setUnlockRequested(true); onRequestUnlock(selectedOffering.offId, kind) }}>Defer unlock request to HoD</Btn>}
             {unlockRequested && <Chip color={T.success} size={9}>Request sent</Chip>}
           </div>
         </Card>
@@ -2260,8 +2782,8 @@ function EntryWorkspacePage({ role, offeringId, kind, onBack, lockByOffering, dr
           const students = getStudentsPatched(sec)
           const paper = PAPER_MAP[sec.code] || PAPER_MAP.default
           const secLocks = lockByOffering[sec.offId] ?? getEntryLockMap(sec)
-          const secLockedForCourseLeader = role === 'Course Leader' && secLocks[kind]
-          const canEditSection = (role === 'Course Leader' || role === 'HoD') && !secLockedForCourseLeader && isApplicableForStage
+          const secLocked = secLocks[kind]
+          const canEditSection = (role === 'Course Leader' || role === 'HoD') && !secLocked && isApplicableForStage
           const draftKey = `${sec.offId}::${kind}`
           return (
             <Card key={sec.offId} style={{ padding: 0, overflow: 'hidden' }}>
@@ -2274,7 +2796,7 @@ function EntryWorkspacePage({ role, offeringId, kind, onBack, lockByOffering, dr
                   <Chip color={isApplicableForStage ? T.blue : T.dim} size={9}>{isApplicableForStage ? 'Stage Applicable' : 'Locked by Stage'}</Chip>
                   {draftBySection[draftKey] && <Chip color={T.success} size={9}>Draft saved</Chip>}
                   <Btn size="sm" onClick={() => onSaveDraft(sec.offId, kind)} variant="ghost">Save Draft</Btn>
-                  <Btn size="sm" onClick={() => onSubmitLock(sec.offId, kind)}>{canEditSection ? 'Submit & Lock' : 'View Only'}</Btn>
+                  <Btn size="sm" onClick={() => onSubmitLock(sec.offId, kind)}>{canEditSection ? 'Submit & Lock' : secLocked ? 'Locked' : 'View Only'}</Btn>
                 </div>
               </div>
               <HScrollArea>
@@ -2339,30 +2861,38 @@ function EntryWorkspacePage({ role, offeringId, kind, onBack, lockByOffering, dr
    ROOT APP
    ══════════════════════════════════════════════════════════════ */
 
-const CL_NAV = [
+const CL_NAV: Array<{ id: PageId; icon: typeof LayoutDashboard; label: string }> = [
   { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+  { id: 'queue-history', icon: ListTodo, label: 'Queue History' },
   { id: 'calendar', icon: Calendar, label: 'Calendar' },
   { id: 'upload', icon: Upload, label: 'Data Entry Hub' },
 ]
-const MENTOR_NAV = [
+const MENTOR_NAV: Array<{ id: PageId; icon: typeof LayoutDashboard; label: string }> = [
   { id: 'mentees', icon: Users, label: 'My Mentees' },
+  { id: 'queue-history', icon: ListTodo, label: 'Queue History' },
   { id: 'calendar', icon: Calendar, label: 'Calendar' },
 ]
-const HOD_NAV = [
+const HOD_NAV: Array<{ id: PageId; icon: typeof LayoutDashboard; label: string }> = [
   { id: 'department', icon: Shield, label: 'Department' },
+  { id: 'queue-history', icon: ListTodo, label: 'Queue History' },
   { id: 'upload', icon: Upload, label: 'Data Entry Hub' },
   { id: 'calendar', icon: Calendar, label: 'Calendar' },
 ]
 
 export default function App() {
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => (localStorage.getItem('airmentor-theme') as ThemeMode) || 'light')
+  const [isNarrowViewport, setIsNarrowViewport] = useState(() => window.innerWidth < 1100)
   const [currentTeacherId, setCurrentTeacherId] = useState<string | null>(() => localStorage.getItem('airmentor-current-teacher-id'))
   const currentTeacher = useMemo(() => currentTeacherId ? (TEACHER_ACCOUNTS.find(t => t.teacherId === currentTeacherId) ?? null) : null, [currentTeacherId])
   const [role, setRole] = useState<Role>('Course Leader')
-  const [page, setPage] = useState('dashboard')
+  const [page, setPage] = useState<PageId>('dashboard')
   const [offering, setOffering] = useState<Offering | null>(null)
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
   const [selectedOffering, setSelectedOffering] = useState<Offering | null>(null)
+  const [selectedMentee, setSelectedMentee] = useState<Mentee | null>(null)
+  const [historyProfile, setHistoryProfile] = useState<StudentHistoryRecord | null>(null)
+  const [selectedUnlockTaskId, setSelectedUnlockTaskId] = useState<string | null>(null)
+  const [schemeOfferingId, setSchemeOfferingId] = useState<string | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [showActionQueue, setShowActionQueue] = useState(true)
   const [uploadOffering, setUploadOffering] = useState<Offering | null>(null)
@@ -2378,6 +2908,15 @@ export default function App() {
     } catch {
       return {}
     }
+  })
+  const [schemeByOffering, setSchemeByOffering] = useState<Record<string, SchemeState>>(() => {
+    try {
+      const saved = localStorage.getItem(SCHEME_STATE_KEY)
+      if (saved) return JSON.parse(saved)
+    } catch {
+      // ignore
+    }
+    return Object.fromEntries(OFFERINGS.map(item => [item.offId, defaultSchemeForOffering(item)])) as Record<string, SchemeState>
   })
 
   const allowedRoles = currentTeacher?.permissions ?? []
@@ -2428,18 +2967,28 @@ export default function App() {
           updatedAt: 'updatedAt' in t && typeof (t as SharedTask).updatedAt === 'number' ? (t as SharedTask).updatedAt : ('createdAt' in t && typeof t.createdAt === 'number' ? t.createdAt : Date.now()),
           taskType: 'taskType' in t && (t as SharedTask).taskType ? (t as SharedTask).taskType : 'Follow-up',
           assignedTo: 'assignedTo' in t && (t as SharedTask).assignedTo ? (t as SharedTask).assignedTo : 'Course Leader',
+          transitionHistory: 'transitionHistory' in t && Array.isArray((t as SharedTask).transitionHistory)
+            ? (t as SharedTask).transitionHistory
+            : [createTransition({ action: 'Imported into local mock state', actorRole: 'System', toOwner: ('assignedTo' in t && (t as SharedTask).assignedTo ? (t as SharedTask).assignedTo : 'Course Leader'), note: 'Recovered persisted queue item.' })],
         }))
       }
     } catch {
       // ignore
     }
-    const courseLeaderTasks: SharedTask[] = generateTasks().map(t => ({ ...t, createdAt: Date.now(), updatedAt: Date.now(), taskType: 'Follow-up', assignedTo: 'Course Leader' }))
+    const courseLeaderTasks: SharedTask[] = generateTasks().map(t => ({
+      ...t,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      taskType: 'Follow-up',
+      assignedTo: 'Course Leader',
+      transitionHistory: [createTransition({ action: 'Created from automatic high-risk trigger', actorRole: 'Auto', toOwner: 'Course Leader', note: 'Student crossed automatic academic-risk threshold.' })],
+    }))
     const mentorTasks: SharedTask[] = MENTEES
       .filter(m => m.avs >= 0.5)
       .slice(0, 8)
       .map((m, i) => ({
         id: `mentor-seed-${m.id}-${i}`,
-        studentId: `mentee-${m.id}`,
+        studentId: m.id,
         studentName: m.name,
         studentUsn: m.usn,
         offeringId: '',
@@ -2457,15 +3006,126 @@ export default function App() {
         updatedAt: Date.now(),
         taskType: 'Follow-up' as TaskType,
         assignedTo: 'Mentor',
+        transitionHistory: [createTransition({ action: 'Created from mentor vulnerability watchlist', actorRole: 'Auto', toOwner: 'Mentor', note: 'Seeded mentor queue item for mock walkthrough.' })],
       }))
-    return [...courseLeaderTasks, ...mentorTasks]
+    const cs401A = OFFERINGS.find(item => item.code === 'CS401' && item.section === 'A') ?? OFFERINGS[0]
+    const cs403C = OFFERINGS.find(item => item.code === 'CS403' && item.section === 'C') ?? OFFERINGS[0]
+    const overdueRemedial: SharedTask = {
+      id: 'seed-remedial-overdue-m1',
+      studentId: 'm1',
+      studentName: 'Aarav Sharma',
+      studentUsn: '1MS23CS001',
+      offeringId: cs401A.offId,
+      courseCode: cs401A.code,
+      courseName: cs401A.title,
+      year: cs401A.year,
+      riskProb: 0.82,
+      riskBand: 'High',
+      title: 'Overdue remedial follow-up for Aarav',
+      due: 'Overdue',
+      dueDateISO: '2026-03-05',
+      status: 'In Progress',
+      actionHint: 'Check-in slipped past due date; mentor follow-up is overdue.',
+      priority: 92,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      taskType: 'Remedial',
+      assignedTo: 'Mentor',
+      sourceRole: 'Course Leader',
+      manual: true,
+      remedialPlan: {
+        planId: 'plan-aarav-overdue',
+        title: 'Algorithm recovery sprint',
+        createdAt: Date.now(),
+        ownerRole: 'Mentor',
+        dueDateISO: '2026-03-05',
+        checkInDatesISO: ['2026-03-03', '2026-03-08'],
+        steps: [
+          { id: 'step-1', label: 'Attend remedial on recurrence relations', completedAt: Date.now() - 86_400_000 },
+          { id: 'step-2', label: 'Submit guided practice sheet' },
+          { id: 'step-3', label: 'Mentor review discussion' },
+        ],
+      },
+      transitionHistory: [
+        createTransition({ action: 'Created and deferred to Mentor', actorRole: 'Course Leader', fromOwner: 'Course Leader', toOwner: 'Mentor', note: 'High-risk case handed to mentor for ongoing support.' }),
+        createTransition({ action: 'Remedial check-in logged', actorRole: 'Mentor', fromOwner: 'Mentor', toOwner: 'Mentor', note: 'Initial remedial session completed; next step is overdue.' }),
+      ],
+    }
+    const pendingUnlockTask: SharedTask = {
+      id: 'seed-unlock-pending-cs401a-tt1',
+      studentId: `${cs401A.offId}-tt1-lock`,
+      studentName: 'Class Data Lock',
+      studentUsn: 'N/A',
+      offeringId: cs401A.offId,
+      courseCode: cs401A.code,
+      courseName: cs401A.title,
+      year: cs401A.year,
+      riskProb: 0.45,
+      riskBand: 'Medium',
+      title: `Unlock request: ${cs401A.code} Sec ${cs401A.section} · TT1`,
+      due: 'Today',
+      status: 'New',
+      actionHint: 'Course Leader requested HoD unlock for TT1 correction after late moderation issue.',
+      priority: 80,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      taskType: 'Academic',
+      assignedTo: 'HoD',
+      escalated: true,
+      sourceRole: 'Course Leader',
+      manual: true,
+      unlockRequest: {
+        kind: 'tt1',
+        status: 'Pending',
+        requestedBy: 'Course Leader',
+        requestedAt: Date.now(),
+      },
+      transitionHistory: [createTransition({ action: 'Unlock requested', actorRole: 'Course Leader', fromOwner: 'Course Leader', toOwner: 'HoD', note: 'Seeded pending unlock example for mock review flow.' })],
+    }
+    const rejectedUnlockTask: SharedTask = {
+      id: 'seed-unlock-rejected-cs403c-tt1',
+      studentId: `${cs403C.offId}-tt1-lock`,
+      studentName: 'Class Data Lock',
+      studentUsn: 'N/A',
+      offeringId: cs403C.offId,
+      courseCode: cs403C.code,
+      courseName: cs403C.title,
+      year: cs403C.year,
+      riskProb: 0.35,
+      riskBand: 'Medium',
+      title: `Unlock request: ${cs403C.code} Sec ${cs403C.section} · TT1`,
+      due: 'Resolved',
+      status: 'Resolved',
+      actionHint: 'Rejected after HoD confirmed mark sheet was already ratified.',
+      priority: 60,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      taskType: 'Academic',
+      assignedTo: 'HoD',
+      escalated: true,
+      sourceRole: 'Course Leader',
+      manual: true,
+      unlockRequest: {
+        kind: 'tt1',
+        status: 'Rejected',
+        requestedBy: 'Course Leader',
+        requestedAt: Date.now() - 86_400_000,
+        reviewedAt: Date.now() - 43_200_000,
+        reviewNote: 'Ratified score sheet should not be reopened.',
+      },
+      transitionHistory: [
+        createTransition({ action: 'Unlock requested', actorRole: 'Course Leader', fromOwner: 'Course Leader', toOwner: 'HoD', note: 'Seeded rejected unlock case.' }),
+        createTransition({ action: 'Unlock rejected', actorRole: 'HoD', fromOwner: 'HoD', toOwner: 'HoD', note: 'Ratified sheet must remain locked.' }),
+      ],
+    }
+    return [...courseLeaderTasks, overdueRemedial, pendingUnlockTask, rejectedUnlockTask, ...mentorTasks]
   })
   const [resolvedTasks, setResolvedTasks] = useState<Record<string, number>>(() => {
     try {
       const saved = localStorage.getItem('airmentor-resolved-tasks')
-      return saved ? JSON.parse(saved) : {}
+      return saved ? JSON.parse(saved) : { 'seed-unlock-rejected-cs403c-tt1': Date.now() - 43_200_000 }
     } catch {
-      return {}
+      return { 'seed-unlock-rejected-cs403c-tt1': Date.now() - 43_200_000 }
     }
   })
 
@@ -2475,34 +3135,33 @@ export default function App() {
   useEffect(() => { localStorage.setItem('airmentor-all-tasks', JSON.stringify(allTasksList)) }, [allTasksList])
   useEffect(() => { localStorage.setItem('airmentor-resolved-tasks', JSON.stringify(resolvedTasks)) }, [resolvedTasks])
   useEffect(() => { localStorage.setItem(STUDENT_PATCHES_KEY, JSON.stringify(studentPatches)) }, [studentPatches])
+  useEffect(() => { localStorage.setItem(SCHEME_STATE_KEY, JSON.stringify(schemeByOffering)) }, [schemeByOffering])
   useEffect(() => { setRuntimeStudentPatches(studentPatches) }, [studentPatches])
-
-  useEffect(() => {
-    const cutoff = Date.now() - TWO_DAYS_MS
-    const expiredResolved = Object.entries(resolvedTasks).filter(([, ts]) => ts < cutoff).map(([id]) => id)
-    if (expiredResolved.length === 0) return
-    setResolvedTasks(prev => {
-      const next = { ...prev }
-      expiredResolved.forEach(id => delete next[id])
-      return next
-    })
-    setAllTasksList(prev => prev.filter(t => !expiredResolved.includes(t.id)))
-  }, [resolvedTasks])
 
   const supervisedOfferingIds = useMemo(() => new Set(assignedOfferings.map(o => o.offId)), [assignedOfferings])
   const supervisedMenteeIds = useMemo(() => new Set(assignedMentees.map(m => m.id)), [assignedMentees])
+  const supervisedMenteeUsns = useMemo(() => new Set(assignedMentees.map(m => m.usn)), [assignedMentees])
 
   const roleTasks = useMemo(() => {
     const base = allTasksList.filter(t => t.assignedTo === role)
     if (role === 'HoD') return base
     if (role === 'Course Leader') return base.filter(t => supervisedOfferingIds.has(t.offeringId))
     const mentorScopedIds = new Set([...Array.from(supervisedMenteeIds), ...Array.from(supervisedMenteeIds).map(id => `mentee-${id}`)])
-    return base.filter(t => mentorScopedIds.has(t.studentId))
-  }, [allTasksList, role, supervisedOfferingIds, supervisedMenteeIds])
+    return base.filter(t => mentorScopedIds.has(t.studentId) || supervisedMenteeUsns.has(t.studentUsn))
+  }, [allTasksList, role, supervisedOfferingIds, supervisedMenteeIds, supervisedMenteeUsns])
 
   const pendingActionCount = roleTasks.filter(t => !resolvedTasks[t.id]).length
   
   const navItems = role === 'Course Leader' ? CL_NAV : role === 'Mentor' ? MENTOR_NAV : HOD_NAV
+  const hasEntryStartedForOffering = useCallback((offId: string) => {
+    const hasDraft = Object.keys(draftBySection).some(key => key.startsWith(`${offId}::`))
+    const hasCells = Object.keys(cellValues).some(key => key.startsWith(`${offId}::`))
+    const locks = lockByOffering[offId]
+    const hasAnyLock = locks ? Object.values(locks).some(Boolean) : false
+    return hasDraft || hasCells || hasAnyLock
+  }, [cellValues, draftBySection, lockByOffering])
+  const selectedSchemeOffering = schemeOfferingId ? (OFFERINGS.find(item => item.offId === schemeOfferingId) ?? null) : null
+  const selectedUnlockTask = selectedUnlockTaskId ? (allTasksList.find(task => task.id === selectedUnlockTaskId) ?? null) : null
 
   // IMMEDIATELY apply the theme *before* rendering any components so child elements pick up the correct T colors
   applyThemePreset(themeMode)
@@ -2521,9 +3180,92 @@ export default function App() {
     if (!currentTeacher.permissions.includes(role)) {
       const nextRole = currentTeacher.permissions[0]
       setRole(nextRole)
-      setPage(nextRole === 'Course Leader' ? 'dashboard' : nextRole === 'Mentor' ? 'mentees' : 'department')
+      setPage(getHomePage(nextRole))
     }
   }, [currentTeacher, role])
+
+  useEffect(() => {
+    if (!canAccessPage(role, page)) {
+      setPage(getHomePage(role))
+    }
+  }, [page, role])
+
+  useEffect(() => {
+    const onResize = () => setIsNarrowViewport(window.innerWidth < 1100)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  useEffect(() => {
+    if (!isNarrowViewport) return
+    setSidebarCollapsed(true)
+    setShowActionQueue(false)
+  }, [isNarrowViewport])
+
+  const auditParamsApplied = useRef(false)
+  useEffect(() => {
+    if (auditParamsApplied.current) return
+    const params = new URLSearchParams(window.location.search)
+    if (![...params.keys()].some(key => key.startsWith('mock'))) {
+      auditParamsApplied.current = true
+      return
+    }
+    const mockTeacher = params.get('mockTeacher')
+    if (mockTeacher && currentTeacherId !== mockTeacher) {
+      setCurrentTeacherId(mockTeacher)
+      return
+    }
+    if (!currentTeacher) return
+    const mockRole = params.get('mockRole') as Role | null
+    if (mockRole && allowedRoles.includes(mockRole) && role !== mockRole) {
+      setRole(mockRole)
+      setPage(getHomePage(mockRole))
+      return
+    }
+    const mockOfferingId = params.get('mockOfferingId')
+    const targetOffering = mockOfferingId ? (OFFERINGS.find(item => item.offId === mockOfferingId) ?? null) : null
+    const mockStudentUsn = params.get('mockStudentUsn')
+    const targetStudent = mockStudentUsn && targetOffering ? (getStudentsPatched(targetOffering).find(student => student.usn === mockStudentUsn) ?? null) : null
+    const mockMenteeId = params.get('mockMenteeId')
+    const targetMentee = mockMenteeId ? (MENTEES.find(mentee => mentee.id === mockMenteeId) ?? null) : null
+    const mockPage = params.get('mockPage') as PageId | null
+    const mockTab = params.get('mockTab')
+    if (targetOffering) {
+      setOffering(targetOffering)
+      setUploadOffering(targetOffering)
+      setEntryOfferingId(targetOffering.offId)
+      setSchemeOfferingId(targetOffering.offId)
+    }
+    const mockKind = params.get('mockKind') as EntryKind | null
+    if (mockKind) {
+      setUploadKind(mockKind)
+      setEntryKind(mockKind)
+    }
+    if (mockTab) setCourseInitialTab(mockTab)
+    const mockShowQueue = params.get('mockShowQueue')
+    if (mockShowQueue) setShowActionQueue(mockShowQueue !== '0')
+    if (targetStudent && targetOffering) {
+      if (mockPage !== 'student-history') {
+        setSelectedStudent(targetStudent)
+        setSelectedOffering(targetOffering)
+      }
+      if (mockPage === 'student-history') {
+        const nextHistory = buildHistoryProfile({ student: targetStudent, offering: targetOffering })
+        if (nextHistory) setHistoryProfile(nextHistory)
+      }
+    }
+    if (targetMentee) {
+      setSelectedMentee(targetMentee)
+      if (mockPage === 'student-history') {
+        const nextHistory = buildHistoryProfile({ mentee: targetMentee })
+        if (nextHistory) setHistoryProfile(nextHistory)
+      }
+    }
+    const mockUnlockTaskId = params.get('mockUnlockTaskId')
+    if (mockUnlockTaskId) setSelectedUnlockTaskId(mockUnlockTaskId)
+    if (mockPage && canAccessPage(role, mockPage)) setPage(mockPage)
+    auditParamsApplied.current = true
+  }, [allTasksList, allowedRoles, currentTeacher, currentTeacherId, role])
 
   const handleOpenCourse = useCallback((o: Offering) => {
     setOffering(o)
@@ -2533,9 +3275,30 @@ export default function App() {
   const handleBack = useCallback(() => {
     setOffering(null)
     setCourseInitialTab(undefined)
-    setPage(role === 'HoD' ? 'department' : 'dashboard')
+    setPage(getHomePage(role))
   }, [role])
-  const handleOpenStudent = useCallback((s: Student, o?: Offering) => { setSelectedStudent(s); setSelectedOffering(o || null) }, [])
+  const handleOpenStudent = useCallback((s: Student, o?: Offering) => {
+    setSelectedStudent(s)
+    setSelectedOffering(o || null)
+  }, [])
+  const handleOpenHistoryFromStudent = useCallback((s: Student, o?: Offering) => {
+    const nextHistory = buildHistoryProfile({ student: s, offering: o ?? null })
+    if (!nextHistory) return
+    setHistoryProfile(nextHistory)
+    setSelectedStudent(null)
+    setSelectedOffering(null)
+    setPage('student-history')
+  }, [])
+  const handleOpenMentee = useCallback((m: Mentee) => {
+    setSelectedMentee(m)
+    setPage('mentee-detail')
+  }, [])
+  const handleOpenHistoryFromMentee = useCallback((m: Mentee) => {
+    const nextHistory = buildHistoryProfile({ mentee: m })
+    if (!nextHistory) return
+    setHistoryProfile(nextHistory)
+    setPage('student-history')
+  }, [])
   const handleOpenEntryHub = useCallback((o: Offering, kind: EntryKind) => {
     setUploadOffering(o)
     setUploadKind(kind)
@@ -2552,18 +3315,37 @@ export default function App() {
     setEntryKind(kind)
     setPage('entry-workspace')
   }, [])
+  const handleOpenSchemeSetup = useCallback((o?: Offering) => {
+    const target = o ?? uploadOffering ?? offering ?? assignedOfferings[0] ?? OFFERINGS[0]
+    if (!target) return
+    setSchemeOfferingId(target.offId)
+    setPage('scheme-setup')
+  }, [assignedOfferings, offering, uploadOffering])
+  const handleOpenQueueHistory = useCallback(() => setPage('queue-history'), [])
+  const handleOpenUnlockReview = useCallback((taskId: string) => {
+    setSelectedUnlockTaskId(taskId)
+    setPage('unlock-review')
+  }, [])
 
   const handleRoleChange = useCallback((r: Role) => {
     if (!allowedRoles.includes(r)) return
     setRole(r)
-    setPage(r === 'Course Leader' ? 'dashboard' : r === 'Mentor' ? 'mentees' : 'department')
+    setPage(getHomePage(r))
     setOffering(null)
     setSelectedStudent(null)
+    setSelectedMentee(null)
+    setHistoryProfile(null)
+    setSelectedUnlockTaskId(null)
+    setSchemeOfferingId(null)
     setCourseInitialTab(undefined)
   }, [allowedRoles])
 
   const handleSaveDraft = useCallback((offId: string, kind: EntryKind) => {
     setDraftBySection(prev => ({ ...prev, [`${offId}::${kind}`]: Date.now() }))
+    setSchemeByOffering(prev => ({
+      ...prev,
+      [offId]: prev[offId] ? { ...prev[offId], status: prev[offId].status === 'Needs Setup' ? 'Configured' : prev[offId].status } : defaultSchemeForOffering(OFFERINGS.find(item => item.offId === offId) ?? OFFERINGS[0]),
+    }))
   }, [])
 
   const handleSubmitLock = useCallback((offId: string, kind: EntryKind) => {
@@ -2571,6 +3353,14 @@ export default function App() {
       ...prev,
       [offId]: { ...(prev[offId] ?? getEntryLockMap(OFFERINGS.find(o => o.offId === offId) ?? OFFERINGS[0])), [kind]: true },
     }))
+    setSchemeByOffering(prev => prev[offId] ? ({
+      ...prev,
+      [offId]: {
+        ...prev[offId],
+        status: 'Locked',
+        lockedAt: Date.now(),
+      },
+    }) : prev)
   }, [])
 
   const handleCellValueChange = useCallback((key: string, value: number | undefined) => {
@@ -2584,7 +3374,13 @@ export default function App() {
 
   const handleResolveTask = useCallback((id: string) => {
     setResolvedTasks(prev => ({ ...prev, [id]: Date.now() }))
-  }, [])
+    setAllTasksList(prev => prev.map(task => task.id === id ? ({
+      ...task,
+      status: 'Resolved',
+      updatedAt: Date.now(),
+      transitionHistory: [...(task.transitionHistory ?? []), createTransition({ action: 'Resolved', actorRole: role, fromOwner: task.assignedTo, toOwner: task.assignedTo, note: `${role} marked this queue item as resolved.` })],
+    }) : task))
+  }, [role])
 
   const handleUndoTask = useCallback((id: string) => {
     setResolvedTasks(prev => {
@@ -2592,7 +3388,13 @@ export default function App() {
       delete next[id]
       return next
     })
-  }, [])
+    setAllTasksList(prev => prev.map(task => task.id === id ? ({
+      ...task,
+      status: 'In Progress',
+      updatedAt: Date.now(),
+      transitionHistory: [...(task.transitionHistory ?? []), createTransition({ action: 'Reopened', actorRole: role, fromOwner: task.assignedTo, toOwner: task.assignedTo, note: `${role} reopened the resolved queue item.` })],
+    }) : task))
+  }, [role])
 
   const handleUpdateStudentAttendance = useCallback((offeringId: string, studentId: string, patch: StudentRuntimePatch) => {
     setStudentPatches(prev => {
@@ -2639,6 +3441,13 @@ export default function App() {
         escalated: true,
         sourceRole: role,
         manual: true,
+        unlockRequest: {
+          kind,
+          status: 'Pending',
+          requestedBy: role,
+          requestedAt: Date.now(),
+        },
+        transitionHistory: [createTransition({ action: 'Unlock requested', actorRole: role, fromOwner: role, toOwner: 'HoD', note: `${role} requested unlock for ${kind.toUpperCase()} entry.` })],
       }
       syncTaskToBackend(toBackendTaskPayload(next))
       return [next, ...prev]
@@ -2679,6 +3488,13 @@ export default function App() {
       escalated: !!input.deferToHod,
       sourceRole: role,
       manual: true,
+      transitionHistory: [createTransition({
+        action: input.deferToHod ? 'Created and deferred to HoD' : 'Created',
+        actorRole: role,
+        fromOwner: role,
+        toOwner: assignedTo,
+        note: input.note || `${role} created ${input.taskType.toLowerCase()} queue item.`,
+      })],
     }
     syncTaskToBackend(toBackendTaskPayload(next))
     setAllTasksList(prev => [next, ...prev])
@@ -2708,13 +3524,20 @@ export default function App() {
         status: progress.completed === progress.total ? 'Follow-up' : 'In Progress',
         updatedAt: Date.now(),
         actionHint: progress.completed === progress.total ? 'Remedial plan completed; monitor improvement in next cycle' : 'Remedial check-in logged and progress updated',
+        transitionHistory: [...(task.transitionHistory ?? []), createTransition({
+          action: progress.completed === progress.total ? 'Remedial plan completed' : 'Remedial check-in logged',
+          actorRole: role,
+          fromOwner: task.assignedTo,
+          toOwner: task.assignedTo,
+          note: progress.completed === progress.total ? 'All remedial steps have been completed.' : 'One remedial step was marked complete.',
+        })],
       }
       syncTaskToBackend(toBackendTaskPayload(updatedTask))
       return updatedTask
     }))
-  }, [])
+  }, [role])
 
-  const upsertTaskFromStudent = useCallback((s: Student, o: Offering | undefined, mode: 'escalate' | 'remedial' | 'manual') => {
+  const upsertTaskFromStudent = useCallback((s: Student, o: Offering | undefined, mode: 'escalate' | 'remedial' | 'manual' | 'mentor') => {
     const off = o ?? OFFERINGS.find(x => getStudentsPatched(x).some(st => st.id === s.id))
     const offId = off?.offId ?? ''
     const code = off?.code ?? 'GEN'
@@ -2723,6 +3546,8 @@ export default function App() {
     const id = `${mode}-${s.id}-${offId || 'na'}`
     const title = mode === 'escalate'
       ? `Escalated: ${s.name.split(' ')[0]} requires HoD intervention`
+      : mode === 'mentor'
+        ? `Mentor follow-up needed for ${s.name.split(' ')[0]}`
       : mode === 'remedial'
         ? `Assign remedial plan to ${s.name.split(' ')[0]}`
         : `Manual follow-up for ${s.name.split(' ')[0]}`
@@ -2743,20 +3568,149 @@ export default function App() {
         title,
         due: mode === 'escalate' ? 'Today' : 'This week',
         status: 'New',
-        actionHint: mode === 'escalate' ? 'Escalation raised and visible across all role queues' : 'User-generated action item',
+        actionHint: mode === 'escalate' ? 'Escalation raised and visible across all role queues' : mode === 'mentor' ? 'Deferred to mentor queue for student-level follow-up' : 'User-generated action item',
         priority: Math.round(riskProb * 100),
         createdAt: Date.now(),
-        assignedTo: mode === 'escalate' ? 'HoD' : role,
+        assignedTo: mode === 'escalate' ? 'HoD' : mode === 'mentor' ? 'Mentor' : role,
         taskType: mode === 'remedial' ? 'Remedial' : 'Follow-up',
         escalated: mode === 'escalate',
         sourceRole: role,
         manual: mode !== 'escalate',
         updatedAt: Date.now(),
+        transitionHistory: [createTransition({
+          action: mode === 'escalate' ? 'Created and escalated to HoD' : mode === 'mentor' ? 'Created and deferred to Mentor' : 'Created',
+          actorRole: role,
+          fromOwner: role,
+          toOwner: mode === 'escalate' ? 'HoD' : mode === 'mentor' ? 'Mentor' : role,
+          note: mode === 'mentor' ? 'Single-owner handoff from student drawer to mentor queue.' : mode === 'escalate' ? 'Escalation raised from student drawer.' : 'Created from student drawer quick action.',
+        })],
       }
       syncTaskToBackend(toBackendTaskPayload(next))
       return [next, ...prev]
     })
   }, [role])
+
+  const handleReassignTask = useCallback((taskId: string, toRole: Role, note?: string) => {
+    setAllTasksList(prev => prev.map(task => {
+      if (task.id !== taskId) return task
+      const nextTask: SharedTask = {
+        ...task,
+        assignedTo: toRole,
+        escalated: toRole === 'HoD',
+        updatedAt: Date.now(),
+        status: 'In Progress',
+        transitionHistory: [...(task.transitionHistory ?? []), createTransition({
+          action: `Reassigned to ${toRole}`,
+          actorRole: role,
+          fromOwner: task.assignedTo,
+          toOwner: toRole,
+          note: note ?? `${role} reassigned the queue item to ${toRole}.`,
+        })],
+      }
+      syncTaskToBackend(toBackendTaskPayload(nextTask))
+      return nextTask
+    }))
+  }, [role])
+
+  const handleSaveScheme = useCallback((offId: string, next: SchemeState) => {
+    setSchemeByOffering(prev => ({
+      ...prev,
+      [offId]: {
+        ...next,
+        status: hasEntryStartedForOffering(offId) ? 'Locked' : next.status,
+        lastEditedBy: role,
+      },
+    }))
+    setPage('upload')
+  }, [hasEntryStartedForOffering, role])
+
+  const handleApproveUnlock = useCallback((taskId: string) => {
+    setAllTasksList(prev => prev.map(task => task.id === taskId ? ({
+      ...task,
+      updatedAt: Date.now(),
+      status: 'In Progress',
+      unlockRequest: task.unlockRequest ? {
+        ...task.unlockRequest,
+        status: 'Approved',
+        reviewedAt: Date.now(),
+        reviewNote: 'HoD approved a controlled correction cycle.',
+      } : task.unlockRequest,
+      transitionHistory: [...(task.transitionHistory ?? []), createTransition({ action: 'Unlock approved', actorRole: 'HoD', fromOwner: 'HoD', toOwner: 'HoD', note: 'Request approved pending explicit reset/unlock.' })],
+    }) : task))
+  }, [])
+
+  const handleRejectUnlock = useCallback((taskId: string) => {
+    setAllTasksList(prev => prev.map(task => task.id === taskId ? ({
+      ...task,
+      updatedAt: Date.now(),
+      status: 'Resolved',
+      unlockRequest: task.unlockRequest ? {
+        ...task.unlockRequest,
+        status: 'Rejected',
+        reviewedAt: Date.now(),
+        reviewNote: 'HoD rejected the unlock request.',
+      } : task.unlockRequest,
+      transitionHistory: [...(task.transitionHistory ?? []), createTransition({ action: 'Unlock rejected', actorRole: 'HoD', fromOwner: 'HoD', toOwner: 'HoD', note: 'Lock remains in effect.' })],
+    }) : task))
+    setResolvedTasks(prev => ({ ...prev, [taskId]: Date.now() }))
+  }, [])
+
+  const handleResetComplete = useCallback((taskId: string) => {
+    const task = allTasksList.find(item => item.id === taskId)
+    if (!task?.unlockRequest) return
+    const unlockKind = task.unlockRequest.kind
+    setLockByOffering(prev => ({
+      ...prev,
+      [task.offeringId]: {
+        ...(prev[task.offeringId] ?? getEntryLockMap(OFFERINGS.find(o => o.offId === task.offeringId) ?? OFFERINGS[0])),
+        [unlockKind]: false,
+      },
+    }))
+    setSchemeByOffering(prev => prev[task.offeringId] ? ({
+      ...prev,
+      [task.offeringId]: {
+        ...prev[task.offeringId],
+        status: 'Configured',
+      },
+    }) : prev)
+    setAllTasksList(prev => prev.map(item => item.id === taskId ? ({
+      ...item,
+      updatedAt: Date.now(),
+      status: 'Resolved',
+      unlockRequest: item.unlockRequest ? {
+        ...item.unlockRequest,
+        status: 'Reset Completed',
+        reviewedAt: Date.now(),
+        reviewNote: 'Reset completed and entry unlocked for correction.',
+      } : item.unlockRequest,
+      transitionHistory: [...(item.transitionHistory ?? []), createTransition({ action: 'Reset completed and unlocked', actorRole: 'HoD', fromOwner: 'HoD', toOwner: item.sourceRole === 'Mentor' ? 'Mentor' : 'Course Leader', note: 'Entry dataset is unlocked for correction.' })],
+    }) : item))
+    setResolvedTasks(prev => ({ ...prev, [taskId]: Date.now() }))
+  }, [allTasksList])
+
+  const handleOpenTaskStudent = useCallback((task: SharedTask) => {
+    const mentorMatch = assignedMentees.find(mentee => mentee.usn === task.studentUsn || mentee.id === task.studentId) ?? MENTEES.find(mentee => mentee.usn === task.studentUsn || mentee.id === task.studentId)
+    if (mentorMatch && role === 'Mentor') {
+      setSelectedMentee(mentorMatch)
+      setPage('mentee-detail')
+      return
+    }
+    const searchableOfferings = role === 'HoD' ? OFFERINGS : assignedOfferings
+    for (const off of searchableOfferings) {
+      const student = getStudentsPatched(off).find(st => st.id === task.studentId || st.usn === task.studentUsn)
+      if (student) {
+        handleOpenStudent(student, off)
+        return
+      }
+    }
+    if (mentorMatch) {
+      const nextHistory = buildHistoryProfile({ mentee: mentorMatch })
+      if (nextHistory) {
+        setHistoryProfile(nextHistory)
+        setPage('student-history')
+      }
+    }
+  }, [assignedMentees, assignedOfferings, handleOpenStudent, role])
 
   if (!currentTeacher) {
     return <LoginPage onLogin={(teacherId) => {
@@ -2765,15 +3719,17 @@ export default function App() {
       setCurrentTeacherId(account.teacherId)
       const firstRole = account.permissions[0]
       setRole(firstRole)
-      setPage(firstRole === 'Course Leader' ? 'dashboard' : firstRole === 'Mentor' ? 'mentees' : 'department')
+      setPage(getHomePage(firstRole))
       setOffering(null)
       setSelectedStudent(null)
+      setSelectedMentee(null)
+      setHistoryProfile(null)
       setCourseInitialTab(undefined)
     }} />
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: T.bg, color: T.text }}>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: T.bg, color: T.text, overflowX: 'hidden' }}>
       {/* ═══ TOP BAR ═══ */}
       <div style={{ position: 'sticky', top: 0, zIndex: 50, display: 'flex', alignItems: 'center', gap: 16, padding: '10px 20px', background: themeMode === 'light' ? 'rgba(255,255,255,0.92)' : 'rgba(7,9,15,0.92)', backdropFilter: 'blur(12px)', borderBottom: `1px solid ${T.border}` }}>
         {/* Brand */}
@@ -2808,6 +3764,10 @@ export default function App() {
             setPage('dashboard')
             setOffering(null)
             setSelectedStudent(null)
+            setSelectedMentee(null)
+            setHistoryProfile(null)
+            setSelectedUnlockTaskId(null)
+            setSchemeOfferingId(null)
             setCourseInitialTab(undefined)
           }} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', cursor: 'pointer', color: T.muted, ...mono, fontSize: 10 }}>Logout</button>
           <div style={{ width: 30, height: 30, borderRadius: 8, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 10, color: '#fff' }}>{currentTeacher.initials}</div>
@@ -2835,7 +3795,11 @@ export default function App() {
                 <nav>
                   {navItems.map(item => {
                     const Icon = item.icon
-                    const active = page === item.id || (page === 'course' && item.id === 'dashboard')
+                    const active = page === item.id
+                      || ((page === 'course' || page === 'student-history') && item.id === (role === 'HoD' ? 'department' : role === 'Mentor' ? 'mentees' : 'dashboard'))
+                      || ((page === 'upload' || page === 'entry-workspace' || page === 'scheme-setup') && item.id === 'upload')
+                      || ((page === 'queue-history' || page === 'unlock-review') && item.id === 'queue-history')
+                      || ((page === 'mentee-detail') && item.id === 'mentees')
                     return (
                       <button key={item.id} onClick={() => { setPage(item.id); setOffering(null) }}
                         style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', background: active ? T.accent + '18' : 'transparent', color: active ? T.accentLight : T.muted, ...sora, fontWeight: 500, fontSize: 12, marginBottom: 2, transition: 'all 0.15s', textAlign: 'left' as const }}>
@@ -2886,33 +3850,33 @@ export default function App() {
         {/* Center Content */}
         <div style={{ flex: 1, overflowY: 'auto', height: 'calc(100vh - 54px)' }}>
           {role === 'Course Leader' && page === 'dashboard' && <CLDashboard offerings={assignedOfferings} pendingTaskCount={pendingActionCount} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} />}
-          {role === 'Course Leader' && page === 'course' && offering && <CourseDetail offering={offering} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} initialTab={courseInitialTab} />}
+          {role === 'Course Leader' && page === 'course' && offering && <CourseDetail offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
+          {role === 'Course Leader' && page === 'scheme-setup' && selectedSchemeOffering && <SchemeSetupPage role={role} offering={selectedSchemeOffering} scheme={schemeByOffering[selectedSchemeOffering.offId] ?? defaultSchemeForOffering(selectedSchemeOffering)} hasEntryStarted={hasEntryStartedForOffering(selectedSchemeOffering.offId)} onSave={(next) => handleSaveScheme(selectedSchemeOffering.offId, next)} onBack={() => setPage('upload')} />}
           {role === 'Course Leader' && page === 'calendar' && <CalendarPage />}
-          {role === 'Course Leader' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} onRequestUnlock={handleRequestUnlock} availableOfferings={assignedOfferings} />}
+          {role === 'Course Leader' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} onRequestUnlock={handleRequestUnlock} availableOfferings={assignedOfferings} scheme={schemeByOffering[(uploadOffering ?? assignedOfferings[0] ?? OFFERINGS[0]).offId] ?? defaultSchemeForOffering(uploadOffering ?? assignedOfferings[0] ?? OFFERINGS[0])} onOpenSchemeSetup={handleOpenSchemeSetup} />}
           {role === 'Course Leader' && page === 'entry-workspace' && <EntryWorkspacePage role={role} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} onRequestUnlock={handleRequestUnlock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onCreateTask={handleCreateTask} onUpdateStudentAttendance={handleUpdateStudentAttendance} />}
+          {role === 'Course Leader' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} />}
 
-          {role === 'Mentor' && page === 'mentees' && <MentorView mentees={assignedMentees} onOpenMentee={() => {}} />}
+          {role === 'Mentor' && page === 'mentees' && <MentorView mentees={assignedMentees} onOpenMentee={handleOpenMentee} />}
+          {role === 'Mentor' && page === 'mentee-detail' && selectedMentee && <MenteeDetailPage mentee={selectedMentee} tasks={roleTasks} onBack={() => setPage('mentees')} onOpenHistory={handleOpenHistoryFromMentee} />}
+          {role === 'Mentor' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} />}
           {role === 'Mentor' && page === 'calendar' && <CalendarPage />}
 
           {role === 'HoD' && page === 'department' && <HodView onOpenUpload={handleOpenUpload} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} tasks={allTasksList} />}
-          {role === 'HoD' && page === 'course' && offering && <CourseDetail offering={offering} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} initialTab={courseInitialTab} />}
-          {role === 'HoD' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} onRequestUnlock={handleRequestUnlock} availableOfferings={assignedOfferings} />}
+          {role === 'HoD' && page === 'course' && offering && <CourseDetail offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
+          {role === 'HoD' && page === 'scheme-setup' && selectedSchemeOffering && <SchemeSetupPage role={role} offering={selectedSchemeOffering} scheme={schemeByOffering[selectedSchemeOffering.offId] ?? defaultSchemeForOffering(selectedSchemeOffering)} hasEntryStarted={hasEntryStartedForOffering(selectedSchemeOffering.offId)} onSave={(next) => handleSaveScheme(selectedSchemeOffering.offId, next)} onBack={() => setPage('upload')} />}
+          {role === 'HoD' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} onRequestUnlock={handleRequestUnlock} availableOfferings={assignedOfferings} scheme={schemeByOffering[(uploadOffering ?? assignedOfferings[0] ?? OFFERINGS[0]).offId] ?? defaultSchemeForOffering(uploadOffering ?? assignedOfferings[0] ?? OFFERINGS[0])} onOpenSchemeSetup={handleOpenSchemeSetup} />}
           {role === 'HoD' && page === 'entry-workspace' && <EntryWorkspacePage role={role} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} onRequestUnlock={handleRequestUnlock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onCreateTask={handleCreateTask} onUpdateStudentAttendance={handleUpdateStudentAttendance} />}
+          {role === 'HoD' && page === 'unlock-review' && selectedUnlockTask && <UnlockReviewPage task={selectedUnlockTask} offering={OFFERINGS.find(item => item.offId === selectedUnlockTask.offeringId) ?? null} onBack={() => setPage('queue-history')} onApprove={() => handleApproveUnlock(selectedUnlockTask.id)} onReject={() => handleRejectUnlock(selectedUnlockTask.id)} onResetComplete={() => handleResetComplete(selectedUnlockTask.id)} />}
+          {role === 'HoD' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} />}
           {role === 'HoD' && page === 'calendar' && <CalendarPage />}
+
+          {page === 'student-history' && historyProfile && <StudentHistoryPage role={role} history={historyProfile} onBack={() => setPage(role === 'Mentor' && selectedMentee ? 'mentee-detail' : getHomePage(role))} />}
         </div>
 
         {/* Right Sidebar — Action Queue */}
         {showActionQueue && (
-          <ActionQueue role={role} tasks={roleTasks} offerings={assignedOfferings} resolvedTaskIds={resolvedTasks} onResolveTask={handleResolveTask} onUndoTask={handleUndoTask} onCreateTask={handleCreateTask} onOpenRemedialPlanner={handleOpenRemedialPlanner} onRemedialCheckIn={handleRemedialCheckIn} onOpenStudent={(id) => {
-            const searchableOfferings = role === 'HoD' ? OFFERINGS : assignedOfferings
-            for (const off of searchableOfferings) {
-              const s = getStudentsPatched(off).find(st => st.id === id)
-              if (s) {
-                handleOpenStudent(s, off)
-                return
-              }
-            }
-          }} />
+          <ActionQueue role={role} tasks={roleTasks} offerings={assignedOfferings} resolvedTaskIds={resolvedTasks} onResolveTask={handleResolveTask} onUndoTask={handleUndoTask} onCreateTask={handleCreateTask} onOpenRemedialPlanner={handleOpenRemedialPlanner} onRemedialCheckIn={handleRemedialCheckIn} onOpenStudent={handleOpenTaskStudent} onReassignTask={handleReassignTask} onOpenUnlockReview={handleOpenUnlockReview} onOpenQueueHistory={handleOpenQueueHistory} />
         )}
       </div>
 
@@ -2923,7 +3887,7 @@ export default function App() {
             const off = o ?? OFFERINGS.find(x => getStudentsPatched(x).some(st => st.id === s.id))
             if (!off) return
             setRemedialContext({ student: s, offering: off, deferToHod: role !== 'HoD' ? false : undefined })
-          }} onAddManualTask={(s, o) => upsertTaskFromStudent(s, o, 'manual')} />
+          }} onAddManualTask={(s, o) => upsertTaskFromStudent(s, o, 'manual')} onAssignToMentor={(s, o) => upsertTaskFromStudent(s, o, 'mentor')} onOpenHistory={handleOpenHistoryFromStudent} />
         )}
       </AnimatePresence>
 

@@ -74,6 +74,40 @@ export interface TeacherInfo {
   avgAtt: number; completeness: number; pendingTasks: number
 }
 
+export interface TranscriptSubjectRecord {
+  code: string
+  title: string
+  credits: number
+  score: number
+  gradeLabel: 'O' | 'A+' | 'A' | 'B+' | 'B' | 'C' | 'P' | 'F'
+  gradePoint: 0 | 4 | 5 | 6 | 7 | 8 | 9 | 10
+  result: 'Passed' | 'Failed' | 'Repeated'
+}
+
+export interface TranscriptTerm {
+  termId: string
+  label: string
+  semesterNumber: number
+  academicYear: string
+  sgpa: number
+  registeredCredits: number
+  earnedCredits: number
+  backlogCount: number
+  subjects: TranscriptSubjectRecord[]
+}
+
+export interface StudentHistoryRecord {
+  usn: string
+  studentName: string
+  program: string
+  dept: string
+  trend: 'Improving' | 'Stable' | 'Declining'
+  currentCgpa: number
+  advisoryNotes: string[]
+  repeatSubjects: string[]
+  terms: TranscriptTerm[]
+}
+
 // ───── Theme ─────
 export const T = {
   bg: '#07090f', surface: '#0d1017', surface2: '#111520', surface3: '#161b28',
@@ -285,12 +319,16 @@ export function makeStudents(offering: Offering): Student[] {
   const cos = CO_MAP[code] || CO_MAP.default
   const paper = PAPER_MAP[code] || PAPER_MAP.default
   const totalMax = paper.reduce((a, q) => a + q.maxMarks, 0)
+  const matchingMentees = MENTEES.filter(m => m.year === offering.year && m.section === offering.section && m.dept === offering.dept)
 
   return Array.from({ length: count }, (_, i) => {
     const present = 28 + rand(17)
     const totalClasses = 45
     const attendancePct = Math.round(present / totalClasses * 100)
-    const prevCgpa = 5.2 + Math.round(randFloat() * 40) / 10 // 5.2 - 9.2
+    const menteeSeed = matchingMentees[i]
+    const prevCgpa = menteeSeed?.prevCgpa && menteeSeed.prevCgpa > 0
+      ? menteeSeed.prevCgpa
+      : 5.2 + Math.round(randFloat() * 40) / 10 // 5.2 - 9.2
 
     let tt1Score: number | null = null
     let tt2Score: number | null = null
@@ -332,9 +370,9 @@ export function makeStudents(offering: Offering): Student[] {
 
     const student: Student = {
       id: `${offering.offId}-s${i}`,
-      usn: `1MS${23 + Math.floor(sem / 2)}${dept.slice(0, 2).toUpperCase()}${String(i + 1).padStart(3, '0')}`,
-      name: NAMES[i % NAMES.length],
-      phone: PHONES[i % PHONES.length],
+      usn: menteeSeed?.usn ?? `1MS${23 + Math.floor(sem / 2)}${dept.slice(0, 2).toUpperCase()}${String(i + 1).padStart(3, '0')}`,
+      name: menteeSeed?.name ?? NAMES[i % NAMES.length],
+      phone: menteeSeed?.phone ?? PHONES[i % PHONES.length],
       present, totalClasses,
       tt1Score, tt1Max: totalMax,
       tt2Score, tt2Max: totalMax,
@@ -360,7 +398,9 @@ export function makeStudents(offering: Offering): Student[] {
     }
 
     // Mock interventions for high-risk students
-    if (riskProb !== null && riskProb >= 0.7 && i < 5) {
+    if (menteeSeed?.interventions?.length) {
+      student.interventions = menteeSeed.interventions
+    } else if (riskProb !== null && riskProb >= 0.7 && i < 5) {
       student.interventions = [
         { date: 'Feb 22', type: 'Call', note: 'Called, no response' },
       ]
@@ -535,3 +575,339 @@ export const CALENDAR_EVENTS = [
   { date: '20 Oct', label: 'Attendance Finalisation — All Years', type: 'att' as const, year: 'All' },
   { date: '10 Nov', label: 'SEE (Finals) begin — All Years', type: 'see' as const, year: 'All' },
 ]
+
+function toGradePoint(score: number): 0 | 4 | 5 | 6 | 7 | 8 | 9 | 10 {
+  if (score > 90) return 10
+  if (score > 74) return 9
+  if (score > 60) return 8
+  if (score >= 55) return 7
+  if (score >= 50) return 6
+  if (score > 44) return 5
+  if (score >= 40) return 4
+  return 0
+}
+
+function toGradeLabel(score: number): 'O' | 'A+' | 'A' | 'B+' | 'B' | 'C' | 'P' | 'F' {
+  const point = toGradePoint(score)
+  if (point === 10) return 'O'
+  if (point === 9) return 'A+'
+  if (point === 8) return 'A'
+  if (point === 7) return 'B+'
+  if (point === 6) return 'B'
+  if (point === 5) return 'C'
+  if (point === 4) return 'P'
+  return 'F'
+}
+
+function toTranscriptSubject(code: string, title: string, credits: number, score: number, result?: 'Passed' | 'Failed' | 'Repeated'): TranscriptSubjectRecord {
+  const gradePoint = toGradePoint(score)
+  return {
+    code,
+    title,
+    credits,
+    score,
+    gradeLabel: toGradeLabel(score),
+    gradePoint,
+    result: result ?? (gradePoint === 0 ? 'Failed' : 'Passed'),
+  }
+}
+
+function toTranscriptTerm(termId: string, label: string, semesterNumber: number, academicYear: string, subjects: TranscriptSubjectRecord[]): TranscriptTerm {
+  const registeredCredits = subjects.reduce((acc, subject) => acc + subject.credits, 0)
+  const earnedCredits = subjects.filter(subject => subject.gradePoint > 0).reduce((acc, subject) => acc + subject.credits, 0)
+  const backlogCount = subjects.filter(subject => subject.gradePoint === 0).length
+  const totalWeightedPoints = subjects.reduce((acc, subject) => acc + subject.credits * subject.gradePoint, 0)
+  return {
+    termId,
+    label,
+    semesterNumber,
+    academicYear,
+    sgpa: registeredCredits > 0 ? Math.round((totalWeightedPoints / registeredCredits) * 100) / 100 : 0,
+    registeredCredits,
+    earnedCredits,
+    backlogCount,
+    subjects,
+  }
+}
+
+function toCurrentCgpa(terms: TranscriptTerm[]) {
+  const allSubjects = terms.flatMap(term => term.subjects)
+  const totalCredits = allSubjects.reduce((acc, subject) => acc + subject.credits, 0)
+  const weighted = allSubjects.reduce((acc, subject) => acc + subject.credits * subject.gradePoint, 0)
+  return totalCredits > 0 ? Math.round((weighted / totalCredits) * 100) / 100 : 0
+}
+
+function toHistoryRecord(input: Omit<StudentHistoryRecord, 'currentCgpa'>): StudentHistoryRecord {
+  return {
+    ...input,
+    currentCgpa: toCurrentCgpa(input.terms),
+  }
+}
+
+const SEEDED_HISTORY: Record<string, StudentHistoryRecord> = {
+  '1MS23CS001': toHistoryRecord({
+    usn: '1MS23CS001',
+    studentName: 'Aarav Sharma',
+    program: 'CSE',
+    dept: 'CSE',
+    trend: 'Declining',
+    advisoryNotes: ['Backlog recovered once already; watch workload and attendance.', 'Repeated Data Structures attempt improved, but current core subjects remain fragile.'],
+    repeatSubjects: ['CS201 Data Structures'],
+    terms: [
+      toTranscriptTerm('sem1', 'Semester 1', 1, '2023-24', [
+        toTranscriptSubject('MA101', 'Engineering Mathematics I', 4, 67),
+        toTranscriptSubject('CS101', 'Problem Solving with C', 4, 74),
+        toTranscriptSubject('EC102', 'Basic Electronics', 3, 63),
+        toTranscriptSubject('HS103', 'Technical Communication', 2, 78),
+        toTranscriptSubject('CS104L', 'C Programming Lab', 1, 82),
+      ]),
+      toTranscriptTerm('sem2', 'Semester 2', 2, '2023-24', [
+        toTranscriptSubject('MA201', 'Discrete Mathematics', 4, 58),
+        toTranscriptSubject('CS201', 'Data Structures', 4, 38, 'Failed'),
+        toTranscriptSubject('CS202', 'Digital Logic', 3, 61),
+        toTranscriptSubject('CS203L', 'Data Structures Lab', 1, 69),
+        toTranscriptSubject('HS204', 'Constitutional Studies', 2, 76),
+      ]),
+      toTranscriptTerm('sem3', 'Semester 3', 3, '2024-25', [
+        toTranscriptSubject('CS201R', 'Data Structures (Repeat)', 4, 68, 'Repeated'),
+        toTranscriptSubject('CS301', 'Formal Languages', 4, 56),
+        toTranscriptSubject('CS302', 'Database Systems', 4, 63),
+        toTranscriptSubject('MA301', 'Engineering Mathematics III', 4, 52),
+        toTranscriptSubject('CS303L', 'DBMS Lab', 1, 77),
+      ]),
+    ],
+  }),
+  '1MS23CS014': toHistoryRecord({
+    usn: '1MS23CS014',
+    studentName: 'Meera Sundaram',
+    program: 'CSE',
+    dept: 'CSE',
+    trend: 'Stable',
+    advisoryNotes: ['Performance is steady; interventions are mostly preventive.', 'Watch CO2/CO3 weakness in algorithm-heavy subjects.'],
+    repeatSubjects: [],
+    terms: [
+      toTranscriptTerm('sem1', 'Semester 1', 1, '2023-24', [
+        toTranscriptSubject('MA101', 'Engineering Mathematics I', 4, 79),
+        toTranscriptSubject('CS101', 'Problem Solving with C', 4, 81),
+        toTranscriptSubject('EC102', 'Basic Electronics', 3, 72),
+        toTranscriptSubject('HS103', 'Technical Communication', 2, 88),
+        toTranscriptSubject('CS104L', 'C Programming Lab', 1, 91),
+      ]),
+      toTranscriptTerm('sem2', 'Semester 2', 2, '2023-24', [
+        toTranscriptSubject('MA201', 'Discrete Mathematics', 4, 76),
+        toTranscriptSubject('CS201', 'Data Structures', 4, 71),
+        toTranscriptSubject('CS202', 'Digital Logic', 3, 75),
+        toTranscriptSubject('CS203L', 'Data Structures Lab', 1, 86),
+        toTranscriptSubject('HS204', 'Constitutional Studies', 2, 90),
+      ]),
+      toTranscriptTerm('sem3', 'Semester 3', 3, '2024-25', [
+        toTranscriptSubject('CS301', 'Formal Languages', 4, 73),
+        toTranscriptSubject('CS302', 'Database Systems', 4, 78),
+        toTranscriptSubject('CS303', 'Computer Networks', 4, 69),
+        toTranscriptSubject('MA301', 'Engineering Mathematics III', 4, 70),
+        toTranscriptSubject('CS303L', 'DBMS Lab', 1, 88),
+      ]),
+    ],
+  }),
+  '1MS24CS103': toHistoryRecord({
+    usn: '1MS24CS103',
+    studentName: 'Rohan Mehta',
+    program: 'CSE',
+    dept: 'CSE',
+    trend: 'Stable',
+    advisoryNotes: ['Current-semester only profile. Use attendance and formative assessment until TT1 is available.'],
+    repeatSubjects: [],
+    terms: [
+      toTranscriptTerm('sem1', 'Semester 1', 1, '2025-26', [
+        toTranscriptSubject('MA101', 'Engineering Mathematics I', 4, 72),
+        toTranscriptSubject('CS101', 'Problem Solving with C', 4, 77),
+        toTranscriptSubject('EC102', 'Basic Electronics', 3, 68),
+        toTranscriptSubject('HS103', 'Technical Communication', 2, 79),
+        toTranscriptSubject('CS104L', 'C Programming Lab', 1, 85),
+      ]),
+    ],
+  }),
+  '1MS22CS041': toHistoryRecord({
+    usn: '1MS22CS041',
+    studentName: 'Sneha Pillai',
+    program: 'CSE',
+    dept: 'CSE',
+    trend: 'Improving',
+    advisoryNotes: ['Third-year performance improved after remedial support in compiler topics.', 'Recent TT2 recovery is consistent with transcript trend.'],
+    repeatSubjects: [],
+    terms: [
+      toTranscriptTerm('sem1', 'Semester 1', 1, '2022-23', [
+        toTranscriptSubject('MA101', 'Engineering Mathematics I', 4, 70),
+        toTranscriptSubject('CS101', 'Problem Solving with C', 4, 75),
+        toTranscriptSubject('EC102', 'Basic Electronics', 3, 68),
+        toTranscriptSubject('HS103', 'Technical Communication', 2, 80),
+        toTranscriptSubject('CS104L', 'C Programming Lab', 1, 84),
+      ]),
+      toTranscriptTerm('sem2', 'Semester 2', 2, '2022-23', [
+        toTranscriptSubject('MA201', 'Discrete Mathematics', 4, 74),
+        toTranscriptSubject('CS201', 'Data Structures', 4, 72),
+        toTranscriptSubject('CS202', 'Digital Logic', 3, 76),
+        toTranscriptSubject('CS203L', 'Data Structures Lab', 1, 89),
+        toTranscriptSubject('HS204', 'Constitutional Studies', 2, 90),
+      ]),
+      toTranscriptTerm('sem3', 'Semester 3', 3, '2023-24', [
+        toTranscriptSubject('CS301', 'Formal Languages', 4, 78),
+        toTranscriptSubject('CS302', 'Database Systems', 4, 80),
+        toTranscriptSubject('CS303', 'Computer Networks', 4, 74),
+        toTranscriptSubject('MA301', 'Engineering Mathematics III', 4, 73),
+        toTranscriptSubject('CS303L', 'DBMS Lab', 1, 91),
+      ]),
+      toTranscriptTerm('sem4', 'Semester 4', 4, '2023-24', [
+        toTranscriptSubject('CS401', 'Design & Analysis of Algorithms', 4, 71),
+        toTranscriptSubject('CS403', 'Operating Systems', 4, 76),
+        toTranscriptSubject('CS405', 'Software Engineering', 3, 83),
+        toTranscriptSubject('CS407L', 'OS Lab', 1, 92),
+      ]),
+    ],
+  }),
+  '1MS21CS008': toHistoryRecord({
+    usn: '1MS21CS008',
+    studentName: 'Deepika Rao',
+    program: 'CSE',
+    dept: 'CSE',
+    trend: 'Stable',
+    advisoryNotes: ['Final-year record is strong overall; current course-level risk is localised.', 'Transcript indicates good recovery after early-semester dips.'],
+    repeatSubjects: [],
+    terms: [
+      toTranscriptTerm('sem1', 'Semester 1', 1, '2021-22', [
+        toTranscriptSubject('MA101', 'Engineering Mathematics I', 4, 81),
+        toTranscriptSubject('CS101', 'Problem Solving with C', 4, 79),
+        toTranscriptSubject('EC102', 'Basic Electronics', 3, 75),
+        toTranscriptSubject('HS103', 'Technical Communication', 2, 86),
+        toTranscriptSubject('CS104L', 'C Programming Lab', 1, 93),
+      ]),
+      toTranscriptTerm('sem2', 'Semester 2', 2, '2021-22', [
+        toTranscriptSubject('MA201', 'Discrete Mathematics', 4, 77),
+        toTranscriptSubject('CS201', 'Data Structures', 4, 81),
+        toTranscriptSubject('CS202', 'Digital Logic', 3, 72),
+        toTranscriptSubject('CS203L', 'Data Structures Lab', 1, 89),
+        toTranscriptSubject('HS204', 'Constitutional Studies', 2, 88),
+      ]),
+      toTranscriptTerm('sem3', 'Semester 3', 3, '2022-23', [
+        toTranscriptSubject('CS301', 'Formal Languages', 4, 78),
+        toTranscriptSubject('CS302', 'Database Systems', 4, 80),
+        toTranscriptSubject('CS303', 'Computer Networks', 4, 79),
+        toTranscriptSubject('MA301', 'Engineering Mathematics III', 4, 73),
+        toTranscriptSubject('CS303L', 'DBMS Lab', 1, 92),
+      ]),
+      toTranscriptTerm('sem4', 'Semester 4', 4, '2022-23', [
+        toTranscriptSubject('CS401', 'Design & Analysis of Algorithms', 4, 82),
+        toTranscriptSubject('CS403', 'Operating Systems', 4, 78),
+        toTranscriptSubject('CS405', 'Software Engineering', 3, 84),
+        toTranscriptSubject('CS407L', 'OS Lab', 1, 94),
+      ]),
+    ],
+  }),
+  '1MS23CS019': toHistoryRecord({
+    usn: '1MS23CS019',
+    studentName: 'Ishita Mishra',
+    program: 'CSE',
+    dept: 'CSE',
+    trend: 'Improving',
+    advisoryNotes: ['Previous-semester failure in mathematics remains an active risk amplifier.', 'Current mentor plan should be checked against repeat-subject workload.'],
+    repeatSubjects: ['MA201 Discrete Mathematics'],
+    terms: [
+      toTranscriptTerm('sem1', 'Semester 1', 1, '2023-24', [
+        toTranscriptSubject('MA101', 'Engineering Mathematics I', 4, 64),
+        toTranscriptSubject('CS101', 'Problem Solving with C', 4, 71),
+        toTranscriptSubject('EC102', 'Basic Electronics', 3, 59),
+        toTranscriptSubject('HS103', 'Technical Communication', 2, 73),
+        toTranscriptSubject('CS104L', 'C Programming Lab', 1, 80),
+      ]),
+      toTranscriptTerm('sem2', 'Semester 2', 2, '2023-24', [
+        toTranscriptSubject('MA201', 'Discrete Mathematics', 4, 36, 'Failed'),
+        toTranscriptSubject('CS201', 'Data Structures', 4, 57),
+        toTranscriptSubject('CS202', 'Digital Logic', 3, 62),
+        toTranscriptSubject('CS203L', 'Data Structures Lab', 1, 74),
+        toTranscriptSubject('HS204', 'Constitutional Studies', 2, 82),
+      ]),
+      toTranscriptTerm('sem3', 'Semester 3', 3, '2024-25', [
+        toTranscriptSubject('MA201R', 'Discrete Mathematics (Repeat)', 4, 61, 'Repeated'),
+        toTranscriptSubject('CS301', 'Formal Languages', 4, 58),
+        toTranscriptSubject('CS302', 'Database Systems', 4, 65),
+        toTranscriptSubject('MA301', 'Engineering Mathematics III', 4, 54),
+        toTranscriptSubject('CS303L', 'DBMS Lab', 1, 79),
+      ]),
+    ],
+  }),
+  '1MS23CS028': toHistoryRecord({
+    usn: '1MS23CS028',
+    studentName: 'Nandita Gowda',
+    program: 'CSE',
+    dept: 'CSE',
+    trend: 'Declining',
+    advisoryNotes: ['Attendance and medium backlog exposure are both rising.', 'Queue handoff to mentor should stay active until TT2 closes.'],
+    repeatSubjects: [],
+    terms: [
+      toTranscriptTerm('sem1', 'Semester 1', 1, '2023-24', [
+        toTranscriptSubject('MA101', 'Engineering Mathematics I', 4, 69),
+        toTranscriptSubject('CS101', 'Problem Solving with C', 4, 72),
+        toTranscriptSubject('EC102', 'Basic Electronics', 3, 61),
+        toTranscriptSubject('HS103', 'Technical Communication', 2, 79),
+        toTranscriptSubject('CS104L', 'C Programming Lab', 1, 85),
+      ]),
+      toTranscriptTerm('sem2', 'Semester 2', 2, '2023-24', [
+        toTranscriptSubject('MA201', 'Discrete Mathematics', 4, 48),
+        toTranscriptSubject('CS201', 'Data Structures', 4, 52),
+        toTranscriptSubject('CS202', 'Digital Logic', 3, 64),
+        toTranscriptSubject('CS203L', 'Data Structures Lab', 1, 71),
+        toTranscriptSubject('HS204', 'Constitutional Studies', 2, 75),
+      ]),
+      toTranscriptTerm('sem3', 'Semester 3', 3, '2024-25', [
+        toTranscriptSubject('CS301', 'Formal Languages', 4, 51),
+        toTranscriptSubject('CS302', 'Database Systems', 4, 56),
+        toTranscriptSubject('CS303', 'Computer Networks', 4, 49, 'Failed'),
+        toTranscriptSubject('MA301', 'Engineering Mathematics III', 4, 58),
+        toTranscriptSubject('CS303L', 'DBMS Lab', 1, 73),
+      ]),
+    ],
+  }),
+}
+
+function buildFallbackHistory(params: { usn: string; studentName: string; dept: string; yearLabel?: string; prevCgpa?: number }): StudentHistoryRecord {
+  const { usn, studentName, dept, yearLabel, prevCgpa = 7 } = params
+  const targetTerms = yearLabel === '4th Year' ? 4 : yearLabel === '3rd Year' ? 4 : yearLabel === '2nd Year' ? 3 : 1
+  const terms: TranscriptTerm[] = []
+  for (let semesterNumber = 1; semesterNumber <= targetTerms; semesterNumber += 1) {
+    const base = Math.round(prevCgpa * 9) + semesterNumber * 2
+    const subjectScores = [
+      58 + ((base + 3) % 24),
+      61 + ((base + 7) % 22),
+      55 + ((base + 11) % 26),
+      64 + ((base + 5) % 18),
+    ]
+    const subjects = [
+      toTranscriptSubject(`CS${semesterNumber}01`, `Core Subject ${semesterNumber}.1`, 4, subjectScores[0]),
+      toTranscriptSubject(`CS${semesterNumber}02`, `Core Subject ${semesterNumber}.2`, 4, subjectScores[1]),
+      toTranscriptSubject(`MA${semesterNumber}01`, `Mathematics ${semesterNumber}`, 4, subjectScores[2]),
+      toTranscriptSubject(`HS${semesterNumber}01`, `Humanities ${semesterNumber}`, 2, subjectScores[3]),
+      toTranscriptSubject(`CS${semesterNumber}0L`, `Lab ${semesterNumber}`, 1, 72 + ((base + 9) % 18)),
+    ]
+    terms.push(toTranscriptTerm(
+      `sem-${semesterNumber}`,
+      `Semester ${semesterNumber}`,
+      semesterNumber,
+      semesterNumber <= 2 ? '2024-25' : '2025-26',
+      subjects,
+    ))
+  }
+  return toHistoryRecord({
+    usn,
+    studentName,
+    program: dept,
+    dept,
+    trend: 'Stable',
+    advisoryNotes: ['Generated fallback transcript for mock walkthrough.', 'Use this record to validate history-page empty-state handling.'],
+    repeatSubjects: [],
+    terms,
+  })
+}
+
+export function getStudentHistoryRecord(params: { usn: string; studentName: string; dept: string; yearLabel?: string; prevCgpa?: number }): StudentHistoryRecord {
+  return SEEDED_HISTORY[params.usn] ?? buildFallbackHistory(params)
+}
