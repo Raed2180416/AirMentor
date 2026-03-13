@@ -90,6 +90,14 @@ type EvaluationScheme = {
   assignmentCount: 0 | 1 | 2
 }
 
+type StudentRuntimePatch = {
+  present?: number
+  totalClasses?: number
+}
+
+const STUDENT_PATCHES_KEY = 'airmentor-student-patches'
+let runtimeStudentPatches: Record<string, StudentRuntimePatch> = {}
+
 const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000
 
 const TEACHER_ACCOUNTS: TeacherAccount[] = [
@@ -150,6 +158,34 @@ function parseInputValue(raw: string, min: number, max: number): number | undefi
 function shouldBlockNumericKey(e: React.KeyboardEvent<HTMLInputElement>) {
   const blocked = ['e', 'E', '+', '-', '.', ',']
   if (blocked.includes(e.key)) e.preventDefault()
+}
+
+function toStudentPatchKey(offId: string, studentId: string) {
+  return `${offId}::${studentId}`
+}
+
+function setRuntimeStudentPatches(next: Record<string, StudentRuntimePatch>) {
+  runtimeStudentPatches = next
+}
+
+function getStudentsPatched(offering: Offering): Student[] {
+  return getStudents(offering).map(s => {
+    const p = runtimeStudentPatches[toStudentPatchKey(offering.offId, s.id)]
+    if (!p) return s
+    const totalClasses = p.totalClasses ?? s.totalClasses
+    const present = clampNumber(p.present ?? s.present, 0, Math.max(1, totalClasses))
+    return {
+      ...s,
+      present,
+      totalClasses,
+    }
+  })
+}
+
+function getOfferingAttendancePatched(offering: Offering) {
+  const students = getStudentsPatched(offering)
+  if (students.length === 0) return 0
+  return Math.round(students.reduce((acc, s) => acc + (s.present / Math.max(1, s.totalClasses)) * 100, 0) / students.length)
 }
 
 function toDueLabel(dueDateISO?: string, fallback = 'This week') {
@@ -554,6 +590,8 @@ function ActionQueue({ role, tasks, offerings, resolvedTaskIds, onResolveTask, o
   const active = tasks.filter(t => !resolvedTaskIds[t.id])
   const done = tasks.filter(t => !!resolvedTaskIds[t.id])
   const [showComposer, setShowComposer] = useState(false)
+  const [selectedYear, setSelectedYear] = useState<string>(offerings[0]?.year ?? '')
+  const [selectedDept, setSelectedDept] = useState<string>(offerings[0]?.dept ?? '')
   const [selectedOffId, setSelectedOffId] = useState<string>(offerings[0]?.offId ?? '')
   const [query, setQuery] = useState('')
   const [selectedStudentId, setSelectedStudentId] = useState('')
@@ -575,23 +613,40 @@ function ActionQueue({ role, tasks, offerings, resolvedTaskIds, onResolveTask, o
     return { taskType: 'Follow-up' as TaskType, dueDateISO: toISO(7), note: `General follow-up with ${s.name.split(' ')[0]}.` }
   }
 
-  useEffect(() => {
-    if (!offerings.some(o => o.offId === selectedOffId)) {
-      setSelectedOffId(offerings[0]?.offId ?? '')
-    }
-  }, [offerings, selectedOffId])
+  const yearOptions = useMemo(() => Array.from(new Set(offerings.map(o => o.year))), [offerings])
+  const deptOptions = useMemo(() => Array.from(new Set(offerings.map(o => o.dept))), [offerings])
+  const classOfferings = useMemo(() => offerings.filter(o => (!selectedYear || o.year === selectedYear) && (!selectedDept || o.dept === selectedDept)), [offerings, selectedYear, selectedDept])
 
-  const selectedOffering = offerings.find(o => o.offId === selectedOffId) ?? offerings[0]
-  const filteredStudents = (selectedOffering ? getStudents(selectedOffering) : []).filter(s => {
+  useEffect(() => {
+    if (!yearOptions.includes(selectedYear)) setSelectedYear(yearOptions[0] ?? '')
+    if (!deptOptions.includes(selectedDept)) setSelectedDept(deptOptions[0] ?? '')
+  }, [yearOptions, deptOptions, selectedYear, selectedDept])
+
+  useEffect(() => {
+    if (!classOfferings.some(o => o.offId === selectedOffId)) {
+      setSelectedOffId(classOfferings[0]?.offId ?? '')
+    }
+  }, [classOfferings, selectedOffId])
+
+  const selectedOffering = classOfferings.find(o => o.offId === selectedOffId) ?? classOfferings[0]
+  const filteredStudents = (selectedOffering ? getStudentsPatched(selectedOffering) : []).filter(s => {
     const q = query.trim().toLowerCase()
     if (!q) return true
     return s.name.toLowerCase().includes(q) || s.usn.toLowerCase().includes(q)
   })
   const selectedStudent = filteredStudents.find(s => s.id === selectedStudentId)
 
+  const searchHits = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return [] as Array<{ offering: Offering; student: Student }>
+    return classOfferings
+      .flatMap(o => getStudentsPatched(o).filter(s => s.name.toLowerCase().includes(q) || s.usn.toLowerCase().includes(q)).map(student => ({ offering: o, student })))
+      .slice(0, 12)
+  }, [query, classOfferings])
+
   useEffect(() => {
     if (!selectedOffering) return
-    const available = getStudents(selectedOffering).filter(s => {
+    const available = getStudentsPatched(selectedOffering).filter(s => {
       const q = query.trim().toLowerCase()
       if (!q) return true
       return s.name.toLowerCase().includes(q) || s.usn.toLowerCase().includes(q)
@@ -706,9 +761,34 @@ function ActionQueue({ role, tasks, offerings, resolvedTaskIds, onResolveTask, o
             </div>
             <div style={{ display: 'grid', gap: 7 }}>
               <select aria-label="Select class" value={selectedOffId} onChange={e => { setSelectedOffId(e.target.value); setQuery('') }} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
-                {offerings.map(o => <option key={o.offId} value={o.offId}>{o.code} · {o.year} · Sec {o.section}</option>)}
+                {classOfferings.map(o => <option key={o.offId} value={o.offId}>{o.code} · {o.year} · {o.dept} · Sec {o.section}</option>)}
               </select>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                <select aria-label="Select year" value={selectedYear} onChange={e => setSelectedYear(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
+                  {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+                <select aria-label="Select branch" value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
+                  {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
               <input aria-label="Search student" placeholder="Search student / USN" value={query} onChange={e => setQuery(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }} />
+              {searchHits.length > 0 && (
+                <select aria-label="Search results" value="" onChange={e => {
+                  const val = e.target.value
+                  if (!val) return
+                  const [offId, sid] = val.split('::')
+                  const hit = searchHits.find(h => h.offering.offId === offId && h.student.id === sid)
+                  if (!hit) return
+                  setSelectedYear(hit.offering.year)
+                  setSelectedDept(hit.offering.dept)
+                  setSelectedOffId(hit.offering.offId)
+                  setSelectedStudentId(hit.student.id)
+                  setQuery(hit.student.name)
+                }} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
+                  <option value="">Select matching result</option>
+                  {searchHits.map(hit => <option key={`${hit.offering.offId}-${hit.student.id}`} value={`${hit.offering.offId}::${hit.student.id}`}>{hit.student.name} · {hit.student.usn} · {hit.offering.code} Sec {hit.offering.section}</option>)}
+                </select>
+              )}
               <select aria-label="Select student" value={selectedStudentId} onChange={e => setSelectedStudentId(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 8px' }}>
                 <option value="">Select student</option>
                 {filteredStudents.map(s => <option key={s.id} value={s.id}>{s.name} · {s.usn}</option>)}
@@ -753,7 +833,7 @@ function inferKindFromPendingAction(pending: string | null): EntryKind {
 
 function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent, onOpenUpload }: { offerings: Offering[]; pendingTaskCount: number; onOpenCourse: (o: Offering) => void; onOpenStudent: (s: Student, o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void }) {
   const total = offerings.reduce((a, o) => a + o.count, 0)
-  const allAtRisk = useMemo(() => offerings.flatMap(o => getStudents(o)), [offerings])
+  const allAtRisk = useMemo(() => offerings.flatMap(o => getStudentsPatched(o)), [offerings])
   const highRiskCount = allAtRisk.filter(s => s.riskBand === 'High').length
   const yearGroups = useMemo(() => {
     return Array.from(new Set(offerings.map(o => o.year))).map(year => {
@@ -808,7 +888,7 @@ function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent,
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
             {allAtRisk.filter(s => s.riskBand === 'High').slice(0, 6).map(s => {
-              const off = offerings.find(o => getStudents(o).some(st => st.id === s.id))
+              const off = offerings.find(o => getStudentsPatched(o).some(st => st.id === s.id))
               return (
                 <div key={s.id} onClick={() => off && onOpenStudent(s as unknown as Student, off)}
                   style={{ background: T.surface2, border: `1px solid ${T.danger}25`, borderRadius: 8, padding: '10px 14px', cursor: 'pointer', transition: 'all 0.15s' }}
@@ -845,7 +925,7 @@ function YearSection({ group, onOpenCourse, onOpenUpload }: { group: YearGroup; 
   const [collapsed, setCollapsed] = useState(false)
   const totalStudents = offerings.reduce((a, o) => a + o.count, 0)
   const avgAtt = Math.round(offerings.reduce((a, o) => a + o.attendance, 0) / (offerings.length || 1))
-  const highRiskCount = offerings.filter(o => o.stage >= 2).reduce((a, o) => a + getStudents(o).filter(s => s.riskBand === 'High').length, 0)
+  const highRiskCount = offerings.filter(o => o.stage >= 2).reduce((a, o) => a + getStudentsPatched(o).filter(s => s.riskBand === 'High').length, 0)
   const pendingCount = offerings.filter(o => o.pendingAction).length
 
   return (
@@ -871,9 +951,10 @@ function YearSection({ group, onOpenCourse, onOpenUpload }: { group: YearGroup; 
 function OfferingCard({ o, yc, onOpen, onOpenUpload }: { o: Offering; yc: string; onOpen: (o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void }) {
   const [hov, setHov] = useState(false)
   const sc = o.stageInfo.color
-  const ac = o.attendance >= 75 ? T.success : o.attendance >= 65 ? T.warning : T.danger
+  const avgAtt = getOfferingAttendancePatched(o)
+  const ac = avgAtt >= 75 ? T.success : avgAtt >= 65 ? T.warning : T.danger
   const checks = [o.tt1Done, o.tt2Done, o.attendance >= 75]
-  const highRisk = o.stage >= 2 ? getStudents(o).filter(s => s.riskBand === 'High').length : 0
+  const highRisk = o.stage >= 2 ? getStudentsPatched(o).filter(s => s.riskBand === 'High').length : 0
 
   return (
     <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} onClick={() => onOpen(o)}
@@ -888,7 +969,7 @@ function OfferingCard({ o, yc, onOpen, onOpenUpload }: { o: Offering; yc: string
       </div>
       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 10 }}>
         <Chip color={T.dim} size={9}>{o.count} students</Chip>
-        <Chip color={ac} size={9}>{o.attendance}% att</Chip>
+        <Chip color={ac} size={9}>{avgAtt}% att</Chip>
         {highRisk > 0 && <Chip color={T.danger} size={9}>🔴 {highRisk} at risk</Chip>}
       </div>
       <div style={{ display: 'flex', gap: 5, alignItems: 'center', marginBottom: 8 }}>
@@ -928,9 +1009,10 @@ function SummaryTable({ offerings, onOpenCourse, onOpenUpload }: { offerings: Of
           </thead>
           <tbody>
             {offerings.map(o => {
-              const ac = o.attendance >= 75 ? T.success : o.attendance >= 65 ? T.warning : T.danger
+              const avgAtt = getOfferingAttendancePatched(o)
+              const ac = avgAtt >= 75 ? T.success : avgAtt >= 65 ? T.warning : T.danger
               const yc = yearColor(o.year)
-              const hr = o.stage >= 2 ? getStudents(o).filter(s => s.riskBand === 'High').length : 0
+              const hr = o.stage >= 2 ? getStudentsPatched(o).filter(s => s.riskBand === 'High').length : 0
               return (
                 <tr key={o.offId} onClick={() => onOpenCourse(o)} style={{ cursor: 'pointer', transition: 'background 0.15s' }}
                   onMouseEnter={e => (e.currentTarget.style.background = T.surface2)} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
@@ -942,7 +1024,7 @@ function SummaryTable({ offerings, onOpenCourse, onOpenUpload }: { offerings: Of
                   <TD>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 100 }}>
                       <Bar val={o.attendance} color={ac} h={4} />
-                      <span style={{ ...mono, fontSize: 10, color: ac }}>{o.attendance}%</span>
+                      <span style={{ ...mono, fontSize: 10, color: ac }}>{avgAtt}%</span>
                     </div>
                   </TD>
                   <TD><Chip color={o.stageInfo.color} size={9}>{o.stageInfo.label}</Chip></TD>
@@ -980,7 +1062,7 @@ const TAB_DEFS = [
 function CourseDetail({ offering: o, onBack, onOpenStudent, onOpenEntryHub, initialTab }: { offering: Offering; onBack: () => void; onOpenStudent: (s: Student) => void; onOpenEntryHub: (kind: EntryKind) => void; initialTab?: string }) {
   const [tab, setTab] = useState(initialTab ?? 'overview')
   const yc = yearColor(o.year)
-  const students = useMemo(() => getStudents(o), [o.offId])
+  const students = useMemo(() => getStudentsPatched(o), [o.offId])
   const cos = CO_MAP[o.code] || CO_MAP['default']
   const paper = PAPER_MAP[o.code] || PAPER_MAP['default']
   const tabLocked = (t: string) => (t === 'tt2' && o.stageInfo.stage < 2) || (t === 'risk' && o.stage < 2)
@@ -1735,8 +1817,8 @@ function HodView({ onOpenUpload, onOpenCourse, onOpenStudent, tasks }: { onOpenU
     return TEACHERS.map(t => {
       const offerings = teacherOfferingsById[t.id] ?? []
       const students = offerings.reduce((a, o) => a + o.count, 0)
-      const highRisk = offerings.reduce((a, o) => a + getStudents(o).filter(s => s.riskBand === 'High').length, 0)
-      const avgAtt = offerings.length > 0 ? Math.round(offerings.reduce((a, o) => a + o.attendance, 0) / offerings.length) : 0
+      const highRisk = offerings.reduce((a, o) => a + getStudentsPatched(o).filter(s => s.riskBand === 'High').length, 0)
+      const avgAtt = offerings.length > 0 ? Math.round(offerings.reduce((a, o) => a + getOfferingAttendancePatched(o), 0) / offerings.length) : 0
       const lockChecks = offerings.flatMap(o => [o.tt1Locked ? 1 : 0, o.tt2Locked ? 1 : 0])
       const completeness = lockChecks.length > 0 ? Math.round(lockChecks.reduce((a, x) => a + x, 0) / lockChecks.length * 100) : 0
       const pendingTasks = offerings.filter(o => !!o.pendingAction).length
@@ -1781,8 +1863,8 @@ function HodView({ onOpenUpload, onOpenCourse, onOpenStudent, tasks }: { onOpenU
   }, [tasks, mentorTasks, selectedTeacher])
 
   const totalStudents = OFFERINGS.reduce((a, o) => a + o.count, 0)
-  const totalHighRisk = OFFERINGS.reduce((a, o) => a + getStudents(o).filter(s => s.riskBand === 'High').length, 0)
-  const avgAttendance = OFFERINGS.length > 0 ? Math.round(OFFERINGS.reduce((a, o) => a + o.attendance, 0) / OFFERINGS.length) : 0
+  const totalHighRisk = OFFERINGS.reduce((a, o) => a + getStudentsPatched(o).filter(s => s.riskBand === 'High').length, 0)
+  const avgAttendance = OFFERINGS.length > 0 ? Math.round(OFFERINGS.reduce((a, o) => a + getOfferingAttendancePatched(o), 0) / OFFERINGS.length) : 0
 
   return (
     <div style={{ padding: '28px 32px', maxWidth: 1100, animation: 'fadeUp 0.35s ease' }}>
@@ -1866,8 +1948,8 @@ function HodView({ onOpenUpload, onOpenCourse, onOpenStudent, tasks }: { onOpenU
                    <Chip color={o.tt2Locked ? T.success : T.warning} size={9}>TT2: {o.tt2Locked ? 'Locked' : 'Pending'}</Chip>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ ...mono, fontSize: 10, color: T.danger }}>{getStudents(o).filter(s => s.riskBand === 'High').length} High Risk</span>
-                  <span style={{ ...mono, fontSize: 10, color: T.text }}>{o.attendance}% Avg Att · Open →</span>
+                  <span style={{ ...mono, fontSize: 10, color: T.danger }}>{getStudentsPatched(o).filter(s => s.riskBand === 'High').length} High Risk</span>
+                  <span style={{ ...mono, fontSize: 10, color: T.text }}>{getOfferingAttendancePatched(o)}% Avg Att · Open →</span>
                 </div>
               </div>
             ))}
@@ -1891,7 +1973,7 @@ function HodView({ onOpenUpload, onOpenCourse, onOpenStudent, tasks }: { onOpenU
                     <TD><button aria-label={`View ${task.studentName} profile`} title="View profile" onClick={() => {
                       const off = OFFERINGS.find(o => o.offId === task.offeringId)
                       if (!off) return
-                      const s = getStudents(off).find(st => st.id === task.studentId)
+                      const s = getStudentsPatched(off).find(st => st.id === task.studentId)
                       if (s) onOpenStudent(s, off)
                     }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Eye size={13} /></button></TD>
                   </tr>
@@ -1963,7 +2045,7 @@ const getEntryLockMap = (o: Offering) => ({
    UPLOAD PAGE
    ══════════════════════════════════════════════════════════════ */
 
-function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOffering, availableOfferings }: { role: Role; offering: Offering | null; defaultKind: EntryKind; onOpenWorkspace: (offeringId: string, kind: EntryKind) => void; lockByOffering: Record<string, EntryLockMap>; availableOfferings?: Offering[] }) {
+function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOffering, onRequestUnlock, availableOfferings }: { role: Role; offering: Offering | null; defaultKind: EntryKind; onOpenWorkspace: (offeringId: string, kind: EntryKind) => void; lockByOffering: Record<string, EntryLockMap>; onRequestUnlock: (offeringId: string, kind: EntryKind) => void; availableOfferings?: Offering[] }) {
   const visibleOfferings = (availableOfferings && availableOfferings.length > 0 ? availableOfferings : OFFERINGS)
   const [selectedKind, setSelectedKind] = useState<EntryKind>(defaultKind)
   const [selectedOffId, setSelectedOffId] = useState<string>(offering?.offId ?? visibleOfferings[0].offId)
@@ -2009,7 +2091,7 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOfferi
         <Card style={{ marginBottom: 12, padding: '12px 14px' }} glow={T.warning}>
           <div style={{ ...mono, fontSize: 11, color: T.warning }}>This entry is locked. You cannot modify {selected.title}.</div>
           <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
-            <Btn size="sm" variant="ghost" onClick={() => setUnlockRequested(selectedKind)}>Request unlock from HoD</Btn>
+            <Btn size="sm" variant="ghost" onClick={() => { setUnlockRequested(selectedKind); onRequestUnlock(selectedOffering.offId, selectedKind) }}>Request unlock from HoD</Btn>
             {unlockRequested === selectedKind && <Chip color={T.success} size={9}>Request submitted</Chip>}
           </div>
         </Card>
@@ -2060,7 +2142,7 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOfferi
   )
 }
 
-function EntryWorkspacePage({ role, offeringId, kind, onBack, lockByOffering, draftBySection, onSaveDraft, onSubmitLock, cellValues, onCellValueChange, onOpenStudent, onCreateTask }: { role: Role; offeringId: string; kind: EntryKind; onBack: () => void; lockByOffering: Record<string, EntryLockMap>; draftBySection: Record<string, number>; onSaveDraft: (offId: string, kind: EntryKind) => void; onSubmitLock: (offId: string, kind: EntryKind) => void; cellValues: Record<string, number>; onCellValueChange: (key: string, value: number | undefined) => void; onOpenStudent: (s: Student, o: Offering) => void; onCreateTask: (input: TaskCreateInput) => void }) {
+function EntryWorkspacePage({ role, offeringId, kind, onBack, lockByOffering, draftBySection, onSaveDraft, onSubmitLock, onRequestUnlock, cellValues, onCellValueChange, onOpenStudent, onCreateTask, onUpdateStudentAttendance }: { role: Role; offeringId: string; kind: EntryKind; onBack: () => void; lockByOffering: Record<string, EntryLockMap>; draftBySection: Record<string, number>; onSaveDraft: (offId: string, kind: EntryKind) => void; onSubmitLock: (offId: string, kind: EntryKind) => void; onRequestUnlock: (offeringId: string, kind: EntryKind) => void; cellValues: Record<string, number>; onCellValueChange: (key: string, value: number | undefined) => void; onOpenStudent: (s: Student, o: Offering) => void; onCreateTask: (input: TaskCreateInput) => void; onUpdateStudentAttendance: (offeringId: string, studentId: string, patch: StudentRuntimePatch) => void }) {
   const [unlockRequested, setUnlockRequested] = useState(false)
   const selectedOffering = OFFERINGS.find(o => o.offId === offeringId) ?? OFFERINGS[0]
   const groupedSections = OFFERINGS.filter(o => o.code === selectedOffering.code && o.year === selectedOffering.year)
@@ -2081,7 +2163,7 @@ function EntryWorkspacePage({ role, offeringId, kind, onBack, lockByOffering, dr
         <Card style={{ marginBottom: 10, padding: '10px 12px' }} glow={T.warning}>
           <div style={{ ...mono, fontSize: 11, color: T.warning }}>This dataset is locked. You cannot edit it as Course Leader.</div>
           <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
-            <Btn size="sm" variant="ghost" onClick={() => setUnlockRequested(true)}>Defer unlock request to HoD</Btn>
+            <Btn size="sm" variant="ghost" onClick={() => { setUnlockRequested(true); onRequestUnlock(selectedOffering.offId, kind) }}>Defer unlock request to HoD</Btn>
             {unlockRequested && <Chip color={T.success} size={9}>Request sent</Chip>}
           </div>
         </Card>
@@ -2090,7 +2172,7 @@ function EntryWorkspacePage({ role, offeringId, kind, onBack, lockByOffering, dr
 
       <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
         {groupedSections.map(sec => {
-          const students = getStudents(sec)
+          const students = getStudentsPatched(sec)
           const paper = PAPER_MAP[sec.code] || PAPER_MAP.default
           const secLocks = lockByOffering[sec.offId] ?? getEntryLockMap(sec)
           const secLockedForCourseLeader = role === 'Course Leader' && secLocks[kind]
@@ -2118,7 +2200,8 @@ function EntryWorkspacePage({ role, offeringId, kind, onBack, lockByOffering, dr
                       {(kind === 'tt1' || kind === 'tt2') && paper.map((q, i) => <TH key={q.id}>Q{i + 1}/{q.maxMarks}</TH>)}
                       {kind === 'quiz' && <TH>Quiz 1 /10</TH>}
                       {kind === 'assignment' && <TH>Asgn 1 /10</TH>}
-                      {kind === 'attendance' && <TH>Present /45</TH>}
+                      {kind === 'attendance' && <TH>Present</TH>}
+                      {kind === 'attendance' && <TH>Total Classes</TH>}
                       {kind === 'finals' && <TH>SEE /50</TH>}
                       <TH>Profile</TH><TH>Task</TH>
                     </tr>
@@ -2136,7 +2219,16 @@ function EntryWorkspacePage({ role, offeringId, kind, onBack, lockByOffering, dr
                         ))}
                         {kind === 'quiz' && <TD><input aria-label={`Quiz 1 marks for ${s.name}`} title={`Enter Quiz 1 marks for ${s.name}`} placeholder="0" type="number" inputMode="numeric" min={0} max={10} disabled={!canEditSection} value={cellValues[toCellKey(sec.offId, kind, s.id, 'quiz1')] ?? (s.quiz1 ?? '')} onKeyDown={shouldBlockNumericKey} onChange={(e) => onCellValueChange(toCellKey(sec.offId, kind, s.id, 'quiz1'), parseInputValue(e.target.value, 0, 10))} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
                         {kind === 'assignment' && <TD><input aria-label={`Assignment 1 marks for ${s.name}`} title={`Enter Assignment 1 marks for ${s.name}`} placeholder="0" type="number" inputMode="numeric" min={0} max={10} disabled={!canEditSection} value={cellValues[toCellKey(sec.offId, kind, s.id, 'asgn1')] ?? (s.asgn1 ?? '')} onKeyDown={shouldBlockNumericKey} onChange={(e) => onCellValueChange(toCellKey(sec.offId, kind, s.id, 'asgn1'), parseInputValue(e.target.value, 0, 10))} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
-                        {kind === 'attendance' && <TD><input aria-label={`Attendance present classes for ${s.name}`} title={`Enter attendance present count for ${s.name}`} placeholder="0" type="number" inputMode="numeric" min={0} max={45} disabled={!canEditSection} value={cellValues[toCellKey(sec.offId, kind, s.id, 'present')] ?? s.present} onKeyDown={shouldBlockNumericKey} onChange={(e) => onCellValueChange(toCellKey(sec.offId, kind, s.id, 'present'), parseInputValue(e.target.value, 0, 45))} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
+                        {kind === 'attendance' && <TD><input aria-label={`Attendance present classes for ${s.name}`} title={`Enter attendance present count for ${s.name}`} placeholder="0" type="number" inputMode="numeric" min={0} max={999} disabled={!canEditSection} value={cellValues[toCellKey(sec.offId, kind, s.id, 'present')] ?? s.present} onKeyDown={shouldBlockNumericKey} onChange={(e) => {
+                          const next = parseInputValue(e.target.value, 0, 999)
+                          onCellValueChange(toCellKey(sec.offId, kind, s.id, 'present'), next)
+                          onUpdateStudentAttendance(sec.offId, s.id, { present: next })
+                        }} style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
+                        {kind === 'attendance' && <TD><input aria-label={`Total classes for ${s.name}`} title={`Enter total classes conducted for ${s.name}`} placeholder="0" type="number" inputMode="numeric" min={1} max={999} disabled={!canEditSection} value={cellValues[toCellKey(sec.offId, kind, s.id, 'total')] ?? s.totalClasses} onKeyDown={shouldBlockNumericKey} onChange={(e) => {
+                          const nextTotal = parseInputValue(e.target.value, 1, 999)
+                          onCellValueChange(toCellKey(sec.offId, kind, s.id, 'total'), nextTotal)
+                          onUpdateStudentAttendance(sec.offId, s.id, { totalClasses: nextTotal })
+                        }} style={{ width: 84, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
                         {kind === 'finals' && <TD><input aria-label={`SEE marks for ${s.name}`} title={`Enter SEE marks for ${s.name}`} type="number" inputMode="numeric" min={0} max={50} disabled={!canEditSection} value={cellValues[toCellKey(sec.offId, kind, s.id, 'see')] ?? ''} onKeyDown={shouldBlockNumericKey} onChange={(e) => onCellValueChange(toCellKey(sec.offId, kind, s.id, 'see'), parseInputValue(e.target.value, 0, 50))} placeholder="Enter" style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }} /></TD>}
                         <TD><button aria-label={`Open ${s.name} profile`} title="Open profile" onClick={() => onOpenStudent(s, sec)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Eye size={13} /></button></TD>
                         <TD>
@@ -2194,13 +2286,21 @@ export default function App() {
   const [entryKind, setEntryKind] = useState<EntryKind>('tt1')
   const [courseInitialTab, setCourseInitialTab] = useState<string | undefined>(undefined)
   const [remedialContext, setRemedialContext] = useState<{ student: Student; offering: Offering; deferToHod?: boolean } | null>(null)
+  const [studentPatches, setStudentPatches] = useState<Record<string, StudentRuntimePatch>>(() => {
+    try {
+      const saved = localStorage.getItem(STUDENT_PATCHES_KEY)
+      return saved ? JSON.parse(saved) : {}
+    } catch {
+      return {}
+    }
+  })
 
   const allowedRoles = currentTeacher?.permissions ?? []
   const assignedOfferings = useMemo(() => {
     if (!currentTeacher) return OFFERINGS
-    if (currentTeacher.permissions.includes('HoD')) return OFFERINGS
+    if (role === 'HoD') return OFFERINGS
     return OFFERINGS.filter(o => currentTeacher.courseCodes.includes(o.code))
-  }, [currentTeacher])
+  }, [currentTeacher, role])
   const assignedMentees = useMemo(() => {
     if (!currentTeacherId) return MENTEES
     const ids = new Set(MENTEE_ASSIGNMENTS[currentTeacherId] ?? [])
@@ -2289,6 +2389,8 @@ export default function App() {
   useEffect(() => { localStorage.setItem('airmentor-cell-values', JSON.stringify(cellValues)) }, [cellValues])
   useEffect(() => { localStorage.setItem('airmentor-all-tasks', JSON.stringify(allTasksList)) }, [allTasksList])
   useEffect(() => { localStorage.setItem('airmentor-resolved-tasks', JSON.stringify(resolvedTasks)) }, [resolvedTasks])
+  useEffect(() => { localStorage.setItem(STUDENT_PATCHES_KEY, JSON.stringify(studentPatches)) }, [studentPatches])
+  useEffect(() => { setRuntimeStudentPatches(studentPatches) }, [studentPatches])
 
   useEffect(() => {
     const cutoff = Date.now() - TWO_DAYS_MS
@@ -2407,10 +2509,61 @@ export default function App() {
     })
   }, [])
 
+  const handleUpdateStudentAttendance = useCallback((offeringId: string, studentId: string, patch: StudentRuntimePatch) => {
+    setStudentPatches(prev => {
+      const key = toStudentPatchKey(offeringId, studentId)
+      const existing = prev[key] ?? {}
+      const next: Record<string, StudentRuntimePatch> = {
+        ...prev,
+        [key]: {
+          ...existing,
+          ...patch,
+        },
+      }
+      setRuntimeStudentPatches(next)
+      return next
+    })
+  }, [])
+
+  const handleRequestUnlock = useCallback((offeringId: string, kind: EntryKind) => {
+    const off = OFFERINGS.find(o => o.offId === offeringId)
+    if (!off) return
+    const id = `unlock-${offeringId}-${kind}`
+    setAllTasksList(prev => {
+      if (prev.some(t => t.id === id)) return prev
+      const next: SharedTask = {
+        id,
+        studentId: `${offeringId}-${kind}-lock`,
+        studentName: 'Class Data Lock',
+        studentUsn: 'N/A',
+        offeringId,
+        courseCode: off.code,
+        courseName: off.title,
+        year: off.year,
+        riskProb: 0.5,
+        riskBand: 'Medium',
+        title: `Unlock request: ${off.code} Sec ${off.section} · ${kind.toUpperCase()}`,
+        due: 'Today',
+        status: 'New',
+        actionHint: `${role} requested HoD unlock for ${kind.toUpperCase()} data entry`,
+        priority: 80,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        assignedTo: 'HoD',
+        taskType: 'Academic',
+        escalated: true,
+        sourceRole: role,
+        manual: true,
+      }
+      syncTaskToBackend(toBackendTaskPayload(next))
+      return [next, ...prev]
+    })
+  }, [role])
+
   const handleCreateTask = useCallback((input: TaskCreateInput) => {
     const off = OFFERINGS.find(o => o.offId === input.offeringId)
     if (!off) return
-    const s = getStudents(off).find(st => st.id === input.studentId)
+    const s = getStudentsPatched(off).find(st => st.id === input.studentId)
     if (!s) return
     const id = `manual-${input.taskType}-${s.id}-${Date.now()}`
     const riskProb = s.riskProb ?? 0.45
@@ -2449,7 +2602,7 @@ export default function App() {
   const handleOpenRemedialPlanner = useCallback((input: { offeringId: string; studentId: string; deferToHod?: boolean }) => {
     const off = OFFERINGS.find(o => o.offId === input.offeringId)
     if (!off) return
-    const student = getStudents(off).find(st => st.id === input.studentId)
+    const student = getStudentsPatched(off).find(st => st.id === input.studentId)
     if (!student) return
     setRemedialContext({ student, offering: off, deferToHod: input.deferToHod })
   }, [])
@@ -2477,7 +2630,7 @@ export default function App() {
   }, [])
 
   const upsertTaskFromStudent = useCallback((s: Student, o: Offering | undefined, mode: 'escalate' | 'remedial' | 'manual') => {
-    const off = o ?? OFFERINGS.find(x => getStudents(x).some(st => st.id === s.id))
+    const off = o ?? OFFERINGS.find(x => getStudentsPatched(x).some(st => st.id === s.id))
     const offId = off?.offId ?? ''
     const code = off?.code ?? 'GEN'
     const name = off?.title ?? 'General Follow-up'
@@ -2650,16 +2803,16 @@ export default function App() {
           {role === 'Course Leader' && page === 'dashboard' && <CLDashboard offerings={assignedOfferings} pendingTaskCount={pendingActionCount} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} />}
           {role === 'Course Leader' && page === 'course' && offering && <CourseDetail offering={offering} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} initialTab={courseInitialTab} />}
           {role === 'Course Leader' && page === 'calendar' && <CalendarPage />}
-          {role === 'Course Leader' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} availableOfferings={assignedOfferings} />}
-          {role === 'Course Leader' && page === 'entry-workspace' && <EntryWorkspacePage role={role} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onCreateTask={handleCreateTask} />}
+          {role === 'Course Leader' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} onRequestUnlock={handleRequestUnlock} availableOfferings={assignedOfferings} />}
+          {role === 'Course Leader' && page === 'entry-workspace' && <EntryWorkspacePage role={role} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} onRequestUnlock={handleRequestUnlock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onCreateTask={handleCreateTask} onUpdateStudentAttendance={handleUpdateStudentAttendance} />}
 
           {role === 'Mentor' && page === 'mentees' && <MentorView mentees={assignedMentees} onOpenMentee={() => {}} />}
           {role === 'Mentor' && page === 'calendar' && <CalendarPage />}
 
           {role === 'HoD' && page === 'department' && <HodView onOpenUpload={handleOpenUpload} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} tasks={allTasksList} />}
           {role === 'HoD' && page === 'course' && offering && <CourseDetail offering={offering} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} initialTab={courseInitialTab} />}
-          {role === 'HoD' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} availableOfferings={assignedOfferings} />}
-          {role === 'HoD' && page === 'entry-workspace' && <EntryWorkspacePage role={role} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onCreateTask={handleCreateTask} />}
+          {role === 'HoD' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} onRequestUnlock={handleRequestUnlock} availableOfferings={assignedOfferings} />}
+          {role === 'HoD' && page === 'entry-workspace' && <EntryWorkspacePage role={role} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} onRequestUnlock={handleRequestUnlock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onCreateTask={handleCreateTask} onUpdateStudentAttendance={handleUpdateStudentAttendance} />}
           {role === 'HoD' && page === 'calendar' && <CalendarPage />}
         </div>
 
@@ -2668,7 +2821,7 @@ export default function App() {
           <ActionQueue role={role} tasks={roleTasks} offerings={assignedOfferings} resolvedTaskIds={resolvedTasks} onResolveTask={handleResolveTask} onUndoTask={handleUndoTask} onCreateTask={handleCreateTask} onOpenRemedialPlanner={handleOpenRemedialPlanner} onRemedialCheckIn={handleRemedialCheckIn} onOpenStudent={(id) => {
             const searchableOfferings = role === 'HoD' ? OFFERINGS : assignedOfferings
             for (const off of searchableOfferings) {
-              const s = getStudents(off).find(st => st.id === id)
+              const s = getStudentsPatched(off).find(st => st.id === id)
               if (s) {
                 handleOpenStudent(s, off)
                 return
@@ -2682,7 +2835,7 @@ export default function App() {
       <AnimatePresence>
         {selectedStudent && (
           <StudentDrawer student={selectedStudent} offering={selectedOffering || undefined} role={role} onClose={() => { setSelectedStudent(null); setSelectedOffering(null) }} onEscalate={(s, o) => upsertTaskFromStudent(s, o, 'escalate')} onAssignRemedial={(s, o) => {
-            const off = o ?? OFFERINGS.find(x => getStudents(x).some(st => st.id === s.id))
+            const off = o ?? OFFERINGS.find(x => getStudentsPatched(x).some(st => st.id === s.id))
             if (!off) return
             setRemedialContext({ student: s, offering: off, deferToHod: role !== 'HoD' ? false : undefined })
           }} onAddManualTask={(s, o) => upsertTaskFromStudent(s, o, 'manual')} />
@@ -2694,6 +2847,19 @@ export default function App() {
           <RemedialPlanModal role={role} context={remedialContext} onClose={() => setRemedialContext(null)} onSubmit={handleCreateTask} />
         )}
       </AnimatePresence>
+
+      <button
+        aria-label="Hard reset development data"
+        title="Hard reset"
+        onClick={() => {
+          if (!confirm('This will reset all saved changes and restore mock defaults. Continue?')) return
+          localStorage.clear()
+          window.location.reload()
+        }}
+        style={{ position: 'fixed', left: 16, bottom: 16, zIndex: 140, border: `1px solid ${T.danger}55`, background: '#ef44441a', color: T.danger, borderRadius: 8, padding: '8px 10px', cursor: 'pointer', ...mono, fontSize: 10 }}
+      >
+        Reset Mock Data
+      </button>
     </div>
   )
 }
