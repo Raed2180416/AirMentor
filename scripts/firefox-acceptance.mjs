@@ -31,6 +31,20 @@ try {
   await page.getByRole('button', { name: /login/i }).click()
   await expectVisible(page.getByText(/Good (Morning|Afternoon|Evening),/), 'dashboard greeting')
 
+  const desktopSidebarToggle = page.locator('.sidebar-edge-toggle')
+  await expectVisible(desktopSidebarToggle, 'desktop sidebar toggle')
+  await desktopSidebarToggle.click()
+  await expectVisible(page.getByRole('button', { name: /Expand sidebar/i }), 'desktop expand control after collapse')
+  await page.getByRole('button', { name: /Expand sidebar/i }).click()
+  await expectVisible(page.getByRole('button', { name: /Collapse sidebar/i }), 'desktop collapse control after expand')
+
+  await page.setViewportSize({ width: 860, height: 1180 })
+  const compactExpandToggle = page.locator('.top-bar-shell button[aria-label="Expand sidebar"]')
+  await expectVisible(compactExpandToggle, 'compact top-bar expand toggle')
+  await compactExpandToggle.click()
+  await expectVisible(page.locator('.top-bar-shell button[aria-label="Collapse sidebar"]'), 'compact collapse toggle after expand')
+  await page.setViewportSize({ width: 1440, height: 1180 })
+
   await page.getByRole('button', { name: /Open Data Entry Hub/i }).click()
   await expectVisible(page.getByText(/^Data Entry Hub$/).last(), 'data entry hub')
 
