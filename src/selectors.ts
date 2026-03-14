@@ -129,28 +129,30 @@ function sumQuestionMarks(node: TermTestNode): number {
 
 export function normalizeBlueprint(kind: TTKind, blueprint: TermTestBlueprint): TermTestBlueprint {
   const nodes = blueprint.nodes.map((node, index) => {
+    const canonicalQuestionLabel = `Q${index + 1}`
+    const questionLabel = node.label?.trim() || canonicalQuestionLabel
     const children = (node.children && node.children.length > 0 ? node.children : [{
       id: `${node.id}-p1`,
-      label: `${node.label}a`,
+      label: `${questionLabel}a`,
       text: node.text,
       maxMarks: node.maxMarks,
       cos: node.cos,
     }]).map((child, childIndex) => ({
       ...child,
-      id: child.id || toLeafId(kind, index, childIndex),
-      label: child.label || `${node.label}${String.fromCharCode(97 + childIndex)}`,
-      text: child.text || `Part ${childIndex + 1}`,
+      id: toLeafId(kind, index, childIndex),
+      label: child.label?.trim() || `${questionLabel}${String.fromCharCode(97 + childIndex)}`,
+      text: child.text?.trim() || (childIndex === 0 ? (node.text?.trim() || `Question ${index + 1}`) : `Part ${String.fromCharCode(65 + childIndex)}`),
       maxMarks: clampNumber(Math.round(child.maxMarks), 1, 25),
       cos: child.cos.length > 0 ? child.cos : node.cos,
     }))
     return {
       ...node,
-      id: node.id || `${kind}-q${index + 1}`,
-      label: node.label || `Q${index + 1}`,
-      text: node.text || `Question ${index + 1}`,
+      id: `${kind}-q${index + 1}`,
+      label: questionLabel,
+      text: node.text?.trim() || `Question ${index + 1}`,
       cos: [],
       children,
-      maxMarks: children.reduce((acc, child) => acc + child.maxMarks, 0),
+      maxMarks: children.reduce((acc, child) => acc + sumQuestionMarks(child), 0),
     }
   })
   return {
@@ -159,6 +161,114 @@ export function normalizeBlueprint(kind: TTKind, blueprint: TermTestBlueprint): 
     updatedAt: blueprint.updatedAt ?? Date.now(),
     nodes,
   }
+}
+
+export function canonicalizeBlueprintStructure(kind: TTKind, blueprint: TermTestBlueprint): TermTestBlueprint {
+  const normalized = normalizeBlueprint(kind, blueprint)
+  const nodes = normalized.nodes.map((node, questionIndex) => {
+    const questionLabel = `Q${questionIndex + 1}`
+    const children = (node.children && node.children.length > 0 ? node.children : [{
+      id: toLeafId(kind, questionIndex, 0),
+      label: `${questionLabel}a`,
+      text: node.text,
+      maxMarks: node.maxMarks,
+      cos: node.cos,
+    }]).map((child, childIndex) => ({
+      ...child,
+      id: toLeafId(kind, questionIndex, childIndex),
+      label: `${questionLabel}${String.fromCharCode(97 + childIndex)}`,
+      text: child.text?.trim() || (childIndex === 0 ? node.text : `Part ${String.fromCharCode(65 + childIndex)}`),
+      maxMarks: clampNumber(Math.round(child.maxMarks), 1, 25),
+      cos: child.cos.length > 0 ? child.cos : node.cos,
+    }))
+    return {
+      ...node,
+      id: `${kind}-q${questionIndex + 1}`,
+      label: questionLabel,
+      text: node.text?.trim() || `Question ${questionIndex + 1}`,
+      cos: [],
+      children,
+      maxMarks: children.reduce((acc, child) => acc + child.maxMarks, 0),
+    }
+  })
+  return {
+    ...normalized,
+    kind,
+    updatedAt: Date.now(),
+    totalMarks: nodes.reduce((acc, node) => acc + node.maxMarks, 0),
+    nodes,
+  }
+}
+
+export function addBlueprintQuestion(kind: TTKind, blueprint: TermTestBlueprint, fallbackCoId?: string): TermTestBlueprint {
+  const normalized = normalizeBlueprint(kind, blueprint)
+  const nextIndex = normalized.nodes.length
+  return canonicalizeBlueprintStructure(kind, {
+    ...normalized,
+    updatedAt: Date.now(),
+    nodes: [...normalized.nodes, {
+      id: `${kind}-q${nextIndex + 1}`,
+      label: `Q${nextIndex + 1}`,
+      text: `Question ${nextIndex + 1}`,
+      maxMarks: 5,
+      cos: [],
+      children: [{
+        id: toLeafId(kind, nextIndex, 0),
+        label: `Q${nextIndex + 1}a`,
+        text: 'Part A',
+        maxMarks: 5,
+        cos: fallbackCoId ? [fallbackCoId] : [],
+      }],
+    }],
+  })
+}
+
+export function removeBlueprintQuestion(kind: TTKind, blueprint: TermTestBlueprint, questionId: string): TermTestBlueprint {
+  const normalized = normalizeBlueprint(kind, blueprint)
+  if (normalized.nodes.length <= 1) return normalized
+  return canonicalizeBlueprintStructure(kind, {
+    ...normalized,
+    updatedAt: Date.now(),
+    nodes: normalized.nodes.filter(node => node.id !== questionId),
+  })
+}
+
+export function addBlueprintPart(kind: TTKind, blueprint: TermTestBlueprint, questionId: string, fallbackCoId?: string): TermTestBlueprint {
+  const normalized = normalizeBlueprint(kind, blueprint)
+  return canonicalizeBlueprintStructure(kind, {
+    ...normalized,
+    updatedAt: Date.now(),
+    nodes: normalized.nodes.map(node => {
+      if (node.id !== questionId) return node
+      const partCount = node.children?.length ?? 0
+      return {
+        ...node,
+        children: [...(node.children ?? []), {
+          id: toLeafId(kind, normalized.nodes.findIndex(candidate => candidate.id === questionId), partCount),
+          label: `${node.label}${String.fromCharCode(97 + partCount)}`,
+          text: `Part ${String.fromCharCode(65 + partCount)}`,
+          maxMarks: 1,
+          cos: node.children?.[0]?.cos?.length ? node.children[0].cos : (fallbackCoId ? [fallbackCoId] : node.cos),
+        }],
+      }
+    }),
+  })
+}
+
+export function removeBlueprintPart(kind: TTKind, blueprint: TermTestBlueprint, questionId: string, partId: string): TermTestBlueprint {
+  const normalized = normalizeBlueprint(kind, blueprint)
+  return canonicalizeBlueprintStructure(kind, {
+    ...normalized,
+    updatedAt: Date.now(),
+    nodes: normalized.nodes.map(node => {
+      if (node.id !== questionId) return node
+      const remainingChildren = (node.children ?? []).filter(child => child.id !== partId)
+      return {
+        ...node,
+        children: remainingChildren.length > 0 ? remainingChildren : node.children,
+      }
+    }),
+  })
 }
 
 export function flattenBlueprintLeaves(nodes: TermTestNode[]) {
