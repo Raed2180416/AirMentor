@@ -1020,6 +1020,7 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 130, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
       <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 760, minHeight: 620, maxHeight: '82vh', display: 'flex', flexDirection: 'column', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, overflow: 'hidden' }}>
         <div style={{ padding: '16px 18px', borderBottom: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          // ...existing code...
           <div>
             <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: T.text }}>{step === 'details' ? 'Add Task' : 'Build Remedial Plan'}</div>
             <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 3 }}>{step === 'details' ? 'One unified task flow for follow-up, attendance, academic, and remedial actions.' : 'Step 2 of 2 · leaf tasks stay tied to the same queue item.'}</div>
@@ -1502,9 +1503,10 @@ function inferKindFromPendingAction(pending: string | null): EntryKind {
   return 'tt1'
 }
 
-function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent, onOpenUpload }: { offerings: Offering[]; pendingTaskCount: number; onOpenCourse: (o: Offering) => void; onOpenStudent: (s: Student, o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void }) {
+function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent, onOpenUpload, teacherInitials, greetingHeadline, greetingMeta }: { offerings: Offering[]; pendingTaskCount: number; onOpenCourse: (o: Offering) => void; onOpenStudent: (s: Student, o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void; teacherInitials: string; greetingHeadline: string; greetingMeta: string }) {
   const total = offerings.reduce((a, o) => a + o.count, 0)
   const allAtRisk = useMemo(() => offerings.flatMap(o => getStudentsPatched(o)), [offerings])
+  const highRiskStudents = useMemo(() => allAtRisk.filter(s => s.riskBand === 'High'), [allAtRisk])
   const highRiskCount = allAtRisk.filter(s => s.riskBand === 'High').length
   const yearGroups = useMemo(() => {
     return Array.from(new Set(offerings.map(o => o.year))).map(year => {
@@ -1517,10 +1519,11 @@ function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent,
     <PageShell size="wide">
       {/* Greeting */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
-        <div style={{ width: 50, height: 50, borderRadius: 14, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 18, color: '#fff' }}>{PROFESSOR.initials}</div>
+        <div style={{ width: 50, height: 50, borderRadius: 14, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 18, color: '#fff' }}>{teacherInitials}</div>
         <div>
-          <div style={{ ...sora, fontWeight: 700, fontSize: 20, color: T.text }}>Good morning, {PROFESSOR.name.split(' ')[0]}</div>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 18, color: T.text }}>{greetingHeadline}</div>
           <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 2 }}>{PROFESSOR.dept} · {PROFESSOR.role}</div>
+          <div style={{ ...mono, fontSize: 10, color: T.accent, marginTop: 3 }}>{greetingMeta}</div>
         </div>
         <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
           <div style={{ ...mono, fontSize: 10, color: T.dim }}>Academic Year</div>
@@ -1534,8 +1537,8 @@ function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent,
         {[
           { icon: '📚', label: 'Assigned Classes', val: offerings.length, color: T.accent },
           { icon: '👥', label: 'Total Students', val: total, color: T.success },
-          { icon: '🔴', label: 'High Risk Students', val: highRiskCount, color: T.danger },
-          { icon: '⚡', label: 'Pending Actions', val: pendingTaskCount, color: T.warning },
+          { icon: '‼️', label: 'High Risk Students', val: highRiskCount, color: T.danger },
+          { icon: '🎯', label: 'Pending Actions', val: pendingTaskCount, color: T.warning },
         ].map((s, i) => (
           <Card key={i} glow={s.color} style={{ padding: '14px 18px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1557,8 +1560,9 @@ function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent,
             <div style={{ ...sora, fontWeight: 700, fontSize: 15, color: T.danger }}>Priority Alerts</div>
             <div style={{ ...mono, fontSize: 11, color: T.muted }}>— {highRiskCount} high-risk students need immediate attention</div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
-            {allAtRisk.filter(s => s.riskBand === 'High').slice(0, 6).map(s => {
+          <div className="scroll-pane scroll-pane--dense" style={{ maxHeight: 300, overflowY: 'auto', paddingRight: 4 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
+              {highRiskStudents.map(s => {
               const off = offerings.find(o => getStudentsPatched(o).some(st => st.id === s.id))
               return (
                 <div key={s.id} onClick={() => off && onOpenStudent(s as unknown as Student, off)}
@@ -1577,7 +1581,8 @@ function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent,
                   </div>
                 </div>
               )
-            })}
+              })}
+            </div>
           </div>
         </Card>
       )}
@@ -3494,6 +3499,9 @@ const HOD_NAV: Array<{ id: PageId; icon: typeof LayoutDashboard; label: string }
 export default function App() {
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => normalizeThemeMode(localStorage.getItem('airmentor-theme')))
   const [isNarrowViewport, setIsNarrowViewport] = useState(() => window.innerWidth < 1100)
+  const [isCompactTopbar, setIsCompactTopbar] = useState(() => window.innerWidth < 980)
+  const [showTopbarMenu, setShowTopbarMenu] = useState(false)
+  const [now, setNow] = useState(() => new Date())
   const [currentTeacherId, setCurrentTeacherId] = useState<string | null>(() => localStorage.getItem('airmentor-current-teacher-id'))
   const currentTeacher = useMemo(() => currentTeacherId ? (TEACHER_ACCOUNTS.find(t => t.teacherId === currentTeacherId) ?? null) : null, [currentTeacherId])
   const [role, setRole] = useState<Role>('Course Leader')
@@ -3839,6 +3847,20 @@ export default function App() {
   }, [cellValues, draftBySection, lockByOffering])
   const selectedSchemeOffering = schemeOfferingId ? (OFFERINGS.find(item => item.offId === schemeOfferingId) ?? null) : null
   const selectedUnlockTask = selectedUnlockTaskId ? (allTasksList.find(task => task.id === selectedUnlockTaskId) ?? null) : null
+  const facultyGivenName = useMemo(() => {
+    const rawName = currentTeacher?.name ?? ''
+    const normalized = rawName.replace(/^dr\.?\s+/i, '').trim()
+    if (!normalized) return ''
+    return normalized.split(/\s+/)[0]
+  }, [currentTeacher])
+  const formattedCurrentTime = useMemo(() => now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase(), [now])
+  const greetingHeadline = useMemo(() => {
+    const hour = now.getHours()
+    const timeOfDay = hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : 'Evening'
+    const salutation = facultyGivenName ? `Dr. ${facultyGivenName}` : 'Dr.'
+    return `Good ${timeOfDay}, ${salutation}`
+  }, [facultyGivenName, now])
+  const greetingMeta = useMemo(() => `it's ${formattedCurrentTime}, here are your insights for today`, [formattedCurrentTime])
 
   // IMMEDIATELY apply the theme *before* rendering any components so child elements pick up the correct T colors
   applyThemePreset(themeMode)
@@ -3868,9 +3890,24 @@ export default function App() {
   }, [page, role])
 
   useEffect(() => {
-    const onResize = () => setIsNarrowViewport(window.innerWidth < 1100)
+    const onResize = () => {
+      const width = window.innerWidth
+      setIsNarrowViewport(width < 1100)
+      setIsCompactTopbar(width < 980)
+    }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  useEffect(() => {
+    if (!isCompactTopbar) setShowTopbarMenu(false)
+  }, [isCompactTopbar])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(new Date())
+    }, 30_000)
+    return () => window.clearInterval(timer)
   }, [])
 
   useEffect(() => {
@@ -3949,6 +3986,16 @@ export default function App() {
     setCourseInitialTab(undefined)
     setPage('course')
   }, [])
+  const handleGoHome = useCallback(() => {
+    setPage(getHomePage(role))
+    setOffering(null)
+    setSelectedStudent(null)
+    setSelectedOffering(null)
+    setSelectedMentee(null)
+    setHistoryProfile(null)
+    setSelectedUnlockTaskId(null)
+    setCourseInitialTab(undefined)
+  }, [role])
   const handleBack = useCallback(() => {
     setOffering(null)
     setCourseInitialTab(undefined)
@@ -4713,62 +4760,109 @@ export default function App() {
     }} />
   }
 
+  const handleLogout = () => {
+    setCurrentTeacherId(null)
+    setRole('Course Leader')
+    setPage('dashboard')
+    setOffering(null)
+    setSelectedStudent(null)
+    setSelectedMentee(null)
+    setHistoryProfile(null)
+    setSelectedUnlockTaskId(null)
+    setSchemeOfferingId(null)
+    setCourseInitialTab(undefined)
+    setTaskComposer(prev => ({ ...prev, isOpen: false }))
+    setPendingNoteAction(null)
+    setShowTopbarMenu(false)
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: T.bg, color: T.text, overflowX: 'hidden' }}>
       {/* ═══ TOP BAR ═══ */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 50, display: 'flex', alignItems: 'center', gap: 16, padding: '10px 20px', background: isLightTheme(themeMode) ? 'rgba(255,255,255,0.9)' : 'rgba(9,14,22,0.9)', backdropFilter: 'blur(12px)', borderBottom: `1px solid ${T.border}` }}>
+      <div className={`top-bar-shell ${isCompactTopbar ? 'top-bar-shell--compact' : ''}`} style={{ position: 'sticky', top: 0, zIndex: 50, display: 'flex', alignItems: 'center', gap: 16, padding: '10px 20px', background: isLightTheme(themeMode) ? 'rgba(255,255,255,0.9)' : 'rgba(9,14,22,0.9)', backdropFilter: 'blur(12px)', borderBottom: `1px solid ${T.border}` }}>
         {/* Brand */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 34, height: 34, borderRadius: 10, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 13, color: '#fff' }}>{currentTeacher.initials}</div>
-          <div>
+        <button aria-label="Go to dashboard" title="Go to dashboard" onClick={handleGoHome} className="top-bar-brand" style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 10, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 13, color: '#fff' }}>AM</div>
+          <div style={{ minWidth: 0 }}>
             <div style={{ ...sora, fontWeight: 800, fontSize: 14, color: T.text }}>AirMentor</div>
-            <div style={{ ...mono, fontSize: 9, color: T.dim }}>AI Mentor Intelligence</div>
+            <div className="top-bar-greeting" style={{ ...mono, fontSize: 9, color: T.dim }}>AI Mentor Intelligence</div>
           </div>
-        </div>
+        </button>
 
         {/* Role Switcher */}
-        <div style={{ display: 'flex', gap: 0, marginLeft: 32, background: T.surface2, borderRadius: 8, padding: 2, border: `1px solid ${T.border}` }}>
+        <div className="top-bar-role-switcher" style={{ display: 'flex', gap: 0, marginLeft: 32, background: T.surface2, borderRadius: 8, padding: 2, border: `1px solid ${T.border}` }}>
           {allowedRoles.map(r => (
             <button key={r} onClick={() => handleRoleChange(r)}
-              style={{ ...sora, fontWeight: 600, fontSize: 11, padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer', background: role === r ? T.accent : 'transparent', color: role === r ? '#fff' : T.muted, transition: 'all 0.15s' }}>
+              style={{ ...sora, fontWeight: 600, fontSize: 11, padding: isCompactTopbar ? '7px 12px' : '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer', background: role === r ? T.accent : 'transparent', color: role === r ? '#fff' : T.muted, transition: 'all 0.15s', minHeight: isCompactTopbar ? 34 : undefined }}>
               {r}
             </button>
           ))}
         </div>
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <select aria-label="Theme family" title="Theme family" value={themeMode.startsWith('frosted-focus') ? 'frosted-focus' : 'material-utility'} onChange={e => {
-            const nextFamily = e.target.value === 'frosted-focus' ? 'frosted-focus' : 'material-utility'
-            const nextTone = isLightTheme(themeMode) ? 'light' : 'dark'
-            setThemeMode(`${nextFamily}-${nextTone}` as ThemeMode)
-          }} style={{ ...mono, fontSize: 10, background: T.surface2, color: T.text, border: `1px solid ${T.border}`, borderRadius: 6, padding: '4px 8px' }}>
-            <option value="material-utility">material-utility</option>
-            <option value="frosted-focus">frosted-focus</option>
-          </select>
-          <button aria-label={isLightTheme(themeMode) ? 'Switch to dark mode' : 'Switch to light mode'} title={isLightTheme(themeMode) ? 'Dark mode' : 'Light mode'} onClick={() => {
+        <div className="top-bar-controls" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
+          <div className="top-bar-clock" style={{ ...mono, fontSize: 10, color: T.dim, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 9px', minHeight: 32, display: 'flex', alignItems: 'center', background: T.surface2 }}>
+            {formattedCurrentTime}
+          </div>
+
+          {!isCompactTopbar && (
+            <>
+              <select aria-label="Theme family" title="Theme family" value={themeMode.startsWith('frosted-focus') ? 'frosted-focus' : 'material-utility'} onChange={e => {
+                const nextFamily = e.target.value === 'frosted-focus' ? 'frosted-focus' : 'material-utility'
+                const nextTone = isLightTheme(themeMode) ? 'light' : 'dark'
+                setThemeMode(`${nextFamily}-${nextTone}` as ThemeMode)
+              }} style={{ ...mono, fontSize: 10, background: T.surface2, color: T.text, border: `1px solid ${T.border}`, borderRadius: 6, padding: '4px 8px', minHeight: 32 }}>
+                <option value="material-utility">material-utility</option>
+                <option value="frosted-focus">frosted-focus</option>
+              </select>
+              <button className="top-control-btn" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={() => setSidebarCollapsed(c => !c)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted }}><Filter size={14} /></button>
+            </>
+          )}
+
+          <button className="top-control-btn" aria-label={isLightTheme(themeMode) ? 'Switch to dark mode' : 'Switch to light mode'} title={isLightTheme(themeMode) ? 'Dark mode' : 'Light mode'} onClick={() => {
             const family = themeMode.startsWith('frosted-focus') ? 'frosted-focus' : 'material-utility'
             setThemeMode(`${family}-${isLightTheme(themeMode) ? 'dark' : 'light'}` as ThemeMode)
-          }} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', cursor: 'pointer', color: T.muted }}>{isLightTheme(themeMode) ? '🌙' : '☀️'}</button>
-          <button aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={() => setSidebarCollapsed(c => !c)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', cursor: 'pointer', color: T.muted }}><Filter size={14} /></button>
-          <button aria-label={showActionQueue ? 'Hide action queue' : 'Show action queue'} title={showActionQueue ? 'Hide action queue' : 'Show action queue'} onClick={() => setShowActionQueue(v => !v)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', cursor: 'pointer', color: T.muted, position: 'relative' }}>
+          }} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted }}>{isLightTheme(themeMode) ? '🌙' : '☀️'}</button>
+
+          <button className="top-control-btn" aria-label={showActionQueue ? 'Hide action queue' : 'Show action queue'} title={showActionQueue ? 'Hide action queue' : 'Show action queue'} onClick={() => setShowActionQueue(v => !v)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted, position: 'relative' }}>
             <Bell size={14} />
             {pendingActionCount > 0 && <div style={{ position: 'absolute', top: -6, right: -6, minWidth: 16, height: 16, borderRadius: 8, background: T.danger, color: '#fff', ...mono, fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>{pendingActionCount}</div>}
           </button>
-          <button aria-label="Logout" title="Logout" onClick={() => {
-            setCurrentTeacherId(null)
-            setRole('Course Leader')
-            setPage('dashboard')
-            setOffering(null)
-            setSelectedStudent(null)
-            setSelectedMentee(null)
-            setHistoryProfile(null)
-            setSelectedUnlockTaskId(null)
-            setSchemeOfferingId(null)
-            setCourseInitialTab(undefined)
-            setTaskComposer(prev => ({ ...prev, isOpen: false }))
-            setPendingNoteAction(null)
-          }} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', cursor: 'pointer', color: T.muted, ...mono, fontSize: 10 }}>Logout</button>
-          <div style={{ width: 30, height: 30, borderRadius: 8, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 10, color: '#fff' }}>{currentTeacher.initials}</div>
+
+          {isCompactTopbar && (
+            <>
+              <button className="top-control-btn" aria-label={showTopbarMenu ? 'Close more controls' : 'Open more controls'} title="More" onClick={() => setShowTopbarMenu(v => !v)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted, ...mono, fontSize: 10 }}>More</button>
+              {showTopbarMenu && (
+                <div className="top-bar-more-menu" style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 38, minWidth: 200, padding: 10, borderRadius: 10, border: `1px solid ${T.border}`, background: T.surface, boxShadow: '0 10px 26px rgba(2,6,23,0.28)', display: 'grid', gap: 8, zIndex: 70 }}>
+                  <label style={{ display: 'grid', gap: 4 }}>
+                    <span style={{ ...mono, fontSize: 9, color: T.dim }}>Theme family</span>
+                    <select aria-label="Theme family" value={themeMode.startsWith('frosted-focus') ? 'frosted-focus' : 'material-utility'} onChange={e => {
+                      const nextFamily = e.target.value === 'frosted-focus' ? 'frosted-focus' : 'material-utility'
+                      const nextTone = isLightTheme(themeMode) ? 'light' : 'dark'
+                      setThemeMode(`${nextFamily}-${nextTone}` as ThemeMode)
+                    }} style={{ ...mono, fontSize: 10, background: T.surface2, color: T.text, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', minHeight: 34 }}>
+                      <option value="material-utility">material-utility</option>
+                      <option value="frosted-focus">frosted-focus</option>
+                    </select>
+                  </label>
+                  <button onClick={() => {
+                    setSidebarCollapsed(c => !c)
+                    setShowTopbarMenu(false)
+                  }} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '7px 10px', cursor: 'pointer', color: T.muted, ...mono, fontSize: 10, textAlign: 'left' }}>
+                    {sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                  </button>
+                  <button onClick={handleLogout} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '7px 10px', cursor: 'pointer', color: T.muted, ...mono, fontSize: 10, textAlign: 'left' }}>
+                    Logout
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+
+          {!isCompactTopbar && (
+            <button className="top-control-btn" aria-label="Logout" title="Logout" onClick={handleLogout} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted, ...mono, fontSize: 10 }}>
+              Logout
+            </button>
+          )}
         </div>
       </div>
 
@@ -4847,7 +4941,7 @@ export default function App() {
 
         {/* Center Content */}
         <div className={`scroll-pane app-content app-content--${layoutMode}`} style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: 'calc(100vh - 54px)' }}>
-          {role === 'Course Leader' && page === 'dashboard' && <CLDashboard offerings={assignedOfferings} pendingTaskCount={pendingActionCount} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} />}
+          {role === 'Course Leader' && page === 'dashboard' && <CLDashboard offerings={assignedOfferings} pendingTaskCount={pendingActionCount} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} teacherInitials={currentTeacher.initials} greetingHeadline={greetingHeadline} greetingMeta={greetingMeta} />}
           {role === 'Course Leader' && page === 'course' && offering && <CourseDetail offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? { tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default), tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default) }} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
           {role === 'Course Leader' && page === 'scheme-setup' && selectedSchemeOffering && <SchemeSetupPage role={role} offering={selectedSchemeOffering} scheme={schemeByOffering[selectedSchemeOffering.offId] ?? defaultSchemeForOffering(selectedSchemeOffering)} hasEntryStarted={hasEntryStartedForOffering(selectedSchemeOffering.offId)} onSave={(next) => handleSaveScheme(selectedSchemeOffering.offId, next)} onBack={() => setPage('upload')} />}
           {role === 'Course Leader' && page === 'calendar' && <CalendarPage />}
