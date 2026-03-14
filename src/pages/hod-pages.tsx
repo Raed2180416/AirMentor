@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Eye, Shield } from 'lucide-react'
 import { FACULTY, MENTEES, OFFERINGS, T, mono, sora, type Offering, type Student } from '../data'
-import type { RiskBand, SharedTask } from '../domain'
+import type { CalendarAuditEvent, RiskBand, SharedTask } from '../domain'
 import { useAppSelectors } from '../selectors'
 import { Bar, Btn, Card, Chip, PageShell, TH, TD } from '../ui-primitives'
 
@@ -10,11 +10,13 @@ export function HodView({
   onOpenCourse,
   onOpenStudent,
   tasks,
+  calendarAuditEvents,
 }: {
   onOpenQueueHistory: () => void
   onOpenCourse: (offering: Offering) => void
   onOpenStudent: (student: Student, offering?: Offering) => void
   tasks: SharedTask[]
+  calendarAuditEvents: CalendarAuditEvent[]
 }) {
   const { getStudentsPatched, getOfferingAttendancePatched } = useAppSelectors()
   const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null)
@@ -82,6 +84,12 @@ export function HodView({
       .sort((left, right) => right.riskProb - left.riskProb)
       .slice(0, 8)
   }, [tasks, mentorTasks, selectedTeacher])
+  const selectedTeacherAuditEvents = useMemo(() => {
+    if (!selectedTeacher) return [] as CalendarAuditEvent[]
+    return calendarAuditEvents
+      .filter(event => event.facultyId === selectedTeacher.id)
+      .slice(0, 8)
+  }, [calendarAuditEvents, selectedTeacher])
 
   const totalStudents = OFFERINGS.reduce((acc, offering) => acc + offering.count, 0)
   const totalHighRisk = OFFERINGS.reduce((acc, offering) => acc + getStudentsPatched(offering).filter(student => student.riskBand === 'High').length, 0)
@@ -202,6 +210,25 @@ export function HodView({
                 )}
               </tbody>
             </table>
+          </div>
+
+          <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginTop: 20, marginBottom: 12 }}>Calendar / Timetable Audit</div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {selectedTeacherAuditEvents.map(event => (
+              <div key={event.id} style={{ borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, padding: '10px 12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginBottom: 6 }}>
+                  <div style={{ ...sora, fontWeight: 700, fontSize: 12, color: T.text }}>{event.actionKind}</div>
+                  <Chip color={event.targetType === 'class' ? T.accent : T.warning} size={9}>{event.targetType}</Chip>
+                </div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted }}>{event.note}</div>
+                <div style={{ ...mono, fontSize: 9, color: T.dim, marginTop: 6 }}>{new Date(event.timestamp).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
+              </div>
+            ))}
+            {selectedTeacherAuditEvents.length === 0 && (
+              <div style={{ ...mono, fontSize: 11, color: T.muted, borderRadius: 8, border: `1px dashed ${T.border2}`, padding: '12px 14px' }}>
+                No calendar or timetable edits logged for this faculty yet.
+              </div>
+            )}
           </div>
         </Card>
       )}

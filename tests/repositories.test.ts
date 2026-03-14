@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createLocalAirMentorRepositories } from '../src/repositories'
-import type { SharedTask } from '../src/domain'
+import { FACULTY, OFFERINGS } from '../src/data'
+import type { CalendarAuditEvent, SharedTask, TaskCalendarPlacement } from '../src/domain'
 
 class MemoryStorage implements Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> {
   private readonly data = new Map<string, string>()
@@ -81,5 +82,49 @@ describe('repositories', () => {
       createdAt: 1,
       updatedAt: 2,
     })
+  })
+
+  it('persists and recovers calendar templates, task placements, and audit events', async () => {
+    const storage = new MemoryStorage()
+    const repositories = createLocalAirMentorRepositories(storage)
+    const templates = repositories.calendar.getTimetableTemplatesSnapshot(FACULTY, OFFERINGS)
+    const facultyId = FACULTY[0].facultyId
+
+    expect(templates[facultyId]?.classBlocks.length).toBeGreaterThan(0)
+
+    const placement: TaskCalendarPlacement = {
+      taskId: 'task-1',
+      dateISO: '2026-03-18',
+      placementMode: 'timed',
+      slotId: 'p2',
+      startTime: '09:20',
+      endTime: '10:10',
+      updatedAt: 12,
+    }
+    const audit: CalendarAuditEvent = {
+      id: 'audit-1',
+      facultyId,
+      actorRole: 'Course Leader',
+      actorFacultyId: facultyId,
+      timestamp: 44,
+      actionKind: 'task-scheduled',
+      targetType: 'task',
+      targetId: 'task-1',
+      note: 'Scheduled Academic follow-up',
+      after: {
+        dateISO: '2026-03-18',
+        slotId: 'p2',
+        placementMode: 'timed',
+      },
+    }
+
+    await repositories.calendar.saveTaskPlacements({ 'task-1': placement })
+    await repositories.calendar.saveCalendarAudit([audit])
+
+    const recoveredPlacements = repositories.calendar.getTaskPlacementsSnapshot()
+    const recoveredAudit = repositories.calendar.getCalendarAuditSnapshot()
+
+    expect(recoveredPlacements['task-1']).toEqual(placement)
+    expect(recoveredAudit).toEqual([audit])
   })
 })

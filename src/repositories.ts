@@ -10,8 +10,11 @@ import {
   type StudentHistoryRecord,
 } from './data'
 import {
+  type CalendarAuditEvent,
   createTransition,
+  type FacultyTimetableTemplate,
   normalizeThemeMode,
+  type TaskCalendarPlacement,
   toBackendTaskPayload,
   type BackendTaskUpsertPayload,
   type EntryLockMap,
@@ -24,6 +27,7 @@ import {
   type TermTestBlueprint,
   type ThemeMode,
 } from './domain'
+import { normalizeFacultyTimetableTemplate } from './calendar-utils'
 import {
   getEntryLockMap,
   normalizeBlueprint,
@@ -45,6 +49,9 @@ export const AIRMENTOR_STORAGE_KEYS = {
   locks: 'airmentor-locks',
   drafts: 'airmentor-drafts',
   cellValues: 'airmentor-cell-values',
+  timetableTemplates: 'airmentor-timetable-templates',
+  taskPlacements: 'airmentor-task-placements',
+  calendarAudit: 'airmentor-calendar-audit',
   allTasks: 'airmentor-all-tasks',
   resolvedTasks: 'airmentor-resolved-tasks',
 } as const
@@ -159,12 +166,22 @@ export interface TaskRepository {
   upsertTask(task: SharedTask): Promise<BackendTaskUpsertPayload>
 }
 
+export interface CalendarRepository {
+  getTimetableTemplatesSnapshot(faculty: FacultyAccount[], offerings: Offering[]): Record<string, FacultyTimetableTemplate>
+  getTaskPlacementsSnapshot(): Record<string, TaskCalendarPlacement>
+  getCalendarAuditSnapshot(): CalendarAuditEvent[]
+  saveTimetableTemplates(next: Record<string, FacultyTimetableTemplate>): Promise<void>
+  saveTaskPlacements(next: Record<string, TaskCalendarPlacement>): Promise<void>
+  saveCalendarAudit(next: CalendarAuditEvent[]): Promise<void>
+}
+
 export interface AirMentorRepositories {
   sessionPreferences: SessionPreferencesRepository
   offeringsStudentsHistory: OfferingsStudentsHistoryRepository
   entryData: EntryDataRepository
   locksAudit: LocksAuditRepository
   tasks: TaskRepository
+  calendar: CalendarRepository
   clearPersistedState(): Promise<void>
 }
 
@@ -285,6 +302,30 @@ export function createLocalAirMentorRepositories(storage?: JsonStorage): AirMent
       },
       async upsertTask(task) {
         return toBackendTaskPayload(task)
+      },
+    },
+    calendar: {
+      getTimetableTemplatesSnapshot(faculty, offerings) {
+        const parsed = readJson(resolvedStorage, AIRMENTOR_STORAGE_KEYS.timetableTemplates, {} as Record<string, FacultyTimetableTemplate>)
+        return Object.fromEntries(faculty.map(account => {
+          const ownedOfferings = offerings.filter(offering => account.offeringIds.includes(offering.offId))
+          return [account.facultyId, normalizeFacultyTimetableTemplate(parsed[account.facultyId], account, ownedOfferings)]
+        })) as Record<string, FacultyTimetableTemplate>
+      },
+      getTaskPlacementsSnapshot() {
+        return readJson(resolvedStorage, AIRMENTOR_STORAGE_KEYS.taskPlacements, {} as Record<string, TaskCalendarPlacement>)
+      },
+      getCalendarAuditSnapshot() {
+        return readJson(resolvedStorage, AIRMENTOR_STORAGE_KEYS.calendarAudit, [] as CalendarAuditEvent[])
+      },
+      async saveTimetableTemplates(next) {
+        writeJson(resolvedStorage, AIRMENTOR_STORAGE_KEYS.timetableTemplates, next)
+      },
+      async saveTaskPlacements(next) {
+        writeJson(resolvedStorage, AIRMENTOR_STORAGE_KEYS.taskPlacements, next)
+      },
+      async saveCalendarAudit(next) {
+        writeJson(resolvedStorage, AIRMENTOR_STORAGE_KEYS.calendarAudit, next)
       },
     },
     async clearPersistedState() {

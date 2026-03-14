@@ -17,6 +17,8 @@ export type FacultyCapabilitySet = {
 }
 
 export type SchedulePreset = 'daily' | 'weekly' | 'monthly' | 'weekdays' | 'custom dates'
+export type Weekday = 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat'
+export type TaskPlacementMode = 'timed' | 'untimed'
 
 export type ScheduleMeta = {
   mode: 'one-time' | 'scheduled'
@@ -125,6 +127,76 @@ export type UnlockRequest = {
   requestNote?: string
   reviewNote?: string
   handoffNote?: string
+}
+
+export type TimetableSlotDefinition = {
+  id: string
+  label: string
+  startTime: string
+  endTime: string
+}
+
+export type FacultyTimetableClassBlock = {
+  id: string
+  facultyId: string
+  offeringId: string
+  courseCode: string
+  courseName: string
+  section: string
+  year: string
+  day: Weekday
+  slotId: string
+  slotSpan: number
+}
+
+export type FacultyTimetableTemplate = {
+  facultyId: string
+  slots: TimetableSlotDefinition[]
+  classBlocks: FacultyTimetableClassBlock[]
+  updatedAt: number
+}
+
+export type TaskCalendarPlacement = {
+  taskId: string
+  dateISO: string
+  placementMode: TaskPlacementMode
+  slotId?: string
+  startTime?: string
+  endTime?: string
+  updatedAt: number
+}
+
+export type CalendarPlacementSnapshot = {
+  dateISO?: string
+  day?: Weekday
+  slotId?: string
+  startTime?: string
+  endTime?: string
+  slotSpan?: number
+  placementMode?: TaskPlacementMode
+  offeringId?: string
+}
+
+export type CalendarAuditActionKind =
+  | 'class-moved'
+  | 'class-resized'
+  | 'task-scheduled'
+  | 'task-rescheduled'
+  | 'task-unscheduled'
+  | 'task-created-and-scheduled'
+
+export type CalendarAuditEvent = {
+  id: string
+  facultyId: string
+  actorRole: Role
+  actorFacultyId?: string
+  timestamp: number
+  actionKind: CalendarAuditActionKind
+  targetType: 'class' | 'task'
+  targetId: string
+  note: string
+  before?: CalendarPlacementSnapshot
+  after?: CalendarPlacementSnapshot
 }
 
 export type StudentRuntimePatch = {
@@ -317,5 +389,31 @@ export function toBackendTaskPayload(task: SharedTask): BackendTaskUpsertPayload
     scheduleMeta: task.scheduleMeta,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt ?? task.createdAt,
+  }
+}
+
+export function createCalendarAuditEvent(input: {
+  facultyId: string
+  actorRole: Role
+  actorFacultyId?: string
+  actionKind: CalendarAuditActionKind
+  targetType: 'class' | 'task'
+  targetId: string
+  note: string
+  before?: CalendarPlacementSnapshot
+  after?: CalendarPlacementSnapshot
+}): CalendarAuditEvent {
+  return {
+    id: `calendar-audit-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    facultyId: input.facultyId,
+    actorRole: input.actorRole,
+    actorFacultyId: input.actorFacultyId,
+    timestamp: Date.now(),
+    actionKind: input.actionKind,
+    targetType: input.targetType,
+    targetId: input.targetId,
+    note: input.note,
+    before: input.before,
+    after: input.after,
   }
 }

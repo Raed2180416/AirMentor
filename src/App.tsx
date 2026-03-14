@@ -8,22 +8,25 @@ import {
 import {
   CO_COLORS, T, mono, sora, yearColor,
   PROFESSOR, OFFERINGS, YEAR_GROUPS, PAPER_MAP,
-  FACULTY, generateTasks, MENTEES, CALENDAR_EVENTS, getStudentHistoryRecord,
+  FACULTY, generateTasks, MENTEES, getStudentHistoryRecord,
   type Offering, type Student, type YearGroup,
   type Mentee, type StudentHistoryRecord,
 } from './data'
 import {
   createTransition,
+  createCalendarAuditEvent,
   getNextScheduledDate,
   getRemedialProgress,
   normalizeDateISO,
   normalizeThemeMode,
   toDueLabel,
   toTodayISO,
+  type CalendarAuditEvent,
   type EntryKind,
   type EntryLockMap,
   type FacultyAccount,
   type FacultyCapabilitySet,
+  type FacultyTimetableTemplate,
   type LayoutMode,
   type QueueTransition,
   type RemedialPlan,
@@ -34,11 +37,22 @@ import {
   type SchemeState,
   type SharedTask,
   type StudentRuntimePatch,
+  type TaskCalendarPlacement,
+  type TaskPlacementMode,
   type TaskType,
   type TermTestBlueprint,
   type ThemeMode,
   type TTKind,
+  type Weekday,
 } from './domain'
+import {
+  applyPlacementToTask,
+  buildPlacementForSlot,
+  buildUntimedPlacement,
+  clampSlotSpan,
+  getSpannedSlotIds,
+  getWeekdayForDateISO,
+} from './calendar-utils'
 import {
   AppSelectorsContext,
   defaultSchemeForOffering,
@@ -64,6 +78,13 @@ const LazySchemeSetupPage = lazy(() => import('./pages/workflow-pages').then(mod
 const LazyUploadPage = lazy(() => import('./pages/workflow-pages').then(module => ({ default: module.UploadPage })))
 const LazyEntryWorkspacePage = lazy(() => import('./pages/workflow-pages').then(module => ({ default: module.EntryWorkspacePage })))
 const LazyHodView = lazy(() => import('./pages/hod-pages').then(module => ({ default: module.HodView })))
+const LazyCalendarTimetablePage = lazy(() => import('./pages/calendar-pages').then(module => ({ default: module.CalendarTimetablePage })))
+
+type TaskPlacementDraft = {
+  dateISO: string
+  placementMode: TaskPlacementMode
+  slotId?: string
+}
 
 type TaskComposerState = {
   isOpen: boolean
@@ -74,6 +95,8 @@ type TaskComposerState = {
   dueDateISO: string
   note: string
   search: string
+  availableOfferingIds?: string[]
+  placement?: TaskPlacementDraft
 }
 
 type NoteActionState =
@@ -90,6 +113,7 @@ type TaskCreateInput = {
   note?: string
   remedialPlan?: RemedialPlan
   scheduleMeta?: ScheduleMeta
+  placement?: TaskPlacementDraft
 }
 
 type PageId = 'dashboard' | 'students' | 'course' | 'calendar' | 'upload' | 'entry-workspace' | 'mentees' | 'department' | 'mentee-detail' | 'student-history' | 'unlock-review' | 'scheme-setup' | 'queue-history'
@@ -420,6 +444,15 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
                   </div>
                 )}
               </Card>
+              {initialState.placement && (
+                <Card style={{ padding: '10px 12px' }}>
+                  <div style={{ ...sora, fontWeight: 700, fontSize: 12, color: T.text, marginBottom: 6 }}>Calendar placement</div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted }}>
+                    {initialState.placement.dateISO} · {initialState.placement.placementMode === 'untimed' ? 'No preferred time' : `Timed slot ${initialState.placement.slotId ?? ''}`}
+                  </div>
+                  <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 4 }}>Saving this task will place it directly into the calendar/timetable workspace.</div>
+                </Card>
+              )}
               <textarea aria-label="Task note" value={note} onChange={e => setNote(e.target.value)} rows={4} placeholder="Task note" style={{ width: '100%', resize: 'none', ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
               {selectedStudent && (
                 <Card style={{ padding: '10px 12px' }}>
@@ -471,6 +504,7 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
                 due: toDueLabel(effectiveDueDateISO),
                 note,
                 scheduleMeta,
+                placement: initialState.placement,
               })
               onClose()
             }}>Create Task</Btn>}
@@ -498,6 +532,7 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
                 note: note.trim() || planTitle.trim(),
                 remedialPlan: plan,
                 scheduleMeta,
+                placement: initialState.placement,
               })
               onClose()
             }}>Create Remedial Task</Btn>}
@@ -806,7 +841,7 @@ function ActionQueue({ role, tasks, resolvedTaskIds, onResolveTask, onUndoTask, 
    COURSE LEADER: DASHBOARD
    ══════════════════════════════════════════════════════════════ */
 
-function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent, onOpenUpload, onOpenAllStudents, teacherInitials, greetingHeadline, greetingMeta }: { offerings: Offering[]; pendingTaskCount: number; onOpenCourse: (o: Offering) => void; onOpenStudent: (s: Student, o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void; onOpenAllStudents: () => void; teacherInitials: string; greetingHeadline: string; greetingMeta: string }) {
+function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent, onOpenUpload, onOpenAllStudents, onOpenCalendar, teacherInitials, greetingHeadline, greetingMeta }: { offerings: Offering[]; pendingTaskCount: number; onOpenCourse: (o: Offering) => void; onOpenStudent: (s: Student, o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void; onOpenAllStudents: () => void; onOpenCalendar: () => void; teacherInitials: string; greetingHeadline: string; greetingMeta: string }) {
   const { getStudentsPatched } = useAppSelectors()
   const total = offerings.reduce((a, o) => a + o.count, 0)
   const allAtRisk = useMemo(() => offerings.flatMap(o => getStudentsPatched(o)), [getStudentsPatched, offerings])
@@ -829,10 +864,8 @@ function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent,
           <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 2 }}>{PROFESSOR.dept} · {PROFESSOR.role}</div>
           <div style={{ ...mono, fontSize: 10, color: T.accent, marginTop: 3 }}>{greetingMeta}</div>
         </div>
-        <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-          <div style={{ ...mono, fontSize: 10, color: T.dim }}>Academic Year</div>
-          <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text }}>Odd Sem 2025–26</div>
-          <div style={{ marginTop: 8 }}><Btn size="sm" onClick={() => onOpenUpload()}>Open Data Entry Hub</Btn></div>
+        <div style={{ marginLeft: 'auto' }}>
+          <Btn size="sm" onClick={onOpenCalendar}>Open Calendar / Timetable</Btn>
         </div>
       </div>
 
@@ -1358,31 +1391,6 @@ function QueueHistoryPage({ role, tasks, resolvedTaskIds, onOpenTaskStudent, onO
    CALENDAR PAGE
    ══════════════════════════════════════════════════════════════ */
 
-function CalendarPage() {
-  const typeColor: Record<string, string> = { tt: T.accent, quiz: T.warning, asgn: T.success, att: T.pink, see: T.danger }
-  const typeLabel: Record<string, string> = { tt: 'Term Test', quiz: 'Quiz', asgn: 'Assignment', att: 'Attendance', see: 'Finals' }
-  return (
-    <PageShell size="narrow">
-      <div style={{ ...sora, fontWeight: 700, fontSize: 20, color: T.text, marginBottom: 4 }}>Academic Calendar</div>
-      <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 20 }}>Odd Semester 2025-26</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {CALENDAR_EVENTS.map((event, index) => {
-          const color = typeColor[event.type] || T.muted
-          const yearTint = event.year === 'All' ? T.muted : yearColor(event.year)
-          return (
-            <div key={index} style={{ display: 'flex', gap: 14, alignItems: 'center', padding: '12px 18px', background: T.surface, border: `1px solid ${T.border}`, borderLeft: `3px solid ${color}`, borderRadius: index === 0 ? '10px 10px 0 0' : index === CALENDAR_EVENTS.length - 1 ? '0 0 10px 10px' : '0' }}>
-              <div style={{ ...mono, fontSize: 11, color: T.muted, minWidth: 52 }}>{event.date}</div>
-              <div style={{ flex: 1, ...sora, fontSize: 13, color: T.text }}>{event.label}</div>
-              <Chip color={color} size={9}>{typeLabel[event.type] || event.type}</Chip>
-              <Chip color={yearTint} size={9}>{event.year}</Chip>
-            </div>
-          )
-        })}
-      </div>
-    </PageShell>
-  )
-}
-
 /* ══════════════════════════════════════════════════════════════
    ROOT APP
    ══════════════════════════════════════════════════════════════ */
@@ -1391,18 +1399,18 @@ const CL_NAV: Array<{ id: PageId; icon: typeof LayoutDashboard; label: string }>
   { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { id: 'students', icon: Users, label: 'All Students' },
   { id: 'queue-history', icon: ListTodo, label: 'Queue History' },
-  { id: 'calendar', icon: Calendar, label: 'Calendar' },
+  { id: 'calendar', icon: Calendar, label: 'Calendar / Timetable' },
   { id: 'upload', icon: Upload, label: 'Data Entry Hub' },
 ]
 const MENTOR_NAV: Array<{ id: PageId; icon: typeof LayoutDashboard; label: string }> = [
   { id: 'mentees', icon: Users, label: 'My Mentees' },
   { id: 'queue-history', icon: ListTodo, label: 'Queue History' },
-  { id: 'calendar', icon: Calendar, label: 'Calendar' },
+  { id: 'calendar', icon: Calendar, label: 'Calendar / Timetable' },
 ]
 const HOD_NAV: Array<{ id: PageId; icon: typeof LayoutDashboard; label: string }> = [
   { id: 'department', icon: Shield, label: 'Department' },
   { id: 'queue-history', icon: ListTodo, label: 'Queue History' },
-  { id: 'calendar', icon: Calendar, label: 'Calendar' },
+  { id: 'calendar', icon: Calendar, label: 'Calendar / Timetable' },
 ]
 
 export default function App() {
@@ -1617,12 +1625,18 @@ export default function App() {
     return [...courseLeaderTasks, overdueRemedial, pendingUnlockTask, rejectedUnlockTask, ...mentorTasks]
   }))
   const [resolvedTasks, setResolvedTasks] = useState<Record<string, number>>(() => repositories.tasks.getResolvedTasksSnapshot({ 'seed-unlock-rejected-cs403c-tt1': Date.now() - 43_200_000 }))
+  const [timetableByFacultyId, setTimetableByFacultyId] = useState<Record<string, FacultyTimetableTemplate>>(() => repositories.calendar.getTimetableTemplatesSnapshot(FACULTY, OFFERINGS))
+  const [taskPlacements, setTaskPlacements] = useState<Record<string, TaskCalendarPlacement>>(() => repositories.calendar.getTaskPlacementsSnapshot())
+  const [calendarAuditEvents, setCalendarAuditEvents] = useState<CalendarAuditEvent[]>(() => repositories.calendar.getCalendarAuditSnapshot())
 
   useEffect(() => { void repositories.locksAudit.saveLocks(lockByOffering) }, [lockByOffering, repositories])
   useEffect(() => { void repositories.entryData.saveDrafts(draftBySection) }, [draftBySection, repositories])
   useEffect(() => { void repositories.entryData.saveCellValues(cellValues) }, [cellValues, repositories])
   useEffect(() => { void repositories.tasks.saveTasks(allTasksList) }, [allTasksList, repositories])
   useEffect(() => { void repositories.tasks.saveResolvedTasks(resolvedTasks) }, [repositories, resolvedTasks])
+  useEffect(() => { void repositories.calendar.saveTimetableTemplates(timetableByFacultyId) }, [repositories, timetableByFacultyId])
+  useEffect(() => { void repositories.calendar.saveTaskPlacements(taskPlacements) }, [repositories, taskPlacements])
+  useEffect(() => { void repositories.calendar.saveCalendarAudit(calendarAuditEvents) }, [calendarAuditEvents, repositories])
   useEffect(() => { void repositories.entryData.saveStudentPatches(studentPatches) }, [repositories, studentPatches])
   useEffect(() => { void repositories.entryData.saveSchemeState(schemeByOffering) }, [repositories, schemeByOffering])
   useEffect(() => { void repositories.entryData.saveBlueprintState(ttBlueprintsByOffering) }, [repositories, ttBlueprintsByOffering])
@@ -1631,6 +1645,24 @@ export default function App() {
   const supervisedOfferingIds = useMemo(() => new Set(assignedOfferings.map(o => o.offId)), [assignedOfferings])
   const supervisedMenteeIds = useMemo(() => new Set(assignedMentees.map(m => m.id)), [assignedMentees])
   const supervisedMenteeUsns = useMemo(() => new Set(assignedMentees.map(m => m.usn)), [assignedMentees])
+  const calendarOfferingIds = useMemo(() => new Set(currentTeacher?.offeringIds ?? []), [currentTeacher])
+  const calendarMenteeIds = useMemo(() => new Set(currentTeacher?.menteeIds ?? []), [currentTeacher])
+  const calendarMenteeUsns = useMemo(() => new Set(
+    MENTEES
+      .filter(mentee => calendarMenteeIds.has(mentee.id))
+      .map(mentee => mentee.usn),
+  ), [calendarMenteeIds])
+  const calendarOfferings = useMemo(() => OFFERINGS.filter(item => calendarOfferingIds.has(item.offId)), [calendarOfferingIds])
+  const currentFacultyTimetable = useMemo(() => currentTeacher ? (timetableByFacultyId[currentTeacher.facultyId] ?? null) : null, [currentTeacher, timetableByFacultyId])
+  const mergedCalendarTasks = useMemo(() => {
+    if (!currentTeacher) return [] as SharedTask[]
+    return allTasksList.filter(task => {
+      if (!currentTeacher.allowedRoles.includes(task.assignedTo)) return false
+      if (task.assignedTo === 'Course Leader') return calendarOfferingIds.has(task.offeringId)
+      if (task.assignedTo === 'Mentor') return calendarMenteeIds.has(task.studentId) || calendarMenteeUsns.has(task.studentUsn) || calendarOfferingIds.has(task.offeringId)
+      return calendarOfferingIds.has(task.offeringId)
+    })
+  }, [allTasksList, calendarMenteeIds, calendarMenteeUsns, calendarOfferingIds, currentTeacher])
 
   const roleTasks = useMemo(() => {
     const base = allTasksList.filter(t => t.assignedTo === role)
@@ -1660,6 +1692,12 @@ export default function App() {
     const hasAnyLock = locks ? Object.values(locks).some(Boolean) : false
     return hasDraft || hasCells || hasAnyLock
   }, [cellValues, draftBySection, lockByOffering])
+  const taskComposerOfferings = useMemo(() => {
+    if (taskComposer.availableOfferingIds && taskComposer.availableOfferingIds.length > 0) {
+      return OFFERINGS.filter(item => taskComposer.availableOfferingIds?.includes(item.offId))
+    }
+    return role === 'HoD' ? OFFERINGS : (assignedOfferings.length > 0 ? assignedOfferings : OFFERINGS)
+  }, [assignedOfferings, role, taskComposer.availableOfferingIds])
   const selectedSchemeOffering = schemeOfferingId ? (OFFERINGS.find(item => item.offId === schemeOfferingId) ?? null) : null
   const selectedUnlockTask = selectedUnlockTaskId ? (allTasksList.find(task => task.id === selectedUnlockTaskId) ?? null) : null
   const facultyGivenName = useMemo(() => {
@@ -1834,6 +1872,13 @@ export default function App() {
     setSelectedOffering(null)
     setSelectedMentee(null)
   }, [])
+  const handleOpenCalendar = useCallback(() => {
+    setPage('calendar')
+    setOffering(null)
+    setSelectedStudent(null)
+    setSelectedOffering(null)
+    setSelectedMentee(null)
+  }, [])
   const handleOpenEntryHub = useCallback((o: Offering, kind: EntryKind) => {
     setUploadOffering(o)
     setUploadKind(kind)
@@ -1889,7 +1934,7 @@ export default function App() {
     setSchemeOfferingId(null)
     setCourseInitialTab(undefined)
     setHistoryBackPage(null)
-    setTaskComposer(prev => ({ ...prev, isOpen: false }))
+    setTaskComposer(prev => ({ ...prev, isOpen: false, placement: undefined, availableOfferingIds: undefined }))
     setPendingNoteAction(null)
   }, [allowedRoles])
 
@@ -1980,53 +2025,62 @@ export default function App() {
 
   const handleResolveTask = useCallback((id: string) => {
     const resolvedAt = Date.now()
+    const target = allTasksList.find(task => task.id === id)
+    if (!target) return
+    const activePlacement = taskPlacements[id]
     setResolvedTasks(prev => ({ ...prev, [id]: resolvedAt }))
-    setAllTasksList(prev => {
-      const target = prev.find(task => task.id === id)
-      if (!target) return prev
+    const resolvedTask: SharedTask = {
+      ...target,
+      status: 'Resolved',
+      updatedAt: resolvedAt,
+      resolvedByFacultyId: currentTeacherId ?? undefined,
+      scheduleMeta: target.scheduleMeta?.mode === 'scheduled'
+        ? {
+            ...target.scheduleMeta,
+            completedDatesISO: [...(target.scheduleMeta.completedDatesISO ?? []), ...(target.dueDateISO ? [target.dueDateISO] : [])],
+          }
+        : target.scheduleMeta,
+      transitionHistory: [...(target.transitionHistory ?? []), createTransition({ action: 'Resolved', actorRole: role, actorTeacherId: currentTeacherId ?? undefined, fromOwner: target.assignedTo, toOwner: target.assignedTo, note: `${role} marked this queue item as resolved.` })],
+    }
 
-      const updated = prev.map(task => {
-        if (task.id !== id) return task
-        const updatedTask: SharedTask = {
-          ...task,
-          status: 'Resolved',
-          updatedAt: resolvedAt,
-          resolvedByFacultyId: currentTeacherId ?? undefined,
-          scheduleMeta: task.scheduleMeta?.mode === 'scheduled'
-            ? {
-              ...task.scheduleMeta,
-              completedDatesISO: [...(task.scheduleMeta.completedDatesISO ?? []), ...(task.dueDateISO ? [task.dueDateISO] : [])],
-            }
-            : task.scheduleMeta,
-          transitionHistory: [...(task.transitionHistory ?? []), createTransition({ action: 'Resolved', actorRole: role, actorTeacherId: currentTeacherId ?? undefined, fromOwner: task.assignedTo, toOwner: task.assignedTo, note: `${role} marked this queue item as resolved.` })],
-        }
-        return updatedTask
-      })
-
-      if (target.scheduleMeta?.mode !== 'scheduled' || target.scheduleMeta.status === 'paused' || target.scheduleMeta.status === 'ended') return updated
-
+    let nextTask: SharedTask | null = null
+    if (target.scheduleMeta?.mode === 'scheduled' && target.scheduleMeta.status !== 'paused' && target.scheduleMeta.status !== 'ended') {
       const nextDueDateISO = getNextScheduledDate(target.scheduleMeta, target.dueDateISO)
-      if (!nextDueDateISO) return updated
-
-      const nextTask: SharedTask = {
-        ...target,
-        id: `${target.id}-next-${Date.now()}`,
-        status: 'New',
-        dueDateISO: nextDueDateISO,
-        due: toDueLabel(nextDueDateISO),
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        scheduleMeta: {
-          ...target.scheduleMeta,
-          nextDueDateISO,
-          completedDatesISO: [...(target.scheduleMeta.completedDatesISO ?? []), ...(target.dueDateISO ? [target.dueDateISO] : [])],
-        },
-        transitionHistory: [createTransition({ action: 'Scheduled occurrence created', actorRole: 'System', toOwner: target.assignedTo, note: `Next ${target.scheduleMeta.preset ?? 'recurring'} occurrence activated for ${nextDueDateISO}.` })],
+      if (nextDueDateISO) {
+        nextTask = {
+          ...target,
+          id: `${target.id}-next-${Date.now()}`,
+          status: 'New',
+          dueDateISO: nextDueDateISO,
+          due: toDueLabel(nextDueDateISO),
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          scheduleMeta: {
+            ...target.scheduleMeta,
+            nextDueDateISO,
+            completedDatesISO: [...(target.scheduleMeta.completedDatesISO ?? []), ...(target.dueDateISO ? [target.dueDateISO] : [])],
+          },
+          transitionHistory: [createTransition({ action: 'Scheduled occurrence created', actorRole: 'System', toOwner: target.assignedTo, note: `Next ${target.scheduleMeta.preset ?? 'recurring'} occurrence activated for ${nextDueDateISO}.` })],
+        }
       }
+    }
 
-      return [...updated, nextTask]
+    setAllTasksList(prev => {
+      const updated = prev.map(task => task.id === id ? resolvedTask : task)
+      return nextTask ? [...updated, nextTask] : updated
     })
-  }, [currentTeacherId, role])
+    if (activePlacement && nextTask) {
+      setTaskPlacements(prev => ({
+        ...prev,
+        [nextTask.id]: {
+          ...activePlacement,
+          taskId: nextTask.id,
+          dateISO: nextTask?.dueDateISO ?? activePlacement.dateISO,
+          updatedAt: Date.now(),
+        },
+      }))
+    }
+  }, [allTasksList, currentTeacherId, role, taskPlacements])
 
   const handleToggleSchedulePause = useCallback((taskId: string) => {
     setAllTasksList(prev => prev.map(task => {
@@ -2057,6 +2111,7 @@ export default function App() {
     const nextDate = window.prompt('Set next occurrence date (YYYY-MM-DD)')
     const normalized = normalizeDateISO(nextDate ?? undefined)
     if (!normalized) return
+    const taskPlacement = taskPlacements[taskId]
     setAllTasksList(prev => prev.map(task => {
       if (task.id !== taskId || task.scheduleMeta?.mode !== 'scheduled' || task.scheduleMeta.status === 'ended') return task
       return {
@@ -2068,7 +2123,17 @@ export default function App() {
         transitionHistory: [...(task.transitionHistory ?? []), createTransition({ action: 'Recurrence edited', actorRole: role, actorTeacherId: currentTeacherId ?? undefined, fromOwner: task.assignedTo, toOwner: task.assignedTo, note: `${role} updated future schedule starting ${normalized}.` })],
       }
     }))
-  }, [currentTeacherId, role])
+    if (taskPlacement) {
+      setTaskPlacements(prev => ({
+        ...prev,
+        [taskId]: {
+          ...taskPlacement,
+          dateISO: normalized,
+          updatedAt: Date.now(),
+        },
+      }))
+    }
+  }, [currentTeacherId, role, taskPlacements])
 
   const handleUndoTask = useCallback((id: string) => {
     setResolvedTasks(prev => {
@@ -2090,13 +2155,125 @@ export default function App() {
       [`${offeringId}::${kind}`]: [...(prev[`${offeringId}::${kind}`] ?? []), transition],
     }))
   }, [])
+  const appendCalendarAudit = useCallback((event: CalendarAuditEvent) => {
+    setCalendarAuditEvents(prev => [event, ...prev])
+  }, [])
 
   const handleUpdateStudentAttendance = useCallback((offeringId: string, studentId: string, patch: StudentRuntimePatch) => {
     commitStudentPatch(offeringId, studentId, existing => ({ ...existing, ...patch }))
   }, [commitStudentPatch])
 
-  const handleOpenTaskComposer = useCallback((input?: { offeringId?: string; studentId?: string; taskType?: TaskType }) => {
-    const fallbackOffering = (input?.offeringId ? OFFERINGS.find(item => item.offId === input.offeringId) : null) ?? uploadOffering ?? offering ?? assignedOfferings[0] ?? OFFERINGS[0]
+  const handleScheduleTask = useCallback((taskId: string, input: TaskPlacementDraft) => {
+    if (!currentTeacher || !currentFacultyTimetable || !currentTeacher.allowedRoles.includes('Course Leader')) return
+    const task = allTasksList.find(item => item.id === taskId)
+    if (!task) return
+    const slot = input.slotId ? currentFacultyTimetable.slots.find(item => item.id === input.slotId) : undefined
+    const weekday = getWeekdayForDateISO(input.dateISO)
+    if (input.placementMode === 'timed') {
+      if (!slot || !weekday) return
+      const classCollision = currentFacultyTimetable.classBlocks.some(block => block.day === weekday && getSpannedSlotIds(block.slotId, block.slotSpan, currentFacultyTimetable.slots).includes(slot.id))
+      const taskCollision = Object.values(taskPlacements).some(placement => placement.taskId !== taskId && placement.placementMode === 'timed' && placement.dateISO === input.dateISO && placement.slotId === slot.id && !resolvedTasks[placement.taskId])
+      if (classCollision || taskCollision) return
+    }
+    const previousPlacement = taskPlacements[taskId]
+    const nextPlacement = input.placementMode === 'timed' && slot
+      ? buildPlacementForSlot({ taskId, dateISO: input.dateISO, slot })
+      : buildUntimedPlacement({ taskId, dateISO: input.dateISO })
+    const updatedTask = applyPlacementToTask(task, nextPlacement, slot)
+    void repositories.tasks.upsertTask(updatedTask)
+    setTaskPlacements(prev => ({ ...prev, [taskId]: nextPlacement }))
+    setAllTasksList(prev => prev.map(item => item.id === taskId ? updatedTask : item))
+    appendCalendarAudit(createCalendarAuditEvent({
+      facultyId: currentTeacher.facultyId,
+      actorRole: role,
+      actorFacultyId: currentTeacherId ?? undefined,
+      actionKind: previousPlacement
+        ? (previousPlacement.placementMode === 'timed' && input.placementMode === 'untimed' ? 'task-unscheduled' : 'task-rescheduled')
+        : 'task-scheduled',
+      targetType: 'task',
+      targetId: taskId,
+      note: previousPlacement ? `Rescheduled ${task.title} for ${input.dateISO}.` : `Scheduled ${task.title} for ${input.dateISO}.`,
+      before: previousPlacement ? {
+        dateISO: previousPlacement.dateISO,
+        slotId: previousPlacement.slotId,
+        startTime: previousPlacement.startTime,
+        endTime: previousPlacement.endTime,
+        placementMode: previousPlacement.placementMode,
+      } : undefined,
+      after: {
+        dateISO: nextPlacement.dateISO,
+        slotId: nextPlacement.slotId,
+        startTime: nextPlacement.startTime,
+        endTime: nextPlacement.endTime,
+        placementMode: nextPlacement.placementMode,
+        offeringId: task.offeringId,
+      },
+    }))
+  }, [allTasksList, appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, repositories, resolvedTasks, role, taskPlacements])
+
+  const handleMoveClassBlock = useCallback((blockId: string, input: { day: Weekday; slotId: string }) => {
+    if (!currentTeacher || !currentFacultyTimetable || !currentTeacher.allowedRoles.includes('Course Leader')) return
+    const block = currentFacultyTimetable.classBlocks.find(item => item.id === blockId)
+    if (!block) return
+    const nextSpan = clampSlotSpan(input.slotId, block.slotSpan, currentFacultyTimetable.slots)
+    const requestedSlotIds = getSpannedSlotIds(input.slotId, nextSpan, currentFacultyTimetable.slots)
+    const classCollision = currentFacultyTimetable.classBlocks.some(item => item.id !== blockId && item.day === input.day && getSpannedSlotIds(item.slotId, item.slotSpan, currentFacultyTimetable.slots).some(slotId => requestedSlotIds.includes(slotId)))
+    const taskCollision = Object.values(taskPlacements).some(placement => placement.placementMode === 'timed' && placement.dateISO && getWeekdayForDateISO(placement.dateISO) === input.day && placement.slotId && requestedSlotIds.includes(placement.slotId) && !resolvedTasks[placement.taskId])
+    if (classCollision || taskCollision) return
+    setTimetableByFacultyId(prev => ({
+      ...prev,
+      [currentTeacher.facultyId]: {
+        ...currentFacultyTimetable,
+        updatedAt: Date.now(),
+        classBlocks: currentFacultyTimetable.classBlocks.map(item => item.id === blockId ? { ...item, day: input.day, slotId: input.slotId, slotSpan: nextSpan } : item),
+      },
+    }))
+    appendCalendarAudit(createCalendarAuditEvent({
+      facultyId: currentTeacher.facultyId,
+      actorRole: role,
+      actorFacultyId: currentTeacherId ?? undefined,
+      actionKind: 'class-moved',
+      targetType: 'class',
+      targetId: blockId,
+      note: `Moved ${block.courseCode} Sec ${block.section} to ${input.day} ${input.slotId}.`,
+      before: { day: block.day, slotId: block.slotId, slotSpan: block.slotSpan, offeringId: block.offeringId },
+      after: { day: input.day, slotId: input.slotId, slotSpan: nextSpan, offeringId: block.offeringId },
+    }))
+  }, [appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, resolvedTasks, role, taskPlacements])
+
+  const handleResizeClassBlock = useCallback((blockId: string, nextSpan: number) => {
+    if (!currentTeacher || !currentFacultyTimetable || !currentTeacher.allowedRoles.includes('Course Leader')) return
+    const block = currentFacultyTimetable.classBlocks.find(item => item.id === blockId)
+    if (!block) return
+    const clampedSpan = clampSlotSpan(block.slotId, Math.max(1, Math.min(3, Math.round(nextSpan))), currentFacultyTimetable.slots)
+    const requestedSlotIds = getSpannedSlotIds(block.slotId, clampedSpan, currentFacultyTimetable.slots)
+    const classCollision = currentFacultyTimetable.classBlocks.some(item => item.id !== blockId && item.day === block.day && getSpannedSlotIds(item.slotId, item.slotSpan, currentFacultyTimetable.slots).some(slotId => requestedSlotIds.includes(slotId)))
+    const taskCollision = Object.values(taskPlacements).some(placement => placement.placementMode === 'timed' && getWeekdayForDateISO(placement.dateISO) === block.day && placement.slotId && requestedSlotIds.includes(placement.slotId) && !resolvedTasks[placement.taskId])
+    if (classCollision || taskCollision) return
+    setTimetableByFacultyId(prev => ({
+      ...prev,
+      [currentTeacher.facultyId]: {
+        ...currentFacultyTimetable,
+        updatedAt: Date.now(),
+        classBlocks: currentFacultyTimetable.classBlocks.map(item => item.id === blockId ? { ...item, slotSpan: clampedSpan } : item),
+      },
+    }))
+    appendCalendarAudit(createCalendarAuditEvent({
+      facultyId: currentTeacher.facultyId,
+      actorRole: role,
+      actorFacultyId: currentTeacherId ?? undefined,
+      actionKind: 'class-resized',
+      targetType: 'class',
+      targetId: blockId,
+      note: `Updated ${block.courseCode} Sec ${block.section} to span ${clampedSpan} periods.`,
+      before: { day: block.day, slotId: block.slotId, slotSpan: block.slotSpan, offeringId: block.offeringId },
+      after: { day: block.day, slotId: block.slotId, slotSpan: clampedSpan, offeringId: block.offeringId },
+    }))
+  }, [appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, resolvedTasks, role, taskPlacements])
+
+  const handleOpenTaskComposer = useCallback((input?: { offeringId?: string; studentId?: string; taskType?: TaskType; dueDateISO?: string; availableOfferingIds?: string[]; placement?: TaskPlacementDraft }) => {
+    const scopedFallbackOffering = input?.availableOfferingIds?.[0] ? (OFFERINGS.find(item => item.offId === input.availableOfferingIds?.[0]) ?? null) : null
+    const fallbackOffering = (input?.offeringId ? OFFERINGS.find(item => item.offId === input.offeringId) : null) ?? scopedFallbackOffering ?? uploadOffering ?? offering ?? assignedOfferings[0] ?? OFFERINGS[0]
     const selectedStudent = input?.studentId && fallbackOffering
       ? getStudentsPatched(fallbackOffering).find(student => student.id === input.studentId)
       : undefined
@@ -2107,9 +2284,11 @@ export default function App() {
       offeringId: fallbackOffering?.offId,
       studentId: input?.studentId,
       taskType: input?.taskType ?? suggested.taskType,
-      dueDateISO: suggested.dueDateISO,
+      dueDateISO: input?.dueDateISO ?? suggested.dueDateISO,
       note: suggested.note,
       search: selectedStudent?.name ?? '',
+      availableOfferingIds: input?.availableOfferingIds,
+      placement: input?.placement,
     })
   }, [assignedOfferings, getStudentsPatched, offering, uploadOffering])
 
@@ -2119,7 +2298,7 @@ export default function App() {
 
   const handleCreateTask = useCallback((input: TaskCreateInput) => {
     const off = OFFERINGS.find(o => o.offId === input.offeringId)
-    if (!off) return
+    if (!off || !currentTeacher) return
     const s = getStudentsPatched(off).find(st => st.id === input.studentId)
     if (!s) return
     const id = `manual-${input.taskType}-${s.id}-${Date.now()}`
@@ -2161,9 +2340,40 @@ export default function App() {
         note: input.note || `${role} created ${input.taskType.toLowerCase()} queue item.`,
       })],
     }
-    void repositories.tasks.upsertTask(next)
-    setAllTasksList(prev => [next, ...prev])
-  }, [currentTeacherId, getStudentsPatched, repositories, role])
+    const placement = input.placement
+      ? (input.placement.placementMode === 'timed' && input.placement.slotId && currentFacultyTimetable
+          ? (() => {
+              const slot = currentFacultyTimetable.slots.find(item => item.id === input.placement?.slotId)
+              return slot ? buildPlacementForSlot({ taskId: id, dateISO: input.placement.dateISO, slot }) : buildUntimedPlacement({ taskId: id, dateISO: input.placement.dateISO })
+            })()
+          : buildUntimedPlacement({ taskId: id, dateISO: input.placement.dateISO }))
+      : undefined
+    const nextTask = placement
+      ? applyPlacementToTask(next, placement, placement.slotId && currentFacultyTimetable ? currentFacultyTimetable.slots.find(item => item.id === placement.slotId) : undefined)
+      : next
+    void repositories.tasks.upsertTask(nextTask)
+    setAllTasksList(prev => [nextTask, ...prev])
+    if (placement) {
+      setTaskPlacements(prev => ({ ...prev, [id]: placement }))
+      appendCalendarAudit(createCalendarAuditEvent({
+        facultyId: currentTeacher.facultyId,
+        actorRole: role,
+        actorFacultyId: currentTeacherId ?? undefined,
+        actionKind: 'task-created-and-scheduled',
+        targetType: 'task',
+        targetId: id,
+        note: `Created ${next.title} directly from calendar/timetable.`,
+        after: {
+          dateISO: placement.dateISO,
+          slotId: placement.slotId,
+          startTime: placement.startTime,
+          endTime: placement.endTime,
+          placementMode: placement.placementMode,
+          offeringId: next.offeringId,
+        },
+      }))
+    }
+  }, [appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, getStudentsPatched, repositories, role])
 
   const handleRemedialCheckIn = useCallback((taskId: string) => {
     setAllTasksList(prev => prev.map(task => {
@@ -2591,7 +2801,7 @@ export default function App() {
     setSchemeOfferingId(null)
     setCourseInitialTab(undefined)
     setHistoryBackPage(null)
-    setTaskComposer(prev => ({ ...prev, isOpen: false }))
+    setTaskComposer(prev => ({ ...prev, isOpen: false, placement: undefined, availableOfferingIds: undefined }))
     setPendingNoteAction(null)
     setShowTopbarMenu(false)
   }
@@ -2599,6 +2809,8 @@ export default function App() {
   const sidebarToggleLabel = sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'
   const routeLoadingLabel = page === 'course'
     ? 'Loading course workspace...'
+    : page === 'calendar'
+      ? 'Loading calendar workspace...'
     : page === 'upload' || page === 'entry-workspace' || page === 'scheme-setup'
       ? 'Loading entry workflow...'
       : page === 'department'
@@ -2766,11 +2978,11 @@ export default function App() {
         {/* Center Content */}
         <div className={`scroll-pane app-content app-content--${layoutMode}`} style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: 'calc(100vh - 54px)' }}>
           <Suspense fallback={<RouteLoadingFallback label={routeLoadingLabel} />}>
-            {role === 'Course Leader' && page === 'dashboard' && <CLDashboard offerings={assignedOfferings} pendingTaskCount={pendingActionCount} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} onOpenAllStudents={handleOpenAllStudents} teacherInitials={currentTeacher.initials} greetingHeadline={greetingHeadline} greetingMeta={greetingMeta} />}
+            {role === 'Course Leader' && page === 'dashboard' && <CLDashboard offerings={assignedOfferings} pendingTaskCount={pendingActionCount} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} onOpenAllStudents={handleOpenAllStudents} onOpenCalendar={handleOpenCalendar} teacherInitials={currentTeacher.initials} greetingHeadline={greetingHeadline} greetingMeta={greetingMeta} />}
             {role === 'Course Leader' && page === 'students' && <LazyAllStudentsPage offerings={assignedOfferings} onOpenStudent={handleOpenStudent} onOpenHistory={handleOpenHistoryFromStudent} onOpenUpload={handleOpenUpload} />}
             {role === 'Course Leader' && page === 'course' && offering && <LazyCourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? { tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default), tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default) }} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
             {role === 'Course Leader' && page === 'scheme-setup' && selectedSchemeOffering && <LazySchemeSetupPage role={role} offering={selectedSchemeOffering} scheme={schemeByOffering[selectedSchemeOffering.offId] ?? defaultSchemeForOffering(selectedSchemeOffering)} hasEntryStarted={hasEntryStartedForOffering(selectedSchemeOffering.offId)} onSave={(next) => handleSaveScheme(selectedSchemeOffering.offId, next)} onBack={() => setPage('upload')} />}
-            {role === 'Course Leader' && page === 'calendar' && <CalendarPage />}
+            {role === 'Course Leader' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onOpenTaskComposer={handleOpenTaskComposer} />}
             {role === 'Course Leader' && page === 'upload' && <LazyUploadPage key={`${uploadOffering?.offId ?? 'default'}-${uploadKind}`} role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} onRequestUnlock={handleRequestUnlock} availableOfferings={assignedOfferings} onOpenSchemeSetup={handleOpenSchemeSetup} />}
             {role === 'Course Leader' && page === 'entry-workspace' && <LazyEntryWorkspacePage capabilities={capabilities} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} onRequestUnlock={handleRequestUnlock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onOpenTaskComposer={handleOpenTaskComposer} onUpdateStudentAttendance={handleUpdateStudentAttendance} schemeByOffering={schemeByOffering} ttBlueprintsByOffering={ttBlueprintsByOffering} lockAuditByTarget={lockAuditByTarget} />}
             {role === 'Course Leader' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} />}
@@ -2778,13 +2990,13 @@ export default function App() {
             {role === 'Mentor' && page === 'mentees' && <MentorView mentees={assignedMentees} onOpenMentee={handleOpenMentee} />}
             {role === 'Mentor' && page === 'mentee-detail' && selectedMentee && <MenteeDetailPage mentee={selectedMentee} tasks={roleTasks} onBack={() => setPage('mentees')} onOpenHistory={handleOpenHistoryFromMentee} />}
             {role === 'Mentor' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} />}
-            {role === 'Mentor' && page === 'calendar' && <CalendarPage />}
+            {role === 'Mentor' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onOpenTaskComposer={handleOpenTaskComposer} />}
 
-            {role === 'HoD' && page === 'department' && <LazyHodView onOpenQueueHistory={handleOpenQueueHistory} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} tasks={allTasksList} />}
+            {role === 'HoD' && page === 'department' && <LazyHodView onOpenQueueHistory={handleOpenQueueHistory} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} tasks={allTasksList} calendarAuditEvents={calendarAuditEvents} />}
             {role === 'HoD' && page === 'course' && offering && <LazyCourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? { tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default), tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default) }} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
             {role === 'HoD' && page === 'unlock-review' && selectedUnlockTask && <UnlockReviewPage task={selectedUnlockTask} offering={OFFERINGS.find(item => item.offId === selectedUnlockTask.offeringId) ?? null} onBack={() => setPage('queue-history')} onApprove={() => handleApproveUnlock(selectedUnlockTask.id)} onReject={() => handleRejectUnlock(selectedUnlockTask.id)} onResetComplete={() => handleResetComplete(selectedUnlockTask.id)} />}
             {role === 'HoD' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} />}
-            {role === 'HoD' && page === 'calendar' && <CalendarPage />}
+            {role === 'HoD' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onOpenTaskComposer={handleOpenTaskComposer} />}
 
             {page === 'student-history' && historyProfile && <LazyStudentHistoryPage role={role} history={historyProfile} onBack={() => {
               const fallback = role === 'Mentor' && selectedMentee ? 'mentee-detail' : getHomePage(role)
@@ -2823,7 +3035,7 @@ export default function App() {
 
       <AnimatePresence>
         {taskComposer.isOpen && (
-          <TaskComposerModal role={role} offerings={role === 'HoD' ? OFFERINGS : (assignedOfferings.length > 0 ? assignedOfferings : OFFERINGS)} initialState={taskComposer} onClose={() => setTaskComposer(prev => ({ ...prev, isOpen: false }))} onSubmit={handleCreateTask} />
+          <TaskComposerModal role={role} offerings={taskComposerOfferings} initialState={taskComposer} onClose={() => setTaskComposer(prev => ({ ...prev, isOpen: false, placement: undefined, availableOfferingIds: undefined }))} onSubmit={handleCreateTask} />
         )}
       </AnimatePresence>
 

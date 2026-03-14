@@ -45,15 +45,17 @@ try {
   await expectVisible(page.locator('.top-bar-shell button[aria-label="Collapse sidebar"]'), 'compact collapse toggle after expand')
   await page.setViewportSize({ width: 1440, height: 1180 })
 
-  await page.getByRole('button', { name: /Open Data Entry Hub/i }).click()
-  await expectVisible(page.getByText(/^Data Entry Hub$/).last(), 'data entry hub')
+  await page.getByRole('button', { name: /Open Calendar \/ Timetable/i }).click()
+  await expectVisible(page.getByText(/^Calendar \/ Timetable$/).last(), 'calendar timetable workspace')
+  await expectVisible(page.getByText(/Detailed day plan/), 'calendar day detail pane')
 
-  await expectVisible(page.getByText(/This entry is locked\. You cannot modify TT1 Marks\./), 'locked TT1 notice')
+  await page.getByRole('button', { name: 'Expand', exact: true }).click()
+  await expectVisible(page.getByText(/Weekly Timetable/), 'weekly timetable workspace')
 
-  await page.getByText('TT2 Marks').first().click()
-  await expectVisible(page.getByText(/Direct Entry Workspace/), 'direct entry workspace')
+  await page.getByRole('button', { name: /^Add$/ }).first().click()
+  await expectVisible(page.getByText(/Create New Task/), 'calendar add sheet')
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
 
-  await page.getByRole('button', { name: /Back to Data Entry Hub/i }).click()
   await page.getByRole('button', { name: 'Queue History', exact: true }).click()
   await expectVisible(page.getByText(/^Queue History$/).last(), 'queue history')
 
