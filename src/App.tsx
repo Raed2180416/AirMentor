@@ -14,7 +14,7 @@ import {
 } from './data'
 import './App.css'
 
-type ThemeMode = 'material-utility-light' | 'material-utility-dark' | 'frosted-focus-light' | 'frosted-focus-dark'
+type ThemeMode = 'frosted-focus-light' | 'frosted-focus-dark'
 type LayoutMode = 'three-column' | 'split' | 'focus'
 type EntryKind = 'tt1' | 'tt2' | 'quiz' | 'assignment' | 'attendance' | 'finals'
 type EntryLockMap = Record<EntryKind, boolean>
@@ -177,7 +177,7 @@ type EvaluationScheme = {
   assignmentComponents: AssessmentComponentDefinition[]
 }
 
-type PageId = 'dashboard' | 'course' | 'calendar' | 'upload' | 'entry-workspace' | 'mentees' | 'department' | 'mentee-detail' | 'student-history' | 'unlock-review' | 'scheme-setup' | 'queue-history'
+type PageId = 'dashboard' | 'students' | 'course' | 'calendar' | 'upload' | 'entry-workspace' | 'mentees' | 'department' | 'mentee-detail' | 'student-history' | 'unlock-review' | 'scheme-setup' | 'queue-history'
 
 type QueueTransition = {
   id: string
@@ -247,20 +247,6 @@ const MENTEE_ASSIGNMENTS: Record<string, string[]> = (() => {
 })()
 
 const THEME_PRESETS: Record<ThemeMode, typeof T> = {
-  'material-utility-light': {
-    ...T,
-    bg: '#f5f8fc', surface: '#ffffff', surface2: '#f1f6fd', surface3: '#e9f0fa',
-    border: '#dbe5f1', border2: '#c9d8ea',
-    text: '#0f172a', muted: '#475569', dim: '#94a3b8',
-    accent: '#006DDD', accentLight: '#1F7FE0',
-  },
-  'material-utility-dark': {
-    ...T,
-    bg: '#0b111b', surface: '#111827', surface2: '#152033', surface3: '#1a2840',
-    border: '#263550', border2: '#2f4364',
-    text: '#d7e0ef', muted: '#99a7bf', dim: '#5d6f8d',
-    accent: '#4f8df3', accentLight: '#7eb0ff',
-  },
   'frosted-focus-light': {
     ...T,
     bg: '#edf3f8', surface: '#f7fbff', surface2: '#edf5ff', surface3: '#e4effa',
@@ -278,10 +264,10 @@ const THEME_PRESETS: Record<ThemeMode, typeof T> = {
 }
 
 function normalizeThemeMode(raw: string | null): ThemeMode {
-  if (raw === 'light') return 'material-utility-light'
-  if (raw === 'dark') return 'material-utility-dark'
-  if (raw === 'material-utility-light' || raw === 'material-utility-dark' || raw === 'frosted-focus-light' || raw === 'frosted-focus-dark') return raw
-  return 'material-utility-dark'
+  if (raw === 'light') return 'frosted-focus-light'
+  if (raw === 'dark') return 'frosted-focus-dark'
+  if (raw === 'frosted-focus-light' || raw === 'frosted-focus-dark') return raw
+  return 'frosted-focus-dark'
 }
 
 function isLightTheme(mode: ThemeMode) {
@@ -681,7 +667,7 @@ function canAccessPage(role: Role, page: PageId) {
   if (page === 'scheme-setup') return role === 'Course Leader'
   if (page === 'unlock-review') return role === 'HoD'
   if (page === 'mentee-detail') return role === 'Mentor'
-  if (role === 'Course Leader') return ['dashboard', 'course', 'calendar', 'upload', 'entry-workspace'].includes(page)
+  if (role === 'Course Leader') return ['dashboard', 'students', 'course', 'calendar', 'upload', 'entry-workspace'].includes(page)
   if (role === 'Mentor') return ['mentees', 'calendar'].includes(page)
   return ['department', 'course', 'calendar', 'unlock-review'].includes(page)
 }
@@ -1020,7 +1006,6 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 130, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
       <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 760, minHeight: 620, maxHeight: '82vh', display: 'flex', flexDirection: 'column', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, overflow: 'hidden' }}>
         <div style={{ padding: '16px 18px', borderBottom: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          // ...existing code...
           <div>
             <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: T.text }}>{step === 'details' ? 'Add Task' : 'Build Remedial Plan'}</div>
             <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 3 }}>{step === 'details' ? 'One unified task flow for follow-up, attendance, academic, and remedial actions.' : 'Step 2 of 2 · leaf tasks stay tied to the same queue item.'}</div>
@@ -1046,8 +1031,7 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
                 {classOfferings.map(offering => <option key={offering.offId} value={offering.offId}>{offering.code} · {offering.year} · Sec {offering.section} · {offering.count} students</option>)}
               </select>
               <input aria-label="Search student" placeholder="Search student / USN" value={query} onChange={e => setQuery(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
-              <div className="scroll-pane scroll-pane--dense" style={{ minHeight: 140, maxHeight: 140, overflowY: 'auto', border: `1px solid ${T.border2}`, borderRadius: 6, background: T.surface2 }}>
-                {query.trim() === '' && <div style={{ ...mono, fontSize: 10, color: T.dim, padding: '10px 12px' }}>Start typing a student name or USN to refine the list.</div>}
+              {query.trim() !== '' && <div className="scroll-pane scroll-pane--dense" style={{ minHeight: 96, maxHeight: 140, overflowY: 'auto', border: `1px solid ${T.border2}`, borderRadius: 6, background: T.surface2 }}>
                 {query.trim() !== '' && searchHits.length === 0 && <div style={{ ...mono, fontSize: 10, color: T.dim, padding: '10px 12px' }}>No matching students.</div>}
                 {query.trim() !== '' && searchHits.map(hit => (
                   <button key={`${hit.offering.offId}-${hit.student.id}`} onClick={() => {
@@ -1061,7 +1045,7 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
                     <div style={{ ...mono, fontSize: 9, color: T.muted }}>{hit.student.usn} · {hit.offering.code} · Sec {hit.offering.section}</div>
                   </button>
                 ))}
-              </div>
+              </div>}
               <select aria-label="Select student" value={selectedStudentId} onChange={e => setSelectedStudentId(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
                 <option value="">Select student</option>
                 {filteredStudents.map(student => <option key={student.id} value={student.id}>{student.name} · {student.usn}</option>)}
@@ -1073,7 +1057,7 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
                   <option>Attendance</option>
                   <option>Academic</option>
                 </select>
-                <input aria-label="Due date" type="date" value={dueDateISO} onChange={e => setDueDateISO(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
+                <input aria-label={schedulingMode === 'scheduled' ? 'Starts on' : 'Due date'} title={schedulingMode === 'scheduled' ? 'Starts on' : 'Due date'} type="date" value={dueDateISO} onChange={e => setDueDateISO(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
               </div>
               <Card style={{ padding: '10px 12px' }}>
                 <div style={{ ...sora, fontWeight: 700, fontSize: 12, color: T.text, marginBottom: 8 }}>Scheduling</div>
@@ -1105,7 +1089,7 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
                         <button type="button" onClick={() => setCustomDates(prev => [...prev, { dateISO: '', time: '' }])} style={{ ...mono, fontSize: 10, borderRadius: 6, border: `1px dashed ${T.border2}`, background: 'transparent', color: T.accent, padding: '6px 8px', cursor: 'pointer' }}>+ Add custom date</button>
                       </div>
                     )}
-                    <div style={{ ...mono, fontSize: 10, color: T.dim }}>Queue activation occurs at the start of each scheduled date. Time is stored as metadata only.</div>
+                    <div style={{ ...mono, fontSize: 10, color: T.dim }}>Starts on: {normalizeDateISO(dueDateISO) ?? 'today'} · Queue activation occurs at the start of each scheduled date. Time is metadata only.</div>
                   </div>
                 )}
               </Card>
@@ -1143,7 +1127,9 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
             {step === 'remedial' && <Btn size="sm" variant="ghost" onClick={() => setStep('details')}>Back</Btn>}
             <Btn size="sm" variant="ghost" onClick={onClose}>Cancel</Btn>
             {step === 'details' && taskType === 'Remedial' && <Btn size="sm" onClick={() => {
-              if (!selectedOffering || !selectedStudentId) return
+              const fallbackStudentId = selectedStudentId || filteredStudents[0]?.id || searchHits[0]?.student.id
+              if (!selectedOffering || !fallbackStudentId) return
+              if (!selectedStudentId) setSelectedStudentId(fallbackStudentId)
               setStep('remedial')
             }}>Build Plan</Btn>}
             {step === 'details' && taskType !== 'Remedial' && <Btn size="sm" onClick={() => {
@@ -1503,7 +1489,7 @@ function inferKindFromPendingAction(pending: string | null): EntryKind {
   return 'tt1'
 }
 
-function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent, onOpenUpload, teacherInitials, greetingHeadline, greetingMeta }: { offerings: Offering[]; pendingTaskCount: number; onOpenCourse: (o: Offering) => void; onOpenStudent: (s: Student, o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void; teacherInitials: string; greetingHeadline: string; greetingMeta: string }) {
+function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent, onOpenUpload, onOpenAllStudents, teacherInitials, greetingHeadline, greetingMeta }: { offerings: Offering[]; pendingTaskCount: number; onOpenCourse: (o: Offering) => void; onOpenStudent: (s: Student, o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void; onOpenAllStudents: () => void; teacherInitials: string; greetingHeadline: string; greetingMeta: string }) {
   const total = offerings.reduce((a, o) => a + o.count, 0)
   const allAtRisk = useMemo(() => offerings.flatMap(o => getStudentsPatched(o)), [offerings])
   const highRiskStudents = useMemo(() => allAtRisk.filter(s => s.riskBand === 'High'), [allAtRisk])
@@ -1536,11 +1522,11 @@ function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent,
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
         {[
           { icon: '📚', label: 'Assigned Classes', val: offerings.length, color: T.accent },
-          { icon: '👥', label: 'Total Students', val: total, color: T.success },
+          { icon: '👥', label: 'Total Students', val: total, color: T.success, action: onOpenAllStudents },
           { icon: '‼️', label: 'High Risk Students', val: highRiskCount, color: T.danger },
           { icon: '🎯', label: 'Pending Actions', val: pendingTaskCount, color: T.warning },
         ].map((s, i) => (
-          <Card key={i} glow={s.color} style={{ padding: '14px 18px' }}>
+          <Card key={i} glow={s.color} style={{ padding: '14px 18px', cursor: s.action ? 'pointer' : 'default' }} onClick={s.action}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 22 }}>{s.icon}</span>
               <div>
@@ -2596,6 +2582,111 @@ function MenteeDetailPage({ mentee, tasks, onBack, onOpenHistory }: { mentee: Me
   )
 }
 
+function AllStudentsPage({ offerings, onOpenStudent, onOpenHistory, onOpenUpload }: { offerings: Offering[]; onOpenStudent: (student: Student, offering: Offering) => void; onOpenHistory: (student: Student, offering: Offering) => void; onOpenUpload: (offering: Offering, kind: EntryKind) => void }) {
+  const [query, setQuery] = useState('')
+  const [selectedYear, setSelectedYear] = useState('all')
+  const [selectedCourse, setSelectedCourse] = useState('all')
+  const [selectedRisk, setSelectedRisk] = useState<'all' | RiskBand>('all')
+
+  const rows = useMemo(() => offerings.flatMap(offering => getStudentsPatched(offering).map(student => {
+    const attendancePct = Math.round((student.present / Math.max(1, student.totalClasses)) * 100)
+    return { offering, student, attendancePct }
+  })), [offerings])
+
+  const filteredRows = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    const riskOrder: Record<RiskBand, number> = { High: 0, Medium: 1, Low: 2 }
+    const normalizeRiskBand = (band: Student['riskBand']): RiskBand => band ?? 'Low'
+    return rows
+      .filter(item => {
+        if (selectedYear !== 'all' && item.offering.year !== selectedYear) return false
+        if (selectedCourse !== 'all' && item.offering.code !== selectedCourse) return false
+        if (selectedRisk !== 'all' && normalizeRiskBand(item.student.riskBand) !== selectedRisk) return false
+        if (!q) return true
+        return item.student.name.toLowerCase().includes(q) || item.student.usn.toLowerCase().includes(q)
+      })
+      .sort((a, b) => {
+        const byRisk = riskOrder[normalizeRiskBand(a.student.riskBand)] - riskOrder[normalizeRiskBand(b.student.riskBand)]
+        if (byRisk !== 0) return byRisk
+        const aProb = a.student.riskProb ?? 0
+        const bProb = b.student.riskProb ?? 0
+        if (aProb !== bProb) return bProb - aProb
+        return a.student.name.localeCompare(b.student.name)
+      })
+  }, [query, rows, selectedCourse, selectedRisk, selectedYear])
+
+  const yearOptions = useMemo(() => Array.from(new Set(offerings.map(offering => offering.year))), [offerings])
+  const courseOptions = useMemo(() => Array.from(new Set(offerings.map(offering => offering.code))), [offerings])
+
+  return (
+    <PageShell size="wide">
+      <div style={{ ...sora, fontWeight: 700, fontSize: 20, color: T.text, marginBottom: 4 }}>All Students</div>
+      <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 14 }}>Single integrated roster for profile review, transcript history, and direct data-entry continuation.</div>
+
+      <Card style={{ marginBottom: 14, padding: '12px 14px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 8 }}>
+          <input aria-label="Search student by name or USN" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search name / USN" style={{ ...mono, fontSize: 11, borderRadius: 6, border: `1px solid ${T.border2}`, background: T.surface2, color: T.text, padding: '8px 10px' }} />
+          <select aria-label="Filter by year" value={selectedYear} onChange={e => setSelectedYear(e.target.value)} style={{ ...mono, fontSize: 11, borderRadius: 6, border: `1px solid ${T.border2}`, background: T.surface2, color: T.text, padding: '8px 10px' }}>
+            <option value="all">All Years</option>
+            {yearOptions.map(year => <option key={year} value={year}>{year}</option>)}
+          </select>
+          <select aria-label="Filter by course" value={selectedCourse} onChange={e => setSelectedCourse(e.target.value)} style={{ ...mono, fontSize: 11, borderRadius: 6, border: `1px solid ${T.border2}`, background: T.surface2, color: T.text, padding: '8px 10px' }}>
+            <option value="all">All Courses</option>
+            {courseOptions.map(code => <option key={code} value={code}>{code}</option>)}
+          </select>
+          <select aria-label="Filter by risk" value={selectedRisk} onChange={e => setSelectedRisk(e.target.value as 'all' | RiskBand)} style={{ ...mono, fontSize: 11, borderRadius: 6, border: `1px solid ${T.border2}`, background: T.surface2, color: T.text, padding: '8px 10px' }}>
+            <option value="all">All Risk Bands</option>
+            <option value="High">High</option>
+            <option value="Medium">Medium</option>
+            <option value="Low">Low</option>
+          </select>
+        </div>
+        <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 8 }}>{filteredRows.length} students shown</div>
+      </Card>
+
+      <Card style={{ padding: 0 }}>
+        <HScrollArea style={{ maxHeight: 560 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 1, background: T.surface }}>
+              <tr>{['Student', 'USN', 'Class', 'Attendance', 'Risk', 'Actions'].map(head => <TH key={head}>{head}</TH>)}</tr>
+            </thead>
+            <tbody>
+              {filteredRows.map(({ offering, student, attendancePct }) => {
+                const riskColor = student.riskBand === 'High' ? T.danger : student.riskBand === 'Medium' ? T.warning : T.success
+                return (
+                  <tr key={`${offering.offId}-${student.id}`} style={{ borderBottom: `1px solid ${T.border}` }}>
+                    <TD>
+                      <div style={{ ...sora, fontWeight: 600, fontSize: 12, color: T.text }}>{student.name}</div>
+                    </TD>
+                    <TD><span style={{ ...mono, fontSize: 11, color: T.muted }}>{student.usn}</span></TD>
+                    <TD><span style={{ ...mono, fontSize: 11, color: T.muted }}>{offering.code} · {offering.year} · Sec {offering.section}</span></TD>
+                    <TD>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Bar val={attendancePct} color={attendancePct >= 75 ? T.success : attendancePct >= 65 ? T.warning : T.danger} h={5} />
+                        <span style={{ ...mono, fontSize: 10, color: T.muted, minWidth: 34 }}>{attendancePct}%</span>
+                      </div>
+                    </TD>
+                    <TD>
+                      <Chip color={riskColor} size={9}>{student.riskBand}{student.riskProb !== null ? ` · ${Math.round(student.riskProb * 100)}%` : ''}</Chip>
+                    </TD>
+                    <TD>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <Btn size="sm" variant="ghost" onClick={() => onOpenStudent(student, offering)}><Eye size={11} /> Profile</Btn>
+                        <Btn size="sm" variant="ghost" onClick={() => onOpenHistory(student, offering)}>History</Btn>
+                        <Btn size="sm" variant="ghost" onClick={() => onOpenUpload(offering, inferKindFromPendingAction(offering.pendingAction))}>Data Entry</Btn>
+                      </div>
+                    </TD>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </HScrollArea>
+      </Card>
+    </PageShell>
+  )
+}
+
 function StudentHistoryPage({ role, history, onBack }: { role: Role; history: StudentHistoryRecord; onBack: () => void }) {
   const latestTerm = history.terms[history.terms.length - 1]
   const totalBacklogs = history.terms.reduce((acc, term) => acc + term.backlogCount, 0)
@@ -3247,7 +3338,9 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOfferi
   const lockMap = lockByOffering[selectedOffering.offId] ?? getEntryLockMap(selectedOffering)
   const stageRequired: Record<EntryKind, number> = { tt1: 1, tt2: 2, quiz: 2, assignment: 2, attendance: 1, finals: 3 }
   const isApplicableForStage = selectedOffering.stageInfo.stage >= stageRequired[selectedKind]
-  const schemeReady = scheme.status !== 'Needs Setup'
+  const hasInFlightEvaluation = !!selectedOffering.tt1Done || !!selectedOffering.tt2Done || !!lockMap.tt1 || !!lockMap.tt2 || !!lockMap.quiz || !!lockMap.assignment
+  const schemeReady = scheme.status !== 'Needs Setup' || hasInFlightEvaluation
+  const shouldShowSchemePrompt = !schemeReady && !hasInFlightEvaluation
 
   const completion = useMemo(() => {
     if (!selectedOffering) return { tt1: false, tt2: false, quiz: false, assignment: false, attendance: true, finals: false }
@@ -3275,9 +3368,9 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOfferi
           </div>
         </Card>
       )}
-      {!schemeReady && (
+      {shouldShowSchemePrompt && (
         <Card style={{ marginBottom: 12, padding: '12px 14px' }} glow={T.warning}>
-          <div style={{ ...mono, fontSize: 11, color: T.warning }}>Evaluation scheme is not locked in yet for this offering. Configure it before starting marks entry.</div>
+          <div style={{ ...mono, fontSize: 11, color: T.warning }}>Set up the evaluation scheme before first marks entry for this class.</div>
           <div style={{ marginTop: 8 }}><Btn size="sm" variant="ghost" onClick={() => onOpenSchemeSetup(selectedOffering)}>Open Scheme Setup</Btn></div>
         </Card>
       )}
@@ -3324,7 +3417,6 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOfferi
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               <Chip color={completion[x.kind] ? T.success : T.warning} size={10}>{completion[x.kind] ? 'Completed' : 'Pending Entry'}</Chip>
               {lockMap[x.kind] && <Chip color={T.danger} size={10}>Locked</Chip>}
-              {!schemeReady && <Chip color={T.warning} size={10}>Scheme required</Chip>}
             </div>
           </Card>
         ))}
@@ -3481,6 +3573,7 @@ function EntryWorkspacePage({ capabilities, offeringId, kind, onBack, lockByOffe
 
 const CL_NAV: Array<{ id: PageId; icon: typeof LayoutDashboard; label: string }> = [
   { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+  { id: 'students', icon: Users, label: 'All Students' },
   { id: 'queue-history', icon: ListTodo, label: 'Queue History' },
   { id: 'calendar', icon: Calendar, label: 'Calendar' },
   { id: 'upload', icon: Upload, label: 'Data Entry Hub' },
@@ -3511,6 +3604,7 @@ export default function App() {
   const [selectedOffering, setSelectedOffering] = useState<Offering | null>(null)
   const [selectedMentee, setSelectedMentee] = useState<Mentee | null>(null)
   const [historyProfile, setHistoryProfile] = useState<StudentHistoryRecord | null>(null)
+  const [historyBackPage, setHistoryBackPage] = useState<PageId | null>(null)
   const [selectedUnlockTaskId, setSelectedUnlockTaskId] = useState<string | null>(null)
   const [schemeOfferingId, setSchemeOfferingId] = useState<string | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -3995,10 +4089,12 @@ export default function App() {
     setHistoryProfile(null)
     setSelectedUnlockTaskId(null)
     setCourseInitialTab(undefined)
+    setHistoryBackPage(null)
   }, [role])
   const handleBack = useCallback(() => {
     setOffering(null)
     setCourseInitialTab(undefined)
+    setHistoryBackPage(null)
     setPage(getHomePage(role))
   }, [role])
   const handleOpenStudent = useCallback((s: Student, o?: Offering) => {
@@ -4009,10 +4105,11 @@ export default function App() {
     const nextHistory = buildHistoryProfile({ student: s, offering: o ?? null })
     if (!nextHistory) return
     setHistoryProfile(nextHistory)
+    setHistoryBackPage(page)
     setSelectedStudent(null)
     setSelectedOffering(null)
     setPage('student-history')
-  }, [])
+  }, [page])
   const handleOpenMentee = useCallback((m: Mentee) => {
     setSelectedMentee(m)
     setPage('mentee-detail')
@@ -4021,7 +4118,15 @@ export default function App() {
     const nextHistory = buildHistoryProfile({ mentee: m })
     if (!nextHistory) return
     setHistoryProfile(nextHistory)
+    setHistoryBackPage('mentee-detail')
     setPage('student-history')
+  }, [])
+  const handleOpenAllStudents = useCallback(() => {
+    setPage('students')
+    setOffering(null)
+    setSelectedStudent(null)
+    setSelectedOffering(null)
+    setSelectedMentee(null)
   }, [])
   const handleOpenEntryHub = useCallback((o: Offering, kind: EntryKind) => {
     setUploadOffering(o)
@@ -4077,6 +4182,7 @@ export default function App() {
     setSelectedUnlockTaskId(null)
     setSchemeOfferingId(null)
     setCourseInitialTab(undefined)
+    setHistoryBackPage(null)
     setTaskComposer(prev => ({ ...prev, isOpen: false }))
     setPendingNoteAction(null)
   }, [allowedRoles])
@@ -4714,10 +4820,11 @@ export default function App() {
       const nextHistory = buildHistoryProfile({ mentee: mentorMatch })
       if (nextHistory) {
         setHistoryProfile(nextHistory)
+        setHistoryBackPage(page)
         setPage('student-history')
       }
     }
-  }, [assignedMentees, assignedOfferings, handleOpenStudent, role])
+  }, [assignedMentees, assignedOfferings, handleOpenStudent, page, role])
 
   const pendingNoteMeta = useMemo(() => {
     if (!pendingNoteAction) return null
@@ -4756,6 +4863,7 @@ export default function App() {
       setSelectedStudent(null)
       setSelectedMentee(null)
       setHistoryProfile(null)
+      setHistoryBackPage(null)
       setCourseInitialTab(undefined)
     }} />
   }
@@ -4771,6 +4879,7 @@ export default function App() {
     setSelectedUnlockTaskId(null)
     setSchemeOfferingId(null)
     setCourseInitialTab(undefined)
+    setHistoryBackPage(null)
     setTaskComposer(prev => ({ ...prev, isOpen: false }))
     setPendingNoteAction(null)
     setShowTopbarMenu(false)
@@ -4789,8 +4898,10 @@ export default function App() {
           </div>
         </button>
 
+        <button className="top-control-btn" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={() => setSidebarCollapsed(c => !c)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted }}><Filter size={14} /></button>
+
         {/* Role Switcher */}
-        <div className="top-bar-role-switcher" style={{ display: 'flex', gap: 0, marginLeft: 32, background: T.surface2, borderRadius: 8, padding: 2, border: `1px solid ${T.border}` }}>
+        <div className="top-bar-role-switcher" style={{ display: 'flex', gap: 0, marginLeft: 16, background: T.surface2, borderRadius: 8, padding: 2, border: `1px solid ${T.border}` }}>
           {allowedRoles.map(r => (
             <button key={r} onClick={() => handleRoleChange(r)}
               style={{ ...sora, fontWeight: 600, fontSize: 11, padding: isCompactTopbar ? '7px 12px' : '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer', background: role === r ? T.accent : 'transparent', color: role === r ? '#fff' : T.muted, transition: 'all 0.15s', minHeight: isCompactTopbar ? 34 : undefined }}>
@@ -4804,23 +4915,8 @@ export default function App() {
             {formattedCurrentTime}
           </div>
 
-          {!isCompactTopbar && (
-            <>
-              <select aria-label="Theme family" title="Theme family" value={themeMode.startsWith('frosted-focus') ? 'frosted-focus' : 'material-utility'} onChange={e => {
-                const nextFamily = e.target.value === 'frosted-focus' ? 'frosted-focus' : 'material-utility'
-                const nextTone = isLightTheme(themeMode) ? 'light' : 'dark'
-                setThemeMode(`${nextFamily}-${nextTone}` as ThemeMode)
-              }} style={{ ...mono, fontSize: 10, background: T.surface2, color: T.text, border: `1px solid ${T.border}`, borderRadius: 6, padding: '4px 8px', minHeight: 32 }}>
-                <option value="material-utility">material-utility</option>
-                <option value="frosted-focus">frosted-focus</option>
-              </select>
-              <button className="top-control-btn" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={() => setSidebarCollapsed(c => !c)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted }}><Filter size={14} /></button>
-            </>
-          )}
-
           <button className="top-control-btn" aria-label={isLightTheme(themeMode) ? 'Switch to dark mode' : 'Switch to light mode'} title={isLightTheme(themeMode) ? 'Dark mode' : 'Light mode'} onClick={() => {
-            const family = themeMode.startsWith('frosted-focus') ? 'frosted-focus' : 'material-utility'
-            setThemeMode(`${family}-${isLightTheme(themeMode) ? 'dark' : 'light'}` as ThemeMode)
+            setThemeMode(isLightTheme(themeMode) ? 'frosted-focus-dark' : 'frosted-focus-light')
           }} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted }}>{isLightTheme(themeMode) ? '🌙' : '☀️'}</button>
 
           <button className="top-control-btn" aria-label={showActionQueue ? 'Hide action queue' : 'Show action queue'} title={showActionQueue ? 'Hide action queue' : 'Show action queue'} onClick={() => setShowActionQueue(v => !v)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted, position: 'relative' }}>
@@ -4833,23 +4929,6 @@ export default function App() {
               <button className="top-control-btn" aria-label={showTopbarMenu ? 'Close more controls' : 'Open more controls'} title="More" onClick={() => setShowTopbarMenu(v => !v)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted, ...mono, fontSize: 10 }}>More</button>
               {showTopbarMenu && (
                 <div className="top-bar-more-menu" style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 38, minWidth: 200, padding: 10, borderRadius: 10, border: `1px solid ${T.border}`, background: T.surface, boxShadow: '0 10px 26px rgba(2,6,23,0.28)', display: 'grid', gap: 8, zIndex: 70 }}>
-                  <label style={{ display: 'grid', gap: 4 }}>
-                    <span style={{ ...mono, fontSize: 9, color: T.dim }}>Theme family</span>
-                    <select aria-label="Theme family" value={themeMode.startsWith('frosted-focus') ? 'frosted-focus' : 'material-utility'} onChange={e => {
-                      const nextFamily = e.target.value === 'frosted-focus' ? 'frosted-focus' : 'material-utility'
-                      const nextTone = isLightTheme(themeMode) ? 'light' : 'dark'
-                      setThemeMode(`${nextFamily}-${nextTone}` as ThemeMode)
-                    }} style={{ ...mono, fontSize: 10, background: T.surface2, color: T.text, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', minHeight: 34 }}>
-                      <option value="material-utility">material-utility</option>
-                      <option value="frosted-focus">frosted-focus</option>
-                    </select>
-                  </label>
-                  <button onClick={() => {
-                    setSidebarCollapsed(c => !c)
-                    setShowTopbarMenu(false)
-                  }} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '7px 10px', cursor: 'pointer', color: T.muted, ...mono, fontSize: 10, textAlign: 'left' }}>
-                    {sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                  </button>
                   <button onClick={handleLogout} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '7px 10px', cursor: 'pointer', color: T.muted, ...mono, fontSize: 10, textAlign: 'left' }}>
                     Logout
                   </button>
@@ -4888,7 +4967,8 @@ export default function App() {
                   {navItems.map(item => {
                     const Icon = item.icon
                     const active = page === item.id
-                      || ((page === 'course' || page === 'student-history') && item.id === (role === 'HoD' ? 'department' : role === 'Mentor' ? 'mentees' : 'dashboard'))
+                      || ((page === 'course') && item.id === (role === 'HoD' ? 'department' : role === 'Mentor' ? 'mentees' : 'dashboard'))
+                      || ((page === 'student-history') && item.id === (historyBackPage === 'students' ? 'students' : role === 'HoD' ? 'department' : role === 'Mentor' ? 'mentees' : 'dashboard'))
                       || ((page === 'upload' || page === 'entry-workspace' || page === 'scheme-setup') && item.id === 'upload')
                       || ((page === 'queue-history' || page === 'unlock-review') && item.id === 'queue-history')
                       || ((page === 'mentee-detail') && item.id === 'mentees')
@@ -4941,7 +5021,8 @@ export default function App() {
 
         {/* Center Content */}
         <div className={`scroll-pane app-content app-content--${layoutMode}`} style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: 'calc(100vh - 54px)' }}>
-          {role === 'Course Leader' && page === 'dashboard' && <CLDashboard offerings={assignedOfferings} pendingTaskCount={pendingActionCount} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} teacherInitials={currentTeacher.initials} greetingHeadline={greetingHeadline} greetingMeta={greetingMeta} />}
+          {role === 'Course Leader' && page === 'dashboard' && <CLDashboard offerings={assignedOfferings} pendingTaskCount={pendingActionCount} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} onOpenAllStudents={handleOpenAllStudents} teacherInitials={currentTeacher.initials} greetingHeadline={greetingHeadline} greetingMeta={greetingMeta} />}
+          {role === 'Course Leader' && page === 'students' && <AllStudentsPage offerings={assignedOfferings} onOpenStudent={handleOpenStudent} onOpenHistory={handleOpenHistoryFromStudent} onOpenUpload={handleOpenUpload} />}
           {role === 'Course Leader' && page === 'course' && offering && <CourseDetail offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? { tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default), tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default) }} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
           {role === 'Course Leader' && page === 'scheme-setup' && selectedSchemeOffering && <SchemeSetupPage role={role} offering={selectedSchemeOffering} scheme={schemeByOffering[selectedSchemeOffering.offId] ?? defaultSchemeForOffering(selectedSchemeOffering)} hasEntryStarted={hasEntryStartedForOffering(selectedSchemeOffering.offId)} onSave={(next) => handleSaveScheme(selectedSchemeOffering.offId, next)} onBack={() => setPage('upload')} />}
           {role === 'Course Leader' && page === 'calendar' && <CalendarPage />}
@@ -4960,7 +5041,12 @@ export default function App() {
           {role === 'HoD' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} />}
           {role === 'HoD' && page === 'calendar' && <CalendarPage />}
 
-          {page === 'student-history' && historyProfile && <StudentHistoryPage role={role} history={historyProfile} onBack={() => setPage(role === 'Mentor' && selectedMentee ? 'mentee-detail' : getHomePage(role))} />}
+          {page === 'student-history' && historyProfile && <StudentHistoryPage role={role} history={historyProfile} onBack={() => {
+            const fallback = role === 'Mentor' && selectedMentee ? 'mentee-detail' : getHomePage(role)
+            const target = historyBackPage && canAccessPage(role, historyBackPage) ? historyBackPage : fallback
+            setPage(target)
+            setHistoryBackPage(null)
+          }} />}
         </div>
 
         {/* Right Sidebar — Action Queue */}
