@@ -2,12 +2,27 @@
 // AirMentor — Complete Mock Data & Types
 // ══════════════════════════════════════════════════════════════
 
-// ───── Types ─────
-export type Role = 'Course Leader' | 'Mentor' | 'HoD'
-export type Stage = 1 | 2 | 3
-export type RiskBand = 'High' | 'Medium' | 'Low'
-export type TaskStatus = 'New' | 'In Progress' | 'Follow-up' | 'Resolved'
+import type {
+  EntryKind,
+  FacultyAccount,
+  Role,
+  RiskBand,
+  SchedulePreset,
+  SchemeState,
+  Stage,
+  TaskStatus,
+  UnlockRequest as CanonicalUnlockRequest,
+} from './domain'
 
+export type {
+  EntryKind,
+  Role,
+  RiskBand,
+  Stage,
+  TaskStatus,
+} from './domain'
+
+// ───── Types ─────
 export interface StageInfo { stage: Stage; label: string; desc: string; color: string }
 export interface Professor { name: string; id: string; dept: string; role: string; initials: string; email: string }
 
@@ -75,21 +90,9 @@ export interface TeacherInfo {
   avgAtt: number; completeness: number; pendingTasks: number
 }
 
-export type SubjectRunSchemeStatus = 'Draft' | 'Submitted to HoD' | 'Changes Requested' | 'Approved & Locked' | 'Frozen'
-export type RecurrencePreset = 'daily' | 'weekly' | 'monthly' | 'weekdays' | 'custom dates'
-
-export interface FacultyRecord {
-  facultyId: string
-  name: string
-  initials: string
-  email: string
-  dept: string
-  roleTitle: string
-  roles: Role[]
-  subjectRunIds: string[]
-  sectionOfferingIds: string[]
-  menteeIds: string[]
-}
+export type SubjectRunSchemeStatus = SchemeState['status']
+export type RecurrencePreset = SchedulePreset
+export type FacultyRecord = FacultyAccount
 
 export interface SubjectRunScheme {
   subjectRunId: string
@@ -125,20 +128,7 @@ export interface SchemeReviewEvent {
   at: number
 }
 
-export interface UnlockRequest {
-  requestId: string
-  subjectRunId: string
-  entryKind: 'tt1' | 'tt2' | 'quiz' | 'assignment' | 'attendance' | 'finals'
-  semester: number
-  status: 'Pending' | 'Approved' | 'Rejected' | 'Reset Completed'
-  requestedByFacultyId: string
-  requestedByRole: Role
-  requestNote?: string
-  reviewedByFacultyId?: string
-  reviewNote?: string
-  requestedAt: number
-  reviewedAt?: number
-}
+export type UnlockRequest = CanonicalUnlockRequest
 
 export interface TaskOccurrence {
   occurrenceId: string
@@ -660,19 +650,21 @@ export const FACULTY: FacultyRecord[] = FACULTY_DIRECTORY.map(item => ({
   email: item.email,
   dept: item.dept,
   roleTitle: item.roleTitle,
-  roles: item.roles.filter((role): role is Role => role === 'Course Leader' || role === 'Mentor' || role === 'HoD'),
-  subjectRunIds: item.subjectRuns,
-  sectionOfferingIds: item.sections,
+  allowedRoles: item.roles.filter((role): role is Role => role === 'Course Leader' || role === 'Mentor' || role === 'HoD'),
+  courseCodes: Array.from(new Set(item.sections
+    .map(offId => OFFERINGS.find(offering => offering.offId === offId)?.code)
+    .filter((code): code is string => !!code))),
+  offeringIds: item.sections,
   menteeIds: item.mentees,
 }))
 
 const inferInitialSchemeStatus = (offeringIds: string[]): SubjectRunSchemeStatus => {
   const hasTtLocked = offeringIds.some(offId => {
     const offering = OFFERINGS.find(o => o.offId === offId)
-    return !!offering?.tt1Locked || !!offering?.tt2Locked
+    return !!offering?.tt1Locked || !!offering?.tt2Locked || !!offering?.quizLocked || !!offering?.asgnLocked
   })
-  if (hasTtLocked) return 'Frozen'
-  return 'Draft'
+  if (hasTtLocked) return 'Locked'
+  return 'Needs Setup'
 }
 
 export const SUBJECT_RUNS: SubjectRun[] = (() => {
@@ -682,12 +674,12 @@ export const SUBJECT_RUNS: SubjectRun[] = (() => {
     byCodeYearSem[key] = [...(byCodeYearSem[key] ?? []), offering]
   })
 
-  return Object.entries(byCodeYearSem).map(([_key, grouped], index) => {
+  return Object.entries(byCodeYearSem).map(([, grouped], index) => {
     const sample = grouped[0]
     const subjectRunId = `run-${sample.code}-${sample.year.replace(/\s+/g, '').toLowerCase()}-s${sample.sem}-${index + 1}`
     const sectionOfferingIds = grouped.map(item => item.offId)
     const courseLeaderFacultyIds = FACULTY
-      .filter(f => f.roles.includes('Course Leader') && f.subjectRunIds.some(run => run.includes(sample.code)))
+      .filter(f => f.allowedRoles.includes('Course Leader') && f.courseCodes.includes(sample.code))
       .map(f => f.facultyId)
 
     return {
@@ -725,7 +717,7 @@ export function getSubjectRunSchemeByOffering(offeringId: string): SubjectRunSch
 }
 
 export function getFacultyByRole(role: Role): FacultyRecord[] {
-  return FACULTY.filter(faculty => faculty.roles.includes(role))
+  return FACULTY.filter(faculty => faculty.allowedRoles.includes(role))
 }
 
 export function getTeacherCardsForDepartment(dept: string): TeacherInfo[] {
@@ -737,13 +729,13 @@ export function getTeacherCardsForDepartment(dept: string): TeacherInfo[] {
       initials: faculty.initials,
       dept: faculty.dept,
       role: faculty.roleTitle,
-      roles: faculty.roles,
-      offerings: faculty.subjectRunIds.length,
-      students: faculty.sectionOfferingIds.reduce((acc, offId) => {
+      roles: faculty.allowedRoles,
+      offerings: faculty.offeringIds.length,
+      students: faculty.offeringIds.reduce((acc, offId) => {
         const offering = OFFERINGS.find(item => item.offId === offId)
         return acc + (offering?.count ?? 0)
       }, 0),
-      highRisk: faculty.sectionOfferingIds.reduce((acc, offId) => {
+      highRisk: faculty.offeringIds.reduce((acc, offId) => {
         const offering = OFFERINGS.find(item => item.offId === offId)
         return acc + (offering ? getStudents(offering).filter(student => student.riskBand === 'High').length : 0)
       }, 0),
@@ -753,32 +745,43 @@ export function getTeacherCardsForDepartment(dept: string): TeacherInfo[] {
     }))
 }
 
-export function getQueueScopeForUnlock(offeringId: string, entryKind: UnlockRequest['entryKind']) {
-  const run = getSubjectRunByOffering(offeringId)
-  if (!run) return null
+export function getQueueScopeForUnlock(offeringId: string, kind: EntryKind) {
+  const offering = OFFERINGS.find(item => item.offId === offeringId)
+  if (!offering) return null
   return {
-    subjectRunId: run.subjectRunId,
-    entryKind,
-    semester: run.sem,
-    sectionOfferingIds: run.sectionOfferingIds,
+    offeringId,
+    kind,
+    semester: offering.sem,
+    sectionOfferingIds: [offeringId],
   }
 }
 
-export const TEACHERS: TeacherInfo[] = FACULTY_DIRECTORY.map(f => {
-  const roles = f.roles.filter((role): role is Role => role === 'Course Leader' || role === 'Mentor' || role === 'HoD')
+export const TEACHERS: TeacherInfo[] = FACULTY.map(faculty => {
+  const offerings = faculty.offeringIds
+    .map(offId => OFFERINGS.find(offering => offering.offId === offId))
+    .filter((offering): offering is Offering => !!offering)
+  const students = offerings.reduce((acc, offering) => acc + offering.count, 0)
+  const highRisk = offerings.reduce((acc, offering) => acc + getStudents(offering).filter(student => student.riskBand === 'High').length, 0)
+  const avgAtt = offerings.length > 0
+    ? Math.round(offerings.reduce((acc, offering) => acc + offering.attendance, 0) / offerings.length)
+    : 0
+  const completenessChecks = offerings.flatMap(offering => [offering.tt1Locked ? 1 : 0, offering.tt2Locked ? 1 : 0, offering.quizLocked ? 1 : 0, offering.asgnLocked ? 1 : 0])
+  const completeness = completenessChecks.length > 0
+    ? Math.round(completenessChecks.reduce((acc, check) => acc + check, 0) / completenessChecks.length * 100)
+    : 0
   return {
-    id: f.id,
-    name: f.name,
-    initials: f.initials,
-    dept: f.dept,
-    role: f.roleTitle,
-    roles,
-    offerings: f.subjectRuns.length * 2, // mock metric equivalent
-    students: f.subjectRuns.length * 120, // mock metric equivalent  
-    highRisk: f.subjectRuns.length * 4,
-    avgAtt: 75 + Math.floor(Math.random() * 15),
-    completeness: 60 + Math.floor(Math.random() * 30),
-    pendingTasks: f.subjectRuns.length * 2
+    id: faculty.facultyId,
+    name: faculty.name,
+    initials: faculty.initials,
+    dept: faculty.dept,
+    role: faculty.roleTitle,
+    roles: faculty.allowedRoles,
+    offerings: offerings.length,
+    students,
+    highRisk,
+    avgAtt,
+    completeness,
+    pendingTasks: offerings.filter(offering => !!offering.pendingAction).length,
   }
 })
 

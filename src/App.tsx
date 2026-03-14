@@ -8,77 +8,59 @@ import {
 import {
   T, mono, sora, yearColor, stageColor, CO_COLORS,
   PROFESSOR, OFFERINGS, YEAR_GROUPS, CO_MAP, PAPER_MAP,
-  getStudents, generateTasks, MENTEES, TEACHERS, CALENDAR_EVENTS, getStudentHistoryRecord,
-  type Offering, type Student, type Role, type Stage, type Task, type YearGroup,
-  type Mentee, type RiskBand, type CODef, type PaperQ, type StudentHistoryRecord, type TranscriptTerm,
+  FACULTY, generateTasks, MENTEES, CALENDAR_EVENTS, getStudentHistoryRecord,
+  type Offering, type Student, type YearGroup,
+  type Mentee, type CODef, type StudentHistoryRecord, type TranscriptTerm,
 } from './data'
+import {
+  createTransition,
+  getNextScheduledDate,
+  getRemedialProgress,
+  normalizeDateISO,
+  normalizeThemeMode,
+  toDueLabel,
+  toTodayISO,
+  type AssessmentComponentDefinition,
+  type EntryKind,
+  type EntryLockMap,
+  type FacultyAccount,
+  type FacultyCapabilitySet,
+  type LayoutMode,
+  type QueueTransition,
+  type RemedialPlan,
+  type Role,
+  type RiskBand,
+  type ScheduleMeta,
+  type SchedulePreset,
+  type SchemeState,
+  type SharedTask,
+  type StudentRuntimePatch,
+  type TaskType,
+  type TermTestBlueprint,
+  type TermTestNode,
+  type ThemeMode,
+  type TTKind,
+  type Stage,
+} from './domain'
+import {
+  AppSelectorsContext,
+  computeEvaluation,
+  defaultSchemeForOffering,
+  flattenBlueprintLeaves,
+  getEntryLockMap,
+  normalizeBlueprint,
+  normalizeSchemeState,
+  pruneScoreMap,
+  sanitizeAssessmentComponents,
+  seedBlueprintFromPaper,
+  toLeafId,
+  toStudentPatchKey,
+  useAppSelectors,
+  createAppSelectors,
+  isPatchEmpty,
+} from './selectors'
+import { createLocalAirMentorRepositories } from './repositories'
 import './App.css'
-
-type ThemeMode = 'frosted-focus-light' | 'frosted-focus-dark'
-type LayoutMode = 'three-column' | 'split' | 'focus'
-type EntryKind = 'tt1' | 'tt2' | 'quiz' | 'assignment' | 'attendance' | 'finals'
-type EntryLockMap = Record<EntryKind, boolean>
-type TaskType = 'Follow-up' | 'Remedial' | 'Attendance' | 'Academic'
-type TTKind = 'tt1' | 'tt2'
-type AssessmentComponentKind = 'quiz' | 'assignment'
-
-type FacultyCapabilitySet = {
-  canApproveUnlock: boolean
-  canEditMarks: boolean
-}
-
-type SchedulePreset = 'daily' | 'weekly' | 'monthly' | 'weekdays' | 'custom dates'
-
-type ScheduleMeta = {
-  mode: 'one-time' | 'scheduled'
-  preset?: SchedulePreset
-  time?: string
-  customDates?: Array<{ dateISO: string; time?: string }>
-  completedDatesISO?: string[]
-  status?: 'active' | 'paused' | 'ended'
-  nextDueDateISO?: string
-}
-
-type AssessmentComponentDefinition = {
-  id: string
-  label: string
-  rawMax: number
-}
-
-type TermTestNode = {
-  id: string
-  label: string
-  text: string
-  maxMarks: number
-  cos: string[]
-  children?: TermTestNode[]
-}
-
-type TermTestBlueprint = {
-  kind: TTKind
-  totalMarks: number
-  nodes: TermTestNode[]
-  updatedAt: number
-}
-
-type DerivedAcademicProjection = {
-  attendancePct: number
-  tt1Raw: number | null
-  tt2Raw: number | null
-  tt1Scaled: number
-  tt2Scaled: number
-  quizRawTotal: number
-  assignmentRawTotal: number
-  quizScaled: number
-  asgnScaled: number
-  ce60: number
-  seeRaw: number | null
-  seeScaled40: number
-  finalScore100: number
-  bandLabel: 'O' | 'A+' | 'A' | 'B+' | 'B' | 'C' | 'P' | 'F'
-  gradePoint: 0 | 4 | 5 | 6 | 7 | 8 | 9 | 10
-  predictedCgpa: number
-}
 
 type TaskComposerState = {
   isOpen: boolean
@@ -96,22 +78,6 @@ type NoteActionState =
   | { type: 'reassign-task'; taskId: string; toRole: Role; title: string }
   | { type: 'student-handoff'; mode: 'escalate' | 'mentor'; studentId: string; offeringId: string; title: string }
 
-type RemedialPlanStep = {
-  id: string
-  label: string
-  completedAt?: number
-}
-
-type RemedialPlan = {
-  planId: string
-  title: string
-  createdAt: number
-  ownerRole: Role
-  dueDateISO: string
-  checkInDatesISO: string[]
-  steps: RemedialPlanStep[]
-}
-
 type TaskCreateInput = {
   offeringId: string
   studentId: string
@@ -123,128 +89,7 @@ type TaskCreateInput = {
   scheduleMeta?: ScheduleMeta
 }
 
-type BackendTaskUpsertPayload = {
-  taskId: string
-  studentId: string
-  offeringId: string
-  assignedTo: Role
-  taskType: TaskType
-  status: Task['status']
-  dueDateISO?: string
-  dueLabel: string
-  note: string
-  escalated: boolean
-  requestNote?: string
-  remedialPlan?: RemedialPlan
-  scheduleMeta?: ScheduleMeta
-  createdAt: number
-  updatedAt: number
-}
-
-type SharedTask = Task & {
-  createdAt: number
-  updatedAt?: number
-  assignedTo: Role
-  taskType?: TaskType
-  dueDateISO?: string
-  remedialPlan?: RemedialPlan
-  escalated?: boolean
-  sourceRole?: Role | 'Auto' | 'System'
-  manual?: boolean
-  transitionHistory?: QueueTransition[]
-  unlockRequest?: UnlockRequest
-  requestNote?: string
-  handoffNote?: string
-  resolvedByFacultyId?: string
-  scheduleMeta?: ScheduleMeta
-}
-
-type TeacherAccount = {
-  teacherId: string
-  name: string
-  initials: string
-  permissions: Role[]
-  courseCodes: string[]
-}
-
-type EvaluationScheme = {
-  finalsMax: 50 | 100
-  quizWeight: number
-  assignmentWeight: number
-  quizCount: 0 | 1 | 2
-  assignmentCount: 0 | 1 | 2
-  quizComponents: AssessmentComponentDefinition[]
-  assignmentComponents: AssessmentComponentDefinition[]
-}
-
 type PageId = 'dashboard' | 'students' | 'course' | 'calendar' | 'upload' | 'entry-workspace' | 'mentees' | 'department' | 'mentee-detail' | 'student-history' | 'unlock-review' | 'scheme-setup' | 'queue-history'
-
-type QueueTransition = {
-  id: string
-  at: number
-  actorRole: Role | 'System' | 'Auto'
-  actorTeacherId?: string
-  action: string
-  fromOwner?: Role
-  toOwner: Role
-  note: string
-}
-
-type UnlockRequest = {
-  kind: EntryKind
-  status: 'Pending' | 'Approved' | 'Rejected' | 'Reset Completed'
-  requestedBy: Role
-  requestedByFacultyId?: string
-  requestedAt: number
-  reviewedAt?: number
-  reviewNote?: string
-  requestNote?: string
-  handoffNote?: string
-}
-
-type SchemeState = EvaluationScheme & {
-  status: 'Needs Setup' | 'Configured' | 'Locked'
-  configuredAt?: number
-  lockedAt?: number
-  lastEditedBy?: Role
-}
-
-type StudentRuntimePatch = {
-  present?: number
-  totalClasses?: number
-  tt1LeafScores?: Record<string, number>
-  tt2LeafScores?: Record<string, number>
-  quizScores?: Record<string, number>
-  assignmentScores?: Record<string, number>
-  seeScore?: number
-}
-
-const STUDENT_PATCHES_KEY = 'airmentor-student-patches'
-const SCHEME_STATE_KEY = 'airmentor-schemes'
-const BLUEPRINT_STATE_KEY = 'airmentor-tt-blueprints'
-const LOCK_AUDIT_KEY = 'airmentor-lock-audit'
-let runtimeStudentPatches: Record<string, StudentRuntimePatch> = {}
-let runtimeSchemesByOffering: Record<string, SchemeState> = {}
-let runtimeBlueprintsByOffering: Record<string, Record<TTKind, TermTestBlueprint>> = {}
-
-const TEACHER_ACCOUNTS: TeacherAccount[] = [
-  { teacherId: 't1', name: 'Dr. Kavitha Rao', initials: 'KR', permissions: ['Course Leader', 'Mentor', 'HoD'], courseCodes: ['CS401', 'CS403'] },
-  { teacherId: 't2', name: 'Dr. Arvind Kumar', initials: 'AK', permissions: ['Course Leader'], courseCodes: ['CS601'] },
-  { teacherId: 't3', name: 'Prof. Sneha Nair', initials: 'SN', permissions: ['Mentor'], courseCodes: ['MA101'] },
-  { teacherId: 't4', name: 'Dr. Rajesh Bhat', initials: 'RB', permissions: ['Course Leader', 'Mentor'], courseCodes: ['CS702'] },
-  { teacherId: 't5', name: 'Prof. Ananya Iyer', initials: 'AI', permissions: ['Course Leader'], courseCodes: ['CS101'] },
-  { teacherId: 't6', name: 'Dr. Vikram Nair', initials: 'VN', permissions: ['Mentor'], courseCodes: ['CS603', 'MA301'] },
-]
-
-const MENTOR_TEACHER_IDS = TEACHER_ACCOUNTS.filter(t => t.permissions.includes('Mentor')).map(t => t.teacherId)
-const MENTEE_ASSIGNMENTS: Record<string, string[]> = (() => {
-  const buckets: Record<string, string[]> = Object.fromEntries(MENTOR_TEACHER_IDS.map(id => [id, []]))
-  MENTEES.forEach((m, i) => {
-    const tid = MENTOR_TEACHER_IDS[i % MENTOR_TEACHER_IDS.length]
-    buckets[tid].push(m.id)
-  })
-  return buckets
-})()
 
 const THEME_PRESETS: Record<ThemeMode, typeof T> = {
   'frosted-focus-light': {
@@ -261,13 +106,6 @@ const THEME_PRESETS: Record<ThemeMode, typeof T> = {
     text: '#d5dfee', muted: '#9badc3', dim: '#607790',
     accent: '#5ea0ff', accentLight: '#84b8ff',
   },
-}
-
-function normalizeThemeMode(raw: string | null): ThemeMode {
-  if (raw === 'light') return 'frosted-focus-light'
-  if (raw === 'dark') return 'frosted-focus-dark'
-  if (raw === 'frosted-focus-light' || raw === 'frosted-focus-dark') return raw
-  return 'frosted-focus-dark'
 }
 
 function isLightTheme(mode: ThemeMode) {
@@ -298,366 +136,6 @@ function shouldBlockNumericKey(e: React.KeyboardEvent<HTMLInputElement>) {
   if (blocked.includes(e.key)) e.preventDefault()
 }
 
-function toStudentPatchKey(offId: string, studentId: string) {
-  return `${offId}::${studentId}`
-}
-
-function setRuntimeStudentPatches(next: Record<string, StudentRuntimePatch>) {
-  runtimeStudentPatches = next
-}
-
-function setRuntimeSchemes(next: Record<string, SchemeState>) {
-  runtimeSchemesByOffering = next
-}
-
-function setRuntimeBlueprints(next: Record<string, Record<TTKind, TermTestBlueprint>>) {
-  runtimeBlueprintsByOffering = next
-}
-
-function buildDefaultAssessmentComponents(kind: AssessmentComponentKind, count: 0 | 1 | 2) {
-  return Array.from({ length: count }, (_, index) => ({
-    id: `${kind}-${index + 1}`,
-    label: `${kind === 'quiz' ? 'Quiz' : 'Assignment'} ${index + 1}`,
-    rawMax: 10,
-  }))
-}
-
-function sanitizeAssessmentComponents(kind: AssessmentComponentKind, count: 0 | 1 | 2, components?: AssessmentComponentDefinition[]) {
-  const base = components && components.length > 0 ? components.slice(0, count) : buildDefaultAssessmentComponents(kind, count)
-  return Array.from({ length: count }, (_, index) => ({
-    id: base[index]?.id ?? `${kind}-${index + 1}`,
-    label: base[index]?.label?.trim() || `${kind === 'quiz' ? 'Quiz' : 'Assignment'} ${index + 1}`,
-    rawMax: clampNumber(Math.round(base[index]?.rawMax ?? 10), 1, 100),
-  }))
-}
-
-function normalizeSchemeState(input: Partial<SchemeState> | undefined, offering: Offering): SchemeState {
-  const defaults = defaultSchemeForOffering(offering)
-  const quizCount = (input?.quizCount ?? defaults.quizCount) as 0 | 1 | 2
-  const assignmentCount = (input?.assignmentCount ?? defaults.assignmentCount) as 0 | 1 | 2
-  return {
-    finalsMax: (input?.finalsMax ?? defaults.finalsMax) as 50 | 100,
-    quizWeight: input?.quizWeight ?? defaults.quizWeight,
-    assignmentWeight: input?.assignmentWeight ?? defaults.assignmentWeight,
-    quizCount,
-    assignmentCount,
-    quizComponents: sanitizeAssessmentComponents('quiz', quizCount, input?.quizComponents ?? defaults.quizComponents),
-    assignmentComponents: sanitizeAssessmentComponents('assignment', assignmentCount, input?.assignmentComponents ?? defaults.assignmentComponents),
-    status: input?.status ?? defaults.status,
-    configuredAt: input?.configuredAt,
-    lockedAt: input?.lockedAt,
-    lastEditedBy: input?.lastEditedBy,
-  }
-}
-
-function toLeafId(kind: TTKind, questionIndex: number, partIndex: number) {
-  return `${kind}-q${questionIndex + 1}-p${partIndex + 1}`
-}
-
-function splitMarks(total: number) {
-  if (total <= 4) return [total]
-  const first = Math.ceil(total / 2)
-  const second = total - first
-  return second > 0 ? [first, second] : [first]
-}
-
-function seedBlueprintFromPaper(kind: TTKind, paper: PaperQ[]): TermTestBlueprint {
-  return {
-    kind,
-    totalMarks: paper.reduce((acc, item) => acc + item.maxMarks, 0),
-    updatedAt: Date.now(),
-    nodes: paper.map((question, questionIndex) => {
-      const parts = splitMarks(question.maxMarks)
-      return {
-        id: `${kind}-q${questionIndex + 1}`,
-        label: `Q${questionIndex + 1}`,
-        text: question.text,
-        maxMarks: question.maxMarks,
-        cos: [],
-        children: parts.map((marks, partIndex) => ({
-          id: toLeafId(kind, questionIndex, partIndex),
-          label: `Q${questionIndex + 1}${String.fromCharCode(97 + partIndex)}`,
-          text: partIndex === 0 ? question.text : `Part ${String.fromCharCode(65 + partIndex)}`,
-          maxMarks: marks,
-          cos: question.cos.length > 0 ? [question.cos[Math.min(partIndex, question.cos.length - 1)]] : [],
-        })),
-      }
-    }),
-  }
-}
-
-function sumQuestionMarks(node: TermTestNode): number {
-  if (!node.children || node.children.length === 0) return node.maxMarks
-  return node.children.reduce((acc, child) => acc + sumQuestionMarks(child), 0)
-}
-
-function normalizeBlueprint(kind: TTKind, blueprint: TermTestBlueprint): TermTestBlueprint {
-  const nodes = blueprint.nodes.map((node, index) => {
-    const children = (node.children && node.children.length > 0 ? node.children : [{
-      id: `${node.id}-p1`,
-      label: `${node.label}a`,
-      text: node.text,
-      maxMarks: node.maxMarks,
-      cos: node.cos,
-    }]).map((child, childIndex) => ({
-      ...child,
-      id: child.id || toLeafId(kind, index, childIndex),
-      label: child.label || `${node.label}${String.fromCharCode(97 + childIndex)}`,
-      text: child.text || `Part ${childIndex + 1}`,
-      maxMarks: clampNumber(Math.round(child.maxMarks), 1, 25),
-      cos: child.cos.length > 0 ? child.cos : node.cos,
-    }))
-    return {
-      ...node,
-      id: node.id || `${kind}-q${index + 1}`,
-      label: node.label || `Q${index + 1}`,
-      text: node.text || `Question ${index + 1}`,
-      cos: [],
-      children,
-      maxMarks: children.reduce((acc, child) => acc + child.maxMarks, 0),
-    }
-  })
-  return {
-    kind,
-    totalMarks: nodes.reduce((acc, node) => acc + sumQuestionMarks(node), 0),
-    updatedAt: blueprint.updatedAt ?? Date.now(),
-    nodes,
-  }
-}
-
-function flattenBlueprintLeaves(nodes: TermTestNode[]) {
-  return nodes.flatMap(node => (node.children && node.children.length > 0 ? node.children : [node]).map(child => ({
-    ...child,
-    parentLabel: node.label,
-  })))
-}
-
-function sumScores(values?: Record<string, number>) {
-  if (!values) return 0
-  return Object.values(values).reduce((acc, value) => acc + value, 0)
-}
-
-function pruneScoreMap(values?: Record<string, number>) {
-  if (!values) return undefined
-  const entries = Object.entries(values).filter(([, value]) => Number.isFinite(value))
-  return entries.length > 0 ? Object.fromEntries(entries) : undefined
-}
-
-function isPatchEmpty(patch: StudentRuntimePatch) {
-  return patch.present === undefined
-    && patch.totalClasses === undefined
-    && patch.seeScore === undefined
-    && !pruneScoreMap(patch.tt1LeafScores)
-    && !pruneScoreMap(patch.tt2LeafScores)
-    && !pruneScoreMap(patch.quizScores)
-    && !pruneScoreMap(patch.assignmentScores)
-}
-
-function getSubjectBand(score: number): DerivedAcademicProjection['bandLabel'] {
-  if (score > 90) return 'O'
-  if (score > 74) return 'A+'
-  if (score > 60) return 'A'
-  if (score >= 55) return 'B+'
-  if (score >= 50) return 'B'
-  if (score > 44) return 'C'
-  if (score >= 40) return 'P'
-  return 'F'
-}
-
-function getGradePointFromBand(band: DerivedAcademicProjection['bandLabel']): DerivedAcademicProjection['gradePoint'] {
-  return band === 'O' ? 10
-    : band === 'A+' ? 9
-    : band === 'A' ? 8
-    : band === 'B+' ? 7
-    : band === 'B' ? 6
-    : band === 'C' ? 5
-    : band === 'P' ? 4
-    : 0
-}
-
-function projectPredictedCgpa(baseCgpa: number, gradePoint: DerivedAcademicProjection['gradePoint']) {
-  const base = baseCgpa > 0 ? baseCgpa : 6
-  return Math.round((((base * 5) + gradePoint) / 6) * 100) / 100
-}
-
-function getStudentsPatched(offering: Offering): Student[] {
-  const scheme = runtimeSchemesByOffering[offering.offId] ?? defaultSchemeForOffering(offering)
-  const blueprints = runtimeBlueprintsByOffering[offering.offId] ?? {
-    tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default),
-    tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default),
-  }
-  const tt1Leaves = flattenBlueprintLeaves(blueprints.tt1.nodes)
-  const tt2Leaves = flattenBlueprintLeaves(blueprints.tt2.nodes)
-  return getStudents(offering).map(s => {
-    const p = runtimeStudentPatches[toStudentPatchKey(offering.offId, s.id)]
-    if (!p) {
-      return {
-        ...s,
-        tt1Max: blueprints.tt1.totalMarks,
-        tt2Max: blueprints.tt2.totalMarks,
-      }
-    }
-    const totalClasses = p.totalClasses ?? s.totalClasses
-    const present = clampNumber(p.present ?? s.present, 0, Math.max(1, totalClasses))
-    const tt1Score = p.tt1LeafScores ? clampNumber(sumScores(p.tt1LeafScores), 0, blueprints.tt1.totalMarks) : s.tt1Score
-    const tt2Score = p.tt2LeafScores ? clampNumber(sumScores(p.tt2LeafScores), 0, blueprints.tt2.totalMarks) : s.tt2Score
-    const quizScores = scheme.quizComponents.map((component, index) => p.quizScores?.[component.id] ?? (index === 0 ? s.quiz1 : s.quiz2) ?? null)
-    const assignmentScores = scheme.assignmentComponents.map((component, index) => p.assignmentScores?.[component.id] ?? (index === 0 ? s.asgn1 : s.asgn2) ?? null)
-    return {
-      ...s,
-      present,
-      totalClasses,
-      tt1Score,
-      tt2Score,
-      tt1Max: blueprints.tt1.totalMarks || (tt1Leaves.length > 0 ? tt1Leaves.reduce((acc, leaf) => acc + leaf.maxMarks, 0) : s.tt1Max),
-      tt2Max: blueprints.tt2.totalMarks || (tt2Leaves.length > 0 ? tt2Leaves.reduce((acc, leaf) => acc + leaf.maxMarks, 0) : s.tt2Max),
-      quiz1: quizScores[0] ?? null,
-      quiz2: quizScores[1] ?? null,
-      asgn1: assignmentScores[0] ?? null,
-      asgn2: assignmentScores[1] ?? null,
-    }
-  })
-}
-
-function getOfferingAttendancePatched(offering: Offering) {
-  const students = getStudentsPatched(offering)
-  if (students.length === 0) return 0
-  return Math.round(students.reduce((acc, s) => acc + (s.present / Math.max(1, s.totalClasses)) * 100, 0) / students.length)
-}
-
-function toDueLabel(dueDateISO?: string, fallback = 'This week') {
-  if (!dueDateISO) return fallback
-  const dueDate = new Date(`${dueDateISO}T00:00:00`)
-  if (Number.isNaN(dueDate.getTime())) return fallback
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const diffDays = Math.round((dueDate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000))
-  if (diffDays <= 0) return 'Today'
-  if (diffDays <= 7) return 'This week'
-  return dueDateISO
-}
-
-function toTodayISO() {
-  return new Date().toISOString().slice(0, 10)
-}
-
-function normalizeDateISO(dateISO?: string) {
-  if (!dateISO) return undefined
-  const parsed = new Date(`${dateISO}T00:00:00`)
-  if (Number.isNaN(parsed.getTime())) return undefined
-  return dateISO
-}
-
-function advanceByPreset(dateISO: string, preset: SchedulePreset) {
-  const base = new Date(`${dateISO}T00:00:00`)
-  if (Number.isNaN(base.getTime())) return dateISO
-  if (preset === 'daily') base.setDate(base.getDate() + 1)
-  if (preset === 'weekly') base.setDate(base.getDate() + 7)
-  if (preset === 'monthly') base.setMonth(base.getMonth() + 1)
-  if (preset === 'weekdays') {
-    do {
-      base.setDate(base.getDate() + 1)
-    } while (base.getDay() === 0 || base.getDay() === 6)
-  }
-  return base.toISOString().slice(0, 10)
-}
-
-function getNextScheduledDate(meta?: ScheduleMeta, currentDateISO?: string) {
-  if (!meta || meta.mode !== 'scheduled' || meta.status === 'ended' || meta.status === 'paused') return undefined
-  const todayISO = toTodayISO()
-  const current = normalizeDateISO(currentDateISO) ?? normalizeDateISO(meta.nextDueDateISO) ?? todayISO
-  if (meta.preset === 'custom dates') {
-    const completed = new Set(meta.completedDatesISO ?? [])
-    return (meta.customDates ?? [])
-      .map(item => item.dateISO)
-      .filter(date => date >= todayISO && date > current && !completed.has(date))
-      .sort()[0]
-  }
-  if (!meta.preset) return undefined
-  return advanceByPreset(current, meta.preset)
-}
-
-function toBackendTaskPayload(task: SharedTask): BackendTaskUpsertPayload {
-  return {
-    taskId: task.id,
-    studentId: task.studentId,
-    offeringId: task.offeringId,
-    assignedTo: task.assignedTo,
-    taskType: task.taskType ?? 'Follow-up',
-    status: task.status,
-    dueDateISO: task.dueDateISO,
-    dueLabel: task.due,
-    note: task.actionHint,
-    escalated: !!task.escalated,
-    requestNote: task.requestNote ?? task.unlockRequest?.requestNote,
-    remedialPlan: task.remedialPlan,
-    scheduleMeta: task.scheduleMeta,
-    createdAt: task.createdAt,
-    updatedAt: task.updatedAt ?? task.createdAt,
-  }
-}
-
-function syncTaskToBackend(_payload: BackendTaskUpsertPayload) {
-  // Backend entrypoint placeholder.
-  // Replace this with POST /tasks or GraphQL mutation when backend is ready.
-}
-
-function getRemedialProgress(plan?: RemedialPlan) {
-  if (!plan) return { completed: 0, total: 0 }
-  const completed = plan.steps.filter(step => !!step.completedAt).length
-  return { completed, total: plan.steps.length }
-}
-
-function computeEvaluation(s: Student, scheme: EvaluationScheme) {
-  const tt1Scaled = s.tt1Score !== null && s.tt1Max > 0 ? (s.tt1Score / s.tt1Max) * 15 : 0
-  const tt2Scaled = s.tt2Score !== null && s.tt2Max > 0 ? (s.tt2Score / s.tt2Max) * 15 : 0
-  const quizVals = scheme.quizComponents.map((component, index) => ({
-    score: index === 0 ? s.quiz1 : s.quiz2,
-    max: component.rawMax,
-  })).filter(item => item.score !== null)
-  const asgnVals = scheme.assignmentComponents.map((component, index) => ({
-    score: index === 0 ? s.asgn1 : s.asgn2,
-    max: component.rawMax,
-  })).filter(item => item.score !== null)
-  const quizPct = quizVals.length > 0 ? quizVals.reduce((acc, item) => acc + ((item.score ?? 0) / Math.max(1, item.max)), 0) / quizVals.length : 0
-  const assignmentPct = asgnVals.length > 0 ? asgnVals.reduce((acc, item) => acc + ((item.score ?? 0) / Math.max(1, item.max)), 0) / asgnVals.length : 0
-  const quizScaled = scheme.quizCount === 0 || scheme.quizWeight === 0 ? 0 : quizPct * scheme.quizWeight
-  const asgnScaled = scheme.assignmentCount === 0 || scheme.assignmentWeight === 0 ? 0 : assignmentPct * scheme.assignmentWeight
-  const ce60 = tt1Scaled + tt2Scaled + quizScaled + asgnScaled
-  const overall40 = (ce60 / 60) * 40
-  return { tt1Scaled, tt2Scaled, quizScaled, asgnScaled, ce60, overall40 }
-}
-
-function deriveAcademicProjection(input: { offering: Offering; student: Student; scheme: SchemeState; history?: StudentHistoryRecord | null }): DerivedAcademicProjection {
-  const patch = runtimeStudentPatches[toStudentPatchKey(input.offering.offId, input.student.id)] ?? {}
-  const evaluation = computeEvaluation(input.student, input.scheme)
-  const attendancePct = Math.round((input.student.present / Math.max(1, input.student.totalClasses)) * 100)
-  const seeRaw = typeof patch.seeScore === 'number' ? patch.seeScore : null
-  const seeScaled40 = seeRaw !== null ? (seeRaw / Math.max(1, input.scheme.finalsMax)) * 40 : 0
-  const finalScore100 = evaluation.ce60 + seeScaled40
-  const bandLabel = getSubjectBand(finalScore100)
-  const gradePoint = getGradePointFromBand(bandLabel)
-  const baseCgpa = input.history?.currentCgpa ?? input.student.prevCgpa
-  return {
-    attendancePct,
-    tt1Raw: input.student.tt1Score,
-    tt2Raw: input.student.tt2Score,
-    tt1Scaled: evaluation.tt1Scaled,
-    tt2Scaled: evaluation.tt2Scaled,
-    quizRawTotal: input.scheme.quizComponents.reduce((acc, _component, index) => acc + ((index === 0 ? input.student.quiz1 : input.student.quiz2) ?? 0), 0),
-    assignmentRawTotal: input.scheme.assignmentComponents.reduce((acc, _component, index) => acc + ((index === 0 ? input.student.asgn1 : input.student.asgn2) ?? 0), 0),
-    quizScaled: evaluation.quizScaled,
-    asgnScaled: evaluation.asgnScaled,
-    ce60: evaluation.ce60,
-    seeRaw,
-    seeScaled40,
-    finalScore100,
-    bandLabel,
-    gradePoint,
-    predictedCgpa: projectPredictedCgpa(baseCgpa, gradePoint),
-  }
-}
-
 function getHomePage(role: Role): PageId {
   return role === 'Course Leader' ? 'dashboard' : role === 'Mentor' ? 'mentees' : 'department'
 }
@@ -672,38 +150,9 @@ function canAccessPage(role: Role, page: PageId) {
   return ['department', 'course', 'calendar', 'unlock-review'].includes(page)
 }
 
-function defaultSchemeForOffering(offering: Offering): SchemeState {
-  const finalsMax = offering.code === 'CS702' ? 100 : 50
-  const quizWeight: number = offering.stageInfo.stage >= 2 ? (offering.code === 'CS401' ? 20 : 10) : 10
-  const assignmentWeight: number = 30 - quizWeight
-  return {
-    finalsMax,
-    quizWeight,
-    assignmentWeight,
-    quizCount: quizWeight === 0 ? 0 : offering.code === 'CS401' ? 2 : 1,
-    assignmentCount: assignmentWeight === 0 ? 0 : offering.code === 'CS401' ? 2 : 1,
-    quizComponents: sanitizeAssessmentComponents('quiz', quizWeight === 0 ? 0 : offering.code === 'CS401' ? 2 : 1),
-    assignmentComponents: sanitizeAssessmentComponents('assignment', assignmentWeight === 0 ? 0 : offering.code === 'CS401' ? 2 : 1),
-    status: 'Needs Setup',
-  }
-}
-
 function formatDateTime(timestamp?: number) {
   if (!timestamp) return 'Pending'
   return new Date(timestamp).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
-}
-
-function createTransition(input: { action: string; actorRole: QueueTransition['actorRole']; toOwner: Role; note: string; fromOwner?: Role; actorTeacherId?: string }): QueueTransition {
-  return {
-    id: `transition-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    at: Date.now(),
-    actorRole: input.actorRole,
-    actorTeacherId: input.actorTeacherId,
-    action: input.action,
-    fromOwner: input.fromOwner,
-    toOwner: input.toOwner,
-    note: input.note,
-  }
 }
 
 function getLatestTransition(task: SharedTask) {
@@ -851,8 +300,8 @@ const StagePips = ({ current }: { current: Stage }) => (
   </div>
 )
 
-function LoginPage({ onLogin }: { onLogin: (teacherId: string) => void }) {
-  const [teacherId, setTeacherId] = useState<string>(TEACHER_ACCOUNTS[0].teacherId)
+function LoginPage({ onLogin }: { onLogin: (facultyId: string) => void }) {
+  const [teacherId, setTeacherId] = useState<string>(FACULTY[0]?.facultyId ?? '')
   const [password, setPassword] = useState('')
   const [err, setErr] = useState('')
 
@@ -876,7 +325,7 @@ function LoginPage({ onLogin }: { onLogin: (teacherId: string) => void }) {
           <div style={{ marginBottom: 10 }}>
             <label htmlFor="teacher-login" style={{ ...mono, fontSize: 10, color: T.muted, display: 'block', marginBottom: 5 }}>Teacher</label>
             <select id="teacher-login" value={teacherId} onChange={e => setTeacherId(e.target.value)} style={{ width: '100%', ...mono, fontSize: 12, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 7, padding: '9px 10px' }}>
-              {TEACHER_ACCOUNTS.map(t => <option key={t.teacherId} value={t.teacherId}>{t.name}</option>)}
+              {FACULTY.map(faculty => <option key={faculty.facultyId} value={faculty.facultyId}>{faculty.name}</option>)}
             </select>
           </div>
 
@@ -927,6 +376,7 @@ function RequiredNoteModal({ title, description, submitLabel, onClose, onSubmit 
 }
 
 function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }: { role: Role; offerings: Offering[]; initialState: TaskComposerState; onClose: () => void; onSubmit: (input: TaskCreateInput) => void }) {
+  const { getStudentsPatched } = useAppSelectors()
   const [selectedYear, setSelectedYear] = useState<string>('')
   const [selectedDept, setSelectedDept] = useState<string>('')
   const [selectedOffId, setSelectedOffId] = useState<string>(initialState.offeringId ?? '')
@@ -936,7 +386,7 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
   const [dueDateISO, setDueDateISO] = useState(initialState.dueDateISO)
   const [note, setNote] = useState(initialState.note)
   const [step, setStep] = useState<'details' | 'remedial'>(initialState.step)
-  const [planTitle, setPlanTitle] = useState('')
+  const [planTitle, setPlanTitle] = useState(() => initialState.search ? `Remedial support plan for ${initialState.search.split(' ')[0]}` : '')
   const [checkIn1, setCheckIn1] = useState('')
   const [checkIn2, setCheckIn2] = useState('')
   const [planSteps, setPlanSteps] = useState<string[]>(['Target weak CO topics', 'Solve supervised practice set', 'Mentor check-in and reflection'])
@@ -948,12 +398,8 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
   const yearOptions = useMemo(() => Array.from(new Set(offerings.map(o => o.year))), [offerings])
   const deptOptions = useMemo(() => Array.from(new Set(offerings.map(o => o.dept))), [offerings])
   const classOfferings = useMemo(() => offerings.filter(o => (!selectedYear || o.year === selectedYear) && (!selectedDept || o.dept === selectedDept)), [offerings, selectedYear, selectedDept])
-
-  useEffect(() => {
-    if (selectedOffId && !classOfferings.some(o => o.offId === selectedOffId)) setSelectedOffId('')
-  }, [classOfferings, selectedOffId])
-
-  const selectedOffering = offerings.find(o => o.offId === selectedOffId)
+  const activeSelectedOffId = selectedOffId && classOfferings.some(o => o.offId === selectedOffId) ? selectedOffId : ''
+  const selectedOffering = offerings.find(o => o.offId === activeSelectedOffId)
   const filteredStudents = (selectedOffering ? getStudentsPatched(selectedOffering) : []).filter(student => {
     const q = query.trim().toLowerCase()
     if (!q) return true
@@ -963,18 +409,17 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
   const searchHits = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return [] as Array<{ offering: Offering; student: Student }>
-    const scope = selectedOffId ? offerings.filter(o => o.offId === selectedOffId) : classOfferings
+    const scope = activeSelectedOffId ? offerings.filter(o => o.offId === activeSelectedOffId) : classOfferings
     return scope.flatMap(o => getStudentsPatched(o).filter(student => student.name.toLowerCase().includes(q) || student.usn.toLowerCase().includes(q)).map(student => ({ offering: o, student }))).slice(0, 10)
-  }, [classOfferings, offerings, query, selectedOffId])
+  }, [activeSelectedOffId, classOfferings, getStudentsPatched, offerings, query])
 
-  useEffect(() => {
-    if (!selectedStudent) return
-    const suggestion = suggestTaskForStudent(selectedStudent)
+  const hydrateSelectedStudent = useCallback((student: Student) => {
+    const suggestion = suggestTaskForStudent(student)
     setTaskType(current => initialState.studentId && current === initialState.taskType ? suggestion.taskType : current)
     setDueDateISO(current => current || suggestion.dueDateISO)
     setNote(current => current || suggestion.note)
-    setPlanTitle(`Remedial support plan for ${selectedStudent.name.split(' ')[0]}`)
-  }, [initialState.studentId, initialState.taskType, selectedStudent?.id, selectedStudent?.name])
+    setPlanTitle(`Remedial support plan for ${student.name.split(' ')[0]}`)
+  }, [initialState.studentId, initialState.taskType])
 
   const getScheduleMeta = () => {
     if (schedulingMode === 'one-time') return undefined
@@ -1026,7 +471,7 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
                   {deptOptions.map(dept => <option key={dept} value={dept}>{dept}</option>)}
                 </select>
               </div>
-              <select aria-label="Select class" value={selectedOffId} onChange={e => { setSelectedOffId(e.target.value); setQuery('') }} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
+              <select aria-label="Select class" value={activeSelectedOffId} onChange={e => { setSelectedOffId(e.target.value); setQuery('') }} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
                 <option value="">Select class</option>
                 {classOfferings.map(offering => <option key={offering.offId} value={offering.offId}>{offering.code} · {offering.year} · Sec {offering.section} · {offering.count} students</option>)}
               </select>
@@ -1040,13 +485,19 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
                     setSelectedOffId(hit.offering.offId)
                     setSelectedStudentId(hit.student.id)
                     setQuery(hit.student.name)
+                    hydrateSelectedStudent(hit.student)
                   }} style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', borderBottom: `1px solid ${T.border}`, cursor: 'pointer', padding: '8px 10px' }}>
                     <div style={{ ...sora, fontWeight: 600, fontSize: 11, color: T.text }}>{hit.student.name}</div>
                     <div style={{ ...mono, fontSize: 9, color: T.muted }}>{hit.student.usn} · {hit.offering.code} · Sec {hit.offering.section}</div>
                   </button>
                 ))}
               </div>}
-              <select aria-label="Select student" value={selectedStudentId} onChange={e => setSelectedStudentId(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
+              <select aria-label="Select student" value={selectedStudentId} onChange={e => {
+                const nextId = e.target.value
+                setSelectedStudentId(nextId)
+                const nextStudent = filteredStudents.find(student => student.id === nextId)
+                if (nextStudent) hydrateSelectedStudent(nextStudent)
+              }} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
                 <option value="">Select student</option>
                 {filteredStudents.map(student => <option key={student.id} value={student.id}>{student.name} · {student.usn}</option>)}
               </select>
@@ -1186,13 +637,14 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
    ══════════════════════════════════════════════════════════════ */
 
 function StudentDrawer({ student, offering, role, onClose, onEscalate, onOpenTaskComposer, onAssignToMentor, onOpenHistory }: { student: Student | null; offering?: Offering; role: Role; onClose: () => void; onEscalate: (s: Student, o?: Offering) => void; onOpenTaskComposer: (s: Student, o?: Offering, taskType?: TaskType) => void; onAssignToMentor: (s: Student, o?: Offering) => void; onOpenHistory: (s: Student, o?: Offering) => void }) {
+  const { deriveAcademicProjection, getSchemeForOffering } = useAppSelectors()
   if (!student) return null
   const s = student
   const attPct = Math.round(s.present / s.totalClasses * 100)
   const riskCol = s.riskBand === 'High' ? T.danger : s.riskBand === 'Medium' ? T.warning : T.success
   const canSeeDetailedMarks = role !== 'Mentor'
   const drawerHistory = buildHistoryProfile({ student: s, offering: offering ?? null })
-  const ceSummary = offering ? deriveAcademicProjection({ offering, student: s, scheme: runtimeSchemesByOffering[offering.offId] ?? defaultSchemeForOffering(offering), history: drawerHistory }) : null
+  const ceSummary = offering ? deriveAcademicProjection({ offering, student: s, scheme: getSchemeForOffering(offering), history: drawerHistory }) : null
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 100, display: 'flex', justifyContent: 'flex-end' }}>
@@ -1490,8 +942,9 @@ function inferKindFromPendingAction(pending: string | null): EntryKind {
 }
 
 function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent, onOpenUpload, onOpenAllStudents, teacherInitials, greetingHeadline, greetingMeta }: { offerings: Offering[]; pendingTaskCount: number; onOpenCourse: (o: Offering) => void; onOpenStudent: (s: Student, o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void; onOpenAllStudents: () => void; teacherInitials: string; greetingHeadline: string; greetingMeta: string }) {
+  const { getStudentsPatched } = useAppSelectors()
   const total = offerings.reduce((a, o) => a + o.count, 0)
-  const allAtRisk = useMemo(() => offerings.flatMap(o => getStudentsPatched(o)), [offerings])
+  const allAtRisk = useMemo(() => offerings.flatMap(o => getStudentsPatched(o)), [getStudentsPatched, offerings])
   const highRiskStudents = useMemo(() => allAtRisk.filter(s => s.riskBand === 'High'), [allAtRisk])
   const highRiskCount = allAtRisk.filter(s => s.riskBand === 'High').length
   const yearGroups = useMemo(() => {
@@ -1583,10 +1036,11 @@ function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent,
 }
 
 function YearSection({ group, onOpenCourse, onOpenUpload }: { group: YearGroup; onOpenCourse: (o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void }) {
+  const { getStudentsPatched, getOfferingAttendancePatched } = useAppSelectors()
   const { year, color, stageInfo, offerings } = group
   const [collapsed, setCollapsed] = useState(false)
   const totalStudents = offerings.reduce((a, o) => a + o.count, 0)
-  const avgAtt = Math.round(offerings.reduce((a, o) => a + o.attendance, 0) / (offerings.length || 1))
+  const avgAtt = Math.round(offerings.reduce((a, o) => a + getOfferingAttendancePatched(o), 0) / (offerings.length || 1))
   const highRiskCount = offerings.filter(o => o.stage >= 2).reduce((a, o) => a + getStudentsPatched(o).filter(s => s.riskBand === 'High').length, 0)
   const pendingCount = offerings.filter(o => o.pendingAction).length
 
@@ -1611,11 +1065,12 @@ function YearSection({ group, onOpenCourse, onOpenUpload }: { group: YearGroup; 
 }
 
 function OfferingCard({ o, yc, onOpen, onOpenUpload }: { o: Offering; yc: string; onOpen: (o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void }) {
+  const { getStudentsPatched, getOfferingAttendancePatched } = useAppSelectors()
   const [hov, setHov] = useState(false)
   const sc = o.stageInfo.color
   const avgAtt = getOfferingAttendancePatched(o)
   const ac = avgAtt >= 75 ? T.success : avgAtt >= 65 ? T.warning : T.danger
-  const checks = [o.tt1Done, o.tt2Done, o.attendance >= 75]
+  const checks = [o.tt1Done, o.tt2Done, avgAtt >= 75]
   const highRisk = o.stage >= 2 ? getStudentsPatched(o).filter(s => s.riskBand === 'High').length : 0
 
   return (
@@ -1659,6 +1114,7 @@ function OfferingCard({ o, yc, onOpen, onOpenUpload }: { o: Offering; yc: string
 }
 
 function SummaryTable({ offerings, onOpenCourse, onOpenUpload }: { offerings: Offering[]; onOpenCourse: (o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void }) {
+  const { getStudentsPatched, getOfferingAttendancePatched } = useAppSelectors()
   return (
     <Card style={{ marginTop: 8, padding: 0, overflow: 'hidden' }}>
       <div style={{ padding: '14px 18px', borderBottom: `1px solid ${T.border}` }}>
@@ -1685,7 +1141,7 @@ function SummaryTable({ offerings, onOpenCourse, onOpenUpload }: { offerings: Of
                   <TD style={{ ...mono, fontSize: 12, fontWeight: 600, color: T.text }}>{o.count}</TD>
                   <TD>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 100 }}>
-                      <Bar val={o.attendance} color={ac} h={4} />
+                      <Bar val={avgAtt} color={ac} h={4} />
                       <span style={{ ...mono, fontSize: 10, color: ac }}>{avgAtt}%</span>
                     </div>
                   </TD>
@@ -1722,15 +1178,12 @@ const TAB_DEFS = [
 ]
 
 function CourseDetail({ offering: o, onBack, onOpenStudent, onOpenEntryHub, onOpenSchemeSetup, initialTab, scheme, lockMap, blueprints, onUpdateBlueprint }: { offering: Offering; onBack: () => void; onOpenStudent: (s: Student) => void; onOpenEntryHub: (kind: EntryKind) => void; onOpenSchemeSetup: () => void; initialTab?: string; scheme: SchemeState; lockMap: EntryLockMap; blueprints: Record<TTKind, TermTestBlueprint>; onUpdateBlueprint: (kind: TTKind, next: TermTestBlueprint) => void }) {
+  const { getStudentsPatched } = useAppSelectors()
   const [tab, setTab] = useState(initialTab ?? 'overview')
   const yc = yearColor(o.year)
-  const students = useMemo(() => getStudentsPatched(o), [o.offId])
+  const students = useMemo(() => getStudentsPatched(o), [getStudentsPatched, o])
   const cos = CO_MAP[o.code] || CO_MAP['default']
   const tabLocked = (t: string) => (t === 'tt2' && o.stageInfo.stage < 2) || (t === 'risk' && o.stage < 2)
-
-  useEffect(() => {
-    if (initialTab) setTab(initialTab)
-  }, [initialTab])
 
   return (
     <PageShell size="wide" style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', padding: 0 }}>
@@ -2024,7 +1477,7 @@ function TTTab({ ttNum, cos, blueprint, isLocked, onChangeBlueprint, students, o
   const normalized = normalizeBlueprint(kind, blueprint)
 
   const commitBlueprint = (nextNodes: TermTestNode[]) => {
-    onChangeBlueprint(normalizeBlueprint(kind, { ...blueprint, nodes: nextNodes, updatedAt: Date.now() }))
+    onChangeBlueprint(normalizeBlueprint(kind, { ...blueprint, nodes: nextNodes }))
   }
 
   const updateQuestion = (questionId: string, updater: (question: TermTestNode) => TermTestNode) => {
@@ -2325,6 +1778,7 @@ function COTab({ cos }: { cos: CODef[] }) {
 
 /* ─── Grade Book Tab ─── */
 function GradeBookTab({ offering, students, scheme, onOpenStudent, onOpenEntryHub, onOpenSchemeSetup }: { offering: Offering; students: Student[]; scheme: SchemeState; onOpenStudent: (s: Student) => void; onOpenEntryHub: () => void; onOpenSchemeSetup: () => void }) {
+  const { deriveAcademicProjection } = useAppSelectors()
   const schemeReady = scheme.status !== 'Needs Setup'
   return (
     <div style={{ padding: '24px 32px' }}>
@@ -2583,6 +2037,7 @@ function MenteeDetailPage({ mentee, tasks, onBack, onOpenHistory }: { mentee: Me
 }
 
 function AllStudentsPage({ offerings, onOpenStudent, onOpenHistory, onOpenUpload }: { offerings: Offering[]; onOpenStudent: (student: Student, offering: Offering) => void; onOpenHistory: (student: Student, offering: Offering) => void; onOpenUpload: (offering: Offering, kind: EntryKind) => void }) {
+  const { getStudentsPatched } = useAppSelectors()
   const [query, setQuery] = useState('')
   const [selectedYear, setSelectedYear] = useState('all')
   const [selectedCourse, setSelectedCourse] = useState('all')
@@ -2591,7 +2046,7 @@ function AllStudentsPage({ offerings, onOpenStudent, onOpenHistory, onOpenUpload
   const rows = useMemo(() => offerings.flatMap(offering => getStudentsPatched(offering).map(student => {
     const attendancePct = Math.round((student.present / Math.max(1, student.totalClasses)) * 100)
     return { offering, student, attendancePct }
-  })), [offerings])
+  })), [getStudentsPatched, offerings])
 
   const filteredRows = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -2947,7 +2402,7 @@ function UnlockReviewPage({ task, offering, onBack, onApprove, onReject, onReset
       </div>
       <Card glow={task.unlockRequest?.status === 'Rejected' ? T.danger : T.warning} style={{ marginBottom: 14 }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-          <Chip color={T.accent} size={9}>Requested by: {task.unlockRequest?.requestedBy ?? task.sourceRole}</Chip>
+          <Chip color={T.accent} size={9}>Requested by: {task.unlockRequest?.requestedByRole ?? task.sourceRole}</Chip>
           <Chip color={task.unlockRequest?.status === 'Rejected' ? T.danger : task.unlockRequest?.status === 'Reset Completed' ? T.success : T.warning} size={9}>Status: {task.unlockRequest?.status ?? 'Pending'}</Chip>
           <Chip color={T.dim} size={9}>Submitted: {formatDateTime(task.unlockRequest?.requestedAt)}</Chip>
         </div>
@@ -3064,37 +2519,36 @@ function QueueHistoryPage({ role, tasks, resolvedTaskIds, onOpenTaskStudent, onO
    ══════════════════════════════════════════════════════════════ */
 
 function HodView({ onOpenQueueHistory, onOpenCourse, onOpenStudent, tasks }: { onOpenQueueHistory: () => void; onOpenCourse: (o: Offering) => void; onOpenStudent: (s: Student, o?: Offering) => void; tasks: SharedTask[] }) {
+  const { getStudentsPatched, getOfferingAttendancePatched } = useAppSelectors()
   const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null)
 
-  const teacherCourseMap: Record<string, string[]> = useMemo(
-    () => Object.fromEntries(TEACHER_ACCOUNTS.map(t => [t.teacherId, t.courseCodes])) as Record<string, string[]>,
-    []
-  )
-
-  const teacherOfferingsById = useMemo(() => {
-    const map: Record<string, Offering[]> = Object.fromEntries(TEACHERS.map(t => [t.id, [] as Offering[]]))
-    OFFERINGS.forEach(o => {
-      const mappedTeacher = TEACHERS.find(t => (teacherCourseMap[t.id] || []).includes(o.code))
-      const teacherId = mappedTeacher
-        ? mappedTeacher.id
-        : TEACHERS[o.offId.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % TEACHERS.length].id
-      map[teacherId].push(o)
-    })
-    return map
-  }, [teacherCourseMap])
-
   const teacherStats = useMemo(() => {
-    return TEACHERS.map(t => {
-      const offerings = teacherOfferingsById[t.id] ?? []
+    return FACULTY.map(faculty => {
+      const offerings = faculty.offeringIds
+        .map(offId => OFFERINGS.find(offering => offering.offId === offId))
+        .filter((offering): offering is Offering => !!offering)
       const students = offerings.reduce((a, o) => a + o.count, 0)
       const highRisk = offerings.reduce((a, o) => a + getStudentsPatched(o).filter(s => s.riskBand === 'High').length, 0)
       const avgAtt = offerings.length > 0 ? Math.round(offerings.reduce((a, o) => a + getOfferingAttendancePatched(o), 0) / offerings.length) : 0
-      const lockChecks = offerings.flatMap(o => [o.tt1Locked ? 1 : 0, o.tt2Locked ? 1 : 0])
+      const lockChecks = offerings.flatMap(o => [o.tt1Locked ? 1 : 0, o.tt2Locked ? 1 : 0, o.quizLocked ? 1 : 0, o.asgnLocked ? 1 : 0])
       const completeness = lockChecks.length > 0 ? Math.round(lockChecks.reduce((a, x) => a + x, 0) / lockChecks.length * 100) : 0
       const pendingTasks = offerings.filter(o => !!o.pendingAction).length
-      return { ...t, offerings, students, highRisk, avgAtt, completeness, pendingTasks }
+      return {
+        id: faculty.facultyId,
+        name: faculty.name,
+        initials: faculty.initials,
+        dept: faculty.dept,
+        role: faculty.roleTitle,
+        roles: faculty.allowedRoles,
+        offerings,
+        students,
+        highRisk,
+        avgAtt,
+        completeness,
+        pendingTasks,
+      }
     })
-  }, [teacherOfferingsById])
+  }, [getOfferingAttendancePatched, getStudentsPatched])
 
   const selectedTeacher = useMemo(() => teacherStats.find(t => t.id === selectedTeacherId) ?? null, [teacherStats, selectedTeacherId])
   const mentorTasks = useMemo(() => {
@@ -3301,39 +2755,21 @@ const ENTRY_CATALOG: { kind: EntryKind; icon: string; title: string; desc: strin
   { kind: 'finals', icon: '🎓', title: 'SEE / Finals', desc: 'Final exam marks and gradebook completion flow.', tabId: 'gradebook' },
 ]
 
-const getEntryLockMap = (o: Offering) => ({
-  tt1: !!o.tt1Locked,
-  tt2: !!o.tt2Locked,
-  quiz: !!o.quizLocked,
-  assignment: !!o.asgnLocked,
-  attendance: false,
-  finals: false,
-})
-
 /* ══════════════════════════════════════════════════════════════
    UPLOAD PAGE
    ══════════════════════════════════════════════════════════════ */
 
-function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOffering, onRequestUnlock, availableOfferings, scheme, onOpenSchemeSetup }: { role: Role; offering: Offering | null; defaultKind: EntryKind; onOpenWorkspace: (offeringId: string, kind: EntryKind) => void; lockByOffering: Record<string, EntryLockMap>; onRequestUnlock: (offeringId: string, kind: EntryKind) => void; availableOfferings?: Offering[]; scheme: SchemeState; onOpenSchemeSetup: (offering?: Offering) => void }) {
+function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOffering, onRequestUnlock, availableOfferings, onOpenSchemeSetup }: { role: Role; offering: Offering | null; defaultKind: EntryKind; onOpenWorkspace: (offeringId: string, kind: EntryKind) => void; lockByOffering: Record<string, EntryLockMap>; onRequestUnlock: (offeringId: string, kind: EntryKind) => void; availableOfferings?: Offering[]; onOpenSchemeSetup: (offering?: Offering) => void }) {
+  const { getOfferingAttendancePatched, getSchemeForOffering } = useAppSelectors()
   const visibleOfferings = (availableOfferings && availableOfferings.length > 0 ? availableOfferings : OFFERINGS)
   const [selectedKind, setSelectedKind] = useState<EntryKind>(defaultKind)
   const [selectedOffId, setSelectedOffId] = useState<string>(offering?.offId ?? visibleOfferings[0].offId)
-  const [selectedCourseCode, setSelectedCourseCode] = useState<string>(offering?.code ?? visibleOfferings[0].code)
-  const [selectedClassOffId, setSelectedClassOffId] = useState<string>(offering?.offId ?? visibleOfferings[0].offId)
   const [unlockRequested, setUnlockRequested] = useState<EntryKind | null>(null)
-  useEffect(() => setSelectedKind(defaultKind), [defaultKind])
-  useEffect(() => {
-    if (offering?.offId) setSelectedOffId(offering.offId)
-  }, [offering])
-  useEffect(() => {
-    const selected = visibleOfferings.find(o => o.offId === selectedOffId) ?? visibleOfferings[0]
-    if (!selected) return
-    setSelectedCourseCode(selected.code)
-    setSelectedClassOffId(selected.offId)
-  }, [selectedOffId, visibleOfferings])
 
   const selected = ENTRY_CATALOG.find(x => x.kind === selectedKind) ?? ENTRY_CATALOG[0]
   const selectedOffering = visibleOfferings.find(o => o.offId === selectedOffId) ?? offering ?? visibleOfferings[0]
+  const scheme = getSchemeForOffering(selectedOffering)
+  const selectedCourseCode = selectedOffering.code
   const classOfferings = visibleOfferings.filter(o => o.code === selectedCourseCode)
   const lockMap = lockByOffering[selectedOffering.offId] ?? getEntryLockMap(selectedOffering)
   const stageRequired: Record<EntryKind, number> = { tt1: 1, tt2: 2, quiz: 2, assignment: 2, attendance: 1, finals: 3 }
@@ -3349,10 +2785,10 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOfferi
       tt2: !!selectedOffering.tt2Locked,
       quiz: !!selectedOffering.quizLocked,
       assignment: !!selectedOffering.asgnLocked,
-      attendance: selectedOffering.attendance >= 75,
+      attendance: getOfferingAttendancePatched(selectedOffering) >= 75,
       finals: selectedOffering.stageInfo.stage >= 3,
     }
-  }, [selectedOffering])
+  }, [getOfferingAttendancePatched, selectedOffering])
 
   return (
     <PageShell size="narrow">
@@ -3379,9 +2815,8 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOfferi
           <label htmlFor="entry-course-select" style={{ ...mono, fontSize: 10, color: T.muted, marginRight: 8 }}>Course:</label>
           <select id="entry-course-select" aria-label="Select course" title="Select course" value={selectedCourseCode} onChange={e => {
             const code = e.target.value
-            setSelectedCourseCode(code)
             const firstClass = visibleOfferings.find(o => o.code === code)
-            if (firstClass) setSelectedClassOffId(firstClass.offId)
+            if (firstClass) setSelectedOffId(firstClass.offId)
           }} style={{ width: '100%', ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 10px' }}>
             {Array.from(new Set(visibleOfferings.map(o => o.code))).map(code => {
               const first = visibleOfferings.find(o => o.code === code)
@@ -3391,16 +2826,19 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOfferi
         </div>
         <div>
           <label htmlFor="entry-class-select" style={{ ...mono, fontSize: 10, color: T.muted, marginRight: 8 }}>Class:</label>
-          <select id="entry-class-select" aria-label="Select class" title="Select class" value={selectedClassOffId} onChange={e => setSelectedClassOffId(e.target.value)} style={{ width: '100%', ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 10px' }}>
+          <select id="entry-class-select" aria-label="Select class" title="Select class" value={selectedOffId} onChange={e => setSelectedOffId(e.target.value)} style={{ width: '100%', ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 10px' }}>
             {classOfferings.map(o => <option key={o.offId} value={o.offId}>{o.year} · Sec {o.section} · {o.count} students</option>)}
           </select>
         </div>
-        <Btn size="sm" onClick={() => setSelectedOffId(selectedClassOffId)}>Select Class</Btn>
+        <Btn size="sm" onClick={() => setSelectedOffId(selectedOffId)}>Select Class</Btn>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        {ENTRY_CATALOG.map((x) => (
-          <Card key={x.kind} glow={selectedKind === x.kind ? T.accent : undefined} style={{ padding: '18px 20px', cursor: 'pointer', opacity: role === 'Course Leader' && lockMap[x.kind] ? 0.8 : 1 }} onClick={() => {
+        {ENTRY_CATALOG.map((x) => {
+          const isCardApplicable = selectedOffering.stageInfo.stage >= stageRequired[x.kind]
+          return (
+          <Card key={x.kind} glow={selectedKind === x.kind ? T.accent : undefined} style={{ padding: '18px 20px', cursor: (!isCardApplicable || (role === 'Course Leader' && lockMap[x.kind])) ? 'not-allowed' : 'pointer', opacity: role === 'Course Leader' && lockMap[x.kind] ? 0.8 : 1 }} onClick={() => {
             setSelectedKind(x.kind)
+            if (!isCardApplicable) return
             if (!schemeReady) {
               onOpenSchemeSetup(selectedOffering)
               return
@@ -3417,9 +2855,10 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOfferi
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               <Chip color={completion[x.kind] ? T.success : T.warning} size={10}>{completion[x.kind] ? 'Completed' : 'Pending Entry'}</Chip>
               {lockMap[x.kind] && <Chip color={T.danger} size={10}>Locked</Chip>}
+              {!isCardApplicable && <Chip color={T.warning} size={10}>Stage N/A</Chip>}
             </div>
           </Card>
-        ))}
+        )})}
       </div>
       {role === 'Mentor' && <div style={{ ...mono, fontSize: 11, color: T.warning, marginTop: 12 }}>Read-only role. Only Course Leaders can edit marks.</div>}
       {!isApplicableForStage && <div style={{ ...mono, fontSize: 11, color: T.warning, marginTop: 8 }}>Current selected type is not applicable at stage {selectedOffering.stageInfo.stage}.</div>}
@@ -3428,6 +2867,7 @@ function UploadPage({ role, offering, defaultKind, onOpenWorkspace, lockByOfferi
 }
 
 function EntryWorkspacePage({ capabilities, offeringId, kind, onBack, lockByOffering, draftBySection, onSaveDraft, onSubmitLock, onRequestUnlock, cellValues, onCellValueChange, onOpenStudent, onOpenTaskComposer, onUpdateStudentAttendance, schemeByOffering, ttBlueprintsByOffering, lockAuditByTarget }: { capabilities: FacultyCapabilitySet; offeringId: string; kind: EntryKind; onBack: () => void; lockByOffering: Record<string, EntryLockMap>; draftBySection: Record<string, number>; onSaveDraft: (offId: string, kind: EntryKind) => void; onSubmitLock: (offId: string, kind: EntryKind) => void; onRequestUnlock: (offeringId: string, kind: EntryKind) => void; cellValues: Record<string, number>; onCellValueChange: (key: string, value: number | undefined) => void; onOpenStudent: (s: Student, o: Offering) => void; onOpenTaskComposer: (input?: { offeringId?: string; studentId?: string; taskType?: TaskType }) => void; onUpdateStudentAttendance: (offeringId: string, studentId: string, patch: StudentRuntimePatch) => void; schemeByOffering: Record<string, SchemeState>; ttBlueprintsByOffering: Record<string, Record<TTKind, TermTestBlueprint>>; lockAuditByTarget: Record<string, QueueTransition[]> }) {
+  const { deriveAcademicProjection, getStudentsPatched } = useAppSelectors()
   const selectedOffering = OFFERINGS.find(o => o.offId === offeringId) ?? OFFERINGS[0]
   const groupedSections = OFFERINGS.filter(o => o.code === selectedOffering.code && o.year === selectedOffering.year)
   const [selectedClassOffId, setSelectedClassOffId] = useState<string>('all')
@@ -3590,15 +3030,15 @@ const HOD_NAV: Array<{ id: PageId; icon: typeof LayoutDashboard; label: string }
 ]
 
 export default function App() {
-  const [themeMode, setThemeMode] = useState<ThemeMode>(() => normalizeThemeMode(localStorage.getItem('airmentor-theme')))
-  const [isNarrowViewport, setIsNarrowViewport] = useState(() => window.innerWidth < 1100)
+  const repositories = useMemo(() => createLocalAirMentorRepositories(), [])
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => repositories.sessionPreferences.getThemeSnapshot() ?? normalizeThemeMode(null))
   const [isCompactTopbar, setIsCompactTopbar] = useState(() => window.innerWidth < 980)
   const [showTopbarMenu, setShowTopbarMenu] = useState(false)
   const [now, setNow] = useState(() => new Date())
-  const [currentTeacherId, setCurrentTeacherId] = useState<string | null>(() => localStorage.getItem('airmentor-current-teacher-id'))
-  const currentTeacher = useMemo(() => currentTeacherId ? (TEACHER_ACCOUNTS.find(t => t.teacherId === currentTeacherId) ?? null) : null, [currentTeacherId])
-  const [role, setRole] = useState<Role>('Course Leader')
-  const [page, setPage] = useState<PageId>('dashboard')
+  const [currentTeacherId, setCurrentTeacherId] = useState<string | null>(() => repositories.sessionPreferences.getCurrentFacultyIdSnapshot())
+  const currentTeacher = useMemo<FacultyAccount | null>(() => currentTeacherId ? (FACULTY.find(faculty => faculty.facultyId === currentTeacherId) ?? null) : null, [currentTeacherId])
+  const [role, setRole] = useState<Role>(() => currentTeacher?.allowedRoles[0] ?? 'Course Leader')
+  const [page, setPage] = useState<PageId>(() => getHomePage(currentTeacher?.allowedRoles[0] ?? 'Course Leader'))
   const [offering, setOffering] = useState<Offering | null>(null)
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
   const [selectedOffering, setSelectedOffering] = useState<Offering | null>(null)
@@ -3607,8 +3047,8 @@ export default function App() {
   const [historyBackPage, setHistoryBackPage] = useState<PageId | null>(null)
   const [selectedUnlockTaskId, setSelectedUnlockTaskId] = useState<string | null>(null)
   const [schemeOfferingId, setSchemeOfferingId] = useState<string | null>(null)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [showActionQueue, setShowActionQueue] = useState(true)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.innerWidth < 1100)
+  const [showActionQueue, setShowActionQueue] = useState(() => window.innerWidth >= 1100)
   const [uploadOffering, setUploadOffering] = useState<Offering | null>(null)
   const [uploadKind, setUploadKind] = useState<EntryKind>('tt1')
   const [entryOfferingId, setEntryOfferingId] = useState<string>(OFFERINGS[0].offId)
@@ -3616,120 +3056,33 @@ export default function App() {
   const [courseInitialTab, setCourseInitialTab] = useState<string | undefined>(undefined)
   const [taskComposer, setTaskComposer] = useState<TaskComposerState>({ isOpen: false, step: 'details', taskType: 'Follow-up', dueDateISO: '', note: '', search: '' })
   const [pendingNoteAction, setPendingNoteAction] = useState<NoteActionState | null>(null)
-  const [studentPatches, setStudentPatches] = useState<Record<string, StudentRuntimePatch>>(() => {
-    try {
-      const saved = localStorage.getItem(STUDENT_PATCHES_KEY)
-      return saved ? JSON.parse(saved) : {}
-    } catch {
-      return {}
-    }
-  })
-  const [schemeByOffering, setSchemeByOffering] = useState<Record<string, SchemeState>>(() => {
-    try {
-      const saved = localStorage.getItem(SCHEME_STATE_KEY)
-      if (saved) {
-        const parsed = JSON.parse(saved) as Record<string, Partial<SchemeState>>
-        return Object.fromEntries(OFFERINGS.map(item => [item.offId, normalizeSchemeState(parsed[item.offId], item)])) as Record<string, SchemeState>
-      }
-    } catch {
-      // ignore
-    }
-    return Object.fromEntries(OFFERINGS.map(item => [item.offId, normalizeSchemeState(defaultSchemeForOffering(item), item)])) as Record<string, SchemeState>
-  })
-  const [ttBlueprintsByOffering, setTtBlueprintsByOffering] = useState<Record<string, Record<TTKind, TermTestBlueprint>>>(() => {
-    try {
-      const saved = localStorage.getItem(BLUEPRINT_STATE_KEY)
-      if (saved) {
-        const parsed = JSON.parse(saved) as Record<string, Record<TTKind, TermTestBlueprint>>
-        return Object.fromEntries(OFFERINGS.map(item => {
-          const source = parsed[item.offId]
-          const basePaper = PAPER_MAP[item.code] || PAPER_MAP.default
-          return [item.offId, {
-            tt1: normalizeBlueprint('tt1', source?.tt1 ?? seedBlueprintFromPaper('tt1', basePaper)),
-            tt2: normalizeBlueprint('tt2', source?.tt2 ?? seedBlueprintFromPaper('tt2', basePaper)),
-          }]
-        })) as Record<string, Record<TTKind, TermTestBlueprint>>
-      }
-    } catch {
-      // ignore
-    }
-    return Object.fromEntries(OFFERINGS.map(item => {
-      const basePaper = PAPER_MAP[item.code] || PAPER_MAP.default
-      return [item.offId, {
-        tt1: seedBlueprintFromPaper('tt1', basePaper),
-        tt2: seedBlueprintFromPaper('tt2', basePaper),
-      }]
-    })) as Record<string, Record<TTKind, TermTestBlueprint>>
-  })
-  const [lockAuditByTarget, setLockAuditByTarget] = useState<Record<string, QueueTransition[]>>(() => {
-    try {
-      const saved = localStorage.getItem(LOCK_AUDIT_KEY)
-      return saved ? JSON.parse(saved) : {}
-    } catch {
-      return {}
-    }
-  })
+  const [studentPatches, setStudentPatches] = useState<Record<string, StudentRuntimePatch>>(() => repositories.entryData.getStudentPatchesSnapshot())
+  const [schemeByOffering, setSchemeByOffering] = useState<Record<string, SchemeState>>(() => repositories.entryData.getSchemeStateSnapshot(OFFERINGS))
+  const [ttBlueprintsByOffering, setTtBlueprintsByOffering] = useState<Record<string, Record<TTKind, TermTestBlueprint>>>(() => repositories.entryData.getBlueprintSnapshot(OFFERINGS))
+  const [lockAuditByTarget, setLockAuditByTarget] = useState<Record<string, QueueTransition[]>>(() => repositories.locksAudit.getLockAuditSnapshot())
+  const selectors = useMemo(() => createAppSelectors({ studentPatches, schemeByOffering, ttBlueprintsByOffering }), [schemeByOffering, studentPatches, ttBlueprintsByOffering])
+  const { getStudentsPatched } = selectors
 
-  const allowedRoles = currentTeacher?.permissions ?? []
+  const allowedRoles = useMemo(() => currentTeacher?.allowedRoles ?? [], [currentTeacher])
   const capabilities = useMemo<FacultyCapabilitySet>(() => ({
     canApproveUnlock: role === 'HoD',
     canEditMarks: role === 'Course Leader',
-  }), [currentTeacher, role])
+  }), [role])
   const assignedOfferings = useMemo(() => {
     if (!currentTeacher) return OFFERINGS
     if (role === 'HoD') return OFFERINGS
     return OFFERINGS.filter(o => currentTeacher.courseCodes.includes(o.code))
   }, [currentTeacher, role])
   const assignedMentees = useMemo(() => {
-    if (!currentTeacherId) return MENTEES
-    const ids = new Set(MENTEE_ASSIGNMENTS[currentTeacherId] ?? [])
+    if (!currentTeacher) return MENTEES
+    const ids = new Set(currentTeacher.menteeIds)
     return MENTEES.filter(m => ids.has(m.id))
-  }, [currentTeacherId])
+  }, [currentTeacher])
 
-  const [lockByOffering, setLockByOffering] = useState<Record<string, EntryLockMap>>(() => {
-    try {
-      const saved = localStorage.getItem('airmentor-locks')
-      if (saved) return JSON.parse(saved)
-    } catch {
-      // ignore
-    }
-    return Object.fromEntries(OFFERINGS.map(o => [o.offId, getEntryLockMap(o)])) as Record<string, EntryLockMap>
-  })
-  const [draftBySection, setDraftBySection] = useState<Record<string, number>>(() => {
-    try {
-      const saved = localStorage.getItem('airmentor-drafts')
-      return saved ? JSON.parse(saved) : {}
-    } catch {
-      return {}
-    }
-  })
-  const [cellValues, setCellValues] = useState<Record<string, number>>(() => {
-    try {
-      const saved = localStorage.getItem('airmentor-cell-values')
-      return saved ? JSON.parse(saved) : {}
-    } catch {
-      return {}
-    }
-  })
-  const [allTasksList, setAllTasksList] = useState<SharedTask[]>(() => {
-    try {
-      const saved = localStorage.getItem('airmentor-all-tasks')
-      if (saved) {
-        const parsed = JSON.parse(saved) as Array<SharedTask | (Task & { createdAt?: number })>
-        return parsed.map(t => ({
-          ...t,
-          createdAt: 'createdAt' in t && typeof t.createdAt === 'number' ? t.createdAt : Date.now(),
-          updatedAt: 'updatedAt' in t && typeof (t as SharedTask).updatedAt === 'number' ? (t as SharedTask).updatedAt : ('createdAt' in t && typeof t.createdAt === 'number' ? t.createdAt : Date.now()),
-          taskType: 'taskType' in t && (t as SharedTask).taskType ? (t as SharedTask).taskType : 'Follow-up',
-          assignedTo: 'assignedTo' in t && (t as SharedTask).assignedTo ? (t as SharedTask).assignedTo : 'Course Leader',
-          transitionHistory: 'transitionHistory' in t && Array.isArray((t as SharedTask).transitionHistory)
-            ? (t as SharedTask).transitionHistory
-            : [createTransition({ action: 'Imported into local mock state', actorRole: 'System', toOwner: ('assignedTo' in t && (t as SharedTask).assignedTo ? (t as SharedTask).assignedTo : 'Course Leader'), note: 'Recovered persisted queue item.' })],
-        }))
-      }
-    } catch {
-      // ignore
-    }
+  const [lockByOffering, setLockByOffering] = useState<Record<string, EntryLockMap>>(() => repositories.locksAudit.getLockSnapshot(OFFERINGS))
+  const [draftBySection, setDraftBySection] = useState<Record<string, number>>(() => repositories.entryData.getDraftSnapshot())
+  const [cellValues, setCellValues] = useState<Record<string, number>>(() => repositories.entryData.getCellValueSnapshot())
+  const [allTasksList, setAllTasksList] = useState<SharedTask[]>(() => repositories.tasks.getTasksSnapshot(() => {
     const courseLeaderTasks: SharedTask[] = generateTasks().map(t => ({
       ...t,
       createdAt: Date.now(),
@@ -3832,9 +3185,10 @@ export default function App() {
       requestNote: 'Late moderation issue was discovered after TT1 lock. Need controlled correction for a small set of students.',
       handoffNote: 'Please unlock TT1 once moderation discrepancy is verified.',
       unlockRequest: {
+        offeringId: cs401A.offId,
         kind: 'tt1',
         status: 'Pending',
-        requestedBy: 'Course Leader',
+        requestedByRole: 'Course Leader',
         requestedByFacultyId: 't1',
         requestedAt: Date.now(),
         requestNote: 'Late moderation issue was discovered after TT1 lock. Need controlled correction for a small set of students.',
@@ -3868,9 +3222,10 @@ export default function App() {
       requestNote: 'Requested TT1 unlock for a re-evaluation challenge, but the sheet had already been ratified.',
       handoffNote: 'Please review whether this ratified sheet can be reopened.',
       unlockRequest: {
+        offeringId: cs403C.offId,
         kind: 'tt1',
         status: 'Rejected',
-        requestedBy: 'Course Leader',
+        requestedByRole: 'Course Leader',
         requestedByFacultyId: 't1',
         requestedAt: Date.now() - 86_400_000,
         requestNote: 'Requested TT1 unlock for a re-evaluation challenge, but the sheet had already been ratified.',
@@ -3884,28 +3239,18 @@ export default function App() {
       ],
     }
     return [...courseLeaderTasks, overdueRemedial, pendingUnlockTask, rejectedUnlockTask, ...mentorTasks]
-  })
-  const [resolvedTasks, setResolvedTasks] = useState<Record<string, number>>(() => {
-    try {
-      const saved = localStorage.getItem('airmentor-resolved-tasks')
-      return saved ? JSON.parse(saved) : { 'seed-unlock-rejected-cs403c-tt1': Date.now() - 43_200_000 }
-    } catch {
-      return { 'seed-unlock-rejected-cs403c-tt1': Date.now() - 43_200_000 }
-    }
-  })
+  }))
+  const [resolvedTasks, setResolvedTasks] = useState<Record<string, number>>(() => repositories.tasks.getResolvedTasksSnapshot({ 'seed-unlock-rejected-cs403c-tt1': Date.now() - 43_200_000 }))
 
-  useEffect(() => { localStorage.setItem('airmentor-locks', JSON.stringify(lockByOffering)) }, [lockByOffering])
-  useEffect(() => { localStorage.setItem('airmentor-drafts', JSON.stringify(draftBySection)) }, [draftBySection])
-  useEffect(() => { localStorage.setItem('airmentor-cell-values', JSON.stringify(cellValues)) }, [cellValues])
-  useEffect(() => { localStorage.setItem('airmentor-all-tasks', JSON.stringify(allTasksList)) }, [allTasksList])
-  useEffect(() => { localStorage.setItem('airmentor-resolved-tasks', JSON.stringify(resolvedTasks)) }, [resolvedTasks])
-  useEffect(() => { localStorage.setItem(STUDENT_PATCHES_KEY, JSON.stringify(studentPatches)) }, [studentPatches])
-  useEffect(() => { localStorage.setItem(SCHEME_STATE_KEY, JSON.stringify(schemeByOffering)) }, [schemeByOffering])
-  useEffect(() => { localStorage.setItem(BLUEPRINT_STATE_KEY, JSON.stringify(ttBlueprintsByOffering)) }, [ttBlueprintsByOffering])
-  useEffect(() => { localStorage.setItem(LOCK_AUDIT_KEY, JSON.stringify(lockAuditByTarget)) }, [lockAuditByTarget])
-  useEffect(() => { setRuntimeStudentPatches(studentPatches) }, [studentPatches])
-  useEffect(() => { setRuntimeSchemes(schemeByOffering) }, [schemeByOffering])
-  useEffect(() => { setRuntimeBlueprints(ttBlueprintsByOffering) }, [ttBlueprintsByOffering])
+  useEffect(() => { void repositories.locksAudit.saveLocks(lockByOffering) }, [lockByOffering, repositories])
+  useEffect(() => { void repositories.entryData.saveDrafts(draftBySection) }, [draftBySection, repositories])
+  useEffect(() => { void repositories.entryData.saveCellValues(cellValues) }, [cellValues, repositories])
+  useEffect(() => { void repositories.tasks.saveTasks(allTasksList) }, [allTasksList, repositories])
+  useEffect(() => { void repositories.tasks.saveResolvedTasks(resolvedTasks) }, [repositories, resolvedTasks])
+  useEffect(() => { void repositories.entryData.saveStudentPatches(studentPatches) }, [repositories, studentPatches])
+  useEffect(() => { void repositories.entryData.saveSchemeState(schemeByOffering) }, [repositories, schemeByOffering])
+  useEffect(() => { void repositories.entryData.saveBlueprintState(ttBlueprintsByOffering) }, [repositories, ttBlueprintsByOffering])
+  useEffect(() => { void repositories.locksAudit.saveLockAudit(lockAuditByTarget) }, [lockAuditByTarget, repositories])
 
   const supervisedOfferingIds = useMemo(() => new Set(assignedOfferings.map(o => o.offId)), [assignedOfferings])
   const supervisedMenteeIds = useMemo(() => new Set(assignedMentees.map(m => m.id)), [assignedMentees])
@@ -3960,42 +3305,26 @@ export default function App() {
   applyThemePreset(themeMode)
 
   useEffect(() => {
-    localStorage.setItem('airmentor-theme', themeMode)
-  }, [themeMode])
+    void repositories.sessionPreferences.saveTheme(themeMode)
+  }, [repositories, themeMode])
 
   useEffect(() => {
-    if (currentTeacherId) localStorage.setItem('airmentor-current-teacher-id', currentTeacherId)
-    else localStorage.removeItem('airmentor-current-teacher-id')
-  }, [currentTeacherId])
-
-  useEffect(() => {
-    if (!currentTeacher) return
-    if (!currentTeacher.permissions.includes(role)) {
-      const nextRole = currentTeacher.permissions[0]
-      setRole(nextRole)
-      setPage(getHomePage(nextRole))
-    }
-  }, [currentTeacher, role])
-
-  useEffect(() => {
-    if (!canAccessPage(role, page)) {
-      setPage(getHomePage(role))
-    }
-  }, [page, role])
+    void repositories.sessionPreferences.saveCurrentFacultyId(currentTeacherId)
+  }, [currentTeacherId, repositories])
 
   useEffect(() => {
     const onResize = () => {
       const width = window.innerWidth
-      setIsNarrowViewport(width < 1100)
+      const nextNarrow = width < 1100
       setIsCompactTopbar(width < 980)
+      if (nextNarrow) {
+        setSidebarCollapsed(true)
+        setShowActionQueue(false)
+      }
     }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
-
-  useEffect(() => {
-    if (!isCompactTopbar) setShowTopbarMenu(false)
-  }, [isCompactTopbar])
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -4003,12 +3332,6 @@ export default function App() {
     }, 30_000)
     return () => window.clearInterval(timer)
   }, [])
-
-  useEffect(() => {
-    if (!isNarrowViewport) return
-    setSidebarCollapsed(true)
-    setShowActionQueue(false)
-  }, [isNarrowViewport])
 
   const auditParamsApplied = useRef(false)
   useEffect(() => {
@@ -4020,7 +3343,14 @@ export default function App() {
     }
     const mockTeacher = params.get('mockTeacher')
     if (mockTeacher && currentTeacherId !== mockTeacher) {
+      const mockFaculty = FACULTY.find(faculty => faculty.facultyId === mockTeacher)
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCurrentTeacherId(mockTeacher)
+      if (mockFaculty) {
+        const nextRole = mockFaculty.allowedRoles[0]
+        setRole(nextRole)
+        setPage(getHomePage(nextRole))
+      }
       return
     }
     if (!currentTeacher) return
@@ -4073,7 +3403,7 @@ export default function App() {
     if (mockUnlockTaskId) setSelectedUnlockTaskId(mockUnlockTaskId)
     if (mockPage && canAccessPage(role, mockPage)) setPage(mockPage)
     auditParamsApplied.current = true
-  }, [allTasksList, allowedRoles, currentTeacher, currentTeacherId, role])
+  }, [allTasksList, allowedRoles, currentTeacher, currentTeacherId, getStudentsPatched, role])
 
   const handleOpenCourse = useCallback((o: Offering) => {
     setOffering(o)
@@ -4210,6 +3540,25 @@ export default function App() {
     }) : prev)
   }, [])
 
+  const commitStudentPatch = useCallback((offeringId: string, studentId: string, updater: (existing: StudentRuntimePatch) => StudentRuntimePatch) => {
+    setStudentPatches(prev => {
+      const key = toStudentPatchKey(offeringId, studentId)
+      const existing = prev[key] ?? {}
+      const updated = updater(existing)
+      const cleaned: StudentRuntimePatch = {
+        ...updated,
+        tt1LeafScores: pruneScoreMap(updated.tt1LeafScores),
+        tt2LeafScores: pruneScoreMap(updated.tt2LeafScores),
+        quizScores: pruneScoreMap(updated.quizScores),
+        assignmentScores: pruneScoreMap(updated.assignmentScores),
+      }
+      const next = { ...prev }
+      if (isPatchEmpty(cleaned)) delete next[key]
+      else next[key] = cleaned
+      return next
+    })
+  }, [])
+
   const handleCellValueChange = useCallback((key: string, value: number | undefined) => {
     setCellValues(prev => {
       const next = { ...prev }
@@ -4260,19 +3609,23 @@ export default function App() {
       const target = prev.find(task => task.id === id)
       if (!target) return prev
 
-      const updated = prev.map(task => task.id === id ? ({
-        ...task,
-        status: 'Resolved' as Task['status'],
-        updatedAt: resolvedAt,
-        resolvedByFacultyId: currentTeacherId ?? undefined,
-        scheduleMeta: task.scheduleMeta?.mode === 'scheduled'
-          ? {
-            ...task.scheduleMeta,
-            completedDatesISO: [...(task.scheduleMeta.completedDatesISO ?? []), ...(task.dueDateISO ? [task.dueDateISO] : [])],
-          }
-          : task.scheduleMeta,
-        transitionHistory: [...(task.transitionHistory ?? []), createTransition({ action: 'Resolved', actorRole: role, actorTeacherId: currentTeacherId ?? undefined, fromOwner: task.assignedTo, toOwner: task.assignedTo, note: `${role} marked this queue item as resolved.` })],
-      }) : task)
+      const updated = prev.map(task => {
+        if (task.id !== id) return task
+        const updatedTask: SharedTask = {
+          ...task,
+          status: 'Resolved',
+          updatedAt: resolvedAt,
+          resolvedByFacultyId: currentTeacherId ?? undefined,
+          scheduleMeta: task.scheduleMeta?.mode === 'scheduled'
+            ? {
+              ...task.scheduleMeta,
+              completedDatesISO: [...(task.scheduleMeta.completedDatesISO ?? []), ...(task.dueDateISO ? [task.dueDateISO] : [])],
+            }
+            : task.scheduleMeta,
+          transitionHistory: [...(task.transitionHistory ?? []), createTransition({ action: 'Resolved', actorRole: role, actorTeacherId: currentTeacherId ?? undefined, fromOwner: task.assignedTo, toOwner: task.assignedTo, note: `${role} marked this queue item as resolved.` })],
+        }
+        return updatedTask
+      })
 
       if (target.scheduleMeta?.mode !== 'scheduled' || target.scheduleMeta.status === 'paused' || target.scheduleMeta.status === 'ended') return updated
 
@@ -4355,26 +3708,6 @@ export default function App() {
     }) : task))
   }, [currentTeacherId, role])
 
-  function commitStudentPatch(offeringId: string, studentId: string, updater: (existing: StudentRuntimePatch) => StudentRuntimePatch) {
-    setStudentPatches(prev => {
-      const key = toStudentPatchKey(offeringId, studentId)
-      const existing = prev[key] ?? {}
-      const updated = updater(existing)
-      const cleaned: StudentRuntimePatch = {
-        ...updated,
-        tt1LeafScores: pruneScoreMap(updated.tt1LeafScores),
-        tt2LeafScores: pruneScoreMap(updated.tt2LeafScores),
-        quizScores: pruneScoreMap(updated.quizScores),
-        assignmentScores: pruneScoreMap(updated.assignmentScores),
-      }
-      const next = { ...prev }
-      if (isPatchEmpty(cleaned)) delete next[key]
-      else next[key] = cleaned
-      setRuntimeStudentPatches(next)
-      return next
-    })
-  }
-
   const appendLockAudit = useCallback((offeringId: string, kind: EntryKind, transition: QueueTransition) => {
     setLockAuditByTarget(prev => ({
       ...prev,
@@ -4384,7 +3717,7 @@ export default function App() {
 
   const handleUpdateStudentAttendance = useCallback((offeringId: string, studentId: string, patch: StudentRuntimePatch) => {
     commitStudentPatch(offeringId, studentId, existing => ({ ...existing, ...patch }))
-  }, [])
+  }, [commitStudentPatch])
 
   const handleOpenTaskComposer = useCallback((input?: { offeringId?: string; studentId?: string; taskType?: TaskType }) => {
     const fallbackOffering = (input?.offeringId ? OFFERINGS.find(item => item.offId === input.offeringId) : null) ?? uploadOffering ?? offering ?? assignedOfferings[0] ?? OFFERINGS[0]
@@ -4402,7 +3735,7 @@ export default function App() {
       note: suggested.note,
       search: selectedStudent?.name ?? '',
     })
-  }, [assignedOfferings, offering, uploadOffering])
+  }, [assignedOfferings, getStudentsPatched, offering, uploadOffering])
 
   const handleRequestUnlock = useCallback((offeringId: string, kind: EntryKind) => {
     setPendingNoteAction({ type: 'unlock-request', offeringId, kind })
@@ -4452,9 +3785,9 @@ export default function App() {
         note: input.note || `${role} created ${input.taskType.toLowerCase()} queue item.`,
       })],
     }
-    syncTaskToBackend(toBackendTaskPayload(next))
+    void repositories.tasks.upsertTask(next)
     setAllTasksList(prev => [next, ...prev])
-  }, [currentTeacherId, role])
+  }, [currentTeacherId, getStudentsPatched, repositories, role])
 
   const handleRemedialCheckIn = useCallback((taskId: string) => {
     setAllTasksList(prev => prev.map(task => {
@@ -4481,10 +3814,10 @@ export default function App() {
           note: progress.completed === progress.total ? 'All remedial steps have been completed.' : 'One remedial step was marked complete.',
         })],
       }
-      syncTaskToBackend(toBackendTaskPayload(updatedTask))
+      void repositories.tasks.upsertTask(updatedTask)
       return updatedTask
     }))
-  }, [currentTeacherId, role])
+  }, [currentTeacherId, repositories, role])
 
   const submitUnlockRequest = useCallback((offeringId: string, kind: EntryKind, note: string) => {
     const off = OFFERINGS.find(o => o.offId === offeringId)
@@ -4520,9 +3853,10 @@ export default function App() {
         requestNote: note,
         handoffNote: note,
         unlockRequest: {
+          offeringId,
           kind,
           status: 'Pending',
-          requestedBy: role,
+          requestedByRole: role,
           requestedByFacultyId: currentTeacherId ?? undefined,
           requestedAt,
           requestNote: note,
@@ -4555,9 +3889,10 @@ export default function App() {
         requestNote: note,
         handoffNote: note,
         unlockRequest: {
+          offeringId,
           kind,
           status: 'Pending',
-          requestedBy: role,
+          requestedByRole: role,
           requestedByFacultyId: currentTeacherId ?? undefined,
           requestedAt,
           requestNote: note,
@@ -4565,10 +3900,10 @@ export default function App() {
         },
         transitionHistory: [transition],
       }
-      syncTaskToBackend(toBackendTaskPayload(nextTask))
+      void repositories.tasks.upsertTask(nextTask)
       return existing ? prev.map(task => task.id === id ? nextTask : task) : [nextTask, ...prev]
     })
-  }, [appendLockAudit, currentTeacherId, role])
+  }, [appendLockAudit, currentTeacherId, repositories, role])
 
   const submitStudentHandoff = useCallback((studentId: string, offeringId: string, mode: 'escalate' | 'mentor', note: string) => {
     const off = OFFERINGS.find(item => item.offId === offeringId)
@@ -4633,10 +3968,10 @@ export default function App() {
         handoffNote: note,
         transitionHistory: [transition],
       }
-      syncTaskToBackend(toBackendTaskPayload(nextTask))
+      void repositories.tasks.upsertTask(nextTask)
       return existing ? prev.map(task => task.id === id ? nextTask : task) : [nextTask, ...prev]
     })
-  }, [currentTeacherId, role])
+  }, [currentTeacherId, getStudentsPatched, repositories, role])
 
   const commitTaskReassignment = useCallback((taskId: string, toRole: Role, note: string) => {
     setResolvedTasks(prev => {
@@ -4664,10 +3999,10 @@ export default function App() {
           note,
         })],
       }
-      syncTaskToBackend(toBackendTaskPayload(nextTask))
+      void repositories.tasks.upsertTask(nextTask)
       return nextTask
     }))
-  }, [currentTeacherId, role])
+  }, [currentTeacherId, repositories, role])
 
   const handleReassignTask = useCallback((taskId: string, toRole: Role) => {
     const task = allTasksList.find(item => item.id === taskId)
@@ -4690,7 +4025,7 @@ export default function App() {
       offeringId: resolvedOffering.offId,
       title: `Escalate ${student.name} to HoD`,
     })
-  }, [])
+  }, [getStudentsPatched])
 
   const handleOpenStudentMentorHandoff = useCallback((student: Student, currentOffering?: Offering) => {
     const resolvedOffering = currentOffering ?? OFFERINGS.find(item => getStudentsPatched(item).some(candidate => candidate.id === student.id))
@@ -4702,7 +4037,7 @@ export default function App() {
       offeringId: resolvedOffering.offId,
       title: `Defer ${student.name} to Mentor`,
     })
-  }, [])
+  }, [getStudentsPatched])
 
   const handleSubmitRequiredNote = useCallback((note: string) => {
     const action = pendingNoteAction
@@ -4824,7 +4159,7 @@ export default function App() {
         setPage('student-history')
       }
     }
-  }, [assignedMentees, assignedOfferings, handleOpenStudent, page, role])
+  }, [assignedMentees, assignedOfferings, getStudentsPatched, handleOpenStudent, page, role])
 
   const pendingNoteMeta = useMemo(() => {
     if (!pendingNoteAction) return null
@@ -4852,11 +4187,11 @@ export default function App() {
   }, [pendingNoteAction])
 
   if (!currentTeacher) {
-    return <LoginPage onLogin={(teacherId) => {
-      const account = TEACHER_ACCOUNTS.find(t => t.teacherId === teacherId)
+    return <AppSelectorsContext.Provider value={selectors}><LoginPage onLogin={(teacherId) => {
+      const account = FACULTY.find(faculty => faculty.facultyId === teacherId)
       if (!account) return
-      setCurrentTeacherId(account.teacherId)
-      const firstRole = account.permissions[0]
+      setCurrentTeacherId(account.facultyId)
+      const firstRole = account.allowedRoles[0]
       setRole(firstRole)
       setPage(getHomePage(firstRole))
       setOffering(null)
@@ -4865,7 +4200,7 @@ export default function App() {
       setHistoryProfile(null)
       setHistoryBackPage(null)
       setCourseInitialTab(undefined)
-    }} />
+    }} /></AppSelectorsContext.Provider>
   }
 
   const handleLogout = () => {
@@ -4886,6 +4221,7 @@ export default function App() {
   }
 
   return (
+    <AppSelectorsContext.Provider value={selectors}>
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: T.bg, color: T.text, overflowX: 'hidden' }}>
       {/* ═══ TOP BAR ═══ */}
       <div className={`top-bar-shell ${isCompactTopbar ? 'top-bar-shell--compact' : ''}`} style={{ position: 'sticky', top: 0, zIndex: 50, display: 'flex', alignItems: 'center', gap: 16, padding: '10px 20px', background: isLightTheme(themeMode) ? 'rgba(255,255,255,0.9)' : 'rgba(9,14,22,0.9)', backdropFilter: 'blur(12px)', borderBottom: `1px solid ${T.border}` }}>
@@ -5023,10 +4359,10 @@ export default function App() {
         <div className={`scroll-pane app-content app-content--${layoutMode}`} style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: 'calc(100vh - 54px)' }}>
           {role === 'Course Leader' && page === 'dashboard' && <CLDashboard offerings={assignedOfferings} pendingTaskCount={pendingActionCount} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} onOpenAllStudents={handleOpenAllStudents} teacherInitials={currentTeacher.initials} greetingHeadline={greetingHeadline} greetingMeta={greetingMeta} />}
           {role === 'Course Leader' && page === 'students' && <AllStudentsPage offerings={assignedOfferings} onOpenStudent={handleOpenStudent} onOpenHistory={handleOpenHistoryFromStudent} onOpenUpload={handleOpenUpload} />}
-          {role === 'Course Leader' && page === 'course' && offering && <CourseDetail offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? { tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default), tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default) }} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
+          {role === 'Course Leader' && page === 'course' && offering && <CourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? { tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default), tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default) }} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
           {role === 'Course Leader' && page === 'scheme-setup' && selectedSchemeOffering && <SchemeSetupPage role={role} offering={selectedSchemeOffering} scheme={schemeByOffering[selectedSchemeOffering.offId] ?? defaultSchemeForOffering(selectedSchemeOffering)} hasEntryStarted={hasEntryStartedForOffering(selectedSchemeOffering.offId)} onSave={(next) => handleSaveScheme(selectedSchemeOffering.offId, next)} onBack={() => setPage('upload')} />}
           {role === 'Course Leader' && page === 'calendar' && <CalendarPage />}
-          {role === 'Course Leader' && page === 'upload' && <UploadPage role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} onRequestUnlock={handleRequestUnlock} availableOfferings={assignedOfferings} scheme={schemeByOffering[(uploadOffering ?? assignedOfferings[0] ?? OFFERINGS[0]).offId] ?? defaultSchemeForOffering(uploadOffering ?? assignedOfferings[0] ?? OFFERINGS[0])} onOpenSchemeSetup={handleOpenSchemeSetup} />}
+          {role === 'Course Leader' && page === 'upload' && <UploadPage key={`${uploadOffering?.offId ?? 'default'}-${uploadKind}`} role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} onRequestUnlock={handleRequestUnlock} availableOfferings={assignedOfferings} onOpenSchemeSetup={handleOpenSchemeSetup} />}
           {role === 'Course Leader' && page === 'entry-workspace' && <EntryWorkspacePage capabilities={capabilities} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} onRequestUnlock={handleRequestUnlock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onOpenTaskComposer={handleOpenTaskComposer} onUpdateStudentAttendance={handleUpdateStudentAttendance} schemeByOffering={schemeByOffering} ttBlueprintsByOffering={ttBlueprintsByOffering} lockAuditByTarget={lockAuditByTarget} />}
           {role === 'Course Leader' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} />}
 
@@ -5036,7 +4372,7 @@ export default function App() {
           {role === 'Mentor' && page === 'calendar' && <CalendarPage />}
 
           {role === 'HoD' && page === 'department' && <HodView onOpenQueueHistory={handleOpenQueueHistory} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} tasks={allTasksList} />}
-          {role === 'HoD' && page === 'course' && offering && <CourseDetail offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? { tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default), tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default) }} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
+          {role === 'HoD' && page === 'course' && offering && <CourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? { tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default), tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default) }} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
           {role === 'HoD' && page === 'unlock-review' && selectedUnlockTask && <UnlockReviewPage task={selectedUnlockTask} offering={OFFERINGS.find(item => item.offId === selectedUnlockTask.offeringId) ?? null} onBack={() => setPage('queue-history')} onApprove={() => handleApproveUnlock(selectedUnlockTask.id)} onReject={() => handleRejectUnlock(selectedUnlockTask.id)} onResetComplete={() => handleResetComplete(selectedUnlockTask.id)} />}
           {role === 'HoD' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} />}
           {role === 'HoD' && page === 'calendar' && <CalendarPage />}
@@ -5092,7 +4428,7 @@ export default function App() {
         title="Hard reset"
         onClick={() => {
           if (!confirm('This will reset all saved changes and restore mock defaults. Continue?')) return
-          localStorage.clear()
+          void repositories.clearPersistedState()
           window.location.reload()
         }}
         style={{ position: 'fixed', left: 16, bottom: 16, zIndex: 140, border: `1px solid ${T.danger}55`, background: '#ef44441a', color: T.danger, borderRadius: 8, padding: '8px 10px', cursor: 'pointer', ...mono, fontSize: 10 }}
@@ -5100,5 +4436,6 @@ export default function App() {
         Reset Mock Data
       </button>
     </div>
+    </AppSelectorsContext.Provider>
   )
 }
