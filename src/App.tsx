@@ -765,6 +765,7 @@ function StudentDrawer({ student, offering, role, onClose, onEscalate, onOpenTas
 
 function ActionQueue({ role, tasks, resolvedTaskIds, onResolveTask, onUndoTask, onOpenStudent, onOpenTaskComposer, onRemedialCheckIn, onReassignTask, onOpenUnlockReview, onOpenQueueHistory, onApproveUnlock, onRejectUnlock, onResetComplete, onToggleSchedulePause, onEditSchedule, onDismissTask, onDismissSeries }: { role: Role; tasks: SharedTask[]; resolvedTaskIds: Record<string, number>; onResolveTask: (id: string) => void; onUndoTask: (id: string) => void; onOpenStudent: (task: SharedTask) => void; onOpenTaskComposer: (input?: { offeringId?: string; studentId?: string; taskType?: TaskType }) => void; onRemedialCheckIn: (taskId: string) => void; onReassignTask: (taskId: string, toRole: Role) => void; onOpenUnlockReview: (taskId: string) => void; onOpenQueueHistory: () => void; onApproveUnlock: (taskId: string) => void; onRejectUnlock: (taskId: string) => void; onResetComplete: (taskId: string) => void; onToggleSchedulePause: (taskId: string) => void; onEditSchedule: (taskId: string) => void; onDismissTask: (taskId: string) => void; onDismissSeries: (taskId: string) => void }) {
   const todayISO = toTodayISO()
+  const [showQueueHelp, setShowQueueHelp] = useState(false)
   const active = tasks
     .filter(t => isTaskActiveForQueue(t, resolvedTaskIds, todayISO))
     .sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt))
@@ -791,24 +792,59 @@ function ActionQueue({ role, tasks, resolvedTaskIds, onResolveTask, onUndoTask, 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
         <ListTodo size={16} color={T.accent} />
         <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text }}>Action Queue</div>
+        <button
+          type="button"
+          aria-label={showQueueHelp ? 'Hide queue help' : 'Show queue help'}
+          aria-expanded={showQueueHelp}
+          title={showQueueHelp ? 'Hide queue help' : 'Show queue help'}
+          onClick={() => setShowQueueHelp(current => !current)}
+          style={{
+            width: 20,
+            height: 20,
+            borderRadius: 999,
+            border: `1px solid ${T.border2}`,
+            background: showQueueHelp ? `${T.accent}16` : T.surface2,
+            color: showQueueHelp ? T.accent : T.muted,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            ...mono,
+            fontSize: 11,
+            fontWeight: 700,
+            lineHeight: 1,
+          }}
+        >
+          i
+        </button>
         <button aria-label="Open queue history" title="Open queue history" onClick={onOpenQueueHistory} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: T.accent, ...mono, fontSize: 10 }}>History</button>
         <Chip color={T.danger} size={10}>{active.length} pending</Chip>
       </div>
       <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 14 }}>Single-owner queue with visible reassignment trail.</div>
-      <div style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 12px', marginBottom: 14 }}>
-        <div style={{ ...mono, fontSize: 9, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Queue shortcuts</div>
-        <div style={{ ...mono, fontSize: 10, color: T.text, marginBottom: 8 }}>Click any task card to open the full student or task context.</div>
-        <div style={{ display: 'grid', gap: 6 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <Chip color={T.success} size={9}>Mark done</Chip>
-            <span style={{ ...mono, fontSize: 10, color: T.dim }}>Completes the current work. Recurring tasks come back on their next scheduled date.</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <Chip color={T.muted} size={9}>Dismiss</Chip>
-            <span style={{ ...mono, fontSize: 10, color: T.dim }}>Stops it from active work. On recurring tasks, this ends the series and keeps it restorable in history.</span>
-          </div>
-        </div>
-      </div>
+      <AnimatePresence initial={false}>
+        {showQueueHelp && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.16, ease: 'easeOut' }}
+            style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 12px', marginBottom: 14 }}
+          >
+            <div style={{ ...mono, fontSize: 9, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Queue shortcuts</div>
+            <div style={{ ...mono, fontSize: 10, color: T.text, marginBottom: 8 }}>Click any task card to open the full student or task context.</div>
+            <div style={{ display: 'grid', gap: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <Chip color={T.success} size={9}>Mark done</Chip>
+                <span style={{ ...mono, fontSize: 10, color: T.dim }}>Completes the current work. Recurring tasks come back on their next scheduled date.</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <Chip color={T.muted} size={9}>Dismiss</Chip>
+                <span style={{ ...mono, fontSize: 10, color: T.dim }}>Stops it from active work. On recurring tasks, this ends the series and keeps it restorable in history.</span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {active.map(t => {
         const progress = getRemedialProgress(t.remedialPlan)
