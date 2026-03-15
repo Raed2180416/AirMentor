@@ -175,6 +175,8 @@ type HoverAddState = {
   dateISO: string
   day: Weekday
   cursorTopPx: number
+  gapStartMinutes: number
+  gapEndMinutes: number
   startMinutes: number
   endMinutes: number
 }
@@ -1244,6 +1246,9 @@ export function CalendarTimetablePage({
 
       {detailsState && (
         <BlockDetailsSheet
+          key={detailsState.type === 'class'
+            ? `class-${detailsState.blockId}-${detailsState.dateISO}`
+            : `task-${detailsState.taskId}-${detailsState.dateISO}`}
           detailsState={detailsState}
           classBlock={detailClassBlock}
           task={detailTask}
@@ -1259,6 +1264,16 @@ export function CalendarTimetablePage({
           }}
           onOpenActionQueue={() => {
             onOpenActionQueue()
+            setDetailsState(null)
+          }}
+          onRescheduleTask={input => {
+            if (!detailTask) return
+            onScheduleTask(detailTask.id, {
+              dateISO: detailsState.dateISO,
+              placementMode: input.placementMode,
+              startMinutes: input.startMinutes,
+              endMinutes: input.endMinutes,
+            })
             setDetailsState(null)
           }}
           onEditClass={() => {
@@ -1444,7 +1459,9 @@ function AgendaBoard({
                   onHoverColumn({
                     dateISO: column.dateISO,
                     day: column.day,
-                    cursorTopPx: (((range.startMinutes + range.endMinutes) / 2) - dayStartMinutes) * AGENDA_PIXELS_PER_MINUTE,
+                    cursorTopPx: event.clientY - rect.top,
+                    gapStartMinutes: range.gapStartMinutes,
+                    gapEndMinutes: range.gapEndMinutes,
                     startMinutes: range.startMinutes,
                     endMinutes: range.endMinutes,
                   })
@@ -1497,7 +1514,12 @@ function AgendaBoard({
                     }}
                     style={{
                       position: 'absolute',
-                      top: Math.max(8, Math.min(boardHeight - 44, hoverAdd.cursorTopPx - 18)),
+                      top: (() => {
+                        const buttonHeight = 36
+                        const gapTopPx = Math.max(8, ((hoverAdd.gapStartMinutes - dayStartMinutes) * AGENDA_PIXELS_PER_MINUTE) + 6)
+                        const gapBottomPx = Math.min(boardHeight - buttonHeight - 8, ((hoverAdd.gapEndMinutes - dayStartMinutes) * AGENDA_PIXELS_PER_MINUTE) - buttonHeight - 6)
+                        return Math.max(gapTopPx, Math.min(gapBottomPx, hoverAdd.cursorTopPx - (buttonHeight / 2)))
+                      })(),
                       left: 10,
                       right: 10,
                       zIndex: 4,
@@ -2062,6 +2084,7 @@ function BlockDetailsSheet({
   onClose,
   onOpenCourse,
   onOpenActionQueue,
+  onRescheduleTask,
   onEditClass,
 }: {
   detailsState: BlockDetailsState
@@ -2074,6 +2097,7 @@ function BlockDetailsSheet({
   onClose: () => void
   onOpenCourse: () => void
   onOpenActionQueue: () => void
+  onRescheduleTask: (input: { placementMode: TaskPlacementMode; startMinutes?: number; endMinutes?: number }) => void
   onEditClass: () => void
 }) {
   const isClass = detailsState.type === 'class'
@@ -2085,6 +2109,9 @@ function BlockDetailsSheet({
         ? `Extra class · ${offering?.title ?? classBlock?.courseName ?? ''}`
         : (offering?.title ?? classBlock?.courseName ?? ''))
     : (task ? `${task.studentName} · ${task.courseCode} · ${task.taskType ?? 'Task'}` : '')
+  const [rescheduleMode, setRescheduleMode] = useState<TaskPlacementMode>(() => placement?.placementMode ?? 'timed')
+  const [rescheduleStart, setRescheduleStart] = useState(() => minutesToTimeString(placement?.startMinutes ?? 0))
+  const [rescheduleEnd, setRescheduleEnd] = useState(() => minutesToTimeString(placement?.endMinutes ?? ((placement?.startMinutes ?? 0) + DEFAULT_TASK_DURATION_MINUTES)))
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 143, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
@@ -2126,8 +2153,57 @@ function BlockDetailsSheet({
               <DetailRow label="Course" value={`${task.courseCode} · ${offering?.title ?? task.courseName}`} />
             </div>
             <div style={{ ...mono, fontSize: 10, color: T.dim }}>{task.actionHint}</div>
+            <div style={{ borderRadius: 12, border: `1px solid ${T.accent}28`, background: `${T.accent}10`, padding: '12px 14px', display: 'grid', gap: 10 }}>
+              <div>
+                <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text }}>Reschedule on {formatShortDate(detailsState.dateISO)}</div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>Adjust this task directly for the selected day without leaving the calendar.</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" onClick={() => setRescheduleMode('timed')} style={segmentedButtonStyle(rescheduleMode === 'timed')}>
+                  Timed
+                </button>
+                <button type="button" onClick={() => setRescheduleMode('untimed')} style={segmentedButtonStyle(rescheduleMode === 'untimed')}>
+                  Untimed
+                </button>
+              </div>
+              {rescheduleMode === 'timed' && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <label style={{ display: 'grid', gap: 6 }}>
+                    <span style={{ ...mono, fontSize: 10, color: T.muted }}>Start</span>
+                    <input
+                      type="time"
+                      value={rescheduleStart}
+                      onChange={event => setRescheduleStart(event.target.value)}
+                      style={sheetFieldStyle()}
+                    />
+                  </label>
+                  <label style={{ display: 'grid', gap: 6 }}>
+                    <span style={{ ...mono, fontSize: 10, color: T.muted }}>End</span>
+                    <input
+                      type="time"
+                      value={rescheduleEnd}
+                      onChange={event => setRescheduleEnd(event.target.value)}
+                      style={sheetFieldStyle()}
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
               <Btn size="sm" variant="ghost" onClick={onClose}>Close</Btn>
+              <Btn
+                size="sm"
+                variant="ghost"
+                onClick={() => onRescheduleTask(rescheduleMode === 'untimed'
+                  ? { placementMode: 'untimed' }
+                  : {
+                      placementMode: 'timed',
+                      startMinutes: normalizeTimeValue(rescheduleStart, placement?.startMinutes ?? 0),
+                      endMinutes: normalizeTimeValue(rescheduleEnd, placement?.endMinutes ?? ((placement?.startMinutes ?? 0) + DEFAULT_TASK_DURATION_MINUTES)),
+                    })}
+              >
+                Save Schedule
+              </Btn>
               <Btn size="sm" onClick={onOpenActionQueue}>Open Action Queue</Btn>
               {canOpenCourseWorkspace && offering && <Btn size="sm" variant="ghost" onClick={onOpenCourse}>Open Course Workspace</Btn>}
             </div>
