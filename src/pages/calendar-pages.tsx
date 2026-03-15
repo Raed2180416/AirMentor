@@ -31,6 +31,7 @@ import {
   minutesToDisplayLabel,
   minutesToTimeString,
   normalizeTimedRange,
+  rangeOverlaps,
   reflowClassDayRanges,
   startOfWeekISO,
 } from '../calendar-utils'
@@ -1275,6 +1276,11 @@ function AgendaBoard({
                   const relativeMinute = clampMinuteValue((event.clientY - rect.top) / AGENDA_PIXELS_PER_MINUTE, 0, dayEndMinutes - dayStartMinutes)
                   const startMinutes = clampMinuteValue(dayStartMinutes + relativeMinute, dayStartMinutes, dayEndMinutes - DEFAULT_TASK_DURATION_MINUTES)
                   const range = normalizeTimedRange(startMinutes, startMinutes + DEFAULT_TASK_DURATION_MINUTES, dayStartMinutes, dayEndMinutes)
+                  const isOccupied = column.events.some(item => item.eventType !== 'preview' && rangeOverlaps(range.startMinutes, range.endMinutes, item.startMinutes, item.endMinutes))
+                  if (isOccupied) {
+                    onHoverColumn(hoverAdd?.dateISO === column.dateISO ? null : hoverAdd)
+                    return
+                  }
                   onHoverColumn({
                     dateISO: column.dateISO,
                     day: column.day,
@@ -1508,7 +1514,11 @@ function TimedEventBlock({
     border: `1px solid ${event.invalid ? T.danger : `${event.accent}48`}`,
     borderTopColor: isClass && touchesPreviousClass ? 'transparent' : undefined,
     background: event.invalid ? `${T.danger}18` : `${event.accent}18`,
-    boxShadow: event.invalid ? `0 0 0 1px ${T.danger}20 inset` : isClass ? 'none' : `0 10px 24px ${event.accent}14`,
+    boxShadow: event.invalid
+      ? `0 0 0 1px ${T.danger}20 inset`
+      : isClass
+        ? (touchesPreviousClass ? `inset 0 1px 0 ${event.accent}38` : 'none')
+        : `0 10px 24px ${event.accent}14`,
     padding: compact ? '8px 10px' : '10px 12px',
     display: 'grid',
     gap: compact ? 4 : 6,
