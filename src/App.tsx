@@ -3124,6 +3124,7 @@ export default function App() {
   }
 
   const sidebarToggleLabel = sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'
+  const resetButtonLeft = !isCompactTopbar && sidebarCollapsed ? 72 : 16
   const routeLoadingLabel = page === 'course'
     ? 'Loading course workspace...'
     : page === 'calendar'
@@ -3409,7 +3410,7 @@ export default function App() {
           void repositories.clearPersistedState()
           window.location.reload()
         }}
-        style={{ position: 'fixed', left: 16, bottom: 16, zIndex: 140, border: `1px solid ${T.danger}55`, background: '#ef44441a', color: T.danger, borderRadius: 8, padding: '8px 10px', cursor: 'pointer', ...mono, fontSize: 10 }}
+        style={{ position: 'fixed', left: resetButtonLeft, bottom: 16, zIndex: 140, border: `1px solid ${T.danger}55`, background: '#ef44441a', color: T.danger, borderRadius: 8, padding: '8px 10px', cursor: 'pointer', ...mono, fontSize: 10 }}
       >
         Reset Mock Data
       </button>
