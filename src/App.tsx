@@ -13,7 +13,6 @@ import {
   type Mentee, type StudentHistoryRecord,
 } from './data'
 import {
-  canDismissCurrentOccurrence,
   createTransition,
   createCalendarAuditEvent,
   getNextScheduledDate,
@@ -764,12 +763,28 @@ function StudentDrawer({ student, offering, role, onClose, onEscalate, onOpenTas
    ACTION QUEUE (Right Sidebar)
    ══════════════════════════════════════════════════════════════ */
 
-function ActionQueue({ role, tasks, resolvedTaskIds, onResolveTask, onUndoTask, onOpenStudent, onOpenTaskComposer, onRemedialCheckIn, onReassignTask, onOpenUnlockReview, onOpenQueueHistory, onApproveUnlock, onRejectUnlock, onResetComplete, onToggleSchedulePause, onEditSchedule, onDismissTask, onDismissCurrentOccurrence, onDismissSeries }: { role: Role; tasks: SharedTask[]; resolvedTaskIds: Record<string, number>; onResolveTask: (id: string) => void; onUndoTask: (id: string) => void; onOpenStudent: (task: SharedTask) => void; onOpenTaskComposer: (input?: { offeringId?: string; studentId?: string; taskType?: TaskType }) => void; onRemedialCheckIn: (taskId: string) => void; onReassignTask: (taskId: string, toRole: Role) => void; onOpenUnlockReview: (taskId: string) => void; onOpenQueueHistory: () => void; onApproveUnlock: (taskId: string) => void; onRejectUnlock: (taskId: string) => void; onResetComplete: (taskId: string) => void; onToggleSchedulePause: (taskId: string) => void; onEditSchedule: (taskId: string) => void; onDismissTask: (taskId: string) => void; onDismissCurrentOccurrence: (taskId: string) => void; onDismissSeries: (taskId: string) => void }) {
+function ActionQueue({ role, tasks, resolvedTaskIds, onResolveTask, onUndoTask, onOpenStudent, onOpenTaskComposer, onRemedialCheckIn, onReassignTask, onOpenUnlockReview, onOpenQueueHistory, onApproveUnlock, onRejectUnlock, onResetComplete, onToggleSchedulePause, onEditSchedule, onDismissTask, onDismissSeries }: { role: Role; tasks: SharedTask[]; resolvedTaskIds: Record<string, number>; onResolveTask: (id: string) => void; onUndoTask: (id: string) => void; onOpenStudent: (task: SharedTask) => void; onOpenTaskComposer: (input?: { offeringId?: string; studentId?: string; taskType?: TaskType }) => void; onRemedialCheckIn: (taskId: string) => void; onReassignTask: (taskId: string, toRole: Role) => void; onOpenUnlockReview: (taskId: string) => void; onOpenQueueHistory: () => void; onApproveUnlock: (taskId: string) => void; onRejectUnlock: (taskId: string) => void; onResetComplete: (taskId: string) => void; onToggleSchedulePause: (taskId: string) => void; onEditSchedule: (taskId: string) => void; onDismissTask: (taskId: string) => void; onDismissSeries: (taskId: string) => void }) {
   const todayISO = toTodayISO()
   const active = tasks
     .filter(t => isTaskActiveForQueue(t, resolvedTaskIds, todayISO))
     .sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt))
   const done = tasks.filter(t => !!resolvedTaskIds[t.id]).sort((a, b) => (resolvedTaskIds[b.id] ?? 0) - (resolvedTaskIds[a.id] ?? 0))
+  const buttonStyle = (color: string, variant: 'ghost' | 'filled' = 'ghost', disabled = false) => ({
+    ...mono,
+    fontSize: 10,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    padding: '6px 10px',
+    borderRadius: 999,
+    border: `1px solid ${disabled ? T.border2 : `${color}${variant === 'filled' ? '44' : '30'}`}`,
+    background: disabled ? T.surface3 : variant === 'filled' ? `${color}16` : `${color}10`,
+    color: disabled ? T.dim : color,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? 0.55 : 1,
+    transition: 'background 0.15s ease, border-color 0.15s ease, transform 0.15s ease',
+  })
 
   return (
     <div className="scroll-pane scroll-pane--dense" style={{ width: 320, flexShrink: 0, background: T.surface, borderLeft: `1px solid ${T.border}`, position: 'sticky', top: 0, height: '100vh', overflowY: 'auto', padding: '18px 16px' }}>
@@ -780,13 +795,45 @@ function ActionQueue({ role, tasks, resolvedTaskIds, onResolveTask, onUndoTask, 
         <Chip color={T.danger} size={10}>{active.length} pending</Chip>
       </div>
       <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 14 }}>Single-owner queue with visible reassignment trail.</div>
+      <div style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 12px', marginBottom: 14 }}>
+        <div style={{ ...mono, fontSize: 9, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Queue shortcuts</div>
+        <div style={{ ...mono, fontSize: 10, color: T.text, marginBottom: 8 }}>Click any task card to open the full student or task context.</div>
+        <div style={{ display: 'grid', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <Chip color={T.success} size={9}>Mark done</Chip>
+            <span style={{ ...mono, fontSize: 10, color: T.dim }}>Completes the current work. Recurring tasks come back on their next scheduled date.</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <Chip color={T.muted} size={9}>Dismiss</Chip>
+            <span style={{ ...mono, fontSize: 10, color: T.dim }}>Stops it from active work. On recurring tasks, this ends the series and keeps it restorable in history.</span>
+          </div>
+        </div>
+      </div>
 
       {active.map(t => {
         const progress = getRemedialProgress(t.remedialPlan)
         const hasRemedialFlow = (t.taskType === 'Remedial' || !!t.remedialPlan) && progress.total > 0
         const latestTransition = getLatestTransition(t)
         return (
-          <div key={t.id} style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 10, padding: '12px 14px', marginBottom: 8 }}>
+          <motion.div
+            key={t.id}
+            layout
+            role="button"
+            tabIndex={0}
+            aria-label={`Open details for ${t.title}`}
+            title="Open details"
+            onClick={() => onOpenStudent(t)}
+            onKeyDown={event => {
+              if (event.target !== event.currentTarget) return
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                onOpenStudent(t)
+              }
+            }}
+            whileHover={{ y: -1 }}
+            transition={{ duration: 0.16, ease: 'easeOut' }}
+            style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '12px 14px', marginBottom: 8, cursor: 'pointer', boxShadow: `0 14px 28px ${T.bg}22` }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
               <div>
                 <div style={{ ...sora, fontWeight: 600, fontSize: 12, color: T.text, lineHeight: 1.3 }}>{t.title}</div>
@@ -816,28 +863,53 @@ function ActionQueue({ role, tasks, resolvedTaskIds, onResolveTask, onUndoTask, 
                 <span style={{ ...mono, fontSize: 9, color: T.dim }}>Next check-in: {t.remedialPlan?.checkInDatesISO.find(d => new Date(`${d}T00:00:00`).getTime() >= Date.now()) ?? 'Schedule pending'}</span>
               </div>
             )}
-            <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
-              {(t.taskType === 'Remedial' || !!t.remedialPlan) && <button aria-label="Log remedial check-in" title="Check-in" onClick={() => onRemedialCheckIn(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.warning, padding: 2 }}><Activity size={13} /></button>}
-              <button aria-label="Open task student details" title="Open student" onClick={() => onOpenStudent(t)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent, padding: 2 }}><Eye size={13} /></button>
-              {t.unlockRequest && role === 'HoD' && (
-                <>
-                  <button aria-label="Review unlock request" title="Review unlock" onClick={() => onOpenUnlockReview(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.warning, ...mono, fontSize: 10 }}>Review</button>
-                  {t.unlockRequest.status === 'Pending' && <button aria-label="Approve unlock request" title="Approve unlock" onClick={() => onApproveUnlock(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.success, ...mono, fontSize: 10 }}>Approve</button>}
-                  {t.unlockRequest.status === 'Pending' && <button aria-label="Reject unlock request" title="Reject unlock" onClick={() => onRejectUnlock(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.danger, ...mono, fontSize: 10 }}>Reject</button>}
-                  {t.unlockRequest.status === 'Approved' && <button aria-label="Reset and unlock dataset" title="Reset and unlock" onClick={() => onResetComplete(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.success, ...mono, fontSize: 10 }}>Reset</button>}
-                </>
-              )}
-              {role === 'Course Leader' && !t.unlockRequest && <button aria-label="Reassign task to mentor" title="Defer to Mentor" onClick={() => onReassignTask(t.id, 'Mentor')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.blue, ...mono, fontSize: 10 }}>Mentor</button>}
-              {role !== 'HoD' && !t.unlockRequest && <button aria-label="Reassign task to hod" title="Defer to HoD" onClick={() => onReassignTask(t.id, 'HoD')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.danger, ...mono, fontSize: 10 }}>HoD</button>}
-              {role === 'HoD' && !t.unlockRequest && <button aria-label="Return task to course leader" title="Return to Course Leader" onClick={() => onReassignTask(t.id, 'Course Leader')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.blue, ...mono, fontSize: 10 }}>CL</button>}
-              {t.scheduleMeta?.mode === 'scheduled' && t.scheduleMeta.status !== 'ended' && <button aria-label="Pause or resume recurrence" title={t.scheduleMeta.status === 'paused' ? 'Resume recurrence' : 'Pause recurrence'} onClick={() => onToggleSchedulePause(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.warning, ...mono, fontSize: 10 }}>{t.scheduleMeta.status === 'paused' ? 'Resume' : 'Pause'}</button>}
-              {t.scheduleMeta?.mode === 'scheduled' && t.scheduleMeta.status !== 'ended' && <button aria-label="Edit recurrence" title="Edit recurrence" onClick={() => onEditSchedule(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent, ...mono, fontSize: 10 }}>Edit schedule</button>}
-              {!t.scheduleMeta && <button aria-label="Dismiss task" title="Dismiss task" onClick={() => onDismissTask(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.muted, ...mono, fontSize: 10 }}>Dismiss</button>}
-              {t.scheduleMeta?.mode === 'scheduled' && <button aria-label="Dismiss current occurrence" title="Dismiss current occurrence" disabled={!canDismissCurrentOccurrence(t)} onClick={() => onDismissCurrentOccurrence(t.id)} style={{ background: 'none', border: 'none', cursor: canDismissCurrentOccurrence(t) ? 'pointer' : 'not-allowed', color: canDismissCurrentOccurrence(t) ? T.muted : T.dim, ...mono, fontSize: 10, opacity: canDismissCurrentOccurrence(t) ? 1 : 0.45 }}>Dismiss current</button>}
-              {t.scheduleMeta?.mode === 'scheduled' && <button aria-label="Dismiss series" title="Dismiss series" onClick={() => onDismissSeries(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.danger, ...mono, fontSize: 10 }}>Dismiss series</button>}
-              <button aria-label="Mark task as resolved" title="Resolve task" onClick={() => onResolveTask(t.id)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: T.success, padding: 2 }}><CheckCircle size={13} /></button>
+            <div style={{ ...mono, fontSize: 9, color: T.dim, marginBottom: 8 }}>
+              {t.scheduleMeta?.mode === 'scheduled'
+                ? 'Recurring task: Mark done clears only this occurrence. Dismiss ends the recurring task.'
+                : 'One-time task: Mark done completes it. Dismiss removes it from the active queue without marking it complete.'}
             </div>
-          </div>
+            <div style={{ display: 'grid', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {(t.taskType === 'Remedial' || !!t.remedialPlan) && (
+                  <button
+                    aria-label="Log remedial check-in"
+                    title="Log remedial check-in"
+                    onClick={event => {
+                      event.stopPropagation()
+                      onRemedialCheckIn(t.id)
+                    }}
+                    style={buttonStyle(T.warning)}
+                  >
+                    <Activity size={12} />
+                    Check-in
+                  </button>
+                )}
+                {t.unlockRequest && role === 'HoD' && (
+                  <>
+                    <button aria-label="Review unlock request" title="Review unlock" onClick={event => { event.stopPropagation(); onOpenUnlockReview(t.id) }} style={buttonStyle(T.warning)}>Review</button>
+                    {t.unlockRequest.status === 'Pending' && <button aria-label="Approve unlock request" title="Approve unlock" onClick={event => { event.stopPropagation(); onApproveUnlock(t.id) }} style={buttonStyle(T.success)}>Approve</button>}
+                    {t.unlockRequest.status === 'Pending' && <button aria-label="Reject unlock request" title="Reject unlock" onClick={event => { event.stopPropagation(); onRejectUnlock(t.id) }} style={buttonStyle(T.danger)}>Reject</button>}
+                    {t.unlockRequest.status === 'Approved' && <button aria-label="Reset and unlock dataset" title="Reset and unlock" onClick={event => { event.stopPropagation(); onResetComplete(t.id) }} style={buttonStyle(T.success)}>Reset</button>}
+                  </>
+                )}
+                {role === 'Course Leader' && !t.unlockRequest && <button aria-label="Reassign task to mentor" title="Defer to Mentor" onClick={event => { event.stopPropagation(); onReassignTask(t.id, 'Mentor') }} style={buttonStyle(T.blue)}>Mentor</button>}
+                {role !== 'HoD' && !t.unlockRequest && <button aria-label="Reassign task to hod" title="Defer to HoD" onClick={event => { event.stopPropagation(); onReassignTask(t.id, 'HoD') }} style={buttonStyle(T.danger)}>HoD</button>}
+                {role === 'HoD' && !t.unlockRequest && <button aria-label="Return task to course leader" title="Return to Course Leader" onClick={event => { event.stopPropagation(); onReassignTask(t.id, 'Course Leader') }} style={buttonStyle(T.blue)}>CL</button>}
+                {t.scheduleMeta?.mode === 'scheduled' && t.scheduleMeta.status !== 'ended' && <button aria-label="Pause or resume recurrence" title={t.scheduleMeta.status === 'paused' ? 'Resume recurrence' : 'Pause recurrence'} onClick={event => { event.stopPropagation(); onToggleSchedulePause(t.id) }} style={buttonStyle(T.warning)}>{t.scheduleMeta.status === 'paused' ? 'Resume' : 'Pause'}</button>}
+                {t.scheduleMeta?.mode === 'scheduled' && t.scheduleMeta.status !== 'ended' && <button aria-label="Edit recurrence" title="Edit recurrence" onClick={event => { event.stopPropagation(); onEditSchedule(t.id) }} style={buttonStyle(T.accent)}>Edit schedule</button>}
+              </div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', borderTop: `1px solid ${T.border}`, paddingTop: 8 }}>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {!t.scheduleMeta && <button aria-label="Dismiss task" title="Dismiss task to history" onClick={event => { event.stopPropagation(); onDismissTask(t.id) }} style={buttonStyle(T.muted)}>Dismiss</button>}
+                  {t.scheduleMeta?.mode === 'scheduled' && <button aria-label="Dismiss recurring task" title="Dismiss recurring task" onClick={event => { event.stopPropagation(); onDismissSeries(t.id) }} style={buttonStyle(T.danger)}>Dismiss</button>}
+                </div>
+                <button aria-label={t.scheduleMeta?.mode === 'scheduled' ? 'Mark current occurrence as done' : 'Mark task as done'} title={t.scheduleMeta?.mode === 'scheduled' ? 'Mark current occurrence as done' : 'Mark task as done'} onClick={event => { event.stopPropagation(); onResolveTask(t.id) }} style={buttonStyle(T.success, 'filled')}>
+                  <CheckCircle size={12} />
+                  Mark done
+                </button>
+              </div>
+            </div>
+          </motion.div>
         )
       })}
 
@@ -2245,42 +2317,6 @@ export default function App() {
     }))
   }, [currentTeacherId, role])
 
-  const handleDismissCurrentOccurrence = useCallback((taskId: string) => {
-    const target = allTasksList.find(task => task.id === taskId)
-    if (!target || !canDismissCurrentOccurrence(target)) return
-    const currentDueDateISO = normalizeDateISO(target.dueDateISO)
-    const nextDueDateISO = getNextScheduledDate(target.scheduleMeta, target.dueDateISO)
-    if (!currentDueDateISO || !nextDueDateISO) return
-
-    setAllTasksList(prev => prev.map(task => {
-      if (task.id !== taskId || task.scheduleMeta?.mode !== 'scheduled') return task
-      return {
-        ...task,
-        dueDateISO: nextDueDateISO,
-        due: toDueLabel(nextDueDateISO),
-        updatedAt: Date.now(),
-        scheduleMeta: {
-          ...task.scheduleMeta,
-          nextDueDateISO,
-          skippedDatesISO: [...(task.scheduleMeta.skippedDatesISO ?? []), currentDueDateISO],
-        },
-        transitionHistory: [...(task.transitionHistory ?? []), createTransition({ action: 'Current occurrence dismissed', actorRole: role, actorTeacherId: currentTeacherId ?? undefined, fromOwner: task.assignedTo, toOwner: task.assignedTo, note: `${role} skipped the ${currentDueDateISO} occurrence and advanced the series to ${nextDueDateISO}.` })],
-      }
-    }))
-
-    const currentPlacement = taskPlacements[taskId]
-    if (currentPlacement) {
-      setTaskPlacements(prev => ({
-        ...prev,
-        [taskId]: {
-          ...currentPlacement,
-          dateISO: nextDueDateISO,
-          updatedAt: Date.now(),
-        },
-      }))
-    }
-  }, [allTasksList, currentTeacherId, role, taskPlacements])
-
   const handleRestoreTask = useCallback((taskId: string) => {
     setAllTasksList(prev => prev.map(task => {
       if (task.id !== taskId || !task.dismissal) return task
@@ -3171,7 +3207,7 @@ export default function App() {
 
   return (
     <AppSelectorsContext.Provider value={selectors}>
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: T.bg, color: T.text, overflowX: 'hidden' }}>
+    <div className="app-shell" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: T.bg, color: T.text, overflowX: 'hidden' }}>
       {/* ═══ TOP BAR ═══ */}
       <div className={`top-bar-shell ${isCompactTopbar ? 'top-bar-shell--compact' : ''}`} style={{ position: 'sticky', top: 0, zIndex: 50, display: 'flex', alignItems: 'center', gap: 16, padding: '10px 20px', background: isLightTheme(themeMode) ? 'rgba(255,255,255,0.9)' : 'rgba(9,14,22,0.9)', backdropFilter: 'blur(12px)', borderBottom: `1px solid ${T.border}` }}>
         {/* Brand */}
@@ -3377,7 +3413,7 @@ export default function App() {
             {role === 'Course Leader' && page === 'students' && <LazyAllStudentsPage offerings={assignedOfferings} onBack={handleNavigateBack} onOpenStudent={handleOpenStudent} onOpenHistory={handleOpenHistoryFromStudent} onOpenUpload={handleOpenUpload} />}
             {role === 'Course Leader' && page === 'course' && offering && <LazyCourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? { tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default), tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default) }} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleNavigateBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
             {role === 'Course Leader' && page === 'scheme-setup' && selectedSchemeOffering && <LazySchemeSetupPage role={role} offering={selectedSchemeOffering} scheme={schemeByOffering[selectedSchemeOffering.offId] ?? defaultSchemeForOffering(selectedSchemeOffering)} hasEntryStarted={hasEntryStartedForOffering(selectedSchemeOffering.offId)} onSave={(next) => handleSaveScheme(selectedSchemeOffering.offId, next)} onBack={handleNavigateBack} />}
-            {role === 'Course Leader' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissCurrentOccurrence={handleDismissCurrentOccurrence} onDismissSeries={handleDismissSeries} />}
+            {role === 'Course Leader' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
             {role === 'Course Leader' && page === 'upload' && <LazyUploadPage key={`${uploadOffering?.offId ?? 'default'}-${uploadKind}`} role={role} offering={uploadOffering} defaultKind={uploadKind} onBack={handleNavigateBack} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} onRequestUnlock={handleRequestUnlock} availableOfferings={assignedOfferings} onOpenSchemeSetup={handleOpenSchemeSetup} />}
             {role === 'Course Leader' && page === 'entry-workspace' && <LazyEntryWorkspacePage capabilities={capabilities} offeringId={entryOfferingId} kind={entryKind} onBack={handleNavigateBack} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} onRequestUnlock={handleRequestUnlock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onOpenTaskComposer={handleOpenTaskComposer} onUpdateStudentAttendance={handleUpdateStudentAttendance} schemeByOffering={schemeByOffering} ttBlueprintsByOffering={ttBlueprintsByOffering} lockAuditByTarget={lockAuditByTarget} />}
             {role === 'Course Leader' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
@@ -3385,13 +3421,13 @@ export default function App() {
             {role === 'Mentor' && page === 'mentees' && <MentorView mentees={assignedMentees} onOpenMentee={handleOpenMentee} />}
             {role === 'Mentor' && page === 'mentee-detail' && selectedMentee && <MenteeDetailPage mentee={selectedMentee} tasks={roleTasks} onBack={handleNavigateBack} onOpenHistory={handleOpenHistoryFromMentee} onOpenQueueHistory={handleOpenQueueHistory} />}
             {role === 'Mentor' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
-            {role === 'Mentor' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissCurrentOccurrence={handleDismissCurrentOccurrence} onDismissSeries={handleDismissSeries} />}
+            {role === 'Mentor' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
 
             {role === 'HoD' && page === 'department' && <LazyHodView onOpenQueueHistory={handleOpenQueueHistory} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} tasks={allTasksList} calendarAuditEvents={calendarAuditEvents} />}
             {role === 'HoD' && page === 'course' && offering && <LazyCourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? { tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default), tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default) }} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleNavigateBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
             {role === 'HoD' && page === 'unlock-review' && selectedUnlockTask && <UnlockReviewPage task={selectedUnlockTask} offering={OFFERINGS.find(item => item.offId === selectedUnlockTask.offeringId) ?? null} onBack={handleNavigateBack} onApprove={() => handleApproveUnlock(selectedUnlockTask.id)} onReject={() => handleRejectUnlock(selectedUnlockTask.id)} onResetComplete={() => handleResetComplete(selectedUnlockTask.id)} />}
             {role === 'HoD' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
-            {role === 'HoD' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissCurrentOccurrence={handleDismissCurrentOccurrence} onDismissSeries={handleDismissSeries} />}
+            {role === 'HoD' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
 
             {page === 'student-history' && historyProfile && <LazyStudentHistoryPage role={role} history={historyProfile} onBack={handleNavigateBack} />}
           </Suspense>
@@ -3408,7 +3444,7 @@ export default function App() {
               transition={{ duration: 0.22, ease: 'easeOut' }}
               style={{ overflow: 'hidden', flexShrink: 0 }}
             >
-              <ActionQueue role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onResolveTask={handleResolveTask} onUndoTask={handleUndoTask} onOpenTaskComposer={handleOpenTaskComposer} onRemedialCheckIn={handleRemedialCheckIn} onOpenStudent={handleOpenTaskStudent} onReassignTask={handleReassignTask} onOpenUnlockReview={handleOpenUnlockReview} onOpenQueueHistory={handleOpenQueueHistory} onApproveUnlock={handleApproveUnlock} onRejectUnlock={handleRejectUnlock} onResetComplete={handleResetComplete} onToggleSchedulePause={handleToggleSchedulePause} onEditSchedule={handleEditSchedule} onDismissTask={handleDismissTask} onDismissCurrentOccurrence={handleDismissCurrentOccurrence} onDismissSeries={handleDismissSeries} />
+              <ActionQueue role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onResolveTask={handleResolveTask} onUndoTask={handleUndoTask} onOpenTaskComposer={handleOpenTaskComposer} onRemedialCheckIn={handleRemedialCheckIn} onOpenStudent={handleOpenTaskStudent} onReassignTask={handleReassignTask} onOpenUnlockReview={handleOpenUnlockReview} onOpenQueueHistory={handleOpenQueueHistory} onApproveUnlock={handleApproveUnlock} onRejectUnlock={handleRejectUnlock} onResetComplete={handleResetComplete} onToggleSchedulePause={handleToggleSchedulePause} onEditSchedule={handleEditSchedule} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />
             </motion.div>
           )}
         </AnimatePresence>

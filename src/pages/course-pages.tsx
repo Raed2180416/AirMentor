@@ -54,46 +54,58 @@ export function CourseDetail({
 
   return (
     <PageShell size="wide" style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', padding: 0 }}>
-      <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: '16px 32px' }}>
+      <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: '16px 32px 0' }}>
         <PageBackButton onClick={onBack} />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
           <div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 5 }}>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
               <Chip color={yearTint}>{offering.year}</Chip><Chip color={T.muted}>{offering.dept}</Chip>
               <Chip color={T.muted}>Sem {offering.sem}</Chip><Chip color={T.muted}>Sec {offering.section}</Chip>
               <Chip color={offering.stageInfo.color}>{offering.stageInfo.label} · {offering.stageInfo.desc}</Chip>
             </div>
-            <div style={{ ...sora, fontWeight: 800, fontSize: 20, color: T.text }}>
+            <div style={{ ...sora, fontWeight: 800, fontSize: 20, color: T.text, lineHeight: 1.2 }}>
               <span style={{ color: yearTint }}>{offering.code}</span> — {offering.title}
             </div>
           </div>
           <Btn variant="ghost" size="sm">📥 Export</Btn>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginTop: 14, maxWidth: 420 }}>
-          {['Term Start', 'TT1', 'TT2', 'Finals'].map((label, index) => (
-            <div key={label} style={{ display: 'flex', alignItems: 'center', flex: index < 3 ? 1 : 0 }}>
-              <div style={{ width: 24, height: 24, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', ...mono, fontSize: 10, fontWeight: 700, background: index < offering.stageInfo.stage ? offering.stageInfo.color : T.border2, border: `2px solid ${index < offering.stageInfo.stage ? offering.stageInfo.color : T.dim}`, color: index < offering.stageInfo.stage ? '#fff' : T.dim }}>
-                {index < offering.stageInfo.stage ? '✓' : index + 1}
-              </div>
-              <span style={{ ...mono, fontSize: 8, color: T.dim, marginLeft: 4, whiteSpace: 'nowrap' }}>{label}</span>
-              {index < 3 && <div style={{ flex: 1, height: 2, background: index < offering.stageInfo.stage - 1 ? offering.stageInfo.color : T.border, margin: '0 6px' }} />}
+        <div style={{ marginTop: 18, background: `linear-gradient(180deg, ${T.surface2} 0%, ${T.surface} 100%)`, border: `1px solid ${T.border}`, borderRadius: 16, padding: '14px 16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 5 }}>Academic progress</div>
+              <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text }}>Current stage: <span style={{ color: offering.stageInfo.color }}>{offering.stageInfo.label}</span></div>
+              <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 4 }}>{offering.stageInfo.desc}</div>
             </div>
-          ))}
+            <Chip color={offering.stageInfo.color}>Stage {offering.stageInfo.stage}</Chip>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginTop: 14, maxWidth: 460 }}>
+            {['Term Start', 'TT1', 'TT2', 'Finals'].map((label, index) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', flex: index < 3 ? 1 : 0 }}>
+                <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', ...mono, fontSize: 10, fontWeight: 700, background: index < offering.stageInfo.stage ? offering.stageInfo.color : T.border2, border: `2px solid ${index < offering.stageInfo.stage ? offering.stageInfo.color : T.dim}`, color: index < offering.stageInfo.stage ? '#fff' : T.dim }}>
+                  {index < offering.stageInfo.stage ? '✓' : index + 1}
+                </div>
+                <span style={{ ...mono, fontSize: 9, color: T.dim, marginLeft: 6, whiteSpace: 'nowrap' }}>{label}</span>
+                {index < 3 && <div style={{ flex: 1, height: 2, background: index < offering.stageInfo.stage - 1 ? offering.stageInfo.color : T.border, margin: '0 8px' }} />}
+              </div>
+            ))}
+          </div>
         </div>
-        <HScrollArea style={{ display: 'flex', gap: 0, marginTop: 14, borderBottom: `1px solid ${T.border}`, marginBottom: -17, marginLeft: -32, marginRight: -32, paddingLeft: 32 }}>
-          {TAB_DEFS.map(def => {
-            const locked = tabLocked(def.id)
-            return (
-              <button
-                key={def.id}
-                onClick={() => !locked && setTab(def.id)}
-                style={{ ...mono, fontSize: 11, padding: '9px 13px', background: 'none', border: 'none', cursor: locked ? 'not-allowed' : 'pointer', color: tab === def.id ? T.accentLight : locked ? T.dim : T.muted, borderBottom: `2px solid ${tab === def.id ? T.accent : 'transparent'}`, opacity: locked ? 0.35 : 1, whiteSpace: 'nowrap', transition: 'color 0.15s', display: 'flex', alignItems: 'center', gap: 4 }}
-              >
-                {def.icon} {def.label}{locked ? ' 🔒' : ''}
-              </button>
-            )
-          })}
-        </HScrollArea>
+        <div style={{ marginTop: 16, marginLeft: -32, marginRight: -32, borderTop: `1px solid ${T.border}` }}>
+          <HScrollArea style={{ display: 'flex', gap: 0, paddingLeft: 32, paddingRight: 32 }}>
+            {TAB_DEFS.map(def => {
+              const locked = tabLocked(def.id)
+              return (
+                <button
+                  key={def.id}
+                  onClick={() => !locked && setTab(def.id)}
+                  style={{ ...mono, fontSize: 11, padding: '13px 14px', background: 'none', border: 'none', cursor: locked ? 'not-allowed' : 'pointer', color: tab === def.id ? T.accentLight : locked ? T.dim : T.muted, borderBottom: `2px solid ${tab === def.id ? T.accent : 'transparent'}`, opacity: locked ? 0.35 : 1, whiteSpace: 'nowrap', transition: 'color 0.15s', display: 'flex', alignItems: 'center', gap: 5 }}
+                >
+                  {def.icon} {def.label}{locked ? ' 🔒' : ''}
+                </button>
+              )
+            })}
+          </HScrollArea>
+        </div>
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', background: T.bg }}>

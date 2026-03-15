@@ -12,7 +12,7 @@ import type {
   TaskPlacementMode,
   Weekday,
 } from '../domain'
-import { canDismissCurrentOccurrence, isTaskDismissed } from '../domain'
+import { isTaskDismissed } from '../domain'
 import {
   DEFAULT_TASK_DURATION_MINUTES,
   MIN_EVENT_DURATION_MINUTES,
@@ -198,7 +198,6 @@ type AgendaBoardProps = {
   onOpenEventDetails: (event: TimedEventCard) => void
   onMoveTaskToUntimed: (taskId: string, dateISO: string) => void
   onDismissTask: (taskId: string) => void
-  onDismissCurrentOccurrence: (taskId: string) => void
   onDismissSeries: (taskId: string) => void
   setColumnRef: (dateISO: string, node: HTMLDivElement | null) => void
   setUntimedBucketRef: (dateISO: string, node: HTMLDivElement | null) => void
@@ -224,7 +223,6 @@ export function CalendarTimetablePage({
   onOpenActionQueue,
   onUpdateTimetableBounds,
   onDismissTask,
-  onDismissCurrentOccurrence,
   onDismissSeries,
 }: {
   onBack: () => void
@@ -250,7 +248,6 @@ export function CalendarTimetablePage({
   onOpenActionQueue: () => void
   onUpdateTimetableBounds: (input: { dayStartMinutes: number; dayEndMinutes: number }) => void
   onDismissTask: (taskId: string) => void
-  onDismissCurrentOccurrence: (taskId: string) => void
   onDismissSeries: (taskId: string) => void
 }) {
   const [mode, setMode] = useState<'calendar' | 'timetable'>('calendar')
@@ -802,7 +799,6 @@ export function CalendarTimetablePage({
 
   const startTaskDrag = (event: React.PointerEvent<HTMLDivElement>, task: SharedTask, placement: TaskCalendarPlacement | null, dateISO: string) => {
     if (!isEditable) return
-    event.preventDefault()
     const startMinutes = placement?.placementMode === 'timed' && typeof placement.startMinutes === 'number'
       ? placement.startMinutes
       : dayStartMinutes + 60
@@ -831,7 +827,6 @@ export function CalendarTimetablePage({
 
   const startClassDrag = (event: React.PointerEvent<HTMLDivElement>, block: FacultyTimetableClassBlock, dateISO: string) => {
     if (!isEditable) return
-    event.preventDefault()
     setInteraction({
       mode: 'pending',
       kind: 'drag',
@@ -1107,7 +1102,6 @@ export function CalendarTimetablePage({
                 onOpenEventDetails={openEventDetails}
                 onMoveTaskToUntimed={(taskId, dateISO) => onScheduleTask(taskId, { dateISO, placementMode: 'untimed' })}
                 onDismissTask={onDismissTask}
-                onDismissCurrentOccurrence={onDismissCurrentOccurrence}
                 onDismissSeries={onDismissSeries}
                 setColumnRef={(dateISO, node) => { columnRefs.current[dateISO] = node }}
                 setUntimedBucketRef={(dateISO, node) => { untimedBucketRefs.current[dateISO] = node }}
@@ -1171,7 +1165,6 @@ export function CalendarTimetablePage({
             onOpenEventDetails={openEventDetails}
             onMoveTaskToUntimed={(taskId, dateISO) => onScheduleTask(taskId, { dateISO, placementMode: 'untimed' })}
             onDismissTask={onDismissTask}
-            onDismissCurrentOccurrence={onDismissCurrentOccurrence}
             onDismissSeries={onDismissSeries}
             setColumnRef={(dateISO, node) => { columnRefs.current[dateISO] = node }}
             setUntimedBucketRef={(dateISO, node) => { untimedBucketRefs.current[dateISO] = node }}
@@ -1354,7 +1347,6 @@ function AgendaBoard({
   onOpenEventDetails,
   onMoveTaskToUntimed,
   onDismissTask,
-  onDismissCurrentOccurrence,
   onDismissSeries,
   setColumnRef,
   setUntimedBucketRef,
@@ -1557,7 +1549,6 @@ function AgendaBoard({
                     onOpenEventDetails={onOpenEventDetails}
                     onMoveTaskToUntimed={onMoveTaskToUntimed}
                     onDismissTask={onDismissTask}
-                    onDismissCurrentOccurrence={onDismissCurrentOccurrence}
                     onDismissSeries={onDismissSeries}
                     editable={editable}
                     touchesPreviousClass={!!classTouchMap[event.entityId]?.touchesPrevious}
@@ -1634,7 +1625,6 @@ function AgendaBoard({
                           task={task}
                           compact
                           onDismissTask={onDismissTask}
-                          onDismissCurrentOccurrence={onDismissCurrentOccurrence}
                           onDismissSeries={onDismissSeries}
                         />
                       )}
@@ -1666,7 +1656,6 @@ function TimedEventBlock({
   onOpenEventDetails,
   onMoveTaskToUntimed,
   onDismissTask,
-  onDismissCurrentOccurrence,
   onDismissSeries,
   editable,
   touchesPreviousClass,
@@ -1683,7 +1672,6 @@ function TimedEventBlock({
   onOpenEventDetails: AgendaBoardProps['onOpenEventDetails']
   onMoveTaskToUntimed: AgendaBoardProps['onMoveTaskToUntimed']
   onDismissTask: (taskId: string) => void
-  onDismissCurrentOccurrence: (taskId: string) => void
   onDismissSeries: (taskId: string) => void
   editable: boolean
   touchesPreviousClass: boolean
@@ -1793,7 +1781,6 @@ function TimedEventBlock({
             <TaskActionStrip
               task={event.task!}
               onDismissTask={onDismissTask}
-              onDismissCurrentOccurrence={onDismissCurrentOccurrence}
               onDismissSeries={onDismissSeries}
             />
           )}
@@ -1807,17 +1794,14 @@ function TaskActionStrip({
   task,
   compact = false,
   onDismissTask,
-  onDismissCurrentOccurrence,
   onDismissSeries,
 }: {
   task: SharedTask
   compact?: boolean
   onDismissTask: (taskId: string) => void
-  onDismissCurrentOccurrence: (taskId: string) => void
   onDismissSeries: (taskId: string) => void
 }) {
   const recurring = task.scheduleMeta?.mode === 'scheduled'
-  const canDismissOccurrence = canDismissCurrentOccurrence(task)
 
   return (
     <div style={{ display: 'flex', gap: compact ? 4 : 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -1830,21 +1814,12 @@ function TaskActionStrip({
         </button>
       )}
       {recurring && (
-        <>
-          <button type="button" disabled={!canDismissOccurrence} onPointerDown={event => event.stopPropagation()} onClick={event => {
-            event.stopPropagation()
-            if (!canDismissOccurrence) return
-            onDismissCurrentOccurrence(task.id)
-          }} style={taskTextButtonStyle(compact, !canDismissOccurrence)}>
-            Dismiss current
-          </button>
-          <button type="button" onPointerDown={event => event.stopPropagation()} onClick={event => {
-            event.stopPropagation()
-            onDismissSeries(task.id)
-          }} style={taskTextButtonStyle(compact)}>
-            Dismiss series
-          </button>
-        </>
+        <button type="button" onPointerDown={event => event.stopPropagation()} onClick={event => {
+          event.stopPropagation()
+          onDismissSeries(task.id)
+        }} style={taskTextButtonStyle(compact)}>
+          Dismiss
+        </button>
       )}
     </div>
   )
