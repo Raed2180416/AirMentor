@@ -33,7 +33,7 @@ import {
   normalizeTimedRange,
   startOfWeekISO,
 } from '../calendar-utils'
-import { Btn, Card, Chip, HScrollArea, PageShell } from '../ui-primitives'
+import { Btn, Card, Chip, HScrollArea, PageBackButton, PageShell } from '../ui-primitives'
 
 const AGENDA_PIXELS_PER_MINUTE = 1.15
 const DAY_COLUMN_MIN_WIDTH = 180
@@ -52,6 +52,15 @@ type AddTargetState = {
   initialMode: TaskPlacementMode
   startMinutes?: number
   endMinutes?: number
+}
+
+type ClassEditState = {
+  blockId: string
+  title: string
+  subtitle: string
+  day: Weekday
+  start: string
+  end: string
 }
 
 type TimedEventCard = {
@@ -88,6 +97,16 @@ type PreviewState = {
   startMinutes?: number
   endMinutes?: number
   valid: boolean
+  linkedClassPreview?: {
+    entityId: string
+    dateISO: string
+    day: Weekday
+    startMinutes: number
+    endMinutes: number
+    title: string
+    subtitle: string
+    accent: string
+  }
 }
 
 type PendingDrag = {
@@ -158,6 +177,7 @@ type AgendaBoardProps = {
   onTaskDragStart: (event: React.PointerEvent<HTMLDivElement>, task: SharedTask, placement: TaskCalendarPlacement | null, dateISO: string) => void
   onClassDragStart: (event: React.PointerEvent<HTMLDivElement>, block: FacultyTimetableClassBlock, dateISO: string) => void
   onClassResizeStart: (event: React.PointerEvent<HTMLButtonElement>, block: FacultyTimetableClassBlock, dateISO: string, edge: 'start' | 'end') => void
+  onOpenClassEdit: (block: FacultyTimetableClassBlock) => void
   onMoveTaskToUntimed: (taskId: string, dateISO: string) => void
   onDismissTask: (taskId: string) => void
   onDismissCurrentOccurrence: (taskId: string) => void
@@ -167,6 +187,7 @@ type AgendaBoardProps = {
 }
 
 export function CalendarTimetablePage({
+  onBack,
   currentTeacher,
   activeRole,
   allowedRoles,
@@ -178,12 +199,14 @@ export function CalendarTimetablePage({
   onScheduleTask,
   onMoveClassBlock,
   onResizeClassBlock,
+  onEditClassTiming,
   onOpenTaskComposer,
   onUpdateTimetableBounds,
   onDismissTask,
   onDismissCurrentOccurrence,
   onDismissSeries,
 }: {
+  onBack: () => void
   currentTeacher: FacultyAccount
   activeRole: Role
   allowedRoles: Role[]
@@ -195,6 +218,7 @@ export function CalendarTimetablePage({
   onScheduleTask: (taskId: string, input: ScheduleInput) => void
   onMoveClassBlock: (blockId: string, input: { day: Weekday; startMinutes: number; endMinutes: number }) => void
   onResizeClassBlock: (blockId: string, input: { startMinutes: number; endMinutes: number }) => void
+  onEditClassTiming: (blockId: string, input: { day: Weekday; startMinutes: number; endMinutes: number }) => void
   onOpenTaskComposer: (input: {
     dueDateISO: string
     availableOfferingIds: string[]
@@ -215,6 +239,7 @@ export function CalendarTimetablePage({
   })
   const [monthAnchorISO, setMonthAnchorISO] = useState(() => `${selectedDateISO.slice(0, 7)}-01`)
   const [addTarget, setAddTarget] = useState<AddTargetState | null>(null)
+  const [classEdit, setClassEdit] = useState<ClassEditState | null>(null)
   const [hoverAdd, setHoverAdd] = useState<HoverAddState | null>(null)
   const [interaction, setInteraction] = useState<InteractionState | null>(null)
   const [boundsDraft, setBoundsDraft] = useState(() => ({
@@ -295,8 +320,15 @@ export function CalendarTimetablePage({
   const buildTimedEventsForDate = useMemo(() => {
     return (dateISO: string) => {
       const weekday = getWeekdayForDateISO(dateISO)
+      const previewHiddenEntityIds = interaction?.mode === 'active'
+        ? new Set([
+            interaction.entityId,
+            ...(interaction.preview?.linkedClassPreview ? [interaction.preview.linkedClassPreview.entityId] : []),
+          ])
+        : null
       const classEvents = weekday
         ? timetable.classBlocks
+            .filter(block => !previewHiddenEntityIds?.has(block.id))
             .filter(block => block.day === weekday)
             .map(block => ({
               id: `class-${block.id}`,
@@ -315,6 +347,7 @@ export function CalendarTimetablePage({
         : []
       const taskEvents = (taskPlacementsByDate[dateISO] ?? [])
         .filter(placement => placement.placementMode === 'timed')
+        .filter(placement => !previewHiddenEntityIds?.has(placement.taskId))
         .flatMap(placement => {
           const task = activeTasksById[placement.taskId]
           const day = getWeekdayForDateISO(dateISO)
@@ -336,25 +369,43 @@ export function CalendarTimetablePage({
           }]
         })
 
-      const previewEvent = interaction?.mode === 'active' && interaction.preview?.placementMode === 'timed' && interaction.preview.dateISO === dateISO && interaction.preview.day
+      const previewEvents = interaction?.mode === 'active' && interaction.preview?.placementMode === 'timed' && interaction.preview.dateISO === dateISO && interaction.preview.day
         && typeof interaction.preview.startMinutes === 'number' && typeof interaction.preview.endMinutes === 'number'
-        ? [{
-            id: `preview-${interaction.kind}-${interaction.entityId}`,
-            renderId: `preview-${interaction.kind}-${interaction.entityId}`,
-            entityId: interaction.entityId,
-            eventType: 'preview' as const,
-            dateISO,
-            day: interaction.preview.day,
-            startMinutes: interaction.preview.startMinutes,
-            endMinutes: interaction.preview.endMinutes,
-            title: interaction.title,
-            subtitle: interaction.subtitle,
-            accent: interaction.accent,
-            invalid: !interaction.preview.valid,
-          }]
+        ? [
+            {
+              id: `preview-${interaction.kind}-${interaction.entityId}`,
+              renderId: `preview-${interaction.kind}-${interaction.entityId}`,
+              entityId: interaction.entityId,
+              eventType: 'preview' as const,
+              dateISO,
+              day: interaction.preview.day,
+              startMinutes: interaction.preview.startMinutes,
+              endMinutes: interaction.preview.endMinutes,
+              title: interaction.title,
+              subtitle: interaction.subtitle,
+              accent: interaction.accent,
+              invalid: !interaction.preview.valid,
+            },
+            ...(interaction.preview.linkedClassPreview && interaction.preview.linkedClassPreview.dateISO === dateISO
+              ? [{
+                  id: `preview-linked-${interaction.preview.linkedClassPreview.entityId}`,
+                  renderId: `preview-linked-${interaction.preview.linkedClassPreview.entityId}`,
+                  entityId: interaction.preview.linkedClassPreview.entityId,
+                  eventType: 'preview' as const,
+                  dateISO,
+                  day: interaction.preview.linkedClassPreview.day,
+                  startMinutes: interaction.preview.linkedClassPreview.startMinutes,
+                  endMinutes: interaction.preview.linkedClassPreview.endMinutes,
+                  title: interaction.preview.linkedClassPreview.title,
+                  subtitle: interaction.preview.linkedClassPreview.subtitle,
+                  accent: interaction.preview.linkedClassPreview.accent,
+                  invalid: !interaction.preview.valid,
+                }]
+              : []),
+          ]
         : []
 
-      return [...classEvents, ...taskEvents, ...previewEvent]
+      return [...classEvents, ...taskEvents, ...previewEvents]
     }
   }, [activeTasksById, interaction, taskPlacementsByDate, timetable.classBlocks])
 
@@ -466,14 +517,23 @@ export function CalendarTimetablePage({
     }
   }, [dayEndMinutes, dayStartMinutes, getTimedNeighbors])
 
-  const getClassResizeBounds = useCallback((dateISO: string, classId: string, anchorStart: number, anchorEnd: number) => {
-    const neighbors = getTimedNeighbors(dateISO, { classId })
-      .filter(item => item.kind === 'class')
-      .sort((left, right) => left.startMinutes - right.startMinutes)
-    const previousEnd = neighbors.filter(item => item.endMinutes <= anchorStart).map(item => item.endMinutes).sort((a, b) => b - a)[0] ?? dayStartMinutes
-    const nextStart = neighbors.filter(item => item.startMinutes >= anchorEnd).map(item => item.startMinutes).sort((a, b) => a - b)[0] ?? dayEndMinutes
-    return { previousEnd, nextStart }
-  }, [dayEndMinutes, dayStartMinutes, getTimedNeighbors])
+  const getClassResizeContext = useCallback((dateISO: string, classId: string, anchorStart: number, anchorEnd: number, edge: 'start' | 'end') => {
+    const day = getWeekdayForDateISO(dateISO)
+    const neighbors = day
+      ? timetable.classBlocks
+          .filter(block => block.day === day && block.id !== classId)
+          .sort((left, right) => left.startMinutes - right.startMinutes || left.endMinutes - right.endMinutes)
+      : []
+    const previousClass = neighbors.filter(item => item.endMinutes <= anchorStart).sort((left, right) => right.endMinutes - left.endMinutes)[0]
+    const nextClass = neighbors.filter(item => item.startMinutes >= anchorEnd).sort((left, right) => left.startMinutes - right.startMinutes)[0]
+    return {
+      previousEnd: previousClass?.endMinutes ?? dayStartMinutes,
+      nextStart: nextClass?.startMinutes ?? dayEndMinutes,
+      touchingNeighbor: edge === 'start'
+        ? (previousClass?.endMinutes === anchorStart ? previousClass : undefined)
+        : (nextClass?.startMinutes === anchorEnd ? nextClass : undefined),
+    }
+  }, [dayEndMinutes, dayStartMinutes, timetable.classBlocks])
 
   const weekColumns = useMemo<TimedColumnData[]>(() => weekDates.map(dateISO => ({
     dateISO,
@@ -574,7 +634,57 @@ export function CalendarTimetablePage({
     }
 
     const nextMinute = timedTarget.minute
-    const { previousEnd, nextStart } = getClassResizeBounds(draft.dateISO, draft.entityId, draft.originalStartMinutes, draft.originalEndMinutes)
+    const { previousEnd, nextStart, touchingNeighbor } = getClassResizeContext(draft.dateISO, draft.entityId, draft.originalStartMinutes, draft.originalEndMinutes, draft.edge)
+    if (touchingNeighbor) {
+      if (draft.edge === 'start') {
+        const boundary = clampMinuteValue(
+          nextMinute,
+          touchingNeighbor.startMinutes + MIN_EVENT_DURATION_MINUTES,
+          draft.originalEndMinutes - MIN_EVENT_DURATION_MINUTES,
+        )
+        return {
+          placementMode: 'timed',
+          dateISO: draft.dateISO,
+          day: draft.day,
+          startMinutes: boundary,
+          endMinutes: draft.originalEndMinutes,
+          valid: true,
+          linkedClassPreview: {
+            entityId: touchingNeighbor.id,
+            dateISO: draft.dateISO,
+            day: touchingNeighbor.day,
+            startMinutes: touchingNeighbor.startMinutes,
+            endMinutes: boundary,
+            title: `${touchingNeighbor.courseCode} · Sec ${touchingNeighbor.section}`,
+            subtitle: touchingNeighbor.courseName,
+            accent: T.accent,
+          },
+        }
+      }
+      const boundary = clampMinuteValue(
+        nextMinute,
+        draft.originalStartMinutes + MIN_EVENT_DURATION_MINUTES,
+        touchingNeighbor.endMinutes - MIN_EVENT_DURATION_MINUTES,
+      )
+      return {
+        placementMode: 'timed',
+        dateISO: draft.dateISO,
+        day: draft.day,
+        startMinutes: draft.originalStartMinutes,
+        endMinutes: boundary,
+        valid: true,
+        linkedClassPreview: {
+          entityId: touchingNeighbor.id,
+          dateISO: draft.dateISO,
+          day: touchingNeighbor.day,
+          startMinutes: boundary,
+          endMinutes: touchingNeighbor.endMinutes,
+          title: `${touchingNeighbor.courseCode} · Sec ${touchingNeighbor.section}`,
+          subtitle: touchingNeighbor.courseName,
+          accent: T.accent,
+        },
+      }
+    }
     const raw = draft.edge === 'start'
       ? normalizeTimedRange(
           clampMinuteValue(nextMinute, previousEnd, draft.originalEndMinutes - MIN_EVENT_DURATION_MINUTES),
@@ -607,7 +717,7 @@ export function CalendarTimetablePage({
       endMinutes: snapped.endMinutes,
       valid: true,
     }
-  }, [dayEndMinutes, dayStartMinutes, findTimedColumnTarget, getClassResizeBounds])
+  }, [dayEndMinutes, dayStartMinutes, findTimedColumnTarget, getClassResizeContext])
 
   useEffect(() => {
     if (!interaction) return undefined
@@ -779,6 +889,28 @@ export function CalendarTimetablePage({
     })
   }
 
+  const openClassEdit = useCallback((block: FacultyTimetableClassBlock) => {
+    if (!isEditable) return
+    setClassEdit({
+      blockId: block.id,
+      title: `${block.courseCode} · Sec ${block.section}`,
+      subtitle: block.courseName,
+      day: block.day,
+      start: minutesToTimeString(block.startMinutes),
+      end: minutesToTimeString(block.endMinutes),
+    })
+  }, [isEditable])
+
+  const handleSaveClassEdit = useCallback(() => {
+    if (!classEdit) return
+    onEditClassTiming(classEdit.blockId, {
+      day: classEdit.day,
+      startMinutes: normalizeTimeValue(classEdit.start, dayStartMinutes),
+      endMinutes: normalizeTimeValue(classEdit.end, dayEndMinutes),
+    })
+    setClassEdit(null)
+  }, [classEdit, dayEndMinutes, dayStartMinutes, onEditClassTiming])
+
   const handleApplyBounds = () => {
     if (!isEditable) return
     const startMinutes = normalizeTimeValue(boundsDraft.start, dayStartMinutes)
@@ -796,6 +928,7 @@ export function CalendarTimetablePage({
   return (
     <PageShell size="wide">
       <div ref={shellRef} style={{ display: 'grid', gap: 18 }}>
+      <PageBackButton onClick={onBack} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 0, flexWrap: 'wrap' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
@@ -929,6 +1062,7 @@ export function CalendarTimetablePage({
                 onTaskDragStart={startTaskDrag}
                 onClassDragStart={startClassDrag}
                 onClassResizeStart={startClassResize}
+                onOpenClassEdit={openClassEdit}
                 onMoveTaskToUntimed={(taskId, dateISO) => onScheduleTask(taskId, { dateISO, placementMode: 'untimed' })}
                 onDismissTask={onDismissTask}
                 onDismissCurrentOccurrence={onDismissCurrentOccurrence}
@@ -992,6 +1126,7 @@ export function CalendarTimetablePage({
             onTaskDragStart={startTaskDrag}
             onClassDragStart={startClassDrag}
             onClassResizeStart={startClassResize}
+            onOpenClassEdit={openClassEdit}
             onMoveTaskToUntimed={(taskId, dateISO) => onScheduleTask(taskId, { dateISO, placementMode: 'untimed' })}
             onDismissTask={onDismissTask}
             onDismissCurrentOccurrence={onDismissCurrentOccurrence}
@@ -1029,6 +1164,15 @@ export function CalendarTimetablePage({
             })
             setAddTarget(null)
           }}
+        />
+      )}
+
+      {classEdit && (
+        <ClassTimingSheet
+          value={classEdit}
+          onClose={() => setClassEdit(null)}
+          onChange={next => setClassEdit(current => current ? { ...current, ...next } : current)}
+          onSave={handleSaveClassEdit}
         />
       )}
 
@@ -1090,6 +1234,7 @@ function AgendaBoard({
   onTaskDragStart,
   onClassDragStart,
   onClassResizeStart,
+  onOpenClassEdit,
   onMoveTaskToUntimed,
   onDismissTask,
   onDismissCurrentOccurrence,
@@ -1169,6 +1314,17 @@ function AgendaBoard({
                     endMinutes: range.endMinutes,
                   })
                 }}
+                onClick={event => {
+                  if (!editable || interaction || hoverAdd?.dateISO !== column.dateISO) return
+                  const target = event.target as HTMLElement
+                  if (target.closest('[data-event-card="true"], button, input, select, textarea')) return
+                  onOpenAdd({
+                    dateISO: column.dateISO,
+                    initialMode: 'timed',
+                    startMinutes: hoverAdd.startMinutes,
+                    endMinutes: hoverAdd.endMinutes,
+                  })
+                }}
                 style={{
                   position: 'relative',
                   height: boardHeight,
@@ -1203,12 +1359,12 @@ function AgendaBoard({
                     })}
                     style={{
                       position: 'absolute',
-                      top: Math.max(8, Math.min(boardHeight - 32, hoverAdd.topPx)),
+                      top: Math.max(8, Math.min(boardHeight - 44, hoverAdd.topPx)),
+                      left: 10,
                       right: 10,
                       zIndex: 4,
-                      width: 26,
-                      height: 26,
-                      borderRadius: 999,
+                      minHeight: 34,
+                      borderRadius: 12,
                       border: `1px solid ${T.accent}48`,
                       background: `${T.accent}16`,
                       color: T.accent,
@@ -1216,10 +1372,14 @@ function AgendaBoard({
                       display: 'inline-flex',
                       alignItems: 'center',
                       justifyContent: 'center',
+                      gap: 8,
                       boxShadow: `0 6px 20px ${T.accent}15`,
+                      ...mono,
+                      fontSize: 10,
                     }}
                   >
                     <Plus size={13} />
+                    Add task here
                   </button>
                 )}
 
@@ -1234,6 +1394,7 @@ function AgendaBoard({
                     onTaskDragStart={onTaskDragStart}
                     onClassDragStart={onClassDragStart}
                     onClassResizeStart={onClassResizeStart}
+                    onOpenClassEdit={onOpenClassEdit}
                     onMoveTaskToUntimed={onMoveTaskToUntimed}
                     onDismissTask={onDismissTask}
                     onDismissCurrentOccurrence={onDismissCurrentOccurrence}
@@ -1323,6 +1484,7 @@ function TimedEventBlock({
   onTaskDragStart,
   onClassDragStart,
   onClassResizeStart,
+  onOpenClassEdit,
   onMoveTaskToUntimed,
   onDismissTask,
   onDismissCurrentOccurrence,
@@ -1337,6 +1499,7 @@ function TimedEventBlock({
   onTaskDragStart: AgendaBoardProps['onTaskDragStart']
   onClassDragStart: AgendaBoardProps['onClassDragStart']
   onClassResizeStart: AgendaBoardProps['onClassResizeStart']
+  onOpenClassEdit: AgendaBoardProps['onOpenClassEdit']
   onMoveTaskToUntimed: AgendaBoardProps['onMoveTaskToUntimed']
   onDismissTask: (taskId: string) => void
   onDismissCurrentOccurrence: (taskId: string) => void
@@ -1376,7 +1539,18 @@ function TimedEventBlock({
       : undefined
 
   return (
-    <motion.div layout transition={{ duration: 0.18, ease: 'easeOut' }} onPointerDown={dragHandler} style={baseStyle}>
+    <motion.div
+      data-event-card="true"
+      layout
+      transition={{ duration: 0.18, ease: 'easeOut' }}
+      onPointerDown={dragHandler}
+      onClick={evt => {
+        if (!editable || !isClass) return
+        evt.stopPropagation()
+        onOpenClassEdit(event.classBlock!)
+      }}
+      style={baseStyle}
+    >
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ ...sora, fontWeight: 700, fontSize: 12, color: T.text, lineHeight: 1.25 }}>{event.title}</div>
@@ -1551,6 +1725,57 @@ function TaskPlacementSheet({
   )
 }
 
+function ClassTimingSheet({
+  value,
+  onClose,
+  onChange,
+  onSave,
+}: {
+  value: ClassEditState
+  onClose: () => void
+  onChange: (next: Partial<ClassEditState>) => void
+  onSave: () => void
+}) {
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 145, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div onClick={event => event.stopPropagation()} style={{ width: '100%', maxWidth: 440, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: 18, display: 'grid', gap: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+          <div>
+            <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: T.text }}>{value.title}</div>
+            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{value.subtitle}</div>
+            <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 4 }}>Custom time edits snap against neighbouring classes on save.</div>
+          </div>
+          <button type="button" aria-label="Close class timing editor" onClick={onClose} style={iconButtonStyle()}>
+            <X size={14} />
+          </button>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span style={{ ...mono, fontSize: 10, color: T.muted }}>Day</span>
+            <select value={value.day} onChange={event => onChange({ day: event.target.value as Weekday })} style={sheetFieldStyle()}>
+              {WEEKDAY_ORDER.map(day => <option key={day} value={day}>{day}</option>)}
+            </select>
+          </label>
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span style={{ ...mono, fontSize: 10, color: T.muted }}>Start</span>
+            <input type="time" value={value.start} onChange={event => onChange({ start: event.target.value })} style={sheetFieldStyle()} />
+          </label>
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span style={{ ...mono, fontSize: 10, color: T.muted }}>End</span>
+            <input type="time" value={value.end} onChange={event => onChange({ end: event.target.value })} style={sheetFieldStyle()} />
+          </label>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <Btn size="sm" variant="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn size="sm" onClick={onSave}>Save Timing</Btn>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function hoverUntimedBucket(interaction: InteractionState | null, dateISO: string) {
   return interaction?.mode === 'active' && interaction.preview?.placementMode === 'untimed' && interaction.preview.dateISO === dateISO
 }
@@ -1636,6 +1861,19 @@ function taskTextButtonStyle(compact: boolean, disabled = false) {
     fontSize: compact ? 9 : 10,
     padding: 0,
     opacity: disabled ? 0.5 : 1,
+  } as const
+}
+
+function sheetFieldStyle() {
+  return {
+    ...mono,
+    fontSize: 11,
+    background: T.surface2,
+    color: T.text,
+    border: `1px solid ${T.border2}`,
+    borderRadius: 8,
+    padding: '8px 10px',
+    width: '100%',
   } as const
 }
 

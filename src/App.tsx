@@ -51,10 +51,11 @@ import {
   applyPlacementToTask,
   buildPlacementForRange,
   buildUntimedPlacement,
+  clampMinuteValue,
   clampRangeToDayBounds,
+  MIN_EVENT_DURATION_MINUTES,
   minutesToDisplayLabel,
   normalizeTimedRange,
-  rangeOverlaps,
 } from './calendar-utils'
 import {
   AppSelectorsContext,
@@ -71,7 +72,7 @@ import {
 } from './selectors'
 import { inferKindFromPendingAction } from './page-utils'
 import { createLocalAirMentorRepositories } from './repositories'
-import { Bar, Btn, Card, Chip, HScrollArea, PageShell, RiskBadge, StagePips, TD, TH } from './ui-primitives'
+import { Bar, Btn, Card, Chip, PageBackButton, PageShell, RiskBadge, StagePips } from './ui-primitives'
 import './App.css'
 
 const LazyCourseDetail = lazy(() => import('./pages/course-pages').then(module => ({ default: module.CourseDetail })))
@@ -122,6 +123,23 @@ type TaskCreateInput = {
 
 type PageId = 'dashboard' | 'students' | 'course' | 'calendar' | 'upload' | 'entry-workspace' | 'mentees' | 'department' | 'mentee-detail' | 'student-history' | 'unlock-review' | 'scheme-setup' | 'queue-history'
 
+type RouteSnapshot = {
+  page: PageId
+  offeringId: string | null
+  uploadOfferingId: string | null
+  uploadKind: EntryKind
+  entryOfferingId: string
+  entryKind: EntryKind
+  selectedMenteeId: string | null
+  historyProfile: StudentHistoryRecord | null
+  historyBackPage: PageId | null
+  selectedUnlockTaskId: string | null
+  schemeOfferingId: string | null
+  courseInitialTab?: string
+}
+
+const CLASS_SNAP_THRESHOLD_MINUTES = 14
+
 function RouteLoadingFallback({ label = 'Loading workspace...' }: { label?: string }) {
   return (
     <PageShell size="standard">
@@ -170,6 +188,23 @@ function canAccessPage(role: Role, page: PageId) {
   if (role === 'Course Leader') return ['dashboard', 'students', 'course', 'calendar', 'upload', 'entry-workspace'].includes(page)
   if (role === 'Mentor') return ['mentees', 'calendar'].includes(page)
   return ['department', 'course', 'calendar', 'unlock-review'].includes(page)
+}
+
+function getRouteSnapshotKey(snapshot: RouteSnapshot) {
+  return [
+    snapshot.page,
+    snapshot.offeringId ?? '',
+    snapshot.uploadOfferingId ?? '',
+    snapshot.uploadKind,
+    snapshot.entryOfferingId,
+    snapshot.entryKind,
+    snapshot.selectedMenteeId ?? '',
+    snapshot.historyProfile?.usn ?? '',
+    snapshot.historyBackPage ?? '',
+    snapshot.selectedUnlockTaskId ?? '',
+    snapshot.schemeOfferingId ?? '',
+    snapshot.courseInitialTab ?? '',
+  ].join('|')
 }
 
 function formatDateTime(timestamp?: number) {
@@ -873,7 +908,6 @@ function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent,
       {/* Stat Row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
         {[
-          { icon: '📚', label: 'Assigned Classes', val: offerings.length, color: T.accent },
           { icon: '👥', label: 'Total Students', val: total, color: T.success, action: onOpenAllStudents },
           { icon: '‼️', label: 'High Risk Students', val: highRiskCount, color: T.danger },
           { icon: '🎯', label: 'Pending Actions', val: pendingTaskCount, color: T.warning, action: onOpenPendingActions },
@@ -928,8 +962,6 @@ function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent,
       {/* Year Sections */}
       {yearGroups.map(g => <YearSection key={g.year} group={g} onOpenCourse={onOpenCourse} onOpenUpload={onOpenUpload} />)}
 
-      {/* Summary Table */}
-      <SummaryTable offerings={offerings} onOpenCourse={onOpenCourse} onOpenUpload={onOpenUpload} />
     </PageShell>
   )
 }
@@ -1009,54 +1041,6 @@ function OfferingCard({ o, yc, onOpen, onOpenUpload }: { o: Offering; yc: string
           </div>
       }
     </div>
-  )
-}
-
-function SummaryTable({ offerings, onOpenCourse, onOpenUpload }: { offerings: Offering[]; onOpenCourse: (o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void }) {
-  const { getStudentsPatched, getOfferingAttendancePatched } = useAppSelectors()
-  return (
-    <Card style={{ marginTop: 8, padding: 0, overflow: 'hidden' }}>
-      <div style={{ padding: '14px 18px', borderBottom: `1px solid ${T.border}` }}>
-        <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text }}>All Assigned Classes — Quick View</div>
-      </div>
-      <HScrollArea>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr>{['Year', 'Code', 'Course', 'Sec', 'Students', 'Attendance', 'Stage', 'TT1', 'TT2', 'High Risk', 'Action', 'Entry'].map(h => <TH key={h}>{h}</TH>)}</tr>
-          </thead>
-          <tbody>
-            {offerings.map(o => {
-              const avgAtt = getOfferingAttendancePatched(o)
-              const ac = avgAtt >= 75 ? T.success : avgAtt >= 65 ? T.warning : T.danger
-              const yc = yearColor(o.year)
-              const hr = o.stage >= 2 ? getStudentsPatched(o).filter(s => s.riskBand === 'High').length : 0
-              return (
-                <tr key={o.offId} onClick={() => onOpenCourse(o)} style={{ cursor: 'pointer', transition: 'background 0.15s' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = T.surface2)} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                  <TD><Chip color={yc} size={9}>{o.year}</Chip></TD>
-                  <TD style={{ ...mono, fontSize: 11, color: yc }}>{o.code}</TD>
-                  <TD style={{ ...sora, fontSize: 12, color: T.text }}>{o.title}</TD>
-                  <TD style={{ ...mono, fontSize: 11, color: T.muted }}>Sec {o.section}</TD>
-                  <TD style={{ ...mono, fontSize: 12, fontWeight: 600, color: T.text }}>{o.count}</TD>
-                  <TD>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 100 }}>
-                      <Bar val={avgAtt} color={ac} h={4} />
-                      <span style={{ ...mono, fontSize: 10, color: ac }}>{avgAtt}%</span>
-                    </div>
-                  </TD>
-                  <TD><Chip color={o.stageInfo.color} size={9}>{o.stageInfo.label}</Chip></TD>
-                  <TD style={{ textAlign: 'center' }}><span style={{ color: o.tt1Done ? T.success : T.dim, fontSize: 13 }}>{o.tt1Done ? '✓' : '—'}</span></TD>
-                  <TD style={{ textAlign: 'center' }}><span style={{ color: o.tt2Done ? T.success : T.dim, fontSize: 13 }}>{o.tt2Done ? '✓' : '—'}</span></TD>
-                  <TD>{hr > 0 ? <Chip color={T.danger} size={9}>{hr} students</Chip> : <span style={{ ...mono, fontSize: 10, color: T.dim }}>—</span>}</TD>
-                  <TD>{o.pendingAction ? <Chip color={T.warning} size={9}>{o.pendingAction}</Chip> : <Chip color={T.success} size={9}>✓</Chip>}</TD>
-                  <TD><button onClick={(e) => { e.stopPropagation(); onOpenUpload(o, inferKindFromPendingAction(o.pendingAction)) }} style={{ ...mono, fontSize: 10, color: T.accent, background: 'none', border: 'none', cursor: 'pointer' }}>Open Hub</button></TD>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </HScrollArea>
-    </Card>
   )
 }
 
@@ -1165,7 +1149,7 @@ function MenteeDetailPage({ mentee, tasks, onBack, onOpenHistory, onOpenQueueHis
 
   return (
     <PageShell size="standard">
-      <button onClick={onBack} style={{ ...mono, fontSize: 11, color: T.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 10 }}>← Back to Mentees</button>
+      <PageBackButton onClick={onBack} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 22 }}>
         <div>
           <div style={{ ...sora, fontWeight: 700, fontSize: 22, color: T.text }}>{mentee.name}</div>
@@ -1271,7 +1255,7 @@ function MenteeDetailPage({ mentee, tasks, onBack, onOpenHistory, onOpenQueueHis
 function UnlockReviewPage({ task, offering, onBack, onApprove, onReject, onResetComplete }: { task: SharedTask; offering: Offering | null; onBack: () => void; onApprove: () => void; onReject: () => void; onResetComplete: () => void }) {
   return (
     <PageShell size="narrow">
-      <button onClick={onBack} style={{ ...mono, fontSize: 11, color: T.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 10 }}>← Back</button>
+      <PageBackButton onClick={onBack} />
       <div style={{ marginBottom: 16 }}>
         <div style={{ ...sora, fontWeight: 700, fontSize: 21, color: T.text }}>Unlock Review</div>
         <div style={{ ...mono, fontSize: 11, color: T.accent, marginTop: 4 }}>{task.courseCode} · {offering?.title ?? task.courseName} · {task.unlockRequest?.kind.toUpperCase()}</div>
@@ -1331,7 +1315,7 @@ function UnlockReviewPage({ task, offering, onBack, onApprove, onReject, onReset
   )
 }
 
-function QueueHistoryPage({ role, tasks, resolvedTaskIds, onOpenTaskStudent, onOpenUnlockReview, onRestoreTask }: { role: Role; tasks: SharedTask[]; resolvedTaskIds: Record<string, number>; onOpenTaskStudent: (task: SharedTask) => void; onOpenUnlockReview: (taskId: string) => void; onRestoreTask: (taskId: string) => void }) {
+function QueueHistoryPage({ role, tasks, resolvedTaskIds, onBack, onOpenTaskStudent, onOpenUnlockReview, onRestoreTask }: { role: Role; tasks: SharedTask[]; resolvedTaskIds: Record<string, number>; onBack: () => void; onOpenTaskStudent: (task: SharedTask) => void; onOpenUnlockReview: (taskId: string) => void; onRestoreTask: (taskId: string) => void }) {
   const [filter, setFilter] = useState<'all' | 'active' | 'resolved' | 'dismissed'>('all')
   const visible = tasks
     .filter(task => {
@@ -1344,6 +1328,7 @@ function QueueHistoryPage({ role, tasks, resolvedTaskIds, onOpenTaskStudent, onO
 
   return (
     <PageShell size="standard">
+      <PageBackButton onClick={onBack} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <div>
           <div style={{ ...sora, fontWeight: 700, fontSize: 21, color: T.text }}>Queue History</div>
@@ -1453,6 +1438,9 @@ export default function App() {
   const [entryOfferingId, setEntryOfferingId] = useState<string>(OFFERINGS[0].offId)
   const [entryKind, setEntryKind] = useState<EntryKind>('tt1')
   const [courseInitialTab, setCourseInitialTab] = useState<string | undefined>(undefined)
+  const [routeHistory, setRouteHistory] = useState<RouteSnapshot[]>([])
+  const previousRouteRef = useRef<RouteSnapshot | null>(null)
+  const restoringRouteRef = useRef(false)
   const [taskComposer, setTaskComposer] = useState<TaskComposerState>({ isOpen: false, step: 'details', taskType: 'Follow-up', dueDateISO: '', note: '', search: '' })
   const [pendingNoteAction, setPendingNoteAction] = useState<NoteActionState | null>(null)
   const [studentPatches, setStudentPatches] = useState<Record<string, StudentRuntimePatch>>(() => repositories.entryData.getStudentPatchesSnapshot())
@@ -1722,6 +1710,56 @@ export default function App() {
     return `Good ${timeOfDay}, ${salutation}`
   }, [facultyGivenName, now])
   const greetingMeta = useMemo(() => `it's ${formattedCurrentTime}, here are your insights for today`, [formattedCurrentTime])
+  const routeSnapshot = useMemo<RouteSnapshot>(() => ({
+    page,
+    offeringId: offering?.offId ?? null,
+    uploadOfferingId: uploadOffering?.offId ?? null,
+    uploadKind,
+    entryOfferingId,
+    entryKind,
+    selectedMenteeId: selectedMentee?.id ?? null,
+    historyProfile,
+    historyBackPage,
+    selectedUnlockTaskId,
+    schemeOfferingId,
+    courseInitialTab,
+  }), [
+    courseInitialTab,
+    entryKind,
+    entryOfferingId,
+    historyBackPage,
+    historyProfile,
+    offering,
+    page,
+    schemeOfferingId,
+    selectedMentee,
+    selectedUnlockTaskId,
+    uploadKind,
+    uploadOffering,
+  ])
+
+  const clearRouteHistory = useCallback(() => {
+    setRouteHistory([])
+    previousRouteRef.current = null
+    restoringRouteRef.current = false
+  }, [])
+
+  const restoreRouteSnapshot = useCallback((snapshot: RouteSnapshot) => {
+    setPage(snapshot.page)
+    setOffering(snapshot.offeringId ? (OFFERINGS.find(item => item.offId === snapshot.offeringId) ?? null) : null)
+    setSelectedStudent(null)
+    setSelectedOffering(null)
+    setSelectedMentee(snapshot.selectedMenteeId ? (MENTEES.find(item => item.id === snapshot.selectedMenteeId) ?? null) : null)
+    setHistoryProfile(snapshot.historyProfile)
+    setHistoryBackPage(snapshot.historyBackPage)
+    setSelectedUnlockTaskId(snapshot.selectedUnlockTaskId)
+    setSchemeOfferingId(snapshot.schemeOfferingId)
+    setUploadOffering(snapshot.uploadOfferingId ? (OFFERINGS.find(item => item.offId === snapshot.uploadOfferingId) ?? null) : null)
+    setUploadKind(snapshot.uploadKind)
+    setEntryOfferingId(snapshot.entryOfferingId)
+    setEntryKind(snapshot.entryKind)
+    setCourseInitialTab(snapshot.courseInitialTab)
+  }, [])
 
   // IMMEDIATELY apply the theme *before* rendering any components so child elements pick up the correct T colors
   applyThemePreset(themeMode)
@@ -1729,6 +1767,28 @@ export default function App() {
   useEffect(() => {
     void repositories.sessionPreferences.saveTheme(themeMode)
   }, [repositories, themeMode])
+
+  useEffect(() => {
+    const previous = previousRouteRef.current
+    if (!previous) {
+      previousRouteRef.current = routeSnapshot
+      return
+    }
+    const previousKey = getRouteSnapshotKey(previous)
+    const nextKey = getRouteSnapshotKey(routeSnapshot)
+    if (previousKey === nextKey) return
+    if (restoringRouteRef.current) {
+      restoringRouteRef.current = false
+      previousRouteRef.current = routeSnapshot
+      return
+    }
+    setRouteHistory(existing => {
+      const last = existing.at(-1)
+      if (last && getRouteSnapshotKey(last) === previousKey) return existing
+      return [...existing, previous].slice(-40)
+    })
+    previousRouteRef.current = routeSnapshot
+  }, [routeSnapshot])
 
   useEffect(() => {
     void repositories.sessionPreferences.saveCurrentFacultyId(currentTeacherId)
@@ -1833,6 +1893,7 @@ export default function App() {
     setPage('course')
   }, [])
   const handleGoHome = useCallback(() => {
+    clearRouteHistory()
     setPage(getHomePage(role))
     setOffering(null)
     setSelectedStudent(null)
@@ -1840,15 +1901,23 @@ export default function App() {
     setSelectedMentee(null)
     setHistoryProfile(null)
     setSelectedUnlockTaskId(null)
+    setSchemeOfferingId(null)
+    setUploadOffering(null)
     setCourseInitialTab(undefined)
     setHistoryBackPage(null)
-  }, [role])
-  const handleBack = useCallback(() => {
-    setOffering(null)
-    setCourseInitialTab(undefined)
-    setHistoryBackPage(null)
-    setPage(getHomePage(role))
-  }, [role])
+  }, [clearRouteHistory, role])
+  const handleNavigateBack = useCallback(() => {
+    const nextHistory = [...routeHistory]
+    while (nextHistory.length > 0) {
+      const candidate = nextHistory.pop()
+      if (!candidate || !canAccessPage(role, candidate.page)) continue
+      setRouteHistory(nextHistory)
+      restoringRouteRef.current = true
+      restoreRouteSnapshot(candidate)
+      return
+    }
+    handleGoHome()
+  }, [handleGoHome, restoreRouteSnapshot, role, routeHistory])
   const handleOpenStudent = useCallback((s: Student, o?: Offering) => {
     setSelectedStudent(s)
     setSelectedOffering(o || null)
@@ -1911,10 +1980,13 @@ export default function App() {
     setSchemeOfferingId(target.offId)
     setPage('scheme-setup')
   }, [assignedOfferings, offering, uploadOffering])
-  const handleOpenActionQueue = useCallback(() => {
-    setShowActionQueue(true)
-    requestAnimationFrame(() => {
-      actionQueueRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+  const handleToggleActionQueue = useCallback(() => {
+    setShowActionQueue(current => {
+      if (current) return false
+      requestAnimationFrame(() => {
+        actionQueueRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+      })
+      return true
     })
   }, [])
   const handleOpenQueueHistory = useCallback(() => setPage('queue-history'), [])
@@ -1938,6 +2010,7 @@ export default function App() {
 
   const handleRoleChange = useCallback((r: Role) => {
     if (!allowedRoles.includes(r)) return
+    clearRouteHistory()
     setRole(r)
     setPage(getHomePage(r))
     setOffering(null)
@@ -1950,7 +2023,7 @@ export default function App() {
     setHistoryBackPage(null)
     setTaskComposer(prev => ({ ...prev, isOpen: false, placement: undefined, availableOfferingIds: undefined }))
     setPendingNoteAction(null)
-  }, [allowedRoles])
+  }, [allowedRoles, clearRouteHistory])
 
   const handleSaveDraft = useCallback((offId: string, kind: EntryKind) => {
     setDraftBySection(prev => ({ ...prev, [`${offId}::${kind}`]: Date.now() }))
@@ -2300,71 +2373,195 @@ export default function App() {
     }))
   }, [allTasksList, appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, repositories, role, taskPlacements])
 
-  const handleMoveClassBlock = useCallback((blockId: string, input: { day: Weekday; startMinutes: number; endMinutes: number }) => {
-    if (!currentTeacher || !currentFacultyTimetable || !currentTeacher.allowedRoles.includes('Course Leader')) return
+  const resolveCommittedClassRange = useCallback((blockId: string, input: { day: Weekday; startMinutes: number; endMinutes: number }, mode: 'move' | 'resize' | 'edit') => {
+    if (!currentFacultyTimetable) return null
     const block = currentFacultyTimetable.classBlocks.find(item => item.id === blockId)
-    if (!block) return
+    if (!block) return null
+    const day = input.day
     const normalized = normalizeTimedRange(
       input.startMinutes,
       input.endMinutes,
       currentFacultyTimetable.dayStartMinutes,
       currentFacultyTimetable.dayEndMinutes,
     )
-    const classCollision = currentFacultyTimetable.classBlocks.some(item => item.id !== blockId && item.day === input.day && rangeOverlaps(item.startMinutes, item.endMinutes, normalized.startMinutes, normalized.endMinutes))
-    if (classCollision) return
+    const siblings = currentFacultyTimetable.classBlocks
+      .filter(item => item.id !== blockId && item.day === day)
+      .sort((left, right) => left.startMinutes - right.startMinutes || left.endMinutes - right.endMinutes)
+    const startChanged = input.startMinutes !== block.startMinutes
+    const endChanged = input.endMinutes !== block.endMinutes
+
+    if (mode === 'move' || (mode === 'edit' && (day !== block.day || (startChanged && endChanged)))) {
+      const durationMinutes = normalized.endMinutes - normalized.startMinutes
+      const gaps: Array<{ startMinutes: number; endMinutes: number }> = []
+      let cursor = currentFacultyTimetable.dayStartMinutes
+      siblings.forEach(item => {
+        gaps.push({ startMinutes: cursor, endMinutes: item.startMinutes })
+        cursor = Math.max(cursor, item.endMinutes)
+      })
+      gaps.push({ startMinutes: cursor, endMinutes: currentFacultyTimetable.dayEndMinutes })
+
+      const draftCenter = normalized.startMinutes + (durationMinutes / 2)
+      const targetGap = gaps
+        .filter(gap => (gap.endMinutes - gap.startMinutes) >= durationMinutes)
+        .sort((left, right) => {
+          const leftDistance = left.startMinutes <= draftCenter && draftCenter <= left.endMinutes
+            ? 0
+            : Math.min(Math.abs(draftCenter - left.startMinutes), Math.abs(draftCenter - left.endMinutes))
+          const rightDistance = right.startMinutes <= draftCenter && draftCenter <= right.endMinutes
+            ? 0
+            : Math.min(Math.abs(draftCenter - right.startMinutes), Math.abs(draftCenter - right.endMinutes))
+          if (leftDistance !== rightDistance) return leftDistance - rightDistance
+          return left.startMinutes - right.startMinutes
+        })[0]
+
+      if (!targetGap) return null
+
+      let startMinutes = Math.max(targetGap.startMinutes, Math.min(normalized.startMinutes, targetGap.endMinutes - durationMinutes))
+      const distanceToGapStart = Math.abs(startMinutes - targetGap.startMinutes)
+      const distanceToGapEnd = Math.abs((startMinutes + durationMinutes) - targetGap.endMinutes)
+      if (distanceToGapStart <= CLASS_SNAP_THRESHOLD_MINUTES) startMinutes = targetGap.startMinutes
+      else if (distanceToGapEnd <= CLASS_SNAP_THRESHOLD_MINUTES) startMinutes = targetGap.endMinutes - durationMinutes
+
+      return {
+        primary: { day, startMinutes, endMinutes: startMinutes + durationMinutes },
+      }
+    }
+
+    const edge = startChanged && !endChanged
+      ? 'start'
+      : endChanged && !startChanged
+        ? 'end'
+        : (Math.abs(input.startMinutes - block.startMinutes) >= Math.abs(input.endMinutes - block.endMinutes) ? 'start' : 'end')
+
+    const touchingNeighbor = edge === 'start'
+      ? siblings.filter(item => item.endMinutes === block.startMinutes).sort((left, right) => left.startMinutes - right.startMinutes)[0]
+      : siblings.filter(item => item.startMinutes === block.endMinutes).sort((left, right) => left.startMinutes - right.startMinutes)[0]
+
+    if (touchingNeighbor) {
+      if (edge === 'start') {
+        const boundary = clampMinuteValue(
+          normalized.startMinutes,
+          touchingNeighbor.startMinutes + MIN_EVENT_DURATION_MINUTES,
+          block.endMinutes - MIN_EVENT_DURATION_MINUTES,
+        )
+        return {
+          primary: { day: block.day, startMinutes: boundary, endMinutes: block.endMinutes },
+          linked: {
+            blockId: touchingNeighbor.id,
+            day: touchingNeighbor.day,
+            startMinutes: touchingNeighbor.startMinutes,
+            endMinutes: boundary,
+          },
+        }
+      }
+
+      const boundary = clampMinuteValue(
+        normalized.endMinutes,
+        block.startMinutes + MIN_EVENT_DURATION_MINUTES,
+        touchingNeighbor.endMinutes - MIN_EVENT_DURATION_MINUTES,
+      )
+      return {
+        primary: { day: block.day, startMinutes: block.startMinutes, endMinutes: boundary },
+        linked: {
+          blockId: touchingNeighbor.id,
+          day: touchingNeighbor.day,
+          startMinutes: boundary,
+          endMinutes: touchingNeighbor.endMinutes,
+        },
+      }
+    }
+
+    const previousEnd = siblings
+      .filter(item => item.endMinutes <= block.startMinutes)
+      .map(item => item.endMinutes)
+      .sort((left, right) => right - left)[0] ?? currentFacultyTimetable.dayStartMinutes
+    const nextStart = siblings
+      .filter(item => item.startMinutes >= block.endMinutes)
+      .map(item => item.startMinutes)
+      .sort((left, right) => left - right)[0] ?? currentFacultyTimetable.dayEndMinutes
+
+    const snappedStart = Math.abs(normalized.startMinutes - previousEnd) <= CLASS_SNAP_THRESHOLD_MINUTES ? previousEnd : normalized.startMinutes
+    const snappedEnd = Math.abs(normalized.endMinutes - nextStart) <= CLASS_SNAP_THRESHOLD_MINUTES ? nextStart : normalized.endMinutes
+    const bounded = normalizeTimedRange(snappedStart, snappedEnd, previousEnd, nextStart)
+    return {
+      primary: { day: block.day, startMinutes: bounded.startMinutes, endMinutes: bounded.endMinutes },
+    }
+  }, [currentFacultyTimetable])
+
+  const applyClassBlockTiming = useCallback((blockId: string, input: { day: Weekday; startMinutes: number; endMinutes: number }, actionKind: 'class-moved' | 'class-resized', mode: 'move' | 'resize' | 'edit') => {
+    if (!currentTeacher || !currentFacultyTimetable || !currentTeacher.allowedRoles.includes('Course Leader')) return
+    const block = currentFacultyTimetable.classBlocks.find(item => item.id === blockId)
+    if (!block) return
+    const resolved = resolveCommittedClassRange(blockId, input, mode)
+    if (!resolved) return
+    const linkedBlock = resolved.linked
+      ? currentFacultyTimetable.classBlocks.find(item => item.id === resolved.linked?.blockId) ?? null
+      : null
     setTimetableByFacultyId(prev => ({
       ...prev,
       [currentTeacher.facultyId]: {
         ...currentFacultyTimetable,
         updatedAt: Date.now(),
-        classBlocks: currentFacultyTimetable.classBlocks.map(item => item.id === blockId ? { ...item, day: input.day, startMinutes: normalized.startMinutes, endMinutes: normalized.endMinutes } : item),
+        classBlocks: currentFacultyTimetable.classBlocks.map(item => {
+          if (item.id === blockId) {
+            return {
+              ...item,
+              day: resolved.primary.day,
+              startMinutes: resolved.primary.startMinutes,
+              endMinutes: resolved.primary.endMinutes,
+            }
+          }
+          if (resolved.linked && item.id === resolved.linked.blockId) {
+            return {
+              ...item,
+              day: resolved.linked.day,
+              startMinutes: resolved.linked.startMinutes,
+              endMinutes: resolved.linked.endMinutes,
+            }
+          }
+          return item
+        }),
       },
     }))
     appendCalendarAudit(createCalendarAuditEvent({
       facultyId: currentTeacher.facultyId,
       actorRole: role,
       actorFacultyId: currentTeacherId ?? undefined,
-      actionKind: 'class-moved',
+      actionKind,
       targetType: 'class',
       targetId: blockId,
-      note: `Moved ${block.courseCode} Sec ${block.section} to ${input.day} ${minutesToDisplayLabel(normalized.startMinutes)} - ${minutesToDisplayLabel(normalized.endMinutes)}.`,
+      note: `${actionKind === 'class-resized' ? 'Resized' : 'Updated'} ${block.courseCode} Sec ${block.section} to ${resolved.primary.day} ${minutesToDisplayLabel(resolved.primary.startMinutes)} - ${minutesToDisplayLabel(resolved.primary.endMinutes)}.${resolved.linked && linkedBlock ? ` Shared boundary adjusted with ${linkedBlock.courseCode} Sec ${linkedBlock.section}.` : ''}`,
       before: { day: block.day, startMinutes: block.startMinutes, endMinutes: block.endMinutes, offeringId: block.offeringId },
-      after: { day: input.day, startMinutes: normalized.startMinutes, endMinutes: normalized.endMinutes, offeringId: block.offeringId },
+      after: { day: resolved.primary.day, startMinutes: resolved.primary.startMinutes, endMinutes: resolved.primary.endMinutes, offeringId: block.offeringId },
     }))
-  }, [appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, role])
+    if (resolved.linked && linkedBlock) {
+      appendCalendarAudit(createCalendarAuditEvent({
+        facultyId: currentTeacher.facultyId,
+        actorRole: role,
+        actorFacultyId: currentTeacherId ?? undefined,
+        actionKind: 'class-resized',
+        targetType: 'class',
+        targetId: linkedBlock.id,
+        note: `Shared boundary resized with ${block.courseCode} Sec ${block.section}; ${linkedBlock.courseCode} Sec ${linkedBlock.section} now runs ${minutesToDisplayLabel(resolved.linked.startMinutes)} - ${minutesToDisplayLabel(resolved.linked.endMinutes)}.`,
+        before: { day: linkedBlock.day, startMinutes: linkedBlock.startMinutes, endMinutes: linkedBlock.endMinutes, offeringId: linkedBlock.offeringId },
+        after: { day: resolved.linked.day, startMinutes: resolved.linked.startMinutes, endMinutes: resolved.linked.endMinutes, offeringId: linkedBlock.offeringId },
+      }))
+    }
+  }, [appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, resolveCommittedClassRange, role])
+
+  const handleMoveClassBlock = useCallback((blockId: string, input: { day: Weekday; startMinutes: number; endMinutes: number }) => {
+    applyClassBlockTiming(blockId, input, 'class-moved', 'move')
+  }, [applyClassBlockTiming])
 
   const handleResizeClassBlock = useCallback((blockId: string, input: { startMinutes: number; endMinutes: number }) => {
-    if (!currentTeacher || !currentFacultyTimetable || !currentTeacher.allowedRoles.includes('Course Leader')) return
-    const block = currentFacultyTimetable.classBlocks.find(item => item.id === blockId)
+    const block = currentFacultyTimetable?.classBlocks.find(item => item.id === blockId)
     if (!block) return
-    const normalized = normalizeTimedRange(
-      input.startMinutes,
-      input.endMinutes,
-      currentFacultyTimetable.dayStartMinutes,
-      currentFacultyTimetable.dayEndMinutes,
-    )
-    const classCollision = currentFacultyTimetable.classBlocks.some(item => item.id !== blockId && item.day === block.day && rangeOverlaps(item.startMinutes, item.endMinutes, normalized.startMinutes, normalized.endMinutes))
-    if (classCollision) return
-    setTimetableByFacultyId(prev => ({
-      ...prev,
-      [currentTeacher.facultyId]: {
-        ...currentFacultyTimetable,
-        updatedAt: Date.now(),
-        classBlocks: currentFacultyTimetable.classBlocks.map(item => item.id === blockId ? { ...item, startMinutes: normalized.startMinutes, endMinutes: normalized.endMinutes } : item),
-      },
-    }))
-    appendCalendarAudit(createCalendarAuditEvent({
-      facultyId: currentTeacher.facultyId,
-      actorRole: role,
-      actorFacultyId: currentTeacherId ?? undefined,
-      actionKind: 'class-resized',
-      targetType: 'class',
-      targetId: blockId,
-      note: `Updated ${block.courseCode} Sec ${block.section} to ${minutesToDisplayLabel(normalized.startMinutes)} - ${minutesToDisplayLabel(normalized.endMinutes)}.`,
-      before: { day: block.day, startMinutes: block.startMinutes, endMinutes: block.endMinutes, offeringId: block.offeringId },
-      after: { day: block.day, startMinutes: normalized.startMinutes, endMinutes: normalized.endMinutes, offeringId: block.offeringId },
-    }))
-  }, [appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, role])
+    applyClassBlockTiming(blockId, { day: block.day, startMinutes: input.startMinutes, endMinutes: input.endMinutes }, 'class-resized', 'resize')
+  }, [applyClassBlockTiming, currentFacultyTimetable])
+
+  const handleEditClassTiming = useCallback((blockId: string, input: { day: Weekday; startMinutes: number; endMinutes: number }) => {
+    applyClassBlockTiming(blockId, input, 'class-moved', 'edit')
+  }, [applyClassBlockTiming])
 
   const handleUpdateTimetableBounds = useCallback((input: { dayStartMinutes: number; dayEndMinutes: number }) => {
     if (!currentTeacher || !currentFacultyTimetable || !currentTeacher.allowedRoles.includes('Course Leader')) return
@@ -2894,6 +3091,7 @@ export default function App() {
     return <AppSelectorsContext.Provider value={selectors}><LoginPage onLogin={(teacherId) => {
       const account = FACULTY.find(faculty => faculty.facultyId === teacherId)
       if (!account) return
+      clearRouteHistory()
       setCurrentTeacherId(account.facultyId)
       const firstRole = account.allowedRoles[0]
       setRole(firstRole)
@@ -2908,6 +3106,7 @@ export default function App() {
   }
 
   const handleLogout = () => {
+    clearRouteHistory()
     setCurrentTeacherId(null)
     setRole('Course Leader')
     setPage('dashboard')
@@ -2976,7 +3175,7 @@ export default function App() {
             setThemeMode(isLightTheme(themeMode) ? 'frosted-focus-dark' : 'frosted-focus-light')
           }} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted }}>{isLightTheme(themeMode) ? '🌙' : '☀️'}</button>
 
-          <button className="top-control-btn" aria-label={showActionQueue ? 'Hide action queue' : 'Show action queue'} title={showActionQueue ? 'Hide action queue' : 'Show action queue'} onClick={() => setShowActionQueue(v => !v)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted, position: 'relative' }}>
+          <button className="top-control-btn" aria-label={showActionQueue ? 'Hide action queue' : 'Show action queue'} title={showActionQueue ? 'Hide action queue' : 'Show action queue'} onClick={handleToggleActionQueue} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted, position: 'relative' }}>
             <Bell size={14} />
             {pendingActionCount > 0 && <div style={{ position: 'absolute', top: -6, right: -6, minWidth: 16, height: 16, borderRadius: 8, background: T.danger, color: '#fff', ...mono, fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>{pendingActionCount}</div>}
           </button>
@@ -3004,20 +3203,35 @@ export default function App() {
 
       {/* ═══ MAIN LAYOUT ═══ */}
       <div className="app-main" style={{ display: 'flex', flex: 1, minWidth: 0, position: 'relative' }}>
-        {!isCompactTopbar && (
+        {!isCompactTopbar && sidebarCollapsed && (
           <motion.button
             type="button"
-            className="sidebar-edge-toggle"
             aria-label={sidebarToggleLabel}
             title={sidebarToggleLabel}
-            onClick={() => setSidebarCollapsed(c => !c)}
-            animate={{ left: sidebarCollapsed ? 18 : 210 }}
-            transition={{ type: 'spring', stiffness: 320, damping: 28 }}
-            style={{ top: 18, background: T.surface, border: `1px solid ${T.border2}`, color: T.muted }}
+            onClick={() => setSidebarCollapsed(false)}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
+            style={{
+              position: 'fixed',
+              left: 18,
+              bottom: 18,
+              zIndex: 30,
+              width: 42,
+              height: 42,
+              borderRadius: 999,
+              background: T.surface,
+              border: `1px solid ${T.border2}`,
+              color: T.muted,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 14px 30px rgba(2,6,23,0.18)',
+            }}
           >
-            <motion.span animate={{ rotate: sidebarCollapsed ? 0 : 180 }} transition={{ duration: 0.18 }} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-              <ChevronRight size={15} />
-            </motion.span>
+            <ChevronRight size={16} />
           </motion.button>
         )}
 
@@ -3026,7 +3240,7 @@ export default function App() {
           {!sidebarCollapsed && (
             <motion.div initial={{ width: 0, opacity: 0 }} animate={{ width: 210, opacity: 1 }} exit={{ width: 0, opacity: 0 }} transition={{ duration: 0.2 }}
               style={{ background: T.surface, borderRight: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', position: 'sticky', top: 54, height: 'calc(100vh - 54px)', flexShrink: 0, overflow: 'hidden' }}>
-              <div style={{ padding: '10px 12px', minWidth: 210 }}>
+              <div style={{ padding: '10px 12px', minWidth: 210, flex: 1, overflowY: 'auto' }}>
                 {/* Profile */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 8px', marginBottom: 10 }}>
                   <div style={{ width: 28, height: 28, borderRadius: 7, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 10, color: '#fff', flexShrink: 0 }}>{PROFESSOR.initials}</div>
@@ -3089,6 +3303,34 @@ export default function App() {
                   </div>
                 )}
               </div>
+              <div style={{ padding: '12px', borderTop: `1px solid ${T.border}` }}>
+                <button
+                  type="button"
+                  aria-label={sidebarToggleLabel}
+                  title={sidebarToggleLabel}
+                  onClick={() => setSidebarCollapsed(true)}
+                  style={{
+                    width: '100%',
+                    borderRadius: 10,
+                    border: `1px solid ${T.border2}`,
+                    background: T.surface2,
+                    color: T.muted,
+                    cursor: 'pointer',
+                    padding: '10px 12px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 10,
+                    ...mono,
+                    fontSize: 11,
+                  }}
+                >
+                  <span>Collapse sidebar</span>
+                  <motion.span animate={{ rotate: 180 }} transition={{ duration: 0.18 }} style={{ display: 'inline-flex', alignItems: 'center' }}>
+                    <ChevronRight size={14} />
+                  </motion.span>
+                </button>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -3096,32 +3338,27 @@ export default function App() {
         {/* Center Content */}
         <div className={`scroll-pane app-content app-content--${layoutMode}`} style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: 'calc(100vh - 54px)' }}>
           <Suspense fallback={<RouteLoadingFallback label={routeLoadingLabel} />}>
-            {role === 'Course Leader' && page === 'dashboard' && <CLDashboard offerings={assignedOfferings} pendingTaskCount={pendingActionCount} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} onOpenAllStudents={handleOpenAllStudents} onOpenCalendar={handleOpenCalendar} onOpenPendingActions={handleOpenActionQueue} teacherInitials={currentTeacher.initials} greetingHeadline={greetingHeadline} greetingMeta={greetingMeta} />}
-            {role === 'Course Leader' && page === 'students' && <LazyAllStudentsPage offerings={assignedOfferings} onOpenStudent={handleOpenStudent} onOpenHistory={handleOpenHistoryFromStudent} onOpenUpload={handleOpenUpload} />}
-            {role === 'Course Leader' && page === 'course' && offering && <LazyCourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? { tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default), tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default) }} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
-            {role === 'Course Leader' && page === 'scheme-setup' && selectedSchemeOffering && <LazySchemeSetupPage role={role} offering={selectedSchemeOffering} scheme={schemeByOffering[selectedSchemeOffering.offId] ?? defaultSchemeForOffering(selectedSchemeOffering)} hasEntryStarted={hasEntryStartedForOffering(selectedSchemeOffering.offId)} onSave={(next) => handleSaveScheme(selectedSchemeOffering.offId, next)} onBack={() => setPage('upload')} />}
-            {role === 'Course Leader' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onOpenTaskComposer={handleOpenTaskComposer} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissCurrentOccurrence={handleDismissCurrentOccurrence} onDismissSeries={handleDismissSeries} />}
-            {role === 'Course Leader' && page === 'upload' && <LazyUploadPage key={`${uploadOffering?.offId ?? 'default'}-${uploadKind}`} role={role} offering={uploadOffering} defaultKind={uploadKind} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} onRequestUnlock={handleRequestUnlock} availableOfferings={assignedOfferings} onOpenSchemeSetup={handleOpenSchemeSetup} />}
-            {role === 'Course Leader' && page === 'entry-workspace' && <LazyEntryWorkspacePage capabilities={capabilities} offeringId={entryOfferingId} kind={entryKind} onBack={() => setPage('upload')} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} onRequestUnlock={handleRequestUnlock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onOpenTaskComposer={handleOpenTaskComposer} onUpdateStudentAttendance={handleUpdateStudentAttendance} schemeByOffering={schemeByOffering} ttBlueprintsByOffering={ttBlueprintsByOffering} lockAuditByTarget={lockAuditByTarget} />}
-            {role === 'Course Leader' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
+            {role === 'Course Leader' && page === 'dashboard' && <CLDashboard offerings={assignedOfferings} pendingTaskCount={pendingActionCount} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} onOpenAllStudents={handleOpenAllStudents} onOpenCalendar={handleOpenCalendar} onOpenPendingActions={handleToggleActionQueue} teacherInitials={currentTeacher.initials} greetingHeadline={greetingHeadline} greetingMeta={greetingMeta} />}
+            {role === 'Course Leader' && page === 'students' && <LazyAllStudentsPage offerings={assignedOfferings} onBack={handleNavigateBack} onOpenStudent={handleOpenStudent} onOpenHistory={handleOpenHistoryFromStudent} onOpenUpload={handleOpenUpload} />}
+            {role === 'Course Leader' && page === 'course' && offering && <LazyCourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? { tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default), tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default) }} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleNavigateBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
+            {role === 'Course Leader' && page === 'scheme-setup' && selectedSchemeOffering && <LazySchemeSetupPage role={role} offering={selectedSchemeOffering} scheme={schemeByOffering[selectedSchemeOffering.offId] ?? defaultSchemeForOffering(selectedSchemeOffering)} hasEntryStarted={hasEntryStartedForOffering(selectedSchemeOffering.offId)} onSave={(next) => handleSaveScheme(selectedSchemeOffering.offId, next)} onBack={handleNavigateBack} />}
+            {role === 'Course Leader' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onOpenTaskComposer={handleOpenTaskComposer} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissCurrentOccurrence={handleDismissCurrentOccurrence} onDismissSeries={handleDismissSeries} />}
+            {role === 'Course Leader' && page === 'upload' && <LazyUploadPage key={`${uploadOffering?.offId ?? 'default'}-${uploadKind}`} role={role} offering={uploadOffering} defaultKind={uploadKind} onBack={handleNavigateBack} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} onRequestUnlock={handleRequestUnlock} availableOfferings={assignedOfferings} onOpenSchemeSetup={handleOpenSchemeSetup} />}
+            {role === 'Course Leader' && page === 'entry-workspace' && <LazyEntryWorkspacePage capabilities={capabilities} offeringId={entryOfferingId} kind={entryKind} onBack={handleNavigateBack} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} onRequestUnlock={handleRequestUnlock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onOpenTaskComposer={handleOpenTaskComposer} onUpdateStudentAttendance={handleUpdateStudentAttendance} schemeByOffering={schemeByOffering} ttBlueprintsByOffering={ttBlueprintsByOffering} lockAuditByTarget={lockAuditByTarget} />}
+            {role === 'Course Leader' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
 
             {role === 'Mentor' && page === 'mentees' && <MentorView mentees={assignedMentees} onOpenMentee={handleOpenMentee} />}
-            {role === 'Mentor' && page === 'mentee-detail' && selectedMentee && <MenteeDetailPage mentee={selectedMentee} tasks={roleTasks} onBack={() => setPage('mentees')} onOpenHistory={handleOpenHistoryFromMentee} onOpenQueueHistory={handleOpenQueueHistory} />}
-            {role === 'Mentor' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
-            {role === 'Mentor' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onOpenTaskComposer={handleOpenTaskComposer} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissCurrentOccurrence={handleDismissCurrentOccurrence} onDismissSeries={handleDismissSeries} />}
+            {role === 'Mentor' && page === 'mentee-detail' && selectedMentee && <MenteeDetailPage mentee={selectedMentee} tasks={roleTasks} onBack={handleNavigateBack} onOpenHistory={handleOpenHistoryFromMentee} onOpenQueueHistory={handleOpenQueueHistory} />}
+            {role === 'Mentor' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
+            {role === 'Mentor' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onOpenTaskComposer={handleOpenTaskComposer} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissCurrentOccurrence={handleDismissCurrentOccurrence} onDismissSeries={handleDismissSeries} />}
 
             {role === 'HoD' && page === 'department' && <LazyHodView onOpenQueueHistory={handleOpenQueueHistory} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} tasks={allTasksList} calendarAuditEvents={calendarAuditEvents} />}
-            {role === 'HoD' && page === 'course' && offering && <LazyCourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? { tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default), tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default) }} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
-            {role === 'HoD' && page === 'unlock-review' && selectedUnlockTask && <UnlockReviewPage task={selectedUnlockTask} offering={OFFERINGS.find(item => item.offId === selectedUnlockTask.offeringId) ?? null} onBack={() => setPage('queue-history')} onApprove={() => handleApproveUnlock(selectedUnlockTask.id)} onReject={() => handleRejectUnlock(selectedUnlockTask.id)} onResetComplete={() => handleResetComplete(selectedUnlockTask.id)} />}
-            {role === 'HoD' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
-            {role === 'HoD' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onOpenTaskComposer={handleOpenTaskComposer} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissCurrentOccurrence={handleDismissCurrentOccurrence} onDismissSeries={handleDismissSeries} />}
+            {role === 'HoD' && page === 'course' && offering && <LazyCourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? { tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default), tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default) }} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleNavigateBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
+            {role === 'HoD' && page === 'unlock-review' && selectedUnlockTask && <UnlockReviewPage task={selectedUnlockTask} offering={OFFERINGS.find(item => item.offId === selectedUnlockTask.offeringId) ?? null} onBack={handleNavigateBack} onApprove={() => handleApproveUnlock(selectedUnlockTask.id)} onReject={() => handleRejectUnlock(selectedUnlockTask.id)} onResetComplete={() => handleResetComplete(selectedUnlockTask.id)} />}
+            {role === 'HoD' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
+            {role === 'HoD' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onOpenTaskComposer={handleOpenTaskComposer} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissCurrentOccurrence={handleDismissCurrentOccurrence} onDismissSeries={handleDismissSeries} />}
 
-            {page === 'student-history' && historyProfile && <LazyStudentHistoryPage role={role} history={historyProfile} onBack={() => {
-              const fallback = role === 'Mentor' && selectedMentee ? 'mentee-detail' : getHomePage(role)
-              const target = historyBackPage && canAccessPage(role, historyBackPage) ? historyBackPage : fallback
-              setPage(target)
-              setHistoryBackPage(null)
-            }} />}
+            {page === 'student-history' && historyProfile && <LazyStudentHistoryPage role={role} history={historyProfile} onBack={handleNavigateBack} />}
           </Suspense>
         </div>
 

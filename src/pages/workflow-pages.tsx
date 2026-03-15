@@ -42,14 +42,16 @@ import {
   shouldBlockNumericKey,
   toCellKey,
 } from '../page-utils'
-import { Bar, Btn, Card, Chip, HScrollArea, PageShell, TD, TH } from '../ui-primitives'
+import { Bar, Btn, Card, Chip, HScrollArea, PageBackButton, PageShell, TD, TH } from '../ui-primitives'
 
 export function AllStudentsPage({
+  onBack,
   offerings,
   onOpenStudent,
   onOpenHistory,
   onOpenUpload,
 }: {
+  onBack: () => void
   offerings: Offering[]
   onOpenStudent: (student: Student, offering: Offering) => void
   onOpenHistory: (student: Student, offering: Offering) => void
@@ -93,6 +95,7 @@ export function AllStudentsPage({
 
   return (
     <PageShell size="wide">
+      <PageBackButton onClick={onBack} />
       <div style={{ ...sora, fontWeight: 700, fontSize: 20, color: T.text, marginBottom: 4 }}>All Students</div>
       <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 14 }}>Single integrated roster for profile review, transcript history, and direct data-entry continuation.</div>
 
@@ -162,7 +165,7 @@ export function StudentHistoryPage({ role, history, onBack }: { role: Role; hist
 
   return (
     <PageShell size="standard">
-      <button onClick={onBack} style={{ ...mono, fontSize: 11, color: T.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 10 }}>← Back</button>
+      <PageBackButton onClick={onBack} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 18, marginBottom: 18 }}>
         <div>
           <div style={{ ...sora, fontWeight: 700, fontSize: 22, color: T.text }}>Student History</div>
@@ -276,7 +279,7 @@ export function SchemeSetupPage({
 
   return (
     <PageShell size="narrow">
-      <button onClick={onBack} style={{ ...mono, fontSize: 11, color: T.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 10 }}>← Back</button>
+      <PageBackButton onClick={onBack} />
       <div style={{ marginBottom: 18 }}>
         <div style={{ ...sora, fontWeight: 700, fontSize: 21, color: T.text }}>Evaluation Scheme Setup</div>
         <div style={{ ...mono, fontSize: 11, color: T.accent, marginTop: 4 }}>{offering.code} · {offering.title} · Sec {offering.section}</div>
@@ -392,6 +395,7 @@ export function UploadPage({
   role,
   offering,
   defaultKind,
+  onBack,
   onOpenWorkspace,
   lockByOffering,
   onRequestUnlock,
@@ -401,6 +405,7 @@ export function UploadPage({
   role: Role
   offering: Offering | null
   defaultKind: EntryKind
+  onBack: () => void
   onOpenWorkspace: (offeringId: string, kind: EntryKind) => void
   lockByOffering: Record<string, EntryLockMap>
   onRequestUnlock: (offeringId: string, kind: EntryKind) => void
@@ -434,6 +439,7 @@ export function UploadPage({
 
   return (
     <PageShell size="narrow">
+      <PageBackButton onClick={onBack} />
       <div style={{ ...sora, fontWeight: 700, fontSize: 20, color: T.text, marginBottom: 4 }}>Data Entry Hub</div>
       <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 6 }}>Single consistent entry route from dashboard. CSV import is disabled in v1.</div>
       <div style={{ ...mono, fontSize: 11, color: T.accent, marginBottom: 12 }}>{selectedOffering.code} · {selectedOffering.title} · {selectedOffering.year} · Stage {selectedOffering.stageInfo.stage}</div>
@@ -576,7 +582,7 @@ export function EntryWorkspacePage({
 
   return (
     <PageShell size="wide">
-      <button onClick={onBack} style={{ ...mono, fontSize: 11, color: T.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 10 }}>← Back to Data Entry Hub</button>
+      <PageBackButton onClick={onBack} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
         <div>
           <div style={{ ...sora, fontWeight: 700, fontSize: 20, color: T.text, marginBottom: 4 }}>{selected.title} — Direct Entry Workspace</div>

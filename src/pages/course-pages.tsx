@@ -20,7 +20,7 @@ import {
   useAppSelectors,
 } from '../selectors'
 import { TAB_DEFS, clampNumber } from '../page-utils'
-import { Bar, Btn, Card, Chip, HScrollArea, PageShell, RiskBadge, TD, TH } from '../ui-primitives'
+import { Bar, Btn, Card, Chip, HScrollArea, PageBackButton, PageShell, RiskBadge, TD, TH } from '../ui-primitives'
 
 export function CourseDetail({
   offering: offering,
@@ -55,7 +55,7 @@ export function CourseDetail({
   return (
     <PageShell size="wide" style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', padding: 0 }}>
       <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: '16px 32px' }}>
-        <button onClick={onBack} style={{ ...mono, fontSize: 11, color: T.accent, background: 'none', border: 'none', cursor: 'pointer', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 4, padding: 0 }}>← Back to Dashboard</button>
+        <PageBackButton onClick={onBack} />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
           <div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 5 }}>

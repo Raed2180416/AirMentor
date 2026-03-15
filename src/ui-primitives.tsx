@@ -86,6 +86,29 @@ export const PageShell = ({ size, children, style = {} }: { size: 'wide' | 'stan
   </div>
 )
 
+export const PageBackButton = ({ onClick, label = 'Back' }: { onClick: () => void; label?: string }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    style={{
+      ...mono,
+      fontSize: 11,
+      color: T.accent,
+      background: 'none',
+      border: 'none',
+      cursor: 'pointer',
+      padding: 0,
+      marginBottom: 12,
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 6,
+    }}
+  >
+    <span aria-hidden="true">←</span>
+    <span>{label}</span>
+  </button>
+)
+
 export const Btn = ({ children, onClick, variant = 'primary', size = 'md', type = 'button', disabled = false }: { children: ReactNode; onClick?: () => void; variant?: string; size?: string; type?: 'button' | 'submit' | 'reset'; disabled?: boolean }) => {
   const pad = size === 'sm' ? '8px 12px' : size === 'lg' ? '12px 18px' : '10px 14px'
   const fs = size === 'sm' ? 11 : size === 'lg' ? 14 : 12
