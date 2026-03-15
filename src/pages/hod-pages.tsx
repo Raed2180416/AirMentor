@@ -160,7 +160,7 @@ export function HodView({
       </div>
 
       {selectedTeacher && (
-        <Card glow={T.accent} style={{ animation: 'fadeUp 0.25s ease' }}>
+        <Card glow={T.accent}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
             <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: T.text }}>{selectedTeacher.name} — Detail View</div>
             <Btn size="sm" variant="ghost" onClick={() => setSelectedTeacherId(null)}>Close</Btn>
@@ -168,7 +168,7 @@ export function HodView({
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 20 }}>
             {selectedTeacher.offerings.map(offering => (
-              <div key={`${offering.code}-${offering.section}`} style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: '12px', cursor: 'pointer' }} onClick={() => onOpenCourse(offering)}>
+              <Card key={`${offering.code}-${offering.section}`} onClick={() => onOpenCourse(offering)} style={{ background: T.surface2, padding: '12px', borderRadius: 8 }}>
                 <div style={{ ...sora, fontWeight: 600, fontSize: 13, color: T.text, marginBottom: 4 }}>{offering.code} - Sec {offering.section}</div>
                 <div style={{ ...mono, fontSize: 10, color: T.muted, marginBottom: 8 }}>{offering.title}</div>
                 <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
@@ -179,7 +179,7 @@ export function HodView({
                   <span style={{ ...mono, fontSize: 10, color: T.danger }}>{getStudentsPatched(offering).filter(student => student.riskBand === 'High').length} High Risk</span>
                   <span style={{ ...mono, fontSize: 10, color: T.text }}>{getOfferingAttendancePatched(offering)}% Avg Att · Open →</span>
                 </div>
-              </div>
+              </Card>
             ))}
             {selectedTeacher.offerings.length === 0 && <div style={{ ...mono, fontSize: 11, color: T.muted }}>No course offerings mapped for this faculty yet.</div>}
           </div>

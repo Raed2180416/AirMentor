@@ -658,7 +658,7 @@ export function EntryWorkspacePage({
                     {students.slice(0, 25).map(student => {
                       const projection = deriveAcademicProjection({ offering: section, student, scheme: currentScheme })
                       return (
-                        <tr key={student.id}>
+                        <tr key={student.id} data-dense-row="true">
                           <TD style={{ ...mono, fontSize: 10, color: T.accent }}>{student.usn}</TD>
                           <TD style={{ ...sora, fontSize: 11, color: T.text }}>{student.name}</TD>
                           {(kind === 'tt1' || kind === 'tt2') && leaves.map(leaf => {

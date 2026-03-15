@@ -2,6 +2,7 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body, #root { width: 100%; min-height: 100vh; }
+html { scroll-behavior: smooth; }
 body { background: #07090f; font-family: 'Sora', system-ui, sans-serif; color: #e2e8f4; }
 
 input[type=number]::-webkit-inner-spin-button,
@@ -16,7 +17,11 @@ input[type=number]::-webkit-outer-spin-button { opacity: 0.3; }
 	--ui-ease: cubic-bezier(0.22, 1, 0.36, 1);
 	--ui-fast: 160ms;
 	--ui-medium: 220ms;
+	--ui-slow: 320ms;
 	--ui-ring: rgba(45, 138, 240, 0.22);
+	--ui-shadow-soft: 0 12px 30px rgba(15, 23, 42, 0.08);
+	--ui-shadow-strong: 0 18px 42px rgba(15, 23, 42, 0.12);
+	--ui-hover-tint: rgba(45, 138, 240, 0.08);
 }
 
 html,
@@ -131,6 +136,21 @@ body,
 .app-shell button,
 .app-shell [role='button'],
 .app-shell a,
+.app-shell [data-pressable='true'],
+.app-shell [data-tab='true'],
+.app-shell [data-nav-item='true'],
+.app-shell [data-clickable-row='true'] {
+	transition:
+		background-color var(--ui-fast) var(--ui-ease),
+		border-color var(--ui-fast) var(--ui-ease),
+		color var(--ui-fast) var(--ui-ease),
+		box-shadow var(--ui-fast) var(--ui-ease),
+		opacity var(--ui-fast) var(--ui-ease),
+		transform var(--ui-fast) var(--ui-ease);
+	transform-origin: center;
+	will-change: transform, box-shadow;
+}
+
 .app-shell input,
 .app-shell select,
 .app-shell textarea {
@@ -144,10 +164,22 @@ body,
 
 .app-shell button:not(:disabled):hover,
 .app-shell [role='button']:hover,
+.app-shell a:hover,
+.app-shell [data-pressable='true']:hover,
+.app-shell [data-tab='true']:hover,
+.app-shell [data-nav-item='true']:hover,
 .app-shell input:hover,
 .app-shell select:hover,
 .app-shell textarea:hover {
-	box-shadow: 0 0 0 1px rgba(45, 138, 240, 0.08);
+	box-shadow: 0 0 0 1px rgba(45, 138, 240, 0.08), var(--ui-shadow-soft);
+}
+
+.app-shell button:not(:disabled):hover,
+.app-shell [role='button']:hover,
+.app-shell a:hover,
+.app-shell [data-pressable='true']:hover,
+.app-shell [data-tab='true']:hover {
+	transform: translateY(-1px);
 }
 
 .app-shell button:focus-visible,
@@ -161,8 +193,62 @@ body,
 }
 
 .app-shell button:active:not(:disabled),
-.app-shell [role='button']:active {
+.app-shell [role='button']:active,
+.app-shell a:active,
+.app-shell [data-pressable='true']:active,
+.app-shell [data-tab='true']:active {
 	filter: brightness(0.985);
+	transform: translateY(0) scale(0.985);
+}
+
+.app-shell [data-nav-item='true'] {
+	position: relative;
+	overflow: hidden;
+}
+
+.app-shell [data-nav-item='true']:hover {
+	transform: translateX(4px);
+	box-shadow: inset 0 0 0 1px rgba(45, 138, 240, 0.12), var(--ui-shadow-soft);
+}
+
+.app-shell [data-nav-item='true'][data-active='true'] {
+	box-shadow: inset 0 0 0 1px rgba(45, 138, 240, 0.18);
+}
+
+.app-shell [data-tab='true'] {
+	position: relative;
+}
+
+.app-shell [data-tab='true']:hover {
+	box-shadow: inset 0 -2px 0 rgba(45, 138, 240, 0.28), var(--ui-shadow-soft);
+}
+
+.app-shell [data-clickable-row='true'] {
+	transition:
+		background-color var(--ui-fast) var(--ui-ease),
+		box-shadow var(--ui-fast) var(--ui-ease),
+		transform var(--ui-fast) var(--ui-ease);
+}
+
+.app-shell [data-dense-row='true'] {
+	transition:
+		background-color var(--ui-fast) var(--ui-ease),
+		box-shadow var(--ui-fast) var(--ui-ease);
+}
+
+.app-shell [data-clickable-row='true']:hover {
+	background: var(--ui-hover-tint);
+	box-shadow: inset 3px 0 0 rgba(45, 138, 240, 0.3);
+}
+
+.app-shell [data-dense-row='true']:hover,
+.app-shell [data-dense-row='true']:focus-within {
+	background: rgba(45, 138, 240, 0.05);
+	box-shadow: inset 3px 0 0 rgba(45, 138, 240, 0.22);
+}
+
+.app-shell [data-clickable-row='true']:active {
+	transform: translateX(1px);
 }
 
 @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
@@ -186,6 +272,10 @@ body,
 	white-space: nowrap;
 	flex-shrink: 0;
 	text-transform: lowercase;
+}
+
+.top-bar-more-menu {
+	animation: fadeUp var(--ui-medium) var(--ui-ease);
 }
 
 .sidebar-edge-toggle {
@@ -272,5 +362,29 @@ body,
 	.top-bar-more-menu {
 		right: 0 !important;
 		min-width: 188px;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	html {
+		scroll-behavior: auto;
+	}
+
+	*, *::before, *::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+
+	.app-shell button,
+	.app-shell [role='button'],
+	.app-shell a,
+	.app-shell [data-pressable='true'],
+	.app-shell [data-tab='true'],
+	.app-shell [data-nav-item='true'],
+	.app-shell [data-clickable-row='true'],
+	.app-shell [data-dense-row='true'] {
+		transform: none !important;
 	}
 }

@@ -72,7 +72,7 @@ import {
 } from './selectors'
 import { inferKindFromPendingAction } from './page-utils'
 import { createLocalAirMentorRepositories } from './repositories'
-import { Bar, Btn, Card, Chip, PageBackButton, PageShell, RiskBadge, StagePips } from './ui-primitives'
+import { Bar, Btn, Card, Chip, PageBackButton, PageShell, RiskBadge, StagePips, UI_TRANSITION_FAST, UI_TRANSITION_MEDIUM } from './ui-primitives'
 import './App.css'
 
 const LazyCourseDetail = lazy(() => import('./pages/course-pages').then(module => ({ default: module.CourseDetail })))
@@ -294,8 +294,22 @@ function suggestTaskForStudent(s?: Student) {
 function RequiredNoteModal({ title, description, submitLabel, onClose, onSubmit }: { title: string; description: string; submitLabel: string; onClose: () => void; onSubmit: (note: string) => void }) {
   const [note, setNote] = useState('')
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 520, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: 18 }}>
+    <motion.div
+      onClick={onClose}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={UI_TRANSITION_FAST}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+    >
+      <motion.div
+        onClick={e => e.stopPropagation()}
+        initial={{ opacity: 0, y: 26, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 18, scale: 0.985 }}
+        transition={UI_TRANSITION_MEDIUM}
+        style={{ width: '100%', maxWidth: 520, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: 18, boxShadow: '0 24px 60px rgba(2, 6, 23, 0.32)' }}
+      >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: T.text }}>{title}</div>
           <button aria-label="Close note modal" title="Close" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.muted }}><X size={16} /></button>
@@ -309,8 +323,8 @@ function RequiredNoteModal({ title, description, submitLabel, onClose, onSubmit 
             onSubmit(note.trim())
           }}>{submitLabel}</Btn>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   )
 }
 
@@ -387,8 +401,22 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
   }
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 130, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 760, minHeight: 620, maxHeight: '82vh', display: 'flex', flexDirection: 'column', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, overflow: 'hidden' }}>
+    <motion.div
+      onClick={onClose}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={UI_TRANSITION_FAST}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 130, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+    >
+      <motion.div
+        onClick={e => e.stopPropagation()}
+        initial={{ opacity: 0, y: 32, scale: 0.965 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 22, scale: 0.985 }}
+        transition={UI_TRANSITION_MEDIUM}
+        style={{ width: '100%', maxWidth: 760, minHeight: 620, maxHeight: '82vh', display: 'flex', flexDirection: 'column', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, overflow: 'hidden', boxShadow: '0 28px 72px rgba(2, 6, 23, 0.34)' }}
+      >
         <div style={{ padding: '16px 18px', borderBottom: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: T.text }}>{step === 'details' ? 'Add Task' : 'Build Remedial Plan'}</div>
@@ -452,8 +480,8 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
               <Card style={{ padding: '10px 12px' }}>
                 <div style={{ ...sora, fontWeight: 700, fontSize: 12, color: T.text, marginBottom: 8 }}>Scheduling</div>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                  <button type="button" onClick={() => setSchedulingMode('one-time')} style={{ ...mono, fontSize: 10, borderRadius: 6, border: `1px solid ${schedulingMode === 'one-time' ? T.accent : T.border}`, background: schedulingMode === 'one-time' ? `${T.accent}18` : 'transparent', color: schedulingMode === 'one-time' ? T.accentLight : T.muted, padding: '5px 8px', cursor: 'pointer' }}>One-time</button>
-                  <button type="button" onClick={() => setSchedulingMode('scheduled')} style={{ ...mono, fontSize: 10, borderRadius: 6, border: `1px solid ${schedulingMode === 'scheduled' ? T.accent : T.border}`, background: schedulingMode === 'scheduled' ? `${T.accent}18` : 'transparent', color: schedulingMode === 'scheduled' ? T.accentLight : T.muted, padding: '5px 8px', cursor: 'pointer' }}>Scheduled</button>
+                  <button type="button" data-tab="true" onClick={() => setSchedulingMode('one-time')} style={{ ...mono, fontSize: 10, borderRadius: 6, border: `1px solid ${schedulingMode === 'one-time' ? T.accent : T.border}`, background: schedulingMode === 'one-time' ? `${T.accent}18` : 'transparent', color: schedulingMode === 'one-time' ? T.accentLight : T.muted, padding: '5px 8px', cursor: 'pointer' }}>One-time</button>
+                  <button type="button" data-tab="true" onClick={() => setSchedulingMode('scheduled')} style={{ ...mono, fontSize: 10, borderRadius: 6, border: `1px solid ${schedulingMode === 'scheduled' ? T.accent : T.border}`, background: schedulingMode === 'scheduled' ? `${T.accent}18` : 'transparent', color: schedulingMode === 'scheduled' ? T.accentLight : T.muted, padding: '5px 8px', cursor: 'pointer' }}>Scheduled</button>
                 </div>
                 {schedulingMode === 'scheduled' && (
                   <div style={{ display: 'grid', gap: 8 }}>
@@ -579,8 +607,8 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
             }}>Create Remedial Task</Btn>}
           </div>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   )
 }
 
@@ -599,8 +627,19 @@ function StudentDrawer({ student, offering, role, onClose, onEscalate, onOpenTas
   const ceSummary = offering ? deriveAcademicProjection({ offering, student: s, scheme: getSchemeForOffering(offering), history: drawerHistory }) : null
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 100, display: 'flex', justifyContent: 'flex-end' }}>
-      <motion.div initial={{ x: 320, opacity: 1 }} animate={{ x: 0, opacity: 1 }} transition={{ duration: 0.12, ease: 'easeOut' }}
+    <motion.div
+      onClick={onClose}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={UI_TRANSITION_FAST}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 100, display: 'flex', justifyContent: 'flex-end' }}
+    >
+      <motion.div
+        initial={{ x: 360, opacity: 0.98 }}
+        animate={{ x: 0, opacity: 1 }}
+        exit={{ x: 360, opacity: 0.98 }}
+        transition={UI_TRANSITION_MEDIUM}
         onClick={e => e.stopPropagation()}
         className="scroll-pane scroll-pane--dense"
         style={{ width: 520, maxWidth: '100vw', height: '100vh', overflowY: 'auto', background: T.surface, borderLeft: `1px solid ${T.border}`, padding: '24px 28px' }}>
@@ -755,7 +794,7 @@ function StudentDrawer({ student, offering, role, onClose, onEscalate, onOpenTas
           {role !== 'HoD' && <Btn size="sm" variant="danger" onClick={() => onEscalate(s, offering)}><AlertTriangle size={12} /> Escalate to HoD</Btn>}
         </div>
       </motion.div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -866,8 +905,9 @@ function ActionQueue({ role, tasks, resolvedTaskIds, onResolveTask, onUndoTask, 
                 onOpenStudent(t)
               }
             }}
-            whileHover={{ y: -1 }}
-            transition={{ duration: 0.16, ease: 'easeOut' }}
+            whileHover={{ y: -3, scale: 1.01 }}
+            whileTap={{ y: -1, scale: 0.992 }}
+            transition={UI_TRANSITION_FAST}
             style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '12px 14px', marginBottom: 8, cursor: 'pointer', boxShadow: `0 14px 28px ${T.bg}22` }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
@@ -1086,7 +1126,7 @@ function YearSection({ group, onOpenCourse, onOpenUpload }: { group: YearGroup; 
 
   return (
     <div style={{ marginBottom: 22 }}>
-      <div onClick={() => setCollapsed(c => !c)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', background: `${color}0c`, border: `1px solid ${color}28`, borderRadius: collapsed ? 10 : '10px 10px 0 0', marginBottom: collapsed ? 0 : 12, cursor: 'pointer', transition: 'all 0.2s', flexWrap: 'wrap' }}>
+      <div data-pressable="true" onClick={() => setCollapsed(c => !c)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', background: `${color}0c`, border: `1px solid ${color}28`, borderRadius: collapsed ? 10 : '10px 10px 0 0', marginBottom: collapsed ? 0 : 12, cursor: 'pointer', transition: 'all 0.2s', flexWrap: 'wrap' }}>
         <div style={{ ...sora, fontWeight: 800, fontSize: 13, color, background: `${color}18`, border: `1px solid ${color}40`, padding: '3px 12px', borderRadius: 6 }}>{year}</div>
         <Chip color={stageInfo.color}>{stageInfo.label} · {stageInfo.desc}</Chip>
         <StagePips current={stageInfo.stage} />
@@ -1106,7 +1146,6 @@ function YearSection({ group, onOpenCourse, onOpenUpload }: { group: YearGroup; 
 
 function OfferingCard({ o, yc, onOpen, onOpenUpload }: { o: Offering; yc: string; onOpen: (o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void }) {
   const { getStudentsPatched, getOfferingAttendancePatched } = useAppSelectors()
-  const [hov, setHov] = useState(false)
   const sc = o.stageInfo.color
   const avgAtt = getOfferingAttendancePatched(o)
   const ac = avgAtt >= 75 ? T.success : avgAtt >= 65 ? T.warning : T.danger
@@ -1114,8 +1153,7 @@ function OfferingCard({ o, yc, onOpen, onOpenUpload }: { o: Offering; yc: string
   const highRisk = o.stage >= 2 ? getStudentsPatched(o).filter(s => s.riskBand === 'High').length : 0
 
   return (
-    <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} onClick={() => onOpen(o)}
-      style={{ background: T.surface, border: `1px solid ${hov ? yc + '50' : T.border}`, borderRadius: 12, padding: '16px 18px', cursor: 'pointer', transition: 'all 0.2s', transform: hov ? 'translateY(-2px)' : 'none', boxShadow: hov ? `0 8px 24px ${yc}12` : 'none', position: 'relative', overflow: 'hidden' }}>
+    <Card onClick={() => onOpen(o)} glow={yc} style={{ position: 'relative', overflow: 'hidden', padding: '16px 18px', borderRadius: 12 }}>
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg,${yc},${sc})` }} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
         <div>
@@ -1149,7 +1187,7 @@ function OfferingCard({ o, yc, onOpen, onOpenUpload }: { o: Offering; yc: string
             <span style={{ ...mono, fontSize: 10, color: T.success }}>All caught up</span>
           </div>
       }
-    </div>
+    </Card>
   )
 }
 
@@ -1445,7 +1483,7 @@ function QueueHistoryPage({ role, tasks, resolvedTaskIds, onBack, onOpenTaskStud
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
           {(['all', 'active', 'resolved', 'dismissed'] as const).map(option => (
-            <button key={option} onClick={() => setFilter(option)} style={{ ...mono, fontSize: 10, padding: '5px 8px', borderRadius: 4, border: `1px solid ${filter === option ? T.accent : T.border}`, background: filter === option ? T.accent + '18' : 'transparent', color: filter === option ? T.accentLight : T.muted, cursor: 'pointer' }}>
+            <button key={option} data-tab="true" onClick={() => setFilter(option)} style={{ ...mono, fontSize: 10, padding: '5px 8px', borderRadius: 4, border: `1px solid ${filter === option ? T.accent : T.border}`, background: filter === option ? T.accent + '18' : 'transparent', color: filter === option ? T.accentLight : T.muted, cursor: 'pointer' }}>
               {option.toUpperCase()}
             </button>
           ))}
@@ -1454,11 +1492,12 @@ function QueueHistoryPage({ role, tasks, resolvedTaskIds, onBack, onOpenTaskStud
 
       <div style={{ display: 'grid', gap: 12 }}>
         {visible.map(task => (
-          <Card key={task.id}>
+          <Card key={task.id} onClick={() => onOpenTaskStudent(task)}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', marginBottom: 10, flexWrap: 'wrap' }}>
               <div>
                 <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text }}>{task.title}</div>
                 <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 3 }}>{task.studentName} · {task.studentUsn} · {task.courseCode || 'Mentor context'}</div>
+                <div style={{ ...mono, fontSize: 9, color: T.dim, marginTop: 4 }}>Open the related student context directly from anywhere on this card.</div>
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 <Chip color={resolvedTaskIds[task.id] ? T.success : task.dismissal ? T.muted : T.warning} size={9}>{resolvedTaskIds[task.id] ? 'Resolved' : task.dismissal ? 'Dismissed' : 'Active'}</Chip>
@@ -1480,9 +1519,9 @@ function QueueHistoryPage({ role, tasks, resolvedTaskIds, onBack, onOpenTaskStud
             </div>
 
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <Btn size="sm" variant="ghost" onClick={() => onOpenTaskStudent(task)}>Open Student</Btn>
-              {task.dismissal && <Btn size="sm" onClick={() => onRestoreTask(task.id)}>{task.dismissal.kind === 'series' ? 'Resume series' : 'Restore'}</Btn>}
-              {task.unlockRequest && role === 'HoD' && <Btn size="sm" onClick={() => onOpenUnlockReview(task.id)}>Open Unlock Review</Btn>}
+              <div onClick={event => event.stopPropagation()}><Btn size="sm" variant="ghost" onClick={() => onOpenTaskStudent(task)}>Open Student</Btn></div>
+              {task.dismissal && <div onClick={event => event.stopPropagation()}><Btn size="sm" onClick={() => onRestoreTask(task.id)}>{task.dismissal.kind === 'series' ? 'Resume series' : 'Restore'}</Btn></div>}
+              {task.unlockRequest && role === 'HoD' && <div onClick={event => event.stopPropagation()}><Btn size="sm" onClick={() => onOpenUnlockReview(task.id)}>Open Unlock Review</Btn></div>}
             </div>
           </Card>
         ))}
@@ -3267,6 +3306,7 @@ export default function App() {
         <div className="top-bar-role-switcher" style={{ display: 'flex', gap: 0, marginLeft: 16, background: T.surface2, borderRadius: 8, padding: 2, border: `1px solid ${T.border}` }}>
           {allowedRoles.map(r => (
             <button key={r} onClick={() => handleRoleChange(r)}
+              data-tab="true"
               style={{ ...sora, fontWeight: 600, fontSize: 11, padding: isCompactTopbar ? '7px 12px' : '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer', background: role === r ? T.accent : 'transparent', color: role === r ? '#fff' : T.muted, transition: 'all 0.15s', minHeight: isCompactTopbar ? 34 : undefined }}>
               {r}
             </button>
@@ -3369,6 +3409,8 @@ export default function App() {
                       || ((page === 'mentee-detail') && item.id === 'mentees')
                     return (
                       <button key={item.id} onClick={() => { setPage(item.id); setOffering(null) }}
+                        data-nav-item="true"
+                        data-active={active ? 'true' : 'false'}
                         style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', background: active ? T.accent + '18' : 'transparent', color: active ? T.accentLight : T.muted, ...sora, fontWeight: 500, fontSize: 12, marginBottom: 2, transition: 'all 0.15s', textAlign: 'left' as const }}>
                         <Icon size={15} /> {item.label}
                       </button>

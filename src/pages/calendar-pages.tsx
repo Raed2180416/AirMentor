@@ -36,7 +36,7 @@ import {
   reflowClassDayRanges,
   startOfWeekISO,
 } from '../calendar-utils'
-import { Btn, Card, Chip, HScrollArea, PageBackButton, PageShell } from '../ui-primitives'
+import { Btn, Card, Chip, HScrollArea, PageBackButton, PageShell, UI_TRANSITION_FAST, UI_TRANSITION_MEDIUM } from '../ui-primitives'
 
 const AGENDA_PIXELS_PER_MINUTE = 1.15
 const DAY_COLUMN_MIN_WIDTH = 180
@@ -1724,6 +1724,8 @@ function TimedEventBlock({
     <motion.div
       data-event-card="true"
       layout
+      whileHover={event.eventType !== 'preview' ? { y: isClass ? -1 : -2, scale: isClass ? 1.002 : 1.01 } : undefined}
+      whileTap={event.eventType !== 'preview' && editable ? { scale: 0.994 } : undefined}
       transition={{ duration: 0.18, ease: 'easeOut' }}
       onPointerDown={dragHandler}
       onClick={evt => {
@@ -1843,8 +1845,22 @@ function TaskPlacementSheet({
   onScheduleExtraClass: () => void
 }) {
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div onClick={event => event.stopPropagation()} style={{ width: '100%', maxWidth: 720, maxHeight: '82vh', overflow: 'hidden', display: 'grid', gridTemplateRows: 'auto 1fr auto', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16 }}>
+    <motion.div
+      onClick={onClose}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={UI_TRANSITION_FAST}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+    >
+      <motion.div
+        onClick={event => event.stopPropagation()}
+        initial={{ opacity: 0, y: 24, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 18, scale: 0.985 }}
+        transition={UI_TRANSITION_MEDIUM}
+        style={{ width: '100%', maxWidth: 720, maxHeight: '82vh', overflow: 'hidden', display: 'grid', gridTemplateRows: 'auto 1fr auto', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, boxShadow: '0 26px 68px rgba(2, 6, 23, 0.34)' }}
+      >
         <div style={{ padding: '16px 18px', borderBottom: `1px solid ${T.border}` }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
             <div>
@@ -1892,7 +1908,7 @@ function TaskPlacementSheet({
           )}
 
           {queueCandidates.map(task => (
-            <div key={task.id} style={{ borderRadius: 12, border: `1px solid ${T.border}`, background: T.surface2, padding: '12px 14px', display: 'grid', gap: 8 }}>
+            <Card key={task.id} style={{ background: T.surface2, padding: '12px 14px', display: 'grid', gap: 8, borderRadius: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
                 <div>
                   <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text }}>{task.title}</div>
@@ -1904,7 +1920,7 @@ function TaskPlacementSheet({
                 <div style={{ ...mono, fontSize: 10, color: T.dim }}>This updates the same queue item and places it directly into the workspace.</div>
                 <Btn size="sm" onClick={() => onPlaceTask(task.id)}>Place here</Btn>
               </div>
-            </div>
+            </Card>
           ))}
           {queueCandidates.length === 0 && (
             <div style={{ ...mono, fontSize: 11, color: T.dim, textAlign: 'center', padding: '24px 12px' }}>
@@ -1927,8 +1943,8 @@ function TaskPlacementSheet({
             </Btn>
           </div>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   )
 }
 
@@ -1944,8 +1960,22 @@ function ClassTimingSheet({
   onSave: () => void
 }) {
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 145, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div onClick={event => event.stopPropagation()} style={{ width: '100%', maxWidth: 440, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: 18, display: 'grid', gap: 14 }}>
+    <motion.div
+      onClick={onClose}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={UI_TRANSITION_FAST}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 145, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+    >
+      <motion.div
+        onClick={event => event.stopPropagation()}
+        initial={{ opacity: 0, y: 24, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 18, scale: 0.985 }}
+        transition={UI_TRANSITION_MEDIUM}
+        style={{ width: '100%', maxWidth: 440, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: 18, display: 'grid', gap: 14, boxShadow: '0 24px 60px rgba(2, 6, 23, 0.32)' }}
+      >
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
           <div>
             <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: T.text }}>{value.title}</div>
@@ -1984,8 +2014,8 @@ function ClassTimingSheet({
           <Btn size="sm" variant="ghost" onClick={onClose}>Cancel</Btn>
           <Btn size="sm" onClick={onSave}>Save Timing</Btn>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   )
 }
 
@@ -2003,8 +2033,22 @@ function ExtraClassSheet({
   onSave: () => void
 }) {
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 142, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div onClick={event => event.stopPropagation()} style={{ width: '100%', maxWidth: 560, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: 18, display: 'grid', gap: 14 }}>
+    <motion.div
+      onClick={onClose}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={UI_TRANSITION_FAST}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 142, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+    >
+      <motion.div
+        onClick={event => event.stopPropagation()}
+        initial={{ opacity: 0, y: 24, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 18, scale: 0.985 }}
+        transition={UI_TRANSITION_MEDIUM}
+        style={{ width: '100%', maxWidth: 560, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: 18, display: 'grid', gap: 14, boxShadow: '0 24px 60px rgba(2, 6, 23, 0.32)' }}
+      >
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
           <div>
             <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: T.text }}>Schedule Extra Class</div>
@@ -2043,8 +2087,8 @@ function ExtraClassSheet({
           <Btn size="sm" variant="ghost" onClick={onClose}>Cancel</Btn>
           <Btn size="sm" onClick={onSave}>Save Extra Class</Btn>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   )
 }
 
@@ -2089,8 +2133,22 @@ function BlockDetailsSheet({
   const [rescheduleEnd, setRescheduleEnd] = useState(() => minutesToTimeString(placement?.endMinutes ?? ((placement?.startMinutes ?? 0) + DEFAULT_TASK_DURATION_MINUTES)))
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 143, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div onClick={event => event.stopPropagation()} style={{ width: '100%', maxWidth: 520, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: 18, display: 'grid', gap: 14 }}>
+    <motion.div
+      onClick={onClose}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={UI_TRANSITION_FAST}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 143, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+    >
+      <motion.div
+        onClick={event => event.stopPropagation()}
+        initial={{ opacity: 0, y: 24, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 18, scale: 0.985 }}
+        transition={UI_TRANSITION_MEDIUM}
+        style={{ width: '100%', maxWidth: 520, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: 18, display: 'grid', gap: 14, boxShadow: '0 24px 60px rgba(2, 6, 23, 0.32)' }}
+      >
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
           <div>
             <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: T.text }}>{title}</div>
@@ -2134,10 +2192,10 @@ function BlockDetailsSheet({
                 <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>Adjust this task directly for the selected day without leaving the calendar.</div>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button type="button" onClick={() => setRescheduleMode('timed')} style={segmentedButtonStyle(rescheduleMode === 'timed')}>
+                <button type="button" data-tab="true" onClick={() => setRescheduleMode('timed')} style={segmentedButtonStyle(rescheduleMode === 'timed')}>
                   Timed
                 </button>
-                <button type="button" onClick={() => setRescheduleMode('untimed')} style={segmentedButtonStyle(rescheduleMode === 'untimed')}>
+                <button type="button" data-tab="true" onClick={() => setRescheduleMode('untimed')} style={segmentedButtonStyle(rescheduleMode === 'untimed')}>
                   Untimed
                 </button>
               </div>
@@ -2184,8 +2242,8 @@ function BlockDetailsSheet({
             </div>
           </>
         )}
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   )
 }
 
@@ -2256,6 +2314,8 @@ function iconButtonStyle() {
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
+    transition: 'transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, background-color 0.15s ease',
+    boxShadow: '0 8px 18px rgba(15, 23, 42, 0.06)',
   } as const
 }
 
@@ -2271,6 +2331,8 @@ function miniIconButtonStyle() {
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
+    transition: 'transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, background-color 0.15s ease',
+    boxShadow: '0 6px 14px rgba(15, 23, 42, 0.05)',
   } as const
 }
 
@@ -2286,6 +2348,8 @@ function edgeHandleStyle() {
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
+    transition: 'transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, background-color 0.15s ease',
+    boxShadow: '0 6px 14px rgba(15, 23, 42, 0.05)',
   } as const
 }
 
@@ -2299,6 +2363,7 @@ function taskTextButtonStyle(compact: boolean, disabled = false) {
     fontSize: compact ? 9 : 10,
     padding: 0,
     opacity: disabled ? 0.5 : 1,
+    transition: 'color 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
   } as const
 }
 

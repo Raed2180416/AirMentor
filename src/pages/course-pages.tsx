@@ -98,6 +98,7 @@ export function CourseDetail({
                 <button
                   key={def.id}
                   onClick={() => !locked && setTab(def.id)}
+                  data-tab="true"
                   style={{ ...mono, fontSize: 11, padding: '13px 14px', background: 'none', border: 'none', cursor: locked ? 'not-allowed' : 'pointer', color: tab === def.id ? T.accentLight : locked ? T.dim : T.muted, borderBottom: `2px solid ${tab === def.id ? T.accent : 'transparent'}`, opacity: locked ? 0.35 : 1, whiteSpace: 'nowrap', transition: 'color 0.15s', display: 'flex', alignItems: 'center', gap: 5 }}
                 >
                   {def.icon} {def.label}{locked ? ' 🔒' : ''}
@@ -154,7 +155,7 @@ function OverviewTab({ offering, cos, students, setTab }: { offering: Offering; 
           <Bar val={doneCount} max={checks.length} color={T.success} h={6} />
           <div style={{ height: 12 }} />
           {checks.map((check, index) => (
-            <div key={check.label} onClick={() => setTab(check.tab)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: index < checks.length - 1 ? `1px solid ${T.border}` : 'none', cursor: 'pointer' }}>
+            <div key={check.label} data-pressable="true" onClick={() => setTab(check.tab)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: index < checks.length - 1 ? `1px solid ${T.border}` : 'none', cursor: 'pointer' }}>
               <div style={{ width: 17, height: 17, borderRadius: '50%', flexShrink: 0, background: check.done ? '#10b98120' : T.surface3, border: `2px solid ${check.done ? T.success : T.dim}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: T.success }}>{check.done ? '✓' : ''}</div>
               <span style={{ ...mono, fontSize: 11, color: check.done ? T.muted : T.text, flex: 1, textDecoration: check.done ? 'line-through' : 'none' }}>{check.label}</span>
               {!check.done && <span style={{ ...mono, fontSize: 10, color: T.accent }}>→</span>}
@@ -258,7 +259,7 @@ function RiskTab({ offering, students, onOpenStudent }: { offering: Offering; st
           <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text }}>Students by Risk ({filter === 'all' ? 'All' : filter})</div>
           <div style={{ display: 'flex', gap: 4 }}>
             {(['all', 'High', 'Medium', 'Low'] as const).map(option => (
-              <button key={option} onClick={() => setFilter(option)} style={{ ...mono, fontSize: 10, padding: '3px 8px', borderRadius: 4, border: `1px solid ${filter === option ? T.accent : T.border}`, background: filter === option ? `${T.accent}18` : 'transparent', color: filter === option ? T.accentLight : T.muted, cursor: 'pointer' }}>
+              <button key={option} data-tab="true" onClick={() => setFilter(option)} style={{ ...mono, fontSize: 10, padding: '3px 8px', borderRadius: 4, border: `1px solid ${filter === option ? T.accent : T.border}`, background: filter === option ? `${T.accent}18` : 'transparent', color: filter === option ? T.accentLight : T.muted, cursor: 'pointer' }}>
                 {option === 'all' ? 'All' : option}
               </button>
             ))}
@@ -271,7 +272,7 @@ function RiskTab({ offering, students, onOpenStudent }: { offering: Offering; st
               {sorted.map(student => {
                 const attendancePct = Math.round((student.present / student.totalClasses) * 100)
                 return (
-                  <tr key={student.id} onClick={() => onOpenStudent(student)} style={{ cursor: 'pointer', transition: 'background 0.15s' }} onMouseEnter={event => (event.currentTarget.style.background = T.surface2)} onMouseLeave={event => (event.currentTarget.style.background = 'transparent')}>
+                  <tr key={student.id} data-clickable-row="true" onClick={() => onOpenStudent(student)} style={{ cursor: 'pointer', transition: 'background 0.15s' }}>
                     <TD style={{ ...mono, fontSize: 10, color: T.accent }}>{student.usn}</TD>
                     <TD style={{ ...sora, fontSize: 12, color: T.text, whiteSpace: 'nowrap' }}>{student.name}</TD>
                     <TD><RiskBadge band={student.riskBand} prob={student.riskProb} /></TD>
@@ -330,7 +331,7 @@ function AttendanceTab({ offering, students, onOpenStudent, onOpenEntryHub }: { 
                 const pct = Math.round((student.present / student.totalClasses) * 100)
                 const color = pct >= 75 ? T.success : pct >= 65 ? T.warning : T.danger
                 return (
-                  <tr key={student.id} onClick={() => onOpenStudent(student)} style={{ cursor: 'pointer' }} onMouseEnter={event => (event.currentTarget.style.background = T.surface2)} onMouseLeave={event => (event.currentTarget.style.background = 'transparent')}>
+                  <tr key={student.id} data-clickable-row="true" onClick={() => onOpenStudent(student)} style={{ cursor: 'pointer' }}>
                     <TD style={{ ...mono, fontSize: 10, color: T.dim }}>{index + 1}</TD>
                     <TD style={{ ...mono, fontSize: 10, color: T.accent }}>{student.usn}</TD>
                     <TD style={{ ...sora, fontSize: 12, color: T.text, whiteSpace: 'nowrap' }}>{student.name}</TD>
