@@ -1233,6 +1233,23 @@ function AgendaBoard({
 
         {columns.map(column => {
           const layout = assignAgendaLanes(column.events)
+          const classTouchMap = layout
+            .filter((event): event is typeof layout[number] & { eventType: 'class'; classBlock: FacultyTimetableClassBlock } => event.eventType === 'class' && !!event.classBlock)
+            .sort((left, right) => {
+              if (left.lane !== right.lane) return left.lane - right.lane
+              if (left.startMinutes !== right.startMinutes) return left.startMinutes - right.startMinutes
+              if (left.endMinutes !== right.endMinutes) return left.endMinutes - right.endMinutes
+              return left.entityId.localeCompare(right.entityId)
+            })
+            .reduce<Record<string, { touchesPrevious: boolean; touchesNext: boolean }>>((acc, event, index, all) => {
+              const previous = index > 0 ? all[index - 1] : null
+              const next = index < all.length - 1 ? all[index + 1] : null
+              acc[event.entityId] = {
+                touchesPrevious: !!previous && previous.lane === event.lane && previous.endMinutes === event.startMinutes,
+                touchesNext: !!next && next.lane === event.lane && event.endMinutes === next.startMinutes,
+              }
+              return acc
+            }, {})
           return (
             <div key={column.dateISO} style={{ display: 'grid', gap: 10 }}>
               {variant === 'day' && (
@@ -1249,6 +1266,11 @@ function AgendaBoard({
                 onMouseLeave={() => onHoverColumn(hoverAdd?.dateISO === column.dateISO ? null : hoverAdd)}
                 onMouseMove={event => {
                   if (!editable || interaction) return
+                  const target = event.target as HTMLElement
+                  if (target.closest('[data-event-card="true"]')) {
+                    onHoverColumn(hoverAdd?.dateISO === column.dateISO ? null : hoverAdd)
+                    return
+                  }
                   const rect = event.currentTarget.getBoundingClientRect()
                   const relativeMinute = clampMinuteValue((event.clientY - rect.top) / AGENDA_PIXELS_PER_MINUTE, 0, dayEndMinutes - dayStartMinutes)
                   const startMinutes = clampMinuteValue(dayStartMinutes + relativeMinute, dayStartMinutes, dayEndMinutes - DEFAULT_TASK_DURATION_MINUTES)
@@ -1295,32 +1317,42 @@ function AgendaBoard({
                 ))}
 
                 {editable && hoverAdd?.dateISO === column.dateISO && !interaction && (
-                  <div
-                    aria-hidden="true"
+                  <button
+                    type="button"
+                    aria-label={`Add task on ${column.label}`}
+                    onClick={event => {
+                      event.stopPropagation()
+                      onOpenAdd({
+                        dateISO: column.dateISO,
+                        placementMode: 'timed',
+                        startMinutes: hoverAdd.startMinutes,
+                        endMinutes: hoverAdd.endMinutes,
+                      })
+                    }}
                     style={{
                       position: 'absolute',
                       top: Math.max(8, Math.min(boardHeight - 44, hoverAdd.cursorTopPx - 18)),
                       left: 10,
                       right: 10,
                       zIndex: 4,
-                      minHeight: 34,
+                      height: 36,
                       borderRadius: 12,
                       border: `1px solid ${T.accent}48`,
                       background: `${T.accent}16`,
                       color: T.accent,
-                      pointerEvents: 'none',
                       display: 'inline-flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       gap: 8,
                       boxShadow: `0 6px 20px ${T.accent}15`,
+                      cursor: 'pointer',
                       ...mono,
                       fontSize: 10,
                     }}
                   >
                     <Plus size={13} />
                     Add task here
-                  </div>
+                  </button>
                 )}
 
                 {layout.map(event => (
@@ -1340,6 +1372,8 @@ function AgendaBoard({
                     onDismissCurrentOccurrence={onDismissCurrentOccurrence}
                     onDismissSeries={onDismissSeries}
                     editable={editable}
+                    touchesPreviousClass={!!classTouchMap[event.entityId]?.touchesPrevious}
+                    touchesNextClass={!!classTouchMap[event.entityId]?.touchesNext}
                   />
                 ))}
               </div>
@@ -1430,6 +1464,8 @@ function TimedEventBlock({
   onDismissCurrentOccurrence,
   onDismissSeries,
   editable,
+  touchesPreviousClass,
+  touchesNextClass,
 }: {
   event: TimedEventCard & { laneCount: number; lane: number }
   dayStartMinutes: number
@@ -1445,6 +1481,8 @@ function TimedEventBlock({
   onDismissCurrentOccurrence: (taskId: string) => void
   onDismissSeries: (taskId: string) => void
   editable: boolean
+  touchesPreviousClass: boolean
+  touchesNextClass: boolean
 }) {
   const top = (event.startMinutes - dayStartMinutes) * AGENDA_PIXELS_PER_MINUTE
   const height = Math.max(46, (event.endMinutes - event.startMinutes) * AGENDA_PIXELS_PER_MINUTE)
@@ -1453,20 +1491,27 @@ function TimedEventBlock({
   const isTask = event.eventType === 'task' && !!event.task
   const isClass = event.eventType === 'class' && !!event.classBlock
   const compact = height < 78
+  const renderedHeight = isClass ? height : Math.max(46, height)
 
   const baseStyle = {
     position: 'absolute' as const,
     top,
     left,
     width,
-    minHeight: height,
-    borderRadius: 14,
+    height: isClass ? renderedHeight : undefined,
+    minHeight: isClass ? undefined : renderedHeight,
+    borderRadius: isClass ? 0 : 14,
+    borderTopLeftRadius: isClass ? (touchesPreviousClass ? 0 : 14) : undefined,
+    borderTopRightRadius: isClass ? (touchesPreviousClass ? 0 : 14) : undefined,
+    borderBottomLeftRadius: isClass ? (touchesNextClass ? 0 : 14) : undefined,
+    borderBottomRightRadius: isClass ? (touchesNextClass ? 0 : 14) : undefined,
     border: `1px solid ${event.invalid ? T.danger : `${event.accent}48`}`,
+    borderTopColor: isClass && touchesPreviousClass ? 'transparent' : undefined,
     background: event.invalid ? `${T.danger}18` : `${event.accent}18`,
-    boxShadow: event.invalid ? `0 0 0 1px ${T.danger}20 inset` : `0 10px 24px ${event.accent}14`,
-    padding: '10px 12px',
+    boxShadow: event.invalid ? `0 0 0 1px ${T.danger}20 inset` : isClass ? 'none' : `0 10px 24px ${event.accent}14`,
+    padding: compact ? '8px 10px' : '10px 12px',
     display: 'grid',
-    gap: 6,
+    gap: compact ? 4 : 6,
     opacity: isGhosted ? 0.24 : 1,
     cursor: editable && event.eventType !== 'preview' ? 'grab' : 'default',
     overflow: 'hidden',
