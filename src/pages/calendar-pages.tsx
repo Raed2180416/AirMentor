@@ -31,14 +31,14 @@ import {
   minutesToDisplayLabel,
   minutesToTimeString,
   normalizeTimedRange,
-  rangeOverlaps,
   startOfWeekISO,
 } from '../calendar-utils'
-import { Btn, Card, Chip, PageShell } from '../ui-primitives'
+import { Btn, Card, Chip, HScrollArea, PageShell } from '../ui-primitives'
 
 const AGENDA_PIXELS_PER_MINUTE = 1.15
 const DAY_COLUMN_MIN_WIDTH = 180
 const DRAG_THRESHOLD_PX = 4
+const SNAP_THRESHOLD_MINUTES = 14
 
 type ScheduleInput = {
   dateISO: string
@@ -225,6 +225,8 @@ export function CalendarTimetablePage({
 
   const columnRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const untimedBucketRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const shellRef = useRef<HTMLDivElement | null>(null)
+  const [pageWidth, setPageWidth] = useState(1400)
 
   const isEditable = activeRole === 'Course Leader'
   const offeringIds = useMemo(() => new Set(facultyOfferings.map(offering => offering.offId)), [facultyOfferings])
@@ -255,6 +257,19 @@ export function CalendarTimetablePage({
         start: minutesToTimeString(timetable.dayStartMinutes),
         end: minutesToTimeString(timetable.dayEndMinutes),
       }
+
+  useEffect(() => {
+    const node = shellRef.current
+    if (!node || typeof ResizeObserver === 'undefined') return undefined
+    const observer = new ResizeObserver(entries => {
+      const entry = entries[0]
+      if (!entry) return
+      setPageWidth(entry.contentRect.width)
+    })
+    observer.observe(node)
+    setPageWidth(node.getBoundingClientRect().width)
+    return () => observer.disconnect()
+  }, [])
 
   const taskPlacementsByDate = useMemo(() => {
     const grouped = {} as Record<string, TaskCalendarPlacement[]>
@@ -350,6 +365,116 @@ export function CalendarTimetablePage({
       .filter((task): task is SharedTask => !!task)
   }, [activeTasksById, taskPlacementsByDate])
 
+  const getTimedNeighbors = useCallback((dateISO: string, exclude: { taskId?: string; classId?: string } = {}) => {
+    const weekday = getWeekdayForDateISO(dateISO)
+    const classNeighbors = weekday
+      ? timetable.classBlocks
+          .filter(block => block.day === weekday && block.id !== exclude.classId)
+          .map(block => ({ startMinutes: block.startMinutes, endMinutes: block.endMinutes, kind: 'class' as const }))
+      : []
+    const taskNeighbors = (taskPlacementsByDate[dateISO] ?? [])
+      .filter(placement => placement.placementMode === 'timed')
+      .filter(placement => placement.taskId !== exclude.taskId)
+      .filter(placement => typeof placement.startMinutes === 'number' && typeof placement.endMinutes === 'number')
+      .map(placement => ({ startMinutes: placement.startMinutes as number, endMinutes: placement.endMinutes as number, kind: 'task' as const }))
+    return [...classNeighbors, ...taskNeighbors].sort((left, right) => left.startMinutes - right.startMinutes || left.endMinutes - right.endMinutes)
+  }, [taskPlacementsByDate, timetable.classBlocks])
+
+  const snapRangeToNeighbors = useCallback((range: { startMinutes: number; endMinutes: number }, dateISO: string, exclude: { taskId?: string; classId?: string } = {}) => {
+    const duration = range.endMinutes - range.startMinutes
+    const candidates = getTimedNeighbors(dateISO, exclude).flatMap(item => [item.startMinutes, item.endMinutes])
+    let best: { startMinutes: number; endMinutes: number } | null = null
+    let bestDistance = SNAP_THRESHOLD_MINUTES + 1
+
+    candidates.forEach(edge => {
+      const startDistance = Math.abs(range.startMinutes - edge)
+      if (startDistance < bestDistance) {
+        bestDistance = startDistance
+        best = { startMinutes: edge, endMinutes: edge + duration }
+      }
+      const endDistance = Math.abs(range.endMinutes - edge)
+      if (endDistance < bestDistance) {
+        bestDistance = endDistance
+        best = { startMinutes: edge - duration, endMinutes: edge }
+      }
+    })
+
+    if (best === null) return range
+    const snapped: { startMinutes: number; endMinutes: number } = best
+    return clampRangeToDayBounds(snapped.startMinutes, snapped.endMinutes, dayStartMinutes, dayEndMinutes)
+  }, [dayEndMinutes, dayStartMinutes, getTimedNeighbors])
+
+  const fitClassRangeIntoGap = useCallback((dateISO: string, durationMinutes: number, draftStartMinutes: number, excludeClassId?: string) => {
+    const day = getWeekdayForDateISO(dateISO)
+    if (!day) {
+      return {
+        placementMode: 'timed' as const,
+        dateISO,
+        valid: false,
+      }
+    }
+    const neighbors = getTimedNeighbors(dateISO, { classId: excludeClassId })
+      .filter(item => item.kind === 'class')
+      .sort((left, right) => left.startMinutes - right.startMinutes)
+    const gaps = [] as Array<{ startMinutes: number; endMinutes: number }>
+    let cursor = dayStartMinutes
+    neighbors.forEach(item => {
+      gaps.push({ startMinutes: cursor, endMinutes: item.startMinutes })
+      cursor = Math.max(cursor, item.endMinutes)
+    })
+    gaps.push({ startMinutes: cursor, endMinutes: dayEndMinutes })
+
+    const draftCenter = draftStartMinutes + (durationMinutes / 2)
+    const targetGap = gaps
+      .filter(gap => (gap.endMinutes - gap.startMinutes) >= durationMinutes)
+      .sort((left, right) => {
+        const leftDistance = left.startMinutes <= draftCenter && draftCenter <= left.endMinutes
+          ? 0
+          : Math.min(Math.abs(draftCenter - left.startMinutes), Math.abs(draftCenter - left.endMinutes))
+        const rightDistance = right.startMinutes <= draftCenter && draftCenter <= right.endMinutes
+          ? 0
+          : Math.min(Math.abs(draftCenter - right.startMinutes), Math.abs(draftCenter - right.endMinutes))
+        if (leftDistance !== rightDistance) return leftDistance - rightDistance
+        return left.startMinutes - right.startMinutes
+      })[0]
+
+    if (!targetGap) {
+      return {
+        placementMode: 'timed' as const,
+        dateISO,
+        day,
+        startMinutes: draftStartMinutes,
+        endMinutes: draftStartMinutes + durationMinutes,
+        valid: false,
+      }
+    }
+
+    const clampedStart = clampMinuteValue(draftStartMinutes, targetGap.startMinutes, targetGap.endMinutes - durationMinutes)
+    let startMinutes = clampedStart
+    const distanceToGapStart = Math.abs(clampedStart - targetGap.startMinutes)
+    const distanceToGapEnd = Math.abs((clampedStart + durationMinutes) - targetGap.endMinutes)
+    if (distanceToGapStart <= SNAP_THRESHOLD_MINUTES) startMinutes = targetGap.startMinutes
+    else if (distanceToGapEnd <= SNAP_THRESHOLD_MINUTES) startMinutes = targetGap.endMinutes - durationMinutes
+
+    return {
+      placementMode: 'timed' as const,
+      dateISO,
+      day,
+      startMinutes,
+      endMinutes: startMinutes + durationMinutes,
+      valid: true,
+    }
+  }, [dayEndMinutes, dayStartMinutes, getTimedNeighbors])
+
+  const getClassResizeBounds = useCallback((dateISO: string, classId: string, anchorStart: number, anchorEnd: number) => {
+    const neighbors = getTimedNeighbors(dateISO, { classId })
+      .filter(item => item.kind === 'class')
+      .sort((left, right) => left.startMinutes - right.startMinutes)
+    const previousEnd = neighbors.filter(item => item.endMinutes <= anchorStart).map(item => item.endMinutes).sort((a, b) => b - a)[0] ?? dayStartMinutes
+    const nextStart = neighbors.filter(item => item.startMinutes >= anchorEnd).map(item => item.startMinutes).sort((a, b) => a - b)[0] ?? dayEndMinutes
+    return { previousEnd, nextStart }
+  }, [dayEndMinutes, dayStartMinutes, getTimedNeighbors])
+
   const weekColumns = useMemo<TimedColumnData[]>(() => weekDates.map(dateISO => ({
     dateISO,
     day: getWeekdayForDateISO(dateISO) ?? WEEKDAY_ORDER[0],
@@ -420,22 +545,20 @@ export function CalendarTimetablePage({
       dayStartMinutes,
       dayEndMinutes,
     )
-    const valid = draft.itemType === 'task'
-      ? true
-      : !timetable.classBlocks.some(block => {
-          if (block.id === draft.entityId) return false
-      return block.day === timedTarget.day
-            && rangeOverlaps(block.startMinutes, block.endMinutes, normalized.startMinutes, normalized.endMinutes)
-        })
+    if (draft.itemType === 'class') {
+      return fitClassRangeIntoGap(timedTarget.dateISO, draft.durationMinutes, normalized.startMinutes, draft.entityId)
+    }
+
+    const snapped = snapRangeToNeighbors(normalized, timedTarget.dateISO, { taskId: draft.entityId })
     return {
       placementMode: 'timed',
       dateISO: timedTarget.dateISO,
       day: timedTarget.day,
-      startMinutes: normalized.startMinutes,
-      endMinutes: normalized.endMinutes,
-      valid,
+      startMinutes: snapped.startMinutes,
+      endMinutes: snapped.endMinutes,
+      valid: true,
     }
-  }, [dayEndMinutes, dayStartMinutes, findTimedColumnTarget, findUntimedTarget, timetable.classBlocks])
+  }, [dayEndMinutes, dayStartMinutes, findTimedColumnTarget, findUntimedTarget, fitClassRangeIntoGap, snapRangeToNeighbors])
 
   const resolveResizePreview = useCallback((draft: PendingResize | ActiveResize, clientX: number, clientY: number): PreviewState | null => {
     const timedTarget = findTimedColumnTarget(clientX, clientY)
@@ -451,22 +574,40 @@ export function CalendarTimetablePage({
     }
 
     const nextMinute = timedTarget.minute
+    const { previousEnd, nextStart } = getClassResizeBounds(draft.dateISO, draft.entityId, draft.originalStartMinutes, draft.originalEndMinutes)
     const raw = draft.edge === 'start'
-      ? normalizeTimedRange(nextMinute, draft.originalEndMinutes, dayStartMinutes, dayEndMinutes, MIN_EVENT_DURATION_MINUTES)
-      : normalizeTimedRange(draft.originalStartMinutes, nextMinute, dayStartMinutes, dayEndMinutes, MIN_EVENT_DURATION_MINUTES)
-    const valid = !timetable.classBlocks.some(block => {
-      if (block.id === draft.entityId) return false
-      return block.day === draft.day && rangeOverlaps(block.startMinutes, block.endMinutes, raw.startMinutes, raw.endMinutes)
-    })
+      ? normalizeTimedRange(
+          clampMinuteValue(nextMinute, previousEnd, draft.originalEndMinutes - MIN_EVENT_DURATION_MINUTES),
+          draft.originalEndMinutes,
+          dayStartMinutes,
+          dayEndMinutes,
+          MIN_EVENT_DURATION_MINUTES,
+        )
+      : normalizeTimedRange(
+          draft.originalStartMinutes,
+          clampMinuteValue(nextMinute, draft.originalStartMinutes + MIN_EVENT_DURATION_MINUTES, nextStart),
+          dayStartMinutes,
+          dayEndMinutes,
+          MIN_EVENT_DURATION_MINUTES,
+        )
+    const snapped = draft.edge === 'start'
+      ? {
+          startMinutes: Math.abs(raw.startMinutes - previousEnd) <= SNAP_THRESHOLD_MINUTES ? previousEnd : raw.startMinutes,
+          endMinutes: raw.endMinutes,
+        }
+      : {
+          startMinutes: raw.startMinutes,
+          endMinutes: Math.abs(raw.endMinutes - nextStart) <= SNAP_THRESHOLD_MINUTES ? nextStart : raw.endMinutes,
+        }
     return {
       placementMode: 'timed',
       dateISO: draft.dateISO,
       day: draft.day,
-      startMinutes: raw.startMinutes,
-      endMinutes: raw.endMinutes,
-      valid,
+      startMinutes: snapped.startMinutes,
+      endMinutes: snapped.endMinutes,
+      valid: true,
     }
-  }, [dayEndMinutes, dayStartMinutes, findTimedColumnTarget, timetable.classBlocks])
+  }, [dayEndMinutes, dayStartMinutes, findTimedColumnTarget, getClassResizeBounds])
 
   useEffect(() => {
     if (!interaction) return undefined
@@ -654,7 +795,8 @@ export function CalendarTimetablePage({
 
   return (
     <PageShell size="wide">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 18, flexWrap: 'wrap' }}>
+      <div ref={shellRef} style={{ display: 'grid', gap: 18 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 0, flexWrap: 'wrap' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
             <CalendarDays size={20} color={T.accent} />
@@ -682,7 +824,7 @@ export function CalendarTimetablePage({
       </div>
 
       {mode === 'calendar' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.7fr) minmax(360px, 1fr)', gap: 16, alignItems: 'start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: pageWidth < 1180 ? 'minmax(0, 1fr)' : 'minmax(0, 1.7fr) minmax(360px, 1fr)', gap: 16, alignItems: 'start' }}>
           <Card style={{ padding: '16px 18px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <div>
@@ -743,7 +885,7 @@ export function CalendarTimetablePage({
             </div>
           </Card>
 
-          <Card style={{ padding: '16px 18px', position: 'sticky', top: 16 }}>
+          <Card style={{ padding: '16px 18px', position: pageWidth < 1180 ? 'relative' : 'sticky', top: pageWidth < 1180 ? undefined : 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
               <div>
                 <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: T.text }}>{formatShortDate(selectedDateISO)}</div>
@@ -929,6 +1071,7 @@ export function CalendarTimetablePage({
           </motion.div>
         )}
       </AnimatePresence>
+      </div>
     </PageShell>
   )
 }
@@ -960,7 +1103,8 @@ function AgendaBoard({
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       {variant === 'week' && (
-        <div style={{ display: 'grid', gridTemplateColumns: `86px repeat(${columns.length}, minmax(${DAY_COLUMN_MIN_WIDTH}px, 1fr))`, gap: 10 }}>
+        <HScrollArea style={{ paddingBottom: 4 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: `86px repeat(${columns.length}, minmax(${DAY_COLUMN_MIN_WIDTH}px, 1fr))`, gap: 10, minWidth: 86 + columns.length * DAY_COLUMN_MIN_WIDTH + Math.max(0, columns.length - 1) * 10 }}>
           <div />
           {columns.map(column => (
             <button
@@ -982,9 +1126,11 @@ function AgendaBoard({
             </button>
           ))}
         </div>
+        </HScrollArea>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: `86px repeat(${columns.length}, minmax(${DAY_COLUMN_MIN_WIDTH}px, 1fr))`, gap: 10, alignItems: 'start' }}>
+      <HScrollArea style={{ paddingBottom: 6 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: `86px repeat(${columns.length}, minmax(${DAY_COLUMN_MIN_WIDTH}px, 1fr))`, gap: 10, alignItems: 'start', minWidth: 86 + columns.length * DAY_COLUMN_MIN_WIDTH + Math.max(0, columns.length - 1) * 10 }}>
         <div style={{ position: 'relative', height: boardHeight }}>
           {guides.map(minute => (
             <div key={`guide-${minute}`} style={{ position: 'absolute', top: (minute - dayStartMinutes) * AGENDA_PIXELS_PER_MINUTE - 8, left: 0, right: 0 }}>
@@ -1163,6 +1309,7 @@ function AgendaBoard({
           )
         })}
       </div>
+      </HScrollArea>
     </div>
   )
 }
