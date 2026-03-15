@@ -51,11 +51,10 @@ import {
   applyPlacementToTask,
   buildPlacementForRange,
   buildUntimedPlacement,
-  clampMinuteValue,
   clampRangeToDayBounds,
-  MIN_EVENT_DURATION_MINUTES,
   minutesToDisplayLabel,
   normalizeTimedRange,
+  reflowClassDayRanges,
 } from './calendar-utils'
 import {
   AppSelectorsContext,
@@ -2373,150 +2372,58 @@ export default function App() {
     }))
   }, [allTasksList, appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, repositories, role, taskPlacements])
 
-  const resolveCommittedClassRange = useCallback((blockId: string, input: { day: Weekday; startMinutes: number; endMinutes: number }, mode: 'move' | 'resize' | 'edit') => {
+  const resolveCommittedClassRange = useCallback((blockId: string, input: { day: Weekday; startMinutes: number; endMinutes: number }) => {
     if (!currentFacultyTimetable) return null
     const block = currentFacultyTimetable.classBlocks.find(item => item.id === blockId)
     if (!block) return null
-    const day = input.day
-    const normalized = normalizeTimedRange(
-      input.startMinutes,
-      input.endMinutes,
-      currentFacultyTimetable.dayStartMinutes,
-      currentFacultyTimetable.dayEndMinutes,
-    )
-    const siblings = currentFacultyTimetable.classBlocks
-      .filter(item => item.id !== blockId && item.day === day)
-      .sort((left, right) => left.startMinutes - right.startMinutes || left.endMinutes - right.endMinutes)
-    const startChanged = input.startMinutes !== block.startMinutes
-    const endChanged = input.endMinutes !== block.endMinutes
+    const targetDayBlocks = [
+      ...currentFacultyTimetable.classBlocks.filter(item => item.day === input.day && item.id !== blockId),
+      { ...block, day: input.day },
+    ]
+    const reflowed = reflowClassDayRanges({
+      blocks: targetDayBlocks,
+      targetId: blockId,
+      desiredStartMinutes: input.startMinutes,
+      desiredEndMinutes: input.endMinutes,
+      dayStartMinutes: currentFacultyTimetable.dayStartMinutes,
+      dayEndMinutes: currentFacultyTimetable.dayEndMinutes,
+      snapThresholdMinutes: CLASS_SNAP_THRESHOLD_MINUTES,
+    })
+    if (!reflowed) return null
 
-    if (mode === 'move' || (mode === 'edit' && (day !== block.day || (startChanged && endChanged)))) {
-      const durationMinutes = normalized.endMinutes - normalized.startMinutes
-      const gaps: Array<{ startMinutes: number; endMinutes: number }> = []
-      let cursor = currentFacultyTimetable.dayStartMinutes
-      siblings.forEach(item => {
-        gaps.push({ startMinutes: cursor, endMinutes: item.startMinutes })
-        cursor = Math.max(cursor, item.endMinutes)
-      })
-      gaps.push({ startMinutes: cursor, endMinutes: currentFacultyTimetable.dayEndMinutes })
+    const changedBlockIds = Array.from(new Set([
+      blockId,
+      ...reflowed.changedBlockIds,
+    ]))
 
-      const draftCenter = normalized.startMinutes + (durationMinutes / 2)
-      const targetGap = gaps
-        .filter(gap => (gap.endMinutes - gap.startMinutes) >= durationMinutes)
-        .sort((left, right) => {
-          const leftDistance = left.startMinutes <= draftCenter && draftCenter <= left.endMinutes
-            ? 0
-            : Math.min(Math.abs(draftCenter - left.startMinutes), Math.abs(draftCenter - left.endMinutes))
-          const rightDistance = right.startMinutes <= draftCenter && draftCenter <= right.endMinutes
-            ? 0
-            : Math.min(Math.abs(draftCenter - right.startMinutes), Math.abs(draftCenter - right.endMinutes))
-          if (leftDistance !== rightDistance) return leftDistance - rightDistance
-          return left.startMinutes - right.startMinutes
-        })[0]
-
-      if (!targetGap) return null
-
-      let startMinutes = Math.max(targetGap.startMinutes, Math.min(normalized.startMinutes, targetGap.endMinutes - durationMinutes))
-      const distanceToGapStart = Math.abs(startMinutes - targetGap.startMinutes)
-      const distanceToGapEnd = Math.abs((startMinutes + durationMinutes) - targetGap.endMinutes)
-      if (distanceToGapStart <= CLASS_SNAP_THRESHOLD_MINUTES) startMinutes = targetGap.startMinutes
-      else if (distanceToGapEnd <= CLASS_SNAP_THRESHOLD_MINUTES) startMinutes = targetGap.endMinutes - durationMinutes
-
-      return {
-        primary: { day, startMinutes, endMinutes: startMinutes + durationMinutes },
-      }
-    }
-
-    const edge = startChanged && !endChanged
-      ? 'start'
-      : endChanged && !startChanged
-        ? 'end'
-        : (Math.abs(input.startMinutes - block.startMinutes) >= Math.abs(input.endMinutes - block.endMinutes) ? 'start' : 'end')
-
-    const touchingNeighbor = edge === 'start'
-      ? siblings.filter(item => item.endMinutes === block.startMinutes).sort((left, right) => left.startMinutes - right.startMinutes)[0]
-      : siblings.filter(item => item.startMinutes === block.endMinutes).sort((left, right) => left.startMinutes - right.startMinutes)[0]
-
-    if (touchingNeighbor) {
-      if (edge === 'start') {
-        const boundary = clampMinuteValue(
-          normalized.startMinutes,
-          touchingNeighbor.startMinutes + MIN_EVENT_DURATION_MINUTES,
-          block.endMinutes - MIN_EVENT_DURATION_MINUTES,
-        )
-        return {
-          primary: { day: block.day, startMinutes: boundary, endMinutes: block.endMinutes },
-          linked: {
-            blockId: touchingNeighbor.id,
-            day: touchingNeighbor.day,
-            startMinutes: touchingNeighbor.startMinutes,
-            endMinutes: boundary,
-          },
-        }
-      }
-
-      const boundary = clampMinuteValue(
-        normalized.endMinutes,
-        block.startMinutes + MIN_EVENT_DURATION_MINUTES,
-        touchingNeighbor.endMinutes - MIN_EVENT_DURATION_MINUTES,
-      )
-      return {
-        primary: { day: block.day, startMinutes: block.startMinutes, endMinutes: boundary },
-        linked: {
-          blockId: touchingNeighbor.id,
-          day: touchingNeighbor.day,
-          startMinutes: boundary,
-          endMinutes: touchingNeighbor.endMinutes,
-        },
-      }
-    }
-
-    const previousEnd = siblings
-      .filter(item => item.endMinutes <= block.startMinutes)
-      .map(item => item.endMinutes)
-      .sort((left, right) => right - left)[0] ?? currentFacultyTimetable.dayStartMinutes
-    const nextStart = siblings
-      .filter(item => item.startMinutes >= block.endMinutes)
-      .map(item => item.startMinutes)
-      .sort((left, right) => left - right)[0] ?? currentFacultyTimetable.dayEndMinutes
-
-    const snappedStart = Math.abs(normalized.startMinutes - previousEnd) <= CLASS_SNAP_THRESHOLD_MINUTES ? previousEnd : normalized.startMinutes
-    const snappedEnd = Math.abs(normalized.endMinutes - nextStart) <= CLASS_SNAP_THRESHOLD_MINUTES ? nextStart : normalized.endMinutes
-    const bounded = normalizeTimedRange(snappedStart, snappedEnd, previousEnd, nextStart)
     return {
-      primary: { day: block.day, startMinutes: bounded.startMinutes, endMinutes: bounded.endMinutes },
+      day: input.day,
+      primary: { day: input.day, startMinutes: reflowed.targetRange.startMinutes, endMinutes: reflowed.targetRange.endMinutes },
+      changedBlockIds,
+      rangesById: reflowed.rangesById,
     }
   }, [currentFacultyTimetable])
 
-  const applyClassBlockTiming = useCallback((blockId: string, input: { day: Weekday; startMinutes: number; endMinutes: number }, actionKind: 'class-moved' | 'class-resized', mode: 'move' | 'resize' | 'edit') => {
+  const applyClassBlockTiming = useCallback((blockId: string, input: { day: Weekday; startMinutes: number; endMinutes: number }, actionKind: 'class-moved' | 'class-resized') => {
     if (!currentTeacher || !currentFacultyTimetable || !currentTeacher.allowedRoles.includes('Course Leader')) return
     const block = currentFacultyTimetable.classBlocks.find(item => item.id === blockId)
     if (!block) return
-    const resolved = resolveCommittedClassRange(blockId, input, mode)
+    const resolved = resolveCommittedClassRange(blockId, input)
     if (!resolved) return
-    const linkedBlock = resolved.linked
-      ? currentFacultyTimetable.classBlocks.find(item => item.id === resolved.linked?.blockId) ?? null
-      : null
+    const changedBlocks = currentFacultyTimetable.classBlocks.filter(item => resolved.changedBlockIds.includes(item.id))
     setTimetableByFacultyId(prev => ({
       ...prev,
       [currentTeacher.facultyId]: {
         ...currentFacultyTimetable,
         updatedAt: Date.now(),
         classBlocks: currentFacultyTimetable.classBlocks.map(item => {
-          if (item.id === blockId) {
+          const nextRange = resolved.rangesById[item.id]
+          if (nextRange) {
             return {
               ...item,
-              day: resolved.primary.day,
-              startMinutes: resolved.primary.startMinutes,
-              endMinutes: resolved.primary.endMinutes,
-            }
-          }
-          if (resolved.linked && item.id === resolved.linked.blockId) {
-            return {
-              ...item,
-              day: resolved.linked.day,
-              startMinutes: resolved.linked.startMinutes,
-              endMinutes: resolved.linked.endMinutes,
+              day: resolved.day,
+              startMinutes: nextRange.startMinutes,
+              endMinutes: nextRange.endMinutes,
             }
           }
           return item
@@ -2530,37 +2437,41 @@ export default function App() {
       actionKind,
       targetType: 'class',
       targetId: blockId,
-      note: `${actionKind === 'class-resized' ? 'Resized' : 'Updated'} ${block.courseCode} Sec ${block.section} to ${resolved.primary.day} ${minutesToDisplayLabel(resolved.primary.startMinutes)} - ${minutesToDisplayLabel(resolved.primary.endMinutes)}.${resolved.linked && linkedBlock ? ` Shared boundary adjusted with ${linkedBlock.courseCode} Sec ${linkedBlock.section}.` : ''}`,
+      note: `${actionKind === 'class-resized' ? 'Resized' : 'Updated'} ${block.courseCode} Sec ${block.section} to ${resolved.primary.day} ${minutesToDisplayLabel(resolved.primary.startMinutes)} - ${minutesToDisplayLabel(resolved.primary.endMinutes)}.${changedBlocks.length > 1 ? ` Reflowed ${changedBlocks.length - 1} adjacent class${changedBlocks.length > 2 ? 'es' : ''} on the same day.` : ''}`,
       before: { day: block.day, startMinutes: block.startMinutes, endMinutes: block.endMinutes, offeringId: block.offeringId },
       after: { day: resolved.primary.day, startMinutes: resolved.primary.startMinutes, endMinutes: resolved.primary.endMinutes, offeringId: block.offeringId },
     }))
-    if (resolved.linked && linkedBlock) {
+    changedBlocks
+      .filter(item => item.id !== blockId)
+      .forEach(item => {
+        const nextRange = resolved.rangesById[item.id]
+        if (!nextRange) return
       appendCalendarAudit(createCalendarAuditEvent({
         facultyId: currentTeacher.facultyId,
         actorRole: role,
         actorFacultyId: currentTeacherId ?? undefined,
-        actionKind: 'class-resized',
+        actionKind: 'class-moved',
         targetType: 'class',
-        targetId: linkedBlock.id,
-        note: `Shared boundary resized with ${block.courseCode} Sec ${block.section}; ${linkedBlock.courseCode} Sec ${linkedBlock.section} now runs ${minutesToDisplayLabel(resolved.linked.startMinutes)} - ${minutesToDisplayLabel(resolved.linked.endMinutes)}.`,
-        before: { day: linkedBlock.day, startMinutes: linkedBlock.startMinutes, endMinutes: linkedBlock.endMinutes, offeringId: linkedBlock.offeringId },
-        after: { day: resolved.linked.day, startMinutes: resolved.linked.startMinutes, endMinutes: resolved.linked.endMinutes, offeringId: linkedBlock.offeringId },
+        targetId: item.id,
+        note: `${item.courseCode} Sec ${item.section} was reflowed to ${minutesToDisplayLabel(nextRange.startMinutes)} - ${minutesToDisplayLabel(nextRange.endMinutes)} after ${block.courseCode} Sec ${block.section} changed.`,
+        before: { day: item.day, startMinutes: item.startMinutes, endMinutes: item.endMinutes, offeringId: item.offeringId },
+        after: { day: resolved.day, startMinutes: nextRange.startMinutes, endMinutes: nextRange.endMinutes, offeringId: item.offeringId },
       }))
-    }
+    })
   }, [appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, resolveCommittedClassRange, role])
 
   const handleMoveClassBlock = useCallback((blockId: string, input: { day: Weekday; startMinutes: number; endMinutes: number }) => {
-    applyClassBlockTiming(blockId, input, 'class-moved', 'move')
+    applyClassBlockTiming(blockId, input, 'class-moved')
   }, [applyClassBlockTiming])
 
   const handleResizeClassBlock = useCallback((blockId: string, input: { startMinutes: number; endMinutes: number }) => {
     const block = currentFacultyTimetable?.classBlocks.find(item => item.id === blockId)
     if (!block) return
-    applyClassBlockTiming(blockId, { day: block.day, startMinutes: input.startMinutes, endMinutes: input.endMinutes }, 'class-resized', 'resize')
+    applyClassBlockTiming(blockId, { day: block.day, startMinutes: input.startMinutes, endMinutes: input.endMinutes }, 'class-resized')
   }, [applyClassBlockTiming, currentFacultyTimetable])
 
   const handleEditClassTiming = useCallback((blockId: string, input: { day: Weekday; startMinutes: number; endMinutes: number }) => {
-    applyClassBlockTiming(blockId, input, 'class-moved', 'edit')
+    applyClassBlockTiming(blockId, input, 'class-moved')
   }, [applyClassBlockTiming])
 
   const handleUpdateTimetableBounds = useCallback((input: { dayStartMinutes: number; dayEndMinutes: number }) => {
@@ -3124,7 +3035,6 @@ export default function App() {
   }
 
   const sidebarToggleLabel = sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'
-  const resetButtonLeft = !isCompactTopbar && sidebarCollapsed ? 72 : 16
   const routeLoadingLabel = page === 'course'
     ? 'Loading course workspace...'
     : page === 'calendar'
@@ -3410,7 +3320,7 @@ export default function App() {
           void repositories.clearPersistedState()
           window.location.reload()
         }}
-        style={{ position: 'fixed', left: resetButtonLeft, bottom: 16, zIndex: 140, border: `1px solid ${T.danger}55`, background: '#ef44441a', color: T.danger, borderRadius: 8, padding: '8px 10px', cursor: 'pointer', ...mono, fontSize: 10 }}
+        style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 140, border: `1px solid ${T.danger}55`, background: '#ef44441a', color: T.danger, borderRadius: 8, padding: '8px 10px', cursor: 'pointer', ...mono, fontSize: 10 }}
       >
         Reset Mock Data
       </button>

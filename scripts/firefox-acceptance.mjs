@@ -31,7 +31,7 @@ try {
   await page.getByRole('button', { name: /login/i }).click()
   await expectVisible(page.getByText(/Good (Morning|Afternoon|Evening),/), 'dashboard greeting')
 
-  const desktopSidebarToggle = page.locator('.sidebar-edge-toggle')
+  const desktopSidebarToggle = page.getByRole('button', { name: /Collapse sidebar/i })
   await expectVisible(desktopSidebarToggle, 'desktop sidebar toggle')
   await desktopSidebarToggle.click()
   await expectVisible(page.getByRole('button', { name: /Expand sidebar/i }), 'desktop expand control after collapse')

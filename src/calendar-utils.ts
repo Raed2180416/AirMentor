@@ -45,6 +45,11 @@ export type TimedAgendaLayoutResult<T extends TimedAgendaLayoutInput> = T & {
   laneCount: number
 }
 
+export type ReflowedClassRange = {
+  startMinutes: number
+  endMinutes: number
+}
+
 function parseLocalDate(dateISO: string) {
   const normalized = normalizeDateISO(dateISO)
   if (!normalized) return null
@@ -205,6 +210,98 @@ export function assignAgendaLanes<T extends TimedAgendaLayoutInput>(items: T[]):
 
   flushCluster()
   return output
+}
+
+export function reflowClassDayRanges<T extends { id: string; startMinutes: number; endMinutes: number }>(input: {
+  blocks: T[]
+  targetId: string
+  desiredStartMinutes: number
+  desiredEndMinutes: number
+  dayStartMinutes: number
+  dayEndMinutes: number
+  snapThresholdMinutes?: number
+}) {
+  const target = input.blocks.find(block => block.id === input.targetId)
+  if (!target) return null
+
+  const minimumDuration = MIN_EVENT_DURATION_MINUTES
+  const snapThresholdMinutes = input.snapThresholdMinutes ?? 14
+  const durationById = Object.fromEntries(
+    input.blocks.map(block => [block.id, Math.max(minimumDuration, block.endMinutes - block.startMinutes)]),
+  ) as Record<string, number>
+
+  const others = input.blocks
+    .filter(block => block.id !== input.targetId)
+    .sort((left, right) => left.startMinutes - right.startMinutes || left.endMinutes - right.endMinutes || left.id.localeCompare(right.id))
+
+  const normalizedDesired = normalizeTimedRange(
+    input.desiredStartMinutes,
+    input.desiredEndMinutes,
+    input.dayStartMinutes,
+    input.dayEndMinutes,
+    minimumDuration,
+  )
+  const desiredTargetDuration = Math.max(minimumDuration, normalizedDesired.endMinutes - normalizedDesired.startMinutes)
+  const ordered = [...others, { id: input.targetId, startMinutes: normalizedDesired.startMinutes, endMinutes: normalizedDesired.endMinutes }]
+    .sort((left, right) => left.startMinutes - right.startMinutes || left.endMinutes - right.endMinutes || left.id.localeCompare(right.id))
+  const targetIndex = ordered.findIndex(block => block.id === input.targetId)
+  const previousBlocks = ordered.slice(0, targetIndex)
+  const nextBlocks = ordered.slice(targetIndex + 1)
+  const previousDuration = previousBlocks.reduce((sum, block) => sum + durationById[block.id], 0)
+  const nextDuration = nextBlocks.reduce((sum, block) => sum + durationById[block.id], 0)
+  const maximumTargetDuration = Math.max(minimumDuration, input.dayEndMinutes - input.dayStartMinutes - previousDuration - nextDuration)
+  const targetDuration = Math.min(desiredTargetDuration, maximumTargetDuration)
+  const minimumTargetStart = input.dayStartMinutes + previousDuration
+  const maximumTargetStart = Math.max(minimumTargetStart, input.dayEndMinutes - nextDuration - targetDuration)
+  const targetStartMinutes = clampMinuteValue(normalizedDesired.startMinutes, minimumTargetStart, maximumTargetStart)
+  const targetEndMinutes = targetStartMinutes + targetDuration
+
+  const rangesById: Record<string, ReflowedClassRange> = {
+    [input.targetId]: {
+      startMinutes: targetStartMinutes,
+      endMinutes: targetEndMinutes,
+    },
+  }
+
+  let previousCursor = targetStartMinutes
+  let previousChainShifted = false
+  for (let index = previousBlocks.length - 1; index >= 0; index -= 1) {
+    const block = previousBlocks[index]
+    const duration = durationById[block.id]
+    const gapToCursor = previousCursor - block.endMinutes
+    const shouldPack: boolean = previousChainShifted || gapToCursor < 0 || gapToCursor <= snapThresholdMinutes
+    const endMinutes = shouldPack ? previousCursor : block.endMinutes
+    const startMinutes = endMinutes - duration
+    rangesById[block.id] = { startMinutes, endMinutes }
+    previousCursor = startMinutes
+    previousChainShifted = previousChainShifted || shouldPack
+  }
+
+  let nextCursor = targetEndMinutes
+  let nextChainShifted = false
+  nextBlocks.forEach(block => {
+    const duration = durationById[block.id]
+    const gapToCursor = block.startMinutes - nextCursor
+    const shouldPack: boolean = nextChainShifted || gapToCursor < 0 || gapToCursor <= snapThresholdMinutes || (block.startMinutes + duration) > input.dayEndMinutes
+    const startMinutes = shouldPack ? nextCursor : block.startMinutes
+    const endMinutes = startMinutes + duration
+    rangesById[block.id] = { startMinutes, endMinutes }
+    nextCursor = endMinutes
+    nextChainShifted = nextChainShifted || shouldPack
+  })
+
+  const changedBlockIds = input.blocks
+    .filter(block => {
+      const nextRange = rangesById[block.id]
+      return nextRange.startMinutes !== block.startMinutes || nextRange.endMinutes !== block.endMinutes
+    })
+    .map(block => block.id)
+
+  return {
+    rangesById,
+    changedBlockIds,
+    targetRange: rangesById[input.targetId],
+  }
 }
 
 export function addDaysISO(dateISO: string, delta: number) {

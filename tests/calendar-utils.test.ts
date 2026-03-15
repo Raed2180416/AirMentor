@@ -11,6 +11,7 @@ import {
   getSpannedSlotIds,
   getWeekDates,
   minutesToTimeString,
+  reflowClassDayRanges,
   seedFacultyTimetableTemplate,
   startOfWeekISO,
 } from '../src/calendar-utils'
@@ -125,5 +126,70 @@ describe('calendar utils', () => {
       'task-b:2/3',
       'task-c:0/1',
     ])
+  })
+
+  it('reflows later class blocks forward when a class is moved into them', () => {
+    const result = reflowClassDayRanges({
+      blocks: [
+        { id: 'a', startMinutes: 510, endMinutes: 560 },
+        { id: 'b', startMinutes: 575, endMinutes: 625 },
+        { id: 'c', startMinutes: 640, endMinutes: 690 },
+      ],
+      targetId: 'a',
+      desiredStartMinutes: 600,
+      desiredEndMinutes: 650,
+      dayStartMinutes: 480,
+      dayEndMinutes: 900,
+    })
+
+    expect(result?.rangesById).toEqual({
+      a: { startMinutes: 600, endMinutes: 650 },
+      b: { startMinutes: 550, endMinutes: 600 },
+      c: { startMinutes: 650, endMinutes: 700 },
+    })
+    expect(result?.changedBlockIds).toEqual(['a', 'b', 'c'])
+  })
+
+  it('preserves a detached gap when the moved class lands in open space', () => {
+    const result = reflowClassDayRanges({
+      blocks: [
+        { id: 'a', startMinutes: 510, endMinutes: 560 },
+        { id: 'b', startMinutes: 600, endMinutes: 650 },
+        { id: 'c', startMinutes: 720, endMinutes: 770 },
+      ],
+      targetId: 'b',
+      desiredStartMinutes: 640,
+      desiredEndMinutes: 690,
+      dayStartMinutes: 480,
+      dayEndMinutes: 900,
+    })
+
+    expect(result?.rangesById).toEqual({
+      a: { startMinutes: 510, endMinutes: 560 },
+      b: { startMinutes: 640, endMinutes: 690 },
+      c: { startMinutes: 720, endMinutes: 770 },
+    })
+    expect(result?.changedBlockIds).toEqual(['b'])
+  })
+
+  it('clamps edited class timing so the reflowed day still fits before day end', () => {
+    const result = reflowClassDayRanges({
+      blocks: [
+        { id: 'a', startMinutes: 540, endMinutes: 600 },
+        { id: 'b', startMinutes: 600, endMinutes: 660 },
+        { id: 'c', startMinutes: 660, endMinutes: 720 },
+      ],
+      targetId: 'b',
+      desiredStartMinutes: 610,
+      desiredEndMinutes: 760,
+      dayStartMinutes: 480,
+      dayEndMinutes: 780,
+    })
+
+    expect(result?.rangesById).toEqual({
+      a: { startMinutes: 510, endMinutes: 570 },
+      b: { startMinutes: 570, endMinutes: 720 },
+      c: { startMinutes: 720, endMinutes: 780 },
+    })
   })
 })
