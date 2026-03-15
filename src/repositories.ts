@@ -9,6 +9,8 @@ import {
   type Student,
   type StudentHistoryRecord,
 } from './data'
+import { AirMentorApiClient, AirMentorApiError, type AirMentorApiClientLike } from './api/client'
+import type { ApiLoginRequest, ApiSessionResponse } from './api/types'
 import {
   type CalendarAuditEvent,
   createTransition,
@@ -37,6 +39,7 @@ import {
 import { PAPER_MAP } from './data'
 
 type JsonStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
+export type RepositoryMode = 'local' | 'http'
 
 export const AIRMENTOR_STORAGE_KEYS = {
   themeMode: 'airmentor-theme',
@@ -129,6 +132,10 @@ export interface SessionPreferencesRepository {
   getCurrentFacultyIdSnapshot(): string | null
   saveTheme(mode: ThemeMode): Promise<void>
   saveCurrentFacultyId(facultyId: string | null): Promise<void>
+  restoreRemoteSession(): Promise<ApiSessionResponse | null>
+  loginRemoteSession(payload: ApiLoginRequest): Promise<ApiSessionResponse>
+  logoutRemoteSession(): Promise<void>
+  switchRemoteRoleContext(roleGrantId: string): Promise<ApiSessionResponse>
 }
 
 export interface OfferingsStudentsHistoryRepository {
@@ -186,6 +193,31 @@ export interface AirMentorRepositories {
   clearPersistedState(): Promise<void>
 }
 
+function getConfiguredRepositoryMode(): RepositoryMode {
+  const value = import.meta.env.VITE_AIRMENTOR_REPOSITORY_MODE
+  return value === 'http' ? 'http' : 'local'
+}
+
+function getConfiguredApiBaseUrl() {
+  return import.meta.env.VITE_AIRMENTOR_API_BASE_URL ?? 'http://127.0.0.1:4000'
+}
+
+function writeThemeSnapshot(storage: JsonStorage | undefined, mode: ThemeMode) {
+  if (!storage) return
+  storage.setItem(AIRMENTOR_STORAGE_KEYS.themeMode, mode)
+}
+
+function writeFacultySnapshot(storage: JsonStorage | undefined, facultyId: string | null) {
+  if (!storage) return
+  if (facultyId) storage.setItem(AIRMENTOR_STORAGE_KEYS.currentFacultyId, facultyId)
+  else storage.removeItem(AIRMENTOR_STORAGE_KEYS.currentFacultyId)
+  storage.removeItem(AIRMENTOR_STORAGE_KEYS.legacyCurrentTeacherId)
+}
+
+function createUnsupportedRemoteSessionError() {
+  return new Error('Remote session APIs are unavailable in local repository mode.')
+}
+
 export function createLocalAirMentorRepositories(storage?: JsonStorage): AirMentorRepositories {
   const resolvedStorage = resolveStorage(storage)
 
@@ -202,13 +234,23 @@ export function createLocalAirMentorRepositories(storage?: JsonStorage): AirMent
       },
       async saveTheme(mode) {
         if (!resolvedStorage) return
-        resolvedStorage.setItem(AIRMENTOR_STORAGE_KEYS.themeMode, mode)
+        writeThemeSnapshot(resolvedStorage, mode)
       },
       async saveCurrentFacultyId(facultyId) {
         if (!resolvedStorage) return
-        if (facultyId) resolvedStorage.setItem(AIRMENTOR_STORAGE_KEYS.currentFacultyId, facultyId)
-        else resolvedStorage.removeItem(AIRMENTOR_STORAGE_KEYS.currentFacultyId)
-        resolvedStorage.removeItem(AIRMENTOR_STORAGE_KEYS.legacyCurrentTeacherId)
+        writeFacultySnapshot(resolvedStorage, facultyId)
+      },
+      async restoreRemoteSession() {
+        return null
+      },
+      async loginRemoteSession() {
+        throw createUnsupportedRemoteSessionError()
+      },
+      async logoutRemoteSession() {
+        throw createUnsupportedRemoteSessionError()
+      },
+      async switchRemoteRoleContext() {
+        throw createUnsupportedRemoteSessionError()
       },
     },
     offeringsStudentsHistory: {
@@ -336,6 +378,83 @@ export function createLocalAirMentorRepositories(storage?: JsonStorage): AirMent
       if (!resolvedStorage) return
       AIRMENTOR_STORAGE_KEY_LIST.forEach(key => resolvedStorage.removeItem(key))
     },
+  }
+}
+
+function createHttpSessionPreferencesRepository({
+  storage,
+  client,
+}: {
+  storage?: JsonStorage
+  client: AirMentorApiClientLike
+}): SessionPreferencesRepository {
+  const resolvedStorage = resolveStorage(storage)
+
+  function cacheSession(session: ApiSessionResponse | null) {
+    const themeMode = session?.preferences.themeMode
+    if (themeMode) writeThemeSnapshot(resolvedStorage, themeMode)
+    writeFacultySnapshot(resolvedStorage, session?.faculty?.facultyId ?? null)
+    return session
+  }
+
+  return {
+    getThemeSnapshot() {
+      if (!resolvedStorage) return null
+      return normalizeThemeMode(resolvedStorage.getItem(AIRMENTOR_STORAGE_KEYS.themeMode))
+    },
+    getCurrentFacultyIdSnapshot() {
+      if (!resolvedStorage) return null
+      return resolvedStorage.getItem(AIRMENTOR_STORAGE_KEYS.currentFacultyId)
+        ?? resolvedStorage.getItem(AIRMENTOR_STORAGE_KEYS.legacyCurrentTeacherId)
+    },
+    async saveTheme(mode) {
+      writeThemeSnapshot(resolvedStorage, mode)
+      try {
+        const preferences = await client.getUiPreferences()
+        await client.saveUiPreferences({ themeMode: mode, version: preferences.version })
+      } catch (error) {
+        if (!(error instanceof AirMentorApiError) || error.status !== 401) throw error
+      }
+    },
+    async saveCurrentFacultyId(facultyId) {
+      writeFacultySnapshot(resolvedStorage, facultyId)
+    },
+    async restoreRemoteSession() {
+      try {
+        return cacheSession(await client.restoreSession())
+      } catch (error) {
+        if (error instanceof AirMentorApiError && error.status === 401) return cacheSession(null)
+        throw error
+      }
+    },
+    async loginRemoteSession(payload) {
+      return cacheSession(await client.login(payload)) as ApiSessionResponse
+    },
+    async logoutRemoteSession() {
+      await client.logout()
+      cacheSession(null)
+    },
+    async switchRemoteRoleContext(roleGrantId) {
+      return cacheSession(await client.switchRoleContext(roleGrantId)) as ApiSessionResponse
+    },
+  }
+}
+
+export function createAirMentorRepositories(options?: {
+  storage?: JsonStorage
+  repositoryMode?: RepositoryMode
+  apiClient?: AirMentorApiClientLike
+}): AirMentorRepositories {
+  const localRepositories = createLocalAirMentorRepositories(options?.storage)
+  const repositoryMode = options?.repositoryMode ?? getConfiguredRepositoryMode()
+  if (repositoryMode !== 'http') return localRepositories
+  const client = options?.apiClient ?? new AirMentorApiClient(getConfiguredApiBaseUrl())
+  return {
+    ...localRepositories,
+    sessionPreferences: createHttpSessionPreferencesRepository({
+      storage: options?.storage,
+      client,
+    }),
   }
 }
 
