@@ -10,7 +10,7 @@ import {
   type StudentHistoryRecord,
 } from './data'
 import { AirMentorApiClient, AirMentorApiError, type AirMentorApiClientLike } from './api/client'
-import type { ApiLoginRequest, ApiSessionResponse } from './api/types'
+import type { ApiAcademicBootstrap, ApiAcademicRuntimeKey, ApiLoginRequest, ApiSessionResponse } from './api/types'
 import {
   type CalendarAuditEvent,
   createTransition,
@@ -44,6 +44,7 @@ export type RepositoryMode = 'local' | 'http'
 export const AIRMENTOR_STORAGE_KEYS = {
   themeMode: 'airmentor-theme',
   currentFacultyId: 'airmentor-current-faculty-id',
+  currentAdminFacultyId: 'airmentor-current-admin-faculty-id',
   legacyCurrentTeacherId: 'airmentor-current-teacher-id',
   studentPatches: 'airmentor-student-patches',
   schemeState: 'airmentor-schemes',
@@ -80,6 +81,10 @@ function readJson<T>(storage: JsonStorage | undefined, key: string, fallback: T)
 function writeJson(storage: JsonStorage | undefined, key: string, value: unknown) {
   if (!storage) return
   storage.setItem(key, JSON.stringify(value))
+}
+
+function deepClone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
 }
 
 function normalizePersistedTask(task: Partial<SharedTask>): SharedTask {
@@ -193,13 +198,9 @@ export interface AirMentorRepositories {
   clearPersistedState(): Promise<void>
 }
 
-function getConfiguredRepositoryMode(): RepositoryMode {
-  const value = import.meta.env.VITE_AIRMENTOR_REPOSITORY_MODE
-  return value === 'http' ? 'http' : 'local'
-}
-
 function getConfiguredApiBaseUrl() {
-  return import.meta.env.VITE_AIRMENTOR_API_BASE_URL ?? 'http://127.0.0.1:4000'
+  const configured = import.meta.env.VITE_AIRMENTOR_API_BASE_URL?.trim()
+  return configured || 'http://127.0.0.1:4000'
 }
 
 function writeThemeSnapshot(storage: JsonStorage | undefined, mode: ThemeMode) {
@@ -207,11 +208,15 @@ function writeThemeSnapshot(storage: JsonStorage | undefined, mode: ThemeMode) {
   storage.setItem(AIRMENTOR_STORAGE_KEYS.themeMode, mode)
 }
 
-function writeFacultySnapshot(storage: JsonStorage | undefined, facultyId: string | null) {
+function readFacultySnapshot(storage: JsonStorage | undefined, key: string) {
+  if (!storage) return null
+  return storage.getItem(key)
+}
+
+function writeFacultySnapshot(storage: JsonStorage | undefined, key: string, facultyId: string | null) {
   if (!storage) return
-  if (facultyId) storage.setItem(AIRMENTOR_STORAGE_KEYS.currentFacultyId, facultyId)
-  else storage.removeItem(AIRMENTOR_STORAGE_KEYS.currentFacultyId)
-  storage.removeItem(AIRMENTOR_STORAGE_KEYS.legacyCurrentTeacherId)
+  if (facultyId) storage.setItem(key, facultyId)
+  else storage.removeItem(key)
 }
 
 function createUnsupportedRemoteSessionError() {
@@ -228,9 +233,8 @@ export function createLocalAirMentorRepositories(storage?: JsonStorage): AirMent
         return normalizeThemeMode(resolvedStorage.getItem(AIRMENTOR_STORAGE_KEYS.themeMode))
       },
       getCurrentFacultyIdSnapshot() {
-        if (!resolvedStorage) return null
-        return resolvedStorage.getItem(AIRMENTOR_STORAGE_KEYS.currentFacultyId)
-          ?? resolvedStorage.getItem(AIRMENTOR_STORAGE_KEYS.legacyCurrentTeacherId)
+        return readFacultySnapshot(resolvedStorage, AIRMENTOR_STORAGE_KEYS.currentFacultyId)
+          ?? readFacultySnapshot(resolvedStorage, AIRMENTOR_STORAGE_KEYS.legacyCurrentTeacherId)
       },
       async saveTheme(mode) {
         if (!resolvedStorage) return
@@ -238,7 +242,8 @@ export function createLocalAirMentorRepositories(storage?: JsonStorage): AirMent
       },
       async saveCurrentFacultyId(facultyId) {
         if (!resolvedStorage) return
-        writeFacultySnapshot(resolvedStorage, facultyId)
+        writeFacultySnapshot(resolvedStorage, AIRMENTOR_STORAGE_KEYS.currentFacultyId, facultyId)
+        resolvedStorage.removeItem(AIRMENTOR_STORAGE_KEYS.legacyCurrentTeacherId)
       },
       async restoreRemoteSession() {
         return null
@@ -384,16 +389,18 @@ export function createLocalAirMentorRepositories(storage?: JsonStorage): AirMent
 function createHttpSessionPreferencesRepository({
   storage,
   client,
+  facultyStorageKey,
 }: {
   storage?: JsonStorage
   client: AirMentorApiClientLike
+  facultyStorageKey: string
 }): SessionPreferencesRepository {
   const resolvedStorage = resolveStorage(storage)
 
   function cacheSession(session: ApiSessionResponse | null) {
     const themeMode = session?.preferences.themeMode
     if (themeMode) writeThemeSnapshot(resolvedStorage, themeMode)
-    writeFacultySnapshot(resolvedStorage, session?.faculty?.facultyId ?? null)
+    writeFacultySnapshot(resolvedStorage, facultyStorageKey, session?.faculty?.facultyId ?? null)
     return session
   }
 
@@ -403,9 +410,7 @@ function createHttpSessionPreferencesRepository({
       return normalizeThemeMode(resolvedStorage.getItem(AIRMENTOR_STORAGE_KEYS.themeMode))
     },
     getCurrentFacultyIdSnapshot() {
-      if (!resolvedStorage) return null
-      return resolvedStorage.getItem(AIRMENTOR_STORAGE_KEYS.currentFacultyId)
-        ?? resolvedStorage.getItem(AIRMENTOR_STORAGE_KEYS.legacyCurrentTeacherId)
+      return readFacultySnapshot(resolvedStorage, facultyStorageKey)
     },
     async saveTheme(mode) {
       writeThemeSnapshot(resolvedStorage, mode)
@@ -417,7 +422,7 @@ function createHttpSessionPreferencesRepository({
       }
     },
     async saveCurrentFacultyId(facultyId) {
-      writeFacultySnapshot(resolvedStorage, facultyId)
+      writeFacultySnapshot(resolvedStorage, facultyStorageKey, facultyId)
     },
     async restoreRemoteSession() {
       try {
@@ -440,20 +445,185 @@ function createHttpSessionPreferencesRepository({
   }
 }
 
+function createHttpAcademicRepositories({
+  client,
+  bootstrap,
+  storage,
+}: {
+  client: AirMentorApiClientLike
+  bootstrap: ApiAcademicBootstrap
+  storage?: JsonStorage
+}): Pick<AirMentorRepositories, 'offeringsStudentsHistory' | 'entryData' | 'locksAudit' | 'tasks' | 'calendar' | 'clearPersistedState'> {
+  const resolvedStorage = resolveStorage(storage)
+  const baselineRuntime = deepClone(bootstrap.runtime)
+  const runtimeCache = deepClone(bootstrap.runtime)
+
+  async function persistRuntimeSlice<T>(stateKey: ApiAcademicRuntimeKey, payload: T) {
+    ;(runtimeCache as Record<string, unknown>)[stateKey] = deepClone(payload)
+    await client.saveAcademicRuntimeSlice(stateKey, payload)
+  }
+
+  return {
+    offeringsStudentsHistory: {
+      async listFaculty() {
+        return bootstrap.faculty
+      },
+      async listOfferings() {
+        return bootstrap.offerings
+      },
+      async listStudents(offering) {
+        return deepClone(bootstrap.studentsByOffering[offering.offId] ?? [])
+      },
+      async listMentees() {
+        return bootstrap.mentees
+      },
+      async getStudentHistory(params) {
+        return bootstrap.studentHistoryByUsn[params.usn] ?? null
+      },
+    },
+    entryData: {
+      getStudentPatchesSnapshot() {
+        return deepClone(runtimeCache.studentPatches ?? {})
+      },
+      getSchemeStateSnapshot(offerings) {
+        const parsed = runtimeCache.schemeByOffering ?? {}
+        return Object.fromEntries(
+          offerings.map(offering => [offering.offId, normalizeSchemeState(parsed[offering.offId], offering)]),
+        ) as Record<string, SchemeState>
+      },
+      getBlueprintSnapshot(offerings) {
+        const parsed = runtimeCache.ttBlueprintsByOffering ?? {}
+        return Object.fromEntries(offerings.map(offering => {
+          const source = parsed[offering.offId]
+          const basePaper = PAPER_MAP[offering.code] || PAPER_MAP.default
+          return [offering.offId, {
+            tt1: normalizeBlueprint('tt1', source?.tt1 ?? seedBlueprintFromPaper('tt1', basePaper)),
+            tt2: normalizeBlueprint('tt2', source?.tt2 ?? seedBlueprintFromPaper('tt2', basePaper)),
+          }]
+        })) as Record<string, Record<TTKind, TermTestBlueprint>>
+      },
+      getDraftSnapshot() {
+        return deepClone(runtimeCache.drafts ?? {})
+      },
+      getCellValueSnapshot() {
+        return deepClone(runtimeCache.cellValues ?? {})
+      },
+      async saveStudentPatches(next) {
+        await persistRuntimeSlice('studentPatches', next)
+      },
+      async saveSchemeState(next) {
+        await persistRuntimeSlice('schemeByOffering', next)
+      },
+      async saveBlueprintState(next) {
+        await persistRuntimeSlice('ttBlueprintsByOffering', next)
+      },
+      async saveDrafts(next) {
+        await persistRuntimeSlice('drafts', next)
+      },
+      async saveCellValues(next) {
+        await persistRuntimeSlice('cellValues', next)
+      },
+    },
+    locksAudit: {
+      getLockSnapshot(offerings) {
+        const parsed = runtimeCache.lockByOffering ?? {}
+        return Object.fromEntries(offerings.map(offering => [offering.offId, parsed[offering.offId] ?? getEntryLockMap(offering)])) as Record<string, EntryLockMap>
+      },
+      getLockAuditSnapshot() {
+        return deepClone(runtimeCache.lockAuditByTarget ?? {})
+      },
+      async saveLocks(next) {
+        await persistRuntimeSlice('lockByOffering', next)
+      },
+      async saveLockAudit(next) {
+        await persistRuntimeSlice('lockAuditByTarget', next)
+      },
+    },
+    tasks: {
+      getTasksSnapshot(seedFactory) {
+        return (runtimeCache.tasks && runtimeCache.tasks.length > 0) ? deepClone(runtimeCache.tasks) : seedFactory()
+      },
+      getResolvedTasksSnapshot(fallback) {
+        return deepClone(runtimeCache.resolvedTasks ?? fallback)
+      },
+      async saveTasks(next) {
+        await persistRuntimeSlice('tasks', next)
+      },
+      async saveResolvedTasks(next) {
+        await persistRuntimeSlice('resolvedTasks', next)
+      },
+      async upsertTask(task) {
+        return toBackendTaskPayload(task)
+      },
+    },
+    calendar: {
+      getTimetableTemplatesSnapshot(faculty, offerings) {
+        const parsed = runtimeCache.timetableByFacultyId ?? {}
+        return Object.fromEntries(faculty.map(account => {
+          const ownedOfferings = offerings.filter(offering => account.offeringIds.includes(offering.offId))
+          return [account.facultyId, normalizeFacultyTimetableTemplate(parsed[account.facultyId], account, ownedOfferings)]
+        })) as Record<string, FacultyTimetableTemplate>
+      },
+      getTaskPlacementsSnapshot() {
+        const parsed = runtimeCache.taskPlacements ?? {}
+        return Object.fromEntries(
+          Object.entries(parsed).map(([taskId, placement]) => [taskId, normalizeTaskCalendarPlacement(placement)]),
+        ) as Record<string, TaskCalendarPlacement>
+      },
+      getCalendarAuditSnapshot() {
+        return deepClone(runtimeCache.calendarAudit ?? [])
+      },
+      async saveTimetableTemplates(next) {
+        await persistRuntimeSlice('timetableByFacultyId', next)
+      },
+      async saveTaskPlacements(next) {
+        await persistRuntimeSlice('taskPlacements', next)
+      },
+      async saveCalendarAudit(next) {
+        await persistRuntimeSlice('calendarAudit', next)
+      },
+    },
+    async clearPersistedState() {
+      for (const key of runtimeStateKeys(bootstrap.runtime)) {
+        const payload = deepClone(baselineRuntime[key])
+        ;(runtimeCache as Record<string, unknown>)[key] = payload
+        await client.saveAcademicRuntimeSlice(key, payload)
+      }
+      if (!resolvedStorage) return
+      AIRMENTOR_STORAGE_KEY_LIST.forEach(key => resolvedStorage.removeItem(key))
+    },
+  }
+}
+
+function runtimeStateKeys(runtime: ApiAcademicBootstrap['runtime']) {
+  return Object.keys(runtime) as ApiAcademicRuntimeKey[]
+}
+
 export function createAirMentorRepositories(options?: {
   storage?: JsonStorage
   repositoryMode?: RepositoryMode
   apiClient?: AirMentorApiClientLike
+  academicBootstrap?: ApiAcademicBootstrap
+  remoteFacultyStorageKey?: string
 }): AirMentorRepositories {
   const localRepositories = createLocalAirMentorRepositories(options?.storage)
-  const repositoryMode = options?.repositoryMode ?? getConfiguredRepositoryMode()
+  const repositoryMode = options?.repositoryMode ?? 'local'
   if (repositoryMode !== 'http') return localRepositories
   const client = options?.apiClient ?? new AirMentorApiClient(getConfiguredApiBaseUrl())
+  const facultyStorageKey = options?.remoteFacultyStorageKey ?? AIRMENTOR_STORAGE_KEYS.currentAdminFacultyId
+  const academicRepositories = options?.academicBootstrap
+    ? createHttpAcademicRepositories({
+        client,
+        bootstrap: options.academicBootstrap,
+        storage: options?.storage,
+      })
+    : localRepositories
   return {
-    ...localRepositories,
+    ...academicRepositories,
     sessionPreferences: createHttpSessionPreferencesRepository({
       storage: options?.storage,
       client,
+      facultyStorageKey,
     }),
   }
 }

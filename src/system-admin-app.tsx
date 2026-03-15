@@ -63,6 +63,10 @@ const EMPTY_ADMIN_DATA: AdminDataset = {
   requests: [],
 }
 
+type SystemAdminAppProps = {
+  onExitPortal?: () => void
+}
+
 const ADMIN_PAGES: Array<{ id: AdminPageId; label: string; icon: typeof LayoutDashboard }> = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'setup', label: 'Setup', icon: Settings2 },
@@ -167,8 +171,8 @@ function EmptyState({ title, body }: { title: string; body: string }) {
   )
 }
 
-export function SystemAdminApp() {
-  const apiBaseUrl = import.meta.env.VITE_AIRMENTOR_API_BASE_URL ?? 'http://127.0.0.1:4000'
+export function SystemAdminApp({ onExitPortal }: SystemAdminAppProps = {}) {
+  const apiBaseUrl = import.meta.env.VITE_AIRMENTOR_API_BASE_URL?.trim() || 'http://127.0.0.1:4000'
   const apiClient = useMemo(() => new AirMentorApiClient(apiBaseUrl), [apiBaseUrl])
   const repositories = useMemo(() => createAirMentorRepositories({
     repositoryMode: 'http',
@@ -188,8 +192,8 @@ export function SystemAdminApp() {
   const [flashMessage, setFlashMessage] = useState('')
   const [actionError, setActionError] = useState('')
   const [actionBusy, setActionBusy] = useState('')
-  const [identifier, setIdentifier] = useState('sysadmin')
-  const [password, setPassword] = useState('admin1234')
+  const [identifier, setIdentifier] = useState('')
+  const [password, setPassword] = useState('')
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string | null>(null)
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null)
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null)
@@ -506,6 +510,7 @@ export function SystemAdminApp() {
       setRequestAuditEvents([])
       setPage('dashboard')
       setFlashMessage('Session cleared.')
+      onExitPortal?.()
     } catch (error) {
       setActionError(toErrorMessage(error))
     } finally {
@@ -781,22 +786,26 @@ export function SystemAdminApp() {
           <form onSubmit={handleLogin} style={{ display: 'grid', gap: 14, marginTop: 22 }}>
             <div>
               <FieldLabel>Username or email</FieldLabel>
-              <TextInput value={identifier} onChange={event => setIdentifier(event.target.value)} placeholder="sysadmin" />
+              <TextInput value={identifier} onChange={event => setIdentifier(event.target.value)} placeholder="Username or email" />
             </div>
             <div>
               <FieldLabel>Password</FieldLabel>
-              <TextInput type="password" value={password} onChange={event => setPassword(event.target.value)} placeholder="admin1234" />
-            </div>
-            <div style={{ ...mono, fontSize: 11, color: T.dim }}>
-              Seeded credentials: <span style={{ color: T.text }}>`sysadmin` / `admin1234`</span>
+              <TextInput type="password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Password" />
             </div>
             {authError ? <InfoBanner tone="error" message={authError} /> : null}
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
               <div style={{ ...mono, fontSize: 10, color: T.dim }}>API base: {apiBaseUrl}</div>
-              <Btn type="submit" disabled={authBusy}>
-                <Shield size={14} />
-                {authBusy ? 'Signing in...' : 'Sign In'}
-              </Btn>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {onExitPortal ? (
+                  <Btn variant="ghost" onClick={onExitPortal}>
+                    Back
+                  </Btn>
+                ) : null}
+                <Btn type="submit" disabled={authBusy}>
+                  <Shield size={14} />
+                  {authBusy ? 'Signing in...' : 'Sign In'}
+                </Btn>
+              </div>
             </div>
           </form>
         </Card>
@@ -837,6 +846,11 @@ export function SystemAdminApp() {
             ))}
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+            {onExitPortal ? (
+              <Btn variant="ghost" onClick={onExitPortal}>
+                Back to portal choice
+              </Btn>
+            ) : null}
             <Btn variant="ghost" onClick={() => void handleLogout()}>
               <LogOut size={14} />
               Log Out

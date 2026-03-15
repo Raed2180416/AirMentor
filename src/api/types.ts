@@ -1,3 +1,27 @@
+import type {
+  Mentee,
+  Offering,
+  Professor,
+  Student,
+  StudentHistoryRecord,
+  SubjectRun,
+  TeacherInfo,
+  YearGroup,
+} from '../data'
+import type {
+  CalendarAuditEvent,
+  EntryLockMap,
+  FacultyAccount,
+  FacultyTimetableTemplate,
+  QueueTransition,
+  SchemeState,
+  SharedTask,
+  StudentRuntimePatch,
+  TaskCalendarPlacement,
+  TTKind,
+  TermTestBlueprint,
+} from '../domain'
+
 export type ApiRoleCode = 'SYSTEM_ADMIN' | 'HOD' | 'COURSE_LEADER' | 'MENTOR'
 
 export type ApiRoleGrant = {
@@ -231,4 +255,55 @@ export type ApiAuditEvent = {
 export type ApiAdminRequestDetail = ApiAdminRequestSummary & {
   notes: ApiAdminRequestNote[]
   transitions: ApiAdminRequestTransition[]
+}
+
+export type ApiAcademicLoginFaculty = {
+  facultyId: string
+  name: string
+  allowedRoles: Array<'Course Leader' | 'Mentor' | 'HoD'>
+}
+
+export type ApiAcademicRuntimeState = {
+  studentPatches: Record<string, StudentRuntimePatch>
+  schemeByOffering: Record<string, SchemeState>
+  ttBlueprintsByOffering: Record<string, Record<TTKind, TermTestBlueprint>>
+  drafts: Record<string, number>
+  cellValues: Record<string, number>
+  lockByOffering: Record<string, EntryLockMap>
+  lockAuditByTarget: Record<string, QueueTransition[]>
+  tasks: SharedTask[]
+  resolvedTasks: Record<string, number>
+  timetableByFacultyId: Record<string, FacultyTimetableTemplate>
+  taskPlacements: Record<string, TaskCalendarPlacement>
+  calendarAudit: CalendarAuditEvent[]
+}
+
+export type ApiAcademicBootstrap = {
+  professor: Professor
+  faculty: FacultyAccount[]
+  offerings: Offering[]
+  yearGroups: YearGroup[]
+  mentees: Mentee[]
+  teachers: TeacherInfo[]
+  subjectRuns: SubjectRun[]
+  studentsByOffering: Record<string, Student[]>
+  studentHistoryByUsn: Record<string, StudentHistoryRecord>
+  runtime: ApiAcademicRuntimeState
+}
+
+export type ApiAcademicRuntimeKey = keyof ApiAcademicRuntimeState
+
+export type ApiAdminOffering = Offering & {
+  version?: number
+}
+
+export type ApiOfferingOwnership = {
+  ownershipId: string
+  offeringId: string
+  facultyId: string
+  ownershipRole: string
+  status: string
+  version: number
+  createdAt: string
+  updatedAt: string
 }
