@@ -146,6 +146,8 @@ export type FacultyTimetableClassBlock = {
   section: string
   year: string
   day: Weekday
+  dateISO?: string
+  kind?: 'regular' | 'extra'
   startMinutes: number
   endMinutes: number
   slotId?: string
@@ -196,6 +198,7 @@ export type TaskDismissalState = {
 }
 
 export type CalendarAuditActionKind =
+  | 'class-created'
   | 'class-moved'
   | 'class-resized'
   | 'task-scheduled'

@@ -51,7 +51,9 @@ import {
   applyPlacementToTask,
   buildPlacementForRange,
   buildUntimedPlacement,
+  classBlockOccursOnDate,
   clampRangeToDayBounds,
+  getWeekdayForDateISO,
   minutesToDisplayLabel,
   normalizeTimedRange,
   reflowClassDayRanges,
@@ -2372,13 +2374,23 @@ export default function App() {
     }))
   }, [allTasksList, appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, repositories, role, taskPlacements])
 
-  const resolveCommittedClassRange = useCallback((blockId: string, input: { day: Weekday; startMinutes: number; endMinutes: number }) => {
+  const resolveCommittedClassRange = useCallback((blockId: string, input: { day: Weekday; dateISO?: string; startMinutes: number; endMinutes: number }) => {
     if (!currentFacultyTimetable) return null
     const block = currentFacultyTimetable.classBlocks.find(item => item.id === blockId)
     if (!block) return null
+    const normalizedDateISO = block.kind === 'extra'
+      ? (normalizeDateISO(input.dateISO ?? block.dateISO ?? '') ?? block.dateISO)
+      : undefined
+    const resolvedDay = normalizedDateISO
+      ? (getWeekdayForDateISO(normalizedDateISO) ?? input.day)
+      : input.day
     const targetDayBlocks = [
-      ...currentFacultyTimetable.classBlocks.filter(item => item.day === input.day && item.id !== blockId),
-      { ...block, day: input.day },
+      ...currentFacultyTimetable.classBlocks.filter(item => item.id !== blockId && (
+        normalizedDateISO
+          ? classBlockOccursOnDate(item, normalizedDateISO, resolvedDay)
+          : item.day === resolvedDay
+      )),
+      { ...block, day: resolvedDay, dateISO: normalizedDateISO },
     ]
     const reflowed = reflowClassDayRanges({
       blocks: targetDayBlocks,
@@ -2397,14 +2409,15 @@ export default function App() {
     ]))
 
     return {
-      day: input.day,
-      primary: { day: input.day, startMinutes: reflowed.targetRange.startMinutes, endMinutes: reflowed.targetRange.endMinutes },
+      day: resolvedDay,
+      dateISO: normalizedDateISO,
+      primary: { day: resolvedDay, dateISO: normalizedDateISO, startMinutes: reflowed.targetRange.startMinutes, endMinutes: reflowed.targetRange.endMinutes },
       changedBlockIds,
       rangesById: reflowed.rangesById,
     }
   }, [currentFacultyTimetable])
 
-  const applyClassBlockTiming = useCallback((blockId: string, input: { day: Weekday; startMinutes: number; endMinutes: number }, actionKind: 'class-moved' | 'class-resized') => {
+  const applyClassBlockTiming = useCallback((blockId: string, input: { day: Weekday; dateISO?: string; startMinutes: number; endMinutes: number }, actionKind: 'class-moved' | 'class-resized') => {
     if (!currentTeacher || !currentFacultyTimetable || !currentTeacher.allowedRoles.includes('Course Leader')) return
     const block = currentFacultyTimetable.classBlocks.find(item => item.id === blockId)
     if (!block) return
@@ -2421,7 +2434,8 @@ export default function App() {
           if (nextRange) {
             return {
               ...item,
-              day: resolved.day,
+              day: item.id === blockId ? resolved.day : item.day,
+              dateISO: item.id === blockId ? resolved.dateISO : item.dateISO,
               startMinutes: nextRange.startMinutes,
               endMinutes: nextRange.endMinutes,
             }
@@ -2438,8 +2452,8 @@ export default function App() {
       targetType: 'class',
       targetId: blockId,
       note: `${actionKind === 'class-resized' ? 'Resized' : 'Updated'} ${block.courseCode} Sec ${block.section} to ${resolved.primary.day} ${minutesToDisplayLabel(resolved.primary.startMinutes)} - ${minutesToDisplayLabel(resolved.primary.endMinutes)}.${changedBlocks.length > 1 ? ` Reflowed ${changedBlocks.length - 1} adjacent class${changedBlocks.length > 2 ? 'es' : ''} on the same day.` : ''}`,
-      before: { day: block.day, startMinutes: block.startMinutes, endMinutes: block.endMinutes, offeringId: block.offeringId },
-      after: { day: resolved.primary.day, startMinutes: resolved.primary.startMinutes, endMinutes: resolved.primary.endMinutes, offeringId: block.offeringId },
+      before: { day: block.day, dateISO: block.dateISO, startMinutes: block.startMinutes, endMinutes: block.endMinutes, offeringId: block.offeringId },
+      after: { day: resolved.primary.day, dateISO: resolved.primary.dateISO, startMinutes: resolved.primary.startMinutes, endMinutes: resolved.primary.endMinutes, offeringId: block.offeringId },
     }))
     changedBlocks
       .filter(item => item.id !== blockId)
@@ -2454,13 +2468,13 @@ export default function App() {
         targetType: 'class',
         targetId: item.id,
         note: `${item.courseCode} Sec ${item.section} was reflowed to ${minutesToDisplayLabel(nextRange.startMinutes)} - ${minutesToDisplayLabel(nextRange.endMinutes)} after ${block.courseCode} Sec ${block.section} changed.`,
-        before: { day: item.day, startMinutes: item.startMinutes, endMinutes: item.endMinutes, offeringId: item.offeringId },
-        after: { day: resolved.day, startMinutes: nextRange.startMinutes, endMinutes: nextRange.endMinutes, offeringId: item.offeringId },
+        before: { day: item.day, dateISO: item.dateISO, startMinutes: item.startMinutes, endMinutes: item.endMinutes, offeringId: item.offeringId },
+        after: { day: item.day, dateISO: item.dateISO, startMinutes: nextRange.startMinutes, endMinutes: nextRange.endMinutes, offeringId: item.offeringId },
       }))
     })
   }, [appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, resolveCommittedClassRange, role])
 
-  const handleMoveClassBlock = useCallback((blockId: string, input: { day: Weekday; startMinutes: number; endMinutes: number }) => {
+  const handleMoveClassBlock = useCallback((blockId: string, input: { day: Weekday; dateISO?: string; startMinutes: number; endMinutes: number }) => {
     applyClassBlockTiming(blockId, input, 'class-moved')
   }, [applyClassBlockTiming])
 
@@ -2470,9 +2484,119 @@ export default function App() {
     applyClassBlockTiming(blockId, { day: block.day, startMinutes: input.startMinutes, endMinutes: input.endMinutes }, 'class-resized')
   }, [applyClassBlockTiming, currentFacultyTimetable])
 
-  const handleEditClassTiming = useCallback((blockId: string, input: { day: Weekday; startMinutes: number; endMinutes: number }) => {
+  const handleEditClassTiming = useCallback((blockId: string, input: { day: Weekday; dateISO?: string; startMinutes: number; endMinutes: number }) => {
     applyClassBlockTiming(blockId, input, 'class-moved')
   }, [applyClassBlockTiming])
+
+  const handleCreateExtraClass = useCallback((input: { offeringId: string; dateISO: string; startMinutes: number; endMinutes: number }) => {
+    if (!currentTeacher || !currentFacultyTimetable || !currentTeacher.allowedRoles.includes('Course Leader')) return
+    const offering = OFFERINGS.find(item => item.offId === input.offeringId)
+    const normalizedDateISO = normalizeDateISO(input.dateISO)
+    const day = normalizedDateISO ? getWeekdayForDateISO(normalizedDateISO) : null
+    if (!offering || !normalizedDateISO || !day) return
+
+    const draftId = `extra-${offering.offId}-${Date.now()}`
+    const draftBlock = {
+      id: draftId,
+      facultyId: currentTeacher.facultyId,
+      offeringId: offering.offId,
+      courseCode: offering.code,
+      courseName: offering.title,
+      section: offering.section,
+      year: offering.year,
+      day,
+      dateISO: normalizedDateISO,
+      kind: 'extra' as const,
+      startMinutes: input.startMinutes,
+      endMinutes: input.endMinutes,
+    }
+
+    const targetDayBlocks = [
+      ...currentFacultyTimetable.classBlocks.filter(item => classBlockOccursOnDate(item, normalizedDateISO, day)),
+      draftBlock,
+    ]
+    const reflowed = reflowClassDayRanges({
+      blocks: targetDayBlocks,
+      targetId: draftId,
+      desiredStartMinutes: input.startMinutes,
+      desiredEndMinutes: input.endMinutes,
+      dayStartMinutes: currentFacultyTimetable.dayStartMinutes,
+      dayEndMinutes: currentFacultyTimetable.dayEndMinutes,
+      snapThresholdMinutes: CLASS_SNAP_THRESHOLD_MINUTES,
+    })
+    if (!reflowed) return
+
+    const changedExistingBlocks = currentFacultyTimetable.classBlocks.filter(item => reflowed.changedBlockIds.includes(item.id))
+    const nextBlock = {
+      ...draftBlock,
+      startMinutes: reflowed.targetRange.startMinutes,
+      endMinutes: reflowed.targetRange.endMinutes,
+    }
+
+    setTimetableByFacultyId(prev => ({
+      ...prev,
+      [currentTeacher.facultyId]: {
+        ...currentFacultyTimetable,
+        updatedAt: Date.now(),
+        classBlocks: [
+          ...currentFacultyTimetable.classBlocks.map(item => {
+            const nextRange = reflowed.rangesById[item.id]
+            if (!nextRange) return item
+            return {
+              ...item,
+              startMinutes: nextRange.startMinutes,
+              endMinutes: nextRange.endMinutes,
+            }
+          }),
+          nextBlock,
+        ],
+      },
+    }))
+
+    appendCalendarAudit(createCalendarAuditEvent({
+      facultyId: currentTeacher.facultyId,
+      actorRole: role,
+      actorFacultyId: currentTeacherId ?? undefined,
+      actionKind: 'class-created',
+      targetType: 'class',
+      targetId: nextBlock.id,
+      note: `Scheduled extra ${nextBlock.courseCode} Sec ${nextBlock.section} on ${normalizedDateISO} ${minutesToDisplayLabel(nextBlock.startMinutes)} - ${minutesToDisplayLabel(nextBlock.endMinutes)}.${changedExistingBlocks.length > 0 ? ` Reflowed ${changedExistingBlocks.length} existing class${changedExistingBlocks.length > 1 ? 'es' : ''} on the same date.` : ''}`,
+      after: {
+        day,
+        dateISO: normalizedDateISO,
+        startMinutes: nextBlock.startMinutes,
+        endMinutes: nextBlock.endMinutes,
+        offeringId: nextBlock.offeringId,
+      },
+    }))
+
+    changedExistingBlocks.forEach(item => {
+      const nextRange = reflowed.rangesById[item.id]
+      if (!nextRange) return
+      appendCalendarAudit(createCalendarAuditEvent({
+        facultyId: currentTeacher.facultyId,
+        actorRole: role,
+        actorFacultyId: currentTeacherId ?? undefined,
+        actionKind: 'class-moved',
+        targetType: 'class',
+        targetId: item.id,
+        note: `${item.courseCode} Sec ${item.section} was reflowed to ${minutesToDisplayLabel(nextRange.startMinutes)} - ${minutesToDisplayLabel(nextRange.endMinutes)} after scheduling an extra class.`,
+        before: { day: item.day, dateISO: item.dateISO, startMinutes: item.startMinutes, endMinutes: item.endMinutes, offeringId: item.offeringId },
+        after: { day: item.day, dateISO: item.dateISO, startMinutes: nextRange.startMinutes, endMinutes: nextRange.endMinutes, offeringId: item.offeringId },
+      }))
+    })
+  }, [appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, role])
+
+  const handleOpenCourseFromCalendar = useCallback((offeringId: string) => {
+    if (role === 'Mentor') return
+    const targetOffering = OFFERINGS.find(item => item.offId === offeringId)
+    if (!targetOffering) return
+    handleOpenCourse(targetOffering)
+  }, [handleOpenCourse, role])
+
+  const handleOpenActionQueueFromCalendar = useCallback(() => {
+    setShowActionQueue(true)
+  }, [])
 
   const handleUpdateTimetableBounds = useCallback((input: { dayStartMinutes: number; dayEndMinutes: number }) => {
     if (!currentTeacher || !currentFacultyTimetable || !currentTeacher.allowedRoles.includes('Course Leader')) return
@@ -3253,7 +3377,7 @@ export default function App() {
             {role === 'Course Leader' && page === 'students' && <LazyAllStudentsPage offerings={assignedOfferings} onBack={handleNavigateBack} onOpenStudent={handleOpenStudent} onOpenHistory={handleOpenHistoryFromStudent} onOpenUpload={handleOpenUpload} />}
             {role === 'Course Leader' && page === 'course' && offering && <LazyCourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? { tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default), tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default) }} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleNavigateBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
             {role === 'Course Leader' && page === 'scheme-setup' && selectedSchemeOffering && <LazySchemeSetupPage role={role} offering={selectedSchemeOffering} scheme={schemeByOffering[selectedSchemeOffering.offId] ?? defaultSchemeForOffering(selectedSchemeOffering)} hasEntryStarted={hasEntryStartedForOffering(selectedSchemeOffering.offId)} onSave={(next) => handleSaveScheme(selectedSchemeOffering.offId, next)} onBack={handleNavigateBack} />}
-            {role === 'Course Leader' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onOpenTaskComposer={handleOpenTaskComposer} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissCurrentOccurrence={handleDismissCurrentOccurrence} onDismissSeries={handleDismissSeries} />}
+            {role === 'Course Leader' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissCurrentOccurrence={handleDismissCurrentOccurrence} onDismissSeries={handleDismissSeries} />}
             {role === 'Course Leader' && page === 'upload' && <LazyUploadPage key={`${uploadOffering?.offId ?? 'default'}-${uploadKind}`} role={role} offering={uploadOffering} defaultKind={uploadKind} onBack={handleNavigateBack} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} onRequestUnlock={handleRequestUnlock} availableOfferings={assignedOfferings} onOpenSchemeSetup={handleOpenSchemeSetup} />}
             {role === 'Course Leader' && page === 'entry-workspace' && <LazyEntryWorkspacePage capabilities={capabilities} offeringId={entryOfferingId} kind={entryKind} onBack={handleNavigateBack} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} onRequestUnlock={handleRequestUnlock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onOpenTaskComposer={handleOpenTaskComposer} onUpdateStudentAttendance={handleUpdateStudentAttendance} schemeByOffering={schemeByOffering} ttBlueprintsByOffering={ttBlueprintsByOffering} lockAuditByTarget={lockAuditByTarget} />}
             {role === 'Course Leader' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
@@ -3261,13 +3385,13 @@ export default function App() {
             {role === 'Mentor' && page === 'mentees' && <MentorView mentees={assignedMentees} onOpenMentee={handleOpenMentee} />}
             {role === 'Mentor' && page === 'mentee-detail' && selectedMentee && <MenteeDetailPage mentee={selectedMentee} tasks={roleTasks} onBack={handleNavigateBack} onOpenHistory={handleOpenHistoryFromMentee} onOpenQueueHistory={handleOpenQueueHistory} />}
             {role === 'Mentor' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
-            {role === 'Mentor' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onOpenTaskComposer={handleOpenTaskComposer} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissCurrentOccurrence={handleDismissCurrentOccurrence} onDismissSeries={handleDismissSeries} />}
+            {role === 'Mentor' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissCurrentOccurrence={handleDismissCurrentOccurrence} onDismissSeries={handleDismissSeries} />}
 
             {role === 'HoD' && page === 'department' && <LazyHodView onOpenQueueHistory={handleOpenQueueHistory} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} tasks={allTasksList} calendarAuditEvents={calendarAuditEvents} />}
             {role === 'HoD' && page === 'course' && offering && <LazyCourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? { tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default), tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default) }} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleNavigateBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
             {role === 'HoD' && page === 'unlock-review' && selectedUnlockTask && <UnlockReviewPage task={selectedUnlockTask} offering={OFFERINGS.find(item => item.offId === selectedUnlockTask.offeringId) ?? null} onBack={handleNavigateBack} onApprove={() => handleApproveUnlock(selectedUnlockTask.id)} onReject={() => handleRejectUnlock(selectedUnlockTask.id)} onResetComplete={() => handleResetComplete(selectedUnlockTask.id)} />}
             {role === 'HoD' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
-            {role === 'HoD' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onOpenTaskComposer={handleOpenTaskComposer} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissCurrentOccurrence={handleDismissCurrentOccurrence} onDismissSeries={handleDismissSeries} />}
+            {role === 'HoD' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissCurrentOccurrence={handleDismissCurrentOccurrence} onDismissSeries={handleDismissSeries} />}
 
             {page === 'student-history' && historyProfile && <LazyStudentHistoryPage role={role} history={historyProfile} onBack={handleNavigateBack} />}
           </Suspense>

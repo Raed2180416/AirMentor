@@ -167,6 +167,63 @@ export function rangeOverlaps(leftStart: number, leftEnd: number, rightStart: nu
   return leftStart < rightEnd && rightStart < leftEnd
 }
 
+export function resolveTimedHoverRange(
+  minute: number,
+  items: Array<{ startMinutes: number; endMinutes: number }>,
+  dayStartMinutes: number,
+  dayEndMinutes: number,
+  preferredDuration = DEFAULT_TASK_DURATION_MINUTES,
+  minimumDuration = MIN_EVENT_DURATION_MINUTES,
+) {
+  const merged = [...items]
+    .sort((left, right) => {
+      if (left.startMinutes !== right.startMinutes) return left.startMinutes - right.startMinutes
+      return left.endMinutes - right.endMinutes
+    })
+    .reduce<Array<{ startMinutes: number; endMinutes: number }>>((acc, item) => {
+      if (acc.length === 0) return [{ startMinutes: item.startMinutes, endMinutes: item.endMinutes }]
+      const previous = acc[acc.length - 1]
+      if (item.startMinutes <= previous.endMinutes) {
+        previous.endMinutes = Math.max(previous.endMinutes, item.endMinutes)
+        return acc
+      }
+      acc.push({ startMinutes: item.startMinutes, endMinutes: item.endMinutes })
+      return acc
+    }, [])
+
+  const occupied = merged.find(item => item.startMinutes <= minute && minute < item.endMinutes)
+  if (occupied) return null
+
+  let gapStartMinutes = dayStartMinutes
+  let gapEndMinutes = dayEndMinutes
+
+  for (const item of merged) {
+    if (item.endMinutes <= minute) gapStartMinutes = Math.max(gapStartMinutes, item.endMinutes)
+    if (item.startMinutes > minute) {
+      gapEndMinutes = Math.min(gapEndMinutes, item.startMinutes)
+      break
+    }
+  }
+
+  const gapDuration = gapEndMinutes - gapStartMinutes
+  if (gapDuration < minimumDuration) return null
+
+  const duration = Math.max(minimumDuration, Math.min(preferredDuration, gapDuration))
+  const startMinutes = clampMinuteValue(minute, gapStartMinutes, gapEndMinutes - duration)
+  return {
+    gapStartMinutes,
+    gapEndMinutes,
+    startMinutes,
+    endMinutes: startMinutes + duration,
+  }
+}
+
+export function classBlockOccursOnDate(block: Pick<FacultyTimetableClassBlock, 'day' | 'dateISO'>, dateISO: string, day: Weekday) {
+  const normalizedDateISO = normalizeDateISO(dateISO)
+  if (block.dateISO) return normalizeDateISO(block.dateISO) === normalizedDateISO
+  return block.day === day
+}
+
 export function buildTimeGuides(dayStartMinutes: number, dayEndMinutes: number, intervalMinutes = 60) {
   const start = Math.floor(dayStartMinutes / intervalMinutes) * intervalMinutes
   const guides: number[] = []
@@ -234,73 +291,127 @@ export function reflowClassDayRanges<T extends { id: string; startMinutes: numbe
     .filter(block => block.id !== input.targetId)
     .sort((left, right) => left.startMinutes - right.startMinutes || left.endMinutes - right.endMinutes || left.id.localeCompare(right.id))
 
-  const normalizedDesired = normalizeTimedRange(
+  const desiredRange = normalizeTimedRange(
     input.desiredStartMinutes,
     input.desiredEndMinutes,
     input.dayStartMinutes,
     input.dayEndMinutes,
     minimumDuration,
   )
-  const desiredTargetDuration = Math.max(minimumDuration, normalizedDesired.endMinutes - normalizedDesired.startMinutes)
-  const ordered = [...others, { id: input.targetId, startMinutes: normalizedDesired.startMinutes, endMinutes: normalizedDesired.endMinutes }]
-    .sort((left, right) => left.startMinutes - right.startMinutes || left.endMinutes - right.endMinutes || left.id.localeCompare(right.id))
-  const targetIndex = ordered.findIndex(block => block.id === input.targetId)
-  const previousBlocks = ordered.slice(0, targetIndex)
-  const nextBlocks = ordered.slice(targetIndex + 1)
-  const previousDuration = previousBlocks.reduce((sum, block) => sum + durationById[block.id], 0)
-  const nextDuration = nextBlocks.reduce((sum, block) => sum + durationById[block.id], 0)
-  const maximumTargetDuration = Math.max(minimumDuration, input.dayEndMinutes - input.dayStartMinutes - previousDuration - nextDuration)
+  const desiredTargetDuration = Math.max(minimumDuration, desiredRange.endMinutes - desiredRange.startMinutes)
+  const totalOtherDuration = others.reduce((sum, block) => sum + durationById[block.id], 0)
+  const maximumTargetDuration = Math.max(minimumDuration, input.dayEndMinutes - input.dayStartMinutes - totalOtherDuration)
   const targetDuration = Math.min(desiredTargetDuration, maximumTargetDuration)
-  const minimumTargetStart = input.dayStartMinutes + previousDuration
-  const maximumTargetStart = Math.max(minimumTargetStart, input.dayEndMinutes - nextDuration - targetDuration)
-  const targetStartMinutes = clampMinuteValue(normalizedDesired.startMinutes, minimumTargetStart, maximumTargetStart)
-  const targetEndMinutes = targetStartMinutes + targetDuration
 
-  const rangesById: Record<string, ReflowedClassRange> = {
-    [input.targetId]: {
-      startMinutes: targetStartMinutes,
-      endMinutes: targetEndMinutes,
-    },
+  let snappedStartMinutes = desiredRange.startMinutes
+  let snappedEndMinutes = desiredRange.startMinutes + targetDuration
+  const desiredOverlaps = others.some(block => rangeOverlaps(desiredRange.startMinutes, desiredRange.startMinutes + targetDuration, block.startMinutes, block.endMinutes))
+  if (!desiredOverlaps) {
+    const snapCandidates = others.flatMap(block => [block.startMinutes, block.endMinutes])
+    let bestSnapDistance = snapThresholdMinutes + 1
+    snapCandidates.forEach(edge => {
+      const startDistance = Math.abs(desiredRange.startMinutes - edge)
+      if (startDistance < bestSnapDistance) {
+        bestSnapDistance = startDistance
+        snappedStartMinutes = edge
+        snappedEndMinutes = edge + targetDuration
+      }
+      const endDistance = Math.abs((desiredRange.startMinutes + targetDuration) - edge)
+      if (endDistance < bestSnapDistance) {
+        bestSnapDistance = endDistance
+        snappedStartMinutes = edge - targetDuration
+        snappedEndMinutes = edge
+      }
+    })
   }
 
-  let previousCursor = targetStartMinutes
-  let previousChainShifted = false
-  for (let index = previousBlocks.length - 1; index >= 0; index -= 1) {
-    const block = previousBlocks[index]
-    const duration = durationById[block.id]
-    const gapToCursor = previousCursor - block.endMinutes
-    const shouldPack: boolean = previousChainShifted || gapToCursor < 0 || gapToCursor <= snapThresholdMinutes
-    const endMinutes = shouldPack ? previousCursor : block.endMinutes
-    const startMinutes = endMinutes - duration
-    rangesById[block.id] = { startMinutes, endMinutes }
-    previousCursor = startMinutes
-    previousChainShifted = previousChainShifted || shouldPack
+  const buildRanges = (candidateStartMinutes: number, candidateEndMinutes: number) => {
+    const ordered = [...others, { id: input.targetId, startMinutes: candidateStartMinutes, endMinutes: candidateEndMinutes }]
+      .sort((left, right) => left.startMinutes - right.startMinutes || left.endMinutes - right.endMinutes || left.id.localeCompare(right.id))
+    const targetIndex = ordered.findIndex(block => block.id === input.targetId)
+    const previousBlocks = ordered.slice(0, targetIndex)
+    const nextBlocks = ordered.slice(targetIndex + 1)
+
+    const rangesById: Record<string, ReflowedClassRange> = {
+      [input.targetId]: {
+        startMinutes: candidateStartMinutes,
+        endMinutes: candidateEndMinutes,
+      },
+    }
+
+    let previousCursor = candidateStartMinutes
+    for (let index = previousBlocks.length - 1; index >= 0; index -= 1) {
+      const block = previousBlocks[index]
+      const duration = durationById[block.id]
+      const overlapsTarget = block.endMinutes > previousCursor
+      const endMinutes = overlapsTarget ? previousCursor : block.endMinutes
+      const startMinutes = endMinutes - duration
+      rangesById[block.id] = { startMinutes, endMinutes }
+      previousCursor = startMinutes
+    }
+
+    let nextCursor = candidateEndMinutes
+    nextBlocks.forEach(block => {
+      const duration = durationById[block.id]
+      const overlapsTarget = block.startMinutes < nextCursor
+      const startMinutes = overlapsTarget ? nextCursor : block.startMinutes
+      const endMinutes = startMinutes + duration
+      rangesById[block.id] = { startMinutes, endMinutes }
+      nextCursor = endMinutes
+    })
+
+    const earliestStartMinutes = Math.min(...Object.values(rangesById).map(range => range.startMinutes))
+    const latestEndMinutes = Math.max(...Object.values(rangesById).map(range => range.endMinutes))
+
+    return {
+      rangesById,
+      earliestStartMinutes,
+      latestEndMinutes,
+    }
   }
 
-  let nextCursor = targetEndMinutes
-  let nextChainShifted = false
-  nextBlocks.forEach(block => {
-    const duration = durationById[block.id]
-    const gapToCursor = block.startMinutes - nextCursor
-    const shouldPack: boolean = nextChainShifted || gapToCursor < 0 || gapToCursor <= snapThresholdMinutes || (block.startMinutes + duration) > input.dayEndMinutes
-    const startMinutes = shouldPack ? nextCursor : block.startMinutes
-    const endMinutes = startMinutes + duration
-    rangesById[block.id] = { startMinutes, endMinutes }
-    nextCursor = endMinutes
-    nextChainShifted = nextChainShifted || shouldPack
-  })
+  const snappedRange = clampRangeToDayBounds(
+    snappedStartMinutes,
+    snappedEndMinutes,
+    input.dayStartMinutes,
+    input.dayEndMinutes,
+    targetDuration,
+  )
+
+  let candidateStartMinutes = snappedRange.startMinutes
+  let candidateEndMinutes = snappedRange.endMinutes
+  let resolved = buildRanges(candidateStartMinutes, candidateEndMinutes)
+
+  for (let iteration = 0; iteration < input.blocks.length + 2; iteration += 1) {
+    if (resolved.earliestStartMinutes >= input.dayStartMinutes && resolved.latestEndMinutes <= input.dayEndMinutes) break
+    const shiftMinutes = resolved.earliestStartMinutes < input.dayStartMinutes
+      ? input.dayStartMinutes - resolved.earliestStartMinutes
+      : input.dayEndMinutes - resolved.latestEndMinutes
+    const shifted = clampRangeToDayBounds(
+      candidateStartMinutes + shiftMinutes,
+      candidateEndMinutes + shiftMinutes,
+      input.dayStartMinutes,
+      input.dayEndMinutes,
+      targetDuration,
+    )
+    candidateStartMinutes = shifted.startMinutes
+    candidateEndMinutes = shifted.endMinutes
+    resolved = buildRanges(candidateStartMinutes, candidateEndMinutes)
+  }
+
+  if (resolved.earliestStartMinutes < input.dayStartMinutes || resolved.latestEndMinutes > input.dayEndMinutes) return null
 
   const changedBlockIds = input.blocks
     .filter(block => {
-      const nextRange = rangesById[block.id]
+      const nextRange = resolved.rangesById[block.id]
       return nextRange.startMinutes !== block.startMinutes || nextRange.endMinutes !== block.endMinutes
     })
     .map(block => block.id)
 
   return {
-    rangesById,
+    rangesById: resolved.rangesById,
     changedBlockIds,
-    targetRange: rangesById[input.targetId],
+    targetRange: resolved.rangesById[input.targetId],
   }
 }
 
@@ -453,6 +564,8 @@ export function normalizeFacultyTimetableTemplate(
       return {
         ...block,
         facultyId: faculty.facultyId,
+        kind: block.kind === 'extra' ? 'extra' : 'regular',
+        dateISO: block.dateISO ? (normalizeDateISO(block.dateISO) ?? undefined) : undefined,
         day: WEEKDAY_ORDER.includes(block.day) ? block.day : 'Mon',
         startMinutes: normalizedRange.startMinutes,
         endMinutes: normalizedRange.endMinutes,

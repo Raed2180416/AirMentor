@@ -21,6 +21,7 @@ import {
   assignAgendaLanes,
   buildMonthGrid,
   buildTimeGuides,
+  classBlockOccursOnDate,
   clampMinuteValue,
   clampRangeToDayBounds,
   formatMonthLabel,
@@ -31,7 +32,7 @@ import {
   minutesToDisplayLabel,
   minutesToTimeString,
   normalizeTimedRange,
-  rangeOverlaps,
+  resolveTimedHoverRange,
   reflowClassDayRanges,
   startOfWeekISO,
 } from '../calendar-utils'
@@ -61,9 +62,22 @@ type ClassEditState = {
   title: string
   subtitle: string
   day: Weekday
+  dateISO?: string
   start: string
   end: string
 }
+
+type ExtraClassDraftState = {
+  offeringId: string
+  dateISO: string
+  day: Weekday
+  startMinutes: number
+  endMinutes: number
+}
+
+type BlockDetailsState =
+  | { type: 'class'; blockId: string; dateISO: string }
+  | { type: 'task'; taskId: string; dateISO: string; placementMode: TaskPlacementMode }
 
 type TimedEventCard = {
   id: string
@@ -179,7 +193,7 @@ type AgendaBoardProps = {
   onTaskDragStart: (event: React.PointerEvent<HTMLDivElement>, task: SharedTask, placement: TaskCalendarPlacement | null, dateISO: string) => void
   onClassDragStart: (event: React.PointerEvent<HTMLDivElement>, block: FacultyTimetableClassBlock, dateISO: string) => void
   onClassResizeStart: (event: React.PointerEvent<HTMLButtonElement>, block: FacultyTimetableClassBlock, dateISO: string, edge: 'start' | 'end') => void
-  onOpenClassEdit: (block: FacultyTimetableClassBlock) => void
+  onOpenEventDetails: (event: TimedEventCard) => void
   onMoveTaskToUntimed: (taskId: string, dateISO: string) => void
   onDismissTask: (taskId: string) => void
   onDismissCurrentOccurrence: (taskId: string) => void
@@ -202,7 +216,10 @@ export function CalendarTimetablePage({
   onMoveClassBlock,
   onResizeClassBlock,
   onEditClassTiming,
+  onCreateExtraClass,
   onOpenTaskComposer,
+  onOpenCourse,
+  onOpenActionQueue,
   onUpdateTimetableBounds,
   onDismissTask,
   onDismissCurrentOccurrence,
@@ -218,14 +235,17 @@ export function CalendarTimetablePage({
   timetable: FacultyTimetableTemplate
   taskPlacements: Record<string, TaskCalendarPlacement>
   onScheduleTask: (taskId: string, input: ScheduleInput) => void
-  onMoveClassBlock: (blockId: string, input: { day: Weekday; startMinutes: number; endMinutes: number }) => void
+  onMoveClassBlock: (blockId: string, input: { day: Weekday; dateISO?: string; startMinutes: number; endMinutes: number }) => void
   onResizeClassBlock: (blockId: string, input: { startMinutes: number; endMinutes: number }) => void
-  onEditClassTiming: (blockId: string, input: { day: Weekday; startMinutes: number; endMinutes: number }) => void
+  onEditClassTiming: (blockId: string, input: { day: Weekday; dateISO?: string; startMinutes: number; endMinutes: number }) => void
+  onCreateExtraClass: (input: { offeringId: string; dateISO: string; startMinutes: number; endMinutes: number }) => void
   onOpenTaskComposer: (input: {
     dueDateISO: string
     availableOfferingIds: string[]
     placement: ScheduleInput
   }) => void
+  onOpenCourse: (offeringId: string) => void
+  onOpenActionQueue: () => void
   onUpdateTimetableBounds: (input: { dayStartMinutes: number; dayEndMinutes: number }) => void
   onDismissTask: (taskId: string) => void
   onDismissCurrentOccurrence: (taskId: string) => void
@@ -241,6 +261,8 @@ export function CalendarTimetablePage({
   })
   const [monthAnchorISO, setMonthAnchorISO] = useState(() => `${selectedDateISO.slice(0, 7)}-01`)
   const [addTarget, setAddTarget] = useState<AddTargetState | null>(null)
+  const [extraClassDraft, setExtraClassDraft] = useState<ExtraClassDraftState | null>(null)
+  const [detailsState, setDetailsState] = useState<BlockDetailsState | null>(null)
   const [classEdit, setClassEdit] = useState<ClassEditState | null>(null)
   const [hoverAdd, setHoverAdd] = useState<HoverAddState | null>(null)
   const [interaction, setInteraction] = useState<InteractionState | null>(null)
@@ -253,10 +275,13 @@ export function CalendarTimetablePage({
   const columnRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const untimedBucketRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const shellRef = useRef<HTMLDivElement | null>(null)
+  const suppressDetailClickUntilRef = useRef(0)
   const [pageWidth, setPageWidth] = useState(1400)
 
   const isEditable = activeRole === 'Course Leader'
+  const canOpenCourseWorkspace = activeRole !== 'Mentor'
   const offeringIds = useMemo(() => new Set(facultyOfferings.map(offering => offering.offId)), [facultyOfferings])
+  const offeringsById = useMemo(() => Object.fromEntries(facultyOfferings.map(offering => [offering.offId, offering])) as Record<string, Offering>, [facultyOfferings])
   const activeTasks = useMemo(() => mergedTasks.filter(task => !resolvedTaskIds[task.id] && !isTaskDismissed(task)), [mergedTasks, resolvedTaskIds])
   const activeTasksById = useMemo(() => Object.fromEntries(activeTasks.map(task => [task.id, task])) as Record<string, SharedTask>, [activeTasks])
   const queueCandidates = useMemo(() => {
@@ -312,7 +337,7 @@ export function CalendarTimetablePage({
     const summary = {} as Record<string, { classCount: number; taskCount: number }>
     monthCells.forEach(cell => {
       const weekday = getWeekdayForDateISO(cell.dateISO)
-      const classCount = weekday ? timetable.classBlocks.filter(block => block.day === weekday).length : 0
+      const classCount = weekday ? timetable.classBlocks.filter(block => classBlockOccursOnDate(block, cell.dateISO, weekday)).length : 0
       const taskCount = (taskPlacementsByDate[cell.dateISO] ?? []).length
       summary[cell.dateISO] = { classCount, taskCount }
     })
@@ -331,7 +356,7 @@ export function CalendarTimetablePage({
       const classEvents = weekday
         ? timetable.classBlocks
             .filter(block => !previewHiddenEntityIds?.has(block.id))
-            .filter(block => block.day === weekday)
+            .filter(block => classBlockOccursOnDate(block, dateISO, weekday))
             .map(block => ({
               id: `class-${block.id}`,
               renderId: `class-${block.id}`,
@@ -342,7 +367,7 @@ export function CalendarTimetablePage({
               startMinutes: block.startMinutes,
               endMinutes: block.endMinutes,
               title: `${block.courseCode} · Sec ${block.section}`,
-              subtitle: block.courseName,
+              subtitle: block.kind === 'extra' ? `${block.courseName} · Extra class` : block.courseName,
               accent: T.accent,
               classBlock: block,
             }))
@@ -439,7 +464,8 @@ export function CalendarTimetablePage({
     const weekday = getWeekdayForDateISO(dateISO)
     const classNeighbors = weekday
       ? timetable.classBlocks
-          .filter(block => block.day === weekday && block.id !== exclude.classId)
+          .filter(block => block.id !== exclude.classId)
+          .filter(block => classBlockOccursOnDate(block, dateISO, weekday))
           .map(block => ({ startMinutes: block.startMinutes, endMinutes: block.endMinutes, kind: 'class' as const }))
       : []
     const taskNeighbors = (taskPlacementsByDate[dateISO] ?? [])
@@ -496,8 +522,8 @@ export function CalendarTimetablePage({
     }
     const reflowed = reflowClassDayRanges({
       blocks: [
-        ...timetable.classBlocks.filter(block => block.day === day && block.id !== classId),
-        { ...targetBlock, day },
+        ...timetable.classBlocks.filter(block => block.id !== classId && classBlockOccursOnDate(block, dateISO, day)),
+        { ...targetBlock, day, dateISO: targetBlock.kind === 'extra' ? dateISO : targetBlock.dateISO },
       ],
       targetId: classId,
       desiredStartMinutes,
@@ -564,6 +590,22 @@ export function CalendarTimetablePage({
       untimedTasks: buildUntimedTasksForDate(selectedDateISO),
     }]
   }, [buildTimedEventsForDate, buildUntimedTasksForDate, selectedDateISO, selectedWeekday])
+
+  const detailClassBlock = useMemo(() => detailsState?.type === 'class'
+    ? (timetable.classBlocks.find(block => block.id === detailsState.blockId) ?? null)
+    : null, [detailsState, timetable.classBlocks])
+  const detailTask = useMemo(() => detailsState?.type === 'task'
+    ? (activeTasksById[detailsState.taskId] ?? null)
+    : null, [activeTasksById, detailsState])
+  const detailOffering = useMemo(() => {
+    if (detailClassBlock) return offeringsById[detailClassBlock.offeringId] ?? null
+    if (detailTask) return offeringsById[detailTask.offeringId] ?? null
+    return null
+  }, [detailClassBlock, detailTask, offeringsById])
+  const detailPlacement = useMemo(() => {
+    if (detailsState?.type !== 'task') return null
+    return taskPlacements[detailsState.taskId] ?? null
+  }, [detailsState, taskPlacements])
 
   const findTimedColumnTarget = useCallback((clientX: number, clientY: number) => {
     for (const [dateISO, node] of Object.entries(columnRefs.current)) {
@@ -723,6 +765,7 @@ export function CalendarTimetablePage({
           }
         } else if (interaction.preview.day && typeof interaction.preview.startMinutes === 'number' && typeof interaction.preview.endMinutes === 'number') {
           onMoveClassBlock(interaction.entityId, {
+            dateISO: interaction.preview.dateISO,
             day: interaction.preview.day,
             startMinutes: interaction.preview.startMinutes,
             endMinutes: interaction.preview.endMinutes,
@@ -737,6 +780,7 @@ export function CalendarTimetablePage({
         })
       }
 
+      if (interaction.mode === 'active') suppressDetailClickUntilRef.current = Date.now() + 220
       setInteraction(null)
     }
 
@@ -833,15 +877,33 @@ export function CalendarTimetablePage({
       title: `${block.courseCode} · Sec ${block.section}`,
       subtitle: block.courseName,
       day: block.day,
+      dateISO: block.dateISO,
       start: minutesToTimeString(block.startMinutes),
       end: minutesToTimeString(block.endMinutes),
     })
   }, [isEditable])
 
+  const openEventDetails = useCallback((event: TimedEventCard) => {
+    if (Date.now() < suppressDetailClickUntilRef.current) return
+    if (event.eventType === 'class' && event.classBlock) {
+      setDetailsState({ type: 'class', blockId: event.classBlock.id, dateISO: event.dateISO })
+      return
+    }
+    if (event.eventType === 'task' && event.task) {
+      setDetailsState({
+        type: 'task',
+        taskId: event.task.id,
+        dateISO: event.dateISO,
+        placementMode: event.placement?.placementMode ?? 'timed',
+      })
+    }
+  }, [])
+
   const handleSaveClassEdit = useCallback(() => {
     if (!classEdit) return
     onEditClassTiming(classEdit.blockId, {
       day: classEdit.day,
+      dateISO: classEdit.dateISO,
       startMinutes: normalizeTimeValue(classEdit.start, dayStartMinutes),
       endMinutes: normalizeTimeValue(classEdit.end, dayEndMinutes),
     })
@@ -855,6 +917,37 @@ export function CalendarTimetablePage({
       return draft.placementMode === 'timed'
         ? normalizeTimedAddTarget(draft, dayStartMinutes, dayEndMinutes)
         : draft
+    })
+  }, [dayEndMinutes, dayStartMinutes])
+
+  const handleChangeExtraClassDraft = useCallback((next: Partial<ExtraClassDraftState>) => {
+    setExtraClassDraft(current => {
+      if (!current) return current
+      const draft = {
+        ...current,
+        ...next,
+      }
+      const normalizedDateISO = draft.dateISO
+      const normalizedDay = getWeekdayForDateISO(normalizedDateISO) ?? draft.day
+      const normalizedRange = normalizeTimedRange(
+        draft.startMinutes,
+        draft.endMinutes,
+        dayStartMinutes,
+        dayEndMinutes,
+      )
+      const nextDraft = {
+        ...draft,
+        day: normalizedDay,
+        startMinutes: normalizedRange.startMinutes,
+        endMinutes: normalizedRange.endMinutes,
+      }
+      setAddTarget({
+        dateISO: nextDraft.dateISO,
+        placementMode: 'timed',
+        startMinutes: nextDraft.startMinutes,
+        endMinutes: nextDraft.endMinutes,
+      })
+      return nextDraft
     })
   }, [dayEndMinutes, dayStartMinutes])
 
@@ -1009,7 +1102,7 @@ export function CalendarTimetablePage({
                 onTaskDragStart={startTaskDrag}
                 onClassDragStart={startClassDrag}
                 onClassResizeStart={startClassResize}
-                onOpenClassEdit={openClassEdit}
+                onOpenEventDetails={openEventDetails}
                 onMoveTaskToUntimed={(taskId, dateISO) => onScheduleTask(taskId, { dateISO, placementMode: 'untimed' })}
                 onDismissTask={onDismissTask}
                 onDismissCurrentOccurrence={onDismissCurrentOccurrence}
@@ -1073,7 +1166,7 @@ export function CalendarTimetablePage({
             onTaskDragStart={startTaskDrag}
             onClassDragStart={startClassDrag}
             onClassResizeStart={startClassResize}
-            onOpenClassEdit={openClassEdit}
+            onOpenEventDetails={openEventDetails}
             onMoveTaskToUntimed={(taskId, dateISO) => onScheduleTask(taskId, { dateISO, placementMode: 'untimed' })}
             onDismissTask={onDismissTask}
             onDismissCurrentOccurrence={onDismissCurrentOccurrence}
@@ -1111,6 +1204,67 @@ export function CalendarTimetablePage({
               },
             })
             setAddTarget(null)
+          }}
+          onScheduleExtraClass={() => {
+            if (addTarget.placementMode !== 'timed' || typeof addTarget.startMinutes !== 'number' || typeof addTarget.endMinutes !== 'number') return
+            const day = getWeekdayForDateISO(addTarget.dateISO)
+            if (!day) return
+            setExtraClassDraft({
+              offeringId: facultyOfferings[0]?.offId ?? '',
+              dateISO: addTarget.dateISO,
+              day,
+              startMinutes: addTarget.startMinutes,
+              endMinutes: addTarget.endMinutes,
+            })
+          }}
+        />
+      )}
+
+      {extraClassDraft && (
+        <ExtraClassSheet
+          draft={extraClassDraft}
+          offerings={facultyOfferings}
+          onClose={() => {
+            setExtraClassDraft(null)
+            setAddTarget(null)
+          }}
+          onChange={handleChangeExtraClassDraft}
+          onSave={() => {
+            onCreateExtraClass({
+              offeringId: extraClassDraft.offeringId,
+              dateISO: extraClassDraft.dateISO,
+              startMinutes: extraClassDraft.startMinutes,
+              endMinutes: extraClassDraft.endMinutes,
+            })
+            setExtraClassDraft(null)
+            setAddTarget(null)
+          }}
+        />
+      )}
+
+      {detailsState && (
+        <BlockDetailsSheet
+          detailsState={detailsState}
+          classBlock={detailClassBlock}
+          task={detailTask}
+          offering={detailOffering}
+          placement={detailPlacement}
+          editable={isEditable}
+          canOpenCourseWorkspace={canOpenCourseWorkspace}
+          onClose={() => setDetailsState(null)}
+          onOpenCourse={() => {
+            if (!detailOffering) return
+            onOpenCourse(detailOffering.offId)
+            setDetailsState(null)
+          }}
+          onOpenActionQueue={() => {
+            onOpenActionQueue()
+            setDetailsState(null)
+          }}
+          onEditClass={() => {
+            if (!detailClassBlock) return
+            setDetailsState(null)
+            openClassEdit(detailClassBlock)
           }}
         />
       )}
@@ -1182,7 +1336,7 @@ function AgendaBoard({
   onTaskDragStart,
   onClassDragStart,
   onClassResizeStart,
-  onOpenClassEdit,
+  onOpenEventDetails,
   onMoveTaskToUntimed,
   onDismissTask,
   onDismissCurrentOccurrence,
@@ -1274,17 +1428,23 @@ function AgendaBoard({
                   }
                   const rect = event.currentTarget.getBoundingClientRect()
                   const relativeMinute = clampMinuteValue((event.clientY - rect.top) / AGENDA_PIXELS_PER_MINUTE, 0, dayEndMinutes - dayStartMinutes)
-                  const startMinutes = clampMinuteValue(dayStartMinutes + relativeMinute, dayStartMinutes, dayEndMinutes - DEFAULT_TASK_DURATION_MINUTES)
-                  const range = normalizeTimedRange(startMinutes, startMinutes + DEFAULT_TASK_DURATION_MINUTES, dayStartMinutes, dayEndMinutes)
-                  const isOccupied = column.events.some(item => item.eventType !== 'preview' && rangeOverlaps(range.startMinutes, range.endMinutes, item.startMinutes, item.endMinutes))
-                  if (isOccupied) {
+                  const minute = dayStartMinutes + relativeMinute
+                  const range = resolveTimedHoverRange(
+                    minute,
+                    column.events
+                      .filter(item => item.eventType !== 'preview')
+                      .map(item => ({ startMinutes: item.startMinutes, endMinutes: item.endMinutes })),
+                    dayStartMinutes,
+                    dayEndMinutes,
+                  )
+                  if (!range) {
                     onHoverColumn(hoverAdd?.dateISO === column.dateISO ? null : hoverAdd)
                     return
                   }
                   onHoverColumn({
                     dateISO: column.dateISO,
                     day: column.day,
-                    cursorTopPx: event.clientY - rect.top,
+                    cursorTopPx: (((range.startMinutes + range.endMinutes) / 2) - dayStartMinutes) * AGENDA_PIXELS_PER_MINUTE,
                     startMinutes: range.startMinutes,
                     endMinutes: range.endMinutes,
                   })
@@ -1372,7 +1532,7 @@ function AgendaBoard({
                     onTaskDragStart={onTaskDragStart}
                     onClassDragStart={onClassDragStart}
                     onClassResizeStart={onClassResizeStart}
-                    onOpenClassEdit={onOpenClassEdit}
+                    onOpenEventDetails={onOpenEventDetails}
                     onMoveTaskToUntimed={onMoveTaskToUntimed}
                     onDismissTask={onDismissTask}
                     onDismissCurrentOccurrence={onDismissCurrentOccurrence}
@@ -1414,11 +1574,28 @@ function AgendaBoard({
                   <motion.div
                     key={`untimed-${task.id}`}
                     layout
-                    transition={{ duration: 0.18, ease: 'easeOut' }}
-                    onPointerDown={event => onTaskDragStart(event, task, null, column.dateISO)}
-                    style={{
-                      borderRadius: 12,
-                      border: `1px solid ${T.warning}32`,
+                  transition={{ duration: 0.18, ease: 'easeOut' }}
+                  onPointerDown={event => onTaskDragStart(event, task, null, column.dateISO)}
+                  onClick={event => {
+                    event.stopPropagation()
+                    onOpenEventDetails({
+                      id: `untimed-${task.id}`,
+                      renderId: `untimed-${task.id}`,
+                      entityId: task.id,
+                      eventType: 'task',
+                      dateISO: column.dateISO,
+                      day: column.day,
+                      startMinutes: dayStartMinutes,
+                      endMinutes: dayStartMinutes + DEFAULT_TASK_DURATION_MINUTES,
+                      title: task.title,
+                      subtitle: `${task.studentName} · ${task.taskType ?? 'Task'}`,
+                      accent: T.warning,
+                      task,
+                    })
+                  }}
+                  style={{
+                    borderRadius: 12,
+                    border: `1px solid ${T.warning}32`,
                       background: `${T.warning}18`,
                       padding: '10px 12px',
                       cursor: editable ? 'grab' : 'default',
@@ -1464,7 +1641,7 @@ function TimedEventBlock({
   onTaskDragStart,
   onClassDragStart,
   onClassResizeStart,
-  onOpenClassEdit,
+  onOpenEventDetails,
   onMoveTaskToUntimed,
   onDismissTask,
   onDismissCurrentOccurrence,
@@ -1481,7 +1658,7 @@ function TimedEventBlock({
   onTaskDragStart: AgendaBoardProps['onTaskDragStart']
   onClassDragStart: AgendaBoardProps['onClassDragStart']
   onClassResizeStart: AgendaBoardProps['onClassResizeStart']
-  onOpenClassEdit: AgendaBoardProps['onOpenClassEdit']
+  onOpenEventDetails: AgendaBoardProps['onOpenEventDetails']
   onMoveTaskToUntimed: AgendaBoardProps['onMoveTaskToUntimed']
   onDismissTask: (taskId: string) => void
   onDismissCurrentOccurrence: (taskId: string) => void
@@ -1540,9 +1717,9 @@ function TimedEventBlock({
       transition={{ duration: 0.18, ease: 'easeOut' }}
       onPointerDown={dragHandler}
       onClick={evt => {
-        if (!editable || !isClass) return
+        if (event.eventType === 'preview') return
         evt.stopPropagation()
-        onOpenClassEdit(event.classBlock!)
+        onOpenEventDetails(event)
       }}
       style={baseStyle}
     >
@@ -1658,6 +1835,7 @@ function TaskPlacementSheet({
   onChangeTarget,
   onPlaceTask,
   onCreateNewTask,
+  onScheduleExtraClass,
 }: {
   target: AddTargetState
   queueCandidates: SharedTask[]
@@ -1665,6 +1843,7 @@ function TaskPlacementSheet({
   onChangeTarget: (next: Partial<AddTargetState>) => void
   onPlaceTask: (taskId: string) => void
   onCreateNewTask: () => void
+  onScheduleExtraClass: () => void
 }) {
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
@@ -1738,9 +1917,14 @@ function TaskPlacementSheet({
         </div>
 
         <div style={{ padding: '14px 18px', borderTop: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ ...mono, fontSize: 10, color: T.muted }}>Need something new instead of reusing queue state?</div>
+          <div style={{ ...mono, fontSize: 10, color: T.muted }}>Need something new instead of reusing queue state or want to add a one-off extra class?</div>
           <div style={{ display: 'flex', gap: 8 }}>
             <Btn size="sm" variant="ghost" onClick={onClose}>Close</Btn>
+            {target.placementMode === 'timed' && (
+              <Btn size="sm" variant="ghost" onClick={onScheduleExtraClass}>
+                <Plus size={12} /> Schedule Extra Class
+              </Btn>
+            )}
             <Btn size="sm" onClick={onCreateNewTask}>
               <Plus size={12} /> Create New Task
             </Btn>
@@ -1769,20 +1953,26 @@ function ClassTimingSheet({
           <div>
             <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: T.text }}>{value.title}</div>
             <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{value.subtitle}</div>
-            <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 4 }}>Custom time edits snap against neighbouring classes on save.</div>
+            <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 4 }}>
+              {value.dateISO
+                ? `One-off extra class for ${formatShortDate(value.dateISO)}. Time edits keep it on that exact date.`
+                : 'Custom time edits snap against neighbouring classes on save.'}
+            </div>
           </div>
           <button type="button" aria-label="Close class timing editor" onClick={onClose} style={iconButtonStyle()}>
             <X size={14} />
           </button>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-          <label style={{ display: 'grid', gap: 6 }}>
-            <span style={{ ...mono, fontSize: 10, color: T.muted }}>Day</span>
-            <select value={value.day} onChange={event => onChange({ day: event.target.value as Weekday })} style={sheetFieldStyle()}>
-              {WEEKDAY_ORDER.map(day => <option key={day} value={day}>{day}</option>)}
-            </select>
-          </label>
+        <div style={{ display: 'grid', gridTemplateColumns: value.dateISO ? '1fr 1fr' : '1fr 1fr 1fr', gap: 10 }}>
+          {!value.dateISO && (
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ ...mono, fontSize: 10, color: T.muted }}>Day</span>
+              <select value={value.day} onChange={event => onChange({ day: event.target.value as Weekday })} style={sheetFieldStyle()}>
+                {WEEKDAY_ORDER.map(day => <option key={day} value={day}>{day}</option>)}
+              </select>
+            </label>
+          )}
           <label style={{ display: 'grid', gap: 6 }}>
             <span style={{ ...mono, fontSize: 10, color: T.muted }}>Start</span>
             <input type="time" value={value.start} onChange={event => onChange({ start: event.target.value })} style={sheetFieldStyle()} />
@@ -1798,6 +1988,161 @@ function ClassTimingSheet({
           <Btn size="sm" onClick={onSave}>Save Timing</Btn>
         </div>
       </div>
+    </div>
+  )
+}
+
+function ExtraClassSheet({
+  draft,
+  offerings,
+  onClose,
+  onChange,
+  onSave,
+}: {
+  draft: ExtraClassDraftState
+  offerings: Offering[]
+  onClose: () => void
+  onChange: (next: Partial<ExtraClassDraftState>) => void
+  onSave: () => void
+}) {
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 142, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div onClick={event => event.stopPropagation()} style={{ width: '100%', maxWidth: 560, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: 18, display: 'grid', gap: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+          <div>
+            <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: T.text }}>Schedule Extra Class</div>
+            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>One-off class on {formatShortDate(draft.dateISO)}. This stays linked to the real course workspace.</div>
+          </div>
+          <button type="button" aria-label="Close extra class editor" onClick={onClose} style={iconButtonStyle()}>
+            <X size={14} />
+          </button>
+        </div>
+
+        <label style={{ display: 'grid', gap: 6 }}>
+          <span style={{ ...mono, fontSize: 10, color: T.muted }}>Class</span>
+          <select value={draft.offeringId} onChange={event => onChange({ offeringId: event.target.value })} style={sheetFieldStyle()}>
+            {offerings.map(offering => (
+              <option key={offering.offId} value={offering.offId}>{offering.code} · Sec {offering.section} · {offering.title}</option>
+            ))}
+          </select>
+        </label>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span style={{ ...mono, fontSize: 10, color: T.muted }}>Start</span>
+            <input type="time" value={minutesToTimeString(draft.startMinutes)} onChange={event => onChange({ startMinutes: normalizeTimeValue(event.target.value, draft.startMinutes) })} style={sheetFieldStyle()} />
+          </label>
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span style={{ ...mono, fontSize: 10, color: T.muted }}>End</span>
+            <input type="time" value={minutesToTimeString(draft.endMinutes)} onChange={event => onChange({ endMinutes: normalizeTimeValue(event.target.value, draft.endMinutes) })} style={sheetFieldStyle()} />
+          </label>
+        </div>
+
+        <div style={{ ...mono, fontSize: 10, color: T.dim }}>
+          If this extra class overlaps the day, neighbouring classes will only reflow when there is a real collision.
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <Btn size="sm" variant="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn size="sm" onClick={onSave}>Save Extra Class</Btn>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BlockDetailsSheet({
+  detailsState,
+  classBlock,
+  task,
+  offering,
+  placement,
+  editable,
+  canOpenCourseWorkspace,
+  onClose,
+  onOpenCourse,
+  onOpenActionQueue,
+  onEditClass,
+}: {
+  detailsState: BlockDetailsState
+  classBlock: FacultyTimetableClassBlock | null
+  task: SharedTask | null
+  offering: Offering | null
+  placement: TaskCalendarPlacement | null
+  editable: boolean
+  canOpenCourseWorkspace: boolean
+  onClose: () => void
+  onOpenCourse: () => void
+  onOpenActionQueue: () => void
+  onEditClass: () => void
+}) {
+  const isClass = detailsState.type === 'class'
+  const title = isClass
+    ? (classBlock ? `${classBlock.courseCode} · Sec ${classBlock.section}` : 'Class details')
+    : (task?.title ?? 'Task details')
+  const subtitle = isClass
+    ? (classBlock?.kind === 'extra'
+        ? `Extra class · ${offering?.title ?? classBlock?.courseName ?? ''}`
+        : (offering?.title ?? classBlock?.courseName ?? ''))
+    : (task ? `${task.studentName} · ${task.courseCode} · ${task.taskType ?? 'Task'}` : '')
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 143, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div onClick={event => event.stopPropagation()} style={{ width: '100%', maxWidth: 520, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: 18, display: 'grid', gap: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+          <div>
+            <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: T.text }}>{title}</div>
+            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{subtitle}</div>
+          </div>
+          <button type="button" aria-label="Close block details" onClick={onClose} style={iconButtonStyle()}>
+            <X size={14} />
+          </button>
+        </div>
+
+        {isClass && classBlock && (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <DetailRow label="When" value={`${classBlock.dateISO ? formatShortDate(classBlock.dateISO) : classBlock.day} · ${minutesToDisplayLabel(classBlock.startMinutes)} - ${minutesToDisplayLabel(classBlock.endMinutes)}`} />
+              <DetailRow label="Year" value={classBlock.year} />
+              <DetailRow label="Section" value={`Sec ${classBlock.section}`} />
+              <DetailRow label="Type" value={classBlock.kind === 'extra' ? 'Extra class' : 'Weekly class'} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+              <Btn size="sm" variant="ghost" onClick={onClose}>Close</Btn>
+              {editable && <Btn size="sm" variant="ghost" onClick={onEditClass}>Edit timing</Btn>}
+              {canOpenCourseWorkspace && <Btn size="sm" onClick={onOpenCourse}>Open Course Workspace</Btn>}
+            </div>
+          </>
+        )}
+
+        {!isClass && task && (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <DetailRow label="When" value={placement?.placementMode === 'untimed'
+                ? `${formatShortDate(detailsState.dateISO)} · No preferred time`
+                : `${formatShortDate(detailsState.dateISO)} · ${minutesToDisplayLabel(placement?.startMinutes ?? 0)} - ${minutesToDisplayLabel(placement?.endMinutes ?? 0)}`} />
+              <DetailRow label="Status" value={task.status} />
+              <DetailRow label="Student" value={task.studentName} />
+              <DetailRow label="Course" value={`${task.courseCode} · ${offering?.title ?? task.courseName}`} />
+            </div>
+            <div style={{ ...mono, fontSize: 10, color: T.dim }}>{task.actionHint}</div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+              <Btn size="sm" variant="ghost" onClick={onClose}>Close</Btn>
+              <Btn size="sm" onClick={onOpenActionQueue}>Open Action Queue</Btn>
+              {canOpenCourseWorkspace && offering && <Btn size="sm" variant="ghost" onClick={onOpenCourse}>Open Course Workspace</Btn>}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ borderRadius: 12, border: `1px solid ${T.border}`, background: T.surface2, padding: '10px 12px' }}>
+      <div style={{ ...mono, fontSize: 9, color: T.dim, marginBottom: 4 }}>{label}</div>
+      <div style={{ ...sora, fontWeight: 600, fontSize: 12, color: T.text }}>{value}</div>
     </div>
   )
 }

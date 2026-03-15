@@ -12,6 +12,7 @@ import {
   getWeekDates,
   minutesToTimeString,
   reflowClassDayRanges,
+  resolveTimedHoverRange,
   seedFacultyTimetableTemplate,
   startOfWeekISO,
 } from '../src/calendar-utils'
@@ -191,5 +192,66 @@ describe('calendar utils', () => {
       b: { startMinutes: 570, endMinutes: 720 },
       c: { startMinutes: 720, endMinutes: 780 },
     })
+  })
+
+  it('derives a stable hover add range from the actual free gap under the cursor', () => {
+    const range = resolveTimedHoverRange(
+      625,
+      [
+        { startMinutes: 510, endMinutes: 560 },
+        { startMinutes: 660, endMinutes: 720 },
+      ],
+      480,
+      900,
+    )
+
+    expect(range).toEqual({
+      gapStartMinutes: 560,
+      gapEndMinutes: 660,
+      startMinutes: 610,
+      endMinutes: 660,
+    })
+  })
+
+  it('suppresses hover add when the cursor is inside an occupied range or the gap is too small', () => {
+    expect(resolveTimedHoverRange(
+      545,
+      [{ startMinutes: 510, endMinutes: 560 }],
+      480,
+      900,
+    )).toBeNull()
+
+    expect(resolveTimedHoverRange(
+      610,
+      [
+        { startMinutes: 580, endMinutes: 600 },
+        { startMinutes: 615, endMinutes: 660 },
+      ],
+      480,
+      900,
+    )).toBeNull()
+  })
+
+  it('keeps separated class gaps intact when a later move only snaps the target block', () => {
+    const result = reflowClassDayRanges({
+      blocks: [
+        { id: 'a', startMinutes: 510, endMinutes: 560 },
+        { id: 'b', startMinutes: 620, endMinutes: 670 },
+        { id: 'c', startMinutes: 735, endMinutes: 785 },
+      ],
+      targetId: 'b',
+      desiredStartMinutes: 678,
+      desiredEndMinutes: 728,
+      dayStartMinutes: 480,
+      dayEndMinutes: 900,
+      snapThresholdMinutes: 14,
+    })
+
+    expect(result?.rangesById).toEqual({
+      a: { startMinutes: 510, endMinutes: 560 },
+      b: { startMinutes: 685, endMinutes: 735 },
+      c: { startMinutes: 735, endMinutes: 785 },
+    })
+    expect(result?.changedBlockIds).toEqual(['b'])
   })
 })
