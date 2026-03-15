@@ -2,6 +2,32 @@ import { describe, expect, it, vi } from 'vitest'
 import { AirMentorApiClient, AirMentorApiError } from '../src/api/client'
 
 describe('AirMentorApiClient', () => {
+  it('binds the default global fetch to the window/global scope', async () => {
+    const fetchMock = vi.fn(async function (this: unknown, _input: RequestInfo | URL, _init?: RequestInit) {
+      expect(this).toBe(globalThis)
+      return new Response(JSON.stringify({
+        userId: 'user-1',
+        themeMode: 'frosted-focus-light',
+        version: 1,
+        updatedAt: '2026-03-16T00:00:00.000Z',
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+
+    vi.stubGlobal('fetch', fetchMock as typeof fetch)
+
+    try {
+      const client = new AirMentorApiClient('http://127.0.0.1:4000')
+      const result = await client.getUiPreferences()
+      expect(result.themeMode).toBe('frosted-focus-light')
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('sends JSON requests with cookies included', async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => new Response(JSON.stringify({
       userId: 'user-1',

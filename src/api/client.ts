@@ -59,13 +59,17 @@ export interface AirMentorApiClientLike {
 
 type FetchLike = typeof fetch
 
+function getDefaultFetch(): FetchLike {
+  return globalThis.fetch.bind(globalThis) as FetchLike
+}
+
 export class AirMentorApiClient implements AirMentorApiClientLike {
   private readonly baseUrl: string
   private readonly fetchImpl: FetchLike
 
-  constructor(baseUrl: string, fetchImpl: FetchLike = fetch) {
+  constructor(baseUrl: string, fetchImpl?: FetchLike) {
     this.baseUrl = baseUrl.replace(/\/$/, '')
-    this.fetchImpl = fetchImpl
+    this.fetchImpl = fetchImpl ?? getDefaultFetch()
   }
 
   async restoreSession() {
