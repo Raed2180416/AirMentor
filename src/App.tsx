@@ -2,7 +2,7 @@ import { Suspense, lazy, useState, useMemo, useCallback, useEffect, useRef, type
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   Bell, Calendar, CheckCircle, ChevronRight,
-  LayoutDashboard, ListTodo, Mail, Phone, Shield, Upload, Users, X,
+  LayoutDashboard, ListTodo, Mail, Phone, Search, Shield, Upload, Users, X,
   AlertTriangle, TrendingDown, BookOpen, Target, Activity, Eye, MessageSquare,
 } from 'lucide-react'
 import {
@@ -1195,38 +1195,156 @@ function OfferingCard({ o, yc, onOpen, onOpenUpload }: { o: Offering; yc: string
    MENTOR VIEW — Student-centric, cross-subject risk
    ══════════════════════════════════════════════════════════════ */
 
-function MentorView({ mentees, onOpenMentee }: { mentees: Mentee[]; onOpenMentee: (m: Mentee) => void }) {
+function MentorView({ mentees, tasks, onOpenMentee }: { mentees: Mentee[]; tasks: SharedTask[]; onOpenMentee: (m: Mentee) => void }) {
+  const [searchQuery, setSearchQuery] = useState('')
+  const [activeFilter, setActiveFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all')
   const sorted = [...mentees].sort((a, b) => b.avs - a.avs)
   const highRisk = mentees.filter(m => m.avs >= 0.6).length
   const medRisk = mentees.filter(m => m.avs >= 0.35 && m.avs < 0.6).length
-  const noData = mentees.filter(m => m.avs < 0).length
+  const lowRisk = mentees.filter(m => m.avs >= 0 && m.avs < 0.35).length
+  const filteredMentees = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
+    return sorted.filter(m => {
+      const byRisk =
+        activeFilter === 'all'
+          ? true
+          : activeFilter === 'high'
+            ? m.avs >= 0.6
+            : activeFilter === 'medium'
+              ? m.avs >= 0.35 && m.avs < 0.6
+              : m.avs >= 0 && m.avs < 0.35
+      if (!byRisk) return false
+      if (!query) return true
+      const matchesText = [
+        m.name,
+        m.usn,
+        m.dept,
+        m.year,
+        m.section,
+        ...m.courseRisks.map(cr => `${cr.code} ${cr.title}`),
+      ].join(' ').toLowerCase()
+      return matchesText.includes(query)
+    })
+  }, [activeFilter, searchQuery, sorted])
+  const pendingMentorActions = useMemo(() => {
+    const menteeByUsn = new Map(mentees.map(m => [m.usn, m]))
+    return tasks
+      .filter(task =>
+        task.assignedTo === 'Mentor'
+        && !task.dismissal
+        && task.status !== 'Resolved'
+        && menteeByUsn.has(task.studentUsn),
+      )
+      .sort((a, b) => {
+        if (a.priority !== b.priority) return b.priority - a.priority
+        const aDue = a.dueDateISO ?? '9999-12-31'
+        const bDue = b.dueDateISO ?? '9999-12-31'
+        return aDue.localeCompare(bDue)
+      })
+      .slice(0, 6)
+  }, [mentees, tasks])
 
   return (
     <PageShell size="standard">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-        <Users size={22} color={T.accent} />
-        <div>
-          <div style={{ ...sora, fontWeight: 700, fontSize: 20, color: T.text }}>My Mentees</div>
-          <div style={{ ...mono, fontSize: 11, color: T.muted }}>Student-centric view · Aggregate vulnerability across all courses</div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Users size={22} color={T.accent} />
+          <div>
+            <div style={{ ...sora, fontWeight: 700, fontSize: 20, color: T.text }}>My Mentees</div>
+            <div style={{ ...mono, fontSize: 11, color: T.muted }}>Student-centric view · Aggregate vulnerability across all courses</div>
+          </div>
+        </div>
+        <div style={{ minWidth: 220, flex: '1 1 280px', maxWidth: 360, position: 'relative' }}>
+          <Search size={14} color={T.dim} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
+          <input
+            value={searchQuery}
+            onChange={event => setSearchQuery(event.target.value)}
+            placeholder="Search mentee, USN, or course"
+            style={{
+              width: '100%',
+              padding: '9px 34px 9px 30px',
+              borderRadius: 8,
+              border: `1px solid ${T.border}`,
+              background: T.surface2,
+              color: T.text,
+              ...mono,
+              fontSize: 10,
+              outline: 'none',
+            }}
+          />
+          {searchQuery && (
+            <button
+              aria-label="Clear mentee search"
+              title="Clear search"
+              onClick={() => setSearchQuery('')}
+              style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', color: T.dim, cursor: 'pointer', display: 'flex' }}
+            >
+              <X size={13} />
+            </button>
+          )}
         </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 22 }}>
         {[
-          { lbl: 'Total Mentees', val: mentees.length, col: T.accent },
-          { lbl: 'High Vulnerability', val: highRisk, col: T.danger },
-          { lbl: 'Medium Risk', val: medRisk, col: T.warning },
-          { lbl: 'Awaiting Data', val: noData, col: T.dim },
+          { lbl: 'Total Mentees', val: mentees.length, col: T.accent, key: 'all' as const, clickable: true },
+          { lbl: 'High Vulnerability', val: highRisk, col: T.danger, key: 'high' as const, clickable: true },
+          { lbl: 'Medium Risk', val: medRisk, col: T.warning, key: 'medium' as const, clickable: true },
+          { lbl: 'Low Risk', val: lowRisk, col: T.success, key: 'low' as const, clickable: true },
         ].map((x, i) => (
-          <Card key={i} glow={x.col} style={{ padding: '12px 16px' }}>
+          <Card
+            key={i}
+            glow={x.col}
+            onClick={x.clickable ? () => setActiveFilter(x.key) : undefined}
+            style={{
+              padding: '12px 16px',
+              cursor: x.clickable ? 'pointer' : 'default',
+              border: x.clickable && activeFilter === x.key ? `1px solid ${x.col}` : undefined,
+              boxShadow: x.clickable && activeFilter === x.key ? `0 0 0 1px ${x.col}25 inset` : undefined,
+            }}
+          >
             <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: x.col }}>{x.val}</div>
             <div style={{ ...mono, fontSize: 9, color: T.muted }}>{x.lbl}</div>
           </Card>
         ))}
       </div>
 
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text }}>Action Queue (Pending Actions)</div>
+          <Chip color={pendingMentorActions.length > 0 ? T.warning : T.success} size={9}>
+            {pendingMentorActions.length} active
+          </Chip>
+        </div>
+        {pendingMentorActions.length > 0 ? (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {pendingMentorActions.map(task => {
+              const target = mentees.find(m => m.usn === task.studentUsn || m.id === task.studentId)
+              return (
+                <div key={task.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, border: `1px solid ${T.border}`, background: T.surface2, borderRadius: 8, padding: '9px 10px' }}>
+                  <div>
+                    <div style={{ ...mono, fontSize: 11, color: T.text }}>{task.title}</div>
+                    <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 3 }}>{task.studentName} · {task.courseCode} · {task.due}</div>
+                  </div>
+                  {target && (
+                    <button
+                      onClick={() => onOpenMentee(target)}
+                      style={{ ...mono, fontSize: 10, color: T.accent, border: `1px solid ${T.border2}`, background: 'transparent', borderRadius: 6, height: 28, padding: '0 10px', cursor: 'pointer', alignSelf: 'center', flexShrink: 0 }}
+                    >
+                      Open Student
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div style={{ ...mono, fontSize: 11, color: T.dim }}>No pending mentor actions right now.</div>
+        )}
+      </Card>
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {sorted.map(m => {
+        {filteredMentees.map(m => {
           const avsBand = m.avs >= 0.6 ? 'High' : m.avs >= 0.35 ? 'Medium' : m.avs >= 0 ? 'Low' : null
           const avsCol = avsBand === 'High' ? T.danger : avsBand === 'Medium' ? T.warning : avsBand === 'Low' ? T.success : T.dim
           return (
@@ -1282,17 +1400,46 @@ function MentorView({ mentees, onOpenMentee }: { mentees: Mentee[]; onOpenMentee
             </Card>
           )
         })}
+        {filteredMentees.length === 0 && (
+          <Card style={{ padding: '16px 18px' }}>
+            <div style={{ ...mono, fontSize: 11, color: T.muted }}>
+              No mentees found for this filter.
+            </div>
+          </Card>
+        )}
       </div>
     </PageShell>
   )
 }
 
-function MenteeDetailPage({ mentee, tasks, onBack, onOpenHistory, onOpenQueueHistory }: { mentee: Mentee; tasks: SharedTask[]; onBack: () => void; onOpenHistory: (mentee: Mentee) => void; onOpenQueueHistory: () => void }) {
-  const studentTasks = tasks.filter(task => task.studentUsn === mentee.usn)
-  const activeTasks = studentTasks.filter(task => !task.dismissal)
-  const dismissedTaskCount = studentTasks.filter(task => !!task.dismissal).length
-  const latestIntervention = mentee.interventions[mentee.interventions.length - 1]
+function MenteeDetailPage({ mentee, onBack, onOpenHistory }: { mentee: Mentee; onBack: () => void; onOpenHistory: (mentee: Mentee) => void }) {
+  const [activeInsight, setActiveInsight] = useState<'risk' | 'cgpa'>('risk')
   const avgCourseRisk = mentee.avs >= 0 ? Math.round(mentee.courseRisks.filter(r => r.risk >= 0).reduce((acc, risk) => acc + risk.risk, 0) / Math.max(1, mentee.courseRisks.filter(r => r.risk >= 0).length) * 100) : null
+  const history = useMemo(() => getStudentHistoryRecord({
+    usn: mentee.usn,
+    studentName: mentee.name,
+    dept: mentee.dept,
+    yearLabel: mentee.year,
+    prevCgpa: mentee.prevCgpa,
+  }), [mentee.dept, mentee.name, mentee.prevCgpa, mentee.usn, mentee.year])
+  const sgpaSeries = useMemo(
+    () => [...history.terms]
+      .sort((a, b) => a.semesterNumber - b.semesterNumber)
+      .map(term => ({ label: `S${term.semesterNumber}`, value: term.sgpa })),
+    [history.terms],
+  )
+  const maxSgpa = sgpaSeries.reduce((best, point) => point.value > best.value ? point : best, sgpaSeries[0] ?? { label: 'S1', value: 0 })
+  const minSgpa = sgpaSeries.reduce((worst, point) => point.value < worst.value ? point : worst, sgpaSeries[0] ?? { label: 'S1', value: 0 })
+  const subjectStats = useMemo(() => {
+    const allSubjects = history.terms.flatMap(term => term.subjects.map(subject => ({ ...subject, termLabel: term.label })))
+    const best = allSubjects.reduce((winner, subject) => subject.score > winner.score ? subject : winner, allSubjects[0] ?? null)
+    const lowest = allSubjects.reduce((loser, subject) => subject.score < loser.score ? subject : loser, allSubjects[0] ?? null)
+    return { best, lowest }
+  }, [history.terms])
+  const riskDrivers = [...mentee.courseRisks]
+    .filter(r => r.risk >= 0)
+    .sort((a, b) => b.risk - a.risk)
+    .slice(0, 3)
 
   return (
     <PageShell size="standard">
@@ -1310,18 +1457,99 @@ function MenteeDetailPage({ mentee, tasks, onBack, onOpenHistory, onOpenQueueHis
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 18 }}>
-        {[
-          { lbl: 'Aggregate Risk', val: mentee.avs >= 0 ? `${Math.round(mentee.avs * 100)}%` : 'Awaiting TT1', col: mentee.avs >= 0.6 ? T.danger : mentee.avs >= 0.35 ? T.warning : T.success },
-          { lbl: 'Prev CGPA', val: mentee.prevCgpa > 0 ? mentee.prevCgpa.toFixed(1) : '—', col: mentee.prevCgpa >= 7 ? T.success : mentee.prevCgpa >= 6 ? T.warning : T.danger },
-          { lbl: 'Tracked Courses', val: mentee.courseRisks.length, col: T.accent },
-          { lbl: 'Open Queue Items', val: activeTasks.length, col: activeTasks.length > 0 ? T.warning : T.success },
-        ].map((metric, index) => (
-          <Card key={index} glow={metric.col} style={{ padding: '12px 16px' }}>
-            <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: metric.col }}>{metric.val}</div>
-            <div style={{ ...mono, fontSize: 9, color: T.muted }}>{metric.lbl}</div>
-          </Card>
-        ))}
+        <Card
+          glow={mentee.avs >= 0.6 ? T.danger : mentee.avs >= 0.35 ? T.warning : T.success}
+          onClick={() => setActiveInsight('risk')}
+          style={{ padding: '12px 16px', cursor: 'pointer', border: activeInsight === 'risk' ? `1px solid ${T.accent}` : undefined }}
+        >
+          <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: mentee.avs >= 0.6 ? T.danger : mentee.avs >= 0.35 ? T.warning : T.success }}>
+            {mentee.avs >= 0 ? `${Math.round(mentee.avs * 100)}%` : 'Awaiting TT1'}
+          </div>
+          <div style={{ ...mono, fontSize: 9, color: T.muted }}>Aggregate Risk (click for why)</div>
+        </Card>
+        <Card
+          glow={mentee.prevCgpa >= 7 ? T.success : mentee.prevCgpa >= 6 ? T.warning : T.danger}
+          onClick={() => setActiveInsight('cgpa')}
+          style={{ padding: '12px 16px', cursor: 'pointer', border: activeInsight === 'cgpa' ? `1px solid ${T.accent}` : undefined }}
+        >
+          <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: mentee.prevCgpa >= 7 ? T.success : mentee.prevCgpa >= 6 ? T.warning : T.danger }}>
+            {mentee.prevCgpa > 0 ? mentee.prevCgpa.toFixed(1) : '—'}
+          </div>
+          <div style={{ ...mono, fontSize: 9, color: T.muted }}>Prev CGPA (click for trend)</div>
+        </Card>
+        <Card glow={T.accent} style={{ padding: '12px 16px' }}>
+          <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: T.accent }}>{mentee.courseRisks.length}</div>
+          <div style={{ ...mono, fontSize: 9, color: T.muted }}>Tracked Courses</div>
+        </Card>
+        <Card glow={T.warning} style={{ padding: '12px 16px' }}>
+          <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: T.warning }}>{mentee.interventions.length}</div>
+          <div style={{ ...mono, fontSize: 9, color: T.muted }}>Interventions Logged</div>
+        </Card>
       </div>
+
+      {activeInsight === 'risk' && (
+        <Card style={{ marginBottom: 14 }}>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 8 }}>Why Aggregate Risk is {mentee.avs >= 0 ? `${Math.round(mentee.avs * 100)}%` : 'unavailable'}</div>
+          {riskDrivers.length > 0 ? (
+            <div style={{ display: 'grid', gap: 8 }}>
+              {riskDrivers.map(driver => {
+                const color = driver.risk >= 0.7 ? T.danger : driver.risk >= 0.35 ? T.warning : T.success
+                return (
+                  <div key={driver.code} style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: '9px 10px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                      <div>
+                        <div style={{ ...mono, fontSize: 11, color: T.text }}>{driver.code} · {driver.title}</div>
+                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>
+                          {driver.risk >= 0.7 ? 'Major contributor' : driver.risk >= 0.35 ? 'Medium contributor' : 'Minor contributor'}
+                        </div>
+                      </div>
+                      <div style={{ ...sora, fontWeight: 700, fontSize: 16, color }}>{Math.round(driver.risk * 100)}%</div>
+                    </div>
+                    <div style={{ marginTop: 6 }}>
+                      <Bar val={driver.risk * 100} color={color} h={4} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div style={{ ...mono, fontSize: 11, color: T.dim }}>Risk breakdown will appear after course-level data is available.</div>
+          )}
+        </Card>
+      )}
+
+      {activeInsight === 'cgpa' && (
+        <Card style={{ marginBottom: 14 }}>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 10 }}>Previous GPA Trend & Subject Highlights</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 14 }}>
+            <div>
+              <div style={{ ...mono, fontSize: 10, color: T.muted, marginBottom: 8 }}>SGPA by semester</div>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 100 }}>
+                {sgpaSeries.map(point => (
+                  <div key={point.label} style={{ flex: 1, minWidth: 30 }}>
+                    <div style={{ height: `${Math.max(10, Math.round((point.value / 10) * 100))}%`, background: T.accent + 'aa', border: `1px solid ${T.accent}66`, borderRadius: '6px 6px 3px 3px' }} />
+                    <div style={{ ...mono, fontSize: 9, color: T.muted, textAlign: 'center', marginTop: 5 }}>{point.label}</div>
+                    <div style={{ ...mono, fontSize: 8, color: T.dim, textAlign: 'center' }}>{point.value.toFixed(2)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: 'grid', gap: 7, alignContent: 'start' }}>
+              <div style={{ ...mono, fontSize: 11, color: T.text }}>Max SGPA: <span style={{ color: T.success }}>{maxSgpa.value.toFixed(2)}</span> ({maxSgpa.label})</div>
+              <div style={{ ...mono, fontSize: 11, color: T.text }}>Min SGPA: <span style={{ color: T.danger }}>{minSgpa.value.toFixed(2)}</span> ({minSgpa.label})</div>
+              <div style={{ ...mono, fontSize: 11, color: T.text }}>
+                Best Subject: <span style={{ color: T.success }}>{subjectStats.best ? `${subjectStats.best.code} (${subjectStats.best.score})` : '—'}</span>
+              </div>
+              <div style={{ ...mono, fontSize: 11, color: T.text }}>
+                Lowest Subject: <span style={{ color: T.warning }}>{subjectStats.lowest ? `${subjectStats.lowest.code} (${subjectStats.lowest.score})` : '—'}</span>
+              </div>
+              <div style={{ ...mono, fontSize: 10, color: T.muted }}>
+                {subjectStats.best?.title ?? 'No subject data'} | {subjectStats.lowest?.title ?? 'No subject data'}
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, alignItems: 'start' }}>
         <Card>
@@ -1353,7 +1581,7 @@ function MenteeDetailPage({ mentee, tasks, onBack, onOpenHistory, onOpenQueueHis
             <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 8 }}>Mentor Summary</div>
             <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.6 }}>
               {avgCourseRisk !== null ? `Average course risk is ${avgCourseRisk}%.` : 'No score-based risk yet.'}
-              {' '}Previous-semester CGPA is {mentee.prevCgpa > 0 ? mentee.prevCgpa.toFixed(1) : 'not yet available'}.
+              {' '}Previous-semester CGPA is {history.currentCgpa > 0 ? history.currentCgpa.toFixed(2) : 'not yet available'}.
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
               {mentee.courseRisks.filter(r => r.risk >= 0.5).map(r => <Chip key={r.code} color={r.risk >= 0.7 ? T.danger : T.warning} size={9}>{r.code}</Chip>)}
@@ -1372,26 +1600,6 @@ function MenteeDetailPage({ mentee, tasks, onBack, onOpenHistory, onOpenQueueHis
             )) : (
               <div style={{ ...mono, fontSize: 11, color: T.dim }}>No interventions logged for this mentee yet.</div>
             )}
-          </Card>
-
-          <Card>
-            <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 8 }}>Queue Ownership Snapshot</div>
-            {studentTasks.length > 0 ? studentTasks.map(task => (
-              <div key={task.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '8px 0', borderBottom: `1px solid ${T.border}` }}>
-                <div>
-                  <div style={{ ...mono, fontSize: 11, color: T.text }}>{task.title}</div>
-                  <div style={{ ...mono, fontSize: 10, color: T.muted }}>{getLatestTransition(task)?.action ?? 'Created'} · {task.due}</div>
-                </div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                  {task.dismissal && <Chip color={task.dismissal.kind === 'series' ? T.danger : T.muted} size={9}>{task.dismissal.kind === 'series' ? 'Series dismissed' : 'Dismissed'}</Chip>}
-                  <Chip color={task.assignedTo === 'Mentor' ? T.warning : task.assignedTo === 'HoD' ? T.danger : T.accent} size={9}>{task.assignedTo}</Chip>
-                </div>
-              </div>
-            )) : (
-              <div style={{ ...mono, fontSize: 11, color: T.dim }}>No active queue items for this mentee.</div>
-            )}
-            {dismissedTaskCount > 0 && <button onClick={onOpenQueueHistory} style={{ ...mono, fontSize: 10, color: T.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginTop: 10 }}>{dismissedTaskCount} dismissed item{dismissedTaskCount === 1 ? '' : 's'} in queue history</button>}
-            {latestIntervention && <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 10 }}>Latest intervention: {latestIntervention.note}</div>}
           </Card>
         </div>
       </div>
@@ -3496,8 +3704,8 @@ export default function App() {
             {role === 'Course Leader' && page === 'entry-workspace' && <LazyEntryWorkspacePage capabilities={capabilities} offeringId={entryOfferingId} kind={entryKind} onBack={handleNavigateBack} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} onRequestUnlock={handleRequestUnlock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onOpenTaskComposer={handleOpenTaskComposer} onUpdateStudentAttendance={handleUpdateStudentAttendance} schemeByOffering={schemeByOffering} ttBlueprintsByOffering={ttBlueprintsByOffering} lockAuditByTarget={lockAuditByTarget} />}
             {role === 'Course Leader' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
 
-            {role === 'Mentor' && page === 'mentees' && <MentorView mentees={assignedMentees} onOpenMentee={handleOpenMentee} />}
-            {role === 'Mentor' && page === 'mentee-detail' && selectedMentee && <MenteeDetailPage mentee={selectedMentee} tasks={roleTasks} onBack={handleNavigateBack} onOpenHistory={handleOpenHistoryFromMentee} onOpenQueueHistory={handleOpenQueueHistory} />}
+            {role === 'Mentor' && page === 'mentees' && <MentorView mentees={assignedMentees} tasks={roleTasks} onOpenMentee={handleOpenMentee} />}
+            {role === 'Mentor' && page === 'mentee-detail' && selectedMentee && <MenteeDetailPage mentee={selectedMentee} onBack={handleNavigateBack} onOpenHistory={handleOpenHistoryFromMentee} />}
             {role === 'Mentor' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
             {role === 'Mentor' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
 
