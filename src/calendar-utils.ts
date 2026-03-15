@@ -1,4 +1,14 @@
-import { normalizeDateISO, toDueLabel, type FacultyAccount, type FacultyTimetableClassBlock, type FacultyTimetableTemplate, type SharedTask, type TaskCalendarPlacement, type TimetableSlotDefinition, type Weekday } from './domain'
+import {
+  normalizeDateISO,
+  toDueLabel,
+  type FacultyAccount,
+  type FacultyTimetableClassBlock,
+  type FacultyTimetableTemplate,
+  type SharedTask,
+  type TaskCalendarPlacement,
+  type TimetableSlotDefinition,
+  type Weekday,
+} from './domain'
 import type { Offering } from './data'
 
 export const WEEKDAY_ORDER: Weekday[] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -14,9 +24,25 @@ export const DEFAULT_TIMETABLE_SLOTS: TimetableSlotDefinition[] = [
   { id: 'p8', label: 'P8', startTime: '15:40', endTime: '16:30' },
 ]
 
-type MonthCell = {
+export const MIN_EVENT_DURATION_MINUTES = 20
+export const DEFAULT_TASK_DURATION_MINUTES = 50
+export const DEFAULT_DAY_START_MINUTES: number = timeStringToMinutes(DEFAULT_TIMETABLE_SLOTS[0].startTime)
+export const DEFAULT_DAY_END_MINUTES: number = timeStringToMinutes(DEFAULT_TIMETABLE_SLOTS[DEFAULT_TIMETABLE_SLOTS.length - 1].endTime)
+
+export type MonthCell = {
   dateISO: string
   inCurrentMonth: boolean
+}
+
+export type TimedAgendaLayoutInput = {
+  id: string
+  startMinutes: number
+  endMinutes: number
+}
+
+export type TimedAgendaLayoutResult<T extends TimedAgendaLayoutInput> = T & {
+  lane: number
+  laneCount: number
 }
 
 function parseLocalDate(dateISO: string) {
@@ -47,6 +73,138 @@ function findCellIndex(cells: ReturnType<typeof getSeedCellSequence>, occupied: 
     if (!occupied.has(`${cell.day}::${cell.slotId}`)) return (startIndex + offset) % cells.length
   }
   return startIndex % cells.length
+}
+
+function resolveLegacySlotRange(slotId: string | undefined, slotSpan: number | undefined, slots: TimetableSlotDefinition[]) {
+  if (!slotId) return null
+  const startIndex = slots.findIndex(slot => slot.id === slotId)
+  if (startIndex < 0) return null
+  const span = clampSlotSpan(slotId, Math.max(1, Math.round(slotSpan ?? 1)), slots)
+  const startSlot = slots[startIndex]
+  const endSlot = slots[Math.min(slots.length - 1, startIndex + span - 1)]
+  return {
+    startMinutes: timeStringToMinutes(startSlot.startTime),
+    endMinutes: timeStringToMinutes(endSlot.endTime),
+  }
+}
+
+function resolvePlacementMinutes(placement: TaskCalendarPlacement) {
+  if (placement.placementMode !== 'timed') return { startMinutes: undefined, endMinutes: undefined }
+  const parsedStart = typeof placement.startMinutes === 'number'
+    ? placement.startMinutes
+    : (placement.startTime ? timeStringToMinutes(placement.startTime) : undefined)
+  const parsedEnd = typeof placement.endMinutes === 'number'
+    ? placement.endMinutes
+    : (placement.endTime ? timeStringToMinutes(placement.endTime) : undefined)
+  if (typeof parsedStart === 'number' && typeof parsedEnd === 'number') {
+    return normalizeTimedRange(parsedStart, parsedEnd, DEFAULT_DAY_START_MINUTES, DEFAULT_DAY_END_MINUTES)
+  }
+  const legacyRange = resolveLegacySlotRange(placement.slotId, 1, DEFAULT_TIMETABLE_SLOTS)
+  if (!legacyRange) return { startMinutes: undefined, endMinutes: undefined }
+  return normalizeTimedRange(legacyRange.startMinutes, legacyRange.endMinutes, DEFAULT_DAY_START_MINUTES, DEFAULT_DAY_END_MINUTES)
+}
+
+export function timeStringToMinutes(value?: string): number {
+  if (!value) return DEFAULT_DAY_START_MINUTES
+  const match = /^(\d{2}):(\d{2})$/.exec(value)
+  if (!match) return DEFAULT_DAY_START_MINUTES
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return DEFAULT_DAY_START_MINUTES
+  return (hours * 60) + minutes
+}
+
+export function minutesToTimeString(minutes: number) {
+  const safe = Math.max(0, Math.min(23 * 60 + 59, Math.round(minutes)))
+  const hours = `${Math.floor(safe / 60)}`.padStart(2, '0')
+  const mins = `${safe % 60}`.padStart(2, '0')
+  return `${hours}:${mins}`
+}
+
+export function minutesToDisplayLabel(minutes: number) {
+  const safe = Math.max(0, Math.min(23 * 60 + 59, Math.round(minutes)))
+  const hours24 = Math.floor(safe / 60)
+  const mins = `${safe % 60}`.padStart(2, '0')
+  const suffix = hours24 >= 12 ? 'pm' : 'am'
+  const hours12 = ((hours24 + 11) % 12) + 1
+  return `${hours12}:${mins} ${suffix}`
+}
+
+export function clampMinuteValue(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, Math.round(value)))
+}
+
+export function normalizeTimedRange(startMinutes: number, endMinutes: number, dayStartMinutes: number, dayEndMinutes: number, minimumDuration = MIN_EVENT_DURATION_MINUTES) {
+  const boundedStart = clampMinuteValue(startMinutes, dayStartMinutes, dayEndMinutes - minimumDuration)
+  const boundedEnd = clampMinuteValue(endMinutes, boundedStart + minimumDuration, dayEndMinutes)
+  if ((boundedEnd - boundedStart) < minimumDuration) {
+    return {
+      startMinutes: boundedStart,
+      endMinutes: Math.min(dayEndMinutes, boundedStart + minimumDuration),
+    }
+  }
+  return {
+    startMinutes: boundedStart,
+    endMinutes: boundedEnd,
+  }
+}
+
+export function clampRangeToDayBounds(startMinutes: number, endMinutes: number, dayStartMinutes: number, dayEndMinutes: number, minimumDuration = MIN_EVENT_DURATION_MINUTES) {
+  const duration = Math.max(minimumDuration, Math.round(endMinutes - startMinutes))
+  const clampedStart = clampMinuteValue(startMinutes, dayStartMinutes, dayEndMinutes - duration)
+  return {
+    startMinutes: clampedStart,
+    endMinutes: clampMinuteValue(clampedStart + duration, clampedStart + minimumDuration, dayEndMinutes),
+  }
+}
+
+export function rangeOverlaps(leftStart: number, leftEnd: number, rightStart: number, rightEnd: number) {
+  return leftStart < rightEnd && rightStart < leftEnd
+}
+
+export function buildTimeGuides(dayStartMinutes: number, dayEndMinutes: number, intervalMinutes = 60) {
+  const start = Math.floor(dayStartMinutes / intervalMinutes) * intervalMinutes
+  const guides: number[] = []
+  for (let minute = start; minute <= dayEndMinutes; minute += intervalMinutes) {
+    if (minute >= dayStartMinutes && minute <= dayEndMinutes) guides.push(minute)
+  }
+  if (!guides.includes(dayEndMinutes)) guides.push(dayEndMinutes)
+  return guides
+}
+
+export function assignAgendaLanes<T extends TimedAgendaLayoutInput>(items: T[]): Array<TimedAgendaLayoutResult<T>> {
+  const sorted = [...items].sort((left, right) => {
+    if (left.startMinutes !== right.startMinutes) return left.startMinutes - right.startMinutes
+    if (left.endMinutes !== right.endMinutes) return left.endMinutes - right.endMinutes
+    return left.id.localeCompare(right.id)
+  })
+
+  const output: Array<TimedAgendaLayoutResult<T>> = []
+  let cluster: Array<T & { lane: number }> = []
+  let active: Array<{ lane: number; endMinutes: number }> = []
+
+  const flushCluster = () => {
+    if (cluster.length === 0) return
+    const laneCount = cluster.reduce((max, item) => Math.max(max, item.lane + 1), 1)
+    cluster.forEach(item => output.push({ ...item, laneCount }))
+    cluster = []
+    active = []
+  }
+
+  sorted.forEach(item => {
+    active = active.filter(entry => entry.endMinutes > item.startMinutes)
+    if (cluster.length > 0 && active.length === 0) flushCluster()
+
+    const occupiedLanes = new Set(active.map(entry => entry.lane))
+    let lane = 0
+    while (occupiedLanes.has(lane)) lane += 1
+
+    cluster.push({ ...item, lane })
+    active.push({ lane, endMinutes: item.endMinutes })
+  })
+
+  flushCluster()
+  return output
 }
 
 export function addDaysISO(dateISO: string, delta: number) {
@@ -120,16 +278,16 @@ export function getSlotMap(slots: TimetableSlotDefinition[]) {
   return Object.fromEntries(slots.map(slot => [slot.id, slot])) as Record<string, TimetableSlotDefinition>
 }
 
-export function getSpannedSlotIds(slotId: string, slotSpan: number, slots: TimetableSlotDefinition[]) {
-  const startIndex = slots.findIndex(slot => slot.id === slotId)
-  if (startIndex < 0) return [slotId]
-  return slots.slice(startIndex, startIndex + clampSlotSpan(slotId, slotSpan, slots)).map(slot => slot.id)
-}
-
 export function clampSlotSpan(slotId: string, slotSpan: number, slots: TimetableSlotDefinition[]) {
   const startIndex = slots.findIndex(slot => slot.id === slotId)
   if (startIndex < 0) return 1
   return Math.max(1, Math.min(Math.max(1, Math.round(slotSpan)), slots.length - startIndex))
+}
+
+export function getSpannedSlotIds(slotId: string, slotSpan: number, slots: TimetableSlotDefinition[]) {
+  const startIndex = slots.findIndex(slot => slot.id === slotId)
+  if (startIndex < 0) return [slotId]
+  return slots.slice(startIndex, startIndex + clampSlotSpan(slotId, slotSpan, slots)).map(slot => slot.id)
 }
 
 export function seedFacultyTimetableTemplate(faculty: FacultyAccount, offerings: Offering[]): FacultyTimetableTemplate {
@@ -144,6 +302,7 @@ export function seedFacultyTimetableTemplate(faculty: FacultyAccount, offerings:
       const startIndex = (offeringIndex + (occurrence * sortedOfferings.length)) % cells.length
       const resolvedIndex = findCellIndex(cells, occupied, startIndex)
       const cell = cells[resolvedIndex]
+      const slot = slots.find(item => item.id === cell.slotId) ?? slots[0]
       occupied.add(`${cell.day}::${cell.slotId}`)
       classBlocks.push({
         id: `class-${faculty.facultyId}-${offering.offId}-${occurrence + 1}`,
@@ -154,6 +313,8 @@ export function seedFacultyTimetableTemplate(faculty: FacultyAccount, offerings:
         section: offering.section,
         year: offering.year,
         day: cell.day,
+        startMinutes: timeStringToMinutes(slot.startTime),
+        endMinutes: timeStringToMinutes(slot.endTime),
         slotId: cell.slotId,
         slotSpan: 1,
       })
@@ -163,6 +324,8 @@ export function seedFacultyTimetableTemplate(faculty: FacultyAccount, offerings:
   return {
     facultyId: faculty.facultyId,
     slots,
+    dayStartMinutes: DEFAULT_DAY_START_MINUTES,
+    dayEndMinutes: DEFAULT_DAY_END_MINUTES,
     classBlocks,
     updatedAt: Date.now(),
   }
@@ -176,34 +339,71 @@ export function normalizeFacultyTimetableTemplate(
   if (!template) return seedFacultyTimetableTemplate(faculty, offerings)
   const slotMap = getSlotMap(DEFAULT_TIMETABLE_SLOTS)
   const offeringIds = new Set(offerings.map(offering => offering.offId))
+  const dayStartMinutes = typeof template.dayStartMinutes === 'number' ? template.dayStartMinutes : DEFAULT_DAY_START_MINUTES
+  const dayEndMinutes = typeof template.dayEndMinutes === 'number' ? template.dayEndMinutes : DEFAULT_DAY_END_MINUTES
+
   const classBlocks = template.classBlocks
     .filter(block => offeringIds.has(block.offeringId))
-    .map(block => ({
-      ...block,
-      facultyId: faculty.facultyId,
-      slotId: slotMap[block.slotId] ? block.slotId : DEFAULT_TIMETABLE_SLOTS[0].id,
-      day: WEEKDAY_ORDER.includes(block.day) ? block.day : 'Mon',
-      slotSpan: clampSlotSpan(block.slotId, Math.max(1, Math.min(3, Math.round(block.slotSpan || 1))), DEFAULT_TIMETABLE_SLOTS),
-    }))
+    .map(block => {
+      const legacyRange = resolveLegacySlotRange(block.slotId, block.slotSpan, DEFAULT_TIMETABLE_SLOTS)
+      const rawStart = typeof block.startMinutes === 'number'
+        ? block.startMinutes
+        : (legacyRange?.startMinutes ?? DEFAULT_DAY_START_MINUTES)
+      const rawEnd = typeof block.endMinutes === 'number'
+        ? block.endMinutes
+        : (legacyRange?.endMinutes ?? (rawStart + DEFAULT_TASK_DURATION_MINUTES))
+      const normalizedRange = normalizeTimedRange(rawStart, rawEnd, dayStartMinutes, dayEndMinutes)
+      return {
+        ...block,
+        facultyId: faculty.facultyId,
+        day: WEEKDAY_ORDER.includes(block.day) ? block.day : 'Mon',
+        startMinutes: normalizedRange.startMinutes,
+        endMinutes: normalizedRange.endMinutes,
+        slotId: block.slotId && slotMap[block.slotId] ? block.slotId : undefined,
+        slotSpan: typeof block.slotSpan === 'number' ? Math.max(1, Math.round(block.slotSpan)) : undefined,
+      }
+    })
+
   return {
     facultyId: faculty.facultyId,
     slots: Array.isArray(template.slots) && template.slots.length > 0 ? template.slots : DEFAULT_TIMETABLE_SLOTS,
+    dayStartMinutes,
+    dayEndMinutes: Math.max(dayStartMinutes + MIN_EVENT_DURATION_MINUTES, dayEndMinutes),
     classBlocks: classBlocks.length > 0 ? classBlocks : seedFacultyTimetableTemplate(faculty, offerings).classBlocks,
     updatedAt: template.updatedAt ?? Date.now(),
   }
 }
 
-export function applyPlacementToTask(
-  task: SharedTask,
-  placement: TaskCalendarPlacement,
-  slot?: TimetableSlotDefinition,
-) {
+export function normalizeTaskCalendarPlacement(placement: TaskCalendarPlacement) {
+  const normalizedDate = normalizeDateISO(placement.dateISO) ?? placement.dateISO
+  if (placement.placementMode !== 'timed') {
+    return {
+      ...placement,
+      dateISO: normalizedDate,
+      updatedAt: placement.updatedAt ?? Date.now(),
+    }
+  }
+  const resolvedRange = resolvePlacementMinutes(placement)
+  return {
+    ...placement,
+    dateISO: normalizedDate,
+    startMinutes: resolvedRange.startMinutes,
+    endMinutes: resolvedRange.endMinutes,
+    startTime: typeof resolvedRange.startMinutes === 'number' ? minutesToTimeString(resolvedRange.startMinutes) : placement.startTime,
+    endTime: typeof resolvedRange.endMinutes === 'number' ? minutesToTimeString(resolvedRange.endMinutes) : placement.endTime,
+    updatedAt: placement.updatedAt ?? Date.now(),
+  }
+}
+
+export function applyPlacementToTask(task: SharedTask, placement: TaskCalendarPlacement) {
   const normalizedDate = normalizeDateISO(placement.dateISO) ?? task.dueDateISO
   const nextScheduleMeta = task.scheduleMeta?.mode === 'scheduled'
     ? {
         ...task.scheduleMeta,
         nextDueDateISO: normalizedDate,
-        time: placement.placementMode === 'timed' ? (slot?.startTime ?? placement.startTime ?? task.scheduleMeta.time) : undefined,
+        time: placement.placementMode === 'timed' && typeof placement.startMinutes === 'number'
+          ? minutesToTimeString(placement.startMinutes)
+          : undefined,
       }
     : task.scheduleMeta
   return {
@@ -215,20 +415,43 @@ export function applyPlacementToTask(
   }
 }
 
+export function buildPlacementForRange(input: {
+  taskId: string
+  dateISO: string
+  startMinutes: number
+  endMinutes: number
+  dayStartMinutes?: number
+  dayEndMinutes?: number
+}): TaskCalendarPlacement {
+  const normalizedRange = normalizeTimedRange(
+    input.startMinutes,
+    input.endMinutes,
+    input.dayStartMinutes ?? DEFAULT_DAY_START_MINUTES,
+    input.dayEndMinutes ?? DEFAULT_DAY_END_MINUTES,
+  )
+  return {
+    taskId: input.taskId,
+    dateISO: input.dateISO,
+    placementMode: 'timed',
+    startMinutes: normalizedRange.startMinutes,
+    endMinutes: normalizedRange.endMinutes,
+    startTime: minutesToTimeString(normalizedRange.startMinutes),
+    endTime: minutesToTimeString(normalizedRange.endMinutes),
+    updatedAt: Date.now(),
+  }
+}
+
 export function buildPlacementForSlot(input: {
   taskId: string
   dateISO: string
   slot: TimetableSlotDefinition
 }): TaskCalendarPlacement {
-  return {
+  return buildPlacementForRange({
     taskId: input.taskId,
     dateISO: input.dateISO,
-    placementMode: 'timed',
-    slotId: input.slot.id,
-    startTime: input.slot.startTime,
-    endTime: input.slot.endTime,
-    updatedAt: Date.now(),
-  }
+    startMinutes: timeStringToMinutes(input.slot.startTime),
+    endMinutes: timeStringToMinutes(input.slot.endTime),
+  })
 }
 
 export function buildUntimedPlacement(input: { taskId: string; dateISO: string }): TaskCalendarPlacement {

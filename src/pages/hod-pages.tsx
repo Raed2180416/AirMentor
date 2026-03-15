@@ -71,6 +71,7 @@ export function HodView({
           riskProb: courseRisk.risk,
           actionHint: 'Mentor-generated follow-up task',
           priority: Math.round(courseRisk.risk * 100),
+          dismissal: undefined,
         })))
   }, [])
 
@@ -194,7 +195,12 @@ export function HodView({
                     <TD style={{ ...mono, fontSize: 11 }}>{task.courseCode}</TD>
                     <TD style={{ ...mono, fontSize: 11 }}>{task.title}</TD>
                     <TD style={{ ...mono, fontSize: 11, color: task.due === 'Today' ? T.danger : T.warning }}>{task.due}</TD>
-                    <TD><Chip color={task.status === 'New' ? T.danger : task.status === 'In Progress' ? T.warning : T.blue} size={9}>{task.status}</Chip></TD>
+                    <TD>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <Chip color={task.status === 'New' ? T.danger : task.status === 'In Progress' ? T.warning : T.blue} size={9}>{task.status}</Chip>
+                        {task.dismissal && <Chip color={task.dismissal.kind === 'series' ? T.danger : T.muted} size={9}>{task.dismissal.kind === 'series' ? 'Series dismissed' : 'Dismissed'}</Chip>}
+                      </div>
+                    </TD>
                     <TD><button aria-label={`View ${task.studentName} profile`} title="View profile" onClick={() => {
                       const offering = OFFERINGS.find(item => item.offId === task.offeringId)
                       if (!offering) return

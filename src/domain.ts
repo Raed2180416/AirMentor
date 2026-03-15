@@ -26,6 +26,7 @@ export type ScheduleMeta = {
   time?: string
   customDates?: Array<{ dateISO: string; time?: string }>
   completedDatesISO?: string[]
+  skippedDatesISO?: string[]
   status?: 'active' | 'paused' | 'ended'
   nextDueDateISO?: string
 }
@@ -145,13 +146,17 @@ export type FacultyTimetableClassBlock = {
   section: string
   year: string
   day: Weekday
-  slotId: string
-  slotSpan: number
+  startMinutes: number
+  endMinutes: number
+  slotId?: string
+  slotSpan?: number
 }
 
 export type FacultyTimetableTemplate = {
   facultyId: string
   slots: TimetableSlotDefinition[]
+  dayStartMinutes: number
+  dayEndMinutes: number
   classBlocks: FacultyTimetableClassBlock[]
   updatedAt: number
 }
@@ -160,6 +165,8 @@ export type TaskCalendarPlacement = {
   taskId: string
   dateISO: string
   placementMode: TaskPlacementMode
+  startMinutes?: number
+  endMinutes?: number
   slotId?: string
   startTime?: string
   endTime?: string
@@ -169,12 +176,23 @@ export type TaskCalendarPlacement = {
 export type CalendarPlacementSnapshot = {
   dateISO?: string
   day?: Weekday
+  startMinutes?: number
+  endMinutes?: number
   slotId?: string
   startTime?: string
   endTime?: string
   slotSpan?: number
   placementMode?: TaskPlacementMode
   offeringId?: string
+}
+
+export type TaskDismissalKind = 'task' | 'series'
+
+export type TaskDismissalState = {
+  kind: TaskDismissalKind
+  dismissedAt: number
+  dismissedByFacultyId?: string
+  dismissedDateISO?: string
 }
 
 export type CalendarAuditActionKind =
@@ -256,6 +274,7 @@ export type SharedTask = {
   handoffNote?: string
   resolvedByFacultyId?: string
   scheduleMeta?: ScheduleMeta
+  dismissal?: TaskDismissalState
 }
 
 export type BackendTaskUpsertPayload = {
@@ -272,6 +291,7 @@ export type BackendTaskUpsertPayload = {
   requestNote?: string
   remedialPlan?: RemedialPlan
   scheduleMeta?: ScheduleMeta
+  dismissal?: TaskDismissalState
   createdAt: number
   updatedAt: number
 }
@@ -343,7 +363,7 @@ export function getNextScheduledDate(meta?: ScheduleMeta, currentDateISO?: strin
   const todayISO = toTodayISO()
   const current = normalizeDateISO(currentDateISO) ?? normalizeDateISO(meta.nextDueDateISO) ?? todayISO
   if (meta.preset === 'custom dates') {
-    const completed = new Set(meta.completedDatesISO ?? [])
+    const completed = new Set([...(meta.completedDatesISO ?? []), ...(meta.skippedDatesISO ?? [])])
     return (meta.customDates ?? [])
       .map(item => item.dateISO)
       .filter(date => date >= todayISO && date > current && !completed.has(date))
@@ -351,6 +371,29 @@ export function getNextScheduledDate(meta?: ScheduleMeta, currentDateISO?: strin
   }
   if (!meta.preset) return undefined
   return advanceByPreset(current, meta.preset)
+}
+
+export function isTaskDismissed(task: SharedTask) {
+  return !!task.dismissal
+}
+
+export function canDismissCurrentOccurrence(task: SharedTask) {
+  return task.scheduleMeta?.mode === 'scheduled'
+    && task.scheduleMeta.status !== 'ended'
+    && task.scheduleMeta.status !== 'paused'
+    && !task.dismissal
+    && !!normalizeDateISO(task.dueDateISO)
+    && !!getNextScheduledDate(task.scheduleMeta, task.dueDateISO)
+}
+
+export function isTaskActiveForQueue(task: SharedTask, resolvedTaskIds: Record<string, number>, todayISO = toTodayISO()) {
+  if (resolvedTaskIds[task.id]) return false
+  if (task.dismissal) return false
+  if (task.scheduleMeta?.mode !== 'scheduled') return true
+  if (task.scheduleMeta.status === 'ended' || task.scheduleMeta.status === 'paused') return false
+  const activationDate = normalizeDateISO(task.scheduleMeta.nextDueDateISO) ?? normalizeDateISO(task.dueDateISO)
+  if (!activationDate) return true
+  return activationDate <= todayISO
 }
 
 export function createTransition(input: { action: string; actorRole: QueueTransition['actorRole']; toOwner: Role; note: string; fromOwner?: Role; actorTeacherId?: string }): QueueTransition {
@@ -387,6 +430,7 @@ export function toBackendTaskPayload(task: SharedTask): BackendTaskUpsertPayload
     requestNote: task.requestNote ?? task.unlockRequest?.requestNote,
     remedialPlan: task.remedialPlan,
     scheduleMeta: task.scheduleMeta,
+    dismissal: task.dismissal,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt ?? task.createdAt,
   }

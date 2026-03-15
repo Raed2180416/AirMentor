@@ -27,7 +27,7 @@ import {
   type TermTestBlueprint,
   type ThemeMode,
 } from './domain'
-import { normalizeFacultyTimetableTemplate } from './calendar-utils'
+import { normalizeFacultyTimetableTemplate, normalizeTaskCalendarPlacement } from './calendar-utils'
 import {
   getEntryLockMap,
   normalizeBlueprint,
@@ -120,6 +120,7 @@ function normalizePersistedTask(task: Partial<SharedTask>): SharedTask {
     handoffNote: task.handoffNote,
     resolvedByFacultyId: task.resolvedByFacultyId,
     scheduleMeta: task.scheduleMeta,
+    dismissal: task.dismissal,
   }
 }
 
@@ -313,7 +314,10 @@ export function createLocalAirMentorRepositories(storage?: JsonStorage): AirMent
         })) as Record<string, FacultyTimetableTemplate>
       },
       getTaskPlacementsSnapshot() {
-        return readJson(resolvedStorage, AIRMENTOR_STORAGE_KEYS.taskPlacements, {} as Record<string, TaskCalendarPlacement>)
+        const parsed = readJson(resolvedStorage, AIRMENTOR_STORAGE_KEYS.taskPlacements, {} as Record<string, TaskCalendarPlacement>)
+        return Object.fromEntries(
+          Object.entries(parsed).map(([taskId, placement]) => [taskId, normalizeTaskCalendarPlacement(placement)]),
+        ) as Record<string, TaskCalendarPlacement>
       },
       getCalendarAuditSnapshot() {
         return readJson(resolvedStorage, AIRMENTOR_STORAGE_KEYS.calendarAudit, [] as CalendarAuditEvent[])

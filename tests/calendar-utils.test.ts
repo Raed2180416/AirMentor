@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { FACULTY, OFFERINGS } from '../src/data'
 import type { SharedTask } from '../src/domain'
 import {
+  assignAgendaLanes,
   DEFAULT_TIMETABLE_SLOTS,
   applyPlacementToTask,
+  buildPlacementForRange,
   buildPlacementForSlot,
   buildUntimedPlacement,
   getSpannedSlotIds,
   getWeekDates,
+  minutesToTimeString,
   seedFacultyTimetableTemplate,
   startOfWeekISO,
 } from '../src/calendar-utils'
@@ -89,6 +92,38 @@ describe('calendar utils', () => {
       '2026-03-19',
       '2026-03-20',
       '2026-03-21',
+    ])
+  })
+
+  it('builds exact-minute placements for freeform timed scheduling', () => {
+    const placement = buildPlacementForRange({
+      taskId: 'task-3',
+      dateISO: '2026-03-19',
+      startMinutes: 545,
+      endMinutes: 615,
+      dayStartMinutes: 480,
+      dayEndMinutes: 1080,
+    })
+
+    expect(placement.startMinutes).toBe(545)
+    expect(placement.endMinutes).toBe(615)
+    expect(placement.startTime).toBe(minutesToTimeString(545))
+    expect(placement.endTime).toBe(minutesToTimeString(615))
+  })
+
+  it('assigns stable side-by-side lanes for overlapping events', () => {
+    const lanes = assignAgendaLanes([
+      { id: 'class-a', startMinutes: 540, endMinutes: 600 },
+      { id: 'task-a', startMinutes: 555, endMinutes: 620 },
+      { id: 'task-b', startMinutes: 560, endMinutes: 610 },
+      { id: 'task-c', startMinutes: 630, endMinutes: 680 },
+    ])
+
+    expect(lanes.map(item => `${item.id}:${item.lane}/${item.laneCount}`)).toEqual([
+      'class-a:0/3',
+      'task-a:1/3',
+      'task-b:2/3',
+      'task-c:0/1',
     ])
   })
 })

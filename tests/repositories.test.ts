@@ -124,7 +124,11 @@ describe('repositories', () => {
     const recoveredPlacements = repositories.calendar.getTaskPlacementsSnapshot()
     const recoveredAudit = repositories.calendar.getCalendarAuditSnapshot()
 
-    expect(recoveredPlacements['task-1']).toEqual(placement)
+    expect(recoveredPlacements['task-1']).toEqual({
+      ...placement,
+      startMinutes: 560,
+      endMinutes: 610,
+    })
     expect(recoveredAudit).toEqual([audit])
   })
 })
