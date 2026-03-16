@@ -243,6 +243,8 @@ function LoginPage({ onLogin }: { onLogin: (facultyId: string) => void }) {
   const [teacherId, setTeacherId] = useState<string>(FACULTY[0]?.facultyId ?? '')
   const [password, setPassword] = useState('')
   const [err, setErr] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const selectedFaculty = FACULTY.find(faculty => faculty.facultyId === teacherId)
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
@@ -256,25 +258,46 @@ function LoginPage({ onLogin }: { onLogin: (facultyId: string) => void }) {
 
   return (
     <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <Card style={{ width: '100%', maxWidth: 420, padding: 24 }} glow={T.accent}>
-        <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: T.text, marginBottom: 6 }}>AirMentor Login</div>
-        <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 16 }}>Use password <span style={{ color: T.accent }}>1234</span> for mock flow.</div>
+      <Card style={{ width: '100%', maxWidth: 440, padding: 24 }} glow={T.accent}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 9, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 12, color: '#fff' }}>AM</div>
+          <div>
+            <div style={{ ...sora, fontWeight: 800, fontSize: 21, color: T.text }}>Welcome Back</div>
+            <div style={{ ...mono, fontSize: 10, color: T.muted }}>Sign in to continue to AirMentor</div>
+          </div>
+        </div>
+        <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 14, background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 10px' }}>
+          Demo password: <span style={{ color: T.accent, fontWeight: 700 }}>1234</span>
+        </div>
 
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: 10 }}>
-            <label htmlFor="teacher-login" style={{ ...mono, fontSize: 10, color: T.muted, display: 'block', marginBottom: 5 }}>Teacher</label>
+            <label htmlFor="teacher-login" style={{ ...mono, fontSize: 10, color: T.muted, display: 'block', marginBottom: 5 }}>Faculty account</label>
             <select id="teacher-login" value={teacherId} onChange={e => setTeacherId(e.target.value)} style={{ width: '100%', ...mono, fontSize: 12, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 7, padding: '9px 10px' }}>
               {FACULTY.map(faculty => <option key={faculty.facultyId} value={faculty.facultyId}>{faculty.name}</option>)}
             </select>
           </div>
 
-          <div style={{ marginBottom: 12 }}>
+          {selectedFaculty && (
+            <div style={{ marginBottom: 10, background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 10px' }}>
+              <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 2 }}>Selected profile</div>
+              <div style={{ ...sora, fontWeight: 700, fontSize: 12, color: T.text }}>{selectedFaculty.name}</div>
+              <div style={{ ...mono, fontSize: 10, color: T.muted }}>{selectedFaculty.dept} · {selectedFaculty.allowedRoles.join(' / ')}</div>
+            </div>
+          )}
+
+          <div style={{ marginBottom: 14 }}>
             <label htmlFor="teacher-password" style={{ ...mono, fontSize: 10, color: T.muted, display: 'block', marginBottom: 5 }}>Password</label>
-            <input id="teacher-password" type="password" value={password} onChange={e => setPassword(e.target.value)} style={{ width: '100%', ...mono, fontSize: 12, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 7, padding: '9px 10px' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input id="teacher-password" type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} style={{ flex: 1, ...mono, fontSize: 12, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 7, padding: '9px 10px' }} />
+              <button type="button" aria-label={showPassword ? 'Hide password' : 'Show password'} title={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword(v => !v)} style={{ height: 34, borderRadius: 7, border: `1px solid ${T.border2}`, background: T.surface2, color: T.muted, cursor: 'pointer', padding: '0 10px', ...mono, fontSize: 10 }}>
+                {showPassword ? 'Hide' : 'Show'}
+              </button>
+            </div>
           </div>
 
           {err && <div style={{ ...mono, fontSize: 11, color: T.danger, marginBottom: 10 }}>{err}</div>}
-          <Btn type="submit"><Shield size={14} /> Login</Btn>
+          <Btn type="submit" size="lg"><Shield size={14} /> Login to Workspace</Btn>
         </form>
       </Card>
     </div>
@@ -1440,6 +1463,14 @@ function MenteeDetailPage({ mentee, onBack, onOpenHistory }: { mentee: Mentee; o
     .filter(r => r.risk >= 0)
     .sort((a, b) => b.risk - a.risk)
     .slice(0, 3)
+  const prioritizedCourseRisks = useMemo(
+    () => [...mentee.courseRisks].filter(risk => risk.risk >= 0).sort((left, right) => right.risk - left.risk),
+    [mentee.courseRisks],
+  )
+  const totalRiskWeight = useMemo(
+    () => prioritizedCourseRisks.reduce((sum, risk) => sum + risk.risk, 0),
+    [prioritizedCourseRisks],
+  )
 
   return (
     <PageShell size="standard">
@@ -1494,13 +1525,14 @@ function MenteeDetailPage({ mentee, onBack, onOpenHistory }: { mentee: Mentee; o
             <div style={{ display: 'grid', gap: 8 }}>
               {riskDrivers.map(driver => {
                 const color = driver.risk >= 0.7 ? T.danger : driver.risk >= 0.35 ? T.warning : T.success
+                const contribution = totalRiskWeight > 0 ? Math.round((driver.risk / totalRiskWeight) * 100) : 0
                 return (
                   <div key={driver.code} style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: '9px 10px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                       <div>
                         <div style={{ ...mono, fontSize: 11, color: T.text }}>{driver.code} · {driver.title}</div>
                         <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>
-                          {driver.risk >= 0.7 ? 'Major contributor' : driver.risk >= 0.35 ? 'Medium contributor' : 'Minor contributor'}
+                          {driver.risk >= 0.7 ? 'Major contributor' : driver.risk >= 0.35 ? 'Medium contributor' : 'Minor contributor'} · ~{contribution}% of current total
                         </div>
                       </div>
                       <div style={{ ...sora, fontWeight: 700, fontSize: 16, color }}>{Math.round(driver.risk * 100)}%</div>
@@ -1553,15 +1585,22 @@ function MenteeDetailPage({ mentee, onBack, onOpenHistory }: { mentee: Mentee; o
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, alignItems: 'start' }}>
         <Card>
-          <div style={{ ...sora, fontWeight: 700, fontSize: 15, color: T.text, marginBottom: 10 }}>Current Course Risk Map</div>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 15, color: T.text, marginBottom: 10 }}>Mentor Priority Queue</div>
           <div style={{ display: 'grid', gap: 10 }}>
-            {mentee.courseRisks.map(risk => {
+            {prioritizedCourseRisks.map((risk, index) => {
               const color = risk.risk >= 0.7 ? T.danger : risk.risk >= 0.35 ? T.warning : risk.risk >= 0 ? T.success : T.dim
+              const guidance = risk.risk >= 0.7
+                ? 'Immediate 1:1 check-in and weekly follow-up'
+                : risk.risk >= 0.5
+                  ? 'Create remedial task and review after next assessment'
+                  : risk.risk >= 0.35
+                    ? 'Monitor attendance and assign targeted practice'
+                    : 'Keep under watch and reinforce consistency'
               return (
                 <div key={risk.code} style={{ background: T.surface2, borderRadius: 8, padding: '10px 12px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
                     <div>
-                      <div style={{ ...sora, fontWeight: 600, fontSize: 13, color: T.text }}>{risk.code}</div>
+                      <div style={{ ...sora, fontWeight: 600, fontSize: 13, color: T.text }}>P{index + 1} · {risk.code}</div>
                       <div style={{ ...mono, fontSize: 10, color: T.muted }}>{risk.title}</div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
@@ -1569,10 +1608,12 @@ function MenteeDetailPage({ mentee, onBack, onOpenHistory }: { mentee: Mentee; o
                       <div style={{ ...mono, fontSize: 9, color: T.dim }}>{risk.risk >= 0 ? `${risk.band} vulnerability` : 'Awaiting data'}</div>
                     </div>
                   </div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, marginBottom: 6 }}>{guidance}</div>
                   <Bar val={risk.risk >= 0 ? risk.risk * 100 : 0} color={color} h={5} />
                 </div>
               )
             })}
+            {prioritizedCourseRisks.length === 0 && <div style={{ ...mono, fontSize: 11, color: T.dim }}>Course priorities will appear once risk inputs are available.</div>}
           </div>
         </Card>
 
