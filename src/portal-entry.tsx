@@ -124,7 +124,7 @@ export function PortalEntryScreen({
           <PortalCard
             eyebrow="Admin"
             title="System Admin Control Plane"
-            body="Use the live backend-backed admin experience for institution setup, faculty and student records, course governance, and request workflow management."
+            body="Use the system-admin experience for institution setup, faculty and student records, course governance, and request workflow management. It runs in mock mode when no admin backend is configured and switches to live backend mode when available."
             actionLabel="Open System Admin"
             accentColor={T.accent}
             icon={Shield}

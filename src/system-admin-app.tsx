@@ -36,8 +36,10 @@ import type {
   ApiStudentRecord,
 } from './api/types'
 import { AIRMENTOR_STORAGE_KEYS, createAirMentorRepositories } from './repositories'
+import { SystemAdminLiveApp } from './system-admin-live-app'
 import { applyThemePreset, isLightTheme } from './theme'
 import { Btn, Card, Chip, PageShell } from './ui-primitives'
+import { SystemAdminMockApp } from './system-admin-mock-app'
 
 type AdminPageId = 'dashboard' | 'setup' | 'faculty' | 'students' | 'courses' | 'requests'
 
@@ -171,7 +173,7 @@ function EmptyState({ title, body }: { title: string; body: string }) {
   )
 }
 
-export function SystemAdminApp({ onExitPortal }: SystemAdminAppProps = {}) {
+export function RemoteSystemAdminApp({ onExitPortal }: SystemAdminAppProps = {}) {
   const apiBaseUrl = import.meta.env.VITE_AIRMENTOR_API_BASE_URL?.trim() || 'http://127.0.0.1:4000'
   const apiClient = useMemo(() => new AirMentorApiClient(apiBaseUrl), [apiBaseUrl])
   const repositories = useMemo(() => createAirMentorRepositories({
@@ -564,6 +566,7 @@ export function SystemAdminApp({ onExitPortal }: SystemAdminAppProps = {}) {
         const current = adminData.departments.find(item => item.departmentId === selectedDepartmentId)
         if (!current) return
         const next = await apiClient.updateDepartment(selectedDepartmentId, {
+          academicFacultyId: current.academicFacultyId,
           code: departmentForm.code,
           name: departmentForm.name,
           status: departmentForm.status,
@@ -576,6 +579,7 @@ export function SystemAdminApp({ onExitPortal }: SystemAdminAppProps = {}) {
         setFlashMessage('Department updated.')
       } else {
         const created = await apiClient.createDepartment({
+          academicFacultyId: null,
           code: departmentForm.code,
           name: departmentForm.name,
           status: departmentForm.status,
@@ -1529,4 +1533,10 @@ export function SystemAdminApp({ onExitPortal }: SystemAdminAppProps = {}) {
       ) : null}
     </div>
   )
+}
+
+export function SystemAdminApp(props: SystemAdminAppProps = {}) {
+  const apiBaseUrl = import.meta.env.VITE_AIRMENTOR_API_BASE_URL?.trim() || ''
+  if (!apiBaseUrl) return <SystemAdminMockApp {...props} />
+  return <SystemAdminLiveApp apiBaseUrl={apiBaseUrl} {...props} />
 }

@@ -75,9 +75,22 @@ export type ApiInstitution = {
   updatedAt: string
 }
 
+export type ApiAcademicFaculty = {
+  academicFacultyId: string
+  institutionId: string
+  code: string
+  name: string
+  overview: string | null
+  status: string
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
 export type ApiDepartment = {
   departmentId: string
   institutionId: string
+  academicFacultyId: string | null
   code: string
   name: string
   status: string
@@ -93,6 +106,33 @@ export type ApiBranch = {
   name: string
   programLevel: string
   semesterCount: number
+  status: string
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type ApiBatch = {
+  batchId: string
+  branchId: string
+  admissionYear: number
+  batchLabel: string
+  currentSemester: number
+  sectionLabels: string[]
+  status: string
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type ApiAcademicTerm = {
+  termId: string
+  branchId: string
+  batchId: string | null
+  academicYearLabel: string
+  semesterNumber: number
+  startDate: string
+  endDate: string
   status: string
   version: number
   createdAt: string
@@ -168,6 +208,23 @@ export type ApiStudentRecord = {
   version: number
   createdAt: string
   updatedAt: string
+  currentCgpa: number
+  activeAcademicContext: {
+    enrollmentId: string
+    branchId: string
+    branchName: string | null
+    departmentId: string | null
+    departmentName: string | null
+    termId: string
+    academicYearLabel: string | null
+    semesterNumber: number | null
+    sectionCode: string
+    batchId: string | null
+    batchLabel: string | null
+    admissionYear: number | null
+    academicStatus: string
+  } | null
+  activeMentorAssignment: ApiMentorAssignment | null
   enrollments: ApiStudentEnrollment[]
   mentorAssignments: ApiMentorAssignment[]
 }
@@ -183,6 +240,102 @@ export type ApiCourse = {
   version: number
   createdAt: string
   updatedAt: string
+}
+
+export type ApiCurriculumCourse = {
+  curriculumCourseId: string
+  batchId: string
+  semesterNumber: number
+  courseId: string | null
+  courseCode: string
+  title: string
+  credits: number
+  status: string
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type ApiGradeBand = {
+  grade: string
+  minimumMark: number
+  maximumMark: number
+  gradePoint: number
+}
+
+export type ApiPolicyPayload = {
+  gradeBands?: ApiGradeBand[]
+  ceSeeSplit?: {
+    ce: number
+    see: number
+  }
+  ceComponentCaps?: {
+    termTestsWeight: number
+    quizWeight: number
+    assignmentWeight: number
+    maxTermTests: number
+    maxQuizzes: number
+    maxAssignments: number
+  }
+  workingCalendar?: {
+    days: Array<'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat' | 'Sun'>
+    dayStart: string
+    dayEnd: string
+  }
+  sgpaCgpaRules?: {
+    sgpaModel: 'credit-weighted'
+    cgpaModel: 'credit-weighted-cumulative'
+    rounding: '2-decimal'
+    includeFailedCredits: boolean
+    repeatedCoursePolicy: 'latest-attempt' | 'best-attempt'
+  }
+}
+
+export type ApiPolicyOverride = {
+  policyOverrideId: string
+  scopeType: 'institution' | 'academic-faculty' | 'department' | 'branch' | 'batch'
+  scopeId: string
+  policy: ApiPolicyPayload
+  status: string
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type ApiResolvedBatchPolicy = {
+  batch: ApiBatch
+  scopeChain: Array<{
+    scopeType: 'institution' | 'academic-faculty' | 'department' | 'branch' | 'batch'
+    scopeId: string
+  }>
+  appliedOverrides: Array<ApiPolicyOverride & { appliedAtScope: string }>
+  effectivePolicy: {
+    gradeBands: ApiGradeBand[]
+    ceSeeSplit: {
+      ce: number
+      see: number
+    }
+    ceComponentCaps: {
+      termTestsWeight: number
+      quizWeight: number
+      assignmentWeight: number
+      maxTermTests: number
+      maxQuizzes: number
+      maxAssignments: number
+    }
+    workingCalendar: {
+      days: Array<'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat' | 'Sun'>
+      dayStart: string
+      dayEnd: string
+    }
+    sgpaCgpaRules: {
+      sgpaModel: 'credit-weighted'
+      cgpaModel: 'credit-weighted-cumulative'
+      rounding: '2-decimal'
+      includeFailedCredits: boolean
+      repeatedCoursePolicy: 'latest-attempt' | 'best-attempt'
+    }
+  }
 }
 
 export type ApiTargetEntityRef = {

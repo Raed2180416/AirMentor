@@ -1,19 +1,25 @@
 import type {
   ApiAcademicBootstrap,
+  ApiAcademicFaculty,
   ApiAcademicLoginFaculty,
+  ApiAcademicTerm,
   ApiAcademicRuntimeKey,
   ApiAdminRequestDetail,
   ApiAdminRequestNote,
   ApiAdminRequestSummary,
   ApiAdminOffering,
   ApiAuditEvent,
+  ApiBatch,
   ApiBranch,
   ApiCourse,
+  ApiCurriculumCourse,
   ApiDepartment,
   ApiFacultyRecord,
   ApiInstitution,
   ApiLoginRequest,
   ApiOfferingOwnership,
+  ApiPolicyOverride,
+  ApiResolvedBatchPolicy,
   ApiSessionResponse,
   ApiStudentRecord,
   ApiUiPreferences,
@@ -42,17 +48,33 @@ export interface AirMentorApiClientLike {
   saveUiPreferences(payload: Pick<ApiUiPreferences, 'themeMode' | 'version'>): Promise<ApiUiPreferences>
   getInstitution(): Promise<ApiInstitution>
   updateInstitution(payload: Pick<ApiInstitution, 'name' | 'timezone' | 'academicYearStartMonth' | 'status' | 'version'>): Promise<ApiInstitution>
+  listAcademicFaculties(): Promise<{ items: ApiAcademicFaculty[] }>
+  createAcademicFaculty(payload: Pick<ApiAcademicFaculty, 'code' | 'name' | 'overview' | 'status'>): Promise<ApiAcademicFaculty>
+  updateAcademicFaculty(academicFacultyId: string, payload: Pick<ApiAcademicFaculty, 'code' | 'name' | 'overview' | 'status' | 'version'>): Promise<ApiAcademicFaculty>
   listDepartments(): Promise<{ items: ApiDepartment[] }>
-  createDepartment(payload: Pick<ApiDepartment, 'code' | 'name' | 'status'>): Promise<ApiDepartment>
-  updateDepartment(departmentId: string, payload: Pick<ApiDepartment, 'code' | 'name' | 'status' | 'version'>): Promise<ApiDepartment>
+  createDepartment(payload: Pick<ApiDepartment, 'academicFacultyId' | 'code' | 'name' | 'status'>): Promise<ApiDepartment>
+  updateDepartment(departmentId: string, payload: Pick<ApiDepartment, 'academicFacultyId' | 'code' | 'name' | 'status' | 'version'>): Promise<ApiDepartment>
   listBranches(): Promise<{ items: ApiBranch[] }>
   createBranch(payload: Pick<ApiBranch, 'departmentId' | 'code' | 'name' | 'programLevel' | 'semesterCount' | 'status'>): Promise<ApiBranch>
   updateBranch(branchId: string, payload: Pick<ApiBranch, 'departmentId' | 'code' | 'name' | 'programLevel' | 'semesterCount' | 'status' | 'version'>): Promise<ApiBranch>
+  listBatches(): Promise<{ items: ApiBatch[] }>
+  createBatch(payload: Pick<ApiBatch, 'branchId' | 'admissionYear' | 'batchLabel' | 'currentSemester' | 'sectionLabels' | 'status'>): Promise<ApiBatch>
+  updateBatch(batchId: string, payload: Pick<ApiBatch, 'branchId' | 'admissionYear' | 'batchLabel' | 'currentSemester' | 'sectionLabels' | 'status' | 'version'>): Promise<ApiBatch>
+  listTerms(): Promise<{ items: ApiAcademicTerm[] }>
+  createTerm(payload: Pick<ApiAcademicTerm, 'branchId' | 'batchId' | 'academicYearLabel' | 'semesterNumber' | 'startDate' | 'endDate' | 'status'>): Promise<ApiAcademicTerm>
+  updateTerm(termId: string, payload: Pick<ApiAcademicTerm, 'branchId' | 'batchId' | 'academicYearLabel' | 'semesterNumber' | 'startDate' | 'endDate' | 'status' | 'version'>): Promise<ApiAcademicTerm>
   listFaculty(): Promise<{ items: ApiFacultyRecord[] }>
   listStudents(): Promise<{ items: ApiStudentRecord[] }>
   listCourses(): Promise<{ items: ApiCourse[] }>
   createCourse(payload: Pick<ApiCourse, 'courseCode' | 'title' | 'defaultCredits' | 'departmentId' | 'status'>): Promise<ApiCourse>
   updateCourse(courseId: string, payload: Pick<ApiCourse, 'courseCode' | 'title' | 'defaultCredits' | 'departmentId' | 'status' | 'version'>): Promise<ApiCourse>
+  listCurriculumCourses(batchId?: string): Promise<{ items: ApiCurriculumCourse[] }>
+  createCurriculumCourse(payload: Pick<ApiCurriculumCourse, 'batchId' | 'semesterNumber' | 'courseId' | 'courseCode' | 'title' | 'credits' | 'status'>): Promise<ApiCurriculumCourse>
+  updateCurriculumCourse(curriculumCourseId: string, payload: Pick<ApiCurriculumCourse, 'batchId' | 'semesterNumber' | 'courseId' | 'courseCode' | 'title' | 'credits' | 'status' | 'version'>): Promise<ApiCurriculumCourse>
+  listPolicyOverrides(filter?: { scopeType?: ApiPolicyOverride['scopeType']; scopeId?: string }): Promise<{ items: ApiPolicyOverride[] }>
+  createPolicyOverride(payload: Pick<ApiPolicyOverride, 'scopeType' | 'scopeId' | 'policy' | 'status'>): Promise<ApiPolicyOverride>
+  updatePolicyOverride(policyOverrideId: string, payload: Pick<ApiPolicyOverride, 'scopeType' | 'scopeId' | 'policy' | 'status' | 'version'>): Promise<ApiPolicyOverride>
+  getResolvedBatchPolicy(batchId: string): Promise<ApiResolvedBatchPolicy>
   listOfferings(): Promise<{ items: ApiAdminOffering[] }>
   createOffering(payload: {
     courseId: string
@@ -186,18 +208,36 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     })
   }
 
+  async listAcademicFaculties() {
+    return this.request<{ items: ApiAcademicFaculty[] }>('/api/admin/academic-faculties')
+  }
+
+  async createAcademicFaculty(payload: Pick<ApiAcademicFaculty, 'code' | 'name' | 'overview' | 'status'>) {
+    return this.request<ApiAcademicFaculty>('/api/admin/academic-faculties', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async updateAcademicFaculty(academicFacultyId: string, payload: Pick<ApiAcademicFaculty, 'code' | 'name' | 'overview' | 'status' | 'version'>) {
+    return this.request<ApiAcademicFaculty>(`/api/admin/academic-faculties/${academicFacultyId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  }
+
   async listDepartments() {
     return this.request<{ items: ApiDepartment[] }>('/api/admin/departments')
   }
 
-  async createDepartment(payload: Pick<ApiDepartment, 'code' | 'name' | 'status'>) {
+  async createDepartment(payload: Pick<ApiDepartment, 'academicFacultyId' | 'code' | 'name' | 'status'>) {
     return this.request<ApiDepartment>('/api/admin/departments', {
       method: 'POST',
       body: JSON.stringify(payload),
     })
   }
 
-  async updateDepartment(departmentId: string, payload: Pick<ApiDepartment, 'code' | 'name' | 'status' | 'version'>) {
+  async updateDepartment(departmentId: string, payload: Pick<ApiDepartment, 'academicFacultyId' | 'code' | 'name' | 'status' | 'version'>) {
     return this.request<ApiDepartment>(`/api/admin/departments/${departmentId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
@@ -217,6 +257,42 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
 
   async updateBranch(branchId: string, payload: Pick<ApiBranch, 'departmentId' | 'code' | 'name' | 'programLevel' | 'semesterCount' | 'status' | 'version'>) {
     return this.request<ApiBranch>(`/api/admin/branches/${branchId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async listBatches() {
+    return this.request<{ items: ApiBatch[] }>('/api/admin/batches')
+  }
+
+  async createBatch(payload: Pick<ApiBatch, 'branchId' | 'admissionYear' | 'batchLabel' | 'currentSemester' | 'sectionLabels' | 'status'>) {
+    return this.request<ApiBatch>('/api/admin/batches', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async updateBatch(batchId: string, payload: Pick<ApiBatch, 'branchId' | 'admissionYear' | 'batchLabel' | 'currentSemester' | 'sectionLabels' | 'status' | 'version'>) {
+    return this.request<ApiBatch>(`/api/admin/batches/${batchId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async listTerms() {
+    return this.request<{ items: ApiAcademicTerm[] }>('/api/admin/terms')
+  }
+
+  async createTerm(payload: Pick<ApiAcademicTerm, 'branchId' | 'batchId' | 'academicYearLabel' | 'semesterNumber' | 'startDate' | 'endDate' | 'status'>) {
+    return this.request<ApiAcademicTerm>('/api/admin/terms', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async updateTerm(termId: string, payload: Pick<ApiAcademicTerm, 'branchId' | 'batchId' | 'academicYearLabel' | 'semesterNumber' | 'startDate' | 'endDate' | 'status' | 'version'>) {
+    return this.request<ApiAcademicTerm>(`/api/admin/terms/${termId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })
@@ -246,6 +322,53 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })
+  }
+
+  async listCurriculumCourses(batchId?: string) {
+    const searchParams = new URLSearchParams()
+    if (batchId) searchParams.set('batchId', batchId)
+    const query = searchParams.toString()
+    return this.request<{ items: ApiCurriculumCourse[] }>(`/api/admin/curriculum-courses${query ? `?${query}` : ''}`)
+  }
+
+  async createCurriculumCourse(payload: Pick<ApiCurriculumCourse, 'batchId' | 'semesterNumber' | 'courseId' | 'courseCode' | 'title' | 'credits' | 'status'>) {
+    return this.request<ApiCurriculumCourse>('/api/admin/curriculum-courses', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async updateCurriculumCourse(curriculumCourseId: string, payload: Pick<ApiCurriculumCourse, 'batchId' | 'semesterNumber' | 'courseId' | 'courseCode' | 'title' | 'credits' | 'status' | 'version'>) {
+    return this.request<ApiCurriculumCourse>(`/api/admin/curriculum-courses/${curriculumCourseId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async listPolicyOverrides(filter?: { scopeType?: ApiPolicyOverride['scopeType']; scopeId?: string }) {
+    const searchParams = new URLSearchParams()
+    if (filter?.scopeType) searchParams.set('scopeType', filter.scopeType)
+    if (filter?.scopeId) searchParams.set('scopeId', filter.scopeId)
+    const query = searchParams.toString()
+    return this.request<{ items: ApiPolicyOverride[] }>(`/api/admin/policy-overrides${query ? `?${query}` : ''}`)
+  }
+
+  async createPolicyOverride(payload: Pick<ApiPolicyOverride, 'scopeType' | 'scopeId' | 'policy' | 'status'>) {
+    return this.request<ApiPolicyOverride>('/api/admin/policy-overrides', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async updatePolicyOverride(policyOverrideId: string, payload: Pick<ApiPolicyOverride, 'scopeType' | 'scopeId' | 'policy' | 'status' | 'version'>) {
+    return this.request<ApiPolicyOverride>(`/api/admin/policy-overrides/${policyOverrideId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async getResolvedBatchPolicy(batchId: string) {
+    return this.request<ApiResolvedBatchPolicy>(`/api/admin/batches/${batchId}/resolved-policy`)
   }
 
   async listOfferings() {

@@ -5,13 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:live": "bash scripts/dev-live.sh",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test": "vitest run",
     "preview": "vite preview",
     "playwright:version": "nix develop -c playwright --version",
     "playwright:smoke": "bash scripts/playwright-smoke.sh",
-    "playwright:firefox:acceptance": "bash scripts/playwright-firefox-acceptance.sh"
+    "playwright:firefox:acceptance": "bash scripts/playwright-firefox-acceptance.sh",
+    "playwright:admin-mock:acceptance": "bash scripts/playwright-admin-mock-acceptance.sh",
+    "playwright:admin-live:acceptance": "bash scripts/playwright-admin-live-acceptance.sh"
   },
   "dependencies": {
     "framer-motion": "^12.35.2",
