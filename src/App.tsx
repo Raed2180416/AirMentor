@@ -225,12 +225,14 @@ function LoginPage({
   helperText = 'Use password 1234 for mock flow.',
   busy = false,
   externalError = '',
+  onBackToPortal,
   onLogin,
 }: {
   facultyOptions?: Array<{ facultyId: string; name: string }>
   helperText?: string
   busy?: boolean
   externalError?: string
+  onBackToPortal?: () => void
   onLogin: (facultyId: string, password: string) => Promise<void> | void
 }) {
   const [teacherId, setTeacherId] = useState<string>(facultyOptions[0]?.facultyId ?? '')
@@ -274,7 +276,14 @@ function LoginPage({
 
           {err && <div style={{ ...mono, fontSize: 11, color: T.danger, marginBottom: 10 }}>{err}</div>}
           {!!externalError && <div style={{ ...mono, fontSize: 11, color: T.danger, marginBottom: 10 }}>{externalError}</div>}
-          <Btn type="submit" disabled={busy}><Shield size={14} /> {busy ? 'Signing In...' : 'Login'}</Btn>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Btn type="submit" disabled={busy}><Shield size={14} /> {busy ? 'Signing In...' : 'Login'}</Btn>
+            {onBackToPortal && (
+              <Btn type="button" variant="ghost" onClick={onBackToPortal} disabled={busy}>
+                Back to portal selector
+              </Btn>
+            )}
+          </div>
         </form>
       </Card>
     </div>
@@ -3943,6 +3952,7 @@ export function OperationalApp() {
           helperText=""
           busy={authBusy}
           externalError={authError}
+          onBackToPortal={() => navigateToPortal('home')}
           onLogin={handleRemoteLogin}
         />
       )
@@ -3963,6 +3973,7 @@ export function OperationalApp() {
       <LoginPage
         helperText="Use password 1234 for mock flow."
         externalError={authError}
+        onBackToPortal={() => navigateToPortal('home')}
         onLogin={handleLocalLogin}
       />
     )
