@@ -73,7 +73,7 @@ import {
 import { inferKindFromPendingAction } from './page-utils'
 import { AIRMENTOR_STORAGE_KEYS, createAirMentorRepositories, createLocalAirMentorRepositories, type AirMentorRepositories } from './repositories'
 import { PortalEntryScreen } from './portal-entry'
-import { navigateToPortal, parsePortalRoute, type PortalRoute } from './portal-routing'
+import { getPortalHash, navigateToPortal, resolvePortalRoute, type PortalRoute } from './portal-routing'
 import { SystemAdminApp } from './system-admin-app'
 import { applyThemePreset, isLightTheme } from './theme'
 import { Bar, Btn, Card, Chip, PageBackButton, PageShell, RiskBadge, StagePips, UI_TRANSITION_FAST, UI_TRANSITION_MEDIUM } from './ui-primitives'
@@ -3984,16 +3984,22 @@ export function OperationalApp() {
 function PortalRouterApp() {
   const [route, setRoute] = useState<PortalRoute>(() => {
     if (typeof window === 'undefined') return 'home'
-    return parsePortalRoute(window.location.hash)
+    return resolvePortalRoute(window.location.hash, window.localStorage)
   })
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const syncRoute = () => setRoute(parsePortalRoute(window.location.hash))
+    const syncRoute = () => setRoute(resolvePortalRoute(window.location.hash, window.localStorage))
     syncRoute()
     window.addEventListener('hashchange', syncRoute)
     return () => window.removeEventListener('hashchange', syncRoute)
   }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const nextHash = getPortalHash(route)
+    if (window.location.hash !== nextHash) window.location.hash = nextHash
+  }, [route])
 
   if (route === 'app') return <OperationalApp />
   if (route === 'admin') return <SystemAdminApp onExitPortal={() => navigateToPortal('home')} />
