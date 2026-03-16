@@ -238,7 +238,6 @@ function LoginPage({
   const [teacherId, setTeacherId] = useState<string>(facultyOptions[0]?.facultyId ?? '')
   const [password, setPassword] = useState('')
   const [err, setErr] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
   const selectedFaculty = FACULTY.find(faculty => faculty.facultyId === teacherId)
 
   useEffect(() => {
