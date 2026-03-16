@@ -1,0 +1,251 @@
+{
+  "institution": {
+    "institutionId": "inst_msruas",
+    "name": "MS Ramaiah University of Applied Sciences",
+    "timezone": "Asia/Kolkata",
+    "academicYearStartMonth": 8,
+    "status": "active"
+  },
+  "departments": [
+    {
+      "departmentId": "dept_cse",
+      "code": "CSE",
+      "name": "Computer Science and Engineering",
+      "status": "active"
+    }
+  ],
+  "branches": [
+    {
+      "branchId": "branch_cse_btech",
+      "departmentId": "dept_cse",
+      "code": "BTECH-CSE",
+      "name": "B.Tech Computer Science and Engineering",
+      "programLevel": "undergraduate",
+      "semesterCount": 8,
+      "status": "active"
+    }
+  ],
+  "terms": [
+    {
+      "termId": "term_2026_odd_sem4",
+      "branchId": "branch_cse_btech",
+      "academicYearLabel": "2026-27",
+      "semesterNumber": 4,
+      "startDate": "2026-08-01",
+      "endDate": "2026-12-15",
+      "status": "active"
+    }
+  ],
+  "faculty": [
+    {
+      "userId": "user_sysadmin",
+      "facultyId": "fac_sysadmin",
+      "username": "sysadmin",
+      "email": "sysadmin@msruas.ac.in",
+      "phone": "+91-9000000001",
+      "employeeCode": "EMP-0001",
+      "displayName": "System Admin",
+      "designation": "Administrator",
+      "joinedOn": "2024-01-01",
+      "status": "active",
+      "password": "admin1234",
+      "appointments": [
+        {
+          "appointmentId": "appt_sysadmin_cse",
+          "departmentId": "dept_cse",
+          "branchId": "branch_cse_btech",
+          "isPrimary": true,
+          "startDate": "2024-01-01",
+          "status": "active"
+        }
+      ],
+      "roleGrants": [
+        {
+          "grantId": "grant_sysadmin_global",
+          "roleCode": "SYSTEM_ADMIN",
+          "scopeType": "institution",
+          "scopeId": "inst_msruas",
+          "startDate": "2024-01-01",
+          "status": "active"
+        },
+        {
+          "grantId": "grant_sysadmin_hod_cse",
+          "roleCode": "HOD",
+          "scopeType": "department",
+          "scopeId": "dept_cse",
+          "startDate": "2024-01-01",
+          "status": "active"
+        }
+      ]
+    },
+    {
+      "userId": "user_hod_cse",
+      "facultyId": "fac_hod_cse",
+      "username": "hod.cse",
+      "email": "hod.cse@msruas.ac.in",
+      "phone": "+91-9000000002",
+      "employeeCode": "EMP-0002",
+      "displayName": "Dr. Kavitha Rao",
+      "designation": "Professor and HoD",
+      "joinedOn": "2020-06-01",
+      "status": "active",
+      "password": "hod1234",
+      "appointments": [
+        {
+          "appointmentId": "appt_hod_cse",
+          "departmentId": "dept_cse",
+          "branchId": "branch_cse_btech",
+          "isPrimary": true,
+          "startDate": "2020-06-01",
+          "status": "active"
+        }
+      ],
+      "roleGrants": [
+        {
+          "grantId": "grant_hod_cse",
+          "roleCode": "HOD",
+          "scopeType": "department",
+          "scopeId": "dept_cse",
+          "startDate": "2024-01-01",
+          "status": "active"
+        }
+      ]
+    },
+    {
+      "userId": "user_course_leader",
+      "facultyId": "fac_course_leader",
+      "username": "cl.kavitha",
+      "email": "course.leader@msruas.ac.in",
+      "phone": "+91-9000000003",
+      "employeeCode": "EMP-0003",
+      "displayName": "Dr. Rajesh Bhat",
+      "designation": "Associate Professor",
+      "joinedOn": "2021-06-01",
+      "status": "active",
+      "password": "course1234",
+      "appointments": [
+        {
+          "appointmentId": "appt_cl_cse",
+          "departmentId": "dept_cse",
+          "branchId": "branch_cse_btech",
+          "isPrimary": true,
+          "startDate": "2021-06-01",
+          "status": "active"
+        }
+      ],
+      "roleGrants": [
+        {
+          "grantId": "grant_cl_cse",
+          "roleCode": "COURSE_LEADER",
+          "scopeType": "department",
+          "scopeId": "dept_cse",
+          "startDate": "2024-01-01",
+          "status": "active"
+        }
+      ]
+    },
+    {
+      "userId": "user_mentor",
+      "facultyId": "fac_mentor",
+      "username": "mentor.sneha",
+      "email": "mentor@msruas.ac.in",
+      "phone": "+91-9000000004",
+      "employeeCode": "EMP-0004",
+      "displayName": "Prof. Sneha Nair",
+      "designation": "Assistant Professor",
+      "joinedOn": "2022-06-01",
+      "status": "active",
+      "password": "mentor1234",
+      "appointments": [
+        {
+          "appointmentId": "appt_mentor_cse",
+          "departmentId": "dept_cse",
+          "branchId": "branch_cse_btech",
+          "isPrimary": true,
+          "startDate": "2022-06-01",
+          "status": "active"
+        }
+      ],
+      "roleGrants": [
+        {
+          "grantId": "grant_mentor_cse",
+          "roleCode": "MENTOR",
+          "scopeType": "department",
+          "scopeId": "dept_cse",
+          "startDate": "2024-01-01",
+          "status": "active"
+        }
+      ]
+    }
+  ],
+  "students": [
+    {
+      "studentId": "student_001",
+      "usn": "1MS23CS001",
+      "rollNumber": "23CS001",
+      "name": "Aarav Sharma",
+      "email": "aarav.sharma@example.edu",
+      "phone": "+91-9001000001",
+      "admissionDate": "2023-08-01",
+      "status": "active",
+      "enrollments": [
+        {
+          "enrollmentId": "enrollment_001",
+          "branchId": "branch_cse_btech",
+          "termId": "term_2026_odd_sem4",
+          "sectionCode": "A",
+          "academicStatus": "active",
+          "startDate": "2026-08-01"
+        }
+      ],
+      "mentorAssignments": [
+        {
+          "assignmentId": "assignment_001",
+          "facultyId": "fac_mentor",
+          "effectiveFrom": "2026-08-01",
+          "source": "manual"
+        }
+      ]
+    }
+  ],
+  "courses": [
+    {
+      "courseId": "course_cs401",
+      "courseCode": "CS401",
+      "title": "Design and Analysis of Algorithms",
+      "defaultCredits": 4,
+      "departmentId": "dept_cse",
+      "status": "active"
+    }
+  ],
+  "adminRequests": [
+    {
+      "adminRequestId": "request_001",
+      "requestType": "faculty role or mapping update",
+      "scopeType": "department",
+      "scopeId": "dept_cse",
+      "targetEntityRefs": [
+        {
+          "entityType": "faculty_profile",
+          "entityId": "fac_mentor"
+        }
+      ],
+      "priority": "P2",
+      "status": "New",
+      "requestedByRole": "HOD",
+      "requestedByFacultyId": "fac_hod_cse",
+      "ownedByRole": "SYSTEM_ADMIN",
+      "ownedByFacultyId": "fac_sysadmin",
+      "summary": "Grant additional mentor mapping coverage",
+      "details": "Need temporary mentor reassignment capacity for section A.",
+      "notesThreadId": "request_001",
+      "dueAt": "2026-03-18T17:00:00.000Z",
+      "slaPolicyCode": "P2_STANDARD",
+      "decision": null,
+      "payload": {
+        "requestedGrant": "MENTOR",
+        "reason": "Expanded load coverage"
+      }
+    }
+  ]
+}
