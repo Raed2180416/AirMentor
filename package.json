@@ -19,7 +19,8 @@
     "playwright:smoke": "bash scripts/playwright-smoke.sh",
     "playwright:firefox:acceptance": "bash scripts/playwright-firefox-acceptance.sh",
     "playwright:admin-mock:acceptance": "bash scripts/playwright-admin-mock-acceptance.sh",
-    "playwright:admin-live:acceptance": "bash scripts/playwright-admin-live-acceptance.sh"
+    "playwright:admin-live:acceptance": "bash scripts/playwright-admin-live-acceptance.sh",
+    "playwright:admin-live:request-flow": "bash scripts/playwright-admin-live-request-flow.sh"
   },
   "dependencies": {
     "framer-motion": "^12.35.2",

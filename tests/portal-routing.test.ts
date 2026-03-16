@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clearPortalWorkspaceHints, getPortalHash, navigateToPortal, parsePortalRoute, resolvePortalRoute } from '../src/portal-routing'
+import { clearPortalWorkspaceHints, getPortalHash, hashBelongsToPortalRoute, navigateToPortal, parsePortalRoute, resolvePortalRoute } from '../src/portal-routing'
 
 describe('portal routing', () => {
   it('parses supported hash routes', () => {
@@ -33,6 +33,12 @@ describe('portal routing', () => {
     expect(getPortalHash('home')).toBe('#/')
     expect(getPortalHash('app')).toBe('#/app')
     expect(getPortalHash('admin')).toBe('#/admin')
+  })
+
+  it('recognizes sub-routes as belonging to their portal workspace', () => {
+    expect(hashBelongsToPortalRoute('#/admin/requests/request_001', 'admin')).toBe(true)
+    expect(hashBelongsToPortalRoute('#/app/calendar', 'app')).toBe(true)
+    expect(hashBelongsToPortalRoute('#/admin/requests/request_001', 'app')).toBe(false)
   })
 
   it('navigates by mutating the location hash', () => {

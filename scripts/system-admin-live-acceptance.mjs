@@ -28,18 +28,32 @@ async function expectFlash(message) {
 }
 
 async function clickTab(name) {
-  await page.getByRole('button', { name, exact: true }).click()
+  await page.getByRole('button', { name, exact: true }).first().click()
+}
+
+async function findVisibleRequestAction() {
+  for (const action of ['Take Review', 'Approve', 'Mark Implemented', 'Close']) {
+    const button = page.getByRole('button', { name: action, exact: true })
+    if (await button.isVisible().catch(() => false)) return { action, button }
+  }
+  return null
 }
 
 async function advanceRequestToClosed() {
-  const orderedActions = ['Take Review', 'Approve', 'Mark Implemented', 'Close']
+  for (let step = 0; step < 6; step += 1) {
+    const closedStatus = page.getByText(/^Closed$/).first()
+    if (await closedStatus.isVisible().catch(() => false)) return
 
-  for (const action of orderedActions) {
-    const button = page.getByRole('button', { name: action, exact: true })
-    if (await button.count()) {
-      await button.click()
-      await expectFlash('Request advanced.')
-    }
+    const nextAction = await findVisibleRequestAction()
+    assert(nextAction, 'Expected a visible request action button before closure')
+
+    await nextAction.button.click()
+    await expectFlash('Request advanced.')
+    await page.waitForFunction((previousAction) => {
+      const hasClosed = Array.from(document.querySelectorAll('*')).some(node => node.textContent?.trim() === 'Closed')
+      if (hasClosed) return true
+      return !Array.from(document.querySelectorAll('button')).some(button => button.textContent?.trim() === previousAction)
+    }, nextAction.action)
   }
 
   await expectVisible(page.getByText(/^Closed$/).first(), 'closed request status')

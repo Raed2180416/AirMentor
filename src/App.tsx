@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState, useMemo, useCallback, useEffect, useRef, type FormEvent } from 'react'
+import { Suspense, lazy, useState, useMemo, useCallback, useEffect, useRef, type FormEvent, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   Bell, Calendar, CheckCircle, ChevronRight,
@@ -73,7 +73,7 @@ import {
 import { inferKindFromPendingAction } from './page-utils'
 import { AIRMENTOR_STORAGE_KEYS, createAirMentorRepositories, createLocalAirMentorRepositories, type AirMentorRepositories } from './repositories'
 import { PortalEntryScreen } from './portal-entry'
-import { clearPortalWorkspaceHints, getPortalHash, navigateToPortal, resolvePortalRoute, type PortalRoute } from './portal-routing'
+import { clearPortalWorkspaceHints, getPortalHash, hashBelongsToPortalRoute, navigateToPortal, resolvePortalRoute, type PortalRoute } from './portal-routing'
 import { SystemAdminApp } from './system-admin-app'
 import { applyThemePreset, isLightTheme } from './theme'
 import { Bar, Btn, Card, Chip, PageBackButton, PageShell, RiskBadge, StagePips, UI_TRANSITION_FAST, UI_TRANSITION_MEDIUM } from './ui-primitives'
@@ -220,9 +220,45 @@ function buildHistoryProfile(input: { student?: Student | null; mentee?: Mentee 
   return null
 }
 
+function AuthFieldLabel({ children }: { children: string }) {
+  return <label style={{ ...mono, fontSize: 10, color: T.muted, display: 'block', marginBottom: 6 }}>{children}</label>
+}
+
+function AuthInput(props: InputHTMLAttributes<HTMLInputElement>) {
+  return <input {...props} style={{ width: '100%', ...mono, fontSize: 11, borderRadius: 10, border: `1px solid ${T.border2}`, background: T.surface2, color: T.text, padding: '10px 12px', ...(props.style ?? {}) }} />
+}
+
+function AuthSelect(props: SelectHTMLAttributes<HTMLSelectElement>) {
+  return <select {...props} style={{ width: '100%', ...mono, fontSize: 11, borderRadius: 10, border: `1px solid ${T.border2}`, background: T.surface2, color: T.text, padding: '10px 12px', ...(props.style ?? {}) }} />
+}
+
+function AuthNotice({ message, tone = 'neutral' }: { message: string; tone?: 'neutral' | 'error' | 'success' }) {
+  const color = tone === 'error' ? T.danger : tone === 'success' ? T.success : T.accent
+  return <div style={{ ...mono, fontSize: 11, color, border: `1px solid ${color}40`, background: `${color}12`, borderRadius: 10, padding: '10px 12px' }}>{message}</div>
+}
+
+function AuthHeroPill({ children, color = T.accent }: { children: ReactNode; color?: string }) {
+  return (
+    <span style={{ ...mono, fontSize: 10, color, border: `1px solid ${color}30`, background: `${color}12`, borderRadius: 999, padding: '6px 10px', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      {children}
+    </span>
+  )
+}
+
+function AuthHeroFeature({ title, body, color }: { title: string; body: string; color: string }) {
+  return (
+    <div style={{ borderRadius: 18, padding: 16, background: `${color}10`, border: `1px solid ${color}22`, boxShadow: `0 18px 40px ${color}10` }}>
+      <div style={{ ...mono, fontSize: 10, color, textTransform: 'uppercase', letterSpacing: '0.12em' }}>{title}</div>
+      <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 8, lineHeight: 1.8 }}>{body}</div>
+    </div>
+  )
+}
+
 function LoginPage({
   facultyOptions = FACULTY.map(faculty => ({ facultyId: faculty.facultyId, name: faculty.name })),
   helperText = 'Use password 1234 for mock flow.',
+  modeLabel = 'Teaching Workspace',
+  heroBody = 'Use the academic portal for course delivery, mentor follow-up, grading operations, and timetable-aware teaching workflows.',
   busy = false,
   externalError = '',
   onBackToPortal,
@@ -230,6 +266,8 @@ function LoginPage({
 }: {
   facultyOptions?: Array<{ facultyId: string; name: string }>
   helperText?: string
+  modeLabel?: string
+  heroBody?: string
   busy?: boolean
   externalError?: string
   onBackToPortal?: () => void
@@ -239,6 +277,7 @@ function LoginPage({
   const [password, setPassword] = useState('')
   const [err, setErr] = useState('')
   const selectedFaculty = FACULTY.find(faculty => faculty.facultyId === teacherId)
+  const selectedOption = facultyOptions.find(option => option.facultyId === teacherId) ?? null
 
   useEffect(() => {
     if (!facultyOptions.some(option => option.facultyId === teacherId)) {
@@ -257,45 +296,99 @@ function LoginPage({
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <Card style={{ width: '100%', maxWidth: 420, padding: 24 }} glow={T.accent}>
-        <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: T.text, marginBottom: 6 }}>AirMentor Login</div>
-        {helperText && <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 16 }}>{helperText}</div>}
-
-        <form onSubmit={event => { void handleSubmit(event) }}>
-          <div style={{ marginBottom: 10 }}>
-            <label htmlFor="teacher-login" style={{ ...mono, fontSize: 10, color: T.muted, display: 'block', marginBottom: 5 }}>Teacher</label>
-            <select id="teacher-login" value={teacherId} onChange={e => setTeacherId(e.target.value)} disabled={busy} style={{ width: '100%', ...mono, fontSize: 12, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 7, padding: '9px 10px' }}>
-              {facultyOptions.map(faculty => <option key={faculty.facultyId} value={faculty.facultyId}>{faculty.name}</option>)}
-            </select>
-          </div>
-
-          {selectedFaculty && (
-            <div style={{ marginBottom: 10, background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 10px' }}>
-              <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 2 }}>Selected profile</div>
-              <div style={{ ...sora, fontWeight: 700, fontSize: 12, color: T.text }}>{selectedFaculty.name}</div>
-              <div style={{ ...mono, fontSize: 10, color: T.muted }}>{selectedFaculty.dept} · {selectedFaculty.allowedRoles.join(' / ')}</div>
+    <PageShell size="wide" style={{ paddingTop: 40 }}>
+      <div style={{ minHeight: 'calc(100vh - 80px)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24, alignItems: 'stretch' }}>
+        <Card
+          style={{
+            padding: 28,
+            background: `radial-gradient(circle at top left, ${T.success}20, transparent 34%), radial-gradient(circle at bottom right, ${T.accent}16, transparent 26%), linear-gradient(160deg, ${T.surface}, ${T.surface2})`,
+            display: 'grid',
+            alignContent: 'space-between',
+            minHeight: 520,
+          }}
+          glow={T.success}
+        >
+          <div style={{ display: 'grid', gap: 18 }}>
+            <AuthHeroPill color={T.success}>
+              <BookOpen size={12} />
+              {modeLabel}
+            </AuthHeroPill>
+            <div>
+              <div style={{ ...sora, fontSize: 42, fontWeight: 800, color: T.text, lineHeight: 1.02, maxWidth: 560 }}>
+                Teach, mentor, and run daily academic operations from one place.
+              </div>
+              <div style={{ ...mono, fontSize: 12, color: T.muted, marginTop: 16, lineHeight: 1.9, maxWidth: 560 }}>
+                {heroBody}
+              </div>
             </div>
-          )}
 
-          <div style={{ marginBottom: 14 }}>
-            <label htmlFor="teacher-password" style={{ ...mono, fontSize: 10, color: T.muted, display: 'block', marginBottom: 5 }}>Password</label>
-            <input id="teacher-password" type="password" value={password} onChange={e => setPassword(e.target.value)} disabled={busy} style={{ width: '100%', ...mono, fontSize: 12, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 7, padding: '9px 10px' }} />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
+              <AuthHeroFeature title="Teaching" body="Course leaders should immediately see classes, offerings, evaluation setup limits, and entry workflows without hunting through role-specific dead ends." color={T.success} />
+              <AuthHeroFeature title="Mentoring" body="Mentors need fast access to student history, intervention queues, and escalation context, with academic records linked back to the right batch and semester." color={T.accent} />
+              <AuthHeroFeature title="Scheduling" body="Faculty should manage weekly execution cleanly while still seeing the default timetable, temporary exceptions, and the permanent-change request path." color={T.orange} />
+            </div>
           </div>
 
-          {err && <div style={{ ...mono, fontSize: 11, color: T.danger, marginBottom: 10 }}>{err}</div>}
-          {!!externalError && <div style={{ ...mono, fontSize: 11, color: T.danger, marginBottom: 10 }}>{externalError}</div>}
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <Btn type="submit" disabled={busy}><Shield size={14} /> {busy ? 'Signing In...' : 'Login'}</Btn>
-            {onBackToPortal && (
-              <Btn type="button" variant="ghost" onClick={onBackToPortal} disabled={busy}>
-                Back to portal selector
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginTop: 24 }}>
+            <div style={{ ...mono, fontSize: 11, color: T.muted }}>Need the system-admin workspace instead? Return to the portal selector and switch context there.</div>
+            {onBackToPortal ? (
+              <Btn variant="ghost" onClick={onBackToPortal} disabled={busy}>
+                Portal Selector
               </Btn>
-            )}
+            ) : null}
           </div>
-        </form>
-      </Card>
-    </div>
+        </Card>
+
+        <Card style={{ padding: 28, display: 'grid', alignContent: 'center', background: `linear-gradient(180deg, ${T.surface}, ${T.surface2})` }}>
+          <div style={{ ...mono, fontSize: 10, color: T.success, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Secure Session</div>
+          <div style={{ ...sora, fontSize: 28, fontWeight: 800, color: T.text, marginTop: 10 }}>Sign in to enter the teaching workspace.</div>
+          <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 10, lineHeight: 1.8 }}>
+            Pick your faculty account, restore your role-aware workspace, and continue from the right teaching or mentoring context. {helperText}
+          </div>
+
+          <form onSubmit={event => { void handleSubmit(event) }} style={{ marginTop: 22, display: 'grid', gap: 14 }}>
+            <div>
+              <AuthFieldLabel>Faculty Account</AuthFieldLabel>
+              <AuthSelect id="teacher-login" value={teacherId} onChange={event => setTeacherId(event.target.value)} disabled={busy}>
+                {facultyOptions.map(faculty => <option key={faculty.facultyId} value={faculty.facultyId}>{faculty.name}</option>)}
+              </AuthSelect>
+            </div>
+
+            {selectedOption ? (
+              <div style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 12px' }}>
+                <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 4 }}>Selected profile</div>
+                <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text }}>{selectedFaculty?.name ?? selectedOption.name}</div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
+                  {selectedFaculty
+                    ? `${selectedFaculty.dept} · ${selectedFaculty.allowedRoles.join(' / ')}`
+                    : `Faculty ID · ${selectedOption.facultyId}`}
+                </div>
+              </div>
+            ) : null}
+
+            <div>
+              <AuthFieldLabel>Password</AuthFieldLabel>
+              <AuthInput id="teacher-password" type="password" value={password} onChange={event => setPassword(event.target.value)} disabled={busy} placeholder="••••••••" />
+            </div>
+
+            {err ? <AuthNotice message={err} tone="error" /> : null}
+            {!!externalError ? <AuthNotice message={externalError} tone="error" /> : null}
+
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+              {onBackToPortal ? (
+                <Btn type="button" variant="ghost" onClick={onBackToPortal} disabled={busy}>
+                  Back To Portal
+                </Btn>
+              ) : <span />}
+              <Btn type="submit" disabled={busy}>
+                <Shield size={14} />
+                {busy ? 'Signing In...' : 'Sign In'}
+              </Btn>
+            </div>
+          </form>
+        </Card>
+      </div>
+    </PageShell>
   )
 }
 
@@ -3977,6 +4070,8 @@ export function OperationalApp() {
         <LoginPage
           facultyOptions={loginFaculty}
           helperText=""
+          modeLabel="Teaching Workspace Live Mode"
+          heroBody="This sign-in restores the faculty workspace against the live backend so course leaders, mentors, and HoDs land in their actual teaching context instead of a disconnected demo shell."
           busy={authBusy}
           externalError={authError}
           onBackToPortal={() => navigateToPortal('home')}
@@ -3999,6 +4094,8 @@ export function OperationalApp() {
     return (
       <LoginPage
         helperText="Use password 1234 for mock flow."
+        modeLabel="Teaching Workspace Mock Mode"
+        heroBody="Use the academic mock flow for role walkthroughs, grading previews, mentoring actions, and timetable experiments while still keeping the live-style teaching entry experience."
         externalError={authError}
         onBackToPortal={() => navigateToPortal('home')}
         onLogin={handleLocalLogin}
@@ -4044,7 +4141,7 @@ function PortalRouterApp() {
   useEffect(() => {
     if (typeof window === 'undefined') return
     const nextHash = getPortalHash(route)
-    if (window.location.hash !== nextHash) window.location.hash = nextHash
+    if (!hashBelongsToPortalRoute(window.location.hash, route)) window.location.hash = nextHash
   }, [route])
 
   if (route === 'app') return <OperationalApp />

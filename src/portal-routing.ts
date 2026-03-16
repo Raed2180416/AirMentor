@@ -38,6 +38,10 @@ export function getPortalHash(route: PortalRoute) {
   return PORTAL_HASH_BY_ROUTE[route]
 }
 
+export function hashBelongsToPortalRoute(hash: string | null | undefined, route: PortalRoute) {
+  return parsePortalRoute(hash) === route
+}
+
 export function navigateToPortal(route: PortalRoute, locationLike: Pick<Location, 'hash'> = window.location) {
   const nextHash = getPortalHash(route)
   if (locationLike.hash !== nextHash) locationLike.hash = nextHash
