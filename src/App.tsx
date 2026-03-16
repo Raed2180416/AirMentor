@@ -8,7 +8,7 @@ import {
 import {
   CO_COLORS, T, mono, sora, yearColor,
   PROFESSOR, OFFERINGS, YEAR_GROUPS, PAPER_MAP,
-  FACULTY, generateTasks, MENTEES, getStudentHistoryRecord,
+  FACULTY, generateTasks, MENTEES, getStudentHistoryRecord, hydrateAcademicData, resetAcademicDataToMockDefaults,
   type Offering, type Student, type YearGroup,
   type Mentee, type StudentHistoryRecord,
 } from './data'
@@ -71,8 +71,14 @@ import {
   isPatchEmpty,
 } from './selectors'
 import { inferKindFromPendingAction } from './page-utils'
-import { createLocalAirMentorRepositories } from './repositories'
+import { AIRMENTOR_STORAGE_KEYS, createAirMentorRepositories, createLocalAirMentorRepositories, type AirMentorRepositories } from './repositories'
+import { PortalEntryScreen } from './portal-entry'
+import { getPortalHash, navigateToPortal, resolvePortalRoute, type PortalRoute } from './portal-routing'
+import { SystemAdminApp } from './system-admin-app'
+import { applyThemePreset, isLightTheme } from './theme'
 import { Bar, Btn, Card, Chip, PageBackButton, PageShell, RiskBadge, StagePips, UI_TRANSITION_FAST, UI_TRANSITION_MEDIUM } from './ui-primitives'
+import { AirMentorApiClient, AirMentorApiError } from './api/client'
+import type { ApiAcademicBootstrap, ApiSessionResponse } from './api/types'
 import './App.css'
 
 const LazyCourseDetail = lazy(() => import('./pages/course-pages').then(module => ({ default: module.CourseDetail })))
@@ -151,31 +157,6 @@ function RouteLoadingFallback({ label = 'Loading workspace...' }: { label?: stri
   )
 }
 
-const THEME_PRESETS: Record<ThemeMode, typeof T> = {
-  'frosted-focus-light': {
-    ...T,
-    bg: '#edf3f8', surface: '#f7fbff', surface2: '#edf5ff', surface3: '#e4effa',
-    border: '#d5e3f2', border2: '#c6d8ec',
-    text: '#11243d', muted: '#4d647f', dim: '#8ea1b8',
-    accent: '#3b82f6', accentLight: '#70a6ff',
-  },
-  'frosted-focus-dark': {
-    ...T,
-    bg: '#0a1018', surface: '#101a27', surface2: '#152131', surface3: '#1a293d',
-    border: '#25364b', border2: '#2d435d',
-    text: '#d5dfee', muted: '#9badc3', dim: '#607790',
-    accent: '#5ea0ff', accentLight: '#84b8ff',
-  },
-}
-
-function isLightTheme(mode: ThemeMode) {
-  return mode.endsWith('-light')
-}
-
-function applyThemePreset(mode: ThemeMode) {
-  Object.assign(T, THEME_PRESETS[mode])
-}
-
 function getHomePage(role: Role): PageId {
   return role === 'Course Leader' ? 'dashboard' : role === 'Mentor' ? 'mentees' : 'department'
 }
@@ -239,42 +220,54 @@ function buildHistoryProfile(input: { student?: Student | null; mentee?: Mentee 
   return null
 }
 
-function LoginPage({ onLogin }: { onLogin: (facultyId: string) => void }) {
-  const [teacherId, setTeacherId] = useState<string>(FACULTY[0]?.facultyId ?? '')
+function LoginPage({
+  facultyOptions = FACULTY.map(faculty => ({ facultyId: faculty.facultyId, name: faculty.name })),
+  helperText = 'Use password 1234 for mock flow.',
+  busy = false,
+  externalError = '',
+  onBackToPortal,
+  onLogin,
+}: {
+  facultyOptions?: Array<{ facultyId: string; name: string }>
+  helperText?: string
+  busy?: boolean
+  externalError?: string
+  onBackToPortal?: () => void
+  onLogin: (facultyId: string, password: string) => Promise<void> | void
+}) {
+  const [teacherId, setTeacherId] = useState<string>(facultyOptions[0]?.facultyId ?? '')
   const [password, setPassword] = useState('')
   const [err, setErr] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const selectedFaculty = FACULTY.find(faculty => faculty.facultyId === teacherId)
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault()
-    if (password !== '1234') {
-      setErr('Invalid password')
-      return
+  useEffect(() => {
+    if (!facultyOptions.some(option => option.facultyId === teacherId)) {
+      setTeacherId(facultyOptions[0]?.facultyId ?? '')
     }
-    setErr('')
-    onLogin(teacherId)
+  }, [facultyOptions, teacherId])
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    try {
+      setErr('')
+      await onLogin(teacherId, password)
+    } catch (error) {
+      setErr(error instanceof Error ? error.message : 'Login failed')
+    }
   }
 
   return (
     <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <Card style={{ width: '100%', maxWidth: 440, padding: 24 }} glow={T.accent}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-          <div style={{ width: 34, height: 34, borderRadius: 9, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 12, color: '#fff' }}>AM</div>
-          <div>
-            <div style={{ ...sora, fontWeight: 800, fontSize: 21, color: T.text }}>Welcome Back</div>
-            <div style={{ ...mono, fontSize: 10, color: T.muted }}>Sign in to continue to AirMentor</div>
-          </div>
-        </div>
-        <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 14, background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 10px' }}>
-          Demo password: <span style={{ color: T.accent, fontWeight: 700 }}>1234</span>
-        </div>
+      <Card style={{ width: '100%', maxWidth: 420, padding: 24 }} glow={T.accent}>
+        <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: T.text, marginBottom: 6 }}>AirMentor Login</div>
+        {helperText && <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 16 }}>{helperText}</div>}
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={event => { void handleSubmit(event) }}>
           <div style={{ marginBottom: 10 }}>
-            <label htmlFor="teacher-login" style={{ ...mono, fontSize: 10, color: T.muted, display: 'block', marginBottom: 5 }}>Faculty account</label>
-            <select id="teacher-login" value={teacherId} onChange={e => setTeacherId(e.target.value)} style={{ width: '100%', ...mono, fontSize: 12, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 7, padding: '9px 10px' }}>
-              {FACULTY.map(faculty => <option key={faculty.facultyId} value={faculty.facultyId}>{faculty.name}</option>)}
+            <label htmlFor="teacher-login" style={{ ...mono, fontSize: 10, color: T.muted, display: 'block', marginBottom: 5 }}>Teacher</label>
+            <select id="teacher-login" value={teacherId} onChange={e => setTeacherId(e.target.value)} disabled={busy} style={{ width: '100%', ...mono, fontSize: 12, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 7, padding: '9px 10px' }}>
+              {facultyOptions.map(faculty => <option key={faculty.facultyId} value={faculty.facultyId}>{faculty.name}</option>)}
             </select>
           </div>
 
@@ -288,16 +281,19 @@ function LoginPage({ onLogin }: { onLogin: (facultyId: string) => void }) {
 
           <div style={{ marginBottom: 14 }}>
             <label htmlFor="teacher-password" style={{ ...mono, fontSize: 10, color: T.muted, display: 'block', marginBottom: 5 }}>Password</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input id="teacher-password" type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} style={{ flex: 1, ...mono, fontSize: 12, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 7, padding: '9px 10px' }} />
-              <button type="button" aria-label={showPassword ? 'Hide password' : 'Show password'} title={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword(v => !v)} style={{ height: 34, borderRadius: 7, border: `1px solid ${T.border2}`, background: T.surface2, color: T.muted, cursor: 'pointer', padding: '0 10px', ...mono, fontSize: 10 }}>
-                {showPassword ? 'Hide' : 'Show'}
-              </button>
-            </div>
+            <input id="teacher-password" type="password" value={password} onChange={e => setPassword(e.target.value)} disabled={busy} style={{ width: '100%', ...mono, fontSize: 12, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 7, padding: '9px 10px' }} />
           </div>
 
           {err && <div style={{ ...mono, fontSize: 11, color: T.danger, marginBottom: 10 }}>{err}</div>}
-          <Btn type="submit" size="lg"><Shield size={14} /> Login to Workspace</Btn>
+          {!!externalError && <div style={{ ...mono, fontSize: 11, color: T.danger, marginBottom: 10 }}>{externalError}</div>}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Btn type="submit" disabled={busy}><Shield size={14} /> {busy ? 'Signing In...' : 'Login'}</Btn>
+            {onBackToPortal && (
+              <Btn type="button" variant="ghost" onClick={onBackToPortal} disabled={busy}>
+                Back to portal selector
+              </Btn>
+            )}
+          </div>
         </form>
       </Card>
     </div>
@@ -1809,16 +1805,29 @@ const HOD_NAV: Array<{ id: PageId; icon: typeof LayoutDashboard; label: string }
   { id: 'calendar', icon: Calendar, label: 'Calendar / Timetable' },
 ]
 
-export default function App() {
-  const repositories = useMemo(() => createLocalAirMentorRepositories(), [])
+type OperationalWorkspaceProps = {
+  repositories: AirMentorRepositories
+  initialTeacherId: string
+  initialRole: Role
+  onLogout: () => Promise<void> | void
+  onRoleChange?: (role: Role) => Promise<void> | void
+}
+
+function OperationalWorkspace({
+  repositories,
+  initialTeacherId,
+  initialRole,
+  onLogout,
+  onRoleChange,
+}: OperationalWorkspaceProps) {
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => repositories.sessionPreferences.getThemeSnapshot() ?? normalizeThemeMode(null))
   const [isCompactTopbar, setIsCompactTopbar] = useState(() => window.innerWidth < 980)
   const [showTopbarMenu, setShowTopbarMenu] = useState(false)
   const [now, setNow] = useState(() => new Date())
-  const [currentTeacherId, setCurrentTeacherId] = useState<string | null>(() => repositories.sessionPreferences.getCurrentFacultyIdSnapshot())
+  const [currentTeacherId, setCurrentTeacherId] = useState<string | null>(initialTeacherId)
   const currentTeacher = useMemo<FacultyAccount | null>(() => currentTeacherId ? (FACULTY.find(faculty => faculty.facultyId === currentTeacherId) ?? null) : null, [currentTeacherId])
-  const [role, setRole] = useState<Role>(() => currentTeacher?.allowedRoles[0] ?? 'Course Leader')
-  const [page, setPage] = useState<PageId>(() => getHomePage(currentTeacher?.allowedRoles[0] ?? 'Course Leader'))
+  const [role, setRole] = useState<Role>(initialRole)
+  const [page, setPage] = useState<PageId>(() => getHomePage(initialRole))
   const [offering, setOffering] = useState<Offering | null>(null)
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
   const [selectedOffering, setSelectedOffering] = useState<Offering | null>(null)
@@ -1848,6 +1857,14 @@ export default function App() {
   const { getStudentsPatched } = selectors
 
   const allowedRoles = useMemo(() => currentTeacher?.allowedRoles ?? [], [currentTeacher])
+  useEffect(() => {
+    setCurrentTeacherId(initialTeacherId)
+  }, [initialTeacherId])
+  useEffect(() => {
+    if (!allowedRoles.includes(initialRole)) return
+    setRole(initialRole)
+    setPage(getHomePage(initialRole))
+  }, [allowedRoles, initialRole])
   const capabilities = useMemo<FacultyCapabilitySet>(() => ({
     canApproveUnlock: role === 'HoD',
     canEditMarks: role === 'Course Leader',
@@ -2420,7 +2437,8 @@ export default function App() {
     setHistoryBackPage(null)
     setTaskComposer(prev => ({ ...prev, isOpen: false, placement: undefined, availableOfferingIds: undefined }))
     setPendingNoteAction(null)
-  }, [allowedRoles, clearRouteHistory])
+    void onRoleChange?.(r)
+  }, [allowedRoles, clearRouteHistory, onRoleChange])
 
   const handleSaveDraft = useCallback((offId: string, kind: EntryKind) => {
     setDraftBySection(prev => ({ ...prev, [`${offId}::${kind}`]: Date.now() }))
@@ -3483,28 +3501,15 @@ export default function App() {
   }, [pendingNoteAction])
 
   if (!currentTeacher) {
-    return <AppSelectorsContext.Provider value={selectors}><LoginPage onLogin={(teacherId) => {
-      const account = FACULTY.find(faculty => faculty.facultyId === teacherId)
-      if (!account) return
-      clearRouteHistory()
-      setCurrentTeacherId(account.facultyId)
-      const firstRole = account.allowedRoles[0]
-      setRole(firstRole)
-      setPage(getHomePage(firstRole))
-      setOffering(null)
-      setSelectedStudent(null)
-      setSelectedMentee(null)
-      setHistoryProfile(null)
-      setHistoryBackPage(null)
-      setCourseInitialTab(undefined)
-    }} /></AppSelectorsContext.Provider>
+    return (
+      <AppSelectorsContext.Provider value={selectors}>
+        <RouteLoadingFallback label="Preparing academic workspace..." />
+      </AppSelectorsContext.Provider>
+    )
   }
 
   const handleLogout = () => {
     clearRouteHistory()
-    setCurrentTeacherId(null)
-    setRole('Course Leader')
-    setPage('dashboard')
     setOffering(null)
     setSelectedStudent(null)
     setSelectedMentee(null)
@@ -3516,6 +3521,7 @@ export default function App() {
     setTaskComposer(prev => ({ ...prev, isOpen: false, placement: undefined, availableOfferingIds: undefined }))
     setPendingNoteAction(null)
     setShowTopbarMenu(false)
+    void onLogout()
   }
 
   const sidebarToggleLabel = sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'
@@ -3814,4 +3820,237 @@ export default function App() {
     </div>
     </AppSelectorsContext.Provider>
   )
+}
+
+function mapApiRoleToRole(roleCode: ApiSessionResponse['activeRoleGrant']['roleCode']): Role | null {
+  if (roleCode === 'COURSE_LEADER') return 'Course Leader'
+  if (roleCode === 'MENTOR') return 'Mentor'
+  if (roleCode === 'HOD') return 'HoD'
+  return null
+}
+
+function getAcademicApiBaseUrl() {
+  return import.meta.env.VITE_AIRMENTOR_API_BASE_URL?.trim() || ''
+}
+
+export function OperationalApp() {
+  const apiBaseUrl = getAcademicApiBaseUrl()
+  const remoteEnabled = apiBaseUrl.length > 0
+  const localRepositories = useMemo(() => createLocalAirMentorRepositories(), [])
+  const apiClient = useMemo(() => remoteEnabled ? new AirMentorApiClient(apiBaseUrl) : null, [apiBaseUrl, remoteEnabled])
+  const remoteSessionRepositories = useMemo(() => (
+    remoteEnabled && apiClient
+      ? createAirMentorRepositories({
+          repositoryMode: 'http',
+          apiClient,
+          remoteFacultyStorageKey: AIRMENTOR_STORAGE_KEYS.currentFacultyId,
+        })
+      : null
+  ), [apiClient, remoteEnabled])
+  const [booting, setBooting] = useState(remoteEnabled)
+  const [authBusy, setAuthBusy] = useState(false)
+  const [authError, setAuthError] = useState('')
+  const [remoteSession, setRemoteSession] = useState<ApiSessionResponse | null>(null)
+  const [remoteBootstrap, setRemoteBootstrap] = useState<ApiAcademicBootstrap | null>(null)
+  const [loginFaculty, setLoginFaculty] = useState<Array<{ facultyId: string; name: string }>>(() => FACULTY.map(faculty => ({ facultyId: faculty.facultyId, name: faculty.name })))
+  const [localTeacherId, setLocalTeacherId] = useState<string | null>(() => localRepositories.sessionPreferences.getCurrentFacultyIdSnapshot())
+
+  const fetchAcademicBootstrap = useCallback(async () => {
+    if (!apiClient) return null
+    const snapshot = await apiClient.getAcademicBootstrap()
+    hydrateAcademicData(snapshot)
+    setRemoteBootstrap(snapshot)
+    setLoginFaculty(snapshot.faculty.map(account => ({ facultyId: account.facultyId, name: account.name })))
+    return snapshot
+  }, [apiClient])
+
+  useEffect(() => {
+    if (!remoteEnabled || !apiClient || !remoteSessionRepositories) {
+      resetAcademicDataToMockDefaults()
+      setBooting(false)
+      return
+    }
+
+    let cancelled = false
+    const load = async () => {
+      try {
+        const [publicFaculty, restoredSession] = await Promise.all([
+          apiClient.listAcademicLoginFaculty().catch(() => null),
+          remoteSessionRepositories.sessionPreferences.restoreRemoteSession(),
+        ])
+        if (cancelled) return
+        if (publicFaculty?.items?.length) {
+          setLoginFaculty(publicFaculty.items.map(account => ({ facultyId: account.facultyId, name: account.name })))
+        }
+        const restoredRole = restoredSession ? mapApiRoleToRole(restoredSession.activeRoleGrant.roleCode) : null
+        if (restoredSession?.faculty?.facultyId && restoredRole) {
+          setRemoteSession(restoredSession)
+          await fetchAcademicBootstrap()
+        } else {
+          setRemoteSession(null)
+          setRemoteBootstrap(null)
+          resetAcademicDataToMockDefaults()
+        }
+      } catch (error) {
+        if (cancelled) return
+        setAuthError(error instanceof Error ? error.message : 'Could not restore the academic portal session.')
+        setRemoteSession(null)
+        setRemoteBootstrap(null)
+        resetAcademicDataToMockDefaults()
+      } finally {
+        if (!cancelled) setBooting(false)
+      }
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [apiClient, fetchAcademicBootstrap, remoteEnabled, remoteSessionRepositories])
+
+  const remoteRepositories = useMemo(() => (
+    remoteEnabled && apiClient && remoteBootstrap
+      ? createAirMentorRepositories({
+          repositoryMode: 'http',
+          apiClient,
+          academicBootstrap: remoteBootstrap,
+          remoteFacultyStorageKey: AIRMENTOR_STORAGE_KEYS.currentFacultyId,
+        })
+      : null
+  ), [apiClient, remoteBootstrap, remoteEnabled])
+
+  const handleLocalLogin = useCallback(async (facultyId: string, password: string) => {
+    if (password !== '1234') {
+      throw new Error('Invalid password')
+    }
+    setAuthError('')
+    setLocalTeacherId(facultyId)
+  }, [])
+
+  const handleRemoteLogin = useCallback(async (facultyId: string, password: string) => {
+    if (!remoteSessionRepositories) throw new Error('Academic backend is unavailable.')
+    setAuthBusy(true)
+    setAuthError('')
+    try {
+      const session = await remoteSessionRepositories.sessionPreferences.loginRemoteSession({
+        identifier: facultyId,
+        password,
+      })
+      const role = mapApiRoleToRole(session.activeRoleGrant.roleCode)
+      if (!session.faculty?.facultyId || !role) {
+        throw new Error('This account does not have an academic portal role.')
+      }
+      setRemoteSession(session)
+      await fetchAcademicBootstrap()
+    } catch (error) {
+      const message = error instanceof AirMentorApiError ? error.message : (error instanceof Error ? error.message : 'Academic login failed.')
+      setAuthError(message)
+      throw new Error(message)
+    } finally {
+      setAuthBusy(false)
+    }
+  }, [fetchAcademicBootstrap, remoteSessionRepositories])
+
+  const handleRemoteLogout = useCallback(async () => {
+    if (!remoteSessionRepositories) return
+    await remoteSessionRepositories.sessionPreferences.logoutRemoteSession()
+    setRemoteSession(null)
+    setRemoteBootstrap(null)
+    resetAcademicDataToMockDefaults()
+  }, [remoteSessionRepositories])
+
+  const handleRemoteRoleChange = useCallback(async (role: Role) => {
+    if (!remoteSession || !remoteSessionRepositories) return
+    const match = remoteSession.availableRoleGrants.find(grant => mapApiRoleToRole(grant.roleCode) === role)
+    if (!match) return
+    const nextSession = await remoteSessionRepositories.sessionPreferences.switchRemoteRoleContext(match.grantId)
+    setRemoteSession(nextSession)
+  }, [remoteSession, remoteSessionRepositories])
+
+  const localCurrentTeacher = localTeacherId ? (FACULTY.find(faculty => faculty.facultyId === localTeacherId) ?? null) : null
+  const localInitialRole = localCurrentTeacher?.allowedRoles[0] ?? 'Course Leader'
+  const remoteInitialRole = remoteSession ? mapApiRoleToRole(remoteSession.activeRoleGrant.roleCode) : null
+
+  if (remoteEnabled) {
+    if (booting) return <RouteLoadingFallback label="Restoring academic session..." />
+    if (!remoteSession || !remoteSession.faculty?.facultyId || !remoteInitialRole || !remoteRepositories) {
+      return (
+        <LoginPage
+          facultyOptions={loginFaculty}
+          helperText=""
+          busy={authBusy}
+          externalError={authError}
+          onBackToPortal={() => navigateToPortal('home')}
+          onLogin={handleRemoteLogin}
+        />
+      )
+    }
+    return (
+      <OperationalWorkspace
+        repositories={remoteRepositories}
+        initialTeacherId={remoteSession.faculty.facultyId}
+        initialRole={remoteInitialRole}
+        onLogout={handleRemoteLogout}
+        onRoleChange={handleRemoteRoleChange}
+      />
+    )
+  }
+
+  if (!localCurrentTeacher) {
+    return (
+      <LoginPage
+        helperText="Use password 1234 for mock flow."
+        externalError={authError}
+        onBackToPortal={() => navigateToPortal('home')}
+        onLogin={handleLocalLogin}
+      />
+    )
+  }
+
+  return (
+    <OperationalWorkspace
+      repositories={localRepositories}
+      initialTeacherId={localCurrentTeacher.facultyId}
+      initialRole={localInitialRole}
+      onLogout={async () => {
+        await localRepositories.sessionPreferences.saveCurrentFacultyId(null)
+        setLocalTeacherId(null)
+      }}
+    />
+  )
+}
+
+function PortalRouterApp() {
+  const [route, setRoute] = useState<PortalRoute>(() => {
+    if (typeof window === 'undefined') return 'home'
+    return resolvePortalRoute(window.location.hash, window.localStorage)
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const syncRoute = () => setRoute(resolvePortalRoute(window.location.hash, window.localStorage))
+    syncRoute()
+    window.addEventListener('hashchange', syncRoute)
+    return () => window.removeEventListener('hashchange', syncRoute)
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const nextHash = getPortalHash(route)
+    if (window.location.hash !== nextHash) window.location.hash = nextHash
+  }, [route])
+
+  if (route === 'app') return <OperationalApp />
+  if (route === 'admin') return <SystemAdminApp onExitPortal={() => navigateToPortal('home')} />
+
+  return (
+    <PortalEntryScreen
+      onSelectAcademic={() => navigateToPortal('app')}
+      onSelectAdmin={() => navigateToPortal('admin')}
+    />
+  )
+}
+
+export default function App() {
+  return <PortalRouterApp />
 }

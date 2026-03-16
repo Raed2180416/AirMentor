@@ -186,6 +186,18 @@ export interface StudentHistoryRecord {
   terms: TranscriptTerm[]
 }
 
+export interface AcademicHydrationSnapshot {
+  professor: Professor
+  faculty: FacultyRecord[]
+  offerings: Offering[]
+  yearGroups: YearGroup[]
+  mentees: Mentee[]
+  teachers: TeacherInfo[]
+  subjectRuns: SubjectRun[]
+  studentsByOffering: Record<string, Student[]>
+  studentHistoryByUsn: Record<string, StudentHistoryRecord>
+}
+
 // ───── Theme ─────
 export const T = {
   bg: '#07090f', surface: '#0d1017', surface2: '#111520', surface3: '#161b28',
@@ -1142,5 +1154,52 @@ function buildFallbackHistory(params: { usn: string; studentName: string; dept: 
 }
 
 export function getStudentHistoryRecord(params: { usn: string; studentName: string; dept: string; yearLabel?: string; prevCgpa?: number }): StudentHistoryRecord {
-  return SEEDED_HISTORY[params.usn] ?? buildFallbackHistory(params)
+  return runtimeStudentHistoryByUsn[params.usn] ?? buildFallbackHistory(params)
+}
+
+function deepClone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function replaceArrayContents<T>(target: T[], next: T[]) {
+  target.splice(0, target.length, ...deepClone(next))
+}
+
+function replaceRecordContents<T extends Record<string, unknown>>(target: T, next: T) {
+  Object.keys(target).forEach(key => delete target[key])
+  Object.assign(target, deepClone(next))
+}
+
+const defaultProfessor = deepClone(PROFESSOR)
+const defaultOfferings = deepClone(OFFERINGS)
+const defaultYearGroups = deepClone(YEAR_GROUPS)
+const defaultMentees = deepClone(MENTEES)
+const defaultFaculty = deepClone(FACULTY)
+const defaultSubjectRuns = deepClone(SUBJECT_RUNS)
+const defaultTeachers = deepClone(TEACHERS)
+const defaultStudentHistoryByUsn = deepClone(SEEDED_HISTORY)
+const runtimeStudentHistoryByUsn: Record<string, StudentHistoryRecord> = deepClone(SEEDED_HISTORY)
+
+export function hydrateAcademicData(snapshot: AcademicHydrationSnapshot) {
+  Object.assign(PROFESSOR, deepClone(snapshot.professor))
+  replaceArrayContents(FACULTY, snapshot.faculty)
+  replaceArrayContents(OFFERINGS, snapshot.offerings)
+  replaceArrayContents(YEAR_GROUPS, snapshot.yearGroups)
+  replaceArrayContents(MENTEES, snapshot.mentees)
+  replaceArrayContents(TEACHERS, snapshot.teachers)
+  replaceArrayContents(SUBJECT_RUNS, snapshot.subjectRuns)
+  replaceRecordContents(_studentCache, snapshot.studentsByOffering as typeof _studentCache)
+  replaceRecordContents(runtimeStudentHistoryByUsn, snapshot.studentHistoryByUsn)
+}
+
+export function resetAcademicDataToMockDefaults() {
+  Object.assign(PROFESSOR, deepClone(defaultProfessor))
+  replaceArrayContents(FACULTY, defaultFaculty)
+  replaceArrayContents(OFFERINGS, defaultOfferings)
+  replaceArrayContents(YEAR_GROUPS, defaultYearGroups)
+  replaceArrayContents(MENTEES, defaultMentees)
+  replaceArrayContents(TEACHERS, defaultTeachers)
+  replaceArrayContents(SUBJECT_RUNS, defaultSubjectRuns)
+  replaceRecordContents(_studentCache, {})
+  replaceRecordContents(runtimeStudentHistoryByUsn, defaultStudentHistoryByUsn)
 }
