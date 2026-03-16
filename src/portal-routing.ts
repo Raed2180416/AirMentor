@@ -42,3 +42,9 @@ export function navigateToPortal(route: PortalRoute, locationLike: Pick<Location
   const nextHash = getPortalHash(route)
   if (locationLike.hash !== nextHash) locationLike.hash = nextHash
 }
+
+type MutableStorageLike = Pick<Storage, 'removeItem'>
+
+export function clearPortalWorkspaceHints(storageLike: MutableStorageLike | null | undefined) {
+  storageLike?.removeItem(AIRMENTOR_STORAGE_KEYS.currentAdminFacultyId)
+}

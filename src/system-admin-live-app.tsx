@@ -13,6 +13,8 @@ import {
 import {
   Building2,
   CheckCircle2,
+  ChevronLeft,
+  Compass,
   GraduationCap,
   Layers3,
   RefreshCw,
@@ -299,6 +301,23 @@ function SectionHeading({ title, eyebrow, caption }: { title: string; eyebrow: s
       <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.12em' }}>{eyebrow}</div>
       <div style={{ ...sora, fontSize: 18, fontWeight: 800, color: T.text, marginTop: 4 }}>{title}</div>
       <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 4 }}>{caption}</div>
+    </div>
+  )
+}
+
+function HeroBadge({ children, color = T.accent }: { children: ReactNode; color?: string }) {
+  return (
+    <span style={{ ...mono, fontSize: 10, color, border: `1px solid ${color}30`, background: `${color}12`, borderRadius: 999, padding: '6px 10px', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      {children}
+    </span>
+  )
+}
+
+function AuthFeature({ title, body, color }: { title: string; body: string; color: string }) {
+  return (
+    <div style={{ borderRadius: 18, padding: 16, background: `${color}10`, border: `1px solid ${color}22`, boxShadow: `0 18px 40px ${color}10` }}>
+      <div style={{ ...mono, fontSize: 10, color, textTransform: 'uppercase', letterSpacing: '0.12em' }}>{title}</div>
+      <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 8, lineHeight: 1.8 }}>{body}</div>
     </div>
   )
 }
@@ -699,27 +718,69 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
   if (!session) {
     return (
-      <PageShell size="narrow" style={{ paddingTop: 48 }}>
-        <Card style={{ padding: 28 }}>
-          <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.12em' }}>System Admin Live Mode</div>
-          <div style={{ ...sora, fontSize: 24, fontWeight: 800, color: T.text, marginTop: 10 }}>Sign in to manage the live hierarchy.</div>
-          <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 8 }}>This workspace is backed by `{apiBaseUrl}` and configures academic faculties, batches, curriculum, and policy overrides directly in the backend.</div>
-          <form onSubmit={handleLogin} style={{ marginTop: 18, display: 'grid', gap: 14 }}>
-            <div>
-              <FieldLabel>Username Or Email</FieldLabel>
-              <TextInput value={identifier} onChange={event => setIdentifier(event.target.value)} placeholder="sysadmin" />
+      <PageShell size="wide" style={{ paddingTop: 40 }}>
+        <div style={{ minHeight: 'calc(100vh - 80px)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24, alignItems: 'stretch' }}>
+          <Card
+            style={{
+              padding: 28,
+              background: `radial-gradient(circle at top left, ${T.accent}24, transparent 36%), radial-gradient(circle at bottom right, ${T.success}16, transparent 28%), linear-gradient(160deg, ${T.surface}, ${T.surface2})`,
+              display: 'grid',
+              alignContent: 'space-between',
+              minHeight: 520,
+            }}
+            glow={T.accent}
+          >
+            <div style={{ display: 'grid', gap: 18 }}>
+              <HeroBadge><Compass size={12} /> System Admin Live Mode</HeroBadge>
+              <div>
+                <div style={{ ...sora, fontSize: 42, fontWeight: 800, color: T.text, lineHeight: 1.02, maxWidth: 560 }}>
+                  Govern curriculum, policy, and year-specific control from one place.
+                </div>
+                <div style={{ ...mono, fontSize: 12, color: T.muted, marginTop: 16, lineHeight: 1.9, maxWidth: 560 }}>
+                  This workspace is connected to the live backend at `{apiBaseUrl}`. Use it for academic faculties, branches, batches, policy overrides, requests, and the student or faculty records that depend on them.
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
+                <AuthFeature title="Hierarchy" body="Academic faculty, department, branch, and batch stay aligned so year-wise policy divergence is explicit instead of buried." color={T.accent} />
+                <AuthFeature title="Governance" body="CE/SEE limits, grade bands, working calendar, and SGPA or CGPA rules remain centrally controlled but overrideable at the right level." color={T.success} />
+                <AuthFeature title="Operations" body="Search, requests, and teaching ownership stay visible together so the sysadmin flow feels like one control plane instead of a setup dead-end." color={T.orange} />
+              </div>
             </div>
-            <div>
-              <FieldLabel>Password</FieldLabel>
-              <TextInput type="password" value={password} onChange={event => setPassword(event.target.value)} placeholder="••••••••" />
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginTop: 24 }}>
+              <div style={{ ...mono, fontSize: 11, color: T.muted }}>Need the teaching workspace instead? Return to the portal selector and sign in as faculty.</div>
+              {onExitPortal ? (
+                <Btn variant="ghost" onClick={onExitPortal}>
+                  <ChevronLeft size={14} />
+                  Portal Selector
+                </Btn>
+              ) : null}
             </div>
-            {authError ? <InfoBanner tone="error" message={authError} /> : null}
-            <div style={{ display: 'flex', gap: 12, justifyContent: 'space-between' }}>
-              <Btn variant="ghost" onClick={onExitPortal}>Back To Portal</Btn>
-              <Btn type="submit" disabled={authBusy}>Sign In</Btn>
-            </div>
-          </form>
-        </Card>
+          </Card>
+
+          <Card style={{ padding: 28, display: 'grid', alignContent: 'center', background: `linear-gradient(180deg, ${T.surface}, ${T.surface2})` }}>
+            <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Secure Session</div>
+            <div style={{ ...sora, fontSize: 28, fontWeight: 800, color: T.text, marginTop: 10 }}>Sign in to manage the live hierarchy.</div>
+            <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 10, lineHeight: 1.8 }}>Use the seeded sysadmin account or your assigned live admin credentials. Session state and theme preferences are restored automatically after sign-in.</div>
+
+            <form onSubmit={handleLogin} style={{ marginTop: 22, display: 'grid', gap: 14 }}>
+              <div>
+                <FieldLabel>Username Or Email</FieldLabel>
+                <TextInput value={identifier} onChange={event => setIdentifier(event.target.value)} placeholder="sysadmin" />
+              </div>
+              <div>
+                <FieldLabel>Password</FieldLabel>
+                <TextInput type="password" value={password} onChange={event => setPassword(event.target.value)} placeholder="••••••••" />
+              </div>
+              {authError ? <InfoBanner tone="error" message={authError} /> : null}
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+                {onExitPortal ? <Btn variant="ghost" onClick={onExitPortal}>Back To Portal</Btn> : <span />}
+                <Btn type="submit" disabled={authBusy}>{authBusy ? 'Signing In…' : 'Sign In'}</Btn>
+              </div>
+            </form>
+          </Card>
+        </div>
       </PageShell>
     )
   }
@@ -749,14 +810,26 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   return (
     <PageShell size="wide" style={{ paddingBottom: 40 }}>
       <div style={{ display: 'grid', gap: 18 }}>
-        <Card style={{ padding: 20 }}>
+        <Card
+          style={{
+            padding: 22,
+            background: `radial-gradient(circle at top left, ${T.accent}18, transparent 28%), linear-gradient(180deg, ${T.surface}, ${T.surface2})`,
+          }}
+          glow={T.accent}
+        >
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.12em' }}>System Admin Live Mode</div>
               <div style={{ ...sora, fontSize: 24, fontWeight: 800, color: T.text, marginTop: 6 }}>Search-first academic configuration.</div>
-              <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 6 }}>Everything is managed from the main dashboard. The old setup sidebar stays out of the way.</div>
+              <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 6, maxWidth: 720 }}>Everything is managed from the main dashboard. Search gets you to the right academic node fast, while hierarchy, policy, requests, and people stay connected instead of scattered.</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 14 }}>
+                <HeroBadge>Live data</HeroBadge>
+                <HeroBadge color={T.success}>Batch policy aware</HeroBadge>
+                <HeroBadge color={T.orange}>HoD request workflow</HeroBadge>
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {onExitPortal ? <Btn variant="ghost" onClick={onExitPortal}>Portal</Btn> : null}
               <Btn variant="ghost" onClick={() => persistTheme(themeMode === 'frosted-focus-light' ? 'frosted-focus-dark' : 'frosted-focus-light')}>Theme</Btn>
               <Btn variant="ghost" onClick={() => void loadAdminData()}><RefreshCw size={14} /> Refresh</Btn>
               <Btn variant="ghost" onClick={handleLogout}>Log Out</Btn>

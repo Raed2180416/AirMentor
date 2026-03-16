@@ -5,6 +5,19 @@ html, body, #root { width: 100%; min-height: 100vh; }
 html { scroll-behavior: smooth; }
 body { background: #07090f; font-family: 'Sora', system-ui, sans-serif; color: #e2e8f4; }
 
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+	-webkit-text-fill-color: #e2e8f4;
+	-webkit-box-shadow: 0 0 0 1000px #111520 inset;
+	box-shadow: 0 0 0 1000px #111520 inset;
+	caret-color: #e2e8f4;
+	border-radius: 10px;
+	transition: background-color 9999s ease-in-out 0s;
+}
+
 input[type=number]::-webkit-inner-spin-button,
 input[type=number]::-webkit-outer-spin-button { opacity: 0.3; }
 

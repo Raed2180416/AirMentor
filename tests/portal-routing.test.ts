@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getPortalHash, navigateToPortal, parsePortalRoute, resolvePortalRoute } from '../src/portal-routing'
+import { clearPortalWorkspaceHints, getPortalHash, navigateToPortal, parsePortalRoute, resolvePortalRoute } from '../src/portal-routing'
 
 describe('portal routing', () => {
   it('parses supported hash routes', () => {
@@ -43,5 +43,16 @@ describe('portal routing', () => {
 
     navigateToPortal('app', locationLike)
     expect(locationLike.hash).toBe('#/app')
+  })
+
+  it('clears the admin workspace hint when leaving the sysadmin portal', () => {
+    const removed: string[] = []
+    clearPortalWorkspaceHints({
+      removeItem(key: string) {
+        removed.push(key)
+      },
+    })
+
+    expect(removed).toEqual(['airmentor-current-admin-faculty-id'])
   })
 })

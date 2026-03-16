@@ -73,7 +73,7 @@ import {
 import { inferKindFromPendingAction } from './page-utils'
 import { AIRMENTOR_STORAGE_KEYS, createAirMentorRepositories, createLocalAirMentorRepositories, type AirMentorRepositories } from './repositories'
 import { PortalEntryScreen } from './portal-entry'
-import { getPortalHash, navigateToPortal, resolvePortalRoute, type PortalRoute } from './portal-routing'
+import { clearPortalWorkspaceHints, getPortalHash, navigateToPortal, resolvePortalRoute, type PortalRoute } from './portal-routing'
 import { SystemAdminApp } from './system-admin-app'
 import { applyThemePreset, isLightTheme } from './theme'
 import { Bar, Btn, Card, Chip, PageBackButton, PageShell, RiskBadge, StagePips, UI_TRANSITION_FAST, UI_TRANSITION_MEDIUM } from './ui-primitives'
@@ -4025,6 +4025,14 @@ function PortalRouterApp() {
     return resolvePortalRoute(window.location.hash, window.localStorage)
   })
 
+  const handleExitAdminToPortal = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      clearPortalWorkspaceHints(window.localStorage)
+    }
+    setRoute('home')
+    navigateToPortal('home')
+  }, [])
+
   useEffect(() => {
     if (typeof window === 'undefined') return
     const syncRoute = () => setRoute(resolvePortalRoute(window.location.hash, window.localStorage))
@@ -4040,7 +4048,7 @@ function PortalRouterApp() {
   }, [route])
 
   if (route === 'app') return <OperationalApp />
-  if (route === 'admin') return <SystemAdminApp onExitPortal={() => navigateToPortal('home')} />
+  if (route === 'admin') return <SystemAdminApp onExitPortal={handleExitAdminToPortal} />
 
   return (
     <PortalEntryScreen
