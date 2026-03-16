@@ -77,12 +77,17 @@ try {
 
   const facultyCode = `QA${Date.now().toString().slice(-4)}`
   const facultyName = `Quality Assurance Faculty ${facultyCode}`
+  const updatedFacultyName = `${facultyName} Updated`
   const departmentCode = `Q${facultyCode.slice(-3)}`
   const departmentName = `Quality Systems ${facultyCode}`
+  const updatedDepartmentName = `${departmentName} Updated`
   const branchCode = `QS-${facultyCode.slice(-2)}`
   const branchName = `Quality Analytics ${facultyCode}`
+  const updatedBranchName = `${branchName} Updated`
   const batchYear = '2028'
+  const batchLabel = `${batchYear}-A`
   const curriculumCode = `QA${facultyCode.slice(-2)}99`
+  const updatedCurriculumTitle = 'Quality Governance Lab Advanced'
   const studentUsn = '1MS24CS022'
 
   await page.getByPlaceholder('ENG', { exact: true }).fill(facultyCode)
@@ -91,12 +96,20 @@ try {
   await page.getByRole('button', { name: 'Add Academic Faculty', exact: true }).click()
   await expectFlash('Academic faculty created.')
   await page.getByText(facultyName, { exact: true }).click()
+  await page.getByLabel('Faculty Name', { exact: true }).fill(updatedFacultyName)
+  await page.getByRole('button', { name: 'Save Faculty', exact: true }).click()
+  await expectFlash('Academic faculty updated.')
+  await expectVisible(page.getByText(updatedFacultyName, { exact: true }).first(), 'updated academic faculty name')
 
   await page.getByPlaceholder('CSE', { exact: true }).fill(departmentCode)
   await page.getByPlaceholder('Computer Science and Engineering', { exact: true }).fill(departmentName)
   await page.getByRole('button', { name: 'Add Department', exact: true }).click()
   await expectFlash('Department created.')
   await page.getByText(departmentName, { exact: true }).click()
+  await page.getByLabel('Department Name', { exact: true }).fill(updatedDepartmentName)
+  await page.getByRole('button', { name: 'Save Department', exact: true }).click()
+  await expectFlash('Department updated.')
+  await expectVisible(page.getByText(updatedDepartmentName, { exact: true }).first(), 'updated department name')
 
   await page.getByPlaceholder('CSE-AI', { exact: true }).fill(branchCode)
   await page.getByPlaceholder('AI and Data Science', { exact: true }).fill(branchName)
@@ -104,6 +117,10 @@ try {
   await page.getByRole('button', { name: 'Add Branch', exact: true }).click()
   await expectFlash('Branch created.')
   await page.getByText(branchName, { exact: true }).click()
+  await page.getByLabel('Branch Name', { exact: true }).fill(updatedBranchName)
+  await page.getByRole('button', { name: 'Save Branch', exact: true }).click()
+  await expectFlash('Branch updated.')
+  await expectVisible(page.getByText(updatedBranchName, { exact: true }).first(), 'updated branch name')
 
   await page.getByPlaceholder('2022', { exact: true }).fill(batchYear)
   await page.getByPlaceholder('5', { exact: true }).first().fill('5')
@@ -111,32 +128,54 @@ try {
   await page.getByRole('button', { name: 'Add Batch', exact: true }).click()
   await expectFlash('Batch created.')
   await page.getByRole('button', { name: new RegExp(`Batch ${batchYear}`) }).first().click()
+  await page.getByLabel('Batch Label', { exact: true }).fill(batchLabel)
+  await page.getByLabel('Batch Active Semester', { exact: true }).fill('6')
+  await page.getByLabel('Batch Section Labels', { exact: true }).fill('A, B')
+  await page.getByRole('button', { name: 'Save Batch', exact: true }).click()
+  await expectFlash('Batch updated.')
+  await expectVisible(page.getByText(/^Sem 6$/).first(), 'updated batch semester chip')
 
   await page.getByRole('button', { name: /Save Batch Policy/i }).click()
   await expectFlash('Batch policy saved.')
 
   await page.getByPlaceholder('2026-27', { exact: true }).fill('2028-29')
-  await page.getByPlaceholder('5', { exact: true }).last().fill('5')
+  await page.getByPlaceholder('5', { exact: true }).last().fill('6')
   await page.getByPlaceholder('YYYY-MM-DD', { exact: true }).nth(0).fill('2028-07-10')
   await page.getByPlaceholder('YYYY-MM-DD', { exact: true }).nth(1).fill('2028-11-20')
   await page.getByRole('button', { name: 'Add Term', exact: true }).click()
   await expectFlash('Academic term created.')
+  await page.getByRole('button', { name: 'Edit', exact: true }).nth(0).click()
+  await page.getByLabel('Term Academic Year Label', { exact: true }).fill('2028-30')
+  await page.getByRole('button', { name: 'Save Term', exact: true }).click()
+  await expectFlash('Academic term updated.')
+  await expectVisible(page.getByText(/Semester 6 · 2028-30/), 'updated term row')
 
-  await page.getByPlaceholder('Semester', { exact: true }).fill('5')
+  await page.getByPlaceholder('Semester', { exact: true }).fill('6')
   await page.getByPlaceholder('CS699', { exact: true }).fill(curriculumCode)
   await page.getByPlaceholder('Advanced Governance Systems', { exact: true }).fill('Quality Governance Lab')
   await page.getByPlaceholder('4', { exact: true }).last().fill('4')
   await page.getByRole('button', { name: 'Add Curriculum Course', exact: true }).click()
   await expectFlash('Curriculum course created.')
   await expectVisible(page.getByText(new RegExp(curriculumCode)), 'new curriculum course row')
+  await page.getByRole('button', { name: 'Edit', exact: true }).nth(1).click()
+  await page.getByLabel('Curriculum Course Title', { exact: true }).fill(updatedCurriculumTitle)
+  await page.getByRole('button', { name: 'Save Curriculum Course', exact: true }).click()
+  await expectFlash('Curriculum course updated.')
+  await expectVisible(page.getByText(new RegExp(updatedCurriculumTitle)).first(), 'updated curriculum course row')
 
   await page.reload({ waitUntil: 'networkidle' })
   await clickTab('Faculties')
-  await page.getByText(facultyName, { exact: true }).click()
-  await page.getByText(departmentName, { exact: true }).click()
-  await page.getByText(branchName, { exact: true }).click()
-  await page.getByRole('button', { name: new RegExp(`Batch ${batchYear}`) }).first().click()
-  await expectVisible(page.getByText(new RegExp(curriculumCode)), 'persisted curriculum after refresh')
+  await page.getByText(updatedFacultyName, { exact: true }).click()
+  await page.getByText(updatedDepartmentName, { exact: true }).click()
+  await page.getByText(updatedBranchName, { exact: true }).click()
+  await page.getByRole('button', { name: new RegExp(`Batch ${batchLabel}`) }).first().click()
+  await expectVisible(page.getByText(new RegExp(updatedCurriculumTitle)).first(), 'persisted curriculum after refresh')
+  await page.getByRole('button', { name: 'Delete', exact: true }).nth(1).click()
+  await expectFlash('Curriculum course archived.')
+  await page.waitForFunction((text) => !Array.from(document.querySelectorAll('*')).some(node => node.textContent?.includes(text)), updatedCurriculumTitle)
+  await page.getByRole('button', { name: 'Delete', exact: true }).nth(0).click()
+  await expectFlash('Academic term archived.')
+  await page.waitForFunction(() => !Array.from(document.querySelectorAll('*')).some(node => node.textContent?.includes('Semester 6 · 2028-30')))
 
   const search = page.getByRole('textbox', { name: 'Global admin search' })
   await search.fill(studentUsn)

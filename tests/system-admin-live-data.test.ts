@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   deriveCurrentYearLabel,
+  isVisibleAdminRecord,
   listCurriculumBySemester,
   listFacultyAssignments,
   searchLiveAdminWorkspace,
@@ -235,6 +236,48 @@ describe('system-admin-live-data', () => {
     expect(grouped).toHaveLength(1)
     expect(grouped[0].semesterNumber).toBe(5)
     expect(grouped[0].courses[0].courseCode).toBe('CS699')
+  })
+
+  it('treats archived records as hidden from primary admin views', () => {
+    expect(isVisibleAdminRecord('active')).toBe(true)
+    expect(isVisibleAdminRecord('archived')).toBe(false)
+
+    const archivedDataset: LiveAdminDataset = {
+      ...dataset,
+      curriculumCourses: [
+        ...dataset.curriculumCourses,
+        {
+          curriculumCourseId: 'curr_2',
+          batchId: 'batch_2022',
+          semesterNumber: 6,
+          courseId: 'course_1',
+          courseCode: 'CS700',
+          title: 'Archived Curriculum',
+          credits: 3,
+          status: 'archived',
+          version: 1,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+      academicFaculties: [
+        ...dataset.academicFaculties,
+        {
+          academicFacultyId: 'af_archived',
+          institutionId: 'inst_1',
+          code: 'ARC',
+          name: 'Archived Faculty',
+          overview: null,
+          status: 'archived',
+          version: 1,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    }
+
+    expect(listCurriculumBySemester(archivedDataset, 'batch_2022')).toHaveLength(1)
+    expect(searchLiveAdminWorkspace(archivedDataset, 'Archived Faculty')).toHaveLength(0)
   })
 
   it('finds faculty assignments from ownership records', () => {

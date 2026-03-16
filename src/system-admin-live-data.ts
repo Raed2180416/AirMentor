@@ -64,6 +64,10 @@ function normalizeSearch(value: string) {
   return value.trim().toLowerCase()
 }
 
+export function isVisibleAdminRecord(status?: string | null) {
+  return (status ?? 'active').toLowerCase() !== 'archived'
+}
+
 export function resolveAcademicFaculty(data: LiveAdminDataset, academicFacultyId?: string | null) {
   return academicFacultyId ? data.academicFaculties.find(item => item.academicFacultyId === academicFacultyId) ?? null : null
 }
@@ -89,28 +93,28 @@ export function resolveFacultyMember(data: LiveAdminDataset, facultyMemberId?: s
 }
 
 export function listDepartmentsForAcademicFaculty(data: LiveAdminDataset, academicFacultyId?: string | null) {
-  return data.departments.filter(item => item.academicFacultyId === (academicFacultyId ?? null))
+  return data.departments.filter(item => item.academicFacultyId === (academicFacultyId ?? null) && isVisibleAdminRecord(item.status))
 }
 
 export function listBranchesForDepartment(data: LiveAdminDataset, departmentId?: string | null) {
-  return data.branches.filter(item => item.departmentId === departmentId)
+  return data.branches.filter(item => item.departmentId === departmentId && isVisibleAdminRecord(item.status))
 }
 
 export function listBatchesForBranch(data: LiveAdminDataset, branchId?: string | null) {
   return data.batches
-    .filter(item => item.branchId === branchId)
+    .filter(item => item.branchId === branchId && isVisibleAdminRecord(item.status))
     .sort((left, right) => right.admissionYear - left.admissionYear)
 }
 
 export function listTermsForBatch(data: LiveAdminDataset, batchId?: string | null) {
   return data.terms
-    .filter(item => item.batchId === batchId)
+    .filter(item => item.batchId === batchId && isVisibleAdminRecord(item.status))
     .sort((left, right) => left.semesterNumber - right.semesterNumber || left.startDate.localeCompare(right.startDate))
 }
 
 export function listCurriculumBySemester(data: LiveAdminDataset, batchId?: string | null) {
   const semesters = new Map<number, ApiCurriculumCourse[]>()
-  for (const item of data.curriculumCourses.filter(course => course.batchId === batchId)) {
+  for (const item of data.curriculumCourses.filter(course => course.batchId === batchId && isVisibleAdminRecord(course.status))) {
     const bucket = semesters.get(item.semesterNumber) ?? []
     bucket.push(item)
     semesters.set(item.semesterNumber, bucket)
@@ -147,6 +151,7 @@ export function searchLiveAdminWorkspace(data: LiveAdminDataset, rawQuery: strin
   const results: LiveAdminSearchResult[] = []
 
   for (const academicFaculty of data.academicFaculties) {
+    if (!isVisibleAdminRecord(academicFaculty.status)) continue
     if (![academicFaculty.name, academicFaculty.code, academicFaculty.overview ?? ''].some(value => value.toLowerCase().includes(query))) continue
     results.push({
       key: `academic-faculty:${academicFaculty.academicFacultyId}`,
@@ -157,6 +162,7 @@ export function searchLiveAdminWorkspace(data: LiveAdminDataset, rawQuery: strin
   }
 
   for (const department of data.departments) {
+    if (!isVisibleAdminRecord(department.status)) continue
     if (![department.name, department.code].some(value => value.toLowerCase().includes(query))) continue
     results.push({
       key: `department:${department.departmentId}`,
@@ -171,6 +177,7 @@ export function searchLiveAdminWorkspace(data: LiveAdminDataset, rawQuery: strin
   }
 
   for (const branch of data.branches) {
+    if (!isVisibleAdminRecord(branch.status)) continue
     if (![branch.name, branch.code, branch.programLevel].some(value => value.toLowerCase().includes(query))) continue
     const department = resolveDepartment(data, branch.departmentId)
     results.push({
@@ -187,6 +194,7 @@ export function searchLiveAdminWorkspace(data: LiveAdminDataset, rawQuery: strin
   }
 
   for (const batch of data.batches) {
+    if (!isVisibleAdminRecord(batch.status)) continue
     const branch = resolveBranch(data, batch.branchId)
     if (![batch.batchLabel, String(batch.admissionYear), branch?.name ?? ''].some(value => value.toLowerCase().includes(query))) continue
     const department = branch ? resolveDepartment(data, branch.departmentId) : null
@@ -227,6 +235,7 @@ export function searchLiveAdminWorkspace(data: LiveAdminDataset, rawQuery: strin
   }
 
   for (const course of data.courses) {
+    if (!isVisibleAdminRecord(course.status)) continue
     if (![course.courseCode, course.title].some(value => value.toLowerCase().includes(query))) continue
     const department = resolveDepartment(data, course.departmentId)
     results.push({

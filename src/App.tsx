@@ -301,7 +301,7 @@ function LoginPage({
         <Card
           style={{
             padding: 28,
-            background: `radial-gradient(circle at top left, ${T.success}20, transparent 34%), radial-gradient(circle at bottom right, ${T.accent}16, transparent 26%), linear-gradient(160deg, ${T.surface}, ${T.surface2})`,
+            background: `radial-gradient(circle at top left, ${T.success}22, transparent 34%), radial-gradient(circle at 82% 86%, ${T.accent}18, transparent 28%), linear-gradient(160deg, ${T.surface}, ${T.surface2})`,
             display: 'grid',
             alignContent: 'space-between',
             minHeight: 520,
@@ -339,53 +339,62 @@ function LoginPage({
           </div>
         </Card>
 
-        <Card style={{ padding: 28, display: 'grid', alignContent: 'center', background: `linear-gradient(180deg, ${T.surface}, ${T.surface2})` }}>
-          <div style={{ ...mono, fontSize: 10, color: T.success, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Secure Session</div>
-          <div style={{ ...sora, fontSize: 28, fontWeight: 800, color: T.text, marginTop: 10 }}>Sign in to enter the teaching workspace.</div>
-          <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 10, lineHeight: 1.8 }}>
-            Pick your faculty account, restore your role-aware workspace, and continue from the right teaching or mentoring context. {helperText}
+        <Card style={{ padding: 28, display: 'grid', alignContent: 'space-between', minHeight: 520, background: `radial-gradient(circle at top right, ${T.success}12, transparent 28%), radial-gradient(circle at bottom left, ${T.accent}10, transparent 24%), linear-gradient(180deg, ${T.surface}, ${T.surface2})` }}>
+          <div style={{ width: '100%', maxWidth: 680, margin: '0 auto' }}>
+            <div style={{ ...mono, fontSize: 10, color: T.success, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Secure Session</div>
+            <div style={{ ...sora, fontSize: 28, fontWeight: 800, color: T.text, marginTop: 10 }}>Sign in to enter the teaching workspace.</div>
+            <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 10, lineHeight: 1.8 }}>
+              Pick your faculty account, restore your role-aware workspace, and continue from the right teaching or mentoring context. {helperText}
+            </div>
+
+            <form onSubmit={event => { void handleSubmit(event) }} style={{ marginTop: 22, display: 'grid', gap: 14 }}>
+              <div>
+                <AuthFieldLabel>Faculty Account</AuthFieldLabel>
+                <AuthSelect id="teacher-login" value={teacherId} onChange={event => setTeacherId(event.target.value)} disabled={busy}>
+                  {facultyOptions.map(faculty => <option key={faculty.facultyId} value={faculty.facultyId}>{faculty.name}</option>)}
+                </AuthSelect>
+              </div>
+
+              {selectedOption ? (
+                <div style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 12px' }}>
+                  <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 4 }}>Selected profile</div>
+                  <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text }}>{selectedFaculty?.name ?? selectedOption.name}</div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
+                    {selectedFaculty
+                      ? `${selectedFaculty.dept} · ${selectedFaculty.allowedRoles.join(' / ')}`
+                      : `Faculty ID · ${selectedOption.facultyId}`}
+                  </div>
+                </div>
+              ) : null}
+
+              <div>
+                <AuthFieldLabel>Password</AuthFieldLabel>
+                <AuthInput id="teacher-password" type="password" value={password} onChange={event => setPassword(event.target.value)} disabled={busy} placeholder="••••••••" />
+              </div>
+
+              {err ? <AuthNotice message={err} tone="error" /> : null}
+              {!!externalError ? <AuthNotice message={externalError} tone="error" /> : null}
+
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+                {onBackToPortal ? (
+                  <Btn type="button" variant="ghost" onClick={onBackToPortal} disabled={busy}>
+                    Back To Portal
+                  </Btn>
+                ) : <span />}
+                <Btn type="submit" disabled={busy}>
+                  <Shield size={14} />
+                  {busy ? 'Signing In...' : 'Sign In'}
+                </Btn>
+              </div>
+            </form>
           </div>
 
-          <form onSubmit={event => { void handleSubmit(event) }} style={{ marginTop: 22, display: 'grid', gap: 14 }}>
-            <div>
-              <AuthFieldLabel>Faculty Account</AuthFieldLabel>
-              <AuthSelect id="teacher-login" value={teacherId} onChange={event => setTeacherId(event.target.value)} disabled={busy}>
-                {facultyOptions.map(faculty => <option key={faculty.facultyId} value={faculty.facultyId}>{faculty.name}</option>)}
-              </AuthSelect>
+          <div style={{ width: '100%', maxWidth: 680, margin: '24px auto 0', borderRadius: 16, border: `1px solid ${T.border}`, background: T.surface2, padding: '14px 16px' }}>
+            <div style={{ ...mono, fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>After Sign-In</div>
+            <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 8, lineHeight: 1.8 }}>
+              The workspace restores your role-aware context, current teaching assignments, and the linked mentoring views that belong to the selected faculty profile.
             </div>
-
-            {selectedOption ? (
-              <div style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 12px' }}>
-                <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 4 }}>Selected profile</div>
-                <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text }}>{selectedFaculty?.name ?? selectedOption.name}</div>
-                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
-                  {selectedFaculty
-                    ? `${selectedFaculty.dept} · ${selectedFaculty.allowedRoles.join(' / ')}`
-                    : `Faculty ID · ${selectedOption.facultyId}`}
-                </div>
-              </div>
-            ) : null}
-
-            <div>
-              <AuthFieldLabel>Password</AuthFieldLabel>
-              <AuthInput id="teacher-password" type="password" value={password} onChange={event => setPassword(event.target.value)} disabled={busy} placeholder="••••••••" />
-            </div>
-
-            {err ? <AuthNotice message={err} tone="error" /> : null}
-            {!!externalError ? <AuthNotice message={externalError} tone="error" /> : null}
-
-            <div style={{ display: 'flex', gap: 12, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
-              {onBackToPortal ? (
-                <Btn type="button" variant="ghost" onClick={onBackToPortal} disabled={busy}>
-                  Back To Portal
-                </Btn>
-              ) : <span />}
-              <Btn type="submit" disabled={busy}>
-                <Shield size={14} />
-                {busy ? 'Signing In...' : 'Sign In'}
-              </Btn>
-            </div>
-          </form>
+          </div>
         </Card>
       </div>
     </PageShell>
