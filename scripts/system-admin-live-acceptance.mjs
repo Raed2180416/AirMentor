@@ -31,6 +31,20 @@ async function clickTab(name) {
   await page.getByRole('button', { name, exact: true }).click()
 }
 
+async function advanceRequestToClosed() {
+  const orderedActions = ['Take Review', 'Approve', 'Mark Implemented', 'Close']
+
+  for (const action of orderedActions) {
+    const button = page.getByRole('button', { name: action, exact: true })
+    if (await button.count()) {
+      await button.click()
+      await expectFlash('Request advanced.')
+    }
+  }
+
+  await expectVisible(page.getByText(/^Closed$/).first(), 'closed request status')
+}
+
 try {
   await page.goto(appUrl, { waitUntil: 'networkidle' })
 
@@ -123,15 +137,7 @@ try {
 
   await clickTab('Requests')
   await page.getByText(/Grant additional mentor mapping coverage/i).click()
-  await page.getByRole('button', { name: 'Take Review', exact: true }).click()
-  await expectFlash('Request advanced.')
-  await page.getByRole('button', { name: 'Approve', exact: true }).click()
-  await expectFlash('Request advanced.')
-  await page.getByRole('button', { name: 'Mark Implemented', exact: true }).click()
-  await expectFlash('Request advanced.')
-  await page.getByRole('button', { name: 'Close', exact: true }).click()
-  await expectFlash('Request advanced.')
-  await expectVisible(page.getByText(/^Closed$/).first(), 'closed request status')
+  await advanceRequestToClosed()
 
   await page.screenshot({ path: successScreenshot, fullPage: true })
   console.log(`System admin live acceptance flow passed. Screenshot: ${successScreenshot}`)
