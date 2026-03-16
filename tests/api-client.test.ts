@@ -65,4 +65,19 @@ describe('AirMentorApiClient', () => {
 
     await expect(client.login({ identifier: 'sysadmin', password: 'wrong' })).rejects.toBeInstanceOf(AirMentorApiError)
   })
+
+  it('does not send a JSON content-type header for bodyless requests like logout', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(null, {
+      status: 204,
+    }))
+
+    const client = new AirMentorApiClient('http://127.0.0.1:4000', fetchMock as typeof fetch)
+    await client.logout()
+
+    expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:4000/api/session', expect.objectContaining({
+      method: 'DELETE',
+      credentials: 'include',
+      headers: {},
+    }))
+  })
 })

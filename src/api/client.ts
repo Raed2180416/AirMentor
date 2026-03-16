@@ -387,12 +387,14 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
   }
 
   private async request<T>(path: string, init?: RequestInit) {
+    const hasBody = init?.body !== undefined
+    const resolvedHeaders = {
+      ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
+      ...(init?.headers ?? {}),
+    }
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
       credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(init?.headers ?? {}),
-      },
+      headers: resolvedHeaders,
       ...init,
     })
 
