@@ -2,7 +2,7 @@
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo_root=$(cd "$script_dir/.." && pwd)
-default_api_dir="$repo_root/../air-mentor-api"
+default_api_dir="$repo_root/air-mentor-api"
 api_repo_dir="${AIRMENTOR_API_DIR:-$default_api_dir}"
 
 runtime_dir=""
@@ -14,7 +14,7 @@ api_base_url=""
 resolve_api_repo_dir() {
   if [[ ! -d "$api_repo_dir" ]]; then
     echo "Live admin backend repo not found at $api_repo_dir" >&2
-    echo "Set AIRMENTOR_API_DIR to your air-mentor-api checkout." >&2
+    echo "Set AIRMENTOR_API_DIR to your embedded air-mentor-api checkout." >&2
     exit 1
   fi
 

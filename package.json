@@ -3,11 +3,16 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "workspaces": [
+    "air-mentor-api"
+  ],
   "scripts": {
     "dev": "vite",
     "dev:live": "bash scripts/dev-live.sh",
+    "build:api": "npm --workspace air-mentor-api run build",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test:api": "npm --workspace air-mentor-api test",
     "test": "vitest run",
     "preview": "vite preview",
     "playwright:version": "nix develop -c playwright --version",

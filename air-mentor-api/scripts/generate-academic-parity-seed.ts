@@ -13,9 +13,9 @@ import {
   TEACHERS,
   getStudentHistoryRecord,
   getStudents,
-} from '../../air-mentor-ui/src/data.ts'
-import { createLocalAirMentorRepositories } from '../../air-mentor-ui/src/repositories.ts'
-import { createTransition, type QueueTransition, type SharedTask, type TaskType } from '../../air-mentor-ui/src/domain.ts'
+} from '../../src/data.ts'
+import { createLocalAirMentorRepositories } from '../../src/repositories.ts'
+import { createTransition, type QueueTransition, type SharedTask, type TaskType } from '../../src/domain.ts'
 
 const BASE_NOW_ISO = '2026-03-16T00:00:00.000Z'
 const BASE_NOW = new Date(BASE_NOW_ISO).getTime()
@@ -300,7 +300,7 @@ function getGenerateTasks() {
 }
 
 async function main() {
-  const academicDataModule = await import('../../air-mentor-ui/src/data.ts')
+  const academicDataModule = await import('../../src/data.ts')
   ;(globalThis as unknown as { __academicDataModule?: { generateTasks: () => SharedTask[] } }).__academicDataModule = {
     generateTasks: academicDataModule.generateTasks,
   }

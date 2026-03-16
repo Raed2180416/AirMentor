@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { AirMentorApiClient } from '../../air-mentor-ui/src/api/client.js'
+import { AirMentorApiClient } from '../../src/api/client.js'
 import { createTestApp, TEST_ORIGIN } from './helpers/test-app.js'
 
 let current: Awaited<ReturnType<typeof createTestApp>> | null = null
