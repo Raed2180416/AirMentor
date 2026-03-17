@@ -7,6 +7,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   adminRequestNotes,
+  adminReminders,
   academicFaculties,
   academicTerms,
   adminRequestTransitions,
@@ -72,6 +73,11 @@ const DEFAULT_POLICY = {
     rounding: '2-decimal',
     includeFailedCredits: false,
     repeatedCoursePolicy: 'latest-attempt',
+  },
+  progressionRules: {
+    passMarkPercent: 40,
+    minimumCgpaForPromotion: 5,
+    requireNoActiveBacklogs: true,
   },
 } as const
 
@@ -262,6 +268,7 @@ export async function seedIntoDatabase(db: AppDb, client: { query: (sql: string,
   }
 
   await db.delete(auditEvents)
+  await db.delete(adminReminders)
   await db.delete(adminRequestTransitions)
   await db.delete(adminRequestNotes)
   await db.delete(adminRequests)

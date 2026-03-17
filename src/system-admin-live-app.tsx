@@ -5,20 +5,39 @@ import {
   useMemo,
   useState,
   type FormEvent,
+  type ReactNode,
 } from 'react'
 import {
+  Bell,
+  BookOpen,
   CheckCircle2,
+  Clock3,
   ChevronLeft,
   Compass,
+  GraduationCap,
+  LayoutDashboard,
+  Plus,
   RefreshCw,
+  Search,
+  UserCog,
+  Users,
 } from 'lucide-react'
 import { AirMentorApiClient, AirMentorApiError } from './api/client'
 import type {
+  ApiAuditEvent,
+  ApiAdminFacultyCalendar,
+  ApiFacultyAppointment,
+  ApiMentorAssignment,
   ApiAdminRequestDetail,
+  ApiAdminSearchResult,
   ApiAdminRequestSummary,
+  ApiOfferingOwnership,
   ApiPolicyPayload,
   ApiResolvedBatchPolicy,
+  ApiRoleCode,
+  ApiRoleGrant,
   ApiSessionResponse,
+  ApiStudentEnrollment,
 } from './api/types'
 import { T, mono, sora } from './data'
 import { normalizeThemeMode, type ThemeMode } from './domain'
@@ -44,7 +63,6 @@ import {
   type LiveAdminRoute,
 } from './system-admin-live-data'
 import {
-  AdminTopBar,
   AuthFeature,
   DayToggle,
   EmptyState,
@@ -59,10 +77,10 @@ import {
   TextInput,
   formatDate,
   formatDateTime,
-  type AdminSectionId,
   type BreadcrumbSegment,
 } from './system-admin-ui'
-import { applyThemePreset } from './theme'
+import { applyThemePreset, isLightTheme } from './theme'
+import { SystemAdminTimetableEditor } from './system-admin-timetable-editor'
 import { Btn, Card, Chip, PageShell } from './ui-primitives'
 
 type SystemAdminLiveAppProps = {
@@ -90,6 +108,9 @@ type PolicyFormState = {
   dayEnd: string
   workingDays: Array<'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat' | 'Sun'>
   repeatedCoursePolicy: 'latest-attempt' | 'best-attempt'
+  passMarkPercent: string
+  minimumCgpaForPromotion: string
+  requireNoActiveBacklogs: boolean
 }
 
 type StructureFormState = {
@@ -110,13 +131,82 @@ type EntityEditorState = {
   curriculum: StructureFormState['curriculum'] & { curriculumCourseId: string }
 }
 
+type StudentFormState = {
+  usn: string
+  rollNumber: string
+  name: string
+  email: string
+  phone: string
+  admissionDate: string
+}
+
+type EnrollmentFormState = {
+  enrollmentId: string
+  branchId: string
+  termId: string
+  sectionCode: string
+  rosterOrder: string
+  academicStatus: string
+  startDate: string
+  endDate: string
+}
+
+type MentorAssignmentFormState = {
+  assignmentId: string
+  facultyId: string
+  effectiveFrom: string
+  effectiveTo: string
+  source: string
+}
+
+type FacultyFormState = {
+  username: string
+  password: string
+  email: string
+  phone: string
+  employeeCode: string
+  displayName: string
+  designation: string
+  joinedOn: string
+}
+
+type AppointmentFormState = {
+  appointmentId: string
+  departmentId: string
+  branchId: string
+  isPrimary: boolean
+  startDate: string
+  endDate: string
+}
+
+type RoleGrantFormState = {
+  grantId: string
+  roleCode: ApiRoleCode
+  scopeType: string
+  scopeId: string
+  startDate: string
+  endDate: string
+}
+
+type OwnershipFormState = {
+  ownershipId: string
+  offeringId: string
+  facultyId: string
+  ownershipRole: string
+}
+
 const EMPTY_DATA: LiveAdminDataset = {
   institution: null, academicFaculties: [], departments: [], branches: [], batches: [], terms: [],
   facultyMembers: [], students: [], courses: [], curriculumCourses: [], policyOverrides: [],
-  offerings: [], ownerships: [], requests: [],
+  offerings: [], ownerships: [], requests: [], reminders: [],
 }
 
 const WEEKDAYS: PolicyFormState['workingDays'] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const DEFAULT_PROGRESSION_RULES = {
+  passMarkPercent: 40,
+  minimumCgpaForPromotion: 5,
+  requireNoActiveBacklogs: true,
+}
 
 function parseAdminRoute(hash: string): LiveAdminRoute {
   const cleaned = hash.replace(/^#\/admin/, '').replace(/^\/+/, '')
@@ -126,6 +216,7 @@ function parseAdminRoute(hash: string): LiveAdminRoute {
   if (parts[0] === 'students') return { section: 'students', studentId: parts[1] }
   if (parts[0] === 'faculty-members') return { section: 'faculty-members', facultyMemberId: parts[1] }
   if (parts[0] === 'requests') return { section: 'requests', requestId: parts[1] }
+  if (parts[0] === 'history') return { section: 'history' }
   if (parts[0] === 'faculties') {
     return {
       section: 'faculties',
@@ -143,6 +234,7 @@ function routeToHash(route: LiveAdminRoute) {
   if (route.section === 'students') return route.studentId ? `#/admin/students/${route.studentId}` : '#/admin/students'
   if (route.section === 'faculty-members') return route.facultyMemberId ? `#/admin/faculty-members/${route.facultyMemberId}` : '#/admin/faculty-members'
   if (route.section === 'requests') return route.requestId ? `#/admin/requests/${route.requestId}` : '#/admin/requests'
+  if (route.section === 'history') return '#/admin/history'
   const segments = ['#/admin/faculties']
   if (route.academicFacultyId) segments.push(route.academicFacultyId)
   if (route.departmentId) segments.push('departments', route.departmentId)
@@ -158,6 +250,9 @@ function defaultPolicyForm(): PolicyFormState {
     maxTermTests: '2', maxQuizzes: '2', maxAssignments: '2',
     dayStart: '08:30', dayEnd: '16:30', workingDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
     repeatedCoursePolicy: 'latest-attempt',
+    passMarkPercent: '40',
+    minimumCgpaForPromotion: '5.0',
+    requireNoActiveBacklogs: true,
   }
 }
 
@@ -169,6 +264,84 @@ function defaultEntityEditorState(currentSemester = '1'): EntityEditorState {
     batch: { admissionYear: '2022', batchLabel: '2022', currentSemester, sectionLabels: 'A, B' },
     term: { termId: '', academicYearLabel: '2026-27', semesterNumber: currentSemester, startDate: '2026-08-01', endDate: '2026-12-15' },
     curriculum: { curriculumCourseId: '', semesterNumber: currentSemester, courseCode: '', title: '', credits: '4' },
+  }
+}
+
+function defaultStudentForm(): StudentFormState {
+  return {
+    usn: '',
+    rollNumber: '',
+    name: '',
+    email: '',
+    phone: '',
+    admissionDate: new Date().toISOString().slice(0, 10),
+  }
+}
+
+function defaultEnrollmentForm(): EnrollmentFormState {
+  return {
+    enrollmentId: '',
+    branchId: '',
+    termId: '',
+    sectionCode: 'A',
+    rosterOrder: '0',
+    academicStatus: 'regular',
+    startDate: new Date().toISOString().slice(0, 10),
+    endDate: '',
+  }
+}
+
+function defaultMentorAssignmentForm(): MentorAssignmentFormState {
+  return {
+    assignmentId: '',
+    facultyId: '',
+    effectiveFrom: new Date().toISOString().slice(0, 10),
+    effectiveTo: '',
+    source: 'sysadmin-manual',
+  }
+}
+
+function defaultFacultyForm(): FacultyFormState {
+  return {
+    username: '',
+    password: '',
+    email: '',
+    phone: '',
+    employeeCode: '',
+    displayName: '',
+    designation: '',
+    joinedOn: new Date().toISOString().slice(0, 10),
+  }
+}
+
+function defaultAppointmentForm(): AppointmentFormState {
+  return {
+    appointmentId: '',
+    departmentId: '',
+    branchId: '',
+    isPrimary: false,
+    startDate: new Date().toISOString().slice(0, 10),
+    endDate: '',
+  }
+}
+
+function defaultRoleGrantForm(): RoleGrantFormState {
+  return {
+    grantId: '',
+    roleCode: 'MENTOR',
+    scopeType: 'department',
+    scopeId: '',
+    startDate: new Date().toISOString().slice(0, 10),
+    endDate: '',
+  }
+}
+
+function defaultOwnershipForm(): OwnershipFormState {
+  return {
+    ownershipId: '',
+    offeringId: '',
+    facultyId: '',
+    ownershipRole: 'owner',
   }
 }
 
@@ -188,6 +361,9 @@ function hydratePolicyForm(policy: ApiResolvedBatchPolicy['effectivePolicy']): P
     dayStart: policy.workingCalendar.dayStart, dayEnd: policy.workingCalendar.dayEnd,
     workingDays: [...policy.workingCalendar.days],
     repeatedCoursePolicy: policy.sgpaCgpaRules.repeatedCoursePolicy,
+    passMarkPercent: String(policy.progressionRules.passMarkPercent),
+    minimumCgpaForPromotion: String(policy.progressionRules.minimumCgpaForPromotion),
+    requireNoActiveBacklogs: policy.progressionRules.requireNoActiveBacklogs,
   }
 }
 
@@ -213,6 +389,11 @@ function buildPolicyPayload(form: PolicyFormState): ApiPolicyPayload {
     sgpaCgpaRules: {
       sgpaModel: 'credit-weighted', cgpaModel: 'credit-weighted-cumulative', rounding: '2-decimal',
       includeFailedCredits: false, repeatedCoursePolicy: form.repeatedCoursePolicy,
+    },
+    progressionRules: {
+      passMarkPercent: Number(form.passMarkPercent),
+      minimumCgpaForPromotion: Number(form.minimumCgpaForPromotion),
+      requireNoActiveBacklogs: form.requireNoActiveBacklogs,
     },
   }
 }
@@ -249,6 +430,12 @@ function requirePositiveInteger(label: string, value: string) {
   return parsed
 }
 
+function requirePositiveEvenInteger(label: string, value: string) {
+  const parsed = requirePositiveInteger(label, value)
+  if (parsed % 2 !== 0) throw new Error(`${label} must be an even whole number.`)
+  return parsed
+}
+
 function requireDate(label: string, value: string) {
   const trimmed = value.trim()
   if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) throw new Error(`${label} must use YYYY-MM-DD format.`)
@@ -277,6 +464,8 @@ function buildValidatedPolicyPayload(form: PolicyFormState): ApiPolicyPayload {
   const maxTermTests = requirePositiveInteger('Max term tests', form.maxTermTests)
   const maxQuizzes = requirePositiveInteger('Max quizzes', form.maxQuizzes)
   const maxAssignments = requirePositiveInteger('Max assignments', form.maxAssignments)
+  const passMarkPercent = requireRange('Pass mark percent', form.passMarkPercent, 0, 100)
+  const minimumCgpaForPromotion = requireRange('Minimum CGPA for promotion', form.minimumCgpaForPromotion, 0, 10)
 
   if (ce + see !== 100) throw new Error('CE and SEE must total 100.')
   if (termTestsWeight + quizWeight + assignmentWeight !== ce) {
@@ -303,7 +492,267 @@ function buildValidatedPolicyPayload(form: PolicyFormState): ApiPolicyPayload {
     maxTermTests: String(maxTermTests),
     maxQuizzes: String(maxQuizzes),
     maxAssignments: String(maxAssignments),
+    passMarkPercent: String(passMarkPercent),
+    minimumCgpaForPromotion: String(minimumCgpaForPromotion),
   })
+}
+
+function formatClockLabel(now: Date) {
+  return now.toLocaleString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function groupCollectionByLabel<T>(items: T[], getLabel: (item: T) => string) {
+  const grouped = new Map<string, T[]>()
+  items.forEach(item => {
+    const label = getLabel(item)
+    const current = grouped.get(label) ?? []
+    current.push(item)
+    grouped.set(label, current)
+  })
+  return Array.from(grouped.entries()).map(([label, groupedItems]) => ({ label, items: groupedItems }))
+}
+
+function isLeaderLikeOwnership(role: string) {
+  const normalized = role.trim().toLowerCase()
+  return normalized.includes('course') || normalized.includes('leader') || normalized.includes('owner') || normalized.includes('primary')
+}
+
+function isCurrentRoleGrant(grant: ApiRoleGrant) {
+  if (grant.status !== 'active') return false
+  const today = new Date().toISOString().slice(0, 10)
+  if (grant.startDate && grant.startDate > today) return false
+  if (grant.endDate && grant.endDate < today) return false
+  return true
+}
+
+function findLatestEnrollment(student: { enrollments: ApiStudentEnrollment[]; activeAcademicContext: { enrollmentId: string } | null }) {
+  return student.enrollments.find(item => item.enrollmentId === student.activeAcademicContext?.enrollmentId)
+    ?? [...student.enrollments].sort((left, right) => right.startDate.localeCompare(left.startDate))[0]
+    ?? null
+}
+
+function findLatestMentorAssignment(student: { mentorAssignments: ApiMentorAssignment[]; activeMentorAssignment: ApiMentorAssignment | null }) {
+  return student.activeMentorAssignment
+    ?? [...student.mentorAssignments].sort((left, right) => right.effectiveFrom.localeCompare(left.effectiveFrom))[0]
+    ?? null
+}
+
+function summarizeAuditEvent(event: ApiAuditEvent) {
+  const action = event.action.replace(/[_-]+/g, ' ')
+  return action.charAt(0).toUpperCase() + action.slice(1)
+}
+
+function getAuditEventRoute(event: ApiAuditEvent): LiveAdminRoute | null {
+  if (event.entityType === 'Student' || event.entityType === 'StudentEnrollment' || event.entityType === 'MentorAssignment') {
+    const studentId = event.entityType === 'Student'
+      ? event.entityId
+      : typeof event.after === 'object' && event.after && 'studentId' in event.after
+        ? String((event.after as { studentId?: unknown }).studentId ?? '')
+        : typeof event.before === 'object' && event.before && 'studentId' in event.before
+          ? String((event.before as { studentId?: unknown }).studentId ?? '')
+          : ''
+    return studentId ? { section: 'students', studentId } : null
+  }
+  if (event.entityType === 'FacultyProfile' || event.entityType === 'FacultyAppointment' || event.entityType === 'RoleGrant' || event.entityType === 'faculty_offering_ownership' || event.entityType === 'FacultyTimetableAdmin') {
+    const facultyMemberId = event.entityType === 'FacultyProfile' || event.entityType === 'FacultyTimetableAdmin'
+      ? event.entityId
+      : typeof event.after === 'object' && event.after && 'facultyId' in event.after
+        ? String((event.after as { facultyId?: unknown }).facultyId ?? '')
+        : typeof event.before === 'object' && event.before && 'facultyId' in event.before
+          ? String((event.before as { facultyId?: unknown }).facultyId ?? '')
+          : ''
+    return facultyMemberId ? { section: 'faculty-members', facultyMemberId } : null
+  }
+  if (event.entityType === 'AdminRequest') return { section: 'requests', requestId: event.entityId }
+  return null
+}
+
+function TeachingShellAdminTopBar({
+  institutionName,
+  adminName,
+  contextLabel,
+  now,
+  themeMode,
+  actionCount,
+  searchQuery,
+  onSearchChange,
+  searchResults,
+  onSearchSelect,
+  onToggleTheme,
+  onToggleQueue,
+  onRefresh,
+  onExitPortal,
+  onLogout,
+}: {
+  institutionName: string
+  adminName: string
+  contextLabel: string
+  now: Date
+  themeMode: ThemeMode
+  actionCount: number
+  searchQuery: string
+  onSearchChange: (query: string) => void
+  searchResults: Array<{ key: string; title: string; subtitle: string; onSelect: () => void }>
+  onSearchSelect?: () => void
+  onToggleTheme: () => void
+  onToggleQueue: () => void
+  onRefresh: () => void
+  onExitPortal?: () => void
+  onLogout: () => void
+}) {
+  return (
+    <div style={{ position: 'sticky', top: 0, zIndex: 40, display: 'grid', gap: 14, padding: '10px 20px 16px', background: isLightTheme(themeMode) ? 'rgba(255,255,255,0.9)' : 'rgba(9,14,22,0.9)', backdropFilter: 'blur(12px)', borderBottom: `1px solid ${T.border}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 10, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 13, color: '#fff' }}>AM</div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ ...sora, fontWeight: 800, fontSize: 14, color: T.text }}>{institutionName}</div>
+            <div style={{ ...mono, fontSize: 9, color: T.dim }}>Welcome {adminName} · {contextLabel}</div>
+          </div>
+        </div>
+
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ ...mono, fontSize: 10, color: T.dim, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 9px', minHeight: 32, display: 'flex', alignItems: 'center', gap: 6, background: T.surface2 }}>
+            <Clock3 size={12} />
+            {formatClockLabel(now)}
+          </div>
+          <button type="button" aria-label={isLightTheme(themeMode) ? 'Switch to dark mode' : 'Switch to light mode'} onClick={onToggleTheme} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted }}>
+            {isLightTheme(themeMode) ? 'Dark' : 'Light'}
+          </button>
+          <button type="button" aria-label="Open action queue" onClick={onToggleQueue} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted, position: 'relative' }}>
+            <Bell size={14} />
+            {actionCount > 0 ? (
+              <span style={{ position: 'absolute', top: -6, right: -6, minWidth: 16, height: 16, borderRadius: 8, background: T.danger, color: '#fff', ...mono, fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>
+                {Math.min(actionCount, 99)}
+              </span>
+            ) : null}
+          </button>
+          <button type="button" aria-label="Refresh admin data" onClick={onRefresh} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted }}>
+            <RefreshCw size={14} />
+          </button>
+          {onExitPortal ? <button type="button" onClick={onExitPortal} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted, ...mono, fontSize: 10 }}>Portal</button> : null}
+          <button type="button" onClick={onLogout} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted, ...mono, fontSize: 10 }}>
+            Logout
+          </button>
+        </div>
+      </div>
+
+      <div style={{ position: 'relative' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, borderRadius: 12, border: `1px solid ${T.border2}`, background: T.surface, padding: '10px 14px' }}>
+          <Search size={15} color={T.muted} />
+          <input
+            aria-label="Global admin search"
+            value={searchQuery}
+            onChange={event => onSearchChange(event.target.value)}
+            placeholder="Search anything: faculty, department, course, request, student, section..."
+            style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', color: T.text, ...mono, fontSize: 12 }}
+          />
+        </div>
+        {searchResults.length > 0 ? (
+          <Card style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, right: 0, padding: 0, overflow: 'hidden', zIndex: 30 }}>
+            {searchResults.map(result => (
+              <button
+                key={result.key}
+                type="button"
+                onClick={() => {
+                  result.onSelect()
+                  onSearchSelect?.()
+                }}
+                style={{
+                  width: '100%',
+                  textAlign: 'left',
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: `1px solid ${T.border}`,
+                  padding: '11px 12px',
+                  cursor: 'pointer',
+                }}
+              >
+                <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{result.title}</div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{result.subtitle}</div>
+              </button>
+            ))}
+          </Card>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function SectionLaunchCard({
+  title,
+  caption,
+  helper,
+  icon,
+  active,
+  onClick,
+}: {
+  title: string
+  caption: string
+  helper: string
+  icon: ReactNode
+  active?: boolean
+  onClick: () => void
+}) {
+  return (
+    <Card
+      glow={active ? T.accent : undefined}
+      onClick={onClick}
+      style={{
+        padding: 20,
+        background: active
+          ? `linear-gradient(160deg, ${T.accent}18, ${T.surface})`
+          : `linear-gradient(160deg, ${T.surface}, ${T.surface2})`,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+        <div style={{ width: 40, height: 40, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${T.accent}16`, color: T.accent }}>
+          {icon}
+        </div>
+        <div>
+          <div style={{ ...sora, fontSize: 17, fontWeight: 800, color: T.text }}>{title}</div>
+          <div style={{ ...mono, fontSize: 10, color: T.accent }}>{caption}</div>
+        </div>
+      </div>
+      <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.8 }}>{helper}</div>
+    </Card>
+  )
+}
+
+function ActionQueueCard({
+  title,
+  subtitle,
+  chips,
+  trailing,
+  tone = T.warning,
+  onClick,
+}: {
+  title: string
+  subtitle: string
+  chips: string[]
+  trailing?: ReactNode
+  tone?: string
+  onClick?: () => void
+}) {
+  return (
+    <Card onClick={onClick} style={{ padding: 12, background: T.surface2, cursor: onClick ? 'pointer' : undefined }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+        <div>
+          <div style={{ ...sora, fontSize: 12, fontWeight: 700, color: T.text }}>{title}</div>
+          <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.7 }}>{subtitle}</div>
+        </div>
+        {trailing}
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+        {chips.map(chip => <Chip key={chip} color={tone} size={9}>{chip}</Chip>)}
+      </div>
+    </Card>
+  )
 }
 
 export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLiveAppProps) {
@@ -311,6 +760,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const repositories = useMemo(() => createAirMentorRepositories({ repositoryMode: 'http', apiClient }), [apiClient])
 
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => repositories.sessionPreferences.getThemeSnapshot() ?? normalizeThemeMode(null))
+  const [now, setNow] = useState(() => new Date())
   const [booting, setBooting] = useState(true)
   const [authBusy, setAuthBusy] = useState(false)
   const [authError, setAuthError] = useState('')
@@ -323,6 +773,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
+  const [serverSearchResults, setServerSearchResults] = useState<ApiAdminSearchResult[]>([])
+  const [showActionQueue, setShowActionQueue] = useState(true)
+  const [universityTab, setUniversityTab] = useState<'overview' | 'bands' | 'ce-see' | 'cgpa' | 'courses'>('overview')
+  const [selectedSectionCode, setSelectedSectionCode] = useState<string | null>(null)
   const [route, setRoute] = useState<LiveAdminRoute>(() => parseAdminRoute(typeof window === 'undefined' ? '' : window.location.hash))
   const [structureForms, setStructureForms] = useState<StructureFormState>({
     academicFaculty: { code: '', name: '', overview: '' },
@@ -338,6 +792,23 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const [selectedRequestDetail, setSelectedRequestDetail] = useState<ApiAdminRequestDetail | null>(null)
   const [requestDetailLoading, setRequestDetailLoading] = useState(false)
   const [requestBusy, setRequestBusy] = useState('')
+  const [studentForm, setStudentForm] = useState<StudentFormState>(() => defaultStudentForm())
+  const [enrollmentForm, setEnrollmentForm] = useState<EnrollmentFormState>(() => defaultEnrollmentForm())
+  const [mentorForm, setMentorForm] = useState<MentorAssignmentFormState>(() => defaultMentorAssignmentForm())
+  const [facultyForm, setFacultyForm] = useState<FacultyFormState>(() => defaultFacultyForm())
+  const [appointmentForm, setAppointmentForm] = useState<AppointmentFormState>(() => defaultAppointmentForm())
+  const [roleGrantForm, setRoleGrantForm] = useState<RoleGrantFormState>(() => defaultRoleGrantForm())
+  const [ownershipForm, setOwnershipForm] = useState<OwnershipFormState>(() => defaultOwnershipForm())
+  const [studentAuditLoading, setStudentAuditLoading] = useState(false)
+  const [studentAuditEvents, setStudentAuditEvents] = useState<ApiAuditEvent[]>([])
+  const [facultyAuditLoading, setFacultyAuditLoading] = useState(false)
+  const [facultyAuditEvents, setFacultyAuditEvents] = useState<ApiAuditEvent[]>([])
+  const [selectedStudentPolicy, setSelectedStudentPolicy] = useState<ApiResolvedBatchPolicy | null>(null)
+  const [selectedStudentPolicyLoading, setSelectedStudentPolicyLoading] = useState(false)
+  const [recentAuditLoading, setRecentAuditLoading] = useState(false)
+  const [recentAuditEvents, setRecentAuditEvents] = useState<ApiAuditEvent[]>([])
+  const [facultyCalendarLoading, setFacultyCalendarLoading] = useState(false)
+  const [facultyCalendar, setFacultyCalendar] = useState<ApiAdminFacultyCalendar | null>(null)
 
   const deferredSearch = useDeferredValue(searchQuery)
 
@@ -365,12 +836,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           throw error
         }
       }
-      const [institution, academicFaculties, departments, branches, batches, terms, facultyMembers, students, courses, curriculumCourses, policyOverrides, offerings, ownerships, requests] = await Promise.all([
+      const [institution, academicFaculties, departments, branches, batches, terms, facultyMembers, students, courses, curriculumCourses, policyOverrides, offerings, ownerships, requests, reminders] = await Promise.all([
         safeInstitution(), apiClient.listAcademicFaculties(), apiClient.listDepartments(),
         apiClient.listBranches(), apiClient.listBatches(), apiClient.listTerms(),
         apiClient.listFaculty(), apiClient.listStudents(), apiClient.listCourses(),
         apiClient.listCurriculumCourses(), apiClient.listPolicyOverrides(),
         apiClient.listOfferings(), apiClient.listOfferingOwnership(), apiClient.listAdminRequests(),
+        apiClient.listAdminReminders(),
       ])
       setData({
         institution, academicFaculties: academicFaculties.items, departments: departments.items,
@@ -378,6 +850,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         facultyMembers: facultyMembers.items, students: students.items, courses: courses.items,
         curriculumCourses: curriculumCourses.items, policyOverrides: policyOverrides.items,
         offerings: offerings.items, ownerships: ownerships.items, requests: requests.items,
+        reminders: reminders.items,
       })
     } catch (error) {
       setDataError(toErrorMessage(error))
@@ -394,6 +867,43 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     syncRoute()
     return () => window.removeEventListener('hashchange', syncRoute)
   }, [])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (route.section !== 'faculties') {
+      setSelectedSectionCode(null)
+      setUniversityTab('overview')
+      return
+    }
+    const storageKey = `airmentor-admin-ui:${routeToHash(route)}`
+    const raw = window.sessionStorage.getItem(storageKey)
+    if (!raw) {
+      setSelectedSectionCode(null)
+      setUniversityTab('overview')
+      return
+    }
+    try {
+      const parsed = JSON.parse(raw) as { tab?: typeof universityTab; sectionCode?: string | null }
+      setUniversityTab(parsed.tab ?? 'overview')
+      setSelectedSectionCode(parsed.sectionCode ?? null)
+    } catch {
+      setSelectedSectionCode(null)
+      setUniversityTab('overview')
+    }
+  }, [route])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || route.section !== 'faculties') return
+    window.sessionStorage.setItem(`airmentor-admin-ui:${routeToHash(route)}`, JSON.stringify({
+      tab: universityTab,
+      sectionCode: selectedSectionCode,
+    }))
+  }, [route, selectedSectionCode, universityTab])
 
   useEffect(() => {
     let cancelled = false
@@ -461,6 +971,31 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     return () => window.clearTimeout(timer)
   }, [flashMessage])
 
+  useEffect(() => {
+    if (!session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') return
+    const query = deferredSearch.trim()
+    if (!query) {
+      setServerSearchResults([])
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const response = await apiClient.searchAdminWorkspace(query, {
+          academicFacultyId: route.academicFacultyId,
+          departmentId: route.departmentId,
+          branchId: route.branchId,
+          batchId: route.batchId,
+          sectionCode: selectedSectionCode ?? undefined,
+        })
+        if (!cancelled) setServerSearchResults(response.items)
+      } catch {
+        if (!cancelled) setServerSearchResults([])
+      }
+    })()
+    return () => { cancelled = true }
+  }, [apiClient, deferredSearch, route.academicFacultyId, route.batchId, route.branchId, route.departmentId, selectedSectionCode, session])
+
   const systemAdminGrant = session?.availableRoleGrants.find(item => item.roleCode === 'SYSTEM_ADMIN') ?? null
   const selectedAcademicFaculty = resolveAcademicFaculty(data, route.academicFacultyId)
   const selectedDepartment = resolveDepartment(data, route.departmentId)
@@ -468,7 +1003,26 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const selectedBatch = resolveBatch(data, route.batchId)
   const selectedStudent = resolveStudent(data, route.studentId)
   const selectedFacultyMember = resolveFacultyMember(data, route.facultyMemberId)
-  const searchResults = useMemo(() => searchLiveAdminWorkspace(data, deferredSearch), [data, deferredSearch])
+  const searchResults = useMemo(() => {
+    if (serverSearchResults.length > 0) {
+      return serverSearchResults.map(result => ({
+        key: result.key,
+        label: result.label,
+        meta: result.meta,
+        route: {
+          section: result.route.section,
+          academicFacultyId: result.route.academicFacultyId,
+          departmentId: result.route.departmentId,
+          branchId: result.route.branchId,
+          batchId: result.route.batchId,
+          studentId: result.route.studentId,
+          facultyMemberId: result.route.facultyMemberId,
+          requestId: result.route.requestId,
+        } satisfies LiveAdminRoute,
+      }))
+    }
+    return searchLiveAdminWorkspace(data, deferredSearch)
+  }, [data, deferredSearch, serverSearchResults])
   const selectedRequest = selectedRequestDetail && selectedRequestSummary && selectedRequestDetail.version !== selectedRequestSummary.version
     ? selectedRequestSummary
     : (selectedRequestDetail ?? selectedRequestSummary)
@@ -529,6 +1083,210 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     }))
   }, [selectedBatch?.batchId, selectedBatch?.version, selectedBatch?.currentSemester])
 
+  useEffect(() => {
+    if (!selectedStudent) {
+      setStudentForm(defaultStudentForm())
+      setEnrollmentForm(defaultEnrollmentForm())
+      setMentorForm(defaultMentorAssignmentForm())
+      return
+    }
+    const latestEnrollment = findLatestEnrollment(selectedStudent)
+    const latestMentorAssignment = findLatestMentorAssignment(selectedStudent)
+    setStudentForm({
+      usn: selectedStudent.usn,
+      rollNumber: selectedStudent.rollNumber ?? '',
+      name: selectedStudent.name,
+      email: selectedStudent.email ?? '',
+      phone: selectedStudent.phone ?? '',
+      admissionDate: selectedStudent.admissionDate,
+    })
+    setEnrollmentForm(latestEnrollment ? {
+      enrollmentId: latestEnrollment.enrollmentId,
+      branchId: latestEnrollment.branchId,
+      termId: latestEnrollment.termId,
+      sectionCode: latestEnrollment.sectionCode,
+      rosterOrder: String(latestEnrollment.rosterOrder ?? 0),
+      academicStatus: latestEnrollment.academicStatus,
+      startDate: latestEnrollment.startDate,
+      endDate: latestEnrollment.endDate ?? '',
+    } : {
+      ...defaultEnrollmentForm(),
+      branchId: selectedStudent.activeAcademicContext?.branchId ?? '',
+      termId: selectedStudent.activeAcademicContext?.termId ?? '',
+      sectionCode: selectedStudent.activeAcademicContext?.sectionCode ?? 'A',
+    })
+    setMentorForm(latestMentorAssignment ? {
+      assignmentId: latestMentorAssignment.assignmentId,
+      facultyId: latestMentorAssignment.facultyId,
+      effectiveFrom: latestMentorAssignment.effectiveFrom,
+      effectiveTo: latestMentorAssignment.effectiveTo ?? '',
+      source: latestMentorAssignment.source,
+    } : defaultMentorAssignmentForm())
+  }, [selectedStudent])
+
+  useEffect(() => {
+    if (!selectedFacultyMember) {
+      setFacultyForm(defaultFacultyForm())
+      setAppointmentForm(defaultAppointmentForm())
+      setRoleGrantForm(defaultRoleGrantForm())
+      setOwnershipForm(defaultOwnershipForm())
+      return
+    }
+    const primaryAppointment = selectedFacultyMember.appointments.find(item => item.isPrimary) ?? selectedFacultyMember.appointments[0] ?? null
+    const latestGrant = selectedFacultyMember.roleGrants[0] ?? null
+    const latestOwnership = data.ownerships.find(item => item.facultyId === selectedFacultyMember.facultyId && item.status === 'active') ?? null
+    setFacultyForm({
+      username: selectedFacultyMember.username,
+      password: '',
+      email: selectedFacultyMember.email,
+      phone: selectedFacultyMember.phone ?? '',
+      employeeCode: selectedFacultyMember.employeeCode,
+      displayName: selectedFacultyMember.displayName,
+      designation: selectedFacultyMember.designation,
+      joinedOn: selectedFacultyMember.joinedOn ?? '',
+    })
+    setAppointmentForm(primaryAppointment ? {
+      appointmentId: primaryAppointment.appointmentId,
+      departmentId: primaryAppointment.departmentId,
+      branchId: primaryAppointment.branchId ?? '',
+      isPrimary: primaryAppointment.isPrimary,
+      startDate: primaryAppointment.startDate,
+      endDate: primaryAppointment.endDate ?? '',
+    } : defaultAppointmentForm())
+    setRoleGrantForm(latestGrant ? {
+      grantId: latestGrant.grantId,
+      roleCode: latestGrant.roleCode,
+      scopeType: latestGrant.scopeType,
+      scopeId: latestGrant.scopeId,
+      startDate: latestGrant.startDate ?? new Date().toISOString().slice(0, 10),
+      endDate: latestGrant.endDate ?? '',
+    } : defaultRoleGrantForm())
+    setOwnershipForm(latestOwnership ? {
+      ownershipId: latestOwnership.ownershipId,
+      offeringId: latestOwnership.offeringId,
+      facultyId: latestOwnership.facultyId,
+      ownershipRole: latestOwnership.ownershipRole,
+    } : {
+      ...defaultOwnershipForm(),
+      facultyId: selectedFacultyMember.facultyId,
+    })
+  }, [data.ownerships, selectedFacultyMember])
+
+  useEffect(() => {
+    if (!selectedStudent?.activeAcademicContext?.batchId) {
+      setSelectedStudentPolicy(null)
+      setSelectedStudentPolicyLoading(false)
+      return
+    }
+    let cancelled = false
+    setSelectedStudentPolicyLoading(true)
+    void (async () => {
+      try {
+        const next = await apiClient.getResolvedBatchPolicy(selectedStudent.activeAcademicContext!.batchId!)
+        if (!cancelled) setSelectedStudentPolicy(next)
+      } catch {
+        if (!cancelled) setSelectedStudentPolicy(null)
+      } finally {
+        if (!cancelled) setSelectedStudentPolicyLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [apiClient, selectedStudent?.activeAcademicContext?.batchId])
+
+  useEffect(() => {
+    if (!selectedStudent) {
+      setStudentAuditEvents([])
+      setStudentAuditLoading(false)
+      return
+    }
+    let cancelled = false
+    setStudentAuditLoading(true)
+    void (async () => {
+      const requests = [
+        apiClient.listAuditEvents({ entityType: 'Student', entityId: selectedStudent.studentId }),
+        ...selectedStudent.enrollments.map(item => apiClient.listAuditEvents({ entityType: 'StudentEnrollment', entityId: item.enrollmentId })),
+        ...selectedStudent.mentorAssignments.map(item => apiClient.listAuditEvents({ entityType: 'MentorAssignment', entityId: item.assignmentId })),
+      ]
+      const settled = await Promise.allSettled(requests)
+      const items = settled.flatMap(result => result.status === 'fulfilled' ? result.value.items : [])
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      if (!cancelled) {
+        setStudentAuditEvents(items)
+        setStudentAuditLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [apiClient, selectedStudent])
+
+  useEffect(() => {
+    if (!selectedFacultyMember) {
+      setFacultyAuditEvents([])
+      setFacultyAuditLoading(false)
+      return
+    }
+    let cancelled = false
+    setFacultyAuditLoading(true)
+    void (async () => {
+      const facultyOwnerships = data.ownerships.filter(item => item.facultyId === selectedFacultyMember.facultyId)
+      const requests = [
+        apiClient.listAuditEvents({ entityType: 'FacultyProfile', entityId: selectedFacultyMember.facultyId }),
+        ...selectedFacultyMember.appointments.map(item => apiClient.listAuditEvents({ entityType: 'FacultyAppointment', entityId: item.appointmentId })),
+        ...selectedFacultyMember.roleGrants.map(item => apiClient.listAuditEvents({ entityType: 'RoleGrant', entityId: item.grantId })),
+        ...facultyOwnerships.map(item => apiClient.listAuditEvents({ entityType: 'faculty_offering_ownership', entityId: item.ownershipId })),
+      ]
+      const settled = await Promise.allSettled(requests)
+      const items = settled.flatMap(result => result.status === 'fulfilled' ? result.value.items : [])
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      if (!cancelled) {
+        setFacultyAuditEvents(items)
+        setFacultyAuditLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [apiClient, data.ownerships, selectedFacultyMember])
+
+  useEffect(() => {
+    if (!session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
+      setRecentAuditEvents([])
+      setRecentAuditLoading(false)
+      return
+    }
+    let cancelled = false
+    setRecentAuditLoading(true)
+    void (async () => {
+      try {
+        const response = await apiClient.listRecentAdminAuditEvents(90)
+        if (!cancelled) setRecentAuditEvents(response.items)
+      } catch {
+        if (!cancelled) setRecentAuditEvents([])
+      } finally {
+        if (!cancelled) setRecentAuditLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [apiClient, dataLoading, session])
+
+  useEffect(() => {
+    if (!selectedFacultyMember) {
+      setFacultyCalendar(null)
+      setFacultyCalendarLoading(false)
+      return
+    }
+    let cancelled = false
+    setFacultyCalendarLoading(true)
+    void (async () => {
+      try {
+        const next = await apiClient.getAdminFacultyCalendar(selectedFacultyMember.facultyId)
+        if (!cancelled) setFacultyCalendar(next)
+      } catch {
+        if (!cancelled) setFacultyCalendar(null)
+      } finally {
+        if (!cancelled) setFacultyCalendarLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [apiClient, selectedFacultyMember?.facultyId])
+
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setAuthBusy(true); setAuthError('')
@@ -552,10 +1310,46 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     finally { setAuthBusy(false) }
   }
 
-  const runAction = async (runner: () => Promise<void>) => {
+  const runAction = async <T,>(runner: () => Promise<T>) => {
     setActionError('')
-    try { await runner(); await loadAdminData() }
-    catch (error) { setActionError(toErrorMessage(error)) }
+    try {
+      const result = await runner()
+      await loadAdminData()
+      return result
+    } catch (error) {
+      setActionError(toErrorMessage(error))
+      return null
+    }
+  }
+
+  const handleCreateReminder = async () => {
+    const title = window.prompt('Reminder title')
+    if (!title?.trim()) return
+    const body = window.prompt('Reminder note', 'Follow up with HoD / verify structure change / review pending implementation.') ?? ''
+    const dueAt = window.prompt('Due date and time (YYYY-MM-DDTHH:mm)', `${new Date().toISOString().slice(0, 16)}`) ?? ''
+    if (!dueAt.trim()) return
+    await runAction(async () => {
+      await apiClient.createAdminReminder({
+        title: title.trim(),
+        body: body.trim() || 'Personal admin reminder.',
+        dueAt: dueAt.trim(),
+        status: 'pending',
+      })
+      setFlashMessage('Reminder created.')
+    })
+  }
+
+  const handleToggleReminderStatus = async (reminder: LiveAdminDataset['reminders'][number]) => {
+    await runAction(async () => {
+      await apiClient.updateAdminReminder(reminder.reminderId, {
+        title: reminder.title,
+        body: reminder.body,
+        dueAt: reminder.dueAt,
+        status: reminder.status === 'pending' ? 'done' : 'pending',
+        version: reminder.version,
+      })
+      setFlashMessage(reminder.status === 'pending' ? 'Reminder completed.' : 'Reminder reopened.')
+    })
   }
 
   const startEditingTerm = (termId: string) => {
@@ -628,7 +1422,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         code: selectedAcademicFaculty.code,
         name: selectedAcademicFaculty.name,
         overview: selectedAcademicFaculty.overview,
-        status: 'archived',
+        status: 'deleted',
         version: selectedAcademicFaculty.version,
       })
       navigate({ section: 'faculties' })
@@ -666,7 +1460,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         academicFacultyId: selectedDepartment.academicFacultyId,
         code: selectedDepartment.code,
         name: selectedDepartment.name,
-        status: 'archived',
+        status: 'deleted',
         version: selectedDepartment.version,
       })
       navigate({ section: 'faculties', academicFacultyId: selectedAcademicFaculty?.academicFacultyId })
@@ -683,7 +1477,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         code: requireText('Branch code', entityEditors.branch.code),
         name: requireText('Branch name', entityEditors.branch.name),
         programLevel: requireText('Program level', entityEditors.branch.programLevel),
-        semesterCount: requirePositiveInteger('Semester count', entityEditors.branch.semesterCount),
+        semesterCount: requirePositiveEvenInteger('Semester count', entityEditors.branch.semesterCount),
         status: selectedBranch.status,
         version: selectedBranch.version,
       })
@@ -705,7 +1499,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         name: selectedBranch.name,
         programLevel: selectedBranch.programLevel,
         semesterCount: selectedBranch.semesterCount,
-        status: 'archived',
+        status: 'deleted',
         version: selectedBranch.version,
       })
       navigate({
@@ -752,7 +1546,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         batchLabel: selectedBatch.batchLabel,
         currentSemester: selectedBatch.currentSemester,
         sectionLabels: selectedBatch.sectionLabels,
-        status: 'archived',
+        status: 'deleted',
         version: selectedBatch.version,
       })
       navigate({
@@ -803,7 +1597,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         code: requireText('Branch code', structureForms.branch.code),
         name: requireText('Branch name', structureForms.branch.name),
         programLevel: requireText('Program level', structureForms.branch.programLevel),
-        semesterCount: requirePositiveInteger('Semester count', structureForms.branch.semesterCount),
+        semesterCount: requirePositiveEvenInteger('Semester count', structureForms.branch.semesterCount),
         status: 'active',
       })
       setStructureForms(prev => ({ ...prev, branch: { code: '', name: '', programLevel: 'UG', semesterCount: '8' } }))
@@ -875,7 +1669,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         semesterNumber: target.semesterNumber,
         startDate: target.startDate,
         endDate: target.endDate,
-        status: 'archived',
+        status: 'deleted',
         version: target.version,
       })
       if (entityEditors.term.termId === termId) resetTermEditor()
@@ -929,7 +1723,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         courseCode: current.courseCode,
         title: current.title,
         credits: current.credits,
-        status: 'archived',
+        status: 'deleted',
         version: current.version,
       })
       if (entityEditors.curriculum.curriculumCourseId === curriculumCourseId) resetCurriculumEditor()
@@ -989,6 +1783,521 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     finally { setRequestBusy('') }
   }
 
+  const resetStudentEditors = () => {
+    setStudentForm(defaultStudentForm())
+    setEnrollmentForm(defaultEnrollmentForm())
+    setMentorForm(defaultMentorAssignmentForm())
+  }
+
+  const startEditingEnrollment = (enrollment: ApiStudentEnrollment) => {
+    setEnrollmentForm({
+      enrollmentId: enrollment.enrollmentId,
+      branchId: enrollment.branchId,
+      termId: enrollment.termId,
+      sectionCode: enrollment.sectionCode,
+      rosterOrder: String(enrollment.rosterOrder ?? 0),
+      academicStatus: enrollment.academicStatus,
+      startDate: enrollment.startDate,
+      endDate: enrollment.endDate ?? '',
+    })
+  }
+
+  const startEditingMentorAssignment = (assignment: ApiMentorAssignment) => {
+    setMentorForm({
+      assignmentId: assignment.assignmentId,
+      facultyId: assignment.facultyId,
+      effectiveFrom: assignment.effectiveFrom,
+      effectiveTo: assignment.effectiveTo ?? '',
+      source: assignment.source,
+    })
+  }
+
+  const handleSaveStudent = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const payload = {
+      usn: requireText('University ID / USN', studentForm.usn),
+      rollNumber: studentForm.rollNumber.trim() || null,
+      name: requireText('Student name', studentForm.name),
+      email: studentForm.email.trim() || null,
+      phone: studentForm.phone.trim() || null,
+      admissionDate: requireDate('Admission date', studentForm.admissionDate),
+      status: selectedStudent?.status ?? 'active',
+    }
+    if (selectedStudent) {
+      await runAction(async () => {
+        await apiClient.updateStudent(selectedStudent.studentId, {
+          ...payload,
+          version: selectedStudent.version,
+        })
+        setFlashMessage('Student record updated.')
+      })
+      return
+    }
+    const created = await runAction(async () => apiClient.createStudent(payload))
+    if (created) {
+      navigate({ section: 'students', studentId: created.studentId })
+      setFlashMessage('Student created.')
+    }
+  }
+
+  const handleArchiveStudent = async () => {
+    if (!selectedStudent) return
+    if (!window.confirm(`Delete ${selectedStudent.name}? This moves the record to the recycle bin for 60 days.`)) return
+    await runAction(async () => {
+      await apiClient.updateStudent(selectedStudent.studentId, {
+        usn: selectedStudent.usn,
+        rollNumber: selectedStudent.rollNumber,
+        name: selectedStudent.name,
+        email: selectedStudent.email,
+        phone: selectedStudent.phone,
+        admissionDate: selectedStudent.admissionDate,
+        status: 'deleted',
+        version: selectedStudent.version,
+      })
+      navigate({ section: 'students' })
+      resetStudentEditors()
+      setFlashMessage('Student moved to recycle bin.')
+    })
+  }
+
+  const handleSaveEnrollment = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!selectedStudent) throw new Error('Select a student before editing enrollment.')
+    const payload = {
+      branchId: requireText('Branch', enrollmentForm.branchId),
+      termId: requireText('Term', enrollmentForm.termId),
+      sectionCode: requireText('Section', enrollmentForm.sectionCode),
+      rosterOrder: requirePositiveInteger('Roster order', enrollmentForm.rosterOrder),
+      academicStatus: requireText('Academic status', enrollmentForm.academicStatus),
+      startDate: requireDate('Enrollment start date', enrollmentForm.startDate),
+      endDate: enrollmentForm.endDate.trim() ? requireDate('Enrollment end date', enrollmentForm.endDate) : null,
+    }
+    if (enrollmentForm.enrollmentId) {
+      const current = selectedStudent.enrollments.find(item => item.enrollmentId === enrollmentForm.enrollmentId)
+      if (!current) throw new Error('Enrollment could not be found.')
+      await runAction(async () => {
+        await apiClient.updateEnrollment(current.enrollmentId, {
+          studentId: selectedStudent.studentId,
+          ...payload,
+          version: current.version,
+        })
+        setFlashMessage('Enrollment updated.')
+      })
+      return
+    }
+    await runAction(async () => {
+      await apiClient.createEnrollment(selectedStudent.studentId, payload)
+      setFlashMessage('Enrollment created.')
+    })
+  }
+
+  const handleCloseEnrollment = async (enrollment: ApiStudentEnrollment) => {
+    if (!selectedStudent) return
+    if (!window.confirm(`Close enrollment ${enrollment.enrollmentId}?`)) return
+    await runAction(async () => {
+      await apiClient.updateEnrollment(enrollment.enrollmentId, {
+        studentId: selectedStudent.studentId,
+        branchId: enrollment.branchId,
+        termId: enrollment.termId,
+        sectionCode: enrollment.sectionCode,
+        rosterOrder: enrollment.rosterOrder ?? 0,
+        academicStatus: enrollment.academicStatus === 'regular' ? 'completed' : enrollment.academicStatus,
+        startDate: enrollment.startDate,
+        endDate: enrollment.endDate ?? new Date().toISOString().slice(0, 10),
+        version: enrollment.version,
+      })
+      setFlashMessage('Enrollment closed.')
+    })
+  }
+
+  const handleSaveMentorAssignment = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!selectedStudent) throw new Error('Select a student before editing mentor linkage.')
+    const payload = {
+      studentId: selectedStudent.studentId,
+      facultyId: requireText('Mentor faculty', mentorForm.facultyId),
+      effectiveFrom: requireDate('Mentor effective from', mentorForm.effectiveFrom),
+      effectiveTo: mentorForm.effectiveTo.trim() ? requireDate('Mentor effective to', mentorForm.effectiveTo) : null,
+      source: requireText('Assignment source', mentorForm.source),
+    }
+    if (mentorForm.assignmentId) {
+      const current = selectedStudent.mentorAssignments.find(item => item.assignmentId === mentorForm.assignmentId)
+      if (!current) throw new Error('Mentor assignment could not be found.')
+      await runAction(async () => {
+        await apiClient.updateMentorAssignment(current.assignmentId, {
+          ...payload,
+          version: current.version,
+        })
+        setFlashMessage('Mentor assignment updated.')
+      })
+      return
+    }
+    await runAction(async () => {
+      await apiClient.createMentorAssignment(payload)
+      setFlashMessage('Mentor assignment created.')
+    })
+  }
+
+  const handleEndMentorAssignment = async (assignment: ApiMentorAssignment) => {
+    if (!selectedStudent) return
+    if (!window.confirm('End this mentor assignment?')) return
+    await runAction(async () => {
+      await apiClient.updateMentorAssignment(assignment.assignmentId, {
+        studentId: assignment.studentId,
+        facultyId: assignment.facultyId,
+        effectiveFrom: assignment.effectiveFrom,
+        effectiveTo: assignment.effectiveTo ?? new Date().toISOString().slice(0, 10),
+        source: assignment.source,
+        version: assignment.version,
+      })
+      setFlashMessage('Mentor assignment ended.')
+    })
+  }
+
+  const handlePromoteStudent = async (targetTermId: string) => {
+    if (!selectedStudent) return
+    const currentEnrollment = findLatestEnrollment(selectedStudent)
+    const targetTerm = data.terms.find(item => item.termId === targetTermId)
+    if (!currentEnrollment || !targetTerm) {
+      setActionError('Active enrollment and target term are required for promotion.')
+      return
+    }
+    const existingTarget = selectedStudent.enrollments.find(item => item.termId === targetTermId)
+    if (existingTarget) {
+      setActionError('This student already has an enrollment for the selected next term.')
+      return
+    }
+    if (!window.confirm(`Promote ${selectedStudent.name} into Semester ${targetTerm.semesterNumber} (${targetTerm.academicYearLabel})?`)) return
+    await runAction(async () => {
+      if (!currentEnrollment.endDate) {
+        await apiClient.updateEnrollment(currentEnrollment.enrollmentId, {
+          studentId: selectedStudent.studentId,
+          branchId: currentEnrollment.branchId,
+          termId: currentEnrollment.termId,
+          sectionCode: currentEnrollment.sectionCode,
+          rosterOrder: currentEnrollment.rosterOrder ?? 0,
+          academicStatus: currentEnrollment.academicStatus === 'regular' ? 'completed' : currentEnrollment.academicStatus,
+          startDate: currentEnrollment.startDate,
+          endDate: targetTerm.startDate,
+          version: currentEnrollment.version,
+        })
+      }
+      await apiClient.createEnrollment(selectedStudent.studentId, {
+        branchId: targetTerm.branchId,
+        termId: targetTerm.termId,
+        sectionCode: currentEnrollment.sectionCode,
+        rosterOrder: currentEnrollment.rosterOrder ?? 0,
+        academicStatus: 'regular',
+        startDate: targetTerm.startDate,
+        endDate: null,
+      })
+      setFlashMessage(`Promotion recorded for Semester ${targetTerm.semesterNumber}.`)
+    })
+  }
+
+  const resetFacultyEditors = () => {
+    setFacultyForm(defaultFacultyForm())
+    setAppointmentForm(defaultAppointmentForm())
+    setRoleGrantForm(defaultRoleGrantForm())
+    setOwnershipForm(defaultOwnershipForm())
+  }
+
+  const startEditingAppointment = (appointment: ApiFacultyAppointment) => {
+    setAppointmentForm({
+      appointmentId: appointment.appointmentId,
+      departmentId: appointment.departmentId,
+      branchId: appointment.branchId ?? '',
+      isPrimary: appointment.isPrimary,
+      startDate: appointment.startDate,
+      endDate: appointment.endDate ?? '',
+    })
+  }
+
+  const startEditingRoleGrant = (grant: ApiRoleGrant) => {
+    setRoleGrantForm({
+      grantId: grant.grantId,
+      roleCode: grant.roleCode,
+      scopeType: grant.scopeType,
+      scopeId: grant.scopeId,
+      startDate: grant.startDate ?? new Date().toISOString().slice(0, 10),
+      endDate: grant.endDate ?? '',
+    })
+  }
+
+  const startEditingOwnership = (ownership: ApiOfferingOwnership) => {
+    setOwnershipForm({
+      ownershipId: ownership.ownershipId,
+      offeringId: ownership.offeringId,
+      facultyId: ownership.facultyId,
+      ownershipRole: ownership.ownershipRole,
+    })
+  }
+
+  const handleSaveFaculty = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const payload = {
+      username: requireText('Username', facultyForm.username),
+      email: requireText('Email', facultyForm.email),
+      phone: facultyForm.phone.trim() || null,
+      employeeCode: requireText('Employee code', facultyForm.employeeCode),
+      displayName: requireText('Display name', facultyForm.displayName),
+      designation: requireText('Designation', facultyForm.designation),
+      joinedOn: facultyForm.joinedOn.trim() ? requireDate('Joined on', facultyForm.joinedOn) : null,
+      status: selectedFacultyMember?.status ?? 'active',
+    }
+    if (selectedFacultyMember) {
+      await runAction(async () => {
+        await apiClient.updateFaculty(selectedFacultyMember.facultyId, {
+          ...payload,
+          version: selectedFacultyMember.version,
+        })
+        setFlashMessage('Faculty profile updated.')
+      })
+      return
+    }
+    const created = await runAction(async () => apiClient.createFaculty({
+      ...payload,
+      password: requireText('Password', facultyForm.password),
+    }))
+    if (created) {
+      navigate({ section: 'faculty-members', facultyMemberId: created.facultyId })
+      setFlashMessage('Faculty profile created.')
+    }
+  }
+
+  const handleArchiveFaculty = async () => {
+    if (!selectedFacultyMember) return
+    if (!window.confirm(`Delete ${selectedFacultyMember.displayName}? This will soft-delete the faculty profile and login.`)) return
+    await runAction(async () => {
+      await apiClient.updateFaculty(selectedFacultyMember.facultyId, {
+        username: selectedFacultyMember.username,
+        email: selectedFacultyMember.email,
+        phone: selectedFacultyMember.phone,
+        employeeCode: selectedFacultyMember.employeeCode,
+        displayName: selectedFacultyMember.displayName,
+        designation: selectedFacultyMember.designation,
+        joinedOn: selectedFacultyMember.joinedOn,
+        status: 'deleted',
+        version: selectedFacultyMember.version,
+      })
+      navigate({ section: 'faculty-members' })
+      resetFacultyEditors()
+      setFlashMessage('Faculty member moved to recycle bin.')
+    })
+  }
+
+  const handleSaveAppointment = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!selectedFacultyMember) throw new Error('Select a faculty member before editing appointments.')
+    const payload = {
+      departmentId: requireText('Department', appointmentForm.departmentId),
+      branchId: appointmentForm.branchId.trim() || null,
+      isPrimary: appointmentForm.isPrimary,
+      startDate: requireDate('Appointment start date', appointmentForm.startDate),
+      endDate: appointmentForm.endDate.trim() ? requireDate('Appointment end date', appointmentForm.endDate) : null,
+      status: 'active',
+    }
+    if (appointmentForm.appointmentId) {
+      const current = selectedFacultyMember.appointments.find(item => item.appointmentId === appointmentForm.appointmentId)
+      if (!current) throw new Error('Appointment could not be found.')
+      await runAction(async () => {
+        await apiClient.updateFacultyAppointment(current.appointmentId, {
+          facultyId: selectedFacultyMember.facultyId,
+          ...payload,
+          status: current.status,
+          version: current.version,
+        })
+        setFlashMessage('Appointment updated.')
+      })
+      return
+    }
+    await runAction(async () => {
+      await apiClient.createFacultyAppointment(selectedFacultyMember.facultyId, payload)
+      setFlashMessage('Appointment created.')
+    })
+  }
+
+  const handleArchiveAppointment = async (appointment: ApiFacultyAppointment) => {
+    if (!selectedFacultyMember) return
+    if (!window.confirm('Delete this appointment?')) return
+    await runAction(async () => {
+      await apiClient.updateFacultyAppointment(appointment.appointmentId, {
+        facultyId: selectedFacultyMember.facultyId,
+        departmentId: appointment.departmentId,
+        branchId: appointment.branchId,
+        isPrimary: appointment.isPrimary,
+        startDate: appointment.startDate,
+        endDate: appointment.endDate,
+        status: 'deleted',
+        version: appointment.version,
+      })
+      setFlashMessage('Appointment moved to recycle bin.')
+    })
+  }
+
+  const handleSaveRoleGrant = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!selectedFacultyMember) throw new Error('Select a faculty member before editing permissions.')
+    const payload = {
+      roleCode: roleGrantForm.roleCode,
+      scopeType: requireText('Scope type', roleGrantForm.scopeType),
+      scopeId: requireText('Scope id', roleGrantForm.scopeId),
+      startDate: requireDate('Permission start date', roleGrantForm.startDate),
+      endDate: roleGrantForm.endDate.trim() ? requireDate('Permission end date', roleGrantForm.endDate) : null,
+      status: 'active',
+    }
+    if (roleGrantForm.grantId) {
+      const current = selectedFacultyMember.roleGrants.find(item => item.grantId === roleGrantForm.grantId)
+      if (!current) throw new Error('Permission grant could not be found.')
+      await runAction(async () => {
+        await apiClient.updateRoleGrant(current.grantId, {
+          facultyId: selectedFacultyMember.facultyId,
+          ...payload,
+          status: current.status,
+          version: current.version,
+        })
+        setFlashMessage('Permission updated.')
+      })
+      return
+    }
+    await runAction(async () => {
+      await apiClient.createRoleGrant(selectedFacultyMember.facultyId, payload)
+      setFlashMessage('Permission granted.')
+    })
+  }
+
+  const handleArchiveRoleGrant = async (grant: ApiRoleGrant) => {
+    if (!selectedFacultyMember) return
+    if (!window.confirm(`Delete ${grant.roleCode} permission?`)) return
+    await runAction(async () => {
+      await apiClient.updateRoleGrant(grant.grantId, {
+        facultyId: selectedFacultyMember.facultyId,
+        roleCode: grant.roleCode,
+        scopeType: grant.scopeType,
+        scopeId: grant.scopeId,
+        startDate: grant.startDate ?? new Date().toISOString().slice(0, 10),
+        endDate: grant.endDate,
+        status: 'deleted',
+        version: grant.version,
+      })
+      setFlashMessage('Permission moved to recycle bin.')
+    })
+  }
+
+  const handleSaveOwnership = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!selectedFacultyMember) throw new Error('Select a faculty member before editing teaching ownership.')
+    const payload = {
+      offeringId: requireText('Class / offering', ownershipForm.offeringId),
+      facultyId: selectedFacultyMember.facultyId,
+      ownershipRole: requireText('Ownership role', ownershipForm.ownershipRole),
+      status: 'active',
+    }
+    if (ownershipForm.ownershipId) {
+      const current = data.ownerships.find(item => item.ownershipId === ownershipForm.ownershipId)
+      if (!current) throw new Error('Teaching ownership could not be found.')
+      await runAction(async () => {
+        await apiClient.updateOfferingOwnership(current.ownershipId, {
+          ...payload,
+          status: current.status,
+          version: current.version,
+        })
+        setFlashMessage('Teaching ownership updated.')
+      })
+      return
+    }
+    await runAction(async () => {
+      await apiClient.createOfferingOwnership(payload)
+      setFlashMessage('Teaching ownership added.')
+    })
+  }
+
+  const handleArchiveOwnership = async (ownership: ApiOfferingOwnership) => {
+    if (!window.confirm('Delete this teaching ownership?')) return
+    await runAction(async () => {
+      await apiClient.updateOfferingOwnership(ownership.ownershipId, {
+        offeringId: ownership.offeringId,
+        facultyId: ownership.facultyId,
+        ownershipRole: ownership.ownershipRole,
+        status: 'deleted',
+        version: ownership.version,
+      })
+      setFlashMessage('Teaching ownership moved to recycle bin.')
+    })
+  }
+
+  const handleAssignCurriculumCourseLeader = async (curriculumCourseId: string, facultyId: string) => {
+    if (!selectedBatch || !selectedBranch) return
+    const curriculumCourse = data.curriculumCourses.find(item => item.curriculumCourseId === curriculumCourseId)
+    if (!curriculumCourse) {
+      setActionError('The selected curriculum course could not be found.')
+      return
+    }
+    const matchingTermIds = new Set(
+      data.terms
+        .filter(item => item.batchId === selectedBatch.batchId && item.branchId === selectedBranch.branchId && item.semesterNumber === curriculumCourse.semesterNumber && isVisibleAdminRecord(item.status))
+        .map(item => item.termId),
+    )
+    const matchingOfferings = data.offerings.filter(item => {
+      if (item.branchId !== selectedBranch.branchId) return false
+      if (!item.termId) return false
+      if (!matchingTermIds.has(item.termId)) return false
+      if (item.code.toLowerCase() !== curriculumCourse.courseCode.toLowerCase()) return false
+      if (selectedSectionCode && item.section !== selectedSectionCode) return false
+      return true
+    })
+    if (matchingOfferings.length === 0) {
+      setActionError('No live offerings match this curriculum row in the selected year or section yet. Create the relevant class offerings first.')
+      return
+    }
+
+    await runAction(async () => {
+      for (const offering of matchingOfferings) {
+        const activeLeaderLikeOwnerships = data.ownerships.filter(ownership => ownership.offeringId === offering.offId && ownership.status === 'active' && isLeaderLikeOwnership(ownership.ownershipRole))
+        for (const ownership of activeLeaderLikeOwnerships) {
+          if (!facultyId || ownership.facultyId !== facultyId) {
+            await apiClient.updateOfferingOwnership(ownership.ownershipId, {
+              offeringId: ownership.offeringId,
+              facultyId: ownership.facultyId,
+              ownershipRole: ownership.ownershipRole,
+              status: 'deleted',
+              version: ownership.version,
+            })
+          }
+        }
+        if (!facultyId) continue
+        const existingForTarget = activeLeaderLikeOwnerships.find(ownership => ownership.facultyId === facultyId)
+        if (!existingForTarget) {
+          await apiClient.createOfferingOwnership({
+            offeringId: offering.offId,
+            facultyId,
+            ownershipRole: 'owner',
+            status: 'active',
+          })
+        }
+      }
+      setFlashMessage(facultyId
+        ? `Course leader updated across ${matchingOfferings.length} offering${matchingOfferings.length === 1 ? '' : 's'}.`
+        : `Course leader cleared across ${matchingOfferings.length} offering${matchingOfferings.length === 1 ? '' : 's'}.`)
+    })
+  }
+
+  const handleSaveFacultyCalendar = async (payload: Pick<ApiAdminFacultyCalendar, 'template' | 'workspace'>) => {
+    if (!selectedFacultyMember) return
+    setFacultyCalendarLoading(true)
+    setActionError('')
+    try {
+      const next = await apiClient.saveAdminFacultyCalendar(selectedFacultyMember.facultyId, payload)
+      setFacultyCalendar(next)
+      await loadAdminData()
+      setFlashMessage('Timetable planner saved.')
+    } catch (error) {
+      setActionError(toErrorMessage(error))
+    } finally {
+      setFacultyCalendarLoading(false)
+    }
+  }
+
   // --- Breadcrumbs ---
   const breadcrumbs: BreadcrumbSegment[] = []
   if (route.section === 'overview') {
@@ -1024,6 +2333,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   } else if (route.section === 'requests') {
     breadcrumbs.push({ label: 'Requests', onClick: route.requestId ? () => navigate({ section: 'requests' }) : undefined })
     if (selectedRequestSummary) breadcrumbs.push({ label: selectedRequestSummary.summary })
+  } else if (route.section === 'history') {
+    breadcrumbs.push({ label: 'History' })
   }
 
   // --- Boot / auth screens ---
@@ -1100,33 +2411,392 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const visibleAcademicFaculties = data.academicFaculties.filter(item => isVisibleAdminRecord(item.status))
   const visibleDepartments = data.departments.filter(item => isVisibleAdminRecord(item.status))
   const visibleBranches = data.branches.filter(item => isVisibleAdminRecord(item.status))
-  const visibleBatches = data.batches.filter(item => isVisibleAdminRecord(item.status))
-  const visibleTerms = data.terms.filter(item => isVisibleAdminRecord(item.status))
+  const deletedItems = [
+    ...data.academicFaculties.filter(item => item.status === 'deleted').map(item => ({ key: `academic-faculty:${item.academicFacultyId}`, label: item.name, meta: 'Academic faculty', updatedAt: item.updatedAt, onRestore: async () => {
+      await apiClient.updateAcademicFaculty(item.academicFacultyId, { code: item.code, name: item.name, overview: item.overview, status: 'active', version: item.version })
+    } })),
+    ...data.departments.filter(item => item.status === 'deleted').map(item => ({ key: `department:${item.departmentId}`, label: item.name, meta: 'Department', updatedAt: item.updatedAt, onRestore: async () => {
+      await apiClient.updateDepartment(item.departmentId, { academicFacultyId: item.academicFacultyId, code: item.code, name: item.name, status: 'active', version: item.version })
+    } })),
+    ...data.branches.filter(item => item.status === 'deleted').map(item => ({ key: `branch:${item.branchId}`, label: item.name, meta: 'Branch', updatedAt: item.updatedAt, onRestore: async () => {
+      await apiClient.updateBranch(item.branchId, { departmentId: item.departmentId, code: item.code, name: item.name, programLevel: item.programLevel, semesterCount: item.semesterCount, status: 'active', version: item.version })
+    } })),
+    ...data.batches.filter(item => item.status === 'deleted').map(item => ({ key: `batch:${item.batchId}`, label: item.batchLabel, meta: 'Year', updatedAt: item.updatedAt, onRestore: async () => {
+      await apiClient.updateBatch(item.batchId, { branchId: item.branchId, admissionYear: item.admissionYear, batchLabel: item.batchLabel, currentSemester: item.currentSemester, sectionLabels: item.sectionLabels, status: 'active', version: item.version })
+    } })),
+    ...data.students.filter(item => item.status === 'deleted').map(item => ({ key: `student:${item.studentId}`, label: item.name, meta: 'Student', updatedAt: item.updatedAt, onRestore: async () => {
+      await apiClient.updateStudent(item.studentId, { usn: item.usn, rollNumber: item.rollNumber, name: item.name, email: item.email, phone: item.phone, admissionDate: item.admissionDate, status: 'active', version: item.version })
+    } })),
+    ...data.facultyMembers.filter(item => item.status === 'deleted').map(item => ({ key: `faculty:${item.facultyId}`, label: item.displayName, meta: 'Faculty member', updatedAt: item.updatedAt, onRestore: async () => {
+      await apiClient.updateFaculty(item.facultyId, { username: item.username, email: item.email, phone: item.phone, employeeCode: item.employeeCode, displayName: item.displayName, designation: item.designation, joinedOn: item.joinedOn, status: 'active', version: item.version })
+    } })),
+    ...data.courses.filter(item => item.status === 'deleted').map(item => ({ key: `course:${item.courseId}`, label: item.title, meta: 'Course', updatedAt: item.updatedAt, onRestore: async () => {
+      await apiClient.updateCourse(item.courseId, { courseCode: item.courseCode, title: item.title, defaultCredits: item.defaultCredits, departmentId: item.departmentId, status: 'active', version: item.version })
+    } })),
+  ].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+  const openRequests = data.requests.filter(item => item.status !== 'Closed')
+  const pendingReminders = data.reminders.filter(item => item.status === 'pending')
+  const actionQueueCount = openRequests.length + pendingReminders.length
+  const selectorSections = selectedBatch?.sectionLabels ?? []
+  const currentUniversityLevel = selectedBatch
+    ? (selectedSectionCode ? 'section' : 'year')
+    : selectedBranch
+      ? 'year'
+      : selectedDepartment
+        ? 'branch'
+        : selectedAcademicFaculty
+          ? 'department'
+          : 'faculty'
+  const universityLeftItems = (() => {
+    if (selectedBatch) {
+      return selectorSections.map(sectionCode => ({
+        key: `section:${sectionCode}`,
+        title: `Section ${sectionCode}`,
+        subtitle: 'Section scope',
+        selected: selectedSectionCode === sectionCode,
+        onSelect: () => setSelectedSectionCode(sectionCode),
+      }))
+    }
+    if (selectedBranch) {
+      return branchBatches.map(batch => ({
+        key: `batch:${batch.batchId}`,
+        title: `${deriveCurrentYearLabel(batch.currentSemester)}`,
+        subtitle: `Batch ${batch.batchLabel} · ${batch.currentSemester % 2 === 0 ? 'Even' : 'Odd'} semester`,
+        selected: route.batchId === batch.batchId,
+        onSelect: () => navigate({
+          section: 'faculties',
+          academicFacultyId: selectedAcademicFaculty?.academicFacultyId,
+          departmentId: selectedDepartment?.departmentId,
+          branchId: selectedBranch!.branchId,
+          batchId: batch.batchId,
+        }),
+      }))
+    }
+    if (selectedDepartment) {
+      return departmentBranches.map(branch => ({
+        key: `branch:${branch.branchId}`,
+        title: branch.name,
+        subtitle: `${branch.code} · ${branch.programLevel} · ${branch.semesterCount} semesters`,
+        selected: route.branchId === branch.branchId,
+        onSelect: () => navigate({
+          section: 'faculties',
+          academicFacultyId: selectedAcademicFaculty?.academicFacultyId,
+          departmentId: selectedDepartment!.departmentId,
+          branchId: branch.branchId,
+        }),
+      }))
+    }
+    if (selectedAcademicFaculty) {
+      return facultyDepartments.map(department => ({
+        key: `department:${department.departmentId}`,
+        title: department.name,
+        subtitle: `${department.code} · ${listBranchesForDepartment(data, department.departmentId).length} branches`,
+        selected: route.departmentId === department.departmentId,
+        onSelect: () => navigate({
+          section: 'faculties',
+          academicFacultyId: selectedAcademicFaculty!.academicFacultyId,
+          departmentId: department.departmentId,
+        }),
+      }))
+    }
+    return visibleAcademicFaculties.map(faculty => ({
+      key: `faculty:${faculty.academicFacultyId}`,
+      title: faculty.name,
+      subtitle: `${faculty.code} · ${listDepartmentsForAcademicFaculty(data, faculty.academicFacultyId).length} departments`,
+      selected: route.academicFacultyId === faculty.academicFacultyId,
+      onSelect: () => navigate({ section: 'faculties', academicFacultyId: faculty.academicFacultyId }),
+    }))
+  })()
+  const universityNextItems = (() => {
+    if (selectedBatch) {
+      return selectorSections.map(sectionCode => ({
+        key: `section:${sectionCode}`,
+        title: `Section ${sectionCode}`,
+        description: `${data.students.filter(student => student.activeAcademicContext?.batchId === selectedBatch!.batchId && student.activeAcademicContext.sectionCode === sectionCode).length} students`,
+        onSelect: () => setSelectedSectionCode(sectionCode),
+      }))
+    }
+    if (selectedBranch) {
+      return branchBatches.map(batch => ({
+        key: `year:${batch.batchId}`,
+        title: deriveCurrentYearLabel(batch.currentSemester),
+        description: `${batch.batchLabel} · sections ${batch.sectionLabels.join(', ') || 'NA'}`,
+        onSelect: () => navigate({
+          section: 'faculties',
+          academicFacultyId: selectedAcademicFaculty?.academicFacultyId,
+          departmentId: selectedDepartment?.departmentId,
+          branchId: selectedBranch!.branchId,
+          batchId: batch.batchId,
+        }),
+      }))
+    }
+    if (selectedDepartment) {
+      return departmentBranches.map(branch => ({
+        key: `branch:${branch.branchId}`,
+        title: branch.name,
+        description: `${branch.code} · ${branch.programLevel} · ${listBatchesForBranch(data, branch.branchId).length} years`,
+        onSelect: () => navigate({
+          section: 'faculties',
+          academicFacultyId: selectedAcademicFaculty?.academicFacultyId,
+          departmentId: selectedDepartment!.departmentId,
+          branchId: branch.branchId,
+        }),
+      }))
+    }
+    if (selectedAcademicFaculty) {
+      return facultyDepartments.map(department => ({
+        key: `department:${department.departmentId}`,
+        title: department.name,
+        description: `${department.code} · ${listBranchesForDepartment(data, department.departmentId).length} branches`,
+        onSelect: () => navigate({
+          section: 'faculties',
+          academicFacultyId: selectedAcademicFaculty!.academicFacultyId,
+          departmentId: department.departmentId,
+        }),
+      }))
+    }
+    return []
+  })()
+  const filteredUniversityStudents = data.students.filter(student => {
+    const context = student.activeAcademicContext
+    if (!context) return false
+    if (selectedAcademicFaculty) {
+      const department = context.departmentId ? resolveDepartment(data, context.departmentId) : null
+      if (department?.academicFacultyId !== selectedAcademicFaculty.academicFacultyId) return false
+    }
+    if (selectedDepartment && context.departmentId !== selectedDepartment.departmentId) return false
+    if (selectedBranch && context.branchId !== selectedBranch.branchId) return false
+    if (selectedBatch && context.batchId !== selectedBatch.batchId) return false
+    if (selectedSectionCode && context.sectionCode !== selectedSectionCode) return false
+    return true
+  })
+  const filteredUniversityFaculty = data.facultyMembers.filter(member => {
+    const appointmentMatch = member.appointments.some(appointment => {
+      if (appointment.status !== 'active') return false
+      if (selectedDepartment && appointment.departmentId !== selectedDepartment.departmentId) return false
+      if (selectedBranch && appointment.branchId !== selectedBranch.branchId) return false
+      if (selectedAcademicFaculty) {
+        const department = resolveDepartment(data, appointment.departmentId)
+        if (department?.academicFacultyId !== selectedAcademicFaculty.academicFacultyId) return false
+      }
+      return true
+    })
+    const ownershipMatch = data.ownerships.some(ownership => {
+      if (ownership.facultyId !== member.facultyId || ownership.status !== 'active') return false
+      const offering = data.offerings.find(item => item.offId === ownership.offeringId)
+      if (!offering) return false
+      if (selectedSectionCode && offering.section !== selectedSectionCode) return false
+      if (selectedDepartment && offering.dept.toLowerCase() !== selectedDepartment.code.toLowerCase()) return false
+      if (selectedAcademicFaculty) {
+        const matchedDepartment = data.departments.find(item => item.code.toLowerCase() === offering.dept.toLowerCase())
+        if (matchedDepartment?.academicFacultyId !== selectedAcademicFaculty.academicFacultyId) return false
+      }
+      return true
+    })
+    if (!selectedAcademicFaculty && !selectedDepartment && !selectedBranch && !selectedBatch && !selectedSectionCode) return true
+    return appointmentMatch || ownershipMatch
+  })
+  const universityContextLabel = selectedSectionCode
+    ? `Section ${selectedSectionCode}`
+    : selectedBatch
+      ? deriveCurrentYearLabel(selectedBatch.currentSemester)
+      : selectedBranch
+        ? selectedBranch.name
+        : selectedDepartment
+          ? selectedDepartment.name
+        : selectedAcademicFaculty
+          ? selectedAcademicFaculty.name
+          : 'Main Dashboard'
+  const universityOverviewItems = universityNextItems.length > 0
+    ? universityNextItems
+    : universityLeftItems.map(item => ({
+        key: item.key,
+        title: item.title,
+        description: item.subtitle,
+        onSelect: item.onSelect,
+      }))
+  const universityLevelTitle = currentUniversityLevel === 'faculty'
+    ? 'Academic Faculties'
+    : currentUniversityLevel === 'department'
+      ? 'Departments'
+      : currentUniversityLevel === 'branch'
+        ? 'Branches'
+        : currentUniversityLevel === 'year'
+          ? 'Years'
+          : 'Sections'
+  const universityLevelHelper = currentUniversityLevel === 'faculty'
+    ? 'Create and maintain top-level academic faculties before drilling into departments, branches, years, and sections.'
+    : currentUniversityLevel === 'department'
+      ? 'Edit the selected academic faculty and curate the departments that live under it.'
+      : currentUniversityLevel === 'branch'
+        ? 'Edit the selected department and define its UG/PG branches with even semester counts.'
+        : currentUniversityLevel === 'year'
+          ? 'Edit the selected branch and manage the year/batch records that determine section scope and policy.'
+          : 'Sections are controlled from the selected year. Editing section labels updates the year directly.'
+  const getUniversityCourseLeaders = (courseCode: string) => {
+    const leaderNames = data.ownerships.flatMap(ownership => {
+      if (ownership.status !== 'active' || !isLeaderLikeOwnership(ownership.ownershipRole)) return []
+      const offering = data.offerings.find(item => item.offId === ownership.offeringId)
+      const facultyMember = resolveFacultyMember(data, ownership.facultyId)
+      if (!offering || !facultyMember) return []
+      if (offering.code.toLowerCase() !== courseCode.toLowerCase()) return []
+      if (selectedSectionCode && offering.section !== selectedSectionCode) return []
+      return [facultyMember.displayName]
+    })
+    return Array.from(new Set(leaderNames))
+  }
+  const scopedCourseLeaderFaculty = Array.from(new Map(
+    filteredUniversityFaculty
+      .filter(member => member.status === 'active')
+      .map(member => [member.facultyId, member]),
+  ).values())
+    .sort((left, right) => left.displayName.localeCompare(right.displayName))
+  const getScopedCourseOfferings = (curriculumCourseId: string) => {
+    if (!selectedBatch || !selectedBranch) return []
+    const curriculumCourse = data.curriculumCourses.find(item => item.curriculumCourseId === curriculumCourseId)
+    if (!curriculumCourse) return []
+    const matchingTermIds = new Set(
+      data.terms
+        .filter(item => item.batchId === selectedBatch.batchId && item.branchId === selectedBranch.branchId && item.semesterNumber === curriculumCourse.semesterNumber && isVisibleAdminRecord(item.status))
+        .map(item => item.termId),
+    )
+    return data.offerings.filter(item => {
+      if (item.branchId !== selectedBranch.branchId) return false
+      if (!item.termId) return false
+      if (!matchingTermIds.has(item.termId)) return false
+      if (item.code.toLowerCase() !== curriculumCourse.courseCode.toLowerCase()) return false
+      if (selectedSectionCode && item.section !== selectedSectionCode) return false
+      return true
+    })
+  }
+  const getScopedCourseLeaderState = (curriculumCourseId: string) => {
+    const matchingOfferings = getScopedCourseOfferings(curriculumCourseId)
+    const leaderIds = Array.from(new Set(
+      matchingOfferings.flatMap(offering => data.ownerships
+        .filter(ownership => ownership.offeringId === offering.offId && ownership.status === 'active' && isLeaderLikeOwnership(ownership.ownershipRole))
+        .map(ownership => ownership.facultyId)),
+    ))
+    return {
+      matchingOfferings,
+      leaderIds,
+      selectedFacultyId: leaderIds.length === 1 ? leaderIds[0] : '',
+      hasMultipleLeaders: leaderIds.length > 1,
+    }
+  }
+  const universityStudentGroups = groupCollectionByLabel(filteredUniversityStudents, student => {
+    const context = student.activeAcademicContext
+    if (!context) return 'Unmapped'
+    if (selectedBatch) return `Section ${context.sectionCode}`
+    if (selectedBranch) return context.semesterNumber ? deriveCurrentYearLabel(context.semesterNumber) : 'Unknown year'
+    if (selectedDepartment) return context.branchName ?? 'Unknown branch'
+    return context.departmentName ?? 'Unassigned department'
+  })
+  const universityFacultyGroups = groupCollectionByLabel(filteredUniversityFaculty, member => {
+    const primaryDepartment = resolveDepartment(data, getPrimaryAppointmentDepartmentId(member))
+    if (selectedBatch) {
+      const sections = Array.from(new Set(
+        data.ownerships
+          .filter(ownership => ownership.facultyId === member.facultyId && ownership.status === 'active')
+          .flatMap(ownership => {
+            const offering = data.offerings.find(item => item.offId === ownership.offeringId)
+            if (!offering) return []
+            if (selectedSectionCode && offering.section !== selectedSectionCode) return []
+            return [`Section ${offering.section}`]
+          }),
+      ))
+      return sections[0] ?? 'Shared section support'
+    }
+    if (selectedBranch) {
+      const years = Array.from(new Set(
+        data.ownerships
+          .filter(ownership => ownership.facultyId === member.facultyId && ownership.status === 'active')
+          .flatMap(ownership => {
+            const offering = data.offerings.find(item => item.offId === ownership.offeringId)
+            return offering ? [offering.year] : []
+          }),
+      ))
+      return years[0] ?? 'Shared year support'
+    }
+    if (selectedDepartment) {
+      const primaryBranch = member.appointments.find(item => item.status === 'active' && item.branchId)?.branchId
+      return resolveBranch(data, primaryBranch)?.name ?? 'Department pool'
+    }
+    return primaryDepartment?.name ?? 'Shared faculty'
+  })
+  const mentorEligibleFaculty = data.facultyMembers
+    .filter(item => item.status === 'active' && item.roleGrants.some(grant => grant.roleCode === 'MENTOR' && isCurrentRoleGrant(grant)))
+    .sort((left, right) => left.displayName.localeCompare(right.displayName))
+  const selectedStudentEnrollment = selectedStudent ? findLatestEnrollment(selectedStudent) : null
+  const selectedStudentMentorAssignment = selectedStudent ? findLatestMentorAssignment(selectedStudent) : null
+  const selectedStudentPromotionRules = selectedStudentPolicy?.effectivePolicy.progressionRules ?? DEFAULT_PROGRESSION_RULES
+  const selectedStudentNextTerms = selectedStudent?.activeAcademicContext
+    ? data.terms
+        .filter(item => item.branchId === selectedStudent.activeAcademicContext!.branchId && item.semesterNumber === (selectedStudent.activeAcademicContext!.semesterNumber ?? 0) + 1 && isVisibleAdminRecord(item.status))
+        .sort((left, right) => left.startDate.localeCompare(right.startDate))
+    : []
+  const selectedStudentPromotionRecommended = selectedStudent
+    ? selectedStudent.currentCgpa >= selectedStudentPromotionRules.minimumCgpaForPromotion
+      && (!selectedStudentPromotionRules.requireNoActiveBacklogs || !/(backlog|fail|repeat|detain)/i.test(selectedStudent.activeAcademicContext?.academicStatus ?? ''))
+    : false
+  const studentRegistryItems = data.students
+    .filter(item => isVisibleAdminRecord(item.status))
+    .sort((left, right) => left.name.localeCompare(right.name))
+  const facultyRegistryItems = data.facultyMembers
+    .filter(item => isVisibleAdminRecord(item.status))
+    .sort((left, right) => left.displayName.localeCompare(right.displayName))
+  const visibleTerms = data.terms
+    .filter(item => isVisibleAdminRecord(item.status))
+    .sort((left, right) => left.startDate.localeCompare(right.startDate))
+  const termsForEnrollment = visibleTerms.filter(item => !enrollmentForm.branchId || item.branchId === enrollmentForm.branchId)
+  const branchesForAppointment = visibleBranches.filter(item => !appointmentForm.departmentId || item.departmentId === appointmentForm.departmentId)
+  const selectedFacultyOwnerships = selectedFacultyMember
+    ? data.ownerships.filter(item => item.facultyId === selectedFacultyMember.facultyId)
+    : []
+  const visibleOfferings = [...data.offerings]
+    .sort((left, right) => `${left.code}-${left.year}-${left.section}`.localeCompare(`${right.code}-${right.year}-${right.section}`))
+  const scopeOptions = (() => {
+    if (roleGrantForm.scopeType === 'institution') {
+      return data.institution ? [{ value: data.institution.institutionId, label: data.institution.name }] : []
+    }
+    if (roleGrantForm.scopeType === 'academic-faculty') {
+      return visibleAcademicFaculties.map(item => ({ value: item.academicFacultyId, label: item.name }))
+    }
+    if (roleGrantForm.scopeType === 'department') {
+      return visibleDepartments.map(item => ({ value: item.departmentId, label: item.name }))
+    }
+    if (roleGrantForm.scopeType === 'branch') {
+      return visibleBranches.map(item => ({ value: item.branchId, label: item.name }))
+    }
+    if (roleGrantForm.scopeType === 'batch') {
+      return data.batches.filter(item => isVisibleAdminRecord(item.status)).map(item => ({ value: item.batchId, label: `${item.batchLabel} · ${deriveCurrentYearLabel(item.currentSemester)}` }))
+    }
+    if (roleGrantForm.scopeType === 'offering') {
+      return visibleOfferings.map(item => ({ value: item.offId, label: `${item.code} · ${item.year} · ${item.section}` }))
+    }
+    return []
+  })()
 
   // --- Main workspace ---
   return (
     <div style={{ minHeight: '100vh', background: `linear-gradient(180deg, ${T.bg}, ${T.surface2})`, color: T.text }}>
-      <AdminTopBar
+      <TeachingShellAdminTopBar
         institutionName={data.institution?.name ?? 'AirMentor'}
-        modeLabel="Live"
-        modeColor={T.success}
-        breadcrumbs={breadcrumbs}
+        adminName={session.faculty?.displayName ?? session.user.username}
+        contextLabel={route.section === 'faculties' ? `University · ${universityContextLabel}` : route.section === 'students' ? 'Student Registry' : route.section === 'faculty-members' ? 'Faculty Registry' : route.section === 'requests' ? 'Governed Requests' : route.section === 'history' ? 'History And Restore' : 'Operations Dashboard'}
+        now={now}
+        themeMode={themeMode}
+        actionCount={actionQueueCount}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         searchResults={searchResults.map(r => ({ key: r.key, title: r.label, subtitle: r.meta, onSelect: () => { setSearchQuery(''); navigate(r.route) } }))}
-        activeSection={route.section as AdminSectionId}
-        onSectionChange={section => navigate({ section: section as LiveAdminRoute['section'] })}
-        themeMode={themeMode}
-        onThemeToggle={() => persistTheme(themeMode === 'frosted-focus-light' ? 'frosted-focus-dark' : 'frosted-focus-light')}
-        extraActions={
-          <>
-            {onExitPortal ? <Btn variant="ghost" onClick={onExitPortal}>Portal</Btn> : null}
-            <Btn variant="ghost" onClick={() => void loadAdminData()}><RefreshCw size={14} /> Refresh</Btn>
-            <Btn variant="ghost" onClick={handleLogout}>Log Out</Btn>
-          </>
-        }
+        onToggleTheme={() => persistTheme(themeMode === 'frosted-focus-light' ? 'frosted-focus-dark' : 'frosted-focus-light')}
+        onToggleQueue={() => setShowActionQueue(current => !current)}
+        onRefresh={() => { void loadAdminData() }}
+        onExitPortal={onExitPortal}
+        onLogout={handleLogout}
       />
 
+      <div style={{ display: 'grid', gridTemplateColumns: showActionQueue ? 'minmax(0,1fr) 320px' : 'minmax(0,1fr)', gap: 0, alignItems: 'start' }}>
       <PageShell size="wide" style={{ display: 'grid', gap: 18, paddingTop: 22, paddingBottom: 34 }}>
         {flashMessage ? <InfoBanner tone="success" message={flashMessage} /> : null}
         {actionError ? <InfoBanner tone="error" message={actionError} /> : null}
@@ -1135,94 +2805,255 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         {/* ========== OVERVIEW ========== */}
         {route.section === 'overview' && (
           <div style={{ display: 'grid', gap: 16 }}>
-            <SectionHeading title="System Admin Dashboard" eyebrow="Live Mode" caption="Search-first academic configuration. Everything is managed from the main dashboard." />
-            <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
-              <MetricCard label="Academic Faculties" value={String(visibleAcademicFaculties.length)} helper="Top-level schools or colleges above departments." onClick={() => navigate({ section: 'faculties' })} />
-              <MetricCard label="Departments" value={String(visibleDepartments.length)} helper="Administrative owners beneath academic faculties." onClick={() => navigate({ section: 'faculties' })} />
-              <MetricCard label="Batches" value={String(visibleBatches.length)} helper="Curriculum and policy versioning nodes per branch." onClick={() => navigate({ section: 'faculties' })} />
-              <MetricCard label="Open Requests" value={String(data.requests.filter(item => item.status !== 'Closed').length)} helper="HoD-driven changes moving through implementation." onClick={() => navigate({ section: 'requests' })} />
-            </div>
-            <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
-              <Card style={{ padding: 18 }}>
-                <div style={{ ...sora, fontSize: 17, fontWeight: 800, color: T.text }}>Hierarchy</div>
-                <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 6 }}>{data.institution?.name ?? 'Institution not configured'} currently has {visibleAcademicFaculties.length} academic faculties, {visibleBranches.length} branches, and {visibleTerms.length} active academic terms.</div>
-              </Card>
-              <Card style={{ padding: 18 }}>
-                <div style={{ ...sora, fontSize: 17, fontWeight: 800, color: T.text }}>Faculty Assignments</div>
-                <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 6 }}>There are {data.ownerships.filter(item => item.status === 'active').length} active class ownership records linked to {data.facultyMembers.length} faculty members.</div>
+            <SectionHeading title="Operations Dashboard" eyebrow="Sysadmin Control Plane" caption="University setup, student registry, faculty registry, and governed requests all begin here." />
+            <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'minmax(0, 1.3fr) minmax(260px, 0.7fr)' }}>
+              <div style={{ display: 'grid', gap: 16 }}>
+                <SectionLaunchCard
+                  title="University"
+                  caption={`${visibleAcademicFaculties.length} faculties · ${visibleDepartments.length} departments · ${visibleBranches.length} branches`}
+                  helper="Selector-driven hierarchy control for academic faculty, department, branch, year, section, policy bands, CE/SEE, CGPA progression, and course tables."
+                  icon={<LayoutDashboard size={18} />}
+                  active={false}
+                  onClick={() => navigate({ section: 'faculties' })}
+                />
+                <SectionLaunchCard
+                  title="Students"
+                  caption={`${data.students.length} records · ${data.students.filter(item => item.activeMentorAssignment).length} mentored`}
+                  helper="Canonical student identity, mentor eligibility, academic context corrections, and semester progression review live in one registry."
+                  icon={<GraduationCap size={18} />}
+                  active={false}
+                  onClick={() => navigate({ section: 'students' })}
+                />
+                <SectionLaunchCard
+                  title="Faculty"
+                  caption={`${data.facultyMembers.length} profiles · ${data.ownerships.filter(item => item.status === 'active').length} active teaching assignments`}
+                  helper="Appointments, permissions, course ownership, mentor scope, and teaching-profile parity are all managed from the faculty registry."
+                  icon={<UserCog size={18} />}
+                  active={false}
+                  onClick={() => navigate({ section: 'faculty-members' })}
+                />
+              </div>
+              <Card style={{ padding: 18, display: 'grid', gap: 14, alignContent: 'start' }}>
+                <div>
+                  <div style={{ ...sora, fontSize: 17, fontWeight: 800, color: T.text }}>Control Snapshot</div>
+                  <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 6 }}>Live counts reflect the actual admin backend, not the old static sysadmin mock.</div>
+                </div>
+                <div style={{ display: 'grid', gap: 10 }}>
+                  <MetricCard label="Open Requests" value={String(openRequests.length)} helper="Items that still need admin review, approval, implementation, or closure." onClick={() => navigate({ section: 'requests' })} />
+                  <MetricCard label="Private Reminders" value={String(pendingReminders.length)} helper="Your personal admin notes, visible only in this account." onClick={() => setShowActionQueue(true)} />
+                  <MetricCard label="Recycle Bin" value={String(deletedItems.length)} helper="Soft-deleted entities that can still be restored within the retention window." onClick={() => navigate({ section: 'history' })} />
+                  <MetricCard label="Recent Audit" value={String(recentAuditEvents.length)} helper="Latest cross-entity changes, including planner saves and restore activity." onClick={() => navigate({ section: 'history' })} />
+                </div>
+                <div style={{ ...mono, fontSize: 10, color: T.dim, lineHeight: 1.8 }}>
+                  Back navigation and scoped search are now intended to behave like an operational control plane instead of a one-off setup form.
+                </div>
               </Card>
             </div>
           </div>
         )}
 
-        {/* ========== FACULTIES (tree explorer + detail) ========== */}
+        {/* ========== FACULTIES (selector workspace) ========== */}
         {route.section === 'faculties' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 16 }}>
+          <div style={{ display: 'grid', gap: 16 }}>
+            <SectionHeading title="University" eyebrow="Hierarchy Control" caption="Selector-driven control for academic faculty, department, branch, year, section, policy, and semester-wise course setup." />
+
+            <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+                <div>
+                  <FieldLabel>Faculty</FieldLabel>
+                  <SelectInput
+                    value={selectedAcademicFaculty?.academicFacultyId ?? ''}
+                    onChange={event => {
+                      setSelectedSectionCode(null)
+                      navigate({ section: 'faculties', academicFacultyId: event.target.value || undefined })
+                    }}
+                  >
+                    <option value="">All Academic Faculties</option>
+                    {visibleAcademicFaculties.map(faculty => <option key={faculty.academicFacultyId} value={faculty.academicFacultyId}>{faculty.name}</option>)}
+                  </SelectInput>
+                </div>
+                <div>
+                  <FieldLabel>Department</FieldLabel>
+                  <SelectInput
+                    value={selectedDepartment?.departmentId ?? ''}
+                    disabled={!selectedAcademicFaculty}
+                    onChange={event => {
+                      setSelectedSectionCode(null)
+                      navigate({
+                        section: 'faculties',
+                        academicFacultyId: selectedAcademicFaculty?.academicFacultyId,
+                        departmentId: event.target.value || undefined,
+                      })
+                    }}
+                  >
+                    <option value="">{selectedAcademicFaculty ? 'Select Department' : 'Pick Faculty First'}</option>
+                    {facultyDepartments.map(department => <option key={department.departmentId} value={department.departmentId}>{department.name}</option>)}
+                  </SelectInput>
+                </div>
+                <div>
+                  <FieldLabel>Branch</FieldLabel>
+                  <SelectInput
+                    value={selectedBranch?.branchId ?? ''}
+                    disabled={!selectedDepartment}
+                    onChange={event => {
+                      setSelectedSectionCode(null)
+                      navigate({
+                        section: 'faculties',
+                        academicFacultyId: selectedAcademicFaculty?.academicFacultyId,
+                        departmentId: selectedDepartment?.departmentId,
+                        branchId: event.target.value || undefined,
+                      })
+                    }}
+                  >
+                    <option value="">{selectedDepartment ? 'Select Branch' : 'Pick Department First'}</option>
+                    {departmentBranches.map(branch => <option key={branch.branchId} value={branch.branchId}>{branch.name}</option>)}
+                  </SelectInput>
+                </div>
+                <div>
+                  <FieldLabel>Year</FieldLabel>
+                  <SelectInput
+                    value={selectedBatch?.batchId ?? ''}
+                    disabled={!selectedBranch}
+                    onChange={event => {
+                      setSelectedSectionCode(null)
+                      navigate({
+                        section: 'faculties',
+                        academicFacultyId: selectedAcademicFaculty?.academicFacultyId,
+                        departmentId: selectedDepartment?.departmentId,
+                        branchId: selectedBranch?.branchId,
+                        batchId: event.target.value || undefined,
+                      })
+                    }}
+                  >
+                    <option value="">{selectedBranch ? 'Select Year' : 'Pick Branch First'}</option>
+                    {branchBatches.map(batch => <option key={batch.batchId} value={batch.batchId}>{deriveCurrentYearLabel(batch.currentSemester)} · {batch.batchLabel}</option>)}
+                  </SelectInput>
+                </div>
+                <div>
+                  <FieldLabel>Section</FieldLabel>
+                  <SelectInput
+                    value={selectedSectionCode ?? ''}
+                    disabled={!selectedBatch}
+                    onChange={event => setSelectedSectionCode(event.target.value || null)}
+                  >
+                    <option value="">{selectedBatch ? 'All Sections' : 'Pick Year First'}</option>
+                    {selectorSections.map(sectionCode => <option key={sectionCode} value={sectionCode}>{sectionCode}</option>)}
+                  </SelectInput>
+                </div>
+              </div>
+              <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                Search narrows automatically to the active selector scope. `Year` is a UI alias for the canonical batch record beneath it.
+              </div>
+            </Card>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 16 }}>
             {/* Tree explorer */}
-            <Card style={{ padding: 16, display: 'grid', gap: 8, alignContent: 'start', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
-              <div style={{ ...mono, fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Hierarchy</div>
-              {visibleAcademicFaculties.map(fac => {
-                const facDepts = listDepartmentsForAcademicFaculty(data, fac.academicFacultyId)
-                const isExpanded = selectedAcademicFaculty?.academicFacultyId === fac.academicFacultyId
-                return (
-                  <div key={fac.academicFacultyId}>
-                    <EntityButton selected={isExpanded && !selectedDepartment} onClick={() => navigate({ section: 'faculties', academicFacultyId: fac.academicFacultyId })}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{fac.name}</div>
-                        <Chip color={T.dim}>{facDepts.length}</Chip>
-                      </div>
-                    </EntityButton>
-                    {isExpanded && facDepts.map(dept => {
-                      const deptBranches = listBranchesForDepartment(data, dept.departmentId)
-                      const isDeptExpanded = selectedDepartment?.departmentId === dept.departmentId
-                      return (
-                        <div key={dept.departmentId} style={{ paddingLeft: 14 }}>
-                          <EntityButton selected={isDeptExpanded && !selectedBranch} onClick={() => navigate({ section: 'faculties', academicFacultyId: fac.academicFacultyId, departmentId: dept.departmentId })} style={{ marginTop: 6 }}>
-                            <div style={{ ...mono, fontSize: 11, color: T.text }}>{dept.name}</div>
-                            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>{dept.code} · {deptBranches.length} branches</div>
-                          </EntityButton>
-                          {isDeptExpanded && deptBranches.map(br => {
-                            const brBatches = listBatchesForBranch(data, br.branchId)
-                            const isBrExpanded = selectedBranch?.branchId === br.branchId
-                            return (
-                              <div key={br.branchId} style={{ paddingLeft: 14 }}>
-                                <EntityButton selected={isBrExpanded && !selectedBatch} onClick={() => navigate({ section: 'faculties', academicFacultyId: fac.academicFacultyId, departmentId: dept.departmentId, branchId: br.branchId })} style={{ marginTop: 6 }}>
-                                  <div style={{ ...mono, fontSize: 11, color: T.text }}>{br.name}</div>
-                                  <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>{br.code} · {br.programLevel} · {brBatches.length} batches</div>
-                                </EntityButton>
-                                {isBrExpanded && brBatches.map(bt => (
-                                  <div key={bt.batchId} style={{ paddingLeft: 14 }}>
-                                    <EntityButton selected={selectedBatch?.batchId === bt.batchId} onClick={() => navigate({ section: 'faculties', academicFacultyId: fac.academicFacultyId, departmentId: dept.departmentId, branchId: br.branchId, batchId: bt.batchId })} style={{ marginTop: 6 }}>
-                                      <div style={{ ...mono, fontSize: 11, color: T.text }}>Batch {bt.batchLabel}</div>
-                                      <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>{deriveCurrentYearLabel(bt.currentSemester)} · Sem {bt.currentSemester}</div>
-                                    </EntityButton>
-                                  </div>
-                                ))}
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )
-                    })}
+            <Card style={{ padding: 16, display: 'grid', gap: 12, alignContent: 'start', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+                <div>
+                  <div style={{ ...mono, fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Entity Rail</div>
+                  <div style={{ ...sora, fontSize: 16, fontWeight: 800, color: T.text, marginTop: 6 }}>{universityLevelTitle}</div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6, lineHeight: 1.8 }}>{universityLevelHelper}</div>
+                </div>
+                <Chip color={T.accent}>{universityLeftItems.length}</Chip>
+              </div>
+
+              <div style={{ display: 'grid', gap: 8 }}>
+                {universityLeftItems.length === 0 ? (
+                  <EmptyState title={`No ${universityLevelTitle.toLowerCase()} yet`} body="Use the forms on the right to create the first record in this scope." />
+                ) : universityLeftItems.map(item => (
+                  <EntityButton key={item.key} selected={item.selected} onClick={item.onSelect}>
+                    <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{item.title}</div>
+                    <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{item.subtitle}</div>
+                  </EntityButton>
+                ))}
+              </div>
+
+              {!selectedAcademicFaculty ? (
+                <form onSubmit={handleCreateAcademicFaculty} style={{ display: 'grid', gap: 8, marginTop: 12, borderTop: `1px solid ${T.border}`, paddingTop: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Plus size={14} color={T.accent} />
+                    <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Add Academic Faculty</div>
                   </div>
-                )
-              })}
-              <form onSubmit={handleCreateAcademicFaculty} style={{ display: 'grid', gap: 8, marginTop: 12, borderTop: `1px solid ${T.border}`, paddingTop: 12 }}>
-                <div style={{ ...mono, fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>New Faculty</div>
-                <TextInput value={structureForms.academicFaculty.code} onChange={event => setStructureForms(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, code: event.target.value } }))} placeholder="ENG" />
-                <TextInput value={structureForms.academicFaculty.name} onChange={event => setStructureForms(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, name: event.target.value } }))} placeholder="Engineering and Technology" />
-                <TextAreaInput value={structureForms.academicFaculty.overview} onChange={event => setStructureForms(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, overview: event.target.value } }))} placeholder="Overview" rows={2} />
-                <Btn type="submit">Add Academic Faculty</Btn>
-              </form>
+                  <TextInput value={structureForms.academicFaculty.code} onChange={event => setStructureForms(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, code: event.target.value } }))} placeholder="ENG" />
+                  <TextInput value={structureForms.academicFaculty.name} onChange={event => setStructureForms(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, name: event.target.value } }))} placeholder="Engineering and Technology" />
+                  <TextAreaInput value={structureForms.academicFaculty.overview} onChange={event => setStructureForms(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, overview: event.target.value } }))} placeholder="Overview" rows={2} />
+                  <Btn type="submit"><Plus size={14} /> Add Faculty</Btn>
+                </form>
+              ) : null}
             </Card>
 
             {/* Right: detail panel */}
             <div style={{ display: 'grid', gap: 14, alignContent: 'start' }}>
-              {!selectedAcademicFaculty && (
-                <>
-                  <SectionHeading title="Academic Faculties" eyebrow="Hierarchy" caption="Select an academic faculty in the tree to begin, or create one below." />
-                </>
+              <Card style={{ padding: 16, display: 'grid', gap: 14, background: T.surface2 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ ...mono, fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Subpanel</div>
+                    <div style={{ ...sora, fontSize: 18, fontWeight: 800, color: T.text, marginTop: 6 }}>{universityContextLabel}</div>
+                    <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6, lineHeight: 1.8 }}>
+                      If you do not switch tabs, this area behaves as a scoped navigator plus metadata surface. Once a batch is selected, the policy controls split into bands, CE/SEE, and CGPA views.
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {selectedBranch ? <Chip color={T.success}>{selectedBranch.programLevel}</Chip> : null}
+                    {selectedBatch ? <Chip color={activeBatchPolicyOverride ? T.orange : T.dim}>{activeBatchPolicyOverride ? 'Override active' : 'Inherited policy'}</Chip> : null}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {[
+                    { id: 'overview' as const, label: 'Overview', icon: <LayoutDashboard size={13} /> },
+                    { id: 'bands' as const, label: 'Bands', icon: <CheckCircle2 size={13} /> },
+                    { id: 'ce-see' as const, label: 'CE / SEE', icon: <Compass size={13} /> },
+                    { id: 'cgpa' as const, label: 'CGPA', icon: <GraduationCap size={13} /> },
+                    ...(selectedBranch ? [{ id: 'courses' as const, label: 'Courses', icon: <BookOpen size={13} /> }] : []),
+                  ].map(tab => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      data-tab="true"
+                      onClick={() => setUniversityTab(tab.id)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        borderRadius: 8,
+                        border: `1px solid ${universityTab === tab.id ? T.accent : T.border}`,
+                        background: universityTab === tab.id ? `${T.accent}16` : 'transparent',
+                        color: universityTab === tab.id ? T.accentLight : T.muted,
+                        cursor: 'pointer',
+                        padding: '8px 12px',
+                        ...mono,
+                        fontSize: 10,
+                      }}
+                    >
+                      {tab.icon}
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </Card>
+
+              {universityTab === 'overview' && !selectedAcademicFaculty && (
+                <Card style={{ padding: 16, background: T.surface2, display: 'grid', gap: 10 }}>
+                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Overview Navigator</div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                    Start with an academic faculty. The left rail is your editable control list, while the cards below mirror the same scope with descriptive metadata and direct drill-down actions.
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8 }}>
+                    {universityOverviewItems.map(item => (
+                      <button key={item.key} type="button" onClick={item.onSelect} style={{ textAlign: 'left', borderRadius: 12, border: `1px solid ${T.border}`, background: T.surface, padding: '12px 14px', cursor: 'pointer' }}>
+                        <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{item.title}</div>
+                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{item.description}</div>
+                      </button>
+                    ))}
+                  </div>
+                </Card>
               )}
+
+              {!selectedAcademicFaculty ? (
+                <SectionHeading title="Academic Faculties" eyebrow="Hierarchy" caption="Select an academic faculty in the tree to begin, or create one below." />
+              ) : null}
 
               {selectedAcademicFaculty && !selectedDepartment && (
                 <Card style={{ padding: 18 }}>
@@ -1436,93 +3267,818 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </div>
                 </Card>
               )}
+
+              {universityTab === 'bands' && (
+                selectedBatch ? (
+                  <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
+                    <SectionHeading title="Academic Bands" eyebrow="Evaluation" caption="Current repo defaults seed the table; save here to keep a batch-specific override." />
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
+                      <div><FieldLabel>O Minimum</FieldLabel><TextInput value={policyForm.oMin} onChange={event => setPolicyForm(prev => ({ ...prev, oMin: event.target.value }))} /></div>
+                      <div><FieldLabel>A+ Minimum</FieldLabel><TextInput value={policyForm.aPlusMin} onChange={event => setPolicyForm(prev => ({ ...prev, aPlusMin: event.target.value }))} /></div>
+                      <div><FieldLabel>A Minimum</FieldLabel><TextInput value={policyForm.aMin} onChange={event => setPolicyForm(prev => ({ ...prev, aMin: event.target.value }))} /></div>
+                      <div><FieldLabel>B+ Minimum</FieldLabel><TextInput value={policyForm.bPlusMin} onChange={event => setPolicyForm(prev => ({ ...prev, bPlusMin: event.target.value }))} /></div>
+                      <div><FieldLabel>B Minimum</FieldLabel><TextInput value={policyForm.bMin} onChange={event => setPolicyForm(prev => ({ ...prev, bMin: event.target.value }))} /></div>
+                      <div><FieldLabel>C Minimum</FieldLabel><TextInput value={policyForm.cMin} onChange={event => setPolicyForm(prev => ({ ...prev, cMin: event.target.value }))} /></div>
+                      <div><FieldLabel>P Minimum</FieldLabel><TextInput value={policyForm.pMin} onChange={event => setPolicyForm(prev => ({ ...prev, pMin: event.target.value }))} /></div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                      <Btn onClick={handleSaveBatchPolicy}><CheckCircle2 size={14} /> Save Bands</Btn>
+                      <Btn variant="ghost" onClick={() => void handleResetBatchPolicy()}>Reset To Inherited</Btn>
+                    </div>
+                  </Card>
+                ) : <EmptyState title="Select a year" body="Bands are editable once year scope is selected." />
+              )}
+
+              {universityTab === 'ce-see' && (
+                selectedBatch ? (
+                  <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
+                    <SectionHeading title="CE / SEE Split" eyebrow="Assessment" caption="Configure CE, SEE, and internal assessment caps for the selected year." />
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+                      <div><FieldLabel>CE</FieldLabel><TextInput value={policyForm.ce} onChange={event => setPolicyForm(prev => ({ ...prev, ce: event.target.value }))} /></div>
+                      <div><FieldLabel>SEE</FieldLabel><TextInput value={policyForm.see} onChange={event => setPolicyForm(prev => ({ ...prev, see: event.target.value }))} /></div>
+                      <div><FieldLabel>TT Weight</FieldLabel><TextInput value={policyForm.termTestsWeight} onChange={event => setPolicyForm(prev => ({ ...prev, termTestsWeight: event.target.value }))} /></div>
+                      <div><FieldLabel>Quiz Weight</FieldLabel><TextInput value={policyForm.quizWeight} onChange={event => setPolicyForm(prev => ({ ...prev, quizWeight: event.target.value }))} /></div>
+                      <div><FieldLabel>Assignment Weight</FieldLabel><TextInput value={policyForm.assignmentWeight} onChange={event => setPolicyForm(prev => ({ ...prev, assignmentWeight: event.target.value }))} /></div>
+                      <div><FieldLabel>Max TTs</FieldLabel><TextInput value={policyForm.maxTermTests} onChange={event => setPolicyForm(prev => ({ ...prev, maxTermTests: event.target.value }))} /></div>
+                      <div><FieldLabel>Max Quizzes</FieldLabel><TextInput value={policyForm.maxQuizzes} onChange={event => setPolicyForm(prev => ({ ...prev, maxQuizzes: event.target.value }))} /></div>
+                      <div><FieldLabel>Max Assignments</FieldLabel><TextInput value={policyForm.maxAssignments} onChange={event => setPolicyForm(prev => ({ ...prev, maxAssignments: event.target.value }))} /></div>
+                      <div><FieldLabel>Day Start</FieldLabel><TextInput value={policyForm.dayStart} onChange={event => setPolicyForm(prev => ({ ...prev, dayStart: event.target.value }))} /></div>
+                      <div><FieldLabel>Day End</FieldLabel><TextInput value={policyForm.dayEnd} onChange={event => setPolicyForm(prev => ({ ...prev, dayEnd: event.target.value }))} /></div>
+                    </div>
+                    <div>
+                      <FieldLabel>Working Days</FieldLabel>
+                      <DayToggle days={WEEKDAYS} selected={policyForm.workingDays} onChange={next => setPolicyForm(prev => ({ ...prev, workingDays: next as PolicyFormState['workingDays'] }))} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                      <Btn onClick={handleSaveBatchPolicy}><CheckCircle2 size={14} /> Save CE / SEE</Btn>
+                      <Btn variant="ghost" onClick={() => void handleResetBatchPolicy()}>Reset To Inherited</Btn>
+                    </div>
+                  </Card>
+                ) : <EmptyState title="Select a year" body="CE/SEE rules are editable once year scope is selected." />
+              )}
+
+              {universityTab === 'cgpa' && (
+                selectedBatch ? (
+                  <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
+                    <SectionHeading title="CGPA And Progression" eyebrow="Rules" caption="Use the current repo defaults as a starting point, then tune promotion rules per year." />
+                    <Card style={{ padding: 14, background: T.surface2 }}>
+                      <div style={{ ...mono, fontSize: 11, color: T.text, lineHeight: 1.9 }}>
+                        CE + SEE → M → Letter Grade → Grade Point<br />
+                        SGPA = Σ(credit × grade point) / Σ credits<br />
+                        CGPA = Σ(all credits × all grade points) / Σ all credits
+                      </div>
+                    </Card>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                      <div><FieldLabel>Pass Mark Percent</FieldLabel><TextInput value={policyForm.passMarkPercent} onChange={event => setPolicyForm(prev => ({ ...prev, passMarkPercent: event.target.value }))} /></div>
+                      <div><FieldLabel>Minimum CGPA For Promotion</FieldLabel><TextInput value={policyForm.minimumCgpaForPromotion} onChange={event => setPolicyForm(prev => ({ ...prev, minimumCgpaForPromotion: event.target.value }))} /></div>
+                      <div>
+                        <FieldLabel>Repeated Course Policy</FieldLabel>
+                        <SelectInput value={policyForm.repeatedCoursePolicy} onChange={event => setPolicyForm(prev => ({ ...prev, repeatedCoursePolicy: event.target.value as PolicyFormState['repeatedCoursePolicy'] }))}>
+                          <option value="latest-attempt">Latest attempt</option>
+                          <option value="best-attempt">Best attempt</option>
+                        </SelectInput>
+                      </div>
+                      <div>
+                        <FieldLabel>Promotion Rule</FieldLabel>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${T.border2}`, background: T.surface2, ...mono, fontSize: 11, color: T.text }}>
+                          <input type="checkbox" checked={policyForm.requireNoActiveBacklogs} onChange={event => setPolicyForm(prev => ({ ...prev, requireNoActiveBacklogs: event.target.checked }))} />
+                          Require no active backlogs
+                        </label>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                      <Btn onClick={handleSaveBatchPolicy}><CheckCircle2 size={14} /> Save CGPA Rules</Btn>
+                      <Btn variant="ghost" onClick={() => void handleResetBatchPolicy()}>Reset To Inherited</Btn>
+                    </div>
+                  </Card>
+                ) : <EmptyState title="Select a year" body="CGPA and progression rules are editable once year scope is selected." />
+              )}
+
+              {universityTab === 'courses' && (
+                selectedBranch ? (
+                  selectedBatch ? (
+                    <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
+                      <SectionHeading title="Semester Courses" eyebrow="Curriculum" caption="Semester-wise course rows, credits, and scoped course leader visibility for the selected year." />
+                      {curriculumBySemester.length === 0 ? <EmptyState title="No semester rows yet" body="Add the first course row below." /> : curriculumBySemester.map(entry => (
+                        <Card key={entry.semesterNumber} style={{ padding: 12, background: T.surface2, display: 'grid', gap: 8 }}>
+                          <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>Semester {entry.semesterNumber}</div>
+                          {entry.courses.map(course => (
+                            <div key={course.curriculumCourseId} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) 110px minmax(220px, 0.9fr) auto', gap: 10, alignItems: 'center' }}>
+                              {(() => {
+                                const leaderState = getScopedCourseLeaderState(course.curriculumCourseId)
+                                return (
+                                  <>
+                                    <div>
+                                      <div style={{ ...mono, fontSize: 11, color: T.text }}>{course.courseCode} · {course.title}</div>
+                                      <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>Semester {entry.semesterNumber} · {leaderState.matchingOfferings.length} live offering{leaderState.matchingOfferings.length === 1 ? '' : 's'} in scope</div>
+                                    </div>
+                                    <div style={{ ...mono, fontSize: 10, color: T.text }}>{course.credits} credits</div>
+                                    <div style={{ display: 'grid', gap: 6 }}>
+                                      <SelectInput
+                                        value={leaderState.selectedFacultyId}
+                                        disabled={leaderState.matchingOfferings.length === 0}
+                                        onChange={event => void handleAssignCurriculumCourseLeader(course.curriculumCourseId, event.target.value)}
+                                      >
+                                        <option value="">{leaderState.hasMultipleLeaders ? 'Multiple leaders assigned' : leaderState.matchingOfferings.length === 0 ? 'No offerings in scope yet' : 'Clear course leader'}</option>
+                                        {scopedCourseLeaderFaculty.map(member => <option key={member.facultyId} value={member.facultyId}>{member.displayName} · {member.employeeCode}</option>)}
+                                      </SelectInput>
+                                      <div style={{ ...mono, fontSize: 10, color: leaderState.hasMultipleLeaders ? T.warning : T.accent }}>
+                                        {leaderState.hasMultipleLeaders
+                                          ? getUniversityCourseLeaders(course.courseCode).join(', ')
+                                          : getUniversityCourseLeaders(course.courseCode).join(', ') || 'Course leader not assigned'}
+                                      </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                      <Btn size="sm" variant="ghost" onClick={() => startEditingCurriculumCourse(course.curriculumCourseId)}>Edit</Btn>
+                                      <Btn
+                                        size="sm"
+                                        variant="danger"
+                                        onClick={() => {
+                                          if (window.confirm(`Delete curriculum row ${course.courseCode}?`)) {
+                                            void handleArchiveCurriculumCourse(course.curriculumCourseId)
+                                          }
+                                        }}
+                                      >
+                                        Delete
+                                      </Btn>
+                                    </div>
+                                  </>
+                                )
+                              })()}
+                            </div>
+                          ))}
+                        </Card>
+                      ))}
+                      <form onSubmit={handleSaveCurriculumCourse} style={{ display: 'grid', gap: 10 }}>
+                        <div><FieldLabel>Semester Number</FieldLabel><TextInput value={entityEditors.curriculum.semesterNumber} onChange={event => setEntityEditors(prev => ({ ...prev, curriculum: { ...prev.curriculum, semesterNumber: event.target.value } }))} placeholder="Semester" /></div>
+                        <div><FieldLabel>Course Code</FieldLabel><TextInput value={entityEditors.curriculum.courseCode} onChange={event => setEntityEditors(prev => ({ ...prev, curriculum: { ...prev.curriculum, courseCode: event.target.value } }))} placeholder="CS699" /></div>
+                        <div><FieldLabel>Course Title</FieldLabel><TextInput value={entityEditors.curriculum.title} onChange={event => setEntityEditors(prev => ({ ...prev, curriculum: { ...prev.curriculum, title: event.target.value } }))} placeholder="Advanced Governance Systems" /></div>
+                        <div><FieldLabel>Credits</FieldLabel><TextInput value={entityEditors.curriculum.credits} onChange={event => setEntityEditors(prev => ({ ...prev, curriculum: { ...prev.curriculum, credits: event.target.value } }))} placeholder="4" /></div>
+                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                          <Btn type="submit">{entityEditors.curriculum.curriculumCourseId ? 'Save Curriculum Course' : 'Add Curriculum Course'}</Btn>
+                          {entityEditors.curriculum.curriculumCourseId ? <Btn type="button" variant="ghost" onClick={resetCurriculumEditor}>Cancel Edit</Btn> : null}
+                        </div>
+                      </form>
+                    </Card>
+                  ) : (
+                    <Card style={{ padding: 18, display: 'grid', gap: 10 }}>
+                      <SectionHeading title="Pick A Year" eyebrow="Courses" caption="Course editing unlocks at branch level, but semester-wise rows belong to a selected year." />
+                      {branchBatches.map(batch => (
+                        <button key={batch.batchId} type="button" onClick={() => navigate({ section: 'faculties', academicFacultyId: selectedAcademicFaculty?.academicFacultyId, departmentId: selectedDepartment?.departmentId, branchId: selectedBranch.branchId, batchId: batch.batchId })} style={{ textAlign: 'left', borderRadius: 12, border: `1px solid ${T.border}`, background: T.surface2, padding: '12px 14px', cursor: 'pointer' }}>
+                          <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{deriveCurrentYearLabel(batch.currentSemester)}</div>
+                          <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>Batch {batch.batchLabel} · sections {batch.sectionLabels.join(', ')}</div>
+                        </button>
+                      ))}
+                    </Card>
+                  )
+                ) : <EmptyState title="Select a branch" body="Courses are only editable after branch scope is selected." />
+              )}
+
+              {(universityTab === 'overview' || universityTab === 'courses') && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+                  <Card style={{ padding: 14, background: T.surface2, display: 'grid', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Users size={14} color={T.accent} />
+                      <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Students View</div>
+                    </div>
+                    {universityStudentGroups.length === 0 ? <div style={{ ...mono, fontSize: 10, color: T.muted }}>No students visible in the current scope.</div> : universityStudentGroups.map(group => (
+                      <Card key={group.label} style={{ padding: 10 }}>
+                        <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{group.label}</div>
+                        <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+                          {group.items.slice(0, 4).map(student => (
+                            <button key={student.studentId} type="button" onClick={() => navigate({ section: 'students', studentId: student.studentId })} style={{ textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+                              <div style={{ ...sora, fontSize: 12, fontWeight: 700, color: T.text }}>{student.name}</div>
+                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>{student.usn} · CGPA {student.currentCgpa.toFixed(2)}</div>
+                            </button>
+                          ))}
+                        </div>
+                      </Card>
+                    ))}
+                  </Card>
+
+                  <Card style={{ padding: 14, background: T.surface2, display: 'grid', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <UserCog size={14} color={T.accent} />
+                      <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Faculty View</div>
+                    </div>
+                    {universityFacultyGroups.length === 0 ? <div style={{ ...mono, fontSize: 10, color: T.muted }}>No faculty visible in the current scope.</div> : universityFacultyGroups.map(group => (
+                      <Card key={group.label} style={{ padding: 10 }}>
+                        <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{group.label}</div>
+                        <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+                          {group.items.slice(0, 4).map(member => (
+                            <button key={member.facultyId} type="button" onClick={() => navigate({ section: 'faculty-members', facultyMemberId: member.facultyId })} style={{ textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+                              <div style={{ ...sora, fontSize: 12, fontWeight: 700, color: T.text }}>{member.displayName}</div>
+                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>{member.designation}</div>
+                            </button>
+                          ))}
+                        </div>
+                      </Card>
+                    ))}
+                  </Card>
+                </div>
+              )}
             </div>
+          </div>
           </div>
         )}
 
         {/* ========== STUDENTS ========== */}
         {route.section === 'students' && (
-          <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'minmax(320px, 420px) minmax(360px, 1fr)' }}>
-            <Card style={{ padding: 18, display: 'grid', gap: 10, alignContent: 'start', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
-              <SectionHeading title="Students" eyebrow="Registry" caption="Canonical student identity, academic context, mentor linkage, and CGPA." />
-              {data.students.map(student => (
+          <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'minmax(320px, 410px) minmax(420px, 1fr)' }}>
+            <Card style={{ padding: 18, display: 'grid', gap: 12, alignContent: 'start', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
+              <SectionHeading title="Students" eyebrow="Registry" caption="Canonical identity, enrollment correction, mentor linkage, promotion review, and audit history." />
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Btn type="button" onClick={() => { navigate({ section: 'students' }); resetStudentEditors() }}><Plus size={14} /> New Student</Btn>
+                <Chip color={T.accent}>{studentRegistryItems.length} active</Chip>
+                <Chip color={T.warning}>{studentRegistryItems.filter(item => !item.activeMentorAssignment).length} mentor gaps</Chip>
+              </div>
+              {studentRegistryItems.map(student => (
                 <EntityButton key={student.studentId} selected={route.studentId === student.studentId} onClick={() => navigate({ section: 'students', studentId: student.studentId })}>
-                  <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{student.name}</div>
-                  <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{student.usn} · {student.activeAcademicContext?.departmentName ?? 'No department'}</div>
-                  <div style={{ ...mono, fontSize: 10, color: T.success, marginTop: 4 }}>CGPA {student.currentCgpa.toFixed(2)}</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                    <div>
+                      <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{student.name}</div>
+                      <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{student.usn} · {student.activeAcademicContext?.branchName ?? 'No branch mapped'}</div>
+                    </div>
+                    <Chip color={student.activeMentorAssignment ? T.success : T.warning} size={9}>{student.activeMentorAssignment ? 'Mentored' : 'Mentor missing'}</Chip>
+                  </div>
+                  <div style={{ ...mono, fontSize: 10, color: T.success, marginTop: 6 }}>CGPA {student.currentCgpa.toFixed(2)} · Semester {student.activeAcademicContext?.semesterNumber ?? '—'} · Section {student.activeAcademicContext?.sectionCode ?? '—'}</div>
                 </EntityButton>
               ))}
+              {studentRegistryItems.length === 0 ? <InfoBanner message="No active students yet. Create the first student record from this panel." /> : null}
             </Card>
-            <Card style={{ padding: 18, display: 'grid', gap: 12, alignContent: 'start' }}>
-              {!selectedStudent ? <EmptyState title="Select a student" body="Choose a student to inspect their academic context." /> : (
-                <>
-                  <SectionHeading title="Student Detail" eyebrow={selectedStudent.name} caption="Academic context, mentor linkage, and enrollment trail." />
+
+            <div style={{ display: 'grid', gap: 16 }}>
+              <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
+                <SectionHeading title={selectedStudent ? 'Student Detail' : 'Create Student'} eyebrow={selectedStudent ? selectedStudent.name : 'New record'} caption="Save the identity record first, then maintain enrollment, mentor, and promotion details below." />
+                {selectedStudent ? (
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <Chip color={T.accent}>{selectedStudent.usn}</Chip>
                     <Chip color={T.success}>CGPA {selectedStudent.currentCgpa.toFixed(2)}</Chip>
                     <Chip color={T.warning}>{selectedStudent.activeAcademicContext?.departmentName ?? 'No department'}</Chip>
+                    <Chip color={selectedStudent.status === 'active' ? T.success : T.danger}>{selectedStudent.status}</Chip>
                   </div>
+                ) : null}
+                <form onSubmit={handleSaveStudent} style={{ display: 'grid', gap: 10 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                    <div><FieldLabel>Name</FieldLabel><TextInput value={studentForm.name} onChange={event => setStudentForm(prev => ({ ...prev, name: event.target.value }))} placeholder="Student name" /></div>
+                    <div><FieldLabel>University ID / USN</FieldLabel><TextInput value={studentForm.usn} onChange={event => setStudentForm(prev => ({ ...prev, usn: event.target.value }))} placeholder="1MS22CS001" /></div>
+                    <div><FieldLabel>Roll Number</FieldLabel><TextInput value={studentForm.rollNumber} onChange={event => setStudentForm(prev => ({ ...prev, rollNumber: event.target.value }))} placeholder="Optional" /></div>
+                    <div><FieldLabel>Admission Date</FieldLabel><TextInput value={studentForm.admissionDate} onChange={event => setStudentForm(prev => ({ ...prev, admissionDate: event.target.value }))} placeholder="YYYY-MM-DD" /></div>
+                    <div><FieldLabel>Email</FieldLabel><TextInput value={studentForm.email} onChange={event => setStudentForm(prev => ({ ...prev, email: event.target.value }))} placeholder="student@campus.edu" /></div>
+                    <div><FieldLabel>Phone</FieldLabel><TextInput value={studentForm.phone} onChange={event => setStudentForm(prev => ({ ...prev, phone: event.target.value }))} placeholder="+91…" /></div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <Btn type="submit">{selectedStudent ? 'Save Student' : 'Create Student'}</Btn>
+                    <Btn type="button" variant="ghost" onClick={() => { navigate({ section: 'students' }); resetStudentEditors() }}>{selectedStudent ? 'New Student' : 'Clear Form'}</Btn>
+                    {selectedStudent ? <Btn type="button" variant="danger" onClick={() => void handleArchiveStudent()}>Delete Student</Btn> : null}
+                  </div>
+                </form>
+              </Card>
+
+              <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
+                <SectionHeading title="Academic Context" eyebrow="Enrollment" caption="Keep branch, term, section, and academic standing aligned with the canonical term structure." />
+                {!selectedStudent ? <EmptyState title="Save the student first" body="Enrollment editing becomes available after the student record exists." /> : (
+                  <>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      {selectedStudent.enrollments.length === 0 ? <InfoBanner message="No enrollment trail exists yet for this student." /> : selectedStudent.enrollments.map(enrollment => {
+                        const term = data.terms.find(item => item.termId === enrollment.termId)
+                        const branch = resolveBranch(data, enrollment.branchId)
+                        return (
+                          <Card key={enrollment.enrollmentId} style={{ padding: 12, background: T.surface2 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                              <div>
+                                <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{branch?.name ?? 'Unknown branch'} · Semester {term?.semesterNumber ?? '—'} · Section {enrollment.sectionCode}</div>
+                                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{term?.academicYearLabel ?? enrollment.termId} · {formatDate(enrollment.startDate)} to {enrollment.endDate ? formatDate(enrollment.endDate) : 'Active'} · {enrollment.academicStatus}</div>
+                              </div>
+                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                <Btn type="button" size="sm" variant="ghost" onClick={() => startEditingEnrollment(enrollment)}>Edit</Btn>
+                                <Btn type="button" size="sm" variant="danger" onClick={() => void handleCloseEnrollment(enrollment)}>Close</Btn>
+                              </div>
+                            </div>
+                          </Card>
+                        )
+                      })}
+                    </div>
+                    <form onSubmit={handleSaveEnrollment} style={{ display: 'grid', gap: 10 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                        <div>
+                          <FieldLabel>Branch</FieldLabel>
+                          <SelectInput value={enrollmentForm.branchId} onChange={event => setEnrollmentForm(prev => ({ ...prev, branchId: event.target.value, termId: '' }))}>
+                            <option value="">Select branch</option>
+                            {visibleBranches.map(branch => <option key={branch.branchId} value={branch.branchId}>{branch.name}</option>)}
+                          </SelectInput>
+                        </div>
+                        <div>
+                          <FieldLabel>Term</FieldLabel>
+                          <SelectInput value={enrollmentForm.termId} onChange={event => {
+                            const nextTerm = visibleTerms.find(item => item.termId === event.target.value)
+                            setEnrollmentForm(prev => ({
+                              ...prev,
+                              termId: event.target.value,
+                              branchId: nextTerm?.branchId ?? prev.branchId,
+                              startDate: nextTerm?.startDate ?? prev.startDate,
+                            }))
+                          }}>
+                            <option value="">Select term</option>
+                            {termsForEnrollment.map(term => <option key={term.termId} value={term.termId}>{term.academicYearLabel} · Semester {term.semesterNumber}</option>)}
+                          </SelectInput>
+                        </div>
+                        <div><FieldLabel>Section</FieldLabel><TextInput value={enrollmentForm.sectionCode} onChange={event => setEnrollmentForm(prev => ({ ...prev, sectionCode: event.target.value.toUpperCase() }))} placeholder="A" /></div>
+                        <div><FieldLabel>Academic Status</FieldLabel><TextInput value={enrollmentForm.academicStatus} onChange={event => setEnrollmentForm(prev => ({ ...prev, academicStatus: event.target.value }))} placeholder="regular / repeat / backlog" /></div>
+                        <div><FieldLabel>Roster Order</FieldLabel><TextInput value={enrollmentForm.rosterOrder} onChange={event => setEnrollmentForm(prev => ({ ...prev, rosterOrder: event.target.value }))} placeholder="0" /></div>
+                        <div><FieldLabel>Start Date</FieldLabel><TextInput value={enrollmentForm.startDate} onChange={event => setEnrollmentForm(prev => ({ ...prev, startDate: event.target.value }))} placeholder="YYYY-MM-DD" /></div>
+                        <div><FieldLabel>End Date</FieldLabel><TextInput value={enrollmentForm.endDate} onChange={event => setEnrollmentForm(prev => ({ ...prev, endDate: event.target.value }))} placeholder="Leave blank while active" /></div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        <Btn type="submit">{enrollmentForm.enrollmentId ? 'Save Enrollment' : 'Add Enrollment'}</Btn>
+                        <Btn type="button" variant="ghost" onClick={() => setEnrollmentForm(selectedStudentEnrollment ? {
+                          enrollmentId: selectedStudentEnrollment.enrollmentId,
+                          branchId: selectedStudentEnrollment.branchId,
+                          termId: selectedStudentEnrollment.termId,
+                          sectionCode: selectedStudentEnrollment.sectionCode,
+                          rosterOrder: String(selectedStudentEnrollment.rosterOrder ?? 0),
+                          academicStatus: selectedStudentEnrollment.academicStatus,
+                          startDate: selectedStudentEnrollment.startDate,
+                          endDate: selectedStudentEnrollment.endDate ?? '',
+                        } : {
+                          ...defaultEnrollmentForm(),
+                          branchId: selectedStudent.activeAcademicContext?.branchId ?? '',
+                          termId: selectedStudent.activeAcademicContext?.termId ?? '',
+                          sectionCode: selectedStudent.activeAcademicContext?.sectionCode ?? 'A',
+                        })}>Reset Enrollment Form</Btn>
+                      </div>
+                    </form>
+                  </>
+                )}
+              </Card>
+
+              <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
+                <SectionHeading title="Mentor Linkage" eyebrow="Faculty" caption="Only faculty with an active mentor permission are shown as eligible mentors." />
+                {!selectedStudent ? <EmptyState title="Save the student first" body="Mentor assignment becomes available after the student record exists." /> : (
+                  <>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      {selectedStudent.mentorAssignments.length === 0 ? <InfoBanner message="No mentor assignments recorded yet." /> : selectedStudent.mentorAssignments.map(assignment => {
+                        const mentor = resolveFacultyMember(data, assignment.facultyId)
+                        return (
+                          <Card key={assignment.assignmentId} style={{ padding: 12, background: T.surface2 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                              <div>
+                                <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{mentor?.displayName ?? assignment.facultyId}</div>
+                                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{assignment.source} · {formatDate(assignment.effectiveFrom)} to {assignment.effectiveTo ? formatDate(assignment.effectiveTo) : 'Active'}</div>
+                              </div>
+                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                <Btn type="button" size="sm" variant="ghost" onClick={() => startEditingMentorAssignment(assignment)}>Edit</Btn>
+                                <Btn type="button" size="sm" variant="danger" onClick={() => void handleEndMentorAssignment(assignment)}>End</Btn>
+                              </div>
+                            </div>
+                          </Card>
+                        )
+                      })}
+                    </div>
+                    <form onSubmit={handleSaveMentorAssignment} style={{ display: 'grid', gap: 10 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                        <div>
+                          <FieldLabel>Eligible Mentor</FieldLabel>
+                          <SelectInput value={mentorForm.facultyId} onChange={event => setMentorForm(prev => ({ ...prev, facultyId: event.target.value }))}>
+                            <option value="">Select mentor</option>
+                            {mentorEligibleFaculty.map(member => <option key={member.facultyId} value={member.facultyId}>{member.displayName} · {member.employeeCode}</option>)}
+                          </SelectInput>
+                        </div>
+                        <div><FieldLabel>Effective From</FieldLabel><TextInput value={mentorForm.effectiveFrom} onChange={event => setMentorForm(prev => ({ ...prev, effectiveFrom: event.target.value }))} placeholder="YYYY-MM-DD" /></div>
+                        <div><FieldLabel>Effective To</FieldLabel><TextInput value={mentorForm.effectiveTo} onChange={event => setMentorForm(prev => ({ ...prev, effectiveTo: event.target.value }))} placeholder="Leave blank while active" /></div>
+                        <div><FieldLabel>Source</FieldLabel><TextInput value={mentorForm.source} onChange={event => setMentorForm(prev => ({ ...prev, source: event.target.value }))} placeholder="sysadmin-manual" /></div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        <Btn type="submit">{mentorForm.assignmentId ? 'Save Mentor Link' : 'Assign Mentor'}</Btn>
+                        <Btn type="button" variant="ghost" onClick={() => setMentorForm(selectedStudentMentorAssignment ? {
+                          assignmentId: selectedStudentMentorAssignment.assignmentId,
+                          facultyId: selectedStudentMentorAssignment.facultyId,
+                          effectiveFrom: selectedStudentMentorAssignment.effectiveFrom,
+                          effectiveTo: selectedStudentMentorAssignment.effectiveTo ?? '',
+                          source: selectedStudentMentorAssignment.source,
+                        } : defaultMentorAssignmentForm())}>Reset Mentor Form</Btn>
+                      </div>
+                    </form>
+                  </>
+                )}
+              </Card>
+
+              <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
+                <SectionHeading title="Promotion Review" eyebrow="Semester Progression" caption="Recommendations use the configured CGPA rule and backlog guard, then wait for explicit admin confirmation." />
+                {!selectedStudent ? <EmptyState title="Select a student" body="Promotion review appears when a student with an academic context is selected." /> : !selectedStudent.activeAcademicContext ? (
+                  <EmptyState title="No active academic context" body="Create or restore an enrollment before using the promotion panel." />
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <Chip color={selectedStudentPromotionRecommended ? T.success : T.warning}>{selectedStudentPromotionRecommended ? 'Recommended' : 'Hold for review'}</Chip>
+                      <Chip color={T.accent}>Current CGPA {selectedStudent.currentCgpa.toFixed(2)}</Chip>
+                      <Chip color={T.warning}>Min CGPA {selectedStudentPromotionRules.minimumCgpaForPromotion.toFixed(1)}</Chip>
+                      {selectedStudentPolicyLoading ? <Chip color={T.dim}>Loading policy…</Chip> : null}
+                    </div>
+                    <div style={{ ...mono, fontSize: 11, color: T.text, lineHeight: 1.9 }}>
+                      Current semester: {selectedStudent.activeAcademicContext.semesterNumber ?? '—'} · Academic status: {selectedStudent.activeAcademicContext.academicStatus}<br />
+                      Promotion rule: {selectedStudentPromotionRules.requireNoActiveBacklogs ? 'Require no active backlogs' : 'Backlog check disabled'} · Pass threshold {selectedStudentPromotionRules.passMarkPercent}%
+                    </div>
+                    {selectedStudentNextTerms.length === 0 ? <InfoBanner message="No next-semester term is configured yet for this branch. Add the next term in the university workspace first." /> : (
+                      <div style={{ display: 'grid', gap: 8 }}>
+                        {selectedStudentNextTerms.map(term => (
+                          <Card key={term.termId} style={{ padding: 12, background: T.surface2, display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <div>
+                              <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{term.academicYearLabel} · Semester {term.semesterNumber}</div>
+                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{formatDate(term.startDate)} to {formatDate(term.endDate)}</div>
+                            </div>
+                            <Btn type="button" onClick={() => void handlePromoteStudent(term.termId)}>Promote Into This Term</Btn>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </Card>
+
+              <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
+                <SectionHeading title="History" eyebrow="Audit Trail" caption="Every student, enrollment, and mentor change lands here so deletions and corrections stay traceable." />
+                {studentAuditLoading ? <InfoBanner message="Loading audit history…" /> : null}
+                {!studentAuditLoading && studentAuditEvents.length === 0 ? <EmptyState title="No audit trail yet" body="Student create/update activity will appear here." /> : (
                   <div style={{ display: 'grid', gap: 8 }}>
-                    <div style={{ ...mono, fontSize: 11, color: T.text }}>Email: {selectedStudent.email ?? 'Not set'}</div>
-                    <div style={{ ...mono, fontSize: 11, color: T.text }}>Phone: {selectedStudent.phone ?? 'Not set'}</div>
-                    <div style={{ ...mono, fontSize: 11, color: T.text }}>Batch: {selectedStudent.activeAcademicContext?.batchLabel ?? 'Not mapped'} · Semester {selectedStudent.activeAcademicContext?.semesterNumber ?? '—'}</div>
-                    <div style={{ ...mono, fontSize: 11, color: T.text }}>Mentor: <button type="button" onClick={() => { if (selectedStudent.activeMentorAssignment?.facultyId) navigate({ section: 'faculty-members', facultyMemberId: selectedStudent.activeMentorAssignment.facultyId }) }} style={{ ...mono, fontSize: 11, color: T.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>{resolveFacultyMember(data, selectedStudent.activeMentorAssignment?.facultyId)?.displayName ?? 'Not assigned'}</button></div>
-                  </div>
-                  <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
-                    <div style={{ ...mono, fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Enrollment Trail</div>
-                    {selectedStudent.enrollments.map(enrollment => (
-                      <Card key={enrollment.enrollmentId} style={{ padding: 12 }}>
-                        <div style={{ ...mono, fontSize: 11, color: T.text }}>{enrollment.termId} · Section {enrollment.sectionCode}</div>
-                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{formatDate(enrollment.startDate)} · {enrollment.academicStatus}</div>
+                    {studentAuditEvents.slice(0, 16).map(item => (
+                      <Card key={item.auditEventId} style={{ padding: 12, background: T.surface2 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <div style={{ ...sora, fontSize: 12, fontWeight: 700, color: T.text }}>{item.entityType} · {summarizeAuditEvent(item)}</div>
+                          <Chip color={T.accent} size={9}>{formatDateTime(item.createdAt)}</Chip>
+                        </div>
+                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6 }}>{item.entityId}{item.actorRole ? ` · ${item.actorRole}` : ''}</div>
                       </Card>
                     ))}
                   </div>
-                </>
-              )}
-            </Card>
+                )}
+              </Card>
+            </div>
           </div>
         )}
 
         {/* ========== FACULTY MEMBERS ========== */}
         {route.section === 'faculty-members' && (
-          <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'minmax(320px, 420px) minmax(360px, 1fr)' }}>
-            <Card style={{ padding: 18, display: 'grid', gap: 10, alignContent: 'start', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
-              <SectionHeading title="Faculty Members" eyebrow="People" caption="Permissions and teaching ownership stay separate." />
-              {data.facultyMembers.map(item => {
+          <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'minmax(320px, 410px) minmax(420px, 1fr)' }}>
+            <Card style={{ padding: 18, display: 'grid', gap: 12, alignContent: 'start', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
+              <SectionHeading title="Faculty Members" eyebrow="Registry" caption="Identity, appointments, permissions, teaching ownership, and teaching-profile parity live here." />
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Btn type="button" onClick={() => { navigate({ section: 'faculty-members' }); resetFacultyEditors() }}><Plus size={14} /> New Faculty</Btn>
+                <Chip color={T.accent}>{facultyRegistryItems.length} active</Chip>
+                <Chip color={T.warning}>{facultyRegistryItems.filter(item => !item.roleGrants.some(grant => isCurrentRoleGrant(grant))).length} no active permissions</Chip>
+              </div>
+              {facultyRegistryItems.map(item => {
                 const primaryDepartment = resolveDepartment(data, getPrimaryAppointmentDepartmentId(item))
                 return (
                   <EntityButton key={item.facultyId} selected={route.facultyMemberId === item.facultyId} onClick={() => navigate({ section: 'faculty-members', facultyMemberId: item.facultyId })}>
-                    <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{item.displayName}</div>
-                    <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{item.employeeCode} · {primaryDepartment?.name ?? 'No primary department'}</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                      <div>
+                        <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{item.displayName}</div>
+                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{item.employeeCode} · {primaryDepartment?.name ?? 'No primary department'}</div>
+                      </div>
+                      <Chip color={item.roleGrants.some(grant => grant.roleCode === 'MENTOR' && isCurrentRoleGrant(grant)) ? T.success : T.dim} size={9}>{item.roleGrants.some(grant => isCurrentRoleGrant(grant)) ? 'Scoped' : 'Unscoped'}</Chip>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                      {item.roleGrants.filter(isCurrentRoleGrant).slice(0, 3).map(grant => <Chip key={grant.grantId} color={T.accent} size={9}>{grant.roleCode}</Chip>)}
+                    </div>
                   </EntityButton>
                 )
               })}
+              {facultyRegistryItems.length === 0 ? <InfoBanner message="No active faculty profiles yet. Create the first faculty record from this panel." /> : null}
             </Card>
-            <Card style={{ padding: 18, display: 'grid', gap: 12, alignContent: 'start' }}>
-              {!selectedFacultyMember ? <EmptyState title="Select a faculty member" body="Review permissions and assigned classes." /> : (
-                <>
-                  <SectionHeading title="Faculty Detail" eyebrow={selectedFacultyMember.displayName} caption="Permissions, appointments, and assigned classes." />
+
+            <div style={{ display: 'grid', gap: 16 }}>
+              <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
+                <SectionHeading title={selectedFacultyMember ? 'Faculty Detail' : 'Create Faculty'} eyebrow={selectedFacultyMember ? selectedFacultyMember.displayName : 'New profile'} caption="Master identity stays admin-owned. Teaching workflow actions continue in the teaching workspace." />
+                {selectedFacultyMember ? (
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {selectedFacultyMember.roleGrants.map(item => <Chip key={item.grantId} color={T.accent}>{item.roleCode}</Chip>)}
+                    <Chip color={T.accent}>{selectedFacultyMember.employeeCode}</Chip>
+                    <Chip color={T.warning}>{resolveDepartment(data, getPrimaryAppointmentDepartmentId(selectedFacultyMember))?.name ?? 'No primary department'}</Chip>
+                    {selectedFacultyMember.roleGrants.filter(isCurrentRoleGrant).map(grant => <Chip key={grant.grantId} color={T.success}>{grant.roleCode}</Chip>)}
                   </div>
+                ) : null}
+                <form onSubmit={handleSaveFaculty} style={{ display: 'grid', gap: 10 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                    <div><FieldLabel>Display Name</FieldLabel><TextInput value={facultyForm.displayName} onChange={event => setFacultyForm(prev => ({ ...prev, displayName: event.target.value }))} placeholder="Faculty name" /></div>
+                    <div><FieldLabel>Employee Code</FieldLabel><TextInput value={facultyForm.employeeCode} onChange={event => setFacultyForm(prev => ({ ...prev, employeeCode: event.target.value }))} placeholder="EMP001" /></div>
+                    <div><FieldLabel>Username</FieldLabel><TextInput value={facultyForm.username} onChange={event => setFacultyForm(prev => ({ ...prev, username: event.target.value }))} placeholder="faculty.user" /></div>
+                    <div><FieldLabel>Email</FieldLabel><TextInput value={facultyForm.email} onChange={event => setFacultyForm(prev => ({ ...prev, email: event.target.value }))} placeholder="faculty@campus.edu" /></div>
+                    <div><FieldLabel>Phone</FieldLabel><TextInput value={facultyForm.phone} onChange={event => setFacultyForm(prev => ({ ...prev, phone: event.target.value }))} placeholder="+91…" /></div>
+                    <div><FieldLabel>Designation</FieldLabel><TextInput value={facultyForm.designation} onChange={event => setFacultyForm(prev => ({ ...prev, designation: event.target.value }))} placeholder="Assistant Professor" /></div>
+                    <div><FieldLabel>Joined On</FieldLabel><TextInput value={facultyForm.joinedOn} onChange={event => setFacultyForm(prev => ({ ...prev, joinedOn: event.target.value }))} placeholder="YYYY-MM-DD" /></div>
+                    {!selectedFacultyMember ? <div><FieldLabel>Initial Password</FieldLabel><TextInput type="password" value={facultyForm.password} onChange={event => setFacultyForm(prev => ({ ...prev, password: event.target.value }))} placeholder="Minimum 8 characters" /></div> : null}
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <Btn type="submit">{selectedFacultyMember ? 'Save Faculty' : 'Create Faculty'}</Btn>
+                    <Btn type="button" variant="ghost" onClick={() => { navigate({ section: 'faculty-members' }); resetFacultyEditors() }}>{selectedFacultyMember ? 'New Faculty' : 'Clear Form'}</Btn>
+                    {selectedFacultyMember ? <Btn type="button" variant="danger" onClick={() => void handleArchiveFaculty()}>Delete Faculty</Btn> : null}
+                  </div>
+                </form>
+              </Card>
+
+              <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
+                <SectionHeading title="Appointments" eyebrow="Canonical Affiliation" caption="Department and branch affiliation stay canonical here, even when HoD visibility rolls up external teaching activity." />
+                {!selectedFacultyMember ? <EmptyState title="Save the faculty profile first" body="Appointments become available after the faculty record exists." /> : (
+                  <>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      {selectedFacultyMember.appointments.length === 0 ? <InfoBanner message="No appointments recorded yet." /> : selectedFacultyMember.appointments.map(appointment => {
+                        const department = resolveDepartment(data, appointment.departmentId)
+                        const branch = resolveBranch(data, appointment.branchId)
+                        return (
+                          <Card key={appointment.appointmentId} style={{ padding: 12, background: T.surface2 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                              <div>
+                                <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{department?.name ?? 'Unknown department'}{branch ? ` · ${branch.name}` : ''}</div>
+                                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{appointment.isPrimary ? 'Primary appointment' : 'Supporting appointment'} · {formatDate(appointment.startDate)} to {appointment.endDate ? formatDate(appointment.endDate) : 'Active'}</div>
+                              </div>
+                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                <Btn type="button" size="sm" variant="ghost" onClick={() => startEditingAppointment(appointment)}>Edit</Btn>
+                                <Btn type="button" size="sm" variant="danger" onClick={() => void handleArchiveAppointment(appointment)}>Delete</Btn>
+                              </div>
+                            </div>
+                          </Card>
+                        )
+                      })}
+                    </div>
+                    <form onSubmit={handleSaveAppointment} style={{ display: 'grid', gap: 10 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                        <div>
+                          <FieldLabel>Department</FieldLabel>
+                          <SelectInput value={appointmentForm.departmentId} onChange={event => setAppointmentForm(prev => ({ ...prev, departmentId: event.target.value, branchId: '' }))}>
+                            <option value="">Select department</option>
+                            {visibleDepartments.map(department => <option key={department.departmentId} value={department.departmentId}>{department.name}</option>)}
+                          </SelectInput>
+                        </div>
+                        <div>
+                          <FieldLabel>Branch</FieldLabel>
+                          <SelectInput value={appointmentForm.branchId} onChange={event => setAppointmentForm(prev => ({ ...prev, branchId: event.target.value }))}>
+                            <option value="">No branch / department-wide</option>
+                            {branchesForAppointment.map(branch => <option key={branch.branchId} value={branch.branchId}>{branch.name}</option>)}
+                          </SelectInput>
+                        </div>
+                        <div><FieldLabel>Start Date</FieldLabel><TextInput value={appointmentForm.startDate} onChange={event => setAppointmentForm(prev => ({ ...prev, startDate: event.target.value }))} placeholder="YYYY-MM-DD" /></div>
+                        <div><FieldLabel>End Date</FieldLabel><TextInput value={appointmentForm.endDate} onChange={event => setAppointmentForm(prev => ({ ...prev, endDate: event.target.value }))} placeholder="Leave blank while active" /></div>
+                        <div>
+                          <FieldLabel>Primary Appointment</FieldLabel>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${T.border2}`, background: T.surface2, ...mono, fontSize: 11, color: T.text }}>
+                            <input type="checkbox" checked={appointmentForm.isPrimary} onChange={event => setAppointmentForm(prev => ({ ...prev, isPrimary: event.target.checked }))} />
+                            Mark as primary
+                          </label>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        <Btn type="submit">{appointmentForm.appointmentId ? 'Save Appointment' : 'Add Appointment'}</Btn>
+                        <Btn type="button" variant="ghost" onClick={() => setAppointmentForm(selectedFacultyMember.appointments.find(item => item.isPrimary) ? {
+                          appointmentId: (selectedFacultyMember.appointments.find(item => item.isPrimary) ?? selectedFacultyMember.appointments[0])!.appointmentId,
+                          departmentId: (selectedFacultyMember.appointments.find(item => item.isPrimary) ?? selectedFacultyMember.appointments[0])!.departmentId,
+                          branchId: (selectedFacultyMember.appointments.find(item => item.isPrimary) ?? selectedFacultyMember.appointments[0])!.branchId ?? '',
+                          isPrimary: (selectedFacultyMember.appointments.find(item => item.isPrimary) ?? selectedFacultyMember.appointments[0])!.isPrimary,
+                          startDate: (selectedFacultyMember.appointments.find(item => item.isPrimary) ?? selectedFacultyMember.appointments[0])!.startDate,
+                          endDate: (selectedFacultyMember.appointments.find(item => item.isPrimary) ?? selectedFacultyMember.appointments[0])!.endDate ?? '',
+                        } : defaultAppointmentForm())}>Reset Appointment Form</Btn>
+                      </div>
+                    </form>
+                  </>
+                )}
+              </Card>
+
+              <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
+                <SectionHeading title="Permissions" eyebrow="Role Grants" caption="Mentor, HoD, Course Leader, and System Admin permissions stay separate from actual class ownership." />
+                {!selectedFacultyMember ? <EmptyState title="Save the faculty profile first" body="Permissions become available after the faculty record exists." /> : (
+                  <>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      {selectedFacultyMember.roleGrants.length === 0 ? <InfoBanner message="No permissions granted yet." /> : selectedFacultyMember.roleGrants.map(grant => (
+                        <Card key={grant.grantId} style={{ padding: 12, background: T.surface2 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                            <div>
+                              <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{grant.roleCode}</div>
+                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{grant.scopeType}:{grant.scopeId} · {grant.startDate ?? 'No start'} to {grant.endDate ?? 'Active'} · {grant.status}</div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                              <Btn type="button" size="sm" variant="ghost" onClick={() => startEditingRoleGrant(grant)}>Edit</Btn>
+                              <Btn type="button" size="sm" variant="danger" onClick={() => void handleArchiveRoleGrant(grant)}>Delete</Btn>
+                            </div>
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                    <form onSubmit={handleSaveRoleGrant} style={{ display: 'grid', gap: 10 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                        <div>
+                          <FieldLabel>Role</FieldLabel>
+                          <SelectInput value={roleGrantForm.roleCode} onChange={event => setRoleGrantForm(prev => ({ ...prev, roleCode: event.target.value as ApiRoleCode }))}>
+                            <option value="MENTOR">MENTOR</option>
+                            <option value="HOD">HOD</option>
+                            <option value="COURSE_LEADER">COURSE_LEADER</option>
+                            <option value="SYSTEM_ADMIN">SYSTEM_ADMIN</option>
+                          </SelectInput>
+                        </div>
+                        <div>
+                          <FieldLabel>Scope Type</FieldLabel>
+                          <SelectInput value={roleGrantForm.scopeType} onChange={event => setRoleGrantForm(prev => ({ ...prev, scopeType: event.target.value, scopeId: '' }))}>
+                            <option value="institution">institution</option>
+                            <option value="academic-faculty">academic-faculty</option>
+                            <option value="department">department</option>
+                            <option value="branch">branch</option>
+                            <option value="batch">batch</option>
+                            <option value="offering">offering</option>
+                          </SelectInput>
+                        </div>
+                        <div>
+                          <FieldLabel>Scope</FieldLabel>
+                          {scopeOptions.length > 0 ? (
+                            <SelectInput value={roleGrantForm.scopeId} onChange={event => setRoleGrantForm(prev => ({ ...prev, scopeId: event.target.value }))}>
+                              <option value="">Select scope</option>
+                              {scopeOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            </SelectInput>
+                          ) : (
+                            <TextInput value={roleGrantForm.scopeId} onChange={event => setRoleGrantForm(prev => ({ ...prev, scopeId: event.target.value }))} placeholder="Scope id" />
+                          )}
+                        </div>
+                        <div><FieldLabel>Start Date</FieldLabel><TextInput value={roleGrantForm.startDate} onChange={event => setRoleGrantForm(prev => ({ ...prev, startDate: event.target.value }))} placeholder="YYYY-MM-DD" /></div>
+                        <div><FieldLabel>End Date</FieldLabel><TextInput value={roleGrantForm.endDate} onChange={event => setRoleGrantForm(prev => ({ ...prev, endDate: event.target.value }))} placeholder="Leave blank while active" /></div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        <Btn type="submit">{roleGrantForm.grantId ? 'Save Permission' : 'Grant Permission'}</Btn>
+                        <Btn type="button" variant="ghost" onClick={() => setRoleGrantForm(selectedFacultyMember.roleGrants[0] ? {
+                          grantId: selectedFacultyMember.roleGrants[0].grantId,
+                          roleCode: selectedFacultyMember.roleGrants[0].roleCode,
+                          scopeType: selectedFacultyMember.roleGrants[0].scopeType,
+                          scopeId: selectedFacultyMember.roleGrants[0].scopeId,
+                          startDate: selectedFacultyMember.roleGrants[0].startDate ?? new Date().toISOString().slice(0, 10),
+                          endDate: selectedFacultyMember.roleGrants[0].endDate ?? '',
+                        } : defaultRoleGrantForm())}>Reset Permission Form</Btn>
+                      </div>
+                    </form>
+                  </>
+                )}
+              </Card>
+
+              <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
+                <SectionHeading title="Teaching Ownership" eyebrow="Classes And Course Leader Scope" caption="Assign the exact classes they own or support. The seeded default role is `owner`, and that now counts for course-leader visibility." />
+                {!selectedFacultyMember ? <EmptyState title="Save the faculty profile first" body="Teaching ownership becomes available after the faculty record exists." /> : (
+                  <>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      {selectedFacultyOwnerships.length === 0 ? <InfoBanner message="No teaching ownership records yet." /> : selectedFacultyOwnerships.map(ownership => {
+                        const offering = data.offerings.find(item => item.offId === ownership.offeringId)
+                        return (
+                          <Card key={ownership.ownershipId} style={{ padding: 12, background: T.surface2 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                              <div>
+                                <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{offering?.code ?? ownership.offeringId} · {offering?.title ?? 'Unknown offering'}</div>
+                                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{offering?.dept ?? 'NA'} · {offering?.year ?? '—'} · Section {offering?.section ?? '—'} · {ownership.ownershipRole} · {ownership.status}</div>
+                              </div>
+                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                <Btn type="button" size="sm" variant="ghost" onClick={() => startEditingOwnership(ownership)}>Edit</Btn>
+                                <Btn type="button" size="sm" variant="danger" onClick={() => void handleArchiveOwnership(ownership)}>Delete</Btn>
+                              </div>
+                            </div>
+                          </Card>
+                        )
+                      })}
+                    </div>
+                    <form onSubmit={handleSaveOwnership} style={{ display: 'grid', gap: 10 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                        <div>
+                          <FieldLabel>Offering / Class</FieldLabel>
+                          <SelectInput value={ownershipForm.offeringId} onChange={event => setOwnershipForm(prev => ({ ...prev, offeringId: event.target.value, facultyId: selectedFacultyMember.facultyId }))}>
+                            <option value="">Select offering</option>
+                            {visibleOfferings.map(offering => <option key={offering.offId} value={offering.offId}>{offering.code} · {offering.year} · Section {offering.section}</option>)}
+                          </SelectInput>
+                        </div>
+                        <div><FieldLabel>Ownership Role</FieldLabel><TextInput value={ownershipForm.ownershipRole} onChange={event => setOwnershipForm(prev => ({ ...prev, ownershipRole: event.target.value }))} placeholder="owner / support / course_leader" /></div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        <Btn type="submit">{ownershipForm.ownershipId ? 'Save Ownership' : 'Add Ownership'}</Btn>
+                        <Btn type="button" variant="ghost" onClick={() => setOwnershipForm(selectedFacultyOwnerships[0] ? {
+                          ownershipId: selectedFacultyOwnerships[0].ownershipId,
+                          offeringId: selectedFacultyOwnerships[0].offeringId,
+                          facultyId: selectedFacultyOwnerships[0].facultyId,
+                          ownershipRole: selectedFacultyOwnerships[0].ownershipRole,
+                        } : {
+                          ...defaultOwnershipForm(),
+                          facultyId: selectedFacultyMember.facultyId,
+                        })}>Reset Ownership Form</Btn>
+                      </div>
+                    </form>
+                    {selectedFacultyAssignments.length > 0 ? (
+                      <Card style={{ padding: 12, background: T.surface }}>
+                        <div style={{ ...mono, fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Current Owned Classes</div>
+                        <div style={{ display: 'grid', gap: 8 }}>
+                          {selectedFacultyAssignments.map(item => (
+                            <div key={item.ownership.ownershipId} style={{ ...mono, fontSize: 10, color: T.text }}>
+                              {item.offering?.code} · {item.offering?.dept} · {item.offering?.year} · Section {item.offering?.section} · {item.ownership.ownershipRole}
+                            </div>
+                          ))}
+                        </div>
+                      </Card>
+                    ) : null}
+                  </>
+                )}
+              </Card>
+
+              <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
+                <SectionHeading title="Timetable Planner" eyebrow="Teaching Calendar" caption="Reuses the teacher-style drag board for class movement, then layers semester markers, term-test windows, holidays, and events in a distinct admin planning rail." />
+                {!selectedFacultyMember ? <EmptyState title="Select or create a faculty member first" body="Timetable planning becomes available once the faculty profile exists." /> : facultyCalendarLoading && !facultyCalendar ? (
+                  <InfoBanner message="Loading timetable planner…" />
+                ) : (
+                  <SystemAdminTimetableEditor
+                    facultyId={selectedFacultyMember.facultyId}
+                    facultyName={selectedFacultyMember.displayName}
+                    offerings={selectedFacultyAssignments.flatMap(item => item.offering ? [item.offering] : [])}
+                    calendar={facultyCalendar}
+                    onSave={handleSaveFacultyCalendar}
+                  />
+                )}
+              </Card>
+
+              <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
+                <SectionHeading title="History" eyebrow="Audit Trail" caption="Profile, appointment, permission, and class-ownership changes all land here for restore and review." />
+                {facultyAuditLoading ? <InfoBanner message="Loading audit history…" /> : null}
+                {!facultyAuditLoading && facultyAuditEvents.length === 0 ? <EmptyState title="No audit trail yet" body="Faculty create/update activity will appear here." /> : (
                   <div style={{ display: 'grid', gap: 8 }}>
-                    <div style={{ ...mono, fontSize: 11, color: T.text }}>Email: {selectedFacultyMember.email}</div>
-                    <div style={{ ...mono, fontSize: 11, color: T.text }}>Phone: {selectedFacultyMember.phone ?? 'Not set'}</div>
-                    <div style={{ ...mono, fontSize: 11, color: T.text }}>Primary Department: <button type="button" onClick={() => { const deptId = getPrimaryAppointmentDepartmentId(selectedFacultyMember); if (deptId) { const dept = resolveDepartment(data, deptId); if (dept) navigate({ section: 'faculties', academicFacultyId: dept.academicFacultyId ?? undefined, departmentId: deptId }) } }} style={{ ...mono, fontSize: 11, color: T.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>{resolveDepartment(data, getPrimaryAppointmentDepartmentId(selectedFacultyMember))?.name ?? 'Not set'}</button></div>
-                  </div>
-                  <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
-                    <div style={{ ...mono, fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Assigned Classes</div>
-                    {selectedFacultyAssignments.map(item => (
-                      <Card key={item.ownership.ownershipId} style={{ padding: 12 }}>
-                        <div style={{ ...mono, fontSize: 11, color: T.text }}>{item.offering?.code} · {item.offering?.title}</div>
-                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{item.offering?.dept} · {item.offering?.year} · Sem {item.offering?.sem} · Section {item.offering?.section}</div>
-                        <div style={{ ...mono, fontSize: 10, color: T.accent, marginTop: 4 }}>{item.ownership.ownershipRole}</div>
+                    {facultyAuditEvents.slice(0, 18).map(item => (
+                      <Card key={item.auditEventId} style={{ padding: 12, background: T.surface2 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <div style={{ ...sora, fontSize: 12, fontWeight: 700, color: T.text }}>{item.entityType} · {summarizeAuditEvent(item)}</div>
+                          <Chip color={T.accent} size={9}>{formatDateTime(item.createdAt)}</Chip>
+                        </div>
+                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6 }}>{item.entityId}{item.actorRole ? ` · ${item.actorRole}` : ''}</div>
                       </Card>
                     ))}
                   </div>
-                </>
-              )}
-            </Card>
+                )}
+              </Card>
+            </div>
+          </div>
+        )}
+
+        {/* ========== HISTORY ========== */}
+        {route.section === 'history' && (
+          <div style={{ display: 'grid', gap: 16 }}>
+            <SectionHeading title="History And Restore" eyebrow="Audit + Recycle Bin" caption="Use one page for recent admin activity, restore-ready deletions, and the exact records that changed." />
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 0.9fr) minmax(420px, 1.1fr)', gap: 16, alignItems: 'start' }}>
+              <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ ...sora, fontSize: 16, fontWeight: 800, color: T.text }}>Recycle Bin</div>
+                    <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>Deletes stay soft for 60 days. Restore is blocked only when a required parent still remains deleted.</div>
+                  </div>
+                  <Chip color={T.danger}>{deletedItems.length}</Chip>
+                </div>
+                {deletedItems.length === 0 ? <EmptyState title="Nothing deleted right now" body="Soft-deleted records will appear here with their restore window." /> : (
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    {deletedItems.map(item => {
+                      const deletedDays = Math.floor((Date.now() - new Date(item.updatedAt).getTime()) / 86_400_000)
+                      const restoreDaysLeft = Math.max(0, 60 - deletedDays)
+                      return (
+                        <Card key={item.key} style={{ padding: 12, background: T.surface2 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                            <div>
+                              <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{item.label}</div>
+                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{item.meta} · deleted {formatDateTime(item.updatedAt)} · {restoreDaysLeft} day{restoreDaysLeft === 1 ? '' : 's'} left</div>
+                            </div>
+                            <Btn type="button" size="sm" onClick={() => void runAction(async () => {
+                              await item.onRestore()
+                              setFlashMessage(`${item.label} restored.`)
+                            })}>Restore</Btn>
+                          </div>
+                        </Card>
+                      )
+                    })}
+                  </div>
+                )}
+              </Card>
+
+              <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ ...sora, fontSize: 16, fontWeight: 800, color: T.text }}>Recent Audit</div>
+                    <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>Recent admin changes across hierarchy, people, requests, and timetable planning.</div>
+                  </div>
+                  <Chip color={T.accent}>{recentAuditEvents.length}</Chip>
+                </div>
+                {recentAuditLoading ? <InfoBanner message="Loading recent audit activity…" /> : null}
+                {!recentAuditLoading && recentAuditEvents.length === 0 ? <EmptyState title="No recent audit activity" body="New creates, updates, restores, and planner saves will surface here." /> : (
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    {recentAuditEvents.map(event => {
+                      const nextRoute = getAuditEventRoute(event)
+                      return (
+                        <Card key={event.auditEventId} style={{ padding: 12, background: T.surface2 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                            <div>
+                              <div style={{ ...sora, fontSize: 12, fontWeight: 700, color: T.text }}>{event.entityType} · {summarizeAuditEvent(event)}</div>
+                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{event.entityId}{event.actorRole ? ` · ${event.actorRole}` : ''} · {formatDateTime(event.createdAt)}</div>
+                            </div>
+                            {nextRoute ? <Btn type="button" size="sm" variant="ghost" onClick={() => navigate(nextRoute)}>Open</Btn> : null}
+                          </div>
+                        </Card>
+                      )
+                    })}
+                  </div>
+                )}
+              </Card>
+            </div>
           </div>
         )}
 
@@ -1631,6 +4187,70 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
         {dataLoading ? <InfoBanner message="Refreshing live admin data…" /> : null}
       </PageShell>
+      {showActionQueue ? (
+        <div className="scroll-pane scroll-pane--dense" style={{ position: 'sticky', top: 92, height: 'calc(100vh - 92px)', overflowY: 'auto', padding: '18px 16px', borderLeft: `1px solid ${T.border}`, background: T.surface }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+            <Bell size={16} color={T.accent} />
+            <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>Action Queue</div>
+            <Chip color={T.danger} size={10}>{actionQueueCount} active</Chip>
+          </div>
+          <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 14 }}>Requests go first. Personal reminders stay private to the signed-in system admin.</div>
+
+          <div style={{ ...mono, fontSize: 9, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Requests</div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {openRequests.slice(0, 8).map(request => (
+              <ActionQueueCard
+                key={request.adminRequestId}
+                title={request.summary}
+                subtitle={`${request.requestType} · ${request.requesterName ?? request.requestedByFacultyId} · due ${formatDateTime(request.dueAt)}`}
+                chips={[request.status, request.priority]}
+                tone={request.status === 'Implemented' ? T.success : T.warning}
+                trailing={<Chip color={request.status === 'Implemented' ? T.success : T.warning} size={9}>{request.status}</Chip>}
+                onClick={() => navigate({ section: 'requests', requestId: request.adminRequestId })}
+              />
+            ))}
+            {openRequests.length === 0 ? <InfoBanner message="No open HoD or governance requests right now." /> : null}
+          </div>
+
+          <div style={{ ...mono, fontSize: 9, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 18, marginBottom: 8 }}>Personal Tasks</div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {pendingReminders.map(reminder => (
+              <ActionQueueCard
+                key={reminder.reminderId}
+                title={reminder.title}
+                subtitle={`${reminder.body} · due ${formatDateTime(reminder.dueAt)}`}
+                chips={[reminder.status]}
+                tone={T.accent}
+                trailing={<button type="button" onClick={event => { event.stopPropagation(); void handleToggleReminderStatus(reminder) }} style={{ ...mono, fontSize: 10, color: T.accent, background: 'none', border: 'none', cursor: 'pointer' }}>Done</button>}
+              />
+            ))}
+            {pendingReminders.length === 0 ? <InfoBanner message="No private admin reminders. Use the quick add button below." /> : null}
+          </div>
+
+          <div style={{ ...mono, fontSize: 9, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 18, marginBottom: 8 }}>Recycle Bin</div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {deletedItems.slice(0, 4).map(item => (
+              <ActionQueueCard
+                key={item.key}
+                title={item.label}
+                subtitle={`${item.meta} · deleted ${formatDateTime(item.updatedAt)} · restore window 60 days`}
+                chips={[item.meta]}
+                tone={T.danger}
+                trailing={<button type="button" onClick={event => { event.stopPropagation(); void runAction(async () => { await item.onRestore(); setFlashMessage(`${item.label} restored.`) }) }} style={{ ...mono, fontSize: 10, color: T.success, background: 'none', border: 'none', cursor: 'pointer' }}>Restore</button>}
+              />
+            ))}
+            {deletedItems.length === 0 ? <div style={{ ...mono, fontSize: 10, color: T.dim }}>Nothing in recycle bin.</div> : null}
+          </div>
+
+          <div style={{ position: 'sticky', bottom: 0, paddingTop: 12, marginTop: 16, background: `linear-gradient(180deg, rgba(0,0,0,0) 0%, ${T.surface} 35%)` }}>
+            <button type="button" onClick={() => void handleCreateReminder()} style={{ width: '100%', border: 'none', borderRadius: 10, cursor: 'pointer', background: T.accent, color: '#fff', padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, ...sora, fontWeight: 700, fontSize: 12 }}>
+              <Plus size={14} />
+              Quick Add Reminder
+            </button>
+          </div>
+        </div>
+      ) : null}
+      </div>
     </div>
   )
 }

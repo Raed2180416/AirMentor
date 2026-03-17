@@ -96,7 +96,18 @@ export async function buildApp(options: BuildAppOptions) {
   const { registerCourseRoutes } = await import('./modules/courses.js')
   const { registerAdminRequestRoutes } = await import('./modules/admin-requests.js')
   const { registerAcademicRoutes } = await import('./modules/academic.js')
-  modules.push(registerSessionRoutes, registerInstitutionRoutes, registerAdminStructureRoutes, registerPeopleRoutes, registerStudentRoutes, registerCourseRoutes, registerAdminRequestRoutes, registerAcademicRoutes)
+  const { registerAdminControlPlaneRoutes } = await import('./modules/admin-control-plane.js')
+  modules.push(
+    registerSessionRoutes,
+    registerInstitutionRoutes,
+    registerAdminStructureRoutes,
+    registerPeopleRoutes,
+    registerStudentRoutes,
+    registerCourseRoutes,
+    registerAdminRequestRoutes,
+    registerAcademicRoutes,
+    registerAdminControlPlaneRoutes,
+  )
 
   for (const registerModule of modules) {
     await registerModule(app, context)

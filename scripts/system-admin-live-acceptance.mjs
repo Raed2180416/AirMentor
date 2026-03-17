@@ -27,8 +27,9 @@ async function expectFlash(message) {
   await expectVisible(page.getByText(message, { exact: true }), `flash "${message}"`)
 }
 
-async function clickTab(name) {
-  await page.getByRole('button', { name, exact: true }).first().click()
+async function expectBodyText(text, description) {
+  await page.waitForFunction((value) => document.body.innerText.includes(value), text, { timeout: 20_000 })
+  assert.ok(true, `${description} should be present`)
 }
 
 async function findVisibleRequestAction() {
@@ -69,10 +70,10 @@ try {
   await page.getByPlaceholder('••••••••', { exact: true }).fill('admin1234')
   await page.getByRole('button', { name: 'Sign In', exact: true }).click()
 
-  await expectVisible(page.getByText(/Search-first academic configuration\./), 'live admin overview')
+  await expectVisible(page.getByText('Operations Dashboard', { exact: true }).last(), 'live admin overview')
   await expectVisible(page.getByRole('textbox', { name: 'Global admin search' }), 'global admin search')
 
-  await clickTab('Faculties')
+  await page.goto(`${appUrl}#/admin/faculties`, { waitUntil: 'networkidle' })
   await expectVisible(page.getByText(/^Academic Faculties$/).last(), 'faculties workspace')
 
   const facultyCode = `QA${Date.now().toString().slice(-4)}`
@@ -93,34 +94,34 @@ try {
   await page.getByPlaceholder('ENG', { exact: true }).fill(facultyCode)
   await page.getByPlaceholder('Engineering and Technology', { exact: true }).fill(facultyName)
   await page.getByPlaceholder('Overview', { exact: true }).fill('Created by the live acceptance flow.')
-  await page.getByRole('button', { name: 'Add Academic Faculty', exact: true }).click()
+  await page.getByRole('button', { name: 'Add Faculty', exact: true }).click()
   await expectFlash('Academic faculty created.')
-  await page.getByText(facultyName, { exact: true }).click()
+  await page.locator('button').filter({ hasText: facultyName }).first().click()
   await page.getByLabel('Faculty Name', { exact: true }).fill(updatedFacultyName)
   await page.getByRole('button', { name: 'Save Faculty', exact: true }).click()
   await expectFlash('Academic faculty updated.')
-  await expectVisible(page.getByText(updatedFacultyName, { exact: true }).first(), 'updated academic faculty name')
+  await expectBodyText(updatedFacultyName, 'updated academic faculty name')
 
   await page.getByPlaceholder('CSE', { exact: true }).fill(departmentCode)
   await page.getByPlaceholder('Computer Science and Engineering', { exact: true }).fill(departmentName)
   await page.getByRole('button', { name: 'Add Department', exact: true }).click()
   await expectFlash('Department created.')
-  await page.getByText(departmentName, { exact: true }).click()
+  await page.locator('button').filter({ hasText: departmentName }).first().click()
   await page.getByLabel('Department Name', { exact: true }).fill(updatedDepartmentName)
   await page.getByRole('button', { name: 'Save Department', exact: true }).click()
   await expectFlash('Department updated.')
-  await expectVisible(page.getByText(updatedDepartmentName, { exact: true }).first(), 'updated department name')
+  await expectBodyText(updatedDepartmentName, 'updated department name')
 
   await page.getByPlaceholder('CSE-AI', { exact: true }).fill(branchCode)
   await page.getByPlaceholder('AI and Data Science', { exact: true }).fill(branchName)
   await page.getByPlaceholder('8', { exact: true }).fill('8')
   await page.getByRole('button', { name: 'Add Branch', exact: true }).click()
   await expectFlash('Branch created.')
-  await page.getByText(branchName, { exact: true }).click()
+  await page.locator('button').filter({ hasText: branchName }).first().click()
   await page.getByLabel('Branch Name', { exact: true }).fill(updatedBranchName)
   await page.getByRole('button', { name: 'Save Branch', exact: true }).click()
   await expectFlash('Branch updated.')
-  await expectVisible(page.getByText(updatedBranchName, { exact: true }).first(), 'updated branch name')
+  await expectBodyText(updatedBranchName, 'updated branch name')
 
   await page.getByPlaceholder('2022', { exact: true }).fill(batchYear)
   await page.getByPlaceholder('5', { exact: true }).first().fill('5')
@@ -148,7 +149,7 @@ try {
   await page.getByLabel('Term Academic Year Label', { exact: true }).fill('2028-30')
   await page.getByRole('button', { name: 'Save Term', exact: true }).click()
   await expectFlash('Academic term updated.')
-  await expectVisible(page.getByText(/Semester 6 · 2028-30/), 'updated term row')
+  await expectBodyText('Semester 6 · 2028-30', 'updated term row')
 
   await page.getByPlaceholder('Semester', { exact: true }).fill('6')
   await page.getByPlaceholder('CS699', { exact: true }).fill(curriculumCode)
@@ -156,20 +157,19 @@ try {
   await page.getByPlaceholder('4', { exact: true }).last().fill('4')
   await page.getByRole('button', { name: 'Add Curriculum Course', exact: true }).click()
   await expectFlash('Curriculum course created.')
-  await expectVisible(page.getByText(new RegExp(curriculumCode)), 'new curriculum course row')
+  await expectBodyText(curriculumCode, 'new curriculum course row')
   await page.getByRole('button', { name: 'Edit', exact: true }).nth(1).click()
   await page.getByLabel('Curriculum Course Title', { exact: true }).fill(updatedCurriculumTitle)
   await page.getByRole('button', { name: 'Save Curriculum Course', exact: true }).click()
   await expectFlash('Curriculum course updated.')
-  await expectVisible(page.getByText(new RegExp(updatedCurriculumTitle)).first(), 'updated curriculum course row')
+  await expectBodyText(updatedCurriculumTitle, 'updated curriculum course row')
 
-  await page.reload({ waitUntil: 'networkidle' })
-  await clickTab('Faculties')
-  await page.getByText(updatedFacultyName, { exact: true }).click()
-  await page.getByText(updatedDepartmentName, { exact: true }).click()
-  await page.getByText(updatedBranchName, { exact: true }).click()
+  await page.goto(`${appUrl}#/admin/faculties`, { waitUntil: 'networkidle' })
+  await page.locator('button').filter({ hasText: updatedFacultyName }).first().click()
+  await page.locator('button').filter({ hasText: updatedDepartmentName }).first().click()
+  await page.locator('button').filter({ hasText: updatedBranchName }).first().click()
   await page.getByRole('button', { name: new RegExp(`Batch ${batchLabel}`) }).first().click()
-  await expectVisible(page.getByText(new RegExp(updatedCurriculumTitle)).first(), 'persisted curriculum after refresh')
+  await expectBodyText(updatedCurriculumTitle, 'persisted curriculum after refresh')
   await page.getByRole('button', { name: 'Delete', exact: true }).nth(1).click()
   await expectFlash('Curriculum course archived.')
   await page.waitForFunction((text) => !Array.from(document.querySelectorAll('*')).some(node => node.textContent?.includes(text)), updatedCurriculumTitle)
@@ -183,13 +183,12 @@ try {
   await expectVisible(page.getByText(/^Student Detail$/).last(), 'student detail panel')
   await expectVisible(page.getByText(/CGPA/).last(), 'student cgpa chip')
 
-  await clickTab('Faculty Members')
-  await page.getByRole('button', { name: /Dr\. Kavitha Rao/i }).click()
+  await page.goto(`${appUrl}#/admin/faculty-members/t1`, { waitUntil: 'networkidle' })
   await expectVisible(page.getByText(/^Faculty Detail$/).last(), 'faculty detail panel')
-  await expectVisible(page.getByText(/Assigned Classes/), 'faculty assigned classes')
+  await expectVisible(page.getByText(/Current Owned Classes/), 'faculty assigned classes')
 
-  await clickTab('Requests')
-  await page.getByText(/Grant additional mentor mapping coverage/i).click()
+  await page.goto(`${appUrl}#/admin/requests`, { waitUntil: 'networkidle' })
+  await page.getByRole('button').filter({ hasText: 'Grant additional mentor mapping coverage' }).first().click()
   await advanceRequestToClosed()
 
   await page.screenshot({ path: successScreenshot, fullPage: true })

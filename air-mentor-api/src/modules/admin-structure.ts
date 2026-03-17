@@ -57,12 +57,19 @@ const sgpaCgpaRulesSchema = z.object({
   repeatedCoursePolicy: z.enum(['latest-attempt', 'best-attempt']),
 })
 
+const progressionRulesSchema = z.object({
+  passMarkPercent: z.number().min(0).max(100),
+  minimumCgpaForPromotion: z.number().min(0).max(10),
+  requireNoActiveBacklogs: z.boolean(),
+})
+
 const policyPayloadSchema = z.object({
   gradeBands: z.array(gradeBandSchema).min(1).optional(),
   ceSeeSplit: ceSeeSplitSchema.optional(),
   ceComponentCaps: ceComponentCapsSchema.optional(),
   workingCalendar: workingCalendarSchema.optional(),
   sgpaCgpaRules: sgpaCgpaRulesSchema.optional(),
+  progressionRules: progressionRulesSchema.optional(),
 }).refine(value => Object.keys(value).length > 0, {
   message: 'At least one policy segment must be provided.',
 })
@@ -128,6 +135,7 @@ type ResolvedPolicy = {
   ceComponentCaps: z.infer<typeof ceComponentCapsSchema>
   workingCalendar: z.infer<typeof workingCalendarSchema>
   sgpaCgpaRules: z.infer<typeof sgpaCgpaRulesSchema>
+  progressionRules: z.infer<typeof progressionRulesSchema>
 }
 
 const DEFAULT_POLICY: ResolvedPolicy = {
@@ -164,6 +172,11 @@ const DEFAULT_POLICY: ResolvedPolicy = {
     rounding: '2-decimal',
     includeFailedCredits: false,
     repeatedCoursePolicy: 'latest-attempt',
+  },
+  progressionRules: {
+    passMarkPercent: 40,
+    minimumCgpaForPromotion: 5,
+    requireNoActiveBacklogs: true,
   },
 }
 
@@ -232,6 +245,7 @@ function mergePolicy(base: ResolvedPolicy, override: PolicyPayload): ResolvedPol
     ceComponentCaps: override.ceComponentCaps ?? base.ceComponentCaps,
     workingCalendar: override.workingCalendar ?? base.workingCalendar,
     sgpaCgpaRules: override.sgpaCgpaRules ?? base.sgpaCgpaRules,
+    progressionRules: override.progressionRules ?? base.progressionRules,
   }
 }
 

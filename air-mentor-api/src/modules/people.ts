@@ -92,6 +92,29 @@ function mapRoleGrant(row: typeof roleGrants.$inferSelect) {
   }
 }
 
+function mapFacultyRecord(params: {
+  profile: typeof facultyProfiles.$inferSelect
+  user: typeof userAccounts.$inferSelect | undefined
+  appointments: Array<typeof facultyAppointments.$inferSelect>
+  grants: Array<typeof roleGrants.$inferSelect>
+}) {
+  return {
+    facultyId: params.profile.facultyId,
+    userId: params.profile.userId,
+    username: params.user?.username ?? '',
+    email: params.user?.email ?? '',
+    phone: params.user?.phone ?? null,
+    employeeCode: params.profile.employeeCode,
+    displayName: params.profile.displayName,
+    designation: params.profile.designation,
+    joinedOn: params.profile.joinedOn,
+    status: params.profile.status,
+    version: params.profile.version,
+    appointments: params.appointments.map(mapAppointment),
+    roleGrants: params.grants.map(mapRoleGrant),
+  }
+}
+
 export async function registerPeopleRoutes(app: FastifyInstance, context: RouteContext) {
   app.get('/api/admin/faculty', {
     schema: { tags: ['people'], summary: 'List faculty master records' },
@@ -102,24 +125,12 @@ export async function registerPeopleRoutes(app: FastifyInstance, context: RouteC
     const appointments = await context.db.select().from(facultyAppointments)
     const grants = await context.db.select().from(roleGrants)
     return {
-      items: profiles.map(profile => {
-        const user = users.find(item => item.userId === profile.userId)
-        return {
-          facultyId: profile.facultyId,
-          userId: profile.userId,
-          username: user?.username ?? '',
-          email: user?.email ?? '',
-          phone: user?.phone ?? null,
-          employeeCode: profile.employeeCode,
-          displayName: profile.displayName,
-          designation: profile.designation,
-          joinedOn: profile.joinedOn,
-          status: profile.status,
-          version: profile.version,
-          appointments: appointments.filter(item => item.facultyId === profile.facultyId).map(mapAppointment),
-          roleGrants: grants.filter(item => item.facultyId === profile.facultyId).map(mapRoleGrant),
-        }
-      }),
+      items: profiles.map(profile => mapFacultyRecord({
+        profile,
+        user: users.find(item => item.userId === profile.userId),
+        appointments: appointments.filter(item => item.facultyId === profile.facultyId),
+        grants: grants.filter(item => item.facultyId === profile.facultyId),
+      })),
     }
   })
 
@@ -181,12 +192,14 @@ export async function registerPeopleRoutes(app: FastifyInstance, context: RouteC
         phone: body.phone ?? null,
       },
     })
-    return {
-      ...created,
-      username: body.username,
-      email: body.email,
-      phone: body.phone ?? null,
-    }
+    const [createdProfile] = await context.db.select().from(facultyProfiles).where(eq(facultyProfiles.facultyId, facultyId))
+    const [createdUser] = await context.db.select().from(userAccounts).where(eq(userAccounts.userId, userId))
+    return mapFacultyRecord({
+      profile: createdProfile,
+      user: createdUser,
+      appointments: [],
+      grants: [],
+    })
   })
 
   app.patch('/api/admin/faculty/:facultyId', {
@@ -218,12 +231,14 @@ export async function registerPeopleRoutes(app: FastifyInstance, context: RouteC
     }).where(eq(facultyProfiles.facultyId, params.facultyId))
     const [next] = await context.db.select().from(facultyProfiles).where(eq(facultyProfiles.facultyId, params.facultyId))
     const [nextUser] = await context.db.select().from(userAccounts).where(eq(userAccounts.userId, current.userId))
-    const payload = {
-      ...next,
-      username: nextUser.username,
-      email: nextUser.email,
-      phone: nextUser.phone,
-    }
+    const appointments = await context.db.select().from(facultyAppointments).where(eq(facultyAppointments.facultyId, params.facultyId))
+    const grants = await context.db.select().from(roleGrants).where(eq(roleGrants.facultyId, params.facultyId))
+    const payload = mapFacultyRecord({
+      profile: next,
+      user: nextUser,
+      appointments,
+      grants,
+    })
     await emitAuditEvent(context, {
       entityType: 'FacultyProfile',
       entityId: params.facultyId,

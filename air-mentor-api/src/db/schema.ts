@@ -349,6 +349,18 @@ export const auditEvents = pgTable('audit_events', {
   createdAt: text('created_at').notNull(),
 })
 
+export const adminReminders = pgTable('admin_reminders', {
+  reminderId: text('reminder_id').primaryKey(),
+  facultyId: text('faculty_id').notNull().references(() => facultyProfiles.facultyId),
+  title: text('title').notNull(),
+  body: text('body').notNull(),
+  dueAt: text('due_at').notNull(),
+  status: text('status').notNull(),
+  version: integer('version').notNull().default(1),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
 export const allTables = {
   institutions,
   departments,
@@ -378,6 +390,7 @@ export const allTables = {
   adminRequestNotes,
   adminRequestTransitions,
   auditEvents,
+  adminReminders,
 }
 
 export type SchemaTableMap = typeof allTables

@@ -89,6 +89,67 @@ function mapMentorAssignment(row: typeof mentorAssignments.$inferSelect) {
   }
 }
 
+function mapStudentRecord(params: {
+  student: typeof students.$inferSelect
+  enrollmentRows: Array<typeof studentEnrollments.$inferSelect>
+  assignmentRows: Array<typeof mentorAssignments.$inferSelect>
+  profileRows: Array<typeof studentAcademicProfiles.$inferSelect>
+  termRows: Array<typeof academicTerms.$inferSelect>
+  branchRows: Array<typeof branches.$inferSelect>
+  departmentRows: Array<typeof departments.$inferSelect>
+  batchRows: Array<typeof batches.$inferSelect>
+}) {
+  const termById = Object.fromEntries(params.termRows.map(row => [row.termId, row]))
+  const branchById = Object.fromEntries(params.branchRows.map(row => [row.branchId, row]))
+  const departmentById = Object.fromEntries(params.departmentRows.map(row => [row.departmentId, row]))
+  const batchById = Object.fromEntries(params.batchRows.map(row => [row.batchId, row]))
+  return {
+    ...params.student,
+    currentCgpa: (params.profileRows.find(item => item.studentId === params.student.studentId)?.prevCgpaScaled ?? 0) / 100,
+    activeAcademicContext: (() => {
+      const currentEnrollment = params.enrollmentRows
+        .filter(item => item.studentId === params.student.studentId)
+        .sort((left, right) => {
+          if (left.endDate === null && right.endDate !== null) return -1
+          if (left.endDate !== null && right.endDate === null) return 1
+          return right.startDate.localeCompare(left.startDate)
+        })[0]
+      if (!currentEnrollment) return null
+      const term = termById[currentEnrollment.termId]
+      const branch = branchById[currentEnrollment.branchId]
+      const department = branch ? departmentById[branch.departmentId] : null
+      const batch = term?.batchId ? batchById[term.batchId] : null
+      return {
+        enrollmentId: currentEnrollment.enrollmentId,
+        branchId: currentEnrollment.branchId,
+        branchName: branch?.name ?? null,
+        departmentId: department?.departmentId ?? null,
+        departmentName: department?.name ?? null,
+        termId: currentEnrollment.termId,
+        academicYearLabel: term?.academicYearLabel ?? null,
+        semesterNumber: term?.semesterNumber ?? null,
+        sectionCode: currentEnrollment.sectionCode,
+        batchId: batch?.batchId ?? term?.batchId ?? null,
+        batchLabel: batch?.batchLabel ?? null,
+        admissionYear: batch?.admissionYear ?? null,
+        academicStatus: currentEnrollment.academicStatus,
+      }
+    })(),
+    activeMentorAssignment: (() => {
+      const activeAssignment = params.assignmentRows
+        .filter(item => item.studentId === params.student.studentId)
+        .sort((left, right) => {
+          if (left.effectiveTo === null && right.effectiveTo !== null) return -1
+          if (left.effectiveTo !== null && right.effectiveTo === null) return 1
+          return right.effectiveFrom.localeCompare(left.effectiveFrom)
+        })[0]
+      return activeAssignment ? mapMentorAssignment(activeAssignment) : null
+    })(),
+    enrollments: params.enrollmentRows.filter(item => item.studentId === params.student.studentId).map(mapEnrollment),
+    mentorAssignments: params.assignmentRows.filter(item => item.studentId === params.student.studentId).map(mapMentorAssignment),
+  }
+}
+
 export async function registerStudentRoutes(app: FastifyInstance, context: RouteContext) {
   app.get('/api/admin/students', {
     schema: { tags: ['students'], summary: 'List students with enrollment and mentor assignment context' },
@@ -102,55 +163,16 @@ export async function registerStudentRoutes(app: FastifyInstance, context: Route
     const branchRows = await context.db.select().from(branches)
     const departmentRows = await context.db.select().from(departments)
     const batchRows = await context.db.select().from(batches)
-    const termById = Object.fromEntries(termRows.map(row => [row.termId, row]))
-    const branchById = Object.fromEntries(branchRows.map(row => [row.branchId, row]))
-    const departmentById = Object.fromEntries(departmentRows.map(row => [row.departmentId, row]))
-    const batchById = Object.fromEntries(batchRows.map(row => [row.batchId, row]))
     return {
-      items: studentRows.map(student => ({
-        ...student,
-        currentCgpa: (profileRows.find(item => item.studentId === student.studentId)?.prevCgpaScaled ?? 0) / 100,
-        activeAcademicContext: (() => {
-          const currentEnrollment = enrollmentRows
-            .filter(item => item.studentId === student.studentId)
-            .sort((left, right) => {
-              if (left.endDate === null && right.endDate !== null) return -1
-              if (left.endDate !== null && right.endDate === null) return 1
-              return right.startDate.localeCompare(left.startDate)
-            })[0]
-          if (!currentEnrollment) return null
-          const term = termById[currentEnrollment.termId]
-          const branch = branchById[currentEnrollment.branchId]
-          const department = branch ? departmentById[branch.departmentId] : null
-          const batch = term?.batchId ? batchById[term.batchId] : null
-          return {
-            enrollmentId: currentEnrollment.enrollmentId,
-            branchId: currentEnrollment.branchId,
-            branchName: branch?.name ?? null,
-            departmentId: department?.departmentId ?? null,
-            departmentName: department?.name ?? null,
-            termId: currentEnrollment.termId,
-            academicYearLabel: term?.academicYearLabel ?? null,
-            semesterNumber: term?.semesterNumber ?? null,
-            sectionCode: currentEnrollment.sectionCode,
-            batchId: batch?.batchId ?? term?.batchId ?? null,
-            batchLabel: batch?.batchLabel ?? null,
-            admissionYear: batch?.admissionYear ?? null,
-            academicStatus: currentEnrollment.academicStatus,
-          }
-        })(),
-        activeMentorAssignment: (() => {
-          const activeAssignment = assignmentRows
-            .filter(item => item.studentId === student.studentId)
-            .sort((left, right) => {
-              if (left.effectiveTo === null && right.effectiveTo !== null) return -1
-              if (left.effectiveTo !== null && right.effectiveTo === null) return 1
-              return right.effectiveFrom.localeCompare(left.effectiveFrom)
-            })[0]
-          return activeAssignment ? mapMentorAssignment(activeAssignment) : null
-        })(),
-        enrollments: enrollmentRows.filter(item => item.studentId === student.studentId).map(mapEnrollment),
-        mentorAssignments: assignmentRows.filter(item => item.studentId === student.studentId).map(mapMentorAssignment),
+      items: studentRows.map(student => mapStudentRecord({
+        student,
+        enrollmentRows,
+        assignmentRows,
+        profileRows,
+        termRows,
+        branchRows,
+        departmentRows,
+        batchRows,
       })),
     }
   })
@@ -186,7 +208,23 @@ export async function registerStudentRoutes(app: FastifyInstance, context: Route
       actorId: auth.facultyId,
       after: created,
     })
-    return created
+    const enrollmentRows = await context.db.select().from(studentEnrollments)
+    const assignmentRows = await context.db.select().from(mentorAssignments)
+    const profileRows = await context.db.select().from(studentAcademicProfiles)
+    const termRows = await context.db.select().from(academicTerms)
+    const branchRows = await context.db.select().from(branches)
+    const departmentRows = await context.db.select().from(departments)
+    const batchRows = await context.db.select().from(batches)
+    return mapStudentRecord({
+      student: created,
+      enrollmentRows,
+      assignmentRows,
+      profileRows,
+      termRows,
+      branchRows,
+      departmentRows,
+      batchRows,
+    })
   })
 
   app.patch('/api/admin/students/:studentId', {
@@ -219,7 +257,23 @@ export async function registerStudentRoutes(app: FastifyInstance, context: Route
       before: current,
       after: next,
     })
-    return next
+    const enrollmentRows = await context.db.select().from(studentEnrollments)
+    const assignmentRows = await context.db.select().from(mentorAssignments)
+    const profileRows = await context.db.select().from(studentAcademicProfiles)
+    const termRows = await context.db.select().from(academicTerms)
+    const branchRows = await context.db.select().from(branches)
+    const departmentRows = await context.db.select().from(departments)
+    const batchRows = await context.db.select().from(batches)
+    return mapStudentRecord({
+      student: next,
+      enrollmentRows,
+      assignmentRows,
+      profileRows,
+      termRows,
+      branchRows,
+      departmentRows,
+      batchRows,
+    })
   })
 
   app.post('/api/admin/students/:studentId/enrollments', {

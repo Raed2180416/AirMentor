@@ -9,6 +9,7 @@ import {
   branches,
   courses,
   departments,
+  facultyAppointments,
   facultyOfferingOwnerships,
   facultyProfiles,
   mentorAssignments,
@@ -89,6 +90,8 @@ const publicFacultyResponseSchema = z.object({
   items: z.array(z.object({
     facultyId: z.string(),
     name: z.string(),
+    dept: z.string(),
+    roleTitle: z.string(),
     allowedRoles: z.array(z.enum(['Course Leader', 'Mentor', 'HoD'])),
   })),
 })
@@ -119,6 +122,16 @@ async function getAcademicRuntimeState<T>(context: RouteContext, stateKey: strin
 
 function dedupeRoles(roleCodes: string[]) {
   return Array.from(new Set(roleCodes.map(toUiRole).filter((value): value is 'Course Leader' | 'Mentor' | 'HoD' => !!value))).sort(sortRoleLabels)
+}
+
+function buildInitials(displayName: string) {
+  return displayName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(part => part[0])
+    .join('')
+    .toUpperCase()
 }
 
 function inferMenteeFallback(input: {
@@ -185,7 +198,9 @@ function inferStudentFallback(input: {
 
 type AcademicStudentProjection = ReturnType<typeof inferStudentFallback> & Record<string, unknown>
 type AcademicMenteeProjection = ReturnType<typeof inferMenteeFallback> & Record<string, unknown>
-type AcademicOfferingProjection = Omit<ReturnType<typeof mapOfferingRow>, 'tt1Locked' | 'tt2Locked' | 'quizLocked' | 'asgnLocked'> & {
+type AcademicOfferingProjection = Omit<ReturnType<typeof mapOfferingRow>, 'termId' | 'branchId' | 'tt1Locked' | 'tt2Locked' | 'quizLocked' | 'asgnLocked'> & {
+  termId?: string
+  branchId?: string
   tt1Locked?: boolean
   tt2Locked?: boolean
   quizLocked?: boolean
@@ -210,6 +225,8 @@ function mapOfferingRow(input: {
   return {
     id: input.course.courseId,
     offId: input.offering.offeringId,
+    termId: input.offering.termId,
+    branchId: input.offering.branchId,
     code: input.course.courseCode,
     title: input.course.title,
     year: input.offering.yearLabel,
@@ -269,6 +286,7 @@ async function buildAcademicBootstrap(context: RouteContext) {
     offeringRows,
     ownershipRows,
     facultyRows,
+    appointmentRows,
     userRows,
     roleGrantRows,
     studentRows,
@@ -283,6 +301,7 @@ async function buildAcademicBootstrap(context: RouteContext) {
     context.db.select().from(sectionOfferings).where(eq(sectionOfferings.status, 'active')).orderBy(asc(sectionOfferings.offeringId)),
     context.db.select().from(facultyOfferingOwnerships).where(eq(facultyOfferingOwnerships.status, 'active')),
     context.db.select().from(facultyProfiles).where(eq(facultyProfiles.status, 'active')).orderBy(asc(facultyProfiles.facultyId)),
+    context.db.select().from(facultyAppointments).where(eq(facultyAppointments.status, 'active')).orderBy(asc(facultyAppointments.facultyId)),
     context.db.select().from(userAccounts),
     context.db.select().from(roleGrants).where(eq(roleGrants.status, 'active')),
     context.db.select().from(students).where(eq(students.status, 'active')).orderBy(asc(students.usn)),
@@ -298,6 +317,13 @@ async function buildAcademicBootstrap(context: RouteContext) {
   const userById = Object.fromEntries(userRows.map(row => [row.userId, row]))
   const studentById = Object.fromEntries(studentRows.map(row => [row.studentId, row]))
   const studentAcademicProfileById = Object.fromEntries(profileRows.map(row => [row.studentId, row]))
+  const primaryAppointmentByFacultyId = new Map<string, typeof facultyAppointments.$inferSelect>()
+  for (const appointment of appointmentRows) {
+    const current = primaryAppointmentByFacultyId.get(appointment.facultyId)
+    if (!current || appointment.isPrimary === 1) {
+      primaryAppointmentByFacultyId.set(appointment.facultyId, appointment)
+    }
+  }
 
   const enrollmentsByGroup = new Map<string, Array<typeof studentEnrollments.$inferSelect>>()
   for (const enrollment of enrollmentRows) {
@@ -458,15 +484,18 @@ async function buildAcademicBootstrap(context: RouteContext) {
   const faculty = facultyRows
     .map(row => {
       const seeded = seededFacultyById[row.facultyId]
-      if (!seeded) return null
       const user = userById[row.userId]
       const grants = roleGrantRows.filter(grant => grant.facultyId === row.facultyId)
+      const hasSystemAdminGrant = grants.some(grant => grant.roleCode === 'SYSTEM_ADMIN')
+      if (hasSystemAdminGrant && !seeded) return null
       const allowedRoles = dedupeRoles(grants.map(grant => grant.roleCode))
       if (allowedRoles.length === 0) return null
+      const primaryAppointment = primaryAppointmentByFacultyId.get(row.facultyId)
+      const appointmentDepartment = primaryAppointment ? departmentById[primaryAppointment.departmentId] : undefined
       const offeringIds = Array.from(new Set(offeringIdsByFacultyId.get(row.facultyId) ?? []))
       const courseCodes = Array.from(new Set(offeringIds.map(offeringId => offeringCodeById[offeringId]).filter((value): value is string => !!value)))
       const nextMenteeIds = Array.from(new Set(menteeIdsByFacultyId.get(row.facultyId) ?? []))
-      const seededMenteeOrder = Array.isArray(seeded.menteeIds) ? seeded.menteeIds.map(value => String(value)) : []
+      const seededMenteeOrder = Array.isArray(seeded?.menteeIds) ? seeded.menteeIds.map(value => String(value)) : []
       nextMenteeIds.sort((left, right) => {
         const leftIndex = seededMenteeOrder.indexOf(left)
         const rightIndex = seededMenteeOrder.indexOf(right)
@@ -477,11 +506,11 @@ async function buildAcademicBootstrap(context: RouteContext) {
       })
       return {
         facultyId: row.facultyId,
-        name: String(seeded.name ?? row.displayName),
-        initials: String(seeded.initials ?? row.displayName.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase()),
-        email: String(seeded.email ?? user?.email ?? `${row.facultyId}@airmentor.local`),
-        dept: String(seeded.dept ?? 'CSE'),
-        roleTitle: String(seeded.roleTitle ?? row.designation),
+        name: String(row.displayName || seeded?.name || row.facultyId),
+        initials: String(seeded?.initials ?? buildInitials(row.displayName)),
+        email: String(user?.email ?? seeded?.email ?? `${row.facultyId}@airmentor.local`),
+        dept: String(appointmentDepartment?.code ?? seeded?.dept ?? 'GEN'),
+        roleTitle: String(row.designation || seeded?.roleTitle || 'Faculty'),
         allowedRoles,
         courseCodes,
         offeringIds,
@@ -577,6 +606,8 @@ async function buildPublicFacultyList(context: RouteContext): Promise<PublicFacu
     items: snapshot.faculty.map(account => ({
       facultyId: account.facultyId,
       name: account.name,
+      dept: account.dept,
+      roleTitle: account.roleTitle,
       allowedRoles: account.allowedRoles,
     })),
   })

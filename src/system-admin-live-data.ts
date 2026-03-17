@@ -3,6 +3,7 @@ import type {
   ApiAcademicTerm,
   ApiAdminOffering,
   ApiAdminRequestSummary,
+  ApiAdminReminder,
   ApiBatch,
   ApiBranch,
   ApiCourse,
@@ -15,7 +16,7 @@ import type {
   ApiStudentRecord,
 } from './api/types'
 
-export type LiveAdminSectionId = 'overview' | 'faculties' | 'students' | 'faculty-members' | 'requests'
+export type LiveAdminSectionId = 'overview' | 'faculties' | 'students' | 'faculty-members' | 'requests' | 'history'
 
 export type LiveAdminDataset = {
   institution: ApiInstitution | null
@@ -32,6 +33,7 @@ export type LiveAdminDataset = {
   offerings: ApiAdminOffering[]
   ownerships: ApiOfferingOwnership[]
   requests: ApiAdminRequestSummary[]
+  reminders: ApiAdminReminder[]
 }
 
 export type LiveAdminRoute = {
@@ -65,7 +67,8 @@ function normalizeSearch(value: string) {
 }
 
 export function isVisibleAdminRecord(status?: string | null) {
-  return (status ?? 'active').toLowerCase() !== 'archived'
+  const normalized = (status ?? 'active').toLowerCase()
+  return normalized !== 'archived' && normalized !== 'deleted'
 }
 
 export function resolveAcademicFaculty(data: LiveAdminDataset, academicFacultyId?: string | null) {

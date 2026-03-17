@@ -143,7 +143,11 @@ export type ApiFacultyAppointment = {
   appointmentId: string
   facultyId: string
   departmentId: string
+  departmentName?: string | null
+  departmentCode?: string | null
   branchId: string | null
+  branchName?: string | null
+  branchCode?: string | null
   isPrimary: boolean
   startDate: string
   endDate: string | null
@@ -165,6 +169,8 @@ export type ApiFacultyRecord = {
   joinedOn: string | null
   status: string
   version: number
+  createdAt: string
+  updatedAt: string
   appointments: ApiFacultyAppointment[]
   roleGrants: ApiRoleGrant[]
 }
@@ -175,6 +181,7 @@ export type ApiStudentEnrollment = {
   branchId: string
   termId: string
   sectionCode: string
+  rosterOrder?: number
   academicStatus: string
   startDate: string
   endDate: string | null
@@ -289,6 +296,11 @@ export type ApiPolicyPayload = {
     includeFailedCredits: boolean
     repeatedCoursePolicy: 'latest-attempt' | 'best-attempt'
   }
+  progressionRules?: {
+    passMarkPercent: number
+    minimumCgpaForPromotion: number
+    requireNoActiveBacklogs: boolean
+  }
 }
 
 export type ApiPolicyOverride = {
@@ -335,7 +347,44 @@ export type ApiResolvedBatchPolicy = {
       includeFailedCredits: boolean
       repeatedCoursePolicy: 'latest-attempt' | 'best-attempt'
     }
+    progressionRules: {
+      passMarkPercent: number
+      minimumCgpaForPromotion: number
+      requireNoActiveBacklogs: boolean
+    }
   }
+}
+
+export type ApiAdminSearchRoute = {
+  section: 'overview' | 'faculties' | 'students' | 'faculty-members' | 'requests'
+  academicFacultyId?: string
+  departmentId?: string
+  branchId?: string
+  batchId?: string
+  studentId?: string
+  facultyMemberId?: string
+  requestId?: string
+}
+
+export type ApiAdminSearchResult = {
+  key: string
+  entityType: string
+  entityId: string
+  label: string
+  meta: string
+  route: ApiAdminSearchRoute
+}
+
+export type ApiAdminReminder = {
+  reminderId: string
+  facultyId: string
+  title: string
+  body: string
+  dueAt: string
+  status: 'pending' | 'done'
+  version: number
+  createdAt: string
+  updatedAt: string
 }
 
 export type ApiTargetEntityRef = {
@@ -413,6 +462,8 @@ export type ApiAdminRequestDetail = ApiAdminRequestSummary & {
 export type ApiAcademicLoginFaculty = {
   facultyId: string
   name: string
+  dept: string
+  roleTitle: string
   allowedRoles: Array<'Course Leader' | 'Mentor' | 'HoD'>
 }
 
@@ -447,7 +498,46 @@ export type ApiAcademicBootstrap = {
 export type ApiAcademicRuntimeKey = keyof ApiAcademicRuntimeState
 
 export type ApiAdminOffering = Offering & {
+  termId?: string
+  branchId?: string
   version?: number
+}
+
+export type ApiAdminCalendarMarkerType =
+  | 'semester-start'
+  | 'semester-end'
+  | 'term-test-start'
+  | 'term-test-end'
+  | 'holiday'
+  | 'event'
+
+export type ApiAdminCalendarMarker = {
+  markerId: string
+  facultyId: string
+  markerType: ApiAdminCalendarMarkerType
+  title: string
+  note: string | null
+  dateISO: string
+  endDateISO: string | null
+  allDay: boolean
+  startMinutes: number | null
+  endMinutes: number | null
+  color: string
+  createdAt: number
+  updatedAt: number
+}
+
+export type ApiAdminFacultyCalendarWorkspace = {
+  publishedAt: string | null
+  markers: ApiAdminCalendarMarker[]
+}
+
+export type ApiAdminFacultyCalendar = {
+  facultyId: string
+  template: FacultyTimetableTemplate | null
+  workspace: ApiAdminFacultyCalendarWorkspace
+  directEditWindowEndsAt: string | null
+  classEditingLocked: boolean
 }
 
 export type ApiOfferingOwnership = {
@@ -459,4 +549,56 @@ export type ApiOfferingOwnership = {
   version: number
   createdAt: string
   updatedAt: string
+}
+
+export type ApiAcademicFacultyProfile = {
+  facultyId: string
+  displayName: string
+  designation: string
+  employeeCode: string
+  email: string
+  phone: string | null
+  primaryDepartment: {
+    departmentId: string
+    name: string
+    code: string
+  } | null
+  appointments: ApiFacultyAppointment[]
+  permissions: ApiRoleGrant[]
+  subjectRunCourseLeaderScope: Array<{
+    subjectRunId: string
+    courseCode: string
+    title: string
+    termId: string
+    yearLabel: string
+    sectionCodes: string[]
+  }>
+  mentorScope: {
+    activeStudentCount: number
+    studentIds: string[]
+  }
+  currentOwnedClasses: Array<{
+    offeringId: string
+    courseCode: string
+    title: string
+    yearLabel: string
+    sectionCode: string
+    ownershipRole: string
+    departmentName: string | null
+    branchName: string | null
+  }>
+  timetableStatus: {
+    hasTemplate: boolean
+    publishedAt: string | null
+    directEditWindowEndsAt: string | null
+  }
+  requestSummary: {
+    openCount: number
+    recent: Array<{
+      adminRequestId: string
+      summary: string
+      status: string
+      updatedAt: string
+    }>
+  }
 }

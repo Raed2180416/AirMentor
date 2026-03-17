@@ -75,10 +75,11 @@ import { AIRMENTOR_STORAGE_KEYS, createAirMentorRepositories, createLocalAirMent
 import { PortalEntryScreen } from './portal-entry'
 import { clearPortalWorkspaceHints, getPortalHash, hashBelongsToPortalRoute, navigateToPortal, resolvePortalRoute, type PortalRoute } from './portal-routing'
 import { SystemAdminApp } from './system-admin-app'
+import { InfoBanner, MetricCard } from './system-admin-ui'
 import { applyThemePreset, isLightTheme } from './theme'
 import { Bar, Btn, Card, Chip, PageBackButton, PageShell, RiskBadge, StagePips, UI_TRANSITION_FAST, UI_TRANSITION_MEDIUM } from './ui-primitives'
 import { AirMentorApiClient, AirMentorApiError } from './api/client'
-import type { ApiAcademicBootstrap, ApiSessionResponse } from './api/types'
+import type { ApiAcademicBootstrap, ApiAcademicFacultyProfile, ApiAcademicLoginFaculty, ApiSessionResponse } from './api/types'
 import './App.css'
 
 const LazyCourseDetail = lazy(() => import('./pages/course-pages').then(module => ({ default: module.CourseDetail })))
@@ -127,7 +128,7 @@ type TaskCreateInput = {
   placement?: TaskPlacementDraft
 }
 
-type PageId = 'dashboard' | 'students' | 'course' | 'calendar' | 'upload' | 'entry-workspace' | 'mentees' | 'department' | 'mentee-detail' | 'student-history' | 'unlock-review' | 'scheme-setup' | 'queue-history'
+type PageId = 'dashboard' | 'students' | 'course' | 'calendar' | 'upload' | 'entry-workspace' | 'mentees' | 'department' | 'mentee-detail' | 'student-history' | 'unlock-review' | 'scheme-setup' | 'queue-history' | 'faculty-profile'
 
 type RouteSnapshot = {
   page: PageId
@@ -162,7 +163,7 @@ function getHomePage(role: Role): PageId {
 }
 
 function canAccessPage(role: Role, page: PageId) {
-  if (page === 'student-history' || page === 'queue-history') return true
+  if (page === 'student-history' || page === 'queue-history' || page === 'faculty-profile') return true
   if (page === 'scheme-setup') return role === 'Course Leader'
   if (page === 'unlock-review') return role === 'HoD'
   if (page === 'mentee-detail') return role === 'Mentor'
@@ -255,7 +256,13 @@ function AuthHeroFeature({ title, body, color }: { title: string; body: string; 
 }
 
 function LoginPage({
-  facultyOptions = FACULTY.map(faculty => ({ facultyId: faculty.facultyId, name: faculty.name })),
+  facultyOptions = FACULTY.map(faculty => ({
+    facultyId: faculty.facultyId,
+    name: faculty.name,
+    dept: faculty.dept,
+    roleTitle: faculty.roleTitle,
+    allowedRoles: faculty.allowedRoles,
+  })),
   helperText = 'Use password 1234 for mock flow.',
   modeLabel = 'Teaching Workspace',
   heroBody = 'Use the academic portal for course delivery, mentor follow-up, grading operations, and timetable-aware teaching workflows.',
@@ -264,7 +271,7 @@ function LoginPage({
   onBackToPortal,
   onLogin,
 }: {
-  facultyOptions?: Array<{ facultyId: string; name: string }>
+  facultyOptions?: ApiAcademicLoginFaculty[]
   helperText?: string
   modeLabel?: string
   heroBody?: string
@@ -276,7 +283,6 @@ function LoginPage({
   const [teacherId, setTeacherId] = useState<string>(facultyOptions[0]?.facultyId ?? '')
   const [password, setPassword] = useState('')
   const [err, setErr] = useState('')
-  const selectedFaculty = FACULTY.find(faculty => faculty.facultyId === teacherId)
   const selectedOption = facultyOptions.find(option => option.facultyId === teacherId) ?? null
 
   useEffect(() => {
@@ -358,11 +364,9 @@ function LoginPage({
               {selectedOption ? (
                 <div style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 12px' }}>
                   <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 4 }}>Selected profile</div>
-                  <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text }}>{selectedFaculty?.name ?? selectedOption.name}</div>
+                  <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text }}>{selectedOption.name}</div>
                   <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
-                    {selectedFaculty
-                      ? `${selectedFaculty.dept} · ${selectedFaculty.allowedRoles.join(' / ')}`
-                      : `Faculty ID · ${selectedOption.facultyId}`}
+                    {`${selectedOption.dept ?? 'Faculty'}${selectedOption.roleTitle ? ` · ${selectedOption.roleTitle}` : ''}${selectedOption.allowedRoles?.length ? ` · ${selectedOption.allowedRoles.join(' / ')}` : ` · Faculty ID ${selectedOption.facultyId}`}`}
                   </div>
                 </div>
               ) : null}
@@ -396,6 +400,153 @@ function LoginPage({
             </div>
           </div>
         </Card>
+      </div>
+    </PageShell>
+  )
+}
+
+function FacultyProfilePage({
+  currentTeacher,
+  activeRole,
+  profile,
+  loading,
+  error,
+  pendingTaskCount,
+  assignedOfferings,
+  currentFacultyTimetable,
+  onBack,
+}: {
+  currentTeacher: FacultyAccount
+  activeRole: Role
+  profile: ApiAcademicFacultyProfile | null
+  loading: boolean
+  error: string
+  pendingTaskCount: number
+  assignedOfferings: Offering[]
+  currentFacultyTimetable: FacultyTimetableTemplate | null
+  onBack: () => void
+}) {
+  const effectivePermissions = profile?.permissions.map(item => item.roleCode) ?? currentTeacher.allowedRoles
+  const effectiveDepartment = profile?.primaryDepartment?.name ?? currentTeacher.dept
+  const effectivePhone = profile?.phone ?? 'Not set'
+  const employeeCode = profile?.employeeCode ?? 'Not available'
+  const timetableWindow = profile?.timetableStatus.directEditWindowEndsAt
+    ? new Date(profile.timetableStatus.directEditWindowEndsAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+    : null
+  const displayPermission = (permission: string) => {
+    if (permission === 'COURSE_LEADER') return 'Course Leader'
+    if (permission === 'SYSTEM_ADMIN') return 'System Admin'
+    if (permission === 'HOD') return 'HoD'
+    if (permission === 'MENTOR') return 'Mentor'
+    return permission
+  }
+
+  return (
+    <PageShell size="standard">
+      <div style={{ display: 'grid', gap: 16, paddingTop: 18, paddingBottom: 26 }}>
+        <PageBackButton onClick={onBack} />
+
+        <Card style={{ padding: 20, display: 'grid', gap: 14, background: `linear-gradient(160deg, ${T.surface}, ${T.surface2})` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Teaching Profile</div>
+              <div style={{ ...sora, fontSize: 28, fontWeight: 800, color: T.text, marginTop: 8 }}>{profile?.displayName ?? currentTeacher.name}</div>
+              <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 8, lineHeight: 1.8 }}>
+                Inspect-first faculty profile powered by the system-admin master record when available. Operational edits still happen in their existing teaching or admin workflows.
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Chip color={T.accent}>{activeRole}</Chip>
+              {effectivePermissions.map(permission => <Chip key={permission} color={T.success}>{permission}</Chip>)}
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+            <MetricCard label="Primary Department" value={effectiveDepartment} helper="Current teaching-side home context." />
+            <MetricCard label="Designation" value={profile?.designation ?? currentTeacher.roleTitle} helper="Admin-managed teaching title and academic responsibility label." />
+            <MetricCard label="Employee Code" value={employeeCode} helper="Read-only faculty identity key from the admin master record." />
+            <MetricCard label="Email" value={profile?.email ?? currentTeacher.email} helper="Read-only identity field from the faculty record." />
+            <MetricCard label="Phone" value={effectivePhone} helper="Shown here so faculty can verify admin-owned contact data." />
+            <MetricCard label="Queue Items" value={String(pendingTaskCount)} helper="Current action queue count for this faculty context." />
+          </div>
+        </Card>
+
+        {loading ? <InfoBanner message="Loading faculty profile..." /> : null}
+        {error ? <InfoBanner tone="error" message={error} /> : null}
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 14 }}>
+          <Card style={{ padding: 16, display: 'grid', gap: 10 }}>
+            <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Permissions</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {effectivePermissions.length > 0 ? effectivePermissions.map(permission => <Chip key={permission} color={T.accent}>{displayPermission(permission)}</Chip>) : <Chip color={T.dim}>No permissions</Chip>}
+            </div>
+            <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+              HoD, mentor, and course-leader visibility now comes from the same admin-managed permission source instead of separate mock-only assumptions.
+            </div>
+          </Card>
+
+          <Card style={{ padding: 16, display: 'grid', gap: 10 }}>
+            <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Appointments</div>
+            {profile?.appointments?.length ? profile.appointments.map(appointment => (
+              <Card key={appointment.appointmentId} style={{ padding: 10, background: T.surface2 }}>
+                <div style={{ ...mono, fontSize: 10, color: T.text }}>
+                  {appointment.departmentName ?? appointment.departmentCode ?? appointment.departmentId}
+                  {appointment.branchName ?? appointment.branchCode ?? appointment.branchId ? ` · ${appointment.branchName ?? appointment.branchCode ?? appointment.branchId}` : ''}
+                </div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{appointment.isPrimary ? 'Primary appointment' : 'Supporting appointment'} · {appointment.status}</div>
+              </Card>
+            )) : (
+              <div style={{ ...mono, fontSize: 10, color: T.muted }}>No explicit appointment projection available in the current mode.</div>
+            )}
+          </Card>
+
+          <Card style={{ padding: 16, display: 'grid', gap: 10 }}>
+            <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Teaching Scope</div>
+            {(profile?.currentOwnedClasses?.length ? profile.currentOwnedClasses.map(item => ({
+              key: item.offeringId,
+              title: `${item.courseCode} · ${item.title}`,
+              meta: `${item.yearLabel} · Section ${item.sectionCode} · ${item.ownershipRole}${item.branchName ? ` · ${item.branchName}` : ''}`,
+            })) : assignedOfferings.map(item => ({
+              key: item.offId,
+              title: `${item.code} · ${item.title}`,
+              meta: `${item.year} · Section ${item.section}`,
+            }))).slice(0, 8).map(item => (
+              <Card key={item.key} style={{ padding: 10, background: T.surface2 }}>
+                <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.title}</div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{item.meta}</div>
+              </Card>
+            ))}
+            {assignedOfferings.length === 0 && !profile?.currentOwnedClasses?.length ? <div style={{ ...mono, fontSize: 10, color: T.muted }}>No current class ownership is mapped in this mode.</div> : null}
+          </Card>
+
+          <Card style={{ padding: 16, display: 'grid', gap: 10 }}>
+            <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Course Leader Scope</div>
+            {profile?.subjectRunCourseLeaderScope?.length ? profile.subjectRunCourseLeaderScope.slice(0, 8).map(subjectRun => (
+              <Card key={subjectRun.subjectRunId} style={{ padding: 10, background: T.surface2 }}>
+                <div style={{ ...mono, fontSize: 10, color: T.text }}>{subjectRun.courseCode} · {subjectRun.title}</div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{subjectRun.yearLabel} · Sections {subjectRun.sectionCodes.join(', ')}</div>
+              </Card>
+            )) : (
+              <div style={{ ...mono, fontSize: 10, color: T.muted }}>No subject-run course-leader scope is currently assigned.</div>
+            )}
+          </Card>
+
+          <Card style={{ padding: 16, display: 'grid', gap: 10 }}>
+            <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Mentoring And Timetable</div>
+            <div style={{ ...mono, fontSize: 10, color: T.text }}>Mentor scope: {profile?.mentorScope.activeStudentCount ?? currentTeacher.menteeIds.length} active students</div>
+            <div style={{ ...mono, fontSize: 10, color: T.text }}>Timetable template: {(profile?.timetableStatus.hasTemplate ?? !!currentFacultyTimetable) ? 'Configured' : 'Not configured'}</div>
+            <div style={{ ...mono, fontSize: 10, color: T.text }}>Direct edit window: {timetableWindow ?? 'Unavailable in current mode'}</div>
+            {profile?.requestSummary ? (
+              <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                {profile.requestSummary.openCount} linked governed requests. Recent: {profile.requestSummary.recent.map(item => `${item.summary} (${item.status})`).join(' · ') || 'none'}.
+              </div>
+            ) : (
+              <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                Timetable and request summaries fall back to local teaching context when the live academic profile endpoint is not in use.
+              </div>
+            )}
+          </Card>
+        </div>
       </div>
     </PageShell>
   )
@@ -1912,6 +2063,7 @@ type OperationalWorkspaceProps = {
   initialRole: Role
   onLogout: () => Promise<void> | void
   onRoleChange?: (role: Role) => Promise<void> | void
+  loadFacultyProfile?: (facultyId: string) => Promise<ApiAcademicFacultyProfile>
 }
 
 function OperationalWorkspace({
@@ -1920,6 +2072,7 @@ function OperationalWorkspace({
   initialRole,
   onLogout,
   onRoleChange,
+  loadFacultyProfile,
 }: OperationalWorkspaceProps) {
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => repositories.sessionPreferences.getThemeSnapshot() ?? normalizeThemeMode(null))
   const [isCompactTopbar, setIsCompactTopbar] = useState(() => window.innerWidth < 980)
@@ -1950,6 +2103,9 @@ function OperationalWorkspace({
   const restoringRouteRef = useRef(false)
   const [taskComposer, setTaskComposer] = useState<TaskComposerState>({ isOpen: false, step: 'details', taskType: 'Follow-up', dueDateISO: '', note: '', search: '' })
   const [pendingNoteAction, setPendingNoteAction] = useState<NoteActionState | null>(null)
+  const [facultyProfile, setFacultyProfile] = useState<ApiAcademicFacultyProfile | null>(null)
+  const [facultyProfileLoading, setFacultyProfileLoading] = useState(false)
+  const [facultyProfileError, setFacultyProfileError] = useState('')
   const [studentPatches, setStudentPatches] = useState<Record<string, StudentRuntimePatch>>(() => repositories.entryData.getStudentPatchesSnapshot())
   const [schemeByOffering, setSchemeByOffering] = useState<Record<string, SchemeState>>(() => repositories.entryData.getSchemeStateSnapshot(OFFERINGS))
   const [ttBlueprintsByOffering, setTtBlueprintsByOffering] = useState<Record<string, Record<TTKind, TermTestBlueprint>>>(() => repositories.entryData.getBlueprintSnapshot(OFFERINGS))
@@ -1961,6 +2117,35 @@ function OperationalWorkspace({
   useEffect(() => {
     setCurrentTeacherId(initialTeacherId)
   }, [initialTeacherId])
+  useEffect(() => {
+    if (!currentTeacher?.facultyId || !loadFacultyProfile) {
+      setFacultyProfile(null)
+      setFacultyProfileError('')
+      setFacultyProfileLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setFacultyProfileLoading(true)
+    setFacultyProfileError('')
+    void loadFacultyProfile(currentTeacher.facultyId)
+      .then(profile => {
+        if (!cancelled) setFacultyProfile(profile)
+      })
+      .catch(error => {
+        if (!cancelled) {
+          setFacultyProfile(null)
+          setFacultyProfileError(error instanceof Error ? error.message : 'Could not load the faculty profile.')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setFacultyProfileLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [currentTeacher?.facultyId, loadFacultyProfile])
   useEffect(() => {
     if (!allowedRoles.includes(initialRole)) return
     setRole(initialRole)
@@ -3752,6 +3937,13 @@ function OperationalWorkspace({
                     <div style={{ ...mono, fontSize: 9, color: T.dim }}>{role}</div>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setPage('faculty-profile')}
+                  style={{ width: '100%', marginBottom: 12, borderRadius: 8, border: `1px solid ${page === 'faculty-profile' ? T.accent : T.border}`, background: page === 'faculty-profile' ? `${T.accent}14` : T.surface2, color: page === 'faculty-profile' ? T.accentLight : T.muted, cursor: 'pointer', padding: '8px 10px', textAlign: 'left', ...mono, fontSize: 10 }}
+                >
+                  Faculty Profile
+                </button>
 
                 {/* Nav */}
                 <nav>
@@ -3843,6 +4035,19 @@ function OperationalWorkspace({
         {/* Center Content */}
         <div className={`scroll-pane app-content app-content--${layoutMode}`} style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: 'calc(100vh - 54px)' }}>
           <Suspense fallback={<RouteLoadingFallback label={routeLoadingLabel} />}>
+            {page === 'faculty-profile' && (
+              <FacultyProfilePage
+                currentTeacher={currentTeacher}
+                activeRole={role}
+                profile={facultyProfile}
+                loading={facultyProfileLoading}
+                error={facultyProfileError}
+                pendingTaskCount={pendingActionCount}
+                assignedOfferings={assignedOfferings}
+                currentFacultyTimetable={currentFacultyTimetable}
+                onBack={handleNavigateBack}
+              />
+            )}
             {role === 'Course Leader' && page === 'dashboard' && <CLDashboard offerings={assignedOfferings} pendingTaskCount={pendingActionCount} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} onOpenAllStudents={handleOpenAllStudents} onOpenCalendar={handleOpenCalendar} onOpenPendingActions={handleToggleActionQueue} teacherInitials={currentTeacher.initials} greetingHeadline={greetingHeadline} greetingMeta={greetingMeta} />}
             {role === 'Course Leader' && page === 'students' && <LazyAllStudentsPage offerings={assignedOfferings} onBack={handleNavigateBack} onOpenStudent={handleOpenStudent} onOpenHistory={handleOpenHistoryFromStudent} onOpenUpload={handleOpenUpload} />}
             {role === 'Course Leader' && page === 'course' && offering && <LazyCourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? { tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default), tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default) }} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleNavigateBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
@@ -3953,7 +4158,13 @@ export function OperationalApp() {
   const [authError, setAuthError] = useState('')
   const [remoteSession, setRemoteSession] = useState<ApiSessionResponse | null>(null)
   const [remoteBootstrap, setRemoteBootstrap] = useState<ApiAcademicBootstrap | null>(null)
-  const [loginFaculty, setLoginFaculty] = useState<Array<{ facultyId: string; name: string }>>(() => FACULTY.map(faculty => ({ facultyId: faculty.facultyId, name: faculty.name })))
+  const [loginFaculty, setLoginFaculty] = useState<ApiAcademicLoginFaculty[]>(() => FACULTY.map(faculty => ({
+    facultyId: faculty.facultyId,
+    name: faculty.name,
+    dept: faculty.dept,
+    roleTitle: faculty.roleTitle,
+    allowedRoles: faculty.allowedRoles,
+  })))
   const [localTeacherId, setLocalTeacherId] = useState<string | null>(() => localRepositories.sessionPreferences.getCurrentFacultyIdSnapshot())
 
   const fetchAcademicBootstrap = useCallback(async () => {
@@ -3961,7 +4172,13 @@ export function OperationalApp() {
     const snapshot = await apiClient.getAcademicBootstrap()
     hydrateAcademicData(snapshot)
     setRemoteBootstrap(snapshot)
-    setLoginFaculty(snapshot.faculty.map(account => ({ facultyId: account.facultyId, name: account.name })))
+    setLoginFaculty(snapshot.faculty.map(account => ({
+      facultyId: account.facultyId,
+      name: account.name,
+      dept: account.dept,
+      roleTitle: account.roleTitle,
+      allowedRoles: account.allowedRoles,
+    })))
     return snapshot
   }, [apiClient])
 
@@ -3981,7 +4198,7 @@ export function OperationalApp() {
         ])
         if (cancelled) return
         if (publicFaculty?.items?.length) {
-          setLoginFaculty(publicFaculty.items.map(account => ({ facultyId: account.facultyId, name: account.name })))
+          setLoginFaculty(publicFaculty.items)
         }
         const restoredRole = restoredSession ? mapApiRoleToRole(restoredSession.activeRoleGrant.roleCode) : null
         if (restoredSession?.faculty?.facultyId && restoredRole) {
@@ -4095,6 +4312,7 @@ export function OperationalApp() {
         initialRole={remoteInitialRole}
         onLogout={handleRemoteLogout}
         onRoleChange={handleRemoteRoleChange}
+        loadFacultyProfile={facultyId => apiClient!.getAcademicFacultyProfile(facultyId)}
       />
     )
   }
