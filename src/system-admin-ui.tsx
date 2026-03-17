@@ -22,11 +22,14 @@ import type { ThemeMode } from './domain'
 
 export type AdminSectionId = 'overview' | 'faculties' | 'students' | 'faculty-members' | 'requests'
 
-export const readOnlyInputStyle: CSSProperties = {
-  background: T.surface3,
-  color: T.dim,
-  cursor: 'default',
-  pointerEvents: 'none' as const,
+export function getReadOnlyInputStyle(): CSSProperties {
+  return {
+    background: T.surface2,
+    color: T.dim,
+    cursor: 'default',
+    pointerEvents: 'none' as const,
+    boxShadow: `inset 0 1px 0 ${T.surface3}`,
+  }
 }
 
 export const TOP_TABS: Array<{ id: AdminSectionId; label: string; icon: typeof Building2 }> = [
@@ -410,6 +413,10 @@ export function EntityButton({ selected, onClick, children, style: extraStyle }:
         border: `1px solid ${selected ? T.accent : T.border}`,
         background: selected ? `linear-gradient(180deg, ${T.accent}16, ${T.surface})` : `linear-gradient(180deg, ${T.surface}, ${T.surface2})`,
         padding: '14px 15px',
+        minHeight: 74,
+        display: 'grid',
+        alignContent: 'start',
+        gap: 6,
         cursor: 'pointer',
         width: '100%',
         ...extraStyle,

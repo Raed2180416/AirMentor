@@ -89,7 +89,7 @@ import {
   TOP_TABS,
   formatDate,
   formatDateTime,
-  readOnlyInputStyle,
+  getReadOnlyInputStyle,
   type BreadcrumbSegment,
 } from './system-admin-ui'
 import type { LiveAdminSectionId } from './system-admin-live-data'
@@ -1041,6 +1041,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const [searchQuery, setSearchQuery] = useState('')
   const [serverSearchResults, setServerSearchResults] = useState<ApiAdminSearchResult[]>([])
   const [showActionQueue, setShowActionQueue] = useState(true)
+  const [viewportWidth, setViewportWidth] = useState(() => typeof window === 'undefined' ? 1440 : window.innerWidth)
   const [remindersSupported, setRemindersSupported] = useState(true)
   const [universityTab, setUniversityTab] = useState<UniversityTab>('overview')
   const [selectedSectionCode, setSelectedSectionCode] = useState<string | null>(null)
@@ -1112,6 +1113,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const deferredSearch = useDeferredValue(searchQuery)
 
   applyThemePreset(themeMode)
+  const readOnlyInputStyle = getReadOnlyInputStyle()
 
   const persistTheme = useCallback((nextMode: ThemeMode) => {
     setThemeMode(nextMode)
@@ -1254,6 +1256,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     if (typeof window === 'undefined') return
     window.localStorage.setItem(ADMIN_DISMISSED_QUEUE_STORAGE_KEY, JSON.stringify(dismissedQueueItemKeys))
   }, [dismissedQueueItemKeys])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onResize = () => setViewportWidth(window.innerWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -3149,6 +3158,14 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const universityWorkspaceTabCards = selectedBatch
     ? universityTabOptions.filter(item => item.id !== 'overview')
     : []
+  const showInlineActionQueue = showActionQueue && viewportWidth >= 1480
+  const registryPageColumns = viewportWidth < 1180 ? 'minmax(0, 1fr)' : 'minmax(360px, 460px) minmax(0, 1fr)'
+  const universityWorkspaceColumns = viewportWidth < 1220 ? 'minmax(0, 1fr)' : '260px minmax(0, 1fr)'
+  const registryFilterColumns = viewportWidth < 760
+    ? 'minmax(0, 1fr)'
+    : viewportWidth < 1120
+      ? 'repeat(2, minmax(0, 1fr))'
+      : 'repeat(auto-fit, minmax(140px, 1fr))'
   const getUniversityCourseLeaders = (courseCode: string) => {
     const leaderNames = data.ownerships.flatMap(ownership => {
       if (ownership.status !== 'active' || !isLeaderLikeOwnership(ownership.ownershipRole)) return []
@@ -3404,7 +3421,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         onLogout={handleLogout}
       />
 
-      <div style={{ display: 'grid', gridTemplateColumns: showActionQueue ? 'minmax(0,1fr) 320px' : 'minmax(0,1fr)', gap: 0, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: showInlineActionQueue ? 'minmax(0,1fr) 320px' : 'minmax(0,1fr)', gap: 0, alignItems: 'start' }}>
       <PageShell size="wide" style={{ display: 'grid', gap: 18, paddingTop: 22, paddingBottom: 34 }}>
         {flashMessage ? <InfoBanner tone="success" message={flashMessage} /> : null}
         {actionError ? <InfoBanner tone="error" message={actionError} /> : null}
@@ -3573,7 +3590,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               </div>
             </Card>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: universityWorkspaceColumns, gap: 16 }}>
             {/* Tree explorer */}
             <Card style={{ padding: 16, display: 'grid', gap: 12, alignContent: 'start', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
@@ -3727,7 +3744,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               ) : null}
 
               {selectedAcademicFaculty && !selectedDepartment && (
-                <Card style={{ padding: 18 }}>
+                <Card style={{ padding: 18, display: 'grid', gap: 16 }}>
                   <SectionHeading
                     title={selectedAcademicFaculty.name}
                     eyebrow="Academic Faculty"
@@ -3750,23 +3767,55 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                       <AdminMiniStat label="Courses" value={String(selectedAcademicFacultyImpact.courses)} tone={T.orange} />
                     </div>
                   ) : null}
-                  <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 14, lineHeight: 1.8 }}>
-                    Archive hides this faculty scope from day-to-day sysadmin views without making you remap departments first. Delete sends the faculty to the recycle bin and removes the whole scope from working views.
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    <div style={{ ...mono, fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Overview</div>
+                    <Card style={{ padding: 14, background: T.surface2 }}>
+                      <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.9 }}>
+                        {selectedAcademicFaculty.overview?.trim() || 'No faculty overview has been added yet.'}
+                      </div>
+                    </Card>
                   </div>
-                  <form onSubmit={handleUpdateAcademicFaculty} style={{ display: 'grid', gap: 10, marginTop: 18 }}>
-                    <div><FieldLabel>Faculty Code</FieldLabel><TextInput aria-label="Faculty Code" value={entityEditors.academicFaculty.code} readOnly onChange={event => setEntityEditors(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, code: event.target.value } }))} placeholder="ENG" style={readOnlyInputStyle} /></div>
-                    <div><FieldLabel>Faculty Name</FieldLabel><TextInput aria-label="Faculty Name" value={entityEditors.academicFaculty.name} readOnly onChange={event => setEntityEditors(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, name: event.target.value } }))} placeholder="Engineering and Technology" style={readOnlyInputStyle} /></div>
-                    <div><FieldLabel>Overview</FieldLabel><TextAreaInput aria-label="Faculty Overview" value={entityEditors.academicFaculty.overview} readOnly onChange={event => setEntityEditors(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, overview: event.target.value } }))} rows={3} placeholder="Overview" style={readOnlyInputStyle} /></div>
-                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                      <Btn type="button" onClick={() => setEditingEntity('academic-faculty')}>Edit Faculty</Btn>
-                      {selectedAcademicFaculty.status === 'archived'
-                        ? <Btn type="button" variant="ghost" onClick={() => void handleRestoreAcademicFaculty()}>Restore Faculty</Btn>
-                        : <Btn type="button" variant="ghost" onClick={() => void handleArchiveAcademicFaculty()}>Archive Faculty</Btn>}
-                      <Btn type="button" variant="danger" onClick={() => void handleDeleteAcademicFaculty()}>Delete Faculty</Btn>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <Btn type="button" size="sm" onClick={() => setEditingEntity('academic-faculty')}>Edit Faculty</Btn>
+                  </div>
+                  {selectedAcademicFaculty.status === 'archived' ? null : facultyDepartments.length > 0 ? (
+                    <div style={{ display: 'grid', gap: 10 }}>
+                      <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Departments</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
+                        {facultyDepartments.map(department => {
+                          const previewBranches = listBranchesForDepartment(data, department.departmentId).sort((left, right) => left.name.localeCompare(right.name))
+                          return (
+                            <Card key={department.departmentId} style={{ padding: 14, background: T.surface2 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                                <div>
+                                  <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>{department.name}</div>
+                                  <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{department.code} · {previewBranches.length} branches</div>
+                                </div>
+                                <Btn type="button" size="sm" variant="ghost" onClick={() => navigate({ section: 'faculties', academicFacultyId: selectedAcademicFaculty.academicFacultyId, departmentId: department.departmentId })}>Open</Btn>
+                              </div>
+                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+                                {previewBranches.slice(0, 4).map(branch => (
+                                  <button
+                                    key={branch.branchId}
+                                    type="button"
+                                    data-pressable="true"
+                                    onClick={() => navigate({ section: 'faculties', academicFacultyId: selectedAcademicFaculty.academicFacultyId, departmentId: department.departmentId, branchId: branch.branchId })}
+                                    style={{ ...mono, fontSize: 10, borderRadius: 999, border: `1px solid ${T.border}`, background: T.surface, color: T.muted, padding: '6px 10px', cursor: 'pointer' }}
+                                  >
+                                    {branch.name}
+                                  </button>
+                                ))}
+                                {previewBranches.length > 4 ? <Chip color={T.dim}>+{previewBranches.length - 4} more</Chip> : null}
+                                {previewBranches.length === 0 ? <span style={{ ...mono, fontSize: 10, color: T.dim }}>No branches yet.</span> : null}
+                              </div>
+                            </Card>
+                          )
+                        })}
+                      </div>
                     </div>
-                  </form>
+                  ) : null}
                   {selectedAcademicFaculty.status === 'archived' ? null : (
-                    <form onSubmit={handleCreateDepartment} style={{ display: 'grid', gap: 10, marginTop: 18, borderTop: `1px solid ${T.border}`, paddingTop: 18 }}>
+                    <form onSubmit={handleCreateDepartment} style={{ display: 'grid', gap: 10, borderTop: `1px solid ${T.border}`, paddingTop: 18 }}>
                       <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Add Department</div>
                       <div><FieldLabel>Department Code</FieldLabel><TextInput value={structureForms.department.code} onChange={event => setStructureForms(prev => ({ ...prev, department: { ...prev.department, code: event.target.value } }))} placeholder="CSE" /></div>
                       <div><FieldLabel>Department Name</FieldLabel><TextInput value={structureForms.department.name} onChange={event => setStructureForms(prev => ({ ...prev, department: { ...prev.department, name: event.target.value } }))} placeholder="Computer Science and Engineering" /></div>
@@ -3777,21 +3826,52 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               )}
 
               {selectedDepartment && !selectedBranch && (
-                <Card style={{ padding: 18 }}>
+                <Card style={{ padding: 18, display: 'grid', gap: 16 }}>
                   <SectionHeading title={selectedDepartment.name} eyebrow="Department" caption="Edit the department record, then create or reorganize the branches it owns." />
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
                     <Chip color={T.accent}>{selectedDepartment.code}</Chip>
                     <Chip color={T.success}>{departmentBranches.length} branches</Chip>
                   </div>
-                  <form onSubmit={handleUpdateDepartment} style={{ display: 'grid', gap: 10, marginTop: 18 }}>
-                    <div><FieldLabel>Department Code</FieldLabel><TextInput aria-label="Department Code" value={entityEditors.department.code} readOnly onChange={event => setEntityEditors(prev => ({ ...prev, department: { ...prev.department, code: event.target.value } }))} placeholder="CSE" style={readOnlyInputStyle} /></div>
-                    <div><FieldLabel>Department Name</FieldLabel><TextInput aria-label="Department Name" value={entityEditors.department.name} readOnly onChange={event => setEntityEditors(prev => ({ ...prev, department: { ...prev.department, name: event.target.value } }))} placeholder="Computer Science and Engineering" style={readOnlyInputStyle} /></div>
-                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                      <Btn type="button" onClick={() => setEditingEntity('department')}>Edit Department</Btn>
-                      <Btn type="button" variant="danger" onClick={() => void handleArchiveDepartment()}>Archive Department</Btn>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <Btn type="button" size="sm" onClick={() => setEditingEntity('department')}>Edit Department</Btn>
+                  </div>
+                  {departmentBranches.length > 0 ? (
+                    <div style={{ display: 'grid', gap: 10 }}>
+                      <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Branches</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
+                        {departmentBranches.map(branch => {
+                          const previewBatches = listBatchesForBranch(data, branch.branchId).sort((left, right) => left.admissionYear - right.admissionYear)
+                          return (
+                            <Card key={branch.branchId} style={{ padding: 14, background: T.surface2 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                                <div>
+                                  <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>{branch.name}</div>
+                                  <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{branch.code} · {branch.programLevel} · {previewBatches.length} years</div>
+                                </div>
+                                <Btn type="button" size="sm" variant="ghost" onClick={() => navigate({ section: 'faculties', academicFacultyId: selectedAcademicFaculty?.academicFacultyId, departmentId: selectedDepartment.departmentId, branchId: branch.branchId })}>Open</Btn>
+                              </div>
+                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+                                {previewBatches.slice(0, 4).map(batch => (
+                                  <button
+                                    key={batch.batchId}
+                                    type="button"
+                                    data-pressable="true"
+                                    onClick={() => navigate({ section: 'faculties', academicFacultyId: selectedAcademicFaculty?.academicFacultyId, departmentId: selectedDepartment.departmentId, branchId: branch.branchId, batchId: batch.batchId })}
+                                    style={{ ...mono, fontSize: 10, borderRadius: 999, border: `1px solid ${T.border}`, background: T.surface, color: T.muted, padding: '6px 10px', cursor: 'pointer' }}
+                                  >
+                                    {deriveCurrentYearLabel(batch.currentSemester)}
+                                  </button>
+                                ))}
+                                {previewBatches.length > 4 ? <Chip color={T.dim}>+{previewBatches.length - 4} more</Chip> : null}
+                                {previewBatches.length === 0 ? <span style={{ ...mono, fontSize: 10, color: T.dim }}>No years yet.</span> : null}
+                              </div>
+                            </Card>
+                          )
+                        })}
+                      </div>
                     </div>
-                  </form>
-                  <form onSubmit={handleCreateBranch} style={{ display: 'grid', gap: 10, marginTop: 18, borderTop: `1px solid ${T.border}`, paddingTop: 18 }}>
+                  ) : null}
+                  <form onSubmit={handleCreateBranch} style={{ display: 'grid', gap: 10, borderTop: `1px solid ${T.border}`, paddingTop: 18 }}>
                     <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Add Branch</div>
                     <div><FieldLabel>Branch Code</FieldLabel><TextInput value={structureForms.branch.code} onChange={event => setStructureForms(prev => ({ ...prev, branch: { ...prev.branch, code: event.target.value } }))} placeholder="CSE-AI" /></div>
                     <div><FieldLabel>Branch Name</FieldLabel><TextInput value={structureForms.branch.name} onChange={event => setStructureForms(prev => ({ ...prev, branch: { ...prev.branch, name: event.target.value } }))} placeholder="AI and Data Science" /></div>
@@ -3805,26 +3885,41 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               )}
 
               {selectedBranch && !selectedBatch && (
-                <Card style={{ padding: 18 }}>
+                <Card style={{ padding: 18, display: 'grid', gap: 16 }}>
                   <SectionHeading title={selectedBranch.name} eyebrow="Branch" caption="Edit core branch metadata, then add or maintain the batch versions that inherit from it." />
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
                     <Chip color={T.accent}>{selectedBranch.code}</Chip>
                     <Chip color={T.warning}>{selectedBranch.programLevel}</Chip>
                     <Chip color={T.success}>{branchBatches.length} batches</Chip>
                   </div>
-                  <form onSubmit={handleUpdateBranch} style={{ display: 'grid', gap: 10, marginTop: 18 }}>
-                    <div><FieldLabel>Branch Code</FieldLabel><TextInput aria-label="Branch Code" value={entityEditors.branch.code} readOnly onChange={event => setEntityEditors(prev => ({ ...prev, branch: { ...prev.branch, code: event.target.value } }))} placeholder="CSE-AI" style={readOnlyInputStyle} /></div>
-                    <div><FieldLabel>Branch Name</FieldLabel><TextInput aria-label="Branch Name" value={entityEditors.branch.name} readOnly onChange={event => setEntityEditors(prev => ({ ...prev, branch: { ...prev.branch, name: event.target.value } }))} placeholder="AI and Data Science" style={readOnlyInputStyle} /></div>
-                    <div><FieldLabel>Program Level</FieldLabel><SelectInput aria-label="Branch Program Level" value={entityEditors.branch.programLevel} disabled onChange={event => setEntityEditors(prev => ({ ...prev, branch: { ...prev.branch, programLevel: event.target.value } }))} style={readOnlyInputStyle}>
-                      <option value="UG">UG</option><option value="PG">PG</option>
-                    </SelectInput></div>
-                    <div><FieldLabel>Semester Count</FieldLabel><TextInput aria-label="Branch Semester Count" value={entityEditors.branch.semesterCount} readOnly onChange={event => setEntityEditors(prev => ({ ...prev, branch: { ...prev.branch, semesterCount: event.target.value } }))} placeholder="8" style={readOnlyInputStyle} /></div>
-                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                      <Btn type="button" onClick={() => setEditingEntity('branch')}>Edit Branch</Btn>
-                      <Btn type="button" variant="danger" onClick={() => void handleArchiveBranch()}>Archive Branch</Btn>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                    {selectedBranch.semesterCount} semesters configured in this branch. Use the edit dialog for branch metadata or jump directly into a year below.
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <Btn type="button" size="sm" onClick={() => setEditingEntity('branch')}>Edit Branch</Btn>
+                  </div>
+                  {branchBatches.length > 0 ? (
+                    <div style={{ display: 'grid', gap: 10 }}>
+                      <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Years</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+                        {branchBatches.map(batch => (
+                          <Card key={batch.batchId} style={{ padding: 14, background: T.surface2 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                              <div>
+                                <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>{deriveCurrentYearLabel(batch.currentSemester)}</div>
+                                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>Batch {batch.batchLabel} · sem {batch.currentSemester}</div>
+                              </div>
+                              <Btn type="button" size="sm" variant="ghost" onClick={() => navigate({ section: 'faculties', academicFacultyId: selectedAcademicFaculty?.academicFacultyId, departmentId: selectedDepartment?.departmentId, branchId: selectedBranch.branchId, batchId: batch.batchId })}>Open</Btn>
+                            </div>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+                              {batch.sectionLabels.map(sectionCode => <Chip key={sectionCode} color={T.accent}>{sectionCode}</Chip>)}
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
                     </div>
-                  </form>
-                  <form onSubmit={handleCreateBatch} style={{ display: 'grid', gap: 10, marginTop: 18, borderTop: `1px solid ${T.border}`, paddingTop: 18 }}>
+                  ) : null}
+                  <form onSubmit={handleCreateBatch} style={{ display: 'grid', gap: 10, borderTop: `1px solid ${T.border}`, paddingTop: 18 }}>
                     <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Add Batch</div>
                     <div><FieldLabel>Admission Year</FieldLabel><TextInput value={structureForms.batch.admissionYear} onChange={event => setStructureForms(prev => ({ ...prev, batch: { ...prev.batch, admissionYear: event.target.value, batchLabel: event.target.value } }))} placeholder="2022" /></div>
                     <div><FieldLabel>Active Semester</FieldLabel><TextInput value={structureForms.batch.currentSemester} onChange={event => setStructureForms(prev => ({ ...prev, batch: { ...prev.batch, currentSemester: event.target.value } }))} placeholder="5" /></div>
@@ -3835,7 +3930,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               )}
 
               {selectedBatch && universityTab === 'overview' && (
-                <Card style={{ padding: 18 }}>
+                <Card style={{ padding: 18, display: 'grid', gap: 16 }}>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
                     <Chip color={T.success}>Batch {selectedBatch.batchLabel}</Chip>
                     <Chip color={T.accent}>Sem {selectedBatch.currentSemester}</Chip>
@@ -3844,24 +3939,33 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </div>
 
                   <SectionHeading title="Batch Configuration" eyebrow="Settings" caption="Edit the batch identity, active semester, and sections before adjusting policy, terms, or curriculum." />
-                  <form onSubmit={handleUpdateBatch} style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', marginTop: 14 }}>
-                    <div><FieldLabel>Admission Year</FieldLabel><TextInput aria-label="Batch Admission Year" value={entityEditors.batch.admissionYear} readOnly onChange={event => setEntityEditors(prev => ({ ...prev, batch: { ...prev.batch, admissionYear: event.target.value } }))} style={readOnlyInputStyle} /></div>
-                    <div><FieldLabel>Batch Label</FieldLabel><TextInput aria-label="Batch Label" value={entityEditors.batch.batchLabel} readOnly onChange={event => setEntityEditors(prev => ({ ...prev, batch: { ...prev.batch, batchLabel: event.target.value } }))} style={readOnlyInputStyle} /></div>
-                    <div><FieldLabel>Active Semester</FieldLabel><TextInput aria-label="Batch Active Semester" value={entityEditors.batch.currentSemester} readOnly onChange={event => setEntityEditors(prev => ({ ...prev, batch: { ...prev.batch, currentSemester: event.target.value } }))} style={readOnlyInputStyle} /></div>
-                    <div><FieldLabel>Section Labels</FieldLabel><TextInput aria-label="Batch Section Labels" value={entityEditors.batch.sectionLabels} readOnly onChange={event => setEntityEditors(prev => ({ ...prev, batch: { ...prev.batch, sectionLabels: event.target.value } }))} placeholder="A, B" style={readOnlyInputStyle} /></div>
-                    <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                      <Btn type="button" onClick={() => setEditingEntity('batch')}>Edit Batch</Btn>
-                      <Btn type="button" variant="danger" onClick={() => void handleArchiveBatch()}>Archive Batch</Btn>
-                    </div>
-                  </form>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+                    <Card style={{ padding: 14, background: T.surface2 }}>
+                      <div style={{ ...mono, fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Admission Year</div>
+                      <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedBatch.admissionYear}</div>
+                    </Card>
+                    <Card style={{ padding: 14, background: T.surface2 }}>
+                      <div style={{ ...mono, fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Active Semester</div>
+                      <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedBatch.currentSemester}</div>
+                    </Card>
+                    <Card style={{ padding: 14, background: T.surface2 }}>
+                      <div style={{ ...mono, fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Sections</div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                        {selectedBatch.sectionLabels.map(sectionCode => <Chip key={sectionCode} color={T.accent}>{sectionCode}</Chip>)}
+                      </div>
+                    </Card>
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <Btn type="button" size="sm" onClick={() => setEditingEntity('batch')}>Edit Batch</Btn>
+                  </div>
 
                   {resolvedBatchPolicy ? (
-                    <div style={{ marginTop: 18 }}>
+                    <div>
                       <InfoBanner message={`Resolved from ${resolvedBatchPolicy.scopeChain.map(item => item.scopeType).join(' -> ')}. Applied overrides: ${resolvedBatchPolicy.appliedOverrides.map(item => item.scopeType).join(', ') || 'institution default only'}.`} />
                     </div>
                   ) : null}
 
-                  <div style={{ marginTop: 18 }}>
+                  <div>
                     <SectionHeading title="Batch Policy Override" eyebrow="Governance" caption="Adjust grading bands and operational limits here, or reset the batch back to inherited defaults." />
                   </div>
 
@@ -4174,95 +4278,99 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
         {/* ========== STUDENTS ========== */}
         {route.section === 'students' && (
-          <div className="fade-up" style={{ display: 'grid', gap: 16, gridTemplateColumns: 'minmax(320px, 410px) minmax(420px, 1fr)' }}>
-            <Card style={{ padding: 18, display: 'grid', gap: 12, alignContent: 'start', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
+          <div className="fade-up" style={{ display: 'grid', gap: 16, gridTemplateColumns: registryPageColumns }}>
+            <Card style={{ padding: 18, display: 'grid', gap: 12, gridTemplateRows: 'auto auto minmax(0, 1fr)', alignContent: 'start', maxHeight: 'calc(100vh - 200px)', overflow: 'hidden' }}>
               <SectionHeading
                 title="Students"
                 eyebrow="Registry"
                 caption={registryScope ? `Canonical identity, enrollment correction, mentor linkage, promotion review, and audit history. Filtered to ${registryScope.label}.` : 'Canonical identity, enrollment correction, mentor linkage, promotion review, and audit history.'}
                 toneColor={ADMIN_SECTION_TONES.students}
               />
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <Btn type="button" onClick={() => { navigate({ section: 'students' }); resetStudentEditors() }}><Plus size={14} /> New Student</Btn>
-                <Chip color={T.accent}>{studentRegistryItems.length} active</Chip>
-                <Chip color={T.warning}>{studentRegistryItems.filter(item => !item.activeMentorAssignment).length} mentor gaps</Chip>
-                {registryScope ? <Chip color={ADMIN_SECTION_TONES.students}>{registryScope.label}</Chip> : null}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
-                <div>
-                  <FieldLabel>Faculty</FieldLabel>
-                  <SelectInput value={effectiveStudentRegistryFilter.academicFacultyId} onChange={event => setStudentRegistryFilter({
-                    academicFacultyId: event.target.value,
-                    departmentId: '',
-                    branchId: '',
-                    batchId: '',
-                    sectionCode: '',
-                  })}>
-                    <option value="">All Faculties</option>
-                    {visibleAcademicFaculties.map(item => <option key={item.academicFacultyId} value={item.academicFacultyId}>{item.name}</option>)}
-                  </SelectInput>
+              <div style={{ display: 'grid', gap: 12 }}>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <Btn type="button" onClick={() => { navigate({ section: 'students' }); resetStudentEditors() }}><Plus size={14} /> New Student</Btn>
+                  <Chip color={T.accent}>{studentRegistryItems.length} active</Chip>
+                  <Chip color={T.warning}>{studentRegistryItems.filter(item => !item.activeMentorAssignment).length} mentor gaps</Chip>
+                  {registryScope ? <Chip color={ADMIN_SECTION_TONES.students}>{registryScope.label}</Chip> : null}
                 </div>
-                <div>
-                  <FieldLabel>Department</FieldLabel>
-                  <SelectInput value={effectiveStudentRegistryFilter.departmentId} onChange={event => setStudentRegistryFilter(prev => ({
-                    ...prev,
-                    departmentId: event.target.value,
-                    branchId: '',
-                    batchId: '',
-                    sectionCode: '',
-                  }))}>
-                    <option value="">All Departments</option>
-                    {studentFilterDepartments.map(item => <option key={item.departmentId} value={item.departmentId}>{item.name}</option>)}
-                  </SelectInput>
-                </div>
-                <div>
-                  <FieldLabel>Branch</FieldLabel>
-                  <SelectInput value={effectiveStudentRegistryFilter.branchId} onChange={event => setStudentRegistryFilter(prev => ({
-                    ...prev,
-                    branchId: event.target.value,
-                    batchId: '',
-                    sectionCode: '',
-                  }))}>
-                    <option value="">All Branches</option>
-                    {studentFilterBranches.map(item => <option key={item.branchId} value={item.branchId}>{item.name}</option>)}
-                  </SelectInput>
-                </div>
-                <div>
-                  <FieldLabel>Year</FieldLabel>
-                  <SelectInput value={effectiveStudentRegistryFilter.batchId} onChange={event => setStudentRegistryFilter(prev => ({
-                    ...prev,
-                    batchId: event.target.value,
-                    sectionCode: '',
-                  }))}>
-                    <option value="">All Years</option>
-                    {studentFilterBatches.map(item => <option key={item.batchId} value={item.batchId}>{deriveCurrentYearLabel(item.currentSemester)} · {item.batchLabel}</option>)}
-                  </SelectInput>
-                </div>
-                <div>
-                  <FieldLabel>Section</FieldLabel>
-                  <SelectInput value={effectiveStudentRegistryFilter.sectionCode} onChange={event => setStudentRegistryFilter(prev => ({ ...prev, sectionCode: event.target.value }))}>
-                    <option value="">All Sections</option>
-                    {studentFilterSections.map(sectionCode => <option key={sectionCode} value={sectionCode}>{sectionCode}</option>)}
-                  </SelectInput>
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <Btn type="button" variant="ghost" onClick={() => setStudentRegistryFilter(hydrateRegistryFilter(registryScope))}>Reset Filters</Btn>
-                <Btn type="button" variant="ghost" onClick={() => handleOpenFullRegistry('students')}>Open Complete Page</Btn>
-              </div>
-              {studentRegistryItems.map(student => (
-                <EntityButton key={student.studentId} selected={route.studentId === student.studentId} onClick={() => navigate({ section: 'students', studentId: student.studentId })}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
-                    <div>
-                      <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{student.name}</div>
-                      <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{student.usn} · {student.activeAcademicContext?.branchName ?? 'No branch mapped'}</div>
-                    </div>
-                    <Chip color={student.activeMentorAssignment ? T.success : T.warning} size={9}>{student.activeMentorAssignment ? 'Mentored' : 'Mentor missing'}</Chip>
+                <div style={{ display: 'grid', gridTemplateColumns: registryFilterColumns, gap: 10 }}>
+                  <div>
+                    <FieldLabel>Faculty</FieldLabel>
+                    <SelectInput value={effectiveStudentRegistryFilter.academicFacultyId} onChange={event => setStudentRegistryFilter({
+                      academicFacultyId: event.target.value,
+                      departmentId: '',
+                      branchId: '',
+                      batchId: '',
+                      sectionCode: '',
+                    })}>
+                      <option value="">All Faculties</option>
+                      {visibleAcademicFaculties.map(item => <option key={item.academicFacultyId} value={item.academicFacultyId}>{item.name}</option>)}
+                    </SelectInput>
                   </div>
-                  <div style={{ ...mono, fontSize: 10, color: T.success, marginTop: 6 }}>CGPA {student.currentCgpa.toFixed(2)} · Semester {student.activeAcademicContext?.semesterNumber ?? '—'} · Section {student.activeAcademicContext?.sectionCode ?? '—'}</div>
-                </EntityButton>
-              ))}
-              {studentRegistryItems.length === 0 ? <InfoBanner message="No active students yet. Create the first student record from this panel." /> : null}
+                  <div>
+                    <FieldLabel>Department</FieldLabel>
+                    <SelectInput value={effectiveStudentRegistryFilter.departmentId} onChange={event => setStudentRegistryFilter(prev => ({
+                      ...prev,
+                      departmentId: event.target.value,
+                      branchId: '',
+                      batchId: '',
+                      sectionCode: '',
+                    }))}>
+                      <option value="">All Departments</option>
+                      {studentFilterDepartments.map(item => <option key={item.departmentId} value={item.departmentId}>{item.name}</option>)}
+                    </SelectInput>
+                  </div>
+                  <div>
+                    <FieldLabel>Branch</FieldLabel>
+                    <SelectInput value={effectiveStudentRegistryFilter.branchId} onChange={event => setStudentRegistryFilter(prev => ({
+                      ...prev,
+                      branchId: event.target.value,
+                      batchId: '',
+                      sectionCode: '',
+                    }))}>
+                      <option value="">All Branches</option>
+                      {studentFilterBranches.map(item => <option key={item.branchId} value={item.branchId}>{item.name}</option>)}
+                    </SelectInput>
+                  </div>
+                  <div>
+                    <FieldLabel>Year</FieldLabel>
+                    <SelectInput value={effectiveStudentRegistryFilter.batchId} onChange={event => setStudentRegistryFilter(prev => ({
+                      ...prev,
+                      batchId: event.target.value,
+                      sectionCode: '',
+                    }))}>
+                      <option value="">All Years</option>
+                      {studentFilterBatches.map(item => <option key={item.batchId} value={item.batchId}>{deriveCurrentYearLabel(item.currentSemester)} · {item.batchLabel}</option>)}
+                    </SelectInput>
+                  </div>
+                  <div>
+                    <FieldLabel>Section</FieldLabel>
+                    <SelectInput value={effectiveStudentRegistryFilter.sectionCode} onChange={event => setStudentRegistryFilter(prev => ({ ...prev, sectionCode: event.target.value }))}>
+                      <option value="">All Sections</option>
+                      {studentFilterSections.map(sectionCode => <option key={sectionCode} value={sectionCode}>{sectionCode}</option>)}
+                    </SelectInput>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <Btn type="button" variant="ghost" onClick={() => setStudentRegistryFilter(hydrateRegistryFilter(registryScope))}>Reset Filters</Btn>
+                  <Btn type="button" variant="ghost" onClick={() => handleOpenFullRegistry('students')}>Open Complete Page</Btn>
+                </div>
+              </div>
+              <div className="scroll-pane" style={{ display: 'grid', gap: 8, minHeight: 0, overflowY: 'auto', paddingRight: 4 }}>
+                {studentRegistryItems.map(student => (
+                  <EntityButton key={student.studentId} selected={route.studentId === student.studentId} onClick={() => navigate({ section: 'students', studentId: student.studentId })}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                      <div>
+                        <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{student.name}</div>
+                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{student.usn} · {student.activeAcademicContext?.branchName ?? 'No branch mapped'}</div>
+                      </div>
+                      <Chip color={student.activeMentorAssignment ? T.success : T.warning} size={9}>{student.activeMentorAssignment ? 'Mentored' : 'Mentor missing'}</Chip>
+                    </div>
+                    <div style={{ ...mono, fontSize: 10, color: T.success, marginTop: 6 }}>CGPA {student.currentCgpa.toFixed(2)} · Semester {student.activeAcademicContext?.semesterNumber ?? '—'} · Section {student.activeAcademicContext?.sectionCode ?? '—'}</div>
+                  </EntityButton>
+                ))}
+                {studentRegistryItems.length === 0 ? <InfoBanner message="No active students yet. Create the first student record from this panel." /> : null}
+              </div>
             </Card>
 
             <div className="scroll-pane" style={{ display: 'grid', gap: 16, maxHeight: 'calc(100vh - 200px)', overflowY: 'auto', paddingRight: 4 }}>
@@ -4537,100 +4645,104 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
         {/* ========== FACULTY MEMBERS ========== */}
         {route.section === 'faculty-members' && (
-          <div className="fade-up" style={{ display: 'grid', gap: 16, gridTemplateColumns: 'minmax(320px, 410px) minmax(420px, 1fr)' }}>
-            <Card style={{ padding: 18, display: 'grid', gap: 12, alignContent: 'start', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
+          <div className="fade-up" style={{ display: 'grid', gap: 16, gridTemplateColumns: registryPageColumns }}>
+            <Card style={{ padding: 18, display: 'grid', gap: 12, gridTemplateRows: 'auto auto minmax(0, 1fr)', alignContent: 'start', maxHeight: 'calc(100vh - 200px)', overflow: 'hidden' }}>
               <SectionHeading
                 title="Faculty Members"
                 eyebrow="Registry"
                 caption={registryScope ? `Identity, appointments, permissions, teaching ownership, and teaching-profile parity live here. Filtered to ${registryScope.label}.` : 'Identity, appointments, permissions, teaching ownership, and teaching-profile parity live here.'}
                 toneColor={ADMIN_SECTION_TONES['faculty-members']}
               />
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <Btn type="button" onClick={() => { navigate({ section: 'faculty-members' }); resetFacultyEditors() }}><Plus size={14} /> New Faculty</Btn>
-                <Chip color={T.accent}>{facultyRegistryItems.length} active</Chip>
-                <Chip color={T.warning}>{facultyRegistryItems.filter(item => !item.roleGrants.some(grant => isCurrentRoleGrant(grant))).length} no active permissions</Chip>
-                {registryScope ? <Chip color={ADMIN_SECTION_TONES['faculty-members']}>{registryScope.label}</Chip> : null}
+              <div style={{ display: 'grid', gap: 12 }}>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <Btn type="button" onClick={() => { navigate({ section: 'faculty-members' }); resetFacultyEditors() }}><Plus size={14} /> New Faculty</Btn>
+                  <Chip color={T.accent}>{facultyRegistryItems.length} active</Chip>
+                  <Chip color={T.warning}>{facultyRegistryItems.filter(item => !item.roleGrants.some(grant => isCurrentRoleGrant(grant))).length} no active permissions</Chip>
+                  {registryScope ? <Chip color={ADMIN_SECTION_TONES['faculty-members']}>{registryScope.label}</Chip> : null}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: registryFilterColumns, gap: 10 }}>
+                  <div>
+                    <FieldLabel>Faculty</FieldLabel>
+                    <SelectInput value={effectiveFacultyRegistryFilter.academicFacultyId} onChange={event => setFacultyRegistryFilter({
+                      academicFacultyId: event.target.value,
+                      departmentId: '',
+                      branchId: '',
+                      batchId: '',
+                      sectionCode: '',
+                    })}>
+                      <option value="">All Faculties</option>
+                      {visibleAcademicFaculties.map(item => <option key={item.academicFacultyId} value={item.academicFacultyId}>{item.name}</option>)}
+                    </SelectInput>
+                  </div>
+                  <div>
+                    <FieldLabel>Department</FieldLabel>
+                    <SelectInput value={effectiveFacultyRegistryFilter.departmentId} onChange={event => setFacultyRegistryFilter(prev => ({
+                      ...prev,
+                      departmentId: event.target.value,
+                      branchId: '',
+                      batchId: '',
+                      sectionCode: '',
+                    }))}>
+                      <option value="">All Departments</option>
+                      {facultyFilterDepartments.map(item => <option key={item.departmentId} value={item.departmentId}>{item.name}</option>)}
+                    </SelectInput>
+                  </div>
+                  <div>
+                    <FieldLabel>Branch</FieldLabel>
+                    <SelectInput value={effectiveFacultyRegistryFilter.branchId} onChange={event => setFacultyRegistryFilter(prev => ({
+                      ...prev,
+                      branchId: event.target.value,
+                      batchId: '',
+                      sectionCode: '',
+                    }))}>
+                      <option value="">All Branches</option>
+                      {facultyFilterBranches.map(item => <option key={item.branchId} value={item.branchId}>{item.name}</option>)}
+                    </SelectInput>
+                  </div>
+                  <div>
+                    <FieldLabel>Year</FieldLabel>
+                    <SelectInput value={effectiveFacultyRegistryFilter.batchId} onChange={event => setFacultyRegistryFilter(prev => ({
+                      ...prev,
+                      batchId: event.target.value,
+                      sectionCode: '',
+                    }))}>
+                      <option value="">All Years</option>
+                      {facultyFilterBatches.map(item => <option key={item.batchId} value={item.batchId}>{deriveCurrentYearLabel(item.currentSemester)} · {item.batchLabel}</option>)}
+                    </SelectInput>
+                  </div>
+                  <div>
+                    <FieldLabel>Section</FieldLabel>
+                    <SelectInput value={effectiveFacultyRegistryFilter.sectionCode} onChange={event => setFacultyRegistryFilter(prev => ({ ...prev, sectionCode: event.target.value }))}>
+                      <option value="">All Sections</option>
+                      {facultyFilterSections.map(sectionCode => <option key={sectionCode} value={sectionCode}>{sectionCode}</option>)}
+                    </SelectInput>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <Btn type="button" variant="ghost" onClick={() => setFacultyRegistryFilter(hydrateRegistryFilter(registryScope))}>Reset Filters</Btn>
+                  <Btn type="button" variant="ghost" onClick={() => handleOpenFullRegistry('faculty-members')}>Open Complete Page</Btn>
+                </div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
-                <div>
-                  <FieldLabel>Faculty</FieldLabel>
-                  <SelectInput value={effectiveFacultyRegistryFilter.academicFacultyId} onChange={event => setFacultyRegistryFilter({
-                    academicFacultyId: event.target.value,
-                    departmentId: '',
-                    branchId: '',
-                    batchId: '',
-                    sectionCode: '',
-                  })}>
-                    <option value="">All Faculties</option>
-                    {visibleAcademicFaculties.map(item => <option key={item.academicFacultyId} value={item.academicFacultyId}>{item.name}</option>)}
-                  </SelectInput>
-                </div>
-                <div>
-                  <FieldLabel>Department</FieldLabel>
-                  <SelectInput value={effectiveFacultyRegistryFilter.departmentId} onChange={event => setFacultyRegistryFilter(prev => ({
-                    ...prev,
-                    departmentId: event.target.value,
-                    branchId: '',
-                    batchId: '',
-                    sectionCode: '',
-                  }))}>
-                    <option value="">All Departments</option>
-                    {facultyFilterDepartments.map(item => <option key={item.departmentId} value={item.departmentId}>{item.name}</option>)}
-                  </SelectInput>
-                </div>
-                <div>
-                  <FieldLabel>Branch</FieldLabel>
-                  <SelectInput value={effectiveFacultyRegistryFilter.branchId} onChange={event => setFacultyRegistryFilter(prev => ({
-                    ...prev,
-                    branchId: event.target.value,
-                    batchId: '',
-                    sectionCode: '',
-                  }))}>
-                    <option value="">All Branches</option>
-                    {facultyFilterBranches.map(item => <option key={item.branchId} value={item.branchId}>{item.name}</option>)}
-                  </SelectInput>
-                </div>
-                <div>
-                  <FieldLabel>Year</FieldLabel>
-                  <SelectInput value={effectiveFacultyRegistryFilter.batchId} onChange={event => setFacultyRegistryFilter(prev => ({
-                    ...prev,
-                    batchId: event.target.value,
-                    sectionCode: '',
-                  }))}>
-                    <option value="">All Years</option>
-                    {facultyFilterBatches.map(item => <option key={item.batchId} value={item.batchId}>{deriveCurrentYearLabel(item.currentSemester)} · {item.batchLabel}</option>)}
-                  </SelectInput>
-                </div>
-                <div>
-                  <FieldLabel>Section</FieldLabel>
-                  <SelectInput value={effectiveFacultyRegistryFilter.sectionCode} onChange={event => setFacultyRegistryFilter(prev => ({ ...prev, sectionCode: event.target.value }))}>
-                    <option value="">All Sections</option>
-                    {facultyFilterSections.map(sectionCode => <option key={sectionCode} value={sectionCode}>{sectionCode}</option>)}
-                  </SelectInput>
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <Btn type="button" variant="ghost" onClick={() => setFacultyRegistryFilter(hydrateRegistryFilter(registryScope))}>Reset Filters</Btn>
-                <Btn type="button" variant="ghost" onClick={() => handleOpenFullRegistry('faculty-members')}>Open Complete Page</Btn>
-              </div>
-              {facultyRegistryItems.map(item => {
-                const primaryDepartment = resolveDepartment(data, getPrimaryAppointmentDepartmentId(item))
-                return (
-                  <EntityButton key={item.facultyId} selected={route.facultyMemberId === item.facultyId} onClick={() => navigate({ section: 'faculty-members', facultyMemberId: item.facultyId })}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
-                      <div>
-                        <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{item.displayName}</div>
-                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{item.employeeCode} · {primaryDepartment?.name ?? 'No primary department'}</div>
+              <div className="scroll-pane" style={{ display: 'grid', gap: 8, minHeight: 0, overflowY: 'auto', paddingRight: 4 }}>
+                {facultyRegistryItems.map(item => {
+                  const primaryDepartment = resolveDepartment(data, getPrimaryAppointmentDepartmentId(item))
+                  return (
+                    <EntityButton key={item.facultyId} selected={route.facultyMemberId === item.facultyId} onClick={() => navigate({ section: 'faculty-members', facultyMemberId: item.facultyId })}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                        <div>
+                          <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{item.displayName}</div>
+                          <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{item.employeeCode} · {primaryDepartment?.name ?? 'No primary department'}</div>
+                        </div>
+                        <Chip color={item.roleGrants.some(grant => grant.roleCode === 'MENTOR' && isCurrentRoleGrant(grant)) ? T.success : T.dim} size={9}>{item.roleGrants.some(grant => isCurrentRoleGrant(grant)) ? 'Scoped' : 'Unscoped'}</Chip>
                       </div>
-                      <Chip color={item.roleGrants.some(grant => grant.roleCode === 'MENTOR' && isCurrentRoleGrant(grant)) ? T.success : T.dim} size={9}>{item.roleGrants.some(grant => isCurrentRoleGrant(grant)) ? 'Scoped' : 'Unscoped'}</Chip>
-                    </div>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
-                      {item.roleGrants.filter(isCurrentRoleGrant).slice(0, 3).map(grant => <Chip key={grant.grantId} color={T.accent} size={9}>{grant.roleCode}</Chip>)}
-                    </div>
-                  </EntityButton>
-                )
-              })}
-              {facultyRegistryItems.length === 0 ? <InfoBanner message="No active faculty profiles yet. Create the first faculty record from this panel." /> : null}
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                        {item.roleGrants.filter(isCurrentRoleGrant).slice(0, 3).map(grant => <Chip key={grant.grantId} color={T.accent} size={9}>{grant.roleCode}</Chip>)}
+                      </div>
+                    </EntityButton>
+                  )
+                })}
+                {facultyRegistryItems.length === 0 ? <InfoBanner message="No active faculty profiles yet. Create the first faculty record from this panel." /> : null}
+              </div>
             </Card>
 
             <div className="scroll-pane" style={{ display: 'grid', gap: 16, maxHeight: 'calc(100vh - 200px)', overflowY: 'auto', paddingRight: 4 }}>
@@ -5176,7 +5288,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         {dataLoading ? <InfoBanner message="Refreshing live admin data…" /> : null}
       </PageShell>
       <AnimatePresence initial={false}>
-      {showActionQueue ? (
+      {showInlineActionQueue ? (
         <motion.div
           initial={{ opacity: 0, x: 18 }}
           animate={{ opacity: 1, x: 0 }}
@@ -5347,7 +5459,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                 <div><FieldLabel>Faculty Code</FieldLabel><TextInput value={entityEditors.academicFaculty.code} onChange={event => setEntityEditors(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, code: event.target.value } }))} /></div>
                 <div><FieldLabel>Faculty Name</FieldLabel><TextInput value={entityEditors.academicFaculty.name} onChange={event => setEntityEditors(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, name: event.target.value } }))} /></div>
                 <div><FieldLabel>Overview</FieldLabel><TextAreaInput value={entityEditors.academicFaculty.overview} onChange={event => setEntityEditors(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, overview: event.target.value } }))} rows={4} /></div>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    {selectedAcademicFaculty.status === 'archived'
+                      ? <Btn type="button" variant="ghost" onClick={() => void handleRestoreAcademicFaculty()}>Restore Faculty</Btn>
+                      : <Btn type="button" variant="ghost" onClick={() => void handleArchiveAcademicFaculty()}>Archive Faculty</Btn>}
+                    <Btn type="button" variant="danger" onClick={() => void handleDeleteAcademicFaculty()}>Delete Faculty</Btn>
+                  </div>
                   <Btn type="button" variant="ghost" onClick={() => setEditingEntity(null)}>Cancel</Btn>
                   <Btn type="submit">Save Faculty</Btn>
                 </div>
@@ -5362,7 +5480,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               <form onSubmit={handleUpdateDepartment} style={{ display: 'grid', gap: 10 }}>
                 <div><FieldLabel>Department Code</FieldLabel><TextInput value={entityEditors.department.code} onChange={event => setEntityEditors(prev => ({ ...prev, department: { ...prev.department, code: event.target.value } }))} /></div>
                 <div><FieldLabel>Department Name</FieldLabel><TextInput value={entityEditors.department.name} onChange={event => setEntityEditors(prev => ({ ...prev, department: { ...prev.department, name: event.target.value } }))} /></div>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'space-between' }}>
+                  <Btn type="button" variant="danger" onClick={() => void handleArchiveDepartment()}>Archive Department</Btn>
                   <Btn type="button" variant="ghost" onClick={() => setEditingEntity(null)}>Cancel</Btn>
                   <Btn type="submit">Save Department</Btn>
                 </div>
@@ -5379,7 +5498,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                 <div><FieldLabel>Branch Name</FieldLabel><TextInput value={entityEditors.branch.name} onChange={event => setEntityEditors(prev => ({ ...prev, branch: { ...prev.branch, name: event.target.value } }))} /></div>
                 <div><FieldLabel>Program Level</FieldLabel><SelectInput value={entityEditors.branch.programLevel} onChange={event => setEntityEditors(prev => ({ ...prev, branch: { ...prev.branch, programLevel: event.target.value } }))}><option value="UG">UG</option><option value="PG">PG</option></SelectInput></div>
                 <div><FieldLabel>Semester Count</FieldLabel><TextInput value={entityEditors.branch.semesterCount} onChange={event => setEntityEditors(prev => ({ ...prev, branch: { ...prev.branch, semesterCount: event.target.value } }))} /></div>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'space-between' }}>
+                  <Btn type="button" variant="danger" onClick={() => void handleArchiveBranch()}>Archive Branch</Btn>
                   <Btn type="button" variant="ghost" onClick={() => setEditingEntity(null)}>Cancel</Btn>
                   <Btn type="submit">Save Branch</Btn>
                 </div>
@@ -5396,7 +5516,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                 <div><FieldLabel>Batch Label</FieldLabel><TextInput value={entityEditors.batch.batchLabel} onChange={event => setEntityEditors(prev => ({ ...prev, batch: { ...prev.batch, batchLabel: event.target.value } }))} /></div>
                 <div><FieldLabel>Active Semester</FieldLabel><TextInput value={entityEditors.batch.currentSemester} onChange={event => setEntityEditors(prev => ({ ...prev, batch: { ...prev.batch, currentSemester: event.target.value } }))} /></div>
                 <div><FieldLabel>Section Labels</FieldLabel><TextInput value={entityEditors.batch.sectionLabels} onChange={event => setEntityEditors(prev => ({ ...prev, batch: { ...prev.batch, sectionLabels: event.target.value } }))} /></div>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'space-between' }}>
+                  <Btn type="button" variant="danger" onClick={() => void handleArchiveBatch()}>Archive Batch</Btn>
                   <Btn type="button" variant="ghost" onClick={() => setEditingEntity(null)}>Cancel</Btn>
                   <Btn type="submit">Save Batch</Btn>
                 </div>
