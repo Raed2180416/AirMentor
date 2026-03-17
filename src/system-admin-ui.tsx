@@ -13,6 +13,7 @@ import {
   Search,
   Shield,
   UserCog,
+  X,
 } from 'lucide-react'
 import { T, mono, sora } from './data'
 import { isLightTheme } from './theme'
@@ -68,7 +69,7 @@ export function getStatusColor(status: string): string {
 }
 
 export function FieldLabel({ children }: { children: ReactNode }) {
-  return <label style={{ ...mono, fontSize: 10, color: T.muted, display: 'block', marginBottom: 6 }}>{children}</label>
+  return <label style={{ ...mono, fontSize: 10, color: T.dim, display: 'block', marginBottom: 6 }}>{children}</label>
 }
 
 export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
@@ -79,11 +80,13 @@ export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
         width: '100%',
         ...mono,
         fontSize: 11,
-        borderRadius: 10,
+        minHeight: 42,
+        borderRadius: 12,
         border: `1px solid ${T.border2}`,
-        background: T.surface2,
+        background: T.surface,
         color: T.text,
         padding: '10px 12px',
+        boxShadow: `inset 0 1px 0 ${T.surface3}`,
         ...(props.style ?? {}),
       }}
     />
@@ -98,11 +101,13 @@ export function SelectInput(props: SelectHTMLAttributes<HTMLSelectElement>) {
         width: '100%',
         ...mono,
         fontSize: 11,
-        borderRadius: 10,
+        minHeight: 42,
+        borderRadius: 12,
         border: `1px solid ${T.border2}`,
-        background: T.surface2,
+        background: T.surface,
         color: T.text,
         padding: '10px 12px',
+        boxShadow: `inset 0 1px 0 ${T.surface3}`,
         ...(props.style ?? {}),
       }}
     />
@@ -118,11 +123,13 @@ export function TextAreaInput(props: TextareaHTMLAttributes<HTMLTextAreaElement>
         resize: 'vertical',
         ...mono,
         fontSize: 11,
-        borderRadius: 10,
+        minHeight: 42,
+        borderRadius: 12,
         border: `1px solid ${T.border2}`,
-        background: T.surface2,
+        background: T.surface,
         color: T.text,
         padding: '10px 12px',
+        boxShadow: `inset 0 1px 0 ${T.surface3}`,
         ...(props.style ?? {}),
       }}
     />
@@ -394,13 +401,15 @@ export function EntityButton({ selected, onClick, children, style: extraStyle }:
   return (
     <button
       type="button"
+      data-nav-item="true"
+      data-active={selected ? 'true' : 'false'}
       onClick={onClick}
       style={{
         textAlign: 'left',
-        borderRadius: 12,
+        borderRadius: 14,
         border: `1px solid ${selected ? T.accent : T.border}`,
-        background: selected ? `${T.accent}18` : T.surface2,
-        padding: '12px 14px',
+        background: selected ? `linear-gradient(180deg, ${T.accent}16, ${T.surface})` : `linear-gradient(180deg, ${T.surface}, ${T.surface2})`,
+        padding: '14px 15px',
         cursor: 'pointer',
         width: '100%',
         ...extraStyle,
@@ -424,6 +433,88 @@ export function AuthFeature({ title, body, color }: { title: string; body: strin
     <div style={{ borderRadius: 18, padding: 16, background: `${color}10`, border: `1px solid ${color}22`, boxShadow: `0 18px 40px ${color}10` }}>
       <div style={{ ...mono, fontSize: 10, color, textTransform: 'uppercase', letterSpacing: '0.12em' }}>{title}</div>
       <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 8, lineHeight: 1.8 }}>{body}</div>
+    </div>
+  )
+}
+
+export function ModalFrame({
+  eyebrow,
+  title,
+  caption,
+  onClose,
+  actions,
+  children,
+  width = 680,
+}: {
+  eyebrow?: string
+  title: string
+  caption?: string
+  onClose: () => void
+  actions?: ReactNode
+  children: ReactNode
+  width?: number
+}) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 120,
+        background: 'rgba(6, 12, 20, 0.52)',
+        backdropFilter: 'blur(14px)',
+        padding: '32px 18px',
+        display: 'grid',
+        placeItems: 'center',
+      }}
+    >
+      <div onClick={event => event.stopPropagation()}>
+      <Card
+        style={{
+          width: 'min(100%, 680px)',
+          maxWidth: width,
+          maxHeight: 'min(88vh, 920px)',
+          overflowY: 'auto',
+          padding: 22,
+          borderRadius: 22,
+          background: `linear-gradient(180deg, ${T.surface}, ${T.surface2})`,
+          boxShadow: `0 28px 64px rgba(2, 6, 23, 0.28)`,
+        }}
+      >
+        <div style={{ display: 'grid', gap: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'flex-start' }}>
+            <div style={{ display: 'grid', gap: 4 }}>
+              {eyebrow ? <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.12em' }}>{eyebrow}</div> : null}
+              <div style={{ ...sora, fontSize: 24, fontWeight: 800, color: T.text }}>{title}</div>
+              {caption ? <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.8 }}>{caption}</div> : null}
+            </div>
+            <button
+              type="button"
+              aria-label="Close dialog"
+              title="Close"
+              onClick={onClose}
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 12,
+                border: `1px solid ${T.border}`,
+                background: T.surface,
+                color: T.muted,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+          {children}
+          {actions ? <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>{actions}</div> : null}
+        </div>
+      </Card>
+      </div>
     </div>
   )
 }
