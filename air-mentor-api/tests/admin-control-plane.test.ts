@@ -1,6 +1,13 @@
 import { eq } from 'drizzle-orm'
 import { afterEach, describe, expect, it } from 'vitest'
-import { academicRuntimeState, sectionOfferings } from '../src/db/schema.js'
+import {
+  academicRuntimeState,
+  facultyAppointments,
+  facultyOfferingOwnerships,
+  mentorAssignments,
+  roleGrants,
+  sectionOfferings,
+} from '../src/db/schema.js'
 import { createTestApp, loginAs, TEST_ORIGIN } from './helpers/test-app.js'
 
 let current: Awaited<ReturnType<typeof createTestApp>> | null = null
@@ -246,6 +253,135 @@ describe('admin control plane routes', () => {
         }),
       }),
     ]))
+  })
+
+  it('soft-deleting a faculty cascades appointments, permissions, ownerships, and mentor links out of the live teaching surface', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+    expect(adminLogin.response.statusCode).toBe(200)
+
+    const facultyCreate = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/faculty',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        username: 'delete.me',
+        email: 'delete.me@msruas.ac.in',
+        phone: '+91-9000000999',
+        password: 'faculty1234',
+        employeeCode: 'EMP-DEL-01',
+        displayName: 'Delete Me',
+        designation: 'Assistant Professor',
+        joinedOn: null,
+        status: 'active',
+      },
+    })
+    expect(facultyCreate.statusCode).toBe(200)
+    const createdFaculty = facultyCreate.json()
+
+    const appointmentCreate = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/faculty/${createdFaculty.facultyId}/appointments`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        departmentId: 'dept_cse',
+        branchId: 'branch_cse_btech',
+        isPrimary: true,
+        startDate: '2024-06-01',
+        status: 'active',
+      },
+    })
+    expect(appointmentCreate.statusCode).toBe(200)
+
+    const roleGrantCreate = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/faculty/${createdFaculty.facultyId}/role-grants`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        roleCode: 'MENTOR',
+        scopeType: 'branch',
+        scopeId: 'branch_cse_btech',
+        startDate: '2024-06-01',
+        status: 'active',
+      },
+    })
+    expect(roleGrantCreate.statusCode).toBe(200)
+
+    const [offering] = await current.db.select().from(sectionOfferings).where(eq(sectionOfferings.branchId, 'branch_cse_btech')).limit(1)
+    expect(offering).toBeTruthy()
+
+    const ownershipCreate = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/offering-ownership',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        offeringId: offering.offeringId,
+        facultyId: createdFaculty.facultyId,
+        ownershipRole: 'owner',
+        status: 'active',
+      },
+    })
+    expect(ownershipCreate.statusCode).toBe(200)
+
+    const studentsResponse = await current.app.inject({
+      method: 'GET',
+      url: '/api/admin/students',
+      headers: { cookie: adminLogin.cookie },
+    })
+    expect(studentsResponse.statusCode).toBe(200)
+    const student = studentsResponse.json().items[0]
+    expect(student).toBeTruthy()
+
+    const mentorAssignmentCreate = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/mentor-assignments',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        studentId: student.studentId,
+        facultyId: createdFaculty.facultyId,
+        effectiveFrom: '2026-03-01',
+        source: 'sysadmin-delete-test',
+      },
+    })
+    expect(mentorAssignmentCreate.statusCode).toBe(200)
+
+    const facultyDelete = await current.app.inject({
+      method: 'PATCH',
+      url: `/api/admin/faculty/${createdFaculty.facultyId}`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        username: createdFaculty.username,
+        email: createdFaculty.email,
+        phone: createdFaculty.phone,
+        employeeCode: createdFaculty.employeeCode,
+        displayName: createdFaculty.displayName,
+        designation: createdFaculty.designation,
+        joinedOn: createdFaculty.joinedOn,
+        status: 'deleted',
+        version: createdFaculty.version,
+      },
+    })
+    expect(facultyDelete.statusCode).toBe(200)
+
+    const appointmentRows = await current.db.select().from(facultyAppointments).where(eq(facultyAppointments.facultyId, createdFaculty.facultyId))
+    const grantRows = await current.db.select().from(roleGrants).where(eq(roleGrants.facultyId, createdFaculty.facultyId))
+    const ownershipRows = await current.db.select().from(facultyOfferingOwnerships).where(eq(facultyOfferingOwnerships.facultyId, createdFaculty.facultyId))
+    const assignmentRows = await current.db.select().from(mentorAssignments).where(eq(mentorAssignments.facultyId, createdFaculty.facultyId))
+
+    expect(appointmentRows.every(item => item.status === 'deleted')).toBe(true)
+    expect(grantRows.every(item => item.status === 'deleted')).toBe(true)
+    expect(ownershipRows.every(item => item.status === 'deleted')).toBe(true)
+    expect(assignmentRows.every(item => item.effectiveTo === '2026-03-16')).toBe(true)
+
+    const publicFaculty = await current.app.inject({
+      method: 'GET',
+      url: '/api/academic/public/faculty',
+    })
+    expect(publicFaculty.statusCode).toBe(200)
+    expect(publicFaculty.json().items.some((item: { facultyId: string }) => item.facultyId === createdFaculty.facultyId)).toBe(false)
+
+    const deletedFacultyLogin = await loginAs(current.app, 'delete.me', 'faculty1234')
+    expect(deletedFacultyLogin.response.statusCode).not.toBe(200)
   })
 
   it('enforces the faculty timetable direct-edit window while keeping markers editable and reflected in teaching profile status', async () => {

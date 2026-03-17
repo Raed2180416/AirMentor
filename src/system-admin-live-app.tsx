@@ -71,14 +71,12 @@ import {
   FieldLabel,
   HeroBadge,
   InfoBanner,
-  MetricCard,
   SectionHeading,
   SelectInput,
   TextAreaInput,
   TextInput,
   formatDate,
   formatDateTime,
-  type BreadcrumbSegment,
 } from './system-admin-ui'
 import { applyThemePreset, isLightTheme } from './theme'
 import { SystemAdminTimetableEditor } from './system-admin-timetable-editor'
@@ -203,6 +201,15 @@ type AdminWorkspaceSnapshot = {
   scrollY: number
 }
 
+type UniversityScopeState = {
+  academicFacultyId: string | null
+  departmentId: string | null
+  branchId: string | null
+  batchId: string | null
+  sectionCode: string | null
+  label: string
+}
+
 const EMPTY_DATA: LiveAdminDataset = {
   institution: null, academicFaculties: [], departments: [], branches: [], batches: [], terms: [],
   facultyMembers: [], students: [], courses: [], curriculumCourses: [], policyOverrides: [],
@@ -210,6 +217,14 @@ const EMPTY_DATA: LiveAdminDataset = {
 }
 
 const WEEKDAYS: PolicyFormState['workingDays'] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const ADMIN_SECTION_TONES = {
+  overview: T.accent,
+  faculties: T.success,
+  students: T.blue,
+  'faculty-members': T.orange,
+  requests: T.warning,
+  history: T.danger,
+} as const
 const DEFAULT_PROGRESSION_RULES = {
   passMarkPercent: 40,
   minimumCgpaForPromotion: 5,
@@ -318,7 +333,7 @@ function defaultFacultyForm(): FacultyFormState {
     employeeCode: '',
     displayName: '',
     designation: '',
-    joinedOn: new Date().toISOString().slice(0, 10),
+    joinedOn: '',
   }
 }
 
@@ -514,17 +529,6 @@ function formatClockLabel(now: Date) {
   })
 }
 
-function groupCollectionByLabel<T>(items: T[], getLabel: (item: T) => string) {
-  const grouped = new Map<string, T[]>()
-  items.forEach(item => {
-    const label = getLabel(item)
-    const current = grouped.get(label) ?? []
-    current.push(item)
-    grouped.set(label, current)
-  })
-  return Array.from(grouped.entries()).map(([label, groupedItems]) => ({ label, items: groupedItems }))
-}
-
 function isLeaderLikeOwnership(role: string) {
   const normalized = role.trim().toLowerCase()
   return normalized.includes('course') || normalized.includes('leader') || normalized.includes('owner') || normalized.includes('primary')
@@ -611,6 +615,61 @@ function AuthPageShell({ children }: { children: ReactNode }) {
   )
 }
 
+function matchesStudentScope(student: LiveAdminDataset['students'][number], data: LiveAdminDataset, scope: Omit<UniversityScopeState, 'label'> | null) {
+  if (!scope) return true
+  const context = student.activeAcademicContext
+  if (!context) return false
+  if (scope.academicFacultyId) {
+    const department = context.departmentId ? resolveDepartment(data, context.departmentId) : null
+    if (department?.academicFacultyId !== scope.academicFacultyId) return false
+  }
+  if (scope.departmentId && context.departmentId !== scope.departmentId) return false
+  if (scope.branchId && context.branchId !== scope.branchId) return false
+  if (scope.batchId && context.batchId !== scope.batchId) return false
+  if (scope.sectionCode && context.sectionCode !== scope.sectionCode) return false
+  return true
+}
+
+function matchesFacultyScope(member: LiveAdminDataset['facultyMembers'][number], data: LiveAdminDataset, scope: Omit<UniversityScopeState, 'label'> | null) {
+  if (!scope) return true
+  const hasScopedSelection = Boolean(scope.academicFacultyId || scope.departmentId || scope.branchId || scope.batchId || scope.sectionCode)
+  if (!hasScopedSelection) return true
+
+  const batchTermIds = scope.batchId
+    ? new Set(
+        data.terms
+          .filter(item => item.batchId === scope.batchId && isVisibleAdminRecord(item.status))
+          .map(item => item.termId),
+      )
+    : null
+
+  const appointmentMatch = member.appointments.some(appointment => {
+    if (appointment.status !== 'active') return false
+    if (scope.departmentId && appointment.departmentId !== scope.departmentId) return false
+    if (scope.branchId && appointment.branchId !== scope.branchId) return false
+    if (scope.academicFacultyId) {
+      const department = resolveDepartment(data, appointment.departmentId)
+      if (department?.academicFacultyId !== scope.academicFacultyId) return false
+    }
+    return true
+  })
+
+  const ownershipMatch = data.ownerships.some(ownership => {
+    if (ownership.facultyId !== member.facultyId || ownership.status !== 'active') return false
+    const offering = data.offerings.find(item => item.offId === ownership.offeringId)
+    if (!offering) return false
+    const matchedDepartment = data.departments.find(item => item.code.toLowerCase() === offering.dept.toLowerCase())
+    if (scope.academicFacultyId && matchedDepartment?.academicFacultyId !== scope.academicFacultyId) return false
+    if (scope.departmentId && matchedDepartment?.departmentId !== scope.departmentId) return false
+    if (scope.branchId && offering.branchId !== scope.branchId) return false
+    if (batchTermIds && (!offering.termId || !batchTermIds.has(offering.termId))) return false
+    if (scope.sectionCode && offering.section !== scope.sectionCode) return false
+    return true
+  })
+
+  return appointmentMatch || ownershipMatch
+}
+
 function TeachingShellAdminTopBar({
   institutionName,
   adminName,
@@ -624,8 +683,6 @@ function TeachingShellAdminTopBar({
   onSearchSelect,
   onToggleTheme,
   onGoHome,
-  canNavigateBack,
-  onNavigateBack,
   onToggleQueue,
   onRefresh,
   onExitPortal,
@@ -643,8 +700,6 @@ function TeachingShellAdminTopBar({
   onSearchSelect?: () => void
   onToggleTheme: () => void
   onGoHome: () => void
-  canNavigateBack: boolean
-  onNavigateBack: () => void
   onToggleQueue: () => void
   onRefresh: () => void
   onExitPortal?: () => void
@@ -670,18 +725,12 @@ function TeachingShellAdminTopBar({
         </div>
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          {canNavigateBack ? (
-            <button type="button" aria-label="Go back" onClick={onNavigateBack} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted, display: 'inline-flex', alignItems: 'center', gap: 6, ...mono, fontSize: 10 }}>
-              <ChevronLeft size={14} />
-              Back
-            </button>
-          ) : null}
           <div style={{ ...mono, fontSize: 10, color: T.dim, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 9px', minHeight: 32, display: 'flex', alignItems: 'center', gap: 6, background: T.surface2 }}>
             <Clock3 size={12} />
             {formatClockLabel(now)}
           </div>
-          <button type="button" aria-label={isLightTheme(themeMode) ? 'Switch to dark mode' : 'Switch to light mode'} onClick={onToggleTheme} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted }}>
-            {isLightTheme(themeMode) ? 'Dark' : 'Light'}
+          <button type="button" aria-label={isLightTheme(themeMode) ? 'Switch to dark mode' : 'Switch to light mode'} title={isLightTheme(themeMode) ? 'Dark mode' : 'Light mode'} onClick={onToggleTheme} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '8px 10px', cursor: 'pointer', color: T.muted, ...mono, fontSize: 14, lineHeight: 1 }}>
+            {isLightTheme(themeMode) ? '🌙' : '☀️'}
           </button>
           <button type="button" aria-label="Open action queue" onClick={onToggleQueue} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted, position: 'relative' }}>
             <Bell size={14} />
@@ -748,6 +797,7 @@ function SectionLaunchCard({
   caption,
   helper,
   icon,
+  tone = T.accent,
   active,
   onClick,
 }: {
@@ -755,27 +805,29 @@ function SectionLaunchCard({
   caption: string
   helper: string
   icon: ReactNode
+  tone?: string
   active?: boolean
   onClick: () => void
 }) {
   return (
     <Card
-      glow={active ? T.accent : undefined}
+      glow={active ? tone : undefined}
       onClick={onClick}
       style={{
         padding: 20,
         background: active
-          ? `linear-gradient(160deg, ${T.accent}18, ${T.surface})`
+          ? `linear-gradient(160deg, ${tone}18, ${T.surface})`
           : `linear-gradient(160deg, ${T.surface}, ${T.surface2})`,
+        borderTop: `3px solid ${tone}28`,
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-        <div style={{ width: 40, height: 40, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${T.accent}16`, color: T.accent }}>
+        <div style={{ width: 40, height: 40, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${tone}16`, color: tone }}>
           {icon}
         </div>
         <div>
           <div style={{ ...sora, fontSize: 17, fontWeight: 800, color: T.text }}>{title}</div>
-          <div style={{ ...mono, fontSize: 10, color: T.accent }}>{caption}</div>
+          <div style={{ ...mono, fontSize: 10, color: tone }}>{caption}</div>
         </div>
       </div>
       <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.8 }}>{helper}</div>
@@ -839,6 +891,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const [selectedSectionCode, setSelectedSectionCode] = useState<string | null>(null)
   const [route, setRoute] = useState<LiveAdminRoute>(() => parseAdminRoute(typeof window === 'undefined' ? '' : window.location.hash))
   const [routeHistory, setRouteHistory] = useState<AdminWorkspaceSnapshot[]>([])
+  const [registryScope, setRegistryScope] = useState<UniversityScopeState | null>(null)
   const [structureForms, setStructureForms] = useState<StructureFormState>({
     academicFaculty: { code: '', name: '', overview: '' },
     department: { code: '', name: '' },
@@ -923,13 +976,18 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     pendingScrollRestoreRef.current = null
   }, [])
 
+  const clearRegistryScope = useCallback(() => {
+    setRegistryScope(null)
+  }, [])
+
   const handleGoHome = useCallback(() => {
     clearRouteHistory()
+    clearRegistryScope()
     updateSelectedSectionCode(null, { recordHistory: false })
     updateUniversityTab('overview', { recordHistory: false })
     navigate({ section: 'overview' }, { recordHistory: false })
     if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
-  }, [clearRouteHistory, navigate, updateSelectedSectionCode, updateUniversityTab])
+  }, [clearRegistryScope, clearRouteHistory, navigate, updateSelectedSectionCode, updateUniversityTab])
 
   const handleNavigateBack = useCallback(() => {
     if (routeHistory.length === 0) {
@@ -1446,6 +1504,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
   const handleLogout = async () => {
     await apiClient.logout()
+    clearRegistryScope()
     setSession(null); setData(EMPTY_DATA)
   }
 
@@ -2197,7 +2256,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       employeeCode: requireText('Employee code', facultyForm.employeeCode),
       displayName: requireText('Display name', facultyForm.displayName),
       designation: requireText('Designation', facultyForm.designation),
-      joinedOn: facultyForm.joinedOn.trim() ? requireDate('Joined on', facultyForm.joinedOn) : null,
+      joinedOn: selectedFacultyMember?.joinedOn ?? null,
       status: selectedFacultyMember?.status ?? 'active',
     }
     if (selectedFacultyMember) {
@@ -2453,45 +2512,6 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     }
   }
 
-  // --- Breadcrumbs ---
-  const breadcrumbs: BreadcrumbSegment[] = []
-  if (route.section === 'overview') {
-    breadcrumbs.push({ label: 'Overview' })
-  } else if (route.section === 'faculties') {
-    if (selectedAcademicFaculty) {
-      breadcrumbs.push({ label: 'Faculties', onClick: () => navigate({ section: 'faculties' }) })
-      if (selectedDepartment) {
-        breadcrumbs.push({ label: selectedAcademicFaculty.name, onClick: () => navigate({ section: 'faculties', academicFacultyId: selectedAcademicFaculty.academicFacultyId }) })
-        if (selectedBranch) {
-          breadcrumbs.push({ label: selectedDepartment.name, onClick: () => navigate({ section: 'faculties', academicFacultyId: selectedAcademicFaculty.academicFacultyId, departmentId: selectedDepartment.departmentId }) })
-          if (selectedBatch) {
-            breadcrumbs.push({ label: selectedBranch.name, onClick: () => navigate({ section: 'faculties', academicFacultyId: selectedAcademicFaculty.academicFacultyId, departmentId: selectedDepartment.departmentId, branchId: selectedBranch.branchId }) })
-            breadcrumbs.push({ label: `Batch ${selectedBatch.batchLabel}` })
-          } else {
-            breadcrumbs.push({ label: selectedBranch.name })
-          }
-        } else {
-          breadcrumbs.push({ label: selectedDepartment.name })
-        }
-      } else {
-        breadcrumbs.push({ label: selectedAcademicFaculty.name })
-      }
-    } else {
-      breadcrumbs.push({ label: 'Faculties' })
-    }
-  } else if (route.section === 'students') {
-    breadcrumbs.push({ label: 'Students', onClick: () => navigate({ section: 'students' }) })
-    if (selectedStudent) breadcrumbs.push({ label: selectedStudent.name })
-  } else if (route.section === 'faculty-members') {
-    breadcrumbs.push({ label: 'Faculty Members', onClick: () => navigate({ section: 'faculty-members' }) })
-    if (selectedFacultyMember) breadcrumbs.push({ label: selectedFacultyMember.displayName })
-  } else if (route.section === 'requests') {
-    breadcrumbs.push({ label: 'Requests', onClick: route.requestId ? () => navigate({ section: 'requests' }) : undefined })
-    if (selectedRequestSummary) breadcrumbs.push({ label: selectedRequestSummary.summary })
-  } else if (route.section === 'history') {
-    breadcrumbs.push({ label: 'History' })
-  }
-
   // --- Boot / auth screens ---
   if (booting) {
     return <PageShell size="narrow" style={{ paddingTop: 48 }}><Card><div style={{ ...mono, fontSize: 11, color: T.muted }}>Restoring system admin session…</div></Card></PageShell>
@@ -2593,6 +2613,15 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const pendingReminders = data.reminders.filter(item => item.status === 'pending')
   const actionQueueCount = openRequests.length + pendingReminders.length
   const selectorSections = selectedBatch?.sectionLabels ?? []
+  const activeUniversityScope = route.section === 'faculties'
+    ? {
+        academicFacultyId: selectedAcademicFaculty?.academicFacultyId ?? null,
+        departmentId: selectedDepartment?.departmentId ?? null,
+        branchId: selectedBranch?.branchId ?? null,
+        batchId: selectedBatch?.batchId ?? null,
+        sectionCode: selectedSectionCode,
+      }
+    : null
   const currentUniversityLevel = selectedBatch
     ? (selectedSectionCode ? 'section' : 'year')
     : selectedBranch
@@ -2663,6 +2692,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     }))
   })()
   const universityNextItems = (() => {
+    if (selectedSectionCode) return []
     if (selectedBatch) {
       return selectorSections.map(sectionCode => ({
         key: `section:${sectionCode}`,
@@ -2712,45 +2742,12 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     }
     return []
   })()
-  const filteredUniversityStudents = data.students.filter(student => {
-    const context = student.activeAcademicContext
-    if (!context) return false
-    if (selectedAcademicFaculty) {
-      const department = context.departmentId ? resolveDepartment(data, context.departmentId) : null
-      if (department?.academicFacultyId !== selectedAcademicFaculty.academicFacultyId) return false
-    }
-    if (selectedDepartment && context.departmentId !== selectedDepartment.departmentId) return false
-    if (selectedBranch && context.branchId !== selectedBranch.branchId) return false
-    if (selectedBatch && context.batchId !== selectedBatch.batchId) return false
-    if (selectedSectionCode && context.sectionCode !== selectedSectionCode) return false
-    return true
-  })
-  const filteredUniversityFaculty = data.facultyMembers.filter(member => {
-    const appointmentMatch = member.appointments.some(appointment => {
-      if (appointment.status !== 'active') return false
-      if (selectedDepartment && appointment.departmentId !== selectedDepartment.departmentId) return false
-      if (selectedBranch && appointment.branchId !== selectedBranch.branchId) return false
-      if (selectedAcademicFaculty) {
-        const department = resolveDepartment(data, appointment.departmentId)
-        if (department?.academicFacultyId !== selectedAcademicFaculty.academicFacultyId) return false
-      }
-      return true
-    })
-    const ownershipMatch = data.ownerships.some(ownership => {
-      if (ownership.facultyId !== member.facultyId || ownership.status !== 'active') return false
-      const offering = data.offerings.find(item => item.offId === ownership.offeringId)
-      if (!offering) return false
-      if (selectedSectionCode && offering.section !== selectedSectionCode) return false
-      if (selectedDepartment && offering.dept.toLowerCase() !== selectedDepartment.code.toLowerCase()) return false
-      if (selectedAcademicFaculty) {
-        const matchedDepartment = data.departments.find(item => item.code.toLowerCase() === offering.dept.toLowerCase())
-        if (matchedDepartment?.academicFacultyId !== selectedAcademicFaculty.academicFacultyId) return false
-      }
-      return true
-    })
-    if (!selectedAcademicFaculty && !selectedDepartment && !selectedBranch && !selectedBatch && !selectedSectionCode) return true
-    return appointmentMatch || ownershipMatch
-  })
+  const filteredUniversityStudents = data.students
+    .filter(item => isVisibleAdminRecord(item.status))
+    .filter(student => matchesStudentScope(student, data, activeUniversityScope))
+  const filteredUniversityFaculty = data.facultyMembers
+    .filter(item => isVisibleAdminRecord(item.status))
+    .filter(member => matchesFacultyScope(member, data, activeUniversityScope))
   const universityContextLabel = selectedSectionCode
     ? `Section ${selectedSectionCode}`
     : selectedBatch
@@ -2762,14 +2759,32 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         : selectedAcademicFaculty
           ? selectedAcademicFaculty.name
           : 'Main Dashboard'
-  const universityOverviewItems = universityNextItems.length > 0
-    ? universityNextItems
-    : universityLeftItems.map(item => ({
-        key: item.key,
-        title: item.title,
-        description: item.subtitle,
-        onSelect: item.onSelect,
-      }))
+  const activeUniversityRegistryScope = activeUniversityScope
+    ? {
+        ...activeUniversityScope,
+        label: universityContextLabel,
+      }
+    : null
+  const universityNavigatorTitle = selectedSectionCode
+    ? 'Navigator Complete'
+    : selectedBatch
+      ? 'Sections'
+      : selectedBranch
+        ? 'Years'
+        : selectedDepartment
+          ? 'Branches'
+          : 'Departments'
+  const universityNavigatorHelper = selectedSectionCode
+    ? 'You are already at the last hierarchy layer. Use the tabs above or jump into the scoped student or faculty registries below.'
+    : selectedBatch
+      ? 'Choose a section to finish the hierarchy path. Clicking a section moves you into the last layer with the same layout.'
+      : selectedBranch
+        ? 'Choose a year to keep drilling down. Each card behaves exactly like selecting the year dropdown above.'
+        : selectedDepartment
+          ? 'Choose a branch to keep the same layout and move one level deeper.'
+          : selectedAcademicFaculty
+            ? 'Choose a department to keep the same layout and move one level deeper.'
+            : 'Select an academic faculty from the left rail first. This area then becomes the next-level navigator for its departments.'
   const universityLevelTitle = currentUniversityLevel === 'faculty'
     ? 'Academic Faculties'
     : currentUniversityLevel === 'department'
@@ -2838,46 +2853,6 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       hasMultipleLeaders: leaderIds.length > 1,
     }
   }
-  const universityStudentGroups = groupCollectionByLabel(filteredUniversityStudents, student => {
-    const context = student.activeAcademicContext
-    if (!context) return 'Unmapped'
-    if (selectedBatch) return `Section ${context.sectionCode}`
-    if (selectedBranch) return context.semesterNumber ? deriveCurrentYearLabel(context.semesterNumber) : 'Unknown year'
-    if (selectedDepartment) return context.branchName ?? 'Unknown branch'
-    return context.departmentName ?? 'Unassigned department'
-  })
-  const universityFacultyGroups = groupCollectionByLabel(filteredUniversityFaculty, member => {
-    const primaryDepartment = resolveDepartment(data, getPrimaryAppointmentDepartmentId(member))
-    if (selectedBatch) {
-      const sections = Array.from(new Set(
-        data.ownerships
-          .filter(ownership => ownership.facultyId === member.facultyId && ownership.status === 'active')
-          .flatMap(ownership => {
-            const offering = data.offerings.find(item => item.offId === ownership.offeringId)
-            if (!offering) return []
-            if (selectedSectionCode && offering.section !== selectedSectionCode) return []
-            return [`Section ${offering.section}`]
-          }),
-      ))
-      return sections[0] ?? 'Shared section support'
-    }
-    if (selectedBranch) {
-      const years = Array.from(new Set(
-        data.ownerships
-          .filter(ownership => ownership.facultyId === member.facultyId && ownership.status === 'active')
-          .flatMap(ownership => {
-            const offering = data.offerings.find(item => item.offId === ownership.offeringId)
-            return offering ? [offering.year] : []
-          }),
-      ))
-      return years[0] ?? 'Shared year support'
-    }
-    if (selectedDepartment) {
-      const primaryBranch = member.appointments.find(item => item.status === 'active' && item.branchId)?.branchId
-      return resolveBranch(data, primaryBranch)?.name ?? 'Department pool'
-    }
-    return primaryDepartment?.name ?? 'Shared faculty'
-  })
   const mentorEligibleFaculty = data.facultyMembers
     .filter(item => item.status === 'active' && item.roleGrants.some(grant => grant.roleCode === 'MENTOR' && isCurrentRoleGrant(grant)))
     .sort((left, right) => left.displayName.localeCompare(right.displayName))
@@ -2895,9 +2870,23 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     : false
   const studentRegistryItems = data.students
     .filter(item => isVisibleAdminRecord(item.status))
+    .filter(item => matchesStudentScope(item, data, registryScope ? {
+      academicFacultyId: registryScope.academicFacultyId,
+      departmentId: registryScope.departmentId,
+      branchId: registryScope.branchId,
+      batchId: registryScope.batchId,
+      sectionCode: registryScope.sectionCode,
+    } : null))
     .sort((left, right) => left.name.localeCompare(right.name))
   const facultyRegistryItems = data.facultyMembers
     .filter(item => isVisibleAdminRecord(item.status))
+    .filter(item => matchesFacultyScope(item, data, registryScope ? {
+      academicFacultyId: registryScope.academicFacultyId,
+      departmentId: registryScope.departmentId,
+      branchId: registryScope.branchId,
+      batchId: registryScope.batchId,
+      sectionCode: registryScope.sectionCode,
+    } : null))
     .sort((left, right) => left.displayName.localeCompare(right.displayName))
   const visibleTerms = data.terms
     .filter(item => isVisibleAdminRecord(item.status))
@@ -2925,12 +2914,70 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     if (roleGrantForm.scopeType === 'batch') {
       return data.batches.filter(item => isVisibleAdminRecord(item.status)).map(item => ({ value: item.batchId, label: `${item.batchLabel} · ${deriveCurrentYearLabel(item.currentSemester)}` }))
     }
-    if (roleGrantForm.scopeType === 'offering') {
+  if (roleGrantForm.scopeType === 'offering') {
       return visibleOfferings.map(item => ({ value: item.offId, label: `${item.code} · ${item.year} · ${item.section}` }))
     }
     return []
   })()
-  const canNavigateBack = routeHistory.length > 0 || route.section !== 'overview' || universityTab !== 'overview' || !!selectedSectionCode
+  const canNavigatePageBack = routeHistory.length > 0 || route.section !== 'overview'
+  const canNavigateUniversityPanelBack = route.section === 'faculties'
+    && (universityTab !== 'overview' || !!selectedSectionCode || !!route.batchId || !!route.branchId || !!route.departmentId || !!route.academicFacultyId)
+  const handleOpenScopedRegistry = (section: 'students' | 'faculty-members') => {
+    if (activeUniversityRegistryScope) setRegistryScope(activeUniversityRegistryScope)
+    navigate({ section })
+  }
+  const handleReturnToScopedUniversity = () => {
+    if (!registryScope) return
+    updateUniversityTab('overview', { recordHistory: false })
+    updateSelectedSectionCode(registryScope.sectionCode, { recordHistory: false })
+    navigate({
+      section: 'faculties',
+      academicFacultyId: registryScope.academicFacultyId ?? undefined,
+      departmentId: registryScope.departmentId ?? undefined,
+      branchId: registryScope.branchId ?? undefined,
+      batchId: registryScope.batchId ?? undefined,
+    }, { recordHistory: false })
+  }
+  const handleNavigateUniversityPanelBack = () => {
+    if (route.section !== 'faculties') return
+    if (selectedSectionCode) {
+      updateSelectedSectionCode(null, { recordHistory: false })
+      return
+    }
+    if (universityTab !== 'overview') {
+      updateUniversityTab('overview', { recordHistory: false })
+      return
+    }
+    if (selectedBatch) {
+      navigate({
+        section: 'faculties',
+        academicFacultyId: selectedAcademicFaculty?.academicFacultyId,
+        departmentId: selectedDepartment?.departmentId,
+        branchId: selectedBranch?.branchId,
+      }, { recordHistory: false })
+      return
+    }
+    if (selectedBranch) {
+      navigate({
+        section: 'faculties',
+        academicFacultyId: selectedAcademicFaculty?.academicFacultyId,
+        departmentId: selectedDepartment?.departmentId,
+      }, { recordHistory: false })
+      return
+    }
+    if (selectedDepartment) {
+      navigate({
+        section: 'faculties',
+        academicFacultyId: selectedAcademicFaculty?.academicFacultyId,
+      }, { recordHistory: false })
+      return
+    }
+    if (selectedAcademicFaculty) {
+      navigate({ section: 'faculties' }, { recordHistory: false })
+      return
+    }
+    handleNavigateBack()
+  }
 
   // --- Main workspace ---
   return (
@@ -2944,11 +2991,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         actionCount={actionQueueCount}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        searchResults={searchResults.map(r => ({ key: r.key, title: r.label, subtitle: r.meta, onSelect: () => { setSearchQuery(''); navigate(r.route) } }))}
+        searchResults={searchResults.map(r => ({ key: r.key, title: r.label, subtitle: r.meta, onSelect: () => { clearRegistryScope(); setSearchQuery(''); navigate(r.route) } }))}
         onToggleTheme={() => persistTheme(themeMode === 'frosted-focus-light' ? 'frosted-focus-dark' : 'frosted-focus-light')}
         onGoHome={handleGoHome}
-        canNavigateBack={canNavigateBack}
-        onNavigateBack={handleNavigateBack}
         onToggleQueue={() => setShowActionQueue(current => !current)}
         onRefresh={() => { void loadAdminData() }}
         onExitPortal={onExitPortal}
@@ -2964,57 +3009,79 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         {/* ========== OVERVIEW ========== */}
         {route.section === 'overview' && (
           <div style={{ display: 'grid', gap: 16 }}>
-            <SectionHeading title="Operations Dashboard" eyebrow="Sysadmin Control Plane" caption="University setup, student registry, faculty registry, and governed requests all begin here." />
-            <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'minmax(0, 1.3fr) minmax(260px, 0.7fr)' }}>
-              <div style={{ display: 'grid', gap: 16 }}>
-                <SectionLaunchCard
-                  title="University"
-                  caption={`${visibleAcademicFaculties.length} faculties · ${visibleDepartments.length} departments · ${visibleBranches.length} branches`}
-                  helper="Selector-driven hierarchy control for academic faculty, department, branch, year, section, policy bands, CE/SEE, CGPA progression, and course tables."
-                  icon={<LayoutDashboard size={18} />}
-                  active={false}
-                  onClick={() => navigate({ section: 'faculties' })}
-                />
-                <SectionLaunchCard
-                  title="Students"
-                  caption={`${data.students.length} records · ${data.students.filter(item => item.activeMentorAssignment).length} mentored`}
-                  helper="Canonical student identity, mentor eligibility, academic context corrections, and semester progression review live in one registry."
-                  icon={<GraduationCap size={18} />}
-                  active={false}
-                  onClick={() => navigate({ section: 'students' })}
-                />
-                <SectionLaunchCard
-                  title="Faculty"
-                  caption={`${data.facultyMembers.length} profiles · ${data.ownerships.filter(item => item.status === 'active').length} active teaching assignments`}
-                  helper="Appointments, permissions, course ownership, mentor scope, and teaching-profile parity are all managed from the faculty registry."
-                  icon={<UserCog size={18} />}
-                  active={false}
-                  onClick={() => navigate({ section: 'faculty-members' })}
-                />
-              </div>
-              <Card style={{ padding: 18, display: 'grid', gap: 14, alignContent: 'start' }}>
-                <div>
-                  <div style={{ ...sora, fontSize: 17, fontWeight: 800, color: T.text }}>Control Snapshot</div>
-                  <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 6 }}>Live counts reflect the actual admin backend, not the old static sysadmin mock.</div>
-                </div>
-                <div style={{ display: 'grid', gap: 10 }}>
-                  <MetricCard label="Open Requests" value={String(openRequests.length)} helper="Items that still need admin review, approval, implementation, or closure." onClick={() => navigate({ section: 'requests' })} />
-                  <MetricCard label="Private Reminders" value={remindersSupported ? String(pendingReminders.length) : 'API'} helper={remindersSupported ? 'Your personal admin notes, visible only in this account.' : 'This live backend has not deployed private reminder support yet.'} onClick={() => setShowActionQueue(true)} />
-                  <MetricCard label="Recycle Bin" value={String(deletedItems.length)} helper="Soft-deleted entities that can still be restored within the retention window." onClick={() => navigate({ section: 'history' })} />
-                  <MetricCard label="Recent Audit" value={String(recentAuditEvents.length)} helper="Latest cross-entity changes, including planner saves and restore activity." onClick={() => navigate({ section: 'history' })} />
-                </div>
-                <div style={{ ...mono, fontSize: 10, color: T.dim, lineHeight: 1.8 }}>
-                  Back navigation and scoped search are now intended to behave like an operational control plane instead of a one-off setup form.
-                </div>
-              </Card>
+            <SectionHeading
+              title="Operations Dashboard"
+              eyebrow="Sysadmin Control Plane"
+              caption="University setup, student registry, faculty registry, and governed requests all begin here."
+              toneColor={ADMIN_SECTION_TONES.overview}
+            />
+            <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
+              <SectionLaunchCard
+                title="University"
+                caption={`${visibleAcademicFaculties.length} faculties · ${visibleDepartments.length} departments · ${visibleBranches.length} branches`}
+                helper="Selector-driven hierarchy control for academic faculty, department, branch, year, section, policy bands, CE/SEE, CGPA progression, and course tables."
+                icon={<LayoutDashboard size={18} />}
+                tone={ADMIN_SECTION_TONES.faculties}
+                active={false}
+                onClick={() => {
+                  clearRegistryScope()
+                  navigate({ section: 'faculties' })
+                }}
+              />
+              <SectionLaunchCard
+                title="Students"
+                caption={`${data.students.length} records · ${data.students.filter(item => item.activeMentorAssignment).length} mentored`}
+                helper="Canonical student identity, mentor eligibility, academic context corrections, and semester progression review live in one registry."
+                icon={<GraduationCap size={18} />}
+                tone={ADMIN_SECTION_TONES.students}
+                active={false}
+                onClick={() => {
+                  clearRegistryScope()
+                  navigate({ section: 'students' })
+                }}
+              />
+              <SectionLaunchCard
+                title="Faculty"
+                caption={`${data.facultyMembers.length} profiles · ${data.ownerships.filter(item => item.status === 'active').length} active teaching assignments`}
+                helper="Appointments, permissions, course ownership, mentor scope, and teaching-profile parity are all managed from the faculty registry."
+                icon={<UserCog size={18} />}
+                tone={ADMIN_SECTION_TONES['faculty-members']}
+                active={false}
+                onClick={() => {
+                  clearRegistryScope()
+                  navigate({ section: 'faculty-members' })
+                }}
+              />
             </div>
+            <Card style={{ padding: 18, display: 'grid', gap: 12, background: `linear-gradient(180deg, ${T.surface}, ${T.surface2})` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <HeroBadge color={T.accent}><Bell size={12} /> Action Queue {actionQueueCount}</HeroBadge>
+                <HeroBadge color={T.warning}><Clock3 size={12} /> Open Requests {openRequests.length}</HeroBadge>
+                <HeroBadge color={T.danger}><RefreshCw size={12} /> Recycle Bin {deletedItems.length}</HeroBadge>
+                <HeroBadge color={remindersSupported ? T.success : T.orange}><CheckCircle2 size={12} /> {remindersSupported ? `Private Reminders ${pendingReminders.length}` : 'Reminder API offline on this backend'}</HeroBadge>
+              </div>
+              <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                The right rail is the operational queue. This dashboard stays intentionally light so the three launch blocks remain the primary wayfinding surface instead of competing with another summary panel.
+              </div>
+            </Card>
           </div>
         )}
 
         {/* ========== FACULTIES (selector workspace) ========== */}
         {route.section === 'faculties' && (
           <div style={{ display: 'grid', gap: 16 }}>
-            <SectionHeading title="University" eyebrow="Hierarchy Control" caption="Selector-driven control for academic faculty, department, branch, year, section, policy, and semester-wise course setup." />
+            <SectionHeading
+              title="University"
+              eyebrow="Hierarchy Control"
+              caption="Selector-driven control for academic faculty, department, branch, year, section, policy, and semester-wise course setup."
+              toneColor={ADMIN_SECTION_TONES.faculties}
+              actions={
+                <>
+                  {canNavigateUniversityPanelBack ? <Btn type="button" size="sm" variant="ghost" onClick={handleNavigateUniversityPanelBack}><ChevronLeft size={14} /> Back In Panel</Btn> : null}
+                  {canNavigatePageBack ? <Btn type="button" size="sm" variant="ghost" onClick={handleNavigateBack}><ChevronLeft size={14} /> Back Page</Btn> : null}
+                </>
+              }
+            />
 
             <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
@@ -3156,6 +3223,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {selectedBranch ? <Chip color={T.success}>{selectedBranch.programLevel}</Chip> : null}
                     {selectedBatch ? <Chip color={activeBatchPolicyOverride ? T.orange : T.dim}>{activeBatchPolicyOverride ? 'Override active' : 'Inherited policy'}</Chip> : null}
+                    {canNavigateUniversityPanelBack ? <Btn type="button" size="sm" variant="ghost" onClick={handleNavigateUniversityPanelBack}><ChevronLeft size={14} /> Back In Panel</Btn> : null}
                   </div>
                 </div>
 
@@ -3193,20 +3261,30 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                 </div>
               </Card>
 
-              {universityTab === 'overview' && !selectedAcademicFaculty && (
+              {universityTab === 'overview' && (
                 <Card style={{ padding: 16, background: T.surface2, display: 'grid', gap: 10 }}>
-                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Overview Navigator</div>
+                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Overview Navigator · {universityNavigatorTitle}</div>
                   <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
-                    Start with an academic faculty. The left rail is your editable control list, while the cards below mirror the same scope with descriptive metadata and direct drill-down actions.
+                    {universityNavigatorHelper}
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8 }}>
-                    {universityOverviewItems.map(item => (
-                      <button key={item.key} type="button" onClick={item.onSelect} style={{ textAlign: 'left', borderRadius: 12, border: `1px solid ${T.border}`, background: T.surface, padding: '12px 14px', cursor: 'pointer' }}>
-                        <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{item.title}</div>
-                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{item.description}</div>
-                      </button>
-                    ))}
-                  </div>
+                  {universityNextItems.length === 0 ? (
+                    <Card style={{ padding: 14, background: T.surface }}>
+                      <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                        {selectedSectionCode
+                          ? 'No further hierarchy level exists below section. Use the tabs above or jump into the scoped student or faculty pages below.'
+                          : 'The next-level cards appear here as soon as the current level on the left is selected.'}
+                      </div>
+                    </Card>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8 }}>
+                      {universityNextItems.map(item => (
+                        <button key={item.key} type="button" onClick={item.onSelect} style={{ textAlign: 'left', borderRadius: 12, border: `1px solid ${T.border}`, background: T.surface, padding: '12px 14px', cursor: 'pointer', transition: 'transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease' }}>
+                          <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{item.title}</div>
+                          <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{item.description}</div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </Card>
               )}
 
@@ -3593,49 +3671,37 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                 ) : <EmptyState title="Select a branch" body="Courses are only editable after branch scope is selected." />
               )}
 
-              {(universityTab === 'overview' || universityTab === 'courses') && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
-                  <Card style={{ padding: 14, background: T.surface2, display: 'grid', gap: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <Users size={14} color={T.accent} />
-                      <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Students View</div>
-                    </div>
-                    {universityStudentGroups.length === 0 ? <div style={{ ...mono, fontSize: 10, color: T.muted }}>No students visible in the current scope.</div> : universityStudentGroups.map(group => (
-                      <Card key={group.label} style={{ padding: 10 }}>
-                        <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{group.label}</div>
-                        <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
-                          {group.items.slice(0, 4).map(student => (
-                            <button key={student.studentId} type="button" onClick={() => navigate({ section: 'students', studentId: student.studentId })} style={{ textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
-                              <div style={{ ...sora, fontSize: 12, fontWeight: 700, color: T.text }}>{student.name}</div>
-                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>{student.usn} · CGPA {student.currentCgpa.toFixed(2)}</div>
-                            </button>
-                          ))}
-                        </div>
-                      </Card>
-                    ))}
-                  </Card>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+                <Card style={{ padding: 16, background: `linear-gradient(180deg, ${T.surface2}, ${T.surface})`, display: 'grid', gap: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Users size={14} color={ADMIN_SECTION_TONES.students} />
+                    <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Students View</div>
+                  </div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                    Open the student registry scoped to {activeUniversityRegistryScope?.label ?? 'the current hierarchy view'}.
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <Chip color={ADMIN_SECTION_TONES.students}>{filteredUniversityStudents.length} visible</Chip>
+                    {selectedSectionCode ? <Chip color={T.accent}>Section scope</Chip> : selectedBatch ? <Chip color={T.accent}>Year scope</Chip> : selectedBranch ? <Chip color={T.accent}>Branch scope</Chip> : selectedDepartment ? <Chip color={T.accent}>Department scope</Chip> : selectedAcademicFaculty ? <Chip color={T.accent}>Faculty scope</Chip> : <Chip color={T.dim}>All students</Chip>}
+                  </div>
+                  <Btn type="button" variant="ghost" onClick={() => handleOpenScopedRegistry('students')}>Open Students Page</Btn>
+                </Card>
 
-                  <Card style={{ padding: 14, background: T.surface2, display: 'grid', gap: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <UserCog size={14} color={T.accent} />
-                      <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Faculty View</div>
-                    </div>
-                    {universityFacultyGroups.length === 0 ? <div style={{ ...mono, fontSize: 10, color: T.muted }}>No faculty visible in the current scope.</div> : universityFacultyGroups.map(group => (
-                      <Card key={group.label} style={{ padding: 10 }}>
-                        <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{group.label}</div>
-                        <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
-                          {group.items.slice(0, 4).map(member => (
-                            <button key={member.facultyId} type="button" onClick={() => navigate({ section: 'faculty-members', facultyMemberId: member.facultyId })} style={{ textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
-                              <div style={{ ...sora, fontSize: 12, fontWeight: 700, color: T.text }}>{member.displayName}</div>
-                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>{member.designation}</div>
-                            </button>
-                          ))}
-                        </div>
-                      </Card>
-                    ))}
-                  </Card>
-                </div>
-              )}
+                <Card style={{ padding: 16, background: `linear-gradient(180deg, ${T.surface2}, ${T.surface})`, display: 'grid', gap: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <UserCog size={14} color={ADMIN_SECTION_TONES['faculty-members']} />
+                    <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Faculty View</div>
+                  </div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                    Open the faculty registry scoped to {activeUniversityRegistryScope?.label ?? 'the current hierarchy view'}.
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <Chip color={ADMIN_SECTION_TONES['faculty-members']}>{filteredUniversityFaculty.length} visible</Chip>
+                    {selectedSectionCode ? <Chip color={T.accent}>Section scope</Chip> : selectedBatch ? <Chip color={T.accent}>Year scope</Chip> : selectedBranch ? <Chip color={T.accent}>Branch scope</Chip> : selectedDepartment ? <Chip color={T.accent}>Department scope</Chip> : selectedAcademicFaculty ? <Chip color={T.accent}>Faculty scope</Chip> : <Chip color={T.dim}>All faculty</Chip>}
+                  </div>
+                  <Btn type="button" variant="ghost" onClick={() => handleOpenScopedRegistry('faculty-members')}>Open Faculty Page</Btn>
+                </Card>
+              </div>
             </div>
           </div>
           </div>
@@ -3645,11 +3711,23 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         {route.section === 'students' && (
           <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'minmax(320px, 410px) minmax(420px, 1fr)' }}>
             <Card style={{ padding: 18, display: 'grid', gap: 12, alignContent: 'start', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
-              <SectionHeading title="Students" eyebrow="Registry" caption="Canonical identity, enrollment correction, mentor linkage, promotion review, and audit history." />
+              <SectionHeading
+                title="Students"
+                eyebrow="Registry"
+                caption={registryScope ? `Canonical identity, enrollment correction, mentor linkage, promotion review, and audit history. Filtered to ${registryScope.label}.` : 'Canonical identity, enrollment correction, mentor linkage, promotion review, and audit history.'}
+                toneColor={ADMIN_SECTION_TONES.students}
+                actions={
+                  <>
+                    {registryScope ? <Btn type="button" size="sm" variant="ghost" onClick={handleReturnToScopedUniversity}><ChevronLeft size={14} /> Back To University</Btn> : null}
+                    {canNavigatePageBack ? <Btn type="button" size="sm" variant="ghost" onClick={handleNavigateBack}><ChevronLeft size={14} /> Back Page</Btn> : null}
+                  </>
+                }
+              />
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <Btn type="button" onClick={() => { navigate({ section: 'students' }); resetStudentEditors() }}><Plus size={14} /> New Student</Btn>
                 <Chip color={T.accent}>{studentRegistryItems.length} active</Chip>
                 <Chip color={T.warning}>{studentRegistryItems.filter(item => !item.activeMentorAssignment).length} mentor gaps</Chip>
+                {registryScope ? <Chip color={ADMIN_SECTION_TONES.students}>{registryScope.label}</Chip> : null}
               </div>
               {studentRegistryItems.map(student => (
                 <EntityButton key={student.studentId} selected={route.studentId === student.studentId} onClick={() => navigate({ section: 'students', studentId: student.studentId })}>
@@ -3880,11 +3958,23 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         {route.section === 'faculty-members' && (
           <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'minmax(320px, 410px) minmax(420px, 1fr)' }}>
             <Card style={{ padding: 18, display: 'grid', gap: 12, alignContent: 'start', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
-              <SectionHeading title="Faculty Members" eyebrow="Registry" caption="Identity, appointments, permissions, teaching ownership, and teaching-profile parity live here." />
+              <SectionHeading
+                title="Faculty Members"
+                eyebrow="Registry"
+                caption={registryScope ? `Identity, appointments, permissions, teaching ownership, and teaching-profile parity live here. Filtered to ${registryScope.label}.` : 'Identity, appointments, permissions, teaching ownership, and teaching-profile parity live here.'}
+                toneColor={ADMIN_SECTION_TONES['faculty-members']}
+                actions={
+                  <>
+                    {registryScope ? <Btn type="button" size="sm" variant="ghost" onClick={handleReturnToScopedUniversity}><ChevronLeft size={14} /> Back To University</Btn> : null}
+                    {canNavigatePageBack ? <Btn type="button" size="sm" variant="ghost" onClick={handleNavigateBack}><ChevronLeft size={14} /> Back Page</Btn> : null}
+                  </>
+                }
+              />
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <Btn type="button" onClick={() => { navigate({ section: 'faculty-members' }); resetFacultyEditors() }}><Plus size={14} /> New Faculty</Btn>
                 <Chip color={T.accent}>{facultyRegistryItems.length} active</Chip>
                 <Chip color={T.warning}>{facultyRegistryItems.filter(item => !item.roleGrants.some(grant => isCurrentRoleGrant(grant))).length} no active permissions</Chip>
+                {registryScope ? <Chip color={ADMIN_SECTION_TONES['faculty-members']}>{registryScope.label}</Chip> : null}
               </div>
               {facultyRegistryItems.map(item => {
                 const primaryDepartment = resolveDepartment(data, getPrimaryAppointmentDepartmentId(item))
@@ -4174,7 +4264,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         {/* ========== HISTORY ========== */}
         {route.section === 'history' && (
           <div style={{ display: 'grid', gap: 16 }}>
-            <SectionHeading title="History And Restore" eyebrow="Audit + Recycle Bin" caption="Use one page for recent admin activity, restore-ready deletions, and the exact records that changed." />
+            <SectionHeading
+              title="History And Restore"
+              eyebrow="Audit + Recycle Bin"
+              caption="Use one page for recent admin activity, restore-ready deletions, and the exact records that changed."
+              toneColor={ADMIN_SECTION_TONES.history}
+              actions={canNavigatePageBack ? <Btn type="button" size="sm" variant="ghost" onClick={handleNavigateBack}><ChevronLeft size={14} /> Back Page</Btn> : undefined}
+            />
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 0.9fr) minmax(420px, 1.1fr)', gap: 16, alignItems: 'start' }}>
               <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -4243,7 +4339,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         {/* ========== REQUESTS ========== */}
         {route.section === 'requests' && (
           <>
-            <SectionHeading title="Requests" eyebrow="Workflow" caption="HoD-issued permanent changes move through admin review, approval, implementation, and closure." />
+            <SectionHeading
+              title="Requests"
+              eyebrow="Workflow"
+              caption="HoD-issued permanent changes move through admin review, approval, implementation, and closure."
+              toneColor={ADMIN_SECTION_TONES.requests}
+              actions={canNavigatePageBack ? <Btn type="button" size="sm" variant="ghost" onClick={handleNavigateBack}><ChevronLeft size={14} /> Back Page</Btn> : undefined}
+            />
             <div style={{ display: 'grid', gridTemplateColumns: '0.96fr 1.04fr', gap: 16, alignItems: 'start' }}>
               <Card style={{ padding: 18, display: 'grid', gap: 10, alignContent: 'start' }}>
                 {data.requests.map(request => (

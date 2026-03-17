@@ -141,11 +141,23 @@ export function MetricCard({ label, value, helper, onClick }: { label: string; v
   )
 }
 
-export function SectionHeading({ title, caption, eyebrow, actions }: { title: string; caption: string; eyebrow?: string; actions?: ReactNode }) {
+export function SectionHeading({
+  title,
+  caption,
+  eyebrow,
+  actions,
+  toneColor = T.accent,
+}: {
+  title: string
+  caption: string
+  eyebrow?: string
+  actions?: ReactNode
+  toneColor?: string
+}) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
       <div style={{ display: 'grid', gap: 4 }}>
-        {eyebrow ? <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.12em' }}>{eyebrow}</div> : null}
+        {eyebrow ? <div style={{ ...mono, fontSize: 10, color: toneColor, textTransform: 'uppercase', letterSpacing: '0.12em' }}>{eyebrow}</div> : null}
         <div style={{ ...sora, fontSize: 18, fontWeight: 800, color: T.text }}>{title}</div>
         <div style={{ ...mono, fontSize: 11, color: T.muted }}>{caption}</div>
       </div>
@@ -260,9 +272,10 @@ export function AdminTopBar({
               type="button"
               aria-label={isLightTheme(themeMode) ? 'Switch to dark mode' : 'Switch to light mode'}
               onClick={onThemeToggle}
-              style={{ ...mono, fontSize: 10, color: T.muted, background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 8, padding: '6px 10px', cursor: 'pointer' }}
+              title={isLightTheme(themeMode) ? 'Dark mode' : 'Light mode'}
+              style={{ ...mono, fontSize: 14, lineHeight: 1, color: T.muted, background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 10px', cursor: 'pointer' }}
             >
-              {isLightTheme(themeMode) ? 'Dark' : 'Light'}
+              {isLightTheme(themeMode) ? '🌙' : '☀️'}
             </button>
             {extraActions}
           </div>

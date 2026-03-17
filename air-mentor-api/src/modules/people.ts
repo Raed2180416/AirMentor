@@ -2,7 +2,17 @@ import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import type { RouteContext } from '../app.js'
-import { facultyAppointments, facultyProfiles, institutions, roleGrants, uiPreferences, userAccounts, userPasswordCredentials } from '../db/schema.js'
+import {
+  facultyAppointments,
+  facultyOfferingOwnerships,
+  facultyProfiles,
+  institutions,
+  mentorAssignments,
+  roleGrants,
+  uiPreferences,
+  userAccounts,
+  userPasswordCredentials,
+} from '../db/schema.js'
 import { createId } from '../lib/ids.js'
 import { notFound } from '../lib/http-errors.js'
 import { hashPassword } from '../lib/passwords.js'
@@ -86,6 +96,20 @@ function mapRoleGrant(row: typeof roleGrants.$inferSelect) {
     startDate: row.startDate,
     endDate: row.endDate,
     status: row.status,
+    version: row.version,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }
+}
+
+function mapMentorAssignment(row: typeof mentorAssignments.$inferSelect) {
+  return {
+    assignmentId: row.assignmentId,
+    studentId: row.studentId,
+    facultyId: row.facultyId,
+    effectiveFrom: row.effectiveFrom,
+    effectiveTo: row.effectiveTo,
+    source: row.source,
     version: row.version,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -212,13 +236,14 @@ export async function registerPeopleRoutes(app: FastifyInstance, context: RouteC
     if (!current) throw notFound('Faculty not found')
     expectVersion(current.version, body.version, 'FacultyProfile', current)
     const [currentUser] = await context.db.select().from(userAccounts).where(eq(userAccounts.userId, current.userId))
+    const now = context.now()
     await context.db.update(userAccounts).set({
       username: body.username,
       email: body.email,
       phone: body.phone ?? null,
       status: body.status,
       version: currentUser.version + 1,
-      updatedAt: context.now(),
+      updatedAt: now,
     }).where(eq(userAccounts.userId, current.userId))
     await context.db.update(facultyProfiles).set({
       employeeCode: body.employeeCode,
@@ -227,8 +252,125 @@ export async function registerPeopleRoutes(app: FastifyInstance, context: RouteC
       joinedOn: body.joinedOn ?? null,
       status: body.status,
       version: current.version + 1,
-      updatedAt: context.now(),
+      updatedAt: now,
     }).where(eq(facultyProfiles.facultyId, params.facultyId))
+
+    const cascadeMetadata = {
+      appointmentsDeleted: 0,
+      roleGrantsDeleted: 0,
+      ownershipsDeleted: 0,
+      mentorAssignmentsEnded: 0,
+    }
+    if (body.status === 'deleted' && current.status !== 'deleted') {
+      const effectiveTo = now.slice(0, 10)
+      const [appointments, grants, ownerships, assignments] = await Promise.all([
+        context.db.select().from(facultyAppointments).where(eq(facultyAppointments.facultyId, params.facultyId)),
+        context.db.select().from(roleGrants).where(eq(roleGrants.facultyId, params.facultyId)),
+        context.db.select().from(facultyOfferingOwnerships).where(eq(facultyOfferingOwnerships.facultyId, params.facultyId)),
+        context.db.select().from(mentorAssignments).where(eq(mentorAssignments.facultyId, params.facultyId)),
+      ])
+
+      for (const appointment of appointments.filter(item => item.status !== 'deleted')) {
+        const next = {
+          ...appointment,
+          status: 'deleted',
+          version: appointment.version + 1,
+          updatedAt: now,
+        }
+        await context.db.update(facultyAppointments).set({
+          status: next.status,
+          version: next.version,
+          updatedAt: next.updatedAt,
+        }).where(eq(facultyAppointments.appointmentId, appointment.appointmentId))
+        await emitAuditEvent(context, {
+          entityType: 'FacultyAppointment',
+          entityId: appointment.appointmentId,
+          action: 'cascade_deleted',
+          actorRole: auth.activeRoleGrant.roleCode,
+          actorId: auth.facultyId,
+          before: mapAppointment(appointment),
+          after: mapAppointment(next),
+          metadata: { reason: 'faculty_profile_deleted', facultyId: params.facultyId },
+        })
+        cascadeMetadata.appointmentsDeleted += 1
+      }
+
+      for (const grant of grants.filter(item => item.status !== 'deleted')) {
+        const next = {
+          ...grant,
+          status: 'deleted',
+          version: grant.version + 1,
+          updatedAt: now,
+        }
+        await context.db.update(roleGrants).set({
+          status: next.status,
+          version: next.version,
+          updatedAt: next.updatedAt,
+        }).where(eq(roleGrants.grantId, grant.grantId))
+        await emitAuditEvent(context, {
+          entityType: 'RoleGrant',
+          entityId: grant.grantId,
+          action: 'cascade_deleted',
+          actorRole: auth.activeRoleGrant.roleCode,
+          actorId: auth.facultyId,
+          before: mapRoleGrant(grant),
+          after: mapRoleGrant(next),
+          metadata: { reason: 'faculty_profile_deleted', facultyId: params.facultyId },
+        })
+        cascadeMetadata.roleGrantsDeleted += 1
+      }
+
+      for (const ownership of ownerships.filter(item => item.status !== 'deleted')) {
+        const next = {
+          ...ownership,
+          status: 'deleted',
+          version: ownership.version + 1,
+          updatedAt: now,
+        }
+        await context.db.update(facultyOfferingOwnerships).set({
+          status: next.status,
+          version: next.version,
+          updatedAt: next.updatedAt,
+        }).where(eq(facultyOfferingOwnerships.ownershipId, ownership.ownershipId))
+        await emitAuditEvent(context, {
+          entityType: 'faculty_offering_ownership',
+          entityId: ownership.ownershipId,
+          action: 'cascade_deleted',
+          actorRole: auth.activeRoleGrant.roleCode,
+          actorId: auth.facultyId,
+          before: ownership,
+          after: next,
+          metadata: { reason: 'faculty_profile_deleted', facultyId: params.facultyId },
+        })
+        cascadeMetadata.ownershipsDeleted += 1
+      }
+
+      for (const assignment of assignments.filter(item => !item.effectiveTo || item.effectiveTo > effectiveTo)) {
+        const next = {
+          ...assignment,
+          effectiveTo,
+          version: assignment.version + 1,
+          updatedAt: now,
+        }
+        await context.db.update(mentorAssignments).set({
+          effectiveTo: next.effectiveTo,
+          version: next.version,
+          updatedAt: next.updatedAt,
+        }).where(eq(mentorAssignments.assignmentId, assignment.assignmentId))
+        await emitAuditEvent(context, {
+          entityType: 'MentorAssignment',
+          entityId: assignment.assignmentId,
+          action: 'cascade_ended',
+          actorRole: auth.activeRoleGrant.roleCode,
+          actorId: auth.facultyId,
+          before: mapMentorAssignment(assignment),
+          after: mapMentorAssignment(next),
+          metadata: { reason: 'faculty_profile_deleted', facultyId: params.facultyId },
+        })
+        cascadeMetadata.mentorAssignmentsEnded += 1
+      }
+    }
+
     const [next] = await context.db.select().from(facultyProfiles).where(eq(facultyProfiles.facultyId, params.facultyId))
     const [nextUser] = await context.db.select().from(userAccounts).where(eq(userAccounts.userId, current.userId))
     const appointments = await context.db.select().from(facultyAppointments).where(eq(facultyAppointments.facultyId, params.facultyId))
@@ -252,6 +394,12 @@ export async function registerPeopleRoutes(app: FastifyInstance, context: RouteC
         phone: currentUser.phone,
       },
       after: payload,
+      metadata: body.status === 'deleted' && current.status !== 'deleted'
+        ? {
+            reason: 'faculty_profile_deleted',
+            cascade: cascadeMetadata,
+          }
+        : undefined,
     })
     return payload
   })
