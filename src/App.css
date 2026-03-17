@@ -186,12 +186,21 @@ body,
 .app-shell input,
 .app-shell select,
 .app-shell textarea {
+	color-scheme: inherit;
+	-webkit-text-fill-color: currentColor;
+	accent-color: var(--app-accent, #3b82f6);
 	transition:
 		background-color var(--ui-fast) var(--ui-ease),
 		border-color var(--ui-fast) var(--ui-ease),
 		color var(--ui-fast) var(--ui-ease),
 		box-shadow var(--ui-fast) var(--ui-ease),
 		opacity var(--ui-fast) var(--ui-ease);
+}
+
+.app-shell input::placeholder,
+.app-shell textarea::placeholder {
+	color: var(--app-muted, #4d647f);
+	opacity: 0.9;
 }
 
 .app-shell button:not(:disabled):hover,

@@ -26,6 +26,7 @@ export function getReadOnlyInputStyle(): CSSProperties {
   return {
     background: T.surface2,
     color: T.dim,
+    WebkitTextFillColor: T.dim,
     cursor: 'default',
     pointerEvents: 'none' as const,
     boxShadow: `inset 0 1px 0 ${T.surface3}`,
@@ -88,6 +89,7 @@ export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
         border: `1px solid ${T.border2}`,
         background: T.surface,
         color: T.text,
+        colorScheme: 'inherit',
         padding: '10px 12px',
         boxShadow: `inset 0 1px 0 ${T.surface3}`,
         ...(props.style ?? {}),
@@ -109,6 +111,7 @@ export function SelectInput(props: SelectHTMLAttributes<HTMLSelectElement>) {
         border: `1px solid ${T.border2}`,
         background: T.surface,
         color: T.text,
+        colorScheme: 'inherit',
         padding: '10px 12px',
         boxShadow: `inset 0 1px 0 ${T.surface3}`,
         ...(props.style ?? {}),
@@ -131,11 +134,50 @@ export function TextAreaInput(props: TextareaHTMLAttributes<HTMLTextAreaElement>
         border: `1px solid ${T.border2}`,
         background: T.surface,
         color: T.text,
+        colorScheme: 'inherit',
         padding: '10px 12px',
         boxShadow: `inset 0 1px 0 ${T.surface3}`,
         ...(props.style ?? {}),
       }}
     />
+  )
+}
+
+export function SearchField({
+  value,
+  onChange,
+  placeholder,
+  ariaLabel,
+}: {
+  value: string
+  onChange: (value: string) => void
+  placeholder: string
+  ariaLabel: string
+}) {
+  return (
+    <div style={{ position: 'relative' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 42, borderRadius: 12, border: `1px solid ${T.border2}`, background: T.surface, padding: '0 12px', boxShadow: `inset 0 1px 0 ${T.surface3}` }}>
+        <Search size={14} color={T.muted} />
+        <input
+          aria-label={ariaLabel}
+          value={value}
+          onChange={event => onChange(event.target.value)}
+          placeholder={placeholder}
+          style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', color: T.text, colorScheme: 'inherit', ...mono, fontSize: 11 }}
+        />
+        {value ? (
+          <button
+            type="button"
+            aria-label={`Clear ${ariaLabel.toLowerCase()}`}
+            title="Clear"
+            onClick={() => onChange('')}
+            style={{ width: 24, height: 24, borderRadius: 8, border: 'none', background: 'transparent', color: T.dim, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+          >
+            <X size={13} />
+          </button>
+        ) : null}
+      </div>
+    </div>
   )
 }
 
@@ -413,7 +455,7 @@ export function EntityButton({ selected, onClick, children, style: extraStyle }:
         border: `1px solid ${selected ? T.accent : T.border}`,
         background: selected ? `linear-gradient(180deg, ${T.accent}16, ${T.surface})` : `linear-gradient(180deg, ${T.surface}, ${T.surface2})`,
         padding: '14px 15px',
-        minHeight: 74,
+        minHeight: 92,
         display: 'grid',
         alignContent: 'start',
         gap: 6,

@@ -82,6 +82,7 @@ import {
   HeroBadge,
   InfoBanner,
   ModalFrame,
+  SearchField,
   SectionHeading,
   SelectInput,
   TextAreaInput,
@@ -89,12 +90,11 @@ import {
   TOP_TABS,
   formatDate,
   formatDateTime,
-  getReadOnlyInputStyle,
   type BreadcrumbSegment,
 } from './system-admin-ui'
 import type { LiveAdminSectionId } from './system-admin-live-data'
 import { applyThemePreset, isLightTheme } from './theme'
-import { SystemAdminTimetableEditor } from './system-admin-timetable-editor'
+import { SystemAdminFacultyCalendarWorkspace } from './system-admin-faculty-calendar-workspace'
 import { Btn, Card, Chip, PageShell } from './ui-primitives'
 
 type SystemAdminLiveAppProps = {
@@ -908,7 +908,7 @@ function SectionLaunchCard({
       onClick={onClick}
       style={{
         padding: 22,
-        minHeight: 246,
+        minHeight: 220,
         background: active
           ? `linear-gradient(160deg, ${tone}18, ${T.surface})`
           : `linear-gradient(160deg, ${T.surface}, ${T.surface2})`,
@@ -927,6 +927,38 @@ function SectionLaunchCard({
         </div>
       </div>
       <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.8 }}>{helper}</div>
+    </Card>
+  )
+}
+
+function OverviewSupportCard({
+  title,
+  value,
+  helper,
+  tone,
+  onClick,
+}: {
+  title: string
+  value: string
+  helper: string
+  tone: string
+  onClick?: () => void
+}) {
+  return (
+    <Card
+      glow={tone}
+      onClick={onClick}
+      style={{
+        padding: 18,
+        minHeight: 160,
+        display: 'grid',
+        alignContent: 'space-between',
+        background: `linear-gradient(180deg, ${T.surface}, ${T.surface2})`,
+      }}
+    >
+      <div style={{ ...mono, fontSize: 10, color: tone, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{title}</div>
+      <div style={{ ...sora, fontSize: 28, fontWeight: 800, color: T.text }}>{value}</div>
+      <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>{helper}</div>
     </Card>
   )
 }
@@ -972,7 +1004,7 @@ function AdminDetailTabs({
   onChange: (tabId: string) => void
 }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
       {tabs.map(tab => (
         <button
           key={tab.id}
@@ -981,23 +1013,24 @@ function AdminDetailTabs({
           disabled={tab.disabled}
           onClick={() => onChange(tab.id)}
           style={{
-            display: 'grid',
-            justifyItems: 'start',
-            alignContent: 'space-between',
-            gap: 10,
-            minHeight: 82,
-            borderRadius: 18,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            minHeight: 40,
+            borderRadius: 12,
             border: `1px solid ${activeTab === tab.id ? T.accent : T.border}`,
-            background: activeTab === tab.id ? `linear-gradient(180deg, ${T.accent}16, ${T.surface})` : `linear-gradient(180deg, ${T.surface}, ${T.surface2})`,
+            background: activeTab === tab.id ? `linear-gradient(180deg, ${T.accent}14, ${T.surface})` : `linear-gradient(180deg, ${T.surface}, ${T.surface2})`,
             color: activeTab === tab.id ? T.accent : (tab.disabled ? T.dim : T.muted),
             cursor: tab.disabled ? 'not-allowed' : 'pointer',
-            padding: '12px 14px',
+            padding: '8px 12px',
             opacity: tab.disabled ? 0.55 : 1,
             textAlign: 'left',
           }}
         >
-          <span style={{ ...sora, fontSize: 13, fontWeight: 700 }}>{tab.label}</span>
-          {tab.count != null ? <Chip color={activeTab === tab.id ? T.accent : T.dim} size={8}>{String(tab.count)}</Chip> : <span style={{ ...mono, fontSize: 9, color: T.dim }}>{tab.disabled ? 'Locked' : 'Open'}</span>}
+          <span style={{ ...sora, fontSize: 12, fontWeight: 700 }}>{tab.label}</span>
+          {tab.count != null
+            ? <Chip color={activeTab === tab.id ? T.accent : T.dim} size={8}>{String(tab.count)}</Chip>
+            : <span style={{ ...mono, fontSize: 9, color: T.dim }}>{tab.disabled ? 'Locked' : 'Open'}</span>}
         </button>
       ))}
     </div>
@@ -1050,6 +1083,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const [registryScope, setRegistryScope] = useState<UniversityScopeState | null>(null)
   const [studentRegistryFilter, setStudentRegistryFilter] = useState<RegistryFilterState>(() => defaultRegistryFilter())
   const [facultyRegistryFilter, setFacultyRegistryFilter] = useState<RegistryFilterState>(() => defaultRegistryFilter())
+  const [studentRegistrySearch, setStudentRegistrySearch] = useState('')
+  const [facultyRegistrySearch, setFacultyRegistrySearch] = useState('')
   const [dismissedQueueItemKeys, setDismissedQueueItemKeys] = useState<string[]>(() => {
     if (typeof window === 'undefined') return []
     try {
@@ -1113,7 +1148,6 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const deferredSearch = useDeferredValue(searchQuery)
 
   applyThemePreset(themeMode)
-  const readOnlyInputStyle = getReadOnlyInputStyle()
 
   const persistTheme = useCallback((nextMode: ThemeMode) => {
     setThemeMode(nextMode)
@@ -3159,6 +3193,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     ? universityTabOptions.filter(item => item.id !== 'overview')
     : []
   const showInlineActionQueue = showActionQueue && viewportWidth >= 1480
+  const registryIsSingleColumn = viewportWidth < 1180
   const registryPageColumns = viewportWidth < 1180 ? 'minmax(0, 1fr)' : 'minmax(360px, 460px) minmax(0, 1fr)'
   const universityWorkspaceColumns = viewportWidth < 1220 ? 'minmax(0, 1fr)' : '260px minmax(0, 1fr)'
   const registryFilterColumns = viewportWidth < 760
@@ -3273,6 +3308,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       .filter(item => !effectiveFacultyRegistryFilter.batchId || item.batchId === effectiveFacultyRegistryFilter.batchId)
       .flatMap(item => item.sectionLabels),
   )).sort()
+  const normalizedStudentRegistrySearch = studentRegistrySearch.trim().toLowerCase()
+  const normalizedFacultyRegistrySearch = facultyRegistrySearch.trim().toLowerCase()
   const studentRegistryItems = data.students
     .filter(item => isStudentVisible(data, item))
     .filter(item => matchesStudentScope(item, data, {
@@ -3282,6 +3319,21 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       batchId: effectiveStudentRegistryFilter.batchId || null,
       sectionCode: effectiveStudentRegistryFilter.sectionCode || null,
     }))
+    .filter(item => {
+      if (!normalizedStudentRegistrySearch) return true
+      const searchableText = [
+        item.name,
+        item.usn,
+        item.rollNumber ?? '',
+        item.email ?? '',
+        item.phone ?? '',
+        item.activeAcademicContext?.departmentName ?? '',
+        item.activeAcademicContext?.branchName ?? '',
+        item.activeAcademicContext?.batchLabel ?? '',
+        item.activeAcademicContext?.sectionCode ?? '',
+      ].join(' ').toLowerCase()
+      return searchableText.includes(normalizedStudentRegistrySearch)
+    })
     .sort((left, right) => {
       const leftKey = `${left.activeAcademicContext?.departmentName ?? ''}-${left.activeAcademicContext?.branchName ?? ''}-${left.name}-${left.usn}`
       const rightKey = `${right.activeAcademicContext?.departmentName ?? ''}-${right.activeAcademicContext?.branchName ?? ''}-${right.name}-${right.usn}`
@@ -3296,6 +3348,21 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       batchId: effectiveFacultyRegistryFilter.batchId || null,
       sectionCode: effectiveFacultyRegistryFilter.sectionCode || null,
     }))
+    .filter(item => {
+      if (!normalizedFacultyRegistrySearch) return true
+      const primaryDepartment = resolveDepartment(data, getPrimaryAppointmentDepartmentId(item))?.name ?? ''
+      const searchableText = [
+        item.displayName,
+        item.employeeCode,
+        item.username,
+        item.email,
+        item.phone ?? '',
+        item.designation,
+        primaryDepartment,
+        ...item.roleGrants.map(grant => grant.roleCode),
+      ].join(' ').toLowerCase()
+      return searchableText.includes(normalizedFacultyRegistrySearch)
+    })
     .sort((left, right) => {
       const leftDepartment = resolveDepartment(data, getPrimaryAppointmentDepartmentId(left))?.name ?? ''
       const rightDepartment = resolveDepartment(data, getPrimaryAppointmentDepartmentId(right))?.name ?? ''
@@ -3429,62 +3496,68 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
         {/* ========== OVERVIEW ========== */}
         {route.section === 'overview' && (
-          <div className="fade-up" style={{ display: 'grid', gap: 16 }}>
-            <SectionHeading
-              title="Operations Dashboard"
-              eyebrow="Sysadmin Control Plane"
-              caption="University setup, student registry, faculty registry, and governed requests all begin here."
-              toneColor={ADMIN_SECTION_TONES.overview}
-            />
-            <div style={{ display: 'grid', gap: 18, gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 280px))', justifyContent: 'center' }}>
-              <SectionLaunchCard
-                title="University"
-                caption={`${visibleAcademicFaculties.length} faculties · ${visibleDepartments.length} departments · ${visibleBranches.length} branches`}
-                helper="Selector-driven hierarchy control for academic faculty, department, branch, year, section, policy bands, CE/SEE, CGPA progression, and course tables."
-                icon={<LayoutDashboard size={18} />}
-                tone={ADMIN_SECTION_TONES.faculties}
-                active={false}
-                onClick={() => {
-                  clearRegistryScope()
-                  navigate({ section: 'faculties' })
-                }}
-              />
-              <SectionLaunchCard
-                title="Students"
-                caption={`${data.students.length} records · ${data.students.filter(item => item.activeMentorAssignment).length} mentored`}
-                helper="Canonical student identity, mentor eligibility, academic context corrections, and semester progression review live in one registry."
-                icon={<GraduationCap size={18} />}
-                tone={ADMIN_SECTION_TONES.students}
-                active={false}
-                onClick={() => {
-                  clearRegistryScope()
-                  navigate({ section: 'students' })
-                }}
-              />
-              <SectionLaunchCard
-                title="Faculty"
-                caption={`${data.facultyMembers.length} profiles · ${data.ownerships.filter(item => item.status === 'active').length} active teaching assignments`}
-                helper="Appointments, permissions, course ownership, mentor scope, and teaching-profile parity are all managed from the faculty registry."
-                icon={<UserCog size={18} />}
-                tone={ADMIN_SECTION_TONES['faculty-members']}
-                active={false}
-                onClick={() => {
-                  clearRegistryScope()
-                  navigate({ section: 'faculty-members' })
-                }}
-              />
+          <div className="fade-up" style={{ display: 'grid', gap: 18 }}>
+            <div style={{ width: '100%', maxWidth: 1080, margin: '0 auto', display: 'grid', gap: 18 }}>
+              <Card style={{ padding: 22, display: 'grid', gap: 14, textAlign: 'center', background: `radial-gradient(circle at top, ${T.accent}12, transparent 34%), linear-gradient(180deg, ${T.surface}, ${T.surface2})` }}>
+                <div style={{ ...mono, fontSize: 10, color: ADMIN_SECTION_TONES.overview, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Sysadmin Control Plane</div>
+                <div style={{ ...sora, fontSize: 28, fontWeight: 800, color: T.text }}>Operations Dashboard</div>
+                <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.9, maxWidth: 760, margin: '0 auto' }}>
+                  University setup, student registry, faculty registry, and governed requests all begin here. The launch blocks stay centered and primary so the dashboard feels like navigation, not another long report.
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <HeroBadge color={T.accent}><Bell size={12} /> Action Queue {actionQueueCount}</HeroBadge>
+                  <HeroBadge color={T.warning}><Clock3 size={12} /> Open Requests {openRequests.length}</HeroBadge>
+                  <HeroBadge color={T.danger}><RefreshCw size={12} /> Hidden Records {hiddenItemCount}</HeroBadge>
+                  <HeroBadge color={remindersSupported ? T.success : T.orange}><CheckCircle2 size={12} /> {remindersSupported ? `Private Reminders ${pendingReminders.length}` : 'Reminder API offline on this backend'}</HeroBadge>
+                </div>
+              </Card>
+
+              <div style={{ display: 'grid', gap: 18, gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 280px))', justifyContent: 'center' }}>
+                <SectionLaunchCard
+                  title="University"
+                  caption={`${visibleAcademicFaculties.length} faculties · ${visibleDepartments.length} departments · ${visibleBranches.length} branches`}
+                  helper="Selector-driven hierarchy control for academic faculty, department, branch, year, section, policy bands, CE/SEE, CGPA progression, and course tables."
+                  icon={<LayoutDashboard size={18} />}
+                  tone={ADMIN_SECTION_TONES.faculties}
+                  active={false}
+                  onClick={() => {
+                    clearRegistryScope()
+                    navigate({ section: 'faculties' })
+                  }}
+                />
+                <SectionLaunchCard
+                  title="Students"
+                  caption={`${data.students.length} records · ${data.students.filter(item => item.activeMentorAssignment).length} mentored`}
+                  helper="Canonical student identity, mentor eligibility, academic context corrections, and semester progression review live in one registry."
+                  icon={<GraduationCap size={18} />}
+                  tone={ADMIN_SECTION_TONES.students}
+                  active={false}
+                  onClick={() => {
+                    clearRegistryScope()
+                    navigate({ section: 'students' })
+                  }}
+                />
+                <SectionLaunchCard
+                  title="Faculty"
+                  caption={`${data.facultyMembers.length} profiles · ${data.ownerships.filter(item => item.status === 'active').length} active teaching assignments`}
+                  helper="Appointments, permissions, course ownership, mentor scope, and teaching-profile parity are all managed from the faculty registry."
+                  icon={<UserCog size={18} />}
+                  tone={ADMIN_SECTION_TONES['faculty-members']}
+                  active={false}
+                  onClick={() => {
+                    clearRegistryScope()
+                    navigate({ section: 'faculty-members' })
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 220px))', justifyContent: 'center' }}>
+                <OverviewSupportCard title="Requests" value={String(openRequests.length)} helper="Governed items waiting in the action rail." tone={T.warning} onClick={() => navigate({ section: 'requests' })} />
+                <OverviewSupportCard title="Hidden Records" value={String(hiddenItemCount)} helper="Archived or deleted records with restore visibility." tone={T.danger} onClick={() => navigate({ section: 'history' })} />
+                <OverviewSupportCard title="Mentor Gaps" value={String(data.students.filter(item => !item.activeMentorAssignment).length)} helper="Students still missing an active mentor linkage." tone={ADMIN_SECTION_TONES.students} onClick={() => navigate({ section: 'students' })} />
+                <OverviewSupportCard title="Teaching Load" value={String(data.ownerships.filter(item => item.status === 'active').length)} helper="Active teaching ownership records mapped to faculty." tone={ADMIN_SECTION_TONES['faculty-members']} onClick={() => navigate({ section: 'faculty-members' })} />
+              </div>
             </div>
-            <Card style={{ padding: 18, display: 'grid', gap: 12, background: `linear-gradient(180deg, ${T.surface}, ${T.surface2})` }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <HeroBadge color={T.accent}><Bell size={12} /> Action Queue {actionQueueCount}</HeroBadge>
-                <HeroBadge color={T.warning}><Clock3 size={12} /> Open Requests {openRequests.length}</HeroBadge>
-                <HeroBadge color={T.danger}><RefreshCw size={12} /> Hidden Records {hiddenItemCount}</HeroBadge>
-                <HeroBadge color={remindersSupported ? T.success : T.orange}><CheckCircle2 size={12} /> {remindersSupported ? `Private Reminders ${pendingReminders.length}` : 'Reminder API offline on this backend'}</HeroBadge>
-              </div>
-              <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
-                The right rail is the operational queue. This dashboard stays intentionally light so the three launch blocks remain the primary wayfinding surface instead of competing with another summary panel.
-              </div>
-            </Card>
           </div>
         )}
 
@@ -4279,7 +4352,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         {/* ========== STUDENTS ========== */}
         {route.section === 'students' && (
           <div className="fade-up" style={{ display: 'grid', gap: 16, gridTemplateColumns: registryPageColumns }}>
-            <Card style={{ padding: 18, display: 'grid', gap: 12, gridTemplateRows: 'auto auto minmax(0, 1fr)', alignContent: 'start', maxHeight: 'calc(100vh - 200px)', overflow: 'hidden' }}>
+            <Card style={{ padding: 18, display: 'grid', gap: 12, gridTemplateRows: 'auto auto auto minmax(0, 1fr)', alignContent: 'start', maxHeight: registryIsSingleColumn ? 'none' : 'calc(100vh - 200px)', overflow: registryIsSingleColumn ? 'visible' : 'hidden' }}>
               <SectionHeading
                 title="Students"
                 eyebrow="Registry"
@@ -4351,29 +4424,50 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                     </SelectInput>
                   </div>
                 </div>
+                <SearchField
+                  value={studentRegistrySearch}
+                  onChange={setStudentRegistrySearch}
+                  placeholder="Search student, USN, branch, section, email..."
+                  ariaLabel="Student registry search"
+                />
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <Btn type="button" variant="ghost" onClick={() => setStudentRegistryFilter(hydrateRegistryFilter(registryScope))}>Reset Filters</Btn>
                   <Btn type="button" variant="ghost" onClick={() => handleOpenFullRegistry('students')}>Open Complete Page</Btn>
+                  <Chip color={T.dim}>Sorted A-Z</Chip>
                 </div>
               </div>
-              <div className="scroll-pane" style={{ display: 'grid', gap: 8, minHeight: 0, overflowY: 'auto', paddingRight: 4 }}>
+              <div className="scroll-pane" style={{ display: 'grid', gap: 8, minHeight: 0, overflowY: registryIsSingleColumn ? 'visible' : 'auto', paddingRight: 4 }}>
                 {studentRegistryItems.map(student => (
                   <EntityButton key={student.studentId} selected={route.studentId === student.studentId} onClick={() => navigate({ section: 'students', studentId: student.studentId })}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
-                      <div>
-                        <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{student.name}</div>
-                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{student.usn} · {student.activeAcademicContext?.branchName ?? 'No branch mapped'}</div>
+                    <div style={{ display: 'grid', gap: 10 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
+                          <div style={{ width: 34, height: 34, borderRadius: 12, background: `${ADMIN_SECTION_TONES.students}18`, color: ADMIN_SECTION_TONES.students, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', ...sora, fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
+                            {student.name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]?.toUpperCase() ?? '').join('') || 'ST'}
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{student.name}</div>
+                            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{student.usn} · {student.activeAcademicContext?.branchName ?? 'No branch mapped'}</div>
+                          </div>
+                        </div>
+                        <Chip color={student.activeMentorAssignment ? T.success : T.warning} size={9}>{student.activeMentorAssignment ? 'Mentored' : 'Mentor missing'}</Chip>
                       </div>
-                      <Chip color={student.activeMentorAssignment ? T.success : T.warning} size={9}>{student.activeMentorAssignment ? 'Mentored' : 'Mentor missing'}</Chip>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {student.activeAcademicContext?.departmentName ? <Chip color={T.warning} size={9}>{student.activeAcademicContext.departmentName}</Chip> : null}
+                        {student.activeAcademicContext?.sectionCode ? <Chip color={T.accent} size={9}>Sec {student.activeAcademicContext.sectionCode}</Chip> : null}
+                        <Chip color={T.success} size={9}>CGPA {student.currentCgpa.toFixed(2)}</Chip>
+                      </div>
+                      <div style={{ ...mono, fontSize: 10, color: T.success }}>
+                        Semester {student.activeAcademicContext?.semesterNumber ?? '—'} · {student.email ?? 'Email not set'} · {student.phone ?? 'Phone not set'}
+                      </div>
                     </div>
-                    <div style={{ ...mono, fontSize: 10, color: T.success, marginTop: 6 }}>CGPA {student.currentCgpa.toFixed(2)} · Semester {student.activeAcademicContext?.semesterNumber ?? '—'} · Section {student.activeAcademicContext?.sectionCode ?? '—'}</div>
                   </EntityButton>
                 ))}
                 {studentRegistryItems.length === 0 ? <InfoBanner message="No active students yet. Create the first student record from this panel." /> : null}
               </div>
             </Card>
 
-            <div className="scroll-pane" style={{ display: 'grid', gap: 16, maxHeight: 'calc(100vh - 200px)', overflowY: 'auto', paddingRight: 4 }}>
+            <div className="scroll-pane" style={{ display: 'grid', gap: 16, maxHeight: registryIsSingleColumn ? 'none' : 'calc(100vh - 200px)', overflowY: registryIsSingleColumn ? 'visible' : 'auto', paddingRight: 4 }}>
               <Card
                 style={{
                   position: 'sticky',
@@ -4419,37 +4513,43 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
                 <SectionHeading title={selectedStudent ? 'Student Detail' : 'Create Student'} eyebrow={selectedStudent ? selectedStudent.name : 'New record'} caption="Save the identity record first, then maintain enrollment, mentor, and promotion details below." />
                 {selectedStudent ? (
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <Chip color={T.accent}>{selectedStudent.usn}</Chip>
-                    <Chip color={T.success}>CGPA {selectedStudent.currentCgpa.toFixed(2)}</Chip>
-                    <Chip color={T.warning}>{selectedStudent.activeAcademicContext?.departmentName ?? 'No department'}</Chip>
-                    <Chip color={selectedStudent.status === 'active' ? T.success : T.danger}>{selectedStudent.status}</Chip>
-                  </div>
-                ) : null}
-                <form onSubmit={handleSaveStudent} style={{ display: 'grid', gap: 10 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-                    <div><FieldLabel>Name</FieldLabel><TextInput value={studentForm.name} readOnly={selectedStudent != null} onChange={event => setStudentForm(prev => ({ ...prev, name: event.target.value }))} placeholder="Student name" style={selectedStudent != null ? readOnlyInputStyle : undefined} /></div>
-                    <div><FieldLabel>University ID / USN</FieldLabel><TextInput value={studentForm.usn} readOnly={selectedStudent != null} onChange={event => setStudentForm(prev => ({ ...prev, usn: event.target.value }))} placeholder="1MS22CS001" style={selectedStudent != null ? readOnlyInputStyle : undefined} /></div>
-                    <div><FieldLabel>Roll Number</FieldLabel><TextInput value={studentForm.rollNumber} readOnly={selectedStudent != null} onChange={event => setStudentForm(prev => ({ ...prev, rollNumber: event.target.value }))} placeholder="Optional" style={selectedStudent != null ? readOnlyInputStyle : undefined} /></div>
-                    <div><FieldLabel>Admission Date</FieldLabel><TextInput value={studentForm.admissionDate} readOnly={selectedStudent != null} onChange={event => setStudentForm(prev => ({ ...prev, admissionDate: event.target.value }))} placeholder="YYYY-MM-DD" style={selectedStudent != null ? readOnlyInputStyle : undefined} /></div>
-                    <div><FieldLabel>Email</FieldLabel><TextInput value={studentForm.email} readOnly={selectedStudent != null} onChange={event => setStudentForm(prev => ({ ...prev, email: event.target.value }))} placeholder="student@campus.edu" style={selectedStudent != null ? readOnlyInputStyle : undefined} /></div>
-                    <div><FieldLabel>Phone</FieldLabel><TextInput value={studentForm.phone} readOnly={selectedStudent != null} onChange={event => setStudentForm(prev => ({ ...prev, phone: event.target.value }))} placeholder="+91…" style={selectedStudent != null ? readOnlyInputStyle : undefined} /></div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                    {selectedStudent ? (
-                      <>
-                        <Btn type="button" onClick={() => setEditingEntity('student-profile')}>Edit Student</Btn>
-                        <Btn type="button" variant="danger" onClick={() => void handleArchiveStudent()}>Delete Student</Btn>
-                        <Btn type="button" variant="ghost" onClick={() => { navigate({ section: 'students' }); resetStudentEditors() }}>New Student</Btn>
-                      </>
-                    ) : (
-                      <>
-                        <Btn type="submit">Create Student</Btn>
-                        <Btn type="button" variant="ghost" onClick={() => { navigate({ section: 'students' }); resetStudentEditors() }}>Clear Form</Btn>
-                      </>
-                    )}
-                  </div>
-                </form>
+                  <>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <Chip color={T.accent}>{selectedStudent.usn}</Chip>
+                      <Chip color={T.success}>CGPA {selectedStudent.currentCgpa.toFixed(2)}</Chip>
+                      <Chip color={T.warning}>{selectedStudent.activeAcademicContext?.departmentName ?? 'No department'}</Chip>
+                      <Chip color={selectedStudent.status === 'active' ? T.success : T.danger}>{selectedStudent.status}</Chip>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Name</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedStudent.name}</div></Card>
+                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Roll Number</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedStudent.rollNumber ?? 'Not set'}</div></Card>
+                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Admission Date</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{formatDate(selectedStudent.admissionDate)}</div></Card>
+                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Email</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedStudent.email ?? 'Not set'}</div></Card>
+                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Phone</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedStudent.phone ?? 'Not set'}</div></Card>
+                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Current Context</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedStudent.activeAcademicContext ? `${selectedStudent.activeAcademicContext.branchName ?? 'Branch'} · Sem ${selectedStudent.activeAcademicContext.semesterNumber ?? '—'} · Sec ${selectedStudent.activeAcademicContext.sectionCode}` : 'No active academic context'}</div></Card>
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                      <Btn type="button" size="sm" onClick={() => setEditingEntity('student-profile')}>Edit Student</Btn>
+                      <Btn type="button" size="sm" variant="danger" onClick={() => void handleArchiveStudent()}>Delete Student</Btn>
+                      <Btn type="button" size="sm" variant="ghost" onClick={() => { navigate({ section: 'students' }); resetStudentEditors() }}>New Student</Btn>
+                    </div>
+                  </>
+                ) : (
+                  <form onSubmit={handleSaveStudent} style={{ display: 'grid', gap: 10 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                      <div><FieldLabel>Name</FieldLabel><TextInput value={studentForm.name} onChange={event => setStudentForm(prev => ({ ...prev, name: event.target.value }))} placeholder="Student name" /></div>
+                      <div><FieldLabel>University ID / USN</FieldLabel><TextInput value={studentForm.usn} onChange={event => setStudentForm(prev => ({ ...prev, usn: event.target.value }))} placeholder="1MS22CS001" /></div>
+                      <div><FieldLabel>Roll Number</FieldLabel><TextInput value={studentForm.rollNumber} onChange={event => setStudentForm(prev => ({ ...prev, rollNumber: event.target.value }))} placeholder="Optional" /></div>
+                      <div><FieldLabel>Admission Date</FieldLabel><TextInput value={studentForm.admissionDate} onChange={event => setStudentForm(prev => ({ ...prev, admissionDate: event.target.value }))} placeholder="YYYY-MM-DD" /></div>
+                      <div><FieldLabel>Email</FieldLabel><TextInput value={studentForm.email} onChange={event => setStudentForm(prev => ({ ...prev, email: event.target.value }))} placeholder="student@campus.edu" /></div>
+                      <div><FieldLabel>Phone</FieldLabel><TextInput value={studentForm.phone} onChange={event => setStudentForm(prev => ({ ...prev, phone: event.target.value }))} placeholder="+91…" /></div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                      <Btn type="submit">Create Student</Btn>
+                      <Btn type="button" variant="ghost" onClick={() => { navigate({ section: 'students' }); resetStudentEditors() }}>Clear Form</Btn>
+                    </div>
+                  </form>
+                )}
               </Card>
               )}
 
@@ -4646,7 +4746,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         {/* ========== FACULTY MEMBERS ========== */}
         {route.section === 'faculty-members' && (
           <div className="fade-up" style={{ display: 'grid', gap: 16, gridTemplateColumns: registryPageColumns }}>
-            <Card style={{ padding: 18, display: 'grid', gap: 12, gridTemplateRows: 'auto auto minmax(0, 1fr)', alignContent: 'start', maxHeight: 'calc(100vh - 200px)', overflow: 'hidden' }}>
+            <Card style={{ padding: 18, display: 'grid', gap: 12, gridTemplateRows: 'auto auto auto minmax(0, 1fr)', alignContent: 'start', maxHeight: registryIsSingleColumn ? 'none' : 'calc(100vh - 200px)', overflow: registryIsSingleColumn ? 'visible' : 'hidden' }}>
               <SectionHeading
                 title="Faculty Members"
                 eyebrow="Registry"
@@ -4718,25 +4818,40 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                     </SelectInput>
                   </div>
                 </div>
+                <SearchField
+                  value={facultyRegistrySearch}
+                  onChange={setFacultyRegistrySearch}
+                  placeholder="Search faculty, code, department, role, email..."
+                  ariaLabel="Faculty registry search"
+                />
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <Btn type="button" variant="ghost" onClick={() => setFacultyRegistryFilter(hydrateRegistryFilter(registryScope))}>Reset Filters</Btn>
                   <Btn type="button" variant="ghost" onClick={() => handleOpenFullRegistry('faculty-members')}>Open Complete Page</Btn>
+                  <Chip color={T.dim}>Sorted A-Z</Chip>
                 </div>
               </div>
-              <div className="scroll-pane" style={{ display: 'grid', gap: 8, minHeight: 0, overflowY: 'auto', paddingRight: 4 }}>
+              <div className="scroll-pane" style={{ display: 'grid', gap: 8, minHeight: 0, overflowY: registryIsSingleColumn ? 'visible' : 'auto', paddingRight: 4 }}>
                 {facultyRegistryItems.map(item => {
                   const primaryDepartment = resolveDepartment(data, getPrimaryAppointmentDepartmentId(item))
                   return (
                     <EntityButton key={item.facultyId} selected={route.facultyMemberId === item.facultyId} onClick={() => navigate({ section: 'faculty-members', facultyMemberId: item.facultyId })}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
-                        <div>
-                          <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{item.displayName}</div>
-                          <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{item.employeeCode} · {primaryDepartment?.name ?? 'No primary department'}</div>
+                      <div style={{ display: 'grid', gap: 10 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                          <div style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
+                            <div style={{ width: 34, height: 34, borderRadius: 12, background: `${ADMIN_SECTION_TONES['faculty-members']}18`, color: ADMIN_SECTION_TONES['faculty-members'], display: 'inline-flex', alignItems: 'center', justifyContent: 'center', ...sora, fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
+                              {item.displayName.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]?.toUpperCase() ?? '').join('') || 'FM'}
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{item.displayName}</div>
+                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{item.employeeCode} · {primaryDepartment?.name ?? 'No primary department'}</div>
+                            </div>
+                          </div>
+                          <Chip color={item.roleGrants.some(grant => grant.roleCode === 'MENTOR' && isCurrentRoleGrant(grant)) ? T.success : T.dim} size={9}>{item.roleGrants.some(grant => isCurrentRoleGrant(grant)) ? 'Scoped' : 'Unscoped'}</Chip>
                         </div>
-                        <Chip color={item.roleGrants.some(grant => grant.roleCode === 'MENTOR' && isCurrentRoleGrant(grant)) ? T.success : T.dim} size={9}>{item.roleGrants.some(grant => isCurrentRoleGrant(grant)) ? 'Scoped' : 'Unscoped'}</Chip>
-                      </div>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {item.roleGrants.filter(isCurrentRoleGrant).slice(0, 3).map(grant => <Chip key={grant.grantId} color={T.accent} size={9}>{grant.roleCode}</Chip>)}
+                        </div>
+                        <div style={{ ...mono, fontSize: 10, color: T.muted }}>{item.designation} · {item.email}</div>
                       </div>
                     </EntityButton>
                   )
@@ -4745,7 +4860,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               </div>
             </Card>
 
-            <div className="scroll-pane" style={{ display: 'grid', gap: 16, maxHeight: 'calc(100vh - 200px)', overflowY: 'auto', paddingRight: 4 }}>
+            <div className="scroll-pane" style={{ display: 'grid', gap: 16, maxHeight: registryIsSingleColumn ? 'none' : 'calc(100vh - 200px)', overflowY: registryIsSingleColumn ? 'visible' : 'auto', paddingRight: 4 }}>
               <Card
                 style={{
                   position: 'sticky',
@@ -4792,37 +4907,43 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
                 <SectionHeading title={selectedFacultyMember ? 'Faculty Detail' : 'Create Faculty'} eyebrow={selectedFacultyMember ? selectedFacultyMember.displayName : 'New profile'} caption="Master identity stays admin-owned. Teaching workflow actions continue in the teaching workspace." />
                 {selectedFacultyMember ? (
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <Chip color={T.accent}>{selectedFacultyMember.employeeCode}</Chip>
-                    <Chip color={T.warning}>{resolveDepartment(data, getPrimaryAppointmentDepartmentId(selectedFacultyMember))?.name ?? 'No primary department'}</Chip>
-                    {selectedFacultyMember.roleGrants.filter(isCurrentRoleGrant).map(grant => <Chip key={grant.grantId} color={T.success}>{grant.roleCode}</Chip>)}
-                  </div>
-                ) : null}
-                <form onSubmit={handleSaveFaculty} style={{ display: 'grid', gap: 10 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-                    <div><FieldLabel>Display Name</FieldLabel><TextInput value={facultyForm.displayName} readOnly={selectedFacultyMember != null} onChange={event => setFacultyForm(prev => ({ ...prev, displayName: event.target.value }))} placeholder="Faculty name" style={selectedFacultyMember != null ? readOnlyInputStyle : undefined} /></div>
-                    <div><FieldLabel>Employee Code</FieldLabel><TextInput value={facultyForm.employeeCode} readOnly={selectedFacultyMember != null} onChange={event => setFacultyForm(prev => ({ ...prev, employeeCode: event.target.value }))} placeholder="EMP001" style={selectedFacultyMember != null ? readOnlyInputStyle : undefined} /></div>
-                    <div><FieldLabel>Username</FieldLabel><TextInput value={facultyForm.username} readOnly={selectedFacultyMember != null} onChange={event => setFacultyForm(prev => ({ ...prev, username: event.target.value }))} placeholder="faculty.user" style={selectedFacultyMember != null ? readOnlyInputStyle : undefined} /></div>
-                    <div><FieldLabel>Email</FieldLabel><TextInput value={facultyForm.email} readOnly={selectedFacultyMember != null} onChange={event => setFacultyForm(prev => ({ ...prev, email: event.target.value }))} placeholder="faculty@campus.edu" style={selectedFacultyMember != null ? readOnlyInputStyle : undefined} /></div>
-                    <div><FieldLabel>Phone</FieldLabel><TextInput value={facultyForm.phone} readOnly={selectedFacultyMember != null} onChange={event => setFacultyForm(prev => ({ ...prev, phone: event.target.value }))} placeholder="+91…" style={selectedFacultyMember != null ? readOnlyInputStyle : undefined} /></div>
-                    <div><FieldLabel>Designation</FieldLabel><TextInput value={facultyForm.designation} readOnly={selectedFacultyMember != null} onChange={event => setFacultyForm(prev => ({ ...prev, designation: event.target.value }))} placeholder="Assistant Professor" style={selectedFacultyMember != null ? readOnlyInputStyle : undefined} /></div>
-                    {!selectedFacultyMember ? <div><FieldLabel>Initial Password</FieldLabel><TextInput type="password" value={facultyForm.password} onChange={event => setFacultyForm(prev => ({ ...prev, password: event.target.value }))} placeholder="Minimum 8 characters" /></div> : null}
-                  </div>
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                    {selectedFacultyMember ? (
-                      <>
-                        <Btn type="button" onClick={() => setEditingEntity('faculty-profile')}>Edit Faculty</Btn>
-                        <Btn type="button" variant="danger" onClick={() => void handleArchiveFaculty()}>Delete Faculty</Btn>
-                        <Btn type="button" variant="ghost" onClick={() => { navigate({ section: 'faculty-members' }); resetFacultyEditors() }}>New Faculty</Btn>
-                      </>
-                    ) : (
-                      <>
-                        <Btn type="submit">Create Faculty</Btn>
-                        <Btn type="button" variant="ghost" onClick={() => { navigate({ section: 'faculty-members' }); resetFacultyEditors() }}>Clear Form</Btn>
-                      </>
-                    )}
-                  </div>
-                </form>
+                  <>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <Chip color={T.accent}>{selectedFacultyMember.employeeCode}</Chip>
+                      <Chip color={T.warning}>{resolveDepartment(data, getPrimaryAppointmentDepartmentId(selectedFacultyMember))?.name ?? 'No primary department'}</Chip>
+                      {selectedFacultyMember.roleGrants.filter(isCurrentRoleGrant).map(grant => <Chip key={grant.grantId} color={T.success}>{grant.roleCode}</Chip>)}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Display Name</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedFacultyMember.displayName}</div></Card>
+                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Username</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedFacultyMember.username}</div></Card>
+                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Designation</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedFacultyMember.designation}</div></Card>
+                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Email</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedFacultyMember.email}</div></Card>
+                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Phone</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedFacultyMember.phone ?? 'Not set'}</div></Card>
+                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Joined On</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedFacultyMember.joinedOn ? formatDate(selectedFacultyMember.joinedOn) : 'Not set'}</div></Card>
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                      <Btn type="button" size="sm" onClick={() => setEditingEntity('faculty-profile')}>Edit Faculty</Btn>
+                      <Btn type="button" size="sm" variant="danger" onClick={() => void handleArchiveFaculty()}>Delete Faculty</Btn>
+                      <Btn type="button" size="sm" variant="ghost" onClick={() => { navigate({ section: 'faculty-members' }); resetFacultyEditors() }}>New Faculty</Btn>
+                    </div>
+                  </>
+                ) : (
+                  <form onSubmit={handleSaveFaculty} style={{ display: 'grid', gap: 10 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                      <div><FieldLabel>Display Name</FieldLabel><TextInput value={facultyForm.displayName} onChange={event => setFacultyForm(prev => ({ ...prev, displayName: event.target.value }))} placeholder="Faculty name" /></div>
+                      <div><FieldLabel>Employee Code</FieldLabel><TextInput value={facultyForm.employeeCode} onChange={event => setFacultyForm(prev => ({ ...prev, employeeCode: event.target.value }))} placeholder="EMP001" /></div>
+                      <div><FieldLabel>Username</FieldLabel><TextInput value={facultyForm.username} onChange={event => setFacultyForm(prev => ({ ...prev, username: event.target.value }))} placeholder="faculty.user" /></div>
+                      <div><FieldLabel>Email</FieldLabel><TextInput value={facultyForm.email} onChange={event => setFacultyForm(prev => ({ ...prev, email: event.target.value }))} placeholder="faculty@campus.edu" /></div>
+                      <div><FieldLabel>Phone</FieldLabel><TextInput value={facultyForm.phone} onChange={event => setFacultyForm(prev => ({ ...prev, phone: event.target.value }))} placeholder="+91…" /></div>
+                      <div><FieldLabel>Designation</FieldLabel><TextInput value={facultyForm.designation} onChange={event => setFacultyForm(prev => ({ ...prev, designation: event.target.value }))} placeholder="Assistant Professor" /></div>
+                      <div><FieldLabel>Initial Password</FieldLabel><TextInput type="password" value={facultyForm.password} onChange={event => setFacultyForm(prev => ({ ...prev, password: event.target.value }))} placeholder="Minimum 8 characters" /></div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                      <Btn type="submit">Create Faculty</Btn>
+                      <Btn type="button" variant="ghost" onClick={() => { navigate({ section: 'faculty-members' }); resetFacultyEditors() }}>Clear Form</Btn>
+                    </div>
+                  </form>
+                )}
               </Card>
               )}
 
@@ -5039,7 +5160,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                 {!selectedFacultyMember ? <EmptyState title="Select or create a faculty member first" body="Timetable planning becomes available once the faculty profile exists." /> : facultyCalendarLoading && !facultyCalendar ? (
                   <InfoBanner message="Loading timetable planner…" />
                 ) : (
-                  <SystemAdminTimetableEditor
+                  <SystemAdminFacultyCalendarWorkspace
                     facultyId={selectedFacultyMember.facultyId}
                     facultyName={selectedFacultyMember.displayName}
                     offerings={selectedFacultyAssignments.flatMap(item => item.offering ? [item.offering] : [])}
@@ -5318,7 +5439,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                 trailing={
                   <div style={{ display: 'grid', gap: 4, justifyItems: 'end' }}>
                     <Chip color={request.status === 'Implemented' ? T.success : T.warning} size={9}>{request.status}</Chip>
-                    <button type="button" onClick={event => { event.stopPropagation(); dismissQueueItem(`request:${request.adminRequestId}`) }} style={{ ...mono, fontSize: 10, color: T.dim, background: 'none', border: 'none', cursor: 'pointer' }}>Discard</button>
+                    <button type="button" onClick={event => { event.stopPropagation(); dismissQueueItem(`request:${request.adminRequestId}`) }} style={{ ...mono, fontSize: 10, color: T.dim, background: 'none', border: 'none', cursor: 'pointer' }}>Hide forever</button>
                   </div>
                 }
                 onClick={() => navigate({ section: 'requests', requestId: request.adminRequestId })}
@@ -5339,7 +5460,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                 trailing={
                   <div style={{ display: 'grid', gap: 4, justifyItems: 'end' }}>
                     <button type="button" onClick={event => { event.stopPropagation(); void handleToggleReminderStatus(reminder) }} style={{ ...mono, fontSize: 10, color: T.accent, background: 'none', border: 'none', cursor: 'pointer' }}>Done</button>
-                    <button type="button" onClick={event => { event.stopPropagation(); dismissQueueItem(`reminder:${reminder.reminderId}`) }} style={{ ...mono, fontSize: 10, color: T.dim, background: 'none', border: 'none', cursor: 'pointer' }}>Discard</button>
+                    <button type="button" onClick={event => { event.stopPropagation(); dismissQueueItem(`reminder:${reminder.reminderId}`) }} style={{ ...mono, fontSize: 10, color: T.dim, background: 'none', border: 'none', cursor: 'pointer' }}>Hide forever</button>
                   </div>
                 }
               />
@@ -5361,7 +5482,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                 trailing={
                   <div style={{ display: 'grid', gap: 4, justifyItems: 'end' }}>
                     <button type="button" onClick={event => { event.stopPropagation(); void runAction(async () => { await item.onRestore(); setFlashMessage(`${item.label} restored.`) }) }} style={{ ...mono, fontSize: 10, color: T.success, background: 'none', border: 'none', cursor: 'pointer' }}>Restore</button>
-                    <button type="button" onClick={event => { event.stopPropagation(); dismissQueueItem(`hidden:${item.key}`) }} style={{ ...mono, fontSize: 10, color: T.dim, background: 'none', border: 'none', cursor: 'pointer' }}>Discard</button>
+                    <button type="button" onClick={event => { event.stopPropagation(); dismissQueueItem(`hidden:${item.key}`) }} style={{ ...mono, fontSize: 10, color: T.dim, background: 'none', border: 'none', cursor: 'pointer' }}>Hide forever</button>
                   </div>
                 }
               />
@@ -5372,7 +5493,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           <div style={{ position: 'sticky', bottom: 0, paddingTop: 12, marginTop: 16, background: `linear-gradient(180deg, ${fadeColor(T.surface, '00')} 0%, ${T.surface} 35%)` }}>
             {dismissedQueueItemKeys.length > 0 ? (
               <button type="button" onClick={clearDismissedQueueItems} style={{ width: '100%', marginBottom: 8, border: `1px solid ${T.border}`, borderRadius: 12, cursor: 'pointer', background: T.surface, color: T.muted, padding: '9px 12px', ...mono, fontSize: 10 }}>
-                Reset Discarded Queue Items
+                Restore Hidden Queue Items
               </button>
             ) : null}
             <button type="button" onClick={() => void handleCreateReminder()} disabled={!remindersSupported} style={{ width: '100%', border: 'none', borderRadius: 10, cursor: remindersSupported ? 'pointer' : 'not-allowed', background: remindersSupported ? T.accent : T.surface3, color: remindersSupported ? '#fff' : T.dim, padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, ...sora, fontWeight: 700, fontSize: 12 }}>
@@ -5399,12 +5520,12 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             >
               <form onSubmit={handleSaveStudent} style={{ display: 'grid', gap: 12 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
-                  <div><FieldLabel>Name</FieldLabel><TextInput value={studentForm.name} onChange={event => setStudentForm(prev => ({ ...prev, name: event.target.value }))} /></div>
-                  <div><FieldLabel>USN</FieldLabel><TextInput value={studentForm.usn} onChange={event => setStudentForm(prev => ({ ...prev, usn: event.target.value }))} /></div>
-                  <div><FieldLabel>Roll Number</FieldLabel><TextInput value={studentForm.rollNumber} onChange={event => setStudentForm(prev => ({ ...prev, rollNumber: event.target.value }))} /></div>
-                  <div><FieldLabel>Admission Date</FieldLabel><TextInput value={studentForm.admissionDate} onChange={event => setStudentForm(prev => ({ ...prev, admissionDate: event.target.value }))} /></div>
-                  <div><FieldLabel>Email</FieldLabel><TextInput value={studentForm.email} onChange={event => setStudentForm(prev => ({ ...prev, email: event.target.value }))} /></div>
-                  <div><FieldLabel>Phone</FieldLabel><TextInput value={studentForm.phone} onChange={event => setStudentForm(prev => ({ ...prev, phone: event.target.value }))} /></div>
+                  <div><FieldLabel>Name</FieldLabel><TextInput aria-label="Student Name" value={studentForm.name} onChange={event => setStudentForm(prev => ({ ...prev, name: event.target.value }))} /></div>
+                  <div><FieldLabel>USN</FieldLabel><TextInput aria-label="Student USN" value={studentForm.usn} onChange={event => setStudentForm(prev => ({ ...prev, usn: event.target.value }))} /></div>
+                  <div><FieldLabel>Roll Number</FieldLabel><TextInput aria-label="Student Roll Number" value={studentForm.rollNumber} onChange={event => setStudentForm(prev => ({ ...prev, rollNumber: event.target.value }))} /></div>
+                  <div><FieldLabel>Admission Date</FieldLabel><TextInput aria-label="Student Admission Date" value={studentForm.admissionDate} onChange={event => setStudentForm(prev => ({ ...prev, admissionDate: event.target.value }))} /></div>
+                  <div><FieldLabel>Email</FieldLabel><TextInput aria-label="Student Email" value={studentForm.email} onChange={event => setStudentForm(prev => ({ ...prev, email: event.target.value }))} /></div>
+                  <div><FieldLabel>Phone</FieldLabel><TextInput aria-label="Student Phone" value={studentForm.phone} onChange={event => setStudentForm(prev => ({ ...prev, phone: event.target.value }))} /></div>
                 </div>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   <Btn type="button" variant="ghost" onClick={() => {
@@ -5432,12 +5553,12 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             >
               <form onSubmit={handleSaveFaculty} style={{ display: 'grid', gap: 12 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
-                  <div><FieldLabel>Display Name</FieldLabel><TextInput value={facultyForm.displayName} onChange={event => setFacultyForm(prev => ({ ...prev, displayName: event.target.value }))} /></div>
-                  <div><FieldLabel>Employee Code</FieldLabel><TextInput value={facultyForm.employeeCode} onChange={event => setFacultyForm(prev => ({ ...prev, employeeCode: event.target.value }))} /></div>
-                  <div><FieldLabel>Username</FieldLabel><TextInput value={facultyForm.username} onChange={event => setFacultyForm(prev => ({ ...prev, username: event.target.value }))} /></div>
-                  <div><FieldLabel>Email</FieldLabel><TextInput value={facultyForm.email} onChange={event => setFacultyForm(prev => ({ ...prev, email: event.target.value }))} /></div>
-                  <div><FieldLabel>Phone</FieldLabel><TextInput value={facultyForm.phone} onChange={event => setFacultyForm(prev => ({ ...prev, phone: event.target.value }))} /></div>
-                  <div><FieldLabel>Designation</FieldLabel><TextInput value={facultyForm.designation} onChange={event => setFacultyForm(prev => ({ ...prev, designation: event.target.value }))} /></div>
+                  <div><FieldLabel>Display Name</FieldLabel><TextInput aria-label="Faculty Display Name" value={facultyForm.displayName} onChange={event => setFacultyForm(prev => ({ ...prev, displayName: event.target.value }))} /></div>
+                  <div><FieldLabel>Employee Code</FieldLabel><TextInput aria-label="Faculty Employee Code" value={facultyForm.employeeCode} onChange={event => setFacultyForm(prev => ({ ...prev, employeeCode: event.target.value }))} /></div>
+                  <div><FieldLabel>Username</FieldLabel><TextInput aria-label="Faculty Username" value={facultyForm.username} onChange={event => setFacultyForm(prev => ({ ...prev, username: event.target.value }))} /></div>
+                  <div><FieldLabel>Email</FieldLabel><TextInput aria-label="Faculty Email" value={facultyForm.email} onChange={event => setFacultyForm(prev => ({ ...prev, email: event.target.value }))} /></div>
+                  <div><FieldLabel>Phone</FieldLabel><TextInput aria-label="Faculty Phone" value={facultyForm.phone} onChange={event => setFacultyForm(prev => ({ ...prev, phone: event.target.value }))} /></div>
+                  <div><FieldLabel>Designation</FieldLabel><TextInput aria-label="Faculty Designation" value={facultyForm.designation} onChange={event => setFacultyForm(prev => ({ ...prev, designation: event.target.value }))} /></div>
                 </div>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   <Btn type="button" variant="ghost" onClick={() => {
@@ -5456,9 +5577,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <ModalFrame eyebrow="Hierarchy Edit" title={`Edit ${selectedAcademicFaculty.name}`} caption="Adjust faculty qualities here, then return to the same hierarchy layer with the rail preserved." onClose={() => setEditingEntity(null)}>
               <form onSubmit={handleUpdateAcademicFaculty} style={{ display: 'grid', gap: 10 }}>
-                <div><FieldLabel>Faculty Code</FieldLabel><TextInput value={entityEditors.academicFaculty.code} onChange={event => setEntityEditors(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, code: event.target.value } }))} /></div>
-                <div><FieldLabel>Faculty Name</FieldLabel><TextInput value={entityEditors.academicFaculty.name} onChange={event => setEntityEditors(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, name: event.target.value } }))} /></div>
-                <div><FieldLabel>Overview</FieldLabel><TextAreaInput value={entityEditors.academicFaculty.overview} onChange={event => setEntityEditors(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, overview: event.target.value } }))} rows={4} /></div>
+                <div><FieldLabel>Faculty Code</FieldLabel><TextInput aria-label="Faculty Code" value={entityEditors.academicFaculty.code} onChange={event => setEntityEditors(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, code: event.target.value } }))} /></div>
+                <div><FieldLabel>Faculty Name</FieldLabel><TextInput aria-label="Faculty Name" value={entityEditors.academicFaculty.name} onChange={event => setEntityEditors(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, name: event.target.value } }))} /></div>
+                <div><FieldLabel>Overview</FieldLabel><TextAreaInput aria-label="Faculty Overview" value={entityEditors.academicFaculty.overview} onChange={event => setEntityEditors(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, overview: event.target.value } }))} rows={4} /></div>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                     {selectedAcademicFaculty.status === 'archived'
@@ -5478,8 +5599,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <ModalFrame eyebrow="Hierarchy Edit" title={`Edit ${selectedDepartment.name}`} caption="Department edits now live in a focused dialog so the rail and next-level branch workspace stay stable behind it." onClose={() => setEditingEntity(null)}>
               <form onSubmit={handleUpdateDepartment} style={{ display: 'grid', gap: 10 }}>
-                <div><FieldLabel>Department Code</FieldLabel><TextInput value={entityEditors.department.code} onChange={event => setEntityEditors(prev => ({ ...prev, department: { ...prev.department, code: event.target.value } }))} /></div>
-                <div><FieldLabel>Department Name</FieldLabel><TextInput value={entityEditors.department.name} onChange={event => setEntityEditors(prev => ({ ...prev, department: { ...prev.department, name: event.target.value } }))} /></div>
+                <div><FieldLabel>Department Code</FieldLabel><TextInput aria-label="Department Code" value={entityEditors.department.code} onChange={event => setEntityEditors(prev => ({ ...prev, department: { ...prev.department, code: event.target.value } }))} /></div>
+                <div><FieldLabel>Department Name</FieldLabel><TextInput aria-label="Department Name" value={entityEditors.department.name} onChange={event => setEntityEditors(prev => ({ ...prev, department: { ...prev.department, name: event.target.value } }))} /></div>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'space-between' }}>
                   <Btn type="button" variant="danger" onClick={() => void handleArchiveDepartment()}>Archive Department</Btn>
                   <Btn type="button" variant="ghost" onClick={() => setEditingEntity(null)}>Cancel</Btn>
@@ -5494,10 +5615,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <ModalFrame eyebrow="Hierarchy Edit" title={`Edit ${selectedBranch.name}`} caption="Branch metadata opens in a modal so year-level work in the subpanel stays visible and easier to reason about." onClose={() => setEditingEntity(null)}>
               <form onSubmit={handleUpdateBranch} style={{ display: 'grid', gap: 10 }}>
-                <div><FieldLabel>Branch Code</FieldLabel><TextInput value={entityEditors.branch.code} onChange={event => setEntityEditors(prev => ({ ...prev, branch: { ...prev.branch, code: event.target.value } }))} /></div>
-                <div><FieldLabel>Branch Name</FieldLabel><TextInput value={entityEditors.branch.name} onChange={event => setEntityEditors(prev => ({ ...prev, branch: { ...prev.branch, name: event.target.value } }))} /></div>
-                <div><FieldLabel>Program Level</FieldLabel><SelectInput value={entityEditors.branch.programLevel} onChange={event => setEntityEditors(prev => ({ ...prev, branch: { ...prev.branch, programLevel: event.target.value } }))}><option value="UG">UG</option><option value="PG">PG</option></SelectInput></div>
-                <div><FieldLabel>Semester Count</FieldLabel><TextInput value={entityEditors.branch.semesterCount} onChange={event => setEntityEditors(prev => ({ ...prev, branch: { ...prev.branch, semesterCount: event.target.value } }))} /></div>
+                <div><FieldLabel>Branch Code</FieldLabel><TextInput aria-label="Branch Code" value={entityEditors.branch.code} onChange={event => setEntityEditors(prev => ({ ...prev, branch: { ...prev.branch, code: event.target.value } }))} /></div>
+                <div><FieldLabel>Branch Name</FieldLabel><TextInput aria-label="Branch Name" value={entityEditors.branch.name} onChange={event => setEntityEditors(prev => ({ ...prev, branch: { ...prev.branch, name: event.target.value } }))} /></div>
+                <div><FieldLabel>Program Level</FieldLabel><SelectInput aria-label="Branch Program Level" value={entityEditors.branch.programLevel} onChange={event => setEntityEditors(prev => ({ ...prev, branch: { ...prev.branch, programLevel: event.target.value } }))}><option value="UG">UG</option><option value="PG">PG</option></SelectInput></div>
+                <div><FieldLabel>Semester Count</FieldLabel><TextInput aria-label="Branch Semester Count" value={entityEditors.branch.semesterCount} onChange={event => setEntityEditors(prev => ({ ...prev, branch: { ...prev.branch, semesterCount: event.target.value } }))} /></div>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'space-between' }}>
                   <Btn type="button" variant="danger" onClick={() => void handleArchiveBranch()}>Archive Branch</Btn>
                   <Btn type="button" variant="ghost" onClick={() => setEditingEntity(null)}>Cancel</Btn>
@@ -5512,10 +5633,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <ModalFrame eyebrow="Hierarchy Edit" title={`Edit Batch ${selectedBatch.batchLabel}`} caption="Year-level edits now happen in a compact popup, while policy tabs and section-level actions stay in the main subpanel." onClose={() => setEditingEntity(null)}>
               <form onSubmit={handleUpdateBatch} style={{ display: 'grid', gap: 10 }}>
-                <div><FieldLabel>Admission Year</FieldLabel><TextInput value={entityEditors.batch.admissionYear} onChange={event => setEntityEditors(prev => ({ ...prev, batch: { ...prev.batch, admissionYear: event.target.value } }))} /></div>
-                <div><FieldLabel>Batch Label</FieldLabel><TextInput value={entityEditors.batch.batchLabel} onChange={event => setEntityEditors(prev => ({ ...prev, batch: { ...prev.batch, batchLabel: event.target.value } }))} /></div>
-                <div><FieldLabel>Active Semester</FieldLabel><TextInput value={entityEditors.batch.currentSemester} onChange={event => setEntityEditors(prev => ({ ...prev, batch: { ...prev.batch, currentSemester: event.target.value } }))} /></div>
-                <div><FieldLabel>Section Labels</FieldLabel><TextInput value={entityEditors.batch.sectionLabels} onChange={event => setEntityEditors(prev => ({ ...prev, batch: { ...prev.batch, sectionLabels: event.target.value } }))} /></div>
+                <div><FieldLabel>Admission Year</FieldLabel><TextInput aria-label="Batch Admission Year" value={entityEditors.batch.admissionYear} onChange={event => setEntityEditors(prev => ({ ...prev, batch: { ...prev.batch, admissionYear: event.target.value } }))} /></div>
+                <div><FieldLabel>Batch Label</FieldLabel><TextInput aria-label="Batch Label" value={entityEditors.batch.batchLabel} onChange={event => setEntityEditors(prev => ({ ...prev, batch: { ...prev.batch, batchLabel: event.target.value } }))} /></div>
+                <div><FieldLabel>Active Semester</FieldLabel><TextInput aria-label="Batch Active Semester" value={entityEditors.batch.currentSemester} onChange={event => setEntityEditors(prev => ({ ...prev, batch: { ...prev.batch, currentSemester: event.target.value } }))} /></div>
+                <div><FieldLabel>Section Labels</FieldLabel><TextInput aria-label="Batch Section Labels" value={entityEditors.batch.sectionLabels} onChange={event => setEntityEditors(prev => ({ ...prev, batch: { ...prev.batch, sectionLabels: event.target.value } }))} /></div>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'space-between' }}>
                   <Btn type="button" variant="danger" onClick={() => void handleArchiveBatch()}>Archive Batch</Btn>
                   <Btn type="button" variant="ghost" onClick={() => setEditingEntity(null)}>Cancel</Btn>

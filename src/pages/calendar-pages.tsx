@@ -259,6 +259,14 @@ export function CalendarTimetablePage({
   onUpdateTimetableBounds,
   onDismissTask,
   onDismissSeries,
+  embedded = false,
+  hideBackButton = false,
+  title = 'Calendar / Timetable',
+  subtitle,
+  editableOverride,
+  canOpenCourseWorkspaceOverride,
+  allowTaskCreation = true,
+  onEditMarker,
 }: {
   onBack: () => void
   currentTeacher: FacultyAccount
@@ -285,6 +293,14 @@ export function CalendarTimetablePage({
   onUpdateTimetableBounds: (input: { dayStartMinutes: number; dayEndMinutes: number }) => void
   onDismissTask: (taskId: string) => void
   onDismissSeries: (taskId: string) => void
+  embedded?: boolean
+  hideBackButton?: boolean
+  title?: string
+  subtitle?: string
+  editableOverride?: boolean
+  canOpenCourseWorkspaceOverride?: boolean
+  allowTaskCreation?: boolean
+  onEditMarker?: (marker: ApiAdminCalendarMarker) => void
 }) {
   const [mode, setMode] = useState<'calendar' | 'timetable'>('calendar')
   const [selectedDateISO, setSelectedDateISO] = useState(() => {
@@ -313,8 +329,8 @@ export function CalendarTimetablePage({
   const suppressDetailClickUntilRef = useRef(0)
   const [pageWidth, setPageWidth] = useState(1400)
 
-  const isEditable = activeRole === 'Course Leader'
-  const canOpenCourseWorkspace = activeRole !== 'Mentor'
+  const isEditable = editableOverride ?? activeRole === 'Course Leader'
+  const canOpenCourseWorkspace = canOpenCourseWorkspaceOverride ?? activeRole !== 'Mentor'
   const offeringIds = useMemo(() => new Set(facultyOfferings.map(offering => offering.offId)), [facultyOfferings])
   const offeringsById = useMemo(() => Object.fromEntries(facultyOfferings.map(offering => [offering.offId, offering])) as Record<string, Offering>, [facultyOfferings])
   const activeTasks = useMemo(() => mergedTasks.filter(task => !resolvedTaskIds[task.id] && !isTaskDismissed(task)), [mergedTasks, resolvedTaskIds])
@@ -1042,18 +1058,17 @@ export function CalendarTimetablePage({
     setBoundsDirty(false)
   }
 
-  return (
-    <PageShell size="wide">
-      <div ref={shellRef} style={{ display: 'grid', gap: 18 }}>
-      <PageBackButton onClick={onBack} />
+  const content = (
+    <div ref={shellRef} style={{ display: 'grid', gap: 18 }}>
+      {!hideBackButton && <PageBackButton onClick={onBack} />}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 0, flexWrap: 'wrap' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
             <CalendarDays size={20} color={T.accent} />
-            <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: T.text }}>Calendar / Timetable</div>
+            <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: T.text }}>{title}</div>
           </div>
           <div style={{ ...mono, fontSize: 11, color: T.muted }}>
-            Personal planning workspace for {currentTeacher.name} · merged role scope across {allowedRoles.join(' / ')}
+            {subtitle ?? `Personal planning workspace for ${currentTeacher.name} · merged role scope across ${allowedRoles.join(' / ')}`}
           </div>
         </div>
         <div style={{ display: 'grid', gap: 8, justifyItems: 'end' }}>
@@ -1259,6 +1274,7 @@ export function CalendarTimetablePage({
         <TaskPlacementSheet
           target={addTarget}
           queueCandidates={queueCandidates}
+          allowTaskCreation={allowTaskCreation}
           onClose={() => setAddTarget(null)}
           onChangeTarget={handleChangeAddTarget}
           onPlaceTask={taskId => {
@@ -1335,6 +1351,7 @@ export function CalendarTimetablePage({
           placement={detailPlacement}
           editable={isEditable}
           canOpenCourseWorkspace={canOpenCourseWorkspace}
+          onEditMarker={onEditMarker}
           onClose={() => setDetailsState(null)}
           onOpenCourse={() => {
             if (!detailOffering) return
@@ -1411,9 +1428,12 @@ export function CalendarTimetablePage({
           </motion.div>
         )}
       </AnimatePresence>
-      </div>
-    </PageShell>
+    </div>
   )
+
+  if (embedded) return content
+
+  return <PageShell size="wide">{content}</PageShell>
 }
 
 function AgendaBoard({
@@ -1945,6 +1965,7 @@ function TaskActionStrip({
 function TaskPlacementSheet({
   target,
   queueCandidates,
+  allowTaskCreation,
   onClose,
   onChangeTarget,
   onPlaceTask,
@@ -1953,6 +1974,7 @@ function TaskPlacementSheet({
 }: {
   target: AddTargetState
   queueCandidates: SharedTask[]
+  allowTaskCreation: boolean
   onClose: () => void
   onChangeTarget: (next: Partial<AddTargetState>) => void
   onPlaceTask: (taskId: string) => void
@@ -2045,7 +2067,9 @@ function TaskPlacementSheet({
         </div>
 
         <div style={{ padding: '14px 18px', borderTop: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ ...mono, fontSize: 10, color: T.muted }}>Need something new instead of reusing queue state or want to add a one-off extra class?</div>
+          <div style={{ ...mono, fontSize: 10, color: T.muted }}>
+            {allowTaskCreation ? 'Need something new instead of reusing queue state or want to add a one-off extra class?' : 'Use this placement for a one-off extra class in the shared timetable canvas.'}
+          </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <Btn size="sm" variant="ghost" onClick={onClose}>Close</Btn>
             {target.placementMode === 'timed' && (
@@ -2053,9 +2077,11 @@ function TaskPlacementSheet({
                 <Plus size={12} /> Schedule Extra Class
               </Btn>
             )}
-            <Btn size="sm" onClick={onCreateNewTask}>
-              <Plus size={12} /> Create New Task
-            </Btn>
+            {allowTaskCreation ? (
+              <Btn size="sm" onClick={onCreateNewTask}>
+                <Plus size={12} /> Create New Task
+              </Btn>
+            ) : null}
           </div>
         </div>
       </motion.div>
@@ -2216,6 +2242,7 @@ function BlockDetailsSheet({
   placement,
   editable,
   canOpenCourseWorkspace,
+  onEditMarker,
   onClose,
   onOpenCourse,
   onOpenActionQueue,
@@ -2230,6 +2257,7 @@ function BlockDetailsSheet({
   placement: TaskCalendarPlacement | null
   editable: boolean
   canOpenCourseWorkspace: boolean
+  onEditMarker?: (marker: ApiAdminCalendarMarker) => void
   onClose: () => void
   onOpenCourse: () => void
   onOpenActionQueue: () => void
@@ -2308,6 +2336,7 @@ function BlockDetailsSheet({
             {marker.note ? <div style={{ ...mono, fontSize: 10, color: T.dim }}>{marker.note}</div> : null}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
               <Btn size="sm" variant="ghost" onClick={onClose}>Close</Btn>
+              {onEditMarker ? <Btn size="sm" onClick={() => onEditMarker(marker)}>Edit Marker</Btn> : null}
             </div>
           </>
         )}
