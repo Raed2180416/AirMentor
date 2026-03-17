@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   deriveCurrentYearLabel,
+  isBatchVisible,
+  isBranchVisible,
+  isCourseVisible,
+  isDepartmentVisible,
+  isFacultyMemberVisible,
+  isStudentVisible,
   isVisibleAdminRecord,
   listCurriculumBySemester,
   listFacultyAssignments,
@@ -278,6 +284,23 @@ describe('system-admin-live-data', () => {
 
     expect(listCurriculumBySemester(archivedDataset, 'batch_2022')).toHaveLength(1)
     expect(searchLiveAdminWorkspace(archivedDataset, 'Archived Faculty')).toHaveLength(0)
+  })
+
+  it('hides descendants when their academic faculty is archived', () => {
+    const archivedDataset: LiveAdminDataset = {
+      ...dataset,
+      academicFaculties: dataset.academicFaculties.map(item => item.academicFacultyId === 'af_eng' ? { ...item, status: 'archived' } : item),
+    }
+
+    expect(isDepartmentVisible(archivedDataset, 'dept_cse')).toBe(false)
+    expect(isBranchVisible(archivedDataset, 'branch_cse')).toBe(false)
+    expect(isBatchVisible(archivedDataset, 'batch_2022')).toBe(false)
+    expect(isCourseVisible(archivedDataset, 'course_1')).toBe(false)
+    expect(isStudentVisible(archivedDataset, 'student_1')).toBe(false)
+    expect(isFacultyMemberVisible(archivedDataset, 'fac_1')).toBe(false)
+    expect(searchLiveAdminWorkspace(archivedDataset, 'Aisha')).toHaveLength(0)
+    expect(searchLiveAdminWorkspace(archivedDataset, 'Nandini')).toHaveLength(0)
+    expect(searchLiveAdminWorkspace(archivedDataset, 'CS699')).toHaveLength(0)
   })
 
   it('finds faculty assignments from ownership records', () => {

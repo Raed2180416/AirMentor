@@ -45,6 +45,13 @@ import { normalizeThemeMode, type ThemeMode } from './domain'
 import { AIRMENTOR_STORAGE_KEYS, createAirMentorRepositories } from './repositories'
 import {
   deriveCurrentYearLabel,
+  isAcademicFacultyVisible,
+  isBatchVisible,
+  isBranchVisible,
+  isDepartmentVisible,
+  isFacultyMemberVisible,
+  isStudentVisible,
+  isTermVisible,
   isVisibleAdminRecord,
   getPrimaryAppointmentDepartmentId,
   listBatchesForBranch,
@@ -193,6 +200,9 @@ type OwnershipFormState = {
   facultyId: string
   ownershipRole: string
 }
+
+type StudentDetailTab = 'profile' | 'academic' | 'mentor' | 'progression' | 'history'
+type FacultyDetailTab = 'profile' | 'appointments' | 'permissions' | 'teaching' | 'timetable' | 'history'
 
 type AdminWorkspaceSnapshot = {
   route: LiveAdminRoute
@@ -638,13 +648,13 @@ function matchesFacultyScope(member: LiveAdminDataset['facultyMembers'][number],
   const batchTermIds = scope.batchId
     ? new Set(
         data.terms
-          .filter(item => item.batchId === scope.batchId && isVisibleAdminRecord(item.status))
+          .filter(item => item.batchId === scope.batchId && isTermVisible(data, item))
           .map(item => item.termId),
       )
     : null
 
   const appointmentMatch = member.appointments.some(appointment => {
-    if (appointment.status !== 'active') return false
+    if (!isVisibleAdminRecord(appointment.status)) return false
     if (scope.departmentId && appointment.departmentId !== scope.departmentId) return false
     if (scope.branchId && appointment.branchId !== scope.branchId) return false
     if (scope.academicFacultyId) {
@@ -866,6 +876,64 @@ function ActionQueueCard({
   )
 }
 
+function AdminDetailTabs({
+  tabs,
+  activeTab,
+  onChange,
+}: {
+  tabs: Array<{ id: string; label: string; count?: string | number; disabled?: boolean }>
+  activeTab: string
+  onChange: (tabId: string) => void
+}) {
+  return (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      {tabs.map(tab => (
+        <button
+          key={tab.id}
+          type="button"
+          data-tab="true"
+          disabled={tab.disabled}
+          onClick={() => onChange(tab.id)}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            borderRadius: 999,
+            border: `1px solid ${activeTab === tab.id ? T.accent : T.border}`,
+            background: activeTab === tab.id ? `${T.accent}14` : T.surface,
+            color: activeTab === tab.id ? T.accent : (tab.disabled ? T.dim : T.muted),
+            cursor: tab.disabled ? 'not-allowed' : 'pointer',
+            padding: '8px 12px',
+            opacity: tab.disabled ? 0.55 : 1,
+            ...mono,
+            fontSize: 10,
+          }}
+        >
+          {tab.label}
+          {tab.count != null ? <Chip color={activeTab === tab.id ? T.accent : T.dim} size={8}>{String(tab.count)}</Chip> : null}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function AdminMiniStat({
+  label,
+  value,
+  tone = T.accent,
+}: {
+  label: string
+  value: string
+  tone?: string
+}) {
+  return (
+    <div style={{ borderRadius: 14, border: `1px solid ${tone}20`, background: `${tone}10`, padding: '12px 14px', minWidth: 0 }}>
+      <div style={{ ...mono, fontSize: 9, color: tone, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
+      <div style={{ ...sora, fontSize: 18, fontWeight: 800, color: T.text, marginTop: 6 }}>{value}</div>
+    </div>
+  )
+}
+
 export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLiveAppProps) {
   const apiClient = useMemo(() => new AirMentorApiClient(apiBaseUrl), [apiBaseUrl])
   const repositories = useMemo(() => createAirMentorRepositories({ repositoryMode: 'http', apiClient }), [apiClient])
@@ -923,6 +991,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const [recentAuditEvents, setRecentAuditEvents] = useState<ApiAuditEvent[]>([])
   const [facultyCalendarLoading, setFacultyCalendarLoading] = useState(false)
   const [facultyCalendar, setFacultyCalendar] = useState<ApiAdminFacultyCalendar | null>(null)
+  const [studentDetailTab, setStudentDetailTab] = useState<StudentDetailTab>('profile')
+  const [facultyDetailTab, setFacultyDetailTab] = useState<FacultyDetailTab>('profile')
   const pendingScrollRestoreRef = useRef<number | null>(null)
 
   const deferredSearch = useDeferredValue(searchQuery)
@@ -1208,7 +1278,26 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const selectedBatch = resolveBatch(data, route.batchId)
   const selectedStudent = resolveStudent(data, route.studentId)
   const selectedFacultyMember = resolveFacultyMember(data, route.facultyMemberId)
+
+  useEffect(() => {
+    setStudentDetailTab('profile')
+  }, [selectedStudent?.studentId])
+
+  useEffect(() => {
+    setFacultyDetailTab('profile')
+  }, [selectedFacultyMember?.facultyId])
+
   const searchResults = useMemo(() => {
+    const isRouteVisible = (candidateRoute: LiveAdminRoute) => {
+      if (candidateRoute.section === 'requests' || candidateRoute.section === 'overview') return true
+      if (candidateRoute.studentId) return isStudentVisible(data, candidateRoute.studentId)
+      if (candidateRoute.facultyMemberId) return isFacultyMemberVisible(data, candidateRoute.facultyMemberId)
+      if (candidateRoute.batchId) return isBatchVisible(data, candidateRoute.batchId)
+      if (candidateRoute.branchId) return isBranchVisible(data, candidateRoute.branchId)
+      if (candidateRoute.departmentId) return isDepartmentVisible(data, candidateRoute.departmentId)
+      if (candidateRoute.academicFacultyId) return isAcademicFacultyVisible(data, candidateRoute.academicFacultyId)
+      return true
+    }
     if (serverSearchResults.length > 0) {
       return serverSearchResults.map(result => ({
         key: result.key,
@@ -1224,9 +1313,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           facultyMemberId: result.route.facultyMemberId,
           requestId: result.route.requestId,
         } satisfies LiveAdminRoute,
-      }))
+      })).filter(result => isRouteVisible(result.route))
     }
-    return searchLiveAdminWorkspace(data, deferredSearch)
+    return searchLiveAdminWorkspace(data, deferredSearch).filter(result => isRouteVisible(result.route))
   }, [data, deferredSearch, serverSearchResults])
   const selectedRequest = selectedRequestDetail && selectedRequestSummary && selectedRequestDetail.version !== selectedRequestSummary.version
     ? selectedRequestSummary
@@ -1627,10 +1716,23 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
   const handleArchiveAcademicFaculty = async () => {
     if (!selectedAcademicFaculty) return
-    if (facultyDepartments.length > 0) {
-      setActionError('Archive or move this faculty’s departments before archiving the academic faculty.')
-      return
-    }
+    if (!window.confirm(`Archive ${selectedAcademicFaculty.name}? Departments, branches, years, students, and faculty tied to this scope will disappear from the working views until you restore it from History.`)) return
+    await runAction(async () => {
+      await apiClient.updateAcademicFaculty(selectedAcademicFaculty.academicFacultyId, {
+        code: selectedAcademicFaculty.code,
+        name: selectedAcademicFaculty.name,
+        overview: selectedAcademicFaculty.overview,
+        status: 'archived',
+        version: selectedAcademicFaculty.version,
+      })
+      navigate({ section: 'faculties' })
+      setFlashMessage('Academic faculty archived. Restore it from History when needed.')
+    })
+  }
+
+  const handleDeleteAcademicFaculty = async () => {
+    if (!selectedAcademicFaculty) return
+    if (!window.confirm(`Delete ${selectedAcademicFaculty.name}? This removes the faculty scope from working views, including its departments, branches, years, and linked registries, and sends the faculty to the recycle bin.`)) return
     await runAction(async () => {
       await apiClient.updateAcademicFaculty(selectedAcademicFaculty.academicFacultyId, {
         code: selectedAcademicFaculty.code,
@@ -1640,7 +1742,22 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         version: selectedAcademicFaculty.version,
       })
       navigate({ section: 'faculties' })
-      setFlashMessage('Academic faculty archived.')
+      setFlashMessage('Academic faculty moved to recycle bin.')
+    })
+  }
+
+  const handleRestoreAcademicFaculty = async (academicFaculty = selectedAcademicFaculty) => {
+    if (!academicFaculty) return
+    await runAction(async () => {
+      await apiClient.updateAcademicFaculty(academicFaculty.academicFacultyId, {
+        code: academicFaculty.code,
+        name: academicFaculty.name,
+        overview: academicFaculty.overview,
+        status: 'active',
+        version: academicFaculty.version,
+      })
+      navigate({ section: 'faculties', academicFacultyId: academicFaculty.academicFacultyId })
+      setFlashMessage('Academic faculty restored.')
     })
   }
 
@@ -2449,7 +2566,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     }
     const matchingTermIds = new Set(
       data.terms
-        .filter(item => item.batchId === selectedBatch.batchId && item.branchId === selectedBranch.branchId && item.semesterNumber === curriculumCourse.semesterNumber && isVisibleAdminRecord(item.status))
+        .filter(item => item.batchId === selectedBatch.batchId && item.branchId === selectedBranch.branchId && item.semesterNumber === curriculumCourse.semesterNumber && isTermVisible(data, item))
         .map(item => item.termId),
     )
     const matchingOfferings = data.offerings.filter(item => {
@@ -2583,9 +2700,24 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const activeBatchPolicyOverride = selectedBatch
     ? data.policyOverrides.find(item => item.scopeType === 'batch' && item.scopeId === selectedBatch.batchId && isVisibleAdminRecord(item.status)) ?? null
     : null
-  const visibleAcademicFaculties = data.academicFaculties.filter(item => isVisibleAdminRecord(item.status))
-  const visibleDepartments = data.departments.filter(item => isVisibleAdminRecord(item.status))
-  const visibleBranches = data.branches.filter(item => isVisibleAdminRecord(item.status))
+  const visibleAcademicFaculties = data.academicFaculties.filter(item => isAcademicFacultyVisible(data, item))
+  const visibleDepartments = data.departments.filter(item => isDepartmentVisible(data, item))
+  const visibleBranches = data.branches.filter(item => isBranchVisible(data, item))
+  const visibleBatches = data.batches.filter(item => isBatchVisible(data, item))
+  const visibleTerms = data.terms
+    .filter(item => isTermVisible(data, item))
+    .sort((left, right) => left.startDate.localeCompare(right.startDate))
+  const archivedItems = [
+    ...data.academicFaculties.filter(item => item.status === 'archived').map(item => ({
+      key: `archived:academic-faculty:${item.academicFacultyId}`,
+      label: item.name,
+      meta: 'Academic faculty',
+      updatedAt: item.updatedAt,
+      onRestore: async () => {
+        await apiClient.updateAcademicFaculty(item.academicFacultyId, { code: item.code, name: item.name, overview: item.overview, status: 'active', version: item.version })
+      },
+    })),
+  ].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
   const deletedItems = [
     ...data.academicFaculties.filter(item => item.status === 'deleted').map(item => ({ key: `academic-faculty:${item.academicFacultyId}`, label: item.name, meta: 'Academic faculty', updatedAt: item.updatedAt, onRestore: async () => {
       await apiClient.updateAcademicFaculty(item.academicFacultyId, { code: item.code, name: item.name, overview: item.overview, status: 'active', version: item.version })
@@ -2609,6 +2741,24 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       await apiClient.updateCourse(item.courseId, { courseCode: item.courseCode, title: item.title, defaultCredits: item.defaultCredits, departmentId: item.departmentId, status: 'active', version: item.version })
     } })),
   ].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+  const hiddenItemCount = archivedItems.length + deletedItems.length
+  const selectedAcademicFacultyImpact = selectedAcademicFaculty
+    ? {
+        departments: data.departments.filter(item => item.academicFacultyId === selectedAcademicFaculty.academicFacultyId && item.status !== 'deleted').length,
+        branches: data.branches.filter(item => {
+          const department = resolveDepartment(data, item.departmentId)
+          return department?.academicFacultyId === selectedAcademicFaculty.academicFacultyId && item.status !== 'deleted'
+        }).length,
+        batches: data.batches.filter(item => {
+          const branch = resolveBranch(data, item.branchId)
+          const department = branch ? resolveDepartment(data, branch.departmentId) : null
+          return department?.academicFacultyId === selectedAcademicFaculty.academicFacultyId && item.status !== 'deleted'
+        }).length,
+        students: data.students.filter(item => item.status !== 'deleted' && item.activeAcademicContext?.departmentId && resolveDepartment(data, item.activeAcademicContext.departmentId)?.academicFacultyId === selectedAcademicFaculty.academicFacultyId).length,
+        facultyMembers: data.facultyMembers.filter(item => item.status !== 'deleted' && item.appointments.some(appointment => appointment.status !== 'deleted' && resolveDepartment(data, appointment.departmentId)?.academicFacultyId === selectedAcademicFaculty.academicFacultyId)).length,
+        courses: data.courses.filter(item => item.status !== 'deleted' && resolveDepartment(data, item.departmentId)?.academicFacultyId === selectedAcademicFaculty.academicFacultyId).length,
+      }
+    : null
   const openRequests = data.requests.filter(item => item.status !== 'Closed')
   const pendingReminders = data.reminders.filter(item => item.status === 'pending')
   const actionQueueCount = openRequests.length + pendingReminders.length
@@ -2743,10 +2893,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     return []
   })()
   const filteredUniversityStudents = data.students
-    .filter(item => isVisibleAdminRecord(item.status))
+    .filter(item => isStudentVisible(data, item))
     .filter(student => matchesStudentScope(student, data, activeUniversityScope))
   const filteredUniversityFaculty = data.facultyMembers
-    .filter(item => isVisibleAdminRecord(item.status))
+    .filter(item => isFacultyMemberVisible(data, item))
     .filter(member => matchesFacultyScope(member, data, activeUniversityScope))
   const universityContextLabel = selectedSectionCode
     ? `Section ${selectedSectionCode}`
@@ -2854,14 +3004,14 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     }
   }
   const mentorEligibleFaculty = data.facultyMembers
-    .filter(item => item.status === 'active' && item.roleGrants.some(grant => grant.roleCode === 'MENTOR' && isCurrentRoleGrant(grant)))
+    .filter(item => isFacultyMemberVisible(data, item) && item.status === 'active' && item.roleGrants.some(grant => grant.roleCode === 'MENTOR' && isCurrentRoleGrant(grant)))
     .sort((left, right) => left.displayName.localeCompare(right.displayName))
   const selectedStudentEnrollment = selectedStudent ? findLatestEnrollment(selectedStudent) : null
   const selectedStudentMentorAssignment = selectedStudent ? findLatestMentorAssignment(selectedStudent) : null
   const selectedStudentPromotionRules = selectedStudentPolicy?.effectivePolicy.progressionRules ?? DEFAULT_PROGRESSION_RULES
   const selectedStudentNextTerms = selectedStudent?.activeAcademicContext
     ? data.terms
-        .filter(item => item.branchId === selectedStudent.activeAcademicContext!.branchId && item.semesterNumber === (selectedStudent.activeAcademicContext!.semesterNumber ?? 0) + 1 && isVisibleAdminRecord(item.status))
+        .filter(item => item.branchId === selectedStudent.activeAcademicContext!.branchId && item.semesterNumber === (selectedStudent.activeAcademicContext!.semesterNumber ?? 0) + 1 && isTermVisible(data, item))
         .sort((left, right) => left.startDate.localeCompare(right.startDate))
     : []
   const selectedStudentPromotionRecommended = selectedStudent
@@ -2869,7 +3019,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       && (!selectedStudentPromotionRules.requireNoActiveBacklogs || !/(backlog|fail|repeat|detain)/i.test(selectedStudent.activeAcademicContext?.academicStatus ?? ''))
     : false
   const studentRegistryItems = data.students
-    .filter(item => isVisibleAdminRecord(item.status))
+    .filter(item => isStudentVisible(data, item))
     .filter(item => matchesStudentScope(item, data, registryScope ? {
       academicFacultyId: registryScope.academicFacultyId,
       departmentId: registryScope.departmentId,
@@ -2879,7 +3029,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     } : null))
     .sort((left, right) => left.name.localeCompare(right.name))
   const facultyRegistryItems = data.facultyMembers
-    .filter(item => isVisibleAdminRecord(item.status))
+    .filter(item => isFacultyMemberVisible(data, item))
     .filter(item => matchesFacultyScope(item, data, registryScope ? {
       academicFacultyId: registryScope.academicFacultyId,
       departmentId: registryScope.departmentId,
@@ -2888,15 +3038,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       sectionCode: registryScope.sectionCode,
     } : null))
     .sort((left, right) => left.displayName.localeCompare(right.displayName))
-  const visibleTerms = data.terms
-    .filter(item => isVisibleAdminRecord(item.status))
-    .sort((left, right) => left.startDate.localeCompare(right.startDate))
   const termsForEnrollment = visibleTerms.filter(item => !enrollmentForm.branchId || item.branchId === enrollmentForm.branchId)
   const branchesForAppointment = visibleBranches.filter(item => !appointmentForm.departmentId || item.departmentId === appointmentForm.departmentId)
   const selectedFacultyOwnerships = selectedFacultyMember
     ? data.ownerships.filter(item => item.facultyId === selectedFacultyMember.facultyId)
     : []
   const visibleOfferings = [...data.offerings]
+    .filter(item => !item.branchId || isBranchVisible(data, item.branchId))
     .sort((left, right) => `${left.code}-${left.year}-${left.section}`.localeCompare(`${right.code}-${right.year}-${right.section}`))
   const scopeOptions = (() => {
     if (roleGrantForm.scopeType === 'institution') {
@@ -2912,7 +3060,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       return visibleBranches.map(item => ({ value: item.branchId, label: item.name }))
     }
     if (roleGrantForm.scopeType === 'batch') {
-      return data.batches.filter(item => isVisibleAdminRecord(item.status)).map(item => ({ value: item.batchId, label: `${item.batchLabel} · ${deriveCurrentYearLabel(item.currentSemester)}` }))
+      return visibleBatches.map(item => ({ value: item.batchId, label: `${item.batchLabel} · ${deriveCurrentYearLabel(item.currentSemester)}` }))
     }
   if (roleGrantForm.scopeType === 'offering') {
       return visibleOfferings.map(item => ({ value: item.offId, label: `${item.code} · ${item.year} · ${item.section}` }))
@@ -3057,7 +3205,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <HeroBadge color={T.accent}><Bell size={12} /> Action Queue {actionQueueCount}</HeroBadge>
                 <HeroBadge color={T.warning}><Clock3 size={12} /> Open Requests {openRequests.length}</HeroBadge>
-                <HeroBadge color={T.danger}><RefreshCw size={12} /> Recycle Bin {deletedItems.length}</HeroBadge>
+                <HeroBadge color={T.danger}><RefreshCw size={12} /> Hidden Records {hiddenItemCount}</HeroBadge>
                 <HeroBadge color={remindersSupported ? T.success : T.orange}><CheckCircle2 size={12} /> {remindersSupported ? `Private Reminders ${pendingReminders.length}` : 'Reminder API offline on this backend'}</HeroBadge>
               </div>
               <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
@@ -3095,6 +3243,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                     }}
                   >
                     <option value="">All Academic Faculties</option>
+                    {selectedAcademicFaculty && !isAcademicFacultyVisible(data, selectedAcademicFaculty) ? (
+                      <option value={selectedAcademicFaculty.academicFacultyId}>{selectedAcademicFaculty.name} ({selectedAcademicFaculty.status})</option>
+                    ) : null}
                     {visibleAcademicFaculties.map(faculty => <option key={faculty.academicFacultyId} value={faculty.academicFacultyId}>{faculty.name}</option>)}
                   </SelectInput>
                 </div>
@@ -3210,7 +3361,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             </Card>
 
             {/* Right: detail panel */}
-            <div style={{ display: 'grid', gap: 14, alignContent: 'start' }}>
+            <div className="scroll-pane" style={{ display: 'grid', gap: 14, alignContent: 'start', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto', paddingRight: 4 }}>
               <Card style={{ padding: 16, display: 'grid', gap: 14, background: T.surface2 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                   <div>
@@ -3294,10 +3445,30 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
               {selectedAcademicFaculty && !selectedDepartment && (
                 <Card style={{ padding: 18 }}>
-                  <SectionHeading title={selectedAcademicFaculty.name} eyebrow="Academic Faculty" caption="Edit the faculty record, then add or organize departments underneath it." />
+                  <SectionHeading
+                    title={selectedAcademicFaculty.name}
+                    eyebrow="Academic Faculty"
+                    caption={selectedAcademicFaculty.status === 'archived'
+                      ? 'This faculty is archived. Restore it to bring its departments and linked workspace scope back into the main admin views.'
+                      : 'Edit the faculty record, then add or organize departments underneath it.'}
+                  />
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
                     <Chip color={T.accent}>{selectedAcademicFaculty.code}</Chip>
                     <Chip color={T.success}>{facultyDepartments.length} departments</Chip>
+                    <Chip color={selectedAcademicFaculty.status === 'archived' ? T.warning : T.success}>{selectedAcademicFaculty.status}</Chip>
+                  </div>
+                  {selectedAcademicFacultyImpact ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(132px, 1fr))', gap: 10, marginTop: 16 }}>
+                      <AdminMiniStat label="Departments" value={String(selectedAcademicFacultyImpact.departments)} tone={T.accent} />
+                      <AdminMiniStat label="Branches" value={String(selectedAcademicFacultyImpact.branches)} tone={T.success} />
+                      <AdminMiniStat label="Years" value={String(selectedAcademicFacultyImpact.batches)} tone={T.warning} />
+                      <AdminMiniStat label="Students" value={String(selectedAcademicFacultyImpact.students)} tone={ADMIN_SECTION_TONES.students} />
+                      <AdminMiniStat label="Faculty" value={String(selectedAcademicFacultyImpact.facultyMembers)} tone={ADMIN_SECTION_TONES['faculty-members']} />
+                      <AdminMiniStat label="Courses" value={String(selectedAcademicFacultyImpact.courses)} tone={T.orange} />
+                    </div>
+                  ) : null}
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 14, lineHeight: 1.8 }}>
+                    Archive hides this faculty scope from day-to-day sysadmin views without making you remap departments first. Delete sends the faculty to the recycle bin and removes the whole scope from working views.
                   </div>
                   <form onSubmit={handleUpdateAcademicFaculty} style={{ display: 'grid', gap: 10, marginTop: 18 }}>
                     <div><FieldLabel>Faculty Code</FieldLabel><TextInput aria-label="Faculty Code" value={entityEditors.academicFaculty.code} onChange={event => setEntityEditors(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, code: event.target.value } }))} placeholder="ENG" /></div>
@@ -3305,15 +3476,20 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                     <div><FieldLabel>Overview</FieldLabel><TextAreaInput aria-label="Faculty Overview" value={entityEditors.academicFaculty.overview} onChange={event => setEntityEditors(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, overview: event.target.value } }))} rows={3} placeholder="Overview" /></div>
                     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                       <Btn type="submit">Save Faculty</Btn>
-                      <Btn type="button" variant="danger" onClick={() => void handleArchiveAcademicFaculty()}>Archive Faculty</Btn>
+                      {selectedAcademicFaculty.status === 'archived'
+                        ? <Btn type="button" variant="ghost" onClick={() => void handleRestoreAcademicFaculty()}>Restore Faculty</Btn>
+                        : <Btn type="button" variant="ghost" onClick={() => void handleArchiveAcademicFaculty()}>Archive Faculty</Btn>}
+                      <Btn type="button" variant="danger" onClick={() => void handleDeleteAcademicFaculty()}>Delete Faculty</Btn>
                     </div>
                   </form>
-                  <form onSubmit={handleCreateDepartment} style={{ display: 'grid', gap: 10, marginTop: 18, borderTop: `1px solid ${T.border}`, paddingTop: 18 }}>
-                    <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Add Department</div>
-                    <div><FieldLabel>Department Code</FieldLabel><TextInput value={structureForms.department.code} onChange={event => setStructureForms(prev => ({ ...prev, department: { ...prev.department, code: event.target.value } }))} placeholder="CSE" /></div>
-                    <div><FieldLabel>Department Name</FieldLabel><TextInput value={structureForms.department.name} onChange={event => setStructureForms(prev => ({ ...prev, department: { ...prev.department, name: event.target.value } }))} placeholder="Computer Science and Engineering" /></div>
-                    <Btn type="submit">Add Department</Btn>
-                  </form>
+                  {selectedAcademicFaculty.status === 'archived' ? null : (
+                    <form onSubmit={handleCreateDepartment} style={{ display: 'grid', gap: 10, marginTop: 18, borderTop: `1px solid ${T.border}`, paddingTop: 18 }}>
+                      <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Add Department</div>
+                      <div><FieldLabel>Department Code</FieldLabel><TextInput value={structureForms.department.code} onChange={event => setStructureForms(prev => ({ ...prev, department: { ...prev.department, code: event.target.value } }))} placeholder="CSE" /></div>
+                      <div><FieldLabel>Department Name</FieldLabel><TextInput value={structureForms.department.name} onChange={event => setStructureForms(prev => ({ ...prev, department: { ...prev.department, name: event.target.value } }))} placeholder="Computer Science and Engineering" /></div>
+                      <Btn type="submit">Add Department</Btn>
+                    </form>
+                  )}
                 </Card>
               )}
 
@@ -3744,7 +3920,49 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               {studentRegistryItems.length === 0 ? <InfoBanner message="No active students yet. Create the first student record from this panel." /> : null}
             </Card>
 
-            <div style={{ display: 'grid', gap: 16 }}>
+            <div className="scroll-pane" style={{ display: 'grid', gap: 16, maxHeight: 'calc(100vh - 200px)', overflowY: 'auto', paddingRight: 4 }}>
+              <Card
+                style={{
+                  position: 'sticky',
+                  top: 0,
+                  zIndex: 2,
+                  padding: 18,
+                  display: 'grid',
+                  gap: 14,
+                  background: isLightTheme(themeMode) ? 'rgba(247,251,255,0.94)' : 'rgba(10,16,24,0.94)',
+                  backdropFilter: 'blur(12px)',
+                }}
+              >
+                <SectionHeading
+                  title={selectedStudent ? selectedStudent.name : 'Create Student'}
+                  eyebrow="Student Workspace"
+                  caption={selectedStudent
+                    ? 'Identity, academic context, mentor linkage, progression review, and history now stay in one focused workspace.'
+                    : 'Create the student identity first, then move through academic context, mentoring, and progression from the tabs below.'}
+                />
+                {selectedStudent ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(128px, 1fr))', gap: 10 }}>
+                    <AdminMiniStat label="CGPA" value={selectedStudent.currentCgpa.toFixed(2)} tone={T.success} />
+                    <AdminMiniStat label="Semester" value={String(selectedStudent.activeAcademicContext?.semesterNumber ?? '—')} tone={T.accent} />
+                    <AdminMiniStat label="Enrollments" value={String(selectedStudent.enrollments.length)} tone={T.warning} />
+                    <AdminMiniStat label="Mentor Links" value={String(selectedStudent.mentorAssignments.length)} tone={ADMIN_SECTION_TONES['faculty-members']} />
+                    <AdminMiniStat label="Audit Events" value={String(studentAuditEvents.length)} tone={T.orange} />
+                  </div>
+                ) : null}
+                <AdminDetailTabs
+                  activeTab={studentDetailTab}
+                  onChange={tabId => setStudentDetailTab(tabId as StudentDetailTab)}
+                  tabs={[
+                    { id: 'profile', label: 'Profile' },
+                    { id: 'academic', label: 'Academic', count: selectedStudent?.enrollments.length ?? 0, disabled: !selectedStudent },
+                    { id: 'mentor', label: 'Mentor', count: selectedStudent?.mentorAssignments.length ?? 0, disabled: !selectedStudent },
+                    { id: 'progression', label: 'Progression', disabled: !selectedStudent },
+                    { id: 'history', label: 'History', count: studentAuditEvents.length, disabled: !selectedStudent },
+                  ]}
+                />
+              </Card>
+
+              {studentDetailTab === 'profile' && (
               <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
                 <SectionHeading title={selectedStudent ? 'Student Detail' : 'Create Student'} eyebrow={selectedStudent ? selectedStudent.name : 'New record'} caption="Save the identity record first, then maintain enrollment, mentor, and promotion details below." />
                 {selectedStudent ? (
@@ -3771,7 +3989,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </div>
                 </form>
               </Card>
+              )}
 
+              {studentDetailTab === 'academic' && (
               <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
                 <SectionHeading title="Academic Context" eyebrow="Enrollment" caption="Keep branch, term, section, and academic standing aligned with the canonical term structure." />
                 {!selectedStudent ? <EmptyState title="Save the student first" body="Enrollment editing becomes available after the student record exists." /> : (
@@ -3848,7 +4068,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </>
                 )}
               </Card>
+              )}
 
+              {studentDetailTab === 'mentor' && (
               <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
                 <SectionHeading title="Mentor Linkage" eyebrow="Faculty" caption="Only faculty with an active mentor permission are shown as eligible mentors." />
                 {!selectedStudent ? <EmptyState title="Save the student first" body="Mentor assignment becomes available after the student record exists." /> : (
@@ -3899,7 +4121,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </>
                 )}
               </Card>
+              )}
 
+              {studentDetailTab === 'progression' && (
               <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
                 <SectionHeading title="Promotion Review" eyebrow="Semester Progression" caption="Recommendations use the configured CGPA rule and backlog guard, then wait for explicit admin confirmation." />
                 {!selectedStudent ? <EmptyState title="Select a student" body="Promotion review appears when a student with an academic context is selected." /> : !selectedStudent.activeAcademicContext ? (
@@ -3932,7 +4156,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </>
                 )}
               </Card>
+              )}
 
+              {studentDetailTab === 'history' && (
               <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
                 <SectionHeading title="History" eyebrow="Audit Trail" caption="Every student, enrollment, and mentor change lands here so deletions and corrections stay traceable." />
                 {studentAuditLoading ? <InfoBanner message="Loading audit history…" /> : null}
@@ -3950,6 +4176,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </div>
                 )}
               </Card>
+              )}
             </div>
           </div>
         )}
@@ -3996,7 +4223,50 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               {facultyRegistryItems.length === 0 ? <InfoBanner message="No active faculty profiles yet. Create the first faculty record from this panel." /> : null}
             </Card>
 
-            <div style={{ display: 'grid', gap: 16 }}>
+            <div className="scroll-pane" style={{ display: 'grid', gap: 16, maxHeight: 'calc(100vh - 200px)', overflowY: 'auto', paddingRight: 4 }}>
+              <Card
+                style={{
+                  position: 'sticky',
+                  top: 0,
+                  zIndex: 2,
+                  padding: 18,
+                  display: 'grid',
+                  gap: 14,
+                  background: isLightTheme(themeMode) ? 'rgba(247,251,255,0.94)' : 'rgba(10,16,24,0.94)',
+                  backdropFilter: 'blur(12px)',
+                }}
+              >
+                <SectionHeading
+                  title={selectedFacultyMember ? selectedFacultyMember.displayName : 'Create Faculty'}
+                  eyebrow="Faculty Workspace"
+                  caption={selectedFacultyMember
+                    ? 'Identity, appointments, permissions, teaching coverage, timetable planning, and history now stay in a tighter working loop.'
+                    : 'Create the faculty profile first, then use the tabs to manage appointments, permissions, teaching coverage, and planning.'}
+                />
+                {selectedFacultyMember ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(128px, 1fr))', gap: 10 }}>
+                    <AdminMiniStat label="Appointments" value={String(selectedFacultyMember.appointments.length)} tone={T.warning} />
+                    <AdminMiniStat label="Permissions" value={String(selectedFacultyMember.roleGrants.length)} tone={T.success} />
+                    <AdminMiniStat label="Classes" value={String(selectedFacultyAssignments.length)} tone={T.accent} />
+                    <AdminMiniStat label="Mentor Load" value={String(data.students.filter(item => item.activeMentorAssignment?.facultyId === selectedFacultyMember.facultyId).length)} tone={ADMIN_SECTION_TONES.students} />
+                    <AdminMiniStat label="Audit Events" value={String(facultyAuditEvents.length)} tone={T.orange} />
+                  </div>
+                ) : null}
+                <AdminDetailTabs
+                  activeTab={facultyDetailTab}
+                  onChange={tabId => setFacultyDetailTab(tabId as FacultyDetailTab)}
+                  tabs={[
+                    { id: 'profile', label: 'Profile' },
+                    { id: 'appointments', label: 'Appointments', count: selectedFacultyMember?.appointments.length ?? 0, disabled: !selectedFacultyMember },
+                    { id: 'permissions', label: 'Permissions', count: selectedFacultyMember?.roleGrants.length ?? 0, disabled: !selectedFacultyMember },
+                    { id: 'teaching', label: 'Teaching', count: selectedFacultyAssignments.length, disabled: !selectedFacultyMember },
+                    { id: 'timetable', label: 'Timetable', disabled: !selectedFacultyMember },
+                    { id: 'history', label: 'History', count: facultyAuditEvents.length, disabled: !selectedFacultyMember },
+                  ]}
+                />
+              </Card>
+
+              {facultyDetailTab === 'profile' && (
               <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
                 <SectionHeading title={selectedFacultyMember ? 'Faculty Detail' : 'Create Faculty'} eyebrow={selectedFacultyMember ? selectedFacultyMember.displayName : 'New profile'} caption="Master identity stays admin-owned. Teaching workflow actions continue in the teaching workspace." />
                 {selectedFacultyMember ? (
@@ -4023,7 +4293,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </div>
                 </form>
               </Card>
+              )}
 
+              {facultyDetailTab === 'appointments' && (
               <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
                 <SectionHeading title="Appointments" eyebrow="Canonical Affiliation" caption="Department and branch affiliation stay canonical here, even when HoD visibility rolls up external teaching activity." />
                 {!selectedFacultyMember ? <EmptyState title="Save the faculty profile first" body="Appointments become available after the faculty record exists." /> : (
@@ -4089,7 +4361,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </>
                 )}
               </Card>
+              )}
 
+              {facultyDetailTab === 'permissions' && (
               <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
                 <SectionHeading title="Permissions" eyebrow="Role Grants" caption="Mentor, HoD, Course Leader, and System Admin permissions stay separate from actual class ownership." />
                 {!selectedFacultyMember ? <EmptyState title="Save the faculty profile first" body="Permissions become available after the faculty record exists." /> : (
@@ -4161,7 +4435,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </>
                 )}
               </Card>
+              )}
 
+              {facultyDetailTab === 'teaching' && (
               <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
                 <SectionHeading title="Teaching Ownership" eyebrow="Classes And Course Leader Scope" caption="Assign the exact classes they own or support. The seeded default role is `owner`, and that now counts for course-leader visibility." />
                 {!selectedFacultyMember ? <EmptyState title="Save the faculty profile first" body="Teaching ownership becomes available after the faculty record exists." /> : (
@@ -4224,7 +4500,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </>
                 )}
               </Card>
+              )}
 
+              {facultyDetailTab === 'timetable' && (
               <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
                 <SectionHeading title="Timetable Planner" eyebrow="Teaching Calendar" caption="Reuses the teacher-style drag board for class movement, then layers semester markers, term-test windows, holidays, and events in a distinct admin planning rail." />
                 {!selectedFacultyMember ? <EmptyState title="Select or create a faculty member first" body="Timetable planning becomes available once the faculty profile exists." /> : facultyCalendarLoading && !facultyCalendar ? (
@@ -4239,7 +4517,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   />
                 )}
               </Card>
+              )}
 
+              {facultyDetailTab === 'history' && (
               <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
                 <SectionHeading title="History" eyebrow="Audit Trail" caption="Profile, appointment, permission, and class-ownership changes all land here for restore and review." />
                 {facultyAuditLoading ? <InfoBanner message="Loading audit history…" /> : null}
@@ -4257,6 +4537,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </div>
                 )}
               </Card>
+              )}
             </div>
           </div>
         )}
@@ -4267,30 +4548,28 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             <SectionHeading
               title="History And Restore"
               eyebrow="Audit + Recycle Bin"
-              caption="Use one page for recent admin activity, restore-ready deletions, and the exact records that changed."
+              caption="Use one page for archived faculties, restore-ready deletions, and the exact records that changed."
               toneColor={ADMIN_SECTION_TONES.history}
               actions={canNavigatePageBack ? <Btn type="button" size="sm" variant="ghost" onClick={handleNavigateBack}><ChevronLeft size={14} /> Back Page</Btn> : undefined}
             />
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 0.9fr) minmax(420px, 1.1fr)', gap: 16, alignItems: 'start' }}>
-              <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <div>
-                    <div style={{ ...sora, fontSize: 16, fontWeight: 800, color: T.text }}>Recycle Bin</div>
-                    <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>Deletes stay soft for 60 days. Restore is blocked only when a required parent still remains deleted.</div>
+              <div style={{ display: 'grid', gap: 16 }}>
+                <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ ...sora, fontSize: 16, fontWeight: 800, color: T.text }}>Archive</div>
+                      <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>Archived faculties stay out of daily sysadmin views until you restore them here.</div>
+                    </div>
+                    <Chip color={T.warning}>{archivedItems.length}</Chip>
                   </div>
-                  <Chip color={T.danger}>{deletedItems.length}</Chip>
-                </div>
-                {deletedItems.length === 0 ? <EmptyState title="Nothing deleted right now" body="Soft-deleted records will appear here with their restore window." /> : (
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    {deletedItems.map(item => {
-                      const deletedDays = Math.floor((Date.now() - new Date(item.updatedAt).getTime()) / 86_400_000)
-                      const restoreDaysLeft = Math.max(0, 60 - deletedDays)
-                      return (
+                  {archivedItems.length === 0 ? <EmptyState title="Nothing archived right now" body="Archived academic faculties will appear here for quick restore." /> : (
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      {archivedItems.map(item => (
                         <Card key={item.key} style={{ padding: 12, background: T.surface2 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                             <div>
                               <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{item.label}</div>
-                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{item.meta} · deleted {formatDateTime(item.updatedAt)} · {restoreDaysLeft} day{restoreDaysLeft === 1 ? '' : 's'} left</div>
+                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{item.meta} · archived {formatDateTime(item.updatedAt)}</div>
                             </div>
                             <Btn type="button" size="sm" onClick={() => void runAction(async () => {
                               await item.onRestore()
@@ -4298,11 +4577,43 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                             })}>Restore</Btn>
                           </div>
                         </Card>
-                      )
-                    })}
+                      ))}
+                    </div>
+                  )}
+                </Card>
+
+                <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ ...sora, fontSize: 16, fontWeight: 800, color: T.text }}>Recycle Bin</div>
+                      <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>Deletes stay soft for 60 days. Restore is blocked only when a required parent still remains deleted.</div>
+                    </div>
+                    <Chip color={T.danger}>{deletedItems.length}</Chip>
                   </div>
-                )}
-              </Card>
+                  {deletedItems.length === 0 ? <EmptyState title="Nothing deleted right now" body="Soft-deleted records will appear here with their restore window." /> : (
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      {deletedItems.map(item => {
+                        const deletedDays = Math.floor((Date.now() - new Date(item.updatedAt).getTime()) / 86_400_000)
+                        const restoreDaysLeft = Math.max(0, 60 - deletedDays)
+                        return (
+                          <Card key={item.key} style={{ padding: 12, background: T.surface2 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                              <div>
+                                <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{item.label}</div>
+                                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{item.meta} · deleted {formatDateTime(item.updatedAt)} · {restoreDaysLeft} day{restoreDaysLeft === 1 ? '' : 's'} left</div>
+                              </div>
+                              <Btn type="button" size="sm" onClick={() => void runAction(async () => {
+                                await item.onRestore()
+                                setFlashMessage(`${item.label} restored.`)
+                              })}>Restore</Btn>
+                            </div>
+                          </Card>
+                        )
+                      })}
+                    </div>
+                  )}
+                </Card>
+              </div>
 
               <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -4491,19 +4802,19 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               : <InfoBanner message="This backend does not expose private reminders yet, so the queue is running in request-only mode." />}
           </div>
 
-          <div style={{ ...mono, fontSize: 9, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 18, marginBottom: 8 }}>Recycle Bin</div>
+          <div style={{ ...mono, fontSize: 9, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 18, marginBottom: 8 }}>Hidden Records</div>
           <div style={{ display: 'grid', gap: 8 }}>
-            {deletedItems.slice(0, 4).map(item => (
+            {[...archivedItems, ...deletedItems].slice(0, 4).map(item => (
               <ActionQueueCard
                 key={item.key}
                 title={item.label}
-                subtitle={`${item.meta} · deleted ${formatDateTime(item.updatedAt)} · restore window 60 days`}
+                subtitle={`${item.meta} · ${item.key.startsWith('archived:') ? 'archived' : 'deleted'} ${formatDateTime(item.updatedAt)}${item.key.startsWith('archived:') ? '' : ' · restore window 60 days'}`}
                 chips={[item.meta]}
-                tone={T.danger}
+                tone={item.key.startsWith('archived:') ? T.warning : T.danger}
                 trailing={<button type="button" onClick={event => { event.stopPropagation(); void runAction(async () => { await item.onRestore(); setFlashMessage(`${item.label} restored.`) }) }} style={{ ...mono, fontSize: 10, color: T.success, background: 'none', border: 'none', cursor: 'pointer' }}>Restore</button>}
               />
             ))}
-            {deletedItems.length === 0 ? <div style={{ ...mono, fontSize: 10, color: T.dim }}>Nothing in recycle bin.</div> : null}
+            {hiddenItemCount === 0 ? <div style={{ ...mono, fontSize: 10, color: T.dim }}>Nothing hidden right now.</div> : null}
           </div>
 
           <div style={{ position: 'sticky', bottom: 0, paddingTop: 12, marginTop: 16, background: `linear-gradient(180deg, rgba(0,0,0,0) 0%, ${T.surface} 35%)` }}>
