@@ -3,17 +3,27 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body, #root { width: 100%; min-height: 100vh; }
 html { scroll-behavior: smooth; }
-body { background: #07090f; font-family: 'Sora', system-ui, sans-serif; color: #e2e8f4; }
+body {
+	background: var(--app-bg, #edf3f8);
+	font-family: 'Sora', system-ui, sans-serif;
+	color: var(--app-text, #11243d);
+	transition: background-color var(--ui-medium, 220ms) var(--ui-ease, cubic-bezier(0.22, 1, 0.36, 1)), color var(--ui-medium, 220ms) var(--ui-ease, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+#root {
+	background: var(--app-bg, #edf3f8);
+	color: var(--app-text, #11243d);
+}
 
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
 textarea:-webkit-autofill,
 select:-webkit-autofill {
-	-webkit-text-fill-color: #e2e8f4;
-	-webkit-box-shadow: 0 0 0 1000px #111520 inset;
-	box-shadow: 0 0 0 1000px #111520 inset;
-	caret-color: #e2e8f4;
+	-webkit-text-fill-color: var(--app-autofill-text, #11243d);
+	-webkit-box-shadow: 0 0 0 1000px var(--app-autofill-bg, #edf5ff) inset;
+	box-shadow: 0 0 0 1000px var(--app-autofill-bg, #edf5ff) inset;
+	caret-color: var(--app-autofill-text, #11243d);
 	border-radius: 10px;
 	transition: background-color 9999s ease-in-out 0s;
 }
@@ -22,6 +32,15 @@ input[type=number]::-webkit-inner-spin-button,
 input[type=number]::-webkit-outer-spin-button { opacity: 0.3; }
 
 :root {
+	--app-bg: #edf3f8;
+	--app-surface: #f7fbff;
+	--app-surface-2: #edf5ff;
+	--app-border: #d5e3f2;
+	--app-text: #11243d;
+	--app-muted: #4d647f;
+	--app-accent: #3b82f6;
+	--app-autofill-bg: #edf5ff;
+	--app-autofill-text: #11243d;
 	--scroll-track: rgba(100, 116, 139, 0.12);
 	--scroll-thumb: rgba(37, 99, 235, 0.38);
 	--scroll-thumb-hover: rgba(37, 99, 235, 0.56);

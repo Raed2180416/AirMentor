@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3, GripVertical, Plus, Rows4, X } from 'lucide-react'
 import { T, mono, sora, type Offering } from '../data'
+import type { ApiAdminCalendarMarker } from '../api/types'
 import type {
   FacultyAccount,
   FacultyTimetableClassBlock,
@@ -43,6 +44,27 @@ const DAY_COLUMN_MIN_WIDTH = 180
 const DRAG_THRESHOLD_PX = 4
 const SNAP_THRESHOLD_MINUTES = 14
 
+function markerSpansDate(marker: ApiAdminCalendarMarker, dateISO: string) {
+  return marker.dateISO <= dateISO && (!marker.endDateISO || marker.endDateISO >= dateISO)
+}
+
+function describeMarkerType(markerType: ApiAdminCalendarMarker['markerType']) {
+  if (markerType === 'semester-start') return 'Semester Start'
+  if (markerType === 'semester-end') return 'Semester End'
+  if (markerType === 'term-test-start') return 'Term Test Start'
+  if (markerType === 'term-test-end') return 'Term Test End'
+  if (markerType === 'holiday') return 'Holiday'
+  return 'Event'
+}
+
+function markerAccent(markerType: ApiAdminCalendarMarker['markerType']) {
+  if (markerType === 'semester-start') return T.success
+  if (markerType === 'semester-end') return T.orange
+  if (markerType === 'term-test-start' || markerType === 'term-test-end') return T.warning
+  if (markerType === 'holiday') return T.danger
+  return T.blue
+}
+
 type ScheduleInput = {
   dateISO: string
   placementMode: TaskPlacementMode
@@ -78,12 +100,21 @@ type ExtraClassDraftState = {
 type BlockDetailsState =
   | { type: 'class'; blockId: string; dateISO: string }
   | { type: 'task'; taskId: string; dateISO: string; placementMode: TaskPlacementMode }
+  | { type: 'marker'; markerId: string; dateISO: string }
+
+type MarkerChip = {
+  markerId: string
+  title: string
+  subtitle: string
+  accent: string
+  marker: ApiAdminCalendarMarker
+}
 
 type TimedEventCard = {
   id: string
   renderId: string
   entityId: string
-  eventType: 'class' | 'task' | 'preview'
+  eventType: 'class' | 'task' | 'marker' | 'preview'
   dateISO: string
   day: Weekday
   startMinutes: number
@@ -94,6 +125,7 @@ type TimedEventCard = {
   placement?: TaskCalendarPlacement
   task?: SharedTask
   classBlock?: FacultyTimetableClassBlock
+  marker?: ApiAdminCalendarMarker
   invalid?: boolean
 }
 
@@ -102,6 +134,7 @@ type TimedColumnData = {
   day: Weekday
   label: string
   selected: boolean
+  allDayMarkers: MarkerChip[]
   events: TimedEventCard[]
   untimedTasks: SharedTask[]
 }
@@ -196,6 +229,7 @@ type AgendaBoardProps = {
   onClassDragStart: (event: React.PointerEvent<HTMLDivElement>, block: FacultyTimetableClassBlock, dateISO: string) => void
   onClassResizeStart: (event: React.PointerEvent<HTMLButtonElement>, block: FacultyTimetableClassBlock, dateISO: string, edge: 'start' | 'end') => void
   onOpenEventDetails: (event: TimedEventCard) => void
+  onOpenMarkerDetails: (marker: ApiAdminCalendarMarker, dateISO: string) => void
   onMoveTaskToUntimed: (taskId: string, dateISO: string) => void
   onDismissTask: (taskId: string) => void
   onDismissSeries: (taskId: string) => void
@@ -212,6 +246,7 @@ export function CalendarTimetablePage({
   mergedTasks,
   resolvedTaskIds,
   timetable,
+  adminMarkers,
   taskPlacements,
   onScheduleTask,
   onMoveClassBlock,
@@ -233,6 +268,7 @@ export function CalendarTimetablePage({
   mergedTasks: SharedTask[]
   resolvedTaskIds: Record<string, number>
   timetable: FacultyTimetableTemplate
+  adminMarkers: ApiAdminCalendarMarker[]
   taskPlacements: Record<string, TaskCalendarPlacement>
   onScheduleTask: (taskId: string, input: ScheduleInput) => void
   onMoveClassBlock: (blockId: string, input: { day: Weekday; dateISO?: string; startMinutes: number; endMinutes: number }) => void
@@ -333,15 +369,16 @@ export function CalendarTimetablePage({
   }, [activeTasksById, taskPlacements])
 
   const monthSummaryByDate = useMemo(() => {
-    const summary = {} as Record<string, { classCount: number; taskCount: number }>
+    const summary = {} as Record<string, { classCount: number; taskCount: number; markerCount: number }>
     monthCells.forEach(cell => {
       const weekday = getWeekdayForDateISO(cell.dateISO)
       const classCount = weekday ? timetable.classBlocks.filter(block => classBlockOccursOnDate(block, cell.dateISO, weekday)).length : 0
       const taskCount = (taskPlacementsByDate[cell.dateISO] ?? []).length
-      summary[cell.dateISO] = { classCount, taskCount }
+      const markerCount = adminMarkers.filter(marker => markerSpansDate(marker, cell.dateISO)).length
+      summary[cell.dateISO] = { classCount, taskCount, markerCount }
     })
     return summary
-  }, [monthCells, taskPlacementsByDate, timetable.classBlocks])
+  }, [adminMarkers, monthCells, taskPlacementsByDate, timetable.classBlocks])
 
   const buildTimedEventsForDate = useMemo(() => {
     return (dateISO: string) => {
@@ -392,6 +429,27 @@ export function CalendarTimetablePage({
             accent: T.warning,
             task,
             placement,
+          }]
+        })
+      const markerEvents = adminMarkers
+        .filter(marker => !marker.allDay)
+        .filter(marker => markerSpansDate(marker, dateISO))
+        .flatMap(marker => {
+          const day = getWeekdayForDateISO(dateISO)
+          if (!day || marker.startMinutes == null || marker.endMinutes == null) return []
+          return [{
+            id: `marker-${marker.markerId}-${dateISO}`,
+            renderId: `marker-${marker.markerId}-${dateISO}`,
+            entityId: marker.markerId,
+            eventType: 'marker' as const,
+            dateISO,
+            day,
+            startMinutes: marker.startMinutes,
+            endMinutes: marker.endMinutes,
+            title: marker.title,
+            subtitle: `${describeMarkerType(marker.markerType)}${marker.note ? ` · ${marker.note}` : ''}`,
+            accent: markerAccent(marker.markerType),
+            marker,
           }]
         })
 
@@ -448,9 +506,22 @@ export function CalendarTimetablePage({
           }]
         : []
 
-      return [...classEvents, ...taskEvents, ...previewEvents, ...addTargetPreview]
+      return [...classEvents, ...taskEvents, ...markerEvents, ...previewEvents, ...addTargetPreview]
     }
-  }, [activeTasksById, addTarget, interaction, taskPlacementsByDate, timetable.classBlocks])
+  }, [activeTasksById, addTarget, adminMarkers, interaction, taskPlacementsByDate, timetable.classBlocks])
+
+  const buildAllDayMarkersForDate = useMemo(() => {
+    return (dateISO: string) => adminMarkers
+      .filter(marker => marker.allDay)
+      .filter(marker => markerSpansDate(marker, dateISO))
+      .map(marker => ({
+        markerId: marker.markerId,
+        title: marker.title,
+        subtitle: marker.note ?? describeMarkerType(marker.markerType),
+        accent: markerAccent(marker.markerType),
+        marker,
+      }))
+  }, [adminMarkers])
 
   const buildUntimedTasksForDate = useMemo(() => {
     return (dateISO: string) => (taskPlacementsByDate[dateISO] ?? [])
@@ -574,9 +645,10 @@ export function CalendarTimetablePage({
     day: getWeekdayForDateISO(dateISO) ?? WEEKDAY_ORDER[0],
     label: formatShortDate(dateISO).split(', ').slice(1).join(', '),
     selected: dateISO === selectedDateISO,
+    allDayMarkers: buildAllDayMarkersForDate(dateISO),
     events: buildTimedEventsForDate(dateISO),
     untimedTasks: buildUntimedTasksForDate(dateISO),
-  })), [buildTimedEventsForDate, buildUntimedTasksForDate, selectedDateISO, weekDates])
+  })), [buildAllDayMarkersForDate, buildTimedEventsForDate, buildUntimedTasksForDate, selectedDateISO, weekDates])
 
   const dayColumns = useMemo<TimedColumnData[]>(() => {
     if (!selectedWeekday) return []
@@ -585,10 +657,11 @@ export function CalendarTimetablePage({
       day: selectedWeekday,
       label: formatShortDate(selectedDateISO),
       selected: true,
+      allDayMarkers: buildAllDayMarkersForDate(selectedDateISO),
       events: buildTimedEventsForDate(selectedDateISO),
       untimedTasks: buildUntimedTasksForDate(selectedDateISO),
     }]
-  }, [buildTimedEventsForDate, buildUntimedTasksForDate, selectedDateISO, selectedWeekday])
+  }, [buildAllDayMarkersForDate, buildTimedEventsForDate, buildUntimedTasksForDate, selectedDateISO, selectedWeekday])
 
   const detailClassBlock = useMemo(() => detailsState?.type === 'class'
     ? (timetable.classBlocks.find(block => block.id === detailsState.blockId) ?? null)
@@ -596,6 +669,9 @@ export function CalendarTimetablePage({
   const detailTask = useMemo(() => detailsState?.type === 'task'
     ? (activeTasksById[detailsState.taskId] ?? null)
     : null, [activeTasksById, detailsState])
+  const detailMarker = useMemo(() => detailsState?.type === 'marker'
+    ? (adminMarkers.find(marker => marker.markerId === detailsState.markerId) ?? null)
+    : null, [adminMarkers, detailsState])
   const detailOffering = useMemo(() => {
     if (detailClassBlock) return offeringsById[detailClassBlock.offeringId] ?? null
     if (detailTask) return offeringsById[detailTask.offeringId] ?? null
@@ -886,6 +962,10 @@ export function CalendarTimetablePage({
       setDetailsState({ type: 'class', blockId: event.classBlock.id, dateISO: event.dateISO })
       return
     }
+    if (event.eventType === 'marker' && event.marker) {
+      setDetailsState({ type: 'marker', markerId: event.marker.markerId, dateISO: event.dateISO })
+      return
+    }
     if (event.eventType === 'task' && event.task) {
       setDetailsState({
         type: 'task',
@@ -1015,7 +1095,7 @@ export function CalendarTimetablePage({
                 <div key={label} style={{ ...mono, fontSize: 10, color: T.dim, padding: '0 6px 6px' }}>{label}</div>
               ))}
               {monthCells.map(cell => {
-                const summary = monthSummaryByDate[cell.dateISO] ?? { classCount: 0, taskCount: 0 }
+                const summary = monthSummaryByDate[cell.dateISO] ?? { classCount: 0, taskCount: 0, markerCount: 0 }
                 const isSelected = cell.dateISO === selectedDateISO
                 const dayNumber = Number(cell.dateISO.slice(8, 10))
                 return (
@@ -1048,6 +1128,7 @@ export function CalendarTimetablePage({
                     <div style={{ display: 'grid', gap: 4 }}>
                       <div style={{ ...mono, fontSize: 10, color: summary.classCount > 0 ? T.accent : T.dim }}>{summary.classCount} class{summary.classCount === 1 ? '' : 'es'}</div>
                       <div style={{ ...mono, fontSize: 10, color: summary.taskCount > 0 ? T.warning : T.dim }}>{summary.taskCount} task{summary.taskCount === 1 ? '' : 's'}</div>
+                      <div style={{ ...mono, fontSize: 10, color: summary.markerCount > 0 ? T.success : T.dim }}>{summary.markerCount} marker{summary.markerCount === 1 ? '' : 's'}</div>
                     </div>
                   </button>
                 )
@@ -1100,6 +1181,7 @@ export function CalendarTimetablePage({
                 onClassDragStart={startClassDrag}
                 onClassResizeStart={startClassResize}
                 onOpenEventDetails={openEventDetails}
+                onOpenMarkerDetails={(marker, dateISO) => setDetailsState({ type: 'marker', markerId: marker.markerId, dateISO })}
                 onMoveTaskToUntimed={(taskId, dateISO) => onScheduleTask(taskId, { dateISO, placementMode: 'untimed' })}
                 onDismissTask={onDismissTask}
                 onDismissSeries={onDismissSeries}
@@ -1163,6 +1245,7 @@ export function CalendarTimetablePage({
             onClassDragStart={startClassDrag}
             onClassResizeStart={startClassResize}
             onOpenEventDetails={openEventDetails}
+            onOpenMarkerDetails={(marker, dateISO) => setDetailsState({ type: 'marker', markerId: marker.markerId, dateISO })}
             onMoveTaskToUntimed={(taskId, dateISO) => onScheduleTask(taskId, { dateISO, placementMode: 'untimed' })}
             onDismissTask={onDismissTask}
             onDismissSeries={onDismissSeries}
@@ -1241,10 +1324,13 @@ export function CalendarTimetablePage({
         <BlockDetailsSheet
           key={detailsState.type === 'class'
             ? `class-${detailsState.blockId}-${detailsState.dateISO}`
-            : `task-${detailsState.taskId}-${detailsState.dateISO}`}
+            : detailsState.type === 'task'
+              ? `task-${detailsState.taskId}-${detailsState.dateISO}`
+              : `marker-${detailsState.markerId}-${detailsState.dateISO}`}
           detailsState={detailsState}
           classBlock={detailClassBlock}
           task={detailTask}
+          marker={detailMarker}
           offering={detailOffering}
           placement={detailPlacement}
           editable={isEditable}
@@ -1345,6 +1431,7 @@ function AgendaBoard({
   onClassDragStart,
   onClassResizeStart,
   onOpenEventDetails,
+  onOpenMarkerDetails,
   onMoveTaskToUntimed,
   onDismissTask,
   onDismissSeries,
@@ -1420,6 +1507,33 @@ function AgendaBoard({
                     <div style={{ ...mono, fontSize: 10, color: T.dim }}>{column.day}</div>
                     <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text }}>{column.label}</div>
                   </div>
+                </div>
+              )}
+
+              {column.allDayMarkers.length > 0 && (
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {column.allDayMarkers.map(markerChip => (
+                    <button
+                      key={markerChip.markerId}
+                      type="button"
+                      onClick={() => onOpenMarkerDetails(markerChip.marker, column.dateISO)}
+                      style={{
+                        width: '100%',
+                        textAlign: 'left',
+                        borderRadius: 12,
+                        border: `1px solid ${markerChip.accent}38`,
+                        background: `${markerChip.accent}16`,
+                        padding: '10px 12px',
+                        cursor: 'pointer',
+                        display: 'grid',
+                        gap: 4,
+                      }}
+                    >
+                      <div style={{ ...mono, fontSize: 10, color: markerChip.accent }}>{describeMarkerType(markerChip.marker.markerType)}</div>
+                      <div style={{ ...sora, fontWeight: 700, fontSize: 12, color: T.text }}>{markerChip.title}</div>
+                      <div style={{ ...mono, fontSize: 10, color: T.muted }}>{markerChip.subtitle}</div>
+                    </button>
+                  ))}
                 </div>
               )}
 
@@ -1683,6 +1797,7 @@ function TimedEventBlock({
   const left = laneCount <= 1 ? 8 : `calc(${lane * (100 / laneCount)}% + ${lane * 8 + 8}px)`
   const isTask = event.eventType === 'task' && !!event.task
   const isClass = event.eventType === 'class' && !!event.classBlock
+  const isMarker = event.eventType === 'marker' && !!event.marker
   const compact = height < 78
   const renderedHeight = isClass ? height : Math.max(46, height)
 
@@ -1710,7 +1825,7 @@ function TimedEventBlock({
     display: 'grid',
     gap: compact ? 4 : 6,
     opacity: isGhosted ? 0.24 : 1,
-    cursor: editable && event.eventType !== 'preview' ? 'grab' : 'default',
+    cursor: editable && (isTask || isClass) ? 'grab' : 'default',
     overflow: 'hidden',
   }
 
@@ -1740,7 +1855,7 @@ function TimedEventBlock({
           <div style={{ ...sora, fontWeight: 700, fontSize: 12, color: T.text, lineHeight: 1.25 }}>{event.title}</div>
           {!compact && <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{event.subtitle}</div>}
         </div>
-        {event.eventType !== 'preview' && editable && (
+        {event.eventType !== 'preview' && editable && !isMarker && (
           <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
             {isClass && (
               <>
@@ -2096,6 +2211,7 @@ function BlockDetailsSheet({
   detailsState,
   classBlock,
   task,
+  marker,
   offering,
   placement,
   editable,
@@ -2109,6 +2225,7 @@ function BlockDetailsSheet({
   detailsState: BlockDetailsState
   classBlock: FacultyTimetableClassBlock | null
   task: SharedTask | null
+  marker: ApiAdminCalendarMarker | null
   offering: Offering | null
   placement: TaskCalendarPlacement | null
   editable: boolean
@@ -2120,14 +2237,19 @@ function BlockDetailsSheet({
   onEditClass: () => void
 }) {
   const isClass = detailsState.type === 'class'
+  const isMarker = detailsState.type === 'marker'
   const title = isClass
     ? (classBlock ? `${classBlock.courseCode} · Sec ${classBlock.section}` : 'Class details')
-    : (task?.title ?? 'Task details')
+    : isMarker
+      ? (marker?.title ?? 'Marker details')
+      : (task?.title ?? 'Task details')
   const subtitle = isClass
     ? (classBlock?.kind === 'extra'
         ? `Extra class · ${offering?.title ?? classBlock?.courseName ?? ''}`
         : (offering?.title ?? classBlock?.courseName ?? ''))
-    : (task ? `${task.studentName} · ${task.courseCode} · ${task.taskType ?? 'Task'}` : '')
+    : isMarker
+      ? (marker ? `${describeMarkerType(marker.markerType)}${marker.note ? ` · ${marker.note}` : ''}` : '')
+      : (task ? `${task.studentName} · ${task.courseCode} · ${task.taskType ?? 'Task'}` : '')
   const [rescheduleMode, setRescheduleMode] = useState<TaskPlacementMode>(() => placement?.placementMode ?? 'timed')
   const [rescheduleStart, setRescheduleStart] = useState(() => minutesToTimeString(placement?.startMinutes ?? 0))
   const [rescheduleEnd, setRescheduleEnd] = useState(() => minutesToTimeString(placement?.endMinutes ?? ((placement?.startMinutes ?? 0) + DEFAULT_TASK_DURATION_MINUTES)))
@@ -2175,7 +2297,22 @@ function BlockDetailsSheet({
           </>
         )}
 
-        {!isClass && task && (
+        {isMarker && marker && (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <DetailRow label="Type" value={describeMarkerType(marker.markerType)} />
+              <DetailRow label="When" value={`${formatShortDate(detailsState.dateISO)}${marker.allDay ? ' · All day' : ` · ${minutesToDisplayLabel(marker.startMinutes ?? 0)} - ${minutesToDisplayLabel(marker.endMinutes ?? 0)}`}`} />
+              <DetailRow label="Range" value={marker.endDateISO ? `${formatShortDate(marker.dateISO)} to ${formatShortDate(marker.endDateISO)}` : formatShortDate(marker.dateISO)} />
+              <DetailRow label="Audience" value="Institutional calendar context" />
+            </div>
+            {marker.note ? <div style={{ ...mono, fontSize: 10, color: T.dim }}>{marker.note}</div> : null}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+              <Btn size="sm" variant="ghost" onClick={onClose}>Close</Btn>
+            </div>
+          </>
+        )}
+
+        {!isClass && !isMarker && task && (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <DetailRow label="When" value={placement?.placementMode === 'untimed'

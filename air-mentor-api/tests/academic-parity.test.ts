@@ -31,7 +31,10 @@ describe('academic parity bootstrap', () => {
     expect(snapshot.subjectRuns).toEqual(platformSeed.academicAssets.subjectRuns)
     expect(snapshot.studentsByOffering).toEqual(platformSeed.academicAssets.studentsByOffering)
     expect(snapshot.studentHistoryByUsn).toEqual(platformSeed.academicAssets.studentHistoryByUsn)
-    expect(snapshot.runtime).toEqual(platformSeed.academicAssets.runtime)
+    expect(snapshot.runtime).toEqual({
+      ...platformSeed.academicAssets.runtime,
+      adminCalendarByFacultyId: {},
+    })
   })
 
   it('reflects admin master-data changes into the academic bootstrap on the next fetch', async () => {

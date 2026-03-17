@@ -1,7 +1,7 @@
 import { Suspense, lazy, useState, useMemo, useCallback, useEffect, useRef, type FormEvent, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  Bell, Calendar, CheckCircle, ChevronRight,
+  Bell, Calendar, CheckCircle, ChevronLeft, ChevronRight,
   LayoutDashboard, ListTodo, Mail, Phone, Search, Shield, Upload, Users, X,
   AlertTriangle, TrendingDown, BookOpen, Target, Activity, Eye, MessageSquare,
 } from 'lucide-react'
@@ -79,7 +79,7 @@ import { InfoBanner, MetricCard } from './system-admin-ui'
 import { applyThemePreset, isLightTheme } from './theme'
 import { Bar, Btn, Card, Chip, PageBackButton, PageShell, RiskBadge, StagePips, UI_TRANSITION_FAST, UI_TRANSITION_MEDIUM } from './ui-primitives'
 import { AirMentorApiClient, AirMentorApiError } from './api/client'
-import type { ApiAcademicBootstrap, ApiAcademicFacultyProfile, ApiAcademicLoginFaculty, ApiSessionResponse } from './api/types'
+import type { ApiAcademicBootstrap, ApiAcademicFacultyProfile, ApiAcademicLoginFaculty, ApiAdminCalendarMarker, ApiSessionResponse } from './api/types'
 import './App.css'
 
 const LazyCourseDetail = lazy(() => import('./pages/course-pages').then(module => ({ default: module.CourseDetail })))
@@ -194,6 +194,22 @@ function formatDateTime(timestamp?: number) {
   return new Date(timestamp).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
+function formatDateLabel(value?: string | null) {
+  if (!value) return 'Not set'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function describeCalendarMarkerType(markerType: ApiAdminCalendarMarker['markerType']) {
+  if (markerType === 'semester-start') return 'Semester Start'
+  if (markerType === 'semester-end') return 'Semester End'
+  if (markerType === 'term-test-start') return 'Term Test Start'
+  if (markerType === 'term-test-end') return 'Term Test End'
+  if (markerType === 'holiday') return 'Holiday'
+  return 'Event'
+}
+
 function getLatestTransition(task: SharedTask) {
   const history = task.transitionHistory ?? []
   return history[history.length - 1]
@@ -255,6 +271,22 @@ function AuthHeroFeature({ title, body, color }: { title: string; body: string; 
   )
 }
 
+function AuthPageShell({ children }: { children: ReactNode }) {
+  return (
+    <div
+      style={{
+        minHeight: '100vh',
+        background: `radial-gradient(circle at top left, ${T.accent}16, transparent 28%), radial-gradient(circle at bottom right, ${T.success}14, transparent 30%), linear-gradient(180deg, ${T.bg}, ${T.surface2})`,
+        padding: 'clamp(18px, 3vw, 30px)',
+      }}
+    >
+      <PageShell size="wide" style={{ paddingTop: 12 }}>
+        {children}
+      </PageShell>
+    </div>
+  )
+}
+
 function LoginPage({
   facultyOptions = FACULTY.map(faculty => ({
     facultyId: faculty.facultyId,
@@ -302,8 +334,8 @@ function LoginPage({
   }
 
   return (
-    <PageShell size="wide" style={{ paddingTop: 40 }}>
-      <div style={{ minHeight: 'calc(100vh - 80px)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24, alignItems: 'stretch' }}>
+    <AuthPageShell>
+      <div style={{ minHeight: 'calc(100vh - 60px)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24, alignItems: 'stretch' }}>
         <Card
           style={{
             padding: 28,
@@ -401,7 +433,7 @@ function LoginPage({
           </div>
         </Card>
       </div>
-    </PageShell>
+    </AuthPageShell>
   )
 }
 
@@ -409,6 +441,7 @@ function FacultyProfilePage({
   currentTeacher,
   activeRole,
   profile,
+  calendarMarkers,
   loading,
   error,
   pendingTaskCount,
@@ -419,6 +452,7 @@ function FacultyProfilePage({
   currentTeacher: FacultyAccount
   activeRole: Role
   profile: ApiAcademicFacultyProfile | null
+  calendarMarkers: ApiAdminCalendarMarker[]
   loading: boolean
   error: string
   pendingTaskCount: number
@@ -426,13 +460,20 @@ function FacultyProfilePage({
   currentFacultyTimetable: FacultyTimetableTemplate | null
   onBack: () => void
 }) {
-  const effectivePermissions = profile?.permissions.map(item => item.roleCode) ?? currentTeacher.allowedRoles
+  const livePermissions = profile?.permissions.filter(item => item.status === 'active') ?? []
+  const effectivePermissions = livePermissions.length > 0 ? Array.from(new Set(livePermissions.map(item => item.roleCode))) : currentTeacher.allowedRoles
   const effectiveDepartment = profile?.primaryDepartment?.name ?? currentTeacher.dept
   const effectivePhone = profile?.phone ?? 'Not set'
   const employeeCode = profile?.employeeCode ?? 'Not available'
   const timetableWindow = profile?.timetableStatus.directEditWindowEndsAt
     ? new Date(profile.timetableStatus.directEditWindowEndsAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
     : null
+  const upcomingMarkers = [...calendarMarkers]
+    .sort((left, right) => {
+      if (left.dateISO !== right.dateISO) return left.dateISO.localeCompare(right.dateISO)
+      return (left.startMinutes ?? -1) - (right.startMinutes ?? -1)
+    })
+    .slice(0, 5)
   const displayPermission = (permission: string) => {
     if (permission === 'COURSE_LEADER') return 'Course Leader'
     if (permission === 'SYSTEM_ADMIN') return 'System Admin'
@@ -480,6 +521,14 @@ function FacultyProfilePage({
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {effectivePermissions.length > 0 ? effectivePermissions.map(permission => <Chip key={permission} color={T.accent}>{displayPermission(permission)}</Chip>) : <Chip color={T.dim}>No permissions</Chip>}
             </div>
+            {profile?.permissions?.length ? profile.permissions.map(permission => (
+              <Card key={permission.grantId} style={{ padding: 10, background: T.surface2 }}>
+                <div style={{ ...mono, fontSize: 10, color: T.text }}>{displayPermission(permission.roleCode)}</div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
+                  {(permission.scopeLabel ?? `${permission.scopeType}:${permission.scopeId}`)} · {formatDateLabel(permission.startDate)} to {permission.endDate ? formatDateLabel(permission.endDate) : 'Active'} · {permission.status}
+                </div>
+              </Card>
+            )) : null}
             <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
               HoD, mentor, and course-leader visibility now comes from the same admin-managed permission source instead of separate mock-only assumptions.
             </div>
@@ -493,7 +542,9 @@ function FacultyProfilePage({
                   {appointment.departmentName ?? appointment.departmentCode ?? appointment.departmentId}
                   {appointment.branchName ?? appointment.branchCode ?? appointment.branchId ? ` · ${appointment.branchName ?? appointment.branchCode ?? appointment.branchId}` : ''}
                 </div>
-                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{appointment.isPrimary ? 'Primary appointment' : 'Supporting appointment'} · {appointment.status}</div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
+                  {appointment.isPrimary ? 'Primary appointment' : 'Supporting appointment'} · {formatDateLabel(appointment.startDate)} to {appointment.endDate ? formatDateLabel(appointment.endDate) : 'Active'} · {appointment.status}
+                </div>
               </Card>
             )) : (
               <div style={{ ...mono, fontSize: 10, color: T.muted }}>No explicit appointment projection available in the current mode.</div>
@@ -543,6 +594,23 @@ function FacultyProfilePage({
             ) : (
               <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
                 Timetable and request summaries fall back to local teaching context when the live academic profile endpoint is not in use.
+              </div>
+            )}
+          </Card>
+
+          <Card style={{ padding: 16, display: 'grid', gap: 10 }}>
+            <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Institution Calendar</div>
+            {upcomingMarkers.length > 0 ? upcomingMarkers.map(marker => (
+              <Card key={marker.markerId} style={{ padding: 10, background: T.surface2 }}>
+                <div style={{ ...mono, fontSize: 10, color: T.text }}>{describeCalendarMarkerType(marker.markerType)} · {marker.title}</div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
+                  {formatDateLabel(marker.dateISO)}{marker.endDateISO ? ` to ${formatDateLabel(marker.endDateISO)}` : ''}{marker.allDay ? ' · All day' : marker.startMinutes != null && marker.endMinutes != null ? ` · ${minutesToDisplayLabel(marker.startMinutes)} - ${minutesToDisplayLabel(marker.endMinutes)}` : ''}
+                </div>
+                {marker.note ? <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 4 }}>{marker.note}</div> : null}
+              </Card>
+            )) : (
+              <div style={{ ...mono, fontSize: 10, color: T.muted }}>
+                No institutional semester markers, holidays, term-test windows, or events are currently mapped for this faculty calendar.
               </div>
             )}
           </Card>
@@ -2064,6 +2132,7 @@ type OperationalWorkspaceProps = {
   onLogout: () => Promise<void> | void
   onRoleChange?: (role: Role) => Promise<void> | void
   loadFacultyProfile?: (facultyId: string) => Promise<ApiAcademicFacultyProfile>
+  academicBootstrap?: ApiAcademicBootstrap | null
 }
 
 function OperationalWorkspace({
@@ -2073,6 +2142,7 @@ function OperationalWorkspace({
   onLogout,
   onRoleChange,
   loadFacultyProfile,
+  academicBootstrap = null,
 }: OperationalWorkspaceProps) {
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => repositories.sessionPreferences.getThemeSnapshot() ?? normalizeThemeMode(null))
   const [isCompactTopbar, setIsCompactTopbar] = useState(() => window.innerWidth < 980)
@@ -2357,6 +2427,12 @@ function OperationalWorkspace({
   ), [calendarMenteeIds])
   const calendarOfferings = useMemo(() => OFFERINGS.filter(item => calendarOfferingIds.has(item.offId)), [calendarOfferingIds])
   const currentFacultyTimetable = useMemo(() => currentTeacher ? (timetableByFacultyId[currentTeacher.facultyId] ?? null) : null, [currentTeacher, timetableByFacultyId])
+  const currentFacultyCalendarMarkers = useMemo(
+    () => currentTeacher
+      ? (academicBootstrap?.runtime.adminCalendarByFacultyId?.[currentTeacher.facultyId]?.markers ?? [])
+      : [],
+    [academicBootstrap, currentTeacher],
+  )
   const mergedCalendarTasks = useMemo(() => {
     if (!currentTeacher) return [] as SharedTask[]
     return allTasksList.filter(task => {
@@ -2410,6 +2486,16 @@ function OperationalWorkspace({
     return `Good ${timeOfDay}, ${salutation}`
   }, [facultyGivenName, now])
   const greetingMeta = useMemo(() => `it's ${formattedCurrentTime}, here are your insights for today`, [formattedCurrentTime])
+  const canNavigateBack = routeHistory.length > 0
+    || page !== getHomePage(role)
+    || !!offering
+    || !!selectedStudent
+    || !!selectedMentee
+    || !!historyProfile
+    || !!selectedUnlockTaskId
+    || !!schemeOfferingId
+    || !!uploadOffering
+    || !!courseInitialTab
   const routeSnapshot = useMemo<RouteSnapshot>(() => ({
     page,
     offeringId: offering?.offId ?? null,
@@ -3855,6 +3941,18 @@ function OperationalWorkspace({
         </div>
 
         <div className="top-bar-controls" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
+          {canNavigateBack ? (
+            <button
+              className="top-control-btn"
+              aria-label="Go back"
+              title="Go back"
+              onClick={handleNavigateBack}
+              style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted, display: 'inline-flex', alignItems: 'center', gap: 6, ...mono, fontSize: 10 }}
+            >
+              <ChevronLeft size={14} />
+              Back
+            </button>
+          ) : null}
           <div className="top-bar-clock" style={{ ...mono, fontSize: 10, color: T.dim, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 9px', minHeight: 32, display: 'flex', alignItems: 'center', background: T.surface2 }}>
             {formattedCurrentTime}
           </div>
@@ -4040,6 +4138,7 @@ function OperationalWorkspace({
                 currentTeacher={currentTeacher}
                 activeRole={role}
                 profile={facultyProfile}
+                calendarMarkers={currentFacultyCalendarMarkers}
                 loading={facultyProfileLoading}
                 error={facultyProfileError}
                 pendingTaskCount={pendingActionCount}
@@ -4052,7 +4151,7 @@ function OperationalWorkspace({
             {role === 'Course Leader' && page === 'students' && <LazyAllStudentsPage offerings={assignedOfferings} onBack={handleNavigateBack} onOpenStudent={handleOpenStudent} onOpenHistory={handleOpenHistoryFromStudent} onOpenUpload={handleOpenUpload} />}
             {role === 'Course Leader' && page === 'course' && offering && <LazyCourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? { tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default), tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default) }} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleNavigateBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
             {role === 'Course Leader' && page === 'scheme-setup' && selectedSchemeOffering && <LazySchemeSetupPage role={role} offering={selectedSchemeOffering} scheme={schemeByOffering[selectedSchemeOffering.offId] ?? defaultSchemeForOffering(selectedSchemeOffering)} hasEntryStarted={hasEntryStartedForOffering(selectedSchemeOffering.offId)} onSave={(next) => handleSaveScheme(selectedSchemeOffering.offId, next)} onBack={handleNavigateBack} />}
-            {role === 'Course Leader' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
+            {role === 'Course Leader' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} adminMarkers={currentFacultyCalendarMarkers} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
             {role === 'Course Leader' && page === 'upload' && <LazyUploadPage key={`${uploadOffering?.offId ?? 'default'}-${uploadKind}`} role={role} offering={uploadOffering} defaultKind={uploadKind} onBack={handleNavigateBack} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} onRequestUnlock={handleRequestUnlock} availableOfferings={assignedOfferings} onOpenSchemeSetup={handleOpenSchemeSetup} />}
             {role === 'Course Leader' && page === 'entry-workspace' && <LazyEntryWorkspacePage capabilities={capabilities} offeringId={entryOfferingId} kind={entryKind} onBack={handleNavigateBack} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} onRequestUnlock={handleRequestUnlock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onOpenTaskComposer={handleOpenTaskComposer} onUpdateStudentAttendance={handleUpdateStudentAttendance} schemeByOffering={schemeByOffering} ttBlueprintsByOffering={ttBlueprintsByOffering} lockAuditByTarget={lockAuditByTarget} />}
             {role === 'Course Leader' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
@@ -4060,13 +4159,13 @@ function OperationalWorkspace({
             {role === 'Mentor' && page === 'mentees' && <MentorView mentees={assignedMentees} tasks={roleTasks} onOpenMentee={handleOpenMentee} />}
             {role === 'Mentor' && page === 'mentee-detail' && selectedMentee && <MenteeDetailPage mentee={selectedMentee} onBack={handleNavigateBack} onOpenHistory={handleOpenHistoryFromMentee} />}
             {role === 'Mentor' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
-            {role === 'Mentor' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
+            {role === 'Mentor' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} adminMarkers={currentFacultyCalendarMarkers} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
 
             {role === 'HoD' && page === 'department' && <LazyHodView onOpenQueueHistory={handleOpenQueueHistory} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} tasks={allTasksList} calendarAuditEvents={calendarAuditEvents} />}
             {role === 'HoD' && page === 'course' && offering && <LazyCourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? { tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default), tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default) }} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleNavigateBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
             {role === 'HoD' && page === 'unlock-review' && selectedUnlockTask && <UnlockReviewPage task={selectedUnlockTask} offering={OFFERINGS.find(item => item.offId === selectedUnlockTask.offeringId) ?? null} onBack={handleNavigateBack} onApprove={() => handleApproveUnlock(selectedUnlockTask.id)} onReject={() => handleRejectUnlock(selectedUnlockTask.id)} onResetComplete={() => handleResetComplete(selectedUnlockTask.id)} />}
             {role === 'HoD' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
-            {role === 'HoD' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
+            {role === 'HoD' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} adminMarkers={currentFacultyCalendarMarkers} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
 
             {page === 'student-history' && historyProfile && <LazyStudentHistoryPage role={role} history={historyProfile} onBack={handleNavigateBack} />}
           </Suspense>
@@ -4313,6 +4412,7 @@ export function OperationalApp() {
         onLogout={handleRemoteLogout}
         onRoleChange={handleRemoteRoleChange}
         loadFacultyProfile={facultyId => apiClient!.getAcademicFacultyProfile(facultyId)}
+        academicBootstrap={remoteBootstrap}
       />
     )
   }
@@ -4339,6 +4439,7 @@ export function OperationalApp() {
         await localRepositories.sessionPreferences.saveCurrentFacultyId(null)
         setLocalTeacherId(null)
       }}
+      academicBootstrap={null}
     />
   )
 }

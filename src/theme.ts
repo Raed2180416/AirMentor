@@ -37,5 +37,18 @@ export function isLightTheme(mode: ThemeMode) {
 }
 
 export function applyThemePreset(mode: ThemeMode) {
-  Object.assign(T, THEME_PRESETS[mode])
+  const preset = THEME_PRESETS[mode]
+  Object.assign(T, preset)
+  if (typeof document === 'undefined') return
+  const root = document.documentElement
+  root.style.setProperty('--app-bg', preset.bg)
+  root.style.setProperty('--app-surface', preset.surface)
+  root.style.setProperty('--app-surface-2', preset.surface2)
+  root.style.setProperty('--app-border', preset.border)
+  root.style.setProperty('--app-text', preset.text)
+  root.style.setProperty('--app-muted', preset.muted)
+  root.style.setProperty('--app-accent', preset.accent)
+  root.style.setProperty('--app-autofill-bg', preset.surface2)
+  root.style.setProperty('--app-autofill-text', preset.text)
+  root.style.colorScheme = isLightTheme(mode) ? 'light' : 'dark'
 }

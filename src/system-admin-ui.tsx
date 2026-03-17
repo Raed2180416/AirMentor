@@ -141,12 +141,15 @@ export function MetricCard({ label, value, helper, onClick }: { label: string; v
   )
 }
 
-export function SectionHeading({ title, caption, eyebrow }: { title: string; caption: string; eyebrow?: string }) {
+export function SectionHeading({ title, caption, eyebrow, actions }: { title: string; caption: string; eyebrow?: string; actions?: ReactNode }) {
   return (
-    <div style={{ display: 'grid', gap: 4 }}>
-      {eyebrow ? <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.12em' }}>{eyebrow}</div> : null}
-      <div style={{ ...sora, fontSize: 18, fontWeight: 800, color: T.text }}>{title}</div>
-      <div style={{ ...mono, fontSize: 11, color: T.muted }}>{caption}</div>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+      <div style={{ display: 'grid', gap: 4 }}>
+        {eyebrow ? <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.12em' }}>{eyebrow}</div> : null}
+        <div style={{ ...sora, fontSize: 18, fontWeight: 800, color: T.text }}>{title}</div>
+        <div style={{ ...mono, fontSize: 11, color: T.muted }}>{caption}</div>
+      </div>
+      {actions ? <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>{actions}</div> : null}
     </div>
   )
 }
@@ -199,6 +202,9 @@ export function AdminTopBar({
   onSectionChange,
   themeMode,
   onThemeToggle,
+  onGoHome,
+  canNavigateBack = false,
+  onNavigateBack,
   extraActions,
   style,
 }: {
@@ -214,6 +220,9 @@ export function AdminTopBar({
   onSectionChange: (section: AdminSectionId) => void
   themeMode: ThemeMode
   onThemeToggle: () => void
+  onGoHome?: () => void
+  canNavigateBack?: boolean
+  onNavigateBack?: () => void
   extraActions?: ReactNode
   style?: CSSProperties
 }) {
@@ -222,7 +231,15 @@ export function AdminTopBar({
       <div style={{ padding: '14px 20px', display: 'grid', gap: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <div style={{ width: 38, height: 38, borderRadius: 12, background: `linear-gradient(135deg, ${T.accent}, ${T.accentLight})`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', ...sora, fontWeight: 800, fontSize: 13 }}>AM</div>
+            <button
+              type="button"
+              onClick={onGoHome}
+              aria-label="Go to dashboard"
+              title="Go to dashboard"
+              style={{ width: 38, height: 38, borderRadius: 12, background: `linear-gradient(135deg, ${T.accent}, ${T.accentLight})`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', ...sora, fontWeight: 800, fontSize: 13, border: 'none', cursor: onGoHome ? 'pointer' : 'default', padding: 0 }}
+            >
+              AM
+            </button>
             <div>
               <div style={{ ...sora, fontWeight: 800, fontSize: 17, color: T.text }}>{institutionName}</div>
               <AdminBreadcrumbs segments={breadcrumbs} />
@@ -230,6 +247,15 @@ export function AdminTopBar({
             <Chip color={modeColor}>{modeLabel}</Chip>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {canNavigateBack && onNavigateBack ? (
+              <button
+                type="button"
+                onClick={onNavigateBack}
+                style={{ ...mono, fontSize: 10, color: T.muted, background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 8, padding: '6px 10px', cursor: 'pointer' }}
+              >
+                Back
+              </button>
+            ) : null}
             <button
               type="button"
               aria-label={isLightTheme(themeMode) ? 'Switch to dark mode' : 'Switch to light mode'}

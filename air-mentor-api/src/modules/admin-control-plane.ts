@@ -139,6 +139,11 @@ function isVisibleStatus(status?: string | null) {
   return normalized !== 'archived' && normalized !== 'deleted'
 }
 
+function isLeaderLikeOwnershipRole(role: string) {
+  const normalized = role.trim().toLowerCase()
+  return normalized.includes('course') || normalized.includes('leader') || normalized.includes('owner') || normalized.includes('primary')
+}
+
 function deriveCurrentYearLabel(currentSemester: number) {
   const year = Math.max(1, Math.ceil(currentSemester / 2))
   if (year === 1) return '1st Year'
@@ -619,7 +624,9 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
       profileRows,
       userRows,
       appointmentRows,
+      academicFacultyRows,
       departmentRows,
+      batchRows,
       roleGrantRows,
       assignmentRows,
       ownershipRows,
@@ -634,7 +641,9 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
       context.db.select().from(facultyProfiles).where(eq(facultyProfiles.facultyId, params.facultyId)),
       context.db.select().from(userAccounts),
       context.db.select().from(facultyAppointments).where(eq(facultyAppointments.facultyId, params.facultyId)),
+      context.db.select().from(academicFaculties),
       context.db.select().from(departments),
+      context.db.select().from(batches),
       context.db.select().from(roleGrants).where(eq(roleGrants.facultyId, params.facultyId)),
       context.db.select().from(mentorAssignments).where(eq(mentorAssignments.facultyId, params.facultyId)),
       context.db.select().from(facultyOfferingOwnerships).where(eq(facultyOfferingOwnerships.facultyId, params.facultyId)),
@@ -650,7 +659,9 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
     const profile = profileRows[0]
     if (!profile) throw notFound('Faculty profile not found')
     const user = userRows.find(row => row.userId === profile.userId)
+    const academicFacultyById = Object.fromEntries(academicFacultyRows.map(row => [row.academicFacultyId, row]))
     const departmentById = Object.fromEntries(departmentRows.map(row => [row.departmentId, row]))
+    const batchById = Object.fromEntries(batchRows.map(row => [row.batchId, row]))
     const branchById = Object.fromEntries(branchRows.map(row => [row.branchId, row]))
     const termById = Object.fromEntries(termRows.map(row => [row.termId, row]))
     const courseById = Object.fromEntries(courseRows.map(row => [row.courseId, row]))
@@ -666,6 +677,7 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
     const calendarWorkspace = parsedCalendarWorkspace?.success ? parsedCalendarWorkspace.data : null
 
     const activeOwnerships = ownershipRows.filter(row => row.status === 'active')
+    const leaderLikeOwnerships = activeOwnerships.filter(row => isLeaderLikeOwnershipRole(row.ownershipRole))
     const currentOwnedClasses = activeOwnerships.flatMap(row => {
       const offering = offeringRows.find(item => item.offeringId === row.offeringId)
       if (!offering) return []
@@ -692,7 +704,7 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
       yearLabel: string
       sectionCodes: Set<string>
     }>()
-    for (const row of activeOwnerships) {
+    for (const row of leaderLikeOwnerships) {
       const offering = offeringRows.find(item => item.offeringId === row.offeringId)
       if (!offering) continue
       const course = courseById[offering.courseId]
@@ -713,11 +725,28 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
       .filter(row => row.requestedByFacultyId === params.facultyId || row.ownedByFacultyId === params.facultyId)
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
 
+    const describeGrantScope = (scopeType: string, scopeId: string) => {
+      if (scopeType === 'institution') return 'Institution'
+      if (scopeType === 'academic-faculty') return academicFacultyById[scopeId]?.name ?? scopeId
+      if (scopeType === 'department') return departmentById[scopeId]?.name ?? scopeId
+      if (scopeType === 'branch') return branchById[scopeId]?.name ?? scopeId
+      if (scopeType === 'batch') return batchById[scopeId]?.batchLabel ?? scopeId
+      if (scopeType === 'offering') {
+        const offering = offeringRows.find(item => item.offeringId === scopeId)
+        const course = offering ? courseById[offering.courseId] : null
+        return offering
+          ? `${course?.courseCode ?? 'NA'} · ${offering.yearLabel} · Section ${offering.sectionCode}`
+          : scopeId
+      }
+      return scopeId
+    }
+
     return {
       facultyId: profile.facultyId,
       displayName: profile.displayName,
       designation: profile.designation,
       employeeCode: profile.employeeCode,
+      joinedOn: profile.joinedOn,
       email: user?.email ?? '',
       phone: user?.phone ?? null,
       primaryDepartment: primaryAppointment
@@ -744,7 +773,10 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
       })),
-      permissions: roleGrantRows.map(mapRoleGrant),
+      permissions: roleGrantRows.map(row => ({
+        ...mapRoleGrant(row),
+        scopeLabel: describeGrantScope(row.scopeType, row.scopeId),
+      })),
       subjectRunCourseLeaderScope: Array.from(subjectRunMap.values()).map(entry => ({
         ...entry,
         sectionCodes: Array.from(entry.sectionCodes).sort(),

@@ -156,6 +156,7 @@ describe('admin control plane routes', () => {
       name: 'Electronics and Communication Engineering',
       code: 'ECE',
     })
+    expect(profile.joinedOn).toBe('2024-01-01')
     expect(profile.permissions.map((item: { roleCode: string }) => item.roleCode).sort()).toEqual(['COURSE_LEADER', 'MENTOR'])
     expect(profile.appointments[0]).toMatchObject({
       departmentId: 'dept_ece',
@@ -325,6 +326,20 @@ describe('admin control plane routes', () => {
       hasTemplate: true,
       publishedAt: savedCalendar.workspace.publishedAt,
     })
+
+    const bootstrapResponse = await current.app.inject({
+      method: 'GET',
+      url: '/api/academic/bootstrap',
+      headers: { cookie: facultyLogin.cookie },
+    })
+    expect(bootstrapResponse.statusCode).toBe(200)
+    expect(bootstrapResponse.json().runtime.adminCalendarByFacultyId.t1.markers).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        markerId: 'marker-1',
+        markerType: 'semester-start',
+        title: 'Semester Start',
+      }),
+    ]))
 
     const recentAuditResponse = await current.app.inject({
       method: 'GET',

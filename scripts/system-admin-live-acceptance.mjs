@@ -170,10 +170,10 @@ try {
   await page.locator('button').filter({ hasText: updatedBranchName }).first().click()
   await page.getByRole('button', { name: new RegExp(`Batch ${batchLabel}`) }).first().click()
   await expectBodyText(updatedCurriculumTitle, 'persisted curriculum after refresh')
-  await page.getByRole('button', { name: 'Delete', exact: true }).nth(1).click()
+  await page.getByText(`${curriculumCode} · ${updatedCurriculumTitle}`, { exact: true }).locator('xpath=ancestor::*[@data-surface="card"][1]').getByRole('button', { name: 'Delete', exact: true }).click()
   await expectFlash('Curriculum course archived.')
   await page.waitForFunction((text) => !Array.from(document.querySelectorAll('*')).some(node => node.textContent?.includes(text)), updatedCurriculumTitle)
-  await page.getByRole('button', { name: 'Delete', exact: true }).nth(0).click()
+  await page.getByText('Semester 6 · 2028-30', { exact: true }).locator('xpath=ancestor::*[@data-surface="card"][1]').getByRole('button', { name: 'Delete', exact: true }).click()
   await expectFlash('Academic term archived.')
   await page.waitForFunction(() => !Array.from(document.querySelectorAll('*')).some(node => node.textContent?.includes('Semester 6 · 2028-30')))
 

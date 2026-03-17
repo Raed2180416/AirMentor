@@ -30,6 +30,7 @@ export type ApiRoleGrant = {
   roleCode: ApiRoleCode
   scopeType: string
   scopeId: string
+  scopeLabel?: string | null
   startDate?: string | null
   endDate?: string | null
   status: string
@@ -478,6 +479,7 @@ export type ApiAcademicRuntimeState = {
   tasks: SharedTask[]
   resolvedTasks: Record<string, number>
   timetableByFacultyId: Record<string, FacultyTimetableTemplate>
+  adminCalendarByFacultyId: Record<string, ApiAdminFacultyCalendarWorkspace>
   taskPlacements: Record<string, TaskCalendarPlacement>
   calendarAudit: CalendarAuditEvent[]
 }
@@ -556,6 +558,7 @@ export type ApiAcademicFacultyProfile = {
   displayName: string
   designation: string
   employeeCode: string
+  joinedOn: string | null
   email: string
   phone: string | null
   primaryDepartment: {

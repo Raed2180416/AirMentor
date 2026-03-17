@@ -43,6 +43,7 @@ const runtimeStateKeys = [
   'tasks',
   'resolvedTasks',
   'timetableByFacultyId',
+  'adminCalendarByFacultyId',
   'taskPlacements',
   'calendarAudit',
 ] as const

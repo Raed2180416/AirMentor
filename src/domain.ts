@@ -303,7 +303,7 @@ export function normalizeThemeMode(raw: string | null): ThemeMode {
   if (raw === 'light') return 'frosted-focus-light'
   if (raw === 'dark') return 'frosted-focus-dark'
   if (raw === 'frosted-focus-light' || raw === 'frosted-focus-dark') return raw
-  return 'frosted-focus-dark'
+  return 'frosted-focus-light'
 }
 
 export function toDueLabel(dueDateISO?: string, fallback = 'This week') {

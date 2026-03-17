@@ -622,6 +622,9 @@ export function SystemAdminMockApp({ onExitPortal }: SystemAdminMockAppProps = {
         onSectionChange={section => navigate({ section })}
         themeMode={themeMode}
         onThemeToggle={handleThemeToggle}
+        onGoHome={() => navigate({ section: 'overview' })}
+        canNavigateBack={route.section !== 'overview'}
+        onNavigateBack={() => navigate({ section: 'overview' })}
         extraActions={
           <>
             <div style={{ ...mono, fontSize: 11, color: T.muted }}>{session.username}</div>

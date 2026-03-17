@@ -3,6 +3,7 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type ReactNode,
@@ -193,6 +194,13 @@ type OwnershipFormState = {
   offeringId: string
   facultyId: string
   ownershipRole: string
+}
+
+type AdminWorkspaceSnapshot = {
+  route: LiveAdminRoute
+  universityTab: 'overview' | 'bands' | 'ce-see' | 'cgpa' | 'courses'
+  selectedSectionCode: string | null
+  scrollY: number
 }
 
 const EMPTY_DATA: LiveAdminDataset = {
@@ -523,11 +531,7 @@ function isLeaderLikeOwnership(role: string) {
 }
 
 function isCurrentRoleGrant(grant: ApiRoleGrant) {
-  if (grant.status !== 'active') return false
-  const today = new Date().toISOString().slice(0, 10)
-  if (grant.startDate && grant.startDate > today) return false
-  if (grant.endDate && grant.endDate < today) return false
-  return true
+  return grant.status === 'active'
 }
 
 function findLatestEnrollment(student: { enrollments: ApiStudentEnrollment[]; activeAcademicContext: { enrollmentId: string } | null }) {
@@ -572,6 +576,41 @@ function getAuditEventRoute(event: ApiAuditEvent): LiveAdminRoute | null {
   return null
 }
 
+function createAdminWorkspaceSnapshot(input: Omit<AdminWorkspaceSnapshot, 'scrollY'>): AdminWorkspaceSnapshot {
+  return {
+    ...input,
+    scrollY: typeof window === 'undefined' ? 0 : window.scrollY,
+  }
+}
+
+function getAdminWorkspaceSnapshotKey(snapshot: Omit<AdminWorkspaceSnapshot, 'scrollY'> | AdminWorkspaceSnapshot) {
+  return `${routeToHash(snapshot.route)}::${snapshot.universityTab}::${snapshot.selectedSectionCode ?? ''}`
+}
+
+function persistAdminRouteUiState(snapshot: Pick<AdminWorkspaceSnapshot, 'route' | 'universityTab' | 'selectedSectionCode'>) {
+  if (typeof window === 'undefined' || snapshot.route.section !== 'faculties') return
+  window.sessionStorage.setItem(`airmentor-admin-ui:${routeToHash(snapshot.route)}`, JSON.stringify({
+    tab: snapshot.universityTab,
+    sectionCode: snapshot.selectedSectionCode,
+  }))
+}
+
+function AuthPageShell({ children }: { children: ReactNode }) {
+  return (
+    <div
+      style={{
+        minHeight: '100vh',
+        background: `radial-gradient(circle at top left, ${T.accent}16, transparent 28%), radial-gradient(circle at bottom right, ${T.success}14, transparent 30%), linear-gradient(180deg, ${T.bg}, ${T.surface2})`,
+        padding: 'clamp(18px, 3vw, 30px)',
+      }}
+    >
+      <PageShell size="wide" style={{ paddingTop: 12 }}>
+        {children}
+      </PageShell>
+    </div>
+  )
+}
+
 function TeachingShellAdminTopBar({
   institutionName,
   adminName,
@@ -584,6 +623,9 @@ function TeachingShellAdminTopBar({
   searchResults,
   onSearchSelect,
   onToggleTheme,
+  onGoHome,
+  canNavigateBack,
+  onNavigateBack,
   onToggleQueue,
   onRefresh,
   onExitPortal,
@@ -600,6 +642,9 @@ function TeachingShellAdminTopBar({
   searchResults: Array<{ key: string; title: string; subtitle: string; onSelect: () => void }>
   onSearchSelect?: () => void
   onToggleTheme: () => void
+  onGoHome: () => void
+  canNavigateBack: boolean
+  onNavigateBack: () => void
   onToggleQueue: () => void
   onRefresh: () => void
   onExitPortal?: () => void
@@ -609,7 +654,15 @@ function TeachingShellAdminTopBar({
     <div style={{ position: 'sticky', top: 0, zIndex: 40, display: 'grid', gap: 14, padding: '10px 20px 16px', background: isLightTheme(themeMode) ? 'rgba(255,255,255,0.9)' : 'rgba(9,14,22,0.9)', backdropFilter: 'blur(12px)', borderBottom: `1px solid ${T.border}` }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-          <div style={{ width: 34, height: 34, borderRadius: 10, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 13, color: '#fff' }}>AM</div>
+          <button
+            type="button"
+            aria-label="Go to dashboard"
+            title="Go to dashboard"
+            onClick={onGoHome}
+            style={{ width: 34, height: 34, borderRadius: 10, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 13, color: '#fff', border: 'none', cursor: 'pointer', padding: 0 }}
+          >
+            AM
+          </button>
           <div style={{ minWidth: 0 }}>
             <div style={{ ...sora, fontWeight: 800, fontSize: 14, color: T.text }}>{institutionName}</div>
             <div style={{ ...mono, fontSize: 9, color: T.dim }}>Welcome {adminName} · {contextLabel}</div>
@@ -617,6 +670,12 @@ function TeachingShellAdminTopBar({
         </div>
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {canNavigateBack ? (
+            <button type="button" aria-label="Go back" onClick={onNavigateBack} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted, display: 'inline-flex', alignItems: 'center', gap: 6, ...mono, fontSize: 10 }}>
+              <ChevronLeft size={14} />
+              Back
+            </button>
+          ) : null}
           <div style={{ ...mono, fontSize: 10, color: T.dim, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 9px', minHeight: 32, display: 'flex', alignItems: 'center', gap: 6, background: T.surface2 }}>
             <Clock3 size={12} />
             {formatClockLabel(now)}
@@ -775,9 +834,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const [searchQuery, setSearchQuery] = useState('')
   const [serverSearchResults, setServerSearchResults] = useState<ApiAdminSearchResult[]>([])
   const [showActionQueue, setShowActionQueue] = useState(true)
+  const [remindersSupported, setRemindersSupported] = useState(true)
   const [universityTab, setUniversityTab] = useState<'overview' | 'bands' | 'ce-see' | 'cgpa' | 'courses'>('overview')
   const [selectedSectionCode, setSelectedSectionCode] = useState<string | null>(null)
   const [route, setRoute] = useState<LiveAdminRoute>(() => parseAdminRoute(typeof window === 'undefined' ? '' : window.location.hash))
+  const [routeHistory, setRouteHistory] = useState<AdminWorkspaceSnapshot[]>([])
   const [structureForms, setStructureForms] = useState<StructureFormState>({
     academicFaculty: { code: '', name: '', overview: '' },
     department: { code: '', name: '' },
@@ -809,6 +870,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const [recentAuditEvents, setRecentAuditEvents] = useState<ApiAuditEvent[]>([])
   const [facultyCalendarLoading, setFacultyCalendarLoading] = useState(false)
   const [facultyCalendar, setFacultyCalendar] = useState<ApiAdminFacultyCalendar | null>(null)
+  const pendingScrollRestoreRef = useRef<number | null>(null)
 
   const deferredSearch = useDeferredValue(searchQuery)
 
@@ -817,13 +879,76 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const persistTheme = useCallback((nextMode: ThemeMode) => {
     setThemeMode(nextMode)
     if (typeof window !== 'undefined') window.localStorage.setItem(AIRMENTOR_STORAGE_KEYS.themeMode, nextMode)
-  }, [])
+    void repositories.sessionPreferences.saveTheme(nextMode)
+  }, [repositories])
 
-  const navigate = useCallback((nextRoute: LiveAdminRoute) => {
+  const currentWorkspaceSnapshot = useCallback(() => createAdminWorkspaceSnapshot({
+    route,
+    universityTab,
+    selectedSectionCode,
+  }), [route, selectedSectionCode, universityTab])
+
+  const pushCurrentWorkspaceToHistory = useCallback(() => {
+    const snapshot = currentWorkspaceSnapshot()
+    setRouteHistory(existing => {
+      const last = existing.at(-1)
+      if (last && getAdminWorkspaceSnapshotKey(last) === getAdminWorkspaceSnapshotKey(snapshot)) return existing
+      return [...existing, snapshot].slice(-60)
+    })
+  }, [currentWorkspaceSnapshot])
+
+  const navigate = useCallback((nextRoute: LiveAdminRoute, options?: { recordHistory?: boolean }) => {
+    if (options?.recordHistory !== false && getAdminWorkspaceSnapshotKey({ route: nextRoute, universityTab, selectedSectionCode }) !== getAdminWorkspaceSnapshotKey({ route, universityTab, selectedSectionCode })) {
+      pushCurrentWorkspaceToHistory()
+    }
     const nextHash = routeToHash(nextRoute)
     if (typeof window !== 'undefined' && window.location.hash !== nextHash) window.location.hash = nextHash
     setRoute(nextRoute)
+  }, [pushCurrentWorkspaceToHistory, route, selectedSectionCode, universityTab])
+
+  const updateUniversityTab = useCallback((nextTab: 'overview' | 'bands' | 'ce-see' | 'cgpa' | 'courses', options?: { recordHistory?: boolean }) => {
+    if (nextTab === universityTab) return
+    if (options?.recordHistory !== false) pushCurrentWorkspaceToHistory()
+    setUniversityTab(nextTab)
+  }, [pushCurrentWorkspaceToHistory, universityTab])
+
+  const updateSelectedSectionCode = useCallback((nextSectionCode: string | null, options?: { recordHistory?: boolean }) => {
+    if ((nextSectionCode ?? null) === selectedSectionCode) return
+    if (options?.recordHistory !== false) pushCurrentWorkspaceToHistory()
+    setSelectedSectionCode(nextSectionCode ?? null)
+  }, [pushCurrentWorkspaceToHistory, selectedSectionCode])
+
+  const clearRouteHistory = useCallback(() => {
+    setRouteHistory([])
+    pendingScrollRestoreRef.current = null
   }, [])
+
+  const handleGoHome = useCallback(() => {
+    clearRouteHistory()
+    updateSelectedSectionCode(null, { recordHistory: false })
+    updateUniversityTab('overview', { recordHistory: false })
+    navigate({ section: 'overview' }, { recordHistory: false })
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [clearRouteHistory, navigate, updateSelectedSectionCode, updateUniversityTab])
+
+  const handleNavigateBack = useCallback(() => {
+    if (routeHistory.length === 0) {
+      handleGoHome()
+      return
+    }
+    const nextHistory = [...routeHistory]
+    const snapshot = nextHistory.pop()
+    if (!snapshot) {
+      handleGoHome()
+      return
+    }
+    setRouteHistory(nextHistory)
+    pendingScrollRestoreRef.current = snapshot.scrollY
+    persistAdminRouteUiState(snapshot)
+    updateSelectedSectionCode(snapshot.selectedSectionCode, { recordHistory: false })
+    updateUniversityTab(snapshot.universityTab, { recordHistory: false })
+    navigate(snapshot.route, { recordHistory: false })
+  }, [handleGoHome, navigate, routeHistory, updateSelectedSectionCode, updateUniversityTab])
 
   const loadAdminData = useCallback(async () => {
     if (!session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') return
@@ -836,13 +961,26 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           throw error
         }
       }
+      const safeReminders = async () => {
+        try {
+          const response = await apiClient.listAdminReminders()
+          setRemindersSupported(true)
+          return response
+        } catch (error) {
+          if (error instanceof AirMentorApiError && error.status === 404) {
+            setRemindersSupported(false)
+            return { items: [] }
+          }
+          throw error
+        }
+      }
       const [institution, academicFaculties, departments, branches, batches, terms, facultyMembers, students, courses, curriculumCourses, policyOverrides, offerings, ownerships, requests, reminders] = await Promise.all([
         safeInstitution(), apiClient.listAcademicFaculties(), apiClient.listDepartments(),
         apiClient.listBranches(), apiClient.listBatches(), apiClient.listTerms(),
         apiClient.listFaculty(), apiClient.listStudents(), apiClient.listCourses(),
         apiClient.listCurriculumCourses(), apiClient.listPolicyOverrides(),
         apiClient.listOfferings(), apiClient.listOfferingOwnership(), apiClient.listAdminRequests(),
-        apiClient.listAdminReminders(),
+        safeReminders(),
       ])
       setData({
         institution, academicFaculties: academicFaculties.items, departments: departments.items,
@@ -903,6 +1041,15 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       tab: universityTab,
       sectionCode: selectedSectionCode,
     }))
+  }, [route, selectedSectionCode, universityTab])
+
+  useEffect(() => {
+    if (pendingScrollRestoreRef.current == null || typeof window === 'undefined') return
+    const targetScrollY = pendingScrollRestoreRef.current
+    pendingScrollRestoreRef.current = null
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: targetScrollY, behavior: 'auto' })
+    })
   }, [route, selectedSectionCode, universityTab])
 
   useEffect(() => {
@@ -1323,6 +1470,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   }
 
   const handleCreateReminder = async () => {
+    if (!remindersSupported) {
+      setActionError('This live backend does not expose private admin reminders yet. Deploy the latest API to enable them.')
+      return
+    }
     const title = window.prompt('Reminder title')
     if (!title?.trim()) return
     const body = window.prompt('Reminder note', 'Follow up with HoD / verify structure change / review pending implementation.') ?? ''
@@ -1340,6 +1491,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   }
 
   const handleToggleReminderStatus = async (reminder: LiveAdminDataset['reminders'][number]) => {
+    if (!remindersSupported) {
+      setActionError('Private reminders are not available on this backend yet.')
+      return
+    }
     await runAction(async () => {
       await apiClient.updateAdminReminder(reminder.reminderId, {
         title: reminder.title,
@@ -2344,8 +2499,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
   if (!session) {
     return (
-      <PageShell size="wide" style={{ paddingTop: 40 }}>
-        <div style={{ minHeight: 'calc(100vh - 80px)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24, alignItems: 'stretch' }}>
+      <AuthPageShell>
+        <div style={{ minHeight: 'calc(100vh - 60px)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24, alignItems: 'stretch' }}>
           <Card style={{ padding: 28, background: `radial-gradient(circle at top left, ${T.accent}24, transparent 36%), radial-gradient(circle at bottom right, ${T.success}16, transparent 28%), linear-gradient(160deg, ${T.surface}, ${T.surface2})`, display: 'grid', alignContent: 'space-between', minHeight: 520 }} glow={T.accent}>
             <div style={{ display: 'grid', gap: 18 }}>
               <HeroBadge><Compass size={12} /> System Admin Live Mode</HeroBadge>
@@ -2379,7 +2534,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             </form>
           </Card>
         </div>
-      </PageShell>
+      </AuthPageShell>
     )
   }
 
@@ -2454,7 +2609,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         title: `Section ${sectionCode}`,
         subtitle: 'Section scope',
         selected: selectedSectionCode === sectionCode,
-        onSelect: () => setSelectedSectionCode(sectionCode),
+        onSelect: () => updateSelectedSectionCode(sectionCode),
       }))
     }
     if (selectedBranch) {
@@ -2513,7 +2668,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         key: `section:${sectionCode}`,
         title: `Section ${sectionCode}`,
         description: `${data.students.filter(student => student.activeAcademicContext?.batchId === selectedBatch!.batchId && student.activeAcademicContext.sectionCode === sectionCode).length} students`,
-        onSelect: () => setSelectedSectionCode(sectionCode),
+        onSelect: () => updateSelectedSectionCode(sectionCode),
       }))
     }
     if (selectedBranch) {
@@ -2775,6 +2930,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     }
     return []
   })()
+  const canNavigateBack = routeHistory.length > 0 || route.section !== 'overview' || universityTab !== 'overview' || !!selectedSectionCode
 
   // --- Main workspace ---
   return (
@@ -2790,6 +2946,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         onSearchChange={setSearchQuery}
         searchResults={searchResults.map(r => ({ key: r.key, title: r.label, subtitle: r.meta, onSelect: () => { setSearchQuery(''); navigate(r.route) } }))}
         onToggleTheme={() => persistTheme(themeMode === 'frosted-focus-light' ? 'frosted-focus-dark' : 'frosted-focus-light')}
+        onGoHome={handleGoHome}
+        canNavigateBack={canNavigateBack}
+        onNavigateBack={handleNavigateBack}
         onToggleQueue={() => setShowActionQueue(current => !current)}
         onRefresh={() => { void loadAdminData() }}
         onExitPortal={onExitPortal}
@@ -2840,7 +2999,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                 </div>
                 <div style={{ display: 'grid', gap: 10 }}>
                   <MetricCard label="Open Requests" value={String(openRequests.length)} helper="Items that still need admin review, approval, implementation, or closure." onClick={() => navigate({ section: 'requests' })} />
-                  <MetricCard label="Private Reminders" value={String(pendingReminders.length)} helper="Your personal admin notes, visible only in this account." onClick={() => setShowActionQueue(true)} />
+                  <MetricCard label="Private Reminders" value={remindersSupported ? String(pendingReminders.length) : 'API'} helper={remindersSupported ? 'Your personal admin notes, visible only in this account.' : 'This live backend has not deployed private reminder support yet.'} onClick={() => setShowActionQueue(true)} />
                   <MetricCard label="Recycle Bin" value={String(deletedItems.length)} helper="Soft-deleted entities that can still be restored within the retention window." onClick={() => navigate({ section: 'history' })} />
                   <MetricCard label="Recent Audit" value={String(recentAuditEvents.length)} helper="Latest cross-entity changes, including planner saves and restore activity." onClick={() => navigate({ section: 'history' })} />
                 </div>
@@ -2864,7 +3023,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   <SelectInput
                     value={selectedAcademicFaculty?.academicFacultyId ?? ''}
                     onChange={event => {
-                      setSelectedSectionCode(null)
+                      updateSelectedSectionCode(null, { recordHistory: false })
                       navigate({ section: 'faculties', academicFacultyId: event.target.value || undefined })
                     }}
                   >
@@ -2878,7 +3037,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                     value={selectedDepartment?.departmentId ?? ''}
                     disabled={!selectedAcademicFaculty}
                     onChange={event => {
-                      setSelectedSectionCode(null)
+                      updateSelectedSectionCode(null, { recordHistory: false })
                       navigate({
                         section: 'faculties',
                         academicFacultyId: selectedAcademicFaculty?.academicFacultyId,
@@ -2896,7 +3055,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                     value={selectedBranch?.branchId ?? ''}
                     disabled={!selectedDepartment}
                     onChange={event => {
-                      setSelectedSectionCode(null)
+                      updateSelectedSectionCode(null, { recordHistory: false })
                       navigate({
                         section: 'faculties',
                         academicFacultyId: selectedAcademicFaculty?.academicFacultyId,
@@ -2915,7 +3074,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                     value={selectedBatch?.batchId ?? ''}
                     disabled={!selectedBranch}
                     onChange={event => {
-                      setSelectedSectionCode(null)
+                      updateSelectedSectionCode(null, { recordHistory: false })
                       navigate({
                         section: 'faculties',
                         academicFacultyId: selectedAcademicFaculty?.academicFacultyId,
@@ -2934,7 +3093,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   <SelectInput
                     value={selectedSectionCode ?? ''}
                     disabled={!selectedBatch}
-                    onChange={event => setSelectedSectionCode(event.target.value || null)}
+                    onChange={event => updateSelectedSectionCode(event.target.value || null)}
                   >
                     <option value="">{selectedBatch ? 'All Sections' : 'Pick Year First'}</option>
                     {selectorSections.map(sectionCode => <option key={sectionCode} value={sectionCode}>{sectionCode}</option>)}
@@ -3012,7 +3171,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                       key={tab.id}
                       type="button"
                       data-tab="true"
-                      onClick={() => setUniversityTab(tab.id)}
+                      onClick={() => updateUniversityTab(tab.id)}
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
@@ -3765,7 +3924,6 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                     <div><FieldLabel>Email</FieldLabel><TextInput value={facultyForm.email} onChange={event => setFacultyForm(prev => ({ ...prev, email: event.target.value }))} placeholder="faculty@campus.edu" /></div>
                     <div><FieldLabel>Phone</FieldLabel><TextInput value={facultyForm.phone} onChange={event => setFacultyForm(prev => ({ ...prev, phone: event.target.value }))} placeholder="+91…" /></div>
                     <div><FieldLabel>Designation</FieldLabel><TextInput value={facultyForm.designation} onChange={event => setFacultyForm(prev => ({ ...prev, designation: event.target.value }))} placeholder="Assistant Professor" /></div>
-                    <div><FieldLabel>Joined On</FieldLabel><TextInput value={facultyForm.joinedOn} onChange={event => setFacultyForm(prev => ({ ...prev, joinedOn: event.target.value }))} placeholder="YYYY-MM-DD" /></div>
                     {!selectedFacultyMember ? <div><FieldLabel>Initial Password</FieldLabel><TextInput type="password" value={facultyForm.password} onChange={event => setFacultyForm(prev => ({ ...prev, password: event.target.value }))} placeholder="Minimum 8 characters" /></div> : null}
                   </div>
                   <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -4194,7 +4352,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>Action Queue</div>
             <Chip color={T.danger} size={10}>{actionQueueCount} active</Chip>
           </div>
-          <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 14 }}>Requests go first. Personal reminders stay private to the signed-in system admin.</div>
+          <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 14 }}>
+            Requests go first. {remindersSupported ? 'Personal reminders stay private to the signed-in system admin.' : 'Private reminders are hidden until the live API supports `/api/admin/reminders`.'}
+          </div>
 
           <div style={{ ...mono, fontSize: 9, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Requests</div>
           <div style={{ display: 'grid', gap: 8 }}>
@@ -4214,7 +4374,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
           <div style={{ ...mono, fontSize: 9, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 18, marginBottom: 8 }}>Personal Tasks</div>
           <div style={{ display: 'grid', gap: 8 }}>
-            {pendingReminders.map(reminder => (
+            {remindersSupported ? pendingReminders.map(reminder => (
               <ActionQueueCard
                 key={reminder.reminderId}
                 title={reminder.title}
@@ -4223,8 +4383,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                 tone={T.accent}
                 trailing={<button type="button" onClick={event => { event.stopPropagation(); void handleToggleReminderStatus(reminder) }} style={{ ...mono, fontSize: 10, color: T.accent, background: 'none', border: 'none', cursor: 'pointer' }}>Done</button>}
               />
-            ))}
-            {pendingReminders.length === 0 ? <InfoBanner message="No private admin reminders. Use the quick add button below." /> : null}
+            )) : null}
+            {remindersSupported
+              ? (pendingReminders.length === 0 ? <InfoBanner message="No private admin reminders. Use the quick add button below." /> : null)
+              : <InfoBanner message="This backend does not expose private reminders yet, so the queue is running in request-only mode." />}
           </div>
 
           <div style={{ ...mono, fontSize: 9, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 18, marginBottom: 8 }}>Recycle Bin</div>
@@ -4243,9 +4405,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           </div>
 
           <div style={{ position: 'sticky', bottom: 0, paddingTop: 12, marginTop: 16, background: `linear-gradient(180deg, rgba(0,0,0,0) 0%, ${T.surface} 35%)` }}>
-            <button type="button" onClick={() => void handleCreateReminder()} style={{ width: '100%', border: 'none', borderRadius: 10, cursor: 'pointer', background: T.accent, color: '#fff', padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, ...sora, fontWeight: 700, fontSize: 12 }}>
+            <button type="button" onClick={() => void handleCreateReminder()} disabled={!remindersSupported} style={{ width: '100%', border: 'none', borderRadius: 10, cursor: remindersSupported ? 'pointer' : 'not-allowed', background: remindersSupported ? T.accent : T.surface3, color: remindersSupported ? '#fff' : T.dim, padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, ...sora, fontWeight: 700, fontSize: 12 }}>
               <Plus size={14} />
-              Quick Add Reminder
+              {remindersSupported ? 'Quick Add Reminder' : 'Reminder API Unavailable'}
             </button>
           </div>
         </div>
