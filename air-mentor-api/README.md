@@ -35,6 +35,23 @@ For a GitHub Pages frontend deployed on a different origin from the API, set:
 
 That keeps credentialed browser requests working across origins with `credentials: 'include'`.
 
+## Railway Deploy
+
+The frontend on GitHub Pages and the API on Railway are deployed separately.
+If the UI starts calling routes such as `/api/admin/reminders` and the live API
+returns `Route ... not found`, the frontend is newer than the Railway deploy.
+
+This repo now includes [deploy-railway-api.yml](/home/raed/projects/air-mentor-ui/.github/workflows/deploy-railway-api.yml)
+to redeploy the backend from `main`. To enable it in GitHub:
+
+1. Add the repository secret `RAILWAY_TOKEN`.
+2. Add the repository variable `RAILWAY_SERVICE` with the Railway service name.
+3. Optionally add `RAILWAY_ENVIRONMENT` if the service deploys anywhere other than the default environment.
+
+The workflow builds `air-mentor-api`, then runs `railway up` from the API directory.
+`air-mentor-api/railway.json` keeps the deploy behavior consistent by running
+`npm run db:migrate` before starting the app.
+
 ## Tests
 
 - `npm test` starts an ephemeral real PostgreSQL cluster via `embedded-postgres`.

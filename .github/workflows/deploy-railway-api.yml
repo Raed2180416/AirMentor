@@ -1,0 +1,54 @@
+name: Deploy API to Railway
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'air-mentor-api/**'
+      - '.github/workflows/deploy-railway-api.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: railway-api
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: ${{ secrets.RAILWAY_TOKEN != '' && vars.RAILWAY_SERVICE != '' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: air-mentor-api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build API
+        run: npm run build
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE }}
+          RAILWAY_ENVIRONMENT: ${{ vars.RAILWAY_ENVIRONMENT }}
+        run: |
+          command=(railway up --ci --service "$RAILWAY_SERVICE")
+          if [ -n "$RAILWAY_ENVIRONMENT" ]; then
+            command+=(--environment "$RAILWAY_ENVIRONMENT")
+          fi
+          "${command[@]}"
