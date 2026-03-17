@@ -21,6 +21,13 @@ import type { ThemeMode } from './domain'
 
 export type AdminSectionId = 'overview' | 'faculties' | 'students' | 'faculty-members' | 'requests'
 
+export const readOnlyInputStyle: CSSProperties = {
+  background: T.surface3,
+  color: T.dim,
+  cursor: 'default',
+  pointerEvents: 'none' as const,
+}
+
 export const TOP_TABS: Array<{ id: AdminSectionId; label: string; icon: typeof Building2 }> = [
   { id: 'overview', label: 'Overview', icon: Layers3 },
   { id: 'faculties', label: 'Faculties', icon: Building2 },

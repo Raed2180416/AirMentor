@@ -45,13 +45,17 @@ try {
 
   await page.goto(`${appUrl}#/admin/faculty-members/t1`, { waitUntil: 'networkidle' })
   await expectVisible(page.getByText(/^Faculty Detail$/).last(), 'faculty detail page')
+  const facultyDetailCard = page.getByText(/^Faculty Detail$/).last().locator('xpath=ancestor::*[@data-surface="card"][1]')
 
-  await page.getByPlaceholder('Faculty name', { exact: true }).fill(updatedDisplayName)
-  await page.getByPlaceholder('+91…', { exact: true }).fill(updatedPhone)
-  await page.getByPlaceholder('Assistant Professor', { exact: true }).fill(updatedDesignation)
-  await page.getByRole('button', { name: 'Save Faculty', exact: true }).click()
+  await facultyDetailCard.getByRole('button', { name: 'Edit Faculty', exact: true }).evaluate(button => button.click())
+  await expectVisible(facultyDetailCard.getByRole('button', { name: 'Save Faculty', exact: true }), 'faculty save button')
+  await facultyDetailCard.getByPlaceholder('Faculty name', { exact: true }).fill(updatedDisplayName)
+  await facultyDetailCard.getByPlaceholder('+91…', { exact: true }).fill(updatedPhone)
+  await facultyDetailCard.getByPlaceholder('Assistant Professor', { exact: true }).fill(updatedDesignation)
+  await facultyDetailCard.getByRole('button', { name: 'Save Faculty', exact: true }).click()
   await expectFlash('Faculty profile updated.')
 
+  await page.getByRole('button', { name: /^Appointments/ }).click()
   await page.getByRole('button', { name: 'Edit', exact: true }).nth(0).click()
   await page.getByRole('combobox').nth(0).selectOption({ label: 'Electronics and Communication Engineering' })
   await page.getByRole('combobox').nth(1).selectOption({ label: 'B.Tech ECE' })

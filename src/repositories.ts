@@ -540,11 +540,11 @@ function createHttpAcademicRepositories({
       },
     },
     tasks: {
-      getTasksSnapshot(seedFactory) {
-        return (runtimeCache.tasks && runtimeCache.tasks.length > 0) ? deepClone(runtimeCache.tasks) : seedFactory()
+      getTasksSnapshot(_seedFactory) {
+        return deepClone(runtimeCache.tasks ?? [])
       },
-      getResolvedTasksSnapshot(fallback) {
-        return deepClone(runtimeCache.resolvedTasks ?? fallback)
+      getResolvedTasksSnapshot(_fallback) {
+        return deepClone(runtimeCache.resolvedTasks ?? {})
       },
       async saveTasks(next) {
         await persistRuntimeSlice('tasks', next)

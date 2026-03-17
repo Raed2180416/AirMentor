@@ -3,7 +3,6 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import type { RouteContext } from '../app.js'
 import {
-  academicAssets,
   academicRuntimeState,
   academicTerms,
   branches,
@@ -111,11 +110,6 @@ function sortRoleLabels(left: string, right: string) {
   return order.indexOf(left) - order.indexOf(right)
 }
 
-async function getAcademicAsset<T>(context: RouteContext, assetKey: string, fallback: T): Promise<T> {
-  const [row] = await context.db.select().from(academicAssets).where(eq(academicAssets.assetKey, assetKey))
-  return row ? parseJson(row.payloadJson, fallback) : fallback
-}
-
 async function getAcademicRuntimeState<T>(context: RouteContext, stateKey: string, fallback: T): Promise<T> {
   const [row] = await context.db.select().from(academicRuntimeState).where(eq(academicRuntimeState.stateKey, stateKey))
   return row ? parseJson(row.payloadJson, fallback) : fallback
@@ -140,6 +134,7 @@ function inferMenteeFallback(input: {
   enrollment?: typeof studentEnrollments.$inferSelect
   deptCode: string
   yearLabel: string
+  prevCgpa: number
 }) {
   return {
     id: `mentee-${input.student.studentId}`,
@@ -150,8 +145,8 @@ function inferMenteeFallback(input: {
     section: input.enrollment?.sectionCode ?? 'A',
     dept: input.deptCode,
     courseRisks: [],
-    avs: input.yearLabel === '1st Year' ? -1 : 0.35,
-    prevCgpa: 0,
+    avs: -1,
+    prevCgpa: input.prevCgpa,
     interventions: [],
   }
 }
@@ -174,26 +169,51 @@ function inferStudentFallback(input: {
     phone: input.student.phone ?? '',
     present: Math.round((input.offering.attendance / 100) * 45),
     totalClasses: 45,
-    tt1Score: input.offering.tt1Done ? 15 : null,
+    tt1Score: null,
     tt1Max: 25,
-    tt2Score: input.offering.tt2Done ? 16 : null,
+    tt2Score: null,
     tt2Max: 25,
-    quiz1: input.offering.tt1Done ? 6 : null,
+    quiz1: null,
     quiz2: null,
-    asgn1: input.offering.tt1Done ? 7 : null,
+    asgn1: null,
     asgn2: null,
     prevCgpa: input.prevCgpa,
-    riskProb: input.offering.stage >= 2 ? 0.35 : null,
-    riskBand: input.offering.stage >= 2 ? 'Medium' : null,
+    riskProb: null,
+    riskBand: null,
     reasons: [],
     coScores: [],
     whatIf: [],
     interventions: [],
     flags: {
-      backlog: input.prevCgpa < 5.5,
-      lowAttendance: input.offering.attendance < 75,
+      backlog: input.prevCgpa > 0 && input.prevCgpa < 5.5,
+      lowAttendance: input.offering.attendance > 0 && input.offering.attendance < 75,
       declining: false,
     },
+  }
+}
+
+function buildStudentHistoryRecord(input: {
+  student: typeof students.$inferSelect
+  branch?: typeof branches.$inferSelect
+  department?: typeof departments.$inferSelect
+  prevCgpa: number
+}) {
+  const departmentCode = input.department?.code ?? input.branch?.code ?? 'GEN'
+  const programLabel = input.branch?.name ?? input.department?.name ?? departmentCode
+  const notes = input.prevCgpa > 0
+    ? ['Transcript history has not been published yet. Current CGPA reflects the latest recorded student profile.']
+    : ['Transcript history has not been published yet for this student.']
+
+  return {
+    usn: input.student.usn,
+    studentName: input.student.name,
+    program: programLabel,
+    dept: departmentCode,
+    trend: 'Stable' as const,
+    currentCgpa: input.prevCgpa,
+    advisoryNotes: notes,
+    repeatSubjects: [],
+    terms: [],
   }
 }
 
@@ -207,13 +227,6 @@ type AcademicOfferingProjection = Omit<ReturnType<typeof mapOfferingRow>, 'termI
   quizLocked?: boolean
   asgnLocked?: boolean
 } & Record<string, unknown>
-
-function valuesMatchSemantically(left: unknown, right: unknown) {
-  if (typeof left === 'number' && typeof right === 'number') {
-    return Math.abs(left - right) < 0.000001
-  }
-  return left === right
-}
 
 function mapOfferingRow(input: {
   offering: typeof sectionOfferings.$inferSelect
@@ -256,26 +269,47 @@ function mapOfferingRow(input: {
   }
 }
 
-async function buildAcademicBootstrap(context: RouteContext) {
-  const [
-    professor,
-    seededFaculty,
-    seededOfferings,
-    seededStudentsByOffering,
-    seededMenteesByUsn,
-    studentHistoryByUsn,
-  ] = await Promise.all([
-    getAcademicAsset(context, 'professor', null as Record<string, unknown> | null),
-    getAcademicAsset(context, 'faculty', [] as Array<Record<string, unknown>>),
-    getAcademicAsset(context, 'offerings', [] as Array<Record<string, unknown>>),
-    getAcademicAsset(context, 'studentsByOffering', {} as Record<string, Array<Record<string, unknown>>>),
-    getAcademicAsset(context, 'menteesByUsn', {} as Record<string, Record<string, unknown>>),
-    getAcademicAsset(context, 'studentHistoryByUsn', {} as Record<string, Record<string, unknown>>),
-  ])
+function buildProfessorProjection(input: {
+  faculty: Array<{
+    facultyId: string
+    name: string
+    initials: string
+    email: string
+    dept: string
+    roleTitle: string
+  }>
+  facultyId?: string | null
+  roleCode?: string | null
+}) {
+  const current = input.facultyId
+    ? (input.faculty.find(account => account.facultyId === input.facultyId) ?? null)
+    : null
+  const fallback = current ?? input.faculty[0] ?? {
+    facultyId: 'faculty-unassigned',
+    name: 'Teaching Workspace',
+    initials: 'TW',
+    email: '',
+    dept: 'Unassigned',
+    roleTitle: 'Faculty',
+  }
 
-  const seededFacultyById = Object.fromEntries(seededFaculty.map(item => [String(item.facultyId ?? ''), item]))
-  const seededOfferingsById = Object.fromEntries(seededOfferings.map(item => [String(item.offId ?? ''), item]))
+  return {
+    name: fallback.name,
+    id: fallback.facultyId,
+    dept: fallback.dept,
+    role: input.roleCode ? (toUiRole(input.roleCode) ?? fallback.roleTitle) : fallback.roleTitle,
+    initials: fallback.initials,
+    email: fallback.email,
+  }
+}
 
+async function buildAcademicBootstrap(
+  context: RouteContext,
+  viewer: {
+    facultyId?: string | null
+    roleCode?: string | null
+  } = {},
+) {
   const runtimeEntries = await Promise.all(runtimeStateKeys.map(async stateKey => [stateKey, await getAcademicRuntimeState(context, stateKey, {})] as const))
   const runtime = Object.fromEntries(runtimeEntries)
 
@@ -315,9 +349,11 @@ async function buildAcademicBootstrap(context: RouteContext) {
   const termById = Object.fromEntries(termRows.map(row => [row.termId, row]))
   const branchById = Object.fromEntries(branchRows.map(row => [row.branchId, row]))
   const departmentById = Object.fromEntries(departmentRows.map(row => [row.departmentId, row]))
+  const offeringRowById = Object.fromEntries(offeringRows.map(row => [row.offeringId, row]))
   const userById = Object.fromEntries(userRows.map(row => [row.userId, row]))
   const studentById = Object.fromEntries(studentRows.map(row => [row.studentId, row]))
   const studentAcademicProfileById = Object.fromEntries(profileRows.map(row => [row.studentId, row]))
+  const activeEnrollmentByStudentId = new Map<string, typeof studentEnrollments.$inferSelect>()
   const primaryAppointmentByFacultyId = new Map<string, typeof facultyAppointments.$inferSelect>()
   for (const appointment of appointmentRows) {
     const current = primaryAppointmentByFacultyId.get(appointment.facultyId)
@@ -330,6 +366,10 @@ async function buildAcademicBootstrap(context: RouteContext) {
   for (const enrollment of enrollmentRows) {
     const key = `${enrollment.termId}::${enrollment.sectionCode}`
     enrollmentsByGroup.set(key, [...(enrollmentsByGroup.get(key) ?? []), enrollment])
+    const current = activeEnrollmentByStudentId.get(enrollment.studentId)
+    if (!current || enrollment.startDate > current.startDate) {
+      activeEnrollmentByStudentId.set(enrollment.studentId, enrollment)
+    }
   }
 
   const activeMentorAssignmentByStudentId = new Map<string, typeof mentorAssignments.$inferSelect>()
@@ -341,16 +381,6 @@ async function buildAcademicBootstrap(context: RouteContext) {
     }
   }
 
-  const offeringTemplateKeys = new Map<string, string>()
-  for (const [offeringId, studentsForOffering] of Object.entries(seededStudentsByOffering)) {
-    const sample = offeringRows.find(row => row.offeringId === offeringId)
-    if (!sample) continue
-    offeringTemplateKeys.set(`${sample.termId}::${sample.sectionCode}`, offeringId)
-    if (studentsForOffering && studentsForOffering.length > 0) {
-      offeringTemplateKeys.set(`${sample.yearLabel}::${sample.sectionCode}::${sample.branchId}`, offeringId)
-    }
-  }
-
   const academicOfferings: AcademicOfferingProjection[] = offeringRows.map(offeringRow => {
     const course = courseById[offeringRow.courseId]
     const term = termById[offeringRow.termId]
@@ -358,108 +388,70 @@ async function buildAcademicBootstrap(context: RouteContext) {
     const department = branch ? departmentById[branch.departmentId] : undefined
     const enrollmentKey = `${offeringRow.termId}::${offeringRow.sectionCode}`
     const sectionEnrollments = enrollmentsByGroup.get(enrollmentKey) ?? []
-    const mapped = mapOfferingRow({
+    return mapOfferingRow({
       offering: offeringRow,
       course,
       term,
       department,
       computedCount: sectionEnrollments.length,
     })
-    const seeded = seededOfferingsById[offeringRow.offeringId]
-    if (!seeded) return mapped
-    return {
-      ...seeded,
-      id: mapped.id,
-      offId: mapped.offId,
-      code: mapped.code,
-      title: mapped.title,
-      year: mapped.year,
-      dept: mapped.dept,
-      sem: mapped.sem,
-      section: mapped.section,
-      count: sectionEnrollments.length === 0 ? Number(seeded.count ?? mapped.count) : mapped.count,
-      attendance: mapped.attendance,
-      stage: mapped.stage,
-      stageInfo: mapped.stageInfo,
-      tt1Done: mapped.tt1Done,
-      tt2Done: mapped.tt2Done,
-      sections: Array.isArray((seeded as { sections?: unknown }).sections)
-        ? ((seeded as { sections: string[] }).sections)
-        : mapped.sections,
-      enrolled: Array.isArray((seeded as { enrolled?: unknown }).enrolled)
-        ? ((seeded as { enrolled: number[] }).enrolled)
-        : mapped.enrolled,
-      att: Array.isArray((seeded as { att?: unknown }).att)
-        ? ((seeded as { att: number[] }).att)
-        : mapped.att,
-      ...(seeded.tt1Locked != null || mapped.tt1Locked ? { tt1Locked: mapped.tt1Locked } : {}),
-      ...(seeded.tt2Locked != null || mapped.tt2Locked ? { tt2Locked: mapped.tt2Locked } : {}),
-      ...(seeded.quizLocked != null || mapped.quizLocked ? { quizLocked: mapped.quizLocked } : {}),
-      ...(seeded.asgnLocked != null || mapped.asgnLocked ? { asgnLocked: mapped.asgnLocked } : {}),
-      pendingAction: mapped.pendingAction,
-    }
   })
 
   const studentsByOffering = Object.fromEntries(academicOfferings.map(offering => {
-    const sectionEnrollments = enrollmentsByGroup.get(`${offeringRows.find(row => row.offeringId === offering.offId)?.termId ?? ''}::${offering.section}`) ?? []
-    const seededList = seededStudentsByOffering[offering.offId] ?? seededStudentsByOffering[offeringTemplateKeys.get(`${offering.year}::${offering.section}::${offeringRows.find(row => row.offeringId === offering.offId)?.branchId ?? ''}`) ?? ''] ?? []
-    const nextStudents = sectionEnrollments.map((enrollment, index) => {
+    const offeringRow = offeringRowById[offering.offId]
+    const sectionEnrollments = offeringRow
+      ? (enrollmentsByGroup.get(`${offeringRow.termId}::${offering.section}`) ?? [])
+      : []
+    const nextStudents = sectionEnrollments.map(enrollment => {
       const student = studentById[enrollment.studentId]
+      if (!student) return null
       const profile = studentAcademicProfileById[enrollment.studentId]
       const prevCgpa = profile ? profile.prevCgpaScaled / 100 : 0
-      const seededStudent = seededList.find(item => item.usn === student.usn) ?? seededList[index] ?? null
-      if (seededStudent) {
-        return {
-          ...seededStudent,
-          ...(valuesMatchSemantically(seededStudent.usn, student.usn) ? {} : { usn: student.usn }),
-          ...(valuesMatchSemantically(seededStudent.name, student.name) ? {} : { name: student.name }),
-          ...(valuesMatchSemantically(seededStudent.phone, student.phone ?? '') ? {} : { phone: student.phone ?? '' }),
-          ...(valuesMatchSemantically(seededStudent.prevCgpa, prevCgpa) ? {} : { prevCgpa }),
-        }
-      }
       return inferStudentFallback({
         offering,
         student,
         prevCgpa,
       })
-    })
+    }).filter((student): student is AcademicStudentProjection => !!student)
     return [offering.offId, nextStudents]
   })) as Record<string, AcademicStudentProjection[]>
+
+  const studentHistoryByUsn = Object.fromEntries(studentRows.map(student => {
+    const enrollment = activeEnrollmentByStudentId.get(student.studentId)
+    const branch = enrollment ? branchById[enrollment.branchId] : undefined
+    const department = branch ? departmentById[branch.departmentId] : undefined
+    const profile = studentAcademicProfileById[student.studentId]
+    const prevCgpa = profile ? profile.prevCgpaScaled / 100 : 0
+    return [student.usn, buildStudentHistoryRecord({
+      student,
+      branch,
+      department,
+      prevCgpa,
+    })]
+  }))
 
   const mentees = studentRows.flatMap(student => {
     const mentorAssignment = activeMentorAssignmentByStudentId.get(student.studentId)
     if (!mentorAssignment) return []
-    const enrollment = enrollmentRows.find(item => item.studentId === student.studentId)
+    const enrollment = activeEnrollmentByStudentId.get(student.studentId)
     const branch = enrollment ? branchById[enrollment.branchId] : undefined
     const department = branch ? departmentById[branch.departmentId] : undefined
-    const offering = academicOfferings.find(item => item.section === (enrollment?.sectionCode ?? '') && item.sem === (enrollment ? termById[enrollment.termId]?.semesterNumber : undefined))
-    const baseline = seededMenteesByUsn[student.usn]
-    if (baseline) {
-      return [{
-        ...baseline,
-        usn: student.usn,
-        name: student.name,
-        phone: student.phone ?? '',
-        year: offering?.year ?? baseline.year,
-        section: enrollment?.sectionCode ?? baseline.section,
-        dept: department?.code ?? baseline.dept,
-      }]
-    }
+    const term = enrollment ? termById[enrollment.termId] : undefined
+    const offering = academicOfferings.find(item => item.section === (enrollment?.sectionCode ?? '') && item.sem === term?.semesterNumber)
+    const profile = studentAcademicProfileById[student.studentId]
+    const prevCgpa = profile ? profile.prevCgpaScaled / 100 : 0
     return [inferMenteeFallback({
       student,
       enrollment,
-      deptCode: department?.code ?? 'CSE',
-      yearLabel: offering?.year ?? '1st Year',
+      deptCode: department?.code ?? 'GEN',
+      yearLabel: offering?.year ?? `Semester ${term?.semesterNumber ?? 1}`,
+      prevCgpa,
     })]
   }) as AcademicMenteeProjection[]
-  const seededMenteeOrder = Object.values(seededMenteesByUsn).map(item => String(item.id ?? ''))
   mentees.sort((left, right) => {
-    const leftIndex = seededMenteeOrder.indexOf(String(left.id ?? ''))
-    const rightIndex = seededMenteeOrder.indexOf(String(right.id ?? ''))
-    if (leftIndex === -1 && rightIndex === -1) return String(left.id ?? '').localeCompare(String(right.id ?? ''))
-    if (leftIndex === -1) return 1
-    if (rightIndex === -1) return -1
-    return leftIndex - rightIndex
+    const nameOrder = left.name.localeCompare(right.name)
+    if (nameOrder !== 0) return nameOrder
+    return left.usn.localeCompare(right.usn)
   })
 
   const menteeByStudentId = new Map<string, string>()
@@ -484,11 +476,8 @@ async function buildAcademicBootstrap(context: RouteContext) {
 
   const faculty = facultyRows
     .map(row => {
-      const seeded = seededFacultyById[row.facultyId]
       const user = userById[row.userId]
       const grants = roleGrantRows.filter(grant => grant.facultyId === row.facultyId)
-      const hasSystemAdminGrant = grants.some(grant => grant.roleCode === 'SYSTEM_ADMIN')
-      if (hasSystemAdminGrant && !seeded) return null
       const allowedRoles = dedupeRoles(grants.map(grant => grant.roleCode))
       if (allowedRoles.length === 0) return null
       const primaryAppointment = primaryAppointmentByFacultyId.get(row.facultyId)
@@ -496,22 +485,16 @@ async function buildAcademicBootstrap(context: RouteContext) {
       const offeringIds = Array.from(new Set(offeringIdsByFacultyId.get(row.facultyId) ?? []))
       const courseCodes = Array.from(new Set(offeringIds.map(offeringId => offeringCodeById[offeringId]).filter((value): value is string => !!value)))
       const nextMenteeIds = Array.from(new Set(menteeIdsByFacultyId.get(row.facultyId) ?? []))
-      const seededMenteeOrder = Array.isArray(seeded?.menteeIds) ? seeded.menteeIds.map(value => String(value)) : []
       nextMenteeIds.sort((left, right) => {
-        const leftIndex = seededMenteeOrder.indexOf(left)
-        const rightIndex = seededMenteeOrder.indexOf(right)
-        if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right)
-        if (leftIndex === -1) return 1
-        if (rightIndex === -1) return -1
-        return leftIndex - rightIndex
+        return left.localeCompare(right)
       })
       return {
         facultyId: row.facultyId,
-        name: String(row.displayName || seeded?.name || row.facultyId),
-        initials: String(seeded?.initials ?? buildInitials(row.displayName)),
-        email: String(user?.email ?? seeded?.email ?? `${row.facultyId}@airmentor.local`),
-        dept: String(appointmentDepartment?.code ?? seeded?.dept ?? 'GEN'),
-        roleTitle: String(row.designation || seeded?.roleTitle || 'Faculty'),
+        name: String(row.displayName || row.facultyId),
+        initials: buildInitials(row.displayName),
+        email: String(user?.email ?? `${row.facultyId}@airmentor.local`),
+        dept: String(appointmentDepartment?.code ?? 'GEN'),
+        roleTitle: String(row.designation || 'Faculty'),
         allowedRoles,
         courseCodes,
         offeringIds,
@@ -578,13 +561,19 @@ async function buildAcademicBootstrap(context: RouteContext) {
       scheme: {
         subjectRunId: `run-${sample.code}-${sample.year.replace(/\s+/g, '').toLowerCase()}-s${sample.sem}-${index + 1}`,
         status: grouped.some(item => item.tt1Locked || item.tt2Locked || item.quizLocked || item.asgnLocked) ? 'Locked' : 'Needs Setup',
-        finalsMax: sample.code === 'CS702' ? 100 : 50,
-        quizWeight: sample.code === 'CS401' ? 20 : 10,
-        assignmentWeight: sample.code === 'CS401' ? 10 : 20,
-        quizCount: sample.code === 'CS401' ? 2 : 1,
-        assignmentCount: sample.code === 'CS401' ? 1 : 2,
+        finalsMax: 50,
+        quizWeight: 10,
+        assignmentWeight: 20,
+        quizCount: 1,
+        assignmentCount: 2,
       },
     }
+  })
+
+  const professor = buildProfessorProjection({
+    faculty,
+    facultyId: viewer.facultyId,
+    roleCode: viewer.roleCode,
   })
 
   return {
@@ -629,7 +618,10 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
     },
   }, async request => {
     requireRole(request, [...academicRoleCodes])
-    return buildAcademicBootstrap(context)
+    return buildAcademicBootstrap(context, {
+      facultyId: request.auth?.facultyId ?? null,
+      roleCode: request.auth?.activeRoleGrant.roleCode ?? null,
+    })
   })
 
   app.put('/api/academic/runtime/:stateKey', {
@@ -674,7 +666,10 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
     },
   }, async request => {
     requireRole(request, ['SYSTEM_ADMIN'])
-    const snapshot = await buildAcademicBootstrap(context)
+    const snapshot = await buildAcademicBootstrap(context, {
+      facultyId: request.auth?.facultyId ?? null,
+      roleCode: request.auth?.activeRoleGrant.roleCode ?? null,
+    })
     return { items: snapshot.offerings }
   })
 

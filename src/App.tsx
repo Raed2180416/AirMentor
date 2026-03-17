@@ -315,6 +315,7 @@ function LoginPage({
   const [teacherId, setTeacherId] = useState<string>(facultyOptions[0]?.facultyId ?? '')
   const [password, setPassword] = useState('')
   const [err, setErr] = useState('')
+  const hasFacultyOptions = facultyOptions.length > 0
   const selectedOption = facultyOptions.find(option => option.facultyId === teacherId) ?? null
 
   useEffect(() => {
@@ -325,6 +326,10 @@ function LoginPage({
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
+    if (!teacherId) {
+      setErr('No teaching faculty accounts are available yet. Create one in system admin first.')
+      return
+    }
     try {
       setErr('')
       await onLogin(teacherId, password)
@@ -388,9 +393,13 @@ function LoginPage({
             <form onSubmit={event => { void handleSubmit(event) }} style={{ marginTop: 22, display: 'grid', gap: 14 }}>
               <div>
                 <AuthFieldLabel>Faculty Account</AuthFieldLabel>
-                <AuthSelect id="teacher-login" value={teacherId} onChange={event => setTeacherId(event.target.value)} disabled={busy}>
-                  {facultyOptions.map(faculty => <option key={faculty.facultyId} value={faculty.facultyId}>{faculty.name}</option>)}
-                </AuthSelect>
+                {hasFacultyOptions ? (
+                  <AuthSelect id="teacher-login" value={teacherId} onChange={event => setTeacherId(event.target.value)} disabled={busy}>
+                    {facultyOptions.map(faculty => <option key={faculty.facultyId} value={faculty.facultyId}>{faculty.name}</option>)}
+                  </AuthSelect>
+                ) : (
+                  <AuthNotice message="No teaching faculty accounts are available yet. Create faculty profiles and academic role grants in system admin to unlock this workspace." />
+                )}
               </div>
 
               {selectedOption ? (
@@ -405,7 +414,7 @@ function LoginPage({
 
               <div>
                 <AuthFieldLabel>Password</AuthFieldLabel>
-                <AuthInput id="teacher-password" type="password" value={password} onChange={event => setPassword(event.target.value)} disabled={busy} placeholder="••••••••" />
+                <AuthInput id="teacher-password" type="password" value={password} onChange={event => setPassword(event.target.value)} disabled={busy || !hasFacultyOptions} placeholder="••••••••" />
               </div>
 
               {err ? <AuthNotice message={err} tone="error" /> : null}
@@ -417,7 +426,7 @@ function LoginPage({
                     Back To Portal
                   </Btn>
                 ) : <span />}
-                <Btn type="submit" disabled={busy}>
+                <Btn type="submit" disabled={busy || !hasFacultyOptions}>
                   <Shield size={14} />
                   {busy ? 'Signing In...' : 'Sign In'}
                 </Btn>
@@ -4257,13 +4266,17 @@ export function OperationalApp() {
   const [authError, setAuthError] = useState('')
   const [remoteSession, setRemoteSession] = useState<ApiSessionResponse | null>(null)
   const [remoteBootstrap, setRemoteBootstrap] = useState<ApiAcademicBootstrap | null>(null)
-  const [loginFaculty, setLoginFaculty] = useState<ApiAcademicLoginFaculty[]>(() => FACULTY.map(faculty => ({
-    facultyId: faculty.facultyId,
-    name: faculty.name,
-    dept: faculty.dept,
-    roleTitle: faculty.roleTitle,
-    allowedRoles: faculty.allowedRoles,
-  })))
+  const [loginFaculty, setLoginFaculty] = useState<ApiAcademicLoginFaculty[]>(() => (
+    remoteEnabled
+      ? []
+      : FACULTY.map(faculty => ({
+          facultyId: faculty.facultyId,
+          name: faculty.name,
+          dept: faculty.dept,
+          roleTitle: faculty.roleTitle,
+          allowedRoles: faculty.allowedRoles,
+        }))
+  ))
   const [localTeacherId, setLocalTeacherId] = useState<string | null>(() => localRepositories.sessionPreferences.getCurrentFacultyIdSnapshot())
 
   const fetchAcademicBootstrap = useCallback(async () => {

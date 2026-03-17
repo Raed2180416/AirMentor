@@ -1,5 +1,6 @@
+import { eq } from 'drizzle-orm'
 import { afterEach, describe, expect, it } from 'vitest'
-import platformSeed from '../src/db/seeds/platform.seed.json' with { type: 'json' }
+import { academicAssets } from '../src/db/schema.js'
 import { createTestApp, loginAs, TEST_ORIGIN } from './helpers/test-app.js'
 
 let current: Awaited<ReturnType<typeof createTestApp>> | null = null
@@ -9,10 +10,35 @@ afterEach(async () => {
   current = null
 })
 
-describe('academic parity bootstrap', () => {
-  it('matches the seeded academic projection exactly for the baseline mock dataset', async () => {
+describe('academic bootstrap', () => {
+  it('ignores legacy academic asset snapshots and derives the live view from admin-owned records', async () => {
     current = await createTestApp()
     const login = await loginAs(current.app, 't1', '1234')
+
+    await current.db.update(academicAssets).set({
+      payloadJson: JSON.stringify({
+        name: 'Legacy Mock Professor',
+        id: 'legacy-professor',
+        dept: 'Legacy Department',
+        role: 'Legacy Role',
+        initials: 'LM',
+        email: 'legacy@example.com',
+      }),
+      version: 99,
+      updatedAt: '2026-03-16T00:00:00.000Z',
+    }).where(eq(academicAssets.assetKey, 'professor'))
+
+    await current.db.update(academicAssets).set({
+      payloadJson: JSON.stringify([{ facultyId: 'legacy-faculty', name: 'Legacy Faculty', dept: 'LEG', roleTitle: 'Demo', allowedRoles: ['Course Leader'] }]),
+      version: 99,
+      updatedAt: '2026-03-16T00:00:00.000Z',
+    }).where(eq(academicAssets.assetKey, 'faculty'))
+
+    await current.db.update(academicAssets).set({
+      payloadJson: JSON.stringify([{ offId: 'legacy-offering', code: 'LEG101', title: 'Legacy Demo Course' }]),
+      version: 99,
+      updatedAt: '2026-03-16T00:00:00.000Z',
+    }).where(eq(academicAssets.assetKey, 'offerings'))
 
     const response = await current.app.inject({
       method: 'GET',
@@ -22,19 +48,22 @@ describe('academic parity bootstrap', () => {
 
     expect(response.statusCode).toBe(200)
     const snapshot = response.json()
-    expect(snapshot.professor).toEqual(platformSeed.academicAssets.professor)
-    expect(snapshot.faculty).toEqual(platformSeed.academicAssets.faculty)
-    expect(snapshot.offerings).toEqual(platformSeed.academicAssets.offerings)
-    expect(snapshot.yearGroups).toEqual(platformSeed.academicAssets.yearGroups)
-    expect(snapshot.mentees).toEqual(Object.values(platformSeed.academicAssets.menteesByUsn))
-    expect(snapshot.teachers).toEqual(platformSeed.academicAssets.teachers)
-    expect(snapshot.subjectRuns).toEqual(platformSeed.academicAssets.subjectRuns)
-    expect(snapshot.studentsByOffering).toEqual(platformSeed.academicAssets.studentsByOffering)
-    expect(snapshot.studentHistoryByUsn).toEqual(platformSeed.academicAssets.studentHistoryByUsn)
-    expect(snapshot.runtime).toEqual({
-      ...platformSeed.academicAssets.runtime,
-      adminCalendarByFacultyId: {},
+    expect(snapshot.professor).toMatchObject({
+      id: 't1',
+      name: 'Dr. Kavitha Rao',
+      dept: 'CSE',
+      role: 'Course Leader',
     })
+    expect(snapshot.faculty.some((faculty: { facultyId: string }) => faculty.facultyId === 'legacy-faculty')).toBe(false)
+    expect(snapshot.offerings.some((offering: { offId: string }) => offering.offId === 'legacy-offering')).toBe(false)
+    expect(snapshot.faculty.find((faculty: { facultyId: string }) => faculty.facultyId === 't1')?.allowedRoles).toContain('Course Leader')
+    expect(snapshot.offerings.find((offering: { offId: string }) => offering.offId === 'c3-A')?.title).toBe('Design & Analysis of Algorithms')
+    expect(snapshot.studentsByOffering['c3-A']?.length ?? 0).toBeGreaterThan(0)
+    expect(snapshot.studentHistoryByUsn['1MS23CS001']).toMatchObject({
+      usn: '1MS23CS001',
+      studentName: 'Aarav Sharma',
+    })
+    expect(Array.isArray(snapshot.runtime.tasks)).toBe(true)
   })
 
   it('reflects admin master-data changes into the academic bootstrap on the next fetch', async () => {
