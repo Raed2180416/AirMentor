@@ -73,6 +73,7 @@ export async function registerSessionRoutes(app: FastifyInstance, context: Route
     const users = await context.db.select().from(userAccounts).where(eq(userAccounts.username, body.identifier))
     const user = users[0]
     if (!user) throw unauthorized('Invalid credentials')
+    if (user.status !== 'active') throw unauthorized('This account is no longer active')
 
     const [credential] = await context.db.select().from(userPasswordCredentials).where(eq(userPasswordCredentials.userId, user.userId))
     if (!credential) throw unauthorized('Password is not configured for this account')
@@ -80,8 +81,8 @@ export async function registerSessionRoutes(app: FastifyInstance, context: Route
     const isValid = await verifyPassword(credential.passwordHash, body.password)
     if (!isValid) throw unauthorized('Invalid credentials')
 
-    const [faculty] = await context.db.select().from(facultyProfiles).where(eq(facultyProfiles.userId, user.userId))
-    if (!faculty) throw notFound('Faculty profile is missing for this account')
+    const [faculty] = await context.db.select().from(facultyProfiles).where(and(eq(facultyProfiles.userId, user.userId), eq(facultyProfiles.status, 'active')))
+    if (!faculty) throw notFound('Faculty profile is missing or inactive for this account')
     const grants = await context.db.select().from(roleGrants).where(and(eq(roleGrants.facultyId, faculty.facultyId), eq(roleGrants.status, 'active')))
     if (grants.length === 0) throw badRequest('No active role grants are configured for this user')
 

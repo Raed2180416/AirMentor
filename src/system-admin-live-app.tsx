@@ -28,6 +28,7 @@ import { AirMentorApiClient, AirMentorApiError } from './api/client'
 import type {
   ApiAuditEvent,
   ApiAdminFacultyCalendar,
+  ApiFacultyRecord,
   ApiFacultyAppointment,
   ApiMentorAssignment,
   ApiAdminRequestDetail,
@@ -100,6 +101,7 @@ import {
   Btn,
   Card,
   Chip,
+  ModalWorkspace,
   PageShell,
   UI_FONT_SIZES,
   getIconButtonStyle,
@@ -267,6 +269,9 @@ const EMPTY_DATA: LiveAdminDataset = {
   offerings: [], ownerships: [], requests: [], reminders: [],
 }
 
+const PRIMARY_VISIBLE_FACULTY_USERNAME = 'kavitha.rao'
+const PRIMARY_VISIBLE_FACULTY_NAME = 'dr. kavitha rao'
+
 const WEEKDAYS: PolicyFormState['workingDays'] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const ADMIN_SECTION_TONES = {
   overview: T.accent,
@@ -282,6 +287,34 @@ const DEFAULT_PROGRESSION_RULES = {
   requireNoActiveBacklogs: true,
 }
 const ADMIN_DISMISSED_QUEUE_STORAGE_KEY = 'airmentor-admin-dismissed-queue-items'
+
+function normalizeFacultyIdentity(value?: string | null) {
+  return (value ?? '').trim().toLowerCase()
+}
+
+function selectPreferredFacultyId<T extends { facultyId: string; username?: string; displayName?: string }>(items: T[]) {
+  const candidates = items
+    .filter(item => normalizeFacultyIdentity(item.username) === PRIMARY_VISIBLE_FACULTY_USERNAME || normalizeFacultyIdentity(item.displayName) === PRIMARY_VISIBLE_FACULTY_NAME)
+    .sort((left, right) => {
+      const leftExactUsername = normalizeFacultyIdentity(left.username) === PRIMARY_VISIBLE_FACULTY_USERNAME ? 1 : 0
+      const rightExactUsername = normalizeFacultyIdentity(right.username) === PRIMARY_VISIBLE_FACULTY_USERNAME ? 1 : 0
+      if (leftExactUsername !== rightExactUsername) return rightExactUsername - leftExactUsername
+      return left.facultyId.localeCompare(right.facultyId)
+    })
+  return candidates[0]?.facultyId ?? null
+}
+
+function applyFacultyVisibilityRules(facultyMembers: ApiFacultyRecord[]) {
+  const preferredFacultyId = selectPreferredFacultyId(facultyMembers)
+  if (!preferredFacultyId) return facultyMembers
+  return facultyMembers.map(item => {
+    if (item.facultyId === preferredFacultyId || item.status === 'deleted') return item
+    return {
+      ...item,
+      status: 'hidden',
+    }
+  })
+}
 
 function parseAdminRoute(hash: string): LiveAdminRoute {
   const cleaned = hash.replace(/^#\/admin/, '').replace(/^\/+/, '')
@@ -787,8 +820,6 @@ function TeachingShellAdminTopBar({
   now,
   themeMode,
   actionCount,
-  railCollapsed,
-  onToggleRail,
   onToggleTheme,
   onGoHome,
   onToggleQueue,
@@ -801,8 +832,6 @@ function TeachingShellAdminTopBar({
   now: Date
   themeMode: ThemeMode
   actionCount: number
-  railCollapsed: boolean
-  onToggleRail: () => void
   onToggleTheme: () => void
   onGoHome: () => void
   onToggleQueue: () => void
@@ -814,15 +843,6 @@ function TeachingShellAdminTopBar({
     <div style={{ ...getShellBarStyle(themeMode), zIndex: 40, gap: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-          <button
-            type="button"
-            aria-label={railCollapsed ? 'Expand operations rail' : 'Collapse operations rail'}
-            title={railCollapsed ? 'Expand operations rail' : 'Collapse operations rail'}
-            onClick={onToggleRail}
-            style={{ ...getIconButtonStyle({ subtle: false }), color: railCollapsed ? T.accent : T.muted }}
-          >
-            {railCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-          </button>
           <button
             type="button"
             aria-label="Go to dashboard"
@@ -1170,7 +1190,7 @@ function AdminMiniStat({
   return (
     <div style={{ borderRadius: 16, border: `1px solid ${withAlpha(tone, '28')}`, background: `linear-gradient(180deg, ${withAlpha(tone, '12')}, ${T.surface})`, padding: '12px 14px', minWidth: 0, boxShadow: `0 10px 24px ${withAlpha(tone, '12')}` }}>
       <div style={{ ...mono, fontSize: UI_FONT_SIZES.micro, color: tone, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
-      <div style={{ ...sora, fontSize: 20, fontWeight: 800, color: T.text, marginTop: 6 }}>{value}</div>
+      <div style={{ ...sora, fontSize: 20, fontWeight: 800, color: T.text, marginTop: 6, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{value}</div>
     </div>
   )
 }
@@ -1383,7 +1403,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       setData({
         institution, academicFaculties: academicFaculties.items, departments: departments.items,
         branches: branches.items, batches: batches.items, terms: terms.items,
-        facultyMembers: facultyMembers.items, students: students.items, courses: courses.items,
+        facultyMembers: applyFacultyVisibilityRules(facultyMembers.items), students: students.items, courses: courses.items,
         curriculumCourses: curriculumCourses.items, policyOverrides: policyOverrides.items,
         offerings: offerings.items, ownerships: ownerships.items, requests: requests.items,
         reminders: reminders.items,
@@ -1569,7 +1589,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const selectedBranch = resolveBranch(data, route.branchId)
   const selectedBatch = resolveBatch(data, route.batchId)
   const selectedStudent = resolveStudent(data, route.studentId)
-  const selectedFacultyMember = resolveFacultyMember(data, route.facultyMemberId)
+  const selectedFacultyRecord = resolveFacultyMember(data, route.facultyMemberId)
+  const selectedFacultyMember = selectedFacultyRecord && isFacultyMemberVisible(data, selectedFacultyRecord)
+    ? selectedFacultyRecord
+    : null
 
   useEffect(() => {
     setStudentDetailTab('profile')
@@ -1584,14 +1607,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   }, [facultyDetailTab, selectedFacultyMember?.facultyId])
 
   useEffect(() => {
-    if (route.section !== 'students') return
-    setStudentRegistryFilter(hydrateRegistryFilter(registryScope))
-  }, [registryScope, route.section])
-
-  useEffect(() => {
-    if (route.section !== 'faculty-members') return
-    setFacultyRegistryFilter(hydrateRegistryFilter(registryScope))
-  }, [registryScope, route.section])
+    if (route.section === 'faculty-members' && route.facultyMemberId && !selectedFacultyMember && session && !dataLoading && data.facultyMembers.length > 0) {
+      setActionError('That faculty profile is no longer available in the active workspace.')
+      navigate({ section: 'faculty-members' }, { recordHistory: false })
+    }
+  }, [data.facultyMembers.length, dataLoading, navigate, route.facultyMemberId, route.section, selectedFacultyMember, session])
 
   const searchResults = useMemo(() => {
     const activeSearchScope = route.section === 'faculties'
@@ -3080,7 +3100,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           return department?.academicFacultyId === selectedAcademicFaculty.academicFacultyId && item.status !== 'deleted'
         }).length,
         students: data.students.filter(item => item.status !== 'deleted' && item.activeAcademicContext?.departmentId && resolveDepartment(data, item.activeAcademicContext.departmentId)?.academicFacultyId === selectedAcademicFaculty.academicFacultyId).length,
-        facultyMembers: data.facultyMembers.filter(item => item.status !== 'deleted' && item.appointments.some(appointment => appointment.status !== 'deleted' && resolveDepartment(data, appointment.departmentId)?.academicFacultyId === selectedAcademicFaculty.academicFacultyId)).length,
+        facultyMembers: data.facultyMembers.filter(item => isFacultyMemberVisible(data, item) && item.appointments.some(appointment => appointment.status !== 'deleted' && resolveDepartment(data, appointment.departmentId)?.academicFacultyId === selectedAcademicFaculty.academicFacultyId)).length,
         courses: data.courses.filter(item => item.status !== 'deleted' && resolveDepartment(data, item.departmentId)?.academicFacultyId === selectedAcademicFaculty.academicFacultyId).length,
       }
     : null
@@ -3402,20 +3422,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     ? selectedStudent.currentCgpa >= selectedStudentPromotionRules.minimumCgpaForPromotion
       && (!selectedStudentPromotionRules.requireNoActiveBacklogs || !/(backlog|fail|repeat|detain)/i.test(selectedStudent.activeAcademicContext?.academicStatus ?? ''))
     : false
-  const effectiveStudentRegistryFilter = {
-    academicFacultyId: studentRegistryFilter.academicFacultyId || registryScope?.academicFacultyId || '',
-    departmentId: studentRegistryFilter.departmentId || registryScope?.departmentId || '',
-    branchId: studentRegistryFilter.branchId || registryScope?.branchId || '',
-    batchId: studentRegistryFilter.batchId || registryScope?.batchId || '',
-    sectionCode: studentRegistryFilter.sectionCode || registryScope?.sectionCode || '',
-  }
-  const effectiveFacultyRegistryFilter = {
-    academicFacultyId: facultyRegistryFilter.academicFacultyId || registryScope?.academicFacultyId || '',
-    departmentId: facultyRegistryFilter.departmentId || registryScope?.departmentId || '',
-    branchId: facultyRegistryFilter.branchId || registryScope?.branchId || '',
-    batchId: facultyRegistryFilter.batchId || registryScope?.batchId || '',
-    sectionCode: facultyRegistryFilter.sectionCode || registryScope?.sectionCode || '',
-  }
+  const effectiveStudentRegistryFilter = studentRegistryFilter
+  const effectiveFacultyRegistryFilter = facultyRegistryFilter
   const studentFilterDepartments = visibleDepartments
     .filter(item => !effectiveStudentRegistryFilter.academicFacultyId || item.academicFacultyId === effectiveStudentRegistryFilter.academicFacultyId)
     .sort((left, right) => left.name.localeCompare(right.name))
@@ -3444,6 +3452,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       .filter(item => !effectiveFacultyRegistryFilter.batchId || item.batchId === effectiveFacultyRegistryFilter.batchId)
       .flatMap(item => item.sectionLabels),
   )).sort()
+  const visibleFacultyMembers = data.facultyMembers.filter(item => isFacultyMemberVisible(data, item))
+  const visibleOwnershipCount = data.ownerships.filter(item => item.status === 'active' && isFacultyMemberVisible(data, item.facultyId)).length
   const normalizedStudentRegistrySearch = studentRegistrySearch.trim().toLowerCase()
   const normalizedFacultyRegistrySearch = facultyRegistrySearch.trim().toLowerCase()
   const studentRegistryItems = data.students
@@ -3550,7 +3560,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     return []
   })()
   const handleOpenScopedRegistry = (section: 'students' | 'faculty-members') => {
-    if (activeUniversityRegistryScope) setRegistryScope(activeUniversityRegistryScope)
+    if (activeUniversityRegistryScope) {
+      setRegistryScope(activeUniversityRegistryScope)
+      if (section === 'students') setStudentRegistryFilter(hydrateRegistryFilter(activeUniversityRegistryScope))
+      else setFacultyRegistryFilter(hydrateRegistryFilter(activeUniversityRegistryScope))
+    }
     navigate({ section })
   }
   const handleOpenFullRegistry = (section: 'students' | 'faculty-members') => {
@@ -3648,7 +3662,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       const scopedRegistryTarget = result.route.section === 'students' || result.route.section === 'faculty-members'
       if (scopedRegistryTarget) {
         const nextScope = route.section === 'faculties' ? activeUniversityRegistryScope : registryScope
-        if (nextScope) setRegistryScope(nextScope)
+        if (nextScope) {
+          setRegistryScope(nextScope)
+          if (result.route.section === 'students') setStudentRegistryFilter(hydrateRegistryFilter(nextScope))
+          if (result.route.section === 'faculty-members') setFacultyRegistryFilter(hydrateRegistryFilter(nextScope))
+        }
       }
       setSearchQuery('')
       navigate(result.route)
@@ -3658,7 +3676,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     if (section === route.section) return
     if (section === 'students' || section === 'faculty-members') {
       const nextScope = route.section === 'faculties' ? activeUniversityRegistryScope : registryScope
-      if (nextScope) setRegistryScope(nextScope)
+      if (nextScope) {
+        setRegistryScope(nextScope)
+        if (section === 'students') setStudentRegistryFilter(hydrateRegistryFilter(nextScope))
+        else setFacultyRegistryFilter(hydrateRegistryFilter(nextScope))
+      }
       navigate({ section })
       return
     }
@@ -3686,8 +3708,6 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         now={now}
         themeMode={themeMode}
         actionCount={actionQueueCount}
-        railCollapsed={sidebarCollapsed}
-        onToggleRail={() => setSidebarCollapsed(current => !current)}
         onToggleTheme={() => persistTheme(themeMode === 'frosted-focus-light' ? 'frosted-focus-dark' : 'frosted-focus-light')}
         onGoHome={handleGoHome}
         onToggleQueue={() => setShowActionQueue(current => !current)}
@@ -3786,7 +3806,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   />
                   <SectionLaunchCard
                     title="Faculty"
-                    caption={`${data.facultyMembers.length} profiles · ${data.ownerships.filter(item => item.status === 'active').length} active class owners`}
+                    caption={`${visibleFacultyMembers.length} profiles · ${visibleOwnershipCount} active class owners`}
                     helper="Appointments, permissions, class ownership, and timetable review all live in the faculty registry."
                     icon={<UserCog size={18} />}
                     tone={ADMIN_SECTION_TONES['faculty-members']}
@@ -3800,7 +3820,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                 <OverviewSupportCard title="Requests" value={String(openRequests.length)} helper="Governed items waiting in the action rail." tone={T.warning} onClick={() => navigate({ section: 'requests' })} />
                 <OverviewSupportCard title="Hidden Records" value={String(hiddenItemCount)} helper="Archived or deleted records with restore visibility." tone={T.danger} onClick={() => navigate({ section: 'history' })} />
                 <OverviewSupportCard title="Mentor Gaps" value={String(data.students.filter(item => !item.activeMentorAssignment).length)} helper="Students still missing an active mentor linkage." tone={ADMIN_SECTION_TONES.students} onClick={() => navigate({ section: 'students' })} />
-                <OverviewSupportCard title="Teaching Load" value={String(data.ownerships.filter(item => item.status === 'active').length)} helper="Active teaching ownership records mapped to faculty." tone={ADMIN_SECTION_TONES['faculty-members']} onClick={() => navigate({ section: 'faculty-members' })} />
+                <OverviewSupportCard title="Teaching Load" value={String(visibleOwnershipCount)} helper="Active teaching ownership records mapped to faculty." tone={ADMIN_SECTION_TONES['faculty-members']} onClick={() => navigate({ section: 'faculty-members' })} />
               </div>
             </div>
 
@@ -4724,7 +4744,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                         {student.activeAcademicContext?.sectionCode ? <Chip color={T.accent} size={9}>Sec {student.activeAcademicContext.sectionCode}</Chip> : null}
                         <Chip color={T.success} size={9}>CGPA {student.currentCgpa.toFixed(2)}</Chip>
                       </div>
-                      <div style={{ ...mono, fontSize: 10, color: T.success }}>
+                      <div style={{ ...mono, fontSize: 10, color: T.success, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
                         Semester {student.activeAcademicContext?.semesterNumber ?? '—'} · {student.email ?? 'Email not set'} · {student.phone ?? 'Phone not set'}
                       </div>
                     </div>
@@ -4791,9 +4811,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                       <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Name</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedStudent.name}</div></Card>
                       <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Roll Number</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedStudent.rollNumber ?? 'Not set'}</div></Card>
                       <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Admission Date</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{formatDate(selectedStudent.admissionDate)}</div></Card>
-                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Email</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedStudent.email ?? 'Not set'}</div></Card>
-                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Phone</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedStudent.phone ?? 'Not set'}</div></Card>
-                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Current Context</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedStudent.activeAcademicContext ? `${selectedStudent.activeAcademicContext.branchName ?? 'Branch'} · Sem ${selectedStudent.activeAcademicContext.semesterNumber ?? '—'} · Sec ${selectedStudent.activeAcademicContext.sectionCode}` : 'No active academic context'}</div></Card>
+                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Email</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedStudent.email ?? 'Not set'}</div></Card>
+                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Phone</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedStudent.phone ?? 'Not set'}</div></Card>
+                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Current Context</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedStudent.activeAcademicContext ? `${selectedStudent.activeAcademicContext.branchName ?? 'Branch'} · Sem ${selectedStudent.activeAcademicContext.semesterNumber ?? '—'} · Sec ${selectedStudent.activeAcademicContext.sectionCode}` : 'No active academic context'}</div></Card>
                     </div>
                     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                       <Btn type="button" size="sm" onClick={() => setEditingEntity('student-profile')}>Edit Student</Btn>
@@ -5118,7 +5138,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {item.roleGrants.filter(isCurrentRoleGrant).slice(0, 3).map(grant => <Chip key={grant.grantId} color={T.accent} size={9}>{grant.roleCode}</Chip>)}
                         </div>
-                        <div style={{ ...mono, fontSize: 10, color: T.muted }}>{item.designation} · {item.email}</div>
+                        <div style={{ ...mono, fontSize: 10, color: T.muted, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{item.designation} · {item.email}</div>
                       </div>
                     </EntityButton>
                   )
@@ -5181,11 +5201,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                       {selectedFacultyMember.roleGrants.filter(isCurrentRoleGrant).map(grant => <Chip key={grant.grantId} color={T.success}>{grant.roleCode}</Chip>)}
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Display Name</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedFacultyMember.displayName}</div></Card>
-                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Username</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedFacultyMember.username}</div></Card>
-                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Designation</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedFacultyMember.designation}</div></Card>
-                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Email</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedFacultyMember.email}</div></Card>
-                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Phone</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedFacultyMember.phone ?? 'Not set'}</div></Card>
+                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Display Name</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedFacultyMember.displayName}</div></Card>
+                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Username</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedFacultyMember.username}</div></Card>
+                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Designation</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedFacultyMember.designation}</div></Card>
+                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Email</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedFacultyMember.email}</div></Card>
+                      <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Phone</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedFacultyMember.phone ?? 'Not set'}</div></Card>
                       <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Joined On</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedFacultyMember.joinedOn ? formatDate(selectedFacultyMember.joinedOn) : 'Not set'}</div></Card>
                     </div>
                     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -5426,7 +5446,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   <InfoBanner message="Loading timetable planner…" />
                 ) : (
                   <div style={{ display: 'grid', gap: 14 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: showFacultyTimetableExpanded ? 'repeat(auto-fit, minmax(160px, 1fr))' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
                       <AdminMiniStat label="Mapped Classes" value={String(selectedFacultyCalendarOfferings.length)} tone={T.accent} />
                       <AdminMiniStat label="Weekly Blocks" value={String(facultyCalendarRecurringBlocks.length)} tone={T.success} />
                       <AdminMiniStat label="Exceptions" value={String(facultyCalendarExtraBlocks.length)} tone={T.warning} />
@@ -5444,8 +5464,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                           <Chip color={facultyCalendar?.classEditingLocked ? T.danger : T.success}>{facultyCalendar?.classEditingLocked ? 'Recurring edits locked' : 'Recurring edits open'}</Chip>
                           <Chip color={facultyCalendar?.workspace.publishedAt ? T.accent : T.warning}>{facultyCalendar?.workspace.publishedAt ? `Published ${formatDate(facultyCalendar.workspace.publishedAt.slice(0, 10))}` : 'Not published'}</Chip>
-                          <Btn type="button" size="sm" variant={showFacultyTimetableExpanded ? 'ghost' : 'primary'} onClick={() => setShowFacultyTimetableExpanded(current => !current)}>
-                            {showFacultyTimetableExpanded ? 'Collapse Planner' : 'Expand Planner'}
+                          <Btn type="button" size="sm" variant="primary" onClick={() => setShowFacultyTimetableExpanded(true)}>
+                            Open Full Planner
                           </Btn>
                         </div>
                       </div>
@@ -5476,28 +5496,38 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                       </div>
                     </Card>
 
-                    {showFacultyTimetableExpanded ? (
-                      <Card style={{ padding: 14, display: 'grid', gap: 12 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                          <div>
-                            <div style={{ ...sora, fontSize: 16, fontWeight: 800, color: T.text }}>Expanded Planner Workspace</div>
-                            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6, lineHeight: 1.8 }}>
-                              This expanded surface stays inside the faculty page, so the rest of the registry context remains visible while you review the full weekly planner.
+                    <AnimatePresence>
+                      {showFacultyTimetableExpanded ? (
+                        <ModalWorkspace
+                          size="full"
+                          eyebrow="Faculty Planner"
+                          title={`${selectedFacultyMember.displayName} · Weekly Planner`}
+                          caption="Use this full-screen planner review surface for weekly edits, then return to the faculty workspace when you are done."
+                          onClose={() => setShowFacultyTimetableExpanded(false)}
+                        >
+                          <div style={{ display: 'grid', gap: 14, padding: 4 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                              <Btn type="button" variant="ghost" onClick={() => setShowFacultyTimetableExpanded(false)}>
+                                <ChevronLeft size={14} /> Back to Faculty Workspace
+                              </Btn>
+                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                <Chip color={facultyCalendar?.classEditingLocked ? T.danger : T.success}>{facultyCalendar?.classEditingLocked ? 'Recurring edits locked' : 'Recurring edits open'}</Chip>
+                                <Chip color={facultyCalendar?.workspace.publishedAt ? T.accent : T.warning}>{facultyCalendar?.workspace.publishedAt ? `Published ${formatDate(facultyCalendar.workspace.publishedAt.slice(0, 10))}` : 'Not published'}</Chip>
+                              </div>
+                            </div>
+                            <div className="scroll-pane" style={{ minHeight: 0, overflowY: 'auto', paddingRight: 4 }}>
+                              <SystemAdminFacultyCalendarWorkspace
+                                facultyId={selectedFacultyMember.facultyId}
+                                facultyName={selectedFacultyMember.displayName}
+                                offerings={selectedFacultyCalendarOfferings}
+                                calendar={facultyCalendar}
+                                onSave={handleSaveFacultyCalendar}
+                              />
                             </div>
                           </div>
-                          <Btn type="button" size="sm" variant="ghost" onClick={() => setShowFacultyTimetableExpanded(false)}>Close Expanded View</Btn>
-                        </div>
-                        <div className="scroll-pane" style={{ maxHeight: 'calc(100vh - 260px)', overflowY: 'auto', paddingRight: 4 }}>
-                          <SystemAdminFacultyCalendarWorkspace
-                            facultyId={selectedFacultyMember.facultyId}
-                            facultyName={selectedFacultyMember.displayName}
-                            offerings={selectedFacultyCalendarOfferings}
-                            calendar={facultyCalendar}
-                            onSave={handleSaveFacultyCalendar}
-                          />
-                        </div>
-                      </Card>
-                    ) : null}
+                        </ModalWorkspace>
+                      ) : null}
+                    </AnimatePresence>
                   </div>
                 )}
               </Card>

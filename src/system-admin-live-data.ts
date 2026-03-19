@@ -81,7 +81,7 @@ function normalizeSearch(value: string) {
 
 export function isVisibleAdminRecord(status?: string | null) {
   const normalized = (status ?? 'active').toLowerCase()
-  return normalized !== 'archived' && normalized !== 'deleted'
+  return normalized !== 'archived' && normalized !== 'deleted' && normalized !== 'hidden'
 }
 
 function toAcademicFaculty(data: LiveAdminDataset, candidate?: ApiAcademicFaculty | string | null) {

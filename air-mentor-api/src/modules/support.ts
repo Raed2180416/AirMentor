@@ -33,11 +33,11 @@ export async function resolveRequestAuth(context: RouteContext, sessionId: strin
   if (new Date(session.expiresAt).getTime() <= new Date(context.now()).getTime()) return null
 
   const [user] = await context.db.select().from(userAccounts).where(eq(userAccounts.userId, session.userId))
-  if (!user) return null
+  if (!user || user.status !== 'active') return null
 
-  const [faculty] = await context.db.select().from(facultyProfiles).where(eq(facultyProfiles.userId, user.userId))
+  const [faculty] = await context.db.select().from(facultyProfiles).where(and(eq(facultyProfiles.userId, user.userId), eq(facultyProfiles.status, 'active')))
   const grants = faculty
-    ? await context.db.select().from(roleGrants).where(eq(roleGrants.facultyId, faculty.facultyId)).orderBy(asc(roleGrants.createdAt))
+    ? await context.db.select().from(roleGrants).where(and(eq(roleGrants.facultyId, faculty.facultyId), eq(roleGrants.status, 'active'))).orderBy(asc(roleGrants.createdAt))
     : []
   const active = grants.find(item => item.grantId === session.activeRoleGrantId) ?? grants[0]
   if (!active) return null

@@ -139,9 +139,9 @@ export function CourseDetail({
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={tab}
-            initial={shouldReduceMotion ? false : { opacity: 0, y: 18, filter: 'blur(6px)' }}
-            animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0, filter: 'blur(0px)' }}
-            exit={shouldReduceMotion ? undefined : { opacity: 0, y: -8, filter: 'blur(4px)' }}
+            initial={shouldReduceMotion ? false : { opacity: 0, y: 12 }}
+            animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0 }}
+            exit={shouldReduceMotion ? undefined : { opacity: 0, y: -8 }}
             transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.24, ease: 'easeOut' }}
           >
             {activeTabContent}

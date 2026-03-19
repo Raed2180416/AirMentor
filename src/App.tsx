@@ -1485,7 +1485,7 @@ function ActionQueue({ role, tasks, resolvedTaskIds, onResolveTask, onUndoTask, 
    COURSE LEADER: DASHBOARD
    ══════════════════════════════════════════════════════════════ */
 
-function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent, onOpenUpload, onOpenAllStudents, onOpenCalendar, onOpenPendingActions, teacherInitials, greetingHeadline, greetingMeta }: { offerings: Offering[]; pendingTaskCount: number; onOpenCourse: (o: Offering) => void; onOpenStudent: (s: Student, o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void; onOpenAllStudents: () => void; onOpenCalendar: () => void; onOpenPendingActions: () => void; teacherInitials: string; greetingHeadline: string; greetingMeta: string }) {
+function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent, onOpenUpload, onOpenCalendar, onOpenPendingActions, teacherInitials, greetingHeadline, greetingMeta }: { offerings: Offering[]; pendingTaskCount: number; onOpenCourse: (o: Offering) => void; onOpenStudent: (s: Student, o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void; onOpenCalendar: () => void; onOpenPendingActions: () => void; teacherInitials: string; greetingHeadline: string; greetingMeta: string }) {
   const { getStudentsPatched } = useAppSelectors()
   const total = offerings.reduce((a, o) => a + o.count, 0)
   const allAtRisk = useMemo(() => offerings.flatMap(o => getStudentsPatched(o)), [getStudentsPatched, offerings])
@@ -1516,7 +1516,7 @@ function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent,
       {/* Stat Row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
         {[
-          { icon: '👥', label: 'Total Students', val: total, color: T.success, action: onOpenAllStudents },
+          { icon: '👥', label: 'Total Students', val: total, color: T.success },
           { icon: '‼️', label: 'High Risk Students', val: highRiskCount, color: T.danger },
           { icon: '🎯', label: 'Pending Actions', val: pendingTaskCount, color: T.warning, action: onOpenPendingActions },
         ].map((s, i) => (
@@ -2229,7 +2229,6 @@ function QueueHistoryPage({ role, tasks, resolvedTaskIds, onBack, onOpenTaskStud
 
 const CL_NAV: Array<{ id: PageId; icon: typeof LayoutDashboard; label: string }> = [
   { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { id: 'students', icon: Users, label: 'All Students' },
   { id: 'queue-history', icon: ListTodo, label: 'Queue History' },
   { id: 'calendar', icon: Calendar, label: 'Calendar / Timetable' },
   { id: 'upload', icon: Upload, label: 'Data Entry Hub' },
@@ -2346,6 +2345,11 @@ function OperationalWorkspace({
     setRole(nextRole)
     setPage(getHomePage(nextRole))
   }, [allowedRoles, initialRole, role])
+  useEffect(() => {
+    if (role === 'Course Leader' && page === 'students') {
+      setPage('dashboard')
+    }
+  }, [page, role])
   const capabilities = useMemo<FacultyCapabilitySet>(() => ({
     canApproveUnlock: role === 'HoD',
     canEditMarks: role === 'Course Leader',
@@ -2929,13 +2933,6 @@ function OperationalWorkspace({
     setHistoryProfile(nextHistory)
     setHistoryBackPage('mentee-detail')
     setPage('student-history')
-  }, [])
-  const handleOpenAllStudents = useCallback(() => {
-    setPage('students')
-    setOffering(null)
-    setSelectedStudent(null)
-    setSelectedOffering(null)
-    setSelectedMentee(null)
   }, [])
   const handleOpenCalendar = useCallback(() => {
     setPage('calendar')
@@ -4199,9 +4196,19 @@ function OperationalWorkspace({
 
   if (!currentTeacher) {
     return (
-      <AppSelectorsContext.Provider value={selectors}>
-        <RouteLoadingFallback label="Preparing academic workspace..." />
-      </AppSelectorsContext.Provider>
+      <AuthPageShell>
+        <Card style={{ maxWidth: 760, margin: '0 auto', display: 'grid', gap: 12 }}>
+          <div style={{ ...sora, fontSize: 22, fontWeight: 800, color: T.text }}>Faculty Context Unavailable</div>
+          <InfoBanner tone="error" message="The active faculty profile is no longer available, so this teaching session cannot be restored safely." />
+          <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.8 }}>
+            Sign back in to refresh the faculty context after admin changes or manual cleanup.
+          </div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <Btn onClick={() => { void onLogout() }}>Return to Login</Btn>
+            <Btn variant="ghost" onClick={handleGoHome}>Back to Portal</Btn>
+          </div>
+        </Card>
+      </AuthPageShell>
     )
   }
 
@@ -4472,7 +4479,7 @@ function OperationalWorkspace({
                 onBack={handleNavigateBack}
               />
             )}
-            {role === 'Course Leader' && page === 'dashboard' && <CLDashboard offerings={assignedOfferings} pendingTaskCount={pendingActionCount} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} onOpenAllStudents={handleOpenAllStudents} onOpenCalendar={handleOpenCalendar} onOpenPendingActions={handleToggleActionQueue} teacherInitials={currentTeacher.initials} greetingHeadline={greetingHeadline} greetingMeta={greetingMeta} />}
+            {role === 'Course Leader' && page === 'dashboard' && <CLDashboard offerings={assignedOfferings} pendingTaskCount={pendingActionCount} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} onOpenCalendar={handleOpenCalendar} onOpenPendingActions={handleToggleActionQueue} teacherInitials={currentTeacher.initials} greetingHeadline={greetingHeadline} greetingMeta={greetingMeta} />}
             {role === 'Course Leader' && page === 'students' && <LazyAllStudentsPage offerings={assignedOfferings} onBack={handleNavigateBack} onOpenStudent={handleOpenStudent} onOpenHistory={handleOpenHistoryFromStudent} onOpenUpload={handleOpenUpload} />}
             {role === 'Course Leader' && page === 'course' && offering && <LazyCourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? getFallbackBlueprintSet(offering.offId)} courseOutcomes={academicBootstrap?.courseOutcomesByOffering?.[offering.offId]} coAttainmentRows={academicBootstrap?.coAttainmentByOffering?.[offering.offId]} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleNavigateBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
             {role === 'Course Leader' && page === 'scheme-setup' && selectedSchemeOffering && <LazySchemeSetupPage role={role} offering={selectedSchemeOffering} scheme={schemeByOffering[selectedSchemeOffering.offId] ?? defaultSchemeForOffering(selectedSchemeOffering)} hasEntryStarted={hasEntryStartedForOffering(selectedSchemeOffering.offId)} onSave={(next) => handleSaveScheme(selectedSchemeOffering.offId, next)} onBack={handleNavigateBack} />}
@@ -4547,6 +4554,35 @@ function mapApiRoleToRole(roleCode: ApiSessionResponse['activeRoleGrant']['roleC
   return null
 }
 
+const PRIMARY_VISIBLE_FACULTY_USERNAME = 'kavitha.rao'
+const PRIMARY_VISIBLE_FACULTY_NAME = 'dr. kavitha rao'
+
+function normalizeVisibleFacultyIdentity(value?: string | null) {
+  return (value ?? '').trim().toLowerCase()
+}
+
+function restrictVisibleFacultyOptions<T extends { facultyId: string; username?: string; name?: string; displayName?: string }>(items: T[]) {
+  const candidates = items
+    .filter(item => normalizeVisibleFacultyIdentity(item.username) === PRIMARY_VISIBLE_FACULTY_USERNAME || normalizeVisibleFacultyIdentity(item.displayName ?? item.name) === PRIMARY_VISIBLE_FACULTY_NAME)
+    .sort((left, right) => {
+      const leftExactUsername = normalizeVisibleFacultyIdentity(left.username) === PRIMARY_VISIBLE_FACULTY_USERNAME ? 1 : 0
+      const rightExactUsername = normalizeVisibleFacultyIdentity(right.username) === PRIMARY_VISIBLE_FACULTY_USERNAME ? 1 : 0
+      if (leftExactUsername !== rightExactUsername) return rightExactUsername - leftExactUsername
+      return left.facultyId.localeCompare(right.facultyId)
+    })
+  return candidates.length > 0 ? [candidates[0]] : items
+}
+
+function restrictAcademicBootstrap(snapshot: ApiAcademicBootstrap): ApiAcademicBootstrap {
+  const visibleFaculty = restrictVisibleFacultyOptions(snapshot.faculty)
+  const visibleTeacherIds = new Set(visibleFaculty.map(account => account.facultyId))
+  return {
+    ...snapshot,
+    faculty: visibleFaculty,
+    teachers: snapshot.teachers.filter(teacher => visibleTeacherIds.has(teacher.id)),
+  }
+}
+
 function getAcademicApiBaseUrl() {
   return import.meta.env.VITE_AIRMENTOR_API_BASE_URL?.trim() || ''
 }
@@ -4572,23 +4608,23 @@ export function OperationalApp() {
 
   const fetchAcademicBootstrap = useCallback(async () => {
     if (!apiClient) return null
-    const snapshot = await apiClient.getAcademicBootstrap()
+    const snapshot = restrictAcademicBootstrap(await apiClient.getAcademicBootstrap())
     hydrateAcademicData(snapshot)
     setRemoteBootstrap(snapshot)
-    setLoginFaculty(snapshot.faculty.map(account => {
+    setLoginFaculty(restrictVisibleFacultyOptions(snapshot.faculty.map(account => {
       const accountUsername = (account as { username?: string }).username ?? account.facultyId
       return {
-      facultyId: account.facultyId,
-      username: accountUsername,
-      name: account.name,
-      displayName: account.name,
-      designation: account.roleTitle,
-      dept: account.dept,
-      departmentCode: account.dept,
-      roleTitle: account.roleTitle,
-      allowedRoles: account.allowedRoles,
+        facultyId: account.facultyId,
+        username: accountUsername,
+        name: account.name,
+        displayName: account.name,
+        designation: account.roleTitle,
+        dept: account.dept,
+        departmentCode: account.dept,
+        roleTitle: account.roleTitle,
+        allowedRoles: account.allowedRoles,
       }
-    }))
+    })))
     return snapshot
   }, [apiClient])
 
@@ -4608,7 +4644,7 @@ export function OperationalApp() {
         ])
         if (cancelled) return
         if (publicFaculty?.items?.length) {
-          setLoginFaculty(publicFaculty.items)
+          setLoginFaculty(restrictVisibleFacultyOptions(publicFaculty.items))
         }
         const restoredRole = restoredSession ? mapApiRoleToRole(restoredSession.activeRoleGrant.roleCode) : null
         if (restoredSession?.faculty?.facultyId && restoredRole) {

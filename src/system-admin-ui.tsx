@@ -154,7 +154,7 @@ export function MetricCard({ label, value, helper, onClick }: { label: string; v
   return (
     <Card style={{ padding: 18, cursor: onClick ? 'pointer' : undefined }} onClick={onClick}>
       <div style={{ ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
-      <div style={{ ...sora, fontSize: 30, fontWeight: 800, color: T.text, marginTop: 10, lineHeight: 1 }}>{value}</div>
+      <div style={{ ...sora, fontSize: 30, fontWeight: 800, color: T.text, marginTop: 10, lineHeight: 1, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{value}</div>
       <div style={{ ...mono, fontSize: UI_FONT_SIZES.meta, color: T.muted, marginTop: 8, lineHeight: 1.8 }}>{helper}</div>
     </Card>
   )

@@ -267,7 +267,7 @@ export function ModalWorkspace({
   onClose: () => void
   footer?: ReactNode
   children: ReactNode
-  size?: 'sm' | 'md' | 'lg' | 'xl'
+  size?: 'sm' | 'md' | 'lg' | 'xl' | 'full'
   width?: number
   zIndex?: number
   bodyStyle?: CSSProperties
@@ -325,7 +325,8 @@ export function ModalWorkspace({
     }
   }, [onClose])
 
-  const sizeWidth = size === 'sm' ? 560 : size === 'lg' ? 880 : size === 'xl' ? 1040 : 720
+  const isFullSize = size === 'full'
+  const sizeWidth = size === 'sm' ? 560 : size === 'lg' ? 880 : size === 'xl' ? 1040 : isFullSize ? 1480 : 720
   const resolvedWidth = width ?? sizeWidth
 
   return (
@@ -341,7 +342,7 @@ export function ModalWorkspace({
         zIndex,
         background: 'rgba(6, 12, 20, 0.54)',
         backdropFilter: 'blur(14px)',
-        padding: isCompact ? 0 : '32px 18px',
+        padding: isCompact ? 0 : isFullSize ? '14px 12px' : '32px 18px',
         display: 'grid',
         placeItems: 'center',
       }}
@@ -359,10 +360,11 @@ export function ModalWorkspace({
         transition={shouldReduceMotion ? { duration: 0 } : UI_TRANSITION_MEDIUM}
         style={{
           ...getSurfaceStyle('modal'),
-          width: isCompact ? '100vw' : `min(100%, ${resolvedWidth}px)`,
-          maxWidth: isCompact ? '100vw' : resolvedWidth,
-          height: isCompact ? '100dvh' : 'auto',
-          maxHeight: isCompact ? '100dvh' : 'min(88vh, 920px)',
+          width: isCompact || isFullSize ? '100vw' : `min(100%, ${resolvedWidth}px)`,
+          maxWidth: isCompact || isFullSize ? '100vw' : resolvedWidth,
+          height: isCompact || isFullSize ? '100dvh' : 'auto',
+          maxHeight: isCompact || isFullSize ? '100dvh' : 'min(88vh, 920px)',
+          borderRadius: isCompact || isFullSize ? 0 : undefined,
           display: 'grid',
           gridTemplateRows: 'auto minmax(0, 1fr) auto',
           overflow: 'hidden',
@@ -536,8 +538,8 @@ export const PageShell = ({ size, children, style = {} }: { size: 'wide' | 'stan
   return (
     <motion.div
       className={`page-shell page-shell--${size}`}
-      initial={shouldReduceMotion ? false : { opacity: 0, y: 18, filter: 'blur(6px)' }}
-      animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0, filter: 'blur(0px)' }}
+      initial={shouldReduceMotion ? false : { opacity: 0, y: 12 }}
+      animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0 }}
       exit={shouldReduceMotion ? undefined : { opacity: 0, y: 10 }}
       transition={shouldReduceMotion ? { duration: 0 } : UI_TRANSITION_MEDIUM}
       style={style}

@@ -15,8 +15,7 @@ body {
 	color: var(--app-text, #11243d);
 	transition:
 		background-color var(--ui-medium, 220ms) var(--ui-ease, cubic-bezier(0.22, 1, 0.36, 1)),
-		color var(--ui-medium, 220ms) var(--ui-ease, cubic-bezier(0.22, 1, 0.36, 1)),
-		filter var(--ui-slow, 320ms) var(--ui-ease, cubic-bezier(0.22, 1, 0.36, 1));
+		color var(--ui-medium, 220ms) var(--ui-ease, cubic-bezier(0.22, 1, 0.36, 1));
 }
 
 input:-webkit-autofill,
@@ -201,8 +200,7 @@ body,
 		background-color var(--ui-medium) var(--ui-ease),
 		border-color var(--ui-medium) var(--ui-ease),
 		color var(--ui-medium) var(--ui-ease),
-		box-shadow var(--ui-medium) var(--ui-ease),
-		filter var(--ui-slow) var(--ui-ease);
+		box-shadow var(--ui-medium) var(--ui-ease);
 }
 
 .app-shell input,
@@ -260,8 +258,11 @@ body,
 .app-shell a:active,
 .app-shell [data-pressable='true']:active,
 .app-shell [data-tab='true']:active {
-	filter: brightness(0.985);
 	transform: translateY(0) scale(0.985);
+}
+
+.app-shell [data-surface='card'] {
+	min-width: 0;
 }
 
 .app-shell [data-nav-item='true'] {

@@ -21,7 +21,6 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 1400 } })
 const updatedDisplayName = 'Dr. Kavitha Rao QA'
 const updatedPhone = '+91-9000001111'
 const updatedDesignation = 'Senior Associate Professor'
-const teachingUsername = 'kavitha.rao'
 const teachingPassword = '1234'
 
 async function expectVisible(locator, description) {
@@ -45,12 +44,14 @@ try {
 
   await expectVisible(page.getByText('Operations Dashboard', { exact: true }).last(), 'sysadmin dashboard')
 
-  await page.goto(`${appUrl}#/admin/faculty-members/t1`, { waitUntil: 'networkidle' })
+  await page.goto(`${appUrl}#/admin/faculty-members`, { waitUntil: 'networkidle' })
+  await page.locator('[data-nav-item="true"]').filter({ has: page.getByText(/Scoped|Unscoped/) }).first().click()
   await expectVisible(page.getByText(/^Faculty Detail$/).last(), 'faculty detail page')
   const facultyDetailCard = page.getByText(/^Faculty Detail$/).last().locator('xpath=ancestor::*[@data-surface="card"][1]')
 
   await facultyDetailCard.getByRole('button', { name: 'Edit Faculty', exact: true }).click()
   await expectVisible(page.getByRole('button', { name: 'Save Faculty', exact: true }), 'faculty save button')
+  const teachingUsername = await page.getByLabel('Faculty Username', { exact: true }).inputValue()
   await page.getByLabel('Faculty Display Name', { exact: true }).fill(updatedDisplayName)
   await page.getByLabel('Faculty Phone', { exact: true }).fill(updatedPhone)
   await page.getByLabel('Faculty Designation', { exact: true }).fill(updatedDesignation)
