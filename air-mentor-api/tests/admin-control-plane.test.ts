@@ -18,6 +18,26 @@ afterEach(async () => {
 })
 
 describe('admin control plane routes', () => {
+  it('rejects assigning a second active owner to the same offering', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const duplicateOwnership = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/offering-ownership',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        offeringId: 'c3-A',
+        facultyId: 't2',
+        ownershipRole: 'owner',
+        status: 'active',
+      },
+    })
+
+    expect(duplicateOwnership.statusCode).toBe(400)
+    expect(duplicateOwnership.json().message).toMatch(/active faculty owner/i)
+  })
+
   it('limits HoD faculty profile access to supervised departments and branches', async () => {
     current = await createTestApp()
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
@@ -135,8 +155,44 @@ describe('admin control plane routes', () => {
       expect(roleGrantCreate.statusCode).toBe(200)
     }
 
-    const [eceOffering] = await current.db.select().from(sectionOfferings).where(eq(sectionOfferings.branchId, 'branch_ece_btech')).limit(1)
-    expect(eceOffering).toBeTruthy()
+    const eceOfferingsResponse = await current.app.inject({
+      method: 'GET',
+      url: '/api/admin/offerings',
+      headers: { cookie: adminLogin.cookie },
+    })
+    expect(eceOfferingsResponse.statusCode).toBe(200)
+    const eceSeedOffering = eceOfferingsResponse.json().items.find((item: { branchId?: string }) => item.branchId === 'branch_ece_btech') ?? null
+    expect(eceSeedOffering).toBeTruthy()
+    if (!eceSeedOffering) throw new Error('Expected a seeded ECE offering for the ownership test')
+
+    const eceOfferingCreate = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/offerings',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        courseId: eceSeedOffering.id,
+        termId: eceSeedOffering.termId,
+        branchId: eceSeedOffering.branchId,
+        sectionCode: 'Z',
+        yearLabel: eceSeedOffering.year,
+        attendance: 0,
+        studentCount: 0,
+        stage: 1,
+        stageLabel: 'Stage 1',
+        stageDescription: 'Setup',
+        stageColor: '#2563eb',
+        tt1Done: false,
+        tt2Done: false,
+        tt1Locked: false,
+        tt2Locked: false,
+        quizLocked: false,
+        assignmentLocked: false,
+        pendingAction: null,
+        status: 'active',
+      },
+    })
+    expect(eceOfferingCreate.statusCode).toBe(200)
+    const eceOffering = eceOfferingCreate.json()
 
     const studentsResponse = await current.app.inject({
       method: 'GET',
@@ -370,8 +426,14 @@ describe('admin control plane routes', () => {
     })
     expect(roleGrantCreate.statusCode).toBe(200)
 
-    const [offering] = await current.db.select().from(sectionOfferings).where(eq(sectionOfferings.branchId, 'branch_cse_btech')).limit(1)
+    const [branchOfferings, branchActiveOwnershipRows] = await Promise.all([
+      current.db.select().from(sectionOfferings).where(eq(sectionOfferings.branchId, 'branch_cse_btech')),
+      current.db.select().from(facultyOfferingOwnerships).where(eq(facultyOfferingOwnerships.status, 'active')),
+    ])
+    const branchActiveOfferingIds = new Set(branchActiveOwnershipRows.map(item => item.offeringId))
+    const offering = branchOfferings.find(item => !branchActiveOfferingIds.has(item.offeringId)) ?? null
     expect(offering).toBeTruthy()
+    if (!offering) throw new Error('Expected an unassigned CSE offering for the ownership test')
 
     const ownershipCreate = await current.app.inject({
       method: 'POST',

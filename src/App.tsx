@@ -501,7 +501,10 @@ function FacultyProfilePage({
   onBack: () => void
 }) {
   const livePermissions = profile?.permissions.filter(item => item.status === 'active') ?? []
-  const effectivePermissions = livePermissions.length > 0 ? Array.from(new Set(livePermissions.map(item => item.roleCode))) : currentTeacher.allowedRoles
+  const effectivePermissions = (livePermissions.length > 0
+    ? Array.from(new Set(livePermissions.map(item => item.roleCode)))
+    : currentTeacher.allowedRoles
+  ).filter(permission => permission !== 'SYSTEM_ADMIN')
   const effectiveDepartment = profile?.primaryDepartment?.name ?? currentTeacher.dept
   const effectivePhone = profile?.phone ?? 'Not set'
   const employeeCode = profile?.employeeCode ?? 'Not available'
@@ -561,7 +564,7 @@ function FacultyProfilePage({
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {effectivePermissions.length > 0 ? effectivePermissions.map(permission => <Chip key={permission} color={T.accent}>{displayPermission(permission)}</Chip>) : <Chip color={T.dim}>No permissions</Chip>}
             </div>
-            {profile?.permissions?.length ? profile.permissions.map(permission => (
+            {profile?.permissions?.filter(permission => permission.roleCode !== 'SYSTEM_ADMIN').length ? profile.permissions.filter(permission => permission.roleCode !== 'SYSTEM_ADMIN').map(permission => (
               <Card key={permission.grantId} style={{ padding: 10, background: T.surface2 }}>
                 <div style={{ ...mono, fontSize: 10, color: T.text }}>{displayPermission(permission.roleCode)}</div>
                 <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
@@ -1025,7 +1028,12 @@ function StudentDrawer({
   const riskCol = s.riskBand === 'High' ? T.danger : s.riskBand === 'Medium' ? T.warning : T.success
   const canSeeDetailedMarks = role !== 'Mentor'
   const drawerHistory = buildHistoryProfile({ student: s, offering: offering ?? null })
-  const ceSummary = offering ? deriveAcademicProjection({ offering, student: s, scheme: getSchemeForOffering(offering), history: drawerHistory }) : null
+  const activeScheme = offering ? getSchemeForOffering(offering) : null
+  const ceSummary = offering && activeScheme ? deriveAcademicProjection({ offering, student: s, scheme: activeScheme, history: drawerHistory }) : null
+  const ceSignalThresholds = activeScheme ? {
+    success: activeScheme.policyContext.ce * 0.5,
+    warning: activeScheme.policyContext.ce * 0.4,
+  } : null
 
   return (
     <motion.div
@@ -1156,7 +1164,7 @@ function StudentDrawer({
             {[
               { lbl: 'Attendance', val: `${attPct}%`, col: attPct >= 75 ? T.success : attPct >= 65 ? T.warning : T.danger },
               { lbl: 'TT Summary', val: canSeeDetailedMarks ? `${s.tt1Score ?? '—'} / ${s.tt2Score ?? '—'}` : ceSummary ? `${(ceSummary.tt1Scaled + ceSummary.tt2Scaled).toFixed(1)}/30` : '—', col: ceSummary && ceSummary.tt1Scaled + ceSummary.tt2Scaled >= 15 ? T.success : T.warning },
-              { lbl: 'CE Signal', val: ceSummary ? `${ceSummary.ce60.toFixed(1)}/60` : '—', col: ceSummary ? (ceSummary.ce60 >= 30 ? T.success : ceSummary.ce60 >= 24 ? T.warning : T.danger) : T.warning },
+              { lbl: 'CE Signal', val: ceSummary && activeScheme ? `${ceSummary.ce60.toFixed(1)}/${activeScheme.policyContext.ce}` : '—', col: ceSummary && ceSignalThresholds ? (ceSummary.ce60 >= ceSignalThresholds.success ? T.success : ceSummary.ce60 >= ceSignalThresholds.warning ? T.warning : T.danger) : T.warning },
               { lbl: 'Weak Component', val: s.reasons[0]?.feature?.toUpperCase() ?? 'None', col: s.reasons[0] ? T.warning : T.success },
               { lbl: 'SEE Readiness', val: s.riskBand === 'High' ? 'Needs support' : s.riskBand === 'Medium' ? 'Watch' : 'On track', col: s.riskBand === 'High' ? T.danger : s.riskBand === 'Medium' ? T.warning : T.success },
               { lbl: 'Pred CGPA', val: ceSummary ? ceSummary.predictedCgpa.toFixed(2) : (s.prevCgpa > 0 ? s.prevCgpa.toFixed(1) : '—'), col: (ceSummary?.predictedCgpa ?? s.prevCgpa) >= 7 ? T.success : (ceSummary?.predictedCgpa ?? s.prevCgpa) >= 6 ? T.warning : T.danger },
@@ -2295,7 +2303,7 @@ function OperationalWorkspace({
   const selectors = useMemo(() => createAppSelectors({ studentPatches, schemeByOffering, ttBlueprintsByOffering }), [schemeByOffering, studentPatches, ttBlueprintsByOffering])
   const { getStudentsPatched } = selectors
 
-  const allowedRoles = useMemo(() => currentTeacher?.allowedRoles ?? [], [currentTeacher])
+  const allowedRoles = useMemo(() => (currentTeacher?.allowedRoles ?? []).filter(candidate => String(candidate) !== 'SYSTEM_ADMIN'), [currentTeacher])
   useEffect(() => {
     setCurrentTeacherId(initialTeacherId)
   }, [initialTeacherId])
@@ -2329,10 +2337,15 @@ function OperationalWorkspace({
     }
   }, [currentTeacher?.facultyId, loadFacultyProfile])
   useEffect(() => {
-    if (!allowedRoles.includes(initialRole)) return
-    setRole(initialRole)
-    setPage(getHomePage(initialRole))
-  }, [allowedRoles, initialRole])
+    if (allowedRoles.length === 0) return
+    const nextRole = allowedRoles.includes(initialRole)
+      ? initialRole
+      : allowedRoles.includes(role)
+        ? role
+        : allowedRoles[0]
+    setRole(nextRole)
+    setPage(getHomePage(nextRole))
+  }, [allowedRoles, initialRole, role])
   const capabilities = useMemo<FacultyCapabilitySet>(() => ({
     canApproveUnlock: role === 'HoD',
     canEditMarks: role === 'Course Leader',
@@ -4522,18 +4535,6 @@ function OperationalWorkspace({
         )}
       </AnimatePresence>
 
-      <button
-        aria-label="Hard reset development data"
-        title="Hard reset"
-        onClick={() => {
-          if (!confirm('This will reset all saved changes and restore mock defaults. Continue?')) return
-          void repositories.clearPersistedState()
-          window.location.reload()
-        }}
-        style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 140, border: `1px solid ${T.danger}55`, background: '#ef44441a', color: T.danger, borderRadius: 8, padding: '8px 10px', cursor: 'pointer', ...mono, fontSize: 10 }}
-      >
-        Reset Mock Data
-      </button>
     </div>
     </AppSelectorsContext.Provider>
   )

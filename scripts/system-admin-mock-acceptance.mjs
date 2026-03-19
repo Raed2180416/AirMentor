@@ -33,7 +33,7 @@ try {
   await page.getByRole('button', { name: 'Sign In', exact: true }).click()
 
   await expectVisible(page.getByText(/System Admin Dashboard/), 'admin overview')
-  await expectVisible(page.getByRole('textbox', { name: 'Global admin search' }), 'global admin search')
+  await expectVisible(page.getByRole('textbox', { name: 'Admin search' }), 'admin search')
   assert.equal(await page.getByText(/^Navigation$/).count(), 0, 'left navigation panel should be removed')
 
   await page.getByRole('button', { name: /Reset Mock Data/i }).click()
@@ -54,7 +54,7 @@ try {
   await page.getByRole('button', { name: /Add Course/i }).click()
   await expectVisible(page.getByText(/CS699/), 'new curriculum course')
 
-  const search = page.getByRole('textbox', { name: 'Global admin search' })
+  const search = page.getByRole('textbox', { name: 'Admin search' })
   await search.fill('Aisha')
   await page.getByRole('button', { name: /Aisha Khan/i }).click()
   await expectVisible(page.getByText(/Aisha Khan/).last(), 'student detail')

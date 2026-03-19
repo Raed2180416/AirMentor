@@ -31,6 +31,7 @@ import {
   getEntryLockMap,
   sanitizeAssessmentComponents,
   seedBlueprintFromPaper,
+  sumComponentWeightage,
   useAppSelectors,
 } from '../selectors'
 import {
@@ -250,32 +251,44 @@ export function SchemeSetupPage({
   onSave: (next: SchemeState) => void
   onBack: () => void
 }) {
-  const [quizWeight, setQuizWeight] = useState(scheme.quizWeight)
-  const [assignmentWeight, setAssignmentWeight] = useState(scheme.assignmentWeight)
+  const [termTestWeights, setTermTestWeights] = useState(scheme.termTestWeights)
   const [quizCount, setQuizCount] = useState<0 | 1 | 2>(scheme.quizCount)
   const [assignmentCount, setAssignmentCount] = useState<0 | 1 | 2>(scheme.assignmentCount)
-  const [finalsMax, setFinalsMax] = useState<50 | 100>(scheme.finalsMax)
   const [quizComponents, setQuizComponents] = useState<AssessmentComponentDefinition[]>(scheme.quizComponents)
   const [assignmentComponents, setAssignmentComponents] = useState<AssessmentComponentDefinition[]>(scheme.assignmentComponents)
-  const canEdit = !hasEntryStarted && scheme.status !== 'Locked'
+  const canEdit = role === 'Course Leader' && !hasEntryStarted && scheme.status !== 'Locked'
+  const maxQuizCount = Math.min(2, scheme.policyContext.maxQuizzes) as 0 | 1 | 2
+  const maxAssignmentCount = Math.min(2, scheme.policyContext.maxAssignments) as 0 | 1 | 2
+  const quizWeightTotal = sumComponentWeightage(quizComponents)
+  const assignmentWeightTotal = sumComponentWeightage(assignmentComponents)
+  const configuredCeWeight = termTestWeights.tt1 + termTestWeights.tt2 + quizWeightTotal + assignmentWeightTotal
+  const remainingCeWeight = scheme.policyContext.ce - configuredCeWeight
 
   useEffect(() => {
-    setQuizWeight(scheme.quizWeight)
-    setAssignmentWeight(scheme.assignmentWeight)
+    setTermTestWeights(scheme.termTestWeights)
     setQuizCount(scheme.quizCount)
     setAssignmentCount(scheme.assignmentCount)
-    setFinalsMax(scheme.finalsMax)
     setQuizComponents(scheme.quizComponents)
     setAssignmentComponents(scheme.assignmentComponents)
   }, [scheme])
 
   useEffect(() => {
-    setQuizComponents(prev => sanitizeAssessmentComponents('quiz', quizCount, prev))
-  }, [quizCount])
+    const nextCount = Math.min(quizCount, maxQuizCount) as 0 | 1 | 2
+    if (nextCount !== quizCount) {
+      setQuizCount(nextCount)
+      return
+    }
+    setQuizComponents(prev => sanitizeAssessmentComponents('quiz', nextCount, prev, sumComponentWeightage(prev)))
+  }, [maxQuizCount, quizCount])
 
   useEffect(() => {
-    setAssignmentComponents(prev => sanitizeAssessmentComponents('assignment', assignmentCount, prev))
-  }, [assignmentCount])
+    const nextCount = Math.min(assignmentCount, maxAssignmentCount) as 0 | 1 | 2
+    if (nextCount !== assignmentCount) {
+      setAssignmentCount(nextCount)
+      return
+    }
+    setAssignmentComponents(prev => sanitizeAssessmentComponents('assignment', nextCount, prev, sumComponentWeightage(prev)))
+  }, [assignmentCount, maxAssignmentCount])
 
   return (
     <PageShell size="narrow">
@@ -283,7 +296,7 @@ export function SchemeSetupPage({
       <div style={{ marginBottom: 18 }}>
         <div style={{ ...sora, fontWeight: 700, fontSize: 21, color: T.text }}>Evaluation Scheme Setup</div>
         <div style={{ ...mono, fontSize: 11, color: T.accent, marginTop: 4 }}>{offering.code} · {offering.title} · Sec {offering.section}</div>
-        <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 6 }}>TT1 and TT2 stay fixed at raw 25 + 25 normalised to 30. Configure the remaining CE split and SEE raw max before entry begins.</div>
+        <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 6 }}>Sysadmin owns the CE / SEE policy. Course leaders only configure the internal CE weightage breakdown before entry begins.</div>
       </div>
 
       <Card glow={canEdit ? T.accent : T.warning} style={{ marginBottom: 16 }}>
@@ -292,52 +305,61 @@ export function SchemeSetupPage({
           <Chip color={T.accent} size={9}>Role: {role}</Chip>
           <Chip color={hasEntryStarted ? T.danger : T.success} size={9}>{hasEntryStarted ? 'Entry already started' : 'No entry started yet'}</Chip>
         </div>
-        {!canEdit && <div style={{ ...mono, fontSize: 11, color: T.warning }}>Scheme changes are blocked after entry begins. Use HoD unlock/reset flow if a reset is required.</div>}
+        {!canEdit && <div style={{ ...mono, fontSize: 11, color: T.warning }}>{role !== 'Course Leader' ? 'This screen is inspect-only outside the course-leader workflow.' : 'Scheme changes are blocked after entry begins. Use HoD unlock/reset flow if a reset is required.'}</div>}
       </Card>
 
       <div style={{ display: 'grid', gap: 12 }}>
         <Card>
-          <div style={{ ...sora, fontWeight: 700, fontSize: 15, color: T.text, marginBottom: 12 }}>Fixed University Rules</div>
-          <div style={{ display: 'grid', gap: 6 }}>
-            <div style={{ ...mono, fontSize: 11, color: T.muted }}>TT1 raw max: 25</div>
-            <div style={{ ...mono, fontSize: 11, color: T.muted }}>TT2 raw max: 25</div>
-            <div style={{ ...mono, fontSize: 11, color: T.muted }}>TT1 + TT2 contribution inside CE: 30</div>
-            <div style={{ ...mono, fontSize: 11, color: T.muted }}>Quiz + Assignment contribution inside CE: 30</div>
-            <div style={{ ...mono, fontSize: 11, color: T.muted }}>SEE contribution in final subject score: 40</div>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 15, color: T.text, marginBottom: 12 }}>Sysadmin Policy Context</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+            <Card style={{ padding: 12, background: T.surface2 }}><div style={{ ...mono, fontSize: 10, color: T.dim }}>CE Weight</div><div style={{ ...sora, fontSize: 18, fontWeight: 700, color: T.text, marginTop: 6 }}>{scheme.policyContext.ce}</div></Card>
+            <Card style={{ padding: 12, background: T.surface2 }}><div style={{ ...mono, fontSize: 10, color: T.dim }}>SEE Weight</div><div style={{ ...sora, fontSize: 18, fontWeight: 700, color: T.text, marginTop: 6 }}>{scheme.policyContext.see}</div></Card>
+            <Card style={{ padding: 12, background: T.surface2 }}><div style={{ ...mono, fontSize: 10, color: T.dim }}>Max Term Tests</div><div style={{ ...sora, fontSize: 18, fontWeight: 700, color: T.text, marginTop: 6 }}>{scheme.policyContext.maxTermTests}</div></Card>
+            <Card style={{ padding: 12, background: T.surface2 }}><div style={{ ...mono, fontSize: 10, color: T.dim }}>Max Quizzes</div><div style={{ ...sora, fontSize: 18, fontWeight: 700, color: T.text, marginTop: 6 }}>{scheme.policyContext.maxQuizzes}</div></Card>
+            <Card style={{ padding: 12, background: T.surface2 }}><div style={{ ...mono, fontSize: 10, color: T.dim }}>Max Assignments</div><div style={{ ...sora, fontSize: 18, fontWeight: 700, color: T.text, marginTop: 6 }}>{scheme.policyContext.maxAssignments}</div></Card>
+            <Card style={{ padding: 12, background: T.surface2 }}><div style={{ ...mono, fontSize: 10, color: T.dim }}>SEE Raw Max</div><div style={{ ...sora, fontSize: 18, fontWeight: 700, color: T.text, marginTop: 6 }}>{scheme.finalsMax}</div></Card>
           </div>
         </Card>
 
         <Card>
-          <div style={{ ...sora, fontWeight: 700, fontSize: 15, color: T.text, marginBottom: 12 }}>Configurable CE / SEE Inputs</div>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 15, color: T.text, marginBottom: 12 }}>Internal CE Breakdown</div>
+          <div style={{ display: 'grid', gap: 10, marginBottom: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+              <div>
+                <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 6 }}>TT1 Weight</div>
+                <input aria-label="TT1 contribution weight" disabled={!canEdit || scheme.policyContext.maxTermTests === 0} type="number" min={0} max={scheme.policyContext.ce} value={termTestWeights.tt1} onChange={event => setTermTestWeights(prev => ({ ...prev, tt1: clampNumber(Number(event.target.value) || 0, 0, scheme.policyContext.ce) }))} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px', width: '100%' }} />
+              </div>
+              <div>
+                <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 6 }}>TT2 Weight</div>
+                <input aria-label="TT2 contribution weight" disabled={!canEdit || scheme.policyContext.maxTermTests < 2} type="number" min={0} max={scheme.policyContext.ce} value={scheme.policyContext.maxTermTests < 2 ? 0 : termTestWeights.tt2} onChange={event => setTermTestWeights(prev => ({ ...prev, tt2: clampNumber(Number(event.target.value) || 0, 0, scheme.policyContext.ce) }))} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px', width: '100%' }} />
+              </div>
+            </div>
+            <Card glow={remainingCeWeight === 0 ? T.success : T.warning} style={{ padding: 12, background: T.surface2 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                <div>
+                  <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>Configured CE Weight</div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>TT1 {termTestWeights.tt1} + TT2 {scheme.policyContext.maxTermTests < 2 ? 0 : termTestWeights.tt2} + Quiz {quizWeightTotal} + Assignment {assignmentWeightTotal}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ ...sora, fontSize: 20, fontWeight: 800, color: remainingCeWeight === 0 ? T.success : T.warning }}>{configuredCeWeight}/{scheme.policyContext.ce}</div>
+                  <div style={{ ...mono, fontSize: 10, color: remainingCeWeight === 0 ? T.success : T.warning }}>Remaining CE pool: {remainingCeWeight}</div>
+                </div>
+              </div>
+            </Card>
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginBottom: 12 }}>
-            <select aria-label="Quiz weight" value={quizWeight} disabled={!canEdit} onChange={event => setQuizWeight(Number(event.target.value))} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
-              <option value={0}>Quiz weight 0</option>
-              <option value={10}>Quiz weight 10</option>
-              <option value={20}>Quiz weight 20</option>
-              <option value={30}>Quiz weight 30</option>
-            </select>
-            <select aria-label="Assignment weight" value={assignmentWeight} disabled={!canEdit} onChange={event => setAssignmentWeight(Number(event.target.value))} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
-              <option value={0}>Assignment weight 0</option>
-              <option value={10}>Assignment weight 10</option>
-              <option value={20}>Assignment weight 20</option>
-              <option value={30}>Assignment weight 30</option>
-            </select>
             <select aria-label="Quiz count" value={quizCount} disabled={!canEdit} onChange={event => setQuizCount(Number(event.target.value) as 0 | 1 | 2)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
               <option value={0}>Quiz count 0</option>
               <option value={1}>Quiz count 1</option>
-              <option value={2}>Quiz count 2</option>
+              {maxQuizCount >= 2 ? <option value={2}>Quiz count 2</option> : null}
             </select>
             <select aria-label="Assignment count" value={assignmentCount} disabled={!canEdit} onChange={event => setAssignmentCount(Number(event.target.value) as 0 | 1 | 2)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
               <option value={0}>Assignment count 0</option>
               <option value={1}>Assignment count 1</option>
-              <option value={2}>Assignment count 2</option>
+              {maxAssignmentCount >= 2 ? <option value={2}>Assignment count 2</option> : null}
             </select>
-            <select aria-label="Finals max" value={finalsMax} disabled={!canEdit} onChange={event => setFinalsMax(Number(event.target.value) as 50 | 100)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
-              <option value={50}>SEE raw max 50</option>
-              <option value={100}>SEE raw max 100</option>
-            </select>
-            <div style={{ ...mono, fontSize: 11, color: quizWeight + assignmentWeight === 30 ? T.success : T.danger, display: 'flex', alignItems: 'center' }}>
-              Remaining CE split: {quizWeight + assignmentWeight}/30
+            <div style={{ ...mono, fontSize: 11, color: T.muted, display: 'flex', alignItems: 'center' }}>
+              Components scale linearly against their raw maxima and weightage.
             </div>
           </div>
           <div style={{ display: 'grid', gap: 12 }}>
@@ -346,9 +368,10 @@ export function SchemeSetupPage({
               <div style={{ display: 'grid', gap: 8 }}>
                 {quizComponents.length === 0 && <div style={{ ...mono, fontSize: 11, color: T.dim }}>No quiz components in this scheme.</div>}
                 {quizComponents.map((component, index) => (
-                  <div key={component.id} style={{ display: 'grid', gridTemplateColumns: '1.3fr 0.7fr', gap: 8 }}>
+                  <div key={component.id} style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.7fr 0.7fr', gap: 8 }}>
                     <input aria-label={`Quiz component ${index + 1} label`} disabled={!canEdit} value={component.label} onChange={event => setQuizComponents(prev => prev.map((item, itemIndex) => itemIndex === index ? { ...item, label: event.target.value } : item))} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
                     <input aria-label={`Quiz component ${index + 1} raw max`} disabled={!canEdit} type="number" min={1} max={100} value={component.rawMax} onChange={event => setQuizComponents(prev => prev.map((item, itemIndex) => itemIndex === index ? { ...item, rawMax: clampNumber(Number(event.target.value) || 1, 1, 100) } : item))} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
+                    <input aria-label={`Quiz component ${index + 1} weightage`} disabled={!canEdit} type="number" min={0} max={scheme.policyContext.ce} value={component.weightage} onChange={event => setQuizComponents(prev => prev.map((item, itemIndex) => itemIndex === index ? { ...item, weightage: clampNumber(Number(event.target.value) || 0, 0, scheme.policyContext.ce) } : item))} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
                   </div>
                 ))}
               </div>
@@ -358,9 +381,10 @@ export function SchemeSetupPage({
               <div style={{ display: 'grid', gap: 8 }}>
                 {assignmentComponents.length === 0 && <div style={{ ...mono, fontSize: 11, color: T.dim }}>No assignment components in this scheme.</div>}
                 {assignmentComponents.map((component, index) => (
-                  <div key={component.id} style={{ display: 'grid', gridTemplateColumns: '1.3fr 0.7fr', gap: 8 }}>
+                  <div key={component.id} style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.7fr 0.7fr', gap: 8 }}>
                     <input aria-label={`Assignment component ${index + 1} label`} disabled={!canEdit} value={component.label} onChange={event => setAssignmentComponents(prev => prev.map((item, itemIndex) => itemIndex === index ? { ...item, label: event.target.value } : item))} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
                     <input aria-label={`Assignment component ${index + 1} raw max`} disabled={!canEdit} type="number" min={1} max={100} value={component.rawMax} onChange={event => setAssignmentComponents(prev => prev.map((item, itemIndex) => itemIndex === index ? { ...item, rawMax: clampNumber(Number(event.target.value) || 1, 1, 100) } : item))} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
+                    <input aria-label={`Assignment component ${index + 1} weightage`} disabled={!canEdit} type="number" min={0} max={scheme.policyContext.ce} value={component.weightage} onChange={event => setAssignmentComponents(prev => prev.map((item, itemIndex) => itemIndex === index ? { ...item, weightage: clampNumber(Number(event.target.value) || 0, 0, scheme.policyContext.ce) } : item))} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
                   </div>
                 ))}
               </div>
@@ -370,16 +394,21 @@ export function SchemeSetupPage({
 
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
           <Btn size="sm" variant="ghost" onClick={onBack}>Cancel</Btn>
-          <Btn size="sm" onClick={() => {
-            if (quizWeight + assignmentWeight !== 30) return
+          <Btn size="sm" disabled={!canEdit || remainingCeWeight !== 0} onClick={() => {
+            if (remainingCeWeight !== 0) return
             onSave({
-              finalsMax,
-              quizWeight,
-              assignmentWeight,
+              finalsMax: scheme.finalsMax,
+              termTestWeights: {
+                tt1: scheme.policyContext.maxTermTests === 0 ? 0 : termTestWeights.tt1,
+                tt2: scheme.policyContext.maxTermTests < 2 ? 0 : termTestWeights.tt2,
+              },
+              quizWeight: sumComponentWeightage(sanitizeAssessmentComponents('quiz', quizCount, quizComponents)),
+              assignmentWeight: sumComponentWeightage(sanitizeAssessmentComponents('assignment', assignmentCount, assignmentComponents)),
               quizCount,
               assignmentCount,
               quizComponents: sanitizeAssessmentComponents('quiz', quizCount, quizComponents),
               assignmentComponents: sanitizeAssessmentComponents('assignment', assignmentCount, assignmentComponents),
+              policyContext: scheme.policyContext,
               status: 'Configured',
               configuredAt: Date.now(),
               lastEditedBy: role,
@@ -772,7 +801,7 @@ export function EntryWorkspacePage({
                               />
                             </TD>
                           )}
-                          <TD><div style={{ ...mono, fontSize: 10, color: T.muted }}>CE {projection.ce60.toFixed(1)}/60<br />CGPA {projection.predictedCgpa.toFixed(2)}</div></TD>
+                          <TD><div style={{ ...mono, fontSize: 10, color: T.muted }}>CE {projection.ce60.toFixed(1)}/{currentScheme.policyContext.ce}<br />CGPA {projection.predictedCgpa.toFixed(2)}</div></TD>
                           <TD><button aria-label={`Open ${student.name} profile`} title="Open profile" onClick={() => onOpenStudent(student, section)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Eye size={13} /></button></TD>
                           <TD><button aria-label={`Add task for ${student.name}`} title="Add task" onClick={() => onOpenTaskComposer({ offeringId: section.offId, studentId: student.id, taskType: 'Follow-up' })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.success, ...mono, fontSize: 11 }}>+Task</button></TD>
                         </tr>

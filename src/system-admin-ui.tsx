@@ -304,7 +304,7 @@ export function AdminTopBar({
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, ...getFieldChromeStyle(), padding: '10px 14px' }}>
             <Search size={15} color={T.muted} />
             <input
-              aria-label="Global admin search"
+              aria-label="Admin search"
               value={searchQuery}
               onChange={event => onSearchChange(event.target.value)}
               placeholder="Search faculty, department, batch, student, faculty member, course..."

@@ -13,6 +13,10 @@ body {
 #root {
 	background: var(--app-bg, #edf3f8);
 	color: var(--app-text, #11243d);
+	transition:
+		background-color var(--ui-medium, 220ms) var(--ui-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+		color var(--ui-medium, 220ms) var(--ui-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+		filter var(--ui-slow, 320ms) var(--ui-ease, cubic-bezier(0.22, 1, 0.36, 1));
 }
 
 input:-webkit-autofill,
@@ -187,6 +191,18 @@ body,
 		transform var(--ui-fast) var(--ui-ease);
 	transform-origin: center;
 	will-change: transform, box-shadow;
+}
+
+.app-shell,
+.page-shell,
+.top-bar-shell,
+.app-shell [data-surface='card'] {
+	transition:
+		background-color var(--ui-medium) var(--ui-ease),
+		border-color var(--ui-medium) var(--ui-ease),
+		color var(--ui-medium) var(--ui-ease),
+		box-shadow var(--ui-medium) var(--ui-ease),
+		filter var(--ui-slow) var(--ui-ease);
 }
 
 .app-shell input,

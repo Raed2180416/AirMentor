@@ -3,12 +3,14 @@
 // ══════════════════════════════════════════════════════════════
 
 import type {
+  AssessmentComponentDefinition,
   AcademicMeeting,
   EntryKind,
   FacultyAccount,
   Role,
   RiskBand,
   SchedulePreset,
+  SchemePolicyContext,
   SchemeState,
   Stage,
   TaskStatus,
@@ -110,10 +112,17 @@ export interface SubjectRunScheme {
   subjectRunId: string
   status: SubjectRunSchemeStatus
   finalsMax: 50 | 100
+  termTestWeights: {
+    tt1: number
+    tt2: number
+  }
   quizWeight: number
   assignmentWeight: number
   quizCount: 0 | 1 | 2
   assignmentCount: 0 | 1 | 2
+  quizComponents: AssessmentComponentDefinition[]
+  assignmentComponents: AssessmentComponentDefinition[]
+  policyContext: SchemePolicyContext
   lastEditedByFacultyId?: string
   lastEditedAt?: number
 }
@@ -723,10 +732,30 @@ export const SUBJECT_RUNS: SubjectRun[] = (() => {
         subjectRunId,
         status: inferInitialSchemeStatus(sectionOfferingIds),
         finalsMax: sample.code === 'CS702' ? 100 : 50,
+        termTestWeights: { tt1: 15, tt2: 15 },
         quizWeight: sample.code === 'CS401' ? 20 : 10,
         assignmentWeight: sample.code === 'CS401' ? 10 : 20,
         quizCount: sample.code === 'CS401' ? 2 : 1,
         assignmentCount: sample.code === 'CS401' ? 1 : 2,
+        quizComponents: Array.from({ length: sample.code === 'CS401' ? 2 : 1 }, (_, componentIndex) => ({
+          id: `quiz-${componentIndex + 1}`,
+          label: `Quiz ${componentIndex + 1}`,
+          rawMax: 10,
+          weightage: sample.code === 'CS401' ? 10 : 10,
+        })),
+        assignmentComponents: Array.from({ length: sample.code === 'CS401' ? 1 : 2 }, (_, componentIndex) => ({
+          id: `assignment-${componentIndex + 1}`,
+          label: `Assignment ${componentIndex + 1}`,
+          rawMax: 10,
+          weightage: sample.code === 'CS401' ? 10 : 10,
+        })),
+        policyContext: {
+          ce: 60,
+          see: 40,
+          maxTermTests: 2,
+          maxQuizzes: 2,
+          maxAssignments: 2,
+        },
       },
     }
   })

@@ -71,7 +71,7 @@ try {
   await page.getByRole('button', { name: 'Sign In', exact: true }).click()
 
   await expectVisible(page.getByText('Operations Dashboard', { exact: true }).last(), 'live admin overview')
-  await expectVisible(page.getByRole('textbox', { name: 'Global admin search' }), 'global admin search')
+  await expectVisible(page.getByRole('textbox', { name: 'Admin search' }), 'admin search')
 
   await page.goto(`${appUrl}#/admin/faculties`, { waitUntil: 'networkidle' })
   await expectVisible(page.getByText(/^Academic Faculties$/).last(), 'faculties workspace')
@@ -180,7 +180,9 @@ try {
   await page.getByText('Semester 6 · 2028-30', { exact: true }).locator('xpath=ancestor::*[@data-surface="card"][1]').getByRole('button', { name: 'Delete', exact: true }).click()
   await page.waitForFunction(() => !Array.from(document.querySelectorAll('*')).some(node => node.textContent?.includes('Semester 6 · 2028-30')))
 
-  const search = page.getByRole('textbox', { name: 'Global admin search' })
+  await page.goto(`${appUrl}#/admin/overview`, { waitUntil: 'networkidle' })
+  await expectVisible(page.getByText('Operations Dashboard', { exact: true }).last(), 'overview before global search')
+  const search = page.getByRole('textbox', { name: 'Admin search' })
   await search.fill(studentUsn)
   await page.getByRole('button', { name: new RegExp(studentUsn) }).first().click()
   await expectVisible(page.getByText(/^Student Detail$/).last(), 'student detail panel')

@@ -153,7 +153,7 @@ const offeringPatchSchema = offeringCreateSchema.extend({
 const ownershipCreateSchema = z.object({
   offeringId: z.string().min(1),
   facultyId: z.string().min(1),
-  ownershipRole: z.string().min(1),
+  ownershipRole: z.string().min(1).optional(),
   status: z.string().min(1),
 })
 
@@ -235,16 +235,32 @@ const assessmentComponentSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
   rawMax: z.number().int().positive(),
+  weightage: z.number().min(0).max(100).optional(),
+})
+
+const schemePolicyContextSchema = z.object({
+  ce: z.number().int().min(0).max(100),
+  see: z.number().int().min(0).max(100),
+  maxTermTests: z.number().int().min(0).max(10),
+  maxQuizzes: z.number().int().min(0).max(10),
+  maxAssignments: z.number().int().min(0).max(10),
+})
+
+const termTestWeightsSchema = z.object({
+  tt1: z.number().min(0).max(100),
+  tt2: z.number().min(0).max(100),
 })
 
 const schemeStateSchema = z.object({
   finalsMax: z.union([z.literal(50), z.literal(100)]),
-  quizWeight: z.number().min(0).max(100),
-  assignmentWeight: z.number().min(0).max(100),
+  termTestWeights: termTestWeightsSchema.optional(),
+  quizWeight: z.number().min(0).max(100).optional(),
+  assignmentWeight: z.number().min(0).max(100).optional(),
   quizCount: z.union([z.literal(0), z.literal(1), z.literal(2)]),
   assignmentCount: z.union([z.literal(0), z.literal(1), z.literal(2)]),
   quizComponents: z.array(assessmentComponentSchema),
   assignmentComponents: z.array(assessmentComponentSchema),
+  policyContext: schemePolicyContextSchema.optional(),
   status: z.string().min(1),
   configuredAt: z.number().finite().optional(),
   lockedAt: z.number().finite().optional(),
@@ -601,6 +617,107 @@ function isLeaderLikeOwnershipRole(role: string) {
   return normalized.includes('course') || normalized.includes('leader') || normalized.includes('owner') || normalized.includes('primary')
 }
 
+const FIXED_OWNERSHIP_ROLE = 'owner'
+
+function clampInteger(value: number | undefined, min: number, max: number, fallback: number) {
+  if (!Number.isFinite(value)) return fallback
+  return Math.max(min, Math.min(max, Math.round(value ?? fallback)))
+}
+
+function buildSchemePolicyContext(policy: ResolvedPolicy) {
+  return {
+    ce: policy.ceSeeSplit.ce,
+    see: policy.ceSeeSplit.see,
+    maxTermTests: policy.ceComponentCaps.maxTermTests,
+    maxQuizzes: policy.ceComponentCaps.maxQuizzes,
+    maxAssignments: policy.ceComponentCaps.maxAssignments,
+  }
+}
+
+function distributeWeightage(totalWeight: number, count: number) {
+  if (count <= 0) return [] as number[]
+  const base = Math.floor(totalWeight / count)
+  const remainder = totalWeight - (base * count)
+  return Array.from({ length: count }, (_, index) => base + (index === count - 1 ? remainder : 0))
+}
+
+function hasExplicitComponentWeightage(components?: Array<z.infer<typeof assessmentComponentSchema>>) {
+  return (components ?? []).some(component => typeof component.weightage === 'number' && Number.isFinite(component.weightage))
+}
+
+function sumAssessmentComponentWeightage(components: Array<z.infer<typeof assessmentComponentSchema>>) {
+  return components.reduce((acc, component) => acc + clampInteger(component.weightage, 0, 100, 0), 0)
+}
+
+function sanitizeAssessmentComponentsForScheme(
+  kind: 'quiz' | 'assignment',
+  count: 0 | 1 | 2,
+  components: Array<z.infer<typeof assessmentComponentSchema>> | undefined,
+  totalWeight: number,
+) {
+  const base = components && components.length > 0
+    ? components.slice(0, count)
+    : []
+  const distributedWeightage = distributeWeightage(totalWeight, count)
+  const explicitWeightage = hasExplicitComponentWeightage(base)
+  return Array.from({ length: count }, (_, index) => ({
+    id: base[index]?.id ?? `${kind}-${index + 1}`,
+    label: base[index]?.label?.trim() || `${kind === 'quiz' ? 'Quiz' : 'Assignment'} ${index + 1}`,
+    rawMax: clampInteger(base[index]?.rawMax, 1, 100, 10),
+    weightage: clampInteger(base[index]?.weightage, 0, 100, explicitWeightage ? 0 : (distributedWeightage[index] ?? 0)),
+  }))
+}
+
+function sanitizeTermTestWeights(
+  weights: z.infer<typeof termTestWeightsSchema> | undefined,
+  totalWeight: number,
+  maxTermTests: number,
+) {
+  if (maxTermTests <= 0 || totalWeight <= 0) return { tt1: 0, tt2: 0 }
+  if (maxTermTests === 1) {
+    return { tt1: clampInteger(weights?.tt1, 0, totalWeight, totalWeight), tt2: 0 }
+  }
+  const fallbackTt1 = Math.round(totalWeight / 2)
+  const fallbackTt2 = totalWeight - fallbackTt1
+  return {
+    tt1: clampInteger(weights?.tt1, 0, totalWeight, fallbackTt1),
+    tt2: clampInteger(weights?.tt2, 0, totalWeight, fallbackTt2),
+  }
+}
+
+function canonicalizeSchemeState(
+  input: z.infer<typeof schemeStateSchema>,
+  policy: ResolvedPolicy,
+) {
+  const policyContext = buildSchemePolicyContext(policy)
+  const quizCount = clampInteger(input.quizCount ?? input.quizComponents.length, 0, Math.min(2, policyContext.maxQuizzes), 0) as 0 | 1 | 2
+  const assignmentCount = clampInteger(input.assignmentCount ?? input.assignmentComponents.length, 0, Math.min(2, policyContext.maxAssignments), 0) as 0 | 1 | 2
+  const legacyQuizWeight = clampInteger(input.quizWeight, 0, 100, 0)
+  const legacyAssignmentWeight = clampInteger(input.assignmentWeight, 0, 100, 0)
+  const explicitQuizWeightage = hasExplicitComponentWeightage(input.quizComponents)
+  const explicitAssignmentWeightage = hasExplicitComponentWeightage(input.assignmentComponents)
+  const quizComponents = sanitizeAssessmentComponentsForScheme('quiz', quizCount, input.quizComponents, explicitQuizWeightage ? 0 : legacyQuizWeight)
+  const assignmentComponents = sanitizeAssessmentComponentsForScheme('assignment', assignmentCount, input.assignmentComponents, explicitAssignmentWeightage ? 0 : legacyAssignmentWeight)
+  const quizWeight = explicitQuizWeightage || quizCount === 0 ? sumAssessmentComponentWeightage(quizComponents) : legacyQuizWeight
+  const assignmentWeight = explicitAssignmentWeightage || assignmentCount === 0 ? sumAssessmentComponentWeightage(assignmentComponents) : legacyAssignmentWeight
+  const termTestTotal = Math.max(0, policyContext.ce - quizWeight - assignmentWeight)
+  return {
+    finalsMax: (input.finalsMax ?? (policyContext.see > 50 ? 100 : 50)) as 50 | 100,
+    termTestWeights: sanitizeTermTestWeights(input.termTestWeights, termTestTotal, policyContext.maxTermTests),
+    quizWeight,
+    assignmentWeight,
+    quizCount,
+    assignmentCount,
+    quizComponents,
+    assignmentComponents,
+    policyContext,
+    status: input.status,
+    configuredAt: input.configuredAt,
+    lockedAt: input.lockedAt,
+    lastEditedBy: input.lastEditedBy,
+  }
+}
+
 function normalizeRuntimeSlice<K extends RuntimeStateKey>(stateKey: K, payload: unknown) {
   const parsed = runtimeSliceSchemas[stateKey].safeParse(payload)
   return parsed.success ? parsed.data : runtimeDefaults[stateKey]
@@ -715,26 +832,27 @@ function buildDefaultCourseOutcomes(courseCode: string, courseTitle: string) {
 }
 
 function buildDefaultSchemeFromPolicy(policy: ResolvedPolicy) {
-  const quizCount = Math.min(2, Math.max(0, policy.ceComponentCaps.maxQuizzes)) as 0 | 1 | 2
-  const assignmentCount = Math.min(2, Math.max(0, policy.ceComponentCaps.maxAssignments)) as 0 | 1 | 2
-  return {
-    finalsMax: (policy.ceSeeSplit.see > 50 ? 100 : 50) as 50 | 100,
-    quizWeight: policy.ceComponentCaps.quizWeight,
-    assignmentWeight: policy.ceComponentCaps.assignmentWeight,
+  const policyContext = buildSchemePolicyContext(policy)
+  const quizCount = Math.min(2, Math.max(0, policyContext.maxQuizzes)) as 0 | 1 | 2
+  const assignmentCount = Math.min(2, Math.max(0, policyContext.maxAssignments)) as 0 | 1 | 2
+  const defaultTermTestWeight = policyContext.maxTermTests > 0 ? Math.min(policyContext.ce, 30) : 0
+  const remainingCe = Math.max(0, policyContext.ce - defaultTermTestWeight)
+  const defaultQuizWeight = Math.min(remainingCe, quizCount > 1 ? Math.max(10, Math.floor(remainingCe * 0.5)) : Math.min(remainingCe, 20))
+  const defaultAssignmentWeight = Math.max(0, remainingCe - defaultQuizWeight)
+  return canonicalizeSchemeState({
+    finalsMax: (policyContext.see > 50 ? 100 : 50) as 50 | 100,
+    termTestWeights: policyContext.maxTermTests > 1
+      ? { tt1: Math.round(defaultTermTestWeight / 2), tt2: defaultTermTestWeight - Math.round(defaultTermTestWeight / 2) }
+      : { tt1: defaultTermTestWeight, tt2: 0 },
+    quizWeight: defaultQuizWeight,
+    assignmentWeight: defaultAssignmentWeight,
     quizCount,
     assignmentCount,
-    quizComponents: Array.from({ length: quizCount }, (_, index) => ({
-      id: `quiz-${index + 1}`,
-      label: `Quiz ${index + 1}`,
-      rawMax: 10,
-    })),
-    assignmentComponents: Array.from({ length: assignmentCount }, (_, index) => ({
-      id: `assignment-${index + 1}`,
-      label: `Assignment ${index + 1}`,
-      rawMax: 10,
-    })),
+    quizComponents: sanitizeAssessmentComponentsForScheme('quiz', quizCount, undefined, defaultQuizWeight),
+    assignmentComponents: sanitizeAssessmentComponentsForScheme('assignment', assignmentCount, undefined, defaultAssignmentWeight),
+    policyContext,
     status: 'Needs Setup',
-  }
+  }, policy)
 }
 
 function roundToTwo(value: number) {
@@ -1128,7 +1246,9 @@ function collectBlueprintOutcomeIds(nodes: z.infer<typeof termTestNodeSchema>[])
   return collected
 }
 
-function validateSchemeAgainstPolicy(scheme: z.infer<typeof schemeStateSchema>, policy: ResolvedPolicy) {
+function validateSchemeAgainstPolicy(input: z.infer<typeof schemeStateSchema>, policy: ResolvedPolicy) {
+  const scheme = canonicalizeSchemeState(input, policy)
+  const policyContext = scheme.policyContext
   if (scheme.quizCount > policy.ceComponentCaps.maxQuizzes) {
     throw badRequest('Quiz count exceeds the sysadmin policy cap')
   }
@@ -1141,8 +1261,28 @@ function validateSchemeAgainstPolicy(scheme: z.infer<typeof schemeStateSchema>, 
   if (scheme.assignmentComponents.length !== scheme.assignmentCount) {
     throw badRequest('Assignment components must match the configured assignment count')
   }
-  if (scheme.quizWeight + scheme.assignmentWeight + policy.ceComponentCaps.termTestsWeight > policy.ceSeeSplit.ce) {
-    throw badRequest('Assessment weights exceed the configured CE split')
+  if (scheme.policyContext.ce !== policyContext.ce || scheme.policyContext.see !== policyContext.see) {
+    throw badRequest('Scheme CE/SEE context must match the sysadmin policy')
+  }
+  if (scheme.policyContext.maxTermTests !== policyContext.maxTermTests || scheme.policyContext.maxQuizzes !== policyContext.maxQuizzes || scheme.policyContext.maxAssignments !== policyContext.maxAssignments) {
+    throw badRequest('Scheme component limits must match the sysadmin policy')
+  }
+  if (scheme.quizWeight !== sumAssessmentComponentWeightage(scheme.quizComponents)) {
+    throw badRequest('Quiz weight must equal the total of configured quiz component weightages')
+  }
+  if (scheme.assignmentWeight !== sumAssessmentComponentWeightage(scheme.assignmentComponents)) {
+    throw badRequest('Assignment weight must equal the total of configured assignment component weightages')
+  }
+  const activeTermTestCount = [scheme.termTestWeights.tt1, scheme.termTestWeights.tt2].filter(weight => weight > 0).length
+  if (activeTermTestCount > policyContext.maxTermTests) {
+    throw badRequest('Term-test count exceeds the sysadmin policy cap')
+  }
+  const configuredCeWeight = scheme.termTestWeights.tt1
+    + scheme.termTestWeights.tt2
+    + scheme.quizWeight
+    + scheme.assignmentWeight
+  if (configuredCeWeight !== policyContext.ce) {
+    throw badRequest('Configured internal CE weightages must exactly match the sysadmin CE total')
   }
 }
 
@@ -1175,6 +1315,28 @@ async function getOfferingContext(context: RouteContext, offeringId: string) {
   const [department] = await context.db.select().from(departments).where(eq(departments.departmentId, branch.departmentId))
   if (!department) throw notFound('Department not found for offering')
   return { offering, course, term, branch, department }
+}
+
+async function assertSingleActiveOfferingOwner(
+  context: RouteContext,
+  offeringId: string,
+  facultyId: string,
+  excludeOwnershipId?: string,
+) {
+  const activeOwnerships = await context.db
+    .select()
+    .from(facultyOfferingOwnerships)
+    .where(and(
+      eq(facultyOfferingOwnerships.offeringId, offeringId),
+      eq(facultyOfferingOwnerships.status, 'active'),
+    ))
+
+  const conflicting = activeOwnerships.filter(item => item.ownershipId !== excludeOwnershipId)
+  if (conflicting.length === 0) return
+  if (conflicting.some(item => item.facultyId === facultyId)) {
+    throw badRequest('This class is already assigned to the selected faculty member.')
+  }
+  throw badRequest('This class already has an active faculty owner. Remove the existing assignment before reassigning it.')
 }
 
 async function assertStudentEnrolledInOffering(
@@ -2054,10 +2216,10 @@ async function buildAcademicBootstrap(
     courseOutcomeOverridesByCourseId.set(row.courseId, [...(courseOutcomeOverridesByCourseId.get(row.courseId) ?? []), row])
   }
 
-  const schemeByOfferingId = new Map<string, z.infer<typeof schemeStateSchema>>()
+  const rawSchemeByOfferingId = new Map<string, z.infer<typeof schemeStateSchema>>()
   for (const row of schemeRows) {
     const parsed = schemeStateSchema.safeParse(parseJson(row.schemeJson, {}))
-    if (parsed.success) schemeByOfferingId.set(row.offeringId, parsed.data)
+    if (parsed.success) rawSchemeByOfferingId.set(row.offeringId, parsed.data)
   }
 
   const questionPapersByOfferingId = new Map<string, Partial<Record<'tt1' | 'tt2', z.infer<typeof termTestBlueprintSchema>>>>()
@@ -2138,7 +2300,9 @@ async function buildAcademicBootstrap(
     resolvedCourseOutcomesByOfferingId.set(offeringRow.offeringId, outcomes)
     resolvedSchemesByOfferingId.set(
       offeringRow.offeringId,
-      schemeByOfferingId.get(offeringRow.offeringId) ?? buildDefaultSchemeFromPolicy(policy),
+      rawSchemeByOfferingId.has(offeringRow.offeringId)
+        ? canonicalizeSchemeState(rawSchemeByOfferingId.get(offeringRow.offeringId)!, policy)
+        : buildDefaultSchemeFromPolicy(policy),
     )
     resolvedQuestionPapersByOfferingId.set(
       offeringRow.offeringId,
@@ -3341,7 +3505,7 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
       .where(eq(offeringAssessmentSchemes.offeringId, params.offeringId))
       .then(rows => rows[0] ?? null)
     const scheme = schemeRow
-      ? schemeStateSchema.parse(parseJson(schemeRow.schemeJson, {}))
+      ? canonicalizeSchemeState(schemeStateSchema.parse(parseJson(schemeRow.schemeJson, {})), policy)
       : buildDefaultSchemeFromPolicy(policy)
     const evaluatedAt = body.evaluatedAt ?? context.now()
     const now = context.now()
@@ -3643,7 +3807,8 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
     await assertCourseLeaderCanManageOffering(context, auth.facultyId, params.offeringId)
     const { offering, term } = await getOfferingContext(context, params.offeringId)
     const policy = term.batchId ? (await resolveBatchPolicy(context, term.batchId)).effectivePolicy : DEFAULT_POLICY
-    validateSchemeAgainstPolicy(body.scheme, policy)
+    const canonicalScheme = canonicalizeSchemeState(body.scheme, policy)
+    validateSchemeAgainstPolicy(canonicalScheme, policy)
     const now = context.now()
     const [current] = await context.db
       .select()
@@ -3653,7 +3818,7 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
     if (current) {
       await context.db.update(offeringAssessmentSchemes).set({
         configuredByFacultyId: auth.facultyId,
-        schemeJson: stringifyJson(body.scheme),
+        schemeJson: stringifyJson(canonicalScheme),
         policySnapshotJson: stringifyJson(policy),
         status: current.status,
         version: current.version + 1,
@@ -3663,7 +3828,7 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
       await context.db.insert(offeringAssessmentSchemes).values({
         offeringId: offering.offeringId,
         configuredByFacultyId: auth.facultyId,
-        schemeJson: stringifyJson(body.scheme),
+        schemeJson: stringifyJson(canonicalScheme),
         policySnapshotJson: stringifyJson(policy),
         status: 'active',
         version: 1,
@@ -3686,14 +3851,14 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
       action: current ? 'UPDATE' : 'CREATE',
       actorRole: auth.activeRoleGrant.roleCode,
       actorId: auth.facultyId,
-      before: previousScheme?.success ? previousScheme.data : null,
-      after: body.scheme,
+      before: previousScheme?.success ? canonicalizeSchemeState(previousScheme.data, policy) : null,
+      after: canonicalScheme,
       metadata: { offeringId: params.offeringId },
     })
 
     return {
       offeringId: saved.offeringId,
-      scheme: schemeStateSchema.parse(parseJson(saved.schemeJson, {})),
+      scheme: canonicalizeSchemeState(schemeStateSchema.parse(parseJson(saved.schemeJson, {})), policy),
       version: saved.version,
       policySnapshot: parseJson(saved.policySnapshotJson, {}),
     }
@@ -4088,13 +4253,16 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
   }, async request => {
     const auth = requireRole(request, ['SYSTEM_ADMIN'])
     const body = parseOrThrow(ownershipCreateSchema, request.body)
+    if (body.status === 'active') {
+      await assertSingleActiveOfferingOwner(context, body.offeringId, body.facultyId)
+    }
     const ownershipId = createId('ownership')
     const now = context.now()
     await context.db.insert(facultyOfferingOwnerships).values({
       ownershipId,
       offeringId: body.offeringId,
       facultyId: body.facultyId,
-      ownershipRole: body.ownershipRole,
+      ownershipRole: FIXED_OWNERSHIP_ROLE,
       status: body.status,
       version: 1,
       createdAt: now,
@@ -4124,10 +4292,13 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
     const [current] = await context.db.select().from(facultyOfferingOwnerships).where(eq(facultyOfferingOwnerships.ownershipId, params.ownershipId))
     if (!current) throw notFound('Offering ownership not found')
     expectVersion(current.version, body.version, 'offering ownership', current)
+    if (body.status === 'active') {
+      await assertSingleActiveOfferingOwner(context, body.offeringId, body.facultyId, current.ownershipId)
+    }
     await context.db.update(facultyOfferingOwnerships).set({
       offeringId: body.offeringId,
       facultyId: body.facultyId,
-      ownershipRole: body.ownershipRole,
+      ownershipRole: FIXED_OWNERSHIP_ROLE,
       status: body.status,
       version: current.version + 1,
       updatedAt: context.now(),

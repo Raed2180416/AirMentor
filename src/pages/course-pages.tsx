@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { AlertTriangle, ArrowUpRight, Eye, Shield } from 'lucide-react'
 import { CO_COLORS, CO_MAP, T, mono, sora, yearColor, type CODef, type CoAttainmentRow, type Offering, type Student } from '../data'
 import type {
@@ -17,6 +18,7 @@ import {
   normalizeBlueprint,
   removeBlueprintPart,
   removeBlueprintQuestion,
+  sumComponentWeightage,
   useAppSelectors,
 } from '../selectors'
 import { TAB_DEFS, clampNumber } from '../page-utils'
@@ -51,10 +53,28 @@ export function CourseDetail({
 }) {
   const { getStudentsPatched } = useAppSelectors()
   const [tab, setTab] = useState(initialTab ?? 'overview')
+  const shouldReduceMotion = useReducedMotion()
   const yearTint = yearColor(offering.year)
   const students = useMemo(() => getStudentsPatched(offering), [getStudentsPatched, offering])
   const cos = courseOutcomes && courseOutcomes.length > 0 ? courseOutcomes : (CO_MAP[offering.code] || CO_MAP.default)
   const tabLocked = (tabId: string) => (tabId === 'tt2' && offering.stageInfo.stage < 2) || (tabId === 'risk' && offering.stage < 2)
+  const activeTabContent = tab === 'overview'
+    ? <OverviewTab offering={offering} cos={cos} students={students} setTab={setTab} />
+    : tab === 'risk'
+      ? <RiskTab offering={offering} students={students} onOpenStudent={onOpenStudent} />
+      : tab === 'attendance'
+        ? <AttendanceTab offering={offering} students={students} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('attendance')} />
+        : tab === 'tt1'
+          ? <TTTab ttNum={1} cos={cos} blueprint={blueprints.tt1} isLocked={lockMap.tt1} students={students} onChangeBlueprint={next => onUpdateBlueprint('tt1', next)} onOpenEntryHub={onOpenEntryHub} onOpenStudent={onOpenStudent} />
+          : tab === 'tt2'
+            ? <TTTab ttNum={2} cos={cos} blueprint={blueprints.tt2} isLocked={lockMap.tt2} students={students} onChangeBlueprint={next => onUpdateBlueprint('tt2', next)} onOpenEntryHub={onOpenEntryHub} onOpenStudent={onOpenStudent} />
+            : tab === 'quizzes'
+              ? <QuizzesTab students={students} scheme={scheme} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('quiz')} />
+              : tab === 'assignments'
+                ? <AssignmentsTab students={students} scheme={scheme} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('assignment')} />
+                : tab === 'co'
+                  ? <COTab cos={cos} rows={coAttainmentRows ?? []} />
+                  : <GradeBookTab offering={offering} students={students} scheme={scheme} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('finals')} onOpenSchemeSetup={onOpenSchemeSetup} />
 
   return (
     <PageShell size="wide" style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', padding: 0 }}>
@@ -116,15 +136,17 @@ export function CourseDetail({
       </div>
 
       <div style={{ flex: 1, background: T.bg }}>
-        {tab === 'overview' && <OverviewTab offering={offering} cos={cos} students={students} setTab={setTab} />}
-        {tab === 'risk' && <RiskTab offering={offering} students={students} onOpenStudent={onOpenStudent} />}
-        {tab === 'attendance' && <AttendanceTab offering={offering} students={students} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('attendance')} />}
-        {tab === 'tt1' && <TTTab ttNum={1} cos={cos} blueprint={blueprints.tt1} isLocked={lockMap.tt1} students={students} onChangeBlueprint={next => onUpdateBlueprint('tt1', next)} onOpenEntryHub={onOpenEntryHub} onOpenStudent={onOpenStudent} />}
-        {tab === 'tt2' && <TTTab ttNum={2} cos={cos} blueprint={blueprints.tt2} isLocked={lockMap.tt2} students={students} onChangeBlueprint={next => onUpdateBlueprint('tt2', next)} onOpenEntryHub={onOpenEntryHub} onOpenStudent={onOpenStudent} />}
-        {tab === 'quizzes' && <QuizzesTab students={students} scheme={scheme} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('quiz')} />}
-        {tab === 'assignments' && <AssignmentsTab students={students} scheme={scheme} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('assignment')} />}
-        {tab === 'co' && <COTab cos={cos} rows={coAttainmentRows ?? []} />}
-        {tab === 'gradebook' && <GradeBookTab offering={offering} students={students} scheme={scheme} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('finals')} onOpenSchemeSetup={onOpenSchemeSetup} />}
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={tab}
+            initial={shouldReduceMotion ? false : { opacity: 0, y: 18, filter: 'blur(6px)' }}
+            animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0, filter: 'blur(0px)' }}
+            exit={shouldReduceMotion ? undefined : { opacity: 0, y: -8, filter: 'blur(4px)' }}
+            transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.24, ease: 'easeOut' }}
+          >
+            {activeTabContent}
+          </motion.div>
+        </AnimatePresence>
       </div>
     </PageShell>
   )
@@ -510,10 +532,12 @@ function TTTab({
 }
 
 function QuizzesTab({ students, scheme, onOpenStudent, onOpenEntryHub }: { students: Student[]; scheme: SchemeState; onOpenStudent: (student: Student) => void; onOpenEntryHub: () => void }) {
+  const totalQuizWeight = sumComponentWeightage(scheme.quizComponents)
   const quizzes = scheme.quizComponents.map((component, index) => ({
     id: component.id,
     name: component.label,
     rawMax: component.rawMax,
+    weightage: component.weightage,
     entered: students.some(student => (index === 0 ? student.quiz1 : student.quiz2) !== null),
   }))
 
@@ -528,7 +552,7 @@ function QuizzesTab({ students, scheme, onOpenStudent, onOpenEntryHub }: { stude
         {quizzes.map(quiz => (
           <Card key={quiz.id} style={{ flex: 1, padding: '14px 16px' }}>
             <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text }}>{quiz.name}</div>
-            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>Raw max: {quiz.rawMax}</div>
+            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>Raw max: {quiz.rawMax} · Weightage: {quiz.weightage}</div>
             <div style={{ marginTop: 8 }}><Chip color={quiz.entered ? T.success : T.warning}>{quiz.entered ? 'Entered' : 'Pending'}</Chip></div>
           </Card>
         ))}
@@ -536,7 +560,7 @@ function QuizzesTab({ students, scheme, onOpenStudent, onOpenEntryHub }: { stude
       <Card style={{ padding: 0, overflow: 'hidden' }}>
         <HScrollArea>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr>{['#', 'USN', 'Name', ...quizzes.map(quiz => `${quiz.name} /${quiz.rawMax}`), `Normalized /${scheme.quizWeight}`, ''].map(header => <TH key={header}>{header}</TH>)}</tr></thead>
+            <thead><tr>{['#', 'USN', 'Name', ...quizzes.map(quiz => `${quiz.name} /${quiz.rawMax} · W${quiz.weightage}`), `Weighted /${totalQuizWeight}`, ''].map(header => <TH key={header}>{header}</TH>)}</tr></thead>
             <tbody>
               {students.slice(0, 15).map((student, index) => (
                 <tr key={student.id}>
@@ -560,10 +584,12 @@ function QuizzesTab({ students, scheme, onOpenStudent, onOpenEntryHub }: { stude
 }
 
 function AssignmentsTab({ students, scheme, onOpenStudent, onOpenEntryHub }: { students: Student[]; scheme: SchemeState; onOpenStudent: (student: Student) => void; onOpenEntryHub: () => void }) {
+  const totalAssignmentWeight = sumComponentWeightage(scheme.assignmentComponents)
   const assignments = scheme.assignmentComponents.map((component, index) => ({
     id: component.id,
     label: component.label,
     rawMax: component.rawMax,
+    weightage: component.weightage,
     entered: students.some(student => (index === 0 ? student.asgn1 : student.asgn2) !== null),
   }))
 
@@ -578,7 +604,7 @@ function AssignmentsTab({ students, scheme, onOpenStudent, onOpenEntryHub }: { s
         {assignments.map(assignment => (
           <Card key={assignment.id} style={{ flex: 1, padding: '14px 16px' }}>
             <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text }}>{assignment.label}</div>
-            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>Raw max: {assignment.rawMax}</div>
+            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>Raw max: {assignment.rawMax} · Weightage: {assignment.weightage}</div>
             <div style={{ display: 'flex', gap: 4, marginTop: 6 }}><Chip color={assignment.entered ? T.success : T.warning}>{assignment.entered ? 'Entered' : 'Pending'}</Chip></div>
           </Card>
         ))}
@@ -586,7 +612,7 @@ function AssignmentsTab({ students, scheme, onOpenStudent, onOpenEntryHub }: { s
       <Card style={{ padding: 0, overflow: 'hidden' }}>
         <HScrollArea>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr>{['#', 'USN', 'Name', ...assignments.map(item => `${item.label} /${item.rawMax}`), `Normalized /${scheme.assignmentWeight}`, ''].map(header => <TH key={header}>{header}</TH>)}</tr></thead>
+            <thead><tr>{['#', 'USN', 'Name', ...assignments.map(item => `${item.label} /${item.rawMax} · W${item.weightage}`), `Weighted /${totalAssignmentWeight}`, ''].map(header => <TH key={header}>{header}</TH>)}</tr></thead>
             <tbody>
               {students.slice(0, 15).map((student, index) => (
                 <tr key={student.id}>
@@ -679,6 +705,10 @@ function GradeBookTab({
 }) {
   const { deriveAcademicProjection } = useAppSelectors()
   const schemeReady = scheme.status !== 'Needs Setup'
+  const ceThresholds = {
+    success: scheme.policyContext.ce * 0.5,
+    warning: scheme.policyContext.ce * 0.4,
+  }
 
   return (
     <div style={{ padding: '24px 32px' }}>
@@ -690,13 +720,16 @@ function GradeBookTab({
         </div>
       </div>
       <Card style={{ marginBottom: 12, padding: '10px 12px' }}>
-        <div style={{ ...mono, fontSize: 10, color: T.muted, marginBottom: 8 }}>CE model: TT1+TT2 = 30/60 fixed. Quiz+Assignment = 30/60 variable. Final subject score uses exact score out of 100 before band mapping.</div>
+        <div style={{ ...mono, fontSize: 10, color: T.muted, marginBottom: 8 }}>CE model follows the sysadmin policy: CE {scheme.policyContext.ce}, SEE {scheme.policyContext.see}. Raw SEE entry still uses the university exam max and is scaled automatically.</div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <Chip color={schemeReady ? T.success : T.warning} size={9}>Scheme: {scheme.status}</Chip>
+          <Chip color={T.accent} size={9}>TT1 {scheme.termTestWeights.tt1}</Chip>
+          <Chip color={T.accent} size={9}>TT2 {scheme.termTestWeights.tt2}</Chip>
           <Chip color={T.accent} size={9}>Quiz {scheme.quizWeight}</Chip>
           <Chip color={T.accent} size={9}>Assignment {scheme.assignmentWeight}</Chip>
           <Chip color={T.dim} size={9}>Quiz count {scheme.quizComponents.length}</Chip>
           <Chip color={T.dim} size={9}>Assignment count {scheme.assignmentComponents.length}</Chip>
+          <Chip color={T.blue} size={9}>SEE {scheme.policyContext.see}</Chip>
           <Chip color={T.blue} size={9}>SEE raw max {scheme.finalsMax}</Chip>
         </div>
       </Card>
@@ -704,7 +737,7 @@ function GradeBookTab({
       <Card style={{ padding: 0, overflow: 'hidden' }}>
         <HScrollArea>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr>{['USN', 'Name', 'TT1 /15', 'TT2 /15', `Quiz /${scheme.quizWeight}`, `Asgn /${scheme.assignmentWeight}`, 'CE /60', `SEE /${scheme.finalsMax}`, 'Final /100', 'Band', 'Pred CGPA', 'Risk', ''].map(header => <TH key={header}>{header}</TH>)}</tr></thead>
+            <thead><tr>{['USN', 'Name', `TT1 /${scheme.termTestWeights.tt1}`, `TT2 /${scheme.termTestWeights.tt2}`, `Quiz /${scheme.quizWeight}`, `Asgn /${scheme.assignmentWeight}`, `CE /${scheme.policyContext.ce}`, `SEE /${scheme.policyContext.see}`, 'Final /100', 'Band', 'Pred CGPA', 'Risk', ''].map(header => <TH key={header}>{header}</TH>)}</tr></thead>
             <tbody>
               {students.slice(0, 20).map(student => {
                 const projection = deriveAcademicProjection({ offering, student, scheme })
@@ -716,8 +749,8 @@ function GradeBookTab({
                     <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: student.tt2Score !== null ? T.text : T.dim }}>{student.tt2Score !== null ? projection.tt2Scaled.toFixed(1) : '—'}</TD>
                     <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: scheme.quizWeight === 0 ? T.dim : T.text }}>{scheme.quizWeight === 0 ? '—' : projection.quizScaled.toFixed(1)}</TD>
                     <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: scheme.assignmentWeight === 0 ? T.dim : T.text }}>{scheme.assignmentWeight === 0 ? '—' : projection.asgnScaled.toFixed(1)}</TD>
-                    <TD style={{ ...mono, fontSize: 12, fontWeight: 700, textAlign: 'center', color: projection.ce60 >= 30 ? T.success : projection.ce60 >= 24 ? T.warning : T.danger }}>{projection.ce60.toFixed(1)}</TD>
-                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: projection.seeRaw !== null ? T.text : T.dim }}>{projection.seeRaw !== null ? projection.seeRaw.toFixed(1) : '—'}</TD>
+                    <TD style={{ ...mono, fontSize: 12, fontWeight: 700, textAlign: 'center', color: projection.ce60 >= ceThresholds.success ? T.success : projection.ce60 >= ceThresholds.warning ? T.warning : T.danger }}>{projection.ce60.toFixed(1)}</TD>
+                    <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: projection.seeRaw !== null ? T.text : T.dim }}>{projection.seeRaw !== null ? projection.seeScaled40.toFixed(1) : '—'}</TD>
                     <TD style={{ ...mono, fontSize: 12, fontWeight: 700, textAlign: 'center', color: projection.finalScore100 >= 60 ? T.success : projection.finalScore100 >= 40 ? T.warning : T.danger }}>{projection.finalScore100.toFixed(1)}</TD>
                     <TD><Chip color={projection.gradePoint >= 8 ? T.success : projection.gradePoint >= 4 ? T.warning : T.danger} size={9}>{projection.bandLabel}</Chip></TD>
                     <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: T.blue }}>{projection.predictedCgpa.toFixed(2)}</TD>

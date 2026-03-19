@@ -15,12 +15,12 @@ import {
   CheckCircle2,
   Clock3,
   ChevronLeft,
+  ChevronRight,
   Compass,
   GraduationCap,
   LayoutDashboard,
   Plus,
   RefreshCw,
-  Search,
   UserCog,
   Users,
 } from 'lucide-react'
@@ -224,7 +224,6 @@ type OwnershipFormState = {
   ownershipId: string
   offeringId: string
   facultyId: string
-  ownershipRole: string
 }
 
 type StudentDetailTab = 'profile' | 'academic' | 'mentor' | 'progression' | 'history'
@@ -452,7 +451,6 @@ function defaultOwnershipForm(): OwnershipFormState {
     ownershipId: '',
     offeringId: '',
     facultyId: '',
-    ownershipRole: 'owner',
   }
 }
 
@@ -583,9 +581,9 @@ function buildValidatedPolicyPayload(form: PolicyFormState): ApiPolicyPayload {
   const pMin = requireRange('P minimum', form.pMin, 0, 100)
   const ce = requireRange('CE', form.ce, 0, 100)
   const see = requireRange('SEE', form.see, 0, 100)
-  const termTestsWeight = requireRange('Term test weight', form.termTestsWeight, 0, 100)
-  const quizWeight = requireRange('Quiz weight', form.quizWeight, 0, 100)
-  const assignmentWeight = requireRange('Assignment weight', form.assignmentWeight, 0, 100)
+  const termTestsWeight = requireRange('Stored term test weight', form.termTestsWeight, 0, 100)
+  const quizWeight = requireRange('Stored quiz weight', form.quizWeight, 0, 100)
+  const assignmentWeight = requireRange('Stored assignment weight', form.assignmentWeight, 0, 100)
   const maxTermTests = requirePositiveInteger('Max term tests', form.maxTermTests)
   const maxQuizzes = requirePositiveInteger('Max quizzes', form.maxQuizzes)
   const maxAssignments = requirePositiveInteger('Max assignments', form.maxAssignments)
@@ -599,9 +597,6 @@ function buildValidatedPolicyPayload(form: PolicyFormState): ApiPolicyPayload {
   const mediumRiskBacklogCount = requireRange('Medium risk backlog threshold', form.mediumRiskBacklogCount, 0, 50)
 
   if (ce + see !== 100) throw new Error('CE and SEE must total 100.')
-  if (termTestsWeight + quizWeight + assignmentWeight !== ce) {
-    throw new Error('Term test, quiz, and assignment weights must total the CE value.')
-  }
   if (!(oMin >= aPlusMin && aPlusMin >= aMin && aMin >= bPlusMin && bPlusMin >= bMin && bMin >= cMin && cMin >= pMin)) {
     throw new Error('Grade bands must descend from O down to P without gaps going upward.')
   }
@@ -792,13 +787,8 @@ function TeachingShellAdminTopBar({
   now,
   themeMode,
   actionCount,
-  searchQuery,
-  onSearchChange,
-  searchResults,
-  onSearchSelect,
-  activeSection,
-  onSectionChange,
-  breadcrumbs,
+  railCollapsed,
+  onToggleRail,
   onToggleTheme,
   onGoHome,
   onToggleQueue,
@@ -811,13 +801,8 @@ function TeachingShellAdminTopBar({
   now: Date
   themeMode: ThemeMode
   actionCount: number
-  searchQuery: string
-  onSearchChange: (query: string) => void
-  searchResults: Array<{ key: string; title: string; subtitle: string; onSelect: () => void }>
-  onSearchSelect?: () => void
-  activeSection: LiveAdminSectionId
-  onSectionChange: (section: LiveAdminSectionId) => void
-  breadcrumbs: BreadcrumbSegment[]
+  railCollapsed: boolean
+  onToggleRail: () => void
   onToggleTheme: () => void
   onGoHome: () => void
   onToggleQueue: () => void
@@ -829,6 +814,15 @@ function TeachingShellAdminTopBar({
     <div style={{ ...getShellBarStyle(themeMode), zIndex: 40, gap: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          <button
+            type="button"
+            aria-label={railCollapsed ? 'Expand operations rail' : 'Collapse operations rail'}
+            title={railCollapsed ? 'Expand operations rail' : 'Collapse operations rail'}
+            onClick={onToggleRail}
+            style={{ ...getIconButtonStyle({ subtle: false }), color: railCollapsed ? T.accent : T.muted }}
+          >
+            {railCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          </button>
           <button
             type="button"
             aria-label="Go to dashboard"
@@ -868,66 +862,145 @@ function TeachingShellAdminTopBar({
           </button>
         </div>
       </div>
+    </div>
+  )
+}
 
-      <div style={{ position: 'relative' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, borderRadius: 16, border: `1px solid ${T.border2}`, background: `linear-gradient(180deg, ${T.surface}, ${T.surface2})`, padding: '12px 14px', boxShadow: `inset 0 1px 0 ${T.surface3}` }}>
-          <Search size={15} color={T.muted} />
-          <input
-            aria-label="Global admin search"
-            value={searchQuery}
-            onChange={event => onSearchChange(event.target.value)}
-            placeholder="Search anything: faculty, department, course, request, student, section..."
-            style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', color: T.text, ...mono, fontSize: UI_FONT_SIZES.body }}
-          />
+function OperationsRail({
+  collapsed,
+  contextLabel,
+  scopeLabel,
+  searchQuery,
+  onSearchChange,
+  searchPlaceholder,
+  searchResults,
+  activeSection,
+  onSectionChange,
+  breadcrumbs,
+  onToggleCollapsed,
+}: {
+  collapsed: boolean
+  contextLabel: string
+  scopeLabel?: string
+  searchQuery: string
+  onSearchChange: (value: string) => void
+  searchPlaceholder: string
+  searchResults: Array<{ key: string; title: string; subtitle: string; onSelect: () => void }>
+  activeSection: LiveAdminSectionId
+  onSectionChange: (section: LiveAdminSectionId) => void
+  breadcrumbs: BreadcrumbSegment[]
+  onToggleCollapsed: () => void
+}) {
+  return (
+    <motion.aside
+      initial={false}
+      animate={{ width: collapsed ? 0 : 232, opacity: collapsed ? 0 : 1 }}
+      transition={{ duration: 0.22, ease: 'easeOut' }}
+      aria-hidden={collapsed}
+      style={{
+        position: 'sticky',
+        top: 0,
+        height: 'calc(100vh - 84px)',
+        alignSelf: 'start',
+        background: `linear-gradient(180deg, ${T.surface}, ${T.surface2})`,
+        borderRight: collapsed ? 'none' : `1px solid ${T.border}`,
+        overflow: 'hidden',
+        flexShrink: 0,
+        pointerEvents: collapsed ? 'none' : 'auto',
+      }}
+    >
+      <div className="scroll-pane scroll-pane--dense" style={{ height: '100%', overflowY: 'auto', padding: '16px 12px', display: 'grid', gridTemplateRows: 'auto auto 1fr auto', gap: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          <div>
+            <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Operations Rail</div>
+            <div style={{ ...sora, fontSize: 16, fontWeight: 800, color: T.text, marginTop: 6 }}>{contextLabel}</div>
+            {scopeLabel ? <div style={{ ...mono, fontSize: 10, color: T.accent, marginTop: 6 }}>{scopeLabel}</div> : null}
+          </div>
+          <button
+            type="button"
+            aria-label="Collapse operations rail"
+            title="Collapse operations rail"
+            onClick={onToggleCollapsed}
+            style={{ ...getIconButtonStyle({ subtle: false }), color: T.muted, marginLeft: 'auto' }}
+          >
+            <ChevronLeft size={14} />
+          </button>
         </div>
-        {searchResults.length > 0 ? (
-          <Card style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, right: 0, padding: 0, overflow: 'hidden', zIndex: 30 }}>
-            {searchResults.map(result => (
+
+        <div style={{ display: 'grid', gap: 10 }}>
+          <SearchField
+            value={searchQuery}
+            onChange={onSearchChange}
+            placeholder={searchPlaceholder}
+            ariaLabel="Admin search"
+          />
+          {searchResults.length > 0 ? (
+            <Card style={{ padding: 0, overflow: 'hidden' }}>
+              {searchResults.map((result, index) => (
+                <button
+                  key={result.key}
+                  type="button"
+                  onClick={result.onSelect}
+                  style={{
+                    width: '100%',
+                    textAlign: 'left',
+                    background: 'transparent',
+                    border: 'none',
+                    borderBottom: index < searchResults.length - 1 ? `1px solid ${T.border}` : 'none',
+                    padding: '10px 12px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ ...sora, fontSize: 12, fontWeight: 700, color: T.text }}>{result.title}</div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{result.subtitle}</div>
+                </button>
+              ))}
+            </Card>
+          ) : searchQuery.trim() ? (
+            <InfoBanner message="No matching records in the active admin scope." />
+          ) : null}
+        </div>
+
+        <nav style={{ display: 'grid', gap: 6, alignContent: 'start' }}>
+          {TOP_TABS.map(tab => {
+            const Icon = tab.icon
+            const active = activeSection === tab.id
+            return (
               <button
-                key={result.key}
+                key={tab.id}
                 type="button"
-                onClick={() => {
-                  result.onSelect()
-                  onSearchSelect?.()
-                }}
+                data-nav-item="true"
+                data-active={active ? 'true' : 'false'}
+                onClick={() => onSectionChange(tab.id as LiveAdminSectionId)}
                 style={{
                   width: '100%',
-                  textAlign: 'left',
-                  background: 'transparent',
-                  border: 'none',
-                  borderBottom: `1px solid ${T.border}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'flex-start',
+                  gap: 10,
                   padding: '11px 12px',
+                  borderRadius: 12,
+                  border: `1px solid ${active ? withAlpha(T.accent, '44') : 'transparent'}`,
+                  background: active ? withAlpha(T.accent, '18') : 'transparent',
+                  color: active ? T.accentLight : T.muted,
                   cursor: 'pointer',
+                  textAlign: 'left',
+                  minHeight: 44,
                 }}
               >
-                <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{result.title}</div>
-                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{result.subtitle}</div>
+                <Icon size={15} />
+                <span style={{ ...sora, fontSize: 12, fontWeight: 700 }}>{tab.label}</span>
               </button>
-            ))}
-          </Card>
-        ) : null}
-      </div>
+            )
+          })}
+        </nav>
 
-      <div style={{ ...getSegmentedGroupStyle(), flexWrap: 'wrap' }}>
-        {TOP_TABS.map(tab => {
-          const Icon = tab.icon
-          const isActive = activeSection === tab.id
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => onSectionChange(tab.id as LiveAdminSectionId)}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, ...getSegmentedButtonStyle({ active: isActive, compact: true }) }}
-            >
-              <Icon size={13} />
-              {tab.label}
-            </button>
-          )
-        })}
+        <Card style={{ padding: 12, background: `linear-gradient(180deg, ${T.surface2}, ${T.surface})` }}>
+          <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>Path</div>
+          {breadcrumbs.length > 0 ? <AdminBreadcrumbs segments={breadcrumbs} /> : <div style={{ ...mono, fontSize: 10, color: T.muted }}>No deeper scope selected yet.</div>}
+        </Card>
       </div>
-
-      {breadcrumbs.length > 0 ? <AdminBreadcrumbs segments={breadcrumbs} /> : null}
-    </div>
+    </motion.aside>
   )
 }
 
@@ -1009,6 +1082,10 @@ function OverviewSupportCard({
   )
 }
 
+function toOptionalScopeValue(value?: string | null) {
+  return value ?? undefined
+}
+
 function ActionQueueCard({
   title,
   subtitle,
@@ -1050,7 +1127,7 @@ function AdminDetailTabs({
   onChange: (tabId: string) => void
 }) {
   return (
-    <div style={{ ...getSegmentedGroupStyle(), flexWrap: 'wrap' }}>
+    <div style={{ ...getSegmentedGroupStyle(), flexWrap: 'wrap', width: '100%' }}>
       {tabs.map(tab => (
         <button
           key={tab.id}
@@ -1058,12 +1135,23 @@ function AdminDetailTabs({
           data-tab="true"
           disabled={tab.disabled}
           onClick={() => onChange(tab.id)}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, textAlign: 'left', ...getSegmentedButtonStyle({ active: activeTab === tab.id, disabled: tab.disabled, compact: true }) }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            minWidth: 156,
+            flex: '1 1 156px',
+            textAlign: 'left',
+            ...getSegmentedButtonStyle({ active: activeTab === tab.id, disabled: tab.disabled, compact: true }),
+          }}
         >
           <span style={{ ...sora, fontSize: 12, fontWeight: 700 }}>{tab.label}</span>
-          {tab.count != null
-            ? <Chip color={activeTab === tab.id ? T.accent : T.dim} size={8}>{String(tab.count)}</Chip>
-            : <span style={{ ...mono, fontSize: 9, color: T.dim }}>{tab.disabled ? 'Locked' : 'Open'}</span>}
+          <span style={{ minWidth: 34, display: 'inline-flex', justifyContent: 'flex-end' }}>
+            {tab.count != null
+              ? <Chip color={activeTab === tab.id ? T.accent : T.dim} size={8}>{String(tab.count)}</Chip>
+              : <span style={{ ...mono, fontSize: 9, color: T.dim }}>{tab.disabled ? 'Locked' : ''}</span>}
+          </span>
         </button>
       ))}
     </div>
@@ -1108,6 +1196,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const [serverSearchResults, setServerSearchResults] = useState<ApiAdminSearchResult[]>([])
   const [showActionQueue, setShowActionQueue] = useState(true)
   const [viewportWidth, setViewportWidth] = useState(() => typeof window === 'undefined' ? 1440 : window.innerWidth)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => typeof window === 'undefined' ? false : window.innerWidth < 1280)
   const [remindersSupported, setRemindersSupported] = useState(true)
   const [universityTab, setUniversityTab] = useState<UniversityTab>('overview')
   const [selectedSectionCode, setSelectedSectionCode] = useState<string | null>(null)
@@ -1160,6 +1249,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const [recentAuditEvents, setRecentAuditEvents] = useState<ApiAuditEvent[]>([])
   const [facultyCalendarLoading, setFacultyCalendarLoading] = useState(false)
   const [facultyCalendar, setFacultyCalendar] = useState<ApiAdminFacultyCalendar | null>(null)
+  const [showFacultyTimetableExpanded, setShowFacultyTimetableExpanded] = useState(false)
   const [studentDetailTab, setStudentDetailTab] = useState<StudentDetailTab>('profile')
   const [facultyDetailTab, setFacultyDetailTab] = useState<FacultyDetailTab>('profile')
   const [editingEntity, setEditingEntity] = useState<EditingEntity | null>(null)
@@ -1442,6 +1532,21 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   useEffect(() => {
     if (!session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') return
     const query = deferredSearch.trim()
+    const activeSearchScope = route.section === 'faculties'
+      ? {
+          academicFacultyId: toOptionalScopeValue(route.academicFacultyId),
+          departmentId: toOptionalScopeValue(route.departmentId),
+          branchId: toOptionalScopeValue(route.branchId),
+          batchId: toOptionalScopeValue(route.batchId),
+          sectionCode: toOptionalScopeValue(selectedSectionCode),
+        }
+      : {
+          academicFacultyId: toOptionalScopeValue(registryScope?.academicFacultyId),
+          departmentId: toOptionalScopeValue(registryScope?.departmentId),
+          branchId: toOptionalScopeValue(registryScope?.branchId),
+          batchId: toOptionalScopeValue(registryScope?.batchId),
+          sectionCode: toOptionalScopeValue(registryScope?.sectionCode),
+        }
     if (!query) {
       setServerSearchResults([])
       return
@@ -1449,20 +1554,14 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     let cancelled = false
     void (async () => {
       try {
-        const response = await apiClient.searchAdminWorkspace(query, {
-          academicFacultyId: route.academicFacultyId,
-          departmentId: route.departmentId,
-          branchId: route.branchId,
-          batchId: route.batchId,
-          sectionCode: selectedSectionCode ?? undefined,
-        })
+        const response = await apiClient.searchAdminWorkspace(query, activeSearchScope)
         if (!cancelled) setServerSearchResults(response.items)
       } catch {
         if (!cancelled) setServerSearchResults([])
       }
     })()
     return () => { cancelled = true }
-  }, [apiClient, deferredSearch, route.academicFacultyId, route.batchId, route.branchId, route.departmentId, selectedSectionCode, session])
+  }, [apiClient, deferredSearch, registryScope?.academicFacultyId, registryScope?.batchId, registryScope?.branchId, registryScope?.departmentId, registryScope?.sectionCode, route.academicFacultyId, route.batchId, route.branchId, route.departmentId, route.section, selectedSectionCode, session])
 
   const systemAdminGrant = session?.availableRoleGrants.find(item => item.roleCode === 'SYSTEM_ADMIN') ?? null
   const selectedAcademicFaculty = resolveAcademicFaculty(data, route.academicFacultyId)
@@ -1481,6 +1580,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   }, [selectedFacultyMember?.facultyId])
 
   useEffect(() => {
+    setShowFacultyTimetableExpanded(false)
+  }, [facultyDetailTab, selectedFacultyMember?.facultyId])
+
+  useEffect(() => {
     if (route.section !== 'students') return
     setStudentRegistryFilter(hydrateRegistryFilter(registryScope))
   }, [registryScope, route.section])
@@ -1491,6 +1594,26 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   }, [registryScope, route.section])
 
   const searchResults = useMemo(() => {
+    const activeSearchScope = route.section === 'faculties'
+      ? {
+          academicFacultyId: toOptionalScopeValue(route.academicFacultyId),
+          departmentId: toOptionalScopeValue(route.departmentId),
+          branchId: toOptionalScopeValue(route.branchId),
+          batchId: toOptionalScopeValue(route.batchId),
+          sectionCode: toOptionalScopeValue(selectedSectionCode),
+        }
+      : {
+          academicFacultyId: toOptionalScopeValue(registryScope?.academicFacultyId),
+          departmentId: toOptionalScopeValue(registryScope?.departmentId),
+          branchId: toOptionalScopeValue(registryScope?.branchId),
+          batchId: toOptionalScopeValue(registryScope?.batchId),
+          sectionCode: toOptionalScopeValue(registryScope?.sectionCode),
+        }
+    const matchesActiveSection = (candidateRoute: LiveAdminRoute) => {
+      if (route.section === 'overview') return true
+      if (route.section === 'history') return candidateRoute.section === 'requests'
+      return candidateRoute.section === route.section
+    }
     const isRouteVisible = (candidateRoute: LiveAdminRoute) => {
       if (candidateRoute.section === 'requests' || candidateRoute.section === 'overview') return true
       if (candidateRoute.studentId) return isStudentVisible(data, candidateRoute.studentId)
@@ -1516,10 +1639,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           facultyMemberId: result.route.facultyMemberId,
           requestId: result.route.requestId,
         } satisfies LiveAdminRoute,
-      })).filter(result => isRouteVisible(result.route))
+      })).filter(result => matchesActiveSection(result.route) && isRouteVisible(result.route))
     }
-    return searchLiveAdminWorkspace(data, deferredSearch).filter(result => isRouteVisible(result.route))
-  }, [data, deferredSearch, serverSearchResults])
+    return searchLiveAdminWorkspace(data, deferredSearch, {
+      section: route.section,
+      scope: activeSearchScope,
+    }).filter(result => matchesActiveSection(result.route) && isRouteVisible(result.route))
+  }, [data, deferredSearch, registryScope?.academicFacultyId, registryScope?.batchId, registryScope?.branchId, registryScope?.departmentId, registryScope?.sectionCode, route.academicFacultyId, route.batchId, route.branchId, route.departmentId, route.section, selectedSectionCode, serverSearchResults])
   const selectedRequest = selectedRequestDetail && selectedRequestSummary && selectedRequestDetail.version !== selectedRequestSummary.version
     ? selectedRequestSummary
     : (selectedRequestDetail ?? selectedRequestSummary)
@@ -1631,7 +1757,6 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     }
     const primaryAppointment = selectedFacultyMember.appointments.find(item => item.isPrimary) ?? selectedFacultyMember.appointments[0] ?? null
     const latestGrant = selectedFacultyMember.roleGrants[0] ?? null
-    const latestOwnership = data.ownerships.find(item => item.facultyId === selectedFacultyMember.facultyId && item.status === 'active') ?? null
     setFacultyForm({
       username: selectedFacultyMember.username,
       password: '',
@@ -1658,12 +1783,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       startDate: latestGrant.startDate ?? new Date().toISOString().slice(0, 10),
       endDate: latestGrant.endDate ?? '',
     } : defaultRoleGrantForm())
-    setOwnershipForm(latestOwnership ? {
-      ownershipId: latestOwnership.ownershipId,
-      offeringId: latestOwnership.offeringId,
-      facultyId: latestOwnership.facultyId,
-      ownershipRole: latestOwnership.ownershipRole,
-    } : {
+    setOwnershipForm({
       ...defaultOwnershipForm(),
       facultyId: selectedFacultyMember.facultyId,
     })
@@ -2575,15 +2695,6 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     })
   }
 
-  const startEditingOwnership = (ownership: ApiOfferingOwnership) => {
-    setOwnershipForm({
-      ownershipId: ownership.ownershipId,
-      offeringId: ownership.offeringId,
-      facultyId: ownership.facultyId,
-      ownershipRole: ownership.ownershipRole,
-    })
-  }
-
   const handleSaveFaculty = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const payload = {
@@ -2739,28 +2850,20 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const handleSaveOwnership = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!selectedFacultyMember) throw new Error('Select a faculty member before editing teaching ownership.')
-    const payload = {
-      offeringId: requireText('Class / offering', ownershipForm.offeringId),
-      facultyId: selectedFacultyMember.facultyId,
-      ownershipRole: requireText('Ownership role', ownershipForm.ownershipRole),
-      status: 'active',
-    }
-    if (ownershipForm.ownershipId) {
-      const current = data.ownerships.find(item => item.ownershipId === ownershipForm.ownershipId)
-      if (!current) throw new Error('Teaching ownership could not be found.')
-      await runAction(async () => {
-        await apiClient.updateOfferingOwnership(current.ownershipId, {
-          ...payload,
-          status: current.status,
-          version: current.version,
-        })
-        setFlashMessage('Teaching ownership updated.')
-      })
-      return
-    }
+    const offeringId = requireText('Class / offering', ownershipForm.offeringId)
     await runAction(async () => {
-      await apiClient.createOfferingOwnership(payload)
-      setFlashMessage('Teaching ownership added.')
+      await apiClient.createOfferingOwnership({
+        offeringId,
+        facultyId: selectedFacultyMember.facultyId,
+        ownershipRole: 'owner',
+        status: 'active',
+      })
+      setOwnershipForm({
+        ownershipId: '',
+        offeringId: '',
+        facultyId: selectedFacultyMember.facultyId,
+      })
+      setFlashMessage('Class ownership added.')
     })
   }
 
@@ -3404,11 +3507,27 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const termsForEnrollment = visibleTerms.filter(item => !enrollmentForm.branchId || item.branchId === enrollmentForm.branchId)
   const branchesForAppointment = visibleBranches.filter(item => !appointmentForm.departmentId || item.departmentId === appointmentForm.departmentId)
   const selectedFacultyOwnerships = selectedFacultyMember
-    ? data.ownerships.filter(item => item.facultyId === selectedFacultyMember.facultyId)
+    ? data.ownerships.filter(item => item.facultyId === selectedFacultyMember.facultyId && item.status === 'active')
     : []
   const visibleOfferings = [...data.offerings]
     .filter(item => !item.branchId || isBranchVisible(data, item.branchId))
     .sort((left, right) => `${left.code}-${left.year}-${left.section}`.localeCompare(`${right.code}-${right.year}-${right.section}`))
+  const activeOfferingOwnerById = new Map(
+    data.ownerships
+      .filter(item => item.status === 'active')
+      .map(item => [item.offeringId, item]),
+  )
+  const availableOwnershipOfferings = selectedFacultyMember
+    ? visibleOfferings.filter(item => !activeOfferingOwnerById.has(item.offId))
+    : []
+  const selectedFacultyCalendarOfferings = selectedFacultyAssignments.flatMap(item => item.offering ? [item.offering] : [])
+  const sortedFacultyCalendarMarkers = [...(facultyCalendar?.workspace.markers ?? [])]
+    .sort((left, right) => {
+      if (left.dateISO !== right.dateISO) return left.dateISO.localeCompare(right.dateISO)
+      return (left.startMinutes ?? -1) - (right.startMinutes ?? -1)
+    })
+  const facultyCalendarRecurringBlocks = facultyCalendar?.template?.classBlocks.filter(item => !item.dateISO) ?? []
+  const facultyCalendarExtraBlocks = facultyCalendar?.template?.classBlocks.filter(item => !!item.dateISO) ?? []
   const scopeOptions = (() => {
     if (roleGrantForm.scopeType === 'institution') {
       return data.institution ? [{ value: data.institution.institutionId, label: data.institution.name }] : []
@@ -3496,6 +3615,66 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     }
     return []
   })()
+  const adminContextLabel = route.section === 'faculties'
+    ? `University · ${universityWorkspaceLabel}`
+    : route.section === 'students'
+      ? 'Student Registry'
+      : route.section === 'faculty-members'
+        ? 'Faculty Registry'
+        : route.section === 'requests'
+          ? 'Governed Requests'
+          : route.section === 'history'
+            ? 'History And Restore'
+            : 'Operations Dashboard'
+  const railScopeLabel = route.section === 'faculties'
+    ? activeUniversityRegistryScope?.label ?? universityWorkspaceLabel
+    : registryScope?.label
+  const railSearchPlaceholder = route.section === 'overview'
+    ? 'Search across the full control plane...'
+    : route.section === 'faculties'
+      ? 'Search within the active university scope...'
+      : route.section === 'students'
+        ? 'Search students in the active scope...'
+        : route.section === 'faculty-members'
+          ? 'Search faculty in the active scope...'
+          : route.section === 'requests'
+            ? 'Search governed requests...'
+            : 'Search admin history...'
+  const railSearchResults = searchResults.map(result => ({
+    key: result.key,
+    title: result.label,
+    subtitle: result.meta,
+    onSelect: () => {
+      const scopedRegistryTarget = result.route.section === 'students' || result.route.section === 'faculty-members'
+      if (scopedRegistryTarget) {
+        const nextScope = route.section === 'faculties' ? activeUniversityRegistryScope : registryScope
+        if (nextScope) setRegistryScope(nextScope)
+      }
+      setSearchQuery('')
+      navigate(result.route)
+    },
+  }))
+  const handleRailSectionChange = (section: LiveAdminSectionId) => {
+    if (section === route.section) return
+    if (section === 'students' || section === 'faculty-members') {
+      const nextScope = route.section === 'faculties' ? activeUniversityRegistryScope : registryScope
+      if (nextScope) setRegistryScope(nextScope)
+      navigate({ section })
+      return
+    }
+    if (section === 'faculties') {
+      const nextScope = route.section === 'faculties' ? activeUniversityRegistryScope : registryScope
+      navigate({
+        section: 'faculties',
+        academicFacultyId: nextScope?.academicFacultyId ?? undefined,
+        departmentId: nextScope?.departmentId ?? undefined,
+        branchId: nextScope?.branchId ?? undefined,
+        batchId: nextScope?.batchId ?? undefined,
+      })
+      return
+    }
+    navigate({ section })
+  }
 
   // --- Main workspace ---
   return (
@@ -3503,26 +3682,67 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       <TeachingShellAdminTopBar
         institutionName={data.institution?.name ?? 'AirMentor'}
         adminName={session.faculty?.displayName ?? session.user.username}
-        contextLabel={route.section === 'faculties' ? `University · ${universityWorkspaceLabel}` : route.section === 'students' ? 'Student Registry' : route.section === 'faculty-members' ? 'Faculty Registry' : route.section === 'requests' ? 'Governed Requests' : route.section === 'history' ? 'History And Restore' : 'Operations Dashboard'}
+        contextLabel={adminContextLabel}
         now={now}
         themeMode={themeMode}
         actionCount={actionQueueCount}
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        searchResults={searchResults.map(r => ({ key: r.key, title: r.label, subtitle: r.meta, onSelect: () => { clearRegistryScope(); setSearchQuery(''); navigate(r.route) } }))}
-        activeSection={route.section as LiveAdminSectionId}
-        onSectionChange={section => { clearRegistryScope(); navigate({ section }) }}
-        breadcrumbs={topBarBreadcrumbs}
+        railCollapsed={sidebarCollapsed}
+        onToggleRail={() => setSidebarCollapsed(current => !current)}
         onToggleTheme={() => persistTheme(themeMode === 'frosted-focus-light' ? 'frosted-focus-dark' : 'frosted-focus-light')}
         onGoHome={handleGoHome}
         onToggleQueue={() => setShowActionQueue(current => !current)}
         onRefresh={() => { void loadAdminData() }}
-        onExitPortal={onExitPortal}
         onLogout={handleLogout}
       />
 
-      <div style={{ display: 'grid', gridTemplateColumns: showInlineActionQueue ? 'minmax(0,1fr) 320px' : 'minmax(0,1fr)', gap: 0, alignItems: 'start' }}>
-      <PageShell size="wide" style={{ display: 'grid', gap: 18, paddingTop: 22, paddingBottom: 34 }}>
+      <div style={{ display: 'flex', minHeight: 'calc(100vh - 84px)', alignItems: 'stretch' }}>
+      {sidebarCollapsed ? (
+        <motion.button
+          type="button"
+          aria-label="Expand operations rail"
+          title="Expand operations rail"
+          onClick={() => setSidebarCollapsed(false)}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 10 }}
+          transition={{ duration: 0.18, ease: 'easeOut' }}
+          style={{
+            position: 'fixed',
+            left: 18,
+            bottom: 18,
+            zIndex: 32,
+            width: 42,
+            height: 42,
+            borderRadius: 999,
+            background: T.surface,
+            border: `1px solid ${T.border2}`,
+            color: T.muted,
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 14px 30px rgba(2,6,23,0.18)',
+          }}
+        >
+          <ChevronRight size={16} />
+        </motion.button>
+      ) : null}
+      <OperationsRail
+        collapsed={sidebarCollapsed}
+        contextLabel={adminContextLabel}
+        scopeLabel={railScopeLabel}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder={railSearchPlaceholder}
+        searchResults={railSearchResults}
+        activeSection={route.section as LiveAdminSectionId}
+        onSectionChange={handleRailSectionChange}
+        breadcrumbs={topBarBreadcrumbs}
+        onToggleCollapsed={() => setSidebarCollapsed(current => !current)}
+      />
+
+      <div style={{ flex: 1, minWidth: 0, display: 'grid', gridTemplateColumns: showInlineActionQueue ? 'minmax(0,1fr) 320px' : 'minmax(0,1fr)', gap: 0, alignItems: 'start' }}>
+      <PageShell size="wide" style={{ display: 'grid', gap: 18, paddingTop: 22, paddingBottom: 34, maxWidth: '100%', paddingLeft: viewportWidth < 720 ? 14 : 22, paddingRight: viewportWidth < 720 ? 14 : 22 }}>
         {flashMessage ? <InfoBanner tone="success" message={flashMessage} /> : null}
         {actionError ? <InfoBanner tone="error" message={actionError} /> : null}
         {dataError ? <InfoBanner tone="error" message={dataError} /> : null}
@@ -3530,66 +3750,77 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         {/* ========== OVERVIEW ========== */}
         {route.section === 'overview' && (
           <div className="fade-up" style={{ display: 'grid', gap: 18 }}>
-            <div style={{ width: '100%', maxWidth: 1080, margin: '0 auto', display: 'grid', gap: 18 }}>
-              <Card style={{ padding: 22, display: 'grid', gap: 14, textAlign: 'center', background: `radial-gradient(circle at top, ${T.accent}12, transparent 34%), linear-gradient(180deg, ${T.surface}, ${T.surface2})` }}>
-                <div style={{ ...mono, fontSize: 10, color: ADMIN_SECTION_TONES.overview, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Sysadmin Control Plane</div>
-                <div style={{ ...sora, fontSize: 28, fontWeight: 800, color: T.text }}>Operations Dashboard</div>
-                <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.9, maxWidth: 760, margin: '0 auto' }}>
-                  University setup, student registry, faculty registry, and governed requests all begin here. The launch blocks stay centered and primary so the dashboard feels like navigation, not another long report.
+            <div style={{ display: 'grid', gap: 16, gridTemplateColumns: viewportWidth > 1180 ? 'minmax(0, 1.6fr) minmax(280px, 0.95fr)' : 'minmax(0, 1fr)' }}>
+              <Card style={{ padding: 24, display: 'grid', gap: 16, textAlign: 'left', background: `radial-gradient(circle at top left, ${T.accent}14, transparent 34%), linear-gradient(180deg, ${T.surface}, ${T.surface2})` }}>
+                <div style={{ display: 'grid', gap: 10 }}>
+                  <div style={{ ...mono, fontSize: 10, color: ADMIN_SECTION_TONES.overview, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Sysadmin Control Plane</div>
+                  <div style={{ ...sora, fontSize: 30, fontWeight: 800, color: T.text }}>Operations Dashboard</div>
+                  <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.9, maxWidth: 760 }}>
+                    University setup, registry cleanup, faculty ownership, and governed requests begin from the rail on the left. This overview now works like an operations launch surface instead of a centered report card.
+                  </div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <HeroBadge color={T.accent}><Bell size={12} /> Action Queue {actionQueueCount}</HeroBadge>
                   <HeroBadge color={T.warning}><Clock3 size={12} /> Open Requests {openRequests.length}</HeroBadge>
                   <HeroBadge color={T.danger}><RefreshCw size={12} /> Hidden Records {hiddenItemCount}</HeroBadge>
                   <HeroBadge color={remindersSupported ? T.success : T.orange}><CheckCircle2 size={12} /> {remindersSupported ? `Private Reminders ${pendingReminders.length}` : 'Reminder API offline on this backend'}</HeroBadge>
                 </div>
+                <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+                  <SectionLaunchCard
+                    title="University"
+                    caption={`${visibleAcademicFaculties.length} faculties · ${visibleDepartments.length} departments · ${visibleBranches.length} branches`}
+                    helper="Selector-driven hierarchy control for faculty, department, branch, year, section, policy bands, and course tables."
+                    icon={<LayoutDashboard size={18} />}
+                    tone={ADMIN_SECTION_TONES.faculties}
+                    active={false}
+                    onClick={() => navigate({ section: 'faculties' })}
+                  />
+                  <SectionLaunchCard
+                    title="Students"
+                    caption={`${data.students.length} records · ${data.students.filter(item => item.activeMentorAssignment).length} mentored`}
+                    helper="Canonical student identity, mentor linkage, context correction, and semester progression in one registry."
+                    icon={<GraduationCap size={18} />}
+                    tone={ADMIN_SECTION_TONES.students}
+                    active={false}
+                    onClick={() => navigate({ section: 'students' })}
+                  />
+                  <SectionLaunchCard
+                    title="Faculty"
+                    caption={`${data.facultyMembers.length} profiles · ${data.ownerships.filter(item => item.status === 'active').length} active class owners`}
+                    helper="Appointments, permissions, class ownership, and timetable review all live in the faculty registry."
+                    icon={<UserCog size={18} />}
+                    tone={ADMIN_SECTION_TONES['faculty-members']}
+                    active={false}
+                    onClick={() => navigate({ section: 'faculty-members' })}
+                  />
+                </div>
               </Card>
 
-              <div style={{ display: 'grid', gap: 18, gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 280px))', justifyContent: 'center' }}>
-                <SectionLaunchCard
-                  title="University"
-                  caption={`${visibleAcademicFaculties.length} faculties · ${visibleDepartments.length} departments · ${visibleBranches.length} branches`}
-                  helper="Selector-driven hierarchy control for academic faculty, department, branch, year, section, policy bands, CE/SEE, CGPA progression, and course tables."
-                  icon={<LayoutDashboard size={18} />}
-                  tone={ADMIN_SECTION_TONES.faculties}
-                  active={false}
-                  onClick={() => {
-                    clearRegistryScope()
-                    navigate({ section: 'faculties' })
-                  }}
-                />
-                <SectionLaunchCard
-                  title="Students"
-                  caption={`${data.students.length} records · ${data.students.filter(item => item.activeMentorAssignment).length} mentored`}
-                  helper="Canonical student identity, mentor eligibility, academic context corrections, and semester progression review live in one registry."
-                  icon={<GraduationCap size={18} />}
-                  tone={ADMIN_SECTION_TONES.students}
-                  active={false}
-                  onClick={() => {
-                    clearRegistryScope()
-                    navigate({ section: 'students' })
-                  }}
-                />
-                <SectionLaunchCard
-                  title="Faculty"
-                  caption={`${data.facultyMembers.length} profiles · ${data.ownerships.filter(item => item.status === 'active').length} active teaching assignments`}
-                  helper="Appointments, permissions, course ownership, mentor scope, and teaching-profile parity are all managed from the faculty registry."
-                  icon={<UserCog size={18} />}
-                  tone={ADMIN_SECTION_TONES['faculty-members']}
-                  active={false}
-                  onClick={() => {
-                    clearRegistryScope()
-                    navigate({ section: 'faculty-members' })
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 220px))', justifyContent: 'center' }}>
+              <div style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
                 <OverviewSupportCard title="Requests" value={String(openRequests.length)} helper="Governed items waiting in the action rail." tone={T.warning} onClick={() => navigate({ section: 'requests' })} />
                 <OverviewSupportCard title="Hidden Records" value={String(hiddenItemCount)} helper="Archived or deleted records with restore visibility." tone={T.danger} onClick={() => navigate({ section: 'history' })} />
                 <OverviewSupportCard title="Mentor Gaps" value={String(data.students.filter(item => !item.activeMentorAssignment).length)} helper="Students still missing an active mentor linkage." tone={ADMIN_SECTION_TONES.students} onClick={() => navigate({ section: 'students' })} />
                 <OverviewSupportCard title="Teaching Load" value={String(data.ownerships.filter(item => item.status === 'active').length)} helper="Active teaching ownership records mapped to faculty." tone={ADMIN_SECTION_TONES['faculty-members']} onClick={() => navigate({ section: 'faculty-members' })} />
               </div>
+            </div>
+
+            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
+              <Card style={{ padding: 16, background: `linear-gradient(180deg, ${T.surface2}, ${T.surface})`, display: 'grid', gap: 10 }}>
+                <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Immediate Watchlist</div>
+                <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>What needs eyes first</div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                  {openRequests.length > 0
+                    ? `${openRequests[0].summary} is currently the highest-visibility governed request.`
+                    : 'No governed requests are waiting right now.'}
+                </div>
+              </Card>
+              <Card style={{ padding: 16, background: `linear-gradient(180deg, ${T.surface2}, ${T.surface})`, display: 'grid', gap: 10 }}>
+                <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Scoped Navigation</div>
+                <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Rail state carries forward</div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                  Deep faculty, student, and faculty-member searches now respect the active hierarchy scope so you can move across panels without rebuilding context.
+                </div>
+              </Card>
             </div>
           </div>
         )}
@@ -4086,9 +4317,6 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                     <div><FieldLabel>CE / SEE</FieldLabel><TextInput value={`${policyForm.ce} / ${policyForm.see}`} readOnly /></div>
                     <div><FieldLabel>CE</FieldLabel><TextInput value={policyForm.ce} onChange={event => setPolicyForm(prev => ({ ...prev, ce: event.target.value }))} /></div>
                     <div><FieldLabel>SEE</FieldLabel><TextInput value={policyForm.see} onChange={event => setPolicyForm(prev => ({ ...prev, see: event.target.value }))} /></div>
-                    <div><FieldLabel>TT Weight</FieldLabel><TextInput value={policyForm.termTestsWeight} onChange={event => setPolicyForm(prev => ({ ...prev, termTestsWeight: event.target.value }))} /></div>
-                    <div><FieldLabel>Quiz Weight</FieldLabel><TextInput value={policyForm.quizWeight} onChange={event => setPolicyForm(prev => ({ ...prev, quizWeight: event.target.value }))} /></div>
-                    <div><FieldLabel>Asgn Weight</FieldLabel><TextInput value={policyForm.assignmentWeight} onChange={event => setPolicyForm(prev => ({ ...prev, assignmentWeight: event.target.value }))} /></div>
                     <div><FieldLabel>Max TTs</FieldLabel><TextInput value={policyForm.maxTermTests} onChange={event => setPolicyForm(prev => ({ ...prev, maxTermTests: event.target.value }))} /></div>
                     <div><FieldLabel>Max Quizzes</FieldLabel><TextInput value={policyForm.maxQuizzes} onChange={event => setPolicyForm(prev => ({ ...prev, maxQuizzes: event.target.value }))} /></div>
                     <div><FieldLabel>Max Asgn</FieldLabel><TextInput value={policyForm.maxAssignments} onChange={event => setPolicyForm(prev => ({ ...prev, maxAssignments: event.target.value }))} /></div>
@@ -4105,6 +4333,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                       </SelectInput>
                     </div>
                   </div>
+
+                  <InfoBanner message="Course leaders now manage the internal TT, quiz, and assignment weightages inside the teaching workspace. Sysadmin controls only the CE/SEE split and max component counts here." />
 
                   <div style={{ marginTop: 14, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                     <Btn onClick={handleSaveBatchPolicy}><CheckCircle2 size={14} /> Save Batch Policy</Btn>
@@ -4198,19 +4428,17 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               {universityTab === 'ce-see' && (
                 selectedBatch ? (
                   <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
-                    <SectionHeading title="CE / SEE Split" eyebrow="Assessment" caption="Configure CE, SEE, and internal assessment caps for the selected year." />
+                    <SectionHeading title="CE / SEE Split" eyebrow="Assessment" caption="Configure the admin-owned CE/SEE split and the component count limits that the teaching workspace must respect." />
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
                       <div><FieldLabel>CE</FieldLabel><TextInput value={policyForm.ce} onChange={event => setPolicyForm(prev => ({ ...prev, ce: event.target.value }))} /></div>
                       <div><FieldLabel>SEE</FieldLabel><TextInput value={policyForm.see} onChange={event => setPolicyForm(prev => ({ ...prev, see: event.target.value }))} /></div>
-                      <div><FieldLabel>TT Weight</FieldLabel><TextInput value={policyForm.termTestsWeight} onChange={event => setPolicyForm(prev => ({ ...prev, termTestsWeight: event.target.value }))} /></div>
-                      <div><FieldLabel>Quiz Weight</FieldLabel><TextInput value={policyForm.quizWeight} onChange={event => setPolicyForm(prev => ({ ...prev, quizWeight: event.target.value }))} /></div>
-                      <div><FieldLabel>Assignment Weight</FieldLabel><TextInput value={policyForm.assignmentWeight} onChange={event => setPolicyForm(prev => ({ ...prev, assignmentWeight: event.target.value }))} /></div>
                       <div><FieldLabel>Max TTs</FieldLabel><TextInput value={policyForm.maxTermTests} onChange={event => setPolicyForm(prev => ({ ...prev, maxTermTests: event.target.value }))} /></div>
                       <div><FieldLabel>Max Quizzes</FieldLabel><TextInput value={policyForm.maxQuizzes} onChange={event => setPolicyForm(prev => ({ ...prev, maxQuizzes: event.target.value }))} /></div>
                       <div><FieldLabel>Max Assignments</FieldLabel><TextInput value={policyForm.maxAssignments} onChange={event => setPolicyForm(prev => ({ ...prev, maxAssignments: event.target.value }))} /></div>
                       <div><FieldLabel>Day Start</FieldLabel><TextInput value={policyForm.dayStart} onChange={event => setPolicyForm(prev => ({ ...prev, dayStart: event.target.value }))} /></div>
                       <div><FieldLabel>Day End</FieldLabel><TextInput value={policyForm.dayEnd} onChange={event => setPolicyForm(prev => ({ ...prev, dayEnd: event.target.value }))} /></div>
                     </div>
+                    <InfoBanner message="Internal TT, quiz, and assignment weight splits are now configured by the Course Leader inside teaching profile. This policy page only defines the total CE pool plus the allowed component counts." />
                     <div>
                       <FieldLabel>Working Days</FieldLabel>
                       <DayToggle days={WEEKDAYS} selected={policyForm.workingDays} onChange={next => setPolicyForm(prev => ({ ...prev, workingDays: next as PolicyFormState['workingDays'] }))} />
@@ -5130,7 +5358,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
               {facultyDetailTab === 'teaching' && (
               <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
-                <SectionHeading title="Teaching Ownership" eyebrow="Classes And Course Leader Scope" caption="Assign the exact classes they own or support. The seeded default role is `owner`, and that now counts for course-leader visibility." />
+                <SectionHeading title="Class Ownership" eyebrow="Single Owner Assignment" caption="System admin assigns classes here as a single-owner list. Ownership role stays fixed and no class can belong to more than one professor at the same time." />
                 {!selectedFacultyMember ? <EmptyState title="Save the faculty profile first" body="Teaching ownership becomes available after the faculty record exists." /> : (
                   <>
                     <div style={{ display: 'grid', gap: 8 }}>
@@ -5141,10 +5369,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                               <div>
                                 <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{offering?.code ?? ownership.offeringId} · {offering?.title ?? 'Unknown offering'}</div>
-                                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{offering?.dept ?? 'NA'} · {offering?.year ?? '—'} · Section {offering?.section ?? '—'} · {ownership.ownershipRole} · {ownership.status}</div>
+                                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{offering?.dept ?? 'NA'} · {offering?.year ?? '—'} · Section {offering?.section ?? '—'} · owner · {ownership.status}</div>
                               </div>
                               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                <Btn type="button" size="sm" variant="ghost" onClick={() => startEditingOwnership(ownership)}>Edit</Btn>
                                 <Btn type="button" size="sm" variant="danger" onClick={() => void handleArchiveOwnership(ownership)}>Delete</Btn>
                               </div>
                             </div>
@@ -5153,27 +5380,26 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                       })}
                     </div>
                     <form onSubmit={handleSaveOwnership} style={{ display: 'grid', gap: 10 }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
                         <div>
                           <FieldLabel>Offering / Class</FieldLabel>
                           <SelectInput value={ownershipForm.offeringId} onChange={event => setOwnershipForm(prev => ({ ...prev, offeringId: event.target.value, facultyId: selectedFacultyMember.facultyId }))}>
-                            <option value="">Select offering</option>
-                            {visibleOfferings.map(offering => <option key={offering.offId} value={offering.offId}>{offering.code} · {offering.year} · Section {offering.section}</option>)}
+                            <option value="">{availableOwnershipOfferings.length > 0 ? 'Select unassigned class' : 'No unassigned classes available'}</option>
+                            {availableOwnershipOfferings.map(offering => <option key={offering.offId} value={offering.offId}>{offering.code} · {offering.year} · Section {offering.section}</option>)}
                           </SelectInput>
                         </div>
-                        <div><FieldLabel>Ownership Role</FieldLabel><TextInput value={ownershipForm.ownershipRole} onChange={event => setOwnershipForm(prev => ({ ...prev, ownershipRole: event.target.value }))} placeholder="owner / support / course_leader" /></div>
+                        <div>
+                          <FieldLabel>Assigned Role</FieldLabel>
+                          <TextInput value="owner" readOnly />
+                        </div>
                       </div>
+                      {availableOwnershipOfferings.length === 0 ? <InfoBanner message="All visible classes already have an active owner. Remove an ownership first before reassigning a class." /> : null}
                       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                        <Btn type="submit">{ownershipForm.ownershipId ? 'Save Ownership' : 'Add Ownership'}</Btn>
-                        <Btn type="button" variant="ghost" onClick={() => setOwnershipForm(selectedFacultyOwnerships[0] ? {
-                          ownershipId: selectedFacultyOwnerships[0].ownershipId,
-                          offeringId: selectedFacultyOwnerships[0].offeringId,
-                          facultyId: selectedFacultyOwnerships[0].facultyId,
-                          ownershipRole: selectedFacultyOwnerships[0].ownershipRole,
-                        } : {
+                        <Btn type="submit" disabled={!ownershipForm.offeringId}>Add Class</Btn>
+                        <Btn type="button" variant="ghost" onClick={() => setOwnershipForm({
                           ...defaultOwnershipForm(),
                           facultyId: selectedFacultyMember.facultyId,
-                        })}>Reset Ownership Form</Btn>
+                        })}>Clear Selection</Btn>
                       </div>
                     </form>
                     {selectedFacultyAssignments.length > 0 ? (
@@ -5182,7 +5408,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                         <div style={{ display: 'grid', gap: 8 }}>
                           {selectedFacultyAssignments.map(item => (
                             <div key={item.ownership.ownershipId} style={{ ...mono, fontSize: 10, color: T.text }}>
-                              {item.offering?.code} · {item.offering?.dept} · {item.offering?.year} · Section {item.offering?.section} · {item.ownership.ownershipRole}
+                              {item.offering?.code} · {item.offering?.dept} · {item.offering?.year} · Section {item.offering?.section} · owner
                             </div>
                           ))}
                         </div>
@@ -5195,17 +5421,84 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
               {facultyDetailTab === 'timetable' && (
               <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
-                <SectionHeading title="Timetable Planner" eyebrow="Teaching Calendar" caption="Reuses the teacher-style drag board for class movement, then layers semester markers, term-test windows, holidays, and events in a distinct admin planning rail." />
+                <SectionHeading title="Timetable Planner" eyebrow="Calendar-First Review" caption="System admin starts with a calendar summary here, then expands into the full planner only when a wider review surface is needed." />
                 {!selectedFacultyMember ? <EmptyState title="Select or create a faculty member first" body="Timetable planning becomes available once the faculty profile exists." /> : facultyCalendarLoading && !facultyCalendar ? (
                   <InfoBanner message="Loading timetable planner…" />
                 ) : (
-                  <SystemAdminFacultyCalendarWorkspace
-                    facultyId={selectedFacultyMember.facultyId}
-                    facultyName={selectedFacultyMember.displayName}
-                    offerings={selectedFacultyAssignments.flatMap(item => item.offering ? [item.offering] : [])}
-                    calendar={facultyCalendar}
-                    onSave={handleSaveFacultyCalendar}
-                  />
+                  <div style={{ display: 'grid', gap: 14 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: showFacultyTimetableExpanded ? 'repeat(auto-fit, minmax(160px, 1fr))' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                      <AdminMiniStat label="Mapped Classes" value={String(selectedFacultyCalendarOfferings.length)} tone={T.accent} />
+                      <AdminMiniStat label="Weekly Blocks" value={String(facultyCalendarRecurringBlocks.length)} tone={T.success} />
+                      <AdminMiniStat label="Exceptions" value={String(facultyCalendarExtraBlocks.length)} tone={T.warning} />
+                      <AdminMiniStat label="Markers" value={String(sortedFacultyCalendarMarkers.length)} tone={T.orange} />
+                    </div>
+
+                    <Card style={{ padding: 16, background: `linear-gradient(180deg, ${T.surface2}, ${T.surface})`, display: 'grid', gap: 12 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                        <div>
+                          <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Planner Summary</div>
+                          <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6, lineHeight: 1.8 }}>
+                            Review the institutional calendar state first, then open the expanded planner when you need the full weekly board without leaving the faculty workspace.
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <Chip color={facultyCalendar?.classEditingLocked ? T.danger : T.success}>{facultyCalendar?.classEditingLocked ? 'Recurring edits locked' : 'Recurring edits open'}</Chip>
+                          <Chip color={facultyCalendar?.workspace.publishedAt ? T.accent : T.warning}>{facultyCalendar?.workspace.publishedAt ? `Published ${formatDate(facultyCalendar.workspace.publishedAt.slice(0, 10))}` : 'Not published'}</Chip>
+                          <Btn type="button" size="sm" variant={showFacultyTimetableExpanded ? 'ghost' : 'primary'} onClick={() => setShowFacultyTimetableExpanded(current => !current)}>
+                            {showFacultyTimetableExpanded ? 'Collapse Planner' : 'Expand Planner'}
+                          </Btn>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
+                        <Card style={{ padding: 14, background: T.surface }}>
+                          <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Upcoming Markers</div>
+                          <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+                            {sortedFacultyCalendarMarkers.slice(0, 4).map(marker => (
+                              <div key={marker.markerId} style={{ ...mono, fontSize: 10, color: T.text, lineHeight: 1.8 }}>
+                                {marker.title} · {formatDate(marker.dateISO)}
+                              </div>
+                            ))}
+                            {sortedFacultyCalendarMarkers.length === 0 ? <div style={{ ...mono, fontSize: 10, color: T.muted }}>No semester or event markers mapped yet.</div> : null}
+                          </div>
+                        </Card>
+                        <Card style={{ padding: 14, background: T.surface }}>
+                          <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Class Coverage</div>
+                          <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+                            {selectedFacultyCalendarOfferings.slice(0, 4).map(offering => (
+                              <div key={offering.offId} style={{ ...mono, fontSize: 10, color: T.text, lineHeight: 1.8 }}>
+                                {offering.code} · {offering.year} · Section {offering.section}
+                              </div>
+                            ))}
+                            {selectedFacultyCalendarOfferings.length === 0 ? <div style={{ ...mono, fontSize: 10, color: T.muted }}>No classes are currently assigned to this faculty member.</div> : null}
+                          </div>
+                        </Card>
+                      </div>
+                    </Card>
+
+                    {showFacultyTimetableExpanded ? (
+                      <Card style={{ padding: 14, display: 'grid', gap: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                          <div>
+                            <div style={{ ...sora, fontSize: 16, fontWeight: 800, color: T.text }}>Expanded Planner Workspace</div>
+                            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6, lineHeight: 1.8 }}>
+                              This expanded surface stays inside the faculty page, so the rest of the registry context remains visible while you review the full weekly planner.
+                            </div>
+                          </div>
+                          <Btn type="button" size="sm" variant="ghost" onClick={() => setShowFacultyTimetableExpanded(false)}>Close Expanded View</Btn>
+                        </div>
+                        <div className="scroll-pane" style={{ maxHeight: 'calc(100vh - 260px)', overflowY: 'auto', paddingRight: 4 }}>
+                          <SystemAdminFacultyCalendarWorkspace
+                            facultyId={selectedFacultyMember.facultyId}
+                            facultyName={selectedFacultyMember.displayName}
+                            offerings={selectedFacultyCalendarOfferings}
+                            calendar={facultyCalendar}
+                            onSave={handleSaveFacultyCalendar}
+                          />
+                        </div>
+                      </Card>
+                    ) : null}
+                  </div>
                 )}
               </Card>
               )}
@@ -5543,6 +5836,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         </motion.div>
       ) : null}
       </AnimatePresence>
+      </div>
       </div>
 
       <AnimatePresence>

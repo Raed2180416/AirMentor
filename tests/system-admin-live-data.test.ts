@@ -229,7 +229,34 @@ const dataset: LiveAdminDataset = {
       updatedAt: '2026-01-01T00:00:00.000Z',
     },
   ],
-  requests: [],
+  requests: [
+    {
+      adminRequestId: 'req_1',
+      requestType: 'Mentor Assignment',
+      scopeType: 'batch',
+      scopeId: 'batch_2022',
+      targetEntityRefs: [],
+      priority: 'P2',
+      status: 'New',
+      requestedByRole: 'HOD',
+      requestedByFacultyId: 'fac_1',
+      ownedByRole: 'SYSTEM_ADMIN',
+      ownedByFacultyId: null,
+      summary: 'Mentor gap in 3rd year CSE',
+      details: 'A student is still waiting for mentor assignment.',
+      notesThreadId: 'thread_1',
+      dueAt: '2026-03-25T09:00:00.000Z',
+      slaPolicyCode: 'std',
+      decision: null,
+      payload: {},
+      version: 1,
+      createdAt: '2026-03-19T09:00:00.000Z',
+      updatedAt: '2026-03-19T09:00:00.000Z',
+      requesterName: 'Admin Desk',
+      ownerName: null,
+    },
+  ],
+  reminders: [],
 }
 
 describe('system-admin-live-data', () => {
@@ -313,5 +340,29 @@ describe('system-admin-live-data', () => {
     expect(searchLiveAdminWorkspace(dataset, 'Aisha')[0]?.route.section).toBe('students')
     expect(searchLiveAdminWorkspace(dataset, '2022')[0]?.route.batchId).toBe('batch_2022')
     expect(searchLiveAdminWorkspace(dataset, 'Nandini')[0]?.route.section).toBe('faculty-members')
+  })
+
+  it('targets search results to the active panel and current hierarchy scope', () => {
+    const scopedDataset: LiveAdminDataset = {
+      ...dataset,
+      students: [
+        ...dataset.students,
+        {
+          ...dataset.students[0],
+          studentId: 'student_2',
+          usn: '1AM22CS099',
+          name: 'Aria Sen',
+          email: 'aria@airmentor.local',
+          activeAcademicContext: {
+            ...dataset.students[0].activeAcademicContext!,
+            sectionCode: 'B',
+          },
+        },
+      ],
+    }
+
+    expect(searchLiveAdminWorkspace(scopedDataset, 'mentor', { section: 'requests' })[0]?.route.section).toBe('requests')
+    expect(searchLiveAdminWorkspace(scopedDataset, 'Aria', { section: 'students', scope: { batchId: 'batch_2022', sectionCode: 'A' } })).toHaveLength(0)
+    expect(searchLiveAdminWorkspace(scopedDataset, 'Aisha', { section: 'students', scope: { batchId: 'batch_2022', sectionCode: 'A' } })[0]?.route.studentId).toBe('student_1')
   })
 })

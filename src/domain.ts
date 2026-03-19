@@ -35,6 +35,15 @@ export type AssessmentComponentDefinition = {
   id: string
   label: string
   rawMax: number
+  weightage: number
+}
+
+export type SchemePolicyContext = {
+  ce: number
+  see: number
+  maxTermTests: number
+  maxQuizzes: number
+  maxAssignments: number
 }
 
 export type TermTestNode = {
@@ -87,12 +96,17 @@ export type FacultyAccount = {
 
 export type EvaluationScheme = {
   finalsMax: 50 | 100
+  termTestWeights: {
+    tt1: number
+    tt2: number
+  }
   quizWeight: number
   assignmentWeight: number
   quizCount: 0 | 1 | 2
   assignmentCount: 0 | 1 | 2
   quizComponents: AssessmentComponentDefinition[]
   assignmentComponents: AssessmentComponentDefinition[]
+  policyContext: SchemePolicyContext
 }
 
 export type SchemeLifecycleStatus = 'Needs Setup' | 'Configured' | 'Locked'

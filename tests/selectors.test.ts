@@ -109,13 +109,49 @@ describe('selectors', () => {
     }, cs401a)
 
     expect(normalized.quizComponents).toEqual([
-      { id: 'quiz-a', label: 'Quiz A', rawMax: 1 },
-      { id: 'quiz-b', label: 'Quiz 2', rawMax: 100 },
+      { id: 'quiz-a', label: 'Quiz A', rawMax: 1, weightage: 10 },
+      { id: 'quiz-b', label: 'Quiz 2', rawMax: 100, weightage: 10 },
     ])
     expect(normalized.assignmentComponents).toEqual([
-      { id: 'assignment-a', label: 'Assignment 1', rawMax: 1 },
+      { id: 'assignment-a', label: 'Assignment 1', rawMax: 1, weightage: 10 },
     ])
     expect(normalized.status).toBe('Configured')
+  })
+
+  it('keeps sysadmin CE policy context and weighted components in sync', () => {
+    const normalized = normalizeSchemeState({
+      finalsMax: 80,
+      quizCount: 1,
+      assignmentCount: 1,
+      termTestWeights: { tt1: 25, tt2: 15 },
+      quizComponents: [
+        { id: 'quiz-a', label: 'Quiz A', rawMax: 10, weightage: 8 },
+      ],
+      assignmentComponents: [
+        { id: 'assignment-a', label: 'Assignment A', rawMax: 20, weightage: 12 },
+      ],
+      policyContext: {
+        ce: 60,
+        see: 40,
+        maxTermTests: 2,
+        maxQuizzes: 1,
+        maxAssignments: 1,
+      },
+      status: 'Configured',
+    }, cs401a)
+
+    expect(normalized.policyContext).toEqual({
+      ce: 60,
+      see: 40,
+      maxTermTests: 2,
+      maxQuizzes: 1,
+      maxAssignments: 1,
+    })
+    expect(normalized.termTestWeights).toEqual({ tt1: 25, tt2: 15 })
+    expect(normalized.quizWeight).toBe(8)
+    expect(normalized.assignmentWeight).toBe(12)
+    expect(normalized.quizComponents[0].weightage).toBe(8)
+    expect(normalized.assignmentComponents[0].weightage).toBe(12)
   })
 
   it('advances scheduled recurrence using the v1 scheduling rules', () => {

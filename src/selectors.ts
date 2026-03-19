@@ -13,6 +13,7 @@ import {
   type DerivedAcademicProjection,
   type EntryLockMap,
   type EvaluationScheme,
+  type SchemePolicyContext,
   type SchemeState,
   type StudentRuntimePatch,
   type TTKind,
@@ -30,55 +31,153 @@ function clampNumber(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value))
 }
 
+function clampInteger(value: number | undefined, min: number, max: number, fallback: number) {
+  if (!Number.isFinite(value)) return fallback
+  return clampNumber(Math.round(value ?? fallback), min, max)
+}
+
 export function toStudentPatchKey(offId: string, studentId: string) {
   return `${offId}::${studentId}`
 }
 
-export function buildDefaultAssessmentComponents(kind: AssessmentComponentKind, count: 0 | 1 | 2) {
+function distributeWeightage(totalWeight: number, count: number) {
+  if (count <= 0) return [] as number[]
+  const base = Math.floor(totalWeight / count)
+  const remainder = totalWeight - (base * count)
+  return Array.from({ length: count }, (_, index) => base + (index === count - 1 ? remainder : 0))
+}
+
+function buildDefaultPolicyContext(): SchemePolicyContext {
+  return {
+    ce: 60,
+    see: 40,
+    maxTermTests: 2,
+    maxQuizzes: 2,
+    maxAssignments: 2,
+  }
+}
+
+function sanitizePolicyContext(input: Partial<SchemePolicyContext> | undefined, defaults: SchemePolicyContext): SchemePolicyContext {
+  return {
+    ce: clampInteger(input?.ce, 0, 100, defaults.ce),
+    see: clampInteger(input?.see, 0, 100, defaults.see),
+    maxTermTests: clampInteger(input?.maxTermTests, 0, 2, defaults.maxTermTests),
+    maxQuizzes: clampInteger(input?.maxQuizzes, 0, 2, defaults.maxQuizzes),
+    maxAssignments: clampInteger(input?.maxAssignments, 0, 2, defaults.maxAssignments),
+  }
+}
+
+function sanitizeTermTestWeights(
+  weights: EvaluationScheme['termTestWeights'] | undefined,
+  totalWeight: number,
+  maxTermTests: number,
+) {
+  if (maxTermTests <= 0 || totalWeight <= 0) return { tt1: 0, tt2: 0 }
+  if (maxTermTests === 1) {
+    const tt1 = clampInteger(weights?.tt1, 0, totalWeight, totalWeight)
+    return { tt1, tt2: 0 }
+  }
+  const fallbackTt1 = Math.round(totalWeight / 2)
+  const fallbackTt2 = totalWeight - fallbackTt1
+  const tt1 = clampInteger(weights?.tt1, 0, totalWeight, fallbackTt1)
+  const tt2 = clampInteger(weights?.tt2, 0, totalWeight, fallbackTt2)
+  return { tt1, tt2 }
+}
+
+export function buildDefaultAssessmentComponents(kind: AssessmentComponentKind, count: 0 | 1 | 2, totalWeight = 0) {
+  const distributedWeightage = distributeWeightage(totalWeight, count)
   return Array.from({ length: count }, (_, index) => ({
     id: `${kind}-${index + 1}`,
     label: `${kind === 'quiz' ? 'Quiz' : 'Assignment'} ${index + 1}`,
     rawMax: 10,
+    weightage: distributedWeightage[index] ?? 0,
   }))
 }
 
-export function sanitizeAssessmentComponents(kind: AssessmentComponentKind, count: 0 | 1 | 2, components?: AssessmentComponentDefinition[]) {
-  const base = components && components.length > 0 ? components.slice(0, count) : buildDefaultAssessmentComponents(kind, count)
+export function sumComponentWeightage(components: AssessmentComponentDefinition[]) {
+  return components.reduce((acc, component) => acc + clampInteger(component.weightage, 0, 100, 0), 0)
+}
+
+export function getSchemeConfiguredCeWeight(scheme: Pick<EvaluationScheme, 'termTestWeights' | 'quizComponents' | 'assignmentComponents'>) {
+  return scheme.termTestWeights.tt1
+    + scheme.termTestWeights.tt2
+    + sumComponentWeightage(scheme.quizComponents)
+    + sumComponentWeightage(scheme.assignmentComponents)
+}
+
+export function sanitizeAssessmentComponents(
+  kind: AssessmentComponentKind,
+  count: 0 | 1 | 2,
+  components?: AssessmentComponentDefinition[],
+  totalWeight = 0,
+) {
+  const base = components && components.length > 0 ? components.slice(0, count) : buildDefaultAssessmentComponents(kind, count, totalWeight)
+  const distributedWeightage = distributeWeightage(totalWeight, count)
+  const hasExplicitWeightage = base.some(component => typeof component?.weightage === 'number' && Number.isFinite(component.weightage))
   return Array.from({ length: count }, (_, index) => ({
     id: base[index]?.id ?? `${kind}-${index + 1}`,
     label: base[index]?.label?.trim() || `${kind === 'quiz' ? 'Quiz' : 'Assignment'} ${index + 1}`,
     rawMax: clampNumber(Math.round(base[index]?.rawMax ?? 10), 1, 100),
+    weightage: clampInteger(base[index]?.weightage, 0, 100, hasExplicitWeightage ? 0 : (distributedWeightage[index] ?? 0)),
   }))
 }
 
 export function defaultSchemeForOffering(offering: Offering): SchemeState {
+  const policyContext = buildDefaultPolicyContext()
   const finalsMax = offering.code === 'CS702' ? 100 : 50
   const quizWeight: number = offering.stageInfo.stage >= 2 ? (offering.code === 'CS401' ? 20 : 10) : 10
-  const assignmentWeight: number = 30 - quizWeight
+  const assignmentWeight: number = Math.max(0, policyContext.ce - 30 - quizWeight)
+  const quizCount = (quizWeight === 0 ? 0 : offering.code === 'CS401' ? 2 : 1) as 0 | 1 | 2
+  const assignmentCount = (assignmentWeight === 0 ? 0 : offering.code === 'CS401' ? 2 : 1) as 0 | 1 | 2
   return {
     finalsMax,
+    termTestWeights: { tt1: 15, tt2: 15 },
     quizWeight,
     assignmentWeight,
-    quizCount: quizWeight === 0 ? 0 : offering.code === 'CS401' ? 2 : 1,
-    assignmentCount: assignmentWeight === 0 ? 0 : offering.code === 'CS401' ? 2 : 1,
-    quizComponents: sanitizeAssessmentComponents('quiz', quizWeight === 0 ? 0 : offering.code === 'CS401' ? 2 : 1),
-    assignmentComponents: sanitizeAssessmentComponents('assignment', assignmentWeight === 0 ? 0 : offering.code === 'CS401' ? 2 : 1),
+    quizCount,
+    assignmentCount,
+    quizComponents: sanitizeAssessmentComponents('quiz', quizCount, undefined, quizWeight),
+    assignmentComponents: sanitizeAssessmentComponents('assignment', assignmentCount, undefined, assignmentWeight),
+    policyContext,
     status: 'Needs Setup',
   }
 }
 
 export function normalizeSchemeState(input: Partial<SchemeState> | undefined, offering: Offering): SchemeState {
   const defaults = defaultSchemeForOffering(offering)
-  const quizCount = (input?.quizCount ?? defaults.quizCount) as 0 | 1 | 2
-  const assignmentCount = (input?.assignmentCount ?? defaults.assignmentCount) as 0 | 1 | 2
+  const policyContext = sanitizePolicyContext(input?.policyContext, defaults.policyContext)
+  const quizCount = clampInteger(input?.quizCount ?? input?.quizComponents?.length, 0, Math.min(2, policyContext.maxQuizzes), defaults.quizCount) as 0 | 1 | 2
+  const assignmentCount = clampInteger(input?.assignmentCount ?? input?.assignmentComponents?.length, 0, Math.min(2, policyContext.maxAssignments), defaults.assignmentCount) as 0 | 1 | 2
+  const legacyQuizWeight = clampInteger(input?.quizWeight, 0, 100, defaults.quizWeight)
+  const legacyAssignmentWeight = clampInteger(input?.assignmentWeight, 0, 100, defaults.assignmentWeight)
+  const hasExplicitQuizWeightage = (input?.quizComponents ?? []).some(component => Number.isFinite(component.weightage))
+  const hasExplicitAssignmentWeightage = (input?.assignmentComponents ?? []).some(component => Number.isFinite(component.weightage))
+  const quizComponents = sanitizeAssessmentComponents(
+    'quiz',
+    quizCount,
+    input?.quizComponents ?? defaults.quizComponents,
+    hasExplicitQuizWeightage ? 0 : legacyQuizWeight,
+  )
+  const assignmentComponents = sanitizeAssessmentComponents(
+    'assignment',
+    assignmentCount,
+    input?.assignmentComponents ?? defaults.assignmentComponents,
+    hasExplicitAssignmentWeightage ? 0 : legacyAssignmentWeight,
+  )
+  const quizWeight = hasExplicitQuizWeightage || quizCount === 0 ? sumComponentWeightage(quizComponents) : legacyQuizWeight
+  const assignmentWeight = hasExplicitAssignmentWeightage || assignmentCount === 0 ? sumComponentWeightage(assignmentComponents) : legacyAssignmentWeight
+  const defaultTermTestTotal = Math.max(0, policyContext.ce - quizWeight - assignmentWeight)
+  const fallbackTermTestTotal = Math.max(0, policyContext.ce - legacyQuizWeight - legacyAssignmentWeight)
   return {
-    finalsMax: (input?.finalsMax ?? defaults.finalsMax) as 50 | 100,
-    quizWeight: input?.quizWeight ?? defaults.quizWeight,
-    assignmentWeight: input?.assignmentWeight ?? defaults.assignmentWeight,
+    finalsMax: (input?.finalsMax ?? (policyContext.see > 50 ? 100 : defaults.finalsMax)) as 50 | 100,
+    termTestWeights: sanitizeTermTestWeights(input?.termTestWeights, defaultTermTestTotal || fallbackTermTestTotal, policyContext.maxTermTests),
+    quizWeight,
+    assignmentWeight,
     quizCount,
     assignmentCount,
-    quizComponents: sanitizeAssessmentComponents('quiz', quizCount, input?.quizComponents ?? defaults.quizComponents),
-    assignmentComponents: sanitizeAssessmentComponents('assignment', assignmentCount, input?.assignmentComponents ?? defaults.assignmentComponents),
+    quizComponents,
+    assignmentComponents,
+    policyContext,
     status: input?.status ?? defaults.status,
     configuredAt: input?.configuredAt,
     lockedAt: input?.lockedAt,
@@ -327,22 +426,26 @@ function projectPredictedCgpa(baseCgpa: number, gradePoint: DerivedAcademicProje
 }
 
 export function computeEvaluation(student: Student, scheme: EvaluationScheme) {
-  const tt1Scaled = student.tt1Score !== null && student.tt1Max > 0 ? (student.tt1Score / student.tt1Max) * 15 : 0
-  const tt2Scaled = student.tt2Score !== null && student.tt2Max > 0 ? (student.tt2Score / student.tt2Max) * 15 : 0
-  const quizVals = scheme.quizComponents.map((component, index) => ({
-    score: index === 0 ? student.quiz1 : student.quiz2,
-    max: component.rawMax,
-  })).filter(item => item.score !== null)
-  const assignmentVals = scheme.assignmentComponents.map((component, index) => ({
-    score: index === 0 ? student.asgn1 : student.asgn2,
-    max: component.rawMax,
-  })).filter(item => item.score !== null)
-  const quizPct = quizVals.length > 0 ? quizVals.reduce((acc, item) => acc + ((item.score ?? 0) / Math.max(1, item.max)), 0) / quizVals.length : 0
-  const assignmentPct = assignmentVals.length > 0 ? assignmentVals.reduce((acc, item) => acc + ((item.score ?? 0) / Math.max(1, item.max)), 0) / assignmentVals.length : 0
-  const quizScaled = scheme.quizCount === 0 || scheme.quizWeight === 0 ? 0 : quizPct * scheme.quizWeight
-  const assignmentScaled = scheme.assignmentCount === 0 || scheme.assignmentWeight === 0 ? 0 : assignmentPct * scheme.assignmentWeight
+  const ceTarget = Math.max(1, scheme.policyContext.ce)
+  const seeTarget = Math.max(0, scheme.policyContext.see)
+  const tt1Scaled = student.tt1Score !== null && student.tt1Max > 0
+    ? (student.tt1Score / student.tt1Max) * scheme.termTestWeights.tt1
+    : 0
+  const tt2Scaled = student.tt2Score !== null && student.tt2Max > 0
+    ? (student.tt2Score / student.tt2Max) * scheme.termTestWeights.tt2
+    : 0
+  const quizScaled = scheme.quizComponents.reduce((acc, component, index) => {
+    const score = index === 0 ? student.quiz1 : student.quiz2
+    if (score === null) return acc
+    return acc + ((score / Math.max(1, component.rawMax)) * component.weightage)
+  }, 0)
+  const assignmentScaled = scheme.assignmentComponents.reduce((acc, component, index) => {
+    const score = index === 0 ? student.asgn1 : student.asgn2
+    if (score === null) return acc
+    return acc + ((score / Math.max(1, component.rawMax)) * component.weightage)
+  }, 0)
   const ce60 = tt1Scaled + tt2Scaled + quizScaled + assignmentScaled
-  const overall40 = (ce60 / 60) * 40
+  const overall40 = (ce60 / ceTarget) * seeTarget
   return { tt1Scaled, tt2Scaled, quizScaled, asgnScaled: assignmentScaled, assignmentScaled, ce60, overall40 }
 }
 
@@ -413,7 +516,7 @@ export function createAppSelectors(state: SelectorState) {
     const evaluation = computeEvaluation(input.student, scheme)
     const attendancePct = Math.round((input.student.present / Math.max(1, input.student.totalClasses)) * 100)
     const seeRaw = typeof patch.seeScore === 'number' ? patch.seeScore : null
-    const seeScaled40 = seeRaw !== null ? (seeRaw / Math.max(1, scheme.finalsMax)) * 40 : 0
+    const seeScaled40 = seeRaw !== null ? (seeRaw / Math.max(1, scheme.finalsMax)) * scheme.policyContext.see : 0
     const finalScore100 = evaluation.ce60 + seeScaled40
     const bandLabel = getSubjectBand(finalScore100)
     const gradePoint = getGradePointFromBand(bandLabel)
