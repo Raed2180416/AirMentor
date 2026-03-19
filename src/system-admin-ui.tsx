@@ -17,7 +17,22 @@ import {
 } from 'lucide-react'
 import { T, mono, sora } from './data'
 import { isLightTheme } from './theme'
-import { Card, Chip } from './ui-primitives'
+import {
+  BrandMark,
+  Card,
+  Chip,
+  FieldInput,
+  FieldSelect,
+  FieldTextarea,
+  ModalWorkspace,
+  UI_FONT_SIZES,
+  getFieldChromeStyle,
+  getIconButtonStyle,
+  getSegmentedButtonStyle,
+  getSegmentedGroupStyle,
+  getShellBarStyle,
+  withAlpha,
+} from './ui-primitives'
 import type { ThemeMode } from './domain'
 
 export type AdminSectionId = 'overview' | 'faculties' | 'students' | 'faculty-members' | 'requests'
@@ -73,74 +88,19 @@ export function getStatusColor(status: string): string {
 }
 
 export function FieldLabel({ children }: { children: ReactNode }) {
-  return <label style={{ ...mono, fontSize: 10, color: T.dim, display: 'block', marginBottom: 6 }}>{children}</label>
+  return <label style={{ ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: T.dim, display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{children}</label>
 }
 
 export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      {...props}
-      style={{
-        width: '100%',
-        ...mono,
-        fontSize: 11,
-        minHeight: 42,
-        borderRadius: 12,
-        border: `1px solid ${T.border2}`,
-        background: T.surface,
-        color: T.text,
-        colorScheme: 'inherit',
-        padding: '10px 12px',
-        boxShadow: `inset 0 1px 0 ${T.surface3}`,
-        ...(props.style ?? {}),
-      }}
-    />
-  )
+  return <FieldInput {...props} />
 }
 
 export function SelectInput(props: SelectHTMLAttributes<HTMLSelectElement>) {
-  return (
-    <select
-      {...props}
-      style={{
-        width: '100%',
-        ...mono,
-        fontSize: 11,
-        minHeight: 42,
-        borderRadius: 12,
-        border: `1px solid ${T.border2}`,
-        background: T.surface,
-        color: T.text,
-        colorScheme: 'inherit',
-        padding: '10px 12px',
-        boxShadow: `inset 0 1px 0 ${T.surface3}`,
-        ...(props.style ?? {}),
-      }}
-    />
-  )
+  return <FieldSelect {...props} />
 }
 
 export function TextAreaInput(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return (
-    <textarea
-      {...props}
-      style={{
-        width: '100%',
-        resize: 'vertical',
-        ...mono,
-        fontSize: 11,
-        minHeight: 42,
-        borderRadius: 12,
-        border: `1px solid ${T.border2}`,
-        background: T.surface,
-        color: T.text,
-        colorScheme: 'inherit',
-        padding: '10px 12px',
-        boxShadow: `inset 0 1px 0 ${T.surface3}`,
-        ...(props.style ?? {}),
-      }}
-    />
-  )
+  return <FieldTextarea {...props} />
 }
 
 export function SearchField({
@@ -156,14 +116,14 @@ export function SearchField({
 }) {
   return (
     <div style={{ position: 'relative' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 42, borderRadius: 12, border: `1px solid ${T.border2}`, background: T.surface, padding: '0 12px', boxShadow: `inset 0 1px 0 ${T.surface3}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, ...getFieldChromeStyle(), padding: '0 12px' }}>
         <Search size={14} color={T.muted} />
         <input
           aria-label={ariaLabel}
           value={value}
           onChange={event => onChange(event.target.value)}
           placeholder={placeholder}
-          style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', color: T.text, colorScheme: 'inherit', ...mono, fontSize: 11 }}
+          style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', color: T.text, colorScheme: 'inherit', ...mono, fontSize: UI_FONT_SIZES.body }}
         />
         {value ? (
           <button
@@ -184,7 +144,7 @@ export function SearchField({
 export function InfoBanner({ tone = 'neutral', message }: { tone?: 'neutral' | 'error' | 'success'; message: string }) {
   const color = tone === 'error' ? T.danger : tone === 'success' ? T.success : T.accent
   return (
-    <div style={{ ...mono, fontSize: 11, color, border: `1px solid ${color}40`, background: `${color}14`, borderRadius: 12, padding: '10px 12px' }}>
+    <div style={{ ...mono, fontSize: UI_FONT_SIZES.body, color, border: `1px solid ${color}40`, background: `${color}12`, borderRadius: 14, padding: '11px 13px', lineHeight: 1.7 }}>
       {message}
     </div>
   )
@@ -193,9 +153,9 @@ export function InfoBanner({ tone = 'neutral', message }: { tone?: 'neutral' | '
 export function MetricCard({ label, value, helper, onClick }: { label: string; value: string; helper: string; onClick?: () => void }) {
   return (
     <Card style={{ padding: 18, cursor: onClick ? 'pointer' : undefined }} onClick={onClick}>
-      <div style={{ ...mono, fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
-      <div style={{ ...sora, fontSize: 28, fontWeight: 800, color: T.text, marginTop: 10 }}>{value}</div>
-      <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 8 }}>{helper}</div>
+      <div style={{ ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
+      <div style={{ ...sora, fontSize: 30, fontWeight: 800, color: T.text, marginTop: 10, lineHeight: 1 }}>{value}</div>
+      <div style={{ ...mono, fontSize: UI_FONT_SIZES.meta, color: T.muted, marginTop: 8, lineHeight: 1.8 }}>{helper}</div>
     </Card>
   )
 }
@@ -216,9 +176,9 @@ export function SectionHeading({
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
       <div style={{ display: 'grid', gap: 4 }}>
-        {eyebrow ? <div style={{ ...mono, fontSize: 10, color: toneColor, textTransform: 'uppercase', letterSpacing: '0.12em' }}>{eyebrow}</div> : null}
-        <div style={{ ...sora, fontSize: 18, fontWeight: 800, color: T.text }}>{title}</div>
-        <div style={{ ...mono, fontSize: 11, color: T.muted }}>{caption}</div>
+        {eyebrow ? <div style={{ ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: toneColor, textTransform: 'uppercase', letterSpacing: '0.12em' }}>{eyebrow}</div> : null}
+        <div style={{ ...sora, fontSize: 20, fontWeight: 800, color: T.text, lineHeight: 1.1 }}>{title}</div>
+        <div style={{ ...mono, fontSize: UI_FONT_SIZES.meta, color: T.muted, lineHeight: 1.8 }}>{caption}</div>
       </div>
       {actions ? <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>{actions}</div> : null}
     </div>
@@ -227,9 +187,9 @@ export function SectionHeading({
 
 export function EmptyState({ title, body }: { title: string; body: string }) {
   return (
-    <Card style={{ padding: 26, textAlign: 'center' }}>
-      <div style={{ ...sora, fontSize: 17, fontWeight: 800, color: T.text }}>{title}</div>
-      <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 8 }}>{body}</div>
+    <Card style={{ padding: 28, textAlign: 'center' }}>
+      <div style={{ ...sora, fontSize: 18, fontWeight: 800, color: T.text }}>{title}</div>
+      <div style={{ ...mono, fontSize: UI_FONT_SIZES.meta, color: T.muted, marginTop: 8, lineHeight: 1.8 }}>{body}</div>
     </Card>
   )
 }
@@ -298,7 +258,7 @@ export function AdminTopBar({
   style?: CSSProperties
 }) {
   return (
-    <div style={{ position: 'sticky', top: 0, zIndex: 20, backdropFilter: 'blur(12px)', background: isLightTheme(themeMode) ? 'rgba(247,251,255,0.88)' : 'rgba(10,16,24,0.88)', borderBottom: `1px solid ${T.border}`, ...style }}>
+    <div style={{ ...getShellBarStyle(themeMode), zIndex: 20, ...style }}>
       <div style={{ padding: '14px 20px', display: 'grid', gap: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
@@ -307,12 +267,12 @@ export function AdminTopBar({
               onClick={onGoHome}
               aria-label="Go to dashboard"
               title="Go to dashboard"
-              style={{ width: 38, height: 38, borderRadius: 12, background: `linear-gradient(135deg, ${T.accent}, ${T.accentLight})`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', ...sora, fontWeight: 800, fontSize: 13, border: 'none', cursor: onGoHome ? 'pointer' : 'default', padding: 0 }}
+              style={{ background: 'none', border: 'none', padding: 0, cursor: onGoHome ? 'pointer' : 'default', display: 'inline-flex' }}
             >
-              AM
+              <BrandMark size={38} />
             </button>
             <div>
-              <div style={{ ...sora, fontWeight: 800, fontSize: 17, color: T.text }}>{institutionName}</div>
+              <div style={{ ...sora, fontWeight: 800, fontSize: 18, color: T.text }}>{institutionName}</div>
               <AdminBreadcrumbs segments={breadcrumbs} />
             </div>
             <Chip color={modeColor}>{modeLabel}</Chip>
@@ -322,7 +282,7 @@ export function AdminTopBar({
               <button
                 type="button"
                 onClick={onNavigateBack}
-                style={{ ...mono, fontSize: 10, color: T.muted, background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 8, padding: '6px 10px', cursor: 'pointer' }}
+                style={{ ...getIconButtonStyle({ subtle: true }), width: 'auto', padding: '0 12px', ...mono, fontSize: UI_FONT_SIZES.eyebrow, gap: 6 }}
               >
                 Back
               </button>
@@ -332,7 +292,7 @@ export function AdminTopBar({
               aria-label={isLightTheme(themeMode) ? 'Switch to dark mode' : 'Switch to light mode'}
               onClick={onThemeToggle}
               title={isLightTheme(themeMode) ? 'Dark mode' : 'Light mode'}
-              style={{ ...mono, fontSize: 14, lineHeight: 1, color: T.muted, background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 10px', cursor: 'pointer' }}
+              style={{ ...getIconButtonStyle({ subtle: false }), ...mono, fontSize: 14, lineHeight: 1 }}
             >
               {isLightTheme(themeMode) ? '🌙' : '☀️'}
             </button>
@@ -341,14 +301,14 @@ export function AdminTopBar({
         </div>
 
         <div style={{ position: 'relative' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, borderRadius: 12, border: `1px solid ${T.border2}`, background: T.surface, padding: '10px 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, ...getFieldChromeStyle(), padding: '10px 14px' }}>
             <Search size={15} color={T.muted} />
             <input
               aria-label="Global admin search"
               value={searchQuery}
               onChange={event => onSearchChange(event.target.value)}
               placeholder="Search faculty, department, batch, student, faculty member, course..."
-              style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', color: T.text, ...mono, fontSize: 12 }}
+              style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', color: T.text, ...mono, fontSize: UI_FONT_SIZES.body }}
             />
           </div>
           {searchResults.length > 0 ? (
@@ -379,7 +339,7 @@ export function AdminTopBar({
           ) : null}
         </div>
 
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ ...getSegmentedGroupStyle(), flexWrap: 'wrap' }}>
           {TOP_TABS.map(item => {
             const Icon = item.icon
             const active = activeSection === item.id
@@ -388,19 +348,7 @@ export function AdminTopBar({
                 key={item.id}
                 type="button"
                 onClick={() => onSectionChange(item.id)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 7,
-                  borderRadius: 999,
-                  border: `1px solid ${active ? T.accent : T.border}`,
-                  background: active ? `${T.accent}18` : 'transparent',
-                  color: active ? T.text : T.muted,
-                  padding: '8px 14px',
-                  cursor: 'pointer',
-                  ...mono,
-                  fontSize: 11,
-                }}
+                style={{ display: 'flex', alignItems: 'center', gap: 7, ...getSegmentedButtonStyle({ active, compact: true }) }}
               >
                 <Icon size={14} />
                 {item.label}
@@ -415,7 +363,7 @@ export function AdminTopBar({
 
 export function DayToggle({ days, selected, onChange }: { days: readonly string[]; selected: string[]; onChange: (next: string[]) => void }) {
   return (
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+    <div style={{ ...getSegmentedGroupStyle(), flexWrap: 'wrap' }}>
       {days.map(day => {
         const active = selected.includes(day)
         return (
@@ -423,16 +371,7 @@ export function DayToggle({ days, selected, onChange }: { days: readonly string[
             key={day}
             type="button"
             onClick={() => onChange(active ? selected.filter(item => item !== day) : [...selected, day])}
-            style={{
-              borderRadius: 999,
-              border: `1px solid ${active ? T.accent : T.border}`,
-              background: active ? `${T.accent}18` : 'transparent',
-              color: active ? T.text : T.muted,
-              padding: '8px 12px',
-              cursor: 'pointer',
-              ...mono,
-              fontSize: 11,
-            }}
+            style={getSegmentedButtonStyle({ active, compact: true })}
           >
             {day}
           </button>
@@ -451,9 +390,9 @@ export function EntityButton({ selected, onClick, children, style: extraStyle }:
       onClick={onClick}
       style={{
         textAlign: 'left',
-        borderRadius: 14,
-        border: `1px solid ${selected ? T.accent : T.border}`,
-        background: selected ? `linear-gradient(180deg, ${T.accent}16, ${T.surface})` : `linear-gradient(180deg, ${T.surface}, ${T.surface2})`,
+        borderRadius: 16,
+        border: `1px solid ${selected ? withAlpha(T.accent, '50') : T.border}`,
+        background: selected ? `linear-gradient(180deg, ${withAlpha(T.accent, '18')}, ${T.surface})` : `linear-gradient(180deg, ${T.surface}, ${T.surface2})`,
         padding: '14px 15px',
         minHeight: 92,
         display: 'grid',
@@ -461,6 +400,7 @@ export function EntityButton({ selected, onClick, children, style: extraStyle }:
         gap: 6,
         cursor: 'pointer',
         width: '100%',
+        boxShadow: selected ? `0 14px 28px ${withAlpha(T.accent, '14')}` : undefined,
         ...extraStyle,
       }}
     >
@@ -504,66 +444,16 @@ export function ModalFrame({
   width?: number
 }) {
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 120,
-        background: 'rgba(6, 12, 20, 0.52)',
-        backdropFilter: 'blur(14px)',
-        padding: '32px 18px',
-        display: 'grid',
-        placeItems: 'center',
-      }}
+    <ModalWorkspace
+      eyebrow={eyebrow}
+      title={title}
+      caption={caption}
+      onClose={onClose}
+      width={width}
+      footer={actions ? <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>{actions}</div> : undefined}
+      zIndex={120}
     >
-      <div onClick={event => event.stopPropagation()}>
-      <Card
-        style={{
-          width: 'min(100%, 680px)',
-          maxWidth: width,
-          maxHeight: 'min(88vh, 920px)',
-          overflowY: 'auto',
-          padding: 22,
-          borderRadius: 22,
-          background: `linear-gradient(180deg, ${T.surface}, ${T.surface2})`,
-          boxShadow: `0 28px 64px rgba(2, 6, 23, 0.28)`,
-        }}
-      >
-        <div style={{ display: 'grid', gap: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'flex-start' }}>
-            <div style={{ display: 'grid', gap: 4 }}>
-              {eyebrow ? <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.12em' }}>{eyebrow}</div> : null}
-              <div style={{ ...sora, fontSize: 24, fontWeight: 800, color: T.text }}>{title}</div>
-              {caption ? <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.8 }}>{caption}</div> : null}
-            </div>
-            <button
-              type="button"
-              aria-label="Close dialog"
-              title="Close"
-              onClick={onClose}
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 12,
-                border: `1px solid ${T.border}`,
-                background: T.surface,
-                color: T.muted,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}
-            >
-              <X size={16} />
-            </button>
-          </div>
-          {children}
-          {actions ? <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>{actions}</div> : null}
-        </div>
-      </Card>
-      </div>
-    </div>
+      {children}
+    </ModalWorkspace>
   )
 }

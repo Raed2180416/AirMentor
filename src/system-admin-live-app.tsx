@@ -95,7 +95,19 @@ import {
 import type { LiveAdminSectionId } from './system-admin-live-data'
 import { applyThemePreset, isLightTheme } from './theme'
 import { SystemAdminFacultyCalendarWorkspace } from './system-admin-faculty-calendar-workspace'
-import { Btn, Card, Chip, PageShell } from './ui-primitives'
+import {
+  BrandMark,
+  Btn,
+  Card,
+  Chip,
+  PageShell,
+  UI_FONT_SIZES,
+  getIconButtonStyle,
+  getSegmentedButtonStyle,
+  getSegmentedGroupStyle,
+  getShellBarStyle,
+  withAlpha,
+} from './ui-primitives'
 
 type SystemAdminLiveAppProps = {
   apiBaseUrl: string
@@ -814,7 +826,7 @@ function TeachingShellAdminTopBar({
   onLogout: () => void
 }) {
   return (
-    <div style={{ position: 'sticky', top: 0, zIndex: 40, display: 'grid', gap: 14, padding: '12px 20px 16px', background: isLightTheme(themeMode) ? fadeColor(T.surface, 'eb') : fadeColor(T.surface, 'e0'), backdropFilter: 'blur(16px)', borderBottom: `1px solid ${T.border}` }}>
+    <div style={{ ...getShellBarStyle(themeMode), zIndex: 40, gap: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
           <button
@@ -822,25 +834,25 @@ function TeachingShellAdminTopBar({
             aria-label="Go to dashboard"
             title="Go to dashboard"
             onClick={onGoHome}
-            style={{ width: 34, height: 34, borderRadius: 10, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 13, color: '#fff', border: 'none', cursor: 'pointer', padding: 0 }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'inline-flex' }}
           >
-            AM
+            <BrandMark size={36} />
           </button>
           <div style={{ minWidth: 0 }}>
-            <div style={{ ...sora, fontWeight: 800, fontSize: 14, color: T.text }}>{institutionName}</div>
-            <div style={{ ...mono, fontSize: 9, color: T.dim }}>Welcome {adminName} · {contextLabel}</div>
+            <div style={{ ...sora, fontWeight: 800, fontSize: 15, color: T.text }}>{institutionName}</div>
+            <div style={{ ...mono, fontSize: UI_FONT_SIZES.micro, color: T.dim }}>Welcome {adminName} · {contextLabel}</div>
           </div>
         </div>
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <div style={{ ...mono, fontSize: 10, color: T.dim, border: `1px solid ${T.border}`, borderRadius: 12, padding: '8px 11px', minHeight: 38, display: 'flex', alignItems: 'center', gap: 6, background: T.surface }}>
+          <div style={{ ...getIconButtonStyle({ subtle: false }), width: 'auto', padding: '0 12px', ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: T.dim, display: 'flex', alignItems: 'center', gap: 6 }}>
             <Clock3 size={12} />
             {formatClockLabel(now)}
           </div>
-          <button type="button" aria-label={isLightTheme(themeMode) ? 'Switch to dark mode' : 'Switch to light mode'} title={isLightTheme(themeMode) ? 'Dark mode' : 'Light mode'} onClick={onToggleTheme} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: '9px 12px', cursor: 'pointer', color: T.muted, ...mono, fontSize: 14, lineHeight: 1 }}>
+          <button type="button" aria-label={isLightTheme(themeMode) ? 'Switch to dark mode' : 'Switch to light mode'} title={isLightTheme(themeMode) ? 'Dark mode' : 'Light mode'} onClick={onToggleTheme} style={{ ...getIconButtonStyle({ subtle: false }), color: T.muted, ...mono, fontSize: 14, lineHeight: 1 }}>
             {isLightTheme(themeMode) ? '🌙' : '☀️'}
           </button>
-          <button type="button" aria-label="Open action queue" onClick={onToggleQueue} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: '9px 12px', cursor: 'pointer', color: T.muted, position: 'relative' }}>
+          <button type="button" aria-label="Open action queue" onClick={onToggleQueue} style={{ ...getIconButtonStyle({ active: actionCount > 0 }), color: actionCount > 0 ? T.accent : T.muted, position: 'relative' }}>
             <Bell size={14} />
             {actionCount > 0 ? (
               <span style={{ position: 'absolute', top: -6, right: -6, minWidth: 16, height: 16, borderRadius: 8, background: T.danger, color: '#fff', ...mono, fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>
@@ -848,10 +860,10 @@ function TeachingShellAdminTopBar({
               </span>
             ) : null}
           </button>
-          <button type="button" aria-label="Refresh admin data" onClick={onRefresh} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: '9px 12px', cursor: 'pointer', color: T.muted }}>
+          <button type="button" aria-label="Refresh admin data" onClick={onRefresh} style={{ ...getIconButtonStyle({ subtle: false }), color: T.muted }}>
             <RefreshCw size={14} />
           </button>
-          <button type="button" onClick={onLogout} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: '9px 12px', cursor: 'pointer', color: T.muted, ...mono, fontSize: 10 }}>
+          <button type="button" onClick={onLogout} style={{ ...getIconButtonStyle({ subtle: true }), width: 'auto', padding: '0 12px', color: T.muted, ...mono, fontSize: UI_FONT_SIZES.eyebrow }}>
             Logout
           </button>
         </div>
@@ -865,7 +877,7 @@ function TeachingShellAdminTopBar({
             value={searchQuery}
             onChange={event => onSearchChange(event.target.value)}
             placeholder="Search anything: faculty, department, course, request, student, section..."
-            style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', color: T.text, ...mono, fontSize: 12 }}
+            style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', color: T.text, ...mono, fontSize: UI_FONT_SIZES.body }}
           />
         </div>
         {searchResults.length > 0 ? (
@@ -896,7 +908,7 @@ function TeachingShellAdminTopBar({
         ) : null}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+      <div style={{ ...getSegmentedGroupStyle(), flexWrap: 'wrap' }}>
         {TOP_TABS.map(tab => {
           const Icon = tab.icon
           const isActive = activeSection === tab.id
@@ -905,20 +917,7 @@ function TeachingShellAdminTopBar({
               key={tab.id}
               type="button"
               onClick={() => onSectionChange(tab.id as LiveAdminSectionId)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                borderRadius: 14,
-                border: `1px solid ${isActive ? T.accent : T.border}`,
-                background: isActive ? `linear-gradient(180deg, ${T.accent}18, ${T.surface})` : `linear-gradient(180deg, ${T.surface}, ${T.surface2})`,
-                color: isActive ? T.accent : T.muted,
-                cursor: 'pointer',
-                padding: '8px 13px',
-                ...mono,
-                fontSize: 11,
-                fontWeight: isActive ? 700 : 500,
-              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, ...getSegmentedButtonStyle({ active: isActive, compact: true }) }}
             >
               <Icon size={13} />
               {tab.label}
@@ -957,9 +956,9 @@ function SectionLaunchCard({
         padding: 22,
         minHeight: 220,
         background: active
-          ? `linear-gradient(160deg, ${tone}18, ${T.surface})`
+          ? `linear-gradient(160deg, ${withAlpha(tone, '20')}, ${T.surface})`
           : `linear-gradient(160deg, ${T.surface}, ${T.surface2})`,
-        borderTop: `3px solid ${tone}28`,
+        borderTop: `3px solid ${withAlpha(tone, '3c')}`,
         display: 'grid',
         alignContent: 'space-between',
       }}
@@ -969,11 +968,11 @@ function SectionLaunchCard({
           {icon}
         </div>
         <div>
-          <div style={{ ...sora, fontSize: 17, fontWeight: 800, color: T.text }}>{title}</div>
-          <div style={{ ...mono, fontSize: 10, color: tone }}>{caption}</div>
+          <div style={{ ...sora, fontSize: 18, fontWeight: 800, color: T.text }}>{title}</div>
+          <div style={{ ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: tone }}>{caption}</div>
         </div>
       </div>
-      <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.8 }}>{helper}</div>
+      <div style={{ ...mono, fontSize: UI_FONT_SIZES.meta, color: T.muted, lineHeight: 1.8 }}>{helper}</div>
     </Card>
   )
 }
@@ -1000,12 +999,12 @@ function OverviewSupportCard({
         minHeight: 160,
         display: 'grid',
         alignContent: 'space-between',
-        background: `linear-gradient(180deg, ${T.surface}, ${T.surface2})`,
+        background: `linear-gradient(180deg, ${withAlpha(tone, '10')}, ${T.surface})`,
       }}
     >
-      <div style={{ ...mono, fontSize: 10, color: tone, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{title}</div>
-      <div style={{ ...sora, fontSize: 28, fontWeight: 800, color: T.text }}>{value}</div>
-      <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>{helper}</div>
+      <div style={{ ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: tone, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{title}</div>
+      <div style={{ ...sora, fontSize: 30, fontWeight: 800, color: T.text, lineHeight: 1 }}>{value}</div>
+      <div style={{ ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: T.muted, lineHeight: 1.8 }}>{helper}</div>
     </Card>
   )
 }
@@ -1026,11 +1025,11 @@ function ActionQueueCard({
   onClick?: () => void
 }) {
   return (
-    <Card onClick={onClick} style={{ padding: 12, background: T.surface2, cursor: onClick ? 'pointer' : undefined }}>
+    <Card onClick={onClick} style={{ padding: 12, background: `linear-gradient(180deg, ${T.surface2}, ${T.surface})`, cursor: onClick ? 'pointer' : undefined }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
         <div>
-          <div style={{ ...sora, fontSize: 12, fontWeight: 700, color: T.text }}>{title}</div>
-          <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.7 }}>{subtitle}</div>
+          <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{title}</div>
+          <div style={{ ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: T.muted, marginTop: 4, lineHeight: 1.7 }}>{subtitle}</div>
         </div>
         {trailing}
       </div>
@@ -1051,7 +1050,7 @@ function AdminDetailTabs({
   onChange: (tabId: string) => void
 }) {
   return (
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+    <div style={{ ...getSegmentedGroupStyle(), flexWrap: 'wrap' }}>
       {tabs.map(tab => (
         <button
           key={tab.id}
@@ -1059,20 +1058,7 @@ function AdminDetailTabs({
           data-tab="true"
           disabled={tab.disabled}
           onClick={() => onChange(tab.id)}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 8,
-            minHeight: 40,
-            borderRadius: 12,
-            border: `1px solid ${activeTab === tab.id ? T.accent : T.border}`,
-            background: activeTab === tab.id ? `linear-gradient(180deg, ${T.accent}14, ${T.surface})` : `linear-gradient(180deg, ${T.surface}, ${T.surface2})`,
-            color: activeTab === tab.id ? T.accent : (tab.disabled ? T.dim : T.muted),
-            cursor: tab.disabled ? 'not-allowed' : 'pointer',
-            padding: '8px 12px',
-            opacity: tab.disabled ? 0.55 : 1,
-            textAlign: 'left',
-          }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, textAlign: 'left', ...getSegmentedButtonStyle({ active: activeTab === tab.id, disabled: tab.disabled, compact: true }) }}
         >
           <span style={{ ...sora, fontSize: 12, fontWeight: 700 }}>{tab.label}</span>
           {tab.count != null
@@ -1094,9 +1080,9 @@ function AdminMiniStat({
   tone?: string
 }) {
   return (
-    <div style={{ borderRadius: 14, border: `1px solid ${tone}20`, background: `${tone}10`, padding: '12px 14px', minWidth: 0 }}>
-      <div style={{ ...mono, fontSize: 9, color: tone, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
-      <div style={{ ...sora, fontSize: 18, fontWeight: 800, color: T.text, marginTop: 6 }}>{value}</div>
+    <div style={{ borderRadius: 16, border: `1px solid ${withAlpha(tone, '28')}`, background: `linear-gradient(180deg, ${withAlpha(tone, '12')}, ${T.surface})`, padding: '12px 14px', minWidth: 0, boxShadow: `0 10px 24px ${withAlpha(tone, '12')}` }}>
+      <div style={{ ...mono, fontSize: UI_FONT_SIZES.micro, color: tone, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
+      <div style={{ ...sora, fontSize: 20, fontWeight: 800, color: T.text, marginTop: 6 }}>{value}</div>
     </div>
   )
 }
@@ -3712,7 +3698,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
             <div style={{ display: 'grid', gridTemplateColumns: universityWorkspaceColumns, gap: 16 }}>
             {/* Tree explorer */}
-            <Card style={{ padding: 16, display: 'grid', gap: 12, alignContent: 'start', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
+            <Card style={{ padding: 16, display: 'grid', gap: 12, alignContent: 'start' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
                 <div>
                   <div style={{ ...mono, fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Entity Rail</div>
@@ -3748,7 +3734,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             </Card>
 
             {/* Right: detail panel */}
-            <div ref={universityWorkspacePaneRef} className="scroll-pane" style={{ display: 'grid', gap: 14, alignContent: 'start', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto', paddingRight: 4 }}>
+            <div ref={universityWorkspacePaneRef} style={{ display: 'grid', gap: 14, alignContent: 'start' }}>
               <Card style={{ padding: 16, display: 'grid', gap: 14, background: `linear-gradient(180deg, ${T.surface2}, ${T.surface})`, position: 'sticky', top: 0, zIndex: 4, boxShadow: isLightTheme(themeMode) ? '0 18px 32px rgba(15, 23, 42, 0.08)' : '0 18px 32px rgba(2, 6, 23, 0.32)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                   <div>
@@ -4520,7 +4506,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               </div>
             </Card>
 
-            <div className="scroll-pane" style={{ display: 'grid', gap: 16, maxHeight: registryIsSingleColumn ? 'none' : 'calc(100vh - 200px)', overflowY: registryIsSingleColumn ? 'visible' : 'auto', paddingRight: 4 }}>
+            <div style={{ display: 'grid', gap: 16 }}>
               <Card
                 style={{
                   position: 'sticky',
@@ -4913,7 +4899,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               </div>
             </Card>
 
-            <div className="scroll-pane" style={{ display: 'grid', gap: 16, maxHeight: registryIsSingleColumn ? 'none' : 'calc(100vh - 200px)', overflowY: registryIsSingleColumn ? 'visible' : 'auto', paddingRight: 4 }}>
+            <div style={{ display: 'grid', gap: 16 }}>
               <Card
                 style={{
                   position: 'sticky',

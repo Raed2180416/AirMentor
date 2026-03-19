@@ -42,7 +42,7 @@ import {
   shouldBlockNumericKey,
   toCellKey,
 } from '../page-utils'
-import { Bar, Btn, Card, Chip, HScrollArea, PageBackButton, PageShell, TD, TH } from '../ui-primitives'
+import { Bar, Btn, Card, Chip, FieldInput, FieldSelect, HScrollArea, PageBackButton, PageShell, TD, TH } from '../ui-primitives'
 
 export function AllStudentsPage({
   onBack,
@@ -99,23 +99,23 @@ export function AllStudentsPage({
       <div style={{ ...sora, fontWeight: 700, fontSize: 20, color: T.text, marginBottom: 4 }}>All Students</div>
       <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 14 }}>Single integrated roster for profile review, transcript history, and direct data-entry continuation.</div>
 
-      <Card style={{ marginBottom: 14, padding: '12px 14px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 8 }}>
-          <input aria-label="Search student by name or USN" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search name / USN" style={{ ...mono, fontSize: 11, borderRadius: 6, border: `1px solid ${T.border2}`, background: T.surface2, color: T.text, padding: '8px 10px' }} />
-          <select aria-label="Filter by year" value={selectedYear} onChange={event => setSelectedYear(event.target.value)} style={{ ...mono, fontSize: 11, borderRadius: 6, border: `1px solid ${T.border2}`, background: T.surface2, color: T.text, padding: '8px 10px' }}>
+      <Card style={{ marginBottom: 14, padding: '14px 16px', background: `linear-gradient(180deg, ${T.surface}, ${T.surface2})` }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 8 }}>
+          <FieldInput aria-label="Search student by name or USN" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search name / USN" />
+          <FieldSelect aria-label="Filter by year" value={selectedYear} onChange={event => setSelectedYear(event.target.value)}>
             <option value="all">All Years</option>
             {yearOptions.map(year => <option key={year} value={year}>{year}</option>)}
-          </select>
-          <select aria-label="Filter by course" value={selectedCourse} onChange={event => setSelectedCourse(event.target.value)} style={{ ...mono, fontSize: 11, borderRadius: 6, border: `1px solid ${T.border2}`, background: T.surface2, color: T.text, padding: '8px 10px' }}>
+          </FieldSelect>
+          <FieldSelect aria-label="Filter by course" value={selectedCourse} onChange={event => setSelectedCourse(event.target.value)}>
             <option value="all">All Courses</option>
             {courseOptions.map(code => <option key={code} value={code}>{code}</option>)}
-          </select>
-          <select aria-label="Filter by risk" value={selectedRisk} onChange={event => setSelectedRisk(event.target.value as 'all' | RiskBand)} style={{ ...mono, fontSize: 11, borderRadius: 6, border: `1px solid ${T.border2}`, background: T.surface2, color: T.text, padding: '8px 10px' }}>
+          </FieldSelect>
+          <FieldSelect aria-label="Filter by risk" value={selectedRisk} onChange={event => setSelectedRisk(event.target.value as 'all' | RiskBand)}>
             <option value="all">All Risk Bands</option>
             <option value="High">High</option>
             <option value="Medium">Medium</option>
             <option value="Low">Low</option>
-          </select>
+          </FieldSelect>
         </div>
         <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 8 }}>{filteredRows.length} students shown</div>
       </Card>

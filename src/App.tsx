@@ -79,7 +79,29 @@ import { clearPortalWorkspaceHints, getPortalHash, hashBelongsToPortalRoute, nav
 import { SystemAdminApp } from './system-admin-app'
 import { InfoBanner, MetricCard } from './system-admin-ui'
 import { applyThemePreset, isLightTheme } from './theme'
-import { Bar, Btn, Card, Chip, PageBackButton, PageShell, RiskBadge, StagePips, UI_TRANSITION_FAST, UI_TRANSITION_MEDIUM } from './ui-primitives'
+import {
+  Bar,
+  BrandMark,
+  Btn,
+  Card,
+  Chip,
+  FieldInput,
+  FieldSelect,
+  FieldTextarea,
+  ModalWorkspace,
+  PageBackButton,
+  PageShell,
+  RiskBadge,
+  StagePips,
+  UI_FONT_SIZES,
+  UI_TRANSITION_FAST,
+  UI_TRANSITION_MEDIUM,
+  getFieldChromeStyle,
+  getIconButtonStyle,
+  getSegmentedButtonStyle,
+  getSegmentedGroupStyle,
+  getShellBarStyle,
+} from './ui-primitives'
 import { AirMentorApiClient, AirMentorApiError } from './api/client'
 import type { ApiAcademicBootstrap, ApiAcademicFacultyProfile, ApiAcademicLoginFaculty, ApiAdminCalendarMarker, ApiSessionResponse } from './api/types'
 import './App.css'
@@ -757,159 +779,22 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
     }
   }
 
+  const denseFieldStyle = getFieldChromeStyle({ dense: true })
+  const denseTextAreaStyle = { ...denseFieldStyle, minHeight: 0 }
+
   return (
-    <motion.div
-      onClick={onClose}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={UI_TRANSITION_FAST}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 130, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
-    >
-      <motion.div
-        onClick={e => e.stopPropagation()}
-        initial={{ opacity: 0, y: 32, scale: 0.965 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 22, scale: 0.985 }}
-        transition={UI_TRANSITION_MEDIUM}
-        style={{ width: '100%', maxWidth: 760, minHeight: 620, maxHeight: '82vh', display: 'flex', flexDirection: 'column', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, overflow: 'hidden', boxShadow: '0 28px 72px rgba(2, 6, 23, 0.34)' }}
-      >
-        <div style={{ padding: '16px 18px', borderBottom: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: T.text }}>{step === 'details' ? 'Add Task' : 'Build Remedial Plan'}</div>
-            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 3 }}>{step === 'details' ? 'One unified task flow for follow-up, attendance, academic, and remedial actions.' : 'Step 2 of 2 · leaf tasks stay tied to the same queue item.'}</div>
-          </div>
-          <button aria-label="Close task composer" title="Close" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.muted }}><X size={16} /></button>
-        </div>
-
-        <div className="scroll-pane scroll-pane--dense" style={{ flex: 1, overflowY: 'auto', padding: 18, display: 'grid', gap: 12 }}>
-          {step === 'details' && (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <select aria-label="Select year" value={selectedYear} onChange={e => setSelectedYear(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
-                  <option value="">All Years</option>
-                  {yearOptions.map(year => <option key={year} value={year}>{year}</option>)}
-                </select>
-                <select aria-label="Select branch" value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
-                  <option value="">All Branches</option>
-                  {deptOptions.map(dept => <option key={dept} value={dept}>{dept}</option>)}
-                </select>
-              </div>
-              <select aria-label="Select class" value={activeSelectedOffId} onChange={e => { setSelectedOffId(e.target.value); setQuery('') }} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
-                <option value="">Select class</option>
-                {classOfferings.map(offering => <option key={offering.offId} value={offering.offId}>{offering.code} · {offering.year} · Sec {offering.section} · {offering.count} students</option>)}
-              </select>
-              <input aria-label="Search student" placeholder="Search student / USN" value={query} onChange={e => setQuery(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
-              {query.trim() !== '' && <div className="scroll-pane scroll-pane--dense" style={{ minHeight: 96, maxHeight: 140, overflowY: 'auto', border: `1px solid ${T.border2}`, borderRadius: 6, background: T.surface2 }}>
-                {query.trim() !== '' && searchHits.length === 0 && <div style={{ ...mono, fontSize: 10, color: T.dim, padding: '10px 12px' }}>No matching students.</div>}
-                {query.trim() !== '' && searchHits.map(hit => (
-                  <button key={`${hit.offering.offId}-${hit.student.id}`} onClick={() => {
-                    setSelectedYear(hit.offering.year)
-                    setSelectedDept(hit.offering.dept)
-                    setSelectedOffId(hit.offering.offId)
-                    setSelectedStudentId(hit.student.id)
-                    setQuery(hit.student.name)
-                    hydrateSelectedStudent(hit.student)
-                  }} style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', borderBottom: `1px solid ${T.border}`, cursor: 'pointer', padding: '8px 10px' }}>
-                    <div style={{ ...sora, fontWeight: 600, fontSize: 11, color: T.text }}>{hit.student.name}</div>
-                    <div style={{ ...mono, fontSize: 9, color: T.muted }}>{hit.student.usn} · {hit.offering.code} · Sec {hit.offering.section}</div>
-                  </button>
-                ))}
-              </div>}
-              <select aria-label="Select student" value={selectedStudentId} onChange={e => {
-                const nextId = e.target.value
-                setSelectedStudentId(nextId)
-                const nextStudent = filteredStudents.find(student => student.id === nextId)
-                if (nextStudent) hydrateSelectedStudent(nextStudent)
-              }} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
-                <option value="">Select student</option>
-                {filteredStudents.map(student => <option key={student.id} value={student.id}>{student.name} · {student.usn}</option>)}
-              </select>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <select aria-label="Task type" value={taskType} onChange={e => setTaskType(e.target.value as TaskType)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
-                  <option>Follow-up</option>
-                  <option>Remedial</option>
-                  <option>Attendance</option>
-                  <option>Academic</option>
-                </select>
-                <input aria-label={schedulingMode === 'scheduled' ? 'Starts on' : 'Due date'} title={schedulingMode === 'scheduled' ? 'Starts on' : 'Due date'} type="date" value={dueDateISO} onChange={e => setDueDateISO(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
-              </div>
-              <Card style={{ padding: '10px 12px' }}>
-                <div style={{ ...sora, fontWeight: 700, fontSize: 12, color: T.text, marginBottom: 8 }}>Scheduling</div>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                  <button type="button" data-tab="true" onClick={() => setSchedulingMode('one-time')} style={{ ...mono, fontSize: 10, borderRadius: 6, border: `1px solid ${schedulingMode === 'one-time' ? T.accent : T.border}`, background: schedulingMode === 'one-time' ? `${T.accent}18` : 'transparent', color: schedulingMode === 'one-time' ? T.accentLight : T.muted, padding: '5px 8px', cursor: 'pointer' }}>One-time</button>
-                  <button type="button" data-tab="true" onClick={() => setSchedulingMode('scheduled')} style={{ ...mono, fontSize: 10, borderRadius: 6, border: `1px solid ${schedulingMode === 'scheduled' ? T.accent : T.border}`, background: schedulingMode === 'scheduled' ? `${T.accent}18` : 'transparent', color: schedulingMode === 'scheduled' ? T.accentLight : T.muted, padding: '5px 8px', cursor: 'pointer' }}>Scheduled</button>
-                </div>
-                {schedulingMode === 'scheduled' && (
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                      <select aria-label="Schedule preset" value={schedulePreset} onChange={e => setSchedulePreset(e.target.value as SchedulePreset)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
-                        <option value="daily">Daily</option>
-                        <option value="weekly">Weekly</option>
-                        <option value="monthly">Monthly</option>
-                        <option value="weekdays">Weekdays</option>
-                        <option value="custom dates">Custom dates</option>
-                      </select>
-                      {schedulePreset !== 'custom dates' && <input aria-label="Recurring time (optional)" type="time" value={scheduleTime} onChange={e => setScheduleTime(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />}
-                    </div>
-                    {schedulePreset === 'custom dates' && (
-                      <div style={{ display: 'grid', gap: 6 }}>
-                        {customDates.map((item, index) => (
-                          <div key={`custom-date-${index}`} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 6 }}>
-                            <input aria-label={`Custom date ${index + 1}`} type="date" value={item.dateISO} onChange={e => setCustomDates(prev => prev.map((row, rowIndex) => rowIndex === index ? { ...row, dateISO: e.target.value } : row))} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
-                            <input aria-label={`Custom date ${index + 1} time`} type="time" value={item.time ?? ''} onChange={e => setCustomDates(prev => prev.map((row, rowIndex) => rowIndex === index ? { ...row, time: e.target.value } : row))} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
-                            <button type="button" aria-label={`Remove custom date ${index + 1}`} onClick={() => setCustomDates(prev => prev.length === 1 ? prev : prev.filter((_, rowIndex) => rowIndex !== index))} style={{ ...mono, fontSize: 10, borderRadius: 6, border: `1px solid ${T.border2}`, background: 'transparent', color: T.muted, padding: '0 8px', cursor: 'pointer' }}>−</button>
-                          </div>
-                        ))}
-                        <button type="button" onClick={() => setCustomDates(prev => [...prev, { dateISO: '', time: '' }])} style={{ ...mono, fontSize: 10, borderRadius: 6, border: `1px dashed ${T.border2}`, background: 'transparent', color: T.accent, padding: '6px 8px', cursor: 'pointer' }}>+ Add custom date</button>
-                      </div>
-                    )}
-                    <div style={{ ...mono, fontSize: 10, color: T.dim }}>Starts on: {normalizeDateISO(dueDateISO) ?? 'today'} · Queue activation follows the recurring schedule. Calendar placement stays exact when this task is launched from the timetable.</div>
-                  </div>
-                )}
-              </Card>
-              {initialState.placement && (
-                <Card style={{ padding: '10px 12px' }}>
-                  <div style={{ ...sora, fontWeight: 700, fontSize: 12, color: T.text, marginBottom: 6 }}>Calendar placement</div>
-                  <div style={{ ...mono, fontSize: 10, color: T.muted }}>
-                    {initialState.placement.dateISO} · {initialState.placement.placementMode === 'untimed'
-                      ? 'No preferred time'
-                      : `${minutesToDisplayLabel(initialState.placement.startMinutes ?? 0)} - ${minutesToDisplayLabel(initialState.placement.endMinutes ?? 0)}`}
-                  </div>
-                  <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 4 }}>Saving this task will place it directly into the calendar/timetable workspace.</div>
-                </Card>
-              )}
-              <textarea aria-label="Task note" value={note} onChange={e => setNote(e.target.value)} rows={4} placeholder="Task note" style={{ width: '100%', resize: 'none', ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
-              {selectedStudent && (
-                <Card style={{ padding: '10px 12px' }}>
-                  <div style={{ ...mono, fontSize: 10, color: T.muted }}>Selected student</div>
-                  <div style={{ ...sora, fontWeight: 600, fontSize: 13, color: T.text, marginTop: 4 }}>{selectedStudent.name}</div>
-                  <div style={{ ...mono, fontSize: 10, color: T.accent, marginTop: 2 }}>{selectedStudent.usn} · {selectedOffering?.code} Sec {selectedOffering?.section}</div>
-                </Card>
-              )}
-            </>
-          )}
-
-          {step === 'remedial' && (
-            <>
-              <div style={{ ...mono, fontSize: 10, color: T.muted }}>{selectedStudent?.name} · {selectedOffering?.code} Sec {selectedOffering?.section}</div>
-              <input aria-label="Remedial plan title" value={planTitle} onChange={e => setPlanTitle(e.target.value)} placeholder="Plan title" style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                <input aria-label="Plan due date" type="date" value={dueDateISO} onChange={e => setDueDateISO(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
-                <input aria-label="Check-in date 1" type="date" value={checkIn1} onChange={e => setCheckIn1(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
-                <input aria-label="Check-in date 2" type="date" value={checkIn2} onChange={e => setCheckIn2(e.target.value)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
-              </div>
-              <div style={{ ...mono, fontSize: 10, color: T.muted }}>Plan steps (checklist)</div>
-              {planSteps.map((stepLabel, index) => (
-                <input key={index} aria-label={`Plan step ${index + 1}`} value={stepLabel} onChange={e => setPlanSteps(prev => prev.map((item, itemIndex) => itemIndex === index ? e.target.value : item))} placeholder={`Step ${index + 1}`} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }} />
-              ))}
-            </>
-          )}
-        </div>
-
-        <div style={{ padding: '14px 18px', borderTop: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+    <ModalWorkspace
+      eyebrow="Action Queue"
+      title={step === 'details' ? 'Add Task' : 'Build Remedial Plan'}
+      caption={step === 'details' ? 'One unified task flow for follow-up, attendance, academic, and remedial actions.' : 'Step 2 of 2. Leaf tasks stay tied to the same queue item.'}
+      onClose={onClose}
+      width={760}
+      size="lg"
+      bodyStyle={{ display: 'grid', gap: 12 }}
+      footer={(
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <Chip color={T.accent} size={9}>Owner: {role}</Chip>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {step === 'remedial' && <Btn size="sm" variant="ghost" onClick={() => setStep('details')}>Back</Btn>}
             <Btn size="sm" variant="ghost" onClick={onClose}>Cancel</Btn>
             {step === 'details' && taskType === 'Remedial' && <Btn size="sm" onClick={() => {
@@ -964,8 +849,131 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
             }}>Create Remedial Task</Btn>}
           </div>
         </div>
-      </motion.div>
-    </motion.div>
+      )}
+    >
+          {step === 'details' && (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <FieldSelect aria-label="Select year" value={selectedYear} onChange={e => setSelectedYear(e.target.value)} style={denseFieldStyle}>
+                  <option value="">All Years</option>
+                  {yearOptions.map(year => <option key={year} value={year}>{year}</option>)}
+                </FieldSelect>
+                <FieldSelect aria-label="Select branch" value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={denseFieldStyle}>
+                  <option value="">All Branches</option>
+                  {deptOptions.map(dept => <option key={dept} value={dept}>{dept}</option>)}
+                </FieldSelect>
+              </div>
+              <FieldSelect aria-label="Select class" value={activeSelectedOffId} onChange={e => { setSelectedOffId(e.target.value); setQuery('') }} style={denseFieldStyle}>
+                <option value="">Select class</option>
+                {classOfferings.map(offering => <option key={offering.offId} value={offering.offId}>{offering.code} · {offering.year} · Sec {offering.section} · {offering.count} students</option>)}
+              </FieldSelect>
+              <FieldInput aria-label="Search student" placeholder="Search student / USN" value={query} onChange={e => setQuery(e.target.value)} style={denseFieldStyle} />
+              {query.trim() !== '' && <div className="scroll-pane scroll-pane--dense" style={{ minHeight: 96, maxHeight: 140, overflowY: 'auto', border: `1px solid ${T.border2}`, borderRadius: 14, background: T.surface2 }}>
+                {query.trim() !== '' && searchHits.length === 0 && <div style={{ ...mono, fontSize: 10, color: T.dim, padding: '10px 12px' }}>No matching students.</div>}
+                {query.trim() !== '' && searchHits.map(hit => (
+                  <button key={`${hit.offering.offId}-${hit.student.id}`} onClick={() => {
+                    setSelectedYear(hit.offering.year)
+                    setSelectedDept(hit.offering.dept)
+                    setSelectedOffId(hit.offering.offId)
+                    setSelectedStudentId(hit.student.id)
+                    setQuery(hit.student.name)
+                    hydrateSelectedStudent(hit.student)
+                  }} style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', borderBottom: `1px solid ${T.border}`, cursor: 'pointer', padding: '8px 10px' }}>
+                    <div style={{ ...sora, fontWeight: 600, fontSize: 11, color: T.text }}>{hit.student.name}</div>
+                    <div style={{ ...mono, fontSize: 9, color: T.muted }}>{hit.student.usn} · {hit.offering.code} · Sec {hit.offering.section}</div>
+                  </button>
+                ))}
+              </div>}
+              <FieldSelect aria-label="Select student" value={selectedStudentId} onChange={e => {
+                const nextId = e.target.value
+                setSelectedStudentId(nextId)
+                const nextStudent = filteredStudents.find(student => student.id === nextId)
+                if (nextStudent) hydrateSelectedStudent(nextStudent)
+              }} style={denseFieldStyle}>
+                <option value="">Select student</option>
+                {filteredStudents.map(student => <option key={student.id} value={student.id}>{student.name} · {student.usn}</option>)}
+              </FieldSelect>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <FieldSelect aria-label="Task type" value={taskType} onChange={e => setTaskType(e.target.value as TaskType)} style={denseFieldStyle}>
+                  <option>Follow-up</option>
+                  <option>Remedial</option>
+                  <option>Attendance</option>
+                  <option>Academic</option>
+                </FieldSelect>
+                <FieldInput aria-label={schedulingMode === 'scheduled' ? 'Starts on' : 'Due date'} title={schedulingMode === 'scheduled' ? 'Starts on' : 'Due date'} type="date" value={dueDateISO} onChange={e => setDueDateISO(e.target.value)} style={denseFieldStyle} />
+              </div>
+              <Card style={{ padding: '10px 12px' }}>
+                <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text, marginBottom: 8 }}>Scheduling</div>
+                <div style={{ ...getSegmentedGroupStyle(), marginBottom: 8, width: 'fit-content' }}>
+                  <button type="button" data-tab="true" onClick={() => setSchedulingMode('one-time')} style={getSegmentedButtonStyle({ active: schedulingMode === 'one-time', compact: true })}>One-time</button>
+                  <button type="button" data-tab="true" onClick={() => setSchedulingMode('scheduled')} style={getSegmentedButtonStyle({ active: schedulingMode === 'scheduled', compact: true })}>Scheduled</button>
+                </div>
+                {schedulingMode === 'scheduled' && (
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <FieldSelect aria-label="Schedule preset" value={schedulePreset} onChange={e => setSchedulePreset(e.target.value as SchedulePreset)} style={denseFieldStyle}>
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                        <option value="weekdays">Weekdays</option>
+                        <option value="custom dates">Custom dates</option>
+                      </FieldSelect>
+                      {schedulePreset !== 'custom dates' && <FieldInput aria-label="Recurring time (optional)" type="time" value={scheduleTime} onChange={e => setScheduleTime(e.target.value)} style={denseFieldStyle} />}
+                    </div>
+                    {schedulePreset === 'custom dates' && (
+                      <div style={{ display: 'grid', gap: 6 }}>
+                        {customDates.map((item, index) => (
+                          <div key={`custom-date-${index}`} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 6 }}>
+                            <FieldInput aria-label={`Custom date ${index + 1}`} type="date" value={item.dateISO} onChange={e => setCustomDates(prev => prev.map((row, rowIndex) => rowIndex === index ? { ...row, dateISO: e.target.value } : row))} style={denseFieldStyle} />
+                            <FieldInput aria-label={`Custom date ${index + 1} time`} type="time" value={item.time ?? ''} onChange={e => setCustomDates(prev => prev.map((row, rowIndex) => rowIndex === index ? { ...row, time: e.target.value } : row))} style={denseFieldStyle} />
+                            <button type="button" aria-label={`Remove custom date ${index + 1}`} onClick={() => setCustomDates(prev => prev.length === 1 ? prev : prev.filter((_, rowIndex) => rowIndex !== index))} style={{ ...getIconButtonStyle({ subtle: false }), width: 38, height: 'auto', minHeight: 42, ...mono, fontSize: UI_FONT_SIZES.eyebrow }}>−</button>
+                          </div>
+                        ))}
+                        <button type="button" onClick={() => setCustomDates(prev => [...prev, { dateISO: '', time: '' }])} style={{ ...getIconButtonStyle({ subtle: true }), width: 'fit-content', padding: '0 10px', ...mono, fontSize: UI_FONT_SIZES.eyebrow }}>+ Add custom date</button>
+                      </div>
+                    )}
+                    <div style={{ ...mono, fontSize: 10, color: T.dim }}>Starts on: {normalizeDateISO(dueDateISO) ?? 'today'} · Queue activation follows the recurring schedule. Calendar placement stays exact when this task is launched from the timetable.</div>
+                  </div>
+                )}
+              </Card>
+              {initialState.placement && (
+                <Card style={{ padding: '10px 12px' }}>
+                  <div style={{ ...sora, fontWeight: 700, fontSize: 12, color: T.text, marginBottom: 6 }}>Calendar placement</div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted }}>
+                    {initialState.placement.dateISO} · {initialState.placement.placementMode === 'untimed'
+                      ? 'No preferred time'
+                      : `${minutesToDisplayLabel(initialState.placement.startMinutes ?? 0)} - ${minutesToDisplayLabel(initialState.placement.endMinutes ?? 0)}`}
+                  </div>
+                  <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 4 }}>Saving this task will place it directly into the calendar/timetable workspace.</div>
+                </Card>
+              )}
+              <FieldTextarea aria-label="Task note" value={note} onChange={e => setNote(e.target.value)} rows={4} placeholder="Task note" style={{ ...denseTextAreaStyle, resize: 'none' }} />
+              {selectedStudent && (
+                <Card style={{ padding: '10px 12px' }}>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted }}>Selected student</div>
+                  <div style={{ ...sora, fontWeight: 600, fontSize: 13, color: T.text, marginTop: 4 }}>{selectedStudent.name}</div>
+                  <div style={{ ...mono, fontSize: 10, color: T.accent, marginTop: 2 }}>{selectedStudent.usn} · {selectedOffering?.code} Sec {selectedOffering?.section}</div>
+                </Card>
+              )}
+            </>
+          )}
+
+          {step === 'remedial' && (
+            <>
+              <div style={{ ...mono, fontSize: 10, color: T.muted }}>{selectedStudent?.name} · {selectedOffering?.code} Sec {selectedOffering?.section}</div>
+              <FieldInput aria-label="Remedial plan title" value={planTitle} onChange={e => setPlanTitle(e.target.value)} placeholder="Plan title" style={denseFieldStyle} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                <FieldInput aria-label="Plan due date" type="date" value={dueDateISO} onChange={e => setDueDateISO(e.target.value)} style={denseFieldStyle} />
+                <FieldInput aria-label="Check-in date 1" type="date" value={checkIn1} onChange={e => setCheckIn1(e.target.value)} style={denseFieldStyle} />
+                <FieldInput aria-label="Check-in date 2" type="date" value={checkIn2} onChange={e => setCheckIn2(e.target.value)} style={denseFieldStyle} />
+              </div>
+              <div style={{ ...mono, fontSize: 10, color: T.muted }}>Plan steps (checklist)</div>
+              {planSteps.map((stepLabel, index) => (
+                <FieldInput key={index} aria-label={`Plan step ${index + 1}`} value={stepLabel} onChange={e => setPlanSteps(prev => prev.map((item, itemIndex) => itemIndex === index ? e.target.value : item))} placeholder={`Step ${index + 1}`} style={denseFieldStyle} />
+              ))}
+            </>
+          )}
+    </ModalWorkspace>
   )
 }
 
@@ -4215,18 +4223,18 @@ function OperationalWorkspace({
     <AppSelectorsContext.Provider value={selectors}>
     <div className="app-shell" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: T.bg, color: T.text, overflowX: 'hidden' }}>
       {/* ═══ TOP BAR ═══ */}
-      <div className={`top-bar-shell ${isCompactTopbar ? 'top-bar-shell--compact' : ''}`} style={{ position: 'sticky', top: 0, zIndex: 50, display: 'flex', alignItems: 'center', gap: 16, padding: '10px 20px', background: isLightTheme(themeMode) ? 'rgba(255,255,255,0.9)' : 'rgba(9,14,22,0.9)', backdropFilter: 'blur(12px)', borderBottom: `1px solid ${T.border}` }}>
+      <div className={`top-bar-shell ${isCompactTopbar ? 'top-bar-shell--compact' : ''}`} style={{ ...getShellBarStyle(themeMode), display: 'flex', alignItems: 'center', gap: 16, padding: '10px 20px' }}>
         {/* Brand */}
         <button aria-label="Go to dashboard" title="Go to dashboard" onClick={handleGoHome} className="top-bar-brand" style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
-          <div style={{ width: 34, height: 34, borderRadius: 10, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 13, color: '#fff' }}>AM</div>
+          <BrandMark size={36} />
           <div style={{ minWidth: 0 }}>
-            <div style={{ ...sora, fontWeight: 800, fontSize: 14, color: T.text }}>AirMentor</div>
-            <div className="top-bar-greeting" style={{ ...mono, fontSize: 9, color: T.dim }}>AI Mentor Intelligence</div>
+            <div style={{ ...sora, fontWeight: 800, fontSize: 15, color: T.text }}>AirMentor</div>
+            <div className="top-bar-greeting" style={{ ...mono, fontSize: UI_FONT_SIZES.micro, color: T.dim }}>AI Mentor Intelligence</div>
           </div>
         </button>
 
         {isCompactTopbar && (
-          <button className="top-control-btn" aria-label={sidebarToggleLabel} title={sidebarToggleLabel} onClick={() => setSidebarCollapsed(c => !c)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted }}>
+          <button className="top-control-btn" aria-label={sidebarToggleLabel} title={sidebarToggleLabel} onClick={() => setSidebarCollapsed(c => !c)} style={{ ...getIconButtonStyle({ subtle: false }), width: 'auto', padding: '0 10px', color: T.muted }}>
             <motion.span animate={{ rotate: sidebarCollapsed ? 0 : 180 }} transition={{ duration: 0.18 }} style={{ display: 'inline-flex', alignItems: 'center' }}>
               <ChevronRight size={14} />
             </motion.span>
@@ -4234,11 +4242,11 @@ function OperationalWorkspace({
         )}
 
         {/* Role Switcher */}
-        <div className="top-bar-role-switcher" style={{ display: 'flex', gap: 0, marginLeft: 16, background: T.surface2, borderRadius: 8, padding: 2, border: `1px solid ${T.border}` }}>
+        <div className="top-bar-role-switcher" style={{ ...getSegmentedGroupStyle(), marginLeft: 16 }}>
           {allowedRoles.map(r => (
             <button key={r} onClick={() => handleRoleChange(r)}
               data-tab="true"
-              style={{ ...sora, fontWeight: 600, fontSize: 11, padding: isCompactTopbar ? '7px 12px' : '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer', background: role === r ? T.accent : 'transparent', color: role === r ? '#fff' : T.muted, transition: 'all 0.15s', minHeight: isCompactTopbar ? 34 : undefined }}>
+              style={getSegmentedButtonStyle({ active: role === r, compact: isCompactTopbar })}>
               {r}
             </button>
           ))}
@@ -4251,31 +4259,31 @@ function OperationalWorkspace({
               aria-label="Go back"
               title="Go back"
               onClick={handleNavigateBack}
-              style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted, display: 'inline-flex', alignItems: 'center', gap: 6, ...mono, fontSize: 10 }}
+              style={{ ...getIconButtonStyle({ subtle: true }), width: 'auto', padding: '0 12px', color: T.muted, display: 'inline-flex', alignItems: 'center', gap: 6, ...mono, fontSize: UI_FONT_SIZES.eyebrow }}
             >
               <ChevronLeft size={14} />
               Back
             </button>
           ) : null}
-          <div className="top-bar-clock" style={{ ...mono, fontSize: 10, color: T.dim, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 9px', minHeight: 32, display: 'flex', alignItems: 'center', background: T.surface2 }}>
+          <div className="top-bar-clock" style={{ ...getIconButtonStyle({ subtle: false }), width: 'auto', padding: '0 10px', ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: T.dim, display: 'flex', alignItems: 'center', background: T.surface2 }}>
             {formattedCurrentTime}
           </div>
 
           <button className="top-control-btn" aria-label={isLightTheme(themeMode) ? 'Switch to dark mode' : 'Switch to light mode'} title={isLightTheme(themeMode) ? 'Dark mode' : 'Light mode'} onClick={() => {
             setThemeMode(isLightTheme(themeMode) ? 'frosted-focus-dark' : 'frosted-focus-light')
-          }} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted }}>{isLightTheme(themeMode) ? '🌙' : '☀️'}</button>
+          }} style={{ ...getIconButtonStyle({ subtle: false }), color: T.muted }}>{isLightTheme(themeMode) ? '🌙' : '☀️'}</button>
 
-          <button className="top-control-btn" aria-label={showActionQueue ? 'Hide action queue' : 'Show action queue'} title={showActionQueue ? 'Hide action queue' : 'Show action queue'} onClick={handleToggleActionQueue} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted, position: 'relative' }}>
+          <button className="top-control-btn" aria-label={showActionQueue ? 'Hide action queue' : 'Show action queue'} title={showActionQueue ? 'Hide action queue' : 'Show action queue'} onClick={handleToggleActionQueue} style={{ ...getIconButtonStyle({ active: showActionQueue }), color: showActionQueue ? T.accent : T.muted, position: 'relative' }}>
             <Bell size={14} />
             {pendingActionCount > 0 && <div style={{ position: 'absolute', top: -6, right: -6, minWidth: 16, height: 16, borderRadius: 8, background: T.danger, color: '#fff', ...mono, fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>{pendingActionCount}</div>}
           </button>
 
           {isCompactTopbar && (
             <>
-              <button className="top-control-btn" aria-label={showTopbarMenu ? 'Close more controls' : 'Open more controls'} title="More" onClick={() => setShowTopbarMenu(v => !v)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted, ...mono, fontSize: 10 }}>More</button>
+              <button className="top-control-btn" aria-label={showTopbarMenu ? 'Close more controls' : 'Open more controls'} title="More" onClick={() => setShowTopbarMenu(v => !v)} style={{ ...getIconButtonStyle({ active: showTopbarMenu, subtle: false }), width: 'auto', padding: '0 10px', color: showTopbarMenu ? T.accent : T.muted, ...mono, fontSize: UI_FONT_SIZES.eyebrow }}>More</button>
               {showTopbarMenu && (
-                <div className="top-bar-more-menu" style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 38, minWidth: 200, padding: 10, borderRadius: 10, border: `1px solid ${T.border}`, background: T.surface, boxShadow: '0 10px 26px rgba(2,6,23,0.28)', display: 'grid', gap: 8, zIndex: 70 }}>
-                  <button onClick={handleLogout} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '7px 10px', cursor: 'pointer', color: T.muted, ...mono, fontSize: 10, textAlign: 'left' }}>
+                <div className="top-bar-more-menu" style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 38, minWidth: 200, padding: 10, borderRadius: 14, border: `1px solid ${T.border}`, background: `linear-gradient(180deg, ${T.surface}, ${T.surface2})`, boxShadow: '0 18px 42px rgba(2,6,23,0.26)', display: 'grid', gap: 8, zIndex: 70 }}>
+                  <button onClick={handleLogout} style={{ ...getIconButtonStyle({ subtle: true }), width: '100%', padding: '0 10px', color: T.muted, ...mono, fontSize: UI_FONT_SIZES.eyebrow, textAlign: 'left', justifyContent: 'flex-start' }}>
                     Logout
                   </button>
                 </div>
@@ -4284,7 +4292,7 @@ function OperationalWorkspace({
           )}
 
           {!isCompactTopbar && (
-            <button className="top-control-btn" aria-label="Logout" title="Logout" onClick={handleLogout} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: T.muted, ...mono, fontSize: 10 }}>
+            <button className="top-control-btn" aria-label="Logout" title="Logout" onClick={handleLogout} style={{ ...getIconButtonStyle({ subtle: true }), width: 'auto', padding: '0 12px', color: T.muted, ...mono, fontSize: UI_FONT_SIZES.eyebrow }}>
               Logout
             </button>
           )}

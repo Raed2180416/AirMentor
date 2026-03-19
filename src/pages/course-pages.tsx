@@ -20,7 +20,7 @@ import {
   useAppSelectors,
 } from '../selectors'
 import { TAB_DEFS, clampNumber } from '../page-utils'
-import { Bar, Btn, Card, Chip, HScrollArea, PageBackButton, PageShell, RiskBadge, TD, TH } from '../ui-primitives'
+import { Bar, Btn, Card, Chip, HScrollArea, PageBackButton, PageShell, RiskBadge, TD, TH, getSegmentedButtonStyle, getSegmentedGroupStyle } from '../ui-primitives'
 
 export function CourseDetail({
   offering: offering,
@@ -58,7 +58,7 @@ export function CourseDetail({
 
   return (
     <PageShell size="wide" style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', padding: 0 }}>
-      <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: '16px 32px 0' }}>
+      <div style={{ background: `linear-gradient(180deg, ${T.surface}, ${T.surface2})`, borderBottom: `1px solid ${T.border}`, padding: '18px 32px 0' }}>
         <PageBackButton onClick={onBack} />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
           <div>
@@ -73,11 +73,11 @@ export function CourseDetail({
           </div>
           <Btn variant="ghost" size="sm">📥 Export</Btn>
         </div>
-        <div style={{ marginTop: 18, background: `linear-gradient(180deg, ${T.surface2} 0%, ${T.surface} 100%)`, border: `1px solid ${T.border}`, borderRadius: 16, padding: '14px 16px' }}>
+        <div style={{ marginTop: 18, background: `linear-gradient(180deg, ${T.surface2} 0%, ${T.surface} 100%)`, border: `1px solid ${T.border}`, borderRadius: 18, padding: '16px 18px', boxShadow: '0 16px 34px rgba(15, 23, 42, 0.08)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
             <div>
               <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 5 }}>Academic progress</div>
-              <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text }}>Current stage: <span style={{ color: offering.stageInfo.color }}>{offering.stageInfo.label}</span></div>
+              <div style={{ ...sora, fontWeight: 800, fontSize: 14, color: T.text }}>Current stage: <span style={{ color: offering.stageInfo.color }}>{offering.stageInfo.label}</span></div>
               <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 4 }}>{offering.stageInfo.desc}</div>
             </div>
             <Chip color={offering.stageInfo.color}>Stage {offering.stageInfo.stage}</Chip>
@@ -95,7 +95,8 @@ export function CourseDetail({
           </div>
         </div>
         <div style={{ marginTop: 16, marginLeft: -32, marginRight: -32, borderTop: `1px solid ${T.border}` }}>
-          <HScrollArea style={{ display: 'flex', gap: 0, paddingLeft: 32, paddingRight: 32 }}>
+          <HScrollArea style={{ paddingLeft: 32, paddingRight: 32 }}>
+            <div style={{ ...getSegmentedGroupStyle(), width: 'fit-content', margin: '12px 0' }}>
             {TAB_DEFS.map(def => {
               const locked = tabLocked(def.id)
               return (
@@ -103,17 +104,18 @@ export function CourseDetail({
                   key={def.id}
                   onClick={() => !locked && setTab(def.id)}
                   data-tab="true"
-                  style={{ ...mono, fontSize: 11, padding: '13px 14px', background: 'none', border: 'none', cursor: locked ? 'not-allowed' : 'pointer', color: tab === def.id ? T.accentLight : locked ? T.dim : T.muted, borderBottom: `2px solid ${tab === def.id ? T.accent : 'transparent'}`, opacity: locked ? 0.35 : 1, whiteSpace: 'nowrap', transition: 'color 0.15s', display: 'flex', alignItems: 'center', gap: 5 }}
+                  style={{ ...getSegmentedButtonStyle({ active: tab === def.id, disabled: locked }), whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}
                 >
                   {def.icon} {def.label}{locked ? ' 🔒' : ''}
                 </button>
               )
             })}
+            </div>
           </HScrollArea>
         </div>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', background: T.bg }}>
+      <div style={{ flex: 1, background: T.bg }}>
         {tab === 'overview' && <OverviewTab offering={offering} cos={cos} students={students} setTab={setTab} />}
         {tab === 'risk' && <RiskTab offering={offering} students={students} onOpenStudent={onOpenStudent} />}
         {tab === 'attendance' && <AttendanceTab offering={offering} students={students} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('attendance')} />}

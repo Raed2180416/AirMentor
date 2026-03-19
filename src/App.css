@@ -51,6 +51,12 @@ input[type=number]::-webkit-outer-spin-button { opacity: 0.3; }
 	--ui-medium: 220ms;
 	--ui-slow: 320ms;
 	--ui-ring: rgba(45, 138, 240, 0.22);
+	--ui-radius-chip: 10px;
+	--ui-radius-button: 12px;
+	--ui-radius-field: 14px;
+	--ui-radius-card: 18px;
+	--ui-radius-panel: 20px;
+	--ui-radius-modal: 24px;
 	--ui-shadow-soft: 0 12px 30px rgba(15, 23, 42, 0.08);
 	--ui-shadow-strong: 0 18px 42px rgba(15, 23, 42, 0.12);
 	--ui-hover-tint: rgba(45, 138, 240, 0.08);
@@ -162,7 +168,7 @@ body,
 .scrollable-x:focus-visible {
 	outline: 2px solid #2d8af0;
 	outline-offset: 2px;
-	border-radius: 6px;
+	border-radius: var(--ui-radius-field);
 }
 
 .app-shell button,
