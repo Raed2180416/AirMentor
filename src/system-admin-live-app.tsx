@@ -55,6 +55,7 @@ import {
   isBranchVisible,
   isDepartmentVisible,
   isFacultyMemberVisible,
+  isOfferingVisible,
   isStudentVisible,
   isTermVisible,
   isVisibleAdminRecord,
@@ -469,6 +470,17 @@ function toRegistrySearchScope(filter: RegistryFilterState): LiveAdminSearchScop
   }
 }
 
+function normalizeHierarchyScope(scope: HierarchyScopeInput | null): LiveAdminSearchScope | null {
+  if (!scope) return null
+  return {
+    academicFacultyId: scope.academicFacultyId || undefined,
+    departmentId: scope.departmentId || undefined,
+    branchId: scope.branchId || undefined,
+    batchId: scope.batchId || undefined,
+    sectionCode: scope.sectionCode || undefined,
+  }
+}
+
 function describeRegistryScope(data: LiveAdminDataset, scope?: LiveAdminSearchScope | null) {
   if (!hasHierarchyScopeSelection(scope)) return null
   if (scope?.sectionCode) {
@@ -840,7 +852,7 @@ function matchesFacultyScope(member: LiveAdminDataset['facultyMembers'][number],
   const ownershipMatch = data.ownerships.some(ownership => {
     if (ownership.facultyId !== member.facultyId || ownership.status !== 'active') return false
     const offering = data.offerings.find(item => item.offId === ownership.offeringId)
-    if (!offering) return false
+    if (!offering || !isOfferingVisible(data, offering)) return false
     const matchedDepartment = data.departments.find(item => item.code.toLowerCase() === offering.dept.toLowerCase())
     if (scope.academicFacultyId && matchedDepartment?.academicFacultyId !== scope.academicFacultyId) return false
     if (scope.departmentId && matchedDepartment?.departmentId !== scope.departmentId) return false
@@ -851,6 +863,26 @@ function matchesFacultyScope(member: LiveAdminDataset['facultyMembers'][number],
   })
 
   return appointmentMatch || ownershipMatch
+}
+
+function matchesOfferingScope(offering: LiveAdminDataset['offerings'][number], data: LiveAdminDataset, scope: HierarchyScopeInput | null) {
+  if (!scope) return true
+  const hasScopedSelection = Boolean(scope.academicFacultyId || scope.departmentId || scope.branchId || scope.batchId || scope.sectionCode)
+  if (!hasScopedSelection) return true
+  if (!isOfferingVisible(data, offering)) return false
+
+  const branch = offering.branchId ? resolveBranch(data, offering.branchId) : null
+  const department = branch
+    ? resolveDepartment(data, branch.departmentId)
+    : data.departments.find(item => item.code.toLowerCase() === offering.dept.toLowerCase()) ?? null
+  const term = offering.termId ? data.terms.find(item => item.termId === offering.termId) ?? null : null
+
+  if (scope.academicFacultyId && department?.academicFacultyId !== scope.academicFacultyId) return false
+  if (scope.departmentId && department?.departmentId !== scope.departmentId) return false
+  if (scope.branchId && offering.branchId !== scope.branchId) return false
+  if (scope.batchId && term?.batchId !== scope.batchId) return false
+  if (scope.sectionCode && offering.section !== scope.sectionCode) return false
+  return true
 }
 
 function TeachingShellAdminTopBar({
@@ -3370,6 +3402,14 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         label: universityContextLabel,
       }
     : null
+  const normalizedActiveUniversityRegistryScope = normalizeHierarchyScope(activeUniversityRegistryScope)
+  const normalizedRegistryScope = normalizeHierarchyScope(registryScope)
+  const overviewHierarchyScope = hasHierarchyScopeSelection(normalizedActiveUniversityRegistryScope)
+    ? normalizedActiveUniversityRegistryScope
+    : hasHierarchyScopeSelection(normalizedRegistryScope)
+      ? normalizedRegistryScope
+      : null
+  const overviewScopeLabel = describeRegistryScope(data, overviewHierarchyScope)
   const universityNavigatorTitle = selectedSectionCode
     ? 'Hierarchy Complete'
     : selectedBatch
@@ -3556,7 +3596,30 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       .flatMap(item => item.sectionLabels),
   )).sort()
   const visibleFacultyMembers = data.facultyMembers.filter(item => isFacultyMemberVisible(data, item))
-  const visibleOwnershipCount = data.ownerships.filter(item => item.status === 'active' && isFacultyMemberVisible(data, item.facultyId)).length
+  const visibleOfferings = [...data.offerings]
+    .filter(item => isOfferingVisible(data, item))
+    .sort((left, right) => `${left.code}-${left.year}-${left.section}`.localeCompare(`${right.code}-${right.year}-${right.section}`))
+  const visibleOfferingById = new Map(visibleOfferings.map(item => [item.offId, item]))
+  const activeVisibleOwnerships = data.ownerships.filter(item => item.status === 'active' && isFacultyMemberVisible(data, item.facultyId) && visibleOfferingById.has(item.offeringId))
+  const overviewScopedStudents = overviewHierarchyScope
+    ? data.students
+        .filter(item => isStudentVisible(data, item))
+        .filter(item => matchesStudentScope(item, data, overviewHierarchyScope))
+    : []
+  const overviewScopedFaculty = overviewHierarchyScope
+    ? visibleFacultyMembers.filter(item => matchesFacultyScope(item, data, overviewHierarchyScope))
+    : []
+  const overviewScopedOwnerships = overviewHierarchyScope
+    ? activeVisibleOwnerships.filter(item => {
+        const offering = visibleOfferingById.get(item.offeringId)
+        return offering ? matchesOfferingScope(offering, data, overviewHierarchyScope) : false
+      })
+    : []
+  const overviewVisibleStudentCount = overviewScopedStudents.length
+  const overviewVisibleMentoredCount = overviewScopedStudents.filter(item => item.activeMentorAssignment).length
+  const overviewVisibleMentorGapCount = overviewScopedStudents.filter(item => !item.activeMentorAssignment).length
+  const overviewVisibleFacultyCount = overviewScopedFaculty.length
+  const overviewVisibleOwnershipCount = overviewScopedOwnerships.length
   const normalizedStudentRegistrySearch = studentRegistrySearch.trim().toLowerCase()
   const normalizedFacultyRegistrySearch = facultyRegistrySearch.trim().toLowerCase()
   const studentRegistryItems = studentRegistryHasScope
@@ -3622,14 +3685,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const termsForEnrollment = visibleTerms.filter(item => !enrollmentForm.branchId || item.branchId === enrollmentForm.branchId)
   const branchesForAppointment = visibleBranches.filter(item => !appointmentForm.departmentId || item.departmentId === appointmentForm.departmentId)
   const selectedFacultyOwnerships = selectedFacultyMember
-    ? data.ownerships.filter(item => item.facultyId === selectedFacultyMember.facultyId && item.status === 'active')
+    ? activeVisibleOwnerships.filter(item => item.facultyId === selectedFacultyMember.facultyId)
     : []
-  const visibleOfferings = [...data.offerings]
-    .filter(item => !item.branchId || isBranchVisible(data, item.branchId))
-    .sort((left, right) => `${left.code}-${left.year}-${left.section}`.localeCompare(`${right.code}-${right.year}-${right.section}`))
   const activeOfferingOwnerById = new Map(
-    data.ownerships
-      .filter(item => item.status === 'active')
+    activeVisibleOwnerships
       .map(item => [item.offeringId, item]),
   )
   const availableOwnershipOfferings = selectedFacultyMember
@@ -3926,8 +3985,12 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   />
                   <SectionLaunchCard
                     title="Students"
-                    caption={`${data.students.length} records · ${data.students.filter(item => item.activeMentorAssignment).length} mentored`}
-                    helper="Canonical student identity, mentor linkage, context correction, and semester progression in one registry."
+                    caption={overviewHierarchyScope
+                      ? `${overviewVisibleStudentCount} records · ${overviewVisibleMentoredCount} mentored`
+                      : '0 records · scope required'}
+                    helper={overviewHierarchyScope
+                      ? `Canonical student identity, mentor linkage, and semester progression filtered to ${overviewScopeLabel ?? 'the active academic scope'}.`
+                      : 'Select a faculty, department, branch, year, or section in the university workspace before student totals appear here.'}
                     icon={<GraduationCap size={18} />}
                     tone={ADMIN_SECTION_TONES.students}
                     active={false}
@@ -3935,8 +3998,12 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   />
                   <SectionLaunchCard
                     title="Faculty"
-                    caption={`${visibleFacultyMembers.length} profiles · ${visibleOwnershipCount} active class owners`}
-                    helper="Appointments, permissions, class ownership, and timetable review all live in the faculty registry."
+                    caption={overviewHierarchyScope
+                      ? `${overviewVisibleFacultyCount} profiles · ${overviewVisibleOwnershipCount} active class owners`
+                      : '0 profiles · scope required'}
+                    helper={overviewHierarchyScope
+                      ? `Appointments, permissions, class ownership, and timetable review filtered to ${overviewScopeLabel ?? 'the active academic scope'}.`
+                      : 'Select an academic scope first so faculty ownership and load totals only reflect the active slice of the institution.'}
                     icon={<UserCog size={18} />}
                     tone={ADMIN_SECTION_TONES['faculty-members']}
                     active={false}
@@ -3948,8 +4015,24 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               <div style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
                 <OverviewSupportCard title="Requests" value={String(openRequests.length)} helper="Governed items waiting in the action rail." tone={T.warning} onClick={() => navigate({ section: 'requests' })} />
                 <OverviewSupportCard title="Hidden Records" value={String(hiddenItemCount)} helper="Archived or deleted records with restore visibility." tone={T.danger} onClick={() => navigate({ section: 'history' })} />
-                <OverviewSupportCard title="Mentor Gaps" value={String(data.students.filter(item => !item.activeMentorAssignment).length)} helper="Students still missing an active mentor linkage." tone={ADMIN_SECTION_TONES.students} onClick={() => navigate({ section: 'students' })} />
-                <OverviewSupportCard title="Teaching Load" value={String(visibleOwnershipCount)} helper="Active teaching ownership records mapped to faculty." tone={ADMIN_SECTION_TONES['faculty-members']} onClick={() => navigate({ section: 'faculty-members' })} />
+                <OverviewSupportCard
+                  title="Mentor Gaps"
+                  value={String(overviewVisibleMentorGapCount)}
+                  helper={overviewHierarchyScope
+                    ? `Students still missing an active mentor linkage inside ${overviewScopeLabel ?? 'the active academic scope'}.`
+                    : 'No hierarchy scope selected yet. Mentor-gap totals stay empty until you select a faculty, department, branch, year, or section.'}
+                  tone={ADMIN_SECTION_TONES.students}
+                  onClick={() => navigate({ section: 'students' })}
+                />
+                <OverviewSupportCard
+                  title="Teaching Load"
+                  value={String(overviewVisibleOwnershipCount)}
+                  helper={overviewHierarchyScope
+                    ? `Active teaching ownership records mapped to faculty inside ${overviewScopeLabel ?? 'the active academic scope'}.`
+                    : 'No hierarchy scope selected yet. Teaching-load totals stay empty until you choose the academic slice you want to inspect.'}
+                  tone={ADMIN_SECTION_TONES['faculty-members']}
+                  onClick={() => navigate({ section: 'faculty-members' })}
+                />
               </div>
             </div>
 

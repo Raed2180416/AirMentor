@@ -127,6 +127,11 @@ function toCourse(data: LiveAdminDataset, candidate?: ApiCourse | string | null)
   return typeof candidate === 'string' ? data.courses.find(item => item.courseId === candidate) ?? null : candidate
 }
 
+function toOffering(data: LiveAdminDataset, candidate?: ApiAdminOffering | string | null) {
+  if (!candidate) return null
+  return typeof candidate === 'string' ? data.offerings.find(item => item.offId === candidate) ?? null : candidate
+}
+
 function toStudent(data: LiveAdminDataset, candidate?: ApiStudentRecord | string | null) {
   if (!candidate) return null
   return typeof candidate === 'string' ? resolveStudent(data, candidate) : candidate
@@ -171,6 +176,14 @@ export function isCourseVisible(data: LiveAdminDataset, candidate?: ApiCourse | 
   const course = toCourse(data, candidate)
   if (!course || !isVisibleAdminRecord(course.status)) return false
   return isDepartmentVisible(data, course.departmentId)
+}
+
+export function isOfferingVisible(data: LiveAdminDataset, candidate?: ApiAdminOffering | string | null) {
+  const offering = toOffering(data, candidate)
+  if (!offering) return false
+  if (offering.branchId && !isBranchVisible(data, offering.branchId)) return false
+  if (offering.termId && !isTermVisible(data, offering.termId)) return false
+  return true
 }
 
 export function isStudentVisible(data: LiveAdminDataset, candidate?: ApiStudentRecord | string | null) {
@@ -273,7 +286,7 @@ export function listFacultyAssignments(data: LiveAdminDataset, facultyId: string
         offering,
       }
     })
-    .filter(item => item.offering && (!item.offering?.branchId || isBranchVisible(data, item.offering.branchId)))
+    .filter(item => item.offering && isOfferingVisible(data, item.offering))
 }
 
 function matchesSearchSection(candidateSection: LiveAdminSectionId, activeSection?: LiveAdminSectionId) {

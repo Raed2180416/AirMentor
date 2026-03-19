@@ -7,6 +7,7 @@ import {
   isCourseVisible,
   isDepartmentVisible,
   isFacultyMemberVisible,
+  isOfferingVisible,
   isStudentVisible,
   isVisibleAdminRecord,
   listCurriculumBySemester,
@@ -216,6 +217,8 @@ const dataset: LiveAdminDataset = {
       sections: ['A'],
       enrolled: [60],
       att: [92],
+      branchId: 'branch_cse',
+      termId: 'term_5',
     },
   ],
   ownerships: [
@@ -344,6 +347,16 @@ describe('system-admin-live-data', () => {
     const assignments = listFacultyAssignments(dataset, 'fac_1')
     expect(assignments).toHaveLength(1)
     expect(assignments[0].offering?.code).toBe('CS699')
+  })
+
+  it('drops ownership-linked assignments when the linked term is no longer visible', () => {
+    const archivedTermDataset: LiveAdminDataset = {
+      ...dataset,
+      terms: dataset.terms.map(item => item.termId === 'term_5' ? { ...item, status: 'archived' } : item),
+    }
+
+    expect(isOfferingVisible(archivedTermDataset, archivedTermDataset.offerings[0])).toBe(false)
+    expect(listFacultyAssignments(archivedTermDataset, 'fac_1')).toHaveLength(0)
   })
 
   it('searches across students, batches, and faculty members', () => {
