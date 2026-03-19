@@ -372,6 +372,7 @@ describe('system-admin-live-data', () => {
     }
 
     expect(searchLiveAdminWorkspace(scopedDataset, 'mentor', { section: 'requests' })[0]?.route.section).toBe('requests')
+    expect(searchLiveAdminWorkspace(scopedDataset, 'Aisha', { section: 'students' })).toHaveLength(0)
     expect(searchLiveAdminWorkspace(scopedDataset, 'Aria', { section: 'students', scope: { batchId: 'batch_2022', sectionCode: 'A' } })).toHaveLength(0)
     expect(searchLiveAdminWorkspace(scopedDataset, 'Aisha', { section: 'students', scope: { batchId: 'batch_2022', sectionCode: 'A' } })[0]?.route.studentId).toBe('student_1')
   })

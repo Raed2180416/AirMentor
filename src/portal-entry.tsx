@@ -115,7 +115,7 @@ export function PortalEntryScreen({
           <PortalCard
             eyebrow="Academic"
             title="Teaching Workspace"
-            body="Use the current mock academic flow for Course Leaders, Mentors, and HoDs. This keeps the existing role selector, task queues, grading views, and operational walkthroughs."
+            body="Use the live teaching workspace for Course Leaders, Mentors, and HoDs. Course ownership, student scope, grading state, and calendar context now come from the backend."
             actionLabel="Open Academic Portal"
             accentColor={T.success}
             icon={GraduationCap}
@@ -124,7 +124,7 @@ export function PortalEntryScreen({
           <PortalCard
             eyebrow="Admin"
             title="System Admin Control Plane"
-            body="Use the system-admin experience for institution setup, faculty and student records, course governance, and request workflow management. It runs in mock mode when no admin backend is configured and switches to live backend mode when available."
+            body="Use the system-admin control plane for institution setup, faculty and student records, course governance, and request workflow management. This portal now expects the live backend."
             actionLabel="Open System Admin"
             accentColor={T.accent}
             icon={Shield}

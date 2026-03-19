@@ -7,8 +7,8 @@ import {
 } from 'lucide-react'
 import {
   CO_COLORS, T, mono, sora, yearColor,
-  OFFERINGS, YEAR_GROUPS, PAPER_MAP,
-  FACULTY, generateTasks, MENTEES, getStudentHistoryRecord, hydrateAcademicData,
+  PAPER_MAP,
+  hydrateAcademicData,
   type Offering, type Student, type YearGroup,
   type Mentee, type StudentHistoryRecord,
 } from './data'
@@ -239,26 +239,13 @@ function getLatestTransition(task: SharedTask) {
   return history[history.length - 1]
 }
 
-function buildHistoryProfile(input: { student?: Student | null; mentee?: Mentee | null; offering?: Offering | null }): StudentHistoryRecord | null {
-  if (input.student) {
-    return getStudentHistoryRecord({
-      usn: input.student.usn,
-      studentName: input.student.name,
-      dept: input.offering?.dept ?? 'CSE',
-      yearLabel: input.offering?.year,
-      prevCgpa: input.student.prevCgpa,
-    })
-  }
-  if (input.mentee) {
-    return getStudentHistoryRecord({
-      usn: input.mentee.usn,
-      studentName: input.mentee.name,
-      dept: input.mentee.dept,
-      yearLabel: input.mentee.year,
-      prevCgpa: input.mentee.prevCgpa,
-    })
-  }
-  return null
+function buildHistoryProfile(input: {
+  student?: Student | null
+  mentee?: Mentee | null
+  historyByUsn?: Record<string, StudentHistoryRecord> | null
+}): StudentHistoryRecord | null {
+  const usn = input.student?.usn ?? input.mentee?.usn ?? null
+  return usn ? (input.historyByUsn?.[usn] ?? null) : null
 }
 
 function parseTimeToMinutes(value: string, fallback: number) {
@@ -317,17 +304,7 @@ function AuthPageShell({ children }: { children: ReactNode }) {
 }
 
 function LoginPage({
-  facultyOptions = FACULTY.map(faculty => ({
-    facultyId: faculty.facultyId,
-    username: faculty.facultyId,
-    name: faculty.name,
-    displayName: faculty.name,
-    designation: faculty.roleTitle,
-    dept: faculty.dept,
-    departmentCode: faculty.dept,
-    roleTitle: faculty.roleTitle,
-    allowedRoles: faculty.allowedRoles,
-  })),
+  facultyOptions = [],
   helperText = '',
   modeLabel = 'Teaching Workspace',
   heroBody = 'Use the academic portal for course delivery, mentor follow-up, grading operations, and timetable-aware teaching workflows.',
@@ -987,6 +964,7 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
 function StudentDrawer({
   student,
   offering,
+  historyByUsn,
   role,
   meetings,
   onClose,
@@ -998,6 +976,7 @@ function StudentDrawer({
 }: {
   student: Student | null
   offering?: Offering
+  historyByUsn?: Record<string, StudentHistoryRecord> | null
   role: Role
   meetings: AcademicMeeting[]
   onClose: () => void
@@ -1027,7 +1006,7 @@ function StudentDrawer({
   const attPct = Math.round(s.present / s.totalClasses * 100)
   const riskCol = s.riskBand === 'High' ? T.danger : s.riskBand === 'Medium' ? T.warning : T.success
   const canSeeDetailedMarks = role !== 'Mentor'
-  const drawerHistory = buildHistoryProfile({ student: s, offering: offering ?? null })
+  const drawerHistory = buildHistoryProfile({ student: s, historyByUsn })
   const activeScheme = offering ? getSchemeForOffering(offering) : null
   const ceSummary = offering && activeScheme ? deriveAcademicProjection({ offering, student: s, scheme: activeScheme, history: drawerHistory }) : null
   const ceSignalThresholds = activeScheme ? {
@@ -1872,30 +1851,35 @@ function MentorView({ mentees, tasks, onOpenMentee }: { mentees: Mentee[]; tasks
   )
 }
 
-function MenteeDetailPage({ mentee, onBack, onOpenHistory }: { mentee: Mentee; onBack: () => void; onOpenHistory: (mentee: Mentee) => void }) {
+function MenteeDetailPage({
+  mentee,
+  history,
+  onBack,
+  onOpenHistory,
+}: {
+  mentee: Mentee
+  history: StudentHistoryRecord | null
+  onBack: () => void
+  onOpenHistory: (mentee: Mentee) => void
+}) {
   const [activeInsight, setActiveInsight] = useState<'risk' | 'cgpa'>('risk')
   const avgCourseRisk = mentee.avs >= 0 ? Math.round(mentee.courseRisks.filter(r => r.risk >= 0).reduce((acc, risk) => acc + risk.risk, 0) / Math.max(1, mentee.courseRisks.filter(r => r.risk >= 0).length) * 100) : null
-  const history = useMemo(() => getStudentHistoryRecord({
-    usn: mentee.usn,
-    studentName: mentee.name,
-    dept: mentee.dept,
-    yearLabel: mentee.year,
-    prevCgpa: mentee.prevCgpa,
-  }), [mentee.dept, mentee.name, mentee.prevCgpa, mentee.usn, mentee.year])
   const sgpaSeries = useMemo(
-    () => [...history.terms]
-      .sort((a, b) => a.semesterNumber - b.semesterNumber)
-      .map(term => ({ label: `S${term.semesterNumber}`, value: term.sgpa })),
-    [history.terms],
+    () => history
+      ? [...history.terms]
+          .sort((a, b) => a.semesterNumber - b.semesterNumber)
+          .map(term => ({ label: `S${term.semesterNumber}`, value: term.sgpa }))
+      : [],
+    [history],
   )
   const maxSgpa = sgpaSeries.reduce((best, point) => point.value > best.value ? point : best, sgpaSeries[0] ?? { label: 'S1', value: 0 })
   const minSgpa = sgpaSeries.reduce((worst, point) => point.value < worst.value ? point : worst, sgpaSeries[0] ?? { label: 'S1', value: 0 })
   const subjectStats = useMemo(() => {
-    const allSubjects = history.terms.flatMap(term => term.subjects.map(subject => ({ ...subject, termLabel: term.label })))
+    const allSubjects = history ? history.terms.flatMap(term => term.subjects.map(subject => ({ ...subject, termLabel: term.label }))) : []
     const best = allSubjects.reduce((winner, subject) => subject.score > winner.score ? subject : winner, allSubjects[0] ?? null)
     const lowest = allSubjects.reduce((loser, subject) => subject.score < loser.score ? subject : loser, allSubjects[0] ?? null)
     return { best, lowest }
-  }, [history.terms])
+  }, [history])
   const riskDrivers = [...mentee.courseRisks]
     .filter(r => r.risk >= 0)
     .sort((a, b) => b.risk - a.risk)
@@ -1909,6 +1893,23 @@ function MenteeDetailPage({ mentee, onBack, onOpenHistory }: { mentee: Mentee; o
     [prioritizedCourseRisks],
   )
 
+  if (!history) {
+    return (
+      <PageShell size="standard">
+        <PageBackButton onClick={onBack} />
+        <Card>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 18, color: T.text }}>Student History Unavailable</div>
+          <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 8, lineHeight: 1.8 }}>
+            The backend did not return a transcript history for {mentee.name}. No seeded fallback is shown in the live teaching workspace.
+          </div>
+          <div style={{ marginTop: 14 }}>
+            <Btn size="sm" variant="ghost" onClick={onBack}>Back</Btn>
+          </div>
+        </Card>
+      </PageShell>
+    )
+  }
+
   return (
     <PageShell size="standard">
       <PageBackButton onClick={onBack} />
@@ -1920,7 +1921,7 @@ function MenteeDetailPage({ mentee, onBack, onOpenHistory }: { mentee: Mentee; o
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <Btn size="sm" variant="ghost" onClick={() => navigator.clipboard.writeText(mentee.phone)}><Phone size={12} /> Copy Phone</Btn>
-          <Btn size="sm" onClick={() => onOpenHistory(mentee)}><Eye size={12} /> View Student History</Btn>
+          <Btn size="sm" disabled={!history} onClick={() => onOpenHistory(mentee)}><Eye size={12} /> View Student History</Btn>
         </div>
       </div>
 
@@ -2252,7 +2253,7 @@ type OperationalWorkspaceProps = {
   onLogout: () => Promise<void> | void
   onRoleChange?: (role: Role) => Promise<void> | void
   loadFacultyProfile?: (facultyId: string) => Promise<ApiAcademicFacultyProfile>
-  academicBootstrap?: ApiAcademicBootstrap | null
+  academicBootstrap: ApiAcademicBootstrap
 }
 
 function OperationalWorkspace({
@@ -2262,13 +2263,14 @@ function OperationalWorkspace({
   onLogout,
   onRoleChange,
   loadFacultyProfile,
-  academicBootstrap = null,
+  academicBootstrap,
 }: OperationalWorkspaceProps) {
-  const facultyAccounts = academicBootstrap?.faculty ?? FACULTY
-  const allOfferings = academicBootstrap?.offerings ?? OFFERINGS
-  const allYearGroups = academicBootstrap?.yearGroups ?? YEAR_GROUPS
-  const allMentees = academicBootstrap?.mentees ?? MENTEES
-  const studentsByOffering = academicBootstrap?.studentsByOffering
+  const facultyAccounts = academicBootstrap.faculty
+  const allOfferings = academicBootstrap.offerings
+  const allYearGroups = academicBootstrap.yearGroups
+  const allMentees = academicBootstrap.mentees
+  const studentsByOffering = academicBootstrap.studentsByOffering
+  const studentHistoryByUsn = academicBootstrap.studentHistoryByUsn
   const defaultOffering = allOfferings[0] ?? null
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => repositories.sessionPreferences.getThemeSnapshot() ?? normalizeThemeMode(null))
   const [isCompactTopbar, setIsCompactTopbar] = useState(() => window.innerWidth < 980)
@@ -2381,165 +2383,8 @@ function OperationalWorkspace({
   const [lockByOffering, setLockByOffering] = useState<Record<string, EntryLockMap>>(() => repositories.locksAudit.getLockSnapshot(allOfferings))
   const [draftBySection, setDraftBySection] = useState<Record<string, number>>(() => repositories.entryData.getDraftSnapshot())
   const [cellValues, setCellValues] = useState<Record<string, number>>(() => repositories.entryData.getCellValueSnapshot())
-  const [allTasksList, setAllTasksList] = useState<SharedTask[]>(() => repositories.tasks.getTasksSnapshot(() => {
-    const courseLeaderTasks: SharedTask[] = generateTasks().map(t => ({
-      ...t,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      taskType: 'Follow-up',
-      assignedTo: 'Course Leader',
-      transitionHistory: [createTransition({ action: 'Created from automatic high-risk trigger', actorRole: 'Auto', toOwner: 'Course Leader', note: 'Student crossed automatic academic-risk threshold.' })],
-    }))
-    const mentorTasks: SharedTask[] = allMentees
-      .filter(m => m.avs >= 0.5)
-      .slice(0, 8)
-      .map((m, i) => ({
-        id: `mentor-seed-${m.id}-${i}`,
-        studentId: m.id,
-        studentName: m.name,
-        studentUsn: m.usn,
-        offeringId: '',
-        courseCode: m.courseRisks[0]?.code ?? 'GEN',
-        courseName: m.courseRisks[0]?.title ?? 'Mentor Follow-up',
-        year: m.year,
-        riskProb: m.avs,
-        riskBand: m.avs >= 0.7 ? 'High' : m.avs >= 0.35 ? 'Medium' : 'Low',
-        title: `Mentor follow-up with ${m.name.split(' ')[0]}`,
-        due: 'This week',
-        status: m.interventions.length > 0 ? 'In Progress' : 'New',
-        actionHint: 'Mentor intervention and counselling review',
-        priority: Math.round(m.avs * 100),
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        taskType: 'Follow-up' as TaskType,
-        assignedTo: 'Mentor',
-        transitionHistory: [createTransition({ action: 'Created from mentor vulnerability watchlist', actorRole: 'Auto', toOwner: 'Mentor', note: 'Seeded mentor queue item for mock walkthrough.' })],
-      }))
-    const cs401A = allOfferings.find(item => item.code === 'CS401' && item.section === 'A') ?? defaultOffering ?? allOfferings[0]
-    const cs403C = allOfferings.find(item => item.code === 'CS403' && item.section === 'C') ?? defaultOffering ?? allOfferings[0]
-    const overdueRemedial: SharedTask = {
-      id: 'seed-remedial-overdue-m1',
-      studentId: 'm1',
-      studentName: 'Aarav Sharma',
-      studentUsn: '1MS23CS001',
-      offeringId: cs401A.offId,
-      courseCode: cs401A.code,
-      courseName: cs401A.title,
-      year: cs401A.year,
-      riskProb: 0.82,
-      riskBand: 'High',
-      title: 'Overdue remedial follow-up for Aarav',
-      due: 'Overdue',
-      dueDateISO: '2026-03-05',
-      status: 'In Progress',
-      actionHint: 'Check-in slipped past due date; mentor follow-up is overdue.',
-      priority: 92,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      taskType: 'Remedial',
-      assignedTo: 'Mentor',
-      sourceRole: 'Course Leader',
-      manual: true,
-      remedialPlan: {
-        planId: 'plan-aarav-overdue',
-        title: 'Algorithm recovery sprint',
-        createdAt: Date.now(),
-        ownerRole: 'Mentor',
-        dueDateISO: '2026-03-05',
-        checkInDatesISO: ['2026-03-03', '2026-03-08'],
-        steps: [
-          { id: 'step-1', label: 'Attend remedial on recurrence relations', completedAt: Date.now() - 86_400_000 },
-          { id: 'step-2', label: 'Submit guided practice sheet' },
-          { id: 'step-3', label: 'Mentor review discussion' },
-        ],
-      },
-      transitionHistory: [
-        createTransition({ action: 'Created and deferred to Mentor', actorRole: 'Course Leader', fromOwner: 'Course Leader', toOwner: 'Mentor', note: 'High-risk case handed to mentor for ongoing support.' }),
-        createTransition({ action: 'Remedial check-in logged', actorRole: 'Mentor', fromOwner: 'Mentor', toOwner: 'Mentor', note: 'Initial remedial session completed; next step is overdue.' }),
-      ],
-    }
-    const pendingUnlockTask: SharedTask = {
-      id: 'seed-unlock-pending-cs401a-tt1',
-      studentId: `${cs401A.offId}-tt1-lock`,
-      studentName: 'Class Data Lock',
-      studentUsn: 'N/A',
-      offeringId: cs401A.offId,
-      courseCode: cs401A.code,
-      courseName: cs401A.title,
-      year: cs401A.year,
-      riskProb: 0.45,
-      riskBand: 'Medium',
-      title: `Unlock request: ${cs401A.code} Sec ${cs401A.section} · TT1`,
-      due: 'Today',
-      status: 'New',
-      actionHint: 'Course Leader requested HoD unlock for TT1 correction after late moderation issue.',
-      priority: 80,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      taskType: 'Academic',
-      assignedTo: 'HoD',
-      escalated: true,
-      sourceRole: 'Course Leader',
-      manual: true,
-      requestNote: 'Late moderation issue was discovered after TT1 lock. Need controlled correction for a small set of students.',
-      handoffNote: 'Please unlock TT1 once moderation discrepancy is verified.',
-      unlockRequest: {
-        offeringId: cs401A.offId,
-        kind: 'tt1',
-        status: 'Pending',
-        requestedByRole: 'Course Leader',
-        requestedByFacultyId: 't1',
-        requestedAt: Date.now(),
-        requestNote: 'Late moderation issue was discovered after TT1 lock. Need controlled correction for a small set of students.',
-        handoffNote: 'Please unlock TT1 once moderation discrepancy is verified.',
-      },
-      transitionHistory: [createTransition({ action: 'Unlock requested', actorRole: 'Course Leader', fromOwner: 'Course Leader', toOwner: 'HoD', note: 'Seeded pending unlock example for mock review flow.' })],
-    }
-    const rejectedUnlockTask: SharedTask = {
-      id: 'seed-unlock-rejected-cs403c-tt1',
-      studentId: `${cs403C.offId}-tt1-lock`,
-      studentName: 'Class Data Lock',
-      studentUsn: 'N/A',
-      offeringId: cs403C.offId,
-      courseCode: cs403C.code,
-      courseName: cs403C.title,
-      year: cs403C.year,
-      riskProb: 0.35,
-      riskBand: 'Medium',
-      title: `Unlock request: ${cs403C.code} Sec ${cs403C.section} · TT1`,
-      due: 'Resolved',
-      status: 'Resolved',
-      actionHint: 'Rejected after HoD confirmed mark sheet was already ratified.',
-      priority: 60,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      taskType: 'Academic',
-      assignedTo: 'HoD',
-      escalated: true,
-      sourceRole: 'Course Leader',
-      manual: true,
-      requestNote: 'Requested TT1 unlock for a re-evaluation challenge, but the sheet had already been ratified.',
-      handoffNote: 'Please review whether this ratified sheet can be reopened.',
-      unlockRequest: {
-        offeringId: cs403C.offId,
-        kind: 'tt1',
-        status: 'Rejected',
-        requestedByRole: 'Course Leader',
-        requestedByFacultyId: 't1',
-        requestedAt: Date.now() - 86_400_000,
-        requestNote: 'Requested TT1 unlock for a re-evaluation challenge, but the sheet had already been ratified.',
-        handoffNote: 'Please review whether this ratified sheet can be reopened.',
-        reviewedAt: Date.now() - 43_200_000,
-        reviewNote: 'Ratified score sheet should not be reopened.',
-      },
-      transitionHistory: [
-        createTransition({ action: 'Unlock requested', actorRole: 'Course Leader', fromOwner: 'Course Leader', toOwner: 'HoD', note: 'Seeded rejected unlock case.' }),
-        createTransition({ action: 'Unlock rejected', actorRole: 'HoD', fromOwner: 'HoD', toOwner: 'HoD', note: 'Ratified sheet must remain locked.' }),
-      ],
-    }
-    return [...courseLeaderTasks, overdueRemedial, pendingUnlockTask, rejectedUnlockTask, ...mentorTasks]
-  }))
-  const [resolvedTasks, setResolvedTasks] = useState<Record<string, number>>(() => repositories.tasks.getResolvedTasksSnapshot({ 'seed-unlock-rejected-cs403c-tt1': Date.now() - 43_200_000 }))
+  const [allTasksList, setAllTasksList] = useState<SharedTask[]>(() => repositories.tasks.getTasksSnapshot(() => []))
+  const [resolvedTasks, setResolvedTasks] = useState<Record<string, number>>(() => repositories.tasks.getResolvedTasksSnapshot({}))
   const [timetableByFacultyId, setTimetableByFacultyId] = useState<Record<string, FacultyTimetableTemplate>>(() => repositories.calendar.getTimetableTemplatesSnapshot(facultyAccounts, allOfferings))
   const [taskPlacements, setTaskPlacements] = useState<Record<string, TaskCalendarPlacement>>(() => repositories.calendar.getTaskPlacementsSnapshot())
   const [calendarAuditEvents, setCalendarAuditEvents] = useState<CalendarAuditEvent[]>(() => repositories.calendar.getCalendarAuditSnapshot())
@@ -2862,14 +2707,14 @@ function OperationalWorkspace({
         setSelectedOffering(targetOffering)
       }
       if (mockPage === 'student-history') {
-        const nextHistory = buildHistoryProfile({ student: targetStudent, offering: targetOffering })
+        const nextHistory = buildHistoryProfile({ student: targetStudent, historyByUsn: studentHistoryByUsn })
         if (nextHistory) setHistoryProfile(nextHistory)
       }
     }
     if (targetMentee) {
       setSelectedMentee(targetMentee)
       if (mockPage === 'student-history') {
-        const nextHistory = buildHistoryProfile({ mentee: targetMentee })
+        const nextHistory = buildHistoryProfile({ mentee: targetMentee, historyByUsn: studentHistoryByUsn })
         if (nextHistory) setHistoryProfile(nextHistory)
       }
     }
@@ -2877,7 +2722,7 @@ function OperationalWorkspace({
     if (mockUnlockTaskId) setSelectedUnlockTaskId(mockUnlockTaskId)
     if (mockPage && canAccessPage(role, mockPage)) setPage(mockPage)
     auditParamsApplied.current = true
-  }, [allMentees, allOfferings, allTasksList, allowedRoles, currentTeacher, currentTeacherId, facultyAccounts, getStudentsPatched, role])
+  }, [allMentees, allOfferings, allTasksList, allowedRoles, currentTeacher, currentTeacherId, facultyAccounts, getStudentsPatched, role, studentHistoryByUsn])
 
   const handleOpenCourse = useCallback((o: Offering) => {
     setOffering(o)
@@ -2949,21 +2794,21 @@ function OperationalWorkspace({
     const updated = await repositories.calendar.updateMeeting(meetingId, payload)
     setAcademicMeetings(current => current.map(meeting => meeting.meetingId === meetingId ? updated : meeting))
   }, [repositories])
-  const handleOpenHistoryFromStudent = useCallback((s: Student, o?: Offering) => {
-    const nextHistory = buildHistoryProfile({ student: s, offering: o ?? null })
+  const handleOpenHistoryFromStudent = useCallback((s: Student, _o?: Offering) => {
+    const nextHistory = buildHistoryProfile({ student: s, historyByUsn: studentHistoryByUsn })
     if (!nextHistory) return
     setHistoryProfile(nextHistory)
     setHistoryBackPage(page)
     setSelectedStudent(null)
     setSelectedOffering(null)
     setPage('student-history')
-  }, [page])
+  }, [page, studentHistoryByUsn])
   const handleOpenMentee = useCallback((m: Mentee) => {
     setSelectedMentee(m)
     setPage('mentee-detail')
-  }, [])
+  }, [studentHistoryByUsn])
   const handleOpenHistoryFromMentee = useCallback((m: Mentee) => {
-    const nextHistory = buildHistoryProfile({ mentee: m })
+    const nextHistory = buildHistoryProfile({ mentee: m, historyByUsn: studentHistoryByUsn })
     if (!nextHistory) return
     setHistoryProfile(nextHistory)
     setHistoryBackPage('mentee-detail')
@@ -4195,14 +4040,14 @@ function OperationalWorkspace({
       }
     }
     if (mentorMatch) {
-      const nextHistory = buildHistoryProfile({ mentee: mentorMatch })
+      const nextHistory = buildHistoryProfile({ mentee: mentorMatch, historyByUsn: studentHistoryByUsn })
       if (nextHistory) {
         setHistoryProfile(nextHistory)
         setHistoryBackPage(page)
         setPage('student-history')
       }
     }
-  }, [assignedMentees, assignedOfferings, getStudentsPatched, handleOpenStudent, page, role])
+  }, [assignedMentees, assignedOfferings, getStudentsPatched, handleOpenStudent, page, role, studentHistoryByUsn])
 
   const pendingNoteMeta = useMemo(() => {
     if (!pendingNoteAction) return null
@@ -4524,7 +4369,7 @@ function OperationalWorkspace({
             {role === 'Course Leader' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
 
             {role === 'Mentor' && page === 'mentees' && <MentorView mentees={assignedMentees} tasks={roleTasks} onOpenMentee={handleOpenMentee} />}
-            {role === 'Mentor' && page === 'mentee-detail' && selectedMentee && <MenteeDetailPage mentee={selectedMentee} onBack={handleNavigateBack} onOpenHistory={handleOpenHistoryFromMentee} />}
+            {role === 'Mentor' && page === 'mentee-detail' && selectedMentee && <MenteeDetailPage mentee={selectedMentee} history={buildHistoryProfile({ mentee: selectedMentee, historyByUsn: studentHistoryByUsn })} onBack={handleNavigateBack} onOpenHistory={handleOpenHistoryFromMentee} />}
             {role === 'Mentor' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
             {role === 'Mentor' && page === 'calendar' && filteredCurrentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} meetings={calendarMeetings} resolvedTaskIds={resolvedTasks} timetable={filteredCurrentFacultyTimetable} adminMarkers={currentFacultyCalendarMarkers} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onUpdateMeeting={handleUpdateMeeting} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
 
@@ -4558,7 +4403,7 @@ function OperationalWorkspace({
       {/* ═══ STUDENT DRAWER ═══ */}
       <AnimatePresence>
         {selectedStudent && (
-          <StudentDrawer student={selectedStudent} offering={selectedOffering || undefined} role={role} meetings={academicMeetings} onClose={() => { setSelectedStudent(null); setSelectedOffering(null) }} onEscalate={handleOpenStudentEscalation} onOpenTaskComposer={(s, o, taskType) => {
+          <StudentDrawer student={selectedStudent} offering={selectedOffering || undefined} historyByUsn={studentHistoryByUsn} role={role} meetings={academicMeetings} onClose={() => { setSelectedStudent(null); setSelectedOffering(null) }} onEscalate={handleOpenStudentEscalation} onOpenTaskComposer={(s, o, taskType) => {
             const resolvedOffering = o ?? allOfferings.find(item => getStudentsPatched(item).some(candidate => candidate.id === s.id))
             handleOpenTaskComposer({ offeringId: resolvedOffering?.offId, studentId: s.id, taskType })
           }} onAssignToMentor={handleOpenStudentMentorHandoff} onOpenHistory={handleOpenHistoryFromStudent} onScheduleMeeting={handleScheduleMeeting} />
@@ -4782,7 +4627,7 @@ export function OperationalApp() {
 
   if (booting) return <RouteLoadingFallback label="Restoring academic session..." />
 
-  if (!remoteSession || !remoteSession.faculty?.facultyId || !remoteInitialRole || !remoteRepositories) {
+  if (!remoteSession || !remoteSession.faculty?.facultyId || !remoteInitialRole || !remoteBootstrap || !remoteRepositories) {
     return (
       <LoginPage
         facultyOptions={loginFaculty}

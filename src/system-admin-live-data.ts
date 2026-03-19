@@ -67,6 +67,10 @@ export type LiveAdminSearchOptions = {
   scope?: LiveAdminSearchScope | null
 }
 
+export function hasHierarchyScopeSelection(scope?: LiveAdminSearchScope | null) {
+  return Boolean(scope?.academicFacultyId || scope?.departmentId || scope?.branchId || scope?.batchId || scope?.sectionCode)
+}
+
 export function deriveCurrentYearLabel(currentSemester: number) {
   const year = Math.max(1, Math.ceil(currentSemester / 2))
   if (year === 1) return '1st Year'
@@ -377,6 +381,7 @@ function getRequestScopeScore(data: LiveAdminDataset, request: ApiAdminRequestSu
 export function searchLiveAdminWorkspace(data: LiveAdminDataset, rawQuery: string, options: LiveAdminSearchOptions = {}): LiveAdminSearchResult[] {
   const query = normalizeSearch(rawQuery)
   if (!query) return []
+  if (options.section === 'students' && !hasHierarchyScopeSelection(options.scope)) return []
 
   const results: Array<{ result: LiveAdminSearchResult; scopeScore: number }> = []
   const pushResult = (result: LiveAdminSearchResult, candidateSection: LiveAdminSectionId, scopeScore: number) => {

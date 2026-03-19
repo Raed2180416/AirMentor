@@ -49,6 +49,7 @@ import { AIRMENTOR_STORAGE_KEYS, createAirMentorRepositories } from './repositor
 import {
   compareAdminTimestampsDesc,
   deriveCurrentYearLabel,
+  hasHierarchyScopeSelection,
   isAcademicFacultyVisible,
   isBatchVisible,
   isBranchVisible,
@@ -73,6 +74,7 @@ import {
   searchLiveAdminWorkspace,
   type LiveAdminDataset,
   type LiveAdminRoute,
+  type LiveAdminSearchScope,
 } from './system-admin-live-data'
 import {
   AdminBreadcrumbs,
@@ -264,6 +266,14 @@ type RegistryFilterState = {
   sectionCode: string
 }
 
+type HierarchyScopeInput = {
+  academicFacultyId?: string | null
+  departmentId?: string | null
+  branchId?: string | null
+  batchId?: string | null
+  sectionCode?: string | null
+}
+
 const EMPTY_DATA: LiveAdminDataset = {
   institution: null, academicFaculties: [], departments: [], branches: [], batches: [], terms: [],
   facultyMembers: [], students: [], courses: [], curriculumCourses: [], policyOverrides: [],
@@ -447,6 +457,35 @@ function hydrateRegistryFilter(scope: UniversityScopeState | null): RegistryFilt
     batchId: scope?.batchId ?? '',
     sectionCode: scope?.sectionCode ?? '',
   }
+}
+
+function toRegistrySearchScope(filter: RegistryFilterState): LiveAdminSearchScope | null {
+  return {
+    academicFacultyId: filter.academicFacultyId || undefined,
+    departmentId: filter.departmentId || undefined,
+    branchId: filter.branchId || undefined,
+    batchId: filter.batchId || undefined,
+    sectionCode: filter.sectionCode || undefined,
+  }
+}
+
+function describeRegistryScope(data: LiveAdminDataset, scope?: LiveAdminSearchScope | null) {
+  if (!hasHierarchyScopeSelection(scope)) return null
+  if (scope?.sectionCode) {
+    const branch = resolveBranch(data, scope.branchId)
+    const batch = resolveBatch(data, scope.batchId)
+    return [`Section ${scope.sectionCode}`, batch ? `Batch ${batch.batchLabel}` : null, branch?.code ?? null].filter(Boolean).join(' · ')
+  }
+  if (scope?.batchId) {
+    const batch = resolveBatch(data, scope.batchId)
+    const branch = resolveBranch(data, scope.branchId)
+    if (!batch) return branch?.name ?? 'Selected year'
+    return [`${deriveCurrentYearLabel(batch.currentSemester)}`, `Batch ${batch.batchLabel}`, branch?.code ?? null].filter(Boolean).join(' · ')
+  }
+  if (scope?.branchId) return resolveBranch(data, scope.branchId)?.name ?? 'Selected branch'
+  if (scope?.departmentId) return resolveDepartment(data, scope.departmentId)?.name ?? 'Selected department'
+  if (scope?.academicFacultyId) return resolveAcademicFaculty(data, scope.academicFacultyId)?.name ?? 'Selected faculty'
+  return null
 }
 
 function fadeColor(hexColor: string, alpha: string) {
@@ -759,7 +798,7 @@ function AuthPageShell({ children }: { children: ReactNode }) {
   )
 }
 
-function matchesStudentScope(student: LiveAdminDataset['students'][number], data: LiveAdminDataset, scope: Omit<UniversityScopeState, 'label'> | null) {
+function matchesStudentScope(student: LiveAdminDataset['students'][number], data: LiveAdminDataset, scope: HierarchyScopeInput | null) {
   if (!scope) return true
   const context = student.activeAcademicContext
   if (!context) return false
@@ -774,7 +813,7 @@ function matchesStudentScope(student: LiveAdminDataset['students'][number], data
   return true
 }
 
-function matchesFacultyScope(member: LiveAdminDataset['facultyMembers'][number], data: LiveAdminDataset, scope: Omit<UniversityScopeState, 'label'> | null) {
+function matchesFacultyScope(member: LiveAdminDataset['facultyMembers'][number], data: LiveAdminDataset, scope: HierarchyScopeInput | null) {
   if (!scope) return true
   const hasScopedSelection = Boolean(scope.academicFacultyId || scope.departmentId || scope.branchId || scope.batchId || scope.sectionCode)
   if (!hasScopedSelection) return true
@@ -1577,6 +1616,32 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     return () => window.clearTimeout(timer)
   }, [flashMessage])
 
+  const systemAdminGrant = session?.availableRoleGrants.find(item => item.roleCode === 'SYSTEM_ADMIN') ?? null
+  const selectedAcademicFaculty = resolveAcademicFaculty(data, route.academicFacultyId)
+  const selectedDepartment = resolveDepartment(data, route.departmentId)
+  const selectedBranch = resolveBranch(data, route.branchId)
+  const selectedBatch = resolveBatch(data, route.batchId)
+  const studentRegistryScope = useMemo(
+    () => toRegistrySearchScope(studentRegistryFilter),
+    [studentRegistryFilter.academicFacultyId, studentRegistryFilter.batchId, studentRegistryFilter.branchId, studentRegistryFilter.departmentId, studentRegistryFilter.sectionCode],
+  )
+  const facultyRegistryScope = useMemo(
+    () => toRegistrySearchScope(facultyRegistryFilter),
+    [facultyRegistryFilter.academicFacultyId, facultyRegistryFilter.batchId, facultyRegistryFilter.branchId, facultyRegistryFilter.departmentId, facultyRegistryFilter.sectionCode],
+  )
+  const studentRegistryHasScope = hasHierarchyScopeSelection(studentRegistryScope)
+  const selectedStudentRecord = resolveStudent(data, route.studentId)
+  const selectedStudent = selectedStudentRecord && isStudentVisible(data, selectedStudentRecord) && (
+    route.section !== 'students'
+      || (studentRegistryHasScope && matchesStudentScope(selectedStudentRecord, data, studentRegistryScope))
+  )
+    ? selectedStudentRecord
+    : null
+  const selectedFacultyRecord = resolveFacultyMember(data, route.facultyMemberId)
+  const selectedFacultyMember = selectedFacultyRecord && isFacultyMemberVisible(data, selectedFacultyRecord)
+    ? selectedFacultyRecord
+    : null
+
   useEffect(() => {
     if (!session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') return
     const query = deferredSearch.trim()
@@ -1588,39 +1653,32 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           batchId: toOptionalScopeValue(route.batchId),
           sectionCode: toOptionalScopeValue(selectedSectionCode),
         }
-      : {
-          academicFacultyId: toOptionalScopeValue(registryScope?.academicFacultyId),
-          departmentId: toOptionalScopeValue(registryScope?.departmentId),
-          branchId: toOptionalScopeValue(registryScope?.branchId),
-          batchId: toOptionalScopeValue(registryScope?.batchId),
-          sectionCode: toOptionalScopeValue(registryScope?.sectionCode),
-        }
-    if (!query) {
+      : route.section === 'students'
+        ? (studentRegistryHasScope ? studentRegistryScope : null)
+        : route.section === 'faculty-members'
+          ? (hasHierarchyScopeSelection(facultyRegistryScope) ? facultyRegistryScope : null)
+          : {
+              academicFacultyId: toOptionalScopeValue(registryScope?.academicFacultyId),
+              departmentId: toOptionalScopeValue(registryScope?.departmentId),
+              branchId: toOptionalScopeValue(registryScope?.branchId),
+              batchId: toOptionalScopeValue(registryScope?.batchId),
+              sectionCode: toOptionalScopeValue(registryScope?.sectionCode),
+            }
+    if (!query || (route.section === 'students' && !studentRegistryHasScope)) {
       setServerSearchResults([])
       return
     }
     let cancelled = false
     void (async () => {
       try {
-        const response = await apiClient.searchAdminWorkspace(query, activeSearchScope)
+        const response = await apiClient.searchAdminWorkspace(query, activeSearchScope ?? undefined)
         if (!cancelled) setServerSearchResults(response.items)
       } catch {
         if (!cancelled) setServerSearchResults([])
       }
     })()
     return () => { cancelled = true }
-  }, [apiClient, deferredSearch, registryScope?.academicFacultyId, registryScope?.batchId, registryScope?.branchId, registryScope?.departmentId, registryScope?.sectionCode, route.academicFacultyId, route.batchId, route.branchId, route.departmentId, route.section, selectedSectionCode, session])
-
-  const systemAdminGrant = session?.availableRoleGrants.find(item => item.roleCode === 'SYSTEM_ADMIN') ?? null
-  const selectedAcademicFaculty = resolveAcademicFaculty(data, route.academicFacultyId)
-  const selectedDepartment = resolveDepartment(data, route.departmentId)
-  const selectedBranch = resolveBranch(data, route.branchId)
-  const selectedBatch = resolveBatch(data, route.batchId)
-  const selectedStudent = resolveStudent(data, route.studentId)
-  const selectedFacultyRecord = resolveFacultyMember(data, route.facultyMemberId)
-  const selectedFacultyMember = selectedFacultyRecord && isFacultyMemberVisible(data, selectedFacultyRecord)
-    ? selectedFacultyRecord
-    : null
+  }, [apiClient, deferredSearch, facultyRegistryScope, registryScope?.academicFacultyId, registryScope?.batchId, registryScope?.branchId, registryScope?.departmentId, registryScope?.sectionCode, route.academicFacultyId, route.batchId, route.branchId, route.departmentId, route.section, selectedSectionCode, session, studentRegistryHasScope, studentRegistryScope])
 
   useEffect(() => {
     setStudentDetailTab('profile')
@@ -1641,6 +1699,16 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     }
   }, [data.facultyMembers.length, dataLoading, navigate, route.facultyMemberId, route.section, selectedFacultyMember, session])
 
+  useEffect(() => {
+    if (route.section !== 'students' || !route.studentId || !session || dataLoading || data.students.length === 0 || selectedStudent) return
+    if (!studentRegistryHasScope) {
+      setActionError('Select a faculty, department, branch, year, or section before opening student records.')
+    } else {
+      setActionError('That student is outside the active academic scope.')
+    }
+    navigate({ section: 'students' }, { recordHistory: false })
+  }, [data.students.length, dataLoading, navigate, route.section, route.studentId, selectedStudent, session, studentRegistryHasScope])
+
   const searchResults = useMemo(() => {
     const activeSearchScope = route.section === 'faculties'
       ? {
@@ -1650,13 +1718,17 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           batchId: toOptionalScopeValue(route.batchId),
           sectionCode: toOptionalScopeValue(selectedSectionCode),
         }
-      : {
-          academicFacultyId: toOptionalScopeValue(registryScope?.academicFacultyId),
-          departmentId: toOptionalScopeValue(registryScope?.departmentId),
-          branchId: toOptionalScopeValue(registryScope?.branchId),
-          batchId: toOptionalScopeValue(registryScope?.batchId),
-          sectionCode: toOptionalScopeValue(registryScope?.sectionCode),
-        }
+      : route.section === 'students'
+        ? (studentRegistryHasScope ? studentRegistryScope : null)
+        : route.section === 'faculty-members'
+          ? (hasHierarchyScopeSelection(facultyRegistryScope) ? facultyRegistryScope : null)
+          : {
+              academicFacultyId: toOptionalScopeValue(registryScope?.academicFacultyId),
+              departmentId: toOptionalScopeValue(registryScope?.departmentId),
+              branchId: toOptionalScopeValue(registryScope?.branchId),
+              batchId: toOptionalScopeValue(registryScope?.batchId),
+              sectionCode: toOptionalScopeValue(registryScope?.sectionCode),
+            }
     const matchesActiveSection = (candidateRoute: LiveAdminRoute) => {
       if (route.section === 'overview') return true
       if (route.section === 'history') return candidateRoute.section === 'requests'
@@ -1693,7 +1765,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       section: route.section,
       scope: activeSearchScope,
     }).filter(result => matchesActiveSection(result.route) && isRouteVisible(result.route))
-  }, [data, deferredSearch, registryScope?.academicFacultyId, registryScope?.batchId, registryScope?.branchId, registryScope?.departmentId, registryScope?.sectionCode, route.academicFacultyId, route.batchId, route.branchId, route.departmentId, route.section, selectedSectionCode, serverSearchResults])
+  }, [data, deferredSearch, facultyRegistryScope, registryScope?.academicFacultyId, registryScope?.batchId, registryScope?.branchId, registryScope?.departmentId, registryScope?.sectionCode, route.academicFacultyId, route.batchId, route.branchId, route.departmentId, route.section, selectedSectionCode, serverSearchResults, studentRegistryHasScope, studentRegistryScope])
   const selectedRequest = selectedRequestDetail && selectedRequestSummary && selectedRequestDetail.version !== selectedRequestSummary.version
     ? selectedRequestSummary
     : (selectedRequestDetail ?? selectedRequestSummary)
@@ -3280,6 +3352,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const filteredUniversityFaculty = data.facultyMembers
     .filter(item => isFacultyMemberVisible(data, item))
     .filter(member => matchesFacultyScope(member, data, activeUniversityScope))
+  const scopedUniversityStudents = activeUniversityScope ? filteredUniversityStudents : []
   const universityContextLabel = selectedSectionCode
     ? `Section ${selectedSectionCode}`
     : selectedBatch
@@ -3452,6 +3525,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     : false
   const effectiveStudentRegistryFilter = studentRegistryFilter
   const effectiveFacultyRegistryFilter = facultyRegistryFilter
+  const studentRegistryScopeLabel = describeRegistryScope(data, studentRegistryScope)
+  const facultyRegistryScopeLabel = describeRegistryScope(data, facultyRegistryScope)
   const studentFilterDepartments = visibleDepartments
     .filter(item => !effectiveStudentRegistryFilter.academicFacultyId || item.academicFacultyId === effectiveStudentRegistryFilter.academicFacultyId)
     .sort((left, right) => left.name.localeCompare(right.name))
@@ -3484,35 +3559,31 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const visibleOwnershipCount = data.ownerships.filter(item => item.status === 'active' && isFacultyMemberVisible(data, item.facultyId)).length
   const normalizedStudentRegistrySearch = studentRegistrySearch.trim().toLowerCase()
   const normalizedFacultyRegistrySearch = facultyRegistrySearch.trim().toLowerCase()
-  const studentRegistryItems = data.students
-    .filter(item => isStudentVisible(data, item))
-    .filter(item => matchesStudentScope(item, data, {
-      academicFacultyId: effectiveStudentRegistryFilter.academicFacultyId || null,
-      departmentId: effectiveStudentRegistryFilter.departmentId || null,
-      branchId: effectiveStudentRegistryFilter.branchId || null,
-      batchId: effectiveStudentRegistryFilter.batchId || null,
-      sectionCode: effectiveStudentRegistryFilter.sectionCode || null,
-    }))
-    .filter(item => {
-      if (!normalizedStudentRegistrySearch) return true
-      const searchableText = [
-        item.name,
-        item.usn,
-        item.rollNumber ?? '',
-        item.email ?? '',
-        item.phone ?? '',
-        item.activeAcademicContext?.departmentName ?? '',
-        item.activeAcademicContext?.branchName ?? '',
-        item.activeAcademicContext?.batchLabel ?? '',
-        item.activeAcademicContext?.sectionCode ?? '',
-      ].join(' ').toLowerCase()
-      return searchableText.includes(normalizedStudentRegistrySearch)
-    })
-    .sort((left, right) => {
-      const leftKey = `${left.activeAcademicContext?.departmentName ?? ''}-${left.activeAcademicContext?.branchName ?? ''}-${left.name}-${left.usn}`
-      const rightKey = `${right.activeAcademicContext?.departmentName ?? ''}-${right.activeAcademicContext?.branchName ?? ''}-${right.name}-${right.usn}`
-      return leftKey.localeCompare(rightKey)
-    })
+  const studentRegistryItems = studentRegistryHasScope
+    ? data.students
+        .filter(item => isStudentVisible(data, item))
+        .filter(item => matchesStudentScope(item, data, studentRegistryScope))
+        .filter(item => {
+          if (!normalizedStudentRegistrySearch) return true
+          const searchableText = [
+            item.name,
+            item.usn,
+            item.rollNumber ?? '',
+            item.email ?? '',
+            item.phone ?? '',
+            item.activeAcademicContext?.departmentName ?? '',
+            item.activeAcademicContext?.branchName ?? '',
+            item.activeAcademicContext?.batchLabel ?? '',
+            item.activeAcademicContext?.sectionCode ?? '',
+          ].join(' ').toLowerCase()
+          return searchableText.includes(normalizedStudentRegistrySearch)
+        })
+        .sort((left, right) => {
+          const leftKey = `${left.activeAcademicContext?.departmentName ?? ''}-${left.activeAcademicContext?.branchName ?? ''}-${left.name}-${left.usn}`
+          const rightKey = `${right.activeAcademicContext?.departmentName ?? ''}-${right.activeAcademicContext?.branchName ?? ''}-${right.name}-${right.usn}`
+          return leftKey.localeCompare(rightKey)
+        })
+    : []
   const facultyRegistryItems = data.facultyMembers
     .filter(item => isFacultyMemberVisible(data, item))
     .filter(item => matchesFacultyScope(item, data, {
@@ -3542,6 +3613,12 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       const rightDepartment = resolveDepartment(data, getPrimaryAppointmentDepartmentId(right))?.name ?? ''
       return `${leftDepartment}-${left.displayName}-${left.employeeCode}`.localeCompare(`${rightDepartment}-${right.displayName}-${right.employeeCode}`)
     })
+  const studentRegistryCaption = studentRegistryHasScope
+    ? `Canonical identity, enrollment correction, mentor linkage, promotion review, and audit history. Filtered to ${studentRegistryScopeLabel ?? 'the selected academic scope'}.`
+    : 'Canonical identity, enrollment correction, mentor linkage, promotion review, and audit history. Select a faculty, department, branch, year, or section to load the student registry.'
+  const studentRegistryEmptyMessage = studentRegistryHasScope
+    ? 'No students match the current academic scope.'
+    : 'Select a faculty, department, branch, year, or section to load students. Unscoped student registry stays empty by design.'
   const termsForEnrollment = visibleTerms.filter(item => !enrollmentForm.branchId || item.branchId === enrollmentForm.branchId)
   const branchesForAppointment = visibleBranches.filter(item => !appointmentForm.departmentId || item.departmentId === appointmentForm.departmentId)
   const selectedFacultyOwnerships = selectedFacultyMember
@@ -3592,6 +3669,12 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       setRegistryScope(activeUniversityRegistryScope)
       if (section === 'students') setStudentRegistryFilter(hydrateRegistryFilter(activeUniversityRegistryScope))
       else setFacultyRegistryFilter(hydrateRegistryFilter(activeUniversityRegistryScope))
+    } else if (section === 'students') {
+      clearRegistryScope()
+      setStudentRegistryFilter(defaultRegistryFilter())
+    } else {
+      clearRegistryScope()
+      setFacultyRegistryFilter(defaultRegistryFilter())
     }
     navigate({ section })
   }
@@ -3670,7 +3753,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             : 'Operations Dashboard'
   const railScopeLabel = route.section === 'faculties'
     ? activeUniversityRegistryScope?.label ?? universityWorkspaceLabel
-    : registryScope?.label
+    : route.section === 'students'
+      ? studentRegistryScopeLabel ?? undefined
+      : route.section === 'faculty-members'
+        ? facultyRegistryScopeLabel ?? registryScope?.label ?? undefined
+        : registryScope?.label
   const railSearchPlaceholder = route.section === 'overview'
     ? 'Search across the full control plane...'
     : route.section === 'faculties'
@@ -3708,6 +3795,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         setRegistryScope(nextScope)
         if (section === 'students') setStudentRegistryFilter(hydrateRegistryFilter(nextScope))
         else setFacultyRegistryFilter(hydrateRegistryFilter(nextScope))
+      } else if (route.section === 'faculties') {
+        clearRegistryScope()
+        if (section === 'students') setStudentRegistryFilter(defaultRegistryFilter())
+        else setFacultyRegistryFilter(defaultRegistryFilter())
       }
       navigate({ section })
       return
@@ -4639,15 +4730,16 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                     <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Students View</div>
                   </div>
                   <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
-                    Open the student registry scoped to {activeUniversityRegistryScope?.label ?? 'the current hierarchy view'}.
+                    {activeUniversityRegistryScope
+                      ? `Open the student registry scoped to ${activeUniversityRegistryScope.label}.`
+                      : 'Select a faculty, department, branch, year, or section first, then open the student registry.'}
                   </div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <Chip color={ADMIN_SECTION_TONES.students}>{filteredUniversityStudents.length} visible</Chip>
-                    {selectedSectionCode ? <Chip color={T.accent}>Section scope</Chip> : selectedBatch ? <Chip color={T.accent}>Year scope</Chip> : selectedBranch ? <Chip color={T.accent}>Branch scope</Chip> : selectedDepartment ? <Chip color={T.accent}>Department scope</Chip> : selectedAcademicFaculty ? <Chip color={T.accent}>Faculty scope</Chip> : <Chip color={T.dim}>All students</Chip>}
+                    <Chip color={activeUniversityRegistryScope ? ADMIN_SECTION_TONES.students : T.dim}>{scopedUniversityStudents.length} visible</Chip>
+                    {selectedSectionCode ? <Chip color={T.accent}>Section scope</Chip> : selectedBatch ? <Chip color={T.accent}>Year scope</Chip> : selectedBranch ? <Chip color={T.accent}>Branch scope</Chip> : selectedDepartment ? <Chip color={T.accent}>Department scope</Chip> : selectedAcademicFaculty ? <Chip color={T.accent}>Faculty scope</Chip> : <Chip color={T.dim}>Scope required</Chip>}
                   </div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <Btn type="button" variant="ghost" onClick={() => handleOpenScopedRegistry('students')}>Open Scoped Students</Btn>
-                    <Btn type="button" variant="ghost" onClick={() => handleOpenFullRegistry('students')}>Open Full Students</Btn>
                   </div>
                 </Card>
 
@@ -4681,7 +4773,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               <SectionHeading
                 title="Students"
                 eyebrow="Registry"
-                caption={registryScope ? `Canonical identity, enrollment correction, mentor linkage, promotion review, and audit history. Filtered to ${registryScope.label}.` : 'Canonical identity, enrollment correction, mentor linkage, promotion review, and audit history.'}
+                caption={studentRegistryCaption}
                 toneColor={ADMIN_SECTION_TONES.students}
               />
               <div style={{ display: 'grid', gap: 12 }}>
@@ -4689,7 +4781,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   <Btn type="button" onClick={() => { navigate({ section: 'students' }); resetStudentEditors() }}><Plus size={14} /> New Student</Btn>
                   <Chip color={T.accent}>{studentRegistryItems.length} active</Chip>
                   <Chip color={T.warning}>{studentRegistryItems.filter(item => !item.activeMentorAssignment).length} mentor gaps</Chip>
-                  {registryScope ? <Chip color={ADMIN_SECTION_TONES.students}>{registryScope.label}</Chip> : null}
+                  {studentRegistryScopeLabel ? <Chip color={ADMIN_SECTION_TONES.students}>{studentRegistryScopeLabel}</Chip> : <Chip color={T.dim}>Scope required</Chip>}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: registryFilterColumns, gap: 10 }}>
                   <div>
@@ -4757,7 +4849,6 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                 />
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <Btn type="button" variant="ghost" onClick={() => setStudentRegistryFilter(hydrateRegistryFilter(registryScope))}>Reset Filters</Btn>
-                  <Btn type="button" variant="ghost" onClick={() => handleOpenFullRegistry('students')}>Open Complete Page</Btn>
                   <Chip color={T.dim}>Sorted A-Z</Chip>
                 </div>
               </div>
@@ -4788,7 +4879,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                     </div>
                   </EntityButton>
                 ))}
-                {studentRegistryItems.length === 0 ? <InfoBanner message="No active students yet. Create the first student record from this panel." /> : null}
+                {studentRegistryItems.length === 0 ? <InfoBanner message={studentRegistryEmptyMessage} /> : null}
               </div>
             </Card>
 
