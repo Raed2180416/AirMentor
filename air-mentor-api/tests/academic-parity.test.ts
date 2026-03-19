@@ -10,9 +10,27 @@ afterEach(async () => {
   current = null
 })
 
+async function grantCourseOwnership(cookie: string, offeringId: string, facultyId = 't1') {
+  if (!current) throw new Error('Test app is not initialized')
+  const response = await current.app.inject({
+    method: 'POST',
+    url: '/api/admin/offering-ownership',
+    headers: { cookie, origin: TEST_ORIGIN },
+    payload: {
+      offeringId,
+      facultyId,
+      ownershipRole: 'owner',
+      status: 'active',
+    },
+  })
+  expect(response.statusCode).toBe(200)
+}
+
 describe('academic bootstrap', () => {
   it('ignores legacy academic asset snapshots and derives the live view from admin-owned records', async () => {
     current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+    await grantCourseOwnership(adminLogin.cookie, 'c3-A')
     const login = await loginAs(current.app, 'kavitha.rao', '1234')
 
     await current.db.update(academicAssets).set({
@@ -69,6 +87,7 @@ describe('academic bootstrap', () => {
   it('reflects admin master-data changes into the academic bootstrap on the next fetch', async () => {
     current = await createTestApp()
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+    await grantCourseOwnership(adminLogin.cookie, 'c3-A')
     const academicLogin = await loginAs(current.app, 'kavitha.rao', '1234')
 
     const coursePatch = await current.app.inject({
@@ -117,6 +136,7 @@ describe('academic bootstrap', () => {
   it('persists resolved course outcomes, offering schemes, and question papers through backend-owned routes', async () => {
     current = await createTestApp()
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+    await grantCourseOwnership(adminLogin.cookie, 'c3-A')
     const facultyLogin = await loginAs(current.app, 'kavitha.rao', '1234')
 
     const overrideResponse = await current.app.inject({
@@ -299,6 +319,9 @@ describe('academic bootstrap', () => {
   it('persists authoritative queue, calendar workspace, attendance, and TT1 entry state through the teaching routes', async () => {
     current = await createTestApp()
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+    await grantCourseOwnership(adminLogin.cookie, 'c3-A')
+    await grantCourseOwnership(adminLogin.cookie, 'c3-B')
+    await grantCourseOwnership(adminLogin.cookie, 'c4-C')
     const offeringUnlockResponse = await current.app.inject({
       method: 'PATCH',
       url: '/api/admin/offerings/c3-A',

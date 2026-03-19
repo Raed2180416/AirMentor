@@ -19,6 +19,7 @@ import { createTransition, type QueueTransition, type SharedTask, type TaskType 
 
 const BASE_NOW_ISO = '2026-03-16T00:00:00.000Z'
 const BASE_NOW = new Date(BASE_NOW_ISO).getTime()
+const FACULTY_WITH_PERMISSIONS_ONLY = 't1'
 
 type YearLabel = '1st Year' | '2nd Year' | '3rd Year' | '4th Year'
 
@@ -39,6 +40,17 @@ function inferAdmissionDate(yearLabel: string) {
   if (yearLabel === '2nd Year') return '2024-08-01'
   if (yearLabel === '3rd Year') return '2023-08-01'
   return '2022-08-01'
+}
+
+function stripSeededFacultyScope<T extends { facultyId: string; courseCodes: string[]; offeringIds: string[]; menteeIds: string[] }>(faculty: T[]) {
+  return faculty.map(account => account.facultyId === FACULTY_WITH_PERMISSIONS_ONLY
+    ? {
+        ...account,
+        courseCodes: [],
+        offeringIds: [],
+        menteeIds: [],
+      }
+    : account)
 }
 
 function buildAcademicYearLabel(yearLabel: YearLabel) {
@@ -311,6 +323,26 @@ async function main() {
   Math.random = () => 0.314159
   try {
     const repositories = createLocalAirMentorRepositories()
+    const removedSeedMenteeIds = new Set(
+      FACULTY.find(account => account.facultyId === FACULTY_WITH_PERMISSIONS_ONLY)?.menteeIds ?? [],
+    )
+    const seededFacultyAccounts = stripSeededFacultyScope(FACULTY)
+    const seededSubjectRuns = SUBJECT_RUNS.map(run => ({
+      ...run,
+      courseLeaderFacultyIds: run.courseLeaderFacultyIds.filter(facultyId => facultyId !== FACULTY_WITH_PERMISSIONS_ONLY),
+    }))
+    const seededTeacherCards = TEACHERS.map(teacher => teacher.id === FACULTY_WITH_PERMISSIONS_ONLY
+      ? {
+          ...teacher,
+          offerings: 0,
+          students: 0,
+          highRisk: 0,
+          avgAtt: 0,
+          completeness: 0,
+          pendingTasks: 0,
+        }
+      : teacher)
+    const seededMentees = MENTEES.filter(mentee => !removedSeedMenteeIds.has(mentee.id))
     const groupedTermMap = new Map<string, { termId: string; branchId: string; academicYearLabel: string; semesterNumber: number; startDate: string; endDate: string; status: string }>()
     const terms: Array<{ termId: string; branchId: string; academicYearLabel: string; semesterNumber: number; startDate: string; endDate: string; status: string }> = []
     for (const offering of OFFERINGS) {
@@ -471,7 +503,7 @@ async function main() {
       status: 'active',
     }))
 
-    const offeringOwnerships = FACULTY.flatMap(account =>
+    const offeringOwnerships = seededFacultyAccounts.flatMap(account =>
       account.offeringIds.map(offeringId => ({
         ownershipId: `ownership_${account.facultyId}_${offeringId}`,
         offeringId,
@@ -482,9 +514,9 @@ async function main() {
     )
 
     const mentorFacultyByMenteeId = Object.fromEntries(
-      FACULTY.flatMap(account => account.menteeIds.map(menteeId => [menteeId, account.facultyId])),
+      seededFacultyAccounts.flatMap(account => account.menteeIds.map(menteeId => [menteeId, account.facultyId])),
     )
-    const menteeByUsn = Object.fromEntries(MENTEES.map(mentee => [mentee.usn, mentee]))
+    const menteeByUsn = Object.fromEntries(seededMentees.map(mentee => [mentee.usn, mentee]))
 
     const uniqueStudents = new Map<string, {
       studentId: string
@@ -638,14 +670,14 @@ async function main() {
       ],
       academicAssets: {
         professor,
-        faculty: FACULTY,
+        faculty: seededFacultyAccounts,
         offerings: OFFERINGS,
         yearGroups: YEAR_GROUPS,
-        subjectRuns: SUBJECT_RUNS,
-        teachers: TEACHERS,
+        subjectRuns: seededSubjectRuns,
+        teachers: seededTeacherCards,
         offeringsById: Object.fromEntries(OFFERINGS.map(offering => [offering.offId, offering])),
         studentsByOffering: baselineStudentsByOffering,
-        menteesByUsn: Object.fromEntries(MENTEES.map(mentee => [mentee.usn, mentee])),
+        menteesByUsn: Object.fromEntries(seededMentees.map(mentee => [mentee.usn, mentee])),
         studentHistoryByUsn,
         runtime,
       },

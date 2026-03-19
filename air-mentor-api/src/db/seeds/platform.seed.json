@@ -665,27 +665,6 @@
   ],
   "offeringOwnerships": [
     {
-      "ownershipId": "ownership_t1_c3-A",
-      "offeringId": "c3-A",
-      "facultyId": "t1",
-      "ownershipRole": "owner",
-      "status": "active"
-    },
-    {
-      "ownershipId": "ownership_t1_c3-B",
-      "offeringId": "c3-B",
-      "facultyId": "t1",
-      "ownershipRole": "owner",
-      "status": "active"
-    },
-    {
-      "ownershipId": "ownership_t1_c4-C",
-      "offeringId": "c4-C",
-      "facultyId": "t1",
-      "ownershipRole": "owner",
-      "status": "active"
-    },
-    {
       "ownershipId": "ownership_t2_c6-A",
       "offeringId": "c6-A",
       "facultyId": "t2",
@@ -4911,14 +4890,7 @@
           "rosterOrder": 0
         }
       ],
-      "mentorAssignments": [
-        {
-          "assignmentId": "assignment_1ms23cs001",
-          "facultyId": "t1",
-          "effectiveFrom": "2026-08-01",
-          "source": "seed"
-        }
-      ]
+      "mentorAssignments": []
     },
     {
       "studentId": "student_term_cse_sem4_a_1ms23cs014",
@@ -4941,14 +4913,7 @@
           "rosterOrder": 1
         }
       ],
-      "mentorAssignments": [
-        {
-          "assignmentId": "assignment_1ms23cs014",
-          "facultyId": "t1",
-          "effectiveFrom": "2026-08-01",
-          "source": "seed"
-        }
-      ]
+      "mentorAssignments": []
     },
     {
       "studentId": "student_term_cse_sem4_a_1ms23cs019",
@@ -13631,19 +13596,9 @@
           "Mentor",
           "HoD"
         ],
-        "courseCodes": [
-          "CS401",
-          "CS403"
-        ],
-        "offeringIds": [
-          "c3-A",
-          "c3-B",
-          "c4-C"
-        ],
-        "menteeIds": [
-          "m1",
-          "m2"
-        ]
+        "courseCodes": [],
+        "offeringIds": [],
+        "menteeIds": []
       },
       {
         "facultyId": "t2",
@@ -14596,10 +14551,43 @@
           "subjectRunId": "run-MA101-1styear-s1-1",
           "status": "Needs Setup",
           "finalsMax": 50,
+          "termTestWeights": {
+            "tt1": 15,
+            "tt2": 15
+          },
           "quizWeight": 10,
           "assignmentWeight": 20,
           "quizCount": 1,
-          "assignmentCount": 2
+          "assignmentCount": 2,
+          "quizComponents": [
+            {
+              "id": "quiz-1",
+              "label": "Quiz 1",
+              "rawMax": 10,
+              "weightage": 10
+            }
+          ],
+          "assignmentComponents": [
+            {
+              "id": "assignment-1",
+              "label": "Assignment 1",
+              "rawMax": 10,
+              "weightage": 10
+            },
+            {
+              "id": "assignment-2",
+              "label": "Assignment 2",
+              "rawMax": 10,
+              "weightage": 10
+            }
+          ],
+          "policyContext": {
+            "ce": 60,
+            "see": 40,
+            "maxTermTests": 2,
+            "maxQuizzes": 2,
+            "maxAssignments": 2
+          }
         }
       },
       {
@@ -14619,10 +14607,43 @@
           "subjectRunId": "run-CS101-1styear-s1-2",
           "status": "Needs Setup",
           "finalsMax": 50,
+          "termTestWeights": {
+            "tt1": 15,
+            "tt2": 15
+          },
           "quizWeight": 10,
           "assignmentWeight": 20,
           "quizCount": 1,
-          "assignmentCount": 2
+          "assignmentCount": 2,
+          "quizComponents": [
+            {
+              "id": "quiz-1",
+              "label": "Quiz 1",
+              "rawMax": 10,
+              "weightage": 10
+            }
+          ],
+          "assignmentComponents": [
+            {
+              "id": "assignment-1",
+              "label": "Assignment 1",
+              "rawMax": 10,
+              "weightage": 10
+            },
+            {
+              "id": "assignment-2",
+              "label": "Assignment 2",
+              "rawMax": 10,
+              "weightage": 10
+            }
+          ],
+          "policyContext": {
+            "ce": 60,
+            "see": 40,
+            "maxTermTests": 2,
+            "maxQuizzes": 2,
+            "maxAssignments": 2
+          }
         }
       },
       {
@@ -14636,17 +14657,48 @@
           "c3-A",
           "c3-B"
         ],
-        "courseLeaderFacultyIds": [
-          "t1"
-        ],
+        "courseLeaderFacultyIds": [],
         "scheme": {
           "subjectRunId": "run-CS401-2ndyear-s4-3",
           "status": "Locked",
           "finalsMax": 50,
+          "termTestWeights": {
+            "tt1": 15,
+            "tt2": 15
+          },
           "quizWeight": 20,
           "assignmentWeight": 10,
           "quizCount": 2,
-          "assignmentCount": 1
+          "assignmentCount": 1,
+          "quizComponents": [
+            {
+              "id": "quiz-1",
+              "label": "Quiz 1",
+              "rawMax": 10,
+              "weightage": 10
+            },
+            {
+              "id": "quiz-2",
+              "label": "Quiz 2",
+              "rawMax": 10,
+              "weightage": 10
+            }
+          ],
+          "assignmentComponents": [
+            {
+              "id": "assignment-1",
+              "label": "Assignment 1",
+              "rawMax": 10,
+              "weightage": 10
+            }
+          ],
+          "policyContext": {
+            "ce": 60,
+            "see": 40,
+            "maxTermTests": 2,
+            "maxQuizzes": 2,
+            "maxAssignments": 2
+          }
         }
       },
       {
@@ -14659,17 +14711,48 @@
         "sectionOfferingIds": [
           "c4-C"
         ],
-        "courseLeaderFacultyIds": [
-          "t1"
-        ],
+        "courseLeaderFacultyIds": [],
         "scheme": {
           "subjectRunId": "run-CS403-2ndyear-s4-4",
           "status": "Locked",
           "finalsMax": 50,
+          "termTestWeights": {
+            "tt1": 15,
+            "tt2": 15
+          },
           "quizWeight": 10,
           "assignmentWeight": 20,
           "quizCount": 1,
-          "assignmentCount": 2
+          "assignmentCount": 2,
+          "quizComponents": [
+            {
+              "id": "quiz-1",
+              "label": "Quiz 1",
+              "rawMax": 10,
+              "weightage": 10
+            }
+          ],
+          "assignmentComponents": [
+            {
+              "id": "assignment-1",
+              "label": "Assignment 1",
+              "rawMax": 10,
+              "weightage": 10
+            },
+            {
+              "id": "assignment-2",
+              "label": "Assignment 2",
+              "rawMax": 10,
+              "weightage": 10
+            }
+          ],
+          "policyContext": {
+            "ce": 60,
+            "see": 40,
+            "maxTermTests": 2,
+            "maxQuizzes": 2,
+            "maxAssignments": 2
+          }
         }
       },
       {
@@ -14687,10 +14770,43 @@
           "subjectRunId": "run-MA301-2ndyear-s3-5",
           "status": "Locked",
           "finalsMax": 50,
+          "termTestWeights": {
+            "tt1": 15,
+            "tt2": 15
+          },
           "quizWeight": 10,
           "assignmentWeight": 20,
           "quizCount": 1,
-          "assignmentCount": 2
+          "assignmentCount": 2,
+          "quizComponents": [
+            {
+              "id": "quiz-1",
+              "label": "Quiz 1",
+              "rawMax": 10,
+              "weightage": 10
+            }
+          ],
+          "assignmentComponents": [
+            {
+              "id": "assignment-1",
+              "label": "Assignment 1",
+              "rawMax": 10,
+              "weightage": 10
+            },
+            {
+              "id": "assignment-2",
+              "label": "Assignment 2",
+              "rawMax": 10,
+              "weightage": 10
+            }
+          ],
+          "policyContext": {
+            "ce": 60,
+            "see": 40,
+            "maxTermTests": 2,
+            "maxQuizzes": 2,
+            "maxAssignments": 2
+          }
         }
       },
       {
@@ -14710,10 +14826,43 @@
           "subjectRunId": "run-CS601-3rdyear-s6-6",
           "status": "Locked",
           "finalsMax": 50,
+          "termTestWeights": {
+            "tt1": 15,
+            "tt2": 15
+          },
           "quizWeight": 10,
           "assignmentWeight": 20,
           "quizCount": 1,
-          "assignmentCount": 2
+          "assignmentCount": 2,
+          "quizComponents": [
+            {
+              "id": "quiz-1",
+              "label": "Quiz 1",
+              "rawMax": 10,
+              "weightage": 10
+            }
+          ],
+          "assignmentComponents": [
+            {
+              "id": "assignment-1",
+              "label": "Assignment 1",
+              "rawMax": 10,
+              "weightage": 10
+            },
+            {
+              "id": "assignment-2",
+              "label": "Assignment 2",
+              "rawMax": 10,
+              "weightage": 10
+            }
+          ],
+          "policyContext": {
+            "ce": 60,
+            "see": 40,
+            "maxTermTests": 2,
+            "maxQuizzes": 2,
+            "maxAssignments": 2
+          }
         }
       },
       {
@@ -14731,10 +14880,43 @@
           "subjectRunId": "run-CS603-3rdyear-s6-7",
           "status": "Locked",
           "finalsMax": 50,
+          "termTestWeights": {
+            "tt1": 15,
+            "tt2": 15
+          },
           "quizWeight": 10,
           "assignmentWeight": 20,
           "quizCount": 1,
-          "assignmentCount": 2
+          "assignmentCount": 2,
+          "quizComponents": [
+            {
+              "id": "quiz-1",
+              "label": "Quiz 1",
+              "rawMax": 10,
+              "weightage": 10
+            }
+          ],
+          "assignmentComponents": [
+            {
+              "id": "assignment-1",
+              "label": "Assignment 1",
+              "rawMax": 10,
+              "weightage": 10
+            },
+            {
+              "id": "assignment-2",
+              "label": "Assignment 2",
+              "rawMax": 10,
+              "weightage": 10
+            }
+          ],
+          "policyContext": {
+            "ce": 60,
+            "see": 40,
+            "maxTermTests": 2,
+            "maxQuizzes": 2,
+            "maxAssignments": 2
+          }
         }
       },
       {
@@ -14754,10 +14936,43 @@
           "subjectRunId": "run-CS702-4thyear-s7-8",
           "status": "Locked",
           "finalsMax": 100,
+          "termTestWeights": {
+            "tt1": 15,
+            "tt2": 15
+          },
           "quizWeight": 10,
           "assignmentWeight": 20,
           "quizCount": 1,
-          "assignmentCount": 2
+          "assignmentCount": 2,
+          "quizComponents": [
+            {
+              "id": "quiz-1",
+              "label": "Quiz 1",
+              "rawMax": 10,
+              "weightage": 10
+            }
+          ],
+          "assignmentComponents": [
+            {
+              "id": "assignment-1",
+              "label": "Assignment 1",
+              "rawMax": 10,
+              "weightage": 10
+            },
+            {
+              "id": "assignment-2",
+              "label": "Assignment 2",
+              "rawMax": 10,
+              "weightage": 10
+            }
+          ],
+          "policyContext": {
+            "ce": 60,
+            "see": 40,
+            "maxTermTests": 2,
+            "maxQuizzes": 2,
+            "maxAssignments": 2
+          }
         }
       }
     ],
@@ -14773,12 +14988,12 @@
           "Mentor",
           "HoD"
         ],
-        "offerings": 3,
-        "students": 168,
-        "highRisk": 19,
-        "avgAtt": 76,
-        "completeness": 25,
-        "pendingTasks": 3
+        "offerings": 0,
+        "students": 0,
+        "highRisk": 0,
+        "avgAtt": 0,
+        "completeness": 0,
+        "pendingTasks": 0
       },
       {
         "id": "t2",
@@ -49110,86 +49325,6 @@
       ]
     },
     "menteesByUsn": {
-      "1MS23CS001": {
-        "id": "m1",
-        "usn": "1MS23CS001",
-        "name": "Aarav Sharma",
-        "phone": "+91 9700000000",
-        "year": "2nd Year",
-        "section": "A",
-        "dept": "CSE",
-        "courseRisks": [
-          {
-            "code": "CS401",
-            "title": "Design & Analysis of Algorithms",
-            "risk": 0.82,
-            "band": "High",
-            "stage": 2
-          },
-          {
-            "code": "CS201",
-            "title": "Data Structures",
-            "risk": 0.45,
-            "band": "Medium",
-            "stage": 2
-          },
-          {
-            "code": "MA201",
-            "title": "Discrete Mathematics",
-            "risk": 0.61,
-            "band": "Medium",
-            "stage": 2
-          }
-        ],
-        "avs": 0.63,
-        "prevCgpa": 6.1,
-        "interventions": [
-          {
-            "date": "Feb 22",
-            "type": "Call",
-            "note": "Called — no response"
-          },
-          {
-            "date": "Mar 01",
-            "type": "Email",
-            "note": "Sent academic warning email"
-          }
-        ]
-      },
-      "1MS23CS014": {
-        "id": "m2",
-        "usn": "1MS23CS014",
-        "name": "Meera Sundaram",
-        "phone": "+91 9700001918",
-        "year": "2nd Year",
-        "section": "A",
-        "dept": "CSE",
-        "courseRisks": [
-          {
-            "code": "CS401",
-            "title": "Design & Analysis of Algorithms",
-            "risk": 0.54,
-            "band": "Medium",
-            "stage": 2
-          },
-          {
-            "code": "CS201",
-            "title": "Data Structures",
-            "risk": 0.22,
-            "band": "Low",
-            "stage": 2
-          }
-        ],
-        "avs": 0.38,
-        "prevCgpa": 7.2,
-        "interventions": [
-          {
-            "date": "Mar 05",
-            "type": "Meeting",
-            "note": "Discussed weak COs; assigned practice problems"
-          }
-        ]
-      },
       "1MS24CS103": {
         "id": "m3",
         "usn": "1MS24CS103",
@@ -49552,7 +49687,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.67
+        "currentCgpa": 8.67,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS002": {
         "usn": "1MS23CS002",
@@ -49624,7 +49761,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.13
+        "currentCgpa": 8.13,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS003": {
         "usn": "1MS23CS003",
@@ -49696,7 +49835,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.67
+        "currentCgpa": 8.67,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS004": {
         "usn": "1MS23CS004",
@@ -49768,7 +49909,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS005": {
         "usn": "1MS23CS005",
@@ -49840,7 +49983,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS006": {
         "usn": "1MS23CS006",
@@ -49912,7 +50057,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.07
+        "currentCgpa": 8.07,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS007": {
         "usn": "1MS23CS007",
@@ -49984,7 +50131,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS008": {
         "usn": "1MS23CS008",
@@ -50056,7 +50205,9 @@
             ]
           }
         ],
-        "currentCgpa": 7.53
+        "currentCgpa": 7.53,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS009": {
         "usn": "1MS23CS009",
@@ -50128,7 +50279,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS010": {
         "usn": "1MS23CS010",
@@ -50200,7 +50353,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS011": {
         "usn": "1MS23CS011",
@@ -50272,7 +50427,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.67
+        "currentCgpa": 8.67,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS012": {
         "usn": "1MS23CS012",
@@ -50344,7 +50501,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS013": {
         "usn": "1MS23CS013",
@@ -50416,7 +50575,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS014": {
         "usn": "1MS23CS014",
@@ -50602,7 +50763,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.6
+        "currentCgpa": 8.6,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS015": {
         "usn": "1MS23CS015",
@@ -50674,7 +50837,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS016": {
         "usn": "1MS23CS016",
@@ -50746,7 +50911,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS017": {
         "usn": "1MS23CS017",
@@ -50818,7 +50985,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.73
+        "currentCgpa": 8.73,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS018": {
         "usn": "1MS23CS018",
@@ -50890,7 +51059,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS019": {
         "usn": "1MS23CS019",
@@ -51078,7 +51249,9 @@
             ]
           }
         ],
-        "currentCgpa": 6.96
+        "currentCgpa": 6.96,
+        "completedCreditsForCgpa": 41,
+        "progressionStatus": "Review"
       },
       "1MS23CS020": {
         "usn": "1MS23CS020",
@@ -51150,7 +51323,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS021": {
         "usn": "1MS23CS021",
@@ -51222,7 +51397,9 @@
             ]
           }
         ],
-        "currentCgpa": 7.53
+        "currentCgpa": 7.53,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS022": {
         "usn": "1MS23CS022",
@@ -51294,7 +51471,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS023": {
         "usn": "1MS23CS023",
@@ -51366,7 +51545,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS024": {
         "usn": "1MS23CS024",
@@ -51438,7 +51619,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS025": {
         "usn": "1MS23CS025",
@@ -51510,7 +51693,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS026": {
         "usn": "1MS23CS026",
@@ -51582,7 +51767,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS027": {
         "usn": "1MS23CS027",
@@ -51654,7 +51841,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.67
+        "currentCgpa": 8.67,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS028": {
         "usn": "1MS23CS028",
@@ -51840,7 +52029,9 @@
             ]
           }
         ],
-        "currentCgpa": 7.04
+        "currentCgpa": 7.04,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS029": {
         "usn": "1MS23CS029",
@@ -51912,7 +52103,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.67
+        "currentCgpa": 8.67,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS030": {
         "usn": "1MS23CS030",
@@ -51984,7 +52177,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS031": {
         "usn": "1MS23CS031",
@@ -52056,7 +52251,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.13
+        "currentCgpa": 8.13,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS032": {
         "usn": "1MS23CS032",
@@ -52128,7 +52325,9 @@
             ]
           }
         ],
-        "currentCgpa": 7.8
+        "currentCgpa": 7.8,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS033": {
         "usn": "1MS23CS033",
@@ -52200,7 +52399,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS034": {
         "usn": "1MS23CS034",
@@ -52272,7 +52473,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.67
+        "currentCgpa": 8.67,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS035": {
         "usn": "1MS23CS035",
@@ -52344,7 +52547,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.07
+        "currentCgpa": 8.07,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS036": {
         "usn": "1MS23CS036",
@@ -52416,7 +52621,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS037": {
         "usn": "1MS23CS037",
@@ -52488,7 +52695,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS038": {
         "usn": "1MS23CS038",
@@ -52560,7 +52769,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS039": {
         "usn": "1MS23CS039",
@@ -52632,7 +52843,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.07
+        "currentCgpa": 8.07,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS040": {
         "usn": "1MS23CS040",
@@ -52704,7 +52917,9 @@
             ]
           }
         ],
-        "currentCgpa": 7.8
+        "currentCgpa": 7.8,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS041": {
         "usn": "1MS23CS041",
@@ -52776,7 +52991,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS042": {
         "usn": "1MS23CS042",
@@ -52848,7 +53065,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.2
+        "currentCgpa": 8.2,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS043": {
         "usn": "1MS23CS043",
@@ -52920,7 +53139,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS044": {
         "usn": "1MS23CS044",
@@ -52992,7 +53213,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.07
+        "currentCgpa": 8.07,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS045": {
         "usn": "1MS23CS045",
@@ -53064,7 +53287,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS046": {
         "usn": "1MS23CS046",
@@ -53136,7 +53361,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS047": {
         "usn": "1MS23CS047",
@@ -53208,7 +53435,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS048": {
         "usn": "1MS23CS048",
@@ -53280,7 +53509,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.73
+        "currentCgpa": 8.73,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS049": {
         "usn": "1MS23CS049",
@@ -53352,7 +53583,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.07
+        "currentCgpa": 8.07,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS050": {
         "usn": "1MS23CS050",
@@ -53424,7 +53657,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS051": {
         "usn": "1MS23CS051",
@@ -53496,7 +53731,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS052": {
         "usn": "1MS23CS052",
@@ -53568,7 +53805,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.13
+        "currentCgpa": 8.13,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS053": {
         "usn": "1MS23CS053",
@@ -53640,7 +53879,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS054": {
         "usn": "1MS23CS054",
@@ -53712,7 +53953,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.67
+        "currentCgpa": 8.67,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS055": {
         "usn": "1MS23CS055",
@@ -53784,7 +54027,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS056": {
         "usn": "1MS23CS056",
@@ -53856,7 +54101,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.13
+        "currentCgpa": 8.13,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS057": {
         "usn": "1MS23CS057",
@@ -53928,7 +54175,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS058": {
         "usn": "1MS23CS058",
@@ -54000,7 +54249,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.67
+        "currentCgpa": 8.67,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS059": {
         "usn": "1MS23CS059",
@@ -54072,7 +54323,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS060": {
         "usn": "1MS23CS060",
@@ -54144,7 +54397,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.73
+        "currentCgpa": 8.73,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS061": {
         "usn": "1MS23CS061",
@@ -54216,7 +54471,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.67
+        "currentCgpa": 8.67,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS062": {
         "usn": "1MS23CS062",
@@ -54288,7 +54545,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.67
+        "currentCgpa": 8.67,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS24CS103": {
         "usn": "1MS24CS103",
@@ -54359,7 +54618,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.5
+        "currentCgpa": 8.5,
+        "completedCreditsForCgpa": 14,
+        "progressionStatus": "Eligible"
       },
       "1MS24CS044": {
         "usn": "1MS24CS044",
@@ -54431,7 +54692,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 15,
+        "progressionStatus": "Eligible"
       },
       "1MS23CS001": {
         "usn": "1MS23CS001",
@@ -54619,7 +54882,9 @@
             ]
           }
         ],
-        "currentCgpa": 7.07
+        "currentCgpa": 7.07,
+        "completedCreditsForCgpa": 41,
+        "progressionStatus": "Review"
       },
       "1MS25CS004": {
         "usn": "1MS25CS004",
@@ -54805,7 +55070,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.4
+        "currentCgpa": 8.4,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS005": {
         "usn": "1MS25CS005",
@@ -54991,7 +55258,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.24
+        "currentCgpa": 8.24,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS006": {
         "usn": "1MS25CS006",
@@ -55177,7 +55446,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.6
+        "currentCgpa": 8.6,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS007": {
         "usn": "1MS25CS007",
@@ -55363,7 +55634,9 @@
             ]
           }
         ],
-        "currentCgpa": 7.89
+        "currentCgpa": 7.89,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS008": {
         "usn": "1MS25CS008",
@@ -55549,7 +55822,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.29
+        "currentCgpa": 8.29,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS009": {
         "usn": "1MS25CS009",
@@ -55735,7 +56010,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS010": {
         "usn": "1MS25CS010",
@@ -55921,7 +56198,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.6
+        "currentCgpa": 8.6,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS011": {
         "usn": "1MS25CS011",
@@ -56107,7 +56386,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.53
+        "currentCgpa": 8.53,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS012": {
         "usn": "1MS25CS012",
@@ -56293,7 +56574,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS013": {
         "usn": "1MS25CS013",
@@ -56479,7 +56762,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.24
+        "currentCgpa": 8.24,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS014": {
         "usn": "1MS25CS014",
@@ -56665,7 +56950,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS015": {
         "usn": "1MS25CS015",
@@ -56851,7 +57138,9 @@
             ]
           }
         ],
-        "currentCgpa": 7.89
+        "currentCgpa": 7.89,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS016": {
         "usn": "1MS25CS016",
@@ -57037,7 +57326,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.29
+        "currentCgpa": 8.29,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS017": {
         "usn": "1MS25CS017",
@@ -57223,7 +57514,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.29
+        "currentCgpa": 8.29,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS018": {
         "usn": "1MS25CS018",
@@ -57409,7 +57702,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.31
+        "currentCgpa": 8.31,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS019": {
         "usn": "1MS25CS019",
@@ -57595,7 +57890,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.22
+        "currentCgpa": 8.22,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS020": {
         "usn": "1MS25CS020",
@@ -57781,7 +58078,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.29
+        "currentCgpa": 8.29,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS021": {
         "usn": "1MS25CS021",
@@ -57967,7 +58266,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS022": {
         "usn": "1MS25CS022",
@@ -58153,7 +58454,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.11
+        "currentCgpa": 8.11,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS023": {
         "usn": "1MS25CS023",
@@ -58339,7 +58642,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.22
+        "currentCgpa": 8.22,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS024": {
         "usn": "1MS25CS024",
@@ -58525,7 +58830,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS025": {
         "usn": "1MS25CS025",
@@ -58711,7 +59018,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.6
+        "currentCgpa": 8.6,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS026": {
         "usn": "1MS25CS026",
@@ -58897,7 +59206,9 @@
             ]
           }
         ],
-        "currentCgpa": 7.71
+        "currentCgpa": 7.71,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS027": {
         "usn": "1MS25CS027",
@@ -59083,7 +59394,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.09
+        "currentCgpa": 8.09,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS028": {
         "usn": "1MS25CS028",
@@ -59269,7 +59582,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.38
+        "currentCgpa": 8.38,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS029": {
         "usn": "1MS25CS029",
@@ -59455,7 +59770,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS030": {
         "usn": "1MS25CS030",
@@ -59641,7 +59958,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.16
+        "currentCgpa": 8.16,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS031": {
         "usn": "1MS25CS031",
@@ -59827,7 +60146,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.6
+        "currentCgpa": 8.6,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS032": {
         "usn": "1MS25CS032",
@@ -60013,7 +60334,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.29
+        "currentCgpa": 8.29,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS033": {
         "usn": "1MS25CS033",
@@ -60199,7 +60522,9 @@
             ]
           }
         ],
-        "currentCgpa": 7.89
+        "currentCgpa": 7.89,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS034": {
         "usn": "1MS25CS034",
@@ -60385,7 +60710,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.09
+        "currentCgpa": 8.09,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS035": {
         "usn": "1MS25CS035",
@@ -60571,7 +60898,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.24
+        "currentCgpa": 8.24,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS036": {
         "usn": "1MS25CS036",
@@ -60757,7 +61086,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.24
+        "currentCgpa": 8.24,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS037": {
         "usn": "1MS25CS037",
@@ -60943,7 +61274,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.24
+        "currentCgpa": 8.24,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS038": {
         "usn": "1MS25CS038",
@@ -61129,7 +61462,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.24
+        "currentCgpa": 8.24,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS039": {
         "usn": "1MS25CS039",
@@ -61315,7 +61650,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS040": {
         "usn": "1MS25CS040",
@@ -61501,7 +61838,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.4
+        "currentCgpa": 8.4,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS041": {
         "usn": "1MS25CS041",
@@ -61687,7 +62026,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.6
+        "currentCgpa": 8.6,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS042": {
         "usn": "1MS25CS042",
@@ -61873,7 +62214,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.29
+        "currentCgpa": 8.29,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS043": {
         "usn": "1MS25CS043",
@@ -62059,7 +62402,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.27
+        "currentCgpa": 8.27,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS044": {
         "usn": "1MS25CS044",
@@ -62245,7 +62590,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.38
+        "currentCgpa": 8.38,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS045": {
         "usn": "1MS25CS045",
@@ -62431,7 +62778,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.4
+        "currentCgpa": 8.4,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS046": {
         "usn": "1MS25CS046",
@@ -62617,7 +62966,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS047": {
         "usn": "1MS25CS047",
@@ -62803,7 +63154,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.71
+        "currentCgpa": 8.71,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS048": {
         "usn": "1MS25CS048",
@@ -62989,7 +63342,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.4
+        "currentCgpa": 8.4,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS049": {
         "usn": "1MS25CS049",
@@ -63175,7 +63530,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.24
+        "currentCgpa": 8.24,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS050": {
         "usn": "1MS25CS050",
@@ -63361,7 +63718,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.53
+        "currentCgpa": 8.53,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS051": {
         "usn": "1MS25CS051",
@@ -63547,7 +63906,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.38
+        "currentCgpa": 8.38,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS052": {
         "usn": "1MS25CS052",
@@ -63733,7 +64094,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.11
+        "currentCgpa": 8.11,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS053": {
         "usn": "1MS25CS053",
@@ -63919,7 +64282,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS054": {
         "usn": "1MS25CS054",
@@ -64105,7 +64470,9 @@
             ]
           }
         ],
-        "currentCgpa": 7.71
+        "currentCgpa": 7.71,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS055": {
         "usn": "1MS25CS055",
@@ -64291,7 +64658,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.09
+        "currentCgpa": 8.09,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS056": {
         "usn": "1MS25CS056",
@@ -64477,7 +64846,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.22
+        "currentCgpa": 8.22,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS057": {
         "usn": "1MS25CS057",
@@ -64663,7 +65034,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.42
+        "currentCgpa": 8.42,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS058": {
         "usn": "1MS25CS058",
@@ -64849,7 +65222,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.4
+        "currentCgpa": 8.4,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS002": {
         "usn": "1MS25CS002",
@@ -65035,7 +65410,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.16
+        "currentCgpa": 8.16,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS003": {
         "usn": "1MS25CS003",
@@ -65221,7 +65598,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.24
+        "currentCgpa": 8.24,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS25CS001": {
         "usn": "1MS25CS001",
@@ -65407,7 +65786,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.09
+        "currentCgpa": 8.09,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS23EC005": {
         "usn": "1MS23EC005",
@@ -65593,7 +65974,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.6
+        "currentCgpa": 8.6,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC002": {
         "usn": "1MS24EC002",
@@ -65779,7 +66162,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.16
+        "currentCgpa": 8.16,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC003": {
         "usn": "1MS24EC003",
@@ -65965,7 +66350,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.4
+        "currentCgpa": 8.4,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC004": {
         "usn": "1MS24EC004",
@@ -66151,7 +66538,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.09
+        "currentCgpa": 8.09,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC005": {
         "usn": "1MS24EC005",
@@ -66337,7 +66726,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.24
+        "currentCgpa": 8.24,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC006": {
         "usn": "1MS24EC006",
@@ -66523,7 +66914,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.24
+        "currentCgpa": 8.24,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC007": {
         "usn": "1MS24EC007",
@@ -66709,7 +67102,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.24
+        "currentCgpa": 8.24,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC008": {
         "usn": "1MS24EC008",
@@ -66895,7 +67290,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.42
+        "currentCgpa": 8.42,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC009": {
         "usn": "1MS24EC009",
@@ -67081,7 +67478,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.24
+        "currentCgpa": 8.24,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC010": {
         "usn": "1MS24EC010",
@@ -67267,7 +67666,9 @@
             ]
           }
         ],
-        "currentCgpa": 7.89
+        "currentCgpa": 7.89,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC011": {
         "usn": "1MS24EC011",
@@ -67453,7 +67854,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.38
+        "currentCgpa": 8.38,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC012": {
         "usn": "1MS24EC012",
@@ -67639,7 +68042,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.49
+        "currentCgpa": 8.49,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC013": {
         "usn": "1MS24EC013",
@@ -67825,7 +68230,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.09
+        "currentCgpa": 8.09,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC014": {
         "usn": "1MS24EC014",
@@ -68011,7 +68418,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.24
+        "currentCgpa": 8.24,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC015": {
         "usn": "1MS24EC015",
@@ -68197,7 +68606,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.38
+        "currentCgpa": 8.38,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC016": {
         "usn": "1MS24EC016",
@@ -68383,7 +68794,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.38
+        "currentCgpa": 8.38,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC017": {
         "usn": "1MS24EC017",
@@ -68569,7 +68982,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC018": {
         "usn": "1MS24EC018",
@@ -68755,7 +69170,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.09
+        "currentCgpa": 8.09,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC019": {
         "usn": "1MS24EC019",
@@ -68941,7 +69358,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.22
+        "currentCgpa": 8.22,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC020": {
         "usn": "1MS24EC020",
@@ -69127,7 +69546,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.42
+        "currentCgpa": 8.42,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC021": {
         "usn": "1MS24EC021",
@@ -69313,7 +69734,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC022": {
         "usn": "1MS24EC022",
@@ -69499,7 +69922,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.24
+        "currentCgpa": 8.24,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC023": {
         "usn": "1MS24EC023",
@@ -69685,7 +70110,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.38
+        "currentCgpa": 8.38,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC024": {
         "usn": "1MS24EC024",
@@ -69871,7 +70298,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.53
+        "currentCgpa": 8.53,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC025": {
         "usn": "1MS24EC025",
@@ -70057,7 +70486,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.27
+        "currentCgpa": 8.27,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC026": {
         "usn": "1MS24EC026",
@@ -70243,7 +70674,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.24
+        "currentCgpa": 8.24,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC027": {
         "usn": "1MS24EC027",
@@ -70429,7 +70862,9 @@
             ]
           }
         ],
-        "currentCgpa": 7.89
+        "currentCgpa": 7.89,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC028": {
         "usn": "1MS24EC028",
@@ -70615,7 +71050,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.11
+        "currentCgpa": 8.11,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC029": {
         "usn": "1MS24EC029",
@@ -70801,7 +71238,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC030": {
         "usn": "1MS24EC030",
@@ -70987,7 +71426,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC031": {
         "usn": "1MS24EC031",
@@ -71173,7 +71614,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.16
+        "currentCgpa": 8.16,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC032": {
         "usn": "1MS24EC032",
@@ -71359,7 +71802,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.29
+        "currentCgpa": 8.29,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC033": {
         "usn": "1MS24EC033",
@@ -71545,7 +71990,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.07
+        "currentCgpa": 8.07,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC034": {
         "usn": "1MS24EC034",
@@ -71731,7 +72178,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.24
+        "currentCgpa": 8.24,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC035": {
         "usn": "1MS24EC035",
@@ -71917,7 +72366,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.24
+        "currentCgpa": 8.24,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC036": {
         "usn": "1MS24EC036",
@@ -72103,7 +72554,9 @@
             ]
           }
         ],
-        "currentCgpa": 7.89
+        "currentCgpa": 7.89,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC037": {
         "usn": "1MS24EC037",
@@ -72289,7 +72742,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.16
+        "currentCgpa": 8.16,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC038": {
         "usn": "1MS24EC038",
@@ -72475,7 +72930,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.24
+        "currentCgpa": 8.24,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC039": {
         "usn": "1MS24EC039",
@@ -72661,7 +73118,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.53
+        "currentCgpa": 8.53,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC040": {
         "usn": "1MS24EC040",
@@ -72847,7 +73306,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.38
+        "currentCgpa": 8.38,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC041": {
         "usn": "1MS24EC041",
@@ -73033,7 +73494,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.16
+        "currentCgpa": 8.16,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC042": {
         "usn": "1MS24EC042",
@@ -73219,7 +73682,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.42
+        "currentCgpa": 8.42,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC043": {
         "usn": "1MS24EC043",
@@ -73405,7 +73870,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.31
+        "currentCgpa": 8.31,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC044": {
         "usn": "1MS24EC044",
@@ -73591,7 +74058,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.07
+        "currentCgpa": 8.07,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC045": {
         "usn": "1MS24EC045",
@@ -73777,7 +74246,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.38
+        "currentCgpa": 8.38,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC046": {
         "usn": "1MS24EC046",
@@ -73963,7 +74434,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.53
+        "currentCgpa": 8.53,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC047": {
         "usn": "1MS24EC047",
@@ -74149,7 +74622,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.38
+        "currentCgpa": 8.38,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC048": {
         "usn": "1MS24EC048",
@@ -74335,7 +74810,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC049": {
         "usn": "1MS24EC049",
@@ -74521,7 +74998,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC050": {
         "usn": "1MS24EC050",
@@ -74707,7 +75186,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.29
+        "currentCgpa": 8.29,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC051": {
         "usn": "1MS24EC051",
@@ -74893,7 +75374,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.22
+        "currentCgpa": 8.22,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC052": {
         "usn": "1MS24EC052",
@@ -75079,7 +75562,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC053": {
         "usn": "1MS24EC053",
@@ -75265,7 +75750,9 @@
             ]
           }
         ],
-        "currentCgpa": 7.89
+        "currentCgpa": 7.89,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC054": {
         "usn": "1MS24EC054",
@@ -75451,7 +75938,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.6
+        "currentCgpa": 8.6,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC055": {
         "usn": "1MS24EC055",
@@ -75637,7 +76126,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.42
+        "currentCgpa": 8.42,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC056": {
         "usn": "1MS24EC056",
@@ -75823,7 +76314,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.38
+        "currentCgpa": 8.38,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC057": {
         "usn": "1MS24EC057",
@@ -76009,7 +76502,9 @@
             ]
           }
         ],
-        "currentCgpa": 7.89
+        "currentCgpa": 7.89,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC058": {
         "usn": "1MS24EC058",
@@ -76195,7 +76690,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC059": {
         "usn": "1MS24EC059",
@@ -76381,7 +76878,9 @@
             ]
           }
         ],
-        "currentCgpa": 7.89
+        "currentCgpa": 7.89,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS24EC060": {
         "usn": "1MS24EC060",
@@ -76567,7 +77066,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.29
+        "currentCgpa": 8.29,
+        "completedCreditsForCgpa": 45,
+        "progressionStatus": "Eligible"
       },
       "1MS22CS041": {
         "usn": "1MS22CS041",
@@ -76801,7 +77302,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.56
+        "currentCgpa": 8.56,
+        "completedCreditsForCgpa": 57,
+        "progressionStatus": "Eligible"
       },
       "1MS22CS033": {
         "usn": "1MS22CS033",
@@ -77044,7 +77547,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.35
+        "currentCgpa": 8.35,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS003": {
         "usn": "1MS26CS003",
@@ -77287,7 +77792,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.3
+        "currentCgpa": 8.3,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS004": {
         "usn": "1MS26CS004",
@@ -77530,7 +78037,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.27
+        "currentCgpa": 8.27,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS005": {
         "usn": "1MS26CS005",
@@ -77773,7 +78282,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.35
+        "currentCgpa": 8.35,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS006": {
         "usn": "1MS26CS006",
@@ -78016,7 +78527,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.43
+        "currentCgpa": 8.43,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS007": {
         "usn": "1MS26CS007",
@@ -78259,7 +78772,9 @@
             ]
           }
         ],
-        "currentCgpa": 7.87
+        "currentCgpa": 7.87,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS008": {
         "usn": "1MS26CS008",
@@ -78502,7 +79017,9 @@
             ]
           }
         ],
-        "currentCgpa": 7.93
+        "currentCgpa": 7.93,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS009": {
         "usn": "1MS26CS009",
@@ -78745,7 +79262,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.2
+        "currentCgpa": 8.2,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS010": {
         "usn": "1MS26CS010",
@@ -78988,7 +79507,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.23
+        "currentCgpa": 8.23,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS011": {
         "usn": "1MS26CS011",
@@ -79231,7 +79752,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.13
+        "currentCgpa": 8.13,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS012": {
         "usn": "1MS26CS012",
@@ -79474,7 +79997,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.13
+        "currentCgpa": 8.13,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS013": {
         "usn": "1MS26CS013",
@@ -79717,7 +80242,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.3
+        "currentCgpa": 8.3,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS014": {
         "usn": "1MS26CS014",
@@ -79960,7 +80487,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS015": {
         "usn": "1MS26CS015",
@@ -80203,7 +80732,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS016": {
         "usn": "1MS26CS016",
@@ -80446,7 +80977,9 @@
             ]
           }
         ],
-        "currentCgpa": 7.93
+        "currentCgpa": 7.93,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS017": {
         "usn": "1MS26CS017",
@@ -80689,7 +81222,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.27
+        "currentCgpa": 8.27,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS018": {
         "usn": "1MS26CS018",
@@ -80932,7 +81467,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.3
+        "currentCgpa": 8.3,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS019": {
         "usn": "1MS26CS019",
@@ -81175,7 +81712,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.27
+        "currentCgpa": 8.27,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS020": {
         "usn": "1MS26CS020",
@@ -81418,7 +81957,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.48
+        "currentCgpa": 8.48,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS021": {
         "usn": "1MS26CS021",
@@ -81661,7 +82202,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.35
+        "currentCgpa": 8.35,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS022": {
         "usn": "1MS26CS022",
@@ -81904,7 +82447,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS023": {
         "usn": "1MS26CS023",
@@ -82147,7 +82692,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.3
+        "currentCgpa": 8.3,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS024": {
         "usn": "1MS26CS024",
@@ -82390,7 +82937,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.03
+        "currentCgpa": 8.03,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS025": {
         "usn": "1MS26CS025",
@@ -82633,7 +83182,9 @@
             ]
           }
         ],
-        "currentCgpa": 7.93
+        "currentCgpa": 7.93,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS026": {
         "usn": "1MS26CS026",
@@ -82876,7 +83427,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.23
+        "currentCgpa": 8.23,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS027": {
         "usn": "1MS26CS027",
@@ -83119,7 +83672,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.38
+        "currentCgpa": 8.38,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS028": {
         "usn": "1MS26CS028",
@@ -83362,7 +83917,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.32
+        "currentCgpa": 8.32,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS029": {
         "usn": "1MS26CS029",
@@ -83605,7 +84162,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.35
+        "currentCgpa": 8.35,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS030": {
         "usn": "1MS26CS030",
@@ -83848,7 +84407,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.35
+        "currentCgpa": 8.35,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS031": {
         "usn": "1MS26CS031",
@@ -84091,7 +84652,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.3
+        "currentCgpa": 8.3,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS032": {
         "usn": "1MS26CS032",
@@ -84334,7 +84897,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.32
+        "currentCgpa": 8.32,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS033": {
         "usn": "1MS26CS033",
@@ -84577,7 +85142,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.48
+        "currentCgpa": 8.48,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS034": {
         "usn": "1MS26CS034",
@@ -84820,7 +85387,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS035": {
         "usn": "1MS26CS035",
@@ -85063,7 +85632,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS036": {
         "usn": "1MS26CS036",
@@ -85306,7 +85877,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.38
+        "currentCgpa": 8.38,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS037": {
         "usn": "1MS26CS037",
@@ -85549,7 +86122,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS038": {
         "usn": "1MS26CS038",
@@ -85792,7 +86367,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.32
+        "currentCgpa": 8.32,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS039": {
         "usn": "1MS26CS039",
@@ -86035,7 +86612,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.33
+        "currentCgpa": 8.33,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS040": {
         "usn": "1MS26CS040",
@@ -86278,7 +86857,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS041": {
         "usn": "1MS26CS041",
@@ -86521,7 +87102,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.38
+        "currentCgpa": 8.38,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS042": {
         "usn": "1MS26CS042",
@@ -86764,7 +87347,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.23
+        "currentCgpa": 8.23,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS043": {
         "usn": "1MS26CS043",
@@ -87007,7 +87592,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.47
+        "currentCgpa": 8.47,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS044": {
         "usn": "1MS26CS044",
@@ -87250,7 +87837,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.27
+        "currentCgpa": 8.27,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS045": {
         "usn": "1MS26CS045",
@@ -87493,7 +88082,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.32
+        "currentCgpa": 8.32,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS046": {
         "usn": "1MS26CS046",
@@ -87736,7 +88327,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.28
+        "currentCgpa": 8.28,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS047": {
         "usn": "1MS26CS047",
@@ -87979,7 +88572,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.23
+        "currentCgpa": 8.23,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS048": {
         "usn": "1MS26CS048",
@@ -88222,7 +88817,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.13
+        "currentCgpa": 8.13,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS049": {
         "usn": "1MS26CS049",
@@ -88465,7 +89062,9 @@
             ]
           }
         ],
-        "currentCgpa": 8
+        "currentCgpa": 8,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS050": {
         "usn": "1MS26CS050",
@@ -88708,7 +89307,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.23
+        "currentCgpa": 8.23,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS051": {
         "usn": "1MS26CS051",
@@ -88951,7 +89552,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.03
+        "currentCgpa": 8.03,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS052": {
         "usn": "1MS26CS052",
@@ -89194,7 +89797,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.2
+        "currentCgpa": 8.2,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS001": {
         "usn": "1MS26CS001",
@@ -89437,7 +90042,9 @@
             ]
           }
         ],
-        "currentCgpa": 7.93
+        "currentCgpa": 7.93,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS26CS002": {
         "usn": "1MS26CS002",
@@ -89680,7 +90287,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.23
+        "currentCgpa": 8.23,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       },
       "1MS21CS008": {
         "usn": "1MS21CS008",
@@ -89914,7 +90523,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.93
+        "currentCgpa": 8.93,
+        "completedCreditsForCgpa": 57,
+        "progressionStatus": "Eligible"
       },
       "1MS21CS012": {
         "usn": "1MS21CS012",
@@ -90157,7 +90768,9 @@
             ]
           }
         ],
-        "currentCgpa": 8.2
+        "currentCgpa": 8.2,
+        "completedCreditsForCgpa": 60,
+        "progressionStatus": "Eligible"
       }
     },
     "runtime": {
@@ -90165,6 +90778,10 @@
       "schemeByOffering": {
         "c1-A": {
           "finalsMax": 50,
+          "termTestWeights": {
+            "tt1": 15,
+            "tt2": 15
+          },
           "quizWeight": 10,
           "assignmentWeight": 20,
           "quizCount": 1,
@@ -90173,20 +90790,33 @@
             {
               "id": "quiz-1",
               "label": "Quiz 1",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 10
             }
           ],
           "assignmentComponents": [
             {
               "id": "assignment-1",
               "label": "Assignment 1",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 20
             }
           ],
+          "policyContext": {
+            "ce": 60,
+            "see": 40,
+            "maxTermTests": 2,
+            "maxQuizzes": 2,
+            "maxAssignments": 2
+          },
           "status": "Needs Setup"
         },
         "c1-B": {
           "finalsMax": 50,
+          "termTestWeights": {
+            "tt1": 15,
+            "tt2": 15
+          },
           "quizWeight": 10,
           "assignmentWeight": 20,
           "quizCount": 1,
@@ -90195,20 +90825,33 @@
             {
               "id": "quiz-1",
               "label": "Quiz 1",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 10
             }
           ],
           "assignmentComponents": [
             {
               "id": "assignment-1",
               "label": "Assignment 1",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 20
             }
           ],
+          "policyContext": {
+            "ce": 60,
+            "see": 40,
+            "maxTermTests": 2,
+            "maxQuizzes": 2,
+            "maxAssignments": 2
+          },
           "status": "Needs Setup"
         },
         "c1-C": {
           "finalsMax": 50,
+          "termTestWeights": {
+            "tt1": 15,
+            "tt2": 15
+          },
           "quizWeight": 10,
           "assignmentWeight": 20,
           "quizCount": 1,
@@ -90217,20 +90860,33 @@
             {
               "id": "quiz-1",
               "label": "Quiz 1",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 10
             }
           ],
           "assignmentComponents": [
             {
               "id": "assignment-1",
               "label": "Assignment 1",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 20
             }
           ],
+          "policyContext": {
+            "ce": 60,
+            "see": 40,
+            "maxTermTests": 2,
+            "maxQuizzes": 2,
+            "maxAssignments": 2
+          },
           "status": "Needs Setup"
         },
         "c2-A": {
           "finalsMax": 50,
+          "termTestWeights": {
+            "tt1": 15,
+            "tt2": 15
+          },
           "quizWeight": 10,
           "assignmentWeight": 20,
           "quizCount": 1,
@@ -90239,20 +90895,33 @@
             {
               "id": "quiz-1",
               "label": "Quiz 1",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 10
             }
           ],
           "assignmentComponents": [
             {
               "id": "assignment-1",
               "label": "Assignment 1",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 20
             }
           ],
+          "policyContext": {
+            "ce": 60,
+            "see": 40,
+            "maxTermTests": 2,
+            "maxQuizzes": 2,
+            "maxAssignments": 2
+          },
           "status": "Needs Setup"
         },
         "c3-A": {
           "finalsMax": 50,
+          "termTestWeights": {
+            "tt1": 15,
+            "tt2": 15
+          },
           "quizWeight": 20,
           "assignmentWeight": 10,
           "quizCount": 2,
@@ -90261,30 +90930,45 @@
             {
               "id": "quiz-1",
               "label": "Quiz 1",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 10
             },
             {
               "id": "quiz-2",
               "label": "Quiz 2",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 10
             }
           ],
           "assignmentComponents": [
             {
               "id": "assignment-1",
               "label": "Assignment 1",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 5
             },
             {
               "id": "assignment-2",
               "label": "Assignment 2",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 5
             }
           ],
+          "policyContext": {
+            "ce": 60,
+            "see": 40,
+            "maxTermTests": 2,
+            "maxQuizzes": 2,
+            "maxAssignments": 2
+          },
           "status": "Needs Setup"
         },
         "c3-B": {
           "finalsMax": 50,
+          "termTestWeights": {
+            "tt1": 15,
+            "tt2": 15
+          },
           "quizWeight": 20,
           "assignmentWeight": 10,
           "quizCount": 2,
@@ -90293,30 +90977,45 @@
             {
               "id": "quiz-1",
               "label": "Quiz 1",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 10
             },
             {
               "id": "quiz-2",
               "label": "Quiz 2",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 10
             }
           ],
           "assignmentComponents": [
             {
               "id": "assignment-1",
               "label": "Assignment 1",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 5
             },
             {
               "id": "assignment-2",
               "label": "Assignment 2",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 5
             }
           ],
+          "policyContext": {
+            "ce": 60,
+            "see": 40,
+            "maxTermTests": 2,
+            "maxQuizzes": 2,
+            "maxAssignments": 2
+          },
           "status": "Needs Setup"
         },
         "c4-C": {
           "finalsMax": 50,
+          "termTestWeights": {
+            "tt1": 15,
+            "tt2": 15
+          },
           "quizWeight": 10,
           "assignmentWeight": 20,
           "quizCount": 1,
@@ -90325,20 +91024,33 @@
             {
               "id": "quiz-1",
               "label": "Quiz 1",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 10
             }
           ],
           "assignmentComponents": [
             {
               "id": "assignment-1",
               "label": "Assignment 1",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 20
             }
           ],
+          "policyContext": {
+            "ce": 60,
+            "see": 40,
+            "maxTermTests": 2,
+            "maxQuizzes": 2,
+            "maxAssignments": 2
+          },
           "status": "Needs Setup"
         },
         "c5-A": {
           "finalsMax": 50,
+          "termTestWeights": {
+            "tt1": 15,
+            "tt2": 15
+          },
           "quizWeight": 10,
           "assignmentWeight": 20,
           "quizCount": 1,
@@ -90347,20 +91059,33 @@
             {
               "id": "quiz-1",
               "label": "Quiz 1",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 10
             }
           ],
           "assignmentComponents": [
             {
               "id": "assignment-1",
               "label": "Assignment 1",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 20
             }
           ],
+          "policyContext": {
+            "ce": 60,
+            "see": 40,
+            "maxTermTests": 2,
+            "maxQuizzes": 2,
+            "maxAssignments": 2
+          },
           "status": "Needs Setup"
         },
         "c6-A": {
           "finalsMax": 50,
+          "termTestWeights": {
+            "tt1": 15,
+            "tt2": 15
+          },
           "quizWeight": 10,
           "assignmentWeight": 20,
           "quizCount": 1,
@@ -90369,20 +91094,33 @@
             {
               "id": "quiz-1",
               "label": "Quiz 1",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 10
             }
           ],
           "assignmentComponents": [
             {
               "id": "assignment-1",
               "label": "Assignment 1",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 20
             }
           ],
+          "policyContext": {
+            "ce": 60,
+            "see": 40,
+            "maxTermTests": 2,
+            "maxQuizzes": 2,
+            "maxAssignments": 2
+          },
           "status": "Needs Setup"
         },
         "c7-B": {
           "finalsMax": 50,
+          "termTestWeights": {
+            "tt1": 15,
+            "tt2": 15
+          },
           "quizWeight": 10,
           "assignmentWeight": 20,
           "quizCount": 1,
@@ -90391,20 +91129,33 @@
             {
               "id": "quiz-1",
               "label": "Quiz 1",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 10
             }
           ],
           "assignmentComponents": [
             {
               "id": "assignment-1",
               "label": "Assignment 1",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 20
             }
           ],
+          "policyContext": {
+            "ce": 60,
+            "see": 40,
+            "maxTermTests": 2,
+            "maxQuizzes": 2,
+            "maxAssignments": 2
+          },
           "status": "Needs Setup"
         },
         "c8-A": {
           "finalsMax": 100,
+          "termTestWeights": {
+            "tt1": 15,
+            "tt2": 15
+          },
           "quizWeight": 10,
           "assignmentWeight": 20,
           "quizCount": 1,
@@ -90413,16 +91164,25 @@
             {
               "id": "quiz-1",
               "label": "Quiz 1",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 10
             }
           ],
           "assignmentComponents": [
             {
               "id": "assignment-1",
               "label": "Assignment 1",
-              "rawMax": 10
+              "rawMax": 10,
+              "weightage": 20
             }
           ],
+          "policyContext": {
+            "ce": 60,
+            "see": 40,
+            "maxTermTests": 2,
+            "maxQuizzes": 2,
+            "maxAssignments": 2
+          },
           "status": "Needs Setup"
         }
       },

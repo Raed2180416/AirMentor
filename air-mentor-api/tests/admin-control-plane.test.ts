@@ -27,8 +27,8 @@ describe('admin control plane routes', () => {
       url: '/api/admin/offering-ownership',
       headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
       payload: {
-        offeringId: 'c3-A',
-        facultyId: 't2',
+        offeringId: 'c6-A',
+        facultyId: 't1',
         ownershipRole: 'owner',
         status: 'active',
       },
@@ -522,7 +522,7 @@ describe('admin control plane routes', () => {
       headers: { cookie: adminLogin.cookie },
     })
     expect(offeringsResponse.statusCode).toBe(200)
-    const offering = offeringsResponse.json().items.find((item: { code: string }) => item.code === 'CS401') ?? offeringsResponse.json().items[0]
+    const offering = offeringsResponse.json().items.find((item: { offId: string }) => item.offId === 'c3-A') ?? offeringsResponse.json().items[0]
     expect(offering).toBeTruthy()
 
     const template = {
