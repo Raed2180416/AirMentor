@@ -26,7 +26,7 @@ export function HodView({
       const offerings = faculty.offeringIds
         .map(offId => OFFERINGS.find(offering => offering.offId === offId))
         .filter((offering): offering is Offering => !!offering)
-      const students = offerings.reduce((acc, offering) => acc + offering.count, 0)
+      const students = offerings.reduce((acc, offering) => acc + getStudentsPatched(offering).length, 0)
       const highRisk = offerings.reduce((acc, offering) => acc + getStudentsPatched(offering).filter(student => student.riskBand === 'High').length, 0)
       const averageAttendance = offerings.length > 0 ? Math.round(offerings.reduce((acc, offering) => acc + getOfferingAttendancePatched(offering), 0) / offerings.length) : 0
       const lockChecks = offerings.flatMap(offering => [offering.tt1Locked ? 1 : 0, offering.tt2Locked ? 1 : 0, offering.quizLocked ? 1 : 0, offering.asgnLocked ? 1 : 0])
@@ -92,7 +92,7 @@ export function HodView({
       .slice(0, 8)
   }, [calendarAuditEvents, selectedTeacher])
 
-  const totalStudents = OFFERINGS.reduce((acc, offering) => acc + offering.count, 0)
+  const totalStudents = OFFERINGS.reduce((acc, offering) => acc + getStudentsPatched(offering).length, 0)
   const totalHighRisk = OFFERINGS.reduce((acc, offering) => acc + getStudentsPatched(offering).filter(student => student.riskBand === 'High').length, 0)
   const averageAttendance = OFFERINGS.length > 0 ? Math.round(OFFERINGS.reduce((acc, offering) => acc + getOfferingAttendancePatched(offering), 0) / OFFERINGS.length) : 0
 

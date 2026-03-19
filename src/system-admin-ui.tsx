@@ -394,13 +394,14 @@ export function EntityButton({ selected, onClick, children, style: extraStyle }:
         border: `1px solid ${selected ? withAlpha(T.accent, '50') : T.border}`,
         background: selected ? `linear-gradient(180deg, ${withAlpha(T.accent, '18')}, ${T.surface})` : `linear-gradient(180deg, ${T.surface}, ${T.surface2})`,
         padding: '14px 15px',
-        minHeight: 92,
+        minHeight: 84,
         display: 'grid',
         alignContent: 'start',
         gap: 6,
         cursor: 'pointer',
         width: '100%',
         boxShadow: selected ? `0 14px 28px ${withAlpha(T.accent, '14')}` : undefined,
+        transition: 'background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease',
         ...extraStyle,
       }}
     >

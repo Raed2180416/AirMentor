@@ -499,6 +499,7 @@ export function SystemAdminFacultyCalendarWorkspace({
           editableOverride={!classEditingLocked}
           canOpenCourseWorkspaceOverride={false}
           allowTaskCreation={false}
+          calendarModeLayout="month-only"
           onBack={() => {}}
           onScheduleTask={() => {}}
           onUpdateMeeting={() => {}}

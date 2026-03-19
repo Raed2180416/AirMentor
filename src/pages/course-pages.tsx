@@ -139,9 +139,9 @@ export function CourseDetail({
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={tab}
-            initial={shouldReduceMotion ? false : { opacity: 0, y: 12 }}
-            animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0 }}
-            exit={shouldReduceMotion ? undefined : { opacity: 0, y: -8 }}
+            initial={shouldReduceMotion ? false : { opacity: 0 }}
+            animate={shouldReduceMotion ? undefined : { opacity: 1 }}
+            exit={shouldReduceMotion ? undefined : { opacity: 0 }}
             transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.24, ease: 'easeOut' }}
           >
             {activeTabContent}
@@ -195,7 +195,7 @@ function OverviewTab({ offering, cos, students, setTab }: { offering: Offering; 
           <Card>
             <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 12 }}>Class Health</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              {[{ label: 'Enrolled', value: offering.count, color: T.accent }, { label: 'Good (≥75%)', value: good, color: T.success }, { label: 'At Risk (<75%)', value: atRisk, color: T.warning }, { label: 'Detained (<65%)', value: detained, color: T.danger }].map(metric => (
+              {[{ label: 'Enrolled', value: students.length, color: T.accent }, { label: 'Good (≥75%)', value: good, color: T.success }, { label: 'At Risk (<75%)', value: atRisk, color: T.warning }, { label: 'Detained (<65%)', value: detained, color: T.danger }].map(metric => (
                 <div key={metric.label} style={{ background: T.surface2, borderRadius: 7, padding: '10px 12px', border: `1px solid ${metric.color}18` }}>
                   <div style={{ ...sora, fontWeight: 800, fontSize: 20, color: metric.color }}>{metric.value}</div>
                   <div style={{ ...mono, fontSize: 9, color: T.muted }}>{metric.label}</div>
@@ -325,7 +325,7 @@ function RiskTab({ offering, students, onOpenStudent }: { offering: Offering; st
   )
 }
 
-function AttendanceTab({ offering, students, onOpenStudent, onOpenEntryHub }: { offering: Offering; students: Student[]; onOpenStudent: (student: Student) => void; onOpenEntryHub: () => void }) {
+function AttendanceTab({ offering: _offering, students, onOpenStudent, onOpenEntryHub }: { offering: Offering; students: Student[]; onOpenStudent: (student: Student) => void; onOpenEntryHub: () => void }) {
   const sorted = [...students].sort((left, right) => left.present / left.totalClasses - right.present / right.totalClasses)
   const stats = {
     good: students.filter(student => student.present / student.totalClasses >= 0.75).length,
@@ -339,7 +339,7 @@ function AttendanceTab({ offering, students, onOpenStudent, onOpenEntryHub }: { 
   return (
     <div style={{ padding: '24px 32px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <div style={{ ...sora, fontWeight: 700, fontSize: 17, color: T.text }}>Attendance Register — {offering.count} students</div>
+        <div style={{ ...sora, fontWeight: 700, fontSize: 17, color: T.text }}>Attendance Register — {students.length} students</div>
         <Btn size="sm" onClick={onOpenEntryHub}>Enter Attendance via Data Entry Hub →</Btn>
       </div>
       <div style={{ display: 'flex', gap: 12, marginBottom: 18 }}>

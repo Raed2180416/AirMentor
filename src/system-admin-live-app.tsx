@@ -821,6 +821,8 @@ function TeachingShellAdminTopBar({
   now,
   themeMode,
   actionCount,
+  canNavigateBack,
+  onNavigateBack,
   onToggleTheme,
   onGoHome,
   onToggleQueue,
@@ -833,6 +835,8 @@ function TeachingShellAdminTopBar({
   now: Date
   themeMode: ThemeMode
   actionCount: number
+  canNavigateBack: boolean
+  onNavigateBack: () => void
   onToggleTheme: () => void
   onGoHome: () => void
   onToggleQueue: () => void
@@ -860,6 +864,12 @@ function TeachingShellAdminTopBar({
         </div>
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {canNavigateBack ? (
+            <button type="button" aria-label="Go back" title="Go back" onClick={onNavigateBack} style={{ ...getIconButtonStyle({ subtle: true }), width: 'auto', padding: '0 12px', color: T.muted, ...mono, fontSize: UI_FONT_SIZES.eyebrow, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <ChevronLeft size={14} />
+              Back
+            </button>
+          ) : null}
           <div style={{ ...getIconButtonStyle({ subtle: false }), width: 'auto', padding: '0 12px', ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: T.dim, display: 'flex', alignItems: 'center', gap: 6 }}>
             <Clock3 size={12} />
             {formatClockLabel(now)}
@@ -1048,7 +1058,7 @@ function SectionLaunchCard({
       onClick={onClick}
       style={{
         padding: 22,
-        minHeight: 220,
+        minHeight: 196,
         background: active
           ? `linear-gradient(160deg, ${withAlpha(tone, '20')}, ${T.surface})`
           : `linear-gradient(160deg, ${T.surface}, ${T.surface2})`,
@@ -1090,7 +1100,7 @@ function OverviewSupportCard({
       onClick={onClick}
       style={{
         padding: 18,
-        minHeight: 160,
+        minHeight: 148,
         display: 'grid',
         alignContent: 'space-between',
         background: `linear-gradient(180deg, ${withAlpha(tone, '10')}, ${T.surface})`,
@@ -1148,7 +1158,7 @@ function AdminDetailTabs({
   onChange: (tabId: string) => void
 }) {
   return (
-    <div style={{ ...getSegmentedGroupStyle(), flexWrap: 'wrap', width: '100%' }}>
+    <div style={{ ...getSegmentedGroupStyle(), flexWrap: 'wrap', width: 'fit-content', maxWidth: '100%', alignItems: 'center', justifyContent: 'flex-start', rowGap: 6 }}>
       {tabs.map(tab => (
         <button
           key={tab.id}
@@ -1159,20 +1169,19 @@ function AdminDetailTabs({
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 10,
-            minWidth: 156,
-            flex: '1 1 156px',
+            justifyContent: 'flex-start',
+            gap: 8,
+            minWidth: 0,
+            maxWidth: '100%',
+            flex: '0 0 auto',
             textAlign: 'left',
+            alignSelf: 'flex-start',
             ...getSegmentedButtonStyle({ active: activeTab === tab.id, disabled: tab.disabled, compact: true }),
           }}
         >
           <span style={{ ...sora, fontSize: 12, fontWeight: 700 }}>{tab.label}</span>
-          <span style={{ minWidth: 34, display: 'inline-flex', justifyContent: 'flex-end' }}>
-            {tab.count != null
-              ? <Chip color={activeTab === tab.id ? T.accent : T.dim} size={8}>{String(tab.count)}</Chip>
-              : <span style={{ ...mono, fontSize: 9, color: T.dim }}>{tab.disabled ? 'Locked' : ''}</span>}
-          </span>
+          {tab.count != null ? <Chip color={activeTab === tab.id ? T.accent : T.dim} size={8}>{String(tab.count)}</Chip> : null}
+          {tab.disabled && tab.count == null ? <span style={{ ...mono, fontSize: 9, color: T.dim }}>Locked</span> : null}
         </button>
       ))}
     </div>
@@ -1222,7 +1231,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const [universityTab, setUniversityTab] = useState<UniversityTab>('overview')
   const [selectedSectionCode, setSelectedSectionCode] = useState<string | null>(null)
   const [route, setRoute] = useState<LiveAdminRoute>(() => parseAdminRoute(typeof window === 'undefined' ? '' : window.location.hash))
-  const [, setRouteHistory] = useState<AdminWorkspaceSnapshot[]>([])
+  const [routeHistory, setRouteHistory] = useState<AdminWorkspaceSnapshot[]>([])
   const [registryScope, setRegistryScope] = useState<UniversityScopeState | null>(null)
   const [studentRegistryFilter, setStudentRegistryFilter] = useState<RegistryFilterState>(() => defaultRegistryFilter())
   const [facultyRegistryFilter, setFacultyRegistryFilter] = useState<RegistryFilterState>(() => defaultRegistryFilter())
@@ -1368,6 +1377,24 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     navigate({ section: 'overview' }, { recordHistory: false })
     if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [clearRegistryScope, clearRouteHistory, navigate, updateSelectedSectionCode, updateUniversityTab])
+
+  const handleNavigateBack = useCallback(() => {
+    const nextHistory = [...routeHistory]
+    const previous = nextHistory.pop()
+    if (!previous) {
+      handleGoHome()
+      return
+    }
+    setRouteHistory(nextHistory)
+    pendingScrollRestoreRef.current = previous.scrollY
+    setRoute(previous.route)
+    setUniversityTab(previous.universityTab)
+    setSelectedSectionCode(previous.selectedSectionCode)
+    if (typeof window !== 'undefined') {
+      const nextHash = routeToHash(previous.route)
+      if (window.location.hash !== nextHash) window.location.hash = nextHash
+    }
+  }, [handleGoHome, routeHistory])
 
   const loadAdminData = useCallback(async () => {
     if (!session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') return
@@ -3351,7 +3378,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     : []
   const showInlineActionQueue = showActionQueue && viewportWidth >= 1480
   const registryIsSingleColumn = viewportWidth < 1180
-  const registryPageColumns = viewportWidth < 1180 ? 'minmax(0, 1fr)' : 'minmax(360px, 460px) minmax(0, 1fr)'
+  const registryPageColumns = viewportWidth < 1180 ? 'minmax(0, 1fr)' : 'minmax(320px, 420px) minmax(0, 1fr)'
   const universityWorkspaceColumns = viewportWidth < 1220 ? 'minmax(0, 1fr)' : '260px minmax(0, 1fr)'
   const registryFilterColumns = viewportWidth < 760
     ? 'minmax(0, 1fr)'
@@ -3698,6 +3725,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     }
     navigate({ section })
   }
+  const canNavigateBack = routeHistory.length > 0
 
   // --- Main workspace ---
   return (
@@ -3709,6 +3737,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         now={now}
         themeMode={themeMode}
         actionCount={actionQueueCount}
+        canNavigateBack={canNavigateBack}
+        onNavigateBack={handleNavigateBack}
         onToggleTheme={() => persistTheme(themeMode === 'frosted-focus-light' ? 'frosted-focus-dark' : 'frosted-focus-light')}
         onGoHome={handleGoHome}
         onToggleQueue={() => setShowActionQueue(current => !current)}
@@ -3763,6 +3793,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       />
 
       <div style={{ flex: 1, minWidth: 0, display: 'grid', gridTemplateColumns: showInlineActionQueue ? 'minmax(0,1fr) 320px' : 'minmax(0,1fr)', gap: 0, alignItems: 'start' }}>
+      <motion.div
+        key={`${routeToHash(route)}::${universityTab}::${selectedSectionCode ?? ''}`}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.2, ease: 'easeOut' }}
+        style={{ minWidth: 0 }}
+      >
       <PageShell size="wide" style={{ display: 'grid', gap: 18, paddingTop: 22, paddingBottom: 34, maxWidth: '100%', paddingLeft: viewportWidth < 720 ? 14 : 22, paddingRight: viewportWidth < 720 ? 14 : 22 }}>
         {flashMessage ? <InfoBanner tone="success" message={flashMessage} /> : null}
         {actionError ? <InfoBanner tone="error" message={actionError} /> : null}
@@ -5771,6 +5808,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
         {dataLoading ? <InfoBanner message="Refreshing live admin data…" /> : null}
       </PageShell>
+      </motion.div>
       <AnimatePresence initial={false}>
       {showInlineActionQueue ? (
         <motion.div

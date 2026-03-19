@@ -441,7 +441,7 @@ export function UploadPage({
   availableOfferings?: Offering[]
   onOpenSchemeSetup: (offering?: Offering) => void
 }) {
-  const { getOfferingAttendancePatched, getSchemeForOffering } = useAppSelectors()
+  const { getOfferingAttendancePatched, getSchemeForOffering, getStudentsPatched } = useAppSelectors()
   const visibleOfferings = (availableOfferings && availableOfferings.length > 0 ? availableOfferings : OFFERINGS)
   const [selectedKind, setSelectedKind] = useState<EntryKind>(defaultKind)
   const [selectedOffId, setSelectedOffId] = useState<string>(offering?.offId ?? visibleOfferings[0].offId)
@@ -504,7 +504,7 @@ export function UploadPage({
         <div>
           <label htmlFor="entry-class-select" style={{ ...mono, fontSize: 10, color: T.muted, marginRight: 8 }}>Class:</label>
           <select id="entry-class-select" aria-label="Select class" title="Select class" value={selectedOffId} onChange={event => setSelectedOffId(event.target.value)} style={{ width: '100%', ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 10px' }}>
-            {classOfferings.map(item => <option key={item.offId} value={item.offId}>{item.year} · Sec {item.section} · {item.count} students</option>)}
+            {classOfferings.map(item => <option key={item.offId} value={item.offId}>{item.year} · Sec {item.section} · {getStudentsPatched(item).length} students</option>)}
           </select>
         </div>
         <Btn size="sm" onClick={() => setSelectedOffId(selectedOffId)}>Select Class</Btn>
@@ -621,7 +621,7 @@ export function EntryWorkspacePage({
           <label htmlFor="entry-workspace-class" style={{ ...mono, fontSize: 10, color: T.muted, display: 'block', marginBottom: 4 }}>Class</label>
           <select id="entry-workspace-class" value={selectedClassOffId} onChange={event => setSelectedClassOffId(event.target.value)} style={{ width: '100%', ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
             <option value="all">All mapped classes for {selectedOffering.code}</option>
-            {groupedSections.map(section => <option key={section.offId} value={section.offId}>{section.year} · Sec {section.section} · {section.count} students</option>)}
+            {groupedSections.map(section => <option key={section.offId} value={section.offId}>{section.year} · Sec {section.section} · {getStudentsPatched(section).length} students</option>)}
           </select>
         </div>
       </div>

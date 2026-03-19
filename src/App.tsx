@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import {
   CO_COLORS, T, mono, sora, yearColor,
-  PROFESSOR, OFFERINGS, YEAR_GROUPS, PAPER_MAP,
+  OFFERINGS, YEAR_GROUPS, PAPER_MAP,
   FACULTY, generateTasks, MENTEES, getStudentHistoryRecord, hydrateAcademicData,
   type Offering, type Student, type YearGroup,
   type Mentee, type StudentHistoryRecord,
@@ -868,7 +868,7 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
               </div>
               <FieldSelect aria-label="Select class" value={activeSelectedOffId} onChange={e => { setSelectedOffId(e.target.value); setQuery('') }} style={denseFieldStyle}>
                 <option value="">Select class</option>
-                {classOfferings.map(offering => <option key={offering.offId} value={offering.offId}>{offering.code} · {offering.year} · Sec {offering.section} · {offering.count} students</option>)}
+                {classOfferings.map(offering => <option key={offering.offId} value={offering.offId}>{offering.code} · {offering.year} · Sec {offering.section} · {getStudentsPatched(offering).length} students</option>)}
               </FieldSelect>
               <FieldInput aria-label="Search student" placeholder="Search student / USN" value={query} onChange={e => setQuery(e.target.value)} style={denseFieldStyle} />
               {query.trim() !== '' && <div className="scroll-pane scroll-pane--dense" style={{ minHeight: 96, maxHeight: 140, overflowY: 'auto', border: `1px solid ${T.border2}`, borderRadius: 14, background: T.surface2 }}>
@@ -1485,9 +1485,9 @@ function ActionQueue({ role, tasks, resolvedTaskIds, onResolveTask, onUndoTask, 
    COURSE LEADER: DASHBOARD
    ══════════════════════════════════════════════════════════════ */
 
-function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent, onOpenUpload, onOpenCalendar, onOpenPendingActions, teacherInitials, greetingHeadline, greetingMeta }: { offerings: Offering[]; pendingTaskCount: number; onOpenCourse: (o: Offering) => void; onOpenStudent: (s: Student, o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void; onOpenCalendar: () => void; onOpenPendingActions: () => void; teacherInitials: string; greetingHeadline: string; greetingMeta: string }) {
+function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent, onOpenUpload, onOpenCalendar, onOpenPendingActions, teacherInitials, greetingHeadline, greetingMeta, greetingSubline }: { offerings: Offering[]; pendingTaskCount: number; onOpenCourse: (o: Offering) => void; onOpenStudent: (s: Student, o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void; onOpenCalendar: () => void; onOpenPendingActions: () => void; teacherInitials: string; greetingHeadline: string; greetingMeta: string; greetingSubline: string }) {
   const { getStudentsPatched } = useAppSelectors()
-  const total = offerings.reduce((a, o) => a + o.count, 0)
+  const total = offerings.reduce((a, o) => a + getStudentsPatched(o).length, 0)
   const allAtRisk = useMemo(() => offerings.flatMap(o => getStudentsPatched(o)), [getStudentsPatched, offerings])
   const highRiskStudents = useMemo(() => allAtRisk.filter(s => s.riskBand === 'High'), [allAtRisk])
   const highRiskCount = allAtRisk.filter(s => s.riskBand === 'High').length
@@ -1505,7 +1505,7 @@ function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent,
         <div style={{ width: 50, height: 50, borderRadius: 14, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 18, color: '#fff' }}>{teacherInitials}</div>
         <div>
           <div style={{ ...sora, fontWeight: 700, fontSize: 18, color: T.text }}>{greetingHeadline}</div>
-          <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 2 }}>{PROFESSOR.dept} · {PROFESSOR.role}</div>
+          <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 2 }}>{greetingSubline}</div>
           <div style={{ ...mono, fontSize: 10, color: T.accent, marginTop: 3 }}>{greetingMeta}</div>
         </div>
         <div style={{ marginLeft: 'auto' }}>
@@ -1578,7 +1578,7 @@ function YearSection({ group, onOpenCourse, onOpenUpload }: { group: YearGroup; 
   const { getStudentsPatched, getOfferingAttendancePatched } = useAppSelectors()
   const { year, color, stageInfo, offerings } = group
   const [collapsed, setCollapsed] = useState(false)
-  const totalStudents = offerings.reduce((a, o) => a + o.count, 0)
+  const totalStudents = offerings.reduce((a, o) => a + getStudentsPatched(o).length, 0)
   const avgAtt = Math.round(offerings.reduce((a, o) => a + getOfferingAttendancePatched(o), 0) / (offerings.length || 1))
   const highRiskCount = offerings.filter(o => o.stage >= 2).reduce((a, o) => a + getStudentsPatched(o).filter(s => s.riskBand === 'High').length, 0)
   const pendingCount = offerings.filter(o => o.pendingAction).length
@@ -1608,6 +1608,7 @@ function OfferingCard({ o, yc, onOpen, onOpenUpload }: { o: Offering; yc: string
   const sc = o.stageInfo.color
   const avgAtt = getOfferingAttendancePatched(o)
   const ac = avgAtt >= 75 ? T.success : avgAtt >= 65 ? T.warning : T.danger
+  const studentCount = getStudentsPatched(o).length
   const checks = [o.tt1Done, o.tt2Done, avgAtt >= 75]
   const highRisk = o.stage >= 2 ? getStudentsPatched(o).filter(s => s.riskBand === 'High').length : 0
 
@@ -1622,7 +1623,7 @@ function OfferingCard({ o, yc, onOpen, onOpenUpload }: { o: Offering; yc: string
         <Chip color={sc} size={10}>{o.stageInfo.label}</Chip>
       </div>
       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 10 }}>
-        <Chip color={T.dim} size={9}>{o.count} students</Chip>
+        <Chip color={T.dim} size={9}>{studentCount} students</Chip>
         <Chip color={ac} size={9}>{avgAtt}% att</Chip>
         {highRisk > 0 && <Chip color={T.danger} size={9}>🔴 {highRisk} at risk</Chip>}
       </div>
@@ -2263,12 +2264,18 @@ function OperationalWorkspace({
   loadFacultyProfile,
   academicBootstrap = null,
 }: OperationalWorkspaceProps) {
+  const facultyAccounts = academicBootstrap?.faculty ?? FACULTY
+  const allOfferings = academicBootstrap?.offerings ?? OFFERINGS
+  const allYearGroups = academicBootstrap?.yearGroups ?? YEAR_GROUPS
+  const allMentees = academicBootstrap?.mentees ?? MENTEES
+  const studentsByOffering = academicBootstrap?.studentsByOffering
+  const defaultOffering = allOfferings[0] ?? null
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => repositories.sessionPreferences.getThemeSnapshot() ?? normalizeThemeMode(null))
   const [isCompactTopbar, setIsCompactTopbar] = useState(() => window.innerWidth < 980)
   const [showTopbarMenu, setShowTopbarMenu] = useState(false)
   const [now, setNow] = useState(() => new Date())
   const [currentTeacherId, setCurrentTeacherId] = useState<string | null>(initialTeacherId)
-  const currentTeacher = useMemo<FacultyAccount | null>(() => currentTeacherId ? (FACULTY.find(faculty => faculty.facultyId === currentTeacherId) ?? null) : null, [currentTeacherId])
+  const currentTeacher = useMemo<FacultyAccount | null>(() => currentTeacherId ? (facultyAccounts.find(faculty => faculty.facultyId === currentTeacherId) ?? null) : null, [currentTeacherId, facultyAccounts])
   const [role, setRole] = useState<Role>(initialRole)
   const [page, setPage] = useState<PageId>(() => getHomePage(initialRole))
   const [offering, setOffering] = useState<Offering | null>(null)
@@ -2284,7 +2291,7 @@ function OperationalWorkspace({
   const actionQueueRef = useRef<HTMLDivElement | null>(null)
   const [uploadOffering, setUploadOffering] = useState<Offering | null>(null)
   const [uploadKind, setUploadKind] = useState<EntryKind>('tt1')
-  const [entryOfferingId, setEntryOfferingId] = useState<string>(OFFERINGS[0].offId)
+  const [entryOfferingId, setEntryOfferingId] = useState<string>(defaultOffering?.offId ?? '')
   const [entryKind, setEntryKind] = useState<EntryKind>('tt1')
   const [courseInitialTab, setCourseInitialTab] = useState<string | undefined>(undefined)
   const [routeHistory, setRouteHistory] = useState<RouteSnapshot[]>([])
@@ -2296,10 +2303,10 @@ function OperationalWorkspace({
   const [facultyProfileLoading, setFacultyProfileLoading] = useState(false)
   const [facultyProfileError, setFacultyProfileError] = useState('')
   const [studentPatches, setStudentPatches] = useState<Record<string, StudentRuntimePatch>>(() => repositories.entryData.getStudentPatchesSnapshot())
-  const [schemeByOffering, setSchemeByOffering] = useState<Record<string, SchemeState>>(() => repositories.entryData.getSchemeStateSnapshot(OFFERINGS))
-  const [ttBlueprintsByOffering, setTtBlueprintsByOffering] = useState<Record<string, Record<TTKind, TermTestBlueprint>>>(() => repositories.entryData.getBlueprintSnapshot(OFFERINGS))
+  const [schemeByOffering, setSchemeByOffering] = useState<Record<string, SchemeState>>(() => repositories.entryData.getSchemeStateSnapshot(allOfferings))
+  const [ttBlueprintsByOffering, setTtBlueprintsByOffering] = useState<Record<string, Record<TTKind, TermTestBlueprint>>>(() => repositories.entryData.getBlueprintSnapshot(allOfferings))
   const [lockAuditByTarget, setLockAuditByTarget] = useState<Record<string, QueueTransition[]>>(() => repositories.locksAudit.getLockAuditSnapshot())
-  const selectors = useMemo(() => createAppSelectors({ studentPatches, schemeByOffering, ttBlueprintsByOffering }), [schemeByOffering, studentPatches, ttBlueprintsByOffering])
+  const selectors = useMemo(() => createAppSelectors({ studentPatches, schemeByOffering, ttBlueprintsByOffering, studentsByOffering }), [schemeByOffering, studentPatches, studentsByOffering, ttBlueprintsByOffering])
   const { getStudentsPatched } = selectors
 
   const allowedRoles = useMemo(() => (currentTeacher?.allowedRoles ?? []).filter(candidate => String(candidate) !== 'SYSTEM_ADMIN'), [currentTeacher])
@@ -2354,18 +2361,24 @@ function OperationalWorkspace({
     canApproveUnlock: role === 'HoD',
     canEditMarks: role === 'Course Leader',
   }), [role])
+  const profileOwnedOfferingIds = useMemo(() => new Set(facultyProfile?.currentOwnedClasses.map(item => item.offeringId) ?? []), [facultyProfile])
   const assignedOfferings = useMemo(() => {
-    if (!currentTeacher) return OFFERINGS
-    if (role === 'HoD') return OFFERINGS
-    return OFFERINGS.filter(o => currentTeacher.courseCodes.includes(o.code))
-  }, [currentTeacher, role])
+    if (!currentTeacher) return []
+    if (role === 'HoD') return allOfferings
+    if (facultyProfileLoading) return []
+    if (facultyProfile) {
+      return profileOwnedOfferingIds.size > 0 ? allOfferings.filter(item => profileOwnedOfferingIds.has(item.offId)) : []
+    }
+    const ownedOfferingIds = new Set(currentTeacher.offeringIds ?? [])
+    return ownedOfferingIds.size > 0 ? allOfferings.filter(item => ownedOfferingIds.has(item.offId)) : []
+  }, [allOfferings, currentTeacher, facultyProfile, facultyProfileLoading, profileOwnedOfferingIds, role])
   const assignedMentees = useMemo(() => {
-    if (!currentTeacher) return MENTEES
+    if (!currentTeacher) return allMentees
     const ids = new Set(currentTeacher.menteeIds)
-    return MENTEES.filter(m => ids.has(m.id))
-  }, [currentTeacher])
+    return allMentees.filter(m => ids.has(m.id))
+  }, [allMentees, currentTeacher])
 
-  const [lockByOffering, setLockByOffering] = useState<Record<string, EntryLockMap>>(() => repositories.locksAudit.getLockSnapshot(OFFERINGS))
+  const [lockByOffering, setLockByOffering] = useState<Record<string, EntryLockMap>>(() => repositories.locksAudit.getLockSnapshot(allOfferings))
   const [draftBySection, setDraftBySection] = useState<Record<string, number>>(() => repositories.entryData.getDraftSnapshot())
   const [cellValues, setCellValues] = useState<Record<string, number>>(() => repositories.entryData.getCellValueSnapshot())
   const [allTasksList, setAllTasksList] = useState<SharedTask[]>(() => repositories.tasks.getTasksSnapshot(() => {
@@ -2377,7 +2390,7 @@ function OperationalWorkspace({
       assignedTo: 'Course Leader',
       transitionHistory: [createTransition({ action: 'Created from automatic high-risk trigger', actorRole: 'Auto', toOwner: 'Course Leader', note: 'Student crossed automatic academic-risk threshold.' })],
     }))
-    const mentorTasks: SharedTask[] = MENTEES
+    const mentorTasks: SharedTask[] = allMentees
       .filter(m => m.avs >= 0.5)
       .slice(0, 8)
       .map((m, i) => ({
@@ -2402,8 +2415,8 @@ function OperationalWorkspace({
         assignedTo: 'Mentor',
         transitionHistory: [createTransition({ action: 'Created from mentor vulnerability watchlist', actorRole: 'Auto', toOwner: 'Mentor', note: 'Seeded mentor queue item for mock walkthrough.' })],
       }))
-    const cs401A = OFFERINGS.find(item => item.code === 'CS401' && item.section === 'A') ?? OFFERINGS[0]
-    const cs403C = OFFERINGS.find(item => item.code === 'CS403' && item.section === 'C') ?? OFFERINGS[0]
+    const cs401A = allOfferings.find(item => item.code === 'CS401' && item.section === 'A') ?? defaultOffering ?? allOfferings[0]
+    const cs403C = allOfferings.find(item => item.code === 'CS403' && item.section === 'C') ?? defaultOffering ?? allOfferings[0]
     const overdueRemedial: SharedTask = {
       id: 'seed-remedial-overdue-m1',
       studentId: 'm1',
@@ -2527,26 +2540,26 @@ function OperationalWorkspace({
     return [...courseLeaderTasks, overdueRemedial, pendingUnlockTask, rejectedUnlockTask, ...mentorTasks]
   }))
   const [resolvedTasks, setResolvedTasks] = useState<Record<string, number>>(() => repositories.tasks.getResolvedTasksSnapshot({ 'seed-unlock-rejected-cs403c-tt1': Date.now() - 43_200_000 }))
-  const [timetableByFacultyId, setTimetableByFacultyId] = useState<Record<string, FacultyTimetableTemplate>>(() => repositories.calendar.getTimetableTemplatesSnapshot(FACULTY, OFFERINGS))
+  const [timetableByFacultyId, setTimetableByFacultyId] = useState<Record<string, FacultyTimetableTemplate>>(() => repositories.calendar.getTimetableTemplatesSnapshot(facultyAccounts, allOfferings))
   const [taskPlacements, setTaskPlacements] = useState<Record<string, TaskCalendarPlacement>>(() => repositories.calendar.getTaskPlacementsSnapshot())
   const [calendarAuditEvents, setCalendarAuditEvents] = useState<CalendarAuditEvent[]>(() => repositories.calendar.getCalendarAuditSnapshot())
   const [academicMeetings, setAcademicMeetings] = useState<AcademicMeeting[]>(() => repositories.calendar.getMeetingsSnapshot())
 
   useEffect(() => {
     setStudentPatches(repositories.entryData.getStudentPatchesSnapshot())
-    setSchemeByOffering(repositories.entryData.getSchemeStateSnapshot(OFFERINGS))
-    setTtBlueprintsByOffering(repositories.entryData.getBlueprintSnapshot(OFFERINGS))
+    setSchemeByOffering(repositories.entryData.getSchemeStateSnapshot(allOfferings))
+    setTtBlueprintsByOffering(repositories.entryData.getBlueprintSnapshot(allOfferings))
     setLockAuditByTarget(repositories.locksAudit.getLockAuditSnapshot())
-    setLockByOffering(repositories.locksAudit.getLockSnapshot(OFFERINGS))
+    setLockByOffering(repositories.locksAudit.getLockSnapshot(allOfferings))
     setDraftBySection(repositories.entryData.getDraftSnapshot())
     setCellValues(repositories.entryData.getCellValueSnapshot())
     setAllTasksList(repositories.tasks.getTasksSnapshot(() => []))
     setResolvedTasks(repositories.tasks.getResolvedTasksSnapshot({}))
-    setTimetableByFacultyId(repositories.calendar.getTimetableTemplatesSnapshot(FACULTY, OFFERINGS))
+    setTimetableByFacultyId(repositories.calendar.getTimetableTemplatesSnapshot(facultyAccounts, allOfferings))
     setTaskPlacements(repositories.calendar.getTaskPlacementsSnapshot())
     setCalendarAuditEvents(repositories.calendar.getCalendarAuditSnapshot())
     setAcademicMeetings(repositories.calendar.getMeetingsSnapshot())
-  }, [repositories])
+  }, [allOfferings, facultyAccounts, repositories])
 
   useEffect(() => { void repositories.locksAudit.saveLocks(lockByOffering) }, [lockByOffering, repositories])
   useEffect(() => { void repositories.entryData.saveDrafts(draftBySection) }, [draftBySection, repositories])
@@ -2564,15 +2577,23 @@ function OperationalWorkspace({
   const supervisedOfferingIds = useMemo(() => new Set(assignedOfferings.map(o => o.offId)), [assignedOfferings])
   const supervisedMenteeIds = useMemo(() => new Set(assignedMentees.map(m => m.id)), [assignedMentees])
   const supervisedMenteeUsns = useMemo(() => new Set(assignedMentees.map(m => m.usn)), [assignedMentees])
-  const calendarOfferingIds = useMemo(() => new Set(currentTeacher?.offeringIds ?? []), [currentTeacher])
+  const calendarOfferingIds = useMemo(() => new Set(assignedOfferings.map(item => item.offId)), [assignedOfferings])
   const calendarMenteeIds = useMemo(() => new Set(currentTeacher?.menteeIds ?? []), [currentTeacher])
   const calendarMenteeUsns = useMemo(() => new Set(
-    MENTEES
+    allMentees
       .filter(mentee => calendarMenteeIds.has(mentee.id))
       .map(mentee => mentee.usn),
-  ), [calendarMenteeIds])
-  const calendarOfferings = useMemo(() => OFFERINGS.filter(item => calendarOfferingIds.has(item.offId)), [calendarOfferingIds])
+  ), [allMentees, calendarMenteeIds])
+  const calendarOfferings = useMemo(() => allOfferings.filter(item => calendarOfferingIds.has(item.offId)), [allOfferings, calendarOfferingIds])
   const currentFacultyTimetable = useMemo(() => currentTeacher ? (timetableByFacultyId[currentTeacher.facultyId] ?? null) : null, [currentTeacher, timetableByFacultyId])
+  const filteredCurrentFacultyTimetable = useMemo(() => {
+    if (!currentFacultyTimetable) return null
+    if (role === 'HoD') return currentFacultyTimetable
+    return {
+      ...currentFacultyTimetable,
+      classBlocks: currentFacultyTimetable.classBlocks.filter(block => calendarOfferingIds.has(block.offeringId)),
+    }
+  }, [calendarOfferingIds, currentFacultyTimetable, role])
   const currentFacultyCalendarMarkers = useMemo(
     () => currentTeacher
       ? (academicBootstrap?.runtime.adminCalendarByFacultyId?.[currentTeacher.facultyId]?.markers ?? [])
@@ -2606,13 +2627,13 @@ function OperationalWorkspace({
         tt2: normalizeBlueprint('tt2', backendBlueprints.tt2),
       }
     }
-    const sourceOffering = OFFERINGS.find(item => item.offId === offeringId) ?? OFFERINGS[0]
-    const basePaper = PAPER_MAP[sourceOffering?.code ?? OFFERINGS[0].code] || PAPER_MAP.default
+    const sourceOffering = allOfferings.find(item => item.offId === offeringId) ?? defaultOffering
+    const basePaper = PAPER_MAP[sourceOffering?.code ?? defaultOffering?.code ?? 'default'] || PAPER_MAP.default
     return {
       tt1: seedBlueprintFromPaper('tt1', basePaper),
       tt2: seedBlueprintFromPaper('tt2', basePaper),
     }
-  }, [academicBootstrap])
+  }, [academicBootstrap, allOfferings, defaultOffering])
 
   const roleTasks = useMemo(() => {
     const base = allTasksList.filter(t => t.assignedTo === role)
@@ -2637,11 +2658,11 @@ function OperationalWorkspace({
   }, [cellValues, draftBySection, lockByOffering])
   const taskComposerOfferings = useMemo(() => {
     if (taskComposer.availableOfferingIds && taskComposer.availableOfferingIds.length > 0) {
-      return OFFERINGS.filter(item => taskComposer.availableOfferingIds?.includes(item.offId))
+      return allOfferings.filter(item => taskComposer.availableOfferingIds?.includes(item.offId))
     }
-    return role === 'HoD' ? OFFERINGS : (assignedOfferings.length > 0 ? assignedOfferings : OFFERINGS)
-  }, [assignedOfferings, role, taskComposer.availableOfferingIds])
-  const selectedSchemeOffering = schemeOfferingId ? (OFFERINGS.find(item => item.offId === schemeOfferingId) ?? null) : null
+    return role === 'HoD' ? allOfferings : assignedOfferings
+  }, [allOfferings, assignedOfferings, role, taskComposer.availableOfferingIds])
+  const selectedSchemeOffering = schemeOfferingId ? (allOfferings.find(item => item.offId === schemeOfferingId) ?? null) : null
   const selectedUnlockTask = selectedUnlockTaskId ? (allTasksList.find(task => task.id === selectedUnlockTaskId) ?? null) : null
   const facultyGivenName = useMemo(() => {
     const rawName = currentTeacher?.name ?? ''
@@ -2657,6 +2678,15 @@ function OperationalWorkspace({
     return `Good ${timeOfDay}, ${salutation}`
   }, [facultyGivenName, now])
   const greetingMeta = useMemo(() => `it's ${formattedCurrentTime}, here are your insights for today`, [formattedCurrentTime])
+  const greetingSubline = useMemo(() => {
+    const deptLabel = currentTeacher?.dept?.trim() || 'Faculty'
+    const roleLabel = role
+    return `${deptLabel} · ${roleLabel}`
+  }, [currentTeacher?.dept, role])
+  const sidebarYearGroups = useMemo(() => {
+    const assignedOfferingIds = new Set(assignedOfferings.map(item => item.offId))
+    return allYearGroups.filter(group => group.offerings.some(item => assignedOfferingIds.has(item.offId)))
+  }, [allYearGroups, assignedOfferings])
   const canNavigateBack = routeHistory.length > 0
     || page !== getHomePage(role)
     || !!offering
@@ -2703,19 +2733,24 @@ function OperationalWorkspace({
 
   const restoreRouteSnapshot = useCallback((snapshot: RouteSnapshot) => {
     setPage(snapshot.page)
-    setOffering(snapshot.offeringId ? (OFFERINGS.find(item => item.offId === snapshot.offeringId) ?? null) : null)
+    setOffering(snapshot.offeringId ? (allOfferings.find(item => item.offId === snapshot.offeringId) ?? null) : null)
     setSelectedStudent(null)
     setSelectedOffering(null)
-    setSelectedMentee(snapshot.selectedMenteeId ? (MENTEES.find(item => item.id === snapshot.selectedMenteeId) ?? null) : null)
+    setSelectedMentee(snapshot.selectedMenteeId ? (allMentees.find(item => item.id === snapshot.selectedMenteeId) ?? null) : null)
     setHistoryProfile(snapshot.historyProfile)
     setHistoryBackPage(snapshot.historyBackPage)
     setSelectedUnlockTaskId(snapshot.selectedUnlockTaskId)
     setSchemeOfferingId(snapshot.schemeOfferingId)
-    setUploadOffering(snapshot.uploadOfferingId ? (OFFERINGS.find(item => item.offId === snapshot.uploadOfferingId) ?? null) : null)
+    setUploadOffering(snapshot.uploadOfferingId ? (allOfferings.find(item => item.offId === snapshot.uploadOfferingId) ?? null) : null)
     setUploadKind(snapshot.uploadKind)
     setEntryOfferingId(snapshot.entryOfferingId)
     setEntryKind(snapshot.entryKind)
     setCourseInitialTab(snapshot.courseInitialTab)
+  }, [allMentees, allOfferings])
+
+  const exitToPortal = useCallback(() => {
+    if (typeof window !== 'undefined') clearPortalWorkspaceHints(window.localStorage)
+    navigateToPortal('home')
   }, [])
 
   // IMMEDIATELY apply the theme *before* rendering any components so child elements pick up the correct T colors
@@ -2782,7 +2817,7 @@ function OperationalWorkspace({
     }
     const mockTeacher = params.get('mockTeacher')
     if (mockTeacher && currentTeacherId !== mockTeacher) {
-      const mockFaculty = FACULTY.find(faculty => faculty.facultyId === mockTeacher)
+      const mockFaculty = facultyAccounts.find(faculty => faculty.facultyId === mockTeacher)
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setCurrentTeacherId(mockTeacher)
       if (mockFaculty) {
@@ -2800,11 +2835,11 @@ function OperationalWorkspace({
       return
     }
     const mockOfferingId = params.get('mockOfferingId')
-    const targetOffering = mockOfferingId ? (OFFERINGS.find(item => item.offId === mockOfferingId) ?? null) : null
+    const targetOffering = mockOfferingId ? (allOfferings.find(item => item.offId === mockOfferingId) ?? null) : null
     const mockStudentUsn = params.get('mockStudentUsn')
     const targetStudent = mockStudentUsn && targetOffering ? (getStudentsPatched(targetOffering).find(student => student.usn === mockStudentUsn) ?? null) : null
     const mockMenteeId = params.get('mockMenteeId')
-    const targetMentee = mockMenteeId ? (MENTEES.find(mentee => mentee.id === mockMenteeId) ?? null) : null
+    const targetMentee = mockMenteeId ? (allMentees.find(mentee => mentee.id === mockMenteeId) ?? null) : null
     const mockPage = params.get('mockPage') as PageId | null
     const mockTab = params.get('mockTab')
     if (targetOffering) {
@@ -2842,7 +2877,7 @@ function OperationalWorkspace({
     if (mockUnlockTaskId) setSelectedUnlockTaskId(mockUnlockTaskId)
     if (mockPage && canAccessPage(role, mockPage)) setPage(mockPage)
     auditParamsApplied.current = true
-  }, [allTasksList, allowedRoles, currentTeacher, currentTeacherId, getStudentsPatched, role])
+  }, [allMentees, allOfferings, allTasksList, allowedRoles, currentTeacher, currentTeacherId, facultyAccounts, getStudentsPatched, role])
 
   const handleOpenCourse = useCallback((o: Offering) => {
     setOffering(o)
@@ -2950,7 +2985,7 @@ function OperationalWorkspace({
   }, [])
   const handleOpenUpload = useCallback((o?: Offering, kind: EntryKind = 'tt1') => {
     if (o) setUploadOffering(o)
-    else setUploadOffering(assignedOfferings[0] ?? OFFERINGS[0])
+    else setUploadOffering(assignedOfferings[0] ?? defaultOffering)
     setUploadKind(kind)
     setPage('upload')
   }, [assignedOfferings])
@@ -2960,7 +2995,7 @@ function OperationalWorkspace({
     setPage('entry-workspace')
   }, [])
   const handleOpenSchemeSetup = useCallback((o?: Offering) => {
-    const target = o ?? uploadOffering ?? offering ?? assignedOfferings[0] ?? OFFERINGS[0]
+    const target = o ?? uploadOffering ?? offering ?? assignedOfferings[0] ?? defaultOffering
     if (!target) return
     setSchemeOfferingId(target.offId)
     setPage('scheme-setup')
@@ -3009,7 +3044,7 @@ function OperationalWorkspace({
   }, [allowedRoles, clearRouteHistory, onRoleChange])
 
   const buildEntryCommitPayload = useCallback((offId: string, kind: EntryKind) => {
-    const targetOffering = OFFERINGS.find(item => item.offId === offId)
+    const targetOffering = allOfferings.find(item => item.offId === offId)
     if (!targetOffering) return null
     const students = selectors.getStudentsPatched(targetOffering)
     const getPatch = (studentId: string) => selectors.getStudentPatch(offId, studentId)
@@ -3136,15 +3171,15 @@ function OperationalWorkspace({
     setDraftBySection(prev => ({ ...prev, [`${offId}::${kind}`]: Date.now() }))
     setSchemeByOffering(prev => ({
       ...prev,
-      [offId]: prev[offId] ? { ...prev[offId], status: prev[offId].status === 'Needs Setup' ? 'Configured' : prev[offId].status } : defaultSchemeForOffering(OFFERINGS.find(item => item.offId === offId) ?? OFFERINGS[0]),
+      [offId]: prev[offId] ? { ...prev[offId], status: prev[offId].status === 'Needs Setup' ? 'Configured' : prev[offId].status } : defaultSchemeForOffering(allOfferings.find(item => item.offId === offId) ?? defaultOffering ?? allOfferings[0]),
     }))
     void persistEntryWorkspace(offId, kind, false)
-  }, [persistEntryWorkspace])
+  }, [allOfferings, defaultOffering, persistEntryWorkspace])
 
   const handleSubmitLock = useCallback((offId: string, kind: EntryKind) => {
     setLockByOffering(prev => ({
       ...prev,
-      [offId]: { ...(prev[offId] ?? getEntryLockMap(OFFERINGS.find(o => o.offId === offId) ?? OFFERINGS[0])), [kind]: true },
+      [offId]: { ...(prev[offId] ?? getEntryLockMap(allOfferings.find(o => o.offId === offId) ?? defaultOffering ?? allOfferings[0])), [kind]: true },
     }))
     setSchemeByOffering(prev => prev[offId] ? ({
       ...prev,
@@ -3155,7 +3190,7 @@ function OperationalWorkspace({
       },
     }) : prev)
     void persistEntryWorkspace(offId, kind, true)
-  }, [persistEntryWorkspace])
+  }, [allOfferings, defaultOffering, persistEntryWorkspace])
 
   const commitStudentPatch = useCallback((offeringId: string, studentId: string, updater: (existing: StudentRuntimePatch) => StudentRuntimePatch) => {
     setStudentPatches(prev => {
@@ -3562,7 +3597,7 @@ function OperationalWorkspace({
 
   const handleCreateExtraClass = useCallback((input: { offeringId: string; dateISO: string; startMinutes: number; endMinutes: number }) => {
     if (!currentTeacher || !currentFacultyTimetable || !currentTeacher.allowedRoles.includes('Course Leader')) return
-    const offering = OFFERINGS.find(item => item.offId === input.offeringId)
+    const offering = allOfferings.find(item => item.offId === input.offeringId)
     const normalizedDateISO = normalizeDateISO(input.dateISO)
     const day = normalizedDateISO ? getWeekdayForDateISO(normalizedDateISO) : null
     if (!offering || !normalizedDateISO || !day) return
@@ -3661,7 +3696,7 @@ function OperationalWorkspace({
 
   const handleOpenCourseFromCalendar = useCallback((offeringId: string) => {
     if (role === 'Mentor') return
-    const targetOffering = OFFERINGS.find(item => item.offId === offeringId)
+    const targetOffering = allOfferings.find(item => item.offId === offeringId)
     if (!targetOffering) return
     handleOpenCourse(targetOffering)
   }, [handleOpenCourse, role])
@@ -3689,8 +3724,8 @@ function OperationalWorkspace({
   }, [currentFacultyTimetable, currentTeacher])
 
   const handleOpenTaskComposer = useCallback((input?: { offeringId?: string; studentId?: string; taskType?: TaskType; dueDateISO?: string; availableOfferingIds?: string[]; placement?: TaskPlacementDraft }) => {
-    const scopedFallbackOffering = input?.availableOfferingIds?.[0] ? (OFFERINGS.find(item => item.offId === input.availableOfferingIds?.[0]) ?? null) : null
-    const fallbackOffering = (input?.offeringId ? OFFERINGS.find(item => item.offId === input.offeringId) : null) ?? scopedFallbackOffering ?? uploadOffering ?? offering ?? assignedOfferings[0] ?? OFFERINGS[0]
+    const scopedFallbackOffering = input?.availableOfferingIds?.[0] ? (allOfferings.find(item => item.offId === input.availableOfferingIds?.[0]) ?? null) : null
+    const fallbackOffering = (input?.offeringId ? allOfferings.find(item => item.offId === input.offeringId) : null) ?? scopedFallbackOffering ?? uploadOffering ?? offering ?? assignedOfferings[0] ?? defaultOffering
     const selectedStudent = input?.studentId && fallbackOffering
       ? getStudentsPatched(fallbackOffering).find(student => student.id === input.studentId)
       : undefined
@@ -3714,7 +3749,7 @@ function OperationalWorkspace({
   }, [])
 
   const handleCreateTask = useCallback((input: TaskCreateInput) => {
-    const off = OFFERINGS.find(o => o.offId === input.offeringId)
+    const off = allOfferings.find(o => o.offId === input.offeringId)
     if (!off || !currentTeacher) return
     const s = getStudentsPatched(off).find(st => st.id === input.studentId)
     if (!s) return
@@ -3828,7 +3863,7 @@ function OperationalWorkspace({
   }, [currentTeacherId, repositories, role])
 
   const submitUnlockRequest = useCallback((offeringId: string, kind: EntryKind, note: string) => {
-    const off = OFFERINGS.find(o => o.offId === offeringId)
+    const off = allOfferings.find(o => o.offId === offeringId)
     if (!off) return
     const id = `unlock-${offeringId}-${kind}`
     const requestedAt = Date.now()
@@ -3914,7 +3949,7 @@ function OperationalWorkspace({
   }, [appendLockAudit, currentTeacherId, repositories, role])
 
   const submitStudentHandoff = useCallback((studentId: string, offeringId: string, mode: 'escalate' | 'mentor', note: string) => {
-    const off = OFFERINGS.find(item => item.offId === offeringId)
+    const off = allOfferings.find(item => item.offId === offeringId)
     if (!off) return
     const student = getStudentsPatched(off).find(item => item.id === studentId)
     if (!student) return
@@ -4024,7 +4059,7 @@ function OperationalWorkspace({
   }, [allTasksList])
 
   const handleOpenStudentEscalation = useCallback((student: Student, currentOffering?: Offering) => {
-    const resolvedOffering = currentOffering ?? OFFERINGS.find(item => getStudentsPatched(item).some(candidate => candidate.id === student.id))
+    const resolvedOffering = currentOffering ?? allOfferings.find(item => getStudentsPatched(item).some(candidate => candidate.id === student.id))
     if (!resolvedOffering) return
     setPendingNoteAction({
       type: 'student-handoff',
@@ -4036,7 +4071,7 @@ function OperationalWorkspace({
   }, [getStudentsPatched])
 
   const handleOpenStudentMentorHandoff = useCallback((student: Student, currentOffering?: Offering) => {
-    const resolvedOffering = currentOffering ?? OFFERINGS.find(item => getStudentsPatched(item).some(candidate => candidate.id === student.id))
+    const resolvedOffering = currentOffering ?? allOfferings.find(item => getStudentsPatched(item).some(candidate => candidate.id === student.id))
     if (!resolvedOffering) return
     setPendingNoteAction({
       type: 'student-handoff',
@@ -4057,7 +4092,7 @@ function OperationalWorkspace({
   }, [commitTaskReassignment, pendingNoteAction, submitStudentHandoff, submitUnlockRequest])
 
   const handleSaveScheme = useCallback((offId: string, next: SchemeState) => {
-    const offeringForScheme = OFFERINGS.find(item => item.offId === offId) ?? OFFERINGS[0]
+    const offeringForScheme = allOfferings.find(item => item.offId === offId) ?? defaultOffering ?? allOfferings[0]
     setSchemeByOffering(prev => ({
       ...prev,
       [offId]: normalizeSchemeState({
@@ -4117,7 +4152,7 @@ function OperationalWorkspace({
     setLockByOffering(prev => ({
       ...prev,
       [task.offeringId]: {
-        ...(prev[task.offeringId] ?? getEntryLockMap(OFFERINGS.find(o => o.offId === task.offeringId) ?? OFFERINGS[0])),
+        ...(prev[task.offeringId] ?? getEntryLockMap(allOfferings.find(o => o.offId === task.offeringId) ?? defaultOffering ?? allOfferings[0])),
         [unlockKind]: false,
       },
     }))
@@ -4145,13 +4180,13 @@ function OperationalWorkspace({
   }, [allTasksList, appendLockAudit, currentTeacherId])
 
   const handleOpenTaskStudent = useCallback((task: SharedTask) => {
-    const mentorMatch = assignedMentees.find(mentee => mentee.usn === task.studentUsn || mentee.id === task.studentId) ?? MENTEES.find(mentee => mentee.usn === task.studentUsn || mentee.id === task.studentId)
+    const mentorMatch = assignedMentees.find(mentee => mentee.usn === task.studentUsn || mentee.id === task.studentId) ?? allMentees.find(mentee => mentee.usn === task.studentUsn || mentee.id === task.studentId)
     if (mentorMatch && role === 'Mentor') {
       setSelectedMentee(mentorMatch)
       setPage('mentee-detail')
       return
     }
-    const searchableOfferings = role === 'HoD' ? OFFERINGS : assignedOfferings
+    const searchableOfferings = role === 'HoD' ? allOfferings : assignedOfferings
     for (const off of searchableOfferings) {
       const student = getStudentsPatched(off).find(st => st.id === task.studentId || st.usn === task.studentUsn)
       if (student) {
@@ -4172,7 +4207,7 @@ function OperationalWorkspace({
   const pendingNoteMeta = useMemo(() => {
     if (!pendingNoteAction) return null
     if (pendingNoteAction.type === 'unlock-request') {
-      const off = OFFERINGS.find(item => item.offId === pendingNoteAction.offeringId)
+      const off = allOfferings.find(item => item.offId === pendingNoteAction.offeringId)
       return {
         title: `Request unlock for ${off?.code ?? 'offering'} ${pendingNoteAction.kind.toUpperCase()}`,
         description: 'Add the teacher note that should travel with this unlock request to the HoD queue.',
@@ -4186,7 +4221,7 @@ function OperationalWorkspace({
         submitLabel: 'Confirm Reassignment',
       }
     }
-    const off = OFFERINGS.find(item => item.offId === pendingNoteAction.offeringId)
+    const off = allOfferings.find(item => item.offId === pendingNoteAction.offeringId)
     return {
       title: pendingNoteAction.mode === 'escalate' ? 'Escalate student to HoD' : 'Defer student to Mentor',
       description: `Add the sender note for ${off?.code ?? 'the selected class'} so the receiving owner sees the full context.`,
@@ -4205,7 +4240,7 @@ function OperationalWorkspace({
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <Btn onClick={() => { void onLogout() }}>Return to Login</Btn>
-            <Btn variant="ghost" onClick={() => navigateToPortal('home')}>Back to Portal</Btn>
+            <Btn variant="ghost" onClick={exitToPortal}>Back to Portal</Btn>
           </div>
         </Card>
       </AuthPageShell>
@@ -4361,7 +4396,7 @@ function OperationalWorkspace({
               <div style={{ padding: '10px 12px', minWidth: 210, flex: 1, overflowY: 'auto' }}>
                 {/* Profile */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 8px', marginBottom: 10 }}>
-                  <div style={{ width: 28, height: 28, borderRadius: 7, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 10, color: '#fff', flexShrink: 0 }}>{PROFESSOR.initials}</div>
+                  <div style={{ width: 28, height: 28, borderRadius: 7, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 10, color: '#fff', flexShrink: 0 }}>{currentTeacher.initials}</div>
                   <div style={{ overflow: 'hidden' }}>
                     <div style={{ ...sora, fontWeight: 600, fontSize: 11, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentTeacher.name}</div>
                     <div style={{ ...mono, fontSize: 9, color: T.dim }}>{role}</div>
@@ -4400,7 +4435,7 @@ function OperationalWorkspace({
                 {role === 'Course Leader' && (
                   <div style={{ padding: '12px 0', borderTop: `1px solid ${T.border}`, marginTop: 12 }}>
                     <div style={{ ...mono, fontSize: 8, color: T.dim, letterSpacing: '0.12em', textTransform: 'uppercase' as const, marginBottom: 8 }}>Year Stages</div>
-                    {YEAR_GROUPS.map(g => (
+                    {sidebarYearGroups.map(g => (
                       <div key={g.year} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
                         <div style={{ width: 6, height: 6, borderRadius: 2, background: g.color, flexShrink: 0 }} />
                         <span style={{ ...mono, fontSize: 9, color: T.muted, flex: 1 }}>{g.year}</span>
@@ -4475,15 +4510,15 @@ function OperationalWorkspace({
                 error={facultyProfileError}
                 pendingTaskCount={pendingActionCount}
                 assignedOfferings={assignedOfferings}
-                currentFacultyTimetable={currentFacultyTimetable}
+                currentFacultyTimetable={filteredCurrentFacultyTimetable}
                 onBack={handleNavigateBack}
               />
             )}
-            {role === 'Course Leader' && page === 'dashboard' && <CLDashboard offerings={assignedOfferings} pendingTaskCount={pendingActionCount} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} onOpenCalendar={handleOpenCalendar} onOpenPendingActions={handleToggleActionQueue} teacherInitials={currentTeacher.initials} greetingHeadline={greetingHeadline} greetingMeta={greetingMeta} />}
+            {role === 'Course Leader' && page === 'dashboard' && <CLDashboard offerings={assignedOfferings} pendingTaskCount={pendingActionCount} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} onOpenCalendar={handleOpenCalendar} onOpenPendingActions={handleToggleActionQueue} teacherInitials={currentTeacher.initials} greetingHeadline={greetingHeadline} greetingMeta={greetingMeta} greetingSubline={greetingSubline} />}
             {role === 'Course Leader' && page === 'students' && <LazyAllStudentsPage offerings={assignedOfferings} onBack={handleNavigateBack} onOpenStudent={handleOpenStudent} onOpenHistory={handleOpenHistoryFromStudent} onOpenUpload={handleOpenUpload} />}
             {role === 'Course Leader' && page === 'course' && offering && <LazyCourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? getFallbackBlueprintSet(offering.offId)} courseOutcomes={academicBootstrap?.courseOutcomesByOffering?.[offering.offId]} coAttainmentRows={academicBootstrap?.coAttainmentByOffering?.[offering.offId]} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleNavigateBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
             {role === 'Course Leader' && page === 'scheme-setup' && selectedSchemeOffering && <LazySchemeSetupPage role={role} offering={selectedSchemeOffering} scheme={schemeByOffering[selectedSchemeOffering.offId] ?? defaultSchemeForOffering(selectedSchemeOffering)} hasEntryStarted={hasEntryStartedForOffering(selectedSchemeOffering.offId)} onSave={(next) => handleSaveScheme(selectedSchemeOffering.offId, next)} onBack={handleNavigateBack} />}
-            {role === 'Course Leader' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} meetings={calendarMeetings} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} adminMarkers={currentFacultyCalendarMarkers} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onUpdateMeeting={handleUpdateMeeting} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
+            {role === 'Course Leader' && page === 'calendar' && filteredCurrentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} meetings={calendarMeetings} resolvedTaskIds={resolvedTasks} timetable={filteredCurrentFacultyTimetable} adminMarkers={currentFacultyCalendarMarkers} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onUpdateMeeting={handleUpdateMeeting} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
             {role === 'Course Leader' && page === 'upload' && <LazyUploadPage key={`${uploadOffering?.offId ?? 'default'}-${uploadKind}`} role={role} offering={uploadOffering} defaultKind={uploadKind} onBack={handleNavigateBack} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} onRequestUnlock={handleRequestUnlock} availableOfferings={assignedOfferings} onOpenSchemeSetup={handleOpenSchemeSetup} />}
             {role === 'Course Leader' && page === 'entry-workspace' && <LazyEntryWorkspacePage capabilities={capabilities} offeringId={entryOfferingId} kind={entryKind} onBack={handleNavigateBack} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} onRequestUnlock={handleRequestUnlock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onOpenTaskComposer={handleOpenTaskComposer} onUpdateStudentAttendance={handleUpdateStudentAttendance} schemeByOffering={schemeByOffering} ttBlueprintsByOffering={ttBlueprintsByOffering} lockAuditByTarget={lockAuditByTarget} />}
             {role === 'Course Leader' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
@@ -4491,13 +4526,13 @@ function OperationalWorkspace({
             {role === 'Mentor' && page === 'mentees' && <MentorView mentees={assignedMentees} tasks={roleTasks} onOpenMentee={handleOpenMentee} />}
             {role === 'Mentor' && page === 'mentee-detail' && selectedMentee && <MenteeDetailPage mentee={selectedMentee} onBack={handleNavigateBack} onOpenHistory={handleOpenHistoryFromMentee} />}
             {role === 'Mentor' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
-            {role === 'Mentor' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} meetings={calendarMeetings} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} adminMarkers={currentFacultyCalendarMarkers} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onUpdateMeeting={handleUpdateMeeting} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
+            {role === 'Mentor' && page === 'calendar' && filteredCurrentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} meetings={calendarMeetings} resolvedTaskIds={resolvedTasks} timetable={filteredCurrentFacultyTimetable} adminMarkers={currentFacultyCalendarMarkers} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onUpdateMeeting={handleUpdateMeeting} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
 
             {role === 'HoD' && page === 'department' && <LazyHodView onOpenQueueHistory={handleOpenQueueHistory} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} tasks={allTasksList} calendarAuditEvents={calendarAuditEvents} />}
             {role === 'HoD' && page === 'course' && offering && <LazyCourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? getFallbackBlueprintSet(offering.offId)} courseOutcomes={academicBootstrap?.courseOutcomesByOffering?.[offering.offId]} coAttainmentRows={academicBootstrap?.coAttainmentByOffering?.[offering.offId]} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleNavigateBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
-            {role === 'HoD' && page === 'unlock-review' && selectedUnlockTask && <UnlockReviewPage task={selectedUnlockTask} offering={OFFERINGS.find(item => item.offId === selectedUnlockTask.offeringId) ?? null} onBack={handleNavigateBack} onApprove={() => handleApproveUnlock(selectedUnlockTask.id)} onReject={() => handleRejectUnlock(selectedUnlockTask.id)} onResetComplete={() => handleResetComplete(selectedUnlockTask.id)} />}
+            {role === 'HoD' && page === 'unlock-review' && selectedUnlockTask && <UnlockReviewPage task={selectedUnlockTask} offering={allOfferings.find(item => item.offId === selectedUnlockTask.offeringId) ?? null} onBack={handleNavigateBack} onApprove={() => handleApproveUnlock(selectedUnlockTask.id)} onReject={() => handleRejectUnlock(selectedUnlockTask.id)} onResetComplete={() => handleResetComplete(selectedUnlockTask.id)} />}
             {role === 'HoD' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
-            {role === 'HoD' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} meetings={calendarMeetings} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} adminMarkers={currentFacultyCalendarMarkers} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onUpdateMeeting={handleUpdateMeeting} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
+            {role === 'HoD' && page === 'calendar' && filteredCurrentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} meetings={calendarMeetings} resolvedTaskIds={resolvedTasks} timetable={filteredCurrentFacultyTimetable} adminMarkers={currentFacultyCalendarMarkers} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onUpdateMeeting={handleUpdateMeeting} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
 
             {page === 'student-history' && historyProfile && <LazyStudentHistoryPage role={role} history={historyProfile} onBack={handleNavigateBack} />}
           </Suspense>
@@ -4524,7 +4559,7 @@ function OperationalWorkspace({
       <AnimatePresence>
         {selectedStudent && (
           <StudentDrawer student={selectedStudent} offering={selectedOffering || undefined} role={role} meetings={academicMeetings} onClose={() => { setSelectedStudent(null); setSelectedOffering(null) }} onEscalate={handleOpenStudentEscalation} onOpenTaskComposer={(s, o, taskType) => {
-            const resolvedOffering = o ?? OFFERINGS.find(item => getStudentsPatched(item).some(candidate => candidate.id === s.id))
+            const resolvedOffering = o ?? allOfferings.find(item => getStudentsPatched(item).some(candidate => candidate.id === s.id))
             handleOpenTaskComposer({ offeringId: resolvedOffering?.offId, studentId: s.id, taskType })
           }} onAssignToMentor={handleOpenStudentMentorHandoff} onOpenHistory={handleOpenHistoryFromStudent} onScheduleMeeting={handleScheduleMeeting} />
         )}
@@ -4605,6 +4640,10 @@ export function OperationalApp() {
   const [remoteSession, setRemoteSession] = useState<ApiSessionResponse | null>(null)
   const [remoteBootstrap, setRemoteBootstrap] = useState<ApiAcademicBootstrap | null>(null)
   const [loginFaculty, setLoginFaculty] = useState<ApiAcademicLoginFaculty[]>([])
+  const handleReturnToPortal = useCallback(() => {
+    if (typeof window !== 'undefined') clearPortalWorkspaceHints(window.localStorage)
+    navigateToPortal('home')
+  }, [])
 
   const fetchAcademicBootstrap = useCallback(async () => {
     if (!apiClient) return null
@@ -4710,7 +4749,8 @@ export function OperationalApp() {
     await remoteSessionRepositories.sessionPreferences.logoutRemoteSession()
     setRemoteSession(null)
     setRemoteBootstrap(null)
-  }, [remoteSessionRepositories])
+    handleReturnToPortal()
+  }, [handleReturnToPortal, remoteSessionRepositories])
 
   const handleRemoteRoleChange = useCallback(async (role: Role) => {
     if (!remoteSession || !remoteSessionRepositories) return
@@ -4733,7 +4773,7 @@ export function OperationalApp() {
             Configure the API URL so the teaching workspace runs entirely from system-admin managed backend data.
           </div>
           <div>
-            <Btn variant="ghost" onClick={() => navigateToPortal('home')}>Back to Portal</Btn>
+            <Btn variant="ghost" onClick={handleReturnToPortal}>Back to Portal</Btn>
           </div>
         </Card>
       </AuthPageShell>
@@ -4751,7 +4791,7 @@ export function OperationalApp() {
         heroBody="Sign in against the live backend so course leaders, mentors, and HoDs land in their actual system-admin managed teaching context."
         busy={authBusy}
         externalError={authError}
-        onBackToPortal={() => navigateToPortal('home')}
+        onBackToPortal={handleReturnToPortal}
         onLogin={handleRemoteLogin}
       />
     )
@@ -4775,6 +4815,16 @@ function PortalRouterApp() {
     if (typeof window === 'undefined') return 'home'
     return resolvePortalRoute(window.location.hash, window.localStorage)
   })
+
+  const handleSelectAcademic = useCallback(() => {
+    setRoute('app')
+    navigateToPortal('app')
+  }, [])
+
+  const handleSelectAdmin = useCallback(() => {
+    setRoute('admin')
+    navigateToPortal('admin')
+  }, [])
 
   const handleExitAdminToPortal = useCallback(() => {
     if (typeof window !== 'undefined') {
@@ -4803,8 +4853,8 @@ function PortalRouterApp() {
 
   return (
     <PortalEntryScreen
-      onSelectAcademic={() => navigateToPortal('app')}
-      onSelectAdmin={() => navigateToPortal('admin')}
+      onSelectAcademic={handleSelectAcademic}
+      onSelectAdmin={handleSelectAdmin}
     />
   )
 }

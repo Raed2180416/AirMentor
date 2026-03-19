@@ -51,4 +51,6 @@ type MutableStorageLike = Pick<Storage, 'removeItem'>
 
 export function clearPortalWorkspaceHints(storageLike: MutableStorageLike | null | undefined) {
   storageLike?.removeItem(AIRMENTOR_STORAGE_KEYS.currentAdminFacultyId)
+  storageLike?.removeItem(AIRMENTOR_STORAGE_KEYS.currentFacultyId)
+  storageLike?.removeItem(AIRMENTOR_STORAGE_KEYS.legacyCurrentTeacherId)
 }

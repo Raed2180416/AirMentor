@@ -51,7 +51,7 @@ describe('portal routing', () => {
     expect(locationLike.hash).toBe('#/app')
   })
 
-  it('clears the admin workspace hint when leaving the sysadmin portal', () => {
+  it('clears every remembered workspace hint when leaving the portal', () => {
     const removed: string[] = []
     clearPortalWorkspaceHints({
       removeItem(key: string) {
@@ -59,6 +59,10 @@ describe('portal routing', () => {
       },
     })
 
-    expect(removed).toEqual(['airmentor-current-admin-faculty-id'])
+    expect(removed).toEqual([
+      'airmentor-current-admin-faculty-id',
+      'airmentor-current-faculty-id',
+      'airmentor-current-teacher-id',
+    ])
   })
 })

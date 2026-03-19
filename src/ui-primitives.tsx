@@ -193,7 +193,7 @@ export function getSegmentedButtonStyle({
 }): CSSProperties {
   return {
     ...sora,
-    fontWeight: active ? 700 : 600,
+    fontWeight: 700,
     fontSize: compact ? UI_FONT_SIZES.meta : UI_FONT_SIZES.body,
     padding: compact ? '7px 12px' : '8px 14px',
     minHeight: compact ? 34 : 38,
@@ -204,6 +204,7 @@ export function getSegmentedButtonStyle({
     color: active ? '#fff' : disabled ? T.dim : T.muted,
     opacity: disabled ? 0.55 : 1,
     boxShadow: active ? `0 12px 24px ${withAlpha(tone, '26')}` : 'none',
+    whiteSpace: 'nowrap',
   }
 }
 
@@ -360,11 +361,11 @@ export function ModalWorkspace({
         transition={shouldReduceMotion ? { duration: 0 } : UI_TRANSITION_MEDIUM}
         style={{
           ...getSurfaceStyle('modal'),
-          width: isCompact || isFullSize ? '100vw' : `min(100%, ${resolvedWidth}px)`,
-          maxWidth: isCompact || isFullSize ? '100vw' : resolvedWidth,
-          height: isCompact || isFullSize ? '100dvh' : 'auto',
-          maxHeight: isCompact || isFullSize ? '100dvh' : 'min(88vh, 920px)',
-          borderRadius: isCompact || isFullSize ? 0 : undefined,
+          width: isCompact ? '100vw' : isFullSize ? `min(calc(100vw - 28px), ${resolvedWidth}px)` : `min(100%, ${resolvedWidth}px)`,
+          maxWidth: isCompact ? '100vw' : isFullSize ? `min(calc(100vw - 28px), ${resolvedWidth}px)` : resolvedWidth,
+          height: isCompact ? '100dvh' : isFullSize ? 'calc(100dvh - 28px)' : 'auto',
+          maxHeight: isCompact ? '100dvh' : isFullSize ? 'calc(100dvh - 28px)' : 'min(88vh, 920px)',
+          borderRadius: isCompact ? 0 : isFullSize ? UI_RADII.modal : undefined,
           display: 'grid',
           gridTemplateRows: 'auto minmax(0, 1fr) auto',
           overflow: 'hidden',
@@ -512,12 +513,11 @@ export const Card = ({ children, style = {}, glow, onClick }: { children: ReactN
       onKeyDown={handleKeyDown}
       initial={false}
       whileHover={interactive && !shouldReduceMotion ? {
-        y: -3,
-        scale: 1.006,
         borderColor: glow ? withAlpha(glow, '66') : T.border2,
         boxShadow: hoverShadow,
+        opacity: 0.998,
       } : undefined}
-      whileTap={interactive && !shouldReduceMotion ? { scale: 0.994, y: -1 } : undefined}
+      whileTap={interactive && !shouldReduceMotion ? { opacity: 0.985 } : undefined}
       transition={shouldReduceMotion ? { duration: 0 } : UI_TRANSITION_MEDIUM}
       style={{
         ...surface,
@@ -603,8 +603,8 @@ export const Btn = ({ children, onClick, variant = 'primary', size = 'md', type 
       data-pressable="true"
       onClick={onClick}
       initial={false}
-      whileHover={!disabled && !shouldReduceMotion ? { y: -2, scale: 1.01, boxShadow: hoverShadow } : undefined}
-      whileTap={!disabled && !shouldReduceMotion ? { y: 0, scale: 0.98 } : undefined}
+      whileHover={!disabled && !shouldReduceMotion ? { boxShadow: hoverShadow, opacity: 0.998 } : undefined}
+      whileTap={!disabled && !shouldReduceMotion ? { opacity: 0.985 } : undefined}
       transition={shouldReduceMotion ? { duration: 0 } : UI_TRANSITION_FAST}
       style={{
         borderRadius: 9,

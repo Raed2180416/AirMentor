@@ -271,6 +271,7 @@ export function CalendarTimetablePage({
   editableOverride,
   canOpenCourseWorkspaceOverride,
   allowTaskCreation = true,
+  calendarModeLayout = 'split',
   onEditMarker,
 }: {
   onBack: () => void
@@ -307,6 +308,7 @@ export function CalendarTimetablePage({
   editableOverride?: boolean
   canOpenCourseWorkspaceOverride?: boolean
   allowTaskCreation?: boolean
+  calendarModeLayout?: 'split' | 'month-only'
   onEditMarker?: (marker: ApiAdminCalendarMarker) => void
 }) {
   const [mode, setMode] = useState<'calendar' | 'timetable'>('calendar')
@@ -338,6 +340,7 @@ export function CalendarTimetablePage({
 
   const isEditable = editableOverride ?? activeRole === 'Course Leader'
   const canOpenCourseWorkspace = canOpenCourseWorkspaceOverride ?? activeRole !== 'Mentor'
+  const showCalendarDayPanel = calendarModeLayout !== 'month-only'
   const offeringIds = useMemo(() => new Set(facultyOfferings.map(offering => offering.offId)), [facultyOfferings])
   const offeringsById = useMemo(() => Object.fromEntries(facultyOfferings.map(offering => [offering.offId, offering])) as Record<string, Offering>, [facultyOfferings])
   const activeTasks = useMemo(() => mergedTasks.filter(task => !resolvedTaskIds[task.id] && !isTaskDismissed(task)), [mergedTasks, resolvedTaskIds])
@@ -1124,12 +1127,12 @@ export function CalendarTimetablePage({
       </div>
 
       {mode === 'calendar' && (
-        <div style={{ display: 'grid', gridTemplateColumns: pageWidth < 1180 ? 'minmax(0, 1fr)' : 'minmax(0, 1.7fr) minmax(360px, 1fr)', gap: 16, alignItems: 'start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: !showCalendarDayPanel || pageWidth < 1180 ? 'minmax(0, 1fr)' : 'minmax(0, 1.7fr) minmax(360px, 1fr)', gap: 16, alignItems: 'start' }}>
           <Card style={{ padding: '16px 18px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <div>
                 <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: T.text }}>{formatMonthLabel(monthAnchorISO)}</div>
-                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>Select a date to open the detailed day plan.</div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{showCalendarDayPanel ? 'Select a date to open the detailed day plan.' : 'Select a date to anchor the weekly planner review.'}</div>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button type="button" aria-label="Previous month" onClick={() => setMonthAnchorISO(addDaysISO(`${monthAnchorISO.slice(0, 7)}-15`, -31).slice(0, 7) + '-01')} style={iconButtonStyle()}>
@@ -1186,6 +1189,7 @@ export function CalendarTimetablePage({
             </div>
           </Card>
 
+          {showCalendarDayPanel ? (
           <Card style={{ padding: '16px 18px', position: pageWidth < 1180 ? 'relative' : 'sticky', top: pageWidth < 1180 ? undefined : 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
               <div>
@@ -1245,6 +1249,7 @@ export function CalendarTimetablePage({
               </Card>
             )}
           </Card>
+          ) : null}
         </div>
       )}
 
