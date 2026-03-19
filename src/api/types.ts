@@ -1,4 +1,5 @@
 import type {
+  CoAttainmentRow,
   Mentee,
   Offering,
   Professor,
@@ -9,6 +10,7 @@ import type {
   YearGroup,
 } from '../data'
 import type {
+  AcademicMeeting,
   CalendarAuditEvent,
   EntryLockMap,
   FacultyAccount,
@@ -302,6 +304,14 @@ export type ApiPolicyPayload = {
     minimumCgpaForPromotion: number
     requireNoActiveBacklogs: boolean
   }
+  riskRules?: {
+    highRiskAttendancePercentBelow: number
+    mediumRiskAttendancePercentBelow: number
+    highRiskCgpaBelow: number
+    mediumRiskCgpaBelow: number
+    highRiskBacklogCount: number
+    mediumRiskBacklogCount: number
+  }
 }
 
 export type ApiPolicyOverride = {
@@ -352,6 +362,14 @@ export type ApiResolvedBatchPolicy = {
       passMarkPercent: number
       minimumCgpaForPromotion: number
       requireNoActiveBacklogs: boolean
+    }
+    riskRules: {
+      highRiskAttendancePercentBelow: number
+      mediumRiskAttendancePercentBelow: number
+      highRiskCgpaBelow: number
+      mediumRiskCgpaBelow: number
+      highRiskBacklogCount: number
+      mediumRiskBacklogCount: number
     }
   }
 }
@@ -462,8 +480,12 @@ export type ApiAdminRequestDetail = ApiAdminRequestSummary & {
 
 export type ApiAcademicLoginFaculty = {
   facultyId: string
+  username: string
   name: string
+  displayName: string
+  designation: string
   dept: string
+  departmentCode: string
   roleTitle: string
   allowedRoles: Array<'Course Leader' | 'Mentor' | 'HoD'>
 }
@@ -484,6 +506,35 @@ export type ApiAcademicRuntimeState = {
   calendarAudit: CalendarAuditEvent[]
 }
 
+export type ApiCourseOutcomeScopeType = 'institution' | 'branch' | 'batch' | 'offering'
+
+export type ApiCourseOutcome = {
+  id: string
+  desc: string
+  bloom: string
+}
+
+export type ApiCourseOutcomeOverride = {
+  courseOutcomeOverrideId: string
+  courseId: string
+  scopeType: ApiCourseOutcomeScopeType
+  scopeId: string
+  outcomes: ApiCourseOutcome[]
+  status: string
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type ApiResolvedCourseOutcomeSet = {
+  offeringId: string
+  courseId: string
+  outcomes: ApiCourseOutcome[]
+}
+
+export type ApiAcademicMeeting = AcademicMeeting
+export type ApiCoAttainmentRow = CoAttainmentRow
+
 export type ApiAcademicBootstrap = {
   professor: Professor
   faculty: FacultyAccount[]
@@ -495,6 +546,11 @@ export type ApiAcademicBootstrap = {
   studentsByOffering: Record<string, Student[]>
   studentHistoryByUsn: Record<string, StudentHistoryRecord>
   runtime: ApiAcademicRuntimeState
+  courseOutcomesByOffering: Record<string, ApiCourseOutcome[]>
+  assessmentSchemesByOffering: Record<string, SchemeState>
+  questionPapersByOffering: Record<string, Record<TTKind, TermTestBlueprint>>
+  coAttainmentByOffering: Record<string, ApiCoAttainmentRow[]>
+  meetings: ApiAcademicMeeting[]
 }
 
 export type ApiAcademicRuntimeKey = keyof ApiAcademicRuntimeState
@@ -551,6 +607,61 @@ export type ApiOfferingOwnership = {
   version: number
   createdAt: string
   updatedAt: string
+}
+
+export type ApiAttendanceSnapshot = {
+  attendanceSnapshotId: string
+  studentId: string
+  offeringId: string
+  presentClasses: number
+  totalClasses: number
+  attendancePercent: number
+  source: string
+  capturedAt: string
+}
+
+export type ApiAssessmentScore = {
+  assessmentScoreId: string
+  studentId: string
+  offeringId: string
+  termId: string | null
+  componentType: 'tt1' | 'tt2' | 'quiz1' | 'quiz2' | 'asgn1' | 'asgn2' | 'sem_end' | 'lab' | 'viva' | 'other'
+  componentCode: string | null
+  score: number
+  maxScore: number
+  evaluatedAt: string
+}
+
+export type ApiStudentIntervention = {
+  interventionId: string
+  studentId: string
+  facultyId: string | null
+  offeringId: string | null
+  interventionType: string
+  note: string
+  occurredAt: string
+}
+
+export type ApiTranscriptTermResult = {
+  transcriptTermResultId: string
+  studentId: string
+  termId: string
+  sgpaScaled: number
+  registeredCredits: number
+  earnedCredits: number
+  backlogCount: number
+}
+
+export type ApiTranscriptSubjectResult = {
+  transcriptSubjectResultId: string
+  transcriptTermResultId: string
+  courseCode: string
+  title: string
+  credits: number
+  score: number
+  gradeLabel: string
+  gradePoint: number
+  result: string
 }
 
 export type ApiAcademicFacultyProfile = {

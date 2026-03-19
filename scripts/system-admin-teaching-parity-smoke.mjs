@@ -21,6 +21,8 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 1400 } })
 const updatedDisplayName = 'Dr. Kavitha Rao QA'
 const updatedPhone = '+91-9000001111'
 const updatedDesignation = 'Senior Associate Professor'
+const teachingUsername = 'kavitha.rao'
+const teachingPassword = '1234'
 
 async function expectVisible(locator, description) {
   await locator.waitFor({ state: 'visible', timeout: 20_000 })
@@ -69,13 +71,15 @@ try {
   await page.getByRole('button', { name: /Open Academic Portal/i }).click()
   await expectVisible(page.getByText(/Teaching Workspace Live Mode/), 'academic login')
 
-  await page.locator('#teacher-login').selectOption('t1')
+  await page.locator('#teacher-username').fill(teachingUsername)
+  await expectVisible(page.getByText('Selected profile', { exact: true }), 'selected teaching profile preview')
   await page.waitForFunction((name) => document.body.innerText.includes(name), updatedDisplayName)
   await page.waitForFunction((department) => document.body.innerText.includes(department), 'ECE')
   await page.waitForFunction((designation) => document.body.innerText.includes(designation), updatedDesignation)
   await page.waitForFunction((roles) => document.body.innerText.includes(roles), 'Course Leader / Mentor / HoD')
+  await page.waitForFunction((username) => (document.querySelector('#teacher-username') instanceof HTMLInputElement) && document.querySelector('#teacher-username').value === username, teachingUsername)
 
-  await page.locator('#teacher-password').fill('1234')
+  await page.locator('#teacher-password').fill(teachingPassword)
   await page.getByRole('button', { name: 'Sign In', exact: true }).click()
 
   await expectVisible(page.getByRole('button', { name: 'Faculty Profile', exact: true }), 'faculty profile nav button')

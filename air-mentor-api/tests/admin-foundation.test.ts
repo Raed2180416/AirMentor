@@ -56,7 +56,7 @@ describe('admin foundation routes', () => {
 
   it('supports the full admin-request decision flow and emits audit detail', async () => {
     current = await createTestApp()
-    const hodLogin = await loginAs(current.app, 't1', '1234')
+    const hodLogin = await loginAs(current.app, 'kavitha.rao', '1234')
     const hodGrantId = hodLogin.body.availableRoleGrants.find((grant: { roleCode: string }) => grant.roleCode === 'HOD')?.grantId
     expect(hodGrantId).toBeTruthy()
     const switched = await current.app.inject({

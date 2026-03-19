@@ -125,6 +125,12 @@ type PolicyFormState = {
   passMarkPercent: string
   minimumCgpaForPromotion: string
   requireNoActiveBacklogs: boolean
+  highRiskAttendancePercentBelow: string
+  mediumRiskAttendancePercentBelow: string
+  highRiskCgpaBelow: string
+  mediumRiskCgpaBelow: string
+  highRiskBacklogCount: string
+  mediumRiskBacklogCount: string
 }
 
 type StructureFormState = {
@@ -311,6 +317,12 @@ function defaultPolicyForm(): PolicyFormState {
     passMarkPercent: '40',
     minimumCgpaForPromotion: '5.0',
     requireNoActiveBacklogs: true,
+    highRiskAttendancePercentBelow: '65',
+    mediumRiskAttendancePercentBelow: '75',
+    highRiskCgpaBelow: '6.0',
+    mediumRiskCgpaBelow: '7.0',
+    highRiskBacklogCount: '2',
+    mediumRiskBacklogCount: '1',
   }
 }
 
@@ -451,6 +463,12 @@ function hydratePolicyForm(policy: ApiResolvedBatchPolicy['effectivePolicy']): P
     passMarkPercent: String(policy.progressionRules.passMarkPercent),
     minimumCgpaForPromotion: String(policy.progressionRules.minimumCgpaForPromotion),
     requireNoActiveBacklogs: policy.progressionRules.requireNoActiveBacklogs,
+    highRiskAttendancePercentBelow: String(policy.riskRules.highRiskAttendancePercentBelow),
+    mediumRiskAttendancePercentBelow: String(policy.riskRules.mediumRiskAttendancePercentBelow),
+    highRiskCgpaBelow: String(policy.riskRules.highRiskCgpaBelow),
+    mediumRiskCgpaBelow: String(policy.riskRules.mediumRiskCgpaBelow),
+    highRiskBacklogCount: String(policy.riskRules.highRiskBacklogCount),
+    mediumRiskBacklogCount: String(policy.riskRules.mediumRiskBacklogCount),
   }
 }
 
@@ -481,6 +499,14 @@ function buildPolicyPayload(form: PolicyFormState): ApiPolicyPayload {
       passMarkPercent: Number(form.passMarkPercent),
       minimumCgpaForPromotion: Number(form.minimumCgpaForPromotion),
       requireNoActiveBacklogs: form.requireNoActiveBacklogs,
+    },
+    riskRules: {
+      highRiskAttendancePercentBelow: Number(form.highRiskAttendancePercentBelow),
+      mediumRiskAttendancePercentBelow: Number(form.mediumRiskAttendancePercentBelow),
+      highRiskCgpaBelow: Number(form.highRiskCgpaBelow),
+      mediumRiskCgpaBelow: Number(form.mediumRiskCgpaBelow),
+      highRiskBacklogCount: Number(form.highRiskBacklogCount),
+      mediumRiskBacklogCount: Number(form.mediumRiskBacklogCount),
     },
   }
 }
@@ -553,6 +579,12 @@ function buildValidatedPolicyPayload(form: PolicyFormState): ApiPolicyPayload {
   const maxAssignments = requirePositiveInteger('Max assignments', form.maxAssignments)
   const passMarkPercent = requireRange('Pass mark percent', form.passMarkPercent, 0, 100)
   const minimumCgpaForPromotion = requireRange('Minimum CGPA for promotion', form.minimumCgpaForPromotion, 0, 10)
+  const highRiskAttendancePercentBelow = requireRange('High risk attendance threshold', form.highRiskAttendancePercentBelow, 0, 100)
+  const mediumRiskAttendancePercentBelow = requireRange('Medium risk attendance threshold', form.mediumRiskAttendancePercentBelow, 0, 100)
+  const highRiskCgpaBelow = requireRange('High risk CGPA threshold', form.highRiskCgpaBelow, 0, 10)
+  const mediumRiskCgpaBelow = requireRange('Medium risk CGPA threshold', form.mediumRiskCgpaBelow, 0, 10)
+  const highRiskBacklogCount = requireRange('High risk backlog threshold', form.highRiskBacklogCount, 0, 50)
+  const mediumRiskBacklogCount = requireRange('Medium risk backlog threshold', form.mediumRiskBacklogCount, 0, 50)
 
   if (ce + see !== 100) throw new Error('CE and SEE must total 100.')
   if (termTestsWeight + quizWeight + assignmentWeight !== ce) {
@@ -560,6 +592,15 @@ function buildValidatedPolicyPayload(form: PolicyFormState): ApiPolicyPayload {
   }
   if (!(oMin >= aPlusMin && aPlusMin >= aMin && aMin >= bPlusMin && bPlusMin >= bMin && bMin >= cMin && cMin >= pMin)) {
     throw new Error('Grade bands must descend from O down to P without gaps going upward.')
+  }
+  if (highRiskAttendancePercentBelow > mediumRiskAttendancePercentBelow) {
+    throw new Error('High risk attendance threshold must be less than or equal to the medium risk threshold.')
+  }
+  if (highRiskCgpaBelow > mediumRiskCgpaBelow) {
+    throw new Error('High risk CGPA threshold must be less than or equal to the medium risk threshold.')
+  }
+  if (highRiskBacklogCount < mediumRiskBacklogCount) {
+    throw new Error('High risk backlog threshold must be greater than or equal to the medium risk threshold.')
   }
 
   return buildPolicyPayload({
@@ -581,6 +622,12 @@ function buildValidatedPolicyPayload(form: PolicyFormState): ApiPolicyPayload {
     maxAssignments: String(maxAssignments),
     passMarkPercent: String(passMarkPercent),
     minimumCgpaForPromotion: String(minimumCgpaForPromotion),
+    highRiskAttendancePercentBelow: String(highRiskAttendancePercentBelow),
+    mediumRiskAttendancePercentBelow: String(mediumRiskAttendancePercentBelow),
+    highRiskCgpaBelow: String(highRiskCgpaBelow),
+    mediumRiskCgpaBelow: String(mediumRiskCgpaBelow),
+    highRiskBacklogCount: String(highRiskBacklogCount),
+    mediumRiskBacklogCount: String(mediumRiskBacklogCount),
   })
 }
 
@@ -4204,6 +4251,12 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
                       <div><FieldLabel>Pass Mark Percent</FieldLabel><TextInput value={policyForm.passMarkPercent} onChange={event => setPolicyForm(prev => ({ ...prev, passMarkPercent: event.target.value }))} /></div>
                       <div><FieldLabel>Minimum CGPA For Promotion</FieldLabel><TextInput value={policyForm.minimumCgpaForPromotion} onChange={event => setPolicyForm(prev => ({ ...prev, minimumCgpaForPromotion: event.target.value }))} /></div>
+                      <div><FieldLabel>High Risk Attendance Below</FieldLabel><TextInput value={policyForm.highRiskAttendancePercentBelow} onChange={event => setPolicyForm(prev => ({ ...prev, highRiskAttendancePercentBelow: event.target.value }))} /></div>
+                      <div><FieldLabel>Medium Risk Attendance Below</FieldLabel><TextInput value={policyForm.mediumRiskAttendancePercentBelow} onChange={event => setPolicyForm(prev => ({ ...prev, mediumRiskAttendancePercentBelow: event.target.value }))} /></div>
+                      <div><FieldLabel>High Risk CGPA Below</FieldLabel><TextInput value={policyForm.highRiskCgpaBelow} onChange={event => setPolicyForm(prev => ({ ...prev, highRiskCgpaBelow: event.target.value }))} /></div>
+                      <div><FieldLabel>Medium Risk CGPA Below</FieldLabel><TextInput value={policyForm.mediumRiskCgpaBelow} onChange={event => setPolicyForm(prev => ({ ...prev, mediumRiskCgpaBelow: event.target.value }))} /></div>
+                      <div><FieldLabel>High Risk Backlogs At Or Above</FieldLabel><TextInput value={policyForm.highRiskBacklogCount} onChange={event => setPolicyForm(prev => ({ ...prev, highRiskBacklogCount: event.target.value }))} /></div>
+                      <div><FieldLabel>Medium Risk Backlogs At Or Above</FieldLabel><TextInput value={policyForm.mediumRiskBacklogCount} onChange={event => setPolicyForm(prev => ({ ...prev, mediumRiskBacklogCount: event.target.value }))} /></div>
                       <div>
                         <FieldLabel>Repeated Course Policy</FieldLabel>
                         <SelectInput value={policyForm.repeatedCoursePolicy} onChange={event => setPolicyForm(prev => ({ ...prev, repeatedCoursePolicy: event.target.value as PolicyFormState['repeatedCoursePolicy'] }))}>

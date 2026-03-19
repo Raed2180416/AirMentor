@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { AlertTriangle, ArrowUpRight, Eye, Shield } from 'lucide-react'
-import { CO_COLORS, CO_MAP, T, mono, sora, yearColor, type CODef, type Offering, type Student } from '../data'
+import { CO_COLORS, CO_MAP, T, mono, sora, yearColor, type CODef, type CoAttainmentRow, type Offering, type Student } from '../data'
 import type {
   EntryKind,
   EntryLockMap,
@@ -33,6 +33,8 @@ export function CourseDetail({
   lockMap,
   blueprints,
   onUpdateBlueprint,
+  courseOutcomes,
+  coAttainmentRows,
 }: {
   offering: Offering
   onBack: () => void
@@ -44,12 +46,14 @@ export function CourseDetail({
   lockMap: EntryLockMap
   blueprints: Record<TTKind, TermTestBlueprint>
   onUpdateBlueprint: (kind: TTKind, next: TermTestBlueprint) => void
+  courseOutcomes?: CODef[]
+  coAttainmentRows?: CoAttainmentRow[]
 }) {
   const { getStudentsPatched } = useAppSelectors()
   const [tab, setTab] = useState(initialTab ?? 'overview')
   const yearTint = yearColor(offering.year)
   const students = useMemo(() => getStudentsPatched(offering), [getStudentsPatched, offering])
-  const cos = CO_MAP[offering.code] || CO_MAP.default
+  const cos = courseOutcomes && courseOutcomes.length > 0 ? courseOutcomes : (CO_MAP[offering.code] || CO_MAP.default)
   const tabLocked = (tabId: string) => (tabId === 'tt2' && offering.stageInfo.stage < 2) || (tabId === 'risk' && offering.stage < 2)
 
   return (
@@ -117,7 +121,7 @@ export function CourseDetail({
         {tab === 'tt2' && <TTTab ttNum={2} cos={cos} blueprint={blueprints.tt2} isLocked={lockMap.tt2} students={students} onChangeBlueprint={next => onUpdateBlueprint('tt2', next)} onOpenEntryHub={onOpenEntryHub} onOpenStudent={onOpenStudent} />}
         {tab === 'quizzes' && <QuizzesTab students={students} scheme={scheme} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('quiz')} />}
         {tab === 'assignments' && <AssignmentsTab students={students} scheme={scheme} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('assignment')} />}
-        {tab === 'co' && <COTab cos={cos} />}
+        {tab === 'co' && <COTab cos={cos} rows={coAttainmentRows ?? []} />}
         {tab === 'gradebook' && <GradeBookTab offering={offering} students={students} scheme={scheme} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('finals')} onOpenSchemeSetup={onOpenSchemeSetup} />}
       </div>
     </PageShell>
@@ -603,23 +607,17 @@ function AssignmentsTab({ students, scheme, onOpenStudent, onOpenEntryHub }: { s
   )
 }
 
-function COTab({ cos }: { cos: CODef[] }) {
+function COTab({ cos, rows }: { cos: CODef[]; rows: CoAttainmentRow[] }) {
   const target = 60
-  const mockAttainments: Record<string, { tt1: number | null; asgn: number | null }> = {
-    CO1: { tt1: 72, asgn: 78 },
-    CO2: { tt1: 58, asgn: 65 },
-    CO3: { tt1: 48, asgn: null },
-    CO4: { tt1: null, asgn: null },
-    CO5: { tt1: null, asgn: null },
-  }
+  const rowByCoId = Object.fromEntries(rows.map(row => [row.coId, row])) as Record<string, CoAttainmentRow | undefined>
 
   return (
     <div style={{ padding: '24px 32px' }}>
       <div style={{ ...sora, fontWeight: 700, fontSize: 17, color: T.text, marginBottom: 16 }}>CO Attainment Report</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12, marginBottom: 22 }}>
         {cos.map((co, index) => {
-          const attainment = mockAttainments[co.id]
-          const value = attainment?.tt1
+          const attainment = rowByCoId[co.id]
+          const value = attainment?.overallAttainment ?? null
           const color = CO_COLORS[index % CO_COLORS.length]
           return (
             <Card key={co.id} glow={color} style={{ textAlign: 'center', padding: '14px 10px' }}>
@@ -636,19 +634,22 @@ function COTab({ cos }: { cos: CODef[] }) {
       </div>
       <Card style={{ padding: 0, overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead><tr>{['CO', 'Description', 'Bloom', 'TT1', 'Assignment', 'Status'].map(header => <TH key={header}>{header}</TH>)}</tr></thead>
+          <thead><tr>{['CO', 'Description', 'Bloom', 'TT1', 'TT2', 'Overall', 'Students', 'Status'].map(header => <TH key={header}>{header}</TH>)}</tr></thead>
           <tbody>
             {cos.map((co, index) => {
-              const attainment = mockAttainments[co.id]
+              const attainment = rowByCoId[co.id]
               const color = CO_COLORS[index % CO_COLORS.length]
+              const overall = attainment?.overallAttainment ?? null
               return (
                 <tr key={co.id}>
                   <TD><Chip color={color} size={9}>{co.id}</Chip></TD>
                   <TD style={{ ...mono, fontSize: 11, color: T.text, maxWidth: 200 }}>{co.desc}</TD>
                   <TD><Chip color={T.dim} size={9}>{co.bloom}</Chip></TD>
-                  <TD style={{ ...mono, fontSize: 12, fontWeight: 700, color: attainment?.tt1 != null ? (attainment.tt1 >= target ? T.success : T.danger) : T.dim }}>{attainment?.tt1 != null ? `${attainment.tt1}%` : '—'}</TD>
-                  <TD style={{ ...mono, fontSize: 12, fontWeight: 700, color: attainment?.asgn != null ? (attainment.asgn >= target ? T.success : T.danger) : T.dim }}>{attainment?.asgn != null ? `${attainment.asgn}%` : '—'}</TD>
-                  <TD>{attainment?.tt1 != null ? (attainment.tt1 >= target ? <Chip color={T.success} size={9}>✓ Met</Chip> : <Chip color={T.danger} size={9}>✗ Below</Chip>) : <Chip color={T.dim} size={9}>Pending</Chip>}</TD>
+                  <TD style={{ ...mono, fontSize: 12, fontWeight: 700, color: attainment?.tt1Attainment != null ? (attainment.tt1Attainment >= target ? T.success : T.danger) : T.dim }}>{attainment?.tt1Attainment != null ? `${attainment.tt1Attainment}%` : '—'}</TD>
+                  <TD style={{ ...mono, fontSize: 12, fontWeight: 700, color: attainment?.tt2Attainment != null ? (attainment.tt2Attainment >= target ? T.success : T.danger) : T.dim }}>{attainment?.tt2Attainment != null ? `${attainment.tt2Attainment}%` : '—'}</TD>
+                  <TD style={{ ...mono, fontSize: 12, fontWeight: 700, color: overall != null ? (overall >= target ? T.success : T.danger) : T.dim }}>{overall != null ? `${overall}%` : '—'}</TD>
+                  <TD style={{ ...mono, fontSize: 11, color: T.muted }}>{attainment?.studentsCounted ?? 0}</TD>
+                  <TD>{overall != null ? (overall >= target ? <Chip color={T.success} size={9}>✓ Met</Chip> : <Chip color={T.danger} size={9}>✗ Below</Chip>) : <Chip color={T.dim} size={9}>Pending</Chip>}</TD>
                 </tr>
               )
             })}

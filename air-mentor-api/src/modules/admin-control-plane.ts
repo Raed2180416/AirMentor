@@ -637,6 +637,7 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
       requestRows,
       timetableRuntimeRows,
       calendarRuntimeRows,
+      viewerAppointmentRows,
     ] = await Promise.all([
       context.db.select().from(facultyProfiles).where(eq(facultyProfiles.facultyId, params.facultyId)),
       context.db.select().from(userAccounts),
@@ -654,10 +655,24 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
       context.db.select().from(adminRequests),
       context.db.select().from(academicRuntimeState).where(eq(academicRuntimeState.stateKey, 'timetableByFacultyId')),
       context.db.select().from(academicRuntimeState).where(eq(academicRuntimeState.stateKey, 'adminCalendarByFacultyId')),
+      auth.activeRoleGrant.roleCode === 'HOD' && auth.facultyId
+        ? context.db.select().from(facultyAppointments).where(eq(facultyAppointments.facultyId, auth.facultyId))
+        : Promise.resolve([]),
     ])
 
     const profile = profileRows[0]
     if (!profile) throw notFound('Faculty profile not found')
+    if (auth.activeRoleGrant.roleCode === 'HOD' && auth.facultyId !== params.facultyId) {
+      const viewerDepartmentIds = new Set(viewerAppointmentRows.map(row => row.departmentId))
+      const viewerBranchIds = new Set(viewerAppointmentRows.map(row => row.branchId).filter((value): value is string => !!value))
+      const targetDepartmentIds = new Set(appointmentRows.map(row => row.departmentId))
+      const targetBranchIds = new Set(appointmentRows.map(row => row.branchId).filter((value): value is string => !!value))
+      const overlapsDepartment = Array.from(targetDepartmentIds).some(departmentId => viewerDepartmentIds.has(departmentId))
+      const overlapsBranch = Array.from(targetBranchIds).some(branchId => viewerBranchIds.has(branchId))
+      if (!overlapsDepartment && !overlapsBranch) {
+        throw forbidden('This HoD does not supervise the requested faculty profile')
+      }
+    }
     const user = userRows.find(row => row.userId === profile.userId)
     const academicFacultyById = Object.fromEntries(academicFacultyRows.map(row => [row.academicFacultyId, row]))
     const departmentById = Object.fromEntries(departmentRows.map(row => [row.departmentId, row]))

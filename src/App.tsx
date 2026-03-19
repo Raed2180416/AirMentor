@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState, useMemo, useCallback, useEffect, useRef, type FormEvent, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react'
+import { Suspense, lazy, useState, useMemo, useCallback, useEffect, useRef, type FormEvent, type InputHTMLAttributes, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   Bell, Calendar, CheckCircle, ChevronLeft, ChevronRight,
@@ -8,11 +8,12 @@ import {
 import {
   CO_COLORS, T, mono, sora, yearColor,
   PROFESSOR, OFFERINGS, YEAR_GROUPS, PAPER_MAP,
-  FACULTY, generateTasks, MENTEES, getStudentHistoryRecord, hydrateAcademicData, resetAcademicDataToMockDefaults,
+  FACULTY, generateTasks, MENTEES, getStudentHistoryRecord, hydrateAcademicData,
   type Offering, type Student, type YearGroup,
   type Mentee, type StudentHistoryRecord,
 } from './data'
 import {
+  type AcademicMeeting,
   createTransition,
   createCalendarAuditEvent,
   getNextScheduledDate,
@@ -60,6 +61,7 @@ import {
 import {
   AppSelectorsContext,
   defaultSchemeForOffering,
+  flattenBlueprintLeaves,
   getEntryLockMap,
   normalizeBlueprint,
   normalizeSchemeState,
@@ -70,8 +72,8 @@ import {
   createAppSelectors,
   isPatchEmpty,
 } from './selectors'
-import { inferKindFromPendingAction } from './page-utils'
-import { AIRMENTOR_STORAGE_KEYS, createAirMentorRepositories, createLocalAirMentorRepositories, type AirMentorRepositories } from './repositories'
+import { inferKindFromPendingAction, toCellKey } from './page-utils'
+import { AIRMENTOR_STORAGE_KEYS, createAirMentorRepositories, type AirMentorRepositories } from './repositories'
 import { PortalEntryScreen } from './portal-entry'
 import { clearPortalWorkspaceHints, getPortalHash, hashBelongsToPortalRoute, navigateToPortal, resolvePortalRoute, type PortalRoute } from './portal-routing'
 import { SystemAdminApp } from './system-admin-app'
@@ -237,16 +239,21 @@ function buildHistoryProfile(input: { student?: Student | null; mentee?: Mentee 
   return null
 }
 
+function parseTimeToMinutes(value: string, fallback: number) {
+  const match = /^(\d{2}):(\d{2})$/.exec(value)
+  if (!match) return fallback
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return fallback
+  return (hours * 60) + minutes
+}
+
 function AuthFieldLabel({ children }: { children: string }) {
   return <label style={{ ...mono, fontSize: 10, color: T.muted, display: 'block', marginBottom: 6 }}>{children}</label>
 }
 
 function AuthInput(props: InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} style={{ width: '100%', ...mono, fontSize: 11, borderRadius: 10, border: `1px solid ${T.border2}`, background: T.surface2, color: T.text, padding: '10px 12px', ...(props.style ?? {}) }} />
-}
-
-function AuthSelect(props: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} style={{ width: '100%', ...mono, fontSize: 11, borderRadius: 10, border: `1px solid ${T.border2}`, background: T.surface2, color: T.text, padding: '10px 12px', ...(props.style ?? {}) }} />
 }
 
 function AuthNotice({ message, tone = 'neutral' }: { message: string; tone?: 'neutral' | 'error' | 'success' }) {
@@ -290,12 +297,16 @@ function AuthPageShell({ children }: { children: ReactNode }) {
 function LoginPage({
   facultyOptions = FACULTY.map(faculty => ({
     facultyId: faculty.facultyId,
+    username: faculty.facultyId,
     name: faculty.name,
+    displayName: faculty.name,
+    designation: faculty.roleTitle,
     dept: faculty.dept,
+    departmentCode: faculty.dept,
     roleTitle: faculty.roleTitle,
     allowedRoles: faculty.allowedRoles,
   })),
-  helperText = 'Use password 1234 for mock flow.',
+  helperText = '',
   modeLabel = 'Teaching Workspace',
   heroBody = 'Use the academic portal for course delivery, mentor follow-up, grading operations, and timetable-aware teaching workflows.',
   busy = false,
@@ -310,29 +321,26 @@ function LoginPage({
   busy?: boolean
   externalError?: string
   onBackToPortal?: () => void
-  onLogin: (facultyId: string, password: string) => Promise<void> | void
+  onLogin: (identifier: string, password: string) => Promise<void> | void
 }) {
-  const [teacherId, setTeacherId] = useState<string>(facultyOptions[0]?.facultyId ?? '')
+  const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [err, setErr] = useState('')
-  const hasFacultyOptions = facultyOptions.length > 0
-  const selectedOption = facultyOptions.find(option => option.facultyId === teacherId) ?? null
-
-  useEffect(() => {
-    if (!facultyOptions.some(option => option.facultyId === teacherId)) {
-      setTeacherId(facultyOptions[0]?.facultyId ?? '')
-    }
-  }, [facultyOptions, teacherId])
+  const selectedOption = useMemo(() => {
+    const key = identifier.trim().toLowerCase()
+    if (!key) return null
+    return facultyOptions.find(option => option.username.toLowerCase() === key) ?? null
+  }, [facultyOptions, identifier])
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!teacherId) {
-      setErr('No teaching faculty accounts are available yet. Create one in system admin first.')
+    if (!identifier.trim()) {
+      setErr('Username is required.')
       return
     }
     try {
       setErr('')
-      await onLogin(teacherId, password)
+      await onLogin(identifier.trim(), password)
     } catch (error) {
       setErr(error instanceof Error ? error.message : 'Login failed')
     }
@@ -387,34 +395,35 @@ function LoginPage({
             <div style={{ ...mono, fontSize: 10, color: T.success, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Secure Session</div>
             <div style={{ ...sora, fontSize: 28, fontWeight: 800, color: T.text, marginTop: 10 }}>Sign in to enter the teaching workspace.</div>
             <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 10, lineHeight: 1.8 }}>
-              Pick your faculty account, restore your role-aware workspace, and continue from the right teaching or mentoring context. {helperText}
+              Sign in using your username and password. {helperText}
             </div>
 
             <form onSubmit={event => { void handleSubmit(event) }} style={{ marginTop: 22, display: 'grid', gap: 14 }}>
               <div>
-                <AuthFieldLabel>Faculty Account</AuthFieldLabel>
-                {hasFacultyOptions ? (
-                  <AuthSelect id="teacher-login" value={teacherId} onChange={event => setTeacherId(event.target.value)} disabled={busy}>
-                    {facultyOptions.map(faculty => <option key={faculty.facultyId} value={faculty.facultyId}>{faculty.name}</option>)}
-                  </AuthSelect>
-                ) : (
-                  <AuthNotice message="No teaching faculty accounts are available yet. Create faculty profiles and academic role grants in system admin to unlock this workspace." />
-                )}
+                <AuthFieldLabel>Username</AuthFieldLabel>
+                <AuthInput
+                  id="teacher-username"
+                  value={identifier}
+                  onChange={event => setIdentifier(event.target.value)}
+                  disabled={busy}
+                  placeholder="e.g. kavitha.rao"
+                  autoComplete="username"
+                />
               </div>
 
               {selectedOption ? (
                 <div style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 12px' }}>
                   <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 4 }}>Selected profile</div>
-                  <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text }}>{selectedOption.name}</div>
+                  <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text }}>{selectedOption.displayName || selectedOption.name}</div>
                   <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
-                    {`${selectedOption.dept ?? 'Faculty'}${selectedOption.roleTitle ? ` · ${selectedOption.roleTitle}` : ''}${selectedOption.allowedRoles?.length ? ` · ${selectedOption.allowedRoles.join(' / ')}` : ` · Faculty ID ${selectedOption.facultyId}`}`}
+                    {`${selectedOption.departmentCode ?? selectedOption.dept ?? 'Faculty'}${selectedOption.designation ? ` · ${selectedOption.designation}` : selectedOption.roleTitle ? ` · ${selectedOption.roleTitle}` : ''}${selectedOption.allowedRoles?.length ? ` · ${selectedOption.allowedRoles.join(' / ')}` : ` · Faculty ID ${selectedOption.facultyId}`}`}
                   </div>
                 </div>
               ) : null}
 
               <div>
                 <AuthFieldLabel>Password</AuthFieldLabel>
-                <AuthInput id="teacher-password" type="password" value={password} onChange={event => setPassword(event.target.value)} disabled={busy || !hasFacultyOptions} placeholder="••••••••" />
+                <AuthInput id="teacher-password" type="password" value={password} onChange={event => setPassword(event.target.value)} disabled={busy} placeholder="••••••••" autoComplete="current-password" />
               </div>
 
               {err ? <AuthNotice message={err} tone="error" /> : null}
@@ -426,7 +435,7 @@ function LoginPage({
                     Back To Portal
                   </Btn>
                 ) : <span />}
-                <Btn type="submit" disabled={busy || !hasFacultyOptions}>
+                <Btn type="submit" disabled={busy}>
                   <Shield size={14} />
                   {busy ? 'Signing In...' : 'Sign In'}
                 </Btn>
@@ -964,8 +973,44 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
    STUDENT DRAWER — SHAP, What-If, CO, Interventions
    ══════════════════════════════════════════════════════════════ */
 
-function StudentDrawer({ student, offering, role, onClose, onEscalate, onOpenTaskComposer, onAssignToMentor, onOpenHistory }: { student: Student | null; offering?: Offering; role: Role; onClose: () => void; onEscalate: (s: Student, o?: Offering) => void; onOpenTaskComposer: (s: Student, o?: Offering, taskType?: TaskType) => void; onAssignToMentor: (s: Student, o?: Offering) => void; onOpenHistory: (s: Student, o?: Offering) => void }) {
+function StudentDrawer({
+  student,
+  offering,
+  role,
+  meetings,
+  onClose,
+  onEscalate,
+  onOpenTaskComposer,
+  onAssignToMentor,
+  onOpenHistory,
+  onScheduleMeeting,
+}: {
+  student: Student | null
+  offering?: Offering
+  role: Role
+  meetings: AcademicMeeting[]
+  onClose: () => void
+  onEscalate: (s: Student, o?: Offering) => void
+  onOpenTaskComposer: (s: Student, o?: Offering, taskType?: TaskType) => void
+  onAssignToMentor: (s: Student, o?: Offering) => void
+  onOpenHistory: (s: Student, o?: Offering) => void
+  onScheduleMeeting: (input: { student: Student; offering?: Offering; title: string; notes?: string; dateISO: string; startMinutes: number; endMinutes: number }) => Promise<void> | void
+}) {
   const { deriveAcademicProjection, getSchemeForOffering } = useAppSelectors()
+  const studentSeedName = student?.name.split(' ')[0] ?? 'Student'
+  const normalizedStudentId = student?.id.split('::').at(-1) ?? ''
+  const [meetingTitle, setMeetingTitle] = useState(() => `Student meeting · ${studentSeedName}`)
+  const [meetingDateISO, setMeetingDateISO] = useState(() => toTodayISO())
+  const [meetingStart, setMeetingStart] = useState('15:30')
+  const [meetingEnd, setMeetingEnd] = useState('16:00')
+  const [meetingNotes, setMeetingNotes] = useState('')
+  const [showMeetingComposer, setShowMeetingComposer] = useState(false)
+  const studentMeetings = useMemo(
+    () => meetings
+      .filter(meeting => meeting.studentUsn === student?.usn || meeting.studentId === normalizedStudentId)
+      .sort((left, right) => `${right.dateISO}-${right.startMinutes}`.localeCompare(`${left.dateISO}-${left.startMinutes}`)),
+    [meetings, normalizedStudentId, student?.usn],
+  )
   if (!student) return null
   const s = student
   const attPct = Math.round(s.present / s.totalClasses * 100)
@@ -1132,11 +1177,61 @@ function StudentDrawer({ student, offering, role, onClose, onEscalate, onOpenTas
           )}
         </div>
 
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Calendar size={14} color={T.accent} /> Meetings
+          </div>
+          {studentMeetings.length > 0 ? studentMeetings.map(meeting => (
+            <div key={meeting.meetingId} style={{ display: 'grid', gap: 4, padding: '10px 12px', borderRadius: 10, background: T.surface2, border: `1px solid ${T.border}`, marginBottom: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text }}>{meeting.title}</div>
+                <Chip color={meeting.status === 'completed' ? T.success : meeting.status === 'cancelled' ? T.danger : T.accent} size={9}>{meeting.status}</Chip>
+              </div>
+              <div style={{ ...mono, fontSize: 10, color: T.muted }}>
+                {meeting.dateISO} · {minutesToDisplayLabel(meeting.startMinutes)} - {minutesToDisplayLabel(meeting.endMinutes)}
+                {meeting.courseCode ? ` · ${meeting.courseCode}` : ''}
+              </div>
+              {meeting.notes ? <div style={{ ...mono, fontSize: 10, color: T.dim }}>{meeting.notes}</div> : null}
+            </div>
+          )) : (
+            <div style={{ ...mono, fontSize: 11, color: T.dim, padding: '12px 0' }}>No meetings scheduled yet</div>
+          )}
+
+          {showMeetingComposer && (
+            <div style={{ marginTop: 10, padding: '12px 14px', borderRadius: 12, background: T.surface2, border: `1px solid ${T.border}`, display: 'grid', gap: 10 }}>
+              <input aria-label="Meeting title" value={meetingTitle} onChange={event => setMeetingTitle(event.target.value)} placeholder="Meeting title" style={{ ...mono, fontSize: 11, borderRadius: 8, border: `1px solid ${T.border2}`, background: T.surface, color: T.text, padding: '8px 10px' }} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                <input aria-label="Meeting date" type="date" value={meetingDateISO} onChange={event => setMeetingDateISO(event.target.value)} style={{ ...mono, fontSize: 11, borderRadius: 8, border: `1px solid ${T.border2}`, background: T.surface, color: T.text, padding: '8px 10px' }} />
+                <input aria-label="Meeting start time" type="time" value={meetingStart} onChange={event => setMeetingStart(event.target.value)} style={{ ...mono, fontSize: 11, borderRadius: 8, border: `1px solid ${T.border2}`, background: T.surface, color: T.text, padding: '8px 10px' }} />
+                <input aria-label="Meeting end time" type="time" value={meetingEnd} onChange={event => setMeetingEnd(event.target.value)} style={{ ...mono, fontSize: 11, borderRadius: 8, border: `1px solid ${T.border2}`, background: T.surface, color: T.text, padding: '8px 10px' }} />
+              </div>
+              <textarea aria-label="Meeting notes" value={meetingNotes} onChange={event => setMeetingNotes(event.target.value)} rows={3} placeholder="Add context, agenda, or follow-up notes" style={{ ...mono, fontSize: 11, borderRadius: 8, border: `1px solid ${T.border2}`, background: T.surface, color: T.text, padding: '8px 10px', resize: 'vertical' }} />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <Btn size="sm" variant="ghost" onClick={() => setShowMeetingComposer(false)}>Cancel</Btn>
+                <Btn size="sm" onClick={() => {
+                  void onScheduleMeeting({
+                    student: s,
+                    offering,
+                    title: meetingTitle.trim() || `Student meeting · ${s.name.split(' ')[0]}`,
+                    notes: meetingNotes.trim(),
+                    dateISO: meetingDateISO,
+                    startMinutes: parseTimeToMinutes(meetingStart, 15 * 60),
+                    endMinutes: parseTimeToMinutes(meetingEnd, (15 * 60) + 30),
+                  })
+                  setShowMeetingComposer(false)
+                  setMeetingNotes('')
+                }}>Schedule Meeting</Btn>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Action Buttons */}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <Btn size="sm" onClick={() => navigator.clipboard.writeText(s.phone)}><Phone size={12} /> Call</Btn>
           <Btn size="sm" variant="ghost"><Mail size={12} /> Email</Btn>
           <Btn size="sm" variant="ghost" onClick={() => onOpenTaskComposer(s, offering, s.riskBand === 'High' ? 'Remedial' : 'Follow-up')}><MessageSquare size={12} /> Add Task</Btn>
+          <Btn size="sm" variant="ghost" onClick={() => setShowMeetingComposer(current => !current)}><Calendar size={12} /> {showMeetingComposer ? 'Hide Meeting Form' : 'Schedule Meeting'}</Btn>
           {(role === 'Course Leader' || role === 'HoD') && <Btn size="sm" variant="ghost" onClick={() => onAssignToMentor(s, offering)}><Users size={12} /> Defer to Mentor</Btn>}
           <Btn size="sm" variant="ghost" onClick={() => onOpenHistory(s, offering)}><Eye size={12} /> Open Full Profile</Btn>
           {role !== 'HoD' && <Btn size="sm" variant="danger" onClick={() => onEscalate(s, offering)}><AlertTriangle size={12} /> Escalate to HoD</Btn>}
@@ -2410,6 +2505,23 @@ function OperationalWorkspace({
   const [timetableByFacultyId, setTimetableByFacultyId] = useState<Record<string, FacultyTimetableTemplate>>(() => repositories.calendar.getTimetableTemplatesSnapshot(FACULTY, OFFERINGS))
   const [taskPlacements, setTaskPlacements] = useState<Record<string, TaskCalendarPlacement>>(() => repositories.calendar.getTaskPlacementsSnapshot())
   const [calendarAuditEvents, setCalendarAuditEvents] = useState<CalendarAuditEvent[]>(() => repositories.calendar.getCalendarAuditSnapshot())
+  const [academicMeetings, setAcademicMeetings] = useState<AcademicMeeting[]>(() => repositories.calendar.getMeetingsSnapshot())
+
+  useEffect(() => {
+    setStudentPatches(repositories.entryData.getStudentPatchesSnapshot())
+    setSchemeByOffering(repositories.entryData.getSchemeStateSnapshot(OFFERINGS))
+    setTtBlueprintsByOffering(repositories.entryData.getBlueprintSnapshot(OFFERINGS))
+    setLockAuditByTarget(repositories.locksAudit.getLockAuditSnapshot())
+    setLockByOffering(repositories.locksAudit.getLockSnapshot(OFFERINGS))
+    setDraftBySection(repositories.entryData.getDraftSnapshot())
+    setCellValues(repositories.entryData.getCellValueSnapshot())
+    setAllTasksList(repositories.tasks.getTasksSnapshot(() => []))
+    setResolvedTasks(repositories.tasks.getResolvedTasksSnapshot({}))
+    setTimetableByFacultyId(repositories.calendar.getTimetableTemplatesSnapshot(FACULTY, OFFERINGS))
+    setTaskPlacements(repositories.calendar.getTaskPlacementsSnapshot())
+    setCalendarAuditEvents(repositories.calendar.getCalendarAuditSnapshot())
+    setAcademicMeetings(repositories.calendar.getMeetingsSnapshot())
+  }, [repositories])
 
   useEffect(() => { void repositories.locksAudit.saveLocks(lockByOffering) }, [lockByOffering, repositories])
   useEffect(() => { void repositories.entryData.saveDrafts(draftBySection) }, [draftBySection, repositories])
@@ -2451,6 +2563,31 @@ function OperationalWorkspace({
       return calendarOfferingIds.has(task.offeringId)
     })
   }, [allTasksList, calendarMenteeIds, calendarMenteeUsns, calendarOfferingIds, currentTeacher])
+  const calendarMeetings = useMemo(() => {
+    if (!currentTeacher) return [] as AcademicMeeting[]
+    if (role === 'HoD') return academicMeetings
+    return academicMeetings.filter(meeting => {
+      if (meeting.facultyId === currentTeacher.facultyId) return true
+      if (meeting.offeringId && calendarOfferingIds.has(meeting.offeringId)) return true
+      return calendarMenteeUsns.has(meeting.studentUsn)
+    })
+  }, [academicMeetings, calendarMenteeUsns, calendarOfferingIds, currentTeacher, role])
+
+  const getFallbackBlueprintSet = useCallback((offeringId: string) => {
+    const backendBlueprints = academicBootstrap?.questionPapersByOffering?.[offeringId]
+    if (backendBlueprints?.tt1 && backendBlueprints?.tt2) {
+      return {
+        tt1: normalizeBlueprint('tt1', backendBlueprints.tt1),
+        tt2: normalizeBlueprint('tt2', backendBlueprints.tt2),
+      }
+    }
+    const sourceOffering = OFFERINGS.find(item => item.offId === offeringId) ?? OFFERINGS[0]
+    const basePaper = PAPER_MAP[sourceOffering?.code ?? OFFERINGS[0].code] || PAPER_MAP.default
+    return {
+      tt1: seedBlueprintFromPaper('tt1', basePaper),
+      tt2: seedBlueprintFromPaper('tt2', basePaper),
+    }
+  }, [academicBootstrap])
 
   const roleTasks = useMemo(() => {
     const base = allTasksList.filter(t => t.assignedTo === role)
@@ -2717,6 +2854,41 @@ function OperationalWorkspace({
     setSelectedStudent(s)
     setSelectedOffering(o || null)
   }, [])
+  const handleScheduleMeeting = useCallback(async (input: {
+    student: Student
+    offering?: Offering
+    title: string
+    notes?: string
+    dateISO: string
+    startMinutes: number
+    endMinutes: number
+  }) => {
+    const created = await repositories.calendar.createMeeting({
+      studentId: input.student.id.split('::').at(-1) ?? input.student.id,
+      offeringId: input.offering?.offId ?? null,
+      title: input.title,
+      notes: input.notes,
+      dateISO: input.dateISO,
+      startMinutes: input.startMinutes,
+      endMinutes: input.endMinutes,
+      status: 'scheduled',
+    })
+    setAcademicMeetings(current => [...current, created].sort((left, right) => `${left.dateISO}-${left.startMinutes}`.localeCompare(`${right.dateISO}-${right.startMinutes}`)))
+  }, [repositories])
+  const handleUpdateMeeting = useCallback(async (meetingId: string, payload: {
+    studentId: string
+    offeringId?: string | null
+    title: string
+    notes?: string | null
+    dateISO: string
+    startMinutes: number
+    endMinutes: number
+    status: AcademicMeeting['status']
+    version: number
+  }) => {
+    const updated = await repositories.calendar.updateMeeting(meetingId, payload)
+    setAcademicMeetings(current => current.map(meeting => meeting.meetingId === meetingId ? updated : meeting))
+  }, [repositories])
   const handleOpenHistoryFromStudent = useCallback((s: Student, o?: Offering) => {
     const nextHistory = buildHistoryProfile({ student: s, offering: o ?? null })
     if (!nextHistory) return
@@ -2794,14 +2966,11 @@ function OperationalWorkspace({
     setTtBlueprintsByOffering(prev => ({
       ...prev,
       [offId]: {
-        ...(prev[offId] ?? {
-          tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[(OFFERINGS.find(item => item.offId === offId)?.code ?? OFFERINGS[0].code)] || PAPER_MAP.default),
-          tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[(OFFERINGS.find(item => item.offId === offId)?.code ?? OFFERINGS[0].code)] || PAPER_MAP.default),
-        }),
+        ...(prev[offId] ?? getFallbackBlueprintSet(offId)),
         [kind]: normalizeBlueprint(kind, next),
       },
     }))
-  }, [])
+  }, [getFallbackBlueprintSet])
 
   const handleRoleChange = useCallback((r: Role) => {
     if (!allowedRoles.includes(r)) return
@@ -2821,13 +2990,138 @@ function OperationalWorkspace({
     void onRoleChange?.(r)
   }, [allowedRoles, clearRouteHistory, onRoleChange])
 
+  const buildEntryCommitPayload = useCallback((offId: string, kind: EntryKind) => {
+    const targetOffering = OFFERINGS.find(item => item.offId === offId)
+    if (!targetOffering) return null
+    const students = selectors.getStudentsPatched(targetOffering)
+    const getPatch = (studentId: string) => selectors.getStudentPatch(offId, studentId)
+
+    if (kind === 'attendance') {
+      return {
+        kind,
+        payload: {
+          entries: students.map(student => {
+            const patch = getPatch(student.id)
+            return {
+              studentId: student.id,
+              presentClasses: patch.present ?? student.present,
+              totalClasses: patch.totalClasses ?? student.totalClasses,
+            }
+          }),
+        },
+      }
+    }
+
+    const currentScheme = schemeByOffering[offId] ?? defaultSchemeForOffering(targetOffering)
+    if (kind === 'tt1' || kind === 'tt2') {
+      const blueprint = ttBlueprintsByOffering[offId]?.[kind] ?? getFallbackBlueprintSet(offId)[kind]
+      const leaves = flattenBlueprintLeaves(blueprint.nodes)
+      if (leaves.length === 0) return null
+      return {
+        kind,
+        payload: {
+          entries: students.map(student => {
+            const patch = getPatch(student.id)
+            const patchScores = kind === 'tt1' ? patch.tt1LeafScores : patch.tt2LeafScores
+            const rawTotal = kind === 'tt1' ? student.tt1Score : student.tt2Score
+            const rawMax = kind === 'tt1' ? student.tt1Max : student.tt2Max
+            return {
+              studentId: student.id,
+              components: leaves.map(leaf => {
+                const key = toCellKey(offId, kind, student.id, leaf.id)
+                const fallbackValue = patchScores?.[leaf.id]
+                  ?? (rawTotal !== null ? Math.round((rawTotal / Math.max(1, rawMax)) * leaf.maxMarks) : 0)
+                return {
+                  componentCode: leaf.id,
+                  score: cellValues[key] ?? fallbackValue,
+                  maxScore: leaf.maxMarks,
+                }
+              }),
+            }
+          }),
+        },
+      }
+    }
+
+    if (kind === 'quiz' || kind === 'assignment') {
+      const components = kind === 'quiz' ? currentScheme.quizComponents : currentScheme.assignmentComponents
+      if (components.length === 0) return null
+      return {
+        kind,
+        payload: {
+          entries: students.map(student => {
+            const patch = getPatch(student.id)
+            const patchScores = kind === 'quiz' ? patch.quizScores : patch.assignmentScores
+            return {
+              studentId: student.id,
+              components: components.map((component, index) => {
+                const fallbackValue = patchScores?.[component.id]
+                  ?? (kind === 'quiz'
+                    ? (index === 0 ? student.quiz1 : student.quiz2)
+                    : (index === 0 ? student.asgn1 : student.asgn2))
+                  ?? 0
+                return {
+                  componentCode: component.id,
+                  score: cellValues[toCellKey(offId, kind, student.id, component.id)] ?? fallbackValue,
+                  maxScore: component.rawMax,
+                }
+              }),
+            }
+          }),
+        },
+      }
+    }
+
+    const finalEntries = students.flatMap(student => {
+      const patch = getPatch(student.id)
+      const value = cellValues[toCellKey(offId, 'finals', student.id, 'see')] ?? patch.seeScore
+      if (typeof value !== 'number') return []
+      return [{
+        studentId: student.id,
+        components: [{
+          componentCode: 'see',
+          score: value,
+          maxScore: currentScheme.finalsMax,
+        }],
+      }]
+    })
+    if (finalEntries.length === 0) return null
+    return {
+      kind,
+      payload: {
+        entries: finalEntries,
+      },
+    }
+  }, [cellValues, getFallbackBlueprintSet, schemeByOffering, selectors, ttBlueprintsByOffering])
+
+  const persistEntryWorkspace = useCallback(async (offId: string, kind: EntryKind, lock = false) => {
+    if (kind === 'attendance') {
+      const commit = buildEntryCommitPayload(offId, kind)
+      if (!commit || commit.kind !== 'attendance') return
+      await repositories.entryData.commitAttendanceEntries(offId, {
+        ...commit.payload,
+        capturedAt: new Date().toISOString(),
+        lock,
+      })
+      return
+    }
+    const commit = buildEntryCommitPayload(offId, kind)
+    if (!commit || commit.kind === 'attendance') return
+    await repositories.entryData.commitAssessmentEntries(offId, commit.kind as Exclude<EntryKind, 'attendance'>, {
+      ...commit.payload,
+      evaluatedAt: new Date().toISOString(),
+      lock,
+    })
+  }, [buildEntryCommitPayload, repositories])
+
   const handleSaveDraft = useCallback((offId: string, kind: EntryKind) => {
     setDraftBySection(prev => ({ ...prev, [`${offId}::${kind}`]: Date.now() }))
     setSchemeByOffering(prev => ({
       ...prev,
       [offId]: prev[offId] ? { ...prev[offId], status: prev[offId].status === 'Needs Setup' ? 'Configured' : prev[offId].status } : defaultSchemeForOffering(OFFERINGS.find(item => item.offId === offId) ?? OFFERINGS[0]),
     }))
-  }, [])
+    void persistEntryWorkspace(offId, kind, false)
+  }, [persistEntryWorkspace])
 
   const handleSubmitLock = useCallback((offId: string, kind: EntryKind) => {
     setLockByOffering(prev => ({
@@ -2842,7 +3136,8 @@ function OperationalWorkspace({
         lockedAt: Date.now(),
       },
     }) : prev)
-  }, [])
+    void persistEntryWorkspace(offId, kind, true)
+  }, [persistEntryWorkspace])
 
   const commitStudentPatch = useCallback((offeringId: string, studentId: string, updater: (existing: StudentRuntimePatch) => StudentRuntimePatch) => {
     setStudentPatches(prev => {
@@ -4158,9 +4453,9 @@ function OperationalWorkspace({
             )}
             {role === 'Course Leader' && page === 'dashboard' && <CLDashboard offerings={assignedOfferings} pendingTaskCount={pendingActionCount} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} onOpenAllStudents={handleOpenAllStudents} onOpenCalendar={handleOpenCalendar} onOpenPendingActions={handleToggleActionQueue} teacherInitials={currentTeacher.initials} greetingHeadline={greetingHeadline} greetingMeta={greetingMeta} />}
             {role === 'Course Leader' && page === 'students' && <LazyAllStudentsPage offerings={assignedOfferings} onBack={handleNavigateBack} onOpenStudent={handleOpenStudent} onOpenHistory={handleOpenHistoryFromStudent} onOpenUpload={handleOpenUpload} />}
-            {role === 'Course Leader' && page === 'course' && offering && <LazyCourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? { tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default), tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default) }} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleNavigateBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
+            {role === 'Course Leader' && page === 'course' && offering && <LazyCourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? getFallbackBlueprintSet(offering.offId)} courseOutcomes={academicBootstrap?.courseOutcomesByOffering?.[offering.offId]} coAttainmentRows={academicBootstrap?.coAttainmentByOffering?.[offering.offId]} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleNavigateBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
             {role === 'Course Leader' && page === 'scheme-setup' && selectedSchemeOffering && <LazySchemeSetupPage role={role} offering={selectedSchemeOffering} scheme={schemeByOffering[selectedSchemeOffering.offId] ?? defaultSchemeForOffering(selectedSchemeOffering)} hasEntryStarted={hasEntryStartedForOffering(selectedSchemeOffering.offId)} onSave={(next) => handleSaveScheme(selectedSchemeOffering.offId, next)} onBack={handleNavigateBack} />}
-            {role === 'Course Leader' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} adminMarkers={currentFacultyCalendarMarkers} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
+            {role === 'Course Leader' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} meetings={calendarMeetings} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} adminMarkers={currentFacultyCalendarMarkers} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onUpdateMeeting={handleUpdateMeeting} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
             {role === 'Course Leader' && page === 'upload' && <LazyUploadPage key={`${uploadOffering?.offId ?? 'default'}-${uploadKind}`} role={role} offering={uploadOffering} defaultKind={uploadKind} onBack={handleNavigateBack} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} onRequestUnlock={handleRequestUnlock} availableOfferings={assignedOfferings} onOpenSchemeSetup={handleOpenSchemeSetup} />}
             {role === 'Course Leader' && page === 'entry-workspace' && <LazyEntryWorkspacePage capabilities={capabilities} offeringId={entryOfferingId} kind={entryKind} onBack={handleNavigateBack} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} onRequestUnlock={handleRequestUnlock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onOpenTaskComposer={handleOpenTaskComposer} onUpdateStudentAttendance={handleUpdateStudentAttendance} schemeByOffering={schemeByOffering} ttBlueprintsByOffering={ttBlueprintsByOffering} lockAuditByTarget={lockAuditByTarget} />}
             {role === 'Course Leader' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
@@ -4168,13 +4463,13 @@ function OperationalWorkspace({
             {role === 'Mentor' && page === 'mentees' && <MentorView mentees={assignedMentees} tasks={roleTasks} onOpenMentee={handleOpenMentee} />}
             {role === 'Mentor' && page === 'mentee-detail' && selectedMentee && <MenteeDetailPage mentee={selectedMentee} onBack={handleNavigateBack} onOpenHistory={handleOpenHistoryFromMentee} />}
             {role === 'Mentor' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
-            {role === 'Mentor' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} adminMarkers={currentFacultyCalendarMarkers} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
+            {role === 'Mentor' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} meetings={calendarMeetings} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} adminMarkers={currentFacultyCalendarMarkers} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onUpdateMeeting={handleUpdateMeeting} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
 
             {role === 'HoD' && page === 'department' && <LazyHodView onOpenQueueHistory={handleOpenQueueHistory} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} tasks={allTasksList} calendarAuditEvents={calendarAuditEvents} />}
-            {role === 'HoD' && page === 'course' && offering && <LazyCourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? { tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default), tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default) }} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleNavigateBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
+            {role === 'HoD' && page === 'course' && offering && <LazyCourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? getFallbackBlueprintSet(offering.offId)} courseOutcomes={academicBootstrap?.courseOutcomesByOffering?.[offering.offId]} coAttainmentRows={academicBootstrap?.coAttainmentByOffering?.[offering.offId]} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleNavigateBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
             {role === 'HoD' && page === 'unlock-review' && selectedUnlockTask && <UnlockReviewPage task={selectedUnlockTask} offering={OFFERINGS.find(item => item.offId === selectedUnlockTask.offeringId) ?? null} onBack={handleNavigateBack} onApprove={() => handleApproveUnlock(selectedUnlockTask.id)} onReject={() => handleRejectUnlock(selectedUnlockTask.id)} onResetComplete={() => handleResetComplete(selectedUnlockTask.id)} />}
             {role === 'HoD' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
-            {role === 'HoD' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} adminMarkers={currentFacultyCalendarMarkers} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
+            {role === 'HoD' && page === 'calendar' && currentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} meetings={calendarMeetings} resolvedTaskIds={resolvedTasks} timetable={currentFacultyTimetable} adminMarkers={currentFacultyCalendarMarkers} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onUpdateMeeting={handleUpdateMeeting} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
 
             {page === 'student-history' && historyProfile && <LazyStudentHistoryPage role={role} history={historyProfile} onBack={handleNavigateBack} />}
           </Suspense>
@@ -4200,10 +4495,10 @@ function OperationalWorkspace({
       {/* ═══ STUDENT DRAWER ═══ */}
       <AnimatePresence>
         {selectedStudent && (
-          <StudentDrawer student={selectedStudent} offering={selectedOffering || undefined} role={role} onClose={() => { setSelectedStudent(null); setSelectedOffering(null) }} onEscalate={handleOpenStudentEscalation} onOpenTaskComposer={(s, o, taskType) => {
+          <StudentDrawer student={selectedStudent} offering={selectedOffering || undefined} role={role} meetings={academicMeetings} onClose={() => { setSelectedStudent(null); setSelectedOffering(null) }} onEscalate={handleOpenStudentEscalation} onOpenTaskComposer={(s, o, taskType) => {
             const resolvedOffering = o ?? OFFERINGS.find(item => getStudentsPatched(item).some(candidate => candidate.id === s.id))
             handleOpenTaskComposer({ offeringId: resolvedOffering?.offId, studentId: s.id, taskType })
-          }} onAssignToMentor={handleOpenStudentMentorHandoff} onOpenHistory={handleOpenHistoryFromStudent} />
+          }} onAssignToMentor={handleOpenStudentMentorHandoff} onOpenHistory={handleOpenHistoryFromStudent} onScheduleMeeting={handleScheduleMeeting} />
         )}
       </AnimatePresence>
 
@@ -4249,54 +4544,48 @@ function getAcademicApiBaseUrl() {
 
 export function OperationalApp() {
   const apiBaseUrl = getAcademicApiBaseUrl()
-  const remoteEnabled = apiBaseUrl.length > 0
-  const localRepositories = useMemo(() => createLocalAirMentorRepositories(), [])
-  const apiClient = useMemo(() => remoteEnabled ? new AirMentorApiClient(apiBaseUrl) : null, [apiBaseUrl, remoteEnabled])
+  const apiClient = useMemo(() => (apiBaseUrl ? new AirMentorApiClient(apiBaseUrl) : null), [apiBaseUrl])
   const remoteSessionRepositories = useMemo(() => (
-    remoteEnabled && apiClient
+    apiClient
       ? createAirMentorRepositories({
           repositoryMode: 'http',
           apiClient,
           remoteFacultyStorageKey: AIRMENTOR_STORAGE_KEYS.currentFacultyId,
         })
       : null
-  ), [apiClient, remoteEnabled])
-  const [booting, setBooting] = useState(remoteEnabled)
+  ), [apiClient])
+  const [booting, setBooting] = useState(true)
   const [authBusy, setAuthBusy] = useState(false)
   const [authError, setAuthError] = useState('')
   const [remoteSession, setRemoteSession] = useState<ApiSessionResponse | null>(null)
   const [remoteBootstrap, setRemoteBootstrap] = useState<ApiAcademicBootstrap | null>(null)
-  const [loginFaculty, setLoginFaculty] = useState<ApiAcademicLoginFaculty[]>(() => (
-    remoteEnabled
-      ? []
-      : FACULTY.map(faculty => ({
-          facultyId: faculty.facultyId,
-          name: faculty.name,
-          dept: faculty.dept,
-          roleTitle: faculty.roleTitle,
-          allowedRoles: faculty.allowedRoles,
-        }))
-  ))
-  const [localTeacherId, setLocalTeacherId] = useState<string | null>(() => localRepositories.sessionPreferences.getCurrentFacultyIdSnapshot())
+  const [loginFaculty, setLoginFaculty] = useState<ApiAcademicLoginFaculty[]>([])
 
   const fetchAcademicBootstrap = useCallback(async () => {
     if (!apiClient) return null
     const snapshot = await apiClient.getAcademicBootstrap()
     hydrateAcademicData(snapshot)
     setRemoteBootstrap(snapshot)
-    setLoginFaculty(snapshot.faculty.map(account => ({
+    setLoginFaculty(snapshot.faculty.map(account => {
+      const accountUsername = (account as { username?: string }).username ?? account.facultyId
+      return {
       facultyId: account.facultyId,
+      username: accountUsername,
       name: account.name,
+      displayName: account.name,
+      designation: account.roleTitle,
       dept: account.dept,
+      departmentCode: account.dept,
       roleTitle: account.roleTitle,
       allowedRoles: account.allowedRoles,
-    })))
+      }
+    }))
     return snapshot
   }, [apiClient])
 
   useEffect(() => {
-    if (!remoteEnabled || !apiClient || !remoteSessionRepositories) {
-      resetAcademicDataToMockDefaults()
+    if (!apiClient || !remoteSessionRepositories) {
+      setAuthError('VITE_AIRMENTOR_API_BASE_URL is required. Teaching workspace runs in backend-only mode.')
       setBooting(false)
       return
     }
@@ -4319,14 +4608,12 @@ export function OperationalApp() {
         } else {
           setRemoteSession(null)
           setRemoteBootstrap(null)
-          resetAcademicDataToMockDefaults()
         }
       } catch (error) {
         if (cancelled) return
         setAuthError(error instanceof Error ? error.message : 'Could not restore the academic portal session.')
         setRemoteSession(null)
         setRemoteBootstrap(null)
-        resetAcademicDataToMockDefaults()
       } finally {
         if (!cancelled) setBooting(false)
       }
@@ -4336,10 +4623,10 @@ export function OperationalApp() {
     return () => {
       cancelled = true
     }
-  }, [apiClient, fetchAcademicBootstrap, remoteEnabled, remoteSessionRepositories])
+  }, [apiClient, fetchAcademicBootstrap, remoteSessionRepositories])
 
   const remoteRepositories = useMemo(() => (
-    remoteEnabled && apiClient && remoteBootstrap
+    apiClient && remoteBootstrap
       ? createAirMentorRepositories({
           repositoryMode: 'http',
           apiClient,
@@ -4347,23 +4634,15 @@ export function OperationalApp() {
           remoteFacultyStorageKey: AIRMENTOR_STORAGE_KEYS.currentFacultyId,
         })
       : null
-  ), [apiClient, remoteBootstrap, remoteEnabled])
+  ), [apiClient, remoteBootstrap])
 
-  const handleLocalLogin = useCallback(async (facultyId: string, password: string) => {
-    if (password !== '1234') {
-      throw new Error('Invalid password')
-    }
-    setAuthError('')
-    setLocalTeacherId(facultyId)
-  }, [])
-
-  const handleRemoteLogin = useCallback(async (facultyId: string, password: string) => {
+  const handleRemoteLogin = useCallback(async (identifier: string, password: string) => {
     if (!remoteSessionRepositories) throw new Error('Academic backend is unavailable.')
     setAuthBusy(true)
     setAuthError('')
     try {
       const session = await remoteSessionRepositories.sessionPreferences.loginRemoteSession({
-        identifier: facultyId,
+        identifier,
         password,
       })
       const role = mapApiRoleToRole(session.activeRoleGrant.roleCode)
@@ -4386,7 +4665,6 @@ export function OperationalApp() {
     await remoteSessionRepositories.sessionPreferences.logoutRemoteSession()
     setRemoteSession(null)
     setRemoteBootstrap(null)
-    resetAcademicDataToMockDefaults()
   }, [remoteSessionRepositories])
 
   const handleRemoteRoleChange = useCallback(async (role: Role) => {
@@ -4395,64 +4673,54 @@ export function OperationalApp() {
     if (!match) return
     const nextSession = await remoteSessionRepositories.sessionPreferences.switchRemoteRoleContext(match.grantId)
     setRemoteSession(nextSession)
-  }, [remoteSession, remoteSessionRepositories])
+    await fetchAcademicBootstrap()
+  }, [fetchAcademicBootstrap, remoteSession, remoteSessionRepositories])
 
-  const localCurrentTeacher = localTeacherId ? (FACULTY.find(faculty => faculty.facultyId === localTeacherId) ?? null) : null
-  const localInitialRole = localCurrentTeacher?.allowedRoles[0] ?? 'Course Leader'
   const remoteInitialRole = remoteSession ? mapApiRoleToRole(remoteSession.activeRoleGrant.roleCode) : null
 
-  if (remoteEnabled) {
-    if (booting) return <RouteLoadingFallback label="Restoring academic session..." />
-    if (!remoteSession || !remoteSession.faculty?.facultyId || !remoteInitialRole || !remoteRepositories) {
-      return (
-        <LoginPage
-          facultyOptions={loginFaculty}
-          helperText=""
-          modeLabel="Teaching Workspace Live Mode"
-          heroBody="This sign-in restores the faculty workspace against the live backend so course leaders, mentors, and HoDs land in their actual teaching context instead of a disconnected demo shell."
-          busy={authBusy}
-          externalError={authError}
-          onBackToPortal={() => navigateToPortal('home')}
-          onLogin={handleRemoteLogin}
-        />
-      )
-    }
+  if (!apiClient || !remoteSessionRepositories) {
     return (
-      <OperationalWorkspace
-        repositories={remoteRepositories}
-        initialTeacherId={remoteSession.faculty.facultyId}
-        initialRole={remoteInitialRole}
-        onLogout={handleRemoteLogout}
-        onRoleChange={handleRemoteRoleChange}
-        loadFacultyProfile={facultyId => apiClient!.getAcademicFacultyProfile(facultyId)}
-        academicBootstrap={remoteBootstrap}
-      />
+      <AuthPageShell>
+        <Card style={{ maxWidth: 760, margin: '0 auto', display: 'grid', gap: 12 }}>
+          <div style={{ ...sora, fontSize: 22, fontWeight: 800, color: T.text }}>Teaching Workspace</div>
+          <InfoBanner tone="error" message="VITE_AIRMENTOR_API_BASE_URL is required. Mock mode has been removed." />
+          <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.8 }}>
+            Configure the API URL so the teaching workspace runs entirely from system-admin managed backend data.
+          </div>
+          <div>
+            <Btn variant="ghost" onClick={() => navigateToPortal('home')}>Back to Portal</Btn>
+          </div>
+        </Card>
+      </AuthPageShell>
     )
   }
 
-  if (!localCurrentTeacher) {
+  if (booting) return <RouteLoadingFallback label="Restoring academic session..." />
+
+  if (!remoteSession || !remoteSession.faculty?.facultyId || !remoteInitialRole || !remoteRepositories) {
     return (
       <LoginPage
-        helperText="Use password 1234 for mock flow."
-        modeLabel="Teaching Workspace Mock Mode"
-        heroBody="Use the academic mock flow for role walkthroughs, grading previews, mentoring actions, and timetable experiments while still keeping the live-style teaching entry experience."
+        facultyOptions={loginFaculty}
+        helperText=""
+        modeLabel="Teaching Workspace Live Mode"
+        heroBody="Sign in against the live backend so course leaders, mentors, and HoDs land in their actual system-admin managed teaching context."
+        busy={authBusy}
         externalError={authError}
         onBackToPortal={() => navigateToPortal('home')}
-        onLogin={handleLocalLogin}
+        onLogin={handleRemoteLogin}
       />
     )
   }
 
   return (
     <OperationalWorkspace
-      repositories={localRepositories}
-      initialTeacherId={localCurrentTeacher.facultyId}
-      initialRole={localInitialRole}
-      onLogout={async () => {
-        await localRepositories.sessionPreferences.saveCurrentFacultyId(null)
-        setLocalTeacherId(null)
-      }}
-      academicBootstrap={null}
+      repositories={remoteRepositories}
+      initialTeacherId={remoteSession.faculty.facultyId}
+      initialRole={remoteInitialRole}
+      onLogout={handleRemoteLogout}
+      onRoleChange={handleRemoteRoleChange}
+      loadFacultyProfile={facultyId => apiClient.getAcademicFacultyProfile(facultyId)}
+      academicBootstrap={remoteBootstrap}
     />
   )
 }

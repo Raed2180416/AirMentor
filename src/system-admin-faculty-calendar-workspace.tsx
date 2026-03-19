@@ -491,6 +491,7 @@ export function SystemAdminFacultyCalendarWorkspace({
           allowedRoles={plannerFaculty.allowedRoles}
           facultyOfferings={offerings}
           mergedTasks={[]}
+          meetings={[]}
           resolvedTaskIds={{}}
           timetable={draftTemplate}
           adminMarkers={draftWorkspace.markers}
@@ -500,6 +501,7 @@ export function SystemAdminFacultyCalendarWorkspace({
           allowTaskCreation={false}
           onBack={() => {}}
           onScheduleTask={() => {}}
+          onUpdateMeeting={() => {}}
           onMoveClassBlock={updateClassBlockTiming}
           onResizeClassBlock={resizeClassBlock}
           onEditClassTiming={updateClassBlockTiming}

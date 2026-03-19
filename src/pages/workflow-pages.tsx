@@ -561,7 +561,7 @@ export function EntryWorkspacePage({
   ttBlueprintsByOffering: Record<string, Record<TTKind, TermTestBlueprint>>
   lockAuditByTarget: Record<string, QueueTransition[]>
 }) {
-  const { deriveAcademicProjection, getStudentsPatched } = useAppSelectors()
+  const { deriveAcademicProjection, getStudentPatch, getStudentsPatched } = useAppSelectors()
   const selectedOffering = OFFERINGS.find(item => item.offId === offeringId) ?? OFFERINGS[0]
   const groupedSections = OFFERINGS.filter(item => item.code === selectedOffering.code && item.year === selectedOffering.year)
   const [selectedClassOffId, setSelectedClassOffId] = useState<string>('all')
@@ -657,6 +657,7 @@ export function EntryWorkspacePage({
                   <tbody>
                     {students.slice(0, 25).map(student => {
                       const projection = deriveAcademicProjection({ offering: section, student, scheme: currentScheme })
+                      const exactPatch = getStudentPatch(section.offId, student.id)
                       return (
                         <tr key={student.id} data-dense-row="true">
                           <TD style={{ ...mono, fontSize: 10, color: T.accent }}>{student.usn}</TD>
@@ -664,7 +665,9 @@ export function EntryWorkspacePage({
                           {(kind === 'tt1' || kind === 'tt2') && leaves.map(leaf => {
                             const rawTotal = kind === 'tt1' ? student.tt1Score : student.tt2Score
                             const maxTotal = kind === 'tt1' ? student.tt1Max : student.tt2Max
-                            const fallbackValue = rawTotal !== null ? clampNumber(Math.round((rawTotal / Math.max(1, maxTotal)) * leaf.maxMarks), 0, leaf.maxMarks) : undefined
+                            const exactLeafScores = kind === 'tt1' ? exactPatch.tt1LeafScores : exactPatch.tt2LeafScores
+                            const fallbackValue = exactLeafScores?.[leaf.id]
+                              ?? (rawTotal !== null ? clampNumber(Math.round((rawTotal / Math.max(1, maxTotal)) * leaf.maxMarks), 0, leaf.maxMarks) : undefined)
                             return (
                               <TD key={leaf.id}>
                                 <input
@@ -687,6 +690,7 @@ export function EntryWorkspacePage({
                           {(kind === 'quiz' || kind === 'assignment') && dynamicComponents.map((component, index) => {
                             const max = component.rawMax
                             const currentScore = kind === 'quiz' ? (index === 0 ? student.quiz1 : student.quiz2) : (index === 0 ? student.asgn1 : student.asgn2)
+                            const exactScores = kind === 'quiz' ? exactPatch.quizScores : exactPatch.assignmentScores
                             return (
                               <TD key={component.id}>
                                 <input
@@ -698,7 +702,7 @@ export function EntryWorkspacePage({
                                   min={0}
                                   max={max}
                                   disabled={!sectionAccess.canEdit}
-                                  value={cellValues[toCellKey(section.offId, kind, student.id, component.id)] ?? (currentScore ?? '')}
+                                  value={cellValues[toCellKey(section.offId, kind, student.id, component.id)] ?? exactScores?.[component.id] ?? (currentScore ?? '')}
                                   onKeyDown={shouldBlockNumericKey}
                                   onChange={event => onCellValueChange(toCellKey(section.offId, kind, student.id, component.id), parseInputValue(event.target.value, 0, max))}
                                   style={{ width: 72, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }}
@@ -717,7 +721,7 @@ export function EntryWorkspacePage({
                                 min={0}
                                 max={999}
                                 disabled={!sectionAccess.canEdit}
-                                value={cellValues[toCellKey(section.offId, kind, student.id, 'present')] ?? student.present}
+                                value={cellValues[toCellKey(section.offId, kind, student.id, 'present')] ?? exactPatch.present ?? student.present}
                                 onKeyDown={shouldBlockNumericKey}
                                 onChange={event => {
                                   const next = parseInputValue(event.target.value, 0, 999)
@@ -739,7 +743,7 @@ export function EntryWorkspacePage({
                                 min={1}
                                 max={999}
                                 disabled={!sectionAccess.canEdit}
-                                value={cellValues[toCellKey(section.offId, kind, student.id, 'total')] ?? student.totalClasses}
+                                value={cellValues[toCellKey(section.offId, kind, student.id, 'total')] ?? exactPatch.totalClasses ?? student.totalClasses}
                                 onKeyDown={shouldBlockNumericKey}
                                 onChange={event => {
                                   const nextTotal = parseInputValue(event.target.value, 1, 999)
@@ -760,7 +764,7 @@ export function EntryWorkspacePage({
                                 min={0}
                                 max={currentScheme.finalsMax}
                                 disabled={!sectionAccess.canEdit}
-                                value={cellValues[toCellKey(section.offId, kind, student.id, 'see')] ?? ''}
+                                value={cellValues[toCellKey(section.offId, kind, student.id, 'see')] ?? exactPatch.seeScore ?? ''}
                                 onKeyDown={shouldBlockNumericKey}
                                 onChange={event => onCellValueChange(toCellKey(section.offId, kind, student.id, 'see'), parseInputValue(event.target.value, 0, currentScheme.finalsMax))}
                                 placeholder="Enter"

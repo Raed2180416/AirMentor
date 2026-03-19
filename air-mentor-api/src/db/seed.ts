@@ -10,8 +10,13 @@ import {
   adminReminders,
   academicFaculties,
   academicTerms,
+  academicCalendarAuditEvents,
   adminRequestTransitions,
   academicAssets,
+  academicMeetings,
+  academicTaskPlacements,
+  academicTaskTransitions,
+  academicTasks,
   adminRequests,
   academicRuntimeState,
   auditEvents,
@@ -21,17 +26,26 @@ import {
   curriculumCourses,
   departments,
   facultyAppointments,
+  facultyCalendarWorkspaces,
+  courseOutcomeOverrides,
   facultyOfferingOwnerships,
   facultyProfiles,
   institutions,
   mentorAssignments,
+  offeringAssessmentSchemes,
+  offeringQuestionPapers,
   policyOverrides,
   roleGrants,
   sectionOfferings,
+  studentAssessmentScores,
   sessions,
   studentAcademicProfiles,
+  studentAttendanceSnapshots,
   studentEnrollments,
+  studentInterventions,
   students,
+  transcriptSubjectResults,
+  transcriptTermResults,
   uiPreferences,
   userAccounts,
   userPasswordCredentials,
@@ -275,8 +289,22 @@ export async function seedIntoDatabase(db: AppDb, client: { query: (sql: string,
   await db.delete(academicRuntimeState)
   await db.delete(academicAssets)
   await db.delete(policyOverrides)
+  await db.delete(courseOutcomeOverrides)
   await db.delete(curriculumCourses)
+  await db.delete(academicCalendarAuditEvents)
+  await db.delete(academicTaskPlacements)
+  await db.delete(academicTaskTransitions)
+  await db.delete(academicTasks)
+  await db.delete(academicMeetings)
+  await db.delete(facultyCalendarWorkspaces)
+  await db.delete(offeringQuestionPapers)
+  await db.delete(offeringAssessmentSchemes)
   await db.delete(facultyOfferingOwnerships)
+  await db.delete(transcriptSubjectResults)
+  await db.delete(transcriptTermResults)
+  await db.delete(studentInterventions)
+  await db.delete(studentAssessmentScores)
+  await db.delete(studentAttendanceSnapshots)
   await db.delete(sectionOfferings)
   await db.delete(mentorAssignments)
   await db.delete(studentEnrollments)

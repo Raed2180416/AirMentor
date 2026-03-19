@@ -152,6 +152,14 @@ describe('admin hierarchy routes', () => {
             ce: 55,
             see: 45,
           },
+          riskRules: {
+            highRiskAttendancePercentBelow: 62,
+            mediumRiskAttendancePercentBelow: 74,
+            highRiskCgpaBelow: 5.8,
+            mediumRiskCgpaBelow: 6.8,
+            highRiskBacklogCount: 3,
+            mediumRiskBacklogCount: 1,
+          },
         },
         status: 'active',
       },
@@ -197,6 +205,14 @@ describe('admin hierarchy routes', () => {
     expect(resolved.effectivePolicy.ceSeeSplit).toEqual({ ce: 55, see: 45 })
     expect(resolved.effectivePolicy.ceComponentCaps.maxAssignments).toBe(3)
     expect(resolved.effectivePolicy.workingCalendar.days).toContain('Sat')
+    expect(resolved.effectivePolicy.riskRules).toEqual({
+      highRiskAttendancePercentBelow: 62,
+      mediumRiskAttendancePercentBelow: 74,
+      highRiskCgpaBelow: 5.8,
+      mediumRiskCgpaBelow: 6.8,
+      highRiskBacklogCount: 3,
+      mediumRiskBacklogCount: 1,
+    })
   })
 
   it('returns current cgpa and active academic context in the student admin list', async () => {

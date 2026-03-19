@@ -18,6 +18,69 @@ afterEach(async () => {
 })
 
 describe('admin control plane routes', () => {
+  it('limits HoD faculty profile access to supervised departments and branches', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const facultyCreate = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/faculty',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        username: 'ece.scope',
+        email: 'ece.scope@msruas.ac.in',
+        phone: '+91-9000000999',
+        password: 'faculty1234',
+        employeeCode: 'EMP-T990',
+        displayName: 'Dr. ECE Scope',
+        designation: 'Professor',
+        joinedOn: '2024-01-01',
+        status: 'active',
+      },
+    })
+    expect(facultyCreate.statusCode).toBe(200)
+    const createdFaculty = facultyCreate.json()
+
+    const appointmentCreate = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/faculty/${createdFaculty.facultyId}/appointments`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        departmentId: 'dept_ece',
+        branchId: 'branch_ece_btech',
+        isPrimary: true,
+        startDate: '2024-01-01',
+        status: 'active',
+      },
+    })
+    expect(appointmentCreate.statusCode).toBe(200)
+
+    const hodLogin = await loginAs(current.app, 'kavitha.rao', '1234')
+    const hodGrantId = hodLogin.body.availableRoleGrants.find((grant: { roleCode: string }) => grant.roleCode === 'HOD')?.grantId
+    expect(hodGrantId).toBeTruthy()
+    const switchRoleResponse = await current.app.inject({
+      method: 'POST',
+      url: '/api/session/role-context',
+      headers: { cookie: hodLogin.cookie, origin: TEST_ORIGIN },
+      payload: { roleGrantId: hodGrantId },
+    })
+    expect(switchRoleResponse.statusCode).toBe(200)
+
+    const inScopeResponse = await current.app.inject({
+      method: 'GET',
+      url: '/api/academic/faculty-profile/t2',
+      headers: { cookie: hodLogin.cookie },
+    })
+    expect(inScopeResponse.statusCode).toBe(200)
+
+    const outOfScopeResponse = await current.app.inject({
+      method: 'GET',
+      url: `/api/academic/faculty-profile/${createdFaculty.facultyId}`,
+      headers: { cookie: hodLogin.cookie },
+    })
+    expect(outOfScopeResponse.statusCode).toBe(403)
+  })
+
   it('propagates admin-created faculty records into teaching login, bootstrap, and faculty profile', async () => {
     current = await createTestApp()
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
@@ -387,7 +450,7 @@ describe('admin control plane routes', () => {
   it('enforces the faculty timetable direct-edit window while keeping markers editable and reflected in teaching profile status', async () => {
     current = await createTestApp()
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
-    const facultyLogin = await loginAs(current.app, 't1', '1234')
+    const facultyLogin = await loginAs(current.app, 'kavitha.rao', '1234')
     expect(adminLogin.response.statusCode).toBe(200)
     expect(facultyLogin.response.statusCode).toBe(200)
 

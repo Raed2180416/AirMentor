@@ -4,6 +4,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, Clock3, GripVertical, Plus, Ro
 import { T, mono, sora, type Offering } from '../data'
 import type { ApiAdminCalendarMarker } from '../api/types'
 import type {
+  AcademicMeeting,
   FacultyAccount,
   FacultyTimetableClassBlock,
   FacultyTimetableTemplate,
@@ -100,6 +101,7 @@ type ExtraClassDraftState = {
 type BlockDetailsState =
   | { type: 'class'; blockId: string; dateISO: string }
   | { type: 'task'; taskId: string; dateISO: string; placementMode: TaskPlacementMode }
+  | { type: 'meeting'; meetingId: string; dateISO: string }
   | { type: 'marker'; markerId: string; dateISO: string }
 
 type MarkerChip = {
@@ -114,7 +116,7 @@ type TimedEventCard = {
   id: string
   renderId: string
   entityId: string
-  eventType: 'class' | 'task' | 'marker' | 'preview'
+  eventType: 'class' | 'task' | 'meeting' | 'marker' | 'preview'
   dateISO: string
   day: Weekday
   startMinutes: number
@@ -124,6 +126,7 @@ type TimedEventCard = {
   accent: string
   placement?: TaskCalendarPlacement
   task?: SharedTask
+  meeting?: AcademicMeeting
   classBlock?: FacultyTimetableClassBlock
   marker?: ApiAdminCalendarMarker
   invalid?: boolean
@@ -244,11 +247,13 @@ export function CalendarTimetablePage({
   allowedRoles,
   facultyOfferings,
   mergedTasks,
+  meetings,
   resolvedTaskIds,
   timetable,
   adminMarkers,
   taskPlacements,
   onScheduleTask,
+  onUpdateMeeting,
   onMoveClassBlock,
   onResizeClassBlock,
   onEditClassTiming,
@@ -274,11 +279,13 @@ export function CalendarTimetablePage({
   allowedRoles: Role[]
   facultyOfferings: Offering[]
   mergedTasks: SharedTask[]
+  meetings: AcademicMeeting[]
   resolvedTaskIds: Record<string, number>
   timetable: FacultyTimetableTemplate
   adminMarkers: ApiAdminCalendarMarker[]
   taskPlacements: Record<string, TaskCalendarPlacement>
   onScheduleTask: (taskId: string, input: ScheduleInput) => void
+  onUpdateMeeting: (meetingId: string, input: { studentId: string; offeringId?: string | null; title: string; notes?: string | null; dateISO: string; startMinutes: number; endMinutes: number; status: AcademicMeeting['status']; version: number }) => void
   onMoveClassBlock: (blockId: string, input: { day: Weekday; dateISO?: string; startMinutes: number; endMinutes: number }) => void
   onResizeClassBlock: (blockId: string, input: { startMinutes: number; endMinutes: number }) => void
   onEditClassTiming: (blockId: string, input: { day: Weekday; dateISO?: string; startMinutes: number; endMinutes: number }) => void
@@ -468,6 +475,22 @@ export function CalendarTimetablePage({
             marker,
           }]
         })
+      const meetingEvents = meetings
+        .filter(meeting => meeting.dateISO === dateISO)
+        .map(meeting => ({
+          id: `meeting-${meeting.meetingId}`,
+          renderId: `meeting-${meeting.meetingId}`,
+          entityId: meeting.meetingId,
+          eventType: 'meeting' as const,
+          dateISO,
+          day: getWeekdayForDateISO(dateISO) ?? WEEKDAY_ORDER[0],
+          startMinutes: meeting.startMinutes,
+          endMinutes: meeting.endMinutes,
+          title: meeting.title,
+          subtitle: `${meeting.studentName}${meeting.courseCode ? ` · ${meeting.courseCode}` : ''}`,
+          accent: meeting.status === 'completed' ? T.success : meeting.status === 'cancelled' ? T.danger : T.blue,
+          meeting,
+        }))
 
       const previewEvents = interaction?.mode === 'active' && interaction.preview?.placementMode === 'timed' && interaction.preview.dateISO === dateISO && interaction.preview.day
         && typeof interaction.preview.startMinutes === 'number' && typeof interaction.preview.endMinutes === 'number'
@@ -522,9 +545,9 @@ export function CalendarTimetablePage({
           }]
         : []
 
-      return [...classEvents, ...taskEvents, ...markerEvents, ...previewEvents, ...addTargetPreview]
+      return [...classEvents, ...taskEvents, ...meetingEvents, ...markerEvents, ...previewEvents, ...addTargetPreview]
     }
-  }, [activeTasksById, addTarget, adminMarkers, interaction, taskPlacementsByDate, timetable.classBlocks])
+  }, [activeTasksById, addTarget, adminMarkers, interaction, meetings, taskPlacementsByDate, timetable.classBlocks])
 
   const buildAllDayMarkersForDate = useMemo(() => {
     return (dateISO: string) => adminMarkers
@@ -685,14 +708,18 @@ export function CalendarTimetablePage({
   const detailTask = useMemo(() => detailsState?.type === 'task'
     ? (activeTasksById[detailsState.taskId] ?? null)
     : null, [activeTasksById, detailsState])
+  const detailMeeting = useMemo(() => detailsState?.type === 'meeting'
+    ? (meetings.find(meeting => meeting.meetingId === detailsState.meetingId) ?? null)
+    : null, [detailsState, meetings])
   const detailMarker = useMemo(() => detailsState?.type === 'marker'
     ? (adminMarkers.find(marker => marker.markerId === detailsState.markerId) ?? null)
     : null, [adminMarkers, detailsState])
   const detailOffering = useMemo(() => {
     if (detailClassBlock) return offeringsById[detailClassBlock.offeringId] ?? null
     if (detailTask) return offeringsById[detailTask.offeringId] ?? null
+    if (detailMeeting?.offeringId) return offeringsById[detailMeeting.offeringId] ?? null
     return null
-  }, [detailClassBlock, detailTask, offeringsById])
+  }, [detailClassBlock, detailMeeting, detailTask, offeringsById])
   const detailPlacement = useMemo(() => {
     if (detailsState?.type !== 'task') return null
     return taskPlacements[detailsState.taskId] ?? null
@@ -988,6 +1015,14 @@ export function CalendarTimetablePage({
         taskId: event.task.id,
         dateISO: event.dateISO,
         placementMode: event.placement?.placementMode ?? 'timed',
+      })
+      return
+    }
+    if (event.eventType === 'meeting' && event.meeting) {
+      setDetailsState({
+        type: 'meeting',
+        meetingId: event.meeting.meetingId,
+        dateISO: event.dateISO,
       })
     }
   }, [])
@@ -1342,14 +1377,18 @@ export function CalendarTimetablePage({
             ? `class-${detailsState.blockId}-${detailsState.dateISO}`
             : detailsState.type === 'task'
               ? `task-${detailsState.taskId}-${detailsState.dateISO}`
+              : detailsState.type === 'meeting'
+                ? `meeting-${detailsState.meetingId}-${detailsState.dateISO}`
               : `marker-${detailsState.markerId}-${detailsState.dateISO}`}
           detailsState={detailsState}
           classBlock={detailClassBlock}
           task={detailTask}
+          meeting={detailMeeting}
           marker={detailMarker}
           offering={detailOffering}
           placement={detailPlacement}
           editable={isEditable}
+          canEditMeeting={!!detailMeeting && detailMeeting.facultyId === currentTeacher.facultyId}
           canOpenCourseWorkspace={canOpenCourseWorkspace}
           onEditMarker={onEditMarker}
           onClose={() => setDetailsState(null)}
@@ -1370,6 +1409,11 @@ export function CalendarTimetablePage({
               startMinutes: input.startMinutes,
               endMinutes: input.endMinutes,
             })
+            setDetailsState(null)
+          }}
+          onUpdateMeeting={input => {
+            if (!detailMeeting) return
+            onUpdateMeeting(detailMeeting.meetingId, input)
             setDetailsState(null)
           }}
           onEditClass={() => {
@@ -1816,6 +1860,7 @@ function TimedEventBlock({
   const width = laneCount <= 1 ? 'calc(100% - 16px)' : `calc(${100 / laneCount}% - 8px)`
   const left = laneCount <= 1 ? 8 : `calc(${lane * (100 / laneCount)}% + ${lane * 8 + 8}px)`
   const isTask = event.eventType === 'task' && !!event.task
+  const isMeeting = event.eventType === 'meeting' && !!event.meeting
   const isClass = event.eventType === 'class' && !!event.classBlock
   const isMarker = event.eventType === 'marker' && !!event.marker
   const compact = height < 78
@@ -1875,7 +1920,7 @@ function TimedEventBlock({
           <div style={{ ...sora, fontWeight: 700, fontSize: 12, color: T.text, lineHeight: 1.25 }}>{event.title}</div>
           {!compact && <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{event.subtitle}</div>}
         </div>
-        {event.eventType !== 'preview' && editable && !isMarker && (
+        {event.eventType !== 'preview' && editable && !isMarker && !isMeeting && (
           <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
             {isClass && (
               <>
@@ -1912,7 +1957,7 @@ function TimedEventBlock({
       {!compact && event.eventType !== 'preview' && (
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-end' }}>
           <div style={{ ...mono, fontSize: 9, color: T.dim, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            <GripVertical size={10} /> {editable ? 'Drag to move' : 'Scheduled'}
+            {isMeeting ? <Clock3 size={10} /> : <GripVertical size={10} />} {isMeeting ? 'Meeting slot' : editable ? 'Drag to move' : 'Scheduled'}
           </div>
           {isTask && editable && (
             <TaskActionStrip
@@ -2237,37 +2282,46 @@ function BlockDetailsSheet({
   detailsState,
   classBlock,
   task,
+  meeting,
   marker,
   offering,
   placement,
   editable,
+  canEditMeeting,
   canOpenCourseWorkspace,
   onEditMarker,
   onClose,
   onOpenCourse,
   onOpenActionQueue,
   onRescheduleTask,
+  onUpdateMeeting,
   onEditClass,
 }: {
   detailsState: BlockDetailsState
   classBlock: FacultyTimetableClassBlock | null
   task: SharedTask | null
+  meeting: AcademicMeeting | null
   marker: ApiAdminCalendarMarker | null
   offering: Offering | null
   placement: TaskCalendarPlacement | null
   editable: boolean
+  canEditMeeting: boolean
   canOpenCourseWorkspace: boolean
   onEditMarker?: (marker: ApiAdminCalendarMarker) => void
   onClose: () => void
   onOpenCourse: () => void
   onOpenActionQueue: () => void
   onRescheduleTask: (input: { placementMode: TaskPlacementMode; startMinutes?: number; endMinutes?: number }) => void
+  onUpdateMeeting: (input: { studentId: string; offeringId?: string | null; title: string; notes?: string | null; dateISO: string; startMinutes: number; endMinutes: number; status: AcademicMeeting['status']; version: number }) => void
   onEditClass: () => void
 }) {
   const isClass = detailsState.type === 'class'
+  const isMeeting = detailsState.type === 'meeting'
   const isMarker = detailsState.type === 'marker'
   const title = isClass
     ? (classBlock ? `${classBlock.courseCode} · Sec ${classBlock.section}` : 'Class details')
+    : isMeeting
+      ? (meeting?.title ?? 'Meeting details')
     : isMarker
       ? (marker?.title ?? 'Marker details')
       : (task?.title ?? 'Task details')
@@ -2275,12 +2329,19 @@ function BlockDetailsSheet({
     ? (classBlock?.kind === 'extra'
         ? `Extra class · ${offering?.title ?? classBlock?.courseName ?? ''}`
         : (offering?.title ?? classBlock?.courseName ?? ''))
+    : isMeeting
+      ? (meeting ? `${meeting.studentName}${meeting.courseCode ? ` · ${meeting.courseCode}` : ''}` : '')
     : isMarker
       ? (marker ? `${describeMarkerType(marker.markerType)}${marker.note ? ` · ${marker.note}` : ''}` : '')
       : (task ? `${task.studentName} · ${task.courseCode} · ${task.taskType ?? 'Task'}` : '')
   const [rescheduleMode, setRescheduleMode] = useState<TaskPlacementMode>(() => placement?.placementMode ?? 'timed')
   const [rescheduleStart, setRescheduleStart] = useState(() => minutesToTimeString(placement?.startMinutes ?? 0))
   const [rescheduleEnd, setRescheduleEnd] = useState(() => minutesToTimeString(placement?.endMinutes ?? ((placement?.startMinutes ?? 0) + DEFAULT_TASK_DURATION_MINUTES)))
+  const [meetingDateISO, setMeetingDateISO] = useState(() => meeting?.dateISO ?? '')
+  const [meetingStart, setMeetingStart] = useState(() => minutesToTimeString(meeting?.startMinutes ?? (15 * 60)))
+  const [meetingEnd, setMeetingEnd] = useState(() => minutesToTimeString(meeting?.endMinutes ?? ((15 * 60) + 30)))
+  const [meetingStatus, setMeetingStatus] = useState<AcademicMeeting['status']>(() => meeting?.status ?? 'scheduled')
+  const [meetingNotes, setMeetingNotes] = useState(() => meeting?.notes ?? '')
 
   return (
     <motion.div
@@ -2337,6 +2398,73 @@ function BlockDetailsSheet({
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
               <Btn size="sm" variant="ghost" onClick={onClose}>Close</Btn>
               {onEditMarker ? <Btn size="sm" onClick={() => onEditMarker(marker)}>Edit Marker</Btn> : null}
+            </div>
+          </>
+        )}
+
+        {isMeeting && meeting && (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <DetailRow label="Student" value={`${meeting.studentName} · ${meeting.studentUsn}`} />
+              <DetailRow label="Status" value={meetingStatus} />
+              <DetailRow label="When" value={`${formatShortDate(meeting.dateISO)} · ${minutesToDisplayLabel(meeting.startMinutes)} - ${minutesToDisplayLabel(meeting.endMinutes)}`} />
+              <DetailRow label="Course" value={meeting.courseCode ? `${meeting.courseCode} · ${meeting.courseName ?? ''}` : 'General student meeting'} />
+            </div>
+            <div style={{ borderRadius: 12, border: `1px solid ${T.blue}28`, background: `${T.blue}10`, padding: '12px 14px', display: 'grid', gap: 10 }}>
+              <div>
+                <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text }}>Update meeting schedule</div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>Adjust the time or mark the meeting as completed or cancelled.</div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <span style={{ ...mono, fontSize: 10, color: T.muted }}>Date</span>
+                  <input type="date" value={meetingDateISO} onChange={event => setMeetingDateISO(event.target.value)} style={sheetFieldStyle()} />
+                </label>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <span style={{ ...mono, fontSize: 10, color: T.muted }}>Start</span>
+                  <input type="time" value={meetingStart} onChange={event => setMeetingStart(event.target.value)} style={sheetFieldStyle()} />
+                </label>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <span style={{ ...mono, fontSize: 10, color: T.muted }}>End</span>
+                  <input type="time" value={meetingEnd} onChange={event => setMeetingEnd(event.target.value)} style={sheetFieldStyle()} />
+                </label>
+              </div>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span style={{ ...mono, fontSize: 10, color: T.muted }}>Status</span>
+                <select value={meetingStatus} onChange={event => setMeetingStatus(event.target.value as AcademicMeeting['status'])} style={sheetFieldStyle()}>
+                  <option value="scheduled">Scheduled</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </label>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span style={{ ...mono, fontSize: 10, color: T.muted }}>Notes</span>
+                <textarea value={meetingNotes} onChange={event => setMeetingNotes(event.target.value)} rows={3} style={{ ...sheetFieldStyle(), resize: 'vertical', minHeight: 88 }} />
+              </label>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+              <Btn size="sm" variant="ghost" onClick={onClose}>Close</Btn>
+              <Btn
+                size="sm"
+                disabled={!canEditMeeting}
+                onClick={() => {
+                  onUpdateMeeting({
+                    studentId: meeting.studentId,
+                    offeringId: meeting.offeringId ?? null,
+                    title: meeting.title,
+                    notes: meetingNotes.trim() || null,
+                    dateISO: meetingDateISO || meeting.dateISO,
+                    startMinutes: normalizeTimeValue(meetingStart, meeting.startMinutes),
+                    endMinutes: normalizeTimeValue(meetingEnd, meeting.endMinutes),
+                    status: meetingStatus,
+                    version: meeting.version,
+                  })
+                }}
+                variant={canEditMeeting ? 'primary' : 'ghost'}
+              >
+                {canEditMeeting ? 'Save Meeting' : 'Owned by another faculty'}
+              </Btn>
+              {canOpenCourseWorkspace && offering && <Btn size="sm" variant="ghost" onClick={onOpenCourse}>Open Course Workspace</Btn>}
             </div>
           </>
         )}

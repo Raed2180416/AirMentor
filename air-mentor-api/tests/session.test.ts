@@ -105,7 +105,7 @@ describe('session routes', () => {
   it('guards system-admin routes from non-admin role contexts', async () => {
     current = await createTestApp()
 
-    const login = await loginAs(current.app, 't1', '1234')
+    const login = await loginAs(current.app, 'kavitha.rao', '1234')
     const response = await current.app.inject({
       method: 'GET',
       url: '/api/admin/departments',

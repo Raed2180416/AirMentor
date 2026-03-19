@@ -23,7 +23,7 @@ import { parseJson, stringifyJson } from '../lib/json.js'
 import { emitAuditEvent, expectVersion, parseOrThrow, requireRole } from './support.js'
 
 const weekdaySchema = z.enum(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])
-const scopeTypeSchema = z.enum(['institution', 'academic-faculty', 'department', 'branch', 'batch'])
+export const scopeTypeSchema = z.enum(['institution', 'academic-faculty', 'department', 'branch', 'batch'])
 
 const gradeBandSchema = z.object({
   grade: z.string().min(1),
@@ -68,6 +68,21 @@ const progressionRulesSchema = z.object({
   requireNoActiveBacklogs: z.boolean(),
 })
 
+const riskRulesSchema = z.object({
+  highRiskAttendancePercentBelow: z.number().min(0).max(100),
+  mediumRiskAttendancePercentBelow: z.number().min(0).max(100),
+  highRiskCgpaBelow: z.number().min(0).max(10),
+  mediumRiskCgpaBelow: z.number().min(0).max(10),
+  highRiskBacklogCount: z.number().int().min(0).max(50),
+  mediumRiskBacklogCount: z.number().int().min(0).max(50),
+}).refine(value => value.highRiskAttendancePercentBelow <= value.mediumRiskAttendancePercentBelow, {
+  message: 'High risk attendance threshold must be less than or equal to medium risk attendance threshold',
+}).refine(value => value.highRiskCgpaBelow <= value.mediumRiskCgpaBelow, {
+  message: 'High risk CGPA threshold must be less than or equal to medium risk CGPA threshold',
+}).refine(value => value.highRiskBacklogCount >= value.mediumRiskBacklogCount, {
+  message: 'High risk backlog threshold must be greater than or equal to medium risk backlog threshold',
+})
+
 const policyPayloadSchema = z.object({
   gradeBands: z.array(gradeBandSchema).min(1).optional(),
   ceSeeSplit: ceSeeSplitSchema.optional(),
@@ -75,6 +90,7 @@ const policyPayloadSchema = z.object({
   workingCalendar: workingCalendarSchema.optional(),
   sgpaCgpaRules: sgpaCgpaRulesSchema.optional(),
   progressionRules: progressionRulesSchema.optional(),
+  riskRules: riskRulesSchema.optional(),
 }).refine(value => Object.keys(value).length > 0, {
   message: 'At least one policy segment must be provided.',
 })
@@ -133,17 +149,18 @@ const policyFilterSchema = z.object({
   scopeId: z.string().min(1).optional(),
 })
 
-type PolicyPayload = z.infer<typeof policyPayloadSchema>
-type ResolvedPolicy = {
+export type PolicyPayload = z.infer<typeof policyPayloadSchema>
+export type ResolvedPolicy = {
   gradeBands: z.infer<typeof gradeBandSchema>[]
   ceSeeSplit: z.infer<typeof ceSeeSplitSchema>
   ceComponentCaps: z.infer<typeof ceComponentCapsSchema>
   workingCalendar: z.infer<typeof workingCalendarSchema>
   sgpaCgpaRules: z.infer<typeof sgpaCgpaRulesSchema>
   progressionRules: z.infer<typeof progressionRulesSchema>
+  riskRules: z.infer<typeof riskRulesSchema>
 }
 
-const DEFAULT_POLICY: ResolvedPolicy = {
+export const DEFAULT_POLICY: ResolvedPolicy = {
   gradeBands: [
     { grade: 'O', minimumMark: 90, maximumMark: 100, gradePoint: 10 },
     { grade: 'A+', minimumMark: 80, maximumMark: 89, gradePoint: 9 },
@@ -182,6 +199,14 @@ const DEFAULT_POLICY: ResolvedPolicy = {
     passMarkPercent: 40,
     minimumCgpaForPromotion: 5,
     requireNoActiveBacklogs: true,
+  },
+  riskRules: {
+    highRiskAttendancePercentBelow: 65,
+    mediumRiskAttendancePercentBelow: 75,
+    highRiskCgpaBelow: 6,
+    mediumRiskCgpaBelow: 7,
+    highRiskBacklogCount: 2,
+    mediumRiskBacklogCount: 1,
   },
 }
 
@@ -251,6 +276,7 @@ function mergePolicy(base: ResolvedPolicy, override: PolicyPayload): ResolvedPol
     workingCalendar: override.workingCalendar ?? base.workingCalendar,
     sgpaCgpaRules: override.sgpaCgpaRules ?? base.sgpaCgpaRules,
     progressionRules: override.progressionRules ?? base.progressionRules,
+    riskRules: override.riskRules ?? base.riskRules,
   }
 }
 
@@ -310,7 +336,7 @@ async function assertScopeExists(context: RouteContext, scopeType: z.infer<typeo
   return row
 }
 
-async function resolveBatchPolicy(context: RouteContext, batchId: string) {
+export async function resolveBatchPolicy(context: RouteContext, batchId: string) {
   const [institution] = await context.db.select().from(institutions)
   if (!institution) throw notFound('Institution is not configured')
 

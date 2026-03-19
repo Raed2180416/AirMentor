@@ -12,8 +12,10 @@ import {
 import { AirMentorApiClient, AirMentorApiError, type AirMentorApiClientLike } from './api/client'
 import type { ApiAcademicBootstrap, ApiAcademicRuntimeKey, ApiLoginRequest, ApiSessionResponse } from './api/types'
 import {
+  type AcademicMeeting,
   type CalendarAuditEvent,
   createTransition,
+  type EntryKind,
   type FacultyTimetableTemplate,
   normalizeThemeMode,
   type TaskCalendarPlacement,
@@ -56,6 +58,7 @@ export const AIRMENTOR_STORAGE_KEYS = {
   timetableTemplates: 'airmentor-timetable-templates',
   taskPlacements: 'airmentor-task-placements',
   calendarAudit: 'airmentor-calendar-audit',
+  meetings: 'airmentor-meetings',
   allTasks: 'airmentor-all-tasks',
   resolvedTasks: 'airmentor-resolved-tasks',
 } as const
@@ -157,6 +160,8 @@ export interface EntryDataRepository {
   getBlueprintSnapshot(offerings: Offering[]): Record<string, Record<TTKind, TermTestBlueprint>>
   getDraftSnapshot(): Record<string, number>
   getCellValueSnapshot(): Record<string, number>
+  commitAttendanceEntries(offeringId: string, payload: { entries: Array<{ studentId: string; presentClasses: number; totalClasses: number }>; capturedAt?: string; lock?: boolean }): Promise<void>
+  commitAssessmentEntries(offeringId: string, kind: Exclude<EntryKind, 'attendance'>, payload: { entries: Array<{ studentId: string; components: Array<{ componentCode: string; score: number; maxScore: number }> }>; evaluatedAt?: string; lock?: boolean }): Promise<void>
   saveStudentPatches(next: Record<string, StudentRuntimePatch>): Promise<void>
   saveSchemeState(next: Record<string, SchemeState>): Promise<void>
   saveBlueprintState(next: Record<string, Record<TTKind, TermTestBlueprint>>): Promise<void>
@@ -183,9 +188,12 @@ export interface CalendarRepository {
   getTimetableTemplatesSnapshot(faculty: FacultyAccount[], offerings: Offering[]): Record<string, FacultyTimetableTemplate>
   getTaskPlacementsSnapshot(): Record<string, TaskCalendarPlacement>
   getCalendarAuditSnapshot(): CalendarAuditEvent[]
+  getMeetingsSnapshot(): AcademicMeeting[]
   saveTimetableTemplates(next: Record<string, FacultyTimetableTemplate>): Promise<void>
   saveTaskPlacements(next: Record<string, TaskCalendarPlacement>): Promise<void>
   saveCalendarAudit(next: CalendarAuditEvent[]): Promise<void>
+  createMeeting(payload: { studentId: string; offeringId?: string | null; title: string; notes?: string | null; dateISO: string; startMinutes: number; endMinutes: number; status?: AcademicMeeting['status'] }): Promise<AcademicMeeting>
+  updateMeeting(meetingId: string, payload: { studentId: string; offeringId?: string | null; title: string; notes?: string | null; dateISO: string; startMinutes: number; endMinutes: number; status: AcademicMeeting['status']; version: number }): Promise<AcademicMeeting>
 }
 
 export interface AirMentorRepositories {
@@ -302,6 +310,12 @@ export function createLocalAirMentorRepositories(storage?: JsonStorage): AirMent
       getCellValueSnapshot() {
         return readJson(resolvedStorage, AIRMENTOR_STORAGE_KEYS.cellValues, {} as Record<string, number>)
       },
+      async commitAttendanceEntries() {
+        return
+      },
+      async commitAssessmentEntries() {
+        return
+      },
       async saveStudentPatches(next) {
         writeJson(resolvedStorage, AIRMENTOR_STORAGE_KEYS.studentPatches, next)
       },
@@ -369,6 +383,9 @@ export function createLocalAirMentorRepositories(storage?: JsonStorage): AirMent
       getCalendarAuditSnapshot() {
         return readJson(resolvedStorage, AIRMENTOR_STORAGE_KEYS.calendarAudit, [] as CalendarAuditEvent[])
       },
+      getMeetingsSnapshot() {
+        return readJson(resolvedStorage, AIRMENTOR_STORAGE_KEYS.meetings, [] as AcademicMeeting[])
+      },
       async saveTimetableTemplates(next) {
         writeJson(resolvedStorage, AIRMENTOR_STORAGE_KEYS.timetableTemplates, next)
       },
@@ -377,6 +394,46 @@ export function createLocalAirMentorRepositories(storage?: JsonStorage): AirMent
       },
       async saveCalendarAudit(next) {
         writeJson(resolvedStorage, AIRMENTOR_STORAGE_KEYS.calendarAudit, next)
+      },
+      async createMeeting(payload) {
+        const meetings = readJson(resolvedStorage, AIRMENTOR_STORAGE_KEYS.meetings, [] as AcademicMeeting[])
+        const created: AcademicMeeting = {
+          meetingId: `meeting-${Date.now()}`,
+          version: 1,
+          facultyId: '',
+          studentId: payload.studentId,
+          studentName: '',
+          studentUsn: '',
+          offeringId: payload.offeringId ?? null,
+          courseCode: null,
+          courseName: null,
+          title: payload.title,
+          notes: payload.notes ?? null,
+          dateISO: payload.dateISO,
+          startMinutes: payload.startMinutes,
+          endMinutes: payload.endMinutes,
+          status: payload.status ?? 'scheduled',
+          createdByFacultyId: null,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        }
+        writeJson(resolvedStorage, AIRMENTOR_STORAGE_KEYS.meetings, [...meetings, created])
+        return created
+      },
+      async updateMeeting(meetingId, payload) {
+        const meetings = readJson(resolvedStorage, AIRMENTOR_STORAGE_KEYS.meetings, [] as AcademicMeeting[])
+        const nextMeetings = meetings.map(meeting => meeting.meetingId === meetingId
+          ? {
+              ...meeting,
+              ...payload,
+              offeringId: payload.offeringId ?? null,
+              notes: payload.notes ?? null,
+              version: payload.version + 1,
+              updatedAt: Date.now(),
+            }
+          : meeting)
+        writeJson(resolvedStorage, AIRMENTOR_STORAGE_KEYS.meetings, nextMeetings)
+        return nextMeetings.find(meeting => meeting.meetingId === meetingId) as AcademicMeeting
       },
     },
     async clearPersistedState() {
@@ -457,6 +514,9 @@ function createHttpAcademicRepositories({
   const resolvedStorage = resolveStorage(storage)
   const baselineRuntime = deepClone(bootstrap.runtime)
   const runtimeCache = deepClone(bootstrap.runtime)
+  const schemeCache = deepClone(bootstrap.assessmentSchemesByOffering)
+  const questionPaperCache = deepClone(bootstrap.questionPapersByOffering)
+  const meetingCache = deepClone(bootstrap.meetings ?? [])
 
   async function persistRuntimeSlice<T>(stateKey: ApiAcademicRuntimeKey, payload: T) {
     ;(runtimeCache as Record<string, unknown>)[stateKey] = deepClone(payload)
@@ -486,15 +546,13 @@ function createHttpAcademicRepositories({
         return deepClone(runtimeCache.studentPatches ?? {})
       },
       getSchemeStateSnapshot(offerings) {
-        const parsed = runtimeCache.schemeByOffering ?? {}
         return Object.fromEntries(
-          offerings.map(offering => [offering.offId, normalizeSchemeState(parsed[offering.offId], offering)]),
+          offerings.map(offering => [offering.offId, normalizeSchemeState(schemeCache[offering.offId], offering)]),
         ) as Record<string, SchemeState>
       },
       getBlueprintSnapshot(offerings) {
-        const parsed = runtimeCache.ttBlueprintsByOffering ?? {}
         return Object.fromEntries(offerings.map(offering => {
-          const source = parsed[offering.offId]
+          const source = questionPaperCache[offering.offId]
           const basePaper = PAPER_MAP[offering.code] || PAPER_MAP.default
           return [offering.offId, {
             tt1: normalizeBlueprint('tt1', source?.tt1 ?? seedBlueprintFromPaper('tt1', basePaper)),
@@ -508,14 +566,37 @@ function createHttpAcademicRepositories({
       getCellValueSnapshot() {
         return deepClone(runtimeCache.cellValues ?? {})
       },
+      async commitAttendanceEntries(offeringId, payload) {
+        await client.commitOfferingAttendance(offeringId, payload)
+      },
+      async commitAssessmentEntries(offeringId, kind, payload) {
+        await client.commitOfferingAssessmentEntries(offeringId, kind, payload)
+      },
       async saveStudentPatches(next) {
-        await persistRuntimeSlice('studentPatches', next)
+        runtimeCache.studentPatches = deepClone(next)
       },
       async saveSchemeState(next) {
-        await persistRuntimeSlice('schemeByOffering', next)
+        const writes = Object.entries(next).filter(([offeringId, scheme]) => {
+          return JSON.stringify(schemeCache[offeringId] ?? null) !== JSON.stringify(scheme)
+        })
+        await Promise.all(writes.map(async ([offeringId, scheme]) => {
+          await client.saveOfferingAssessmentScheme(offeringId, { scheme })
+          schemeCache[offeringId] = deepClone(scheme)
+        }))
       },
       async saveBlueprintState(next) {
-        await persistRuntimeSlice('ttBlueprintsByOffering', next)
+        const writes = Object.entries(next).flatMap(([offeringId, kinds]) => {
+          return (['tt1', 'tt2'] as const)
+            .filter(kind => JSON.stringify(questionPaperCache[offeringId]?.[kind] ?? null) !== JSON.stringify(kinds[kind]))
+            .map(kind => ({ offeringId, kind, blueprint: kinds[kind] }))
+        })
+        await Promise.all(writes.map(async ({ offeringId, kind, blueprint }) => {
+          await client.saveOfferingQuestionPaper(offeringId, kind, { blueprint })
+          questionPaperCache[offeringId] = {
+            ...(questionPaperCache[offeringId] ?? {}),
+            [kind]: deepClone(blueprint),
+          }
+        }))
       },
       async saveDrafts(next) {
         await persistRuntimeSlice('drafts', next)
@@ -547,10 +628,11 @@ function createHttpAcademicRepositories({
         return deepClone(runtimeCache.resolvedTasks ?? {})
       },
       async saveTasks(next) {
-        await persistRuntimeSlice('tasks', next)
+        runtimeCache.tasks = deepClone(next)
+        await client.syncAcademicTasks({ tasks: next })
       },
       async saveResolvedTasks(next) {
-        await persistRuntimeSlice('resolvedTasks', next)
+        runtimeCache.resolvedTasks = deepClone(next)
       },
       async upsertTask(task) {
         return toBackendTaskPayload(task)
@@ -573,14 +655,36 @@ function createHttpAcademicRepositories({
       getCalendarAuditSnapshot() {
         return deepClone(runtimeCache.calendarAudit ?? [])
       },
+      getMeetingsSnapshot() {
+        return deepClone(meetingCache)
+      },
       async saveTimetableTemplates(next) {
-        await persistRuntimeSlice('timetableByFacultyId', next)
+        const previousTemplates = deepClone(runtimeCache.timetableByFacultyId ?? {})
+        const writes = Object.entries(next).filter(([facultyId, template]) => {
+          return JSON.stringify(previousTemplates[facultyId] ?? null) !== JSON.stringify(template)
+        })
+        runtimeCache.timetableByFacultyId = deepClone(next)
+        await Promise.all(writes.map(async ([facultyId, template]) => {
+          await client.saveFacultyCalendarWorkspace(facultyId, { template })
+        }))
       },
       async saveTaskPlacements(next) {
-        await persistRuntimeSlice('taskPlacements', next)
+        runtimeCache.taskPlacements = deepClone(next)
+        await client.syncAcademicTaskPlacements({ placements: next })
       },
       async saveCalendarAudit(next) {
-        await persistRuntimeSlice('calendarAudit', next)
+        runtimeCache.calendarAudit = deepClone(next)
+        await client.syncAcademicCalendarAudit({ events: next })
+      },
+      async createMeeting(payload) {
+        const created = await client.createAcademicMeeting(payload)
+        meetingCache.splice(0, meetingCache.length, ...deepClone([...meetingCache, created]))
+        return created
+      },
+      async updateMeeting(meetingId, payload) {
+        const updated = await client.updateAcademicMeeting(meetingId, payload)
+        meetingCache.splice(0, meetingCache.length, ...deepClone(meetingCache.map(meeting => meeting.meetingId === meetingId ? updated : meeting)))
+        return updated
       },
     },
     async clearPersistedState() {

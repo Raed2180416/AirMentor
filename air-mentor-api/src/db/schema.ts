@@ -275,6 +275,183 @@ export const studentAcademicProfiles = pgTable('student_academic_profiles', {
   updatedAt: text('updated_at').notNull(),
 })
 
+export const studentAttendanceSnapshots = pgTable('student_attendance_snapshots', {
+  attendanceSnapshotId: text('attendance_snapshot_id').primaryKey(),
+  studentId: text('student_id').notNull().references(() => students.studentId),
+  offeringId: text('offering_id').notNull().references(() => sectionOfferings.offeringId),
+  presentClasses: integer('present_classes').notNull(),
+  totalClasses: integer('total_classes').notNull(),
+  attendancePercent: integer('attendance_percent').notNull(),
+  source: text('source').notNull(),
+  capturedAt: text('captured_at').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
+export const studentAssessmentScores = pgTable('student_assessment_scores', {
+  assessmentScoreId: text('assessment_score_id').primaryKey(),
+  studentId: text('student_id').notNull().references(() => students.studentId),
+  offeringId: text('offering_id').notNull().references(() => sectionOfferings.offeringId),
+  termId: text('term_id').references(() => academicTerms.termId),
+  componentType: text('component_type').notNull(),
+  componentCode: text('component_code'),
+  score: integer('score').notNull(),
+  maxScore: integer('max_score').notNull(),
+  evaluatedAt: text('evaluated_at').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
+export const studentInterventions = pgTable('student_interventions', {
+  interventionId: text('intervention_id').primaryKey(),
+  studentId: text('student_id').notNull().references(() => students.studentId),
+  facultyId: text('faculty_id').references(() => facultyProfiles.facultyId),
+  offeringId: text('offering_id').references(() => sectionOfferings.offeringId),
+  interventionType: text('intervention_type').notNull(),
+  note: text('note').notNull(),
+  occurredAt: text('occurred_at').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
+export const transcriptTermResults = pgTable('transcript_term_results', {
+  transcriptTermResultId: text('transcript_term_result_id').primaryKey(),
+  studentId: text('student_id').notNull().references(() => students.studentId),
+  termId: text('term_id').notNull().references(() => academicTerms.termId),
+  sgpaScaled: integer('sgpa_scaled').notNull(),
+  registeredCredits: integer('registered_credits').notNull(),
+  earnedCredits: integer('earned_credits').notNull(),
+  backlogCount: integer('backlog_count').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
+export const transcriptSubjectResults = pgTable('transcript_subject_results', {
+  transcriptSubjectResultId: text('transcript_subject_result_id').primaryKey(),
+  transcriptTermResultId: text('transcript_term_result_id').notNull().references(() => transcriptTermResults.transcriptTermResultId),
+  courseCode: text('course_code').notNull(),
+  title: text('title').notNull(),
+  credits: integer('credits').notNull(),
+  score: integer('score').notNull(),
+  gradeLabel: text('grade_label').notNull(),
+  gradePoint: integer('grade_point').notNull(),
+  result: text('result').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
+export const courseOutcomeOverrides = pgTable('course_outcome_overrides', {
+  courseOutcomeOverrideId: text('course_outcome_override_id').primaryKey(),
+  courseId: text('course_id').notNull().references(() => courses.courseId),
+  scopeType: text('scope_type').notNull(),
+  scopeId: text('scope_id').notNull(),
+  outcomesJson: text('outcomes_json').notNull(),
+  status: text('status').notNull(),
+  version: integer('version').notNull().default(1),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
+export const offeringAssessmentSchemes = pgTable('offering_assessment_schemes', {
+  offeringId: text('offering_id').primaryKey().references(() => sectionOfferings.offeringId),
+  configuredByFacultyId: text('configured_by_faculty_id').references(() => facultyProfiles.facultyId),
+  schemeJson: text('scheme_json').notNull(),
+  policySnapshotJson: text('policy_snapshot_json').notNull(),
+  status: text('status').notNull(),
+  version: integer('version').notNull().default(1),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
+export const offeringQuestionPapers = pgTable('offering_question_papers', {
+  paperId: text('paper_id').primaryKey(),
+  offeringId: text('offering_id').notNull().references(() => sectionOfferings.offeringId),
+  kind: text('kind').notNull(),
+  blueprintJson: text('blueprint_json').notNull(),
+  updatedByFacultyId: text('updated_by_faculty_id').references(() => facultyProfiles.facultyId),
+  version: integer('version').notNull().default(1),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
+export const academicTasks = pgTable('academic_tasks', {
+  taskId: text('task_id').primaryKey(),
+  studentId: text('student_id').notNull().references(() => students.studentId),
+  offeringId: text('offering_id').notNull().references(() => sectionOfferings.offeringId),
+  assignedToRole: text('assigned_to_role').notNull(),
+  taskType: text('task_type').notNull(),
+  status: text('status').notNull(),
+  title: text('title').notNull(),
+  dueLabel: text('due_label').notNull(),
+  dueDateIso: text('due_date_iso'),
+  riskProbScaled: integer('risk_prob_scaled').notNull(),
+  riskBand: text('risk_band').notNull(),
+  priority: integer('priority').notNull(),
+  payloadJson: text('payload_json').notNull(),
+  createdByFacultyId: text('created_by_faculty_id').references(() => facultyProfiles.facultyId),
+  updatedByFacultyId: text('updated_by_faculty_id').references(() => facultyProfiles.facultyId),
+  version: integer('version').notNull().default(1),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
+export const academicTaskTransitions = pgTable('academic_task_transitions', {
+  transitionId: text('transition_id').primaryKey(),
+  taskId: text('task_id').notNull().references(() => academicTasks.taskId),
+  actorRole: text('actor_role').notNull(),
+  actorFacultyId: text('actor_faculty_id').references(() => facultyProfiles.facultyId),
+  action: text('action').notNull(),
+  fromOwner: text('from_owner'),
+  toOwner: text('to_owner').notNull(),
+  note: text('note').notNull(),
+  occurredAt: text('occurred_at').notNull(),
+})
+
+export const academicTaskPlacements = pgTable('academic_task_placements', {
+  taskId: text('task_id').primaryKey().references(() => academicTasks.taskId),
+  facultyId: text('faculty_id').notNull().references(() => facultyProfiles.facultyId),
+  dateIso: text('date_iso').notNull(),
+  placementMode: text('placement_mode').notNull(),
+  startMinutes: integer('start_minutes'),
+  endMinutes: integer('end_minutes'),
+  slotId: text('slot_id'),
+  startTime: text('start_time'),
+  endTime: text('end_time'),
+  updatedAt: text('updated_at').notNull(),
+})
+
+export const facultyCalendarWorkspaces = pgTable('faculty_calendar_workspaces', {
+  facultyId: text('faculty_id').primaryKey().references(() => facultyProfiles.facultyId),
+  templateJson: text('template_json').notNull(),
+  version: integer('version').notNull().default(1),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
+export const academicCalendarAuditEvents = pgTable('academic_calendar_audit_events', {
+  auditEventId: text('audit_event_id').primaryKey(),
+  facultyId: text('faculty_id').notNull().references(() => facultyProfiles.facultyId),
+  payloadJson: text('payload_json').notNull(),
+  createdAt: text('created_at').notNull(),
+})
+
+export const academicMeetings = pgTable('academic_meetings', {
+  meetingId: text('meeting_id').primaryKey(),
+  facultyId: text('faculty_id').notNull().references(() => facultyProfiles.facultyId),
+  studentId: text('student_id').notNull().references(() => students.studentId),
+  offeringId: text('offering_id').references(() => sectionOfferings.offeringId),
+  title: text('title').notNull(),
+  notes: text('notes'),
+  dateIso: text('date_iso').notNull(),
+  startMinutes: integer('start_minutes').notNull(),
+  endMinutes: integer('end_minutes').notNull(),
+  status: text('status').notNull(),
+  createdByFacultyId: text('created_by_faculty_id').references(() => facultyProfiles.facultyId),
+  version: integer('version').notNull().default(1),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
 export const academicAssets = pgTable('academic_assets', {
   assetKey: text('asset_key').primaryKey(),
   payloadJson: text('payload_json').notNull(),
@@ -384,6 +561,20 @@ export const allTables = {
   sectionOfferings,
   facultyOfferingOwnerships,
   studentAcademicProfiles,
+  studentAttendanceSnapshots,
+  studentAssessmentScores,
+  studentInterventions,
+  transcriptTermResults,
+  transcriptSubjectResults,
+  courseOutcomeOverrides,
+  offeringAssessmentSchemes,
+  offeringQuestionPapers,
+  academicTasks,
+  academicTaskTransitions,
+  academicTaskPlacements,
+  facultyCalendarWorkspaces,
+  academicCalendarAuditEvents,
+  academicMeetings,
   academicAssets,
   academicRuntimeState,
   adminRequests,

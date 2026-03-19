@@ -1,4 +1,4 @@
-import { and, eq, or } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { sendCookie, type RouteContext } from '../app.js'
@@ -66,19 +66,12 @@ export async function registerSessionRoutes(app: FastifyInstance, context: Route
   app.post('/api/session/login', {
     schema: {
       tags: ['session'],
-      summary: 'Login with username or email',
+      summary: 'Login with username and password',
     },
   }, async (request, reply) => {
     const body = parseOrThrow(loginSchema, request.body)
-    let users = await context.db.select().from(userAccounts).where(or(eq(userAccounts.username, body.identifier), eq(userAccounts.email, body.identifier)))
-    let user = users[0]
-    if (!user) {
-      const [facultyById] = await context.db.select().from(facultyProfiles).where(eq(facultyProfiles.facultyId, body.identifier))
-      if (facultyById) {
-        const matchedUsers = await context.db.select().from(userAccounts).where(eq(userAccounts.userId, facultyById.userId))
-        user = matchedUsers[0]
-      }
-    }
+    const users = await context.db.select().from(userAccounts).where(eq(userAccounts.username, body.identifier))
+    const user = users[0]
     if (!user) throw unauthorized('Invalid credentials')
 
     const [credential] = await context.db.select().from(userPasswordCredentials).where(eq(userPasswordCredentials.userId, user.userId))

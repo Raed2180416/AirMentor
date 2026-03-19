@@ -3,6 +3,7 @@
 // ══════════════════════════════════════════════════════════════
 
 import type {
+  AcademicMeeting,
   EntryKind,
   FacultyAccount,
   Role,
@@ -51,6 +52,16 @@ export interface SHAPReason { label: string; impact: number; feature: string }
 export interface COScore { coId: string; attainment: number }
 export interface WhatIf { label: string; current: string; target: string; currentRisk: number; newRisk: number }
 export interface Intervention { date: string; type: string; note: string }
+export interface CoAttainmentRow {
+  coId: string
+  desc: string
+  bloom: string
+  target: number
+  tt1Attainment: number | null
+  tt2Attainment: number | null
+  overallAttainment: number | null
+  studentsCounted: number
+}
 
 export interface Student {
   id: string; usn: string; name: string; phone: string
@@ -60,6 +71,7 @@ export interface Student {
   quiz1: number | null; quiz2: number | null
   asgn1: number | null; asgn2: number | null
   prevCgpa: number
+  currentCgpa?: number
   riskProb: number | null; riskBand: RiskBand | null
   reasons: SHAPReason[]
   coScores: COScore[]
@@ -181,6 +193,8 @@ export interface StudentHistoryRecord {
   dept: string
   trend: 'Improving' | 'Stable' | 'Declining'
   currentCgpa: number
+  completedCreditsForCgpa: number
+  progressionStatus: 'Eligible' | 'Review' | 'Hold'
   advisoryNotes: string[]
   repeatSubjects: string[]
   terms: TranscriptTerm[]
@@ -196,6 +210,8 @@ export interface AcademicHydrationSnapshot {
   subjectRuns: SubjectRun[]
   studentsByOffering: Record<string, Student[]>
   studentHistoryByUsn: Record<string, StudentHistoryRecord>
+  coAttainmentByOffering?: Record<string, CoAttainmentRow[]>
+  meetings?: AcademicMeeting[]
 }
 
 // ───── Theme ─────
@@ -882,10 +898,18 @@ function toCurrentCgpa(terms: TranscriptTerm[]) {
   return totalCredits > 0 ? Math.round((weighted / totalCredits) * 100) / 100 : 0
 }
 
-function toHistoryRecord(input: Omit<StudentHistoryRecord, 'currentCgpa'>): StudentHistoryRecord {
+function toHistoryRecord(input: Omit<StudentHistoryRecord, 'currentCgpa' | 'completedCreditsForCgpa' | 'progressionStatus'>): StudentHistoryRecord {
+  const currentCgpa = toCurrentCgpa(input.terms)
+  const completedCreditsForCgpa = input.terms.reduce((acc, term) => acc + term.earnedCredits, 0)
   return {
     ...input,
-    currentCgpa: toCurrentCgpa(input.terms),
+    currentCgpa,
+    completedCreditsForCgpa,
+    progressionStatus: currentCgpa >= 6.5 && input.terms.every(term => term.backlogCount === 0)
+      ? 'Eligible'
+      : currentCgpa >= 5.5
+        ? 'Review'
+        : 'Hold',
   }
 }
 

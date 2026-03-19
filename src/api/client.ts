@@ -1,6 +1,7 @@
 import type {
   ApiAcademicBootstrap,
   ApiAcademicFaculty,
+  ApiAcademicMeeting,
   ApiAdminFacultyCalendar,
   ApiAcademicLoginFaculty,
   ApiAcademicTerm,
@@ -13,9 +14,13 @@ import type {
   ApiAdminOffering,
   ApiAcademicFacultyProfile,
   ApiAuditEvent,
+  ApiAttendanceSnapshot,
+  ApiAssessmentScore,
   ApiBatch,
   ApiBranch,
   ApiCourse,
+  ApiCourseOutcomeOverride,
+  ApiCourseOutcomeScopeType,
   ApiCurriculumCourse,
   ApiDepartment,
   ApiFacultyRecord,
@@ -26,12 +31,27 @@ import type {
   ApiOfferingOwnership,
   ApiPolicyOverride,
   ApiResolvedBatchPolicy,
+  ApiResolvedCourseOutcomeSet,
   ApiRoleGrant,
   ApiSessionResponse,
   ApiStudentRecord,
   ApiStudentEnrollment,
+  ApiStudentIntervention,
+  ApiTranscriptSubjectResult,
+  ApiTranscriptTermResult,
   ApiUiPreferences,
 } from './types.js'
+import type {
+  MeetingStatus,
+  CalendarAuditEvent,
+  EntryKind,
+  FacultyTimetableTemplate,
+  SchemeState,
+  SharedTask,
+  TaskCalendarPlacement,
+  TTKind,
+  TermTestBlueprint,
+} from '../domain.js'
 
 export class AirMentorApiError extends Error {
   readonly status: number
@@ -52,6 +72,14 @@ export interface AirMentorApiClientLike {
   listAcademicLoginFaculty(): Promise<{ items: ApiAcademicLoginFaculty[] }>
   getAcademicBootstrap(): Promise<ApiAcademicBootstrap>
   saveAcademicRuntimeSlice<T>(stateKey: ApiAcademicRuntimeKey, payload: T): Promise<{ ok: true; stateKey: ApiAcademicRuntimeKey }>
+  syncAcademicTasks(payload: { tasks: SharedTask[] }): Promise<{ ok: true; count: number }>
+  syncAcademicTaskPlacements(payload: { placements: Record<string, TaskCalendarPlacement> }): Promise<{ ok: true; count: number }>
+  syncAcademicCalendarAudit(payload: { events: CalendarAuditEvent[] }): Promise<{ ok: true; count: number }>
+  saveFacultyCalendarWorkspace(facultyId: string, payload: { template: FacultyTimetableTemplate }): Promise<{ facultyId: string; template: FacultyTimetableTemplate; version: number; directEditWindowEndsAt: string | null; classEditingLocked: boolean }>
+  createAcademicMeeting(payload: { studentId: string; offeringId?: string | null; title: string; notes?: string | null; dateISO: string; startMinutes: number; endMinutes: number; status?: MeetingStatus }): Promise<ApiAcademicMeeting>
+  updateAcademicMeeting(meetingId: string, payload: { studentId: string; offeringId?: string | null; title: string; notes?: string | null; dateISO: string; startMinutes: number; endMinutes: number; status: MeetingStatus; version: number }): Promise<ApiAcademicMeeting>
+  commitOfferingAttendance(offeringId: string, payload: { entries: Array<{ studentId: string; presentClasses: number; totalClasses: number }>; capturedAt?: string; lock?: boolean }): Promise<{ ok: true; offeringId: string; capturedAt: string; averageAttendance: number; locked: boolean }>
+  commitOfferingAssessmentEntries(offeringId: string, kind: Exclude<EntryKind, 'attendance'>, payload: { entries: Array<{ studentId: string; components: Array<{ componentCode: string; score: number; maxScore: number }> }>; evaluatedAt?: string; lock?: boolean }): Promise<{ ok: true; offeringId: string; kind: Exclude<EntryKind, 'attendance'>; evaluatedAt: string; locked: boolean }>
   getUiPreferences(): Promise<ApiUiPreferences>
   saveUiPreferences(payload: Pick<ApiUiPreferences, 'themeMode' | 'version'>): Promise<ApiUiPreferences>
   getInstitution(): Promise<ApiInstitution>
@@ -162,6 +190,17 @@ export interface AirMentorApiClientLike {
   listOfferingOwnership(): Promise<{ items: ApiOfferingOwnership[] }>
   createOfferingOwnership(payload: Pick<ApiOfferingOwnership, 'offeringId' | 'facultyId' | 'ownershipRole' | 'status'>): Promise<ApiOfferingOwnership>
   updateOfferingOwnership(ownershipId: string, payload: Pick<ApiOfferingOwnership, 'offeringId' | 'facultyId' | 'ownershipRole' | 'status' | 'version'>): Promise<ApiOfferingOwnership>
+  listCourseOutcomeOverrides(filter?: { courseId?: string; scopeType?: ApiCourseOutcomeScopeType; scopeId?: string }): Promise<{ items: ApiCourseOutcomeOverride[] }>
+  createCourseOutcomeOverride(payload: Pick<ApiCourseOutcomeOverride, 'courseId' | 'scopeType' | 'scopeId' | 'outcomes' | 'status'>): Promise<ApiCourseOutcomeOverride>
+  updateCourseOutcomeOverride(courseOutcomeOverrideId: string, payload: Pick<ApiCourseOutcomeOverride, 'courseId' | 'scopeType' | 'scopeId' | 'outcomes' | 'status' | 'version'>): Promise<ApiCourseOutcomeOverride>
+  getResolvedCourseOutcomes(offeringId: string): Promise<ApiResolvedCourseOutcomeSet>
+  saveOfferingAssessmentScheme(offeringId: string, payload: { scheme: SchemeState }): Promise<{ offeringId: string; scheme: SchemeState; version: number; policySnapshot: unknown }>
+  saveOfferingQuestionPaper(offeringId: string, kind: TTKind, payload: { blueprint: TermTestBlueprint }): Promise<{ paperId: string; offeringId: string; kind: TTKind; blueprint: TermTestBlueprint; version: number }>
+  createAttendanceSnapshot(payload: Omit<ApiAttendanceSnapshot, 'attendanceSnapshotId'>): Promise<{ attendanceSnapshotId: string; ok: true }>
+  createAssessmentScore(payload: Omit<ApiAssessmentScore, 'assessmentScoreId'>): Promise<{ assessmentScoreId: string; ok: true }>
+  createStudentIntervention(payload: Omit<ApiStudentIntervention, 'interventionId'>): Promise<{ interventionId: string; ok: true }>
+  createTranscriptTermResult(payload: Omit<ApiTranscriptTermResult, 'transcriptTermResultId'>): Promise<{ transcriptTermResultId: string; ok: true }>
+  createTranscriptSubjectResult(payload: Omit<ApiTranscriptSubjectResult, 'transcriptSubjectResultId'>): Promise<{ transcriptSubjectResultId: string; ok: true }>
   listAdminRequests(): Promise<{ items: ApiAdminRequestSummary[] }>
   searchAdminWorkspace(query: string, scope?: {
     academicFacultyId?: string
@@ -236,6 +275,62 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
 
   async saveAcademicRuntimeSlice<T>(stateKey: ApiAcademicRuntimeKey, payload: T) {
     return this.request<{ ok: true; stateKey: ApiAcademicRuntimeKey }>(`/api/academic/runtime/${stateKey}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async syncAcademicTasks(payload: { tasks: SharedTask[] }) {
+    return this.request<{ ok: true; count: number }>('/api/academic/tasks/sync', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async syncAcademicTaskPlacements(payload: { placements: Record<string, TaskCalendarPlacement> }) {
+    return this.request<{ ok: true; count: number }>('/api/academic/task-placements/sync', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async syncAcademicCalendarAudit(payload: { events: CalendarAuditEvent[] }) {
+    return this.request<{ ok: true; count: number }>('/api/academic/calendar-audit/sync', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async saveFacultyCalendarWorkspace(facultyId: string, payload: { template: FacultyTimetableTemplate }) {
+    return this.request<{ facultyId: string; template: FacultyTimetableTemplate; version: number; directEditWindowEndsAt: string | null; classEditingLocked: boolean }>(`/api/academic/faculty-calendar-workspace/${facultyId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async createAcademicMeeting(payload: { studentId: string; offeringId?: string | null; title: string; notes?: string | null; dateISO: string; startMinutes: number; endMinutes: number; status?: MeetingStatus }) {
+    return this.request<ApiAcademicMeeting>('/api/academic/meetings', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async updateAcademicMeeting(meetingId: string, payload: { studentId: string; offeringId?: string | null; title: string; notes?: string | null; dateISO: string; startMinutes: number; endMinutes: number; status: MeetingStatus; version: number }) {
+    return this.request<ApiAcademicMeeting>(`/api/academic/meetings/${meetingId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async commitOfferingAttendance(offeringId: string, payload: { entries: Array<{ studentId: string; presentClasses: number; totalClasses: number }>; capturedAt?: string; lock?: boolean }) {
+    return this.request<{ ok: true; offeringId: string; capturedAt: string; averageAttendance: number; locked: boolean }>(`/api/academic/offerings/${offeringId}/attendance`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async commitOfferingAssessmentEntries(offeringId: string, kind: Exclude<EntryKind, 'attendance'>, payload: { entries: Array<{ studentId: string; components: Array<{ componentCode: string; score: number; maxScore: number }> }>; evaluatedAt?: string; lock?: boolean }) {
+    return this.request<{ ok: true; offeringId: string; kind: Exclude<EntryKind, 'attendance'>; evaluatedAt: string; locked: boolean }>(`/api/academic/offerings/${offeringId}/assessment-entries/${kind}`, {
       method: 'PUT',
       body: JSON.stringify(payload),
     })
@@ -603,6 +698,82 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
   async updateOfferingOwnership(ownershipId: string, payload: Pick<ApiOfferingOwnership, 'offeringId' | 'facultyId' | 'ownershipRole' | 'status' | 'version'>) {
     return this.request<ApiOfferingOwnership>(`/api/admin/offering-ownership/${ownershipId}`, {
       method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async listCourseOutcomeOverrides(filter?: { courseId?: string; scopeType?: ApiCourseOutcomeScopeType; scopeId?: string }) {
+    const search = new URLSearchParams()
+    if (filter?.courseId) search.set('courseId', filter.courseId)
+    if (filter?.scopeType) search.set('scopeType', filter.scopeType)
+    if (filter?.scopeId) search.set('scopeId', filter.scopeId)
+    const suffix = search.toString() ? `?${search.toString()}` : ''
+    return this.request<{ items: ApiCourseOutcomeOverride[] }>(`/api/admin/course-outcomes${suffix}`)
+  }
+
+  async createCourseOutcomeOverride(payload: Pick<ApiCourseOutcomeOverride, 'courseId' | 'scopeType' | 'scopeId' | 'outcomes' | 'status'>) {
+    return this.request<ApiCourseOutcomeOverride>('/api/admin/course-outcomes', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async updateCourseOutcomeOverride(courseOutcomeOverrideId: string, payload: Pick<ApiCourseOutcomeOverride, 'courseId' | 'scopeType' | 'scopeId' | 'outcomes' | 'status' | 'version'>) {
+    return this.request<ApiCourseOutcomeOverride>(`/api/admin/course-outcomes/${courseOutcomeOverrideId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async getResolvedCourseOutcomes(offeringId: string) {
+    return this.request<ApiResolvedCourseOutcomeSet>(`/api/admin/offerings/${offeringId}/resolved-course-outcomes`)
+  }
+
+  async saveOfferingAssessmentScheme(offeringId: string, payload: { scheme: SchemeState }) {
+    return this.request<{ offeringId: string; scheme: SchemeState; version: number; policySnapshot: unknown }>(`/api/academic/offerings/${offeringId}/scheme`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async saveOfferingQuestionPaper(offeringId: string, kind: TTKind, payload: { blueprint: TermTestBlueprint }) {
+    return this.request<{ paperId: string; offeringId: string; kind: TTKind; blueprint: TermTestBlueprint; version: number }>(`/api/academic/offerings/${offeringId}/question-papers/${kind}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async createAttendanceSnapshot(payload: Omit<ApiAttendanceSnapshot, 'attendanceSnapshotId'>) {
+    return this.request<{ attendanceSnapshotId: string; ok: true }>('/api/admin/attendance-snapshots', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async createAssessmentScore(payload: Omit<ApiAssessmentScore, 'assessmentScoreId'>) {
+    return this.request<{ assessmentScoreId: string; ok: true }>('/api/admin/assessment-scores', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async createStudentIntervention(payload: Omit<ApiStudentIntervention, 'interventionId'>) {
+    return this.request<{ interventionId: string; ok: true }>('/api/admin/student-interventions', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async createTranscriptTermResult(payload: Omit<ApiTranscriptTermResult, 'transcriptTermResultId'>) {
+    return this.request<{ transcriptTermResultId: string; ok: true }>('/api/admin/transcript-term-results', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async createTranscriptSubjectResult(payload: Omit<ApiTranscriptSubjectResult, 'transcriptSubjectResultId'>) {
+    return this.request<{ transcriptSubjectResultId: string; ok: true }>('/api/admin/transcript-subject-results', {
+      method: 'POST',
       body: JSON.stringify(payload),
     })
   }

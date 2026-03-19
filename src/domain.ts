@@ -220,6 +220,29 @@ export type CalendarAuditEvent = {
   after?: CalendarPlacementSnapshot
 }
 
+export type MeetingStatus = 'scheduled' | 'completed' | 'cancelled'
+
+export type AcademicMeeting = {
+  meetingId: string
+  version: number
+  facultyId: string
+  studentId: string
+  studentName: string
+  studentUsn: string
+  offeringId?: string | null
+  courseCode?: string | null
+  courseName?: string | null
+  title: string
+  notes?: string | null
+  dateISO: string
+  startMinutes: number
+  endMinutes: number
+  status: MeetingStatus
+  createdByFacultyId?: string | null
+  createdAt: number
+  updatedAt: number
+}
+
 export type StudentRuntimePatch = {
   present?: number
   totalClasses?: number

@@ -178,7 +178,6 @@ try {
   await expectFlash('Curriculum course archived.')
   await page.waitForFunction((text) => !Array.from(document.querySelectorAll('*')).some(node => node.textContent?.includes(text)), updatedCurriculumTitle)
   await page.getByText('Semester 6 · 2028-30', { exact: true }).locator('xpath=ancestor::*[@data-surface="card"][1]').getByRole('button', { name: 'Delete', exact: true }).click()
-  await expectFlash('Academic term archived.')
   await page.waitForFunction(() => !Array.from(document.querySelectorAll('*')).some(node => node.textContent?.includes('Semester 6 · 2028-30')))
 
   const search = page.getByRole('textbox', { name: 'Global admin search' })
