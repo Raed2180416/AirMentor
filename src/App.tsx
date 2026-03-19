@@ -1546,7 +1546,7 @@ function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent,
               const off = offerings.find(o => getStudentsPatched(o).some(st => st.id === s.id))
               return (
                 <div key={s.id} onClick={() => off && onOpenStudent(s as unknown as Student, off)}
-                  style={{ background: T.surface2, border: `1px solid ${T.danger}25`, borderRadius: 8, padding: '10px 14px', cursor: 'pointer', transition: 'all 0.15s' }}
+                  style={{ background: T.surface2, border: `1px solid ${T.danger}25`, borderRadius: 8, padding: '10px 14px', cursor: 'pointer', transition: 'background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease' }}
                   onMouseEnter={e => (e.currentTarget.style.borderColor = T.danger + '60')} onMouseLeave={e => (e.currentTarget.style.borderColor = T.danger + '25')}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                     <div style={{ ...sora, fontWeight: 600, fontSize: 13, color: T.text }}>{s.name}</div>
@@ -1585,7 +1585,7 @@ function YearSection({ group, onOpenCourse, onOpenUpload }: { group: YearGroup; 
 
   return (
     <div style={{ marginBottom: 22 }}>
-      <div data-pressable="true" onClick={() => setCollapsed(c => !c)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', background: `${color}0c`, border: `1px solid ${color}28`, borderRadius: collapsed ? 10 : '10px 10px 0 0', marginBottom: collapsed ? 0 : 12, cursor: 'pointer', transition: 'all 0.2s', flexWrap: 'wrap' }}>
+      <div data-pressable="true" onClick={() => setCollapsed(c => !c)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', background: `${color}0c`, border: `1px solid ${color}28`, borderRadius: collapsed ? 10 : '10px 10px 0 0', marginBottom: collapsed ? 0 : 12, cursor: 'pointer', transition: 'background-color 0.2s ease, border-color 0.2s ease, border-radius 0.2s ease, margin-bottom 0.2s ease', flexWrap: 'wrap' }}>
         <div style={{ ...sora, fontWeight: 800, fontSize: 13, color, background: `${color}18`, border: `1px solid ${color}40`, padding: '3px 12px', borderRadius: 6 }}>{year}</div>
         <Chip color={stageInfo.color}>{stageInfo.label} · {stageInfo.desc}</Chip>
         <StagePips current={stageInfo.stage} />
@@ -1595,7 +1595,7 @@ function YearSection({ group, onOpenCourse, onOpenUpload }: { group: YearGroup; 
         <div style={{ ...mono, fontSize: 12, color: T.dim, marginLeft: 'auto' }}>{collapsed ? '▸' : '▾'}</div>
       </div>
       {!collapsed && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 12, animation: 'fadeUp 0.25s ease' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 12 }}>
           {offerings.map(o => <OfferingCard key={o.offId} o={o} yc={color} onOpen={onOpenCourse} onOpenUpload={onOpenUpload} />)}
         </div>
       )}
@@ -4205,7 +4205,7 @@ function OperationalWorkspace({
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <Btn onClick={() => { void onLogout() }}>Return to Login</Btn>
-            <Btn variant="ghost" onClick={handleGoHome}>Back to Portal</Btn>
+            <Btn variant="ghost" onClick={() => navigateToPortal('home')}>Back to Portal</Btn>
           </div>
         </Card>
       </AuthPageShell>
@@ -4389,7 +4389,7 @@ function OperationalWorkspace({
                       <button key={item.id} onClick={() => { setPage(item.id); setOffering(null) }}
                         data-nav-item="true"
                         data-active={active ? 'true' : 'false'}
-                        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', background: active ? T.accent + '18' : 'transparent', color: active ? T.accentLight : T.muted, ...sora, fontWeight: 500, fontSize: 12, marginBottom: 2, transition: 'all 0.15s', textAlign: 'left' as const }}>
+                        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', background: active ? T.accent + '18' : 'transparent', color: active ? T.accentLight : T.muted, ...sora, fontWeight: 500, fontSize: 12, marginBottom: 2, transition: 'background-color 0.15s ease, color 0.15s ease', textAlign: 'left' as const }}>
                         <Icon size={15} /> {item.label}
                       </button>
                     )

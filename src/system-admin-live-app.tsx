@@ -47,6 +47,7 @@ import { T, mono, sora } from './data'
 import { normalizeThemeMode, type ThemeMode } from './domain'
 import { AIRMENTOR_STORAGE_KEYS, createAirMentorRepositories } from './repositories'
 import {
+  compareAdminTimestampsDesc,
   deriveCurrentYearLabel,
   isAcademicFacultyVisible,
   isBatchVisible,
@@ -3056,36 +3057,36 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       key: `archived:academic-faculty:${item.academicFacultyId}`,
       label: item.name,
       meta: 'Academic faculty',
-      updatedAt: item.updatedAt,
+      updatedAt: item.updatedAt ?? item.createdAt ?? '',
       onRestore: async () => {
         await apiClient.updateAcademicFaculty(item.academicFacultyId, { code: item.code, name: item.name, overview: item.overview, status: 'active', version: item.version })
       },
     })),
-  ].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+  ].sort((left, right) => compareAdminTimestampsDesc(left.updatedAt, right.updatedAt))
   const deletedItems = [
-    ...data.academicFaculties.filter(item => item.status === 'deleted').map(item => ({ key: `academic-faculty:${item.academicFacultyId}`, label: item.name, meta: 'Academic faculty', updatedAt: item.updatedAt, onRestore: async () => {
+    ...data.academicFaculties.filter(item => item.status === 'deleted').map(item => ({ key: `academic-faculty:${item.academicFacultyId}`, label: item.name, meta: 'Academic faculty', updatedAt: item.updatedAt ?? item.createdAt ?? '', onRestore: async () => {
       await apiClient.updateAcademicFaculty(item.academicFacultyId, { code: item.code, name: item.name, overview: item.overview, status: 'active', version: item.version })
     } })),
-    ...data.departments.filter(item => item.status === 'deleted').map(item => ({ key: `department:${item.departmentId}`, label: item.name, meta: 'Department', updatedAt: item.updatedAt, onRestore: async () => {
+    ...data.departments.filter(item => item.status === 'deleted').map(item => ({ key: `department:${item.departmentId}`, label: item.name, meta: 'Department', updatedAt: item.updatedAt ?? item.createdAt ?? '', onRestore: async () => {
       await apiClient.updateDepartment(item.departmentId, { academicFacultyId: item.academicFacultyId, code: item.code, name: item.name, status: 'active', version: item.version })
     } })),
-    ...data.branches.filter(item => item.status === 'deleted').map(item => ({ key: `branch:${item.branchId}`, label: item.name, meta: 'Branch', updatedAt: item.updatedAt, onRestore: async () => {
+    ...data.branches.filter(item => item.status === 'deleted').map(item => ({ key: `branch:${item.branchId}`, label: item.name, meta: 'Branch', updatedAt: item.updatedAt ?? item.createdAt ?? '', onRestore: async () => {
       await apiClient.updateBranch(item.branchId, { departmentId: item.departmentId, code: item.code, name: item.name, programLevel: item.programLevel, semesterCount: item.semesterCount, status: 'active', version: item.version })
     } })),
-    ...data.batches.filter(item => item.status === 'deleted').map(item => ({ key: `batch:${item.batchId}`, label: item.batchLabel, meta: 'Year', updatedAt: item.updatedAt, onRestore: async () => {
+    ...data.batches.filter(item => item.status === 'deleted').map(item => ({ key: `batch:${item.batchId}`, label: item.batchLabel, meta: 'Year', updatedAt: item.updatedAt ?? item.createdAt ?? '', onRestore: async () => {
       await apiClient.updateBatch(item.batchId, { branchId: item.branchId, admissionYear: item.admissionYear, batchLabel: item.batchLabel, currentSemester: item.currentSemester, sectionLabels: item.sectionLabels, status: 'active', version: item.version })
     } })),
-    ...data.students.filter(item => item.status === 'deleted').map(item => ({ key: `student:${item.studentId}`, label: item.name, meta: 'Student', updatedAt: item.updatedAt, onRestore: async () => {
+    ...data.students.filter(item => item.status === 'deleted').map(item => ({ key: `student:${item.studentId}`, label: item.name, meta: 'Student', updatedAt: item.updatedAt ?? item.createdAt ?? '', onRestore: async () => {
       const restored = await apiClient.updateStudent(item.studentId, { usn: item.usn, rollNumber: item.rollNumber, name: item.name, email: item.email, phone: item.phone, admissionDate: item.admissionDate, status: 'active', version: item.version })
       mergeStudentRecord(restored)
     } })),
-    ...data.facultyMembers.filter(item => item.status === 'deleted').map(item => ({ key: `faculty:${item.facultyId}`, label: item.displayName, meta: 'Faculty member', updatedAt: item.updatedAt, onRestore: async () => {
+    ...data.facultyMembers.filter(item => item.status === 'deleted').map(item => ({ key: `faculty:${item.facultyId}`, label: item.displayName, meta: 'Faculty member', updatedAt: item.updatedAt ?? item.createdAt ?? '', onRestore: async () => {
       await apiClient.updateFaculty(item.facultyId, { username: item.username, email: item.email, phone: item.phone, employeeCode: item.employeeCode, displayName: item.displayName, designation: item.designation, joinedOn: item.joinedOn, status: 'active', version: item.version })
     } })),
-    ...data.courses.filter(item => item.status === 'deleted').map(item => ({ key: `course:${item.courseId}`, label: item.title, meta: 'Course', updatedAt: item.updatedAt, onRestore: async () => {
+    ...data.courses.filter(item => item.status === 'deleted').map(item => ({ key: `course:${item.courseId}`, label: item.title, meta: 'Course', updatedAt: item.updatedAt ?? item.createdAt ?? '', onRestore: async () => {
       await apiClient.updateCourse(item.courseId, { courseCode: item.courseCode, title: item.title, defaultCredits: item.defaultCredits, departmentId: item.departmentId, status: 'active', version: item.version })
     } })),
-  ].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+  ].sort((left, right) => compareAdminTimestampsDesc(left.updatedAt, right.updatedAt))
   const hiddenItemCount = archivedItems.length + deletedItems.length
   const selectedAcademicFacultyImpact = selectedAcademicFaculty
     ? {
@@ -3769,7 +3770,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
         {/* ========== OVERVIEW ========== */}
         {route.section === 'overview' && (
-          <div className="fade-up" style={{ display: 'grid', gap: 18 }}>
+          <div style={{ display: 'grid', gap: 18 }}>
             <div style={{ display: 'grid', gap: 16, gridTemplateColumns: viewportWidth > 1180 ? 'minmax(0, 1.6fr) minmax(280px, 0.95fr)' : 'minmax(0, 1fr)' }}>
               <Card style={{ padding: 24, display: 'grid', gap: 16, textAlign: 'left', background: `radial-gradient(circle at top left, ${T.accent}14, transparent 34%), linear-gradient(180deg, ${T.surface}, ${T.surface2})` }}>
                 <div style={{ display: 'grid', gap: 10 }}>
@@ -3847,7 +3848,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
         {/* ========== FACULTIES (selector workspace) ========== */}
         {route.section === 'faculties' && (
-          <div className="fade-up" style={{ display: 'grid', gap: 16 }}>
+          <div style={{ display: 'grid', gap: 16 }}>
             <SectionHeading
               title="University"
               eyebrow="Hierarchy Control"
@@ -4638,7 +4639,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
         {/* ========== STUDENTS ========== */}
         {route.section === 'students' && (
-          <div className="fade-up" style={{ display: 'grid', gap: 16, gridTemplateColumns: registryPageColumns }}>
+          <div style={{ display: 'grid', gap: 16, gridTemplateColumns: registryPageColumns }}>
             <Card style={{ padding: 18, display: 'grid', gap: 12, gridTemplateRows: 'auto auto auto minmax(0, 1fr)', alignContent: 'start', maxHeight: registryIsSingleColumn ? 'none' : 'calc(100vh - 200px)', overflow: registryIsSingleColumn ? 'visible' : 'hidden' }}>
               <SectionHeading
                 title="Students"
@@ -5032,7 +5033,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
         {/* ========== FACULTY MEMBERS ========== */}
         {route.section === 'faculty-members' && (
-          <div className="fade-up" style={{ display: 'grid', gap: 16, gridTemplateColumns: registryPageColumns }}>
+          <div style={{ display: 'grid', gap: 16, gridTemplateColumns: registryPageColumns }}>
             <Card style={{ padding: 18, display: 'grid', gap: 12, gridTemplateRows: 'auto auto auto minmax(0, 1fr)', alignContent: 'start', maxHeight: registryIsSingleColumn ? 'none' : 'calc(100vh - 200px)', overflow: registryIsSingleColumn ? 'visible' : 'hidden' }}>
               <SectionHeading
                 title="Faculty Members"
@@ -5558,7 +5559,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
         {/* ========== HISTORY ========== */}
         {route.section === 'history' && (
-          <div className="fade-up" style={{ display: 'grid', gap: 16 }}>
+          <div style={{ display: 'grid', gap: 16 }}>
             <SectionHeading
               title="History And Restore"
               eyebrow="Audit + Recycle Bin"

@@ -84,6 +84,15 @@ export function isVisibleAdminRecord(status?: string | null) {
   return normalized !== 'archived' && normalized !== 'deleted' && normalized !== 'hidden'
 }
 
+export function compareAdminTimestampsDesc(left?: string | null, right?: string | null) {
+  const leftValue = left?.trim() ?? ''
+  const rightValue = right?.trim() ?? ''
+  if (!leftValue && !rightValue) return 0
+  if (!leftValue) return 1
+  if (!rightValue) return -1
+  return rightValue.localeCompare(leftValue)
+}
+
 function toAcademicFaculty(data: LiveAdminDataset, candidate?: ApiAcademicFaculty | string | null) {
   if (!candidate) return null
   return typeof candidate === 'string' ? resolveAcademicFaculty(data, candidate) : candidate

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  compareAdminTimestampsDesc,
   deriveCurrentYearLabel,
   isBatchVisible,
   isBranchVisible,
@@ -260,6 +261,15 @@ const dataset: LiveAdminDataset = {
 }
 
 describe('system-admin-live-data', () => {
+  it('sorts missing admin timestamps after real updates', () => {
+    const timestamps = ['2026-03-19T09:00:00.000Z', undefined, '2026-03-18T09:00:00.000Z']
+    expect([...timestamps].sort((left, right) => compareAdminTimestampsDesc(left, right))).toEqual([
+      '2026-03-19T09:00:00.000Z',
+      '2026-03-18T09:00:00.000Z',
+      undefined,
+    ])
+  })
+
   it('derives the current year label from the active semester', () => {
     expect(deriveCurrentYearLabel(5)).toBe('3rd Year')
   })

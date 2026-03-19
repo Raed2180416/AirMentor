@@ -315,14 +315,14 @@ body,
 	transform: translateX(1px);
 }
 
-@keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeUp { from { opacity: 0; } to { opacity: 1; } }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideRight { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
 @keyframes slideLeft { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
 
-.fade-up { animation: fadeUp 0.35s ease; }
+.fade-up { animation: fadeUp 0.18s var(--ui-ease); }
 .fade-in { animation: fadeIn 0.3s ease; }
 
 .top-bar-greeting {

@@ -1168,7 +1168,7 @@ export function CalendarTimetablePage({
                       display: 'grid',
                       alignContent: 'space-between',
                       textAlign: 'left',
-                      transition: 'all 0.18s ease',
+                      transition: 'background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease',
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1523,7 +1523,7 @@ function AgendaBoard({
                 padding: '10px 12px',
                 textAlign: 'left',
                 cursor: 'pointer',
-                transition: 'all 0.18s ease',
+                transition: 'background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease',
               }}
             >
               <div style={{ ...mono, fontSize: 10, color: T.dim }}>{column.day}</div>
@@ -1746,7 +1746,7 @@ function AgendaBoard({
                   display: 'grid',
                   gap: 8,
                   alignContent: 'start',
-                  transition: 'all 0.18s ease',
+                  transition: 'background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease',
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -2592,7 +2592,7 @@ function segmentedButtonStyle(active: boolean) {
     gap: 6,
     ...mono,
     fontSize: 11,
-    transition: 'all 0.15s ease',
+    transition: 'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease',
   } as const
 }
 

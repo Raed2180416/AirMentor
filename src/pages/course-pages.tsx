@@ -247,7 +247,7 @@ function RiskTab({ offering, students, onOpenStudent }: { offering: Offering; st
   const averageRisk = atRisk.length ? Math.round(atRisk.reduce((acc, student) => acc + (student.riskProb ?? 0), 0) / atRisk.length * 100) : 0
 
   return (
-    <div style={{ padding: '24px 32px', animation: 'fadeUp 0.3s ease' }}>
+    <div style={{ padding: '24px 32px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
         <div>
           <div style={{ ...sora, fontWeight: 700, fontSize: 17, color: T.text, display: 'flex', alignItems: 'center', gap: 8 }}>
