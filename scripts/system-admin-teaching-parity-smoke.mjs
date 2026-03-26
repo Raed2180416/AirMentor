@@ -21,7 +21,7 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 1400 } })
 const updatedDisplayName = 'Dr. Kavitha Rao QA'
 const updatedPhone = '+91-9000001111'
 const updatedDesignation = 'Senior Associate Professor'
-const teachingPassword = '1234'
+const teachingPassword = 'faculty1234'
 
 async function expectVisible(locator, description) {
   await locator.waitFor({ state: 'visible', timeout: 20_000 })
