@@ -3004,7 +3004,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const resetCurriculumEditor = () => {
     setEntityEditors(prev => ({
       ...prev,
-      curriculum: defaultEntityEditorState(selectedBatch ? String(selectedBatch.currentSemester) : '1').curriculum,
+      curriculum: defaultEntityEditorState(selectedCurriculumSemester || (selectedBatch ? String(selectedBatch.currentSemester) : '1')).curriculum,
     }))
   }
 
@@ -4233,7 +4233,16 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const branchBatches = listBatchesForBranch(data, selectedBranch?.branchId)
   const batchTerms = listTermsForBatch(data, selectedBatch?.batchId)
   const curriculumBySemester = listCurriculumBySemester(data, selectedBatch?.batchId)
-  const selectedCurriculumSemesterEntry = curriculumBySemester.find(entry => String(entry.semesterNumber) === selectedCurriculumSemester) ?? null
+  const curriculumSemesterEntries = useMemo(() => {
+    const semesterCount = selectedBranch?.semesterCount ?? 0
+    if (semesterCount <= 0) return curriculumBySemester
+    return Array.from({ length: semesterCount }, (_, index) => {
+      const semesterNumber = index + 1
+      const existing = curriculumBySemester.find(entry => entry.semesterNumber === semesterNumber)
+      return existing ?? { semesterNumber, courses: [] }
+    })
+  }, [curriculumBySemester, selectedBranch?.semesterCount])
+  const selectedCurriculumSemesterEntry = curriculumSemesterEntries.find(entry => String(entry.semesterNumber) === selectedCurriculumSemester) ?? null
   const selectedCurriculumSemesterCourses = selectedCurriculumSemesterEntry?.courses ?? []
   const selectedCurriculumCourse = selectedCurriculumSemesterCourses.find(course => course.curriculumCourseId === selectedCurriculumCourseId)
     ?? selectedCurriculumSemesterCourses[0]
@@ -4246,21 +4255,21 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     : null
 
   useEffect(() => {
-    if (curriculumBySemester.length === 0) {
+    if (curriculumSemesterEntries.length === 0) {
       setSelectedCurriculumSemester('')
       setSelectedCurriculumCourseId('')
       return
     }
     const preferredSemester = selectedCurriculumSemester
-      && curriculumBySemester.some(entry => String(entry.semesterNumber) === selectedCurriculumSemester)
+      && curriculumSemesterEntries.some(entry => String(entry.semesterNumber) === selectedCurriculumSemester)
       ? selectedCurriculumSemester
-      : curriculumBySemester.find(entry => entry.semesterNumber === selectedBatch?.currentSemester)?.semesterNumber?.toString()
-        ?? String(curriculumBySemester[0]!.semesterNumber)
+      : curriculumSemesterEntries.find(entry => entry.semesterNumber === selectedBatch?.currentSemester)?.semesterNumber?.toString()
+        ?? String(curriculumSemesterEntries[0]!.semesterNumber)
     if (preferredSemester !== selectedCurriculumSemester) {
       setSelectedCurriculumSemester(preferredSemester)
       return
     }
-    const semesterCourses = curriculumBySemester.find(entry => String(entry.semesterNumber) === preferredSemester)?.courses ?? []
+    const semesterCourses = curriculumSemesterEntries.find(entry => String(entry.semesterNumber) === preferredSemester)?.courses ?? []
     if (semesterCourses.length === 0) {
       if (selectedCurriculumCourseId) setSelectedCurriculumCourseId('')
       return
@@ -4268,7 +4277,19 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     if (!semesterCourses.some(course => course.curriculumCourseId === selectedCurriculumCourseId)) {
       setSelectedCurriculumCourseId(semesterCourses[0]!.curriculumCourseId)
     }
-  }, [curriculumBySemester, selectedBatch?.currentSemester, selectedCurriculumCourseId, selectedCurriculumSemester])
+  }, [curriculumSemesterEntries, selectedBatch?.currentSemester, selectedCurriculumCourseId, selectedCurriculumSemester])
+  useEffect(() => {
+    if (entityEditors.curriculum.curriculumCourseId) return
+    const nextSemester = selectedCurriculumSemester || String(selectedBatch?.currentSemester ?? 1)
+    if (entityEditors.curriculum.semesterNumber === nextSemester) return
+    setEntityEditors(prev => ({
+      ...prev,
+      curriculum: {
+        ...prev.curriculum,
+        semesterNumber: nextSemester,
+      },
+    }))
+  }, [entityEditors.curriculum.curriculumCourseId, entityEditors.curriculum.semesterNumber, selectedBatch?.currentSemester, selectedCurriculumSemester])
   const activeScopeChain = useMemo<ActiveAdminScope[]>(() => {
     const chain: ActiveAdminScope[] = []
     if (data.institution) {
@@ -6444,23 +6465,29 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
                   <div style={{ display: 'grid', gap: 10, marginTop: 18, borderTop: `1px solid ${T.border}`, paddingTop: 18 }}>
                     <SectionHeading title="Semester Curriculum" eyebrow="Courses" caption="Curriculum rows hold the exact course code, title, and credits for each batch-semester." />
-                    {curriculumBySemester.map(entry => (
+                    {curriculumSemesterEntries.map(entry => (
                       <Card key={entry.semesterNumber} style={{ padding: 12 }}>
                         <div style={{ ...mono, fontSize: 11, color: T.text }}>Semester {entry.semesterNumber}</div>
-                        <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
-                          {entry.courses.map(course => (
-                            <div key={course.curriculumCourseId} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                              <div>
-                                <div style={{ ...mono, fontSize: 11, color: T.text }}>{course.courseCode} · {course.title}</div>
-                                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{course.credits} credits</div>
+                        {entry.courses.length === 0 ? (
+                          <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 10, lineHeight: 1.8 }}>
+                            No curriculum rows yet for this semester. Use the editor below to add them without leaving this batch.
+                          </div>
+                        ) : (
+                          <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+                            {entry.courses.map(course => (
+                              <div key={course.curriculumCourseId} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                                <div>
+                                  <div style={{ ...mono, fontSize: 11, color: T.text }}>{course.courseCode} · {course.title}</div>
+                                  <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{course.credits} credits</div>
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                  <Btn size="sm" variant="ghost" onClick={() => startEditingCurriculumCourse(course.curriculumCourseId)}>Edit</Btn>
+                                  <Btn size="sm" variant="danger" onClick={() => void handleArchiveCurriculumCourse(course.curriculumCourseId)}>Delete</Btn>
+                                </div>
                               </div>
-                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                <Btn size="sm" variant="ghost" onClick={() => startEditingCurriculumCourse(course.curriculumCourseId)}>Edit</Btn>
-                                <Btn size="sm" variant="danger" onClick={() => void handleArchiveCurriculumCourse(course.curriculumCourseId)}>Delete</Btn>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+                            ))}
+                          </div>
+                        )}
                       </Card>
                     ))}
                     <form onSubmit={handleSaveCurriculumCourse} style={{ display: 'grid', gap: 10 }}>
@@ -6833,13 +6860,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                 selectedBatch ? (
                     <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
                       <SectionHeading title="Semester Courses" eyebrow="Curriculum" caption="Semester-wise course rows, credits, and scoped course leader visibility for the selected year." />
-                      {curriculumBySemester.length === 0 ? <EmptyState title="No semester rows yet" body="Add the first course row below." /> : (
+                      {curriculumSemesterEntries.length === 0 ? <EmptyState title="No semester rows yet" body="Add the first course row below." /> : (
                         <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 12 }}>
                           <div style={{ display: 'grid', gridTemplateColumns: viewportWidth < 1024 ? 'minmax(0, 1fr)' : '180px minmax(0, 1fr)', gap: 10 }}>
                             <div>
                               <FieldLabel>Semester</FieldLabel>
                               <SelectInput value={selectedCurriculumSemester} onChange={event => setSelectedCurriculumSemester(event.target.value)}>
-                                {curriculumBySemester.map(entry => (
+                                {curriculumSemesterEntries.map(entry => (
                                   <option key={entry.semesterNumber} value={String(entry.semesterNumber)}>
                                     {`Semester ${entry.semesterNumber} · ${entry.courses.length} course${entry.courses.length === 1 ? '' : 's'}`}
                                   </option>
@@ -6863,7 +6890,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                                 ))}
                               </SelectInput>
                               <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6 }}>
-                                Selecting a course here loads its code, title, and credits into the editor below so you can rename it or adjust credits without leaving the semester view.
+                                Every semester in the branch is available here, even if no rows exist yet. Selecting a course loads its code, title, and credits into the editor below so you can rename it or adjust credits without leaving the semester view.
                               </div>
                             </div>
                           </div>
