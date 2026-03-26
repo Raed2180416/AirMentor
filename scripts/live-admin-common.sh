@@ -58,6 +58,12 @@ read_ready_value() {
   node -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(data[process.argv[2]] ?? ''))" "$file" "$field"
 }
 
+read_ready_value_from_log() {
+  local file="$1"
+  local field="$2"
+  node -e "const fs = require('node:fs'); const file = process.argv[1]; const field = process.argv[2]; if (!fs.existsSync(file)) process.exit(0); const lines = fs.readFileSync(file, 'utf8').trim().split(/\r?\n/).reverse(); for (const line of lines) { try { const data = JSON.parse(line); if (data?.type === 'airmentor-seeded-server-ready') { process.stdout.write(String(data[field] ?? '')); process.exit(0); } } catch {} }" "$file" "$field"
+}
+
 start_seeded_api() {
   local cors_allowed_origins="$1"
   local output_dir="$2"
@@ -79,14 +85,19 @@ start_seeded_api() {
   backend_pid=$!
 
   if ! wait_for_file "$backend_ready_file" 90; then
-    echo "Seeded backend did not become ready. Log: $backend_log" >&2
-    if [[ -f "$backend_log" ]]; then
-      cat "$backend_log" >&2
+    api_base_url=$(read_ready_value_from_log "$backend_log" "apiBaseUrl")
+    if [[ -z "$api_base_url" ]]; then
+      echo "Seeded backend did not become ready. Log: $backend_log" >&2
+      if [[ -f "$backend_log" ]]; then
+        cat "$backend_log" >&2
+      fi
+      exit 1
     fi
-    exit 1
   fi
 
-  api_base_url=$(read_ready_value "$backend_ready_file" "apiBaseUrl")
+  if [[ -z "$api_base_url" ]]; then
+    api_base_url=$(read_ready_value "$backend_ready_file" "apiBaseUrl")
+  fi
   if [[ -z "$api_base_url" ]]; then
     echo "Seeded backend readiness payload did not include apiBaseUrl. Log: $backend_log" >&2
     cat "$backend_log" >&2

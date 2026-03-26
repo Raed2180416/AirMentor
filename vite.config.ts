@@ -7,10 +7,31 @@ const isUserSite = repoName.endsWith('.github.io')
 const pagesBase = process.env.GITHUB_ACTIONS
   ? (isUserSite ? '/' : `/${repoName}/`)
   : '/'
+const apiProxyTarget = process.env.AIRMENTOR_UI_PROXY_API_TARGET?.trim() || ''
+const apiBaseUrl = process.env.VITE_AIRMENTOR_API_BASE_URL?.trim() || ''
+const liveApiProxy = apiProxyTarget && apiBaseUrl === '/'
+  ? {
+      '/api': {
+        target: apiProxyTarget,
+        changeOrigin: true,
+        secure: false,
+      },
+    }
+  : undefined
 
 export default defineConfig({
   plugins: [react()],
   base: pagesBase,
+  server: liveApiProxy
+    ? {
+        proxy: liveApiProxy,
+      }
+    : undefined,
+  preview: liveApiProxy
+    ? {
+        proxy: liveApiProxy,
+      }
+    : undefined,
   build: {
     rollupOptions: {
       output: {

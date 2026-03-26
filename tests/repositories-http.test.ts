@@ -70,6 +70,17 @@ function createSessionResponse(overrides?: Partial<ApiSessionResponse>): ApiSess
   }
 }
 
+function createApiClientMock(overrides: Partial<AirMentorApiClientLike>): AirMentorApiClientLike {
+  return new Proxy(overrides as AirMentorApiClientLike, {
+    get(target, prop, receiver) {
+      if (Reflect.has(target, prop)) return Reflect.get(target, prop, receiver)
+      return vi.fn(async () => {
+        throw new Error(`Unexpected API call in repositories-http.test: ${String(prop)}`)
+      })
+    },
+  })
+}
+
 describe('HTTP repository mode', () => {
   it('uses the remote session adapter while keeping local operational repositories', async () => {
     const storage = new MemoryStorage()
@@ -80,6 +91,7 @@ describe('HTTP repository mode', () => {
         ...remoteSession.availableRoleGrants[1],
       },
     })
+    let persistedRemoteSession = remoteSession
     const preferencesResponse: ApiUiPreferences = {
       userId: 'user-1',
       themeMode: 'frosted-focus-light',
@@ -103,6 +115,11 @@ describe('HTTP repository mode', () => {
       subjectRuns: [],
       studentsByOffering: {},
       studentHistoryByUsn: {},
+      courseOutcomesByOffering: {},
+      assessmentSchemesByOffering: {},
+      questionPapersByOffering: {},
+      coAttainmentByOffering: {},
+      meetings: [],
       runtime: {
         studentPatches: {},
         schemeByOffering: {},
@@ -114,15 +131,19 @@ describe('HTTP repository mode', () => {
         tasks: [],
         resolvedTasks: {},
         timetableByFacultyId: {},
+        adminCalendarByFacultyId: {},
         taskPlacements: {},
         calendarAudit: [],
       },
     }
-    const client: AirMentorApiClientLike = {
-      restoreSession: vi.fn(async () => remoteSession),
+    const client = createApiClientMock({
+      restoreSession: vi.fn(async () => persistedRemoteSession),
       login: vi.fn(async (_payload: ApiLoginRequest) => remoteSession),
       logout: vi.fn(async () => undefined),
-      switchRoleContext: vi.fn(async () => switchedSession),
+      switchRoleContext: vi.fn(async () => {
+        persistedRemoteSession = switchedSession
+        return switchedSession
+      }),
       listAcademicLoginFaculty: vi.fn(async () => ({ items: [] })),
       getAcademicBootstrap: vi.fn(async () => academicBootstrap),
       saveAcademicRuntimeSlice: vi.fn(async stateKey => ({ ok: true as const, stateKey })),
@@ -162,7 +183,7 @@ describe('HTTP repository mode', () => {
       closeAdminRequest: vi.fn(),
       addAdminRequestNote: vi.fn(),
       getAdminRequestAudit: vi.fn(),
-    }
+    })
 
     const repositories = createAirMentorRepositories({
       storage,
@@ -191,5 +212,145 @@ describe('HTTP repository mode', () => {
 
     const localRepositories = createLocalAirMentorRepositories(storage)
     expect(localRepositories.sessionPreferences.getCurrentFacultyIdSnapshot()).toBe('faculty-academic')
+  })
+
+  it('does not persist a normalized timetable snapshot back to the API on first HTTP render', async () => {
+    const storage = new MemoryStorage()
+    const saveFacultyCalendarWorkspace = vi.fn(async () => ({
+      facultyId: 'fac_course_leader',
+      template: {
+        facultyId: 'fac_course_leader',
+        slots: [],
+        dayStartMinutes: 510,
+        dayEndMinutes: 930,
+        classBlocks: [],
+        updatedAt: 1,
+      },
+      version: 1,
+      directEditWindowEndsAt: null,
+      classEditingLocked: false,
+    }))
+    const client = {
+      saveFacultyCalendarWorkspace,
+      saveAcademicRuntimeSlice: vi.fn(async stateKey => ({ ok: true as const, stateKey })),
+    } as unknown as AirMentorApiClientLike
+
+    const bootstrap: ApiAcademicBootstrap = {
+      professor: {
+        name: 'Dr. Devika Shetty',
+        id: 'mnc_t1',
+        dept: 'Mathematics and Computing',
+        role: 'Course Leader',
+        initials: 'DS',
+        email: 'devika.shetty@msruas.ac.in',
+      },
+      faculty: [
+        {
+          facultyId: 'fac_course_leader',
+          name: 'Dr. Devika Shetty',
+          initials: 'DS',
+          dept: 'MNC',
+          roleTitle: 'Professor',
+          email: 'devika.shetty@msruas.ac.in',
+          offeringIds: ['off_001'],
+          courseCodes: ['MCC301A'],
+          allowedRoles: ['Course Leader'],
+          menteeIds: [],
+        },
+      ],
+      offerings: [
+        {
+          id: 'course_graph_theory',
+          offId: 'off_001',
+          code: 'MCC301A',
+          title: 'Graph Theory',
+          dept: 'MNC',
+          sem: 5,
+          section: 'A',
+          year: '3rd Year',
+          count: 60,
+          attendance: 0,
+          stage: 1,
+          stageInfo: {
+            stage: 1,
+            label: 'Stage 1',
+            desc: 'Proof',
+            color: '#2563eb',
+          },
+          tt1Done: false,
+          tt2Done: false,
+          tt1Locked: false,
+          tt2Locked: false,
+          quizLocked: false,
+          asgnLocked: false,
+          pendingAction: null,
+          sections: ['A'],
+          enrolled: [60],
+          att: [0],
+        },
+      ],
+      yearGroups: [],
+      mentees: [],
+      teachers: [],
+      subjectRuns: [],
+      studentsByOffering: {},
+      studentHistoryByUsn: {},
+      courseOutcomesByOffering: {},
+      assessmentSchemesByOffering: {},
+      questionPapersByOffering: {},
+      coAttainmentByOffering: {},
+      meetings: [],
+      runtime: {
+        studentPatches: {},
+        schemeByOffering: {},
+        ttBlueprintsByOffering: {},
+        drafts: {},
+        cellValues: {},
+        lockByOffering: {},
+        lockAuditByTarget: {},
+        tasks: [],
+        resolvedTasks: {},
+        timetableByFacultyId: {
+          fac_course_leader: {
+            facultyId: 'fac_course_leader',
+            slots: [],
+            dayStartMinutes: 510,
+            dayEndMinutes: 930,
+            classBlocks: [
+              {
+                id: 'class-1',
+                facultyId: 'legacy-faculty',
+                offeringId: 'off_001',
+                courseCode: 'MCC301A',
+                courseName: 'Graph Theory',
+                section: 'A',
+                year: '3rd Year',
+                day: 'Mon',
+                startMinutes: 540,
+                endMinutes: 600,
+              },
+            ],
+            updatedAt: 1,
+          },
+        },
+        taskPlacements: {},
+        calendarAudit: [],
+        adminCalendarByFacultyId: {},
+      },
+    }
+
+    const repositories = createAirMentorRepositories({
+      storage,
+      repositoryMode: 'http',
+      apiClient: createApiClientMock(client),
+      academicBootstrap: bootstrap,
+    })
+
+    const snapshot = repositories.calendar.getTimetableTemplatesSnapshot(bootstrap.faculty, bootstrap.offerings)
+    expect(snapshot.fac_course_leader.facultyId).toBe('fac_course_leader')
+
+    await repositories.calendar.saveTimetableTemplates(snapshot)
+
+    expect(saveFacultyCalendarWorkspace).not.toHaveBeenCalled()
   })
 })

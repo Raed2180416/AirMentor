@@ -1,7 +1,15 @@
 import type {
   ApiAcademicBootstrap,
   ApiAcademicFaculty,
+  ApiAcademicHodProofBundle,
   ApiAcademicMeeting,
+  ApiAcademicHodProofCourseRollup,
+  ApiAcademicHodProofFacultyRollup,
+  ApiProofReassessmentAcknowledgeRequest,
+  ApiProofReassessmentAcknowledgeResponse,
+  ApiAcademicHodProofReassessment,
+  ApiAcademicHodProofStudentWatch,
+  ApiAcademicHodProofSummary,
   ApiAdminFacultyCalendar,
   ApiAcademicLoginFaculty,
   ApiAcademicTerm,
@@ -19,6 +27,8 @@ import type {
   ApiBatch,
   ApiBranch,
   ApiCourse,
+  ApiCurriculumFeatureConfigBundle,
+  ApiCurriculumFeatureConfigPayload,
   ApiCourseOutcomeOverride,
   ApiCourseOutcomeScopeType,
   ApiCurriculumCourse,
@@ -30,13 +40,25 @@ import type {
   ApiMentorAssignment,
   ApiOfferingOwnership,
   ApiPolicyOverride,
+  ApiProofDashboard,
+  ApiProofRunCheckpointDetail,
+  ApiProofRunCheckpointStudentDetail,
+  ApiProofReassessmentResolveRequest,
+  ApiProofReassessmentResolveResponse,
+  ApiProofStudentEvidenceTimelineItem,
   ApiResolvedBatchPolicy,
   ApiResolvedCourseOutcomeSet,
   ApiRoleGrant,
   ApiSessionResponse,
+  ApiStudentAgentCard,
+  ApiStudentAgentMessage,
+  ApiStudentAgentSession,
+  ApiStudentAgentTimelineItem,
+  ApiStudentRiskExplorer,
   ApiStudentRecord,
   ApiStudentEnrollment,
   ApiStudentIntervention,
+  ApiSimulationStageCheckpointSummary,
   ApiTranscriptSubjectResult,
   ApiTranscriptTermResult,
   ApiUiPreferences,
@@ -70,7 +92,20 @@ export interface AirMentorApiClientLike {
   logout(): Promise<void>
   switchRoleContext(roleGrantId: string): Promise<ApiSessionResponse>
   listAcademicLoginFaculty(): Promise<{ items: ApiAcademicLoginFaculty[] }>
-  getAcademicBootstrap(): Promise<ApiAcademicBootstrap>
+  getAcademicBootstrap(filter?: { simulationStageCheckpointId?: string }): Promise<ApiAcademicBootstrap>
+  getAcademicHodProofBundle(filter?: { section?: string; semester?: number; riskBand?: string; status?: string; facultyId?: string; courseCode?: string; studentId?: string; simulationStageCheckpointId?: string }): Promise<ApiAcademicHodProofBundle>
+  getAcademicHodProofSummary(filter?: { section?: string; semester?: number; simulationStageCheckpointId?: string }): Promise<ApiAcademicHodProofSummary>
+  getAcademicHodProofCourses(filter?: { section?: string; semester?: number; riskBand?: string; courseCode?: string; simulationStageCheckpointId?: string }): Promise<{ items: ApiAcademicHodProofCourseRollup[] }>
+  getAcademicHodProofFaculty(filter?: { section?: string; semester?: number; facultyId?: string; simulationStageCheckpointId?: string }): Promise<{ items: ApiAcademicHodProofFacultyRollup[] }>
+  getAcademicHodProofStudents(filter?: { section?: string; semester?: number; riskBand?: string; courseCode?: string; studentId?: string; simulationStageCheckpointId?: string }): Promise<{ items: ApiAcademicHodProofStudentWatch[] }>
+  getAcademicHodProofReassessments(filter?: { section?: string; semester?: number; riskBand?: string; status?: string; facultyId?: string; courseCode?: string; studentId?: string; simulationStageCheckpointId?: string }): Promise<{ items: ApiAcademicHodProofReassessment[] }>
+  acknowledgeAcademicProofReassessment(reassessmentEventId: string, payload?: ApiProofReassessmentAcknowledgeRequest): Promise<ApiProofReassessmentAcknowledgeResponse>
+  resolveAcademicProofReassessment(reassessmentEventId: string, payload: ApiProofReassessmentResolveRequest): Promise<ApiProofReassessmentResolveResponse>
+  getAcademicStudentAgentCard(studentId: string, filter?: { simulationRunId?: string; simulationStageCheckpointId?: string }): Promise<ApiStudentAgentCard>
+  getAcademicStudentRiskExplorer(studentId: string, filter?: { simulationRunId?: string; simulationStageCheckpointId?: string }): Promise<ApiStudentRiskExplorer>
+  getAcademicStudentAgentTimeline(studentId: string, filter?: { simulationRunId?: string; simulationStageCheckpointId?: string }): Promise<{ items: ApiStudentAgentTimelineItem[] }>
+  startAcademicStudentAgentSession(studentId: string, payload?: { simulationRunId?: string; simulationStageCheckpointId?: string }): Promise<ApiStudentAgentSession>
+  sendAcademicStudentAgentMessage(sessionId: string, payload: { prompt: string }): Promise<{ items: ApiStudentAgentMessage[] }>
   saveAcademicRuntimeSlice<T>(stateKey: ApiAcademicRuntimeKey, payload: T): Promise<{ ok: true; stateKey: ApiAcademicRuntimeKey }>
   syncAcademicTasks(payload: { tasks: SharedTask[] }): Promise<{ ok: true; count: number }>
   syncAcademicTaskPlacements(payload: { placements: Record<string, TaskCalendarPlacement> }): Promise<{ ok: true; count: number }>
@@ -143,6 +178,20 @@ export interface AirMentorApiClientLike {
   createPolicyOverride(payload: Pick<ApiPolicyOverride, 'scopeType' | 'scopeId' | 'policy' | 'status'>): Promise<ApiPolicyOverride>
   updatePolicyOverride(policyOverrideId: string, payload: Pick<ApiPolicyOverride, 'scopeType' | 'scopeId' | 'policy' | 'status' | 'version'>): Promise<ApiPolicyOverride>
   getResolvedBatchPolicy(batchId: string): Promise<ApiResolvedBatchPolicy>
+  getProofDashboard(batchId: string): Promise<ApiProofDashboard>
+  createProofImport(batchId: string, payload?: { sourcePath?: string }): Promise<{ curriculumImportVersionId: string; validation: Record<string, unknown>; completenessCertificate: Record<string, unknown> }>
+  validateProofImport(curriculumImportVersionId: string): Promise<Record<string, unknown>>
+  reviewProofCrosswalks(curriculumImportVersionId: string, payload: { reviews: Array<{ officialCodeCrosswalkId: string; reviewStatus: string; overrideReason?: string | null }> }): Promise<{ ok: true; count: number }>
+  approveProofImport(curriculumImportVersionId: string): Promise<{ ok: true }>
+  createProofRun(batchId: string, payload: { curriculumImportVersionId: string; seed?: number; runLabel?: string; activate?: boolean }): Promise<{ simulationRunId: string; activeFlag: boolean }>
+  activateProofRun(simulationRunId: string): Promise<{ ok: true }>
+  archiveProofRun(simulationRunId: string): Promise<{ ok: true }>
+  recomputeProofRunRisk(simulationRunId: string): Promise<{ ok: true }>
+  restoreProofRunSnapshot(simulationRunId: string, payload?: { simulationResetSnapshotId?: string }): Promise<{ simulationRunId: string; activeFlag: boolean }>
+  getProofRunCheckpoints(simulationRunId: string): Promise<{ items: ApiSimulationStageCheckpointSummary[] }>
+  getProofRunCheckpointDetail(simulationRunId: string, simulationStageCheckpointId: string): Promise<ApiProofRunCheckpointDetail>
+  getProofRunCheckpointStudentDetail(simulationRunId: string, simulationStageCheckpointId: string, studentId: string): Promise<ApiProofRunCheckpointStudentDetail>
+  getProofStudentEvidenceTimeline(simulationRunId: string, studentId: string): Promise<{ items: ApiProofStudentEvidenceTimelineItem[] }>
   listOfferings(): Promise<{ items: ApiAdminOffering[] }>
   createOffering(payload: {
     courseId: string
@@ -194,6 +243,8 @@ export interface AirMentorApiClientLike {
   createCourseOutcomeOverride(payload: Pick<ApiCourseOutcomeOverride, 'courseId' | 'scopeType' | 'scopeId' | 'outcomes' | 'status'>): Promise<ApiCourseOutcomeOverride>
   updateCourseOutcomeOverride(courseOutcomeOverrideId: string, payload: Pick<ApiCourseOutcomeOverride, 'courseId' | 'scopeType' | 'scopeId' | 'outcomes' | 'status' | 'version'>): Promise<ApiCourseOutcomeOverride>
   getResolvedCourseOutcomes(offeringId: string): Promise<ApiResolvedCourseOutcomeSet>
+  getCurriculumFeatureConfig(batchId: string): Promise<ApiCurriculumFeatureConfigBundle>
+  saveCurriculumFeatureConfig(batchId: string, curriculumCourseId: string, payload: ApiCurriculumFeatureConfigPayload): Promise<{ ok: true; batchId: string; curriculumCourseId: string; curriculumImportVersionId: string }>
   saveOfferingAssessmentScheme(offeringId: string, payload: { scheme: SchemeState }): Promise<{ offeringId: string; scheme: SchemeState; version: number; policySnapshot: unknown }>
   saveOfferingQuestionPaper(offeringId: string, kind: TTKind, payload: { blueprint: TermTestBlueprint }): Promise<{ paperId: string; offeringId: string; kind: TTKind; blueprint: TermTestBlueprint; version: number }>
   createAttendanceSnapshot(payload: Omit<ApiAttendanceSnapshot, 'attendanceSnapshotId'>): Promise<{ attendanceSnapshotId: string; ok: true }>
@@ -216,7 +267,7 @@ export interface AirMentorApiClientLike {
   updateAdminReminder(reminderId: string, payload: Pick<ApiAdminReminder, 'title' | 'body' | 'dueAt' | 'status' | 'version'>): Promise<ApiAdminReminder>
   getAdminFacultyCalendar(facultyId: string): Promise<ApiAdminFacultyCalendar>
   saveAdminFacultyCalendar(facultyId: string, payload: Pick<ApiAdminFacultyCalendar, 'template' | 'workspace'>): Promise<ApiAdminFacultyCalendar>
-  getAcademicFacultyProfile(facultyId: string): Promise<ApiAcademicFacultyProfile>
+  getAcademicFacultyProfile(facultyId: string, filter?: { simulationStageCheckpointId?: string }): Promise<ApiAcademicFacultyProfile>
   getAdminRequest(requestId: string): Promise<ApiAdminRequestDetail>
   assignAdminRequest(requestId: string, payload: { version: number; ownedByFacultyId?: string | null; noteBody?: string }): Promise<ApiAdminRequestSummary>
   requestAdminRequestInfo(requestId: string, payload: { version: number; noteBody: string }): Promise<ApiAdminRequestSummary>
@@ -269,8 +320,133 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     return this.request<{ items: ApiAcademicLoginFaculty[] }>('/api/academic/public/faculty')
   }
 
-  async getAcademicBootstrap() {
-    return this.request<ApiAcademicBootstrap>('/api/academic/bootstrap')
+  async getAcademicBootstrap(filter?: { simulationStageCheckpointId?: string }) {
+    const searchParams = new URLSearchParams()
+    if (filter?.simulationStageCheckpointId) searchParams.set('simulationStageCheckpointId', filter.simulationStageCheckpointId)
+    const query = searchParams.toString()
+    return this.request<ApiAcademicBootstrap>(`/api/academic/bootstrap${query ? `?${query}` : ''}`)
+  }
+
+  async getAcademicHodProofBundle(filter?: { section?: string; semester?: number; riskBand?: string; status?: string; facultyId?: string; courseCode?: string; studentId?: string; simulationStageCheckpointId?: string }) {
+    const searchParams = new URLSearchParams()
+    if (filter?.section) searchParams.set('section', filter.section)
+    if (typeof filter?.semester === 'number') searchParams.set('semester', String(filter.semester))
+    if (filter?.riskBand) searchParams.set('riskBand', filter.riskBand)
+    if (filter?.status) searchParams.set('status', filter.status)
+    if (filter?.facultyId) searchParams.set('facultyId', filter.facultyId)
+    if (filter?.courseCode) searchParams.set('courseCode', filter.courseCode)
+    if (filter?.studentId) searchParams.set('studentId', filter.studentId)
+    if (filter?.simulationStageCheckpointId) searchParams.set('simulationStageCheckpointId', filter.simulationStageCheckpointId)
+    const query = searchParams.toString()
+    return this.request<ApiAcademicHodProofBundle>(`/api/academic/hod/proof-bundle${query ? `?${query}` : ''}`)
+  }
+
+  async getAcademicHodProofSummary(filter?: { section?: string; semester?: number; simulationStageCheckpointId?: string }) {
+    const searchParams = new URLSearchParams()
+    if (filter?.section) searchParams.set('section', filter.section)
+    if (typeof filter?.semester === 'number') searchParams.set('semester', String(filter.semester))
+    if (filter?.simulationStageCheckpointId) searchParams.set('simulationStageCheckpointId', filter.simulationStageCheckpointId)
+    const query = searchParams.toString()
+    return this.request<ApiAcademicHodProofSummary>(`/api/academic/hod/proof-summary${query ? `?${query}` : ''}`)
+  }
+
+  async getAcademicHodProofCourses(filter?: { section?: string; semester?: number; riskBand?: string; courseCode?: string; simulationStageCheckpointId?: string }) {
+    const searchParams = new URLSearchParams()
+    if (filter?.section) searchParams.set('section', filter.section)
+    if (typeof filter?.semester === 'number') searchParams.set('semester', String(filter.semester))
+    if (filter?.riskBand) searchParams.set('riskBand', filter.riskBand)
+    if (filter?.courseCode) searchParams.set('courseCode', filter.courseCode)
+    if (filter?.simulationStageCheckpointId) searchParams.set('simulationStageCheckpointId', filter.simulationStageCheckpointId)
+    const query = searchParams.toString()
+    return this.request<{ items: ApiAcademicHodProofCourseRollup[] }>(`/api/academic/hod/proof-courses${query ? `?${query}` : ''}`)
+  }
+
+  async getAcademicHodProofFaculty(filter?: { section?: string; semester?: number; facultyId?: string; simulationStageCheckpointId?: string }) {
+    const searchParams = new URLSearchParams()
+    if (filter?.section) searchParams.set('section', filter.section)
+    if (typeof filter?.semester === 'number') searchParams.set('semester', String(filter.semester))
+    if (filter?.facultyId) searchParams.set('facultyId', filter.facultyId)
+    if (filter?.simulationStageCheckpointId) searchParams.set('simulationStageCheckpointId', filter.simulationStageCheckpointId)
+    const query = searchParams.toString()
+    return this.request<{ items: ApiAcademicHodProofFacultyRollup[] }>(`/api/academic/hod/proof-faculty${query ? `?${query}` : ''}`)
+  }
+
+  async getAcademicHodProofStudents(filter?: { section?: string; semester?: number; riskBand?: string; courseCode?: string; studentId?: string; simulationStageCheckpointId?: string }) {
+    const searchParams = new URLSearchParams()
+    if (filter?.section) searchParams.set('section', filter.section)
+    if (typeof filter?.semester === 'number') searchParams.set('semester', String(filter.semester))
+    if (filter?.riskBand) searchParams.set('riskBand', filter.riskBand)
+    if (filter?.courseCode) searchParams.set('courseCode', filter.courseCode)
+    if (filter?.studentId) searchParams.set('studentId', filter.studentId)
+    if (filter?.simulationStageCheckpointId) searchParams.set('simulationStageCheckpointId', filter.simulationStageCheckpointId)
+    const query = searchParams.toString()
+    return this.request<{ items: ApiAcademicHodProofStudentWatch[] }>(`/api/academic/hod/proof-students${query ? `?${query}` : ''}`)
+  }
+
+  async getAcademicHodProofReassessments(filter?: { section?: string; semester?: number; riskBand?: string; status?: string; facultyId?: string; courseCode?: string; studentId?: string; simulationStageCheckpointId?: string }) {
+    const searchParams = new URLSearchParams()
+    if (filter?.section) searchParams.set('section', filter.section)
+    if (typeof filter?.semester === 'number') searchParams.set('semester', String(filter.semester))
+    if (filter?.riskBand) searchParams.set('riskBand', filter.riskBand)
+    if (filter?.status) searchParams.set('status', filter.status)
+    if (filter?.facultyId) searchParams.set('facultyId', filter.facultyId)
+    if (filter?.courseCode) searchParams.set('courseCode', filter.courseCode)
+    if (filter?.studentId) searchParams.set('studentId', filter.studentId)
+    if (filter?.simulationStageCheckpointId) searchParams.set('simulationStageCheckpointId', filter.simulationStageCheckpointId)
+    const query = searchParams.toString()
+    return this.request<{ items: ApiAcademicHodProofReassessment[] }>(`/api/academic/hod/proof-reassessments${query ? `?${query}` : ''}`)
+  }
+
+  async acknowledgeAcademicProofReassessment(reassessmentEventId: string, payload: ApiProofReassessmentAcknowledgeRequest = {}) {
+    return this.request<ApiProofReassessmentAcknowledgeResponse>(`/api/academic/proof-reassessments/${encodeURIComponent(reassessmentEventId)}/acknowledge`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async resolveAcademicProofReassessment(reassessmentEventId: string, payload: ApiProofReassessmentResolveRequest) {
+    return this.request<ApiProofReassessmentResolveResponse>(`/api/academic/proof-reassessments/${encodeURIComponent(reassessmentEventId)}/resolve`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async getAcademicStudentAgentCard(studentId: string, filter?: { simulationRunId?: string; simulationStageCheckpointId?: string }) {
+    const searchParams = new URLSearchParams()
+    if (filter?.simulationRunId) searchParams.set('simulationRunId', filter.simulationRunId)
+    if (filter?.simulationStageCheckpointId) searchParams.set('simulationStageCheckpointId', filter.simulationStageCheckpointId)
+    const query = searchParams.toString()
+    return this.request<ApiStudentAgentCard>(`/api/academic/student-shell/students/${encodeURIComponent(studentId)}/card${query ? `?${query}` : ''}`)
+  }
+
+  async getAcademicStudentRiskExplorer(studentId: string, filter?: { simulationRunId?: string; simulationStageCheckpointId?: string }) {
+    const searchParams = new URLSearchParams()
+    if (filter?.simulationRunId) searchParams.set('simulationRunId', filter.simulationRunId)
+    if (filter?.simulationStageCheckpointId) searchParams.set('simulationStageCheckpointId', filter.simulationStageCheckpointId)
+    const query = searchParams.toString()
+    return this.request<ApiStudentRiskExplorer>(`/api/academic/students/${encodeURIComponent(studentId)}/risk-explorer${query ? `?${query}` : ''}`)
+  }
+
+  async getAcademicStudentAgentTimeline(studentId: string, filter?: { simulationRunId?: string; simulationStageCheckpointId?: string }) {
+    const searchParams = new URLSearchParams()
+    if (filter?.simulationRunId) searchParams.set('simulationRunId', filter.simulationRunId)
+    if (filter?.simulationStageCheckpointId) searchParams.set('simulationStageCheckpointId', filter.simulationStageCheckpointId)
+    const query = searchParams.toString()
+    return this.request<{ items: ApiStudentAgentTimelineItem[] }>(`/api/academic/student-shell/students/${encodeURIComponent(studentId)}/timeline${query ? `?${query}` : ''}`)
+  }
+
+  async startAcademicStudentAgentSession(studentId: string, payload?: { simulationRunId?: string; simulationStageCheckpointId?: string }) {
+    return this.request<ApiStudentAgentSession>(`/api/academic/student-shell/students/${encodeURIComponent(studentId)}/sessions`, {
+      method: 'POST',
+      body: JSON.stringify(payload ?? {}),
+    })
+  }
+
+  async sendAcademicStudentAgentMessage(sessionId: string, payload: { prompt: string }) {
+    return this.request<{ items: ApiStudentAgentMessage[] }>(`/api/academic/student-shell/sessions/${encodeURIComponent(sessionId)}/messages`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
   }
 
   async saveAcademicRuntimeSlice<T>(stateKey: ApiAcademicRuntimeKey, payload: T) {
@@ -625,6 +801,89 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     return this.request<ApiResolvedBatchPolicy>(`/api/admin/batches/${batchId}/resolved-policy`)
   }
 
+  async getProofDashboard(batchId: string) {
+    return this.request<ApiProofDashboard>(`/api/admin/batches/${batchId}/proof-dashboard`)
+  }
+
+  async createProofImport(batchId: string, payload?: { sourcePath?: string }) {
+    return this.request<{ curriculumImportVersionId: string; validation: Record<string, unknown>; completenessCertificate: Record<string, unknown> }>(`/api/admin/batches/${batchId}/proof-imports`, {
+      method: 'POST',
+      body: JSON.stringify(payload ?? {}),
+    })
+  }
+
+  async validateProofImport(curriculumImportVersionId: string) {
+    return this.request<Record<string, unknown>>(`/api/admin/proof-imports/${curriculumImportVersionId}/validate`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+  }
+
+  async reviewProofCrosswalks(curriculumImportVersionId: string, payload: { reviews: Array<{ officialCodeCrosswalkId: string; reviewStatus: string; overrideReason?: string | null }> }) {
+    return this.request<{ ok: true; count: number }>(`/api/admin/proof-imports/${curriculumImportVersionId}/review-crosswalks`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async approveProofImport(curriculumImportVersionId: string) {
+    return this.request<{ ok: true }>(`/api/admin/proof-imports/${curriculumImportVersionId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+  }
+
+  async createProofRun(batchId: string, payload: { curriculumImportVersionId: string; seed?: number; runLabel?: string; activate?: boolean }) {
+    return this.request<{ simulationRunId: string; activeFlag: boolean }>(`/api/admin/batches/${batchId}/proof-runs`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async activateProofRun(simulationRunId: string) {
+    return this.request<{ ok: true }>(`/api/admin/proof-runs/${simulationRunId}/activate`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+  }
+
+  async archiveProofRun(simulationRunId: string) {
+    return this.request<{ ok: true }>(`/api/admin/proof-runs/${simulationRunId}/archive`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+  }
+
+  async recomputeProofRunRisk(simulationRunId: string) {
+    return this.request<{ ok: true }>(`/api/admin/proof-runs/${simulationRunId}/recompute-risk`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+  }
+
+  async restoreProofRunSnapshot(simulationRunId: string, payload?: { simulationResetSnapshotId?: string }) {
+    return this.request<{ simulationRunId: string; activeFlag: boolean }>(`/api/admin/proof-runs/${simulationRunId}/restore-snapshot`, {
+      method: 'POST',
+      body: JSON.stringify(payload ?? {}),
+    })
+  }
+
+  async getProofRunCheckpoints(simulationRunId: string) {
+    return this.request<{ items: ApiSimulationStageCheckpointSummary[] }>(`/api/admin/proof-runs/${simulationRunId}/checkpoints`)
+  }
+
+  async getProofRunCheckpointDetail(simulationRunId: string, simulationStageCheckpointId: string) {
+    return this.request<ApiProofRunCheckpointDetail>(`/api/admin/proof-runs/${simulationRunId}/checkpoints/${encodeURIComponent(simulationStageCheckpointId)}`)
+  }
+
+  async getProofRunCheckpointStudentDetail(simulationRunId: string, simulationStageCheckpointId: string, studentId: string) {
+    return this.request<ApiProofRunCheckpointStudentDetail>(`/api/admin/proof-runs/${simulationRunId}/checkpoints/${encodeURIComponent(simulationStageCheckpointId)}/students/${encodeURIComponent(studentId)}`)
+  }
+
+  async getProofStudentEvidenceTimeline(simulationRunId: string, studentId: string) {
+    return this.request<{ items: ApiProofStudentEvidenceTimelineItem[] }>(`/api/admin/proof-runs/${simulationRunId}/students/${studentId}/evidence-timeline`)
+  }
+
   async listOfferings() {
     return this.request<{ items: ApiAdminOffering[] }>('/api/admin/offerings')
   }
@@ -727,6 +986,20 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
 
   async getResolvedCourseOutcomes(offeringId: string) {
     return this.request<ApiResolvedCourseOutcomeSet>(`/api/admin/offerings/${offeringId}/resolved-course-outcomes`)
+  }
+
+  async getCurriculumFeatureConfig(batchId: string) {
+    return this.request<ApiCurriculumFeatureConfigBundle>(`/api/admin/batches/${batchId}/curriculum-feature-config`)
+  }
+
+  async saveCurriculumFeatureConfig(batchId: string, curriculumCourseId: string, payload: ApiCurriculumFeatureConfigPayload) {
+    return this.request<{ ok: true; batchId: string; curriculumCourseId: string; curriculumImportVersionId: string }>(
+      `/api/admin/batches/${batchId}/curriculum-feature-config/${curriculumCourseId}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      },
+    )
   }
 
   async saveOfferingAssessmentScheme(offeringId: string, payload: { scheme: SchemeState }) {
@@ -842,8 +1115,11 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     })
   }
 
-  async getAcademicFacultyProfile(facultyId: string) {
-    return this.request<ApiAcademicFacultyProfile>(`/api/academic/faculty-profile/${facultyId}`)
+  async getAcademicFacultyProfile(facultyId: string, filter?: { simulationStageCheckpointId?: string }) {
+    const searchParams = new URLSearchParams()
+    if (filter?.simulationStageCheckpointId) searchParams.set('simulationStageCheckpointId', filter.simulationStageCheckpointId)
+    const query = searchParams.toString()
+    return this.request<ApiAcademicFacultyProfile>(`/api/academic/faculty-profile/${facultyId}${query ? `?${query}` : ''}`)
   }
 
   async getAdminRequest(requestId: string) {

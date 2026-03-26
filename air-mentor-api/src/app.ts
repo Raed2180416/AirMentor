@@ -95,6 +95,7 @@ export async function buildApp(options: BuildAppOptions) {
   const { registerStudentRoutes } = await import('./modules/students.js')
   const { registerCourseRoutes } = await import('./modules/courses.js')
   const { registerAdminRequestRoutes } = await import('./modules/admin-requests.js')
+  const { registerAdminProofSandboxRoutes } = await import('./modules/admin-proof-sandbox.js')
   const { registerAcademicRoutes } = await import('./modules/academic.js')
   const { registerAdminControlPlaneRoutes } = await import('./modules/admin-control-plane.js')
   modules.push(
@@ -105,6 +106,7 @@ export async function buildApp(options: BuildAppOptions) {
     registerStudentRoutes,
     registerCourseRoutes,
     registerAdminRequestRoutes,
+    registerAdminProofSandboxRoutes,
     registerAcademicRoutes,
     registerAdminControlPlaneRoutes,
   )

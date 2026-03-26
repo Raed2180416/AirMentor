@@ -80,4 +80,60 @@ describe('AirMentorApiClient', () => {
       headers: {},
     }))
   })
+
+  it('threads checkpoint playback filters and admin checkpoint routes through the API client', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => new Response(JSON.stringify({
+      ok: true,
+      items: [],
+      checkpoint: {
+        simulationStageCheckpointId: 'checkpoint_001',
+        simulationRunId: 'run_001',
+        semesterNumber: 6,
+        stageKey: 'post-tt1',
+        stageLabel: 'Post TT1',
+        stageDescription: 'Checkpoint',
+        stageOrder: 2,
+        previousCheckpointId: null,
+        nextCheckpointId: null,
+      },
+      queuePreview: [],
+      offeringRollups: [],
+      student: {
+        studentId: 'student_001',
+        studentName: 'Aarav Sharma',
+        usn: '1MS23MC001',
+      },
+      projections: [],
+      proofPlayback: null,
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }))
+    const client = new AirMentorApiClient('http://127.0.0.1:4000', fetchMock as typeof fetch)
+
+    await client.getAcademicBootstrap({ simulationStageCheckpointId: 'checkpoint_001' })
+    await client.getAcademicFacultyProfile('mnc_t1', { simulationStageCheckpointId: 'checkpoint_001' })
+    await client.getAcademicHodProofBundle({ simulationStageCheckpointId: 'checkpoint_001' })
+    await client.getAcademicHodProofSummary({ simulationStageCheckpointId: 'checkpoint_001' })
+    await client.getAcademicStudentAgentCard('student_001', { simulationStageCheckpointId: 'checkpoint_001' })
+    await client.getAcademicStudentRiskExplorer('student_001', { simulationStageCheckpointId: 'checkpoint_001' })
+    await client.startAcademicStudentAgentSession('student_001', { simulationStageCheckpointId: 'checkpoint_001' })
+    await client.getProofRunCheckpoints('run_001')
+    await client.getProofRunCheckpointDetail('run_001', 'checkpoint_001')
+    await client.getProofRunCheckpointStudentDetail('run_001', 'checkpoint_001', 'student_001')
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://127.0.0.1:4000/api/academic/bootstrap?simulationStageCheckpointId=checkpoint_001', expect.any(Object))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://127.0.0.1:4000/api/academic/faculty-profile/mnc_t1?simulationStageCheckpointId=checkpoint_001', expect.any(Object))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, 'http://127.0.0.1:4000/api/academic/hod/proof-bundle?simulationStageCheckpointId=checkpoint_001', expect.any(Object))
+    expect(fetchMock).toHaveBeenNthCalledWith(4, 'http://127.0.0.1:4000/api/academic/hod/proof-summary?simulationStageCheckpointId=checkpoint_001', expect.any(Object))
+    expect(fetchMock).toHaveBeenNthCalledWith(5, 'http://127.0.0.1:4000/api/academic/student-shell/students/student_001/card?simulationStageCheckpointId=checkpoint_001', expect.any(Object))
+    expect(fetchMock).toHaveBeenNthCalledWith(6, 'http://127.0.0.1:4000/api/academic/students/student_001/risk-explorer?simulationStageCheckpointId=checkpoint_001', expect.any(Object))
+    expect(fetchMock).toHaveBeenNthCalledWith(7, 'http://127.0.0.1:4000/api/academic/student-shell/students/student_001/sessions', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ simulationStageCheckpointId: 'checkpoint_001' }),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(8, 'http://127.0.0.1:4000/api/admin/proof-runs/run_001/checkpoints', expect.any(Object))
+    expect(fetchMock).toHaveBeenNthCalledWith(9, 'http://127.0.0.1:4000/api/admin/proof-runs/run_001/checkpoints/checkpoint_001', expect.any(Object))
+    expect(fetchMock).toHaveBeenNthCalledWith(10, 'http://127.0.0.1:4000/api/admin/proof-runs/run_001/checkpoints/checkpoint_001/students/student_001', expect.any(Object))
+  })
 })

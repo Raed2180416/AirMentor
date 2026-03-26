@@ -40,7 +40,11 @@ trap cleanup EXIT
 start_seeded_api "$cors_allowed_origins" "$output_dir"
 
 mkdir -p "$output_dir"
-VITE_AIRMENTOR_API_BASE_URL="$api_base_url" npm run build >/dev/null
+AIRMENTOR_UI_PROXY_API_TARGET="$api_base_url" \
+VITE_AIRMENTOR_API_BASE_URL="/" \
+npm run build >/dev/null
+AIRMENTOR_UI_PROXY_API_TARGET="$api_base_url" \
+VITE_AIRMENTOR_API_BASE_URL="/" \
 npm run preview -- --host "$ui_host" --port "$ui_port" >"$preview_log" 2>&1 &
 preview_pid=$!
 

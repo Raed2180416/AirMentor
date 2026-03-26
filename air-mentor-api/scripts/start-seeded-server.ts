@@ -102,7 +102,10 @@ async function main() {
       config,
       db,
       pool,
-      clock: () => baseNow,
+      // Keep seeded academic data deterministic, but use wall-clock time for
+      // runtime session expiry so live-browser logins do not receive already-
+      // expired cookies as the fixed seed date ages.
+      clock: () => new Date().toISOString(),
     })
 
     const apiBaseUrl = await app.listen({ port: config.port, host: config.host })

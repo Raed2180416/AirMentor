@@ -68,6 +68,17 @@ jobs:
           fi
           "${command[@]}"
 
+      - name: Verify Railway health
+        if: steps.railway-config.outputs.ready == 'true' && vars.RAILWAY_PUBLIC_API_URL != ''
+        env:
+          RAILWAY_PUBLIC_API_URL: ${{ vars.RAILWAY_PUBLIC_API_URL }}
+        run: |
+          node -e "const base = process.env.RAILWAY_PUBLIC_API_URL; const url = new URL('/health', base); fetch(url).then(async response => { if (!response.ok) { const body = await response.text().catch(() => ''); throw new Error(`Healthcheck failed: ${response.status} ${body}`) } }).catch(error => { console.error(error.message); process.exit(1) })"
+
+      - name: Railway health verification not configured
+        if: steps.railway-config.outputs.ready == 'true' && vars.RAILWAY_PUBLIC_API_URL == ''
+        run: echo "Skipping post-deploy /health verification because RAILWAY_PUBLIC_API_URL is not configured."
+
       - name: Railway deployment not configured
         if: steps.railway-config.outputs.ready != 'true'
         run: echo "Skipping Railway deploy because RAILWAY_TOKEN or RAILWAY_SERVICE is not configured."

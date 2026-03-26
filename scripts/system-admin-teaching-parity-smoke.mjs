@@ -77,7 +77,11 @@ try {
   await page.waitForFunction((name) => document.body.innerText.includes(name), updatedDisplayName)
   await page.waitForFunction((department) => document.body.innerText.includes(department), 'ECE')
   await page.waitForFunction((designation) => document.body.innerText.includes(designation), updatedDesignation)
-  await page.waitForFunction((roles) => document.body.innerText.includes(roles), 'Course Leader / Mentor / HoD')
+  await page.waitForFunction(() => (
+    document.body.innerText.includes('Course Leader')
+    && document.body.innerText.includes('Mentor')
+    && document.body.innerText.includes('HoD')
+  ))
   await page.waitForFunction((username) => (document.querySelector('#teacher-username') instanceof HTMLInputElement) && document.querySelector('#teacher-username').value === username, teachingUsername)
 
   await page.locator('#teacher-password').fill(teachingPassword)

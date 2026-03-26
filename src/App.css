@@ -223,7 +223,7 @@ body,
 }
 
 .app-shell button:not(:disabled):hover,
-.app-shell [role='button']:hover,
+.app-shell [role='button']:not([data-surface='card']):hover,
 .app-shell a:hover,
 .app-shell [data-pressable='true']:hover,
 .app-shell [data-tab='true']:hover,
@@ -235,7 +235,7 @@ body,
 }
 
 .app-shell button:not(:disabled):hover,
-.app-shell [role='button']:hover,
+.app-shell [role='button']:not([data-surface='card']):hover,
 .app-shell a:hover,
 .app-shell [data-pressable='true']:hover,
 .app-shell [data-tab='true']:hover {
@@ -243,7 +243,7 @@ body,
 }
 
 .app-shell button:focus-visible,
-.app-shell [role='button']:focus-visible,
+.app-shell [role='button']:not([data-surface='card']):focus-visible,
 .app-shell a:focus-visible,
 .app-shell input:focus-visible,
 .app-shell select:focus-visible,
@@ -253,7 +253,7 @@ body,
 }
 
 .app-shell button:active:not(:disabled),
-.app-shell [role='button']:active,
+.app-shell [role='button']:not([data-surface='card']):active,
 .app-shell a:active,
 .app-shell [data-pressable='true']:active,
 .app-shell [data-tab='true']:active {
@@ -262,6 +262,11 @@ body,
 
 .app-shell [data-surface='card'] {
 	min-width: 0;
+}
+
+.app-shell [data-surface='card'][data-interactive='true']:focus-visible {
+	outline: none;
+	box-shadow: 0 0 0 1px rgba(45, 138, 240, 0.18), 0 0 0 4px var(--ui-ring), var(--ui-shadow-soft);
 }
 
 .app-shell [data-nav-item='true'] {

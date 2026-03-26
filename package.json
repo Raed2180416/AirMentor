@@ -13,6 +13,10 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test:api": "npm --workspace air-mentor-api test",
+    "evaluate:proof-risk-model": "npm --workspace air-mentor-api run evaluate:proof-risk-model",
+    "verify:proof-closure": "npm --workspace air-mentor-api run build && npm run build && npm --workspace air-mentor-api test -- --reporter=dot && npm test -- --reporter=dot && bash scripts/playwright-admin-live-proof-risk-smoke.sh",
+    "verify:proof-closure:proof-rc": "npm run verify:proof-closure && npm --workspace air-mentor-api run test:proof-rc",
+    "verify:proof-closure:live": "AIRMENTOR_LIVE_STACK=1 bash scripts/playwright-admin-live-proof-risk-smoke.sh",
     "test": "vitest run",
     "preview": "vite preview",
     "playwright:version": "nix develop -c playwright --version",
@@ -20,6 +24,7 @@
     "playwright:firefox:acceptance": "bash scripts/playwright-firefox-acceptance.sh",
     "playwright:admin-mock:acceptance": "bash scripts/playwright-admin-mock-acceptance.sh",
     "playwright:admin-live:acceptance": "bash scripts/playwright-admin-live-acceptance.sh",
+    "playwright:admin-live:proof-risk": "bash scripts/playwright-admin-live-proof-risk-smoke.sh",
     "playwright:admin-live:request-flow": "bash scripts/playwright-admin-live-request-flow.sh",
     "playwright:admin-live:teaching-parity": "bash scripts/playwright-admin-live-teaching-parity.sh"
   },

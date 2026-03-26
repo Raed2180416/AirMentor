@@ -10,7 +10,7 @@ import { createDb, createPool, type AppDb } from '../../src/db/client.js'
 import { runSqlMigrations } from '../../src/db/migrate.js'
 import { seedIntoDatabase } from '../../src/db/seed.js'
 
-const baseNow = '2026-03-16T00:00:00.000Z'
+export const TEST_NOW = '2026-03-16T00:00:00.000Z'
 export const TEST_ORIGIN = 'http://127.0.0.1:5173'
 
 function findFreePort() {
@@ -60,7 +60,7 @@ export async function createTestApp(options?: {
     const db = createDb(pool) as AppDb
     const migrationsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../src/db/migrations')
     await runSqlMigrations(pool, migrationsDir)
-    await seedIntoDatabase(db, pool, baseNow)
+    await seedIntoDatabase(db, pool, TEST_NOW)
 
     const config = loadConfig({
       DATABASE_URL: connectionString,
@@ -73,18 +73,19 @@ export async function createTestApp(options?: {
       config,
       db,
       pool,
-      clock: () => baseNow,
+      clock: () => TEST_NOW,
     })
     await app.ready()
 
+    const activePool = pool
     return {
       app,
       db,
       embeddedPostgres,
-      pool,
+      pool: activePool,
       async close() {
         await app.close()
-        await pool.end()
+        await activePool.end()
         await embeddedPostgres.stop()
         await rm(databaseDir, { recursive: true, force: true })
       },
@@ -108,6 +109,9 @@ export async function loginAs(app: Awaited<ReturnType<typeof createTestApp>>['ap
   })
   const setCookie = response.headers['set-cookie']
   const cookie = Array.isArray(setCookie) ? setCookie[0] : setCookie
+  if (!cookie) {
+    throw new Error(`Expected login for ${identifier} to return a session cookie`)
+  }
   return {
     response,
     cookie,

@@ -10,11 +10,15 @@ import {
   academicTaskPlacements,
   academicTaskTransitions,
   academicTasks,
+  alertAcknowledgements,
+  alertDecisions,
+  alertOutcomes,
   batches,
   branches,
   courseOutcomeOverrides,
   courses,
   departments,
+  electiveRecommendations,
   facultyAppointments,
   facultyCalendarWorkspaces,
   facultyOfferingOwnerships,
@@ -22,13 +26,21 @@ import {
   mentorAssignments,
   offeringAssessmentSchemes,
   offeringQuestionPapers,
+  reassessmentEvents,
+  reassessmentResolutions,
+  riskAssessments,
   roleGrants,
   sectionOfferings,
+  simulationStageCheckpoints,
+  simulationStageOfferingProjections,
+  simulationRuns,
   studentAssessmentScores,
   studentAcademicProfiles,
+  studentAgentSessions,
   studentAttendanceSnapshots,
   studentEnrollments,
   studentInterventions,
+  studentObservedSemesterStates,
   students,
   transcriptSubjectResults,
   transcriptTermResults,
@@ -37,7 +49,21 @@ import {
 } from '../db/schema.js'
 import { createId } from '../lib/ids.js'
 import { badRequest, forbidden, notFound } from '../lib/http-errors.js'
+import { inferObservableRisk } from '../lib/inference-engine.js'
 import { parseJson, stringifyJson } from '../lib/json.js'
+import {
+  getProofRiskModelActive,
+  buildHodProofAnalytics,
+  buildStudentAgentCard,
+  buildStudentRiskExplorer,
+  listStudentAgentTimeline,
+  sendStudentAgentMessage,
+  startStudentAgentSession,
+} from '../lib/msruas-proof-control-plane.js'
+import {
+  buildObservableFeaturePayload,
+  scoreObservableRiskWithModel,
+} from '../lib/proof-risk-model.js'
 import {
   emitAuditEvent,
   expectVersion,
@@ -123,6 +149,87 @@ const runtimeSliceSchemas = {
     at: z.number().finite().optional(),
   }).passthrough()),
 } satisfies Record<RuntimeStateKey, z.ZodTypeAny>
+
+const hodProofSummaryQuerySchema = z.object({
+  section: z.string().min(1).optional(),
+  semester: z.coerce.number().int().min(1).max(8).optional(),
+  simulationStageCheckpointId: z.string().min(1).optional(),
+})
+
+const hodProofCourseQuerySchema = z.object({
+  section: z.string().min(1).optional(),
+  semester: z.coerce.number().int().min(1).max(8).optional(),
+  simulationStageCheckpointId: z.string().min(1).optional(),
+  riskBand: z.string().min(1).optional(),
+  courseCode: z.string().min(1).optional(),
+})
+
+const hodProofFacultyQuerySchema = z.object({
+  section: z.string().min(1).optional(),
+  semester: z.coerce.number().int().min(1).max(8).optional(),
+  simulationStageCheckpointId: z.string().min(1).optional(),
+  facultyId: z.string().min(1).optional(),
+})
+
+const hodProofStudentQuerySchema = z.object({
+  section: z.string().min(1).optional(),
+  semester: z.coerce.number().int().min(1).max(8).optional(),
+  simulationStageCheckpointId: z.string().min(1).optional(),
+  riskBand: z.string().min(1).optional(),
+  courseCode: z.string().min(1).optional(),
+  studentId: z.string().min(1).optional(),
+})
+
+const hodProofReassessmentQuerySchema = z.object({
+  section: z.string().min(1).optional(),
+  semester: z.coerce.number().int().min(1).max(8).optional(),
+  simulationStageCheckpointId: z.string().min(1).optional(),
+  riskBand: z.string().min(1).optional(),
+  status: z.string().min(1).optional(),
+  facultyId: z.string().min(1).optional(),
+  courseCode: z.string().min(1).optional(),
+  studentId: z.string().min(1).optional(),
+})
+
+const studentShellQuerySchema = z.object({
+  simulationRunId: z.string().min(1).optional(),
+  simulationStageCheckpointId: z.string().min(1).optional(),
+})
+
+const studentShellSessionCreateSchema = z.object({
+  simulationRunId: z.string().min(1).optional(),
+  simulationStageCheckpointId: z.string().min(1).optional(),
+})
+
+const studentShellMessageSchema = z.object({
+  prompt: z.string().trim().min(1).max(2000),
+})
+
+const proofReassessmentParamsSchema = z.object({
+  reassessmentEventId: z.string().min(1),
+})
+
+const proofReassessmentAcknowledgeSchema = z.object({
+  note: z.string().trim().max(1000).optional(),
+})
+
+const proofReassessmentResolutionOutcomeSchema = z.enum([
+  'completed_awaiting_evidence',
+  'completed_improving',
+  'not_completed',
+  'no_show',
+  'switch_intervention',
+  'administratively_closed',
+])
+
+const proofReassessmentResolveSchema = z.object({
+  outcome: proofReassessmentResolutionOutcomeSchema,
+  note: z.string().trim().max(1000).optional(),
+})
+
+const academicBootstrapQuerySchema = z.object({
+  simulationStageCheckpointId: z.string().min(1).optional(),
+})
 
 const offeringCreateSchema = z.object({
   courseId: z.string().min(1),
@@ -416,6 +523,7 @@ const sharedTaskSchema = z.object({
   scheduleMeta: scheduleMetaSchema.optional(),
   dismissal: taskDismissalSchema.optional(),
 })
+const sharedTaskPayloadSchema = sharedTaskSchema.partial()
 
 const taskSyncSchema = z.object({
   tasks: z.array(sharedTaskSchema),
@@ -771,6 +879,101 @@ function isoToMillis(value: string | undefined, fallback = Date.now()) {
 
 function normalizeAcademicStudentId(studentId: string) {
   return studentId.includes('::') ? (studentId.split('::').at(-1) ?? studentId) : studentId
+}
+
+async function resolveStudentShellRun(
+  context: RouteContext,
+  auth: ReturnType<typeof requireAuth>,
+  requestedRunId?: string,
+) {
+  if (requestedRunId && auth.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
+    throw forbidden('Only system admin may select a non-active proof run')
+  }
+  const [run] = requestedRunId
+    ? await context.db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, requestedRunId))
+    : await context.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+  if (!run) throw notFound('Proof run not found')
+  if (auth.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN' && run.activeFlag !== 1) {
+    throw forbidden('Academic roles may inspect only the active proof run')
+  }
+  return run
+}
+
+async function resolveAcademicStageCheckpoint(
+  context: RouteContext,
+  auth: ReturnType<typeof requireAuth>,
+  simulationRunId: string,
+  simulationStageCheckpointId?: string,
+) {
+  if (!simulationStageCheckpointId) return null
+  const [checkpoint] = await context.db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationStageCheckpointId, simulationStageCheckpointId))
+  if (!checkpoint) throw notFound('Simulation stage checkpoint not found')
+  if (checkpoint.simulationRunId !== simulationRunId) {
+    throw forbidden('Simulation stage checkpoint does not belong to the selected proof run')
+  }
+  if (auth.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
+    const [activeRun] = await context.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    if (!activeRun || activeRun.simulationRunId !== checkpoint.simulationRunId) {
+      throw forbidden('Academic roles may inspect only checkpoints from the active proof run')
+    }
+  }
+  return checkpoint
+}
+
+async function assertStudentShellScope(
+  context: RouteContext,
+  auth: ReturnType<typeof requireAuth>,
+  simulationRunId: string,
+  studentId: string,
+) {
+  if (auth.activeRoleGrant.roleCode === 'SYSTEM_ADMIN') return
+  if (!auth.facultyId) throw forbidden('Faculty context is required')
+
+  if (auth.activeRoleGrant.roleCode === 'HOD') {
+    const analytics = await buildHodProofAnalytics(context.db, {
+      facultyId: auth.facultyId,
+      now: context.now(),
+      filters: { studentId },
+    })
+    if (!analytics.summary.activeRunContext || analytics.summary.activeRunContext.simulationRunId !== simulationRunId) {
+      throw forbidden('Student shell is only available for the active HoD proof scope')
+    }
+    if (!analytics.students.some(row => row.studentId === studentId)) {
+      throw forbidden('Student is outside the supervised HoD proof scope')
+    }
+    return
+  }
+
+  if (auth.activeRoleGrant.roleCode === 'MENTOR') {
+    const [assignment] = await context.db.select().from(mentorAssignments).where(and(
+      eq(mentorAssignments.facultyId, auth.facultyId),
+      eq(mentorAssignments.studentId, studentId),
+    ))
+    if (!assignment || assignment.effectiveTo) {
+      throw forbidden('Student is outside the active mentor proof scope')
+    }
+    return
+  }
+
+  const ownedOfferingIds = new Set(
+    (await context.db.select().from(facultyOfferingOwnerships).where(and(
+      eq(facultyOfferingOwnerships.facultyId, auth.facultyId),
+      eq(facultyOfferingOwnerships.status, 'active'),
+    ))).map(row => row.offeringId),
+  )
+  if (ownedOfferingIds.size === 0) throw forbidden('No owned proof offerings are available for this faculty context')
+  const observedRows = await context.db.select().from(studentObservedSemesterStates).where(and(
+    eq(studentObservedSemesterStates.simulationRunId, simulationRunId),
+    eq(studentObservedSemesterStates.studentId, studentId),
+  ))
+  const hasOwnedProofEvidence = observedRows.some(row => {
+    const payload = parseJson(row.observedStateJson, {} as Record<string, unknown>)
+    const offeringId = typeof payload.offeringId === 'string' ? payload.offeringId : null
+    return !!offeringId && ownedOfferingIds.has(offeringId)
+  })
+  if (!hasOwnedProofEvidence) {
+    throw forbidden('Student is outside the active course-leader proof scope')
+  }
 }
 
 function buildInitials(displayName: string) {
@@ -1157,28 +1360,89 @@ function computeRiskFromPolicy(input: {
     weakCoCount = 0,
     policy,
   } = input
-  const rules = policy.riskRules
-  let riskProb = 0.08
+  const inference = inferObservableRisk({
+    attendancePct,
+    currentCgpa,
+    backlogCount,
+    tt1Pct,
+    tt2Pct,
+    weakCoCount,
+    policy,
+  })
+  return {
+    riskProb: inference.riskProb,
+    riskBand: inference.riskBand,
+  }
+}
 
-  if (attendancePct < rules.highRiskAttendancePercentBelow) riskProb += 0.42
-  else if (attendancePct < rules.mediumRiskAttendancePercentBelow) riskProb += 0.22
-
-  if (currentCgpa > 0 && currentCgpa < rules.highRiskCgpaBelow) riskProb += 0.28
-  else if (currentCgpa > 0 && currentCgpa < rules.mediumRiskCgpaBelow) riskProb += 0.14
-
-  if (backlogCount >= rules.highRiskBacklogCount) riskProb += 0.24
-  else if (backlogCount >= rules.mediumRiskBacklogCount) riskProb += 0.12
-
-  const termSignals = [tt1Pct, tt2Pct].filter((value): value is number => typeof value === 'number')
-  if (termSignals.some(value => value < 40)) riskProb += 0.16
-  else if (termSignals.some(value => value < 55)) riskProb += 0.08
-
-  if (weakCoCount >= 2) riskProb += 0.1
-  else if (weakCoCount === 1) riskProb += 0.05
-
-  const bounded = Math.max(0.05, Math.min(0.95, Math.round(riskProb * 100) / 100))
-  const riskBand: 'High' | 'Medium' | 'Low' = bounded >= 0.7 ? 'High' : bounded >= 0.35 ? 'Medium' : 'Low'
-  return { riskProb: bounded, riskBand }
+function computeRiskFromActiveModelOrPolicy(input: {
+  attendancePct: number
+  currentCgpa: number
+  backlogCount: number
+  tt1Pct?: number | null
+  tt2Pct?: number | null
+  quizPct?: number | null
+  assignmentPct?: number | null
+  seePct?: number | null
+  weakCoCount?: number
+  policy: ResolvedPolicy
+  activeModel?: Awaited<ReturnType<typeof getProofRiskModelActive>>['production'] | null
+  semesterProgress?: number
+}) {
+  const {
+    attendancePct,
+    currentCgpa,
+    backlogCount,
+    tt1Pct = null,
+    tt2Pct = null,
+    quizPct = null,
+    assignmentPct = null,
+    seePct = null,
+    weakCoCount = 0,
+    policy,
+    activeModel = null,
+    semesterProgress = 1,
+  } = input
+  const featurePayload = buildObservableFeaturePayload({
+    attendancePct,
+    attendanceHistory: [],
+    currentCgpa,
+    backlogCount,
+    tt1Pct,
+    tt2Pct,
+    quizPct,
+    assignmentPct,
+    seePct,
+    weakCoCount,
+    weakQuestionCount: 0,
+    interventionResponseScore: null,
+    prerequisiteAveragePct: 0,
+    prerequisiteFailureCount: 0,
+    prerequisiteCourseCodes: [],
+    sectionRiskRate: 0,
+    semesterProgress,
+  })
+  const inference = scoreObservableRiskWithModel({
+    attendancePct,
+    currentCgpa,
+    backlogCount,
+    tt1Pct,
+    tt2Pct,
+    quizPct,
+    assignmentPct,
+    seePct,
+    weakCoCount,
+    attendanceHistoryRiskCount: 0,
+    questionWeaknessCount: 0,
+    interventionResponseScore: null,
+    policy,
+    featurePayload,
+    productionModel: activeModel,
+  })
+  return {
+    riskProb: inference.riskProb,
+    riskBand: inference.riskBand,
+  }
 }
 
 function resolveCourseOutcomesForOffering(input: {
@@ -1544,29 +1808,114 @@ async function assertViewerCanSuperviseStudent(input: {
   throw forbidden('This role cannot manage meetings')
 }
 
+const proofResolutionCreditByOutcome = {
+  completed_awaiting_evidence: 0.02,
+  completed_improving: 0.05,
+  not_completed: -0.05,
+  no_show: -0.08,
+  switch_intervention: -0.01,
+  administratively_closed: 0,
+} satisfies Record<z.infer<typeof proofReassessmentResolutionOutcomeSchema>, number>
+
+function proofResolutionRecoveryState(outcome: z.infer<typeof proofReassessmentResolutionOutcomeSchema>) {
+  return outcome === 'completed_improving' ? 'confirmed_improvement' : 'under_watch'
+}
+
+async function resolveProofReassessmentAccess(input: {
+  context: RouteContext
+  auth: ReturnType<typeof requireAuth>
+  reassessmentEventId: string
+}) {
+  const [event] = await input.context.db
+    .select()
+    .from(reassessmentEvents)
+    .where(eq(reassessmentEvents.reassessmentEventId, input.reassessmentEventId))
+  if (!event) throw notFound('Proof reassessment not found')
+
+  const [risk] = await input.context.db
+    .select()
+    .from(riskAssessments)
+    .where(eq(riskAssessments.riskAssessmentId, event.riskAssessmentId))
+  if (!risk) throw notFound('Proof reassessment risk context not found')
+
+  const [run] = risk.simulationRunId
+    ? await input.context.db
+      .select()
+      .from(simulationRuns)
+      .where(eq(simulationRuns.simulationRunId, risk.simulationRunId))
+    : []
+  if (!run) throw notFound('Proof reassessment run context not found')
+
+  if (input.auth.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
+    const [activeRun] = await input.context.db
+      .select()
+      .from(simulationRuns)
+      .where(eq(simulationRuns.activeFlag, 1))
+    if (!activeRun || activeRun.simulationRunId !== run.simulationRunId) {
+      throw forbidden('Academic roles may modify proof reassessments only for the active proof run')
+    }
+    await assertViewerCanSuperviseStudent({
+      context: input.context,
+      auth: input.auth,
+      studentId: event.studentId,
+      offeringId: event.offeringId ?? risk.offeringId ?? null,
+    })
+    if (
+      input.auth.facultyId
+      && event.assignedFacultyId
+      && event.assignedFacultyId !== input.auth.facultyId
+      && input.auth.activeRoleGrant.roleCode !== 'HOD'
+    ) {
+      throw forbidden('This proof reassessment is assigned to a different faculty member')
+    }
+  }
+
+  const [alert] = await input.context.db
+    .select()
+    .from(alertDecisions)
+    .where(eq(alertDecisions.riskAssessmentId, event.riskAssessmentId))
+
+  return { event, risk, run, alert: alert ?? null }
+}
+
 function mapAcademicTaskRow(
   row: typeof academicTasks.$inferSelect,
   transitions: z.infer<typeof queueTransitionSchema>[],
 ) {
-  const parsed = sharedTaskSchema.safeParse(parseJson(row.payloadJson, {}))
-  const payload = parsed.success ? parsed.data : null
+  const parsed = sharedTaskPayloadSchema.safeParse(parseJson(row.payloadJson, {}))
+  const payload = parsed.success ? parsed.data : {}
   return sharedTaskSchema.parse({
-    ...payload,
     id: row.taskId,
     studentId: row.studentId,
-    offeringId: row.offeringId,
+    studentName: payload.studentName ?? row.studentId,
+    studentUsn: payload.studentUsn ?? row.studentId,
+    offeringId: payload.offeringId ?? row.offeringId,
+    courseCode: payload.courseCode ?? 'NA',
+    courseName: payload.courseName ?? row.title,
+    year: payload.year ?? 'Unmapped',
     assignedTo: row.assignedToRole,
     taskType: row.taskType,
     status: row.status,
     title: row.title,
     due: row.dueLabel,
-    dueDateISO: row.dueDateIso ?? payload?.dueDateISO,
+    dueDateISO: row.dueDateIso ?? payload.dueDateISO,
     riskProb: row.riskProbScaled / 100,
     riskBand: row.riskBand,
+    actionHint: payload.actionHint ?? row.title,
     priority: row.priority,
-    createdAt: payload?.createdAt ?? isoToMillis(row.createdAt),
-    updatedAt: payload?.updatedAt ?? isoToMillis(row.updatedAt),
-    transitionHistory: transitions.length > 0 ? transitions : (payload?.transitionHistory ?? []),
+    createdAt: payload.createdAt ?? isoToMillis(row.createdAt),
+    updatedAt: payload.updatedAt ?? isoToMillis(row.updatedAt),
+    remedialPlan: payload.remedialPlan,
+    escalated: payload.escalated,
+    sourceRole: payload.sourceRole,
+    manual: payload.manual,
+    transitionHistory: transitions.length > 0 ? transitions : (payload.transitionHistory ?? []),
+    unlockRequest: payload.unlockRequest,
+    requestNote: payload.requestNote,
+    handoffNote: payload.handoffNote,
+    resolvedByFacultyId: payload.resolvedByFacultyId,
+    scheduleMeta: payload.scheduleMeta,
+    dismissal: payload.dismissal,
   })
 }
 
@@ -1866,6 +2215,13 @@ function buildStudentHistoryRecord(input: {
   progressionStatus: 'Eligible' | 'Review' | 'Hold'
   trend: 'Improving' | 'Stable' | 'Declining'
   latestBacklogCount: number
+  electiveRecommendation?: {
+    recommendedCode: string
+    recommendedTitle: string
+    stream: string
+    rationale: string
+    alternatives: Array<{ code: string; title: string; stream: string }>
+  } | null
   transcriptTerms?: Array<{
     termId: string
     label: string
@@ -1911,6 +2267,7 @@ function buildStudentHistoryRecord(input: {
     progressionStatus: input.progressionStatus,
     advisoryNotes: notes,
     repeatSubjects: input.repeatSubjects,
+    electiveRecommendation: input.electiveRecommendation ?? null,
     terms: input.transcriptTerms && input.transcriptTerms.length > 0
       ? input.transcriptTerms
       : input.term
@@ -2022,6 +2379,7 @@ async function buildAcademicBootstrap(
   viewer: {
     facultyId?: string | null
     roleCode?: string | null
+    simulationStageCheckpointId?: string | null
   } = {},
 ) {
   const runtimeEntries = await Promise.all(runtimeStateKeys.map(async stateKey => {
@@ -2052,12 +2410,16 @@ async function buildAcademicBootstrap(
     courseOutcomeOverrideRows,
     schemeRows,
     questionPaperRows,
+    riskAssessmentRows,
+    electiveRecommendationRows,
     academicTaskRows,
     academicTaskTransitionRows,
     academicTaskPlacementRows,
     facultyCalendarWorkspaceRows,
     academicCalendarAuditRows,
     academicMeetingRows,
+    stageCheckpointRow,
+    stageOfferingProjectionRows,
   ] = await Promise.all([
     context.db.select().from(courses).orderBy(asc(courses.courseCode)),
     context.db.select().from(academicTerms),
@@ -2081,12 +2443,20 @@ async function buildAcademicBootstrap(
     context.db.select().from(courseOutcomeOverrides).where(eq(courseOutcomeOverrides.status, 'active')),
     context.db.select().from(offeringAssessmentSchemes).where(eq(offeringAssessmentSchemes.status, 'active')),
     context.db.select().from(offeringQuestionPapers),
+    context.db.select().from(riskAssessments),
+    context.db.select().from(electiveRecommendations),
     context.db.select().from(academicTasks).orderBy(asc(academicTasks.createdAt)),
     context.db.select().from(academicTaskTransitions).orderBy(asc(academicTaskTransitions.occurredAt)),
     context.db.select().from(academicTaskPlacements),
     context.db.select().from(facultyCalendarWorkspaces),
     context.db.select().from(academicCalendarAuditEvents).orderBy(asc(academicCalendarAuditEvents.createdAt)),
     context.db.select().from(academicMeetings).orderBy(asc(academicMeetings.dateIso), asc(academicMeetings.startMinutes)),
+    viewer.simulationStageCheckpointId
+      ? context.db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationStageCheckpointId, viewer.simulationStageCheckpointId)).then(rows => rows[0] ?? null)
+      : Promise.resolve(null),
+    viewer.simulationStageCheckpointId
+      ? context.db.select().from(simulationStageOfferingProjections).where(eq(simulationStageOfferingProjections.simulationStageCheckpointId, viewer.simulationStageCheckpointId))
+      : Promise.resolve([]),
   ])
 
   const courseById = Object.fromEntries(courseRows.map(row => [row.courseId, row]))
@@ -2176,8 +2546,33 @@ async function buildAcademicBootstrap(
     interventionsByStudentId.set(studentId, entries)
   }
 
-  const transcriptTermsByStudentId = new Map<string, Array<typeof transcriptTermResults.$inferSelect>>()
+  const latestRiskAssessmentByStudentOffering = new Map<string, typeof riskAssessments.$inferSelect>()
+  for (const row of riskAssessmentRows) {
+    const key = `${row.studentId}::${row.offeringId}`
+    const current = latestRiskAssessmentByStudentOffering.get(key)
+    if (!current || row.assessedAt > current.assessedAt) {
+      latestRiskAssessmentByStudentOffering.set(key, row)
+    }
+  }
+
+  const latestElectiveRecommendationByStudentId = new Map<string, typeof electiveRecommendations.$inferSelect>()
+  for (const row of electiveRecommendationRows) {
+    const current = latestElectiveRecommendationByStudentId.get(row.studentId)
+    if (!current || row.updatedAt > current.updatedAt) {
+      latestElectiveRecommendationByStudentId.set(row.studentId, row)
+    }
+  }
+
+  const latestTranscriptTermByStudentAndTerm = new Map<string, typeof transcriptTermResults.$inferSelect>()
   for (const row of transcriptTermRows) {
+    const key = `${row.studentId}::${row.termId}`
+    const current = latestTranscriptTermByStudentAndTerm.get(key)
+    if (!current || row.updatedAt > current.updatedAt) {
+      latestTranscriptTermByStudentAndTerm.set(key, row)
+    }
+  }
+  const transcriptTermsByStudentId = new Map<string, Array<typeof transcriptTermResults.$inferSelect>>()
+  for (const row of latestTranscriptTermByStudentAndTerm.values()) {
     transcriptTermsByStudentId.set(row.studentId, [...(transcriptTermsByStudentId.get(row.studentId) ?? []), row])
   }
   const transcriptSubjectsByTermResultId = new Map<string, Array<typeof transcriptSubjectResults.$inferSelect>>()
@@ -2193,6 +2588,14 @@ async function buildAcademicBootstrap(
   }))
   for (const [batchId, policy] of resolvedPolicies) {
     resolvedPolicyByBatchId.set(batchId, policy)
+  }
+  const activeRiskModelByBatchId = new Map<string, Awaited<ReturnType<typeof getProofRiskModelActive>>['production'] | null>()
+  const activeModelRows = await Promise.all(batchIds.map(async batchId => {
+    const activeModel = await getProofRiskModelActive(context.db, { batchId })
+    return [batchId, activeModel.production ?? null] as const
+  }))
+  for (const [batchId, activeModel] of activeModelRows) {
+    activeRiskModelByBatchId.set(batchId, activeModel)
   }
 
   const studentTranscriptAnalyticsByStudentId = new Map<string, ReturnType<typeof computeTranscriptAnalytics>>()
@@ -2379,42 +2782,83 @@ async function buildAcademicBootstrap(
       const tt2Max = Math.max(1, assessmentMap.tt2?.maxScore ?? questionPapers.tt2.totalMarks)
       const tt1Pct = tt1Raw !== null ? roundToTwo((tt1Raw / tt1Max) * 100) : null
       const tt2Pct = tt2Raw !== null ? roundToTwo((tt2Raw / tt2Max) * 100) : null
+      const quizPcts = ['quiz1', 'quiz2']
+        .map(key => {
+          const score = assessmentMap[key]?.score ?? null
+          const maxScore = assessmentMap[key]?.maxScore ?? null
+          if (score === null || !maxScore || maxScore <= 0) return null
+          return roundToTwo((score / maxScore) * 100)
+        })
+        .filter((value): value is number => value !== null)
+      const assignmentPcts = ['asgn1', 'asgn2']
+        .map(key => {
+          const score = assessmentMap[key]?.score ?? null
+          const maxScore = assessmentMap[key]?.maxScore ?? null
+          if (score === null || !maxScore || maxScore <= 0) return null
+          return roundToTwo((score / maxScore) * 100)
+        })
+        .filter((value): value is number => value !== null)
+      const quizPct = quizPcts.length > 0 ? roundToTwo(quizPcts.reduce((sum, value) => sum + value, 0) / quizPcts.length) : null
+      const assignmentPct = assignmentPcts.length > 0 ? roundToTwo(assignmentPcts.reduce((sum, value) => sum + value, 0) / assignmentPcts.length) : null
+      const seeRaw = assessmentMap.see?.score ?? null
+      const seeMax = assessmentMap.see?.maxScore ?? null
+      const seePct = seeRaw !== null && seeMax && seeMax > 0 ? roundToTwo((seeRaw / seeMax) * 100) : null
       const outcomeBreakdown = computeStudentOutcomeAttainment({
         outcomes: resolvedCourseOutcomesByOfferingId.get(offering.offId) ?? [],
         tt1Blueprint: questionPapers.tt1,
         tt2Blueprint: questionPapers.tt2,
         assessmentCells,
       })
-      const risk = computeRiskFromPolicy({
-        attendancePct,
-        currentCgpa: transcriptAnalytics.currentCgpa,
-        backlogCount: transcriptAnalytics.latestBacklogCount,
-        tt1Pct,
-        tt2Pct,
-        weakCoCount: outcomeBreakdown.filter(item => item.overallAttainment > 0 && item.overallAttainment < 45).length,
-        policy,
-      })
+      const persistedRisk = latestRiskAssessmentByStudentOffering.get(runtimeKey)
+      const batchIdForOffering = offeringRow ? (termById[offeringRow.termId]?.batchId ?? null) : null
+      const risk = persistedRisk
+        ? {
+            riskProb: persistedRisk.riskProbScaled / 100,
+            riskBand: persistedRisk.riskBand as 'Low' | 'Medium' | 'High',
+          }
+        : computeRiskFromActiveModelOrPolicy({
+            attendancePct,
+            currentCgpa: transcriptAnalytics.currentCgpa,
+            backlogCount: transcriptAnalytics.latestBacklogCount,
+            tt1Pct,
+            tt2Pct,
+            quizPct,
+            assignmentPct,
+            seePct,
+            weakCoCount: outcomeBreakdown.filter(item => item.overallAttainment > 0 && item.overallAttainment < 45).length,
+            policy,
+            activeModel: batchIdForOffering ? (activeRiskModelByBatchId.get(batchIdForOffering) ?? null) : null,
+            semesterProgress: Math.max(0.25, Math.min(1, offering.stage / 3)),
+          })
       const quizRawTotal = ['quiz1', 'quiz2'].reduce((sum, key) => sum + (assessmentMap[key]?.score ?? 0), 0)
       const assignmentRawTotal = ['asgn1', 'asgn2'].reduce((sum, key) => sum + (assessmentMap[key]?.score ?? 0), 0)
-      const reasons = risk.riskProb >= 0.35
-        ? buildStudentReasons({
-            attendancePct,
-            tt1Raw,
-            tt1Max,
-            tt2Raw,
-            tt2Max,
-            currentCgpa: transcriptAnalytics.currentCgpa,
-            quizRawTotal,
-            coScores: outcomeBreakdown.map(item => ({ coId: item.coId, overallAttainment: item.overallAttainment })),
-          })
-        : []
-      const whatIf = risk.riskProb >= 0.35
-        ? buildStudentWhatIf({
-            riskProb: risk.riskProb,
-            attendancePct,
-            coScores: outcomeBreakdown.map(item => ({ coId: item.coId, overallAttainment: item.overallAttainment })),
-          })
-        : []
+      const reasons = persistedRisk
+        ? z.array(z.object({
+            label: z.string(),
+            impact: z.number(),
+            feature: z.string(),
+          })).catch([]).parse(parseJson(persistedRisk.driversJson, []))
+        : risk.riskProb >= 0.35
+          ? buildStudentReasons({
+              attendancePct,
+              tt1Raw,
+              tt1Max,
+              tt2Raw,
+              tt2Max,
+              currentCgpa: transcriptAnalytics.currentCgpa,
+              quizRawTotal,
+              coScores: outcomeBreakdown.map(item => ({ coId: item.coId, overallAttainment: item.overallAttainment })),
+            })
+          : []
+      const whatIf = persistedRisk
+        ? []
+        : risk.riskProb >= 0.35
+          ? buildStudentWhatIf({
+              riskProb: risk.riskProb,
+              attendancePct,
+              coScores: outcomeBreakdown.map(item => ({ coId: item.coId, overallAttainment: item.overallAttainment })),
+            })
+          : []
       const mergedInterventions = [
         ...(interventionsByStudentId.get(student.studentId) ?? []),
         ...(meetingEntriesByStudentId.get(student.studentId) ?? []),
@@ -2535,6 +2979,19 @@ async function buildAcademicBootstrap(
       progressionStatus: transcriptAnalytics.progressionStatus,
       trend: transcriptAnalytics.trend,
       latestBacklogCount: transcriptAnalytics.latestBacklogCount,
+      electiveRecommendation: (() => {
+        const recommendation = latestElectiveRecommendationByStudentId.get(student.studentId)
+        if (!recommendation) return null
+        const rationale = parseJson(recommendation.rationaleJson, { summary: '' as string })
+        const alternatives = parseJson(recommendation.alternativesJson, [] as Array<{ code: string; title: string; stream: string }>)
+        return {
+          recommendedCode: recommendation.recommendedCode,
+          recommendedTitle: recommendation.recommendedTitle,
+          stream: recommendation.stream,
+          rationale: rationale.summary ?? '',
+          alternatives,
+        }
+      })(),
       transcriptTerms,
     })]
   }))
@@ -2752,7 +3209,26 @@ async function buildAcademicBootstrap(
     visibleFacultyIds.add(viewerAccount.facultyId)
   }
 
-  const filteredOfferings = academicOfferings.filter(offering => visibleOfferingIds.has(offering.offId))
+  const playbackOfferingOverlayByOfferingId = new Map(
+    stageOfferingProjectionRows.map(row => [row.offeringId, row] as const).filter((entry): entry is [string, typeof simulationStageOfferingProjections.$inferSelect] => !!entry[0]),
+  )
+  const filteredOfferings = academicOfferings
+    .filter(offering => visibleOfferingIds.has(offering.offId))
+    .map(offering => {
+      const playback = playbackOfferingOverlayByOfferingId.get(offering.offId)
+      if (!playback) return offering
+      return {
+        ...offering,
+        stage: playback.stage,
+        stageInfo: {
+          ...offering.stageInfo,
+          stage: playback.stage,
+          label: playback.stageLabel,
+          desc: playback.stageDescription,
+        },
+        pendingAction: playback.pendingAction,
+      }
+    })
   const filteredStudentsByOffering = Object.fromEntries(
     Object.entries(studentsByOffering)
       .filter(([offeringId]) => visibleOfferingIds.has(offeringId))
@@ -2942,6 +3418,17 @@ async function buildAcademicBootstrap(
     questionPapersByOffering: Object.fromEntries(filteredOfferings.map(offering => [offering.offId, resolvedQuestionPapersByOfferingId.get(offering.offId) ?? { tt1: buildDefaultQuestionPaper('tt1', resolvedCourseOutcomesByOfferingId.get(offering.offId) ?? []), tt2: buildDefaultQuestionPaper('tt2', resolvedCourseOutcomesByOfferingId.get(offering.offId) ?? []) }])),
     coAttainmentByOffering: filteredCoAttainmentByOffering,
     meetings: filteredMeetings,
+    proofPlayback: stageCheckpointRow ? {
+      simulationStageCheckpointId: stageCheckpointRow.simulationStageCheckpointId,
+      simulationRunId: stageCheckpointRow.simulationRunId,
+      semesterNumber: stageCheckpointRow.semesterNumber,
+      stageKey: stageCheckpointRow.stageKey,
+      stageLabel: stageCheckpointRow.stageLabel,
+      stageDescription: stageCheckpointRow.stageDescription,
+      stageOrder: stageCheckpointRow.stageOrder,
+      previousCheckpointId: stageCheckpointRow.previousCheckpointId,
+      nextCheckpointId: stageCheckpointRow.nextCheckpointId,
+    } : null,
   }
 }
 
@@ -2976,11 +3463,370 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
       summary: 'Return the full academic portal parity snapshot',
     },
   }, async request => {
-    requireRole(request, [...academicRoleCodes])
+    const auth = requireRole(request, [...academicRoleCodes])
+    const query = parseOrThrow(academicBootstrapQuerySchema, request.query)
+    if (query.simulationStageCheckpointId) {
+      const [activeRun] = await context.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+      if (!activeRun) throw notFound('Active proof run not found')
+      await resolveAcademicStageCheckpoint(context, auth, activeRun.simulationRunId, query.simulationStageCheckpointId)
+    }
     return buildAcademicBootstrap(context, {
-      facultyId: request.auth?.facultyId ?? null,
-      roleCode: request.auth?.activeRoleGrant.roleCode ?? null,
+      facultyId: auth.facultyId ?? null,
+      roleCode: auth.activeRoleGrant.roleCode ?? null,
+      simulationStageCheckpointId: query.simulationStageCheckpointId,
     })
+  })
+
+  app.get('/api/academic/hod/proof-summary', {
+    schema: {
+      tags: ['academic'],
+      summary: 'Return the live HoD proof summary sourced from the active proof run',
+    },
+  }, async request => {
+    const auth = requireRole(request, ['HOD'])
+    if (!auth.facultyId) throw forbidden('Faculty context is required')
+    const query = parseOrThrow(hodProofSummaryQuerySchema, request.query)
+    const result = await buildHodProofAnalytics(context.db, {
+      facultyId: auth.facultyId,
+      now: context.now(),
+      filters: query,
+    })
+    return result.summary
+  })
+
+  app.get('/api/academic/hod/proof-bundle', {
+    schema: {
+      tags: ['academic'],
+      summary: 'Return the full live HoD proof analytics bundle sourced from the active proof run',
+    },
+  }, async request => {
+    const auth = requireRole(request, ['HOD'])
+    if (!auth.facultyId) throw forbidden('Faculty context is required')
+    const query = parseOrThrow(hodProofReassessmentQuerySchema, request.query)
+    const result = await buildHodProofAnalytics(context.db, {
+      facultyId: auth.facultyId,
+      now: context.now(),
+      filters: query,
+    })
+    return {
+      summary: result.summary,
+      courses: result.courses,
+      faculty: result.faculty,
+      students: result.students,
+      reassessments: result.reassessments,
+    }
+  })
+
+  app.get('/api/academic/hod/proof-courses', {
+    schema: {
+      tags: ['academic'],
+      summary: 'Return live HoD course hotspot rollups for the active proof run',
+    },
+  }, async request => {
+    const auth = requireRole(request, ['HOD'])
+    if (!auth.facultyId) throw forbidden('Faculty context is required')
+    const query = parseOrThrow(hodProofCourseQuerySchema, request.query)
+    const result = await buildHodProofAnalytics(context.db, {
+      facultyId: auth.facultyId,
+      now: context.now(),
+      filters: query,
+    })
+    return { items: result.courses }
+  })
+
+  app.get('/api/academic/hod/proof-faculty', {
+    schema: {
+      tags: ['academic'],
+      summary: 'Return live HoD faculty operations rollups for the active proof run',
+    },
+  }, async request => {
+    const auth = requireRole(request, ['HOD'])
+    if (!auth.facultyId) throw forbidden('Faculty context is required')
+    const query = parseOrThrow(hodProofFacultyQuerySchema, request.query)
+    const result = await buildHodProofAnalytics(context.db, {
+      facultyId: auth.facultyId,
+      now: context.now(),
+      filters: query,
+    })
+    return { items: result.faculty }
+  })
+
+  app.get('/api/academic/hod/proof-students', {
+    schema: {
+      tags: ['academic'],
+      summary: 'Return live HoD student watch rows for the active proof run',
+    },
+  }, async request => {
+    const auth = requireRole(request, ['HOD'])
+    if (!auth.facultyId) throw forbidden('Faculty context is required')
+    const query = parseOrThrow(hodProofStudentQuerySchema, request.query)
+    const result = await buildHodProofAnalytics(context.db, {
+      facultyId: auth.facultyId,
+      now: context.now(),
+      filters: query,
+    })
+    return { items: result.students }
+  })
+
+  app.get('/api/academic/hod/proof-reassessments', {
+    schema: {
+      tags: ['academic'],
+      summary: 'Return live HoD reassessment audit rows for the active proof run',
+    },
+  }, async request => {
+    const auth = requireRole(request, ['HOD'])
+    if (!auth.facultyId) throw forbidden('Faculty context is required')
+    const query = parseOrThrow(hodProofReassessmentQuerySchema, request.query)
+    const result = await buildHodProofAnalytics(context.db, {
+      facultyId: auth.facultyId,
+      now: context.now(),
+      filters: query,
+    })
+    return { items: result.reassessments }
+  })
+
+  app.post('/api/academic/proof-reassessments/:reassessmentEventId/acknowledge', {
+    schema: {
+      tags: ['academic'],
+      summary: 'Acknowledge one proof reassessment without resolving it',
+    },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN', ...academicRoleCodes])
+    const params = parseOrThrow(proofReassessmentParamsSchema, request.params)
+    const body = parseOrThrow(proofReassessmentAcknowledgeSchema, request.body ?? {})
+    const { event, run, alert } = await resolveProofReassessmentAccess({
+      context,
+      auth,
+      reassessmentEventId: params.reassessmentEventId,
+    })
+    if (!alert) throw badRequest('Proof reassessment has no matching alert decision to acknowledge')
+
+    const now = context.now()
+    const acknowledgementId = createId('alert_ack')
+    await context.db.insert(alertAcknowledgements).values({
+      alertAcknowledgementId: acknowledgementId,
+      alertDecisionId: alert.alertDecisionId,
+      batchId: run.batchId,
+      acknowledgedByFacultyId: auth.facultyId ?? null,
+      status: 'Acknowledged',
+      note: body.note ?? null,
+      createdAt: now,
+      updatedAt: now,
+    })
+    await context.db.update(alertOutcomes).set({
+      outcomeStatus: 'Acknowledged',
+      acknowledgedByFacultyId: auth.facultyId ?? null,
+      acknowledgedAt: now,
+      outcomeNote: body.note ?? null,
+      updatedAt: now,
+    }).where(eq(alertOutcomes.alertDecisionId, alert.alertDecisionId))
+
+    const response = {
+      reassessmentEventId: event.reassessmentEventId,
+      acknowledgement: {
+        acknowledgementId,
+        alertDecisionId: alert.alertDecisionId,
+        acknowledgedByFacultyId: auth.facultyId ?? null,
+        status: 'Acknowledged',
+        note: body.note ?? null,
+        createdAt: now,
+      },
+    }
+    await emitAuditEvent(context, {
+      entityType: 'proof_reassessment',
+      entityId: event.reassessmentEventId,
+      action: 'ACKNOWLEDGE',
+      actorRole: auth.activeRoleGrant.roleCode,
+      actorId: auth.facultyId ?? auth.userId,
+      metadata: response,
+    })
+    return response
+  })
+
+  app.post('/api/academic/proof-reassessments/:reassessmentEventId/resolve', {
+    schema: {
+      tags: ['academic'],
+      summary: 'Resolve one proof reassessment with a bounded outcome classification',
+    },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN', ...academicRoleCodes])
+    const params = parseOrThrow(proofReassessmentParamsSchema, request.params)
+    const body = parseOrThrow(proofReassessmentResolveSchema, request.body ?? {})
+    const { event, run, alert } = await resolveProofReassessmentAccess({
+      context,
+      auth,
+      reassessmentEventId: params.reassessmentEventId,
+    })
+
+    const outcome = body.outcome
+    const now = context.now()
+    const resolutionJson = {
+      outcome,
+      temporaryResponseCredit: proofResolutionCreditByOutcome[outcome],
+      recoveryState: proofResolutionRecoveryState(outcome),
+      queueCaseId: String(parseJson(event.payloadJson, {} as Record<string, unknown>).queueCaseId ?? ''),
+      actorRole: auth.activeRoleGrant.roleCode,
+      resolvedAt: now,
+      version: 1,
+    }
+    const resolutionId = createId('reassessment_resolution')
+    await context.db.insert(reassessmentResolutions).values({
+      reassessmentResolutionId: resolutionId,
+      reassessmentEventId: event.reassessmentEventId,
+      batchId: run.batchId,
+      resolvedByFacultyId: auth.facultyId ?? null,
+      resolutionStatus: 'Resolved',
+      note: body.note ?? null,
+      resolutionJson: stringifyJson(resolutionJson),
+      createdAt: now,
+      updatedAt: now,
+    })
+    await context.db.update(reassessmentEvents).set({
+      status: 'Resolved',
+      payloadJson: stringifyJson({
+        ...parseJson(event.payloadJson, {} as Record<string, unknown>),
+        recoveryState: resolutionJson.recoveryState,
+        lastResolutionOutcome: outcome,
+        temporaryResponseCredit: resolutionJson.temporaryResponseCredit,
+        resolvedAt: now,
+      }),
+      updatedAt: now,
+    }).where(eq(reassessmentEvents.reassessmentEventId, event.reassessmentEventId))
+    if (alert) {
+      await context.db.update(alertOutcomes).set({
+        outcomeStatus: 'Resolved',
+        outcomeNote: body.note ?? null,
+        updatedAt: now,
+      }).where(eq(alertOutcomes.alertDecisionId, alert.alertDecisionId))
+    }
+
+    const response = {
+      reassessmentEventId: event.reassessmentEventId,
+      resolution: {
+        reassessmentResolutionId: resolutionId,
+        resolutionStatus: 'Resolved',
+        note: body.note ?? null,
+        resolutionJson,
+        createdAt: now,
+      },
+    }
+    await emitAuditEvent(context, {
+      entityType: 'proof_reassessment',
+      entityId: event.reassessmentEventId,
+      action: 'RESOLVE',
+      actorRole: auth.activeRoleGrant.roleCode,
+      actorId: auth.facultyId ?? auth.userId,
+      metadata: response,
+    })
+    return response
+  })
+
+  app.get('/api/academic/student-shell/students/:studentId/card', {
+    schema: {
+      tags: ['academic'],
+      summary: 'Return the deterministic student-agent card for one proof-scoped student',
+    },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN', ...academicRoleCodes])
+    const params = parseOrThrow(z.object({ studentId: z.string().min(1) }), request.params)
+    const query = parseOrThrow(studentShellQuerySchema, request.query)
+    const run = await resolveStudentShellRun(context, auth, query.simulationRunId)
+    await resolveAcademicStageCheckpoint(context, auth, run.simulationRunId, query.simulationStageCheckpointId)
+    await assertStudentShellScope(context, auth, run.simulationRunId, params.studentId)
+    return buildStudentAgentCard(context.db, {
+      simulationRunId: run.simulationRunId,
+      studentId: params.studentId,
+      simulationStageCheckpointId: query.simulationStageCheckpointId,
+    })
+  })
+
+  app.get('/api/academic/students/:studentId/risk-explorer', {
+    schema: {
+      tags: ['academic'],
+      summary: 'Return the proof-backed student risk explorer payload for one scoped student',
+    },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN', ...academicRoleCodes])
+    const params = parseOrThrow(z.object({ studentId: z.string().min(1) }), request.params)
+    const query = parseOrThrow(studentShellQuerySchema, request.query)
+    const run = await resolveStudentShellRun(context, auth, query.simulationRunId)
+    await resolveAcademicStageCheckpoint(context, auth, run.simulationRunId, query.simulationStageCheckpointId)
+    await assertStudentShellScope(context, auth, run.simulationRunId, params.studentId)
+    return buildStudentRiskExplorer(context.db, {
+      simulationRunId: run.simulationRunId,
+      studentId: params.studentId,
+      simulationStageCheckpointId: query.simulationStageCheckpointId,
+    })
+  })
+
+  app.get('/api/academic/student-shell/students/:studentId/timeline', {
+    schema: {
+      tags: ['academic'],
+      summary: 'Return the deterministic student-agent timeline for one proof-scoped student',
+    },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN', ...academicRoleCodes])
+    const params = parseOrThrow(z.object({ studentId: z.string().min(1) }), request.params)
+    const query = parseOrThrow(studentShellQuerySchema, request.query)
+    const run = await resolveStudentShellRun(context, auth, query.simulationRunId)
+    await resolveAcademicStageCheckpoint(context, auth, run.simulationRunId, query.simulationStageCheckpointId)
+    await assertStudentShellScope(context, auth, run.simulationRunId, params.studentId)
+    return {
+      items: await listStudentAgentTimeline(context.db, {
+        simulationRunId: run.simulationRunId,
+        studentId: params.studentId,
+        simulationStageCheckpointId: query.simulationStageCheckpointId,
+      }),
+    }
+  })
+
+  app.post('/api/academic/student-shell/students/:studentId/sessions', {
+    schema: {
+      tags: ['academic'],
+      summary: 'Start a deterministic student-agent session for one proof-scoped student',
+    },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN', ...academicRoleCodes])
+    const params = parseOrThrow(z.object({ studentId: z.string().min(1) }), request.params)
+    const body = parseOrThrow(studentShellSessionCreateSchema, request.body ?? {})
+    const run = await resolveStudentShellRun(context, auth, body.simulationRunId)
+    await resolveAcademicStageCheckpoint(context, auth, run.simulationRunId, body.simulationStageCheckpointId)
+    await assertStudentShellScope(context, auth, run.simulationRunId, params.studentId)
+    return startStudentAgentSession(context.db, {
+      simulationRunId: run.simulationRunId,
+      simulationStageCheckpointId: body.simulationStageCheckpointId,
+      studentId: params.studentId,
+      viewerFacultyId: auth.facultyId,
+      viewerRole: auth.activeRoleGrant.roleCode,
+    })
+  })
+
+  app.post('/api/academic/student-shell/sessions/:sessionId/messages', {
+    schema: {
+      tags: ['academic'],
+      summary: 'Send a bounded deterministic message to the student-agent shell',
+    },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN', ...academicRoleCodes])
+    const params = parseOrThrow(z.object({ sessionId: z.string().min(1) }), request.params)
+    const body = parseOrThrow(studentShellMessageSchema, request.body)
+    const [session] = await context.db.select().from(studentAgentSessions).where(eq(studentAgentSessions.studentAgentSessionId, params.sessionId))
+    if (!session) throw notFound('Student shell session not found')
+    if (auth.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
+      if (!auth.facultyId || session.viewerFacultyId !== auth.facultyId || session.viewerRole !== auth.activeRoleGrant.roleCode) {
+        throw forbidden('Student shell session is outside the current faculty scope')
+      }
+      const [activeRun] = await context.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+      if (!activeRun || activeRun.simulationRunId !== session.simulationRunId) {
+        throw forbidden('Academic roles may send shell messages only for the active proof run')
+      }
+    }
+    return {
+      items: await sendStudentAgentMessage(context.db, {
+        studentAgentSessionId: params.sessionId,
+        prompt: body.prompt,
+      }),
+    }
   })
 
   app.put('/api/academic/runtime/:stateKey', {

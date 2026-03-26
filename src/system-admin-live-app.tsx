@@ -28,6 +28,8 @@ import { AirMentorApiClient, AirMentorApiError } from './api/client'
 import type {
   ApiAuditEvent,
   ApiAdminFacultyCalendar,
+  ApiCurriculumFeatureConfigBundle,
+  ApiCurriculumFeatureConfigPayload,
   ApiFacultyRecord,
   ApiFacultyAppointment,
   ApiMentorAssignment,
@@ -36,10 +38,13 @@ import type {
   ApiAdminRequestSummary,
   ApiOfferingOwnership,
   ApiPolicyPayload,
+  ApiProofDashboard,
+  ApiProofRunCheckpointDetail,
   ApiResolvedBatchPolicy,
   ApiRoleCode,
   ApiRoleGrant,
   ApiSessionResponse,
+  ApiSimulationStageCheckpointSummary,
   ApiStudentEnrollment,
   ApiStudentRecord,
 } from './api/types'
@@ -99,6 +104,7 @@ import {
 } from './system-admin-ui'
 import type { LiveAdminSectionId } from './system-admin-live-data'
 import { applyThemePreset, isLightTheme } from './theme'
+import { readProofPlaybackSelection, writeProofPlaybackSelection } from './proof-playback'
 import { SystemAdminFacultyCalendarWorkspace } from './system-admin-faculty-calendar-workspace'
 import {
   BrandMark,
@@ -139,6 +145,21 @@ type PolicyFormState = {
   dayStart: string
   dayEnd: string
   workingDays: Array<'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat' | 'Sun'>
+  courseworkWeeks: string
+  examPreparationWeeks: string
+  seeWeeks: string
+  totalWeeks: string
+  minimumAttendancePercent: string
+  condonationFloorPercent: string
+  condonationShortagePercent: string
+  condonationRequiresApproval: boolean
+  minimumCeForSeeEligibility: string
+  allowCondonationForSeeEligibility: boolean
+  minimumCeMark: string
+  minimumSeeMark: string
+  minimumOverallMark: string
+  applyBeforeStatusDetermination: boolean
+  sgpaCgpaDecimals: string
   repeatedCoursePolicy: 'latest-attempt' | 'best-attempt'
   passMarkPercent: string
   minimumCgpaForPromotion: string
@@ -158,6 +179,17 @@ type StructureFormState = {
   batch: { admissionYear: string; batchLabel: string; currentSemester: string; sectionLabels: string }
   term: { academicYearLabel: string; semesterNumber: string; startDate: string; endDate: string }
   curriculum: { semesterNumber: string; courseCode: string; title: string; credits: string }
+}
+
+type CurriculumFeatureFormState = {
+  assessmentProfile: string
+  outcomesText: string
+  prerequisitesText: string
+  bridgeModulesText: string
+  tt1TopicsText: string
+  tt2TopicsText: string
+  seeTopicsText: string
+  workbookTopicsText: string
 }
 
 type EntityEditorState = {
@@ -281,9 +313,6 @@ const EMPTY_DATA: LiveAdminDataset = {
   offerings: [], ownerships: [], requests: [], reminders: [],
 }
 
-const PRIMARY_VISIBLE_FACULTY_USERNAME = 'kavitha.rao'
-const PRIMARY_VISIBLE_FACULTY_NAME = 'dr. kavitha rao'
-
 const WEEKDAYS: PolicyFormState['workingDays'] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const ADMIN_SECTION_TONES = {
   overview: T.accent,
@@ -300,31 +329,11 @@ const DEFAULT_PROGRESSION_RULES = {
 }
 const ADMIN_DISMISSED_QUEUE_STORAGE_KEY = 'airmentor-admin-dismissed-queue-items'
 
-function normalizeFacultyIdentity(value?: string | null) {
-  return (value ?? '').trim().toLowerCase()
-}
-
-function selectPreferredFacultyId<T extends { facultyId: string; username?: string; displayName?: string }>(items: T[]) {
-  const candidates = items
-    .filter(item => normalizeFacultyIdentity(item.username) === PRIMARY_VISIBLE_FACULTY_USERNAME || normalizeFacultyIdentity(item.displayName) === PRIMARY_VISIBLE_FACULTY_NAME)
-    .sort((left, right) => {
-      const leftExactUsername = normalizeFacultyIdentity(left.username) === PRIMARY_VISIBLE_FACULTY_USERNAME ? 1 : 0
-      const rightExactUsername = normalizeFacultyIdentity(right.username) === PRIMARY_VISIBLE_FACULTY_USERNAME ? 1 : 0
-      if (leftExactUsername !== rightExactUsername) return rightExactUsername - leftExactUsername
-      return left.facultyId.localeCompare(right.facultyId)
-    })
-  return candidates[0]?.facultyId ?? null
-}
-
 function applyFacultyVisibilityRules(facultyMembers: ApiFacultyRecord[]) {
-  const preferredFacultyId = selectPreferredFacultyId(facultyMembers)
-  if (!preferredFacultyId) return facultyMembers
-  return facultyMembers.map(item => {
-    if (item.facultyId === preferredFacultyId || item.status === 'deleted') return item
-    return {
-      ...item,
-      status: 'hidden',
-    }
+  return [...facultyMembers].sort((left, right) => {
+    const leftLabel = left.displayName.toLowerCase()
+    const rightLabel = right.displayName.toLowerCase()
+    return leftLabel.localeCompare(rightLabel) || left.facultyId.localeCompare(right.facultyId)
   })
 }
 
@@ -366,9 +375,21 @@ function routeToHash(route: LiveAdminRoute) {
 function defaultPolicyForm(): PolicyFormState {
   return {
     oMin: '90', aPlusMin: '80', aMin: '70', bPlusMin: '60', bMin: '55', cMin: '50', pMin: '40',
-    ce: '50', see: '50', termTestsWeight: '20', quizWeight: '10', assignmentWeight: '20',
+    ce: '60', see: '40', termTestsWeight: '30', quizWeight: '10', assignmentWeight: '20',
     maxTermTests: '2', maxQuizzes: '2', maxAssignments: '2',
     dayStart: '08:30', dayEnd: '16:30', workingDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+    courseworkWeeks: '16', examPreparationWeeks: '1', seeWeeks: '3', totalWeeks: '20',
+    minimumAttendancePercent: '75',
+    condonationFloorPercent: '65',
+    condonationShortagePercent: '10',
+    condonationRequiresApproval: true,
+    minimumCeForSeeEligibility: '24',
+    allowCondonationForSeeEligibility: true,
+    minimumCeMark: '24',
+    minimumSeeMark: '16',
+    minimumOverallMark: '40',
+    applyBeforeStatusDetermination: true,
+    sgpaCgpaDecimals: '2',
     repeatedCoursePolicy: 'latest-attempt',
     passMarkPercent: '40',
     minimumCgpaForPromotion: '5.0',
@@ -401,6 +422,83 @@ function defaultStudentForm(): StudentFormState {
     email: '',
     phone: '',
     admissionDate: new Date().toISOString().slice(0, 10),
+  }
+}
+
+function defaultCurriculumFeatureForm(): CurriculumFeatureFormState {
+  return {
+    assessmentProfile: 'admin-authored',
+    outcomesText: '',
+    prerequisitesText: '',
+    bridgeModulesText: '',
+    tt1TopicsText: '',
+    tt2TopicsText: '',
+    seeTopicsText: '',
+    workbookTopicsText: '',
+  }
+}
+
+function hydrateCurriculumFeatureForm(item: ApiCurriculumFeatureConfigBundle['items'][number] | null): CurriculumFeatureFormState {
+  if (!item) return defaultCurriculumFeatureForm()
+  return {
+    assessmentProfile: item.assessmentProfile || 'admin-authored',
+    outcomesText: item.outcomes.map(outcome => `${outcome.id} | ${outcome.bloom} | ${outcome.desc}`).join('\n'),
+    prerequisitesText: item.prerequisites.map(prerequisite => `${prerequisite.sourceCourseCode} | ${prerequisite.edgeKind} | ${prerequisite.rationale}`).join('\n'),
+    bridgeModulesText: item.bridgeModules.join('\n'),
+    tt1TopicsText: item.topicPartitions.tt1.join('\n'),
+    tt2TopicsText: item.topicPartitions.tt2.join('\n'),
+    seeTopicsText: item.topicPartitions.see.join('\n'),
+    workbookTopicsText: item.topicPartitions.workbook.join('\n'),
+  }
+}
+
+function parseCurriculumFeatureLines(value: string) {
+  return value
+    .split('\n')
+    .map(item => item.trim())
+    .filter(Boolean)
+}
+
+function buildCurriculumFeaturePayload(form: CurriculumFeatureFormState): ApiCurriculumFeatureConfigPayload {
+  const outcomes = parseCurriculumFeatureLines(form.outcomesText).map((line, index) => {
+    const [id, bloom, ...descParts] = line.split('|').map(part => part.trim())
+    if (!id || !bloom || descParts.length === 0) {
+      throw new Error(`Outcome line ${index + 1} must use "COx | Bloom | Description".`)
+    }
+    return {
+      id,
+      bloom,
+      desc: descParts.join(' | '),
+    }
+  })
+  const prerequisites = parseCurriculumFeatureLines(form.prerequisitesText).map((line, index) => {
+    const [sourceCourseCode, rawKind, ...rationaleParts] = line.split('|').map(part => part.trim())
+    let edgeKind: 'explicit' | 'added' | null = null
+    if (rawKind === 'added') edgeKind = 'added'
+    else if (rawKind === 'explicit' || !rawKind) edgeKind = 'explicit'
+    if (!sourceCourseCode || !edgeKind || rationaleParts.length === 0) {
+      throw new Error(`Prerequisite line ${index + 1} must use "COURSE_CODE | explicit|added | Rationale".`)
+    }
+    return {
+      sourceCourseCode,
+      edgeKind,
+      rationale: rationaleParts.join(' | '),
+    }
+  })
+  if (outcomes.length === 0) {
+    throw new Error('At least one course outcome is required.')
+  }
+  return {
+    assessmentProfile: requireText('Assessment profile', form.assessmentProfile),
+    outcomes,
+    prerequisites,
+    bridgeModules: parseCurriculumFeatureLines(form.bridgeModulesText),
+    topicPartitions: {
+      tt1: parseCurriculumFeatureLines(form.tt1TopicsText),
+      tt2: parseCurriculumFeatureLines(form.tt2TopicsText),
+      see: parseCurriculumFeatureLines(form.seeTopicsText),
+      workbook: parseCurriculumFeatureLines(form.workbookTopicsText),
+    },
   }
 }
 
@@ -554,6 +652,21 @@ function hydratePolicyForm(policy: ApiResolvedBatchPolicy['effectivePolicy']): P
     maxAssignments: String(policy.ceComponentCaps.maxAssignments),
     dayStart: policy.workingCalendar.dayStart, dayEnd: policy.workingCalendar.dayEnd,
     workingDays: [...policy.workingCalendar.days],
+    courseworkWeeks: String(policy.workingCalendar.courseworkWeeks),
+    examPreparationWeeks: String(policy.workingCalendar.examPreparationWeeks),
+    seeWeeks: String(policy.workingCalendar.seeWeeks),
+    totalWeeks: String(policy.workingCalendar.totalWeeks),
+    minimumAttendancePercent: String(policy.attendanceRules.minimumRequiredPercent),
+    condonationFloorPercent: String(policy.attendanceRules.condonationFloorPercent),
+    condonationShortagePercent: String(policy.condonationRules.maximumShortagePercent),
+    condonationRequiresApproval: policy.condonationRules.requiresApproval,
+    minimumCeForSeeEligibility: String(policy.eligibilityRules.minimumCeForSeeEligibility),
+    allowCondonationForSeeEligibility: policy.eligibilityRules.allowCondonationForSeeEligibility,
+    minimumCeMark: String(policy.passRules.minimumCeMark),
+    minimumSeeMark: String(policy.passRules.minimumSeeMark),
+    minimumOverallMark: String(policy.passRules.minimumOverallMark),
+    applyBeforeStatusDetermination: policy.roundingRules.applyBeforeStatusDetermination,
+    sgpaCgpaDecimals: String(policy.roundingRules.sgpaCgpaDecimals),
     repeatedCoursePolicy: policy.sgpaCgpaRules.repeatedCoursePolicy,
     passMarkPercent: String(policy.progressionRules.passMarkPercent),
     minimumCgpaForPromotion: String(policy.progressionRules.minimumCgpaForPromotion),
@@ -585,7 +698,40 @@ function buildPolicyPayload(form: PolicyFormState): ApiPolicyPayload {
       assignmentWeight: Number(form.assignmentWeight), maxTermTests: Number(form.maxTermTests),
       maxQuizzes: Number(form.maxQuizzes), maxAssignments: Number(form.maxAssignments),
     },
-    workingCalendar: { days: form.workingDays, dayStart: form.dayStart, dayEnd: form.dayEnd },
+    workingCalendar: {
+      days: form.workingDays,
+      dayStart: form.dayStart,
+      dayEnd: form.dayEnd,
+      courseworkWeeks: Number(form.courseworkWeeks),
+      examPreparationWeeks: Number(form.examPreparationWeeks),
+      seeWeeks: Number(form.seeWeeks),
+      totalWeeks: Number(form.totalWeeks),
+    },
+    attendanceRules: {
+      minimumRequiredPercent: Number(form.minimumAttendancePercent),
+      condonationFloorPercent: Number(form.condonationFloorPercent),
+    },
+    condonationRules: {
+      maximumShortagePercent: Number(form.condonationShortagePercent),
+      requiresApproval: form.condonationRequiresApproval,
+    },
+    eligibilityRules: {
+      minimumCeForSeeEligibility: Number(form.minimumCeForSeeEligibility),
+      allowCondonationForSeeEligibility: form.allowCondonationForSeeEligibility,
+    },
+    passRules: {
+      minimumCeMark: Number(form.minimumCeMark),
+      minimumSeeMark: Number(form.minimumSeeMark),
+      minimumOverallMark: Number(form.minimumOverallMark),
+      ceMaximum: Number(form.ce),
+      seeMaximum: Number(form.see),
+      overallMaximum: 100,
+    },
+    roundingRules: {
+      statusMarkRounding: 'nearest-integer',
+      applyBeforeStatusDetermination: form.applyBeforeStatusDetermination,
+      sgpaCgpaDecimals: Number(form.sgpaCgpaDecimals),
+    },
     sgpaCgpaRules: {
       sgpaModel: 'credit-weighted', cgpaModel: 'credit-weighted-cumulative', rounding: '2-decimal',
       includeFailedCredits: false, repeatedCoursePolicy: form.repeatedCoursePolicy,
@@ -672,6 +818,18 @@ function buildValidatedPolicyPayload(form: PolicyFormState): ApiPolicyPayload {
   const maxTermTests = requirePositiveInteger('Max term tests', form.maxTermTests)
   const maxQuizzes = requirePositiveInteger('Max quizzes', form.maxQuizzes)
   const maxAssignments = requirePositiveInteger('Max assignments', form.maxAssignments)
+  const courseworkWeeks = requirePositiveInteger('Coursework weeks', form.courseworkWeeks)
+  const examPreparationWeeks = requireRange('Exam preparation weeks', form.examPreparationWeeks, 0, 52)
+  const seeWeeks = requireRange('SEE weeks', form.seeWeeks, 0, 52)
+  const totalWeeks = requirePositiveInteger('Total weeks', form.totalWeeks)
+  const minimumAttendancePercent = requireRange('Minimum attendance percent', form.minimumAttendancePercent, 0, 100)
+  const condonationFloorPercent = requireRange('Condonation floor percent', form.condonationFloorPercent, 0, 100)
+  const condonationShortagePercent = requireRange('Condonation shortage percent', form.condonationShortagePercent, 0, 100)
+  const minimumCeForSeeEligibility = requireRange('Minimum CE for SEE eligibility', form.minimumCeForSeeEligibility, 0, 100)
+  const minimumCeMark = requireRange('Minimum CE mark', form.minimumCeMark, 0, 100)
+  const minimumSeeMark = requireRange('Minimum SEE mark', form.minimumSeeMark, 0, 100)
+  const minimumOverallMark = requireRange('Minimum overall mark', form.minimumOverallMark, 0, 100)
+  const sgpaCgpaDecimals = requireRange('SGPA / CGPA decimals', form.sgpaCgpaDecimals, 0, 4)
   const passMarkPercent = requireRange('Pass mark percent', form.passMarkPercent, 0, 100)
   const minimumCgpaForPromotion = requireRange('Minimum CGPA for promotion', form.minimumCgpaForPromotion, 0, 10)
   const highRiskAttendancePercentBelow = requireRange('High risk attendance threshold', form.highRiskAttendancePercentBelow, 0, 100)
@@ -682,6 +840,18 @@ function buildValidatedPolicyPayload(form: PolicyFormState): ApiPolicyPayload {
   const mediumRiskBacklogCount = requireRange('Medium risk backlog threshold', form.mediumRiskBacklogCount, 0, 50)
 
   if (ce + see !== 100) throw new Error('CE and SEE must total 100.')
+  if (courseworkWeeks + examPreparationWeeks + seeWeeks !== totalWeeks) {
+    throw new Error('Coursework, exam preparation, and SEE weeks must total the configured total weeks.')
+  }
+  if (condonationFloorPercent > minimumAttendancePercent) {
+    throw new Error('Condonation floor percent must be less than or equal to the minimum attendance percent.')
+  }
+  if (minimumCeForSeeEligibility > ce) {
+    throw new Error('Minimum CE for SEE eligibility cannot exceed the CE maximum.')
+  }
+  if (minimumCeMark > ce || minimumSeeMark > see || minimumOverallMark > 100) {
+    throw new Error('Pass thresholds cannot exceed the configured CE / SEE totals.')
+  }
   if (!(oMin >= aPlusMin && aPlusMin >= aMin && aMin >= bPlusMin && bPlusMin >= bMin && bMin >= cMin && cMin >= pMin)) {
     throw new Error('Grade bands must descend from O down to P without gaps going upward.')
   }
@@ -712,6 +882,18 @@ function buildValidatedPolicyPayload(form: PolicyFormState): ApiPolicyPayload {
     maxTermTests: String(maxTermTests),
     maxQuizzes: String(maxQuizzes),
     maxAssignments: String(maxAssignments),
+    courseworkWeeks: String(courseworkWeeks),
+    examPreparationWeeks: String(examPreparationWeeks),
+    seeWeeks: String(seeWeeks),
+    totalWeeks: String(totalWeeks),
+    minimumAttendancePercent: String(minimumAttendancePercent),
+    condonationFloorPercent: String(condonationFloorPercent),
+    condonationShortagePercent: String(condonationShortagePercent),
+    minimumCeForSeeEligibility: String(minimumCeForSeeEligibility),
+    minimumCeMark: String(minimumCeMark),
+    minimumSeeMark: String(minimumSeeMark),
+    minimumOverallMark: String(minimumOverallMark),
+    sgpaCgpaDecimals: String(sgpaCgpaDecimals),
     passMarkPercent: String(passMarkPercent),
     minimumCgpaForPromotion: String(minimumCgpaForPromotion),
     highRiskAttendancePercentBelow: String(highRiskAttendancePercentBelow),
@@ -730,6 +912,83 @@ function formatClockLabel(now: Date) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function readStringField(source: Record<string, unknown> | null | undefined, key: string) {
+  const value = source?.[key]
+  return typeof value === 'string' ? value : null
+}
+
+function readNumberField(source: Record<string, unknown> | null | undefined, key: string) {
+  const value = source?.[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function readBooleanField(source: Record<string, unknown> | null | undefined, key: string) {
+  const value = source?.[key]
+  return typeof value === 'boolean' ? value : null
+}
+
+function readRecordField(source: Record<string, unknown> | null | undefined, key: string) {
+  const value = source?.[key]
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
+}
+
+function formatSplitSummary(summary: Record<string, unknown> | null | undefined) {
+  if (!summary) return 'Unavailable'
+  const train = readNumberField(summary, 'train')
+  const validation = readNumberField(summary, 'validation')
+  const test = readNumberField(summary, 'test')
+  return [
+    train != null ? `train ${train}` : null,
+    validation != null ? `validation ${validation}` : null,
+    test != null ? `test ${test}` : null,
+  ].filter((value): value is string => !!value).join(' · ') || 'Unavailable'
+}
+
+function formatKeyedCounts(summary: Record<string, unknown> | null | undefined) {
+  if (!summary) return 'Unavailable'
+  const entries = Object.entries(summary)
+    .filter(([, value]) => typeof value === 'number' && Number.isFinite(value))
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key} ${value}`)
+  return entries.length > 0 ? entries.join(' · ') : 'Unavailable'
+}
+
+function formatHeadSupportSummary(summary: Record<string, unknown> | null | undefined) {
+  if (!summary) return 'Unavailable'
+  const entries = Object.entries(summary)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([headKey, value]) => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return headKey
+      const record = value as Record<string, unknown>
+      const counts = [
+        readNumberField(record, 'trainSupport') ?? readNumberField(record, 'train'),
+        readNumberField(record, 'validationSupport') ?? readNumberField(record, 'validation'),
+        readNumberField(record, 'testSupport') ?? readNumberField(record, 'test'),
+      ].filter((item): item is number => typeof item === 'number')
+      if (counts.length === 0) return headKey
+      return `${headKey} ${counts.join('/')}`
+    })
+  return entries.length > 0 ? entries.join(' · ') : 'Unavailable'
+}
+
+function formatDiagnosticSummary(summary: Record<string, unknown> | null | undefined) {
+  if (!summary) return 'Unavailable'
+  const entries = Object.entries(summary)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => {
+      if (value == null) return null
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return `${key} ${String(value)}`
+      if (Array.isArray(value)) return `${key} ${value.length} items`
+      if (typeof value === 'object') {
+        const nestedKeys = Object.keys(value as Record<string, unknown>).slice(0, 3)
+        return `${key} ${nestedKeys.join('/') || 'object'}`
+      }
+      return null
+    })
+    .filter((value): value is string => !!value)
+  return entries.length > 0 ? entries.join(' · ') : 'Unavailable'
 }
 
 function isLeaderLikeOwnership(role: string) {
@@ -1131,9 +1390,9 @@ function SectionLaunchCard({
         padding: 22,
         minHeight: 196,
         background: active
-          ? `linear-gradient(160deg, ${withAlpha(tone, '20')}, ${T.surface})`
-          : `linear-gradient(160deg, ${T.surface}, ${T.surface2})`,
-        borderTop: `3px solid ${withAlpha(tone, '3c')}`,
+          ? `linear-gradient(160deg, ${withAlpha(tone, '20')} 0%, ${withAlpha(tone, '0f')} 18%, ${T.surface} 100%)`
+          : `linear-gradient(160deg, ${withAlpha(tone, '10')} 0%, ${T.surface} 20%, ${T.surface2} 100%)`,
+        boxShadow: `inset 0 1px 0 ${withAlpha(tone, active ? '46' : '24')}`,
         display: 'grid',
         alignContent: 'space-between',
       }}
@@ -1330,6 +1589,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const [entityEditors, setEntityEditors] = useState<EntityEditorState>(() => defaultEntityEditorState())
   const [policyForm, setPolicyForm] = useState<PolicyFormState>(() => defaultPolicyForm())
   const [resolvedBatchPolicy, setResolvedBatchPolicy] = useState<ApiResolvedBatchPolicy | null>(null)
+  const [proofDashboard, setProofDashboard] = useState<ApiProofDashboard | null>(null)
+  const [proofDashboardLoading, setProofDashboardLoading] = useState(false)
+  const [curriculumFeatureConfig, setCurriculumFeatureConfig] = useState<ApiCurriculumFeatureConfigBundle | null>(null)
+  const [selectedCurriculumFeatureCourseId, setSelectedCurriculumFeatureCourseId] = useState('')
+  const [curriculumFeatureForm, setCurriculumFeatureForm] = useState<CurriculumFeatureFormState>(() => defaultCurriculumFeatureForm())
+  const [selectedProofCheckpointId, setSelectedProofCheckpointId] = useState<string | null>(() => readProofPlaybackSelection()?.simulationStageCheckpointId ?? null)
+  const [selectedProofCheckpointDetail, setSelectedProofCheckpointDetail] = useState<ApiProofRunCheckpointDetail | null>(null)
   const [selectedRequestDetail, setSelectedRequestDetail] = useState<ApiAdminRequestDetail | null>(null)
   const [requestDetailLoading, setRequestDetailLoading] = useState(false)
   const [requestBusy, setRequestBusy] = useState('')
@@ -1467,6 +1733,26 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     }
   }, [handleGoHome, routeHistory])
 
+  const settleCookieBackedSession = useCallback(async (stage: 'login' | 'role-switch') => {
+    const retryDelaysMs = [0, 75, 200, 400, 750, 1200, 2000, 3000]
+    for (const delayMs of retryDelaysMs) {
+      if (delayMs > 0) {
+        await new Promise(resolve => window.setTimeout(resolve, delayMs))
+      }
+      try {
+        return await apiClient.restoreSession()
+      } catch (error) {
+        if (error instanceof AirMentorApiError && error.status === 401) continue
+        throw error
+      }
+    }
+    throw new Error(
+      stage === 'login'
+        ? 'Signed in, but the backend session cookie did not become readable yet. Please try signing in again.'
+        : 'Role switch did not settle in the backend session. Please retry the switch.',
+    )
+  }, [apiClient])
+
   const loadAdminData = useCallback(async () => {
     if (!session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') return
     setDataLoading(true)
@@ -1602,6 +1888,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   useEffect(() => {
     if (!route.batchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
       setResolvedBatchPolicy(null)
+      setProofDashboard(null)
+      setCurriculumFeatureConfig(null)
+      setSelectedCurriculumFeatureCourseId('')
+      setCurriculumFeatureForm(defaultCurriculumFeatureForm())
       return
     }
     let cancelled = false
@@ -1615,6 +1905,96 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     })()
     return () => { cancelled = true }
   }, [apiClient, route.batchId, session])
+
+  const refreshCurriculumFeatureConfig = useCallback(async (batchId: string) => {
+    const next = await apiClient.getCurriculumFeatureConfig(batchId)
+    setCurriculumFeatureConfig(next)
+    return next
+  }, [apiClient])
+
+  const refreshProofDashboard = useCallback(async (batchId: string) => {
+    setProofDashboardLoading(true)
+    try {
+      const next = await apiClient.getProofDashboard(batchId)
+      setProofDashboard(next)
+      return next
+    } finally {
+      setProofDashboardLoading(false)
+    }
+  }, [apiClient])
+
+  useEffect(() => {
+    if (!route.batchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
+      setProofDashboard(null)
+      return
+    }
+    let cancelled = false
+    setProofDashboardLoading(true)
+    void (async () => {
+      try {
+        const next = await apiClient.getProofDashboard(route.batchId!)
+        if (!cancelled) setProofDashboard(next)
+      } catch (error) {
+        if (!cancelled) setActionError(toErrorMessage(error))
+      } finally {
+        if (!cancelled) setProofDashboardLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [apiClient, route.batchId, session])
+
+  const maybeAutoRefreshSelectedProofBatch = useCallback(async (reason: string, curriculumImportVersionId?: string | null) => {
+    if (!route.batchId) return null
+    const importVersionId = curriculumImportVersionId
+      ?? curriculumFeatureConfig?.curriculumImportVersion?.curriculumImportVersionId
+      ?? proofDashboard?.imports[0]?.curriculumImportVersionId
+      ?? null
+    if (!importVersionId) return null
+    const activeRun = proofDashboard?.activeRunDetail ?? null
+    const result = await apiClient.createProofRun(route.batchId, {
+      curriculumImportVersionId: importVersionId,
+      seed: activeRun?.seed,
+      runLabel: `${activeRun?.runLabel ?? 'Sysadmin auto refresh'} · ${reason}`,
+      activate: true,
+    })
+    await refreshProofDashboard(route.batchId)
+    return result
+  }, [apiClient, curriculumFeatureConfig?.curriculumImportVersion?.curriculumImportVersionId, proofDashboard, refreshProofDashboard, route.batchId])
+
+  useEffect(() => {
+    if (!route.batchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
+      setCurriculumFeatureConfig(null)
+      setSelectedCurriculumFeatureCourseId('')
+      setCurriculumFeatureForm(defaultCurriculumFeatureForm())
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const next = await apiClient.getCurriculumFeatureConfig(route.batchId!)
+        if (cancelled) return
+        setCurriculumFeatureConfig(next)
+      } catch (error) {
+        if (!cancelled) setActionError(toErrorMessage(error))
+      }
+    })()
+    return () => { cancelled = true }
+  }, [apiClient, route.batchId, session])
+
+  useEffect(() => {
+    const items = curriculumFeatureConfig?.items ?? []
+    if (items.length === 0) {
+      setSelectedCurriculumFeatureCourseId('')
+      setCurriculumFeatureForm(defaultCurriculumFeatureForm())
+      return
+    }
+    const nextSelectedId = items.some(item => item.curriculumCourseId === selectedCurriculumFeatureCourseId)
+      ? selectedCurriculumFeatureCourseId
+      : items[0]!.curriculumCourseId
+    setSelectedCurriculumFeatureCourseId(nextSelectedId)
+    const selectedItem = items.find(item => item.curriculumCourseId === nextSelectedId) ?? null
+    setCurriculumFeatureForm(hydrateCurriculumFeatureForm(selectedItem))
+  }, [curriculumFeatureConfig, selectedCurriculumFeatureCourseId])
 
   const selectedRequestSummary = route.requestId ? data.requests.find(item => item.adminRequestId === route.requestId) ?? null : null
 
@@ -1653,6 +2033,88 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const selectedDepartment = resolveDepartment(data, route.departmentId)
   const selectedBranch = resolveBranch(data, route.branchId)
   const selectedBatch = resolveBatch(data, route.batchId)
+  const activeRunCheckpoints = proofDashboard?.activeRunDetail?.checkpoints ?? []
+  const activeModelDiagnostics = proofDashboard?.activeRunDetail?.modelDiagnostics ?? null
+  const activeProductionDiagnostics = activeModelDiagnostics?.production ?? null
+  const activeChallengerDiagnostics = activeModelDiagnostics?.challenger ?? null
+  const activeProductionEvaluation = (activeProductionDiagnostics?.evaluation ?? {}) as Record<string, unknown>
+  const activeChallengerEvaluation = (activeChallengerDiagnostics?.evaluation ?? {}) as Record<string, unknown>
+  const activeDiagnosticsTrainingManifestVersion = activeModelDiagnostics?.trainingManifestVersion
+    ?? readStringField(activeProductionEvaluation, 'trainingManifestVersion')
+    ?? readStringField(activeChallengerEvaluation, 'trainingManifestVersion')
+    ?? activeProductionDiagnostics?.trainingManifestVersion
+    ?? activeChallengerDiagnostics?.trainingManifestVersion
+  const activeDiagnosticsCalibrationVersion = activeModelDiagnostics?.calibrationVersion
+    ?? activeProductionDiagnostics?.calibrationVersion
+    ?? activeChallengerDiagnostics?.calibrationVersion
+    ?? readStringField(activeProductionEvaluation, 'calibrationVersion')
+    ?? readStringField(activeChallengerEvaluation, 'calibrationVersion')
+  const activeDiagnosticsSplitSummary = activeModelDiagnostics?.splitSummary
+    ?? readRecordField(activeProductionEvaluation, 'splitSummary')
+    ?? readRecordField(activeChallengerEvaluation, 'splitSummary')
+  const activeDiagnosticsWorldSplitSummary = activeModelDiagnostics?.worldSplitSummary
+    ?? readRecordField(activeProductionEvaluation, 'worldSplitSummary')
+    ?? readRecordField(activeChallengerEvaluation, 'worldSplitSummary')
+  const activeDiagnosticsScenarioFamilies = activeModelDiagnostics?.scenarioFamilySummary
+    ?? readRecordField(activeProductionEvaluation, 'scenarioFamilySummary')
+    ?? readRecordField(activeChallengerEvaluation, 'scenarioFamilySummary')
+  const activeDiagnosticsHeadSupportSummary = activeModelDiagnostics?.headSupportSummary
+    ?? readRecordField(activeProductionEvaluation, 'headSupportSummary')
+    ?? readRecordField(activeChallengerEvaluation, 'headSupportSummary')
+  const activeDiagnosticsPolicyDiagnostics = activeModelDiagnostics?.policyDiagnostics
+    ?? readRecordField(activeProductionEvaluation, 'policyDiagnostics')
+    ?? readRecordField(activeChallengerEvaluation, 'policyDiagnostics')
+  const activeDiagnosticsCoEvidence = activeModelDiagnostics?.coEvidenceDiagnostics
+    ?? readRecordField(activeProductionEvaluation, 'coEvidenceDiagnostics')
+    ?? readRecordField(activeChallengerEvaluation, 'coEvidenceDiagnostics')
+  const activeDiagnosticsSupportWarning = readStringField(activeProductionEvaluation, 'supportWarning')
+    ?? readStringField(activeChallengerEvaluation, 'supportWarning')
+    ?? null
+  const activeDiagnosticsDisplayProbabilityAllowed = readBooleanField(activeProductionEvaluation, 'displayProbabilityAllowed')
+    ?? readBooleanField(activeChallengerEvaluation, 'displayProbabilityAllowed')
+  const activeDiagnosticsGovernedRunCount = readNumberField(activeProductionEvaluation, 'governedRunCount')
+    ?? readNumberField(activeChallengerEvaluation, 'governedRunCount')
+  const activeDiagnosticsSkippedRunCount = readNumberField(activeProductionEvaluation, 'skippedRunCount')
+    ?? readNumberField(activeChallengerEvaluation, 'skippedRunCount')
+  const activeDiagnosticsPolicyAcceptance = readRecordField(activeDiagnosticsPolicyDiagnostics, 'acceptanceGates')
+  const activeDiagnosticsUiParity = activeModelDiagnostics?.uiParityDiagnostics
+    ?? readRecordField(activeProductionEvaluation, 'uiParityDiagnostics')
+    ?? readRecordField(activeChallengerEvaluation, 'uiParityDiagnostics')
+  const activeDiagnosticsOverallCourseRuntime = readRecordField(activeProductionEvaluation, 'overallCourseRuntimeSummary')
+    ?? readRecordField(activeChallengerEvaluation, 'overallCourseRuntimeSummary')
+    ?? readRecordField(activeProductionEvaluation, 'runtimeSummary')
+    ?? readRecordField(activeChallengerEvaluation, 'runtimeSummary')
+    ?? activeModelDiagnostics?.overallCourseRuntimeSummary
+    ?? activeModelDiagnostics?.runtimeSummary
+  const activeDiagnosticsQueueBurden = readRecordField(activeProductionEvaluation, 'queueBurdenSummary')
+    ?? readRecordField(activeChallengerEvaluation, 'queueBurdenSummary')
+    ?? activeModelDiagnostics?.queueBurdenSummary
+  const selectedProofCheckpoint = useMemo<ApiSimulationStageCheckpointSummary | null>(() => {
+    if (activeRunCheckpoints.length === 0) return null
+    if (!selectedProofCheckpointId) return activeRunCheckpoints[0] ?? null
+    return activeRunCheckpoints.find(item => item.simulationStageCheckpointId === selectedProofCheckpointId) ?? activeRunCheckpoints[0] ?? null
+  }, [activeRunCheckpoints, selectedProofCheckpointId])
+  const firstBlockedCheckpointIndex = useMemo(() => (
+    activeRunCheckpoints.findIndex(item => item.playbackAccessible === false || item.stageAdvanceBlocked === true || (item.blockingQueueItemCount ?? item.openQueueCount ?? 0) > 0)
+  ), [activeRunCheckpoints])
+  const firstAccessibleCheckpointIndex = useMemo(() => (
+    activeRunCheckpoints.findIndex(item => item.playbackAccessible !== false && item.stageAdvanceBlocked !== true && (item.blockingQueueItemCount ?? item.openQueueCount ?? 0) === 0)
+  ), [activeRunCheckpoints])
+  const selectedProofCheckpointIndex = useMemo(() => (
+    selectedProofCheckpoint
+      ? activeRunCheckpoints.findIndex(item => item.simulationStageCheckpointId === selectedProofCheckpoint.simulationStageCheckpointId)
+      : -1
+  ), [activeRunCheckpoints, selectedProofCheckpoint?.simulationStageCheckpointId])
+  const selectedProofCheckpointBlocked = !!selectedProofCheckpoint && (
+    selectedProofCheckpoint.playbackAccessible === false
+    || selectedProofCheckpoint.stageAdvanceBlocked === true
+    || (selectedProofCheckpoint.blockingQueueItemCount ?? selectedProofCheckpoint.openQueueCount ?? 0) > 0
+  )
+  const selectedProofCheckpointHasBlockedProgression = firstBlockedCheckpointIndex >= 0
+    && selectedProofCheckpointIndex >= 0
+    && selectedProofCheckpointIndex >= firstBlockedCheckpointIndex
+  const selectedProofCheckpointCanStepForward = !!selectedProofCheckpoint && activeRunCheckpoints.length > 0 && !selectedProofCheckpointBlocked && !selectedProofCheckpointHasBlockedProgression
+  const selectedProofCheckpointCanPlayToEnd = !!selectedProofCheckpoint && activeRunCheckpoints.length > 0 && !selectedProofCheckpointBlocked && firstBlockedCheckpointIndex < 0
   const studentRegistryScope = useMemo(
     () => toRegistrySearchScope(studentRegistryFilter),
     [studentRegistryFilter.academicFacultyId, studentRegistryFilter.batchId, studentRegistryFilter.branchId, studentRegistryFilter.departmentId, studentRegistryFilter.sectionCode],
@@ -1673,6 +2135,57 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const selectedFacultyMember = selectedFacultyRecord && isFacultyMemberVisible(data, selectedFacultyRecord)
     ? selectedFacultyRecord
     : null
+
+  useEffect(() => {
+    if (!proofDashboard?.activeRunDetail || activeRunCheckpoints.length === 0) {
+      setSelectedProofCheckpointDetail(null)
+      return
+    }
+    const persistedSelection = readProofPlaybackSelection()
+    const persistedCheckpointId = persistedSelection?.simulationRunId === proofDashboard.activeRunDetail.simulationRunId
+      ? persistedSelection.simulationStageCheckpointId
+      : null
+    setSelectedProofCheckpointId(current => (
+      current && activeRunCheckpoints.some(item => item.simulationStageCheckpointId === current)
+        ? current
+        : persistedCheckpointId && activeRunCheckpoints.some(item => item.simulationStageCheckpointId === persistedCheckpointId)
+          ? persistedCheckpointId
+        : activeRunCheckpoints.find(item => item.playbackAccessible !== false)?.simulationStageCheckpointId
+          ?? activeRunCheckpoints[0]?.simulationStageCheckpointId
+          ?? null
+    ))
+  }, [activeRunCheckpoints, proofDashboard?.activeRunDetail?.simulationRunId])
+
+  useEffect(() => {
+    if (!proofDashboard?.activeRunDetail?.simulationRunId || !selectedProofCheckpoint?.simulationStageCheckpointId) {
+      setSelectedProofCheckpointDetail(null)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const detail = await apiClient.getProofRunCheckpointDetail(
+          proofDashboard.activeRunDetail!.simulationRunId,
+          selectedProofCheckpoint.simulationStageCheckpointId,
+        )
+        if (!cancelled) setSelectedProofCheckpointDetail(detail)
+      } catch (error) {
+        if (!cancelled) setActionError(toErrorMessage(error))
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [apiClient, proofDashboard?.activeRunDetail?.simulationRunId, selectedProofCheckpoint?.simulationStageCheckpointId])
+
+  useEffect(() => {
+    if (!proofDashboard?.activeRunDetail?.simulationRunId || !selectedProofCheckpoint?.simulationStageCheckpointId) return
+    writeProofPlaybackSelection({
+      simulationRunId: proofDashboard.activeRunDetail.simulationRunId,
+      simulationStageCheckpointId: selectedProofCheckpoint.simulationStageCheckpointId,
+      updatedAt: new Date().toISOString(),
+    })
+  }, [proofDashboard?.activeRunDetail?.simulationRunId, selectedProofCheckpoint?.simulationStageCheckpointId])
 
   useEffect(() => {
     if (!session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') return
@@ -2060,7 +2573,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     event.preventDefault()
     setAuthBusy(true); setAuthError('')
     try {
-      const nextSession = await apiClient.login({ identifier, password })
+      await apiClient.login({ identifier, password })
+      const nextSession = await settleCookieBackedSession('login')
       setSession(nextSession); setIdentifier(''); setPassword('')
     } catch (error) { setAuthError(toErrorMessage(error)) }
     finally { setAuthBusy(false) }
@@ -2076,7 +2590,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const handleSwitchToSystemAdmin = async () => {
     if (!systemAdminGrant) return
     setAuthBusy(true)
-    try { const next = await apiClient.switchRoleContext(systemAdminGrant.grantId); setSession(next) }
+    try {
+      await apiClient.switchRoleContext(systemAdminGrant.grantId)
+      const next = await settleCookieBackedSession('role-switch')
+      setSession(next)
+    }
     catch (error) { setAuthError(toErrorMessage(error)) }
     finally { setAuthBusy(false) }
   }
@@ -2497,10 +3015,12 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     event.preventDefault()
     if (!selectedBatch) return
     await runAction(async () => {
+      let courseCodeForRefresh = entityEditors.curriculum.courseCode
       const matchingCourse = data.courses.find(item => item.courseCode.toLowerCase() === entityEditors.curriculum.courseCode.toLowerCase() && isVisibleAdminRecord(item.status)) ?? null
       if (entityEditors.curriculum.curriculumCourseId) {
         const current = data.curriculumCourses.find(item => item.curriculumCourseId === entityEditors.curriculum.curriculumCourseId)
         if (!current) throw new Error('Selected curriculum course could not be found.')
+        courseCodeForRefresh = current.courseCode
         await apiClient.updateCurriculumCourse(current.curriculumCourseId, {
           batchId: selectedBatch.batchId,
           semesterNumber: requirePositiveInteger('Curriculum semester number', entityEditors.curriculum.semesterNumber),
@@ -2525,6 +3045,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         setFlashMessage('Curriculum course created.')
       }
       resetCurriculumEditor()
+      await refreshCurriculumFeatureConfig(selectedBatch.batchId)
+      const rerun = await maybeAutoRefreshSelectedProofBatch(`${courseCodeForRefresh} curriculum refresh`)
+      if (rerun) {
+        setFlashMessage(`Curriculum course saved and proof batch refreshed for ${courseCodeForRefresh}.`)
+      }
     })
   }
 
@@ -2543,7 +3068,26 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         version: current.version,
       })
       if (entityEditors.curriculum.curriculumCourseId === curriculumCourseId) resetCurriculumEditor()
-      setFlashMessage('Curriculum course archived.')
+      await refreshCurriculumFeatureConfig(current.batchId)
+      const rerun = await maybeAutoRefreshSelectedProofBatch(`${current.courseCode} curriculum archive`)
+      setFlashMessage(rerun
+        ? `Curriculum course archived and proof batch refreshed for ${current.courseCode}.`
+        : 'Curriculum course archived.')
+    })
+  }
+
+  const handleSaveCurriculumFeatureConfig = async () => {
+    if (!selectedBatch || !selectedCurriculumFeatureItem) return
+    await runAction(async () => {
+      const payload = buildCurriculumFeaturePayload(curriculumFeatureForm)
+      const saved = await apiClient.saveCurriculumFeatureConfig(selectedBatch.batchId, selectedCurriculumFeatureItem.curriculumCourseId, payload)
+      const nextBundle = await refreshCurriculumFeatureConfig(selectedBatch.batchId)
+      const nextSelected = nextBundle.items.find(item => item.curriculumCourseId === selectedCurriculumFeatureItem.curriculumCourseId) ?? null
+      setCurriculumFeatureForm(hydrateCurriculumFeatureForm(nextSelected))
+      const rerun = await maybeAutoRefreshSelectedProofBatch(`${selectedCurriculumFeatureItem.courseCode} feature refresh`, saved.curriculumImportVersionId)
+      setFlashMessage(rerun
+        ? `Curriculum model inputs saved and proof batch refreshed for ${selectedCurriculumFeatureItem.courseCode}.`
+        : `Curriculum model inputs saved for ${selectedCurriculumFeatureItem.courseCode}.`)
     })
   }
 
@@ -2557,6 +3101,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       setFlashMessage('Batch policy saved.')
       const nextResolved = await apiClient.getResolvedBatchPolicy(selectedBatch.batchId)
       setResolvedBatchPolicy(nextResolved)
+      const rerun = await maybeAutoRefreshSelectedProofBatch('policy refresh')
+      if (rerun) {
+        setFlashMessage('Batch policy saved and proof batch refreshed.')
+      }
     })
   }
 
@@ -2579,8 +3127,157 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       setResolvedBatchPolicy(nextResolved)
       setPolicyForm(hydratePolicyForm(nextResolved.effectivePolicy))
       setFlashMessage('Batch policy override reset to inherited defaults.')
+      const rerun = await maybeAutoRefreshSelectedProofBatch('policy reset')
+      if (rerun) {
+        setFlashMessage('Batch policy override reset and proof batch refreshed.')
+      }
     })
   }
+
+  const handleCreateProofImport = async () => {
+    if (!selectedBatch) return
+    await runAction(async () => {
+      await apiClient.createProofImport(selectedBatch.batchId)
+      await refreshCurriculumFeatureConfig(selectedBatch.batchId)
+      await refreshProofDashboard(selectedBatch.batchId)
+      setFlashMessage('Proof curriculum import created from the reconciled workbook.')
+    })
+  }
+
+  const handleValidateLatestProofImport = async () => {
+    if (!selectedBatch) return
+    const latestImport = proofDashboard?.imports[0]
+    if (!latestImport) return
+    await runAction(async () => {
+      await apiClient.validateProofImport(latestImport.curriculumImportVersionId)
+      await refreshProofDashboard(selectedBatch.batchId)
+      setFlashMessage('Latest proof import validated.')
+    })
+  }
+
+  const handleReviewPendingCrosswalks = async () => {
+    if (!selectedBatch || !proofDashboard?.crosswalkReviewQueue.length || !proofDashboard.imports[0]) return
+    await runAction(async () => {
+      await apiClient.reviewProofCrosswalks(proofDashboard.imports[0].curriculumImportVersionId, {
+        reviews: proofDashboard.crosswalkReviewQueue.map(item => ({
+          officialCodeCrosswalkId: item.officialCodeCrosswalkId,
+          reviewStatus: 'accepted-with-note',
+          overrideReason: 'Reviewed in the sysadmin proof shell for the first-6-semester proof batch.',
+        })),
+      })
+      await refreshProofDashboard(selectedBatch.batchId)
+      setFlashMessage('Pending proof crosswalk entries marked as reviewed.')
+    })
+  }
+
+  const handleApproveLatestProofImport = async () => {
+    if (!selectedBatch) return
+    const latestImport = proofDashboard?.imports[0]
+    if (!latestImport) return
+    await runAction(async () => {
+      await apiClient.approveProofImport(latestImport.curriculumImportVersionId)
+      const rerun = await maybeAutoRefreshSelectedProofBatch('proof import approval', latestImport.curriculumImportVersionId)
+      await refreshCurriculumFeatureConfig(selectedBatch.batchId)
+      await refreshProofDashboard(selectedBatch.batchId)
+      setFlashMessage(
+        rerun
+          ? 'Latest proof import approved, synced into the batch curriculum snapshot, and republished as the active proof run.'
+          : 'Latest proof import approved and synced into the batch curriculum snapshot.',
+      )
+    })
+  }
+
+  const handleCreateProofRun = async () => {
+    if (!selectedBatch) return
+    const preferredImport = proofDashboard?.imports.find(item => item.status === 'approved') ?? proofDashboard?.imports[0]
+    if (!preferredImport) return
+    await runAction(async () => {
+      await apiClient.createProofRun(selectedBatch.batchId, {
+        curriculumImportVersionId: preferredImport.curriculumImportVersionId,
+        activate: true,
+      })
+      await refreshProofDashboard(selectedBatch.batchId)
+      setFlashMessage('Proof simulation rerun completed and published as active.')
+    })
+  }
+
+  const handleActivateProofRun = async (simulationRunId: string) => {
+    if (!selectedBatch) return
+    await runAction(async () => {
+      await apiClient.activateProofRun(simulationRunId)
+      await refreshProofDashboard(selectedBatch.batchId)
+      setFlashMessage('Selected proof run is now active.')
+    })
+  }
+
+  const handleArchiveProofRun = async (simulationRunId: string) => {
+    if (!selectedBatch) return
+    await runAction(async () => {
+      await apiClient.archiveProofRun(simulationRunId)
+      await refreshProofDashboard(selectedBatch.batchId)
+      setFlashMessage('Selected proof run archived.')
+    })
+  }
+
+  const handleRecomputeProofRunRisk = async () => {
+    if (!selectedBatch || !proofDashboard?.activeRunDetail) return
+    const activeRunDetail = proofDashboard.activeRunDetail
+    await runAction(async () => {
+      await apiClient.recomputeProofRunRisk(activeRunDetail.simulationRunId)
+      await refreshProofDashboard(selectedBatch.batchId)
+      setFlashMessage('Observable-only risk recomputed for the active proof run.')
+    })
+  }
+
+  const handleRestoreProofSnapshot = async (simulationRunId: string, simulationResetSnapshotId?: string) => {
+    if (!selectedBatch) return
+    await runAction(async () => {
+      await apiClient.restoreProofRunSnapshot(simulationRunId, simulationResetSnapshotId ? { simulationResetSnapshotId } : undefined)
+      await refreshProofDashboard(selectedBatch.batchId)
+      setFlashMessage('Proof run restored from the selected snapshot.')
+    })
+  }
+
+  const persistProofPlaybackSelection = useCallback((checkpointId: string | null) => {
+    const simulationRunId = proofDashboard?.activeRunDetail?.simulationRunId
+    if (!simulationRunId || !checkpointId) return
+    writeProofPlaybackSelection({
+      simulationRunId,
+      simulationStageCheckpointId: checkpointId,
+      updatedAt: new Date().toISOString(),
+    })
+  }, [proofDashboard?.activeRunDetail?.simulationRunId])
+
+  const handleSelectProofCheckpoint = useCallback((checkpointId: string | null) => {
+    setSelectedProofCheckpointId(checkpointId)
+    persistProofPlaybackSelection(checkpointId)
+  }, [persistProofPlaybackSelection])
+
+  const handleStepProofPlayback = useCallback((direction: 'previous' | 'next' | 'start' | 'end') => {
+    if (activeRunCheckpoints.length === 0) return
+    if (direction === 'start') {
+      const startIndex = firstAccessibleCheckpointIndex >= 0 ? firstAccessibleCheckpointIndex : 0
+      const checkpointId = activeRunCheckpoints[startIndex]?.simulationStageCheckpointId ?? null
+      setSelectedProofCheckpointId(checkpointId)
+      persistProofPlaybackSelection(checkpointId)
+      return
+    }
+    if (direction === 'end') {
+      const lastAccessibleIndex = firstBlockedCheckpointIndex >= 0 ? Math.max(0, firstBlockedCheckpointIndex - 1) : activeRunCheckpoints.length - 1
+      const checkpointId = activeRunCheckpoints[lastAccessibleIndex]?.simulationStageCheckpointId ?? null
+      setSelectedProofCheckpointId(checkpointId)
+      persistProofPlaybackSelection(checkpointId)
+      return
+    }
+    const currentIndex = Math.max(0, activeRunCheckpoints.findIndex(item => item.simulationStageCheckpointId === selectedProofCheckpoint?.simulationStageCheckpointId))
+    const nextIndex = direction === 'previous'
+      ? Math.max(0, currentIndex - 1)
+      : Math.min(activeRunCheckpoints.length - 1, currentIndex + 1)
+    if (direction === 'next' && firstBlockedCheckpointIndex >= 0 && nextIndex >= firstBlockedCheckpointIndex) return
+    const checkpointId = activeRunCheckpoints[nextIndex]?.simulationStageCheckpointId ?? null
+    setSelectedProofCheckpointId(checkpointId)
+    persistProofPlaybackSelection(checkpointId)
+  }, [activeRunCheckpoints, firstBlockedCheckpointIndex, persistProofPlaybackSelection, selectedProofCheckpoint?.simulationStageCheckpointId])
 
   const handleAdvanceRequest = async (request: ApiAdminRequestSummary) => {
     setRequestBusy(request.adminRequestId)
@@ -2704,13 +3401,15 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           ...payload,
           version: current.version,
         })
-        setFlashMessage('Enrollment updated.')
+        const rerun = await maybeAutoRefreshSelectedProofBatch(`${selectedStudent.name} enrollment refresh`)
+        setFlashMessage(rerun ? 'Enrollment updated and proof batch refreshed.' : 'Enrollment updated.')
       })
       return
     }
     await runAction(async () => {
       await apiClient.createEnrollment(selectedStudent.studentId, payload)
-      setFlashMessage('Enrollment created.')
+      const rerun = await maybeAutoRefreshSelectedProofBatch(`${selectedStudent.name} enrollment refresh`)
+      setFlashMessage(rerun ? 'Enrollment created and proof batch refreshed.' : 'Enrollment created.')
     })
   }
 
@@ -3172,6 +3871,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const branchBatches = listBatchesForBranch(data, selectedBranch?.branchId)
   const batchTerms = listTermsForBatch(data, selectedBatch?.batchId)
   const curriculumBySemester = listCurriculumBySemester(data, selectedBatch?.batchId)
+  const curriculumFeatureItems = curriculumFeatureConfig?.items ?? []
+  const selectedCurriculumFeatureItem = curriculumFeatureItems.find(item => item.curriculumCourseId === selectedCurriculumFeatureCourseId) ?? null
   const selectedFacultyAssignments = selectedFacultyMember ? listFacultyAssignments(data, selectedFacultyMember.facultyId) : []
   const activeBatchPolicyOverride = selectedBatch
     ? data.policyOverrides.find(item => item.scopeType === 'batch' && item.scopeId === selectedBatch.batchId && isVisibleAdminRecord(item.status)) ?? null
@@ -4534,8 +5235,428 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                     </div>
                   ) : null}
 
+                  <Card data-proof-surface="system-admin-proof-control-plane" style={{ padding: 14, background: T.surface2, display: 'grid', gap: 14 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                      <div>
+                        <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Proof Control Plane</div>
+                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6 }}>
+                          Curriculum import, crosswalk review, active run control, monitoring state, and snapshot restore all run from the backend proof shell now.
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <Btn size="sm" dataProofAction="proof-create-import" onClick={handleCreateProofImport}>Create Import</Btn>
+                        <Btn size="sm" variant="ghost" dataProofAction="proof-validate-import" onClick={handleValidateLatestProofImport} disabled={!proofDashboard?.imports.length}>Validate Import</Btn>
+                        <Btn size="sm" variant="ghost" dataProofAction="proof-review-crosswalks" onClick={handleReviewPendingCrosswalks} disabled={!proofDashboard?.crosswalkReviewQueue.length}>Review Mappings</Btn>
+                        <Btn size="sm" variant="ghost" dataProofAction="proof-approve-import" onClick={handleApproveLatestProofImport} disabled={!proofDashboard?.imports.length}>Approve Import</Btn>
+                        <Btn size="sm" dataProofAction="proof-run-rerun" onClick={handleCreateProofRun} disabled={!proofDashboard?.imports.length}>Run / Rerun</Btn>
+                        <Btn size="sm" variant="ghost" dataProofAction="proof-recompute-risk" onClick={handleRecomputeProofRunRisk} disabled={!proofDashboard?.activeRunDetail}>Recompute Risk</Btn>
+                      </div>
+                    </div>
+
+                    {proofDashboardLoading ? <InfoBanner message="Loading proof control-plane data..." /> : null}
+
+                    {proofDashboard?.activeRunDetail ? (
+                      <div style={{ display: 'grid', gap: 14 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+                          <Card style={{ padding: 12, background: T.surface }}>
+                            <div style={{ ...mono, fontSize: 10, color: T.dim }}>Active Run</div>
+                            <div style={{ ...mono, fontSize: 11, color: T.text, marginTop: 4 }}>{proofDashboard.activeRunDetail.runLabel}</div>
+                            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6 }}>Seed {proofDashboard.activeRunDetail.seed} · {proofDashboard.activeRunDetail.status}</div>
+                          </Card>
+                        <Card style={{ padding: 12, background: T.surface }}>
+                          <div style={{ ...mono, fontSize: 10, color: T.dim }}>Monitoring</div>
+                          <div style={{ ...mono, fontSize: 11, color: T.text, marginTop: 4 }}>
+                            {proofDashboard.activeRunDetail.monitoringSummary.riskAssessmentCount} watch scores · {proofDashboard.activeRunDetail.monitoringSummary.activeReassessmentCount} open reassessments
+                          </div>
+                        </Card>
+                        <Card style={{ padding: 12, background: T.surface }}>
+                          <div style={{ ...mono, fontSize: 10, color: T.dim }}>Alerts</div>
+                          <div style={{ ...mono, fontSize: 11, color: T.text, marginTop: 4 }}>
+                            {proofDashboard.activeRunDetail.monitoringSummary.alertDecisionCount} decisions · {proofDashboard.activeRunDetail.monitoringSummary.acknowledgementCount} acknowledgements
+                          </div>
+                        </Card>
+                        <Card style={{ padding: 12, background: T.surface }}>
+                          <div style={{ ...mono, fontSize: 10, color: T.dim }}>Snapshots</div>
+                          <div style={{ ...mono, fontSize: 11, color: T.text, marginTop: 4 }}>{proofDashboard.activeRunDetail.snapshots.length} saved</div>
+                        </Card>
+                        <Card style={{ padding: 12, background: T.surface }}>
+                          <div style={{ ...mono, fontSize: 10, color: T.dim }}>Stage 2 Coverage</div>
+                          <div style={{ ...mono, fontSize: 11, color: T.text, marginTop: 4 }}>
+                            {proofDashboard.activeRunDetail.coverageDiagnostics.behaviorProfileCoverage.count}/{proofDashboard.activeRunDetail.coverageDiagnostics.behaviorProfileCoverage.expected} profiles · {proofDashboard.activeRunDetail.coverageDiagnostics.questionResultCoverage.count} question results
+                          </div>
+                          <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6 }}>
+                            Topic {proofDashboard.activeRunDetail.coverageDiagnostics.topicStateCoverage.count} · CO {proofDashboard.activeRunDetail.coverageDiagnostics.coStateCoverage.count} · response {proofDashboard.activeRunDetail.coverageDiagnostics.interventionResponseCoverage.count}
+                          </div>
+                        </Card>
+                          <Card style={{ padding: 12, background: T.surface, display: 'grid', gap: 10 }}>
+                            <div>
+                              <div style={{ ...mono, fontSize: 10, color: T.dim }}>Risk Model</div>
+                              <div style={{ ...mono, fontSize: 11, color: T.text, marginTop: 4 }}>
+                                {activeProductionDiagnostics
+                                  ? `${activeProductionDiagnostics.artifactVersion} · ${proofDashboard.activeRunDetail.modelDiagnostics.activeRunFeatureRowCount} active rows`
+                                  : 'Heuristic fallback only'}
+                              </div>
+                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6 }}>
+                                {activeProductionDiagnostics
+                                  ? `${proofDashboard.activeRunDetail.modelDiagnostics.sourceRunCount} run corpus · ${proofDashboard.activeRunDetail.modelDiagnostics.featureRowCount} checkpoint rows`
+                                  : 'No active local artifact has been trained for this batch yet.'}
+                              </div>
+                            </div>
+
+                            <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 10, display: 'grid', gap: 6 }}>
+                              <div style={{ ...mono, fontSize: 10, color: T.dim }}>Corpus + Split</div>
+                              <div style={{ ...mono, fontSize: 11, color: T.text, lineHeight: 1.6 }}>
+                                Manifest {activeDiagnosticsTrainingManifestVersion ?? 'unknown'}
+                              </div>
+                              <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>
+                                Splits: {formatSplitSummary(activeDiagnosticsSplitSummary)}
+                              </div>
+                              <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>
+                                Worlds: {formatSplitSummary(activeDiagnosticsWorldSplitSummary)}
+                              </div>
+                              <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>
+                                Scenario families: {formatKeyedCounts(activeModelDiagnostics?.scenarioFamilySummary ?? activeDiagnosticsScenarioFamilies)}
+                              </div>
+                              {activeDiagnosticsHeadSupportSummary ? (
+                                <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>
+                                  Head support: {formatHeadSupportSummary(activeDiagnosticsHeadSupportSummary)}
+                                </div>
+                              ) : null}
+                              {activeDiagnosticsGovernedRunCount != null || activeDiagnosticsSkippedRunCount != null ? (
+                                <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>
+                                  Governed runs: {activeDiagnosticsGovernedRunCount ?? 'unknown'} · skipped runs: {activeDiagnosticsSkippedRunCount ?? 0}
+                                </div>
+                              ) : null}
+                            </div>
+
+                            <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 10, display: 'grid', gap: 6 }}>
+                              <div style={{ ...mono, fontSize: 10, color: T.dim }}>Calibration + Policy</div>
+                              <div style={{ ...mono, fontSize: 11, color: T.text, lineHeight: 1.6 }}>
+                                Calibration {activeDiagnosticsCalibrationVersion ?? 'unknown'}
+                              </div>
+                              {activeDiagnosticsDisplayProbabilityAllowed != null ? (
+                                <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>
+                                  Probability display: {activeDiagnosticsDisplayProbabilityAllowed ? 'allowed' : 'band only'}
+                                </div>
+                              ) : null}
+                              {activeDiagnosticsSupportWarning ? (
+                                <div style={{ ...mono, fontSize: 10, color: T.warning, lineHeight: 1.6 }}>
+                                  Support: {activeDiagnosticsSupportWarning}
+                                </div>
+                              ) : null}
+                              <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>
+                                {activeProductionDiagnostics?.evaluation && typeof activeProductionDiagnostics.evaluation === 'object'
+                                  ? `Evaluation keys: ${Object.keys(activeProductionDiagnostics.evaluation).slice(0, 5).join(' · ') || 'none'}`
+                                  : 'No evaluation payload is available.'}
+                              </div>
+                              {activeDiagnosticsPolicyDiagnostics ? (
+                                <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>
+                                  Governed policy: {formatDiagnosticSummary(activeDiagnosticsPolicyDiagnostics)}
+                                </div>
+                              ) : null}
+                              {activeDiagnosticsCoEvidence ? (
+                                <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>
+                                  Governed CO evidence: {formatDiagnosticSummary(activeDiagnosticsCoEvidence)}
+                                </div>
+                              ) : null}
+                              {activeDiagnosticsPolicyAcceptance ? (
+                                <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>
+                                  Policy gates: {formatDiagnosticSummary(activeDiagnosticsPolicyAcceptance)}
+                                </div>
+                              ) : null}
+                              {activeDiagnosticsOverallCourseRuntime ? (
+                                <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>
+                                  Overall-course runtime: {formatDiagnosticSummary(activeDiagnosticsOverallCourseRuntime)}
+                                </div>
+                              ) : null}
+                              {activeDiagnosticsQueueBurden ? (
+                                <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>
+                                  Queue burden: {formatDiagnosticSummary(activeDiagnosticsQueueBurden)}
+                                </div>
+                              ) : null}
+                              {activeDiagnosticsUiParity ? (
+                                <div style={{ ...mono, fontSize: 10, color: T.dim, lineHeight: 1.6 }}>
+                                  Active-run parity: {formatDiagnosticSummary(activeDiagnosticsUiParity)}
+                                </div>
+                              ) : null}
+                              {activeProductionDiagnostics?.correlations ? (
+                                <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>
+                                  Correlations: {Object.keys(activeProductionDiagnostics.correlations).slice(0, 5).join(' · ') || 'none'}
+                                </div>
+                              ) : null}
+                            </div>
+                          </Card>
+                      </div>
+
+                        {selectedProofCheckpoint ? (
+                          <Card data-proof-section="checkpoint-playback" style={{ padding: 12, background: T.surface, display: 'grid', gap: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                          <div>
+                            <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>Checkpoint Playback</div>
+                            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.8 }}>
+                              Read-only playback overlay for the active proof run. The run itself does not mutate while stepping through stage checkpoints.
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            <Btn
+                              size="sm"
+                              variant="ghost"
+                              dataProofAction="proof-playback-reset"
+                              onClick={() => handleStepProofPlayback('start')}
+                              disabled={activeRunCheckpoints.length === 0 || selectedProofCheckpoint.simulationStageCheckpointId === activeRunCheckpoints[0]?.simulationStageCheckpointId}
+                            >
+                              Reset To Start
+                            </Btn>
+                            <Btn
+                              size="sm"
+                              variant="ghost"
+                              dataProofAction="proof-playback-previous"
+                              onClick={() => handleStepProofPlayback('previous')}
+                              disabled={!selectedProofCheckpoint.previousCheckpointId}
+                            >
+                              Previous
+                            </Btn>
+                            <Btn
+                              size="sm"
+                              variant="ghost"
+                              dataProofAction="proof-playback-next"
+                              onClick={() => handleStepProofPlayback('next')}
+                              disabled={!selectedProofCheckpointCanStepForward || !selectedProofCheckpoint.nextCheckpointId}
+                            >
+                              Next
+                            </Btn>
+                            <Btn
+                              size="sm"
+                              dataProofAction="proof-playback-end"
+                              onClick={() => handleStepProofPlayback('end')}
+                              disabled={!selectedProofCheckpointCanPlayToEnd}
+                            >
+                              Play To End
+                            </Btn>
+                          </div>
+                        </div>
+
+                        <div data-proof-section="selected-checkpoint-banner">
+                          <InfoBanner
+                            tone={selectedProofCheckpointBlocked || selectedProofCheckpointHasBlockedProgression ? 'error' : 'neutral'}
+                            message={`Selected checkpoint: semester ${selectedProofCheckpoint.semesterNumber} · ${selectedProofCheckpoint.stageLabel} · ${selectedProofCheckpoint.stageDescription}. ${selectedProofCheckpointBlocked || selectedProofCheckpointHasBlockedProgression ? 'Playback progression is blocked until all queue items at this checkpoint are resolved.' : 'This stage is synced into the academic playback overlay for teaching surfaces.'}`}
+                          />
+                        </div>
+
+                        <div data-proof-section="checkpoint-buttons" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          {activeRunCheckpoints.map(item => (
+                            <Btn
+                              key={item.simulationStageCheckpointId}
+                              size="sm"
+                              dataProofAction="proof-select-checkpoint"
+                              dataProofEntityId={item.simulationStageCheckpointId}
+                              variant={item.simulationStageCheckpointId === selectedProofCheckpoint.simulationStageCheckpointId ? 'primary' : 'ghost'}
+                              onClick={() => handleSelectProofCheckpoint(item.simulationStageCheckpointId)}
+                            >
+                              {`S${item.semesterNumber} · ${item.stageLabel}${item.playbackAccessible === false ? ' · blocked' : ''}`}
+                            </Btn>
+                          ))}
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+                          <Card style={{ padding: 12, background: T.surface2 }}>
+                            <div style={{ ...mono, fontSize: 10, color: T.dim }}>Risk Snapshot</div>
+                            <div style={{ ...mono, fontSize: 11, color: T.text, marginTop: 4 }}>
+                              {selectedProofCheckpoint.highRiskCount ?? 0} high · {selectedProofCheckpoint.mediumRiskCount ?? 0} medium · {selectedProofCheckpoint.lowRiskCount ?? 0} low
+                            </div>
+                          </Card>
+                          <Card style={{ padding: 12, background: T.surface2 }}>
+                            <div style={{ ...mono, fontSize: 10, color: T.dim }}>Queue State</div>
+                            <div style={{ ...mono, fontSize: 11, color: T.text, marginTop: 4 }}>
+                              {selectedProofCheckpoint.openQueueCount ?? 0} open · {selectedProofCheckpoint.watchQueueCount ?? 0} watch · {selectedProofCheckpoint.resolvedQueueCount ?? 0} resolved
+                            </div>
+                            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
+                              {selectedProofCheckpoint.blockingQueueItemCount ?? selectedProofCheckpoint.openQueueCount ?? 0} blocking students · {selectedProofCheckpoint.watchStudentCount ?? 0} watched students
+                            </div>
+                            {selectedProofCheckpoint.stageAdvanceBlocked ? (
+                              <div style={{ ...mono, fontSize: 10, color: T.warning, marginTop: 4, lineHeight: 1.6 }}>
+                                Stage progression blocked{selectedProofCheckpoint.blockedProgressionReason ? ` · ${selectedProofCheckpoint.blockedProgressionReason}` : ''}.
+                              </div>
+                            ) : null}
+                          </Card>
+                          <Card style={{ padding: 12, background: T.surface2 }}>
+                            <div style={{ ...mono, fontSize: 10, color: T.dim }}>No-Action Comparator</div>
+                            <div style={{ ...mono, fontSize: 11, color: T.text, marginTop: 4 }}>
+                              {selectedProofCheckpoint.noActionHighRiskCount ?? 0} high-risk rows without simulated support
+                            </div>
+                          </Card>
+                          <Card style={{ padding: 12, background: T.surface2 }}>
+                            <div style={{ ...mono, fontSize: 10, color: T.dim }}>Average Risk Change</div>
+                            <div style={{ ...mono, fontSize: 11, color: T.text, marginTop: 4 }}>
+                              {selectedProofCheckpoint.averageRiskChangeFromPreviousCheckpointScaled ?? selectedProofCheckpoint.averageRiskDeltaScaled ?? 0} scaled points
+                            </div>
+                          </Card>
+                          <Card style={{ padding: 12, background: T.surface2 }}>
+                            <div style={{ ...mono, fontSize: 10, color: T.dim }}>Average Counterfactual Lift</div>
+                            <div style={{ ...mono, fontSize: 11, color: T.text, marginTop: 4 }}>
+                              {selectedProofCheckpoint.averageCounterfactualLiftScaled ?? 0} scaled points
+                            </div>
+                          </Card>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+                          <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 8 }}>
+                            <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>Stage queue preview</div>
+                            {selectedProofCheckpointDetail?.queuePreview.length ? selectedProofCheckpointDetail.queuePreview.slice(0, 8).map(item => (
+                              <Card key={item.simulationStageQueueProjectionId} style={{ padding: 10, background: T.surface }}>
+                                <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.courseCode} · {item.assignedToRole} · {item.riskBand} · {item.status}</div>
+                                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.8 }}>
+                                  {item.taskType} · action {item.simulatedActionTaken ?? item.recommendedAction ?? 'none'} · risk {item.riskProbScaled}%{item.noActionRiskProbScaled != null ? ` vs no-action ${item.noActionRiskProbScaled}%` : ''}.
+                                </div>
+                                {item.coEvidenceMode ? (
+                                  <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 4, lineHeight: 1.8 }}>
+                                    CO evidence mode: {item.coEvidenceMode}.
+                                  </div>
+                                ) : null}
+                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                                  {item.riskChangeFromPreviousCheckpointScaled != null ? <Chip color={item.riskChangeFromPreviousCheckpointScaled > 0 ? T.danger : item.riskChangeFromPreviousCheckpointScaled < 0 ? T.success : T.dim}>{`Δ ${item.riskChangeFromPreviousCheckpointScaled > 0 ? '+' : ''}${item.riskChangeFromPreviousCheckpointScaled}`}</Chip> : null}
+                                  {item.counterfactualLiftScaled != null ? <Chip color={item.counterfactualLiftScaled > 0 ? T.success : item.counterfactualLiftScaled < 0 ? T.warning : T.dim}>{`Lift ${item.counterfactualLiftScaled > 0 ? '+' : ''}${item.counterfactualLiftScaled}`}</Chip> : null}
+                                </div>
+                              </Card>
+                            )) : <div style={{ ...mono, fontSize: 10, color: T.muted }}>No stage queue items exist at this checkpoint.</div>}
+                          </Card>
+
+                          <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 8 }}>
+                            <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>Offering action summary</div>
+                            {selectedProofCheckpointDetail?.offeringRollups.length ? selectedProofCheckpointDetail.offeringRollups.slice(0, 8).map(item => {
+                              const projection = item.projection
+                              const averageRisk = typeof projection.averageRiskProbScaled === 'number' ? projection.averageRiskProbScaled : null
+                              const openQueueCount = typeof projection.openQueueCount === 'number' ? projection.openQueueCount : null
+                              return (
+                                <Card key={item.simulationStageOfferingProjectionId} style={{ padding: 10, background: T.surface }}>
+                              <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.courseCode} · Section {item.sectionCode}</div>
+                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.8 }}>
+                                {item.pendingAction ?? 'No pending action'}{averageRisk != null ? ` · avg risk ${averageRisk}%` : ''}{openQueueCount != null ? ` · open queue ${openQueueCount}` : ''}.
+                              </div>
+                              {typeof projection.coEvidenceMode === 'string' && projection.coEvidenceMode.length > 0 ? (
+                                <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 4, lineHeight: 1.8 }}>
+                                  CO evidence mode: {projection.coEvidenceMode}.
+                                </div>
+                              ) : null}
+                              {item.projection ? (
+                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                                  {typeof projection.riskChangeFromPreviousCheckpointScaled === 'number' ? <Chip color={projection.riskChangeFromPreviousCheckpointScaled > 0 ? T.danger : projection.riskChangeFromPreviousCheckpointScaled < 0 ? T.success : T.dim}>{`Δ ${projection.riskChangeFromPreviousCheckpointScaled > 0 ? '+' : ''}${projection.riskChangeFromPreviousCheckpointScaled}`}</Chip> : null}
+                                  {typeof projection.counterfactualLiftScaled === 'number' ? <Chip color={projection.counterfactualLiftScaled > 0 ? T.success : projection.counterfactualLiftScaled < 0 ? T.warning : T.dim}>{`Lift ${projection.counterfactualLiftScaled > 0 ? '+' : ''}${projection.counterfactualLiftScaled}`}</Chip> : null}
+                                </div>
+                              ) : null}
+                            </Card>
+                          )
+                        }) : <div style={{ ...mono, fontSize: 10, color: T.muted }}>No offering rollups are available for this checkpoint.</div>}
+                          </Card>
+                        </div>
+                      </Card>
+                    ) : null}
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+                      <Card style={{ padding: 12, background: T.surface, display: 'grid', gap: 8 }}>
+                        <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>Imports</div>
+                        {proofDashboard?.imports.length ? proofDashboard.imports.slice(0, 3).map(item => (
+                          <Card key={item.curriculumImportVersionId} style={{ padding: 10, background: T.surface2 }}>
+                            <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.sourceLabel}</div>
+                            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
+                              {item.status} · {item.validationStatus} · {item.unresolvedMappingCount} unresolved mappings
+                            </div>
+                          </Card>
+                        )) : <div style={{ ...mono, fontSize: 10, color: T.muted }}>No proof imports yet.</div>}
+                      </Card>
+
+                      <Card style={{ padding: 12, background: T.surface, display: 'grid', gap: 8 }}>
+                        <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>Crosswalk Review</div>
+                        {proofDashboard?.crosswalkReviewQueue.length ? proofDashboard.crosswalkReviewQueue.slice(0, 5).map(item => (
+                          <Card key={item.officialCodeCrosswalkId} style={{ padding: 10, background: T.surface2 }}>
+                            <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.internalCompilerId}</div>
+                            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
+                              {item.officialWebCode ?? 'No public code'} · {item.confidence}
+                            </div>
+                          </Card>
+                        )) : <div style={{ ...mono, fontSize: 10, color: T.muted }}>No pending crosswalk reviews.</div>}
+                      </Card>
+
+                      <Card style={{ padding: 12, background: T.surface, display: 'grid', gap: 8 }}>
+                        <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>Runs</div>
+                        {proofDashboard?.proofRuns.length ? proofDashboard.proofRuns.slice(0, 4).map(item => (
+                          <Card key={item.simulationRunId} style={{ padding: 10, background: T.surface2 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                              <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.runLabel}</div>
+                              <Chip color={item.activeFlag ? T.success : T.dim}>{item.activeFlag ? 'Active' : item.status}</Chip>
+                            </div>
+                            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>Seed {item.seed} · {new Date(item.createdAt).toLocaleString('en-IN')}</div>
+                            <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                              {!item.activeFlag ? <Btn size="sm" variant="ghost" onClick={() => handleActivateProofRun(item.simulationRunId)}>Set Active</Btn> : null}
+                              <Btn size="sm" variant="ghost" onClick={() => handleArchiveProofRun(item.simulationRunId)}>Archive</Btn>
+                              {proofDashboard?.activeRunDetail?.snapshots[0] ? <Btn size="sm" variant="ghost" onClick={() => handleRestoreProofSnapshot(item.simulationRunId, proofDashboard.activeRunDetail?.snapshots[0]?.simulationResetSnapshotId)}>Restore Snapshot</Btn> : null}
+                            </div>
+                          </Card>
+                        )) : <div style={{ ...mono, fontSize: 10, color: T.muted }}>No proof simulation runs yet.</div>}
+                      </Card>
+                    </div>
+
+                    {proofDashboard?.activeRunDetail ? (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+                        <Card style={{ padding: 12, background: T.surface, display: 'grid', gap: 8 }}>
+                          <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>Teacher Load</div>
+                          {proofDashboard.activeRunDetail.teacherAllocationLoad.slice(0, 6).map(load => (
+                            <Card key={load.teacherLoadProfileId} style={{ padding: 10, background: T.surface2 }}>
+                              <div style={{ ...mono, fontSize: 10, color: T.text }}>{load.facultyName}</div>
+                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
+                                Sem {load.semesterNumber} · {load.weeklyContactHours} contact hrs · {load.assignedCredits} credits
+                              </div>
+                            </Card>
+                          ))}
+                        </Card>
+
+                        <Card style={{ padding: 12, background: T.surface, display: 'grid', gap: 8 }}>
+                          <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>Queue Preview</div>
+                          {proofDashboard.activeRunDetail.queuePreview.length ? proofDashboard.activeRunDetail.queuePreview.map(item => (
+                            <Card key={item.reassessmentEventId} style={{ padding: 10, background: T.surface2 }}>
+                              <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.studentName} · {item.courseCode}</div>
+                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
+                                {item.assignedToRole} · {item.status} · due {new Date(item.dueAt).toLocaleString('en-IN')}
+                              </div>
+                              {item.sourceKind === 'checkpoint-playback' ? (
+                                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
+                                  Playback fallback · {item.stageLabel ?? 'checkpoint-sourced'}
+                                </div>
+                              ) : null}
+                              {item.coEvidenceMode ? (
+                                <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 4, lineHeight: 1.8 }}>
+                                  CO evidence mode: {item.coEvidenceMode}.
+                                </div>
+                              ) : null}
+                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                                {item.riskChangeFromPreviousCheckpointScaled != null ? <Chip color={item.riskChangeFromPreviousCheckpointScaled > 0 ? T.danger : item.riskChangeFromPreviousCheckpointScaled < 0 ? T.success : T.dim}>{`Δ ${item.riskChangeFromPreviousCheckpointScaled > 0 ? '+' : ''}${item.riskChangeFromPreviousCheckpointScaled}`}</Chip> : null}
+                                {item.counterfactualLiftScaled != null ? <Chip color={item.counterfactualLiftScaled > 0 ? T.success : item.counterfactualLiftScaled < 0 ? T.warning : T.dim}>{`Lift ${item.counterfactualLiftScaled > 0 ? '+' : ''}${item.counterfactualLiftScaled}`}</Chip> : null}
+                              </div>
+                            </Card>
+                          )) : <div style={{ ...mono, fontSize: 10, color: T.muted }}>No active reassessment queue items.</div>}
+                        </Card>
+
+                        <Card style={{ padding: 12, background: T.surface, display: 'grid', gap: 8 }}>
+                          <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>Lifecycle Audit</div>
+                          {proofDashboard.lifecycleAudit.length ? proofDashboard.lifecycleAudit.slice(0, 6).map(item => (
+                            <Card key={item.simulationLifecycleAuditId} style={{ padding: 10, background: T.surface2 }}>
+                              <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.actionType}</div>
+                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
+                                {item.createdByFacultyName ?? 'System'} · {new Date(item.createdAt).toLocaleString('en-IN')}
+                              </div>
+                            </Card>
+                          )) : <div style={{ ...mono, fontSize: 10, color: T.muted }}>No proof lifecycle audit entries yet.</div>}
+                          </Card>
+                        </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <InfoBanner message="No proof run exists for this batch yet. Create an import, approve it, then start the first run." />
+                    )}
+                  </Card>
+
                   <div>
-                    <SectionHeading title="Batch Policy Override" eyebrow="Governance" caption="Adjust grading bands and operational limits here, or reset the batch back to inherited defaults." />
+                    <SectionHeading title="Batch Policy Override" eyebrow="Governance" caption="Adjust deterministic MSRUAS attendance, condonation, grading, and operational limits here, or reset the batch back to inherited defaults." />
                   </div>
 
                   <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', marginTop: 14 }}>
@@ -4558,11 +5679,41 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                       <FieldLabel>Working Days</FieldLabel>
                       <DayToggle days={WEEKDAYS} selected={policyForm.workingDays} onChange={next => setPolicyForm(prev => ({ ...prev, workingDays: next as PolicyFormState['workingDays'] }))} />
                     </div>
+                    <div><FieldLabel>Coursework Weeks</FieldLabel><TextInput value={policyForm.courseworkWeeks} onChange={event => setPolicyForm(prev => ({ ...prev, courseworkWeeks: event.target.value }))} /></div>
+                    <div><FieldLabel>Exam Prep Weeks</FieldLabel><TextInput value={policyForm.examPreparationWeeks} onChange={event => setPolicyForm(prev => ({ ...prev, examPreparationWeeks: event.target.value }))} /></div>
+                    <div><FieldLabel>SEE Weeks</FieldLabel><TextInput value={policyForm.seeWeeks} onChange={event => setPolicyForm(prev => ({ ...prev, seeWeeks: event.target.value }))} /></div>
+                    <div><FieldLabel>Total Weeks</FieldLabel><TextInput value={policyForm.totalWeeks} onChange={event => setPolicyForm(prev => ({ ...prev, totalWeeks: event.target.value }))} /></div>
+                    <div><FieldLabel>Minimum Attendance %</FieldLabel><TextInput value={policyForm.minimumAttendancePercent} onChange={event => setPolicyForm(prev => ({ ...prev, minimumAttendancePercent: event.target.value }))} /></div>
+                    <div><FieldLabel>Condonation Floor %</FieldLabel><TextInput value={policyForm.condonationFloorPercent} onChange={event => setPolicyForm(prev => ({ ...prev, condonationFloorPercent: event.target.value }))} /></div>
+                    <div><FieldLabel>Condonation Shortage %</FieldLabel><TextInput value={policyForm.condonationShortagePercent} onChange={event => setPolicyForm(prev => ({ ...prev, condonationShortagePercent: event.target.value }))} /></div>
+                    <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${T.border2}`, background: T.surface2, ...mono, fontSize: 11, color: T.text }}>
+                        <input type="checkbox" checked={policyForm.condonationRequiresApproval} onChange={event => setPolicyForm(prev => ({ ...prev, condonationRequiresApproval: event.target.checked }))} />
+                        Condonation needs approval
+                      </label>
+                    </div>
+                    <div><FieldLabel>CE Needed For SEE</FieldLabel><TextInput value={policyForm.minimumCeForSeeEligibility} onChange={event => setPolicyForm(prev => ({ ...prev, minimumCeForSeeEligibility: event.target.value }))} /></div>
+                    <div><FieldLabel>Minimum CE Mark</FieldLabel><TextInput value={policyForm.minimumCeMark} onChange={event => setPolicyForm(prev => ({ ...prev, minimumCeMark: event.target.value }))} /></div>
+                    <div><FieldLabel>Minimum SEE Mark</FieldLabel><TextInput value={policyForm.minimumSeeMark} onChange={event => setPolicyForm(prev => ({ ...prev, minimumSeeMark: event.target.value }))} /></div>
+                    <div><FieldLabel>Minimum Overall Mark</FieldLabel><TextInput value={policyForm.minimumOverallMark} onChange={event => setPolicyForm(prev => ({ ...prev, minimumOverallMark: event.target.value }))} /></div>
+                    <div><FieldLabel>SGPA / CGPA Decimals</FieldLabel><TextInput value={policyForm.sgpaCgpaDecimals} onChange={event => setPolicyForm(prev => ({ ...prev, sgpaCgpaDecimals: event.target.value }))} /></div>
                     <div style={{ gridColumn: '1 / -1' }}>
                       <FieldLabel>Repeat Course Policy</FieldLabel>
                       <SelectInput value={policyForm.repeatedCoursePolicy} onChange={event => setPolicyForm(prev => ({ ...prev, repeatedCoursePolicy: event.target.value as PolicyFormState['repeatedCoursePolicy'] }))}>
                         <option value="latest-attempt">Latest attempt</option><option value="best-attempt">Best attempt</option>
                       </SelectInput>
+                    </div>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${T.border2}`, background: T.surface2, ...mono, fontSize: 11, color: T.text }}>
+                        <input type="checkbox" checked={policyForm.allowCondonationForSeeEligibility} onChange={event => setPolicyForm(prev => ({ ...prev, allowCondonationForSeeEligibility: event.target.checked }))} />
+                        Allow condoned attendance cases to remain SEE-eligible
+                      </label>
+                    </div>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${T.border2}`, background: T.surface2, ...mono, fontSize: 11, color: T.text }}>
+                        <input type="checkbox" checked={policyForm.applyBeforeStatusDetermination} onChange={event => setPolicyForm(prev => ({ ...prev, applyBeforeStatusDetermination: event.target.checked }))} />
+                        Apply rounding before pass / fail and grade status determination
+                      </label>
                     </div>
                   </div>
 
@@ -4791,6 +5942,61 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                           {entityEditors.curriculum.curriculumCourseId ? <Btn type="button" variant="ghost" onClick={resetCurriculumEditor}>Cancel Edit</Btn> : null}
                         </div>
                       </form>
+                      <Card style={{ padding: 16, background: T.surface2, display: 'grid', gap: 12 }}>
+                        <SectionHeading title="Model Inputs" eyebrow="Risk Model" caption="Manage the course outcomes, prerequisite edges, bridge modules, and topic partitions that feed the proof model and world generation for this batch." />
+                        {curriculumFeatureItems.length === 0 ? (
+                          <EmptyState title="No model input bundle yet" body="Save at least one curriculum row first. The sysadmin editor will then project those rows into the proof curriculum snapshot." />
+                        ) : (
+                          <>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1fr) minmax(0, 1fr)', gap: 10 }}>
+                              <div>
+                                <FieldLabel>Course</FieldLabel>
+                                <SelectInput
+                                  value={selectedCurriculumFeatureCourseId}
+                                  onChange={event => {
+                                    const nextId = event.target.value
+                                    setSelectedCurriculumFeatureCourseId(nextId)
+                                    const nextItem = curriculumFeatureItems.find(item => item.curriculumCourseId === nextId) ?? null
+                                    setCurriculumFeatureForm(hydrateCurriculumFeatureForm(nextItem))
+                                  }}
+                                >
+                                  {curriculumFeatureItems.map(item => (
+                                    <option key={item.curriculumCourseId} value={item.curriculumCourseId}>
+                                      {`Sem ${item.semesterNumber} · ${item.courseCode} · ${item.title}`}
+                                    </option>
+                                  ))}
+                                </SelectInput>
+                              </div>
+                              <div style={{ display: 'grid', gap: 8 }}>
+                                <FieldLabel>Snapshot Status</FieldLabel>
+                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                  <Chip color={curriculumFeatureConfig?.curriculumImportVersion ? T.accent : T.dim}>
+                                    {curriculumFeatureConfig?.curriculumImportVersion
+                                      ? `${curriculumFeatureConfig.curriculumImportVersion.sourceLabel} · ${curriculumFeatureConfig.curriculumImportVersion.validationStatus}`
+                                      : 'No import snapshot yet'}
+                                  </Chip>
+                                  {selectedCurriculumFeatureItem?.outcomeOverride ? <Chip color={T.success}>Batch outcome override active</Chip> : <Chip color={T.dim}>Using default outcomes</Chip>}
+                                </div>
+                              </div>
+                            </div>
+                            <InfoBanner message="Outcome line format: CO1 | Apply | Description. Prerequisite line format: COURSE_CODE | explicit|added | rationale. Saving here updates the batch proof snapshot and, when proof data exists for this batch, triggers an automatic rerun." />
+                            <div style={{ display: 'grid', gridTemplateColumns: viewportWidth < 1240 ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+                              <div><FieldLabel>Assessment Profile</FieldLabel><TextInput value={curriculumFeatureForm.assessmentProfile} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, assessmentProfile: event.target.value }))} placeholder="admin-authored" /></div>
+                              <div><FieldLabel>Bridge Modules</FieldLabel><TextAreaInput value={curriculumFeatureForm.bridgeModulesText} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, bridgeModulesText: event.target.value }))} rows={4} placeholder={'Bridge topic 1\nBridge topic 2'} /></div>
+                              <div style={{ gridColumn: '1 / -1' }}><FieldLabel>Course Outcomes</FieldLabel><TextAreaInput value={curriculumFeatureForm.outcomesText} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, outcomesText: event.target.value }))} rows={6} placeholder={'CO1 | Understand | Explain the core concepts\nCO2 | Apply | Apply the methods to structured problems'} /></div>
+                              <div style={{ gridColumn: '1 / -1' }}><FieldLabel>Prerequisites</FieldLabel><TextAreaInput value={curriculumFeatureForm.prerequisitesText} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, prerequisitesText: event.target.value }))} rows={5} placeholder={'MATH201 | explicit | Calculus foundation for optimisation\nCS202 | added | Added dependency for implementation readiness'} /></div>
+                              <div><FieldLabel>TT1 Topics</FieldLabel><TextAreaInput value={curriculumFeatureForm.tt1TopicsText} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, tt1TopicsText: event.target.value }))} rows={4} placeholder={'Unit 1\nUnit 2'} /></div>
+                              <div><FieldLabel>TT2 Topics</FieldLabel><TextAreaInput value={curriculumFeatureForm.tt2TopicsText} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, tt2TopicsText: event.target.value }))} rows={4} placeholder={'Unit 3\nUnit 4'} /></div>
+                              <div><FieldLabel>SEE Topics</FieldLabel><TextAreaInput value={curriculumFeatureForm.seeTopicsText} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, seeTopicsText: event.target.value }))} rows={4} placeholder={'Comprehensive topic 1\nComprehensive topic 2'} /></div>
+                              <div><FieldLabel>Workbook Topics</FieldLabel><TextAreaInput value={curriculumFeatureForm.workbookTopicsText} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, workbookTopicsText: event.target.value }))} rows={4} placeholder={'Workbook topic 1\nWorkbook topic 2'} /></div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                              <Btn type="button" onClick={() => void handleSaveCurriculumFeatureConfig()} disabled={!selectedCurriculumFeatureItem}>Save Model Inputs</Btn>
+                              {selectedCurriculumFeatureItem ? <Chip color={T.warning}>{`${selectedCurriculumFeatureItem.prerequisites.length} prerequisites · ${selectedCurriculumFeatureItem.bridgeModules.length} bridge modules`}</Chip> : null}
+                            </div>
+                          </>
+                        )}
+                      </Card>
                     </Card>
                   ) : (
                     <Card style={{ padding: 18, display: 'grid', gap: 10 }}>

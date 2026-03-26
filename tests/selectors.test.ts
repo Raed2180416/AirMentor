@@ -99,28 +99,28 @@ describe('selectors', () => {
       quizCount: 2,
       assignmentCount: 1,
       quizComponents: [
-        { id: 'quiz-a', label: 'Quiz A', rawMax: 0 },
-        { id: 'quiz-b', label: '', rawMax: 240 },
+        { id: 'quiz-a', label: 'Quiz A', rawMax: 0, weightage: 0 },
+        { id: 'quiz-b', label: '', rawMax: 240, weightage: 0 },
       ],
       assignmentComponents: [
-        { id: 'assignment-a', label: '', rawMax: -5 },
+        { id: 'assignment-a', label: '', rawMax: -5, weightage: 0 },
       ],
       status: 'Configured',
     }, cs401a)
 
     expect(normalized.quizComponents).toEqual([
-      { id: 'quiz-a', label: 'Quiz A', rawMax: 1, weightage: 10 },
-      { id: 'quiz-b', label: 'Quiz 2', rawMax: 100, weightage: 10 },
+      { id: 'quiz-a', label: 'Quiz A', rawMax: 1, weightage: 0 },
+      { id: 'quiz-b', label: 'Quiz 2', rawMax: 100, weightage: 0 },
     ])
     expect(normalized.assignmentComponents).toEqual([
-      { id: 'assignment-a', label: 'Assignment 1', rawMax: 1, weightage: 10 },
+      { id: 'assignment-a', label: 'Assignment 1', rawMax: 1, weightage: 0 },
     ])
     expect(normalized.status).toBe('Configured')
   })
 
   it('keeps sysadmin CE policy context and weighted components in sync', () => {
     const normalized = normalizeSchemeState({
-      finalsMax: 80,
+      finalsMax: 100,
       quizCount: 1,
       assignmentCount: 1,
       termTestWeights: { tt1: 25, tt2: 15 },

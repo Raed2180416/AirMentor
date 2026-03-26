@@ -6,8 +6,8 @@ import { facultyProfiles, roleGrants, sessions, uiPreferences, userAccounts, use
 import { createId } from '../lib/ids.js'
 import { conflict, badRequest, notFound, unauthorized } from '../lib/http-errors.js'
 import { verifyPassword } from '../lib/passwords.js'
-import { addHours } from '../lib/time.js'
-import { ensurePreference, parseOrThrow, requireAuth, resolveRequestAuth } from './support.js'
+import { addHours, nowIso } from '../lib/time.js'
+import { ensurePreference, parseOrThrow, requireAuth, resolveRequestAuth, sortActiveRoleGrantRows } from './support.js'
 
 const loginSchema = z.object({
   identifier: z.string().min(1),
@@ -56,9 +56,10 @@ export async function registerSessionRoutes(app: FastifyInstance, context: Route
     },
   }, async request => {
     const auth = requireAuth(request)
+    const now = nowIso()
     await context.db.update(sessions).set({
-      lastSeenAt: context.now(),
-      updatedAt: context.now(),
+      lastSeenAt: now,
+      updatedAt: now,
     }).where(eq(sessions.sessionId, auth.sessionId))
     return buildSessionPayload(context, auth.sessionId)
   })
@@ -83,10 +84,12 @@ export async function registerSessionRoutes(app: FastifyInstance, context: Route
 
     const [faculty] = await context.db.select().from(facultyProfiles).where(and(eq(facultyProfiles.userId, user.userId), eq(facultyProfiles.status, 'active')))
     if (!faculty) throw notFound('Faculty profile is missing or inactive for this account')
-    const grants = await context.db.select().from(roleGrants).where(and(eq(roleGrants.facultyId, faculty.facultyId), eq(roleGrants.status, 'active')))
+    const grants = sortActiveRoleGrantRows(
+      await context.db.select().from(roleGrants).where(and(eq(roleGrants.facultyId, faculty.facultyId), eq(roleGrants.status, 'active'))),
+    )
     if (grants.length === 0) throw badRequest('No active role grants are configured for this user')
 
-    const now = context.now()
+    const now = nowIso()
     const expiresAt = addHours(now, context.config.sessionTtlHours)
     const sessionId = createId('session')
     await ensurePreference(context, user.userId)
@@ -138,7 +141,7 @@ export async function registerSessionRoutes(app: FastifyInstance, context: Route
     if (!match) throw unauthorized('Role grant is not available for this session')
     await context.db.update(sessions).set({
       activeRoleGrantId: body.roleGrantId,
-      updatedAt: context.now(),
+      updatedAt: nowIso(),
     }).where(eq(sessions.sessionId, auth.sessionId))
     return buildSessionPayload(context, auth.sessionId)
   })

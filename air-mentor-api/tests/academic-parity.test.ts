@@ -10,6 +10,35 @@ afterEach(async () => {
   current = null
 })
 
+function weekdayFromDateIso(value: string) {
+  const parsed = new Date(value)
+  const weekday = parsed.getUTCDay()
+  return (['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][weekday] ?? null) as string | null
+}
+
+function timetableBlocksCanOverlap(
+  left: { kind?: string; dateISO?: string; day: string },
+  right: { kind?: string; dateISO?: string; day: string },
+) {
+  if (left.kind === 'extra' && left.dateISO && right.kind === 'extra' && right.dateISO) {
+    return left.dateISO === right.dateISO
+  }
+  if (left.kind === 'extra' && left.dateISO && right.kind !== 'extra') {
+    return weekdayFromDateIso(left.dateISO) === right.day
+  }
+  if (right.kind === 'extra' && right.dateISO && left.kind !== 'extra') {
+    return weekdayFromDateIso(right.dateISO) === left.day
+  }
+  return left.day === right.day
+}
+
+function timetableRangesOverlap(
+  left: { startMinutes: number; endMinutes: number },
+  right: { startMinutes: number; endMinutes: number },
+) {
+  return left.startMinutes < right.endMinutes && right.startMinutes < left.endMinutes
+}
+
 async function grantCourseOwnership(cookie: string, offeringId: string, facultyId = 't1') {
   if (!current) throw new Error('Test app is not initialized')
   const response = await current.app.inject({
@@ -27,6 +56,40 @@ async function grantCourseOwnership(cookie: string, offeringId: string, facultyI
 }
 
 describe('academic bootstrap', () => {
+  it('exposes non-overlapping faculty timetable blocks in the proof bootstrap for course-leader playback', async () => {
+    current = await createTestApp()
+    const login = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+
+    const response = await current.app.inject({
+      method: 'GET',
+      url: '/api/academic/bootstrap',
+      headers: { cookie: login.cookie },
+    })
+
+    expect(response.statusCode).toBe(200)
+    const snapshot = response.json()
+    const timetable = snapshot.runtime.timetableByFacultyId?.mnc_t1
+    expect(timetable).toBeTruthy()
+    if (!timetable) throw new Error('Expected a proof timetable for mnc_t1')
+
+    const classBlocks = timetable.classBlocks as Array<{
+      kind?: string
+      dateISO?: string
+      day: string
+      startMinutes: number
+      endMinutes: number
+    }>
+
+    for (let index = 0; index < classBlocks.length; index += 1) {
+      const left = classBlocks[index]
+      for (let compareIndex = index + 1; compareIndex < classBlocks.length; compareIndex += 1) {
+        const right = classBlocks[compareIndex]
+        if (!timetableBlocksCanOverlap(left, right)) continue
+        expect(timetableRangesOverlap(left, right)).toBe(false)
+      }
+    }
+  })
+
   it('ignores legacy academic asset snapshots and derives the live view from admin-owned records', async () => {
     current = await createTestApp()
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
@@ -178,25 +241,25 @@ describe('academic bootstrap', () => {
       payload: {
         scheme: {
           finalsMax: 100,
-          termTestWeights: { tt1: 20, tt2: 10 },
-          quizWeight: 8,
-          assignmentWeight: 10,
+          termTestWeights: { tt1: 20, tt2: 15 },
+          quizWeight: 10,
+          assignmentWeight: 14,
           quizCount: 2,
           assignmentCount: 2,
           policyContext: {
-            ce: 50,
-            see: 50,
+            ce: 60,
+            see: 40,
             maxTermTests: 2,
             maxQuizzes: 2,
             maxAssignments: 2,
           },
           quizComponents: [
-            { id: 'quiz-1', label: 'Quiz 1', rawMax: 10, weightage: 4 },
-            { id: 'quiz-2', label: 'Quiz 2', rawMax: 10, weightage: 4 },
+            { id: 'quiz-1', label: 'Quiz 1', rawMax: 10, weightage: 5 },
+            { id: 'quiz-2', label: 'Quiz 2', rawMax: 10, weightage: 5 },
           ],
           assignmentComponents: [
-            { id: 'assignment-1', label: 'Assignment 1', rawMax: 10, weightage: 5 },
-            { id: 'assignment-2', label: 'Assignment 2', rawMax: 10, weightage: 5 },
+            { id: 'assignment-1', label: 'Assignment 1', rawMax: 10, weightage: 7 },
+            { id: 'assignment-2', label: 'Assignment 2', rawMax: 10, weightage: 7 },
           ],
           status: 'Needs Setup',
         },
@@ -211,25 +274,25 @@ describe('academic bootstrap', () => {
       payload: {
         scheme: {
           finalsMax: 100,
-          termTestWeights: { tt1: 20, tt2: 10 },
-          quizWeight: 8,
-          assignmentWeight: 12,
+          termTestWeights: { tt1: 20, tt2: 15 },
+          quizWeight: 10,
+          assignmentWeight: 15,
           quizCount: 2,
           assignmentCount: 2,
           policyContext: {
-            ce: 50,
-            see: 50,
+            ce: 60,
+            see: 40,
             maxTermTests: 2,
             maxQuizzes: 2,
             maxAssignments: 2,
           },
           quizComponents: [
-            { id: 'quiz-1', label: 'Quiz 1', rawMax: 10, weightage: 4 },
-            { id: 'quiz-2', label: 'Quiz 2', rawMax: 10, weightage: 4 },
+            { id: 'quiz-1', label: 'Quiz 1', rawMax: 10, weightage: 5 },
+            { id: 'quiz-2', label: 'Quiz 2', rawMax: 10, weightage: 5 },
           ],
           assignmentComponents: [
-            { id: 'assignment-1', label: 'Assignment 1', rawMax: 10, weightage: 6 },
-            { id: 'assignment-2', label: 'Assignment 2', rawMax: 10, weightage: 6 },
+            { id: 'assignment-1', label: 'Assignment 1', rawMax: 10, weightage: 7 },
+            { id: 'assignment-2', label: 'Assignment 2', rawMax: 10, weightage: 8 },
           ],
           status: 'Configured',
           configuredAt: Date.now(),

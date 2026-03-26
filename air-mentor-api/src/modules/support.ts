@@ -16,6 +16,7 @@ import type { RouteContext } from '../app.js'
 import { createId } from '../lib/ids.js'
 import { conflict, forbidden, unauthorized, badRequest } from '../lib/http-errors.js'
 import { parseJson, stringifyJson } from '../lib/json.js'
+import { nowIso } from '../lib/time.js'
 
 export const sessionCookieSchema = z.object({
   roleGrantId: z.string().min(1),
@@ -26,11 +27,29 @@ export const apiRoleSchema = z.enum(['SYSTEM_ADMIN', 'HOD', 'COURSE_LEADER', 'ME
 export const prioritySchema = z.enum(['P1', 'P2', 'P3', 'P4'])
 export const adminRequestStatusSchema = z.enum(['New', 'In Review', 'Needs Info', 'Approved', 'Rejected', 'Implemented', 'Closed'])
 
+const ROLE_LOGIN_PRIORITY: Record<z.infer<typeof apiRoleSchema>, number> = {
+  SYSTEM_ADMIN: 0,
+  COURSE_LEADER: 1,
+  MENTOR: 2,
+  HOD: 3,
+}
+
+export function sortActiveRoleGrantRows(rows: Array<typeof roleGrants.$inferSelect>) {
+  return [...rows].sort((left, right) => {
+    const roleOrder = (ROLE_LOGIN_PRIORITY[left.roleCode as z.infer<typeof apiRoleSchema>] ?? Number.MAX_SAFE_INTEGER)
+      - (ROLE_LOGIN_PRIORITY[right.roleCode as z.infer<typeof apiRoleSchema>] ?? Number.MAX_SAFE_INTEGER)
+    if (roleOrder !== 0) return roleOrder
+    const createdOrder = left.createdAt.localeCompare(right.createdAt)
+    if (createdOrder !== 0) return createdOrder
+    return left.grantId.localeCompare(right.grantId)
+  })
+}
+
 export async function resolveRequestAuth(context: RouteContext, sessionId: string | undefined) {
   if (!sessionId) return null
   const [session] = await context.db.select().from(sessions).where(eq(sessions.sessionId, sessionId))
   if (!session) return null
-  if (new Date(session.expiresAt).getTime() <= new Date(context.now()).getTime()) return null
+  if (new Date(session.expiresAt).getTime() <= new Date(nowIso()).getTime()) return null
 
   const [user] = await context.db.select().from(userAccounts).where(eq(userAccounts.userId, session.userId))
   if (!user || user.status !== 'active') return null
@@ -39,7 +58,8 @@ export async function resolveRequestAuth(context: RouteContext, sessionId: strin
   const grants = faculty
     ? await context.db.select().from(roleGrants).where(and(eq(roleGrants.facultyId, faculty.facultyId), eq(roleGrants.status, 'active'))).orderBy(asc(roleGrants.createdAt))
     : []
-  const active = grants.find(item => item.grantId === session.activeRoleGrantId) ?? grants[0]
+  const orderedGrants = sortActiveRoleGrantRows(grants)
+  const active = orderedGrants.find(item => item.grantId === session.activeRoleGrantId) ?? orderedGrants[0]
   if (!active) return null
 
   return {
@@ -50,7 +70,7 @@ export async function resolveRequestAuth(context: RouteContext, sessionId: strin
     facultyId: faculty?.facultyId ?? null,
     facultyName: faculty?.displayName ?? null,
     activeRoleGrant: mapRoleGrant(active),
-    availableRoleGrants: grants.map(mapRoleGrant),
+    availableRoleGrants: orderedGrants.map(mapRoleGrant),
   }
 }
 

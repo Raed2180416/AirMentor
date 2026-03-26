@@ -17,5 +17,6 @@ echo "Frontend URL: http://${ui_host}:${ui_port}"
 echo "Backend URL: $api_base_url"
 echo "Backend log: $backend_log"
 
-VITE_AIRMENTOR_API_BASE_URL="$api_base_url" \
+AIRMENTOR_UI_PROXY_API_TARGET="$api_base_url" \
+VITE_AIRMENTOR_API_BASE_URL="/" \
 npm exec vite -- --host "$ui_host" --port "$ui_port"

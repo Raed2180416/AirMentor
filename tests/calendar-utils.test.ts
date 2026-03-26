@@ -17,7 +17,11 @@ import {
   startOfWeekISO,
 } from '../src/calendar-utils'
 
-const faculty = FACULTY.find(item => item.facultyId === 't1') ?? FACULTY[0]
+const faculty = (() => {
+  const resolved = FACULTY.find(item => item.facultyId === 't1') ?? FACULTY[0]
+  if (!resolved) throw new Error('Expected seeded faculty fixture data.')
+  return resolved
+})()
 const offerings = OFFERINGS.filter(item => faculty.offeringIds.includes(item.offId))
 
 describe('calendar utils', () => {
@@ -29,7 +33,12 @@ describe('calendar utils', () => {
       second.classBlocks.map(block => `${block.id}:${block.day}:${block.slotId}`),
     )
 
-    const occupied = first.classBlocks.flatMap(block => getSpannedSlotIds(block.slotId, block.slotSpan, first.slots).map(slotId => `${block.day}:${slotId}`))
+    const occupied = first.classBlocks
+      .flatMap(block => {
+        const slotId = block.slotId
+        if (typeof slotId !== 'string' || slotId.length === 0) return []
+        return getSpannedSlotIds(slotId, block.slotSpan ?? 1, first.slots).map(spannedSlotId => `${block.day}:${spannedSlotId}`)
+      })
     expect(new Set(occupied).size).toBe(occupied.length)
     expect(first.classBlocks.every(block => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].includes(block.day))).toBe(true)
   })
@@ -62,7 +71,7 @@ describe('calendar utils', () => {
       dateISO: '2026-03-18',
       slot: DEFAULT_TIMETABLE_SLOTS[1],
     })
-    const oneTimeUpdated = applyPlacementToTask(baseTask, timedPlacement, DEFAULT_TIMETABLE_SLOTS[1])
+    const oneTimeUpdated = applyPlacementToTask(baseTask, timedPlacement)
 
     expect(oneTimeUpdated.dueDateISO).toBe('2026-03-18')
     expect(oneTimeUpdated.scheduleMeta).toBeUndefined()

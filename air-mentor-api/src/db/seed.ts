@@ -21,10 +21,20 @@ import {
   academicRuntimeState,
   auditEvents,
   batches,
+  alertDecisions,
+  alertOutcomes,
+  bridgeModules,
   branches,
+  courseTopicPartitions,
   courses,
+  curriculumEdges,
+  curriculumImportVersions,
+  curriculumNodes,
   curriculumCourses,
   departments,
+  electiveBaskets,
+  electiveOptions,
+  electiveRecommendations,
   facultyAppointments,
   facultyCalendarWorkspaces,
   courseOutcomeOverrides,
@@ -35,65 +45,37 @@ import {
   offeringAssessmentSchemes,
   offeringQuestionPapers,
   policyOverrides,
+  reassessmentEvents,
+  riskAssessments,
   roleGrants,
   sectionOfferings,
+  semesterTransitionLogs,
+  simulationResetSnapshots,
+  simulationRuns,
   studentAssessmentScores,
   sessions,
+  studentAgentCards,
+  studentAgentMessages,
+  studentAgentSessions,
   studentAcademicProfiles,
   studentAttendanceSnapshots,
   studentEnrollments,
   studentInterventions,
+  studentLatentStates,
+  studentObservedSemesterStates,
   students,
+  teacherAllocations,
+  teacherLoadProfiles,
   transcriptSubjectResults,
   transcriptTermResults,
   uiPreferences,
   userAccounts,
   userPasswordCredentials,
 } from './schema.js'
+import { DEFAULT_POLICY } from '../modules/admin-structure.js'
+import { seedMsruasProofSandbox } from '../lib/msruas-proof-sandbox.js'
 import { hashPassword } from '../lib/passwords.js'
 import { nowIso } from '../lib/time.js'
-
-const DEFAULT_POLICY = {
-  gradeBands: [
-    { grade: 'O', minimumMark: 90, maximumMark: 100, gradePoint: 10 },
-    { grade: 'A+', minimumMark: 80, maximumMark: 89, gradePoint: 9 },
-    { grade: 'A', minimumMark: 70, maximumMark: 79, gradePoint: 8 },
-    { grade: 'B+', minimumMark: 60, maximumMark: 69, gradePoint: 7 },
-    { grade: 'B', minimumMark: 55, maximumMark: 59, gradePoint: 6 },
-    { grade: 'C', minimumMark: 50, maximumMark: 54, gradePoint: 5 },
-    { grade: 'P', minimumMark: 40, maximumMark: 49, gradePoint: 4 },
-    { grade: 'F', minimumMark: 0, maximumMark: 39, gradePoint: 0 },
-  ],
-  ceSeeSplit: {
-    ce: 50,
-    see: 50,
-  },
-  ceComponentCaps: {
-    termTestsWeight: 20,
-    quizWeight: 10,
-    assignmentWeight: 20,
-    maxTermTests: 2,
-    maxQuizzes: 2,
-    maxAssignments: 2,
-  },
-  workingCalendar: {
-    days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
-    dayStart: '08:30',
-    dayEnd: '16:30',
-  },
-  sgpaCgpaRules: {
-    sgpaModel: 'credit-weighted',
-    cgpaModel: 'credit-weighted-cumulative',
-    rounding: '2-decimal',
-    includeFailedCredits: false,
-    repeatedCoursePolicy: 'latest-attempt',
-  },
-  progressionRules: {
-    passMarkPercent: 40,
-    minimumCgpaForPromotion: 5,
-    requireNoActiveBacklogs: true,
-  },
-} as const
 
 function parseAcademicYearStart(academicYearLabel: string) {
   const match = academicYearLabel.match(/^(\d{4})/)
@@ -281,6 +263,28 @@ export async function seedIntoDatabase(db: AppDb, client: { query: (sql: string,
     })
   }
 
+  await db.delete(alertOutcomes)
+  await db.delete(alertDecisions)
+  await db.delete(reassessmentEvents)
+  await db.delete(riskAssessments)
+  await db.delete(electiveRecommendations)
+  await db.delete(simulationResetSnapshots)
+  await db.delete(semesterTransitionLogs)
+  await db.delete(studentAgentMessages)
+  await db.delete(studentAgentSessions)
+  await db.delete(studentAgentCards)
+  await db.delete(studentObservedSemesterStates)
+  await db.delete(studentLatentStates)
+  await db.delete(teacherAllocations)
+  await db.delete(teacherLoadProfiles)
+  await db.delete(simulationRuns)
+  await db.delete(electiveOptions)
+  await db.delete(electiveBaskets)
+  await db.delete(courseTopicPartitions)
+  await db.delete(bridgeModules)
+  await db.delete(curriculumEdges)
+  await db.delete(curriculumNodes)
+  await db.delete(curriculumImportVersions)
   await db.delete(auditEvents)
   await db.delete(adminReminders)
   await db.delete(adminRequestTransitions)
@@ -629,6 +633,12 @@ export async function seedIntoDatabase(db: AppDb, client: { query: (sql: string,
       })))
     }
   }
+
+  await seedMsruasProofSandbox(db, {
+    institutionId: seedData.institution.institutionId,
+    now,
+    policy: DEFAULT_POLICY,
+  })
 }
 
 export async function main() {

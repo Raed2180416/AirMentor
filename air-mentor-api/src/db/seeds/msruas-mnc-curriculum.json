@@ -1,0 +1,1861 @@
+{
+  "courses": [
+    {
+      "title": "Basic Electrical Engineering",
+      "semester": 1,
+      "credits": 4,
+      "assessmentProfile": "theory_heavy",
+      "explicitPrerequisites": [],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "DC Circuits (KCL, KVL, Mesh/Node analysis)",
+        "AC Fundamentals (R-L-C circuits, Three-phase)",
+        "Transformers"
+      ],
+      "tt2Topics": [
+        "DC Machines",
+        "Synchronous Generators"
+      ],
+      "seeTopics": [
+        "DC Circuits (KCL, KVL, Mesh/Node analysis)",
+        "AC Fundamentals (R-L-C circuits, Three-phase)",
+        "Transformers",
+        "DC Machines",
+        "Synchronous Generators",
+        "Domestic Wiring & Safety."
+      ],
+      "workbookTopics": [
+        "DC Circuits (KCL, KVL, Mesh/Node analysis)",
+        "AC Fundamentals (R-L-C circuits, Three-phase)",
+        "Transformers",
+        "DC Machines",
+        "Synchronous Generators",
+        "Domestic Wiring & Safety."
+      ],
+      "internalCompilerId": "AMC-S1-01",
+      "officialWebCode": "EEF105A",
+      "officialWebTitle": "Elements of Electrical Engineering and Laboratory",
+      "matchStatus": "near",
+      "mappingNote": "Nearest current official public match; uploaded title is older/common-name variant."
+    },
+    {
+      "title": "Communication Skills",
+      "semester": 1,
+      "credits": 2,
+      "assessmentProfile": "nontechnical_continuous",
+      "explicitPrerequisites": [],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "Communication Process",
+        "Barriers"
+      ],
+      "tt2Topics": [
+        "Grammar (Tenses, Voices)",
+        "Writing (Letters, Emails, Reports)"
+      ],
+      "seeTopics": [
+        "Communication Process",
+        "Barriers",
+        "Grammar (Tenses, Voices)",
+        "Writing (Letters, Emails, Reports)",
+        "Oral Communication (Presentations, Group Discussions)."
+      ],
+      "workbookTopics": [
+        "Communication Process",
+        "Barriers",
+        "Grammar (Tenses, Voices)",
+        "Writing (Letters, Emails, Reports)",
+        "Oral Communication (Presentations, Group Discussions)."
+      ],
+      "internalCompilerId": "AMC-S1-02",
+      "officialWebCode": "TSN101A",
+      "officialWebTitle": "Professional Communication",
+      "matchStatus": "near",
+      "mappingNote": "Nearest current official public match; title differs."
+    },
+    {
+      "title": "Constitution, Human Rights and Law",
+      "semester": 1,
+      "credits": 2,
+      "assessmentProfile": "nontechnical_continuous",
+      "explicitPrerequisites": [],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "Preamble",
+        "Fundamental Rights/Duties",
+        "Directive Principles"
+      ],
+      "tt2Topics": [
+        "Union & State Government",
+        "Human Rights Commission"
+      ],
+      "seeTopics": [
+        "Preamble",
+        "Fundamental Rights/Duties",
+        "Directive Principles",
+        "Union & State Government",
+        "Human Rights Commission",
+        "Legal Awareness."
+      ],
+      "workbookTopics": [
+        "Preamble",
+        "Fundamental Rights/Duties",
+        "Directive Principles",
+        "Union & State Government",
+        "Human Rights Commission",
+        "Legal Awareness."
+      ],
+      "internalCompilerId": "AMC-S1-03",
+      "officialWebCode": "LAN101A",
+      "officialWebTitle": "Constitution, Human Rights and Law",
+      "matchStatus": "exact",
+      "mappingNote": "Direct public current-page match."
+    },
+    {
+      "title": "Elements of Computer Science & Engineering",
+      "semester": 1,
+      "credits": 3,
+      "assessmentProfile": "theory_heavy",
+      "explicitPrerequisites": [],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "Computer Hardware (CPU, Memory, I/O)",
+        "Operating Systems",
+        "Networking (Topologies, Protocols)"
+      ],
+      "tt2Topics": [
+        "Data Storage",
+        "Algorithm basics"
+      ],
+      "seeTopics": [
+        "Computer Hardware (CPU, Memory, I/O)",
+        "Operating Systems",
+        "Networking (Topologies, Protocols)",
+        "Data Storage",
+        "Algorithm basics",
+        "Software Development Life Cycle."
+      ],
+      "workbookTopics": [
+        "Computer Hardware (CPU, Memory, I/O)",
+        "Operating Systems",
+        "Networking (Topologies, Protocols)",
+        "Data Storage",
+        "Algorithm basics",
+        "Software Development Life Cycle."
+      ],
+      "internalCompilerId": "AMC-S1-04",
+      "officialWebCode": "CSF106A",
+      "officialWebTitle": "Elements of Computer Science and Engineering and Laboratory",
+      "matchStatus": "near",
+      "mappingNote": "Nearest current official public match; public title includes laboratory."
+    },
+    {
+      "title": "Engineering Mathematics-1",
+      "semester": 1,
+      "credits": 4,
+      "assessmentProfile": "theory_plus_problem_solving",
+      "explicitPrerequisites": [],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "Differential Calculus (Polar curves, Pedal eq)",
+        "Taylor's & Maclaurin's series"
+      ],
+      "tt2Topics": [
+        "Partial derivatives",
+        "Jacobians"
+      ],
+      "seeTopics": [
+        "Differential Calculus (Polar curves, Pedal eq)",
+        "Taylor's & Maclaurin's series",
+        "Partial derivatives",
+        "Jacobians",
+        "Sequences & Series (Tests of convergence)."
+      ],
+      "workbookTopics": [
+        "Differential Calculus (Polar curves, Pedal eq)",
+        "Taylor's & Maclaurin's series",
+        "Partial derivatives",
+        "Jacobians",
+        "Sequences & Series (Tests of convergence)."
+      ],
+      "internalCompilerId": "AMC-S1-05",
+      "officialWebCode": "MTB101A",
+      "officialWebTitle": "Engineering Mathematics 1",
+      "matchStatus": "exact_with_web_conflict",
+      "mappingNote": "Public page shows MTB101A in Sem 1 Physics Cycle, but also shows MTB102A in Sem 1 Chemistry Cycle; keep MTB101A as primary and flag conflict."
+    },
+    {
+      "title": "Engineering Physics",
+      "semester": 1,
+      "credits": 4,
+      "assessmentProfile": "theory_heavy",
+      "explicitPrerequisites": [],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "Modern Physics (Quantum Mech, Wave-particle duality)",
+        "Lasers & Fiber Optics"
+      ],
+      "tt2Topics": [
+        "Electrical properties of materials (Semiconductors, Superconductors)"
+      ],
+      "seeTopics": [
+        "Modern Physics (Quantum Mech, Wave-particle duality)",
+        "Lasers & Fiber Optics",
+        "Electrical properties of materials (Semiconductors, Superconductors)",
+        "Dielectric & Magnetic materials."
+      ],
+      "workbookTopics": [
+        "Modern Physics (Quantum Mech, Wave-particle duality)",
+        "Lasers & Fiber Optics",
+        "Electrical properties of materials (Semiconductors, Superconductors)",
+        "Dielectric & Magnetic materials."
+      ],
+      "internalCompilerId": "AMC-S1-06",
+      "officialWebCode": "PYB102A",
+      "officialWebTitle": "Engineering Physics and Laboratory",
+      "matchStatus": "near",
+      "mappingNote": "Nearest current official public match; public title includes laboratory."
+    },
+    {
+      "title": "Basic Electronics",
+      "semester": 2,
+      "credits": 3,
+      "assessmentProfile": "theory_heavy",
+      "explicitPrerequisites": [],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "Semiconductor Diodes (Rectifiers, Zener)",
+        "Transistors (BJT, MOSFET)"
+      ],
+      "tt2Topics": [
+        "Operational Amplifiers",
+        "Digital Electronics (Logic gates, Flip-flops)"
+      ],
+      "seeTopics": [
+        "Semiconductor Diodes (Rectifiers, Zener)",
+        "Transistors (BJT, MOSFET)",
+        "Operational Amplifiers",
+        "Digital Electronics (Logic gates, Flip-flops)",
+        "Communication Systems (Modulation)."
+      ],
+      "workbookTopics": [
+        "Semiconductor Diodes (Rectifiers, Zener)",
+        "Transistors (BJT, MOSFET)",
+        "Operational Amplifiers",
+        "Digital Electronics (Logic gates, Flip-flops)",
+        "Communication Systems (Modulation)."
+      ],
+      "internalCompilerId": "AMC-S2-07",
+      "officialWebCode": "ECF102A",
+      "officialWebTitle": "Elements of Electronics Engineering and Laboratory",
+      "matchStatus": "near",
+      "mappingNote": "Nearest current official public match; uploaded title is simplified."
+    },
+    {
+      "title": "Computer Aided Engineering Drawing",
+      "semester": 2,
+      "credits": 3,
+      "assessmentProfile": "theory_heavy",
+      "explicitPrerequisites": [],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "CAD Software commands",
+        "Orthographic Projections (Points, Lines, Planes, Solids)"
+      ],
+      "tt2Topics": [
+        "Isometric Projections",
+        "Development of Surfaces"
+      ],
+      "seeTopics": [
+        "CAD Software commands",
+        "Orthographic Projections (Points, Lines, Planes, Solids)",
+        "Isometric Projections",
+        "Development of Surfaces",
+        "3D Modeling basics."
+      ],
+      "workbookTopics": [
+        "CAD Software commands",
+        "Orthographic Projections (Points, Lines, Planes, Solids)",
+        "Isometric Projections",
+        "Development of Surfaces",
+        "3D Modeling basics."
+      ],
+      "internalCompilerId": "AMC-S2-08",
+      "officialWebCode": "MEF103A",
+      "officialWebTitle": "Engineering Drawing",
+      "matchStatus": "near",
+      "mappingNote": "Closest current public drawing code; uploaded title differs and may reflect batch-specific naming."
+    },
+    {
+      "title": "Engineering Chemistry",
+      "semester": 2,
+      "credits": 4,
+      "assessmentProfile": "theory_heavy",
+      "explicitPrerequisites": [],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "Electrochemistry",
+        "Battery Technology (Li-ion, Fuel cells)",
+        "Corrosion Control"
+      ],
+      "tt2Topics": [
+        "Water Chemistry (Hardness, Treatment)",
+        "Polymers & Green Chemistry"
+      ],
+      "seeTopics": [
+        "Electrochemistry",
+        "Battery Technology (Li-ion, Fuel cells)",
+        "Corrosion Control",
+        "Water Chemistry (Hardness, Treatment)",
+        "Polymers & Green Chemistry",
+        "Instrumental methods."
+      ],
+      "workbookTopics": [
+        "Electrochemistry",
+        "Battery Technology (Li-ion, Fuel cells)",
+        "Corrosion Control",
+        "Water Chemistry (Hardness, Treatment)",
+        "Polymers & Green Chemistry",
+        "Instrumental methods."
+      ],
+      "internalCompilerId": "AMC-S2-09",
+      "officialWebCode": "CYB104A",
+      "officialWebTitle": "Engineering Chemistry and Laboratory",
+      "matchStatus": "near",
+      "mappingNote": "Nearest current official public match; public title includes laboratory."
+    },
+    {
+      "title": "Engineering Mathematics-2",
+      "semester": 2,
+      "credits": 4,
+      "assessmentProfile": "theory_plus_problem_solving",
+      "explicitPrerequisites": [
+        "Engineering Mathematics-1"
+      ],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "First order ODEs (Exact, Linear)",
+        "Higher order ODEs"
+      ],
+      "tt2Topics": [
+        "Laplace Transforms (Inverse, Convolution)"
+      ],
+      "seeTopics": [
+        "First order ODEs (Exact, Linear)",
+        "Higher order ODEs",
+        "Laplace Transforms (Inverse, Convolution)",
+        "Vector Calculus (Gradient, Divergence, Curl, Integral theorems)."
+      ],
+      "workbookTopics": [
+        "First order ODEs (Exact, Linear)",
+        "Higher order ODEs",
+        "Laplace Transforms (Inverse, Convolution)",
+        "Vector Calculus (Gradient, Divergence, Curl, Integral theorems)."
+      ],
+      "internalCompilerId": "AMC-S2-10",
+      "officialWebCode": "MTB102A",
+      "officialWebTitle": "Engineering Mathematics-2",
+      "matchStatus": "exact",
+      "mappingNote": "Direct public current-page match."
+    },
+    {
+      "title": "Environmental Studies",
+      "semester": 2,
+      "credits": 2,
+      "assessmentProfile": "nontechnical_continuous",
+      "explicitPrerequisites": [],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "Natural Resources",
+        "Ecosystems",
+        "Biodiversity"
+      ],
+      "tt2Topics": [
+        "Pollution (Air, Water, Soil, Noise)",
+        "Waste Management"
+      ],
+      "seeTopics": [
+        "Natural Resources",
+        "Ecosystems",
+        "Biodiversity",
+        "Pollution (Air, Water, Soil, Noise)",
+        "Waste Management",
+        "Social Issues & Environment."
+      ],
+      "workbookTopics": [
+        "Natural Resources",
+        "Ecosystems",
+        "Biodiversity",
+        "Pollution (Air, Water, Soil, Noise)",
+        "Waste Management",
+        "Social Issues & Environment."
+      ],
+      "internalCompilerId": "AMC-S2-11",
+      "officialWebCode": "BTN101A",
+      "officialWebTitle": "Environmental Studies",
+      "matchStatus": "exact",
+      "mappingNote": "Direct public current-page match."
+    },
+    {
+      "title": "Programming in C",
+      "semester": 2,
+      "credits": 4,
+      "assessmentProfile": "mixed_practical",
+      "explicitPrerequisites": [],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "Problem Solving basics",
+        "C Fundamentals (Data types, Operators)",
+        "Control Structures (If, Switch, Loops)",
+        "Arrays & Strings"
+      ],
+      "tt2Topics": [
+        "Functions",
+        "Pointers",
+        "Structures & Unions"
+      ],
+      "seeTopics": [
+        "Problem Solving basics",
+        "C Fundamentals (Data types, Operators)",
+        "Control Structures (If, Switch, Loops)",
+        "Arrays & Strings",
+        "Functions",
+        "Pointers",
+        "Structures & Unions",
+        "File Handling."
+      ],
+      "workbookTopics": [
+        "Problem Solving basics",
+        "C Fundamentals (Data types, Operators)",
+        "Control Structures (If, Switch, Loops)",
+        "Arrays & Strings",
+        "Functions",
+        "Pointers",
+        "Structures & Unions",
+        "File Handling."
+      ],
+      "internalCompilerId": "AMC-S2-12",
+      "officialWebCode": null,
+      "officialWebTitle": "Programming in C",
+      "matchStatus": "blog_only_no_public_code",
+      "mappingNote": "Official MSRUAS blog lists the title, but the current public programme page does not provide a code."
+    },
+    {
+      "title": "Data Structures and Algorithms",
+      "semester": 3,
+      "credits": 4,
+      "assessmentProfile": "theory_plus_problem_solving",
+      "explicitPrerequisites": [
+        "Programming in C"
+      ],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "Stacks",
+        "Queues",
+        "Linked Lists",
+        "Trees (Binary, AVL, Heaps)"
+      ],
+      "tt2Topics": [
+        "Graphs (BFS, DFS)",
+        "Hashing",
+        "Sorting (Quick, Merge, Heap)"
+      ],
+      "seeTopics": [
+        "Stacks",
+        "Queues",
+        "Linked Lists",
+        "Trees (Binary, AVL, Heaps)",
+        "Graphs (BFS, DFS)",
+        "Hashing",
+        "Sorting (Quick, Merge, Heap)",
+        "Searching techniques."
+      ],
+      "workbookTopics": [
+        "Stacks",
+        "Queues",
+        "Linked Lists",
+        "Trees (Binary, AVL, Heaps)",
+        "Graphs (BFS, DFS)",
+        "Hashing",
+        "Sorting (Quick, Merge, Heap)",
+        "Searching techniques."
+      ],
+      "internalCompilerId": "AMC-S3-13",
+      "officialWebCode": "CSD201A",
+      "officialWebTitle": "Data Structures Foundation",
+      "matchStatus": "near",
+      "mappingNote": "Nearest current official core match; title and credits differ."
+    },
+    {
+      "title": "Digital Logic Design",
+      "semester": 3,
+      "credits": 3,
+      "assessmentProfile": "theory_plus_problem_solving",
+      "explicitPrerequisites": [
+        "Basic Electronics"
+      ],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "Number Systems",
+        "Boolean Algebra",
+        "K-Maps",
+        "Adders/Subtractors"
+      ],
+      "tt2Topics": [
+        "Multiplexers",
+        "Decoders",
+        "Flip-Flops",
+        "Counters"
+      ],
+      "seeTopics": [
+        "Number Systems",
+        "Boolean Algebra",
+        "K-Maps",
+        "Adders/Subtractors",
+        "Multiplexers",
+        "Decoders",
+        "Flip-Flops",
+        "Counters",
+        "Registers",
+        "Finite State Machines."
+      ],
+      "workbookTopics": [
+        "Number Systems",
+        "Boolean Algebra",
+        "K-Maps",
+        "Adders/Subtractors",
+        "Multiplexers",
+        "Decoders",
+        "Flip-Flops",
+        "Counters",
+        "Registers",
+        "Finite State Machines."
+      ],
+      "internalCompilerId": "AMC-S3-14",
+      "officialWebCode": "CSD202A",
+      "officialWebTitle": "Logic Design",
+      "matchStatus": "near",
+      "mappingNote": "Nearest current official core match; title simplified on public page."
+    },
+    {
+      "title": "Discrete Mathematics",
+      "semester": 3,
+      "credits": 4,
+      "assessmentProfile": "theory_plus_problem_solving",
+      "explicitPrerequisites": [],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "Set Theory",
+        "Mathematical Logic",
+        "Relations & Functions"
+      ],
+      "tt2Topics": [
+        "Combinatorics",
+        "Recurrence Relations"
+      ],
+      "seeTopics": [
+        "Set Theory",
+        "Mathematical Logic",
+        "Relations & Functions",
+        "Combinatorics",
+        "Recurrence Relations",
+        "Graph Theory (Trees, Connectivity)",
+        "Algebraic Structures."
+      ],
+      "workbookTopics": [
+        "Set Theory",
+        "Mathematical Logic",
+        "Relations & Functions",
+        "Combinatorics",
+        "Recurrence Relations",
+        "Graph Theory (Trees, Connectivity)",
+        "Algebraic Structures."
+      ],
+      "internalCompilerId": "AMC-S3-15",
+      "officialWebCode": "CSC201A",
+      "officialWebTitle": "Discrete Mathematics",
+      "matchStatus": "exact",
+      "mappingNote": "Direct public current-page match."
+    },
+    {
+      "title": "Linear Algebra",
+      "semester": 3,
+      "credits": 4,
+      "assessmentProfile": "theory_plus_problem_solving",
+      "explicitPrerequisites": [
+        "Engineering Mathematics-1",
+        "Engineering Mathematics-2"
+      ],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "Systems of Linear Equations",
+        "Vector Spaces",
+        "Subspaces",
+        "Basis & Dimension"
+      ],
+      "tt2Topics": [
+        "Inner Product Spaces",
+        "Linear Transformations",
+        "Eigenvalues/Eigenvectors"
+      ],
+      "seeTopics": [
+        "Systems of Linear Equations",
+        "Vector Spaces",
+        "Subspaces",
+        "Basis & Dimension",
+        "Inner Product Spaces",
+        "Linear Transformations",
+        "Eigenvalues/Eigenvectors",
+        "Diagonalization."
+      ],
+      "workbookTopics": [
+        "Systems of Linear Equations",
+        "Vector Spaces",
+        "Subspaces",
+        "Basis & Dimension",
+        "Inner Product Spaces",
+        "Linear Transformations",
+        "Eigenvalues/Eigenvectors",
+        "Diagonalization."
+      ],
+      "internalCompilerId": "AMC-S3-16",
+      "officialWebCode": "MCC205A",
+      "officialWebTitle": "Linear Algebra",
+      "matchStatus": "exact_sem_credit_conflict",
+      "mappingNote": "Exact public title match, but uploaded semester/credits differ from current public page."
+    },
+    {
+      "title": "Object Oriented Programming",
+      "semester": 3,
+      "credits": 3,
+      "assessmentProfile": "mixed_practical",
+      "explicitPrerequisites": [
+        "Programming in C"
+      ],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "C++ Basics",
+        "Classes & Objects",
+        "Constructors/Destructors",
+        "Operator Overloading"
+      ],
+      "tt2Topics": [
+        "Inheritance",
+        "Virtual Functions",
+        "Templates"
+      ],
+      "seeTopics": [
+        "C++ Basics",
+        "Classes & Objects",
+        "Constructors/Destructors",
+        "Operator Overloading",
+        "Inheritance",
+        "Virtual Functions",
+        "Templates",
+        "Exception Handling."
+      ],
+      "workbookTopics": [
+        "C++ Basics",
+        "Classes & Objects",
+        "Constructors/Destructors",
+        "Operator Overloading",
+        "Inheritance",
+        "Virtual Functions",
+        "Templates",
+        "Exception Handling."
+      ],
+      "internalCompilerId": "AMC-S3-17",
+      "officialWebCode": null,
+      "officialWebTitle": "N/A on current public M&C page",
+      "matchStatus": "no_reliable_public_code",
+      "mappingNote": "No exact current public M&C code found; do not force Programming Paradigms as an official ID."
+    },
+    {
+      "title": "Professional Ethics",
+      "semester": 3,
+      "credits": 2,
+      "assessmentProfile": "nontechnical_continuous",
+      "explicitPrerequisites": [],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "Ethics in Engineering",
+        "Moral Autonomy",
+        "Safety & Risk"
+      ],
+      "tt2Topics": [
+        "Rights of Engineers",
+        "Global Issues"
+      ],
+      "seeTopics": [
+        "Ethics in Engineering",
+        "Moral Autonomy",
+        "Safety & Risk",
+        "Rights of Engineers",
+        "Global Issues",
+        "Professional Codes of Conduct."
+      ],
+      "workbookTopics": [
+        "Ethics in Engineering",
+        "Moral Autonomy",
+        "Safety & Risk",
+        "Rights of Engineers",
+        "Global Issues",
+        "Professional Codes of Conduct."
+      ],
+      "internalCompilerId": "AMC-S3-18",
+      "officialWebCode": null,
+      "officialWebTitle": "N/A on current public M&C page",
+      "matchStatus": "no_reliable_public_code",
+      "mappingNote": "No exact current public M&C code found."
+    },
+    {
+      "title": "Database Management Systems",
+      "semester": 4,
+      "credits": 4,
+      "assessmentProfile": "theory_heavy",
+      "explicitPrerequisites": [
+        "Data Structures and Algorithms"
+      ],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "DBMS Architecture",
+        "ER Modeling",
+        "Relational Algebra"
+      ],
+      "tt2Topics": [
+        "SQL (DDL, DML, Joins)",
+        "Normalization (1NF to BCNF)"
+      ],
+      "seeTopics": [
+        "DBMS Architecture",
+        "ER Modeling",
+        "Relational Algebra",
+        "SQL (DDL, DML, Joins)",
+        "Normalization (1NF to BCNF)",
+        "Transaction Management",
+        "Concurrency Control."
+      ],
+      "workbookTopics": [
+        "DBMS Architecture",
+        "ER Modeling",
+        "Relational Algebra",
+        "SQL (DDL, DML, Joins)",
+        "Normalization (1NF to BCNF)",
+        "Transaction Management",
+        "Concurrency Control."
+      ],
+      "internalCompilerId": "AMC-S4-19",
+      "officialWebCode": null,
+      "officialWebTitle": "Database Systems",
+      "matchStatus": "blog_only_no_public_code",
+      "mappingNote": "Official MSRUAS blog lists Database Systems in the curriculum, but the current public programme page does not provide a code."
+    },
+    {
+      "title": "Design and Analysis of Algorithms",
+      "semester": 4,
+      "credits": 4,
+      "assessmentProfile": "theory_plus_problem_solving",
+      "explicitPrerequisites": [
+        "Data Structures and Algorithms"
+      ],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "Asymptotic Notations",
+        "Divide & Conquer (Merge sort)",
+        "Greedy Method (Knapsack, MST)"
+      ],
+      "tt2Topics": [
+        "Dynamic Programming (Shortest paths)",
+        "Backtracking"
+      ],
+      "seeTopics": [
+        "Asymptotic Notations",
+        "Divide & Conquer (Merge sort)",
+        "Greedy Method (Knapsack, MST)",
+        "Dynamic Programming (Shortest paths)",
+        "Backtracking",
+        "NP-Hard/NP-Complete."
+      ],
+      "workbookTopics": [
+        "Asymptotic Notations",
+        "Divide & Conquer (Merge sort)",
+        "Greedy Method (Knapsack, MST)",
+        "Dynamic Programming (Shortest paths)",
+        "Backtracking",
+        "NP-Hard/NP-Complete."
+      ],
+      "internalCompilerId": "AMC-S4-20",
+      "officialWebCode": "CSD206A",
+      "officialWebTitle": "Design and Analysis of Algorithms",
+      "matchStatus": "exact_sem_credit_conflict",
+      "mappingNote": "Exact public title match, but uploaded semester/credits differ from current public page."
+    },
+    {
+      "title": "Operating Systems",
+      "semester": 4,
+      "credits": 3,
+      "assessmentProfile": "mixed_practical",
+      "explicitPrerequisites": [
+        "Elements of Computer Science & Engineering"
+      ],
+      "addedPrerequisites": [
+        "Data Structures and Algorithms",
+        "Digital Logic Design"
+      ],
+      "bridgeModules": [
+        "pointer/data-structure refresher",
+        "digital-logic refresher"
+      ],
+      "tt1Topics": [
+        "OS Architecture",
+        "Process Management",
+        "CPU Scheduling"
+      ],
+      "tt2Topics": [
+        "Process Sync (Semaphores)",
+        "Deadlocks"
+      ],
+      "seeTopics": [
+        "OS Architecture",
+        "Process Management",
+        "CPU Scheduling",
+        "Process Sync (Semaphores)",
+        "Deadlocks",
+        "Memory Management (Paging, Segmentation)",
+        "Disk Scheduling."
+      ],
+      "workbookTopics": [
+        "OS Architecture",
+        "Process Management",
+        "CPU Scheduling",
+        "Process Sync (Semaphores)",
+        "Deadlocks",
+        "Memory Management (Paging, Segmentation)",
+        "Disk Scheduling."
+      ],
+      "internalCompilerId": "AMC-S4-21",
+      "officialWebCode": null,
+      "officialWebTitle": "Operating Systems",
+      "matchStatus": "blog_only_no_public_code",
+      "mappingNote": "Official MSRUAS blog lists the title, but the current public programme page does not provide a code."
+    },
+    {
+      "title": "Probability and Statistics",
+      "semester": 4,
+      "credits": 4,
+      "assessmentProfile": "theory_plus_problem_solving",
+      "explicitPrerequisites": [
+        "Engineering Mathematics-1"
+      ],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "Probability axioms",
+        "Bayes\u2019 Theorem",
+        "Random Variables"
+      ],
+      "tt2Topics": [
+        "Distributions (Binomial, Poisson, Normal)",
+        "Sampling Theory"
+      ],
+      "seeTopics": [
+        "Probability axioms",
+        "Bayes\u2019 Theorem",
+        "Random Variables",
+        "Distributions (Binomial, Poisson, Normal)",
+        "Sampling Theory",
+        "Hypothesis Testing (t-test, Z-test)",
+        "Regression."
+      ],
+      "workbookTopics": [
+        "Probability axioms",
+        "Bayes\u2019 Theorem",
+        "Random Variables",
+        "Distributions (Binomial, Poisson, Normal)",
+        "Sampling Theory",
+        "Hypothesis Testing (t-test, Z-test)",
+        "Regression."
+      ],
+      "internalCompilerId": "AMC-S4-22",
+      "officialWebCode": "MCC202A",
+      "officialWebTitle": "Probability and Statistics",
+      "matchStatus": "exact_sem_credit_conflict",
+      "mappingNote": "Exact public title match, but uploaded semester/credits differ from current public page."
+    },
+    {
+      "title": "Python Programming",
+      "semester": 4,
+      "credits": 2,
+      "assessmentProfile": "mixed_practical",
+      "explicitPrerequisites": [
+        "Programming in C"
+      ],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "Python Syntax",
+        "Data Structures (Lists, Dicts, Tuples)",
+        "File I/O"
+      ],
+      "tt2Topics": [
+        "NumPy for arrays",
+        "Pandas for dataframes"
+      ],
+      "seeTopics": [
+        "Python Syntax",
+        "Data Structures (Lists, Dicts, Tuples)",
+        "File I/O",
+        "NumPy for arrays",
+        "Pandas for dataframes",
+        "Matplotlib for visualization."
+      ],
+      "workbookTopics": [
+        "Python Syntax",
+        "Data Structures (Lists, Dicts, Tuples)",
+        "File I/O",
+        "NumPy for arrays",
+        "Pandas for dataframes",
+        "Matplotlib for visualization."
+      ],
+      "internalCompilerId": "AMC-S4-23",
+      "officialWebCode": "CSD204A",
+      "officialWebTitle": "Python and Data Structures Laboratory",
+      "matchStatus": "near",
+      "mappingNote": "Nearest current public Python-coded course; uploaded course is theory-oriented, public course is laboratory-oriented."
+    },
+    {
+      "title": "Theory of Computation",
+      "semester": 4,
+      "credits": 3,
+      "assessmentProfile": "theory_plus_problem_solving",
+      "explicitPrerequisites": [
+        "Discrete Mathematics"
+      ],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "Finite Automata (DFA, NFA)",
+        "Regular Expressions",
+        "Context-Free Grammars"
+      ],
+      "tt2Topics": [
+        "Pushdown Automata",
+        "Turing Machines"
+      ],
+      "seeTopics": [
+        "Finite Automata (DFA, NFA)",
+        "Regular Expressions",
+        "Context-Free Grammars",
+        "Pushdown Automata",
+        "Turing Machines",
+        "Undecidability",
+        "P and NP classes."
+      ],
+      "workbookTopics": [
+        "Finite Automata (DFA, NFA)",
+        "Regular Expressions",
+        "Context-Free Grammars",
+        "Pushdown Automata",
+        "Turing Machines",
+        "Undecidability",
+        "P and NP classes."
+      ],
+      "internalCompilerId": "AMC-S4-24",
+      "officialWebCode": "CSL201A",
+      "officialWebTitle": "Formal Languages and Automation Theory",
+      "matchStatus": "near_equivalent",
+      "mappingNote": "Nearest current public theoretical-computation core course; not an exact title match."
+    },
+    {
+      "title": "Computer Networks",
+      "semester": 5,
+      "credits": 4,
+      "assessmentProfile": "mixed_practical",
+      "explicitPrerequisites": [
+        "Operating Systems"
+      ],
+      "addedPrerequisites": [
+        "Data Structures and Algorithms"
+      ],
+      "bridgeModules": [
+        "queue/buffer/data-structure refresher"
+      ],
+      "tt1Topics": [
+        "Physical Layer",
+        "Data Link Layer (Error control, MAC)",
+        "Network Layer (IP, Routing)"
+      ],
+      "tt2Topics": [
+        "Transport Layer (TCP, UDP)",
+        "Application Layer (DNS, HTTP)"
+      ],
+      "seeTopics": [
+        "Physical Layer",
+        "Data Link Layer (Error control, MAC)",
+        "Network Layer (IP, Routing)",
+        "Transport Layer (TCP, UDP)",
+        "Application Layer (DNS, HTTP)",
+        "Network Security."
+      ],
+      "workbookTopics": [
+        "Physical Layer",
+        "Data Link Layer (Error control, MAC)",
+        "Network Layer (IP, Routing)",
+        "Transport Layer (TCP, UDP)",
+        "Application Layer (DNS, HTTP)",
+        "Network Security."
+      ],
+      "internalCompilerId": "AMC-S5-25",
+      "officialWebCode": "CSD301A",
+      "officialWebTitle": "Computer Networks",
+      "matchStatus": "exact_sem_credit_conflict",
+      "mappingNote": "Exact public title match, but uploaded semester/credits differ from current public page."
+    },
+    {
+      "title": "Dept Elective - I",
+      "semester": 5,
+      "credits": 3,
+      "assessmentProfile": "theory_heavy",
+      "explicitPrerequisites": [],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "Topics depend on elective choice (e.g., Cryptography, AI, Cloud)."
+      ],
+      "tt2Topics": [],
+      "seeTopics": [
+        "Topics depend on elective choice (e.g., Cryptography, AI, Cloud)."
+      ],
+      "workbookTopics": [
+        "Topics depend on elective choice (e.g., Cryptography, AI, Cloud)."
+      ],
+      "internalCompilerId": "AMC-S5-26",
+      "officialWebCode": "xxxxxx",
+      "officialWebTitle": "Professional Core Elective-1 or Online Course",
+      "matchStatus": "structural_slot_match",
+      "mappingNote": "Current public page has a semester-6 elective placeholder, not a fixed single course code."
+    },
+    {
+      "title": "Machine Learning",
+      "semester": 5,
+      "credits": 4,
+      "assessmentProfile": "mixed_practical",
+      "explicitPrerequisites": [
+        "Probability and Statistics",
+        "Linear Algebra"
+      ],
+      "addedPrerequisites": [
+        "Python Programming",
+        "Engineering Mathematics-2"
+      ],
+      "bridgeModules": [
+        "matrix calculus refresher",
+        "Python/NumPy implementation refresher"
+      ],
+      "tt1Topics": [
+        "Supervised Learning (Linear Regression, KNN, SVM)",
+        "Decision Trees"
+      ],
+      "tt2Topics": [
+        "Neural Networks",
+        "Unsupervised Learning (Clustering, PCA)"
+      ],
+      "seeTopics": [
+        "Supervised Learning (Linear Regression, KNN, SVM)",
+        "Decision Trees",
+        "Neural Networks",
+        "Unsupervised Learning (Clustering, PCA)",
+        "Model Evaluation."
+      ],
+      "workbookTopics": [
+        "Supervised Learning (Linear Regression, KNN, SVM)",
+        "Decision Trees",
+        "Neural Networks",
+        "Unsupervised Learning (Clustering, PCA)",
+        "Model Evaluation."
+      ],
+      "internalCompilerId": "AMC-S5-27",
+      "officialWebCode": "AIC203A",
+      "officialWebTitle": "Machine Learning-1",
+      "matchStatus": "near",
+      "mappingNote": "Nearest current public core match."
+    },
+    {
+      "title": "Numerical Methods",
+      "semester": 5,
+      "credits": 4,
+      "assessmentProfile": "theory_plus_problem_solving",
+      "explicitPrerequisites": [
+        "Linear Algebra"
+      ],
+      "addedPrerequisites": [
+        "Engineering Mathematics-2"
+      ],
+      "bridgeModules": [
+        "calculus/ODE refresher"
+      ],
+      "tt1Topics": [
+        "Roots of Equations (Bisection, NR)",
+        "Linear Systems (Gauss)"
+      ],
+      "tt2Topics": [
+        "Interpolation (Newton, Lagrange)",
+        "Numerical Integration (Simpson)"
+      ],
+      "seeTopics": [
+        "Roots of Equations (Bisection, NR)",
+        "Linear Systems (Gauss)",
+        "Interpolation (Newton, Lagrange)",
+        "Numerical Integration (Simpson)",
+        "Numerical solution of ODEs (Runge-Kutta)."
+      ],
+      "workbookTopics": [
+        "Roots of Equations (Bisection, NR)",
+        "Linear Systems (Gauss)",
+        "Interpolation (Newton, Lagrange)",
+        "Numerical Integration (Simpson)",
+        "Numerical solution of ODEs (Runge-Kutta)."
+      ],
+      "internalCompilerId": "AMC-S5-28",
+      "officialWebCode": null,
+      "officialWebTitle": "Numerical Analysis",
+      "matchStatus": "blog_only_no_public_code",
+      "mappingNote": "Official blog lists Numerical Analysis, but the current public programme page does not provide a core-theory code."
+    },
+    {
+      "title": "Scientific Computing Lab",
+      "semester": 5,
+      "credits": 1,
+      "assessmentProfile": "lab_or_project_heavy",
+      "explicitPrerequisites": [
+        "Numerical Methods"
+      ],
+      "addedPrerequisites": [
+        "Python Programming"
+      ],
+      "bridgeModules": [
+        "Python/MATLAB refresher"
+      ],
+      "tt1Topics": [
+        "Numerical differentiation",
+        "Integration"
+      ],
+      "tt2Topics": [
+        "Solving linear systems using code",
+        "Curve fitting"
+      ],
+      "seeTopics": [
+        "Numerical differentiation",
+        "Integration",
+        "Solving linear systems using code",
+        "Curve fitting",
+        "ODE solvers implementation."
+      ],
+      "workbookTopics": [
+        "Numerical differentiation",
+        "Integration",
+        "Solving linear systems using code",
+        "Curve fitting",
+        "ODE solvers implementation."
+      ],
+      "internalCompilerId": "AMC-S5-29",
+      "officialWebCode": "MCL201A",
+      "officialWebTitle": "Numerical Analysis Laboratory",
+      "matchStatus": "near",
+      "mappingNote": "Nearest current public lab match; title differs."
+    },
+    {
+      "title": "Software Engineering",
+      "semester": 5,
+      "credits": 3,
+      "assessmentProfile": "mixed_practical",
+      "explicitPrerequisites": [
+        "Object Oriented Programming"
+      ],
+      "addedPrerequisites": [
+        "Data Structures and Algorithms"
+      ],
+      "bridgeModules": [
+        "data-structure complexity refresher"
+      ],
+      "tt1Topics": [
+        "SDLC Models (Waterfall, Agile)",
+        "Requirement Engineering",
+        "UML Diagrams"
+      ],
+      "tt2Topics": [
+        "Software Design",
+        "Software Testing (Black/White box)"
+      ],
+      "seeTopics": [
+        "SDLC Models (Waterfall, Agile)",
+        "Requirement Engineering",
+        "UML Diagrams",
+        "Software Design",
+        "Software Testing (Black/White box)",
+        "Project Management."
+      ],
+      "workbookTopics": [
+        "SDLC Models (Waterfall, Agile)",
+        "Requirement Engineering",
+        "UML Diagrams",
+        "Software Design",
+        "Software Testing (Black/White box)",
+        "Project Management."
+      ],
+      "internalCompilerId": "AMC-S5-30",
+      "officialWebCode": null,
+      "officialWebTitle": "N/A on current public M&C page",
+      "matchStatus": "no_reliable_public_code",
+      "mappingNote": "No exact current public M&C code found."
+    },
+    {
+      "title": "Artificial Intelligence",
+      "semester": 6,
+      "credits": 4,
+      "assessmentProfile": "mixed_practical",
+      "explicitPrerequisites": [
+        "Discrete Mathematics"
+      ],
+      "addedPrerequisites": [
+        "Data Structures and Algorithms",
+        "Probability and Statistics"
+      ],
+      "bridgeModules": [
+        "algorithmic search refresher",
+        "probability refresher"
+      ],
+      "tt1Topics": [
+        "Search Algorithms (A*, BFS, DFS)",
+        "Game Playing (Minimax)"
+      ],
+      "tt2Topics": [
+        "Knowledge Representation (Logic)",
+        "Probabilistic Reasoning"
+      ],
+      "seeTopics": [
+        "Search Algorithms (A*, BFS, DFS)",
+        "Game Playing (Minimax)",
+        "Knowledge Representation (Logic)",
+        "Probabilistic Reasoning",
+        "Intro to NLP and Robotics."
+      ],
+      "workbookTopics": [
+        "Search Algorithms (A*, BFS, DFS)",
+        "Game Playing (Minimax)",
+        "Knowledge Representation (Logic)",
+        "Probabilistic Reasoning",
+        "Intro to NLP and Robotics."
+      ],
+      "internalCompilerId": "AMC-S6-31",
+      "officialWebCode": "AID201A",
+      "officialWebTitle": "Principles of Artificial Intelligence",
+      "matchStatus": "near",
+      "mappingNote": "Nearest current public core match."
+    },
+    {
+      "title": "Data Science and Analytics",
+      "semester": 6,
+      "credits": 4,
+      "assessmentProfile": "mixed_practical",
+      "explicitPrerequisites": [
+        "Machine Learning",
+        "Database Management Systems"
+      ],
+      "addedPrerequisites": [
+        "Python Programming",
+        "Probability and Statistics"
+      ],
+      "bridgeModules": [
+        "Python data stack refresher",
+        "probability/statistics refresher"
+      ],
+      "tt1Topics": [
+        "Data Lifecycle",
+        "EDA",
+        "Data Wrangling"
+      ],
+      "tt2Topics": [
+        "Big Data (Hadoop, Spark)",
+        "Data Visualization"
+      ],
+      "seeTopics": [
+        "Data Lifecycle",
+        "EDA",
+        "Data Wrangling",
+        "Big Data (Hadoop, Spark)",
+        "Data Visualization",
+        "Predictive Analytics",
+        "Storytelling with data."
+      ],
+      "workbookTopics": [
+        "Data Lifecycle",
+        "EDA",
+        "Data Wrangling",
+        "Big Data (Hadoop, Spark)",
+        "Data Visualization",
+        "Predictive Analytics",
+        "Storytelling with data."
+      ],
+      "internalCompilerId": "AMC-S6-32",
+      "officialWebCode": null,
+      "officialWebTitle": "No exact current public core course; related electives exist",
+      "matchStatus": "no_reliable_public_code",
+      "mappingNote": "Current public M&C page has related electives such as Data Sciences Foundation / Data Analytics, but no exact core match."
+    },
+    {
+      "title": "Dept Elective - II",
+      "semester": 6,
+      "credits": 3,
+      "assessmentProfile": "theory_heavy",
+      "explicitPrerequisites": [],
+      "addedPrerequisites": [],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "Topics depend on elective choice (e.g., Deep Learning, Cyber Security)."
+      ],
+      "tt2Topics": [],
+      "seeTopics": [
+        "Topics depend on elective choice (e.g., Deep Learning, Cyber Security)."
+      ],
+      "workbookTopics": [
+        "Topics depend on elective choice (e.g., Deep Learning, Cyber Security)."
+      ],
+      "internalCompilerId": "AMC-S6-33",
+      "officialWebCode": null,
+      "officialWebTitle": "No exact current public Semester-6 slot",
+      "matchStatus": "structure_conflict",
+      "mappingNote": "Uploaded curriculum has a second department elective in Semester 6; current public page instead uses PCE-2/PCE-3 in Semester 7."
+    },
+    {
+      "title": "Mini Project",
+      "semester": 6,
+      "credits": 2,
+      "assessmentProfile": "lab_or_project_heavy",
+      "explicitPrerequisites": [],
+      "addedPrerequisites": [
+        "Software Engineering",
+        "Machine Learning",
+        "Database Management Systems",
+        "Artificial Intelligence",
+        "Parallel & Distributed Computing"
+      ],
+      "bridgeModules": [],
+      "tt1Topics": [
+        "Problem Identification",
+        "Literature Survey",
+        "System Design"
+      ],
+      "tt2Topics": [
+        "Implementation",
+        "Testing"
+      ],
+      "seeTopics": [
+        "Problem Identification",
+        "Literature Survey",
+        "System Design",
+        "Implementation",
+        "Testing",
+        "Project Documentation and Viva-voce."
+      ],
+      "workbookTopics": [
+        "Problem Identification",
+        "Literature Survey",
+        "System Design",
+        "Implementation",
+        "Testing",
+        "Project Documentation and Viva-voce."
+      ],
+      "internalCompilerId": "AMC-S6-34",
+      "officialWebCode": null,
+      "officialWebTitle": "Seminar / Project Work-1 / Internship",
+      "matchStatus": "structure_conflict",
+      "mappingNote": "Current public page has Seminar in Semester 6 and Project Work/Internship in Semester 7, but no exact Semester-6 Mini Project code."
+    },
+    {
+      "title": "Optimization Techniques",
+      "semester": 6,
+      "credits": 4,
+      "assessmentProfile": "theory_plus_problem_solving",
+      "explicitPrerequisites": [
+        "Linear Algebra"
+      ],
+      "addedPrerequisites": [
+        "Engineering Mathematics-2",
+        "Probability and Statistics"
+      ],
+      "bridgeModules": [
+        "calculus refresher",
+        "probability refresher"
+      ],
+      "tt1Topics": [
+        "Linear Programming (Simplex, Big-M)",
+        "Duality",
+        "Transportation & Assignment problems"
+      ],
+      "tt2Topics": [
+        "Integer Programming",
+        "Non-linear optimization"
+      ],
+      "seeTopics": [
+        "Linear Programming (Simplex, Big-M)",
+        "Duality",
+        "Transportation & Assignment problems",
+        "Integer Programming",
+        "Non-linear optimization",
+        "Genetic Algorithms."
+      ],
+      "workbookTopics": [
+        "Linear Programming (Simplex, Big-M)",
+        "Duality",
+        "Transportation & Assignment problems",
+        "Integer Programming",
+        "Non-linear optimization",
+        "Genetic Algorithms."
+      ],
+      "internalCompilerId": "AMC-S6-35",
+      "officialWebCode": "MCC301A",
+      "officialWebTitle": "Optimization Techniques",
+      "matchStatus": "exact_sem_conflict",
+      "mappingNote": "Exact public title match, but uploaded semester differs from current public page."
+    },
+    {
+      "title": "Parallel & Distributed Computing",
+      "semester": 6,
+      "credits": 3,
+      "assessmentProfile": "theory_heavy",
+      "explicitPrerequisites": [
+        "Operating Systems",
+        "Computer Networks"
+      ],
+      "addedPrerequisites": [
+        "Programming in C"
+      ],
+      "bridgeModules": [
+        "concurrency/programming refresher"
+      ],
+      "tt1Topics": [
+        "Parallel Architectures",
+        "Parallel Programming (OpenMP)",
+        "Distributed System Models"
+      ],
+      "tt2Topics": [
+        "Synchronization",
+        "Consistency & Replication"
+      ],
+      "seeTopics": [
+        "Parallel Architectures",
+        "Parallel Programming (OpenMP)",
+        "Distributed System Models",
+        "Synchronization",
+        "Consistency & Replication",
+        "Fault Tolerance."
+      ],
+      "workbookTopics": [
+        "Parallel Architectures",
+        "Parallel Programming (OpenMP)",
+        "Distributed System Models",
+        "Synchronization",
+        "Consistency & Replication",
+        "Fault Tolerance."
+      ],
+      "internalCompilerId": "AMC-S6-36",
+      "officialWebCode": "MCC310A",
+      "officialWebTitle": "Parallel Algorithms for Scientific Computing",
+      "matchStatus": "near",
+      "mappingNote": "Nearest current public core match; title differs."
+    }
+  ],
+  "explicitEdges": [
+    {
+      "targetCourse": "Engineering Mathematics-2",
+      "sourceCourse": "Engineering Mathematics-1",
+      "edgeType": "explicit"
+    },
+    {
+      "targetCourse": "Linear Algebra",
+      "sourceCourse": "Engineering Mathematics-1",
+      "edgeType": "explicit"
+    },
+    {
+      "targetCourse": "Linear Algebra",
+      "sourceCourse": "Engineering Mathematics-2",
+      "edgeType": "explicit"
+    },
+    {
+      "targetCourse": "Data Structures and Algorithms",
+      "sourceCourse": "Programming in C",
+      "edgeType": "explicit"
+    },
+    {
+      "targetCourse": "Digital Logic Design",
+      "sourceCourse": "Basic Electronics",
+      "edgeType": "explicit"
+    },
+    {
+      "targetCourse": "Object Oriented Programming",
+      "sourceCourse": "Programming in C",
+      "edgeType": "explicit"
+    },
+    {
+      "targetCourse": "Probability and Statistics",
+      "sourceCourse": "Engineering Mathematics-1",
+      "edgeType": "explicit"
+    },
+    {
+      "targetCourse": "Design and Analysis of Algorithms",
+      "sourceCourse": "Data Structures and Algorithms",
+      "edgeType": "explicit"
+    },
+    {
+      "targetCourse": "Database Management Systems",
+      "sourceCourse": "Data Structures and Algorithms",
+      "edgeType": "explicit"
+    },
+    {
+      "targetCourse": "Operating Systems",
+      "sourceCourse": "Elements of Computer Science & Engineering",
+      "edgeType": "explicit"
+    },
+    {
+      "targetCourse": "Theory of Computation",
+      "sourceCourse": "Discrete Mathematics",
+      "edgeType": "explicit"
+    },
+    {
+      "targetCourse": "Python Programming",
+      "sourceCourse": "Programming in C",
+      "edgeType": "explicit"
+    },
+    {
+      "targetCourse": "Numerical Methods",
+      "sourceCourse": "Linear Algebra",
+      "edgeType": "explicit"
+    },
+    {
+      "targetCourse": "Computer Networks",
+      "sourceCourse": "Operating Systems",
+      "edgeType": "explicit"
+    },
+    {
+      "targetCourse": "Machine Learning",
+      "sourceCourse": "Probability and Statistics",
+      "edgeType": "explicit"
+    },
+    {
+      "targetCourse": "Machine Learning",
+      "sourceCourse": "Linear Algebra",
+      "edgeType": "explicit"
+    },
+    {
+      "targetCourse": "Software Engineering",
+      "sourceCourse": "Object Oriented Programming",
+      "edgeType": "explicit"
+    },
+    {
+      "targetCourse": "Scientific Computing Lab",
+      "sourceCourse": "Numerical Methods",
+      "edgeType": "explicit"
+    },
+    {
+      "targetCourse": "Optimization Techniques",
+      "sourceCourse": "Linear Algebra",
+      "edgeType": "explicit"
+    },
+    {
+      "targetCourse": "Data Science and Analytics",
+      "sourceCourse": "Machine Learning",
+      "edgeType": "explicit"
+    },
+    {
+      "targetCourse": "Data Science and Analytics",
+      "sourceCourse": "Database Management Systems",
+      "edgeType": "explicit"
+    },
+    {
+      "targetCourse": "Artificial Intelligence",
+      "sourceCourse": "Discrete Mathematics",
+      "edgeType": "explicit"
+    },
+    {
+      "targetCourse": "Parallel & Distributed Computing",
+      "sourceCourse": "Operating Systems",
+      "edgeType": "explicit"
+    },
+    {
+      "targetCourse": "Parallel & Distributed Computing",
+      "sourceCourse": "Computer Networks",
+      "edgeType": "explicit"
+    }
+  ],
+  "addedEdges": [
+    {
+      "targetCourse": "Numerical Methods",
+      "sourceCourse": "Engineering Mathematics-2",
+      "edgeType": "added_soft_or_bridge",
+      "whyAdded": "calculus-based numerical methods and ODE/series intuition"
+    },
+    {
+      "targetCourse": "Machine Learning",
+      "sourceCourse": "Python Programming",
+      "edgeType": "added_soft_or_bridge",
+      "whyAdded": "implementation and calculus/optimization readiness"
+    },
+    {
+      "targetCourse": "Machine Learning",
+      "sourceCourse": "Engineering Mathematics-2",
+      "edgeType": "added_soft_or_bridge",
+      "whyAdded": "implementation and calculus/optimization readiness"
+    },
+    {
+      "targetCourse": "Data Science and Analytics",
+      "sourceCourse": "Python Programming",
+      "edgeType": "added_soft_or_bridge",
+      "whyAdded": "programming and statistical workflow readiness"
+    },
+    {
+      "targetCourse": "Data Science and Analytics",
+      "sourceCourse": "Probability and Statistics",
+      "edgeType": "added_soft_or_bridge",
+      "whyAdded": "programming and statistical workflow readiness"
+    },
+    {
+      "targetCourse": "Artificial Intelligence",
+      "sourceCourse": "Data Structures and Algorithms",
+      "edgeType": "added_soft_or_bridge",
+      "whyAdded": "algorithmic search plus probabilistic reasoning support"
+    },
+    {
+      "targetCourse": "Artificial Intelligence",
+      "sourceCourse": "Probability and Statistics",
+      "edgeType": "added_soft_or_bridge",
+      "whyAdded": "algorithmic search plus probabilistic reasoning support"
+    },
+    {
+      "targetCourse": "Operating Systems",
+      "sourceCourse": "Data Structures and Algorithms",
+      "edgeType": "added_soft_or_bridge",
+      "whyAdded": "systems programming and low-level state reasoning support"
+    },
+    {
+      "targetCourse": "Operating Systems",
+      "sourceCourse": "Digital Logic Design",
+      "edgeType": "added_soft_or_bridge",
+      "whyAdded": "systems programming and low-level state reasoning support"
+    },
+    {
+      "targetCourse": "Parallel & Distributed Computing",
+      "sourceCourse": "Programming in C",
+      "edgeType": "added_soft_or_bridge",
+      "whyAdded": "programming maturity for concurrency/distribution"
+    },
+    {
+      "targetCourse": "Scientific Computing Lab",
+      "sourceCourse": "Python Programming",
+      "edgeType": "added_soft_or_bridge",
+      "whyAdded": "implementation dependency"
+    },
+    {
+      "targetCourse": "Computer Networks",
+      "sourceCourse": "Data Structures and Algorithms",
+      "edgeType": "added_soft_or_bridge",
+      "whyAdded": "queue/buffer and systems data-structure maturity"
+    },
+    {
+      "targetCourse": "Software Engineering",
+      "sourceCourse": "Data Structures and Algorithms",
+      "edgeType": "added_soft_or_bridge",
+      "whyAdded": "design/complexity maturity from DSA"
+    },
+    {
+      "targetCourse": "Optimization Techniques",
+      "sourceCourse": "Engineering Mathematics-2",
+      "edgeType": "added_soft_or_bridge",
+      "whyAdded": "calculus and probabilistic modeling support"
+    },
+    {
+      "targetCourse": "Optimization Techniques",
+      "sourceCourse": "Probability and Statistics",
+      "edgeType": "added_soft_or_bridge",
+      "whyAdded": "calculus and probabilistic modeling support"
+    },
+    {
+      "targetCourse": "Mini Project",
+      "sourceCourse": "Software Engineering",
+      "edgeType": "added_soft_or_bridge",
+      "whyAdded": "integration of major upper-semester competencies"
+    },
+    {
+      "targetCourse": "Mini Project",
+      "sourceCourse": "Machine Learning",
+      "edgeType": "added_soft_or_bridge",
+      "whyAdded": "integration of major upper-semester competencies"
+    },
+    {
+      "targetCourse": "Mini Project",
+      "sourceCourse": "Database Management Systems",
+      "edgeType": "added_soft_or_bridge",
+      "whyAdded": "integration of major upper-semester competencies"
+    },
+    {
+      "targetCourse": "Mini Project",
+      "sourceCourse": "Artificial Intelligence",
+      "edgeType": "added_soft_or_bridge",
+      "whyAdded": "integration of major upper-semester competencies"
+    },
+    {
+      "targetCourse": "Mini Project",
+      "sourceCourse": "Parallel & Distributed Computing",
+      "edgeType": "added_soft_or_bridge",
+      "whyAdded": "integration of major upper-semester competencies"
+    }
+  ],
+  "electives": [
+    {
+      "stream": "Coding and Cryptography",
+      "pceGroup": "PCE-1",
+      "code": "20MCE401A",
+      "title": "Information Theory and Coding",
+      "semesterSlot": "Sem 6"
+    },
+    {
+      "stream": "Coding and Cryptography",
+      "pceGroup": "PCE-2",
+      "code": "20MCE402A",
+      "title": "Computational Number Theory and Algebra",
+      "semesterSlot": "Sem 7"
+    },
+    {
+      "stream": "Coding and Cryptography",
+      "pceGroup": "PCE-3",
+      "code": "20MCE403A",
+      "title": "Number Theory and Elliptic Curve Cryptography",
+      "semesterSlot": "Sem 7"
+    },
+    {
+      "stream": "Mathematical Models",
+      "pceGroup": "PCE-1",
+      "code": "20MCE404A",
+      "title": "Introduction to Real Analysis",
+      "semesterSlot": "Sem 6"
+    },
+    {
+      "stream": "Mathematical Models",
+      "pceGroup": "PCE-2",
+      "code": "20MCE405A",
+      "title": "Topology",
+      "semesterSlot": "Sem 7"
+    },
+    {
+      "stream": "Mathematical Models",
+      "pceGroup": "PCE-3",
+      "code": "20MCE402A",
+      "title": "Computational Number Theory and Algebra",
+      "semesterSlot": "Sem 7"
+    },
+    {
+      "stream": "Artificial Intelligence and Data Sciences",
+      "pceGroup": "PCE-1",
+      "code": "20CSE405A",
+      "title": "Computer Vision",
+      "semesterSlot": "Sem 6"
+    },
+    {
+      "stream": "Artificial Intelligence and Data Sciences",
+      "pceGroup": "PCE-2",
+      "code": "20AIE407A",
+      "title": "Pattern Recognition",
+      "semesterSlot": "Sem 7"
+    },
+    {
+      "stream": "Artificial Intelligence and Data Sciences",
+      "pceGroup": "PCE-3",
+      "code": "20AIE404A",
+      "title": "Artificial Intelligence and Healthcare",
+      "semesterSlot": "Sem 7"
+    },
+    {
+      "stream": "Software Development",
+      "pceGroup": "PCE-1",
+      "code": "20CSE401A",
+      "title": "Software Architecture",
+      "semesterSlot": "Sem 6"
+    },
+    {
+      "stream": "Software Development",
+      "pceGroup": "PCE-2",
+      "code": "20CSE402A",
+      "title": "Principles and Practices of Software Testing",
+      "semesterSlot": "Sem 7"
+    },
+    {
+      "stream": "Software Development",
+      "pceGroup": "PCE-3",
+      "code": "20CSE403A",
+      "title": "Service Oriented Architecture",
+      "semesterSlot": "Sem 7"
+    },
+    {
+      "stream": "Applied Mathematics",
+      "pceGroup": "PCE-1",
+      "code": "20CSE401A",
+      "title": "Advanced Mathematics",
+      "semesterSlot": "Sem 6"
+    },
+    {
+      "stream": "Applied Mathematics",
+      "pceGroup": "PCE-2",
+      "code": "20MCC301A",
+      "title": "Optimization Techniques",
+      "semesterSlot": "Sem 7"
+    },
+    {
+      "stream": "Applied Mathematics",
+      "pceGroup": "PCE-3",
+      "code": "20MCE403A",
+      "title": "Advanced Numerical Methods",
+      "semesterSlot": "Sem 7"
+    },
+    {
+      "stream": "Data Science and Analytics",
+      "pceGroup": "PCE-1",
+      "code": "20CSE407A",
+      "title": "Data Sciences Foundation",
+      "semesterSlot": "Sem 6"
+    },
+    {
+      "stream": "Data Science and Analytics",
+      "pceGroup": "PCE-2",
+      "code": "20CSE304A",
+      "title": "Data Mining",
+      "semesterSlot": "Sem 7"
+    },
+    {
+      "stream": "Data Science and Analytics",
+      "pceGroup": "PCE-3",
+      "code": "20CSE408A",
+      "title": "Data Analytics",
+      "semesterSlot": "Sem 7"
+    }
+  ]
+}

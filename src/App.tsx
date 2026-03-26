@@ -2,7 +2,7 @@ import { Suspense, lazy, useState, useMemo, useCallback, useEffect, useRef, type
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   Bell, Calendar, CheckCircle, ChevronLeft, ChevronRight,
-  LayoutDashboard, ListTodo, Mail, Phone, Search, Shield, Upload, Users, X,
+  GraduationCap, LayoutDashboard, ListTodo, Mail, Phone, Search, Shield, Upload, Users, X,
   AlertTriangle, TrendingDown, BookOpen, Target, Activity, Eye, MessageSquare,
 } from 'lucide-react'
 import {
@@ -103,12 +103,27 @@ import {
   getShellBarStyle,
 } from './ui-primitives'
 import { AirMentorApiClient, AirMentorApiError } from './api/client'
-import type { ApiAcademicBootstrap, ApiAcademicFacultyProfile, ApiAcademicLoginFaculty, ApiAdminCalendarMarker, ApiSessionResponse } from './api/types'
+import type {
+  ApiAcademicBootstrap,
+  ApiAcademicFacultyProfile,
+  ApiAcademicHodProofBundle,
+  ApiAcademicLoginFaculty,
+  ApiAdminCalendarMarker,
+  ApiSessionResponse,
+  ApiStudentAgentCard,
+  ApiStudentAgentMessage,
+  ApiStudentAgentSession,
+  ApiStudentAgentTimelineItem,
+  ApiStudentRiskExplorer,
+} from './api/types'
+import { PROOF_PLAYBACK_SELECTION_STORAGE_KEY, readProofPlaybackSelection, writeProofPlaybackSelection } from './proof-playback'
 import './App.css'
 
 const LazyCourseDetail = lazy(() => import('./pages/course-pages').then(module => ({ default: module.CourseDetail })))
 const LazyAllStudentsPage = lazy(() => import('./pages/workflow-pages').then(module => ({ default: module.AllStudentsPage })))
 const LazyStudentHistoryPage = lazy(() => import('./pages/workflow-pages').then(module => ({ default: module.StudentHistoryPage })))
+const LazyStudentShellPage = lazy(() => import('./pages/student-shell').then(module => ({ default: module.StudentShellPage })))
+const LazyRiskExplorerPage = lazy(() => import('./pages/risk-explorer').then(module => ({ default: module.RiskExplorerPage })))
 const LazySchemeSetupPage = lazy(() => import('./pages/workflow-pages').then(module => ({ default: module.SchemeSetupPage })))
 const LazyUploadPage = lazy(() => import('./pages/workflow-pages').then(module => ({ default: module.UploadPage })))
 const LazyEntryWorkspacePage = lazy(() => import('./pages/workflow-pages').then(module => ({ default: module.EntryWorkspacePage })))
@@ -152,7 +167,7 @@ type TaskCreateInput = {
   placement?: TaskPlacementDraft
 }
 
-type PageId = 'dashboard' | 'students' | 'course' | 'calendar' | 'upload' | 'entry-workspace' | 'mentees' | 'department' | 'mentee-detail' | 'student-history' | 'unlock-review' | 'scheme-setup' | 'queue-history' | 'faculty-profile'
+type PageId = 'dashboard' | 'students' | 'course' | 'calendar' | 'upload' | 'entry-workspace' | 'mentees' | 'department' | 'mentee-detail' | 'student-history' | 'student-shell' | 'risk-explorer' | 'unlock-review' | 'scheme-setup' | 'queue-history' | 'faculty-profile'
 
 type RouteSnapshot = {
   page: PageId
@@ -163,6 +178,8 @@ type RouteSnapshot = {
   entryKind: EntryKind
   selectedMenteeId: string | null
   historyProfile: StudentHistoryRecord | null
+  historyStudentId: string | null
+  studentShellStudentId: string | null
   historyBackPage: PageId | null
   selectedUnlockTaskId: string | null
   schemeOfferingId: string | null
@@ -187,7 +204,7 @@ function getHomePage(role: Role): PageId {
 }
 
 function canAccessPage(role: Role, page: PageId) {
-  if (page === 'student-history' || page === 'queue-history' || page === 'faculty-profile') return true
+  if (page === 'student-history' || page === 'student-shell' || page === 'risk-explorer' || page === 'queue-history' || page === 'faculty-profile') return true
   if (page === 'scheme-setup') return role === 'Course Leader'
   if (page === 'unlock-review') return role === 'HoD'
   if (page === 'mentee-detail') return role === 'Mentor'
@@ -206,6 +223,8 @@ function getRouteSnapshotKey(snapshot: RouteSnapshot) {
     snapshot.entryKind,
     snapshot.selectedMenteeId ?? '',
     snapshot.historyProfile?.usn ?? '',
+    snapshot.historyStudentId ?? '',
+    snapshot.studentShellStudentId ?? '',
     snapshot.historyBackPage ?? '',
     snapshot.selectedUnlockTaskId ?? '',
     snapshot.schemeOfferingId ?? '',
@@ -454,7 +473,7 @@ function LoginPage({
   )
 }
 
-function FacultyProfilePage({
+export function FacultyProfilePage({
   currentTeacher,
   activeRole,
   profile,
@@ -465,6 +484,8 @@ function FacultyProfilePage({
   assignedOfferings,
   currentFacultyTimetable,
   onBack,
+  onOpenStudentShell,
+  onOpenRiskExplorer,
 }: {
   currentTeacher: FacultyAccount
   activeRole: Role
@@ -476,6 +497,8 @@ function FacultyProfilePage({
   assignedOfferings: Offering[]
   currentFacultyTimetable: FacultyTimetableTemplate | null
   onBack: () => void
+  onOpenStudentShell: (studentId: string) => void
+  onOpenRiskExplorer: (studentId: string) => void
 }) {
   const livePermissions = profile?.permissions.filter(item => item.status === 'active') ?? []
   const effectivePermissions = (livePermissions.length > 0
@@ -485,8 +508,16 @@ function FacultyProfilePage({
   const effectiveDepartment = profile?.primaryDepartment?.name ?? currentTeacher.dept
   const effectivePhone = profile?.phone ?? 'Not set'
   const employeeCode = profile?.employeeCode ?? 'Not available'
+  const proofOps = profile?.proofOperations ?? null
+  const activeProofRun = proofOps?.activeRunContexts[0] ?? null
+  const selectedProofCheckpoint = proofOps?.selectedCheckpoint ?? null
+  const leadingProofQueueItem = proofOps?.monitoringQueue[0] ?? null
+  const leadingElectiveFit = proofOps?.electiveFits[0] ?? null
   const timetableWindow = profile?.timetableStatus.directEditWindowEndsAt
     ? new Date(profile.timetableStatus.directEditWindowEndsAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+    : null
+  const nextReassessmentWindow = profile?.reassessmentSummary?.nextDueAt
+    ? new Date(profile.reassessmentSummary.nextDueAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
     : null
   const upcomingMarkers = [...calendarMarkers]
     .sort((left, right) => {
@@ -529,8 +560,19 @@ function FacultyProfilePage({
             <MetricCard label="Email" value={profile?.email ?? currentTeacher.email} helper="Read-only identity field from the faculty record." />
             <MetricCard label="Phone" value={effectivePhone} helper="Shown here so faculty can verify admin-owned contact data." />
             <MetricCard label="Queue Items" value={String(pendingTaskCount)} helper="Current action queue count for this faculty context." />
+            <MetricCard label="Batch Contexts" value={String(profile?.currentBatchContexts.length ?? 0)} helper="Active year or section scopes connected to teaching and mentoring." />
+            <MetricCard label="Next Reassessment" value={nextReassessmentWindow ?? 'None'} helper="Earliest governed reassessment due in the active faculty scope." />
+            <MetricCard label="Active Proof Runs" value={String(proofOps?.activeRunContexts.length ?? 0)} helper="Simulation runs currently linked to this faculty context." />
+            <MetricCard label="Proof Queue" value={String(proofOps?.monitoringQueue.length ?? 0)} helper="Observed-only risk items available for review and follow-up." />
+            <MetricCard label="Elective Fits" value={String(proofOps?.electiveFits.length ?? 0)} helper="Semester-6 elective recommendations derived from observed performance." />
           </div>
         </Card>
+
+        {proofOps ? (
+          <div data-proof-section="proof-mode-authority">
+            <InfoBanner message="Proof mode is active. Use the Proof Control Plane, Risk Explorer, and Student Shell for checkpoint-bound evidence. Other faculty-profile cards on this page remain operational context and may not reflect the selected proof checkpoint." />
+          </div>
+        ) : null}
 
         {loading ? <InfoBanner message="Loading faculty profile..." /> : null}
         {error ? <InfoBanner tone="error" message={error} /> : null}
@@ -591,6 +633,20 @@ function FacultyProfilePage({
           </Card>
 
           <Card style={{ padding: 16, display: 'grid', gap: 10 }}>
+            <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Current Batch Context</div>
+            {profile?.currentBatchContexts?.length ? profile.currentBatchContexts.map(batchContext => (
+              <Card key={batchContext.batchId} style={{ padding: 10, background: T.surface2 }}>
+                <div style={{ ...mono, fontSize: 10, color: T.text }}>{batchContext.batchLabel}{batchContext.branchName ? ` · ${batchContext.branchName}` : ''}</div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
+                  Semester {batchContext.currentSemester} · Sections {batchContext.sectionCodes.join(', ')} · {batchContext.roleCoverage.join(', ')}
+                </div>
+              </Card>
+            )) : (
+              <div style={{ ...mono, fontSize: 10, color: T.muted }}>No batch context is currently mapped for this faculty profile.</div>
+            )}
+          </Card>
+
+          <Card style={{ padding: 16, display: 'grid', gap: 10 }}>
             <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Course Leader Scope</div>
             {profile?.subjectRunCourseLeaderScope?.length ? profile.subjectRunCourseLeaderScope.slice(0, 8).map(subjectRun => (
               <Card key={subjectRun.subjectRunId} style={{ padding: 10, background: T.surface2 }}>
@@ -607,6 +663,8 @@ function FacultyProfilePage({
             <div style={{ ...mono, fontSize: 10, color: T.text }}>Mentor scope: {profile?.mentorScope.activeStudentCount ?? currentTeacher.menteeIds.length} active students</div>
             <div style={{ ...mono, fontSize: 10, color: T.text }}>Timetable template: {(profile?.timetableStatus.hasTemplate ?? !!currentFacultyTimetable) ? 'Configured' : 'Not configured'}</div>
             <div style={{ ...mono, fontSize: 10, color: T.text }}>Direct edit window: {timetableWindow ?? 'Unavailable in current mode'}</div>
+            <div style={{ ...mono, fontSize: 10, color: T.text }}>Open reassessments: {profile?.reassessmentSummary?.openCount ?? 0}</div>
+            <div style={{ ...mono, fontSize: 10, color: T.text }}>Next reassessment due: {nextReassessmentWindow ?? 'None'}</div>
             {profile?.requestSummary ? (
               <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
                 {profile.requestSummary.openCount} linked governed requests. Recent: {profile.requestSummary.recent.map(item => `${item.summary} (${item.status})`).join(' · ') || 'none'}.
@@ -632,6 +690,174 @@ function FacultyProfilePage({
               <div style={{ ...mono, fontSize: 10, color: T.muted }}>
                 No institutional semester markers, holidays, term-test windows, or events are currently mapped for this faculty calendar.
               </div>
+            )}
+          </Card>
+
+          <Card
+            data-proof-surface="teacher-proof-panel"
+            data-proof-entity-id={selectedProofCheckpoint?.simulationStageCheckpointId ?? undefined}
+            style={{ padding: 16, display: 'grid', gap: 10 }}
+          >
+            <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Proof Control Plane</div>
+            <div data-proof-section="proof-authority-note" style={{ display: 'grid', gap: 8 }}>
+              <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                This panel only surfaces rerunnable proof data: active simulation runs, observed risk queue items, and elective-fit summaries. It does not expose latent-state internals.
+              </div>
+              <InfoBanner message="Authoritative proof panel for this faculty scope. Use this card and the linked proof routes for checkpoint-bound evidence; surrounding faculty-profile cards remain operational context." />
+            </div>
+                {proofOps ? (
+                  <>
+                    <Card data-proof-section="active-run-contexts" style={{ padding: 10, background: T.surface2, display: 'grid', gap: 6 }}>
+                  <div style={{ ...mono, fontSize: 10, color: T.text }}>Active run contexts</div>
+                  {proofOps.activeRunContexts.length > 0 ? proofOps.activeRunContexts.slice(0, 3).map(run => (
+                    <div key={run.simulationRunId} style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
+                      {run.batchLabel} · {run.runLabel} · {run.status} · Seed {run.seed} · Created {formatDateLabel(run.createdAt)}
+                    </div>
+                  )) : (
+                    <div style={{ ...mono, fontSize: 10, color: T.muted }}>No active run is linked to this faculty context.</div>
+                  )}
+                </Card>
+
+                {selectedProofCheckpoint ? (
+                  <Card
+                    data-proof-section="checkpoint-overlay"
+                    data-proof-entity-id={selectedProofCheckpoint.simulationStageCheckpointId}
+                    style={{ padding: 10, background: T.surface2, display: 'grid', gap: 6 }}
+                  >
+                    <div style={{ ...mono, fontSize: 10, color: T.text }}>Checkpoint overlay</div>
+                    <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
+                      Sem {selectedProofCheckpoint.semesterNumber} · {selectedProofCheckpoint.stageLabel} · {selectedProofCheckpoint.stageDescription}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <Chip color={T.warning}>{`${selectedProofCheckpoint.highRiskCount ?? 0} high watch`}</Chip>
+                      <Chip color={T.accent}>{`${selectedProofCheckpoint.openQueueCount ?? 0} open queue`}</Chip>
+                      {selectedProofCheckpoint.stageAdvanceBlocked ? <Chip color={T.danger}>Stage blocked</Chip> : null}
+                      {selectedProofCheckpoint.blockedProgressionReason ? <Chip color={T.dim}>{selectedProofCheckpoint.blockedProgressionReason}</Chip> : null}
+                    </div>
+                  </Card>
+                ) : null}
+
+                <Card data-proof-section="monitoring-queue" style={{ padding: 10, background: T.surface2, display: 'grid', gap: 6 }}>
+                  <div style={{ ...mono, fontSize: 10, color: T.text }}>Monitoring queue</div>
+                  {proofOps.monitoringQueue.length > 0 ? proofOps.monitoringQueue.slice(0, 3).map(item => (
+                    <div
+                      key={item.riskAssessmentId}
+                      data-proof-row="teacher-monitoring-item"
+                      data-proof-student-id={item.studentId}
+                      style={{ display: 'grid', gap: 4, borderTop: `1px solid ${T.border2}`, paddingTop: 8, marginTop: 2 }}
+                    >
+                      <div style={{ ...mono, fontSize: 10, color: T.text }}>
+                        {item.studentName} · {item.courseCode} · {item.riskBand} · {item.recommendedAction}
+                      </div>
+                      <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
+                        Evidence: attendance {item.observedEvidence.attendancePct}%, TT1 {item.observedEvidence.tt1Pct}%, TT2 {item.observedEvidence.tt2Pct}%, quiz {item.observedEvidence.quizPct}%, assignment {item.observedEvidence.assignmentPct}%, SEE {item.observedEvidence.seePct}%, weak COs {item.observedEvidence.weakCoCount}, weak questions {item.observedEvidence.weakQuestionCount}, CGPA {item.observedEvidence.cgpa}, backlogs {item.observedEvidence.backlogCount}.
+                      </div>
+                      {item.observedEvidence.interventionRecoveryStatus ? (
+                        <div style={{ ...mono, fontSize: 10, color: T.dim }}>
+                          Intervention recovery status: {item.observedEvidence.interventionRecoveryStatus}.
+                        </div>
+                      ) : null}
+                      {item.observedEvidence.coEvidenceMode ? (
+                        <div style={{ ...mono, fontSize: 10, color: T.dim }}>
+                          CO evidence mode: {item.observedEvidence.coEvidenceMode}.
+                        </div>
+                      ) : null}
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {item.drivers.slice(0, 3).map(driver => (
+                          <Chip key={`${item.riskAssessmentId}-${driver.feature}`} color={driver.impact >= 0 ? T.danger : T.success}>{driver.label}</Chip>
+                        ))}
+                        {item.riskChangeFromPreviousCheckpointScaled != null ? <Chip color={item.riskChangeFromPreviousCheckpointScaled > 0 ? T.danger : item.riskChangeFromPreviousCheckpointScaled < 0 ? T.success : T.dim}>{`Δ ${item.riskChangeFromPreviousCheckpointScaled > 0 ? '+' : ''}${item.riskChangeFromPreviousCheckpointScaled}`}</Chip> : null}
+                        {item.counterfactualLiftScaled != null ? <Chip color={item.counterfactualLiftScaled > 0 ? T.success : item.counterfactualLiftScaled < 0 ? T.warning : T.dim}>{`Lift ${item.counterfactualLiftScaled > 0 ? '+' : ''}${item.counterfactualLiftScaled}`}</Chip> : null}
+                        <Btn
+                          size="sm"
+                          variant="ghost"
+                          dataProofAction="teacher-proof-open-risk-explorer"
+                          dataProofEntityId={item.studentId}
+                          onClick={() => onOpenRiskExplorer(item.studentId)}
+                        >
+                          Open Risk Explorer
+                        </Btn>
+                        <Btn
+                          size="sm"
+                          variant="ghost"
+                          dataProofAction="teacher-proof-open-student-shell"
+                          dataProofEntityId={item.studentId}
+                          onClick={() => onOpenStudentShell(item.studentId)}
+                        >
+                          Open Student Shell
+                        </Btn>
+                      </div>
+                    </div>
+                  )) : (
+                    <div style={{ ...mono, fontSize: 10, color: T.muted }}>No governed queue items are currently linked to this profile.</div>
+                  )}
+                </Card>
+
+                <Card data-proof-section="elective-fit" style={{ padding: 10, background: T.surface2, display: 'grid', gap: 6 }}>
+                  <div style={{ ...mono, fontSize: 10, color: T.text }}>Semester-6 elective fit</div>
+                  {leadingElectiveFit ? (
+                    <>
+                      <div style={{ ...mono, fontSize: 10, color: T.text }}>
+                        {leadingElectiveFit.studentName} · {leadingElectiveFit.recommendedCode} · {leadingElectiveFit.recommendedTitle}
+                      </div>
+                      <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
+                        Stream {leadingElectiveFit.stream}. Rationale: {leadingElectiveFit.rationale.slice(0, 3).join(' · ') || 'Observed performance and prerequisite fit.'}
+                      </div>
+                      <div
+                        data-proof-row="teacher-elective-fit"
+                        data-proof-student-id={leadingElectiveFit.studentId}
+                        style={{ display: 'flex', justifyContent: 'flex-end' }}
+                      >
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <Btn
+                            size="sm"
+                            variant="ghost"
+                            dataProofAction="teacher-proof-open-risk-explorer"
+                            dataProofEntityId={leadingElectiveFit.studentId}
+                            onClick={() => onOpenRiskExplorer(leadingElectiveFit.studentId)}
+                          >
+                            Open Risk Explorer
+                          </Btn>
+                          <Btn
+                            size="sm"
+                            variant="ghost"
+                            dataProofAction="teacher-proof-open-student-shell"
+                            dataProofEntityId={leadingElectiveFit.studentId}
+                            onClick={() => onOpenStudentShell(leadingElectiveFit.studentId)}
+                          >
+                            Open Student Shell
+                          </Btn>
+                        </div>
+                      </div>
+                      {leadingElectiveFit.alternatives.length > 0 ? (
+                        <div style={{ ...mono, fontSize: 10, color: T.muted }}>
+                          Alternatives: {leadingElectiveFit.alternatives.slice(0, 3).map(option => option.code).join(' · ')}
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <div style={{ ...mono, fontSize: 10, color: T.muted }}>No elective recommendation is currently available for this profile.</div>
+                  )}
+                </Card>
+
+                {activeProofRun ? (
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                    Active proof context: {activeProofRun.batchLabel} · {activeProofRun.runLabel} · {activeProofRun.status} · {activeProofRun.branchName ?? 'Branch unavailable'}.
+                  </div>
+                ) : null}
+                {selectedProofCheckpoint ? (
+                  <div style={{ ...mono, fontSize: 10, color: T.dim, lineHeight: 1.8 }}>
+                    Stage overlay active: semester {selectedProofCheckpoint.semesterNumber}, {selectedProofCheckpoint.stageLabel}. This read-only view is aligned to the sysadmin playback checkpoint{selectedProofCheckpoint.stageAdvanceBlocked ? ' and is currently blocked for forward progression.' : ''}.
+                  </div>
+                ) : null}
+                {leadingProofQueueItem ? (
+                  <div style={{ ...mono, fontSize: 10, color: T.dim, lineHeight: 1.8 }}>
+                    Latest queue item: {leadingProofQueueItem.studentName} in {leadingProofQueueItem.courseCode} is marked {leadingProofQueueItem.riskBand} with a follow-up window of {leadingProofQueueItem.dueAt ? formatDateLabel(leadingProofQueueItem.dueAt) : 'unspecified'}.
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <div style={{ ...mono, fontSize: 10, color: T.muted }}>No proof sandbox is attached to this faculty profile yet.</div>
             )}
           </Card>
         </div>
@@ -958,7 +1184,7 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
 }
 
 /* ══════════════════════════════════════════════════════════════
-   STUDENT DRAWER — SHAP, What-If, CO, Interventions
+   STUDENT DRAWER — OBSERVABLE WATCH, CO, INTERVENTIONS
    ══════════════════════════════════════════════════════════════ */
 
 function StudentDrawer({
@@ -972,6 +1198,8 @@ function StudentDrawer({
   onOpenTaskComposer,
   onAssignToMentor,
   onOpenHistory,
+  onOpenStudentShell,
+  onOpenRiskExplorer,
   onScheduleMeeting,
 }: {
   student: Student | null
@@ -984,6 +1212,8 @@ function StudentDrawer({
   onOpenTaskComposer: (s: Student, o?: Offering, taskType?: TaskType) => void
   onAssignToMentor: (s: Student, o?: Offering) => void
   onOpenHistory: (s: Student, o?: Offering) => void
+  onOpenStudentShell: (studentId: string) => void
+  onOpenRiskExplorer: (studentId: string) => void
   onScheduleMeeting: (input: { student: Student; offering?: Offering; title: string; notes?: string; dateISO: string; startMinutes: number; endMinutes: number }) => Promise<void> | void
 }) {
   const { deriveAcademicProjection, getSchemeForOffering } = useAppSelectors()
@@ -1042,14 +1272,14 @@ function StudentDrawer({
           <button aria-label="Close student details" title="Close" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.muted, padding: 4 }}><X size={18} /></button>
         </div>
 
-        {/* Risk Gauge */}
+        {/* Watch Gauge */}
         {s.riskProb !== null ? (
           <div style={{ background: `${riskCol}0c`, border: `1px solid ${riskCol}30`, borderRadius: 12, padding: '18px 22px', marginBottom: 18 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
               <div style={{ ...sora, fontWeight: 800, fontSize: 42, color: riskCol }}>{Math.round(s.riskProb * 100)}%</div>
               <div>
-                <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: riskCol }}>Failure Risk — {s.riskBand}</div>
-                <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 2 }}>P(subject grade &lt; 7.5 or backlog)</div>
+                <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: riskCol }}>Academic Watch Score — {s.riskBand}</div>
+                <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 2 }}>Observable-only score from attendance, term tests, transcript history, and course outcomes.</div>
                 <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
                   {s.flags.backlog && <Chip color={T.danger} size={9}>Backlog history</Chip>}
                   {s.flags.lowAttendance && <Chip color={T.warning} size={9}>Low attendance</Chip>}
@@ -1061,16 +1291,16 @@ function StudentDrawer({
           </div>
         ) : (
           <div style={{ background: T.surface2, borderRadius: 12, padding: '18px 22px', marginBottom: 18, textAlign: 'center' }}>
-            <div style={{ ...mono, fontSize: 12, color: T.muted }}>Risk prediction unavailable — TT1 not yet completed</div>
-            <div style={{ ...mono, fontSize: 11, color: T.dim, marginTop: 4 }}>Showing attendance data only</div>
+            <div style={{ ...mono, fontSize: 12, color: T.muted }}>Watch score unavailable because the current evidence window is incomplete.</div>
+            <div style={{ ...mono, fontSize: 11, color: T.dim, marginTop: 4 }}>Showing attendance and transcript context only.</div>
           </div>
         )}
 
-        {/* SHAP — Top Risk Drivers */}
+        {/* Observable Drivers */}
         {s.reasons.length > 0 && (
           <div style={{ marginBottom: 18 }}>
             <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <TrendingDown size={14} color={T.danger} /> Top Risk Drivers
+              <TrendingDown size={14} color={T.danger} /> Observable Drivers
             </div>
             {s.reasons.map((r, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
@@ -1107,30 +1337,6 @@ function StudentDrawer({
           </div>
         )}
 
-        {/* What-If Scenarios */}
-        {s.whatIf.length > 0 && (
-          <div style={{ marginBottom: 18 }}>
-            <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Activity size={14} color={T.blue} /> What Could Change
-            </div>
-            {s.whatIf.map((w, i) => (
-              <div key={i} style={{ background: `${T.blue}0a`, border: `1px solid ${T.blue}25`, borderRadius: 8, padding: '10px 14px', marginBottom: 8 }}>
-                <div style={{ ...mono, fontSize: 11, color: T.text }}>{w.label}</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-                  <span style={{ ...mono, fontSize: 12, color: T.muted }}>{w.current}</span>
-                  <span style={{ ...mono, fontSize: 10, color: T.dim }}>→</span>
-                  <span style={{ ...mono, fontSize: 12, color: T.success }}>{w.target}</span>
-                  <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <span style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.danger }}>{Math.round(w.currentRisk * 100)}%</span>
-                    <span style={{ ...mono, fontSize: 10, color: T.dim }}>→</span>
-                    <span style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.success }}>{Math.round(w.newRisk * 100)}%</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
         {/* Academic Snapshot */}
         <div style={{ marginBottom: 18 }}>
           <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1144,7 +1350,7 @@ function StudentDrawer({
               { lbl: 'Attendance', val: `${attPct}%`, col: attPct >= 75 ? T.success : attPct >= 65 ? T.warning : T.danger },
               { lbl: 'TT Summary', val: canSeeDetailedMarks ? `${s.tt1Score ?? '—'} / ${s.tt2Score ?? '—'}` : ceSummary ? `${(ceSummary.tt1Scaled + ceSummary.tt2Scaled).toFixed(1)}/30` : '—', col: ceSummary && ceSummary.tt1Scaled + ceSummary.tt2Scaled >= 15 ? T.success : T.warning },
               { lbl: 'CE Signal', val: ceSummary && activeScheme ? `${ceSummary.ce60.toFixed(1)}/${activeScheme.policyContext.ce}` : '—', col: ceSummary && ceSignalThresholds ? (ceSummary.ce60 >= ceSignalThresholds.success ? T.success : ceSummary.ce60 >= ceSignalThresholds.warning ? T.warning : T.danger) : T.warning },
-              { lbl: 'Weak Component', val: s.reasons[0]?.feature?.toUpperCase() ?? 'None', col: s.reasons[0] ? T.warning : T.success },
+              { lbl: 'Primary Signal', val: s.reasons[0]?.feature?.toUpperCase() ?? 'None', col: s.reasons[0] ? T.warning : T.success },
               { lbl: 'SEE Readiness', val: s.riskBand === 'High' ? 'Needs support' : s.riskBand === 'Medium' ? 'Watch' : 'On track', col: s.riskBand === 'High' ? T.danger : s.riskBand === 'Medium' ? T.warning : T.success },
               { lbl: 'Pred CGPA', val: ceSummary ? ceSummary.predictedCgpa.toFixed(2) : (s.prevCgpa > 0 ? s.prevCgpa.toFixed(1) : '—'), col: (ceSummary?.predictedCgpa ?? s.prevCgpa) >= 7 ? T.success : (ceSummary?.predictedCgpa ?? s.prevCgpa) >= 6 ? T.warning : T.danger },
             ].map((x, i) => (
@@ -1155,6 +1361,24 @@ function StudentDrawer({
             ))}
           </div>
         </div>
+
+        {drawerHistory?.electiveRecommendation ? (
+          <div style={{ marginBottom: 18 }}>
+            <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <GraduationCap size={14} color={T.accent} /> Semester 6 Elective Fit
+            </div>
+            <div style={{ background: T.surface2, borderRadius: 10, border: `1px solid ${T.border}`, padding: '12px 14px' }}>
+              <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text }}>{drawerHistory.electiveRecommendation.recommendedTitle}</div>
+              <div style={{ ...mono, fontSize: 10, color: T.accent, marginTop: 4 }}>{drawerHistory.electiveRecommendation.recommendedCode} · {drawerHistory.electiveRecommendation.stream}</div>
+              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 8, lineHeight: 1.7 }}>{drawerHistory.electiveRecommendation.rationale || 'Recommended from the current proof-batch elective basket using accumulated readiness signals.'}</div>
+              {drawerHistory.electiveRecommendation.alternatives.length > 0 ? (
+                <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 8 }}>
+                  Alternates: {drawerHistory.electiveRecommendation.alternatives.map(option => `${option.title} (${option.code})`).join(' · ')}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
 
         {/* Intervention History */}
         <div style={{ marginBottom: 18 }}>
@@ -1229,6 +1453,8 @@ function StudentDrawer({
           <Btn size="sm" variant="ghost" onClick={() => setShowMeetingComposer(current => !current)}><Calendar size={12} /> {showMeetingComposer ? 'Hide Meeting Form' : 'Schedule Meeting'}</Btn>
           {(role === 'Course Leader' || role === 'HoD') && <Btn size="sm" variant="ghost" onClick={() => onAssignToMentor(s, offering)}><Users size={12} /> Defer to Mentor</Btn>}
           <Btn size="sm" variant="ghost" onClick={() => onOpenHistory(s, offering)}><Eye size={12} /> Open Full Profile</Btn>
+          <Btn size="sm" variant="ghost" onClick={() => onOpenStudentShell(normalizedStudentId)}><Shield size={12} /> Student Shell</Btn>
+          <Btn size="sm" variant="ghost" onClick={() => onOpenRiskExplorer(normalizedStudentId)}><Activity size={12} /> Risk Explorer</Btn>
           {role !== 'HoD' && <Btn size="sm" variant="danger" onClick={() => onEscalate(s, offering)}><AlertTriangle size={12} /> Escalate to HoD</Btn>}
         </div>
       </motion.div>
@@ -1496,7 +1722,7 @@ function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent,
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
         {[
           { icon: '👥', label: 'Total Students', val: total, color: T.success },
-          { icon: '‼️', label: 'High Risk Students', val: highRiskCount, color: T.danger },
+          { icon: '‼️', label: 'High Watch Students', val: highRiskCount, color: T.danger },
           { icon: '🎯', label: 'Pending Actions', val: pendingTaskCount, color: T.warning, action: onOpenPendingActions },
         ].map((s, i) => (
           <Card key={i} glow={s.color} style={{ padding: '14px 18px', cursor: s.action ? 'pointer' : 'default' }} onClick={s.action}>
@@ -1517,7 +1743,7 @@ function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent,
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
             <AlertTriangle size={16} color={T.danger} />
             <div style={{ ...sora, fontWeight: 700, fontSize: 15, color: T.danger }}>Priority Alerts</div>
-            <div style={{ ...mono, fontSize: 11, color: T.muted }}>— {highRiskCount} high-risk students need immediate attention</div>
+            <div style={{ ...mono, fontSize: 11, color: T.muted }}>— {highRiskCount} students are above the alert threshold on the current evidence window</div>
           </div>
           <div className="scroll-pane scroll-pane--dense" style={{ maxHeight: 300, overflowY: 'auto', paddingRight: 4 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
@@ -1690,7 +1916,7 @@ function MentorView({ mentees, tasks, onOpenMentee }: { mentees: Mentee[]; tasks
           <Users size={22} color={T.accent} />
           <div>
             <div style={{ ...sora, fontWeight: 700, fontSize: 20, color: T.text }}>My Mentees</div>
-            <div style={{ ...mono, fontSize: 11, color: T.muted }}>Student-centric view · Aggregate vulnerability across all courses</div>
+            <div style={{ ...mono, fontSize: 11, color: T.muted }}>Student-centric view · Cross-course watchlist summary from current observable evidence</div>
           </div>
         </div>
         <div style={{ minWidth: 220, flex: '1 1 280px', maxWidth: 360, position: 'relative' }}>
@@ -1934,7 +2160,7 @@ function MenteeDetailPage({
           <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: mentee.avs >= 0.6 ? T.danger : mentee.avs >= 0.35 ? T.warning : T.success }}>
             {mentee.avs >= 0 ? `${Math.round(mentee.avs * 100)}%` : 'Awaiting TT1'}
           </div>
-          <div style={{ ...mono, fontSize: 9, color: T.muted }}>Aggregate Risk (click for why)</div>
+          <div style={{ ...mono, fontSize: 9, color: T.muted }}>Aggregate Watch Score (click for why)</div>
         </Card>
         <Card
           glow={mentee.prevCgpa >= 7 ? T.success : mentee.prevCgpa >= 6 ? T.warning : T.danger}
@@ -1958,7 +2184,7 @@ function MenteeDetailPage({
 
       {activeInsight === 'risk' && (
         <Card style={{ marginBottom: 14 }}>
-          <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 8 }}>Why Aggregate Risk is {mentee.avs >= 0 ? `${Math.round(mentee.avs * 100)}%` : 'unavailable'}</div>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 8 }}>Why The Aggregate Watch Score Is {mentee.avs >= 0 ? `${Math.round(mentee.avs * 100)}%` : 'unavailable'}</div>
           {riskDrivers.length > 0 ? (
             <div style={{ display: 'grid', gap: 8 }}>
               {riskDrivers.map(driver => {
@@ -2043,7 +2269,7 @@ function MenteeDetailPage({
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ ...sora, fontWeight: 800, fontSize: 18, color }}>{risk.risk >= 0 ? `${Math.round(risk.risk * 100)}%` : '—'}</div>
-                      <div style={{ ...mono, fontSize: 9, color: T.dim }}>{risk.risk >= 0 ? `${risk.band} vulnerability` : 'Awaiting data'}</div>
+                      <div style={{ ...mono, fontSize: 9, color: T.dim }}>{risk.risk >= 0 ? `${risk.band} watch band` : 'Awaiting data'}</div>
                     </div>
                   </div>
                   <div style={{ ...mono, fontSize: 10, color: T.muted, marginBottom: 6 }}>{guidance}</div>
@@ -2253,7 +2479,14 @@ type OperationalWorkspaceProps = {
   onLogout: () => Promise<void> | void
   onRoleChange?: (role: Role) => Promise<void> | void
   loadFacultyProfile?: (facultyId: string) => Promise<ApiAcademicFacultyProfile>
+  loadHodProofAnalytics?: () => Promise<ApiAcademicHodProofBundle>
+  loadStudentAgentCard?: (studentId: string) => Promise<ApiStudentAgentCard>
+  loadStudentAgentTimeline?: (studentId: string) => Promise<{ items: ApiStudentAgentTimelineItem[] }>
+  startStudentAgentSession?: (studentId: string) => Promise<ApiStudentAgentSession>
+  sendStudentAgentMessage?: (sessionId: string, payload: { prompt: string }) => Promise<{ items: ApiStudentAgentMessage[] }>
+  loadStudentRiskExplorer?: (studentId: string) => Promise<ApiStudentRiskExplorer>
   academicBootstrap: ApiAcademicBootstrap
+  proofPlaybackNotice?: string
 }
 
 function OperationalWorkspace({
@@ -2263,7 +2496,14 @@ function OperationalWorkspace({
   onLogout,
   onRoleChange,
   loadFacultyProfile,
+  loadHodProofAnalytics,
+  loadStudentAgentCard,
+  loadStudentAgentTimeline,
+  startStudentAgentSession,
+  sendStudentAgentMessage,
+  loadStudentRiskExplorer,
   academicBootstrap,
+  proofPlaybackNotice,
 }: OperationalWorkspaceProps) {
   const facultyAccounts = academicBootstrap.faculty
   const allOfferings = academicBootstrap.offerings
@@ -2285,6 +2525,8 @@ function OperationalWorkspace({
   const [selectedOffering, setSelectedOffering] = useState<Offering | null>(null)
   const [selectedMentee, setSelectedMentee] = useState<Mentee | null>(null)
   const [historyProfile, setHistoryProfile] = useState<StudentHistoryRecord | null>(null)
+  const [historyStudentId, setHistoryStudentId] = useState<string | null>(null)
+  const [studentShellStudentId, setStudentShellStudentId] = useState<string | null>(null)
   const [historyBackPage, setHistoryBackPage] = useState<PageId | null>(null)
   const [selectedUnlockTaskId, setSelectedUnlockTaskId] = useState<string | null>(null)
   const [schemeOfferingId, setSchemeOfferingId] = useState<string | null>(null)
@@ -2304,6 +2546,11 @@ function OperationalWorkspace({
   const [facultyProfile, setFacultyProfile] = useState<ApiAcademicFacultyProfile | null>(null)
   const [facultyProfileLoading, setFacultyProfileLoading] = useState(false)
   const [facultyProfileError, setFacultyProfileError] = useState('')
+  const [hodProofAnalytics, setHodProofAnalytics] = useState<ApiAcademicHodProofBundle | null>(null)
+  const [hodProofLoading, setHodProofLoading] = useState(false)
+  const [hodProofError, setHodProofError] = useState('')
+  const [roleChangeBusy, setRoleChangeBusy] = useState(false)
+  const [roleChangeError, setRoleChangeError] = useState('')
   const [studentPatches, setStudentPatches] = useState<Record<string, StudentRuntimePatch>>(() => repositories.entryData.getStudentPatchesSnapshot())
   const [schemeByOffering, setSchemeByOffering] = useState<Record<string, SchemeState>>(() => repositories.entryData.getSchemeStateSnapshot(allOfferings))
   const [ttBlueprintsByOffering, setTtBlueprintsByOffering] = useState<Record<string, Record<TTKind, TermTestBlueprint>>>(() => repositories.entryData.getBlueprintSnapshot(allOfferings))
@@ -2344,6 +2591,35 @@ function OperationalWorkspace({
       cancelled = true
     }
   }, [currentTeacher?.facultyId, loadFacultyProfile])
+  useEffect(() => {
+    if (role !== 'HoD' || !currentTeacher?.facultyId || !loadHodProofAnalytics) {
+      setHodProofAnalytics(null)
+      setHodProofError('')
+      setHodProofLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setHodProofLoading(true)
+    setHodProofError('')
+    void loadHodProofAnalytics()
+      .then(bundle => {
+        if (!cancelled) setHodProofAnalytics(bundle)
+      })
+      .catch(error => {
+        if (!cancelled) {
+          setHodProofAnalytics(null)
+          setHodProofError(error instanceof Error ? error.message : 'Could not load HoD proof analytics.')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setHodProofLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [currentTeacher?.facultyId, loadHodProofAnalytics, role])
   useEffect(() => {
     if (allowedRoles.length === 0) return
     const nextRole = allowedRoles.includes(initialRole)
@@ -2389,21 +2665,44 @@ function OperationalWorkspace({
   const [taskPlacements, setTaskPlacements] = useState<Record<string, TaskCalendarPlacement>>(() => repositories.calendar.getTaskPlacementsSnapshot())
   const [calendarAuditEvents, setCalendarAuditEvents] = useState<CalendarAuditEvent[]>(() => repositories.calendar.getCalendarAuditSnapshot())
   const [academicMeetings, setAcademicMeetings] = useState<AcademicMeeting[]>(() => repositories.calendar.getMeetingsSnapshot())
+  const hydratedTimetableSnapshotRef = useRef(JSON.stringify(timetableByFacultyId))
+  const hydratedBlueprintSnapshotRef = useRef(JSON.stringify(ttBlueprintsByOffering))
+  const timetableHydrationSkipRef = useRef(0)
+  const blueprintHydrationSkipRef = useRef(0)
 
   useEffect(() => {
-    setStudentPatches(repositories.entryData.getStudentPatchesSnapshot())
-    setSchemeByOffering(repositories.entryData.getSchemeStateSnapshot(allOfferings))
-    setTtBlueprintsByOffering(repositories.entryData.getBlueprintSnapshot(allOfferings))
-    setLockAuditByTarget(repositories.locksAudit.getLockAuditSnapshot())
-    setLockByOffering(repositories.locksAudit.getLockSnapshot(allOfferings))
-    setDraftBySection(repositories.entryData.getDraftSnapshot())
-    setCellValues(repositories.entryData.getCellValueSnapshot())
-    setAllTasksList(repositories.tasks.getTasksSnapshot(() => []))
-    setResolvedTasks(repositories.tasks.getResolvedTasksSnapshot({}))
-    setTimetableByFacultyId(repositories.calendar.getTimetableTemplatesSnapshot(facultyAccounts, allOfferings))
-    setTaskPlacements(repositories.calendar.getTaskPlacementsSnapshot())
-    setCalendarAuditEvents(repositories.calendar.getCalendarAuditSnapshot())
-    setAcademicMeetings(repositories.calendar.getMeetingsSnapshot())
+    const nextStudentPatches = repositories.entryData.getStudentPatchesSnapshot()
+    const nextSchemeByOffering = repositories.entryData.getSchemeStateSnapshot(allOfferings)
+    const nextTtBlueprintsByOffering = repositories.entryData.getBlueprintSnapshot(allOfferings)
+    const nextLockAuditByTarget = repositories.locksAudit.getLockAuditSnapshot()
+    const nextLockByOffering = repositories.locksAudit.getLockSnapshot(allOfferings)
+    const nextDraftBySection = repositories.entryData.getDraftSnapshot()
+    const nextCellValues = repositories.entryData.getCellValueSnapshot()
+    const nextAllTasksList = repositories.tasks.getTasksSnapshot(() => [])
+    const nextResolvedTasks = repositories.tasks.getResolvedTasksSnapshot({})
+    const nextTimetableByFacultyId = repositories.calendar.getTimetableTemplatesSnapshot(facultyAccounts, allOfferings)
+    const nextTaskPlacements = repositories.calendar.getTaskPlacementsSnapshot()
+    const nextCalendarAuditEvents = repositories.calendar.getCalendarAuditSnapshot()
+    const nextAcademicMeetings = repositories.calendar.getMeetingsSnapshot()
+
+    hydratedTimetableSnapshotRef.current = JSON.stringify(nextTimetableByFacultyId)
+    hydratedBlueprintSnapshotRef.current = JSON.stringify(nextTtBlueprintsByOffering)
+    timetableHydrationSkipRef.current = 2
+    blueprintHydrationSkipRef.current = 2
+
+    setStudentPatches(nextStudentPatches)
+    setSchemeByOffering(nextSchemeByOffering)
+    setTtBlueprintsByOffering(nextTtBlueprintsByOffering)
+    setLockAuditByTarget(nextLockAuditByTarget)
+    setLockByOffering(nextLockByOffering)
+    setDraftBySection(nextDraftBySection)
+    setCellValues(nextCellValues)
+    setAllTasksList(nextAllTasksList)
+    setResolvedTasks(nextResolvedTasks)
+    setTimetableByFacultyId(nextTimetableByFacultyId)
+    setTaskPlacements(nextTaskPlacements)
+    setCalendarAuditEvents(nextCalendarAuditEvents)
+    setAcademicMeetings(nextAcademicMeetings)
   }, [allOfferings, facultyAccounts, repositories])
 
   useEffect(() => { void repositories.locksAudit.saveLocks(lockByOffering) }, [lockByOffering, repositories])
@@ -2411,12 +2710,43 @@ function OperationalWorkspace({
   useEffect(() => { void repositories.entryData.saveCellValues(cellValues) }, [cellValues, repositories])
   useEffect(() => { void repositories.tasks.saveTasks(allTasksList) }, [allTasksList, repositories])
   useEffect(() => { void repositories.tasks.saveResolvedTasks(resolvedTasks) }, [repositories, resolvedTasks])
-  useEffect(() => { void repositories.calendar.saveTimetableTemplates(timetableByFacultyId) }, [repositories, timetableByFacultyId])
+  useEffect(() => {
+    if (page !== 'calendar') return
+    if (timetableHydrationSkipRef.current > 0) {
+      timetableHydrationSkipRef.current -= 1
+      return
+    }
+    const serialized = JSON.stringify(timetableByFacultyId)
+    if (serialized === hydratedTimetableSnapshotRef.current) return
+    const previousSnapshot = hydratedTimetableSnapshotRef.current
+    hydratedTimetableSnapshotRef.current = serialized
+    void repositories.calendar.saveTimetableTemplates(timetableByFacultyId).catch(error => {
+      hydratedTimetableSnapshotRef.current = previousSnapshot
+      console.error('Could not persist timetable templates.', error)
+    })
+  }, [page, repositories, timetableByFacultyId])
   useEffect(() => { void repositories.calendar.saveTaskPlacements(taskPlacements) }, [repositories, taskPlacements])
   useEffect(() => { void repositories.calendar.saveCalendarAudit(calendarAuditEvents) }, [calendarAuditEvents, repositories])
   useEffect(() => { void repositories.entryData.saveStudentPatches(studentPatches) }, [repositories, studentPatches])
-  useEffect(() => { void repositories.entryData.saveSchemeState(schemeByOffering) }, [repositories, schemeByOffering])
-  useEffect(() => { void repositories.entryData.saveBlueprintState(ttBlueprintsByOffering) }, [repositories, ttBlueprintsByOffering])
+  useEffect(() => {
+    if (role !== 'Course Leader' || (page !== 'course' && page !== 'scheme-setup' && page !== 'entry-workspace')) return
+    void repositories.entryData.saveSchemeState(schemeByOffering)
+  }, [page, repositories, role, schemeByOffering])
+  useEffect(() => {
+    if (role !== 'Course Leader' || (page !== 'course' && page !== 'scheme-setup' && page !== 'entry-workspace')) return
+    if (blueprintHydrationSkipRef.current > 0) {
+      blueprintHydrationSkipRef.current -= 1
+      return
+    }
+    const serialized = JSON.stringify(ttBlueprintsByOffering)
+    if (serialized === hydratedBlueprintSnapshotRef.current) return
+    const previousSnapshot = hydratedBlueprintSnapshotRef.current
+    hydratedBlueprintSnapshotRef.current = serialized
+    void repositories.entryData.saveBlueprintState(ttBlueprintsByOffering).catch(error => {
+      hydratedBlueprintSnapshotRef.current = previousSnapshot
+      console.error('Could not persist question-paper blueprints.', error)
+    })
+  }, [page, repositories, role, ttBlueprintsByOffering])
   useEffect(() => { void repositories.locksAudit.saveLockAudit(lockAuditByTarget) }, [lockAuditByTarget, repositories])
 
   const supervisedOfferingIds = useMemo(() => new Set(assignedOfferings.map(o => o.offId)), [assignedOfferings])
@@ -2551,6 +2881,8 @@ function OperationalWorkspace({
     entryKind,
     selectedMenteeId: selectedMentee?.id ?? null,
     historyProfile,
+    historyStudentId,
+    studentShellStudentId,
     historyBackPage,
     selectedUnlockTaskId,
     schemeOfferingId,
@@ -2561,11 +2893,13 @@ function OperationalWorkspace({
     entryOfferingId,
     historyBackPage,
     historyProfile,
+    historyStudentId,
     offering,
     page,
     schemeOfferingId,
     selectedMentee,
     selectedUnlockTaskId,
+    studentShellStudentId,
     uploadKind,
     uploadOffering,
   ])
@@ -2583,6 +2917,8 @@ function OperationalWorkspace({
     setSelectedOffering(null)
     setSelectedMentee(snapshot.selectedMenteeId ? (allMentees.find(item => item.id === snapshot.selectedMenteeId) ?? null) : null)
     setHistoryProfile(snapshot.historyProfile)
+    setHistoryStudentId(snapshot.historyStudentId)
+    setStudentShellStudentId(snapshot.studentShellStudentId)
     setHistoryBackPage(snapshot.historyBackPage)
     setSelectedUnlockTaskId(snapshot.selectedUnlockTaskId)
     setSchemeOfferingId(snapshot.schemeOfferingId)
@@ -2655,6 +2991,10 @@ function OperationalWorkspace({
   const auditParamsApplied = useRef(false)
   useEffect(() => {
     if (auditParamsApplied.current) return
+    if (getAcademicApiBaseUrl()) {
+      auditParamsApplied.current = true
+      return
+    }
     const params = new URLSearchParams(window.location.search)
     if (![...params.keys()].some(key => key.startsWith('mock'))) {
       auditParamsApplied.current = true
@@ -2709,6 +3049,13 @@ function OperationalWorkspace({
       if (mockPage === 'student-history') {
         const nextHistory = buildHistoryProfile({ student: targetStudent, historyByUsn: studentHistoryByUsn })
         if (nextHistory) setHistoryProfile(nextHistory)
+        setHistoryStudentId(targetStudent.id.split('::').at(-1) ?? targetStudent.id)
+      }
+      if (mockPage === 'student-shell') {
+        setStudentShellStudentId(targetStudent.id.split('::').at(-1) ?? targetStudent.id)
+      }
+      if (mockPage === 'risk-explorer') {
+        setStudentShellStudentId(targetStudent.id.split('::').at(-1) ?? targetStudent.id)
       }
     }
     if (targetMentee) {
@@ -2716,6 +3063,7 @@ function OperationalWorkspace({
       if (mockPage === 'student-history') {
         const nextHistory = buildHistoryProfile({ mentee: targetMentee, historyByUsn: studentHistoryByUsn })
         if (nextHistory) setHistoryProfile(nextHistory)
+        setHistoryStudentId(targetMentee.id.replace(/^mentee-/, ''))
       }
     }
     const mockUnlockTaskId = params.get('mockUnlockTaskId')
@@ -2798,6 +3146,7 @@ function OperationalWorkspace({
     const nextHistory = buildHistoryProfile({ student: s, historyByUsn: studentHistoryByUsn })
     if (!nextHistory) return
     setHistoryProfile(nextHistory)
+    setHistoryStudentId(s.id.split('::').at(-1) ?? s.id)
     setHistoryBackPage(page)
     setSelectedStudent(null)
     setSelectedOffering(null)
@@ -2811,9 +3160,24 @@ function OperationalWorkspace({
     const nextHistory = buildHistoryProfile({ mentee: m, historyByUsn: studentHistoryByUsn })
     if (!nextHistory) return
     setHistoryProfile(nextHistory)
+    setHistoryStudentId(m.id.replace(/^mentee-/, ''))
     setHistoryBackPage('mentee-detail')
     setPage('student-history')
   }, [])
+  const handleOpenStudentShell = useCallback((studentId: string, backPage?: PageId) => {
+    setStudentShellStudentId(studentId)
+    setHistoryBackPage(backPage ?? page)
+    setSelectedStudent(null)
+    setSelectedOffering(null)
+    setPage('student-shell')
+  }, [page])
+  const handleOpenRiskExplorer = useCallback((studentId: string, backPage?: PageId) => {
+    setStudentShellStudentId(studentId)
+    setHistoryBackPage(backPage ?? page)
+    setSelectedStudent(null)
+    setSelectedOffering(null)
+    setPage('risk-explorer')
+  }, [page])
   const handleOpenCalendar = useCallback(() => {
     setPage('calendar')
     setOffering(null)
@@ -2871,22 +3235,43 @@ function OperationalWorkspace({
   }, [getFallbackBlueprintSet])
 
   const handleRoleChange = useCallback((r: Role) => {
-    if (!allowedRoles.includes(r)) return
-    clearRouteHistory()
-    setRole(r)
-    setPage(getHomePage(r))
-    setOffering(null)
-    setSelectedStudent(null)
-    setSelectedMentee(null)
-    setHistoryProfile(null)
-    setSelectedUnlockTaskId(null)
-    setSchemeOfferingId(null)
-    setCourseInitialTab(undefined)
-    setHistoryBackPage(null)
-    setTaskComposer(prev => ({ ...prev, isOpen: false, placement: undefined, availableOfferingIds: undefined }))
-    setPendingNoteAction(null)
-    void onRoleChange?.(r)
-  }, [allowedRoles, clearRouteHistory, onRoleChange])
+    if (!allowedRoles.includes(r) || r === role || roleChangeBusy) return
+
+    const applyRoleLocally = () => {
+      clearRouteHistory()
+      setRole(r)
+      setPage(getHomePage(r))
+      setOffering(null)
+      setSelectedStudent(null)
+      setSelectedMentee(null)
+      setHistoryProfile(null)
+      setSelectedUnlockTaskId(null)
+      setSchemeOfferingId(null)
+      setCourseInitialTab(undefined)
+      setHistoryBackPage(null)
+      setTaskComposer(prev => ({ ...prev, isOpen: false, placement: undefined, availableOfferingIds: undefined }))
+      setPendingNoteAction(null)
+      setShowTopbarMenu(false)
+    }
+
+    setRoleChangeError('')
+    if (!onRoleChange) {
+      applyRoleLocally()
+      return
+    }
+
+    setRoleChangeBusy(true)
+    void Promise.resolve(onRoleChange(r))
+      .then(() => {
+        applyRoleLocally()
+      })
+      .catch(error => {
+        setRoleChangeError(error instanceof Error ? error.message : `Could not switch to ${r}.`)
+      })
+      .finally(() => {
+        setRoleChangeBusy(false)
+      })
+  }, [allowedRoles, clearRouteHistory, onRoleChange, role, roleChangeBusy])
 
   const buildEntryCommitPayload = useCallback((offId: string, kind: EntryKind) => {
     const targetOffering = allOfferings.find(item => item.offId === offId)
@@ -4113,6 +4498,10 @@ function OperationalWorkspace({
     ? 'Loading course workspace...'
     : page === 'calendar'
       ? 'Loading calendar workspace...'
+    : page === 'student-shell'
+      ? 'Loading student shell...'
+    : page === 'risk-explorer'
+      ? 'Loading risk explorer...'
     : page === 'upload' || page === 'entry-workspace' || page === 'scheme-setup'
       ? 'Loading entry workflow...'
       : page === 'department'
@@ -4145,9 +4534,12 @@ function OperationalWorkspace({
         <div className="top-bar-role-switcher" style={{ ...getSegmentedGroupStyle(), marginLeft: 16 }}>
           {allowedRoles.map(r => (
             <button key={r} onClick={() => handleRoleChange(r)}
+              disabled={roleChangeBusy}
               data-tab="true"
+              data-proof-action="switch-role"
+              data-proof-entity-id={r}
               style={getSegmentedButtonStyle({ active: role === r, compact: isCompactTopbar })}>
-              {r}
+              {roleChangeBusy && role !== r ? `${r}` : r}
             </button>
           ))}
         </div>
@@ -4192,7 +4584,7 @@ function OperationalWorkspace({
           )}
 
           {!isCompactTopbar && (
-            <button className="top-control-btn" aria-label="Logout" title="Logout" onClick={handleLogout} style={{ ...getIconButtonStyle({ subtle: true }), width: 'auto', padding: '0 12px', color: T.muted, ...mono, fontSize: UI_FONT_SIZES.eyebrow }}>
+            <button className="top-control-btn" aria-label="Logout" title="Logout" data-proof-action="logout" onClick={handleLogout} style={{ ...getIconButtonStyle({ subtle: true }), width: 'auto', padding: '0 12px', color: T.muted, ...mono, fontSize: UI_FONT_SIZES.eyebrow }}>
               Logout
             </button>
           )}
@@ -4249,6 +4641,7 @@ function OperationalWorkspace({
                 </div>
                 <button
                   type="button"
+                  data-proof-action="open-faculty-profile"
                   onClick={() => setPage('faculty-profile')}
                   style={{ width: '100%', marginBottom: 12, borderRadius: 8, border: `1px solid ${page === 'faculty-profile' ? T.accent : T.border}`, background: page === 'faculty-profile' ? `${T.accent}14` : T.surface2, color: page === 'faculty-profile' ? T.accentLight : T.muted, cursor: 'pointer', padding: '8px 10px', textAlign: 'left', ...mono, fontSize: 10 }}
                 >
@@ -4262,6 +4655,8 @@ function OperationalWorkspace({
                     const active = page === item.id
                       || ((page === 'course') && item.id === (role === 'HoD' ? 'department' : role === 'Mentor' ? 'mentees' : 'dashboard'))
                       || ((page === 'student-history') && item.id === (historyBackPage === 'students' ? 'students' : role === 'HoD' ? 'department' : role === 'Mentor' ? 'mentees' : 'dashboard'))
+                      || ((page === 'student-shell') && item.id === (historyBackPage === 'students' ? 'students' : role === 'HoD' ? 'department' : role === 'Mentor' ? 'mentees' : 'dashboard'))
+                      || ((page === 'risk-explorer') && item.id === (historyBackPage === 'students' ? 'students' : role === 'HoD' ? 'department' : role === 'Mentor' ? 'mentees' : 'dashboard'))
                       || ((page === 'upload' || page === 'entry-workspace' || page === 'scheme-setup') && item.id === 'upload')
                       || ((page === 'queue-history' || page === 'unlock-review') && item.id === 'queue-history')
                       || ((page === 'mentee-detail') && item.id === 'mentees')
@@ -4344,6 +4739,18 @@ function OperationalWorkspace({
 
         {/* Center Content */}
         <div className={`scroll-pane app-content app-content--${layoutMode}`} style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: 'calc(100vh - 54px)' }}>
+          {proofPlaybackNotice ? (
+            <div style={{ padding: '16px 20px 0' }}>
+              <div data-proof-section="proof-playback-notice">
+                <InfoBanner message={proofPlaybackNotice} />
+              </div>
+            </div>
+          ) : null}
+          {roleChangeError ? (
+            <div style={{ padding: '16px 20px 0' }}>
+              <InfoBanner tone="error" message={roleChangeError} />
+            </div>
+          ) : null}
           <Suspense fallback={<RouteLoadingFallback label={routeLoadingLabel} />}>
             {page === 'faculty-profile' && (
               <FacultyProfilePage
@@ -4357,6 +4764,8 @@ function OperationalWorkspace({
                 assignedOfferings={assignedOfferings}
                 currentFacultyTimetable={filteredCurrentFacultyTimetable}
                 onBack={handleNavigateBack}
+                onOpenStudentShell={studentId => handleOpenStudentShell(studentId, 'faculty-profile')}
+                onOpenRiskExplorer={studentId => handleOpenRiskExplorer(studentId, 'faculty-profile')}
               />
             )}
             {role === 'Course Leader' && page === 'dashboard' && <CLDashboard offerings={assignedOfferings} pendingTaskCount={pendingActionCount} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} onOpenCalendar={handleOpenCalendar} onOpenPendingActions={handleToggleActionQueue} teacherInitials={currentTeacher.initials} greetingHeadline={greetingHeadline} greetingMeta={greetingMeta} greetingSubline={greetingSubline} />}
@@ -4373,13 +4782,49 @@ function OperationalWorkspace({
             {role === 'Mentor' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
             {role === 'Mentor' && page === 'calendar' && filteredCurrentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} meetings={calendarMeetings} resolvedTaskIds={resolvedTasks} timetable={filteredCurrentFacultyTimetable} adminMarkers={currentFacultyCalendarMarkers} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onUpdateMeeting={handleUpdateMeeting} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
 
-            {role === 'HoD' && page === 'department' && <LazyHodView onOpenQueueHistory={handleOpenQueueHistory} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} tasks={allTasksList} calendarAuditEvents={calendarAuditEvents} />}
+            {role === 'HoD' && page === 'department' && (
+              <LazyHodView
+                onOpenQueueHistory={handleOpenQueueHistory}
+                onOpenStudentShell={studentId => handleOpenStudentShell(studentId, 'department')}
+                onOpenRiskExplorer={studentId => handleOpenRiskExplorer(studentId, 'department')}
+                onOpenCourse={handleOpenCourse}
+                onOpenStudent={handleOpenStudent}
+                tasks={allTasksList}
+                calendarAuditEvents={calendarAuditEvents}
+                summary={hodProofAnalytics?.summary ?? null}
+                courseRollups={hodProofAnalytics?.courses ?? []}
+                facultyRollups={hodProofAnalytics?.faculty ?? []}
+                studentWatchRows={hodProofAnalytics?.students ?? []}
+                reassessmentRows={hodProofAnalytics?.reassessments ?? []}
+                loading={hodProofLoading}
+                error={hodProofError}
+              />
+            )}
             {role === 'HoD' && page === 'course' && offering && <LazyCourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? getFallbackBlueprintSet(offering.offId)} courseOutcomes={academicBootstrap?.courseOutcomesByOffering?.[offering.offId]} coAttainmentRows={academicBootstrap?.coAttainmentByOffering?.[offering.offId]} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleNavigateBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
             {role === 'HoD' && page === 'unlock-review' && selectedUnlockTask && <UnlockReviewPage task={selectedUnlockTask} offering={allOfferings.find(item => item.offId === selectedUnlockTask.offeringId) ?? null} onBack={handleNavigateBack} onApprove={() => handleApproveUnlock(selectedUnlockTask.id)} onReject={() => handleRejectUnlock(selectedUnlockTask.id)} onResetComplete={() => handleResetComplete(selectedUnlockTask.id)} />}
             {role === 'HoD' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
             {role === 'HoD' && page === 'calendar' && filteredCurrentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} meetings={calendarMeetings} resolvedTaskIds={resolvedTasks} timetable={filteredCurrentFacultyTimetable} adminMarkers={currentFacultyCalendarMarkers} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onUpdateMeeting={handleUpdateMeeting} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
 
-            {page === 'student-history' && historyProfile && <LazyStudentHistoryPage role={role} history={historyProfile} onBack={handleNavigateBack} />}
+            {page === 'student-history' && historyProfile && <LazyStudentHistoryPage role={role} history={historyProfile} studentId={historyStudentId} onBack={handleNavigateBack} onOpenStudentShell={studentId => handleOpenStudentShell(studentId, historyBackPage ?? page)} onOpenRiskExplorer={studentId => handleOpenRiskExplorer(studentId, historyBackPage ?? page)} />}
+            {page === 'student-shell' && studentShellStudentId && (
+              <LazyStudentShellPage
+                role={role}
+                studentId={studentShellStudentId}
+                onBack={handleNavigateBack}
+                loadCard={loadStudentAgentCard}
+                loadTimeline={loadStudentAgentTimeline}
+                startSession={startStudentAgentSession}
+                sendMessage={sendStudentAgentMessage}
+              />
+            )}
+            {page === 'risk-explorer' && studentShellStudentId && (
+              <LazyRiskExplorerPage
+                role={role}
+                studentId={studentShellStudentId}
+                onBack={handleNavigateBack}
+                loadExplorer={loadStudentRiskExplorer}
+              />
+            )}
           </Suspense>
         </div>
 
@@ -4406,7 +4851,7 @@ function OperationalWorkspace({
           <StudentDrawer student={selectedStudent} offering={selectedOffering || undefined} historyByUsn={studentHistoryByUsn} role={role} meetings={academicMeetings} onClose={() => { setSelectedStudent(null); setSelectedOffering(null) }} onEscalate={handleOpenStudentEscalation} onOpenTaskComposer={(s, o, taskType) => {
             const resolvedOffering = o ?? allOfferings.find(item => getStudentsPatched(item).some(candidate => candidate.id === s.id))
             handleOpenTaskComposer({ offeringId: resolvedOffering?.offId, studentId: s.id, taskType })
-          }} onAssignToMentor={handleOpenStudentMentorHandoff} onOpenHistory={handleOpenHistoryFromStudent} onScheduleMeeting={handleScheduleMeeting} />
+          }} onAssignToMentor={handleOpenStudentMentorHandoff} onOpenHistory={handleOpenHistoryFromStudent} onOpenStudentShell={studentId => handleOpenStudentShell(studentId, page)} onOpenRiskExplorer={studentId => handleOpenRiskExplorer(studentId, page)} onScheduleMeeting={handleScheduleMeeting} />
         )}
       </AnimatePresence>
 
@@ -4434,23 +4879,12 @@ function mapApiRoleToRole(roleCode: ApiSessionResponse['activeRoleGrant']['roleC
   return null
 }
 
-const PRIMARY_VISIBLE_FACULTY_USERNAME = 'kavitha.rao'
-const PRIMARY_VISIBLE_FACULTY_NAME = 'dr. kavitha rao'
-
-function normalizeVisibleFacultyIdentity(value?: string | null) {
-  return (value ?? '').trim().toLowerCase()
-}
-
 function restrictVisibleFacultyOptions<T extends { facultyId: string; username?: string; name?: string; displayName?: string }>(items: T[]) {
-  const candidates = items
-    .filter(item => normalizeVisibleFacultyIdentity(item.username) === PRIMARY_VISIBLE_FACULTY_USERNAME || normalizeVisibleFacultyIdentity(item.displayName ?? item.name) === PRIMARY_VISIBLE_FACULTY_NAME)
-    .sort((left, right) => {
-      const leftExactUsername = normalizeVisibleFacultyIdentity(left.username) === PRIMARY_VISIBLE_FACULTY_USERNAME ? 1 : 0
-      const rightExactUsername = normalizeVisibleFacultyIdentity(right.username) === PRIMARY_VISIBLE_FACULTY_USERNAME ? 1 : 0
-      if (leftExactUsername !== rightExactUsername) return rightExactUsername - leftExactUsername
-      return left.facultyId.localeCompare(right.facultyId)
-    })
-  return candidates.length > 0 ? [candidates[0]] : items
+  return [...items].sort((left, right) => {
+    const leftLabel = (left.displayName ?? left.name ?? left.username ?? left.facultyId).toLowerCase()
+    const rightLabel = (right.displayName ?? right.name ?? right.username ?? right.facultyId).toLowerCase()
+    return leftLabel.localeCompare(rightLabel) || left.facultyId.localeCompare(right.facultyId)
+  })
 }
 
 function restrictAcademicBootstrap(snapshot: ApiAcademicBootstrap): ApiAcademicBootstrap {
@@ -4485,6 +4919,8 @@ export function OperationalApp() {
   const [remoteSession, setRemoteSession] = useState<ApiSessionResponse | null>(null)
   const [remoteBootstrap, setRemoteBootstrap] = useState<ApiAcademicBootstrap | null>(null)
   const [loginFaculty, setLoginFaculty] = useState<ApiAcademicLoginFaculty[]>([])
+  const [playbackCheckpointId, setPlaybackCheckpointId] = useState<string | null>(() => readProofPlaybackSelection()?.simulationStageCheckpointId ?? null)
+  const [proofPlaybackNotice, setProofPlaybackNotice] = useState('')
   const handleReturnToPortal = useCallback(() => {
     if (typeof window !== 'undefined') clearPortalWorkspaceHints(window.localStorage)
     navigateToPortal('home')
@@ -4492,25 +4928,56 @@ export function OperationalApp() {
 
   const fetchAcademicBootstrap = useCallback(async () => {
     if (!apiClient) return null
-    const snapshot = restrictAcademicBootstrap(await apiClient.getAcademicBootstrap())
-    hydrateAcademicData(snapshot)
-    setRemoteBootstrap(snapshot)
-    setLoginFaculty(restrictVisibleFacultyOptions(snapshot.faculty.map(account => {
-      const accountUsername = (account as { username?: string }).username ?? account.facultyId
-      return {
-        facultyId: account.facultyId,
-        username: accountUsername,
-        name: account.name,
-        displayName: account.name,
-        designation: account.roleTitle,
-        dept: account.dept,
-        departmentCode: account.dept,
-        roleTitle: account.roleTitle,
-        allowedRoles: account.allowedRoles,
+    const syncSnapshot = (snapshot: ApiAcademicBootstrap) => {
+      hydrateAcademicData(snapshot)
+      setRemoteBootstrap(snapshot)
+      setPlaybackCheckpointId(snapshot.proofPlayback?.simulationStageCheckpointId ?? null)
+      setLoginFaculty(restrictVisibleFacultyOptions(snapshot.faculty.map(account => {
+        const accountUsername = (account as { username?: string }).username ?? account.facultyId
+        return {
+          facultyId: account.facultyId,
+          username: accountUsername,
+          name: account.name,
+          displayName: account.name,
+          designation: account.roleTitle,
+          dept: account.dept,
+          departmentCode: account.dept,
+          roleTitle: account.roleTitle,
+          allowedRoles: account.allowedRoles,
+        }
+      })))
+      return snapshot
+    }
+    const selection = readProofPlaybackSelection()
+    try {
+      const snapshot = restrictAcademicBootstrap(await apiClient.getAcademicBootstrap(selection?.simulationStageCheckpointId ? {
+        simulationStageCheckpointId: selection.simulationStageCheckpointId,
+      } : undefined))
+      if (!selection?.simulationStageCheckpointId || snapshot.proofPlayback?.simulationStageCheckpointId === selection.simulationStageCheckpointId) {
+        setProofPlaybackNotice('')
       }
-    })))
-    return snapshot
+      return syncSnapshot(snapshot)
+    } catch (error) {
+      const invalidSelection = selection?.simulationStageCheckpointId
+        && error instanceof AirMentorApiError
+        && (error.status === 403 || error.status === 404)
+      if (!invalidSelection) throw error
+      writeProofPlaybackSelection(null)
+      setProofPlaybackNotice('The selected proof playback checkpoint is no longer accessible in this academic scope. The portal reverted to the active proof-run view.')
+      const snapshot = restrictAcademicBootstrap(await apiClient.getAcademicBootstrap())
+      return syncSnapshot(snapshot)
+    }
   }, [apiClient])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !remoteSession?.faculty?.facultyId) return undefined
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== PROOF_PLAYBACK_SELECTION_STORAGE_KEY) return
+      void fetchAcademicBootstrap().catch(() => undefined)
+    }
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
+  }, [fetchAcademicBootstrap, remoteSession?.faculty?.facultyId])
 
   useEffect(() => {
     if (!apiClient || !remoteSessionRepositories) {
@@ -4625,6 +5092,26 @@ export function OperationalApp() {
     )
   }
 
+  const loadAcademicFacultyProfile = useCallback((facultyId: string) => apiClient.getAcademicFacultyProfile(facultyId, playbackCheckpointId ? {
+    simulationStageCheckpointId: playbackCheckpointId,
+  } : undefined), [apiClient, playbackCheckpointId])
+  const loadAcademicHodProofAnalytics = useCallback(() => apiClient.getAcademicHodProofBundle(playbackCheckpointId ? {
+    simulationStageCheckpointId: playbackCheckpointId,
+  } : undefined), [apiClient, playbackCheckpointId])
+  const loadAcademicStudentAgentCard = useCallback((studentId: string) => apiClient.getAcademicStudentAgentCard(studentId, playbackCheckpointId ? {
+    simulationStageCheckpointId: playbackCheckpointId,
+  } : undefined), [apiClient, playbackCheckpointId])
+  const loadAcademicStudentAgentTimeline = useCallback((studentId: string) => apiClient.getAcademicStudentAgentTimeline(studentId, playbackCheckpointId ? {
+    simulationStageCheckpointId: playbackCheckpointId,
+  } : undefined), [apiClient, playbackCheckpointId])
+  const startAcademicStudentAgentSession = useCallback((studentId: string) => apiClient.startAcademicStudentAgentSession(studentId, playbackCheckpointId ? {
+    simulationStageCheckpointId: playbackCheckpointId,
+  } : undefined), [apiClient, playbackCheckpointId])
+  const sendAcademicStudentAgentMessage = useCallback((sessionId: string, payload: { prompt: string }) => apiClient.sendAcademicStudentAgentMessage(sessionId, payload), [apiClient])
+  const loadAcademicStudentRiskExplorer = useCallback((studentId: string) => apiClient.getAcademicStudentRiskExplorer(studentId, playbackCheckpointId ? {
+    simulationStageCheckpointId: playbackCheckpointId,
+  } : undefined), [apiClient, playbackCheckpointId])
+
   if (booting) return <RouteLoadingFallback label="Restoring academic session..." />
 
   if (!remoteSession || !remoteSession.faculty?.facultyId || !remoteInitialRole || !remoteBootstrap || !remoteRepositories) {
@@ -4643,16 +5130,23 @@ export function OperationalApp() {
   }
 
   return (
-    <OperationalWorkspace
-      repositories={remoteRepositories}
-      initialTeacherId={remoteSession.faculty.facultyId}
+      <OperationalWorkspace
+        repositories={remoteRepositories}
+        initialTeacherId={remoteSession.faculty.facultyId}
       initialRole={remoteInitialRole}
       onLogout={handleRemoteLogout}
       onRoleChange={handleRemoteRoleChange}
-      loadFacultyProfile={facultyId => apiClient.getAcademicFacultyProfile(facultyId)}
-      academicBootstrap={remoteBootstrap}
-    />
-  )
+      loadFacultyProfile={loadAcademicFacultyProfile}
+      loadHodProofAnalytics={loadAcademicHodProofAnalytics}
+      loadStudentAgentCard={loadAcademicStudentAgentCard}
+      loadStudentAgentTimeline={loadAcademicStudentAgentTimeline}
+      startStudentAgentSession={startAcademicStudentAgentSession}
+        sendStudentAgentMessage={sendAcademicStudentAgentMessage}
+        loadStudentRiskExplorer={loadAcademicStudentRiskExplorer}
+        academicBootstrap={remoteBootstrap}
+        proofPlaybackNotice={proofPlaybackNotice}
+      />
+    )
 }
 
 function PortalRouterApp() {

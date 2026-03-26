@@ -7,6 +7,7 @@ import {
   academicRuntimeState,
   adminReminders,
   adminRequests,
+  alertDecisions,
   academicTerms,
   auditEvents,
   batches,
@@ -17,8 +18,10 @@ import {
   facultyOfferingOwnerships,
   facultyProfiles,
   mentorAssignments,
+  reassessmentEvents,
   roleGrants,
   sectionOfferings,
+  studentEnrollments,
   students,
   userAccounts,
 } from '../db/schema.js'
@@ -35,6 +38,7 @@ import {
   requireAuth,
   requireRole,
 } from './support.js'
+import { buildFacultyProofView } from '../lib/msruas-proof-control-plane.js'
 
 const reminderCreateSchema = z.object({
   title: z.string().min(1),
@@ -612,6 +616,9 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
   }, async request => {
     const auth = requireAuth(request)
     const params = parseOrThrow(z.object({ facultyId: z.string().min(1) }), request.params)
+    const query = parseOrThrow(z.object({
+      simulationStageCheckpointId: z.string().min(1).optional(),
+    }), request.query)
     if (
       auth.facultyId !== params.facultyId
       && auth.activeRoleGrant.roleCode !== 'HOD'
@@ -635,6 +642,8 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
       branchRows,
       termRows,
       requestRows,
+      reassessmentRows,
+      alertDecisionRows,
       timetableRuntimeRows,
       calendarRuntimeRows,
       viewerAppointmentRows,
@@ -653,6 +662,8 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
       context.db.select().from(branches),
       context.db.select().from(academicTerms),
       context.db.select().from(adminRequests),
+      context.db.select().from(reassessmentEvents),
+      context.db.select().from(alertDecisions),
       context.db.select().from(academicRuntimeState).where(eq(academicRuntimeState.stateKey, 'timetableByFacultyId')),
       context.db.select().from(academicRuntimeState).where(eq(academicRuntimeState.stateKey, 'adminCalendarByFacultyId')),
       auth.activeRoleGrant.roleCode === 'HOD' && auth.facultyId
@@ -693,6 +704,7 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
 
     const activeOwnerships = ownershipRows.filter(row => row.status === 'active')
     const leaderLikeOwnerships = activeOwnerships.filter(row => isLeaderLikeOwnershipRole(row.ownershipRole))
+    const activeMentorAssignments = assignmentRows.filter(row => row.effectiveTo === null)
     const currentOwnedClasses = activeOwnerships.flatMap(row => {
       const offering = offeringRows.find(item => item.offeringId === row.offeringId)
       if (!offering) return []
@@ -710,6 +722,51 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
         branchName: branch?.name ?? null,
       }]
     })
+    const currentBatchContextsMap = new Map<string, {
+      batchId: string
+      batchLabel: string
+      branchName: string | null
+      currentSemester: number
+      sectionCodes: Set<string>
+      roleCoverage: Set<string>
+    }>()
+    for (const item of currentOwnedClasses) {
+      const offering = offeringRows.find(row => row.offeringId === item.offeringId)
+      const term = offering ? termById[offering.termId] : null
+      const batch = term?.batchId ? batchById[term.batchId] : null
+      if (!batch) continue
+      const existing = currentBatchContextsMap.get(batch.batchId) ?? {
+        batchId: batch.batchId,
+        batchLabel: batch.batchLabel,
+        branchName: item.branchName,
+        currentSemester: batch.currentSemester,
+        sectionCodes: new Set<string>(),
+        roleCoverage: new Set<string>(),
+      }
+      existing.sectionCodes.add(item.sectionCode)
+      existing.roleCoverage.add(item.ownershipRole)
+      currentBatchContextsMap.set(batch.batchId, existing)
+    }
+    const activeStudentIds = new Set(activeMentorAssignments.map(row => row.studentId))
+    if (activeStudentIds.size > 0) {
+      const enrollmentRows = await context.db.select().from(studentEnrollments)
+      for (const enrollment of enrollmentRows.filter(row => activeStudentIds.has(row.studentId) && row.academicStatus === 'active')) {
+        const batch = batchById[termById[enrollment.termId]?.batchId ?? '']
+        const branch = branchById[enrollment.branchId]
+        if (!batch) continue
+        const existing = currentBatchContextsMap.get(batch.batchId) ?? {
+          batchId: batch.batchId,
+          batchLabel: batch.batchLabel,
+          branchName: branch?.name ?? null,
+          currentSemester: batch.currentSemester,
+          sectionCodes: new Set<string>(),
+          roleCoverage: new Set<string>(),
+        }
+        existing.sectionCodes.add(enrollment.sectionCode)
+        existing.roleCoverage.add('MENTOR')
+        currentBatchContextsMap.set(batch.batchId, existing)
+      }
+    }
 
     const subjectRunMap = new Map<string, {
       subjectRunId: string
@@ -739,6 +796,27 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
     const relatedRequests = requestRows
       .filter(row => row.requestedByFacultyId === params.facultyId || row.ownedByFacultyId === params.facultyId)
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+
+    const relevantOfferingIds = new Set(currentOwnedClasses.map(item => item.offeringId))
+    const relevantStudentIds = new Set(activeMentorAssignments.map(item => item.studentId))
+    const relevantReassessments = reassessmentRows.filter(row => (
+      relevantStudentIds.has(row.studentId)
+      || (row.offeringId ? relevantOfferingIds.has(row.offeringId) : false)
+    ))
+    const relevantRiskDecisionIds = new Set(relevantReassessments.map(row => row.riskAssessmentId))
+    const recentAlertDecisions = alertDecisionRows
+      .filter(row => relevantRiskDecisionIds.has(row.riskAssessmentId))
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .slice(0, 5)
+    const nextReassessmentDueAt = relevantReassessments
+      .filter(row => row.status !== 'completed' && row.status !== 'monitoring-only')
+      .map(row => row.dueAt)
+      .sort()[0] ?? null
+    const proofView = await buildFacultyProofView(context.db, {
+      facultyId: params.facultyId,
+      viewerRoleCode: auth.activeRoleGrant.roleCode,
+      simulationStageCheckpointId: query.simulationStageCheckpointId,
+    })
 
     const describeGrantScope = (scopeType: string, scopeId: string) => {
       if (scopeType === 'institution') return 'Institution'
@@ -797,10 +875,18 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
         sectionCodes: Array.from(entry.sectionCodes).sort(),
       })),
       mentorScope: {
-        activeStudentCount: assignmentRows.filter(row => row.effectiveTo === null).length,
-        studentIds: assignmentRows.filter(row => row.effectiveTo === null).map(row => row.studentId),
+        activeStudentCount: activeMentorAssignments.length,
+        studentIds: activeMentorAssignments.map(row => row.studentId),
       },
       currentOwnedClasses,
+      currentBatchContexts: Array.from(currentBatchContextsMap.values()).map(entry => ({
+        batchId: entry.batchId,
+        batchLabel: entry.batchLabel,
+        branchName: entry.branchName,
+        currentSemester: entry.currentSemester,
+        sectionCodes: Array.from(entry.sectionCodes).sort(),
+        roleCoverage: Array.from(entry.roleCoverage).sort(),
+      })),
       timetableStatus: {
         hasTemplate: !!timetableTemplate,
         publishedAt: timetableTemplate ? (calendarWorkspace?.publishedAt ?? timetableRuntimeRows[0]?.updatedAt ?? null) : null,
@@ -817,6 +903,12 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
           updatedAt: row.updatedAt,
         })),
       },
+      reassessmentSummary: {
+        openCount: relevantReassessments.filter(row => row.status !== 'completed' && row.status !== 'monitoring-only').length,
+        nextDueAt: nextReassessmentDueAt,
+        recentDecisionTypes: recentAlertDecisions.map(row => row.decisionType),
+      },
+      proofOperations: proofView,
     }
   })
 }

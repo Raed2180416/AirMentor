@@ -102,6 +102,19 @@ describe('session routes', () => {
     expect(afterLogout.statusCode).toBe(401)
   })
 
+  it('chooses a deterministic default academic role on login for multi-role faculty', async () => {
+    current = await createTestApp()
+
+    const login = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+    expect(login.response.statusCode).toBe(200)
+    expect(login.body.activeRoleGrant.roleCode).toBe('COURSE_LEADER')
+    expect(login.body.availableRoleGrants.map((grant: { roleCode: string }) => grant.roleCode)).toEqual([
+      'COURSE_LEADER',
+      'MENTOR',
+      'HOD',
+    ])
+  })
+
   it('guards system-admin routes from non-admin role contexts', async () => {
     current = await createTestApp()
 

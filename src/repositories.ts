@@ -461,6 +461,26 @@ function createHttpSessionPreferencesRepository({
     return session
   }
 
+  async function settleCookieBackedSession(stage: 'login' | 'role-switch') {
+    const retryDelaysMs = [0, 75, 200, 400]
+    for (const delayMs of retryDelaysMs) {
+      if (delayMs > 0) {
+        await new Promise(resolve => window.setTimeout(resolve, delayMs))
+      }
+      try {
+        return cacheSession(await client.restoreSession())
+      } catch (error) {
+        if (error instanceof AirMentorApiError && error.status === 401) continue
+        throw error
+      }
+    }
+    throw new Error(
+      stage === 'login'
+        ? 'Signed in, but the browser session cookie did not become readable by the backend. Please try signing in again.'
+        : 'Role changed locally, but the backend session context did not settle. Please retry the role switch.',
+    )
+  }
+
   return {
     getThemeSnapshot() {
       if (!resolvedStorage) return null
@@ -490,14 +510,18 @@ function createHttpSessionPreferencesRepository({
       }
     },
     async loginRemoteSession(payload) {
-      return cacheSession(await client.login(payload)) as ApiSessionResponse
+      const session = await client.login(payload)
+      cacheSession(session)
+      return settleCookieBackedSession('login') as Promise<ApiSessionResponse>
     },
     async logoutRemoteSession() {
       await client.logout()
       cacheSession(null)
     },
     async switchRemoteRoleContext(roleGrantId) {
-      return cacheSession(await client.switchRoleContext(roleGrantId)) as ApiSessionResponse
+      const session = await client.switchRoleContext(roleGrantId)
+      cacheSession(session)
+      return settleCookieBackedSession('role-switch') as Promise<ApiSessionResponse>
     },
   }
 }
@@ -641,10 +665,12 @@ function createHttpAcademicRepositories({
     calendar: {
       getTimetableTemplatesSnapshot(faculty, offerings) {
         const parsed = runtimeCache.timetableByFacultyId ?? {}
-        return Object.fromEntries(faculty.map(account => {
+        const normalizedSnapshot = Object.fromEntries(faculty.map(account => {
           const ownedOfferings = offerings.filter(offering => account.offeringIds.includes(offering.offId))
           return [account.facultyId, normalizeFacultyTimetableTemplate(parsed[account.facultyId], account, ownedOfferings)]
         })) as Record<string, FacultyTimetableTemplate>
+        runtimeCache.timetableByFacultyId = deepClone(normalizedSnapshot)
+        return normalizedSnapshot
       },
       getTaskPlacementsSnapshot() {
         const parsed = runtimeCache.taskPlacements ?? {}

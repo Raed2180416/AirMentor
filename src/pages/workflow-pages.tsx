@@ -160,7 +160,21 @@ export function AllStudentsPage({
   )
 }
 
-export function StudentHistoryPage({ role, history, onBack }: { role: Role; history: StudentHistoryRecord; onBack: () => void }) {
+export function StudentHistoryPage({
+  role,
+  history,
+  studentId,
+  onBack,
+  onOpenStudentShell,
+  onOpenRiskExplorer,
+}: {
+  role: Role
+  history: StudentHistoryRecord
+  studentId?: string | null
+  onBack: () => void
+  onOpenStudentShell?: (studentId: string) => void
+  onOpenRiskExplorer?: (studentId: string) => void
+}) {
   const latestTerm = history.terms[history.terms.length - 1]
   const totalBacklogs = history.terms.reduce((acc, term) => acc + term.backlogCount, 0)
 
@@ -171,9 +185,13 @@ export function StudentHistoryPage({ role, history, onBack }: { role: Role; hist
         <div>
           <div style={{ ...sora, fontWeight: 700, fontSize: 22, color: T.text }}>Student History</div>
           <div style={{ ...mono, fontSize: 11, color: T.accent, marginTop: 3 }}>{history.studentName} · {history.usn} · {history.program}</div>
-          <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 6 }}>Semester-wise history for mentor review, academic follow-up, and later risk-model inputs.</div>
+          <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 6 }}>Semester-wise history for mentor review, academic follow-up, and later adaptive monitoring inputs.</div>
         </div>
-        <Chip color={history.trend === 'Improving' ? T.success : history.trend === 'Declining' ? T.danger : T.warning} size={10}>{history.trend} trend</Chip>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Chip color={history.trend === 'Improving' ? T.success : history.trend === 'Declining' ? T.danger : T.warning} size={10}>{history.trend} trend</Chip>
+          {studentId && onOpenRiskExplorer ? <Btn size="sm" variant="ghost" onClick={() => onOpenRiskExplorer(studentId)}><Eye size={12} /> Risk Explorer</Btn> : null}
+          {studentId && onOpenStudentShell ? <Btn size="sm" variant="ghost" onClick={() => onOpenStudentShell(studentId)}><Eye size={12} /> Student Shell</Btn> : null}
+        </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 18 }}>

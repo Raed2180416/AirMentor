@@ -206,6 +206,13 @@ export interface StudentHistoryRecord {
   progressionStatus: 'Eligible' | 'Review' | 'Hold'
   advisoryNotes: string[]
   repeatSubjects: string[]
+  electiveRecommendation?: {
+    recommendedCode: string
+    recommendedTitle: string
+    stream: string
+    rationale: string
+    alternatives: Array<{ code: string; title: string; stream: string }>
+  } | null
   terms: TranscriptTerm[]
 }
 

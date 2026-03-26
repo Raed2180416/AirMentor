@@ -3,6 +3,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type HTMLAttributes,
   type CSSProperties,
   type InputHTMLAttributes,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -483,7 +484,28 @@ export const Bar = ({ val, max = 100, color, h = 5 }: { val: number; max?: numbe
   )
 }
 
-export const Card = ({ children, style = {}, glow, onClick }: { children: ReactNode; style?: CSSProperties; glow?: string; onClick?: () => void }) => {
+type CardProps = {
+  children: ReactNode
+  style?: CSSProperties
+  glow?: string
+  onClick?: () => void
+} & Omit<
+  HTMLAttributes<HTMLDivElement>,
+  'onAnimationEnd'
+  | 'onAnimationEndCapture'
+  | 'onAnimationIteration'
+  | 'onAnimationIterationCapture'
+  | 'onAnimationStart'
+  | 'onAnimationStartCapture'
+  | 'onDrag'
+  | 'onDragCapture'
+  | 'onDragEnd'
+  | 'onDragEndCapture'
+  | 'onDragStart'
+  | 'onDragStartCapture'
+>
+
+export const Card = ({ children, style = {}, glow, onClick, ...rest }: CardProps) => {
   const shouldReduceMotion = useReducedMotion()
   const interactive = typeof onClick === 'function'
   const role = glow ? 'selected' : 'primary'
@@ -505,6 +527,7 @@ export const Card = ({ children, style = {}, glow, onClick }: { children: ReactN
 
   return (
     <motion.div
+      {...rest}
       data-surface="card"
       data-interactive={interactive ? 'true' : undefined}
       role={interactive ? 'button' : undefined}
@@ -549,13 +572,22 @@ export const PageShell = ({ size, children, style = {} }: { size: 'wide' | 'stan
   )
 }
 
-export const PageBackButton = ({ onClick, label = 'Back' }: { onClick: () => void; label?: string }) => {
+export const PageBackButton = ({
+  onClick,
+  label = 'Back',
+  dataProofAction,
+}: {
+  onClick: () => void
+  label?: string
+  dataProofAction?: string
+}) => {
   const shouldReduceMotion = useReducedMotion()
 
   return (
     <motion.button
       type="button"
       data-pressable="true"
+      data-proof-action={dataProofAction}
       onClick={onClick}
       whileHover={!shouldReduceMotion ? { x: -4 } : undefined}
       whileTap={!shouldReduceMotion ? { scale: 0.98 } : undefined}
@@ -580,7 +612,29 @@ export const PageBackButton = ({ onClick, label = 'Back' }: { onClick: () => voi
   )
 }
 
-export const Btn = ({ children, onClick, variant = 'primary', size = 'md', type = 'button', disabled = false }: { children: ReactNode; onClick?: () => void; variant?: string; size?: string; type?: 'button' | 'submit' | 'reset'; disabled?: boolean }) => {
+export const Btn = ({
+  children,
+  onClick,
+  variant = 'primary',
+  size = 'md',
+  type = 'button',
+  disabled = false,
+  dataProofAction,
+  dataProofEntityId,
+  ariaLabel,
+  title,
+}: {
+  children: ReactNode
+  onClick?: () => void
+  variant?: string
+  size?: string
+  type?: 'button' | 'submit' | 'reset'
+  disabled?: boolean
+  dataProofAction?: string
+  dataProofEntityId?: string
+  ariaLabel?: string
+  title?: string
+}) => {
   const shouldReduceMotion = useReducedMotion()
   const pad = size === 'sm' ? '8px 12px' : size === 'lg' ? '12px 18px' : '10px 14px'
   const fs = size === 'sm' ? 11 : size === 'lg' ? 14 : 12
@@ -601,6 +655,10 @@ export const Btn = ({ children, onClick, variant = 'primary', size = 'md', type 
       type={type}
       disabled={disabled}
       data-pressable="true"
+      data-proof-action={dataProofAction}
+      data-proof-entity-id={dataProofEntityId}
+      aria-label={ariaLabel}
+      title={title}
       onClick={onClick}
       initial={false}
       whileHover={!disabled && !shouldReduceMotion ? { boxShadow: hoverShadow, opacity: 0.998 } : undefined}

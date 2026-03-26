@@ -1,243 +1,916 @@
 import { useMemo, useState } from 'react'
-import { Eye, Shield } from 'lucide-react'
-import { FACULTY, MENTEES, OFFERINGS, T, mono, sora, type Offering, type Student } from '../data'
+import { Shield } from 'lucide-react'
+import type { Offering, Student } from '../data'
+import { T, mono, sora } from '../data'
 import type { CalendarAuditEvent, RiskBand, SharedTask } from '../domain'
-import { useAppSelectors } from '../selectors'
-import { Bar, Btn, Card, Chip, PageShell, TH, TD } from '../ui-primitives'
+import type {
+  ApiAcademicHodProofCourseRollup,
+  ApiAcademicHodProofFacultyRollup,
+  ApiAcademicHodProofReassessment,
+  ApiAcademicHodProofStudentWatch,
+  ApiAcademicHodProofSummary,
+} from '../api/types'
+import { Btn, Card, Chip, ModalWorkspace, PageShell, RiskBadge, TH, TD } from '../ui-primitives'
+import { EmptyState, InfoBanner, MetricCard, SectionHeading, formatDateTime, getStatusColor } from '../system-admin-ui'
+
+type HodTabId = 'overview' | 'courses' | 'faculty' | 'reassessments'
+
+function toRiskBand(band?: string | null): RiskBand | null {
+  const normalized = band?.trim().toLowerCase()
+  if (normalized === 'high') return 'High'
+  if (normalized === 'medium') return 'Medium'
+  if (normalized === 'low') return 'Low'
+  return null
+}
+
+function formatPercent(value: number) {
+  return `${Math.round(value)}%`
+}
+
+function formatHours(value: number) {
+  return `${value.toFixed(1)} h`
+}
+
+function sectionColor(_sectionCode: string) {
+  return T.muted
+}
+
+type GovernedQueueState = 'open' | 'watching' | 'resolved' | null
+
+function resolveGovernedQueueState(status?: string | null): GovernedQueueState {
+  const normalized = status?.trim().toLowerCase()
+  if (normalized === 'open' || normalized === 'opened') return 'open'
+  if (normalized === 'watch' || normalized === 'watching') return 'watching'
+  if (normalized === 'resolved') return 'resolved'
+  return null
+}
+
+function governedQueueLabel(state: Exclude<GovernedQueueState, null>) {
+  if (state === 'open') return 'Action Needed'
+  if (state === 'watching') return 'Watching'
+  return 'Resolved'
+}
+
+function governedQueueColor(state: Exclude<GovernedQueueState, null>) {
+  if (state === 'open') return T.danger
+  if (state === 'watching') return T.warning
+  return T.success
+}
+
+function PanelLabel({ children, color = T.accent }: { children: string; color?: string }) {
+  return (
+    <span style={{ ...mono, fontSize: 10, color, textTransform: 'uppercase', letterSpacing: '0.12em' }}>
+      {children}
+    </span>
+  )
+}
+
+function TableCard({
+  title,
+  caption,
+  children,
+  ...rest
+}: {
+  title: string
+  caption: string
+  children: React.ReactNode
+} & Omit<React.HTMLAttributes<HTMLDivElement>, 'onClick'>) {
+  return (
+    <Card style={{ padding: 16, display: 'grid', gap: 12 }} {...rest}>
+      <div>
+        <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>{title}</div>
+        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.8 }}>{caption}</div>
+      </div>
+      <div style={{ overflowX: 'auto' }}>{children}</div>
+    </Card>
+  )
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: string
+}) {
+  return <Btn size="sm" variant={active ? 'primary' : 'ghost'} onClick={onClick}>{children}</Btn>
+}
 
 export function HodView({
   onOpenQueueHistory,
-  onOpenCourse,
-  onOpenStudent,
-  tasks,
-  calendarAuditEvents,
+  onOpenStudentShell,
+  onOpenRiskExplorer,
+  summary,
+  courseRollups,
+  facultyRollups,
+  studentWatchRows,
+  reassessmentRows,
+  loading,
+  error,
 }: {
   onOpenQueueHistory: () => void
   onOpenCourse: (offering: Offering) => void
   onOpenStudent: (student: Student, offering?: Offering) => void
+  onOpenStudentShell: (studentId: string) => void
+  onOpenRiskExplorer: (studentId: string) => void
   tasks: SharedTask[]
   calendarAuditEvents: CalendarAuditEvent[]
+  summary: ApiAcademicHodProofSummary | null
+  courseRollups: ApiAcademicHodProofCourseRollup[]
+  facultyRollups: ApiAcademicHodProofFacultyRollup[]
+  studentWatchRows: ApiAcademicHodProofStudentWatch[]
+  reassessmentRows: ApiAcademicHodProofReassessment[]
+  loading: boolean
+  error: string
 }) {
-  const { getStudentsPatched, getOfferingAttendancePatched } = useAppSelectors()
-  const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<HodTabId>('overview')
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null)
+  const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(null)
+  const [selectedFacultyId, setSelectedFacultyId] = useState<string | null>(null)
+  const [showActionNeededOnly, setShowActionNeededOnly] = useState(true)
 
-  const teacherStats = useMemo(() => {
-    return FACULTY.map(faculty => {
-      const offerings = faculty.offeringIds
-        .map(offId => OFFERINGS.find(offering => offering.offId === offId))
-        .filter((offering): offering is Offering => !!offering)
-      const students = offerings.reduce((acc, offering) => acc + getStudentsPatched(offering).length, 0)
-      const highRisk = offerings.reduce((acc, offering) => acc + getStudentsPatched(offering).filter(student => student.riskBand === 'High').length, 0)
-      const averageAttendance = offerings.length > 0 ? Math.round(offerings.reduce((acc, offering) => acc + getOfferingAttendancePatched(offering), 0) / offerings.length) : 0
-      const lockChecks = offerings.flatMap(offering => [offering.tt1Locked ? 1 : 0, offering.tt2Locked ? 1 : 0, offering.quizLocked ? 1 : 0, offering.asgnLocked ? 1 : 0])
-      const completeness = lockChecks.length > 0 ? Math.round(lockChecks.reduce((acc, value) => acc + value, 0) / lockChecks.length * 100) : 0
-      const pendingTasks = offerings.filter(offering => !!offering.pendingAction).length
-      return {
-        id: faculty.facultyId,
-        name: faculty.name,
-        initials: faculty.initials,
-        dept: faculty.dept,
-        role: faculty.roleTitle,
-        roles: faculty.allowedRoles,
-        offerings,
-        students,
-        highRisk,
-        averageAttendance,
-        completeness,
-        pendingTasks,
-      }
-    })
-  }, [getOfferingAttendancePatched, getStudentsPatched])
+  const selectedStudent = useMemo(
+    () => studentWatchRows.find(row => row.studentId === selectedStudentId) ?? null,
+    [selectedStudentId, studentWatchRows],
+  )
+  const selectedCourse = useMemo(
+    () => courseRollups.find(row => row.courseCode === selectedCourseCode) ?? null,
+    [courseRollups, selectedCourseCode],
+  )
+  const selectedFaculty = useMemo(
+    () => facultyRollups.find(row => row.facultyId === selectedFacultyId) ?? null,
+    [facultyRollups, selectedFacultyId],
+  )
 
-  const selectedTeacher = useMemo(() => teacherStats.find(teacher => teacher.id === selectedTeacherId) ?? null, [teacherStats, selectedTeacherId])
-  const mentorTasks = useMemo(() => {
-    return MENTEES
-      .filter(mentee => mentee.avs >= 0.5)
-      .flatMap(mentee => mentee.courseRisks
-        .filter(courseRisk => courseRisk.risk >= 0.5)
-        .map(courseRisk => ({
-          id: `mentor-${mentee.id}-${courseRisk.code}`,
-          studentId: mentee.id,
-          offeringId: OFFERINGS.find(offering => offering.code === courseRisk.code)?.offId ?? '',
-          studentName: mentee.name,
-          studentUsn: mentee.usn,
-          courseCode: courseRisk.code,
-          courseName: courseRisk.title,
-          year: mentee.year,
-          riskBand: courseRisk.risk >= 0.7 ? 'High' as RiskBand : courseRisk.risk >= 0.35 ? 'Medium' as RiskBand : 'Low' as RiskBand,
-          title: `Mentor follow-up: ${Math.round(courseRisk.risk * 100)}% vulnerability in ${courseRisk.code}`,
-          due: 'This week',
-          status: mentee.interventions.length > 0 ? 'In Progress' : 'New',
-          riskProb: courseRisk.risk,
-          actionHint: 'Mentor-generated follow-up task',
-          priority: Math.round(courseRisk.risk * 100),
-          dismissal: undefined,
-        })))
-  }, [])
+  const selectedCourseStudents = useMemo(() => {
+    if (!selectedCourse) return []
+    return studentWatchRows.filter(row =>
+      row.courseSnapshots.some(snapshot => snapshot.courseCode === selectedCourse.courseCode),
+    )
+  }, [selectedCourse, studentWatchRows])
 
-  const selectedTeacherTasks = useMemo(() => {
-    if (!selectedTeacher) return []
-    const offeringIds = new Set(selectedTeacher.offerings.map(offering => offering.offId))
-    const courseCodes = new Set(selectedTeacher.offerings.map(offering => offering.code))
-    const courseLeaderTasks = tasks.filter(task => offeringIds.has(task.offeringId))
-    const mentorLinkedTasks = mentorTasks.filter(task => courseCodes.has(task.courseCode))
-    return [...courseLeaderTasks, ...mentorLinkedTasks]
-      .sort((left, right) => right.riskProb - left.riskProb)
-      .slice(0, 8)
-  }, [tasks, mentorTasks, selectedTeacher])
-  const selectedTeacherAuditEvents = useMemo(() => {
-    if (!selectedTeacher) return [] as CalendarAuditEvent[]
-    return calendarAuditEvents
-      .filter(event => event.facultyId === selectedTeacher.id)
-      .slice(0, 8)
-  }, [calendarAuditEvents, selectedTeacher])
+  const selectedFacultyReassessments = useMemo(() => {
+    if (!selectedFaculty) return []
+    return reassessmentRows.filter(row => row.assignedToRole.toLowerCase() === 'hod' || selectedFaculty.permissions.includes(row.assignedToRole))
+  }, [reassessmentRows, selectedFaculty])
+  const checkpointContext = summary?.activeRunContext?.checkpointContext ?? null
 
-  const totalStudents = OFFERINGS.reduce((acc, offering) => acc + getStudentsPatched(offering).length, 0)
-  const totalHighRisk = OFFERINGS.reduce((acc, offering) => acc + getStudentsPatched(offering).filter(student => student.riskBand === 'High').length, 0)
-  const averageAttendance = OFFERINGS.length > 0 ? Math.round(OFFERINGS.reduce((acc, offering) => acc + getOfferingAttendancePatched(offering), 0) / OFFERINGS.length) : 0
+  const filteredStudents = useMemo(() => {
+    if (showActionNeededOnly) {
+      return studentWatchRows.filter(row => resolveGovernedQueueState(row.currentReassessmentStatus) === 'open')
+    }
+    return studentWatchRows
+  }, [studentWatchRows, showActionNeededOnly])
+
+  const overviewStudents = filteredStudents.slice(0, 16)
+
+  if (loading) {
+    return (
+      <PageShell size="wide">
+        <InfoBanner message="Loading live HoD proof analytics..." />
+      </PageShell>
+    )
+  }
+
+  if (error) {
+    return (
+      <PageShell size="wide">
+        <InfoBanner tone="error" message={error} />
+      </PageShell>
+    )
+  }
+
+  if (!summary?.activeRunContext) {
+    return (
+      <PageShell size="wide">
+        <EmptyState
+          title="No active proof run"
+          body="HoD analytics becomes available when sysadmin activates a proof run for the supervised batch. This page remains read-only and sourced only from live proof records."
+        />
+      </PageShell>
+    )
+  }
 
   return (
     <PageShell size="wide">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-        <Shield size={22} color={T.accent} />
-        <div>
-          <div style={{ ...sora, fontWeight: 700, fontSize: 20, color: T.text }}>Department Overview — CSE</div>
-          <div style={{ ...mono, fontSize: 11, color: T.muted }}>Head of Department view · All faculty and students</div>
-        </div>
-        <div style={{ marginLeft: 'auto' }}>
-          <Btn size="sm" onClick={onOpenQueueHistory}>Open Queue History</Btn>
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 22 }}>
-        {[
-          { label: 'Faculty', value: teacherStats.length, color: T.accent },
-          { label: 'Total Students', value: totalStudents, color: T.success },
-          { label: 'High Risk (dept)', value: totalHighRisk, color: T.danger },
-          { label: 'Avg Attendance', value: `${averageAttendance}%`, color: T.blue },
-        ].map(metric => (
-          <Card key={metric.label} glow={metric.color} style={{ padding: '12px 16px' }}>
-            <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: metric.color }}>{metric.value}</div>
-            <div style={{ ...mono, fontSize: 9, color: T.muted }}>{metric.label}</div>
-          </Card>
-        ))}
-      </div>
-
-      <div style={{ ...sora, fontWeight: 700, fontSize: 15, color: T.text, marginBottom: 12 }}>Faculty Members</div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, marginBottom: 22 }}>
-        {teacherStats.map(teacher => {
-          const isSelected = selectedTeacher?.id === teacher.id
-          return (
-            <Card key={teacher.id} glow={isSelected ? T.accent : undefined} style={{ padding: '16px 18px', cursor: 'pointer' }} onClick={() => setSelectedTeacherId(isSelected ? null : teacher.id)}>
-              <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 10 }}>
-                <div style={{ width: 38, height: 38, borderRadius: 10, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 13, color: '#fff' }}>{teacher.initials}</div>
-                <div>
-                  <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text }}>{teacher.name}</div>
-                  <div style={{ ...mono, fontSize: 10, color: T.muted }}>{teacher.role}</div>
-                </div>
+      <div style={{ display: 'grid', gap: 18, paddingBottom: 24 }}>
+        <Card
+          data-proof-surface="hod-proof-analytics"
+          data-proof-entity-id={checkpointContext?.simulationStageCheckpointId ?? undefined}
+          style={{ padding: 20, display: 'grid', gap: 16, background: `linear-gradient(160deg, ${T.surface}, ${T.surface2})` }}
+        >
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap' }}>
+            <Shield size={22} color={T.accent} />
+            <div style={{ flex: 1, minWidth: 260 }}>
+              <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Live HoD Analytics</div>
+              <div style={{ ...sora, fontWeight: 800, fontSize: 24, color: T.text, marginTop: 8 }}>Department proof records for the active simulation run</div>
+              <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 8, lineHeight: 1.8 }}>
+                Read-only oversight view sourced from the same active proof run used by sysadmin and faculty profile. Formal academic status remains policy-derived; this surface does not expose latent-state internals.
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
-                {[
-                  { label: 'Offerings', value: teacher.offerings.length, color: T.accent },
-                  { label: 'Students', value: teacher.students, color: T.text },
-                  { label: 'High Risk', value: teacher.highRisk, color: teacher.highRisk > 10 ? T.danger : T.warning },
-                ].map(metric => (
-                  <div key={metric.label} style={{ background: T.surface2, borderRadius: 5, padding: '6px 8px', textAlign: 'center' }}>
-                    <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: metric.color }}>{metric.value}</div>
-                    <div style={{ ...mono, fontSize: 8, color: T.dim }}>{metric.label}</div>
-                  </div>
-                ))}
-              </div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
-                <div style={{ ...mono, fontSize: 10, color: T.muted }}>Data:</div>
-                <div style={{ flex: 1 }}><Bar val={teacher.completeness} color={teacher.completeness >= 80 ? T.success : teacher.completeness >= 60 ? T.warning : T.danger} h={4} /></div>
-                <span style={{ ...mono, fontSize: 10, color: T.muted }}>{teacher.completeness}%</span>
-                {teacher.pendingTasks > 0 && <Chip color={T.warning} size={9}>{teacher.pendingTasks} tasks</Chip>}
-              </div>
-            </Card>
-          )
-        })}
-      </div>
-
-      {selectedTeacher && (
-        <Card glow={T.accent}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-            <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: T.text }}>{selectedTeacher.name} — Detail View</div>
-            <Btn size="sm" variant="ghost" onClick={() => setSelectedTeacherId(null)}>Close</Btn>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginLeft: 'auto' }}>
+              <Btn size="sm" variant="ghost" onClick={onOpenQueueHistory}>Queue History</Btn>
+            </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 20 }}>
-            {selectedTeacher.offerings.map(offering => (
-              <Card key={`${offering.code}-${offering.section}`} onClick={() => onOpenCourse(offering)} style={{ background: T.surface2, padding: '12px', borderRadius: 8 }}>
-                <div style={{ ...sora, fontWeight: 600, fontSize: 13, color: T.text, marginBottom: 4 }}>{offering.code} - Sec {offering.section}</div>
-                <div style={{ ...mono, fontSize: 10, color: T.muted, marginBottom: 8 }}>{offering.title}</div>
-                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-                  <Chip color={offering.tt1Locked ? T.success : T.warning} size={9}>TT1: {offering.tt1Locked ? 'Locked' : 'Pending'}</Chip>
-                  <Chip color={offering.tt2Locked ? T.success : T.warning} size={9}>TT2: {offering.tt2Locked ? 'Locked' : 'Pending'}</Chip>
+          <InfoBanner message={`Active run ${summary.activeRunContext.runLabel} · seed ${summary.activeRunContext.seed} · created ${formatDateTime(summary.activeRunContext.createdAt)} · sourced from live proof records${checkpointContext ? ` · checkpoint ${checkpointContext.stageLabel} (semester ${checkpointContext.semesterNumber})` : ''}.`} />
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Chip color={T.accent}>{summary.activeRunContext.batchLabel}</Chip>
+            <Chip color={T.success}>{summary.activeRunContext.branchName ?? 'Branch scope pending'}</Chip>
+            <Chip color={T.warning}>{summary.activeRunContext.status}</Chip>
+            {checkpointContext ? <Chip color={T.orange}>{`Sem ${checkpointContext.semesterNumber} · ${checkpointContext.stageLabel}`}</Chip> : null}
+            {summary.scope.departmentNames.map(name => <Chip key={name} color={T.muted}>{name}</Chip>)}
+            {summary.scope.branchNames.map(name => <Chip key={name} color={T.dim}>{name}</Chip>)}
+          </div>
+
+          {checkpointContext ? (
+            <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+              Read-only checkpoint overlay active: {checkpointContext.stageDescription}. This HoD surface shows the same selected playback checkpoint as the teaching proof overlay{checkpointContext.stageAdvanceBlocked ? ' and respects the blocked progression state.' : ''}.
+            </div>
+          ) : null}
+        </Card>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
+          <MetricCard label="Students Covered" value={String(summary.totals.studentsCovered)} helper="Students visible in the active HoD scope." />
+          <MetricCard label="High Watch" value={String(summary.totals.highRiskCount)} helper="Current high-priority watchlist count for the active semester." />
+          <MetricCard label="Medium Watch" value={String(summary.totals.mediumRiskCount)} helper="Students requiring review but not yet in the highest watch band." />
+          <MetricCard label="Open Reassessments" value={String(summary.monitoringSummary.activeReassessmentCount)} helper="Read-only count of currently open reassessment events." />
+          <MetricCard label="Unresolved Alerts" value={String(summary.totals.unresolvedAlertCount)} helper="Alert decisions without acknowledgement in the current active run." />
+          <MetricCard label="Average Queue Age" value={formatHours(summary.totals.averageQueueAgeHours)} helper="Mean age of open reassessments in the current view." />
+          <MetricCard label="Faculty In Scope" value={String(summary.facultyLoadSummary.facultyCount)} helper="Faculty rows visible in the supervised proof scope." />
+          <MetricCard label="Overload Flags" value={String(summary.facultyLoadSummary.overloadedFacultyCount)} helper="Faculty load profiles exceeding the current semester threshold." />
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <TabButton active={activeTab === 'overview'} onClick={() => setActiveTab('overview')}>Overview</TabButton>
+          <TabButton active={activeTab === 'courses'} onClick={() => setActiveTab('courses')}>Course Hotspots</TabButton>
+          <TabButton active={activeTab === 'faculty'} onClick={() => setActiveTab('faculty')}>Faculty Operations</TabButton>
+          <TabButton active={activeTab === 'reassessments'} onClick={() => setActiveTab('reassessments')}>Reassessment Audit</TabButton>
+        </div>
+
+        {activeTab === 'overview' ? (
+          <div style={{ display: 'grid', gap: 16 }}>
+            <SectionHeading
+              eyebrow="Overview"
+              title="Run-wide oversight"
+              caption="Section comparison, backlog distribution, and the top watchlist rows for the current active run."
+              actions={
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <Chip color={T.accent}>{`${summary.monitoringSummary.riskAssessmentCount} risk assessments`}</Chip>
+                  <Chip color={T.warning}>{`${summary.monitoringSummary.alertDecisionCount} alert decisions`}</Chip>
+                  <Chip color={T.success}>{`${summary.monitoringSummary.resolutionCount} resolutions`}</Chip>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ ...mono, fontSize: 10, color: T.danger }}>{getStudentsPatched(offering).filter(student => student.riskBand === 'High').length} High Risk</span>
-                  <span style={{ ...mono, fontSize: 10, color: T.text }}>{getOfferingAttendancePatched(offering)}% Avg Att · Open →</span>
+              }
+            />
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
+              <TableCard title="Section Comparison" caption="Observed attendance and open reassessment counts for section A and B.">
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <TH>Section</TH>
+                      <TH>Students</TH>
+                      <TH>High</TH>
+                      <TH>Medium</TH>
+                      <TH>Attendance</TH>
+                      <TH>Open Reassessments</TH>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.sectionComparison.map(row => (
+                      <tr key={row.sectionCode}>
+                        <TD><Chip color={sectionColor(row.sectionCode)}>{row.sectionCode}</Chip></TD>
+                        <TD>{row.studentCount}</TD>
+                        <TD>{row.highRiskCount}</TD>
+                        <TD>{row.mediumRiskCount}</TD>
+                        <TD>{formatPercent(row.averageAttendancePct)}</TD>
+                        <TD>{row.openReassessmentCount}</TD>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TableCard>
+
+              <TableCard title="Semester Distribution" caption="Backlog-based semester pressure derived from transcript records.">
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <TH>Semester</TH>
+                      <TH>High Pressure</TH>
+                      <TH>Review</TH>
+                      <TH>Stable</TH>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.semesterRiskDistribution.map(row => (
+                      <tr key={row.semesterNumber}>
+                        <TD>Sem {row.semesterNumber}</TD>
+                        <TD>{row.highPressureCount}</TD>
+                        <TD>{row.reviewCount}</TD>
+                        <TD>{row.stableCount}</TD>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TableCard>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 14 }}>
+              <Card style={{ padding: 16, display: 'grid', gap: 10 }}>
+                <PanelLabel color={T.warning}>Policy Derived</PanelLabel>
+                <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Backlog distribution</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {summary.backlogDistribution.map(item => (
+                    <Chip key={item.bucket} color={item.bucket === '0' ? T.success : item.bucket === '1' ? T.warning : T.danger}>
+                      {`${item.bucket} backlog · ${item.studentCount}`}
+                    </Chip>
+                  ))}
+                </div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                  These buckets come from transcript rollups in the active run and help reconcile semester pressure with course-level watch states.
                 </div>
               </Card>
-            ))}
-            {selectedTeacher.offerings.length === 0 && <div style={{ ...mono, fontSize: 11, color: T.muted }}>No course offerings mapped for this faculty yet.</div>}
-          </div>
 
-          <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 12 }}>Top Assigned Tasks (Overdue)</div>
-          <div style={{ background: T.surface2, borderRadius: 8, overflow: 'hidden' }}>
+              <Card style={{ padding: 16, display: 'grid', gap: 10 }}>
+                <PanelLabel color={T.success}>Observed</PanelLabel>
+                <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Elective readiness distribution</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {summary.electiveDistribution.length > 0 ? summary.electiveDistribution.map(item => (
+                    <Chip key={item.stream} color={T.success}>{`${item.stream} · ${item.recommendationCount}`}</Chip>
+                  )) : <Chip color={T.dim}>No semester-6 recommendations in the active slice</Chip>}
+                </div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                  Semester-6 elective fit remains advisory and is derived from observed prior performance, not from hidden simulation variables.
+                </div>
+              </Card>
+
+              <Card style={{ padding: 16, display: 'grid', gap: 10 }}>
+                <PanelLabel color={T.accent}>Human Action Log</PanelLabel>
+                <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Governance summary</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <Chip color={T.accent}>{`${summary.monitoringSummary.acknowledgementCount} acknowledgements`}</Chip>
+                  <Chip color={T.warning}>{`${summary.totals.manualOverrideCount} overrides`}</Chip>
+                  <Chip color={T.success}>{`${summary.totals.resolvedAlertCount} resolved alerts`}</Chip>
+                </div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                  Sysadmin remains the owner of run lifecycle and proof governance. This HoD surface is read-only and shows only persisted audit outcomes.
+                </div>
+              </Card>
+            </div>
+
+            <TableCard
+              title="Current Watchlist"
+              caption="Priority rows by current risk probability. Action Needed now keys off governed open cases; View All keeps Watching rows visible without treating them as blocking work."
+              data-proof-section="hod-overview-students"
+            >
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                <Btn
+                  size="sm"
+                  variant={showActionNeededOnly ? 'primary' : 'ghost'}
+                  onClick={() => setShowActionNeededOnly(true)}
+                >
+                  Action Needed
+                </Btn>
+                <Btn
+                  size="sm"
+                  variant={!showActionNeededOnly ? 'primary' : 'ghost'}
+                  onClick={() => setShowActionNeededOnly(false)}
+                >
+                  View All
+                </Btn>
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <TH>Student</TH>
+                    <TH>Section</TH>
+                    <TH>Primary Course</TH>
+                    <TH>Risk</TH>
+                    <TH>Attendance</TH>
+                    <TH>TT Window</TH>
+                    <TH>Elective Fit</TH>
+                    <TH>Actions</TH>
+                  </tr>
+                </thead>
+                <tbody>
+                  {overviewStudents.length === 0 ? (
+                    <tr>
+                      <TD colSpan={8} style={{ color: T.muted }}>
+                        No students are in the current HoD watchlist for this scope.
+                      </TD>
+                    </tr>
+                  ) : null}
+                  {overviewStudents.map(row => {
+                    const governedQueueState = resolveGovernedQueueState(row.currentReassessmentStatus)
+                    const actionNeeded = governedQueueState === 'open'
+                    return (
+                      <tr key={row.studentId} data-proof-row="hod-student-row" data-proof-student-id={row.studentId}>
+                        <TD>
+                          <div style={{ ...mono, fontSize: 11, color: T.text }}>{row.studentName}</div>
+                          <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>{row.usn}</div>
+                        </TD>
+                        <TD><Chip color={sectionColor(row.sectionCode)}>{row.sectionCode}</Chip></TD>
+                        <TD>{row.primaryCourseCode}</TD>
+                        <TD>
+                          <div style={{ display: 'grid', gap: 4 }}>
+                            <RiskBadge band={toRiskBand(row.currentRiskBand)} prob={row.currentRiskProbScaled / 100} />
+                            {governedQueueState ? (
+                              <Chip color={governedQueueColor(governedQueueState)}>{governedQueueLabel(governedQueueState)}</Chip>
+                            ) : null}
+                          </div>
+                        </TD>
+                        <TD>{formatPercent(row.observedEvidence.attendancePct)}</TD>
+                        <TD>{`${formatPercent(row.observedEvidence.tt1Pct)} / ${formatPercent(row.observedEvidence.tt2Pct)}`}</TD>
+                        <TD>{row.electiveFit ? `${row.electiveFit.recommendedCode} · ${row.electiveFit.stream}` : 'Pending'}</TD>
+                        <TD>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            {actionNeeded ? (
+                              <Btn size="sm" variant="ghost">Acknowledge</Btn>
+                            ) : null}
+                            <Btn size="sm" variant="ghost" onClick={() => setSelectedStudentId(row.studentId)}>Inspect</Btn>
+                            <Btn
+                              size="sm"
+                              variant="ghost"
+                              dataProofAction="hod-open-risk-explorer"
+                              dataProofEntityId={row.studentId}
+                              onClick={() => onOpenRiskExplorer(row.studentId)}
+                            >
+                              Success Profile
+                            </Btn>
+                            <Btn
+                              size="sm"
+                              variant="ghost"
+                              dataProofAction="hod-open-student-shell"
+                              dataProofEntityId={row.studentId}
+                              onClick={() => onOpenStudentShell(row.studentId)}
+                            >
+                              Shell
+                            </Btn>
+                          </div>
+                        </TD>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </TableCard>
+          </div>
+        ) : null}
+
+        {activeTab === 'courses' ? (
+          <TableCard title="Course Hotspots" caption="Course-level view of risk concentration, attendance pressure, TT1/TT2 weakness, question weakness, and reassessment burden.">
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr>{['Student', 'Course', 'Task', 'Due', 'Status', ''].map(header => <TH key={header}>{header}</TH>)}</tr></thead>
+              <thead>
+                <tr>
+                  <TH>Course</TH>
+                  <TH>Sections</TH>
+                  <TH>Risk</TH>
+                  <TH>Attendance</TH>
+                  <TH>Assessment Weakness</TH>
+                  <TH>Backlog Carryover</TH>
+                  <TH>Reassessments</TH>
+                  <TH>Open</TH>
+                </tr>
+              </thead>
               <tbody>
-                {selectedTeacherTasks.map(task => (
-                  <tr key={task.id}>
-                    <TD><span style={{ ...sora, fontSize: 11, color: T.text }}>{task.studentName}</span> <span style={{ ...mono, fontSize: 10, color: T.accent }}>{task.studentUsn}</span></TD>
-                    <TD style={{ ...mono, fontSize: 11 }}>{task.courseCode}</TD>
-                    <TD style={{ ...mono, fontSize: 11 }}>{task.title}</TD>
-                    <TD style={{ ...mono, fontSize: 11, color: task.due === 'Today' ? T.danger : T.warning }}>{task.due}</TD>
+                {courseRollups.map(row => (
+                  <tr key={row.courseCode}>
+                    <TD>
+                      <div style={{ ...mono, fontSize: 11, color: T.text }}>{row.courseCode}</div>
+                      <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>{row.title}</div>
+                    </TD>
+                    <TD>{row.sectionCodes.join(', ') || 'NA'}</TD>
                     <TD>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        <Chip color={task.status === 'New' ? T.danger : task.status === 'In Progress' ? T.warning : T.blue} size={9}>{task.status}</Chip>
-                        {task.dismissal && <Chip color={task.dismissal.kind === 'series' ? T.danger : T.muted} size={9}>{task.dismissal.kind === 'series' ? 'Series dismissed' : 'Dismissed'}</Chip>}
+                        <Chip color={T.danger}>{`High ${row.riskCountHigh}`}</Chip>
+                        <Chip color={T.warning}>{`Medium ${row.riskCountMedium}`}</Chip>
                       </div>
                     </TD>
-                    <TD><button aria-label={`View ${task.studentName} profile`} title="View profile" onClick={() => {
-                      const offering = OFFERINGS.find(item => item.offId === task.offeringId)
-                      if (!offering) return
-                      const student = getStudentsPatched(offering).find(item => item.id === task.studentId)
-                      if (student) onOpenStudent(student, offering)
-                    }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Eye size={13} /></button></TD>
+                    <TD>{formatPercent(row.averageAttendancePct)}</TD>
+                    <TD>{`TT1 ${row.tt1WeakCount} · TT2 ${row.tt2WeakCount} · SEE ${row.seeWeakCount} · Q ${row.weakQuestionSignalCount}`}</TD>
+                    <TD>{row.backlogCarryoverCount}</TD>
+                    <TD>{`${row.openReassessmentCount} open · ${row.resolvedReassessmentCount} resolved`}</TD>
+                    <TD><Btn size="sm" variant="ghost" onClick={() => setSelectedCourseCode(row.courseCode)}>Inspect</Btn></TD>
                   </tr>
                 ))}
-                {selectedTeacherTasks.length === 0 && (
-                  <tr>
-                    <TD colSpan={6} style={{ ...mono, fontSize: 11, color: T.muted, textAlign: 'center' }}>No overdue tasks for mapped offerings.</TD>
-                  </tr>
-                )}
               </tbody>
             </table>
-          </div>
+          </TableCard>
+        ) : null}
 
-          <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginTop: 20, marginBottom: 12 }}>Calendar / Timetable Audit</div>
-          <div style={{ display: 'grid', gap: 8 }}>
-            {selectedTeacherAuditEvents.map(event => (
-              <div key={event.id} style={{ borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, padding: '10px 12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginBottom: 6 }}>
-                  <div style={{ ...sora, fontWeight: 700, fontSize: 12, color: T.text }}>{event.actionKind}</div>
-                  <Chip color={event.targetType === 'class' ? T.accent : T.warning} size={9}>{event.targetType}</Chip>
+        {activeTab === 'faculty' ? (
+          <TableCard title="Faculty Operations" caption="Proof-scope load and monitoring metrics for faculty inside the supervised department or branch.">
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <TH>Faculty</TH>
+                  <TH>Permissions</TH>
+                  <TH>Weekly Load</TH>
+                  <TH>Sections</TH>
+                  <TH>Queue</TH>
+                  <TH>Ack Lag</TH>
+                  <TH>Closure Rate</TH>
+                  <TH>Open</TH>
+                </tr>
+              </thead>
+              <tbody>
+                {facultyRollups.map(row => (
+                  <tr key={row.facultyId}>
+                    <TD>
+                      <div style={{ ...mono, fontSize: 11, color: T.text }}>{row.facultyName}</div>
+                      <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>{row.designation}</div>
+                    </TD>
+                    <TD>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {row.permissions.map(permission => <Chip key={`${row.facultyId}-${permission}`} color={permission === 'HOD' ? T.warning : permission === 'MENTOR' ? T.success : T.accent}>{permission}</Chip>)}
+                      </div>
+                    </TD>
+                    <TD>
+                      <div style={{ ...mono, fontSize: 11, color: T.text }}>{formatHours(row.weeklyContactHours)}</div>
+                      {row.overloadFlag ? <div style={{ ...mono, fontSize: 10, color: T.danger, marginTop: 2 }}>Over threshold</div> : null}
+                    </TD>
+                    <TD>{row.assignedSections.join(', ') || 'None'}</TD>
+                    <TD>{row.queueLoad}</TD>
+                    <TD>{formatHours(row.avgAcknowledgementLagHours)}</TD>
+                    <TD>{`${row.reassessmentClosureRate}%`}</TD>
+                    <TD><Btn size="sm" variant="ghost" onClick={() => setSelectedFacultyId(row.facultyId)}>Inspect</Btn></TD>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableCard>
+        ) : null}
+
+        {activeTab === 'reassessments' ? (
+          <TableCard title="Reassessment Audit" caption="Run-scoped reassessment records with current status, acknowledgement, and resolution visibility.">
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <TH>Student</TH>
+                  <TH>Course</TH>
+                  <TH>Assigned Role</TH>
+                  <TH>Risk</TH>
+                  <TH>Due</TH>
+                  <TH>Status</TH>
+                  <TH>Acknowledgement</TH>
+                  <TH>Resolution</TH>
+                  <TH>Open</TH>
+                </tr>
+              </thead>
+              <tbody>
+                {reassessmentRows.map(row => (
+                  <tr key={row.reassessmentEventId}>
+                    <TD>
+                      <div style={{ ...mono, fontSize: 11, color: T.text }}>{row.studentName}</div>
+                      <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>{row.usn}</div>
+                    </TD>
+                    <TD>
+                      <div style={{ ...mono, fontSize: 11, color: T.text }}>{row.courseCode}</div>
+                      <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>{row.sectionCode ?? 'NA'}</div>
+                    </TD>
+                    <TD><Chip color={row.assignedToRole === 'HOD' ? T.warning : T.accent}>{row.assignedToRole}</Chip></TD>
+                    <TD><RiskBadge band={toRiskBand(row.riskBand)} prob={row.riskProbScaled / 100} /></TD>
+                    <TD>{formatDateTime(row.dueAt)}</TD>
+                    <TD><Chip color={getStatusColor(row.status)}>{row.status}</Chip></TD>
+                    <TD>{row.acknowledgement ? <Chip color={getStatusColor(row.acknowledgement.status)}>{row.acknowledgement.status}</Chip> : <Chip color={T.dim}>Pending</Chip>}</TD>
+                    <TD>{row.resolution ? <Chip color={getStatusColor(row.resolution.resolutionStatus)}>{row.resolution.resolutionStatus}</Chip> : <Chip color={T.dim}>Open</Chip>}</TD>
+                    <TD>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <Btn size="sm" variant="ghost" onClick={() => setSelectedStudentId(row.studentId)}>Inspect</Btn>
+                        <Btn
+                          size="sm"
+                          variant="ghost"
+                          dataProofAction="hod-open-risk-explorer"
+                          dataProofEntityId={row.studentId}
+                          onClick={() => onOpenRiskExplorer(row.studentId)}
+                        >
+                          Risk Explorer
+                        </Btn>
+                        <Btn
+                          size="sm"
+                          variant="ghost"
+                          dataProofAction="hod-open-student-shell"
+                          dataProofEntityId={row.studentId}
+                          onClick={() => onOpenStudentShell(row.studentId)}
+                        >
+                          Student Shell
+                        </Btn>
+                      </div>
+                    </TD>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableCard>
+        ) : null}
+      </div>
+
+      {selectedStudent ? (
+        <ModalWorkspace
+          eyebrow="Student Drilldown"
+          title={`${selectedStudent.studentName} · ${selectedStudent.usn}`}
+          caption="Observed evidence, policy-derived status, semester timeline, and elective-fit context for the active proof run."
+          onClose={() => setSelectedStudentId(null)}
+          size="xl"
+        >
+          <div data-proof-surface="hod-student-drilldown" data-proof-student-id={selectedStudent.studentId} style={{ display: 'grid', gap: 16 }}>
+            {(() => {
+              const governedQueueState = resolveGovernedQueueState(selectedStudent.currentReassessmentStatus)
+              return governedQueueState ? (
+                <InfoBanner
+                  tone={governedQueueState === 'open' ? 'error' : governedQueueState === 'watching' ? 'neutral' : 'success'}
+                  message={`${governedQueueLabel(governedQueueState)}${selectedStudent.nextDueAt ? ` · due ${formatDateTime(selectedStudent.nextDueAt)}` : ''}. Watching remains visible here but does not count as a blocking open case.`}
+                />
+              ) : null
+            })()}
+            <div data-proof-section="hod-student-actions" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Btn
+                  size="sm"
+                  variant="ghost"
+                  dataProofAction="hod-open-risk-explorer"
+                  dataProofEntityId={selectedStudent.studentId}
+                  onClick={() => onOpenRiskExplorer(selectedStudent.studentId)}
+                >
+                  Open Risk Explorer
+                </Btn>
+                <Btn
+                  size="sm"
+                  variant="ghost"
+                  dataProofAction="hod-open-student-shell"
+                  dataProofEntityId={selectedStudent.studentId}
+                  onClick={() => onOpenStudentShell(selectedStudent.studentId)}
+                >
+                  Open Student Shell
+                </Btn>
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+              <MetricCard label="Section" value={selectedStudent.sectionCode} helper="Current section in the active run." />
+              <MetricCard label="Risk" value={`${selectedStudent.currentRiskBand} · ${selectedStudent.currentRiskProbScaled}%`} helper="Current risk band from the observable-only inference layer." />
+              {selectedStudent.riskChangeFromPreviousCheckpointScaled != null ? (
+                <MetricCard label="Risk Change" value={`${selectedStudent.riskChangeFromPreviousCheckpointScaled > 0 ? '+' : ''}${selectedStudent.riskChangeFromPreviousCheckpointScaled}`} helper="Stage-to-stage risk delta from the selected playback checkpoint." />
+              ) : null}
+              {selectedStudent.counterfactualLiftScaled != null ? (
+                <MetricCard label="Counterfactual Lift" value={`${selectedStudent.counterfactualLiftScaled > 0 ? '+' : ''}${selectedStudent.counterfactualLiftScaled}`} helper="Checkpoint replay lift over no-action." />
+              ) : null}
+              <MetricCard label="Attendance" value={formatPercent(selectedStudent.observedEvidence.attendancePct)} helper="Current observed attendance in the active semester slice." />
+              <MetricCard label="Backlogs" value={String(selectedStudent.observedEvidence.backlogCount)} helper="Transcript-backed backlog count available in the active run context." />
+              <MetricCard label="Weak COs" value={String(selectedStudent.observedEvidence.weakCoCount)} helper="Observed COs under the current support threshold." />
+              <MetricCard label="Weak Questions" value={String(selectedStudent.observedEvidence.weakQuestionCount)} helper="Question-level weakness count in the active evidence window." />
+            </div>
+
+            <Card style={{ padding: 16, display: 'grid', gap: 10 }}>
+              <PanelLabel color={T.accent}>Observed</PanelLabel>
+              <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Current evidence</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Chip color={T.accent}>{`TT1 ${formatPercent(selectedStudent.observedEvidence.tt1Pct)}`}</Chip>
+                <Chip color={T.accent}>{`TT2 ${formatPercent(selectedStudent.observedEvidence.tt2Pct)}`}</Chip>
+                <Chip color={T.success}>{`Quiz ${formatPercent(selectedStudent.observedEvidence.quizPct)}`}</Chip>
+                <Chip color={T.warning}>{`Assignment ${formatPercent(selectedStudent.observedEvidence.assignmentPct)}`}</Chip>
+                <Chip color={T.warning}>{`SEE ${formatPercent(selectedStudent.observedEvidence.seePct)}`}</Chip>
+                <Chip color={T.muted}>{`CGPA ${selectedStudent.observedEvidence.cgpa.toFixed(2)}`}</Chip>
+              </div>
+              {selectedStudent.observedEvidence.interventionRecoveryStatus ? (
+                <div style={{ ...mono, fontSize: 10, color: T.muted }}>
+                  Intervention recovery status: {selectedStudent.observedEvidence.interventionRecoveryStatus}.
                 </div>
-                <div style={{ ...mono, fontSize: 10, color: T.muted }}>{event.note}</div>
-                <div style={{ ...mono, fontSize: 9, color: T.dim, marginTop: 6 }}>{new Date(event.timestamp).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
-              </div>
-            ))}
-            {selectedTeacherAuditEvents.length === 0 && (
-              <div style={{ ...mono, fontSize: 11, color: T.muted, borderRadius: 8, border: `1px dashed ${T.border2}`, padding: '12px 14px' }}>
-                No calendar or timetable edits logged for this faculty yet.
-              </div>
-            )}
+              ) : null}
+              {selectedStudent.observedEvidence.coEvidenceMode ? (
+                <div style={{ ...mono, fontSize: 10, color: T.muted }}>
+                  CO evidence mode: {selectedStudent.observedEvidence.coEvidenceMode}.
+                </div>
+              ) : null}
+            </Card>
+
+            <TableCard title="Course snapshots" caption="Course-specific watch rows available for this student in the active semester.">
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <TH>Course</TH>
+                    <TH>Risk</TH>
+                    <TH>Attendance</TH>
+                    <TH>Assessment Window</TH>
+                    <TH>Recommended Action</TH>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedStudent.courseSnapshots.map(snapshot => (
+                    <tr key={snapshot.riskAssessmentId}>
+                      <TD>
+                        <div style={{ ...mono, fontSize: 11, color: T.text }}>{snapshot.courseCode}</div>
+                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>{snapshot.courseTitle}</div>
+                      </TD>
+                      <TD><RiskBadge band={toRiskBand(snapshot.riskBand)} prob={snapshot.riskProbScaled / 100} /></TD>
+                      <TD>{formatPercent(snapshot.observedEvidence.attendancePct)}</TD>
+                      <TD>{`TT1 ${formatPercent(snapshot.observedEvidence.tt1Pct)} · TT2 ${formatPercent(snapshot.observedEvidence.tt2Pct)} · SEE ${formatPercent(snapshot.observedEvidence.seePct)}`}</TD>
+                      <TD>
+                        <div style={{ display: 'grid', gap: 4 }}>
+                          <div>{snapshot.recommendedAction}</div>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            {snapshot.riskChangeFromPreviousCheckpointScaled != null ? <Chip color={snapshot.riskChangeFromPreviousCheckpointScaled > 0 ? T.danger : snapshot.riskChangeFromPreviousCheckpointScaled < 0 ? T.success : T.dim}>{`Δ ${snapshot.riskChangeFromPreviousCheckpointScaled > 0 ? '+' : ''}${snapshot.riskChangeFromPreviousCheckpointScaled}`}</Chip> : null}
+                            {snapshot.counterfactualLiftScaled != null ? <Chip color={snapshot.counterfactualLiftScaled > 0 ? T.success : snapshot.counterfactualLiftScaled < 0 ? T.warning : T.dim}>{`Lift ${snapshot.counterfactualLiftScaled > 0 ? '+' : ''}${snapshot.counterfactualLiftScaled}`}</Chip> : null}
+                            {snapshot.observedEvidence.coEvidenceMode ? <Chip color={T.dim}>{snapshot.observedEvidence.coEvidenceMode}</Chip> : null}
+                          </div>
+                        </div>
+                      </TD>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableCard>
+
+            <TableCard title="Semester evidence timeline" caption="Semester-grouped evidence windows already persisted for this student in the proof run.">
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <TH>Semester</TH>
+                    <TH>Section</TH>
+                    <TH>Risk Bands</TH>
+                    <TH>Evidence Windows</TH>
+                    <TH>Updated</TH>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedStudent.evidenceTimeline.map(item => {
+                    const riskBands = Array.isArray(item.observedState.riskBands)
+                      ? item.observedState.riskBands.filter((value): value is string => typeof value === 'string')
+                      : []
+                    const evidenceWindowCount = typeof item.observedState.evidenceWindowCount === 'number'
+                      ? item.observedState.evidenceWindowCount
+                      : 1
+                    return (
+                      <tr key={item.studentObservedSemesterStateId}>
+                        <TD>{`Sem ${item.semesterNumber}`}</TD>
+                        <TD>{item.sectionCode}</TD>
+                        <TD>{riskBands.length > 0 ? riskBands.join(', ') : 'Recorded'}</TD>
+                        <TD>{evidenceWindowCount}</TD>
+                        <TD>{formatDateTime(item.updatedAt)}</TD>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </TableCard>
+
+            <Card style={{ padding: 16, display: 'grid', gap: 10 }}>
+              <PanelLabel color={T.success}>Policy Derived</PanelLabel>
+              <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Elective fit</div>
+              {selectedStudent.electiveFit ? (
+                <>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <Chip color={T.success}>{selectedStudent.electiveFit.recommendedCode}</Chip>
+                    <Chip color={T.accent}>{selectedStudent.electiveFit.stream}</Chip>
+                    <Chip color={T.muted}>{selectedStudent.electiveFit.recommendedTitle}</Chip>
+                  </div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                    {selectedStudent.electiveFit.rationale.join(' · ')}
+                  </div>
+                </>
+              ) : (
+                <div style={{ ...mono, fontSize: 10, color: T.muted }}>No elective recommendation is available for this student in the current proof run.</div>
+              )}
+            </Card>
           </div>
-        </Card>
-      )}
+        </ModalWorkspace>
+      ) : null}
+
+      {selectedCourse ? (
+        <ModalWorkspace
+          eyebrow="Course Hotspot"
+          title={`${selectedCourse.courseCode} · ${selectedCourse.title}`}
+          caption="Read-only course rollup derived from live proof records for the active run."
+          onClose={() => setSelectedCourseCode(null)}
+          size="lg"
+        >
+          <div style={{ display: 'grid', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+              <MetricCard label="Sections" value={selectedCourse.sectionCodes.join(', ') || 'NA'} helper="Sections carrying this course in the active semester." />
+              <MetricCard label="Students" value={String(selectedCourse.studentCount)} helper="Distinct students represented in the current evidence slice." />
+              <MetricCard label="Attendance" value={formatPercent(selectedCourse.averageAttendancePct)} helper="Average observed attendance across current evidence rows." />
+              <MetricCard label="Reassessments" value={`${selectedCourse.openReassessmentCount} open`} helper={`${selectedCourse.resolvedReassessmentCount} resolved in the active run`} />
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Chip color={T.danger}>{`High watch ${selectedCourse.riskCountHigh}`}</Chip>
+              <Chip color={T.warning}>{`Medium watch ${selectedCourse.riskCountMedium}`}</Chip>
+              <Chip color={T.accent}>{`TT1 weak ${selectedCourse.tt1WeakCount}`}</Chip>
+              <Chip color={T.accent}>{`TT2 weak ${selectedCourse.tt2WeakCount}`}</Chip>
+              <Chip color={T.warning}>{`SEE weak ${selectedCourse.seeWeakCount}`}</Chip>
+              <Chip color={T.warning}>{`Weak questions ${selectedCourse.weakQuestionSignalCount}`}</Chip>
+              <Chip color={T.muted}>{`Backlog carryover ${selectedCourse.backlogCarryoverCount}`}</Chip>
+            </div>
+            <TableCard title="Linked student rows" caption="Students in the current HoD watchlist who carry this course as a risk-bearing snapshot.">
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <TH>Student</TH>
+                    <TH>Section</TH>
+                    <TH>Risk</TH>
+                    <TH>Attendance</TH>
+                    <TH>TT Window</TH>
+                    <TH>Open</TH>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedCourseStudents.map(row => (
+                    <tr key={row.studentId}>
+                      <TD>
+                        <div style={{ ...mono, fontSize: 11, color: T.text }}>{row.studentName}</div>
+                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>{row.usn}</div>
+                      </TD>
+                      <TD>{row.sectionCode}</TD>
+                      <TD><RiskBadge band={toRiskBand(row.currentRiskBand)} prob={row.currentRiskProbScaled / 100} /></TD>
+                      <TD>{formatPercent(row.observedEvidence.attendancePct)}</TD>
+                      <TD>{`${formatPercent(row.observedEvidence.tt1Pct)} / ${formatPercent(row.observedEvidence.tt2Pct)}`}</TD>
+                      <TD>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          <Btn size="sm" variant="ghost" onClick={() => setSelectedStudentId(row.studentId)}>Inspect Student</Btn>
+                          <Btn
+                            size="sm"
+                            variant="ghost"
+                            dataProofAction="hod-open-risk-explorer"
+                            dataProofEntityId={row.studentId}
+                            onClick={() => onOpenRiskExplorer(row.studentId)}
+                          >
+                            Risk Explorer
+                          </Btn>
+                          <Btn
+                            size="sm"
+                            variant="ghost"
+                            dataProofAction="hod-open-student-shell"
+                            dataProofEntityId={row.studentId}
+                            onClick={() => onOpenStudentShell(row.studentId)}
+                          >
+                            Student Shell
+                          </Btn>
+                        </div>
+                      </TD>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableCard>
+          </div>
+        </ModalWorkspace>
+      ) : null}
+
+      {selectedFaculty ? (
+        <ModalWorkspace
+          eyebrow="Faculty Rollup"
+          title={selectedFaculty.facultyName}
+          caption="Faculty-level load and monitoring metrics visible in the current HoD proof scope."
+          onClose={() => setSelectedFacultyId(null)}
+          size="lg"
+        >
+          <div style={{ display: 'grid', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+              <MetricCard label="Designation" value={selectedFaculty.designation} helper="Current faculty title from the proof-linked profile." />
+              <MetricCard label="Weekly Load" value={formatHours(selectedFaculty.weeklyContactHours)} helper="Current semester contact-hour load projection." />
+              <MetricCard label="Queue Load" value={String(selectedFaculty.queueLoad)} helper="In-scope queue burden derived from current proof records." />
+              <MetricCard label="Closure Rate" value={`${selectedFaculty.reassessmentClosureRate}%`} helper="Resolved reassessments divided by relevant reassessment rows." />
+            </div>
+            <Card style={{ padding: 16, display: 'grid', gap: 10 }}>
+              <PanelLabel color={T.accent}>Observed</PanelLabel>
+              <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Faculty scope</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {selectedFaculty.permissions.map(permission => <Chip key={permission} color={permission === 'HOD' ? T.warning : permission === 'MENTOR' ? T.success : T.accent}>{permission}</Chip>)}
+                {selectedFaculty.assignedSections.map(section => <Chip key={section} color={sectionColor(section)}>{`Section ${section}`}</Chip>)}
+                {selectedFaculty.overloadFlag ? <Chip color={T.danger}>Load threshold exceeded</Chip> : <Chip color={T.success}>Within load threshold</Chip>}
+              </div>
+              <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                Average acknowledgement lag is {formatHours(selectedFaculty.avgAcknowledgementLagHours)} and the current intervention count is {selectedFaculty.interventionCount}.
+              </div>
+            </Card>
+            <TableCard title="Relevant reassessment sample" caption="Run-scoped reassessment rows aligned to the visible faculty permissions.">
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <TH>Student</TH>
+                    <TH>Course</TH>
+                    <TH>Assigned Role</TH>
+                    <TH>Status</TH>
+                    <TH>Due</TH>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedFacultyReassessments.slice(0, 10).map(row => (
+                    <tr key={row.reassessmentEventId}>
+                      <TD>{row.studentName}</TD>
+                      <TD>{row.courseCode}</TD>
+                      <TD>{row.assignedToRole}</TD>
+                      <TD>{row.status}</TD>
+                      <TD>{formatDateTime(row.dueAt)}</TD>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableCard>
+          </div>
+        </ModalWorkspace>
+      ) : null}
     </PageShell>
   )
 }

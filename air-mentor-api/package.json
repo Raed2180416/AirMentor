@@ -11,7 +11,10 @@
     "dev:seeded": "tsx scripts/start-seeded-server.ts",
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.build.json",
-    "test": "vitest run",
+    "test": "node scripts/run-vitest-suite.mjs",
+    "test:proof-rc": "AIRMENTOR_BACKEND_SUITE=proof-rc node scripts/run-vitest-suite.mjs",
+    "test:all": "npm run test && npm run test:proof-rc",
+    "evaluate:proof-risk-model": "tsx scripts/evaluate-proof-risk-model.ts",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts"
   },
@@ -23,6 +26,7 @@
     "drizzle-orm": "^0.44.6",
     "fastify": "^5.6.2",
     "pg": "^8.16.3",
+    "xlsx": "^0.18.5",
     "zod": "^4.1.12"
   },
   "devDependencies": {

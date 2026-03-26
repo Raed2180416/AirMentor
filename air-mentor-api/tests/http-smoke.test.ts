@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { AirMentorApiClient } from '../../src/api/client.js'
 import { createTestApp, TEST_ORIGIN } from './helpers/test-app.js'
 
 let current: Awaited<ReturnType<typeof createTestApp>> | null = null
@@ -27,16 +26,44 @@ describe('http smoke', () => {
       return response
     }
 
-    const client = new AirMentorApiClient(address, cookieAwareFetch)
-    const session = await client.login({ identifier: 'sysadmin', password: 'admin1234' })
+    const apiFetch = async <T>(path: string, init?: RequestInit) => {
+      const response = await cookieAwareFetch(`${address}${path}`, init)
+      expect(response.ok).toBe(true)
+      return response.json() as Promise<T>
+    }
+
+    const session = await apiFetch<{
+      user: { username: string }
+      availableRoleGrants: Array<{ grantId: string; roleCode: string }>
+    }>('/api/session/login', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ identifier: 'sysadmin', password: 'admin1234' }),
+    })
     expect(session.user.username).toBe('sysadmin')
 
-    const restored = await client.restoreSession()
+    const restored = await apiFetch<{
+      faculty: { facultyId: string } | null
+      availableRoleGrants: Array<{ grantId: string; roleCode: string }>
+      activeRoleGrant: { roleCode: string }
+    }>('/api/session', {
+      method: 'GET',
+    })
     expect(restored.faculty?.facultyId).toBe('fac_sysadmin')
 
     const hodGrant = restored.availableRoleGrants.find((grant: { roleCode: string }) => grant.roleCode === 'HOD')
     expect(hodGrant).toBeTruthy()
-    const switched = await client.switchRoleContext(hodGrant!.grantId)
+    const switched = await apiFetch<{
+      activeRoleGrant: { roleCode: string }
+    }>('/api/session/role-context', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ roleGrantId: hodGrant!.grantId }),
+    })
     expect(switched.activeRoleGrant.roleCode).toBe('HOD')
   })
 })

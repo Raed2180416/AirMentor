@@ -58,7 +58,7 @@ export function getEntryAccessState(input: { stage: number; kind: EntryKind; isL
 
 export const TAB_DEFS = [
   { id: 'overview', icon: '🏠', label: 'Overview' },
-  { id: 'risk', icon: '🎯', label: 'Risk Analysis' },
+  { id: 'risk', icon: '🎯', label: 'Risk Watch' },
   { id: 'attendance', icon: '📅', label: 'Attendance' },
   { id: 'tt1', icon: '📝', label: 'TT1' },
   { id: 'tt2', icon: '📝', label: 'TT2' },
