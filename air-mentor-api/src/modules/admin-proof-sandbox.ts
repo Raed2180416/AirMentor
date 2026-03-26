@@ -22,6 +22,10 @@ import {
   validateProofCurriculumImport,
   archiveProofSimulationRun,
 } from '../lib/msruas-proof-control-plane.js'
+import {
+  enqueueProofSimulationRun,
+  retryQueuedProofSimulationRun,
+} from '../lib/proof-run-queue.js'
 import { MSRUAS_PROOF_BATCH_ID } from '../lib/msruas-proof-sandbox.js'
 import { emitAuditEvent, parseOrThrow, requireRole } from './support.js'
 import { resolveBatchCurriculumFeatures, resolveBatchPolicy } from './admin-structure.js'
@@ -253,13 +257,12 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
     const body = parseOrThrow(startRunSchema, request.body)
     const resolved = await resolveBatchPolicy(context, params.batchId)
     const resolvedFeatures = await resolveBatchCurriculumFeatures(context, params.batchId)
-    const result = await startProofSimulationRun(context.db, {
+    const result = await enqueueProofSimulationRun(context.db, {
       batchId: params.batchId,
       curriculumImportVersionId: body.curriculumImportVersionId,
       policy: resolved.effectivePolicy,
       curriculumFeatureProfileId: resolvedFeatures.primaryCurriculumFeatureProfileId,
       curriculumFeatureProfileFingerprint: resolvedFeatures.curriculumFeatureProfileFingerprint,
-      actorFacultyId: auth.facultyId,
       now: context.now(),
       seed: body.seed,
       runLabel: body.runLabel,
@@ -274,6 +277,26 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
       after: result,
     })
     return result
+  })
+
+  app.post('/api/admin/proof-runs/:simulationRunId/retry', {
+    schema: { tags: ['admin-proof'], summary: 'Retry a failed or stale proof simulation run' },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
+    const params = parseOrThrow(runParamsSchema, request.params)
+    const retried = await retryQueuedProofSimulationRun(context.db, {
+      simulationRunId: params.simulationRunId,
+      now: context.now(),
+    })
+    await emitAuditEvent(context, {
+      entityType: 'ProofSimulationRun',
+      entityId: params.simulationRunId,
+      action: 'Retried',
+      actorRole: auth.activeRoleGrant.roleCode,
+      actorId: auth.facultyId,
+      after: retried,
+    })
+    return retried
   })
 
   app.post('/api/admin/proof-runs/:simulationRunId/activate', {

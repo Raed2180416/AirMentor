@@ -11,7 +11,7 @@ function candidate(overrides: Partial<ProofQueueCandidate> = {}): ProofQueueCand
     studentId: overrides.studentId ?? 'student-1',
     semesterNumber: overrides.semesterNumber ?? 1,
     sectionCode: overrides.sectionCode ?? 'A',
-    stageKey: overrides.stageKey ?? 'post-reassessment',
+    stageKey: overrides.stageKey ?? 'post-assignments',
     offeringId: overrides.offeringId ?? 'off-1',
     courseCode: overrides.courseCode ?? 'AMC301',
     courseTitle: overrides.courseTitle ?? 'Algorithms',
@@ -32,10 +32,10 @@ function candidate(overrides: Partial<ProofQueueCandidate> = {}): ProofQueueCand
 }
 
 describe('proof queue governance', () => {
-  it('keeps semester-start watch-only even for high-risk candidates', () => {
+  it('keeps pre-tt1 watch-only even for high-risk candidates', () => {
     const result = governProofQueueStage({
-      stageKey: 'semester-start',
-      candidates: [candidate({ stageKey: 'semester-start' })],
+      stageKey: 'pre-tt1',
+      candidates: [candidate({ stageKey: 'pre-tt1' })],
       sectionStudentCountByKey: new Map([['1::A', 60]]),
       facultyBudgetByKey: new Map([['Mentor::faculty-1::1', 10]]),
     })
@@ -43,7 +43,7 @@ describe('proof queue governance', () => {
     expect(result.decisions.get('student-1::1')).toMatchObject({
       status: 'watch',
       countsTowardCapacity: false,
-      governanceReason: 'semester_start_watch_only',
+      governanceReason: 'pre_tt1_watch_only',
     })
   })
 
@@ -87,12 +87,13 @@ describe('proof queue governance', () => {
     })
   })
 
-  it('enforces lift gates after reassessment and keeps diffuse amber medium cases on watch', () => {
+  it('enforces lift gates after tt2 and keeps diffuse amber medium cases on watch', () => {
     const result = governProofQueueStage({
-      stageKey: 'post-reassessment',
+      stageKey: 'post-assignments',
       candidates: [
         candidate({
           caseKey: 'student-1::1',
+          stageKey: 'post-assignments',
           counterfactualLiftScaled: 1,
           riskBand: 'High',
         }),
@@ -100,6 +101,7 @@ describe('proof queue governance', () => {
           caseKey: 'student-2::1',
           studentId: 'student-2',
           sourceKey: 'student-2::1::off-2::AMC302',
+          stageKey: 'post-assignments',
           riskBand: 'Medium',
           counterfactualLiftScaled: 6,
           policyPhenotype: 'diffuse-amber',
@@ -108,6 +110,7 @@ describe('proof queue governance', () => {
           caseKey: 'student-3::1',
           studentId: 'student-3',
           sourceKey: 'student-3::1::off-3::AMC303',
+          stageKey: 'post-assignments',
           riskBand: 'Medium',
           counterfactualLiftScaled: 6,
           policyPhenotype: 'academic-weakness',

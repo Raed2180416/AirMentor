@@ -4,12 +4,11 @@ export const scopeTypeValues = ['institution', 'academic-faculty', 'department',
 export type ScopeTypeValue = (typeof scopeTypeValues)[number]
 
 export const stagePolicyStageKeyValues = [
-  'semester-start',
+  'pre-tt1',
   'post-tt1',
-  'post-reassessment',
   'post-tt2',
+  'post-assignments',
   'post-see',
-  'semester-close',
 ] as const
 export type StagePolicyStageKey = (typeof stagePolicyStageKeyValues)[number]
 
@@ -60,9 +59,9 @@ export type StagePolicyPayload = z.infer<typeof stagePolicyPayloadSchema>
 export const DEFAULT_STAGE_POLICY: StagePolicyPayload = {
   stages: [
     {
-      key: 'semester-start',
-      label: 'Semester Start',
-      description: 'Opening checkpoint using early attendance and carryover history before TT1 closes.',
+      key: 'pre-tt1',
+      label: 'Pre TT1',
+      description: 'Opening stage before TT1 closes. Scheme setup, attendance updates, and class execution stay open here.',
       order: 1,
       semesterDayOffset: 0,
       requiredEvidence: ['attendance'],
@@ -74,62 +73,50 @@ export const DEFAULT_STAGE_POLICY: StagePolicyPayload = {
     {
       key: 'post-tt1',
       label: 'Post TT1',
-      description: 'First major risk checkpoint after TT1 evidence lands and the first queue decision is made.',
+      description: 'First checkpoint after TT1 evidence is present and locked.',
       order: 2,
       semesterDayOffset: 35,
-      requiredEvidence: ['attendance', 'tt1'],
+      requiredEvidence: ['tt1'],
       requireQueueClearance: true,
       requireTaskClearance: true,
       advancementMode: 'admin-confirmed',
       color: '#F59E0B',
     },
     {
-      key: 'post-reassessment',
-      label: 'Post Reassessment',
-      description: 'Follow-up window after the deterministic intervention path is opened but before TT2 is locked.',
-      order: 3,
-      semesterDayOffset: 49,
-      requiredEvidence: ['attendance', 'tt1'],
-      requireQueueClearance: true,
-      requireTaskClearance: true,
-      advancementMode: 'admin-confirmed',
-      color: '#F97316',
-    },
-    {
       key: 'post-tt2',
       label: 'Post TT2',
-      description: 'Checkpoint after TT2 where response is judged against the earlier intervention path.',
-      order: 4,
+      description: 'Checkpoint after TT2 evidence is present and locked.',
+      order: 3,
       semesterDayOffset: 77,
-      requiredEvidence: ['attendance', 'tt1', 'tt2'],
+      requiredEvidence: ['tt2'],
       requireQueueClearance: true,
       requireTaskClearance: true,
       advancementMode: 'admin-confirmed',
       color: '#8B5CF6',
     },
     {
+      key: 'post-assignments',
+      label: 'Post Assignments',
+      description: 'Checkpoint after assignment evidence is present and locked. Assignment work may be entered earlier but cannot skip TT2.',
+      order: 4,
+      semesterDayOffset: 98,
+      requiredEvidence: ['assignment'],
+      requireQueueClearance: true,
+      requireTaskClearance: true,
+      advancementMode: 'admin-confirmed',
+      color: '#F97316',
+    },
+    {
       key: 'post-see',
       label: 'Post SEE',
-      description: 'Checkpoint after SEE where final risk, action effect, and advisory fit are recomputed.',
+      description: 'Checkpoint after SEE evidence is present and locked. This is the end-of-semester progression gate.',
       order: 5,
       semesterDayOffset: 119,
-      requiredEvidence: ['attendance', 'tt1', 'tt2', 'quiz', 'assignment', 'finals'],
+      requiredEvidence: ['finals'],
       requireQueueClearance: true,
       requireTaskClearance: true,
       advancementMode: 'admin-confirmed',
       color: '#EF4444',
-    },
-    {
-      key: 'semester-close',
-      label: 'Semester Close',
-      description: 'Closing checkpoint after transcript-grade consolidation and queue resolution.',
-      order: 6,
-      semesterDayOffset: 133,
-      requiredEvidence: ['attendance', 'tt1', 'tt2', 'quiz', 'assignment', 'finals', 'transcript'],
-      requireQueueClearance: true,
-      requireTaskClearance: true,
-      advancementMode: 'admin-confirmed',
-      color: '#10B981',
     },
   ],
 }
@@ -143,4 +130,3 @@ export function canonicalizeStagePolicy(input?: unknown) {
 export function stagePolicyStageByKey(policy: StagePolicyPayload, key: StagePolicyStageKey) {
   return policy.stages.find(stage => stage.key === key) ?? DEFAULT_STAGE_POLICY.stages.find(stage => stage.key === key) ?? DEFAULT_STAGE_POLICY.stages[0]
 }
-

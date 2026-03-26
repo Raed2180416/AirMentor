@@ -231,7 +231,7 @@ body,
 .app-shell input:hover,
 .app-shell select:hover,
 .app-shell textarea:hover {
-	box-shadow: 0 0 0 1px rgba(45, 138, 240, 0.08), var(--ui-shadow-soft);
+	box-shadow: 0 0 0 1px rgba(45, 138, 240, 0.05), var(--ui-shadow-soft);
 }
 
 .app-shell button:not(:disabled):hover,

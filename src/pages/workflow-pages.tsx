@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Eye } from 'lucide-react'
 import {
-  OFFERINGS,
   PAPER_MAP,
   T,
   mono,
@@ -460,18 +459,40 @@ export function UploadPage({
   onOpenSchemeSetup: (offering?: Offering) => void
 }) {
   const { getOfferingAttendancePatched, getSchemeForOffering, getStudentsPatched } = useAppSelectors()
-  const visibleOfferings = (availableOfferings && availableOfferings.length > 0 ? availableOfferings : OFFERINGS)
+  const visibleOfferings = availableOfferings ?? (offering ? [offering] : [])
   const [selectedKind, setSelectedKind] = useState<EntryKind>(defaultKind)
-  const [selectedOffId, setSelectedOffId] = useState<string>(offering?.offId ?? visibleOfferings[0].offId)
+  const [selectedOffId, setSelectedOffId] = useState<string>(offering?.offId ?? visibleOfferings[0]?.offId ?? '')
   const [unlockRequested, setUnlockRequested] = useState<EntryKind | null>(null)
 
+  useEffect(() => {
+    if (visibleOfferings.length === 0) {
+      if (selectedOffId !== '') setSelectedOffId('')
+      return
+    }
+    const nextSelection = visibleOfferings.some(item => item.offId === selectedOffId)
+      ? selectedOffId
+      : (offering?.offId ?? visibleOfferings[0]?.offId ?? '')
+    if (nextSelection !== selectedOffId) setSelectedOffId(nextSelection)
+  }, [offering?.offId, selectedOffId, visibleOfferings])
+
   const selected = ENTRY_CATALOG.find(item => item.kind === selectedKind) ?? ENTRY_CATALOG[0]
-  const selectedOffering = visibleOfferings.find(item => item.offId === selectedOffId) ?? offering ?? visibleOfferings[0]
+  const selectedOffering = visibleOfferings.find(item => item.offId === selectedOffId) ?? offering ?? visibleOfferings[0] ?? null
+  if (!selectedOffering) {
+    return (
+      <PageShell size="narrow">
+        <PageBackButton onClick={onBack} />
+        <Card surface="panel" style={{ padding: '16px 18px' }}>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 18, color: T.text, marginBottom: 6 }}>Data Entry Hub</div>
+          <div style={{ ...mono, fontSize: 11, color: T.muted }}>No live class is mapped to this faculty scope yet. Provision the class through sysadmin or assign offering ownership before marks entry.</div>
+        </Card>
+      </PageShell>
+    )
+  }
   const scheme = getSchemeForOffering(selectedOffering)
   const selectedCourseCode = selectedOffering.code
   const classOfferings = visibleOfferings.filter(item => item.code === selectedCourseCode)
   const lockMap = lockByOffering[selectedOffering.offId] ?? getEntryLockMap(selectedOffering)
-  const hasInFlightEvaluation = !!selectedOffering.tt1Done || !!selectedOffering.tt2Done || !!lockMap.tt1 || !!lockMap.tt2 || !!lockMap.quiz || !!lockMap.assignment
+  const hasInFlightEvaluation = !!selectedOffering.tt1Done || !!selectedOffering.tt2Done || !!lockMap.tt1 || !!lockMap.tt2 || !!lockMap.quiz || !!lockMap.assignment || !!lockMap.finals
   const schemeReady = scheme.status !== 'Needs Setup' || hasInFlightEvaluation
   const shouldShowSchemePrompt = !schemeReady && !hasInFlightEvaluation
 
@@ -481,7 +502,7 @@ export function UploadPage({
     quiz: !!selectedOffering.quizLocked,
     assignment: !!selectedOffering.asgnLocked,
     attendance: getOfferingAttendancePatched(selectedOffering) >= 75,
-    finals: selectedOffering.stageInfo.stage >= 3,
+    finals: !!selectedOffering.finalsLocked,
   }
 
   return (
@@ -548,7 +569,7 @@ export function UploadPage({
                   return
                 }
                 if (!access.canOpenWorkspace) return
-                onOpenWorkspace(selectedOffId, item.kind)
+                onOpenWorkspace(selectedOffering.offId, item.kind)
               }}
             >
               <div style={{ fontSize: 28, marginBottom: 10 }}>{item.icon}</div>
@@ -589,6 +610,7 @@ export function EntryWorkspacePage({
   schemeByOffering,
   ttBlueprintsByOffering,
   lockAuditByTarget,
+  availableOfferings,
 }: {
   capabilities: FacultyCapabilitySet
   offeringId: string
@@ -607,12 +629,26 @@ export function EntryWorkspacePage({
   schemeByOffering: Record<string, SchemeState>
   ttBlueprintsByOffering: Record<string, Record<TTKind, TermTestBlueprint>>
   lockAuditByTarget: Record<string, QueueTransition[]>
+  availableOfferings: Offering[]
 }) {
   const { deriveAcademicProjection, getStudentPatch, getStudentsPatched } = useAppSelectors()
-  const selectedOffering = OFFERINGS.find(item => item.offId === offeringId) ?? OFFERINGS[0]
-  const groupedSections = OFFERINGS.filter(item => item.code === selectedOffering.code && item.year === selectedOffering.year)
+  const selectedOffering = availableOfferings.find(item => item.offId === offeringId) ?? null
+  const groupedSections = selectedOffering
+    ? availableOfferings.filter(item => item.code === selectedOffering.code && item.year === selectedOffering.year)
+    : []
   const [selectedClassOffId, setSelectedClassOffId] = useState<string>('all')
   const selected = ENTRY_CATALOG.find(item => item.kind === kind) ?? ENTRY_CATALOG[0]
+  if (!selectedOffering) {
+    return (
+      <PageShell size="wide">
+        <PageBackButton onClick={onBack} />
+        <Card surface="panel" style={{ padding: '16px 18px' }}>
+          <div style={{ ...sora, fontWeight: 700, fontSize: 18, color: T.text, marginBottom: 6 }}>{selected.title}</div>
+          <div style={{ ...mono, fontSize: 11, color: T.muted }}>This workspace has no live offering in scope. Re-open it from a provisioned class in the data-entry hub.</div>
+        </Card>
+      </PageShell>
+    )
+  }
   const lockMap = lockByOffering[selectedOffering.offId] ?? getEntryLockMap(selectedOffering)
   const access = getEntryAccessState({
     stage: selectedOffering.stageInfo.stage,
@@ -710,11 +746,7 @@ export function EntryWorkspacePage({
                           <TD style={{ ...mono, fontSize: 10, color: T.accent }}>{student.usn}</TD>
                           <TD style={{ ...sora, fontSize: 11, color: T.text }}>{student.name}</TD>
                           {(kind === 'tt1' || kind === 'tt2') && leaves.map(leaf => {
-                            const rawTotal = kind === 'tt1' ? student.tt1Score : student.tt2Score
-                            const maxTotal = kind === 'tt1' ? student.tt1Max : student.tt2Max
                             const exactLeafScores = kind === 'tt1' ? exactPatch.tt1LeafScores : exactPatch.tt2LeafScores
-                            const fallbackValue = exactLeafScores?.[leaf.id]
-                              ?? (rawTotal !== null ? clampNumber(Math.round((rawTotal / Math.max(1, maxTotal)) * leaf.maxMarks), 0, leaf.maxMarks) : undefined)
                             return (
                               <TD key={leaf.id}>
                                 <input
@@ -726,7 +758,7 @@ export function EntryWorkspacePage({
                                   min={0}
                                   max={leaf.maxMarks}
                                   disabled={!sectionAccess.canEdit}
-                                  value={cellValues[toCellKey(section.offId, kind, student.id, leaf.id)] ?? fallbackValue ?? ''}
+                                  value={cellValues[toCellKey(section.offId, kind, student.id, leaf.id)] ?? exactLeafScores?.[leaf.id] ?? ''}
                                   onKeyDown={shouldBlockNumericKey}
                                   onChange={event => onCellValueChange(toCellKey(section.offId, kind, student.id, leaf.id), parseInputValue(event.target.value, 0, leaf.maxMarks))}
                                   style={{ width: 58, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }}

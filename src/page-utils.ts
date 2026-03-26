@@ -35,10 +35,10 @@ export function inferKindFromPendingAction(pending: string | null): EntryKind {
 export const ENTRY_STAGE_REQUIREMENTS: Record<EntryKind, number> = {
   tt1: 1,
   tt2: 2,
-  quiz: 2,
-  assignment: 2,
+  quiz: 1,
+  assignment: 1,
   attendance: 1,
-  finals: 3,
+  finals: 4,
 }
 
 export function isEntryKindApplicableForStage(stage: number, kind: EntryKind) {

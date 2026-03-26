@@ -280,13 +280,13 @@ describe('msruas proof engines', () => {
     expect(steppedDown.note).toContain('Risk eased from high to medium')
   })
 
-  it('converts CE thresholds to percentages and keeps early coursework evidence neutral', () => {
+  it('converts CE thresholds to percentages and only surfaces coursework once the stage allows it', () => {
     expect(ceMinimumPctForPolicy(DEFAULT_POLICY)).toBe(40)
     expect(ceShortfallLabelFromPct(39.9, DEFAULT_POLICY)).toBe(1)
     expect(ceShortfallLabelFromPct(40, DEFAULT_POLICY)).toBe(0)
 
     expect(stageCourseworkEvidenceForStage({
-      stageKey: 'semester-start',
+      stageKey: 'pre-tt1',
       quizPct: 72,
       assignmentPct: 74,
     })).toEqual({
@@ -304,7 +304,7 @@ describe('msruas proof engines', () => {
     })
 
     expect(stageCourseworkEvidenceForStage({
-      stageKey: 'post-reassessment',
+      stageKey: 'post-tt2',
       quizPct: 72,
       assignmentPct: 74,
     })).toEqual({

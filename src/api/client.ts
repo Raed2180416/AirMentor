@@ -196,7 +196,8 @@ export interface AirMentorApiClientLike {
   validateProofImport(curriculumImportVersionId: string): Promise<Record<string, unknown>>
   reviewProofCrosswalks(curriculumImportVersionId: string, payload: { reviews: Array<{ officialCodeCrosswalkId: string; reviewStatus: string; overrideReason?: string | null }> }): Promise<{ ok: true; count: number }>
   approveProofImport(curriculumImportVersionId: string): Promise<{ ok: true }>
-  createProofRun(batchId: string, payload: { curriculumImportVersionId: string; seed?: number; runLabel?: string; activate?: boolean }): Promise<{ simulationRunId: string; activeFlag: boolean }>
+  createProofRun(batchId: string, payload: { curriculumImportVersionId: string; seed?: number; runLabel?: string; activate?: boolean }): Promise<{ simulationRunId: string; status: string; activeFlag: boolean; createdAt: string; startedAt: string | null; completedAt: string | null; failureCode: string | null; failureMessage: string | null; progress: Record<string, unknown> | null }>
+  retryProofRun(simulationRunId: string): Promise<{ simulationRunId: string; status: string; activeFlag: boolean; createdAt: string; startedAt: string | null; completedAt: string | null; failureCode: string | null; failureMessage: string | null; progress: Record<string, unknown> | null }>
   activateProofRun(simulationRunId: string): Promise<{ ok: true }>
   archiveProofRun(simulationRunId: string): Promise<{ ok: true }>
   recomputeProofRunRisk(simulationRunId: string): Promise<{ ok: true }>
@@ -882,9 +883,16 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
   }
 
   async createProofRun(batchId: string, payload: { curriculumImportVersionId: string; seed?: number; runLabel?: string; activate?: boolean }) {
-    return this.request<{ simulationRunId: string; activeFlag: boolean }>(`/api/admin/batches/${batchId}/proof-runs`, {
+    return this.request<{ simulationRunId: string; status: string; activeFlag: boolean; createdAt: string; startedAt: string | null; completedAt: string | null; failureCode: string | null; failureMessage: string | null; progress: Record<string, unknown> | null }>(`/api/admin/batches/${batchId}/proof-runs`, {
       method: 'POST',
       body: JSON.stringify(payload),
+    })
+  }
+
+  async retryProofRun(simulationRunId: string) {
+    return this.request<{ simulationRunId: string; status: string; activeFlag: boolean; createdAt: string; startedAt: string | null; completedAt: string | null; failureCode: string | null; failureMessage: string | null; progress: Record<string, unknown> | null }>(`/api/admin/proof-runs/${simulationRunId}/retry`, {
+      method: 'POST',
+      body: JSON.stringify({}),
     })
   }
 

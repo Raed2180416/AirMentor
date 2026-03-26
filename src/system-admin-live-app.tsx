@@ -544,9 +544,9 @@ function buildCurriculumFeaturePayload(form: CurriculumFeatureFormState): ApiCur
 const DEFAULT_STAGE_POLICY: ApiStagePolicyPayload = {
   stages: [
     {
-      key: 'semester-start',
-      label: 'Semester Start',
-      description: 'Opening checkpoint using early attendance and carryover history before TT1 closes.',
+      key: 'pre-tt1',
+      label: 'Pre TT1',
+      description: 'Opening stage before TT1 closes. Scheme setup, attendance updates, and class execution stay open here.',
       order: 1,
       semesterDayOffset: 0,
       requiredEvidence: ['attendance'],
@@ -558,62 +558,50 @@ const DEFAULT_STAGE_POLICY: ApiStagePolicyPayload = {
     {
       key: 'post-tt1',
       label: 'Post TT1',
-      description: 'First major risk checkpoint after TT1 evidence lands and the first queue decision is made.',
+      description: 'First checkpoint after TT1 evidence is present and locked.',
       order: 2,
       semesterDayOffset: 35,
-      requiredEvidence: ['attendance', 'tt1'],
+      requiredEvidence: ['tt1'],
       requireQueueClearance: true,
       requireTaskClearance: true,
       advancementMode: 'admin-confirmed',
       color: '#F59E0B',
     },
     {
-      key: 'post-reassessment',
-      label: 'Post Reassessment',
-      description: 'Follow-up window after the deterministic intervention path is opened but before TT2 is locked.',
-      order: 3,
-      semesterDayOffset: 49,
-      requiredEvidence: ['attendance', 'tt1'],
-      requireQueueClearance: true,
-      requireTaskClearance: true,
-      advancementMode: 'admin-confirmed',
-      color: '#F97316',
-    },
-    {
       key: 'post-tt2',
       label: 'Post TT2',
-      description: 'Checkpoint after TT2 where response is judged against the earlier intervention path.',
-      order: 4,
+      description: 'Checkpoint after TT2 evidence is present and locked.',
+      order: 3,
       semesterDayOffset: 77,
-      requiredEvidence: ['attendance', 'tt1', 'tt2'],
+      requiredEvidence: ['tt2'],
       requireQueueClearance: true,
       requireTaskClearance: true,
       advancementMode: 'admin-confirmed',
       color: '#8B5CF6',
     },
     {
+      key: 'post-assignments',
+      label: 'Post Assignments',
+      description: 'Checkpoint after assignment evidence is present and locked. Assignment work may be entered earlier but cannot skip TT2.',
+      order: 4,
+      semesterDayOffset: 98,
+      requiredEvidence: ['assignment'],
+      requireQueueClearance: true,
+      requireTaskClearance: true,
+      advancementMode: 'admin-confirmed',
+      color: '#F97316',
+    },
+    {
       key: 'post-see',
       label: 'Post SEE',
-      description: 'Checkpoint after SEE where final risk, action effect, and advisory fit are recomputed.',
+      description: 'Checkpoint after SEE evidence is present and locked. This is the end-of-semester progression gate.',
       order: 5,
       semesterDayOffset: 119,
-      requiredEvidence: ['attendance', 'tt1', 'tt2', 'quiz', 'assignment', 'finals'],
+      requiredEvidence: ['finals'],
       requireQueueClearance: true,
       requireTaskClearance: true,
       advancementMode: 'admin-confirmed',
       color: '#EF4444',
-    },
-    {
-      key: 'semester-close',
-      label: 'Semester Close',
-      description: 'Closing checkpoint after transcript-grade consolidation and queue resolution.',
-      order: 6,
-      semesterDayOffset: 133,
-      requiredEvidence: ['attendance', 'tt1', 'tt2', 'quiz', 'assignment', 'finals', 'transcript'],
-      requireQueueClearance: true,
-      requireTaskClearance: true,
-      advancementMode: 'admin-confirmed',
-      color: '#10B981',
     },
   ],
 }
@@ -682,7 +670,7 @@ function defaultBatchProvisioningForm(): BatchProvisioningFormState {
     createStudents: true,
     createMentors: true,
     createAttendanceScaffolding: true,
-    createAssessmentScaffolding: true,
+    createAssessmentScaffolding: false,
     createTranscriptScaffolding: true,
   }
 }
@@ -1679,14 +1667,14 @@ function OverviewSupportCard({
 }) {
   return (
     <Card
-      glow={tone}
+      surface="launch"
       onClick={onClick}
       style={{
         padding: 18,
         minHeight: 148,
         display: 'grid',
         alignContent: 'space-between',
-        background: `linear-gradient(180deg, ${withAlpha(tone, '10')}, ${T.surface})`,
+        background: `linear-gradient(180deg, ${withAlpha(tone, '0d')}, ${T.surface})`,
       }}
     >
       <div style={{ ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: tone, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{title}</div>
@@ -1849,6 +1837,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const [proofDashboardLoading, setProofDashboardLoading] = useState(false)
   const [curriculumFeatureConfig, setCurriculumFeatureConfig] = useState<ApiCurriculumFeatureConfigBundle | null>(null)
   const [selectedCurriculumFeatureCourseId, setSelectedCurriculumFeatureCourseId] = useState('')
+  const [selectedCurriculumSemester, setSelectedCurriculumSemester] = useState('')
+  const [selectedCurriculumCourseId, setSelectedCurriculumCourseId] = useState('')
   const [curriculumFeatureForm, setCurriculumFeatureForm] = useState<CurriculumFeatureFormState>(() => defaultCurriculumFeatureForm())
   const [curriculumFeatureTargetMode, setCurriculumFeatureTargetMode] = useState<'batch-local-override' | 'scope-profile'>('batch-local-override')
   const [curriculumFeatureTargetScopeKey, setCurriculumFeatureTargetScopeKey] = useState('')
@@ -2228,6 +2218,16 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     })()
     return () => { cancelled = true }
   }, [apiClient, route.batchId, session])
+
+  useEffect(() => {
+    if (!route.batchId) return
+    const runStatus = proofDashboard?.activeRunDetail?.status ?? null
+    if (runStatus !== 'queued' && runStatus !== 'running') return
+    const timer = window.setInterval(() => {
+      void refreshProofDashboard(route.batchId!)
+    }, 5_000)
+    return () => window.clearInterval(timer)
+  }, [proofDashboard?.activeRunDetail?.status, refreshProofDashboard, route.batchId])
 
   const autoRefreshProofBatches = useCallback(async (batchIds: string[], reason: string, overrideImportVersionId?: string | null) => {
     const refreshedBatchIds: string[] = []
@@ -2987,6 +2987,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const startEditingCurriculumCourse = (curriculumCourseId: string) => {
     const target = data.curriculumCourses.find(item => item.curriculumCourseId === curriculumCourseId)
     if (!target) return
+    setSelectedCurriculumSemester(String(target.semesterNumber))
+    setSelectedCurriculumCourseId(target.curriculumCourseId)
     setEntityEditors(prev => ({
       ...prev,
       curriculum: {
@@ -3604,12 +3606,21 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     const preferredImport = proofDashboard?.imports.find(item => item.status === 'approved') ?? proofDashboard?.imports[0]
     if (!preferredImport) return
     await runAction(async () => {
-      await apiClient.createProofRun(selectedBatch.batchId, {
+      const queuedRun = await apiClient.createProofRun(selectedBatch.batchId, {
         curriculumImportVersionId: preferredImport.curriculumImportVersionId,
         activate: true,
       })
       await refreshProofDashboard(selectedBatch.batchId)
-      setFlashMessage('Proof simulation rerun completed and published as active.')
+      setFlashMessage(`Proof simulation rerun queued as ${queuedRun.simulationRunId}. It will publish automatically when background execution completes.`)
+    })
+  }
+
+  const handleRetryProofRun = async (simulationRunId: string) => {
+    if (!selectedBatch) return
+    await runAction(async () => {
+      await apiClient.retryProofRun(simulationRunId)
+      await refreshProofDashboard(selectedBatch.batchId)
+      setFlashMessage('Failed proof run re-queued for background execution.')
     })
   }
 
@@ -4222,12 +4233,42 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const branchBatches = listBatchesForBranch(data, selectedBranch?.branchId)
   const batchTerms = listTermsForBatch(data, selectedBatch?.batchId)
   const curriculumBySemester = listCurriculumBySemester(data, selectedBatch?.batchId)
+  const selectedCurriculumSemesterEntry = curriculumBySemester.find(entry => String(entry.semesterNumber) === selectedCurriculumSemester) ?? null
+  const selectedCurriculumSemesterCourses = selectedCurriculumSemesterEntry?.courses ?? []
+  const selectedCurriculumCourse = selectedCurriculumSemesterCourses.find(course => course.curriculumCourseId === selectedCurriculumCourseId)
+    ?? selectedCurriculumSemesterCourses[0]
+    ?? null
   const curriculumFeatureItems = curriculumFeatureConfig?.items ?? []
   const selectedCurriculumFeatureItem = curriculumFeatureItems.find(item => item.curriculumCourseId === selectedCurriculumFeatureCourseId) ?? null
   const selectedFacultyAssignments = selectedFacultyMember ? listFacultyAssignments(data, selectedFacultyMember.facultyId) : []
   const activeBatchPolicyOverride = selectedBatch
     ? data.policyOverrides.find(item => item.scopeType === 'batch' && item.scopeId === selectedBatch.batchId && isVisibleAdminRecord(item.status)) ?? null
     : null
+
+  useEffect(() => {
+    if (curriculumBySemester.length === 0) {
+      setSelectedCurriculumSemester('')
+      setSelectedCurriculumCourseId('')
+      return
+    }
+    const preferredSemester = selectedCurriculumSemester
+      && curriculumBySemester.some(entry => String(entry.semesterNumber) === selectedCurriculumSemester)
+      ? selectedCurriculumSemester
+      : curriculumBySemester.find(entry => entry.semesterNumber === selectedBatch?.currentSemester)?.semesterNumber?.toString()
+        ?? String(curriculumBySemester[0]!.semesterNumber)
+    if (preferredSemester !== selectedCurriculumSemester) {
+      setSelectedCurriculumSemester(preferredSemester)
+      return
+    }
+    const semesterCourses = curriculumBySemester.find(entry => String(entry.semesterNumber) === preferredSemester)?.courses ?? []
+    if (semesterCourses.length === 0) {
+      if (selectedCurriculumCourseId) setSelectedCurriculumCourseId('')
+      return
+    }
+    if (!semesterCourses.some(course => course.curriculumCourseId === selectedCurriculumCourseId)) {
+      setSelectedCurriculumCourseId(semesterCourses[0]!.curriculumCourseId)
+    }
+  }, [curriculumBySemester, selectedBatch?.currentSemester, selectedCurriculumCourseId, selectedCurriculumSemester])
   const activeScopeChain = useMemo<ActiveAdminScope[]>(() => {
     const chain: ActiveAdminScope[] = []
     if (data.institution) {
@@ -5888,6 +5929,16 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                             <div style={{ ...mono, fontSize: 10, color: T.dim }}>Active Run</div>
                             <div style={{ ...mono, fontSize: 11, color: T.text, marginTop: 4 }}>{proofDashboard.activeRunDetail.runLabel}</div>
                             <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6 }}>Seed {proofDashboard.activeRunDetail.seed} · {proofDashboard.activeRunDetail.status}</div>
+                            {proofDashboard.activeRunDetail.progress ? (
+                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6 }}>
+                                {String(proofDashboard.activeRunDetail.progress.phase ?? 'running')} · {String(proofDashboard.activeRunDetail.progress.percent ?? 0)}%
+                              </div>
+                            ) : null}
+                            {proofDashboard.activeRunDetail.failureMessage ? (
+                              <div style={{ ...mono, fontSize: 10, color: T.warning, marginTop: 6, lineHeight: 1.6 }}>
+                                {proofDashboard.activeRunDetail.failureMessage}
+                              </div>
+                            ) : null}
                           </Card>
                         <Card style={{ padding: 12, background: T.surface }}>
                           <div style={{ ...mono, fontSize: 10, color: T.dim }}>Monitoring</div>
@@ -6212,8 +6263,17 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                               <Chip color={item.activeFlag ? T.success : T.dim}>{item.activeFlag ? 'Active' : item.status}</Chip>
                             </div>
                             <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>Seed {item.seed} · {new Date(item.createdAt).toLocaleString('en-IN')}</div>
+                            {item.progress ? (
+                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
+                                {String(item.progress.phase ?? item.status)} · {String(item.progress.percent ?? 0)}%
+                              </div>
+                            ) : null}
+                            {item.failureMessage ? (
+                              <div style={{ ...mono, fontSize: 10, color: T.warning, marginTop: 4, lineHeight: 1.6 }}>{item.failureMessage}</div>
+                            ) : null}
                             <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-                              {!item.activeFlag ? <Btn size="sm" variant="ghost" onClick={() => handleActivateProofRun(item.simulationRunId)}>Set Active</Btn> : null}
+                              {!item.activeFlag && item.status === 'completed' ? <Btn size="sm" variant="ghost" onClick={() => handleActivateProofRun(item.simulationRunId)}>Set Active</Btn> : null}
+                              {item.status === 'failed' ? <Btn size="sm" variant="ghost" onClick={() => handleRetryProofRun(item.simulationRunId)}>Retry</Btn> : null}
                               <Btn size="sm" variant="ghost" onClick={() => handleArchiveProofRun(item.simulationRunId)}>Archive</Btn>
                               {proofDashboard?.activeRunDetail?.snapshots[0] ? <Btn size="sm" variant="ghost" onClick={() => handleRestoreProofSnapshot(item.simulationRunId, proofDashboard.activeRunDetail?.snapshots[0]?.simulationResetSnapshotId)}>Restore Snapshot</Btn> : null}
                             </div>
@@ -6653,7 +6713,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                                 <Card key={item.kind} style={{ padding: 12, background: T.surface2, display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                                   <div>
                                     <div style={{ ...mono, fontSize: 11, color: T.text, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{item.kind}</div>
-                                    <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{item.required ? 'Required for next stage.' : 'Not required at this stage.'}</div>
+                                    <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
+                                      {item.required ? `Required for next stage · ${item.presentCount}/${item.expectedCount} records present.` : 'Not required at this stage.'}
+                                    </div>
                                   </div>
                                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                                     <Chip color={item.required ? T.accent : T.dim}>{item.required ? 'Required' : 'Optional'}</Chip>
@@ -6768,59 +6830,93 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
               {universityTab === 'courses' && (
                 selectedBranch ? (
-                  selectedBatch ? (
+                selectedBatch ? (
                     <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
                       <SectionHeading title="Semester Courses" eyebrow="Curriculum" caption="Semester-wise course rows, credits, and scoped course leader visibility for the selected year." />
-                      {curriculumBySemester.length === 0 ? <EmptyState title="No semester rows yet" body="Add the first course row below." /> : curriculumBySemester.map(entry => (
-                        <Card key={entry.semesterNumber} style={{ padding: 12, background: T.surface2, display: 'grid', gap: 8 }}>
-                          <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>Semester {entry.semesterNumber}</div>
-                          {entry.courses.map(course => (
-                            <div key={course.curriculumCourseId} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) 110px minmax(220px, 0.9fr) auto', gap: 10, alignItems: 'center' }}>
-                              {(() => {
-                                const leaderState = getScopedCourseLeaderState(course.curriculumCourseId)
-                                return (
-                                  <>
-                                    <div>
-                                      <div style={{ ...mono, fontSize: 11, color: T.text }}>{course.courseCode} · {course.title}</div>
-                                      <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>Semester {entry.semesterNumber} · {leaderState.matchingOfferings.length} live offering{leaderState.matchingOfferings.length === 1 ? '' : 's'} in scope</div>
-                                    </div>
-                                    <div style={{ ...mono, fontSize: 10, color: T.text }}>{course.credits} credits</div>
-                                    <div style={{ display: 'grid', gap: 6 }}>
-                                      <SelectInput
-                                        value={leaderState.selectedFacultyId}
-                                        disabled={leaderState.matchingOfferings.length === 0}
-                                        onChange={event => void handleAssignCurriculumCourseLeader(course.curriculumCourseId, event.target.value)}
-                                      >
-                                        <option value="">{leaderState.hasMultipleLeaders ? 'Multiple leaders assigned' : leaderState.matchingOfferings.length === 0 ? 'No offerings in scope yet' : 'Clear course leader'}</option>
-                                        {scopedCourseLeaderFaculty.map(member => <option key={member.facultyId} value={member.facultyId}>{member.displayName} · {member.employeeCode}</option>)}
-                                      </SelectInput>
-                                      <div style={{ ...mono, fontSize: 10, color: leaderState.hasMultipleLeaders ? T.warning : T.accent }}>
-                                        {leaderState.hasMultipleLeaders
-                                          ? getUniversityCourseLeaders(course.courseCode).join(', ')
-                                          : getUniversityCourseLeaders(course.courseCode).join(', ') || 'Course leader not assigned'}
-                                      </div>
-                                    </div>
-                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                      <Btn size="sm" variant="ghost" onClick={() => startEditingCurriculumCourse(course.curriculumCourseId)}>Edit</Btn>
-                                      <Btn
-                                        size="sm"
-                                        variant="danger"
-                                        onClick={() => {
-                                          if (window.confirm(`Delete curriculum row ${course.courseCode}?`)) {
-                                            void handleArchiveCurriculumCourse(course.curriculumCourseId)
-                                          }
-                                        }}
-                                      >
-                                        Delete
-                                      </Btn>
-                                    </div>
-                                  </>
-                                )
-                              })()}
+                      {curriculumBySemester.length === 0 ? <EmptyState title="No semester rows yet" body="Add the first course row below." /> : (
+                        <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 12 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: viewportWidth < 1024 ? 'minmax(0, 1fr)' : '180px minmax(0, 1fr)', gap: 10 }}>
+                            <div>
+                              <FieldLabel>Semester</FieldLabel>
+                              <SelectInput value={selectedCurriculumSemester} onChange={event => setSelectedCurriculumSemester(event.target.value)}>
+                                {curriculumBySemester.map(entry => (
+                                  <option key={entry.semesterNumber} value={String(entry.semesterNumber)}>
+                                    {`Semester ${entry.semesterNumber} · ${entry.courses.length} course${entry.courses.length === 1 ? '' : 's'}`}
+                                  </option>
+                                ))}
+                              </SelectInput>
                             </div>
-                          ))}
+                            <div>
+                              <FieldLabel>Course In Selected Semester</FieldLabel>
+                              <SelectInput
+                                value={selectedCurriculumCourse?.curriculumCourseId ?? ''}
+                                onChange={event => {
+                                  setSelectedCurriculumCourseId(event.target.value)
+                                  if (event.target.value) startEditingCurriculumCourse(event.target.value)
+                                }}
+                                disabled={selectedCurriculumSemesterCourses.length === 0}
+                              >
+                                {selectedCurriculumSemesterCourses.length === 0 ? <option value="">No courses in this semester</option> : selectedCurriculumSemesterCourses.map(course => (
+                                  <option key={course.curriculumCourseId} value={course.curriculumCourseId}>
+                                    {`${course.courseCode} · ${course.title}`}
+                                  </option>
+                                ))}
+                              </SelectInput>
+                            </div>
+                          </div>
+
+                          {selectedCurriculumCourse ? (() => {
+                            const leaderState = getScopedCourseLeaderState(selectedCurriculumCourse.curriculumCourseId)
+                            return (
+                              <Card style={{ padding: 14, background: T.surface, display: 'grid', gap: 12 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                                  <div>
+                                    <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>{selectedCurriculumCourse.courseCode} · {selectedCurriculumCourse.title}</div>
+                                    <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6 }}>
+                                      {`Semester ${selectedCurriculumSemesterEntry?.semesterNumber ?? selectedCurriculumCourse.semesterNumber} · ${leaderState.matchingOfferings.length} live offering${leaderState.matchingOfferings.length === 1 ? '' : 's'} in scope`}
+                                    </div>
+                                  </div>
+                                  <Chip color={T.accent}>{`${selectedCurriculumCourse.credits} credits`}</Chip>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: viewportWidth < 1024 ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) auto', gap: 10, alignItems: 'end' }}>
+                                  <div style={{ display: 'grid', gap: 6 }}>
+                                    <FieldLabel>Course Leader</FieldLabel>
+                                    <SelectInput
+                                      value={leaderState.selectedFacultyId}
+                                      disabled={leaderState.matchingOfferings.length === 0}
+                                      onChange={event => void handleAssignCurriculumCourseLeader(selectedCurriculumCourse.curriculumCourseId, event.target.value)}
+                                    >
+                                      <option value="">{leaderState.hasMultipleLeaders ? 'Multiple leaders assigned' : leaderState.matchingOfferings.length === 0 ? 'No offerings in scope yet' : 'Clear course leader'}</option>
+                                      {scopedCourseLeaderFaculty.map(member => <option key={member.facultyId} value={member.facultyId}>{member.displayName} · {member.employeeCode}</option>)}
+                                    </SelectInput>
+                                    <div style={{ ...mono, fontSize: 10, color: leaderState.hasMultipleLeaders ? T.warning : T.accent }}>
+                                      {leaderState.hasMultipleLeaders
+                                        ? getUniversityCourseLeaders(selectedCurriculumCourse.courseCode).join(', ')
+                                        : getUniversityCourseLeaders(selectedCurriculumCourse.courseCode).join(', ') || 'Course leader not assigned'}
+                                    </div>
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                    <Btn size="sm" variant="ghost" onClick={() => startEditingCurriculumCourse(selectedCurriculumCourse.curriculumCourseId)}>Load Into Editor</Btn>
+                                    <Btn
+                                      size="sm"
+                                      variant="danger"
+                                      onClick={() => {
+                                        if (window.confirm(`Delete curriculum row ${selectedCurriculumCourse.courseCode}?`)) {
+                                          void handleArchiveCurriculumCourse(selectedCurriculumCourse.curriculumCourseId)
+                                        }
+                                      }}
+                                    >
+                                      Delete
+                                    </Btn>
+                                  </div>
+                                </div>
+                              </Card>
+                            )
+                          })() : (
+                            <InfoBanner message="No course exists in the selected semester yet. Use the form below to create the first row." />
+                          )}
                         </Card>
-                      ))}
+                      )}
                       <form onSubmit={handleSaveCurriculumCourse} style={{ display: 'grid', gap: 10 }}>
                         <div><FieldLabel>Semester Number</FieldLabel><TextInput value={entityEditors.curriculum.semesterNumber} onChange={event => setEntityEditors(prev => ({ ...prev, curriculum: { ...prev.curriculum, semesterNumber: event.target.value } }))} placeholder="Semester" /></div>
                         <div><FieldLabel>Course Code</FieldLabel><TextInput value={entityEditors.curriculum.courseCode} onChange={event => setEntityEditors(prev => ({ ...prev, curriculum: { ...prev.curriculum, courseCode: event.target.value } }))} placeholder="CS699" /></div>

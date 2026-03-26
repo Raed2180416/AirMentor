@@ -48,6 +48,7 @@ import {
   studentAssessmentScores,
   studentAttendanceSnapshots,
   studentBehaviorProfiles,
+  studentEnrollments,
   studentAgentCards,
   studentAgentMessages,
   studentAgentSessions,
@@ -1913,7 +1914,7 @@ export function stageCourseworkEvidenceForStage(input: {
   quizPct: number | null
   assignmentPct: number | null
 }) {
-  if (input.stageKey === 'semester-start' || input.stageKey === 'post-tt1') {
+  if (input.stageKey === 'pre-tt1' || input.stageKey === 'post-tt1') {
     return {
       quizPct: null,
       assignmentPct: null,
@@ -1927,15 +1928,14 @@ export function stageCourseworkEvidenceForStage(input: {
 
 function attendanceCheckpointCountForStage(stageKey: PlaybackStageKey) {
   switch (stageKey) {
-    case 'semester-start':
+    case 'pre-tt1':
       return 1
     case 'post-tt1':
       return 2
-    case 'post-reassessment':
-      return 3
     case 'post-tt2':
+      return 3
+    case 'post-assignments':
     case 'post-see':
-    case 'semester-close':
       return 4
   }
 }
@@ -1946,15 +1946,14 @@ function includedAttendanceForSourceStage(source: StageCourseProjectionSource, s
 
 function questionComponentsForStage(stageKey: PlaybackStageKey) {
   switch (stageKey) {
-    case 'semester-start':
+    case 'pre-tt1':
       return [] as Array<'tt1' | 'tt2' | 'see'>
     case 'post-tt1':
-    case 'post-reassessment':
       return ['tt1'] as Array<'tt1' | 'tt2' | 'see'>
     case 'post-tt2':
+    case 'post-assignments':
       return ['tt1', 'tt2'] as Array<'tt1' | 'tt2' | 'see'>
     case 'post-see':
-    case 'semester-close':
       return ['tt1', 'tt2', 'see'] as Array<'tt1' | 'tt2' | 'see'>
   }
 }
@@ -1962,9 +1961,10 @@ function questionComponentsForStage(stageKey: PlaybackStageKey) {
 function stageWeakCourseOutcomes(rows: Array<typeof studentCoStates.$inferSelect>, stageKey: PlaybackStageKey) {
   return summarizeCoRows(rows)
     .filter(row => {
-      if (stageKey === 'semester-start') return false
-      if (stageKey === 'post-tt1' || stageKey === 'post-reassessment') return row.tt1Pct < 45
+      if (stageKey === 'pre-tt1') return false
+      if (stageKey === 'post-tt1') return row.tt1Pct < 45
       if (stageKey === 'post-tt2') return row.tt2Pct < 45
+      if (stageKey === 'post-assignments') return row.tt2Pct < 45
       return Math.min(row.tt2Pct || 100, row.seePct || 100) < 45 || row.seePct < 45
     })
     .slice(0, 6)
@@ -1972,11 +1972,7 @@ function stageWeakCourseOutcomes(rows: Array<typeof studentCoStates.$inferSelect
 
 function pickInterventionResponseForStage(response: StageCourseProjectionSource['interventionResponse'], stageKey: PlaybackStageKey) {
   if (!response) return null
-  if (stageKey === 'semester-start' || stageKey === 'post-tt1') return null
-  if (stageKey === 'post-reassessment') {
-    if (response.accepted) return response.completed ? 0.05 : 0.02
-    return -0.05
-  }
+  if (stageKey === 'pre-tt1' || stageKey === 'post-tt1') return null
   return response.residual
 }
 
@@ -2135,7 +2131,7 @@ function availablePolicyActionsForStage(stageKey: PlaybackStageKey) {
     'structured-study-plan',
     'outreach-plus-tutoring',
   ]
-  if (stageKey === 'post-tt2' || stageKey === 'post-see' || stageKey === 'semester-close') {
+  if (stageKey === 'post-tt2' || stageKey === 'post-assignments' || stageKey === 'post-see') {
     base.push('pre-see-rescue')
   }
   return base
@@ -2171,7 +2167,7 @@ export function classifyPolicyPhenotype(input: {
   const attendanceDominant = input.evidence.attendancePct < 75 || input.evidence.attendanceHistoryRiskCount >= 2
   const persistentNonresponse = (input.evidence.interventionResponseScore ?? 0) < -0.03
   const lateSemesterAcute = input.riskBand === 'High' && (
-    input.stageKey === 'post-tt2' || input.stageKey === 'post-see' || input.stageKey === 'semester-close'
+    input.stageKey === 'post-tt2' || input.stageKey === 'post-assignments' || input.stageKey === 'post-see'
   )
   const prerequisiteDominant = (
     input.prerequisiteSummary.prerequisiteFailureCount > 0
@@ -2530,23 +2526,23 @@ function buildStageEvidenceSnapshot(input: {
   })
   const snapshot: StageEvidenceSnapshot = {
     attendancePct: latestAttendance?.attendancePct ?? input.source.attendancePct,
-    tt1Pct: (input.stageKey === 'post-tt1' || input.stageKey === 'post-reassessment' || input.stageKey === 'post-tt2' || input.stageKey === 'post-see' || input.stageKey === 'semester-close')
+    tt1Pct: (input.stageKey === 'post-tt1' || input.stageKey === 'post-tt2' || input.stageKey === 'post-assignments' || input.stageKey === 'post-see')
       ? input.source.tt1Pct
       : null,
-    tt2Pct: (input.stageKey === 'post-tt2' || input.stageKey === 'post-see' || input.stageKey === 'semester-close')
+    tt2Pct: (input.stageKey === 'post-tt2' || input.stageKey === 'post-assignments' || input.stageKey === 'post-see')
       ? input.source.tt2Pct
       : null,
     quizPct: courseworkEvidence.quizPct,
     assignmentPct: courseworkEvidence.assignmentPct,
-    seePct: (input.stageKey === 'post-see' || input.stageKey === 'semester-close')
+    seePct: input.stageKey === 'post-see'
       ? input.source.seePct
       : null,
     weakCoCount: weakCourseOutcomes.length,
     weakQuestionCount: questionPatterns.weakQuestionCount,
     attentionAreas: [],
     attendanceHistoryRiskCount: includedAttendance.filter(entry => entry.attendancePct < input.policy.attendanceRules.minimumRequiredPercent).length,
-    currentCgpa: input.stageKey === 'semester-close' ? input.source.closingCgpa : input.source.previousCgpa,
-    backlogCount: input.stageKey === 'semester-close' ? input.source.closingBacklogCount : input.source.previousBacklogCount,
+    currentCgpa: input.stageKey === 'post-see' ? input.source.closingCgpa : input.source.previousCgpa,
+    backlogCount: input.stageKey === 'post-see' ? input.source.closingBacklogCount : input.source.previousBacklogCount,
     interventionResponseScore: pickInterventionResponseForStage(input.source.interventionResponse, input.stageKey),
     evidenceWindow: `${input.source.semesterNumber}-${input.stageKey}`,
     weakCourseOutcomes,
@@ -2560,7 +2556,7 @@ function buildNoActionSnapshot(input: {
   actionTaken: string | null
   stageKey: PlaybackStageKey
 }) {
-  if (!input.actionTaken || (input.stageKey !== 'post-reassessment' && input.stageKey !== 'post-tt2' && input.stageKey !== 'post-see' && input.stageKey !== 'semester-close')) {
+  if (!input.actionTaken || (input.stageKey !== 'post-tt2' && input.stageKey !== 'post-assignments' && input.stageKey !== 'post-see')) {
     return {
       ...input.evidence,
       interventionResponseScore: input.evidence.interventionResponseScore == null ? null : Math.min(input.evidence.interventionResponseScore, 0),
@@ -4301,7 +4297,11 @@ export async function rebuildSimulationStagePlayback(db: AppDb, input: {
   const templateById = new Map(questionTemplateRows.map(row => [row.simulationQuestionTemplateId, row]))
 
   const checkpointBySemesterStage = new Map<string, typeof simulationStageCheckpoints.$inferInsert>()
-  const orderedCheckpointRows = Array.from({ length: 6 }, (_, semesterIndex) => semesterIndex + 1)
+  const semesterNumbers = Array.from(
+    { length: Math.max(1, run.semesterEnd - run.semesterStart + 1) },
+    (_, semesterIndex) => run.semesterStart + semesterIndex,
+  )
+  const orderedCheckpointRows = semesterNumbers
     .flatMap(semesterNumber => PLAYBACK_STAGE_DEFS.map(stage => ({
       simulationStageCheckpointId: buildDeterministicId('stage_checkpoint', [input.simulationRunId, semesterNumber, stage.key]),
       simulationRunId: input.simulationRunId,
@@ -4356,7 +4356,7 @@ export async function rebuildSimulationStagePlayback(db: AppDb, input: {
       const student = studentById.get(row.studentId)
       const payload = parseJson(row.observedStateJson, {} as Record<string, unknown>)
       const previousSummary = previousSemesterSummaryByStudentSemester.get(`${row.studentId}::${row.semesterNumber - 1}`) ?? { cgpa: 0, backlogCount: 0 }
-      if (row.semesterNumber <= 5) {
+      if (row.semesterNumber <= 5 && typeof payload.offeringId !== 'string') {
         const subjectScores = Array.isArray(payload.subjectScores) ? payload.subjectScores : []
         subjectScores.forEach(subject => {
           const record = subject as Record<string, unknown>
@@ -4498,7 +4498,7 @@ export async function rebuildSimulationStagePlayback(db: AppDb, input: {
     .slice()
     .sort((left, right) => left.facultyId.localeCompare(right.facultyId))[0]?.facultyId ?? null
   const overloadPenaltyBySemesterFaculty = new Map<string, number>()
-  for (let semesterNumber = 1; semesterNumber <= 6; semesterNumber += 1) {
+  for (const semesterNumber of semesterNumbers) {
     const semesterLoads = teacherLoadRows.filter(row => row.semesterNumber === semesterNumber)
     const currentLoadAverage = average(semesterLoads.map(row => row.weeklyContactHours))
     const overloadThreshold = Math.max(8, Math.ceil(currentLoadAverage * 1.25))
@@ -4606,7 +4606,7 @@ export async function rebuildSimulationStagePlayback(db: AppDb, input: {
     ]))
     const caseStateByKey = new Map<string, ProofQueuePriorCaseState>()
 
-    for (let semesterNumber = 1; semesterNumber <= 6; semesterNumber += 1) {
+    for (const semesterNumber of semesterNumbers) {
       const semesterSources = orderedSourcesForGovernance.filter(source => source.semesterNumber === semesterNumber)
       for (const stage of PLAYBACK_STAGE_DEFS) {
         const checkpoint = checkpointBySemesterStage.get(`${semesterNumber}::${stage.key}`)
@@ -4709,8 +4709,8 @@ export async function rebuildSimulationStagePlayback(db: AppDb, input: {
           const shouldSwitchAction = !sourceState.actionTaken
             || (policyComparison.recommendedAction != null && policyComparison.recommendedAction !== sourceState.actionTaken && (
               (evidence.interventionResponseScore ?? 0) < -0.03
-              || stage.key === 'post-reassessment'
               || stage.key === 'post-tt2'
+              || stage.key === 'post-assignments'
               || stage.key === 'post-see'
             ))
           const nextActionTaken = shouldSwitchAction ? (policyComparison.recommendedAction ?? sourceState.actionTaken) : sourceState.actionTaken
@@ -5279,8 +5279,8 @@ export async function rebuildSimulationStagePlayback(db: AppDb, input: {
         const shouldSwitchAction = !actionTaken
           || (policyComparison.recommendedAction != null && policyComparison.recommendedAction !== actionTaken && (
             (evidence.interventionResponseScore ?? 0) < -0.03
-            || stage.key === 'post-reassessment'
             || stage.key === 'post-tt2'
+            || stage.key === 'post-assignments'
             || stage.key === 'post-see'
           ))
         nextActionTaken = shouldSwitchAction ? (policyComparison.recommendedAction ?? actionTaken) : actionTaken
@@ -5353,7 +5353,7 @@ export async function rebuildSimulationStagePlayback(db: AppDb, input: {
           }
           queueOpen = true
         } else if (queueOpen) {
-          queueState = inference.riskBand === 'Low' || stage.key === 'semester-close' ? 'resolved' : 'watch'
+          queueState = inference.riskBand === 'Low' || stage.key === 'post-see' ? 'resolved' : 'watch'
           reassessmentState = queueState === 'resolved' ? 'Resolved' : 'Watching'
           queueOpen = false
         } else if (queueDisposition.watch) {
@@ -5621,10 +5621,7 @@ export async function rebuildSimulationStagePlayback(db: AppDb, input: {
     const checkpointStudentRows = studentProjectionRows.filter(row => row.simulationStageCheckpointId === checkpoint.simulationStageCheckpointId)
     const checkpointQueueRows = queueProjectionRows.filter(row => row.simulationStageCheckpointId === checkpoint.simulationStageCheckpointId)
     const checkpointOfferingRows = offeringProjectionRows.filter(row => row.simulationStageCheckpointId === checkpoint.simulationStageCheckpointId)
-    const electiveVisibleCount = (
-      checkpoint.semesterNumber > 5
-      || (checkpoint.semesterNumber === 5 && checkpoint.stageKey === 'semester-close')
-    )
+    const electiveVisibleCount = checkpoint.stageKey === 'post-see'
       ? electiveRows.length
       : 0
     checkpoint.summaryJson = JSON.stringify(stageSummaryPayload({
@@ -6414,7 +6411,438 @@ export async function approveProofCurriculumImport(db: AppDb, input: {
   await syncCurriculumSnapshot(db, importRow.batchId, input.curriculumImportVersionId, input.now)
 }
 
+function buildLiveAttendanceHistory(input: {
+  attendancePct: number
+  presentClasses: number
+  totalClasses: number
+}) {
+  const checkpoints = [
+    { checkpoint: 'wk4', checkpointLabel: 'Week 4', totalClasses: 8 },
+    { checkpoint: 'wk8', checkpointLabel: 'Week 8', totalClasses: 16 },
+    { checkpoint: 'wk12', checkpointLabel: 'Week 12', totalClasses: 24 },
+    { checkpoint: 'wk16', checkpointLabel: 'Week 16', totalClasses: 32 },
+  ]
+  const safeTotalClasses = Math.max(0, input.totalClasses)
+  const safePresentClasses = Math.max(0, input.presentClasses)
+  const effectivePct = safeTotalClasses > 0
+    ? clamp(Math.round((safePresentClasses / safeTotalClasses) * 100), 0, 100)
+    : clamp(Math.round(input.attendancePct), 0, 100)
+  return checkpoints.map(checkpoint => {
+    const scaledTotal = safeTotalClasses > 0 ? Math.min(checkpoint.totalClasses, safeTotalClasses) : checkpoint.totalClasses
+    const scaledPresent = Math.min(
+      scaledTotal,
+      safeTotalClasses > 0
+        ? Math.round((safePresentClasses / Math.max(1, safeTotalClasses)) * scaledTotal)
+        : Math.round((effectivePct / 100) * scaledTotal),
+    )
+    return {
+      checkpoint: checkpoint.checkpoint,
+      checkpointLabel: checkpoint.checkpointLabel,
+      presentClasses: scaledPresent,
+      totalClasses: scaledTotal,
+      attendancePct: scaledTotal > 0 ? Math.round((scaledPresent / scaledTotal) * 100) : effectivePct,
+    }
+  })
+}
+
+function pctFromScoredComponents(rows: Array<typeof studentAssessmentScores.$inferSelect>, componentTypes: string[]) {
+  const relevantRows = rows.filter(row => componentTypes.includes(row.componentType))
+  if (relevantRows.length === 0) return null
+  const totalScore = relevantRows.reduce((sum, row) => sum + row.score, 0)
+  const totalMax = relevantRows.reduce((sum, row) => sum + row.maxScore, 0)
+  if (totalMax <= 0) return null
+  return roundToTwo((totalScore / totalMax) * 100)
+}
+
+function latestRowByKey<T extends { updatedAt: string; createdAt: string }>(rows: T[], keyOf: (row: T) => string) {
+  const latest = new Map<string, T>()
+  rows.forEach(row => {
+    const key = keyOf(row)
+    const current = latest.get(key)
+    if (!current || row.updatedAt > current.updatedAt || (row.updatedAt === current.updatedAt && row.createdAt > current.createdAt)) {
+      latest.set(key, row)
+    }
+  })
+  return latest
+}
+
+async function startLiveBatchProofSimulationRun(db: AppDb, input: {
+  simulationRunId?: string
+  batchId: string
+  curriculumImportVersionId: string
+  policy: ResolvedPolicy
+  curriculumFeatureProfileId?: string | null
+  curriculumFeatureProfileFingerprint?: string | null
+  actorFacultyId?: string | null
+  now: string
+  seed?: number
+  runLabel?: string
+  parentSimulationRunId?: string | null
+  activate?: boolean
+}) {
+  const runSeed = input.seed ?? Math.floor(Date.now() % 100000)
+  const simulationRunId = input.simulationRunId ?? createId('simulation_run')
+  const activate = input.activate ?? true
+
+  const [batch] = await db.select().from(batches).where(eq(batches.batchId, input.batchId))
+  if (!batch) throw new Error('Batch not found')
+
+  const [
+    termRows,
+    curriculumRows,
+    courseRows,
+    offeringRows,
+    enrollmentRows,
+    studentRows,
+    profileRows,
+    attendanceRows,
+    assessmentRows,
+    ownershipRows,
+    mentorRows,
+    termResultRows,
+    subjectResultRows,
+  ] = await Promise.all([
+    db.select().from(academicTerms).where(eq(academicTerms.batchId, input.batchId)),
+    db.select().from(curriculumCourses).where(eq(curriculumCourses.batchId, input.batchId)),
+    db.select().from(courses),
+    db.select().from(sectionOfferings).where(eq(sectionOfferings.branchId, batch.branchId)),
+    db.select().from(studentEnrollments),
+    db.select().from(students),
+    db.select().from(studentAcademicProfiles),
+    db.select().from(studentAttendanceSnapshots),
+    db.select().from(studentAssessmentScores),
+    db.select().from(facultyOfferingOwnerships).where(eq(facultyOfferingOwnerships.status, 'active')),
+    db.select().from(mentorAssignments),
+    db.select().from(transcriptTermResults),
+    db.select().from(transcriptSubjectResults),
+  ])
+
+  const activeTerm = termRows
+    .filter(row => row.status === 'active')
+    .slice()
+    .sort((left, right) => right.semesterNumber - left.semesterNumber || right.updatedAt.localeCompare(left.updatedAt))[0]
+    ?? termRows
+      .slice()
+      .sort((left, right) => right.semesterNumber - left.semesterNumber || right.updatedAt.localeCompare(left.updatedAt))[0]
+    ?? null
+  if (!activeTerm) throw new Error('No academic term is configured for this batch')
+
+  const termOfferings = offeringRows.filter(row => row.termId === activeTerm.termId && row.status === 'active')
+  if (termOfferings.length === 0) throw new Error('No active offerings exist for the selected batch term')
+
+  const relevantOfferingIds = new Set(termOfferings.map(row => row.offeringId))
+  const activeEnrollments = enrollmentRows.filter(row => row.termId === activeTerm.termId && row.academicStatus === 'active')
+  const relevantStudentIds = new Set(activeEnrollments.map(row => row.studentId))
+  const studentById = new Map(studentRows.filter(row => relevantStudentIds.has(row.studentId)).map(row => [row.studentId, row]))
+  const courseById = new Map(courseRows.map(row => [row.courseId, row]))
+  const curriculumByCourseId = new Map(curriculumRows.map(row => [row.courseId ?? `code:${row.courseCode}`, row]))
+  const profileByStudentId = new Map(profileRows.map(row => [row.studentId, row]))
+  const latestAttendanceByStudentOffering = latestRowByKey(
+    attendanceRows.filter(row => relevantOfferingIds.has(row.offeringId)),
+    row => `${row.studentId}::${row.offeringId}`,
+  )
+  const latestTermResultByStudentId = latestRowByKey(
+    termResultRows.filter(row => relevantStudentIds.has(row.studentId)),
+    row => row.studentId,
+  )
+  const subjectRowsByTranscriptId = new Map<string, Array<typeof transcriptSubjectResults.$inferSelect>>()
+  subjectResultRows.forEach(row => {
+    subjectRowsByTranscriptId.set(row.transcriptTermResultId, [...(subjectRowsByTranscriptId.get(row.transcriptTermResultId) ?? []), row])
+  })
+
+  if (activate) {
+    await db.update(simulationRuns).set({
+      activeFlag: 0,
+      status: 'completed',
+      updatedAt: input.now,
+    }).where(eq(simulationRuns.batchId, input.batchId))
+  }
+
+  if (input.simulationRunId) {
+    await db.update(simulationRuns).set({
+      batchId: input.batchId,
+      curriculumImportVersionId: input.curriculumImportVersionId,
+      curriculumFeatureProfileId: input.curriculumFeatureProfileId ?? null,
+      curriculumFeatureProfileFingerprint: input.curriculumFeatureProfileFingerprint ?? null,
+      parentSimulationRunId: input.parentSimulationRunId ?? null,
+      runLabel: input.runLabel ?? `Live batch proof run ${runSeed}`,
+      seed: runSeed,
+      sectionCount: new Set(termOfferings.map(row => row.sectionCode)).size,
+      studentCount: activeEnrollments.length,
+      facultyCount: new Set(ownershipRows.filter(row => relevantOfferingIds.has(row.offeringId ?? '')).map(row => row.facultyId)).size,
+      semesterStart: activeTerm.semesterNumber,
+      semesterEnd: activeTerm.semesterNumber,
+      sourceType: 'live-runtime',
+      policySnapshotJson: JSON.stringify(input.policy),
+      engineVersionsJson: JSON.stringify({
+        compilerVersion: MSRUAS_PROOF_VALIDATOR_VERSION,
+        worldEngineVersion: WORLD_ENGINE_VERSION,
+        inferenceModelVersion: INFERENCE_MODEL_VERSION,
+        monitoringPolicyVersion: MONITORING_POLICY_VERSION,
+      }),
+      metricsJson: JSON.stringify({
+        proofGoal: 'live-runtime-playback',
+        termId: activeTerm.termId,
+        sectionDistribution: Object.fromEntries(
+          Array.from(new Set(termOfferings.map(row => row.sectionCode))).map(sectionCode => [
+            sectionCode,
+            activeEnrollments.filter(row => row.sectionCode === sectionCode).length,
+          ]),
+        ),
+      }),
+      updatedAt: input.now,
+    }).where(eq(simulationRuns.simulationRunId, simulationRunId))
+  } else {
+    await db.insert(simulationRuns).values({
+      simulationRunId,
+      batchId: input.batchId,
+      curriculumImportVersionId: input.curriculumImportVersionId,
+      curriculumFeatureProfileId: input.curriculumFeatureProfileId ?? null,
+      curriculumFeatureProfileFingerprint: input.curriculumFeatureProfileFingerprint ?? null,
+      parentSimulationRunId: input.parentSimulationRunId ?? null,
+      runLabel: input.runLabel ?? `Live batch proof run ${runSeed}`,
+      status: 'running',
+      activeFlag: 0,
+      seed: runSeed,
+      sectionCount: new Set(termOfferings.map(row => row.sectionCode)).size,
+      studentCount: activeEnrollments.length,
+      facultyCount: new Set(ownershipRows.filter(row => relevantOfferingIds.has(row.offeringId ?? '')).map(row => row.facultyId)).size,
+      semesterStart: activeTerm.semesterNumber,
+      semesterEnd: activeTerm.semesterNumber,
+      sourceType: 'live-runtime',
+      policySnapshotJson: JSON.stringify(input.policy),
+      engineVersionsJson: JSON.stringify({
+        compilerVersion: MSRUAS_PROOF_VALIDATOR_VERSION,
+        worldEngineVersion: WORLD_ENGINE_VERSION,
+        inferenceModelVersion: INFERENCE_MODEL_VERSION,
+        monitoringPolicyVersion: MONITORING_POLICY_VERSION,
+      }),
+      metricsJson: JSON.stringify({
+        proofGoal: 'live-runtime-playback',
+        termId: activeTerm.termId,
+      }),
+      createdAt: input.now,
+      updatedAt: input.now,
+    })
+  }
+
+  const ownershipByOfferingId = new Map(
+    ownershipRows
+      .filter(row => row.offeringId != null && relevantOfferingIds.has(row.offeringId))
+      .map(row => [row.offeringId!, row]),
+  )
+  const loadsByFacultySemester = new Map<string, Array<{ offeringId: string; weeklyHours: number }>>()
+  const teacherAllocationRows: Array<typeof teacherAllocations.$inferInsert> = []
+  for (const offering of termOfferings) {
+    const owner = ownershipByOfferingId.get(offering.offeringId) ?? null
+    if (!owner) continue
+    const course = courseById.get(offering.courseId)
+    const curriculumCourse = curriculumByCourseId.get(offering.courseId) ?? curriculumByCourseId.get(`code:${course?.courseCode ?? ''}`) ?? null
+    const weeklyHours = weeklyContactHoursForCourse({
+      title: course?.title ?? course?.courseCode ?? 'Course',
+      assessmentProfile: 'admin-authored',
+      credits: curriculumCourse?.credits ?? course?.defaultCredits ?? 0,
+    })
+    teacherAllocationRows.push({
+      teacherAllocationId: createId('teacher_allocation'),
+      simulationRunId,
+      facultyId: owner.facultyId,
+      offeringId: offering.offeringId,
+      curriculumNodeId: null,
+      semesterNumber: activeTerm.semesterNumber,
+      sectionCode: offering.sectionCode,
+      allocationRole: 'course-leader',
+      plannedContactHours: weeklyHours,
+      createdAt: input.now,
+      updatedAt: input.now,
+    })
+    const loadKey = `${owner.facultyId}::${activeTerm.semesterNumber}`
+    loadsByFacultySemester.set(loadKey, [...(loadsByFacultySemester.get(loadKey) ?? []), {
+      offeringId: offering.offeringId,
+      weeklyHours,
+    }])
+  }
+  if (teacherAllocationRows.length > 0) {
+    await insertRowsInChunks(db, teacherAllocations, teacherAllocationRows)
+  }
+
+  const teacherLoadRows: Array<typeof teacherLoadProfiles.$inferInsert> = Array.from(loadsByFacultySemester.entries()).map(([key, rows]) => {
+    const [facultyId, semesterNumberRaw] = key.split('::')
+    return {
+      teacherLoadProfileId: createId('teacher_load'),
+      simulationRunId,
+      facultyId,
+      semesterNumber: Number(semesterNumberRaw),
+      sectionLoadCount: rows.length,
+      weeklyContactHours: rows.reduce((sum, row) => sum + row.weeklyHours, 0),
+      assignedCredits: rows.length,
+      permissionsJson: JSON.stringify(['COURSE_LEADER']),
+      createdAt: input.now,
+      updatedAt: input.now,
+    }
+  })
+  if (teacherLoadRows.length > 0) {
+    await insertRowsInChunks(db, teacherLoadProfiles, teacherLoadRows)
+  }
+
+  const assessmentRowsByStudentOffering = new Map<string, Array<typeof studentAssessmentScores.$inferSelect>>()
+  assessmentRows
+    .filter(row => relevantOfferingIds.has(row.offeringId))
+    .forEach(row => {
+      const key = `${row.studentId}::${row.offeringId}`
+      assessmentRowsByStudentOffering.set(key, [...(assessmentRowsByStudentOffering.get(key) ?? []), row])
+    })
+
+  const observedRows: Array<typeof studentObservedSemesterStates.$inferInsert> = []
+  for (const offering of termOfferings) {
+    const course = courseById.get(offering.courseId)
+    if (!course) continue
+    const sectionEnrollments = activeEnrollments.filter(row => row.sectionCode === offering.sectionCode)
+    for (const enrollment of sectionEnrollments) {
+      const student = studentById.get(enrollment.studentId)
+      if (!student) continue
+      const attendance = latestAttendanceByStudentOffering.get(`${enrollment.studentId}::${offering.offeringId}`) ?? null
+      const assessmentCells = assessmentRowsByStudentOffering.get(`${enrollment.studentId}::${offering.offeringId}`) ?? []
+      const latestTranscript = latestTermResultByStudentId.get(enrollment.studentId) ?? null
+      const latestSubject = latestTranscript ? subjectRowsByTranscriptId.get(latestTranscript.transcriptTermResultId) ?? [] : []
+      const prevCgpa = (profileByStudentId.get(enrollment.studentId)?.prevCgpaScaled ?? 0) / 100
+      const backlogCount = latestTranscript?.backlogCount ?? 0
+      const tt1Pct = pctFromScoredComponents(assessmentCells, ['tt1', 'tt1_leaf'])
+      const tt2Pct = pctFromScoredComponents(assessmentCells, ['tt2', 'tt2_leaf'])
+      const quizPct = pctFromScoredComponents(assessmentCells, ['quiz1', 'quiz2'])
+      const assignmentPct = pctFromScoredComponents(assessmentCells, ['asgn1', 'asgn2'])
+      const seePct = pctFromScoredComponents(assessmentCells, ['sem_end', 'see'])
+      const ceContributions = [tt1Pct, tt2Pct, quizPct, assignmentPct].filter((value): value is number => value != null)
+      const cePct = ceContributions.length > 0 ? roundToTwo(average(ceContributions)) : 0
+      const deterministicPolicy = deterministicPolicyFromResolved(input.policy)
+      const ceMark = roundToTwo((cePct / 100) * deterministicPolicy.passRules.ceMaximum)
+      const seeMark = roundToTwo(((seePct ?? 0) / 100) * deterministicPolicy.passRules.seeMaximum)
+      const courseStatus = evaluateCourseStatus({
+        attendancePercent: attendance?.attendancePercent ?? 0,
+        ceMark,
+        seeMark,
+        policy: deterministicPolicy,
+      })
+      const finalMark = courseStatus.overallRounded
+      const gradePoint = (seePct == null && tt2Pct == null && tt1Pct == null) ? 0 : courseStatus.gradePoint
+      const gradeLabel = (seePct == null && tt2Pct == null && tt1Pct == null) ? 'IP' : courseStatus.gradeLabel
+      const result = (seePct == null && tt2Pct == null && tt1Pct == null)
+        ? 'In Progress'
+        : courseStatus.result
+      observedRows.push({
+        studentObservedSemesterStateId: createId('observed_state'),
+        simulationRunId,
+        studentId: enrollment.studentId,
+        termId: activeTerm.termId,
+        semesterNumber: activeTerm.semesterNumber,
+        sectionCode: offering.sectionCode,
+        observedStateJson: JSON.stringify({
+          offeringId: offering.offeringId,
+          courseTitle: course.title,
+          courseCode: course.courseCode,
+          attendancePct: attendance?.attendancePercent ?? 0,
+          attendanceHistory: buildLiveAttendanceHistory({
+            attendancePct: attendance?.attendancePercent ?? 0,
+            presentClasses: attendance?.presentClasses ?? 0,
+            totalClasses: attendance?.totalClasses ?? 0,
+          }),
+          tt1Pct,
+          tt2Pct,
+          quizPct,
+          assignmentPct,
+          seePct,
+          cePct,
+          finalMark,
+          gradeLabel,
+          gradePoint,
+          result,
+          weakCoCount: 0,
+          coSummary: [],
+          questionEvidenceSummary: {
+            weakQuestionCount: 0,
+            coverageCount: 0,
+            commonWeakTopics: [],
+          },
+          cgpa: prevCgpa,
+          backlogCount,
+          priorTranscriptCourses: latestSubject.map(row => row.courseCode),
+        }),
+        createdAt: input.now,
+        updatedAt: input.now,
+      })
+    }
+  }
+  if (observedRows.length > 0) {
+    await insertRowsInChunks(db, studentObservedSemesterStates, observedRows)
+  }
+
+  await rebuildSimulationStagePlayback(db, {
+    simulationRunId,
+    policy: input.policy,
+    now: input.now,
+  })
+  await recomputeObservedOnlyRisk(db, {
+    simulationRunId,
+    policy: input.policy,
+    actorFacultyId: input.actorFacultyId ?? null,
+    now: input.now,
+    rebuildModelArtifacts: false,
+  })
+
+  await db.insert(simulationResetSnapshots).values({
+    simulationResetSnapshotId: createId('simulation_reset'),
+    simulationRunId,
+    batchId: input.batchId,
+    snapshotLabel: 'Live baseline snapshot',
+    snapshotJson: JSON.stringify({
+      curriculumImportVersionId: input.curriculumImportVersionId,
+      seed: runSeed,
+      termId: activeTerm.termId,
+      semesterNumber: activeTerm.semesterNumber,
+      policySnapshot: input.policy,
+      studentCount: activeEnrollments.length,
+      sectionCount: new Set(termOfferings.map(row => row.sectionCode)).size,
+    }),
+    createdAt: input.now,
+  })
+
+  await db.update(simulationRuns).set({
+    status: 'completed',
+    activeFlag: activate ? 1 : 0,
+    completedAt: input.now,
+    progressJson: JSON.stringify({
+      phase: 'completed',
+      percent: 100,
+      mode: 'live-runtime',
+      termId: activeTerm.termId,
+      semesterNumber: activeTerm.semesterNumber,
+      observedRowCount: observedRows.length,
+    }),
+    updatedAt: input.now,
+  }).where(eq(simulationRuns.simulationRunId, simulationRunId))
+
+  await emitSimulationAudit(db, {
+    simulationRunId,
+    batchId: input.batchId,
+    actionType: input.parentSimulationRunId ? 'restored-run-created' : 'run-created',
+    payload: {
+      seed: runSeed,
+      curriculumImportVersionId: input.curriculumImportVersionId,
+      activate,
+      mode: 'live-runtime',
+    },
+    createdByFacultyId: input.actorFacultyId ?? null,
+    now: input.now,
+  })
+
+  return {
+    simulationRunId,
+    activeFlag: activate,
+  }
+}
+
 export async function startProofSimulationRun(db: AppDb, input: {
+  simulationRunId?: string
   batchId: string
   curriculumImportVersionId: string
   policy: ResolvedPolicy
@@ -6430,7 +6858,7 @@ export async function startProofSimulationRun(db: AppDb, input: {
   skipActiveRiskRecompute?: boolean
 }) {
   if (input.batchId !== MSRUAS_PROOF_BATCH_ID) {
-    throw new Error('The proof simulator is currently scoped to the seeded MSRUAS proof batch only')
+    return startLiveBatchProofSimulationRun(db, input)
   }
   const runtime = await readRuntimeCurriculum(db, input.curriculumImportVersionId)
   const sem6 = runtime.courses.filter(course => course.semesterNumber === 6)
@@ -6438,7 +6866,7 @@ export async function startProofSimulationRun(db: AppDb, input: {
   const runSeed = input.seed ?? Math.floor(Date.now() % 100000)
   const scenarioProfile = scenarioProfileForSeed(runSeed)
   const deterministicPolicy = deterministicPolicyFromResolved(input.policy)
-  const simulationRunId = createId('simulation_run')
+  const simulationRunId = input.simulationRunId ?? createId('simulation_run')
   const activate = input.activate ?? true
 
   if (activate) {
@@ -6462,38 +6890,69 @@ export async function startProofSimulationRun(db: AppDb, input: {
     sem6OfferingByCourseTitleSection.set(`${course.title}::${offering.sectionCode}`, offering)
   }
 
-  await db.insert(simulationRuns).values({
-    simulationRunId,
-    batchId: input.batchId,
-    curriculumImportVersionId: input.curriculumImportVersionId,
-    curriculumFeatureProfileId: input.curriculumFeatureProfileId ?? null,
-    curriculumFeatureProfileFingerprint: input.curriculumFeatureProfileFingerprint ?? null,
-    parentSimulationRunId: input.parentSimulationRunId ?? null,
-    runLabel: input.runLabel ?? `MSRUAS proof rerun ${runSeed}`,
-    status: activate ? 'active' : 'completed',
-    activeFlag: activate ? 1 : 0,
-    seed: runSeed,
-    sectionCount: 2,
-    studentCount: 120,
-    facultyCount: PROOF_FACULTY.length,
-    semesterStart: 1,
-    semesterEnd: 6,
-    sourceType: 'simulation',
-    policySnapshotJson: JSON.stringify(input.policy),
-    engineVersionsJson: JSON.stringify({
-      compilerVersion: MSRUAS_PROOF_VALIDATOR_VERSION,
-      worldEngineVersion: WORLD_ENGINE_VERSION,
-      inferenceModelVersion: INFERENCE_MODEL_VERSION,
-      monitoringPolicyVersion: MONITORING_POLICY_VERSION,
-    }),
-    metricsJson: JSON.stringify({
-      proofGoal: 'adaptation-readiness',
-      sectionDistribution: { A: 60, B: 60 },
-      scenarioFamily: scenarioProfile.family,
-    }),
-    createdAt: input.now,
-    updatedAt: input.now,
-  })
+  if (input.simulationRunId) {
+    await db.update(simulationRuns).set({
+      batchId: input.batchId,
+      curriculumImportVersionId: input.curriculumImportVersionId,
+      curriculumFeatureProfileId: input.curriculumFeatureProfileId ?? null,
+      curriculumFeatureProfileFingerprint: input.curriculumFeatureProfileFingerprint ?? null,
+      parentSimulationRunId: input.parentSimulationRunId ?? null,
+      runLabel: input.runLabel ?? `MSRUAS proof rerun ${runSeed}`,
+      seed: runSeed,
+      sectionCount: 2,
+      studentCount: 120,
+      facultyCount: PROOF_FACULTY.length,
+      semesterStart: 1,
+      semesterEnd: 6,
+      sourceType: 'simulation',
+      policySnapshotJson: JSON.stringify(input.policy),
+      engineVersionsJson: JSON.stringify({
+        compilerVersion: MSRUAS_PROOF_VALIDATOR_VERSION,
+        worldEngineVersion: WORLD_ENGINE_VERSION,
+        inferenceModelVersion: INFERENCE_MODEL_VERSION,
+        monitoringPolicyVersion: MONITORING_POLICY_VERSION,
+      }),
+      metricsJson: JSON.stringify({
+        proofGoal: 'adaptation-readiness',
+        sectionDistribution: { A: 60, B: 60 },
+        scenarioFamily: scenarioProfile.family,
+      }),
+      updatedAt: input.now,
+    }).where(eq(simulationRuns.simulationRunId, simulationRunId))
+  } else {
+    await db.insert(simulationRuns).values({
+      simulationRunId,
+      batchId: input.batchId,
+      curriculumImportVersionId: input.curriculumImportVersionId,
+      curriculumFeatureProfileId: input.curriculumFeatureProfileId ?? null,
+      curriculumFeatureProfileFingerprint: input.curriculumFeatureProfileFingerprint ?? null,
+      parentSimulationRunId: input.parentSimulationRunId ?? null,
+      runLabel: input.runLabel ?? `MSRUAS proof rerun ${runSeed}`,
+      status: 'running',
+      activeFlag: 0,
+      seed: runSeed,
+      sectionCount: 2,
+      studentCount: 120,
+      facultyCount: PROOF_FACULTY.length,
+      semesterStart: 1,
+      semesterEnd: 6,
+      sourceType: 'simulation',
+      policySnapshotJson: JSON.stringify(input.policy),
+      engineVersionsJson: JSON.stringify({
+        compilerVersion: MSRUAS_PROOF_VALIDATOR_VERSION,
+        worldEngineVersion: WORLD_ENGINE_VERSION,
+        inferenceModelVersion: INFERENCE_MODEL_VERSION,
+        monitoringPolicyVersion: MONITORING_POLICY_VERSION,
+      }),
+      metricsJson: JSON.stringify({
+        proofGoal: 'adaptation-readiness',
+        sectionDistribution: { A: 60, B: 60 },
+        scenarioFamily: scenarioProfile.family,
+      }),
+      createdAt: input.now,
+      updatedAt: input.now,
+    })
+  }
 
   const trajectories = Array.from({ length: 120 }, (_, index) => buildStudentTrajectory(index, runSeed, scenarioProfile))
   const mentorFaculty = PROOF_FACULTY.filter(item => item.permissions.includes('MENTOR'))
@@ -7454,6 +7913,15 @@ export async function startProofSimulationRun(db: AppDb, input: {
   })
 
   await db.update(simulationRuns).set({
+    status: 'completed',
+    activeFlag: activate ? 1 : 0,
+    completedAt: input.now,
+    progressJson: JSON.stringify({
+      phase: 'completed',
+      percent: 100,
+      mode: 'seeded-proof',
+      scenarioFamily: scenarioProfile.family,
+    }),
     metricsJson: JSON.stringify({
       proofGoal: 'adaptation-readiness',
       sectionDistribution: { A: 60, B: 60 },
@@ -7642,9 +8110,13 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
     }
   })
 
+  const currentSemesterNumber = Math.max(
+    run.semesterEnd,
+    observedRows.reduce((max, row) => Math.max(max, row.semesterNumber), 0),
+  )
   const latestHistoricalByStudent = new Map<string, Record<string, unknown>>()
   observedRows
-    .filter(row => row.semesterNumber <= 5)
+    .filter(row => row.semesterNumber < currentSemesterNumber)
     .sort((left, right) => right.semesterNumber - left.semesterNumber)
     .forEach(row => {
       if (!latestHistoricalByStudent.has(row.studentId)) {
@@ -7658,7 +8130,7 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
     sourceRefs: ObservableSourceRefs
   }>()
   runEvidenceRows
-    .filter(row => row.stageKey === 'semester-close')
+    .filter(row => row.stageKey === 'post-see')
     .forEach(row => {
       const featurePayload = parseJson(row.featureJson, null as ReturnType<typeof buildObservableFeaturePayload> | null)
       const labelPayload = parseJson(row.labelJson, null as ObservableLabelPayload | null)
@@ -7671,9 +8143,9 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       })
     })
 
-  const liveStageSourceKey = (studentId: string, offeringId: string, courseCode: string) => `${studentId}::6::${offeringId}::${courseCode}`
-  const liveCaseKey = (studentId: string) => `${studentId}::6`
-  const liveQueueCaseId = (studentId: string, stageKey: PlaybackStageKey) => buildDeterministicId('runtime_queue_case', [input.simulationRunId, studentId, 6, stageKey])
+  const liveStageSourceKey = (studentId: string, offeringId: string, courseCode: string) => `${studentId}::${currentSemesterNumber}::${offeringId}::${courseCode}`
+  const liveCaseKey = (studentId: string) => `${studentId}::${currentSemesterNumber}`
+  const liveQueueCaseId = (studentId: string, stageKey: PlaybackStageKey) => buildDeterministicId('runtime_queue_case', [input.simulationRunId, studentId, currentSemesterNumber, stageKey])
   const courseLeaderFacultyIdByOfferingId = new Map<string, string>()
   ownershipRows
     .filter(row => row.offeringId != null)
@@ -7697,11 +8169,11 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
     .slice()
     .sort((left, right) => left.facultyId.localeCompare(right.facultyId))[0]?.facultyId ?? null
   const overloadPenaltyBySemesterFaculty = new Map<string, number>()
-  const semesterSixLoads = teacherLoadRows.filter(row => row.semesterNumber === 6)
-  const semesterSixLoadAverage = average(semesterSixLoads.map(row => row.weeklyContactHours))
-  const semesterSixOverloadThreshold = Math.max(8, Math.ceil(semesterSixLoadAverage * 1.25))
-  semesterSixLoads.forEach(row => {
-    overloadPenaltyBySemesterFaculty.set(row.facultyId, row.weeklyContactHours > semesterSixOverloadThreshold ? 2 : 0)
+  const currentSemesterLoads = teacherLoadRows.filter(row => row.semesterNumber === currentSemesterNumber)
+  const currentSemesterLoadAverage = average(currentSemesterLoads.map(row => row.weeklyContactHours))
+  const currentSemesterOverloadThreshold = Math.max(8, Math.ceil(currentSemesterLoadAverage * 1.25))
+  currentSemesterLoads.forEach(row => {
+    overloadPenaltyBySemesterFaculty.set(row.facultyId, row.weeklyContactHours > currentSemesterOverloadThreshold ? 2 : 0)
   })
   const mentorAssignmentCountByFacultyId = new Map<string, number>()
   mentorRows
@@ -7715,15 +8187,15 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       .map(row => row.sectionCode!),
   ).size
   const facultyBudgetByKey = new Map<string, number>()
-  semesterSixLoads.forEach(row => {
+  currentSemesterLoads.forEach(row => {
     const overloadPenalty = overloadPenaltyBySemesterFaculty.get(row.facultyId) ?? 0
     const ownedOfferingCount = teacherAllocationRows.filter(allocation =>
-      allocation.semesterNumber === 6
+      allocation.semesterNumber === currentSemesterNumber
       && allocation.facultyId === row.facultyId
       && allocation.allocationRole === 'course-leader').length
-    facultyBudgetByKey.set(`Course Leader::${row.facultyId}::6`, clamp(4 + ownedOfferingCount - overloadPenalty, 2, 12))
-    facultyBudgetByKey.set(`Mentor::${row.facultyId}::6`, clamp(6 + Math.ceil((mentorAssignmentCountByFacultyId.get(row.facultyId) ?? 0) / 15) - overloadPenalty, 4, 18))
-    facultyBudgetByKey.set(`HoD::${row.facultyId}::6`, clamp(8 + supervisedSectionCount - overloadPenalty, 6, 24))
+    facultyBudgetByKey.set(`Course Leader::${row.facultyId}::${currentSemesterNumber}`, clamp(4 + ownedOfferingCount - overloadPenalty, 2, 12))
+    facultyBudgetByKey.set(`Mentor::${row.facultyId}::${currentSemesterNumber}`, clamp(6 + Math.ceil((mentorAssignmentCountByFacultyId.get(row.facultyId) ?? 0) / 15) - overloadPenalty, 4, 18))
+    facultyBudgetByKey.set(`HoD::${row.facultyId}::${currentSemesterNumber}`, clamp(8 + supervisedSectionCount - overloadPenalty, 6, 24))
   })
   const runtimeFacultyAssignment = (studentId: string, offeringId: string, assignedRole: ProofQueueRole) => {
     const assignedFacultyId = assignedRole === 'Course Leader'
@@ -7733,7 +8205,7 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
         : hodFacultyId
     return {
       assignedFacultyId,
-      facultyBudgetKey: assignedFacultyId ? `${assignedRole}::${assignedFacultyId}::6` : null,
+      facultyBudgetKey: assignedFacultyId ? `${assignedRole}::${assignedFacultyId}::${currentSemesterNumber}` : null,
     }
   }
   const questionPatternBaseline = summarizeQuestionPatterns({
@@ -7742,22 +8214,23 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
   })
   const liveStageKeyForPayload = (payload: Record<string, unknown>) => {
     if (payload.seePct != null) return 'post-see' as const
+    if (payload.assignmentPct != null) return 'post-assignments' as const
     if (payload.tt2Pct != null) return 'post-tt2' as const
     if (payload.tt1Pct != null) return 'post-tt1' as const
-    return 'semester-start' as const
+    return 'pre-tt1' as const
   }
 
-  const sem6Rows = observedRows.filter(row => row.semesterNumber === 6)
-  const sem6SectionStudentCountByKey = new Map<string, number>()
-  Array.from(new Set(sem6Rows.map(row => `${row.semesterNumber}::${row.sectionCode}::${row.studentId}`)))
+  const currentSemesterRows = observedRows.filter(row => row.semesterNumber === currentSemesterNumber)
+  const currentSemesterSectionStudentCountByKey = new Map<string, number>()
+  Array.from(new Set(currentSemesterRows.map(row => `${row.semesterNumber}::${row.sectionCode}::${row.studentId}`)))
     .forEach(key => {
       const [semesterNumber, sectionCode] = key.split('::')
       const sectionKey = `${semesterNumber}::${sectionCode}`
-      sem6SectionStudentCountByKey.set(sectionKey, (sem6SectionStudentCountByKey.get(sectionKey) ?? 0) + 1)
+      currentSemesterSectionStudentCountByKey.set(sectionKey, (currentSemesterSectionStudentCountByKey.get(sectionKey) ?? 0) + 1)
     })
   const sectionRiskRateBySemesterSection = new Map<string, number>()
   const sectionRiskRateSeed = new Map<string, number[]>()
-  for (const row of sem6Rows) {
+  for (const row of currentSemesterRows) {
     const payload = parseJson(row.observedStateJson, {} as Record<string, unknown>)
     const sectionKey = `${row.semesterNumber}::${row.sectionCode}`
     const observablePressure = observableSectionPressureFromEvidence({
@@ -7811,7 +8284,7 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       seePct: number
     }
   }> = []
-  for (const row of sem6Rows) {
+  for (const row of currentSemesterRows) {
     const payload = parseJson(row.observedStateJson, {} as Record<string, unknown>)
     const historical = latestHistoricalByStudent.get(row.studentId) ?? {}
     const offeringId = String(payload.offeringId ?? '')
@@ -7828,7 +8301,7 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       simulationStageCheckpointId: null,
       studentId: row.studentId,
       offeringId,
-      semesterNumber: 6,
+      semesterNumber: currentSemesterNumber,
       sectionCode: row.sectionCode,
       courseCode: String(payload.courseCode ?? 'NA'),
       courseTitle: String(payload.courseTitle ?? payload.courseCode ?? 'Unknown'),
@@ -7905,7 +8378,7 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       currentCgpa: Number(historical.cgpaAfterSemester ?? payload.cgpa ?? 0),
       backlogCount: Number(historical.backlogCount ?? payload.backlogCount ?? 0),
       interventionResponseScore,
-      evidenceWindow: payload.seePct != null ? 'semester-6-see' : payload.tt2Pct != null ? 'semester-6-tt2' : payload.tt1Pct != null ? 'semester-6-tt1' : 'semester-6-start',
+      evidenceWindow: payload.seePct != null ? `semester-${currentSemesterNumber}-see` : payload.tt2Pct != null ? `semester-${currentSemesterNumber}-tt2` : payload.tt1Pct != null ? `semester-${currentSemesterNumber}-tt1` : `semester-${currentSemesterNumber}-start`,
       weakCourseOutcomes: [],
       questionPatterns: questionPatternBaseline,
     }
@@ -7984,12 +8457,12 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       batchId: run.batchId,
       studentId: row.studentId,
       offeringId,
-      semesterNumber: 6,
+      semesterNumber: currentSemesterNumber,
       sectionCode: row.sectionCode,
       courseCode: String(payload.courseCode ?? 'NA'),
       courseTitle: String(payload.courseTitle ?? payload.courseCode ?? 'Unknown'),
       stageKey: null,
-      evidenceWindow: payload.seePct != null ? 'semester-6-see' : payload.tt2Pct != null ? 'semester-6-tt2' : 'semester-6-tt1',
+      evidenceWindow: payload.seePct != null ? `semester-${currentSemesterNumber}-see` : payload.tt2Pct != null ? `semester-${currentSemesterNumber}-tt2` : payload.tt1Pct != null ? `semester-${currentSemesterNumber}-tt1` : `semester-${currentSemesterNumber}-start`,
       featureSchemaVersion: RISK_FEATURE_SCHEMA_VERSION,
       featureJson: JSON.stringify(featurePayload),
       labelJson: JSON.stringify(labelPayload),
@@ -8011,7 +8484,7 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       riskBand: inference.riskBand,
       recommendedAction: inference.recommendedAction,
       driversJson: JSON.stringify(inference.observableDrivers),
-      evidenceWindow: payload.seePct != null ? 'semester-6-see' : payload.tt2Pct != null ? 'semester-6-tt2' : 'semester-6-tt1',
+      evidenceWindow: payload.seePct != null ? `semester-${currentSemesterNumber}-see` : payload.tt2Pct != null ? `semester-${currentSemesterNumber}-tt2` : payload.tt1Pct != null ? `semester-${currentSemesterNumber}-tt1` : `semester-${currentSemesterNumber}-start`,
       evidenceSnapshotId,
       modelVersion: inference.modelVersion,
       policyVersion: 'resolved-batch-policy',
@@ -8091,7 +8564,7 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
         caseKey: candidate.caseKey,
         sourceKey: candidate.sourceKey,
         studentId: candidate.studentId,
-        semesterNumber: 6,
+        semesterNumber: currentSemesterNumber,
         sectionCode: candidate.sectionCode,
         stageKey: candidate.stageKey,
         offeringId: candidate.offeringId,
@@ -8112,7 +8585,7 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
         facultyBudgetKey: candidate.facultyBudgetKey,
       }) satisfies ProofQueueCandidate),
       priorCaseStateByKey: liveCaseStateByKey,
-      sectionStudentCountByKey: sem6SectionStudentCountByKey,
+      sectionStudentCountByKey: currentSemesterSectionStudentCountByKey,
       facultyBudgetByKey,
     })
 
@@ -8411,7 +8884,33 @@ export async function buildProofBatchDashboard(db: AppDb, batchId: string) {
   const courseById = new Map(courseRows.map(row => [row.courseId, row]))
   const facultyById = new Map(facultyRows.map(row => [row.facultyId, row]))
   const studentById = new Map(studentRows.map(row => [row.studentId, row]))
-  const activeRun = runRows.find(row => row.activeFlag === 1) ?? runRows.slice().sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0] ?? null
+  const proofRunStatusRank = (status: string) => {
+    switch (status) {
+      case 'active':
+        return 0
+      case 'running':
+        return 1
+      case 'queued':
+        return 2
+      case 'completed':
+        return 3
+      case 'failed':
+        return 4
+      case 'archived':
+        return 5
+      default:
+        return 6
+    }
+  }
+  const activeRun = runRows
+    .slice()
+    .sort((left, right) => {
+      if (left.activeFlag !== right.activeFlag) return right.activeFlag - left.activeFlag
+      const statusDelta = proofRunStatusRank(left.status) - proofRunStatusRank(right.status)
+      if (statusDelta !== 0) return statusDelta
+      if (left.updatedAt !== right.updatedAt) return right.updatedAt.localeCompare(left.updatedAt)
+      return right.createdAt.localeCompare(left.createdAt)
+    })[0] ?? null
   const activeRunId = activeRun?.simulationRunId ?? null
   const modelDiagnostics = await getProofRiskModelDiagnostics(db, {
     batchId,
@@ -8572,6 +9071,11 @@ export async function buildProofBatchDashboard(db: AppDb, batchId: string) {
         activeFlag: row.activeFlag === 1,
         seed: row.seed,
         createdAt: row.createdAt,
+        startedAt: row.startedAt,
+        completedAt: row.completedAt,
+        failureCode: row.failureCode,
+        failureMessage: row.failureMessage,
+        progress: parseJson(row.progressJson, null as Record<string, unknown> | null),
         metrics: parseJson(row.metricsJson, {} as Record<string, unknown>),
       })),
     activeRunDetail: activeRun ? {
@@ -8579,7 +9083,12 @@ export async function buildProofBatchDashboard(db: AppDb, batchId: string) {
       runLabel: activeRun.runLabel,
       seed: activeRun.seed,
       createdAt: activeRun.createdAt,
+      startedAt: activeRun.startedAt,
+      completedAt: activeRun.completedAt,
       status: activeRun.status,
+      failureCode: activeRun.failureCode,
+      failureMessage: activeRun.failureMessage,
+      progress: parseJson(activeRun.progressJson, null as Record<string, unknown> | null),
       monitoringSummary: {
         riskAssessmentCount: activeRiskRows.length,
         activeReassessmentCount: activeReassessments.filter(row => row.status !== 'completed').length,
@@ -8979,7 +9488,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
         const evidenceTimeline = buildEvidenceTimelineFromRows(observedRows
           .filter(row => row.simulationRunId === activeRunId && row.studentId === studentId)
           .sort((left, right) => left.semesterNumber - right.semesterNumber || left.createdAt.localeCompare(right.createdAt)))
-        const electiveFit = (checkpoint.semesterNumber > 5 || (checkpoint.semesterNumber === 5 && checkpoint.stageKey === 'semester-close'))
+        const electiveFit = checkpoint.stageKey === 'post-see'
           ? electiveRows
             .filter(row => row.simulationRunId === activeRunId && row.studentId === studentId)
             .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0] ?? null
@@ -9198,7 +9707,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
           bucket,
           studentCount: transcriptRows.filter(row => bucketBacklogCount(row.backlogCount) === bucket).length,
         })),
-        electiveDistribution: (checkpoint.semesterNumber > 5 || (checkpoint.semesterNumber === 5 && checkpoint.stageKey === 'semester-close'))
+        electiveDistribution: checkpoint.stageKey === 'post-see'
           ? Array.from(new Map(electiveRows.filter(row => row.simulationRunId === activeRunId).map(row => [row.stream, {
               stream: row.stream,
               recommendationCount: electiveRows.filter(item => item.simulationRunId === activeRunId && item.stream === row.stream).length,
@@ -9843,7 +10352,7 @@ export async function buildFacultyProofView(db: AppDb, input: {
       })
       .sort((left, right) => right.riskProbScaled - left.riskProbScaled || String(left.dueAt ?? '').localeCompare(String(right.dueAt ?? '')))
 
-    const electiveVisible = checkpoint.semesterNumber > 5 || (checkpoint.semesterNumber === 5 && checkpoint.stageKey === 'semester-close')
+    const electiveVisible = checkpoint.stageKey === 'post-see'
     const electiveFits = electiveVisible
       ? electiveRows
         .filter(row => row.simulationRunId === checkpoint.simulationRunId)

@@ -7,12 +7,11 @@ export const PROOF_QUEUE_ACTIONABLE_LIFT_THRESHOLD = 5
 export const PROOF_QUEUE_HIGH_RISK_LIFT_THRESHOLD = 2
 
 export type ProofQueueGovernanceStageKey =
-  | 'semester-start'
+  | 'pre-tt1'
   | 'post-tt1'
-  | 'post-reassessment'
   | 'post-tt2'
+  | 'post-assignments'
   | 'post-see'
-  | 'semester-close'
 
 export type ProofQueueBand = 'High' | 'Medium' | 'Low'
 export type ProofQueueRole = 'Course Leader' | 'Mentor' | 'HoD'
@@ -81,7 +80,7 @@ type RankedCaseCandidate = {
 }
 
 export function proofQueueActionableRateLimitForStage(stageKey: ProofQueueGovernanceStageKey | string) {
-  return stageKey === 'post-see' || stageKey === 'semester-close'
+  return stageKey === 'post-see'
     ? PROOF_QUEUE_LATE_STAGE_ACTIONABLE_RATE_LIMIT
     : PROOF_QUEUE_DEFAULT_ACTIONABLE_RATE_LIMIT
 }
@@ -145,11 +144,11 @@ function candidateEligibility(candidate: ProofQueueCandidate) {
       reason: 'no_action_or_low_risk',
     }
   }
-  if (candidate.stageKey === 'semester-start') {
+  if (candidate.stageKey === 'pre-tt1') {
     return {
       openEligible: false,
       watchEligible: false,
-      reason: 'semester_start_observation_only',
+      reason: 'pre_tt1_observation_only',
     }
   }
   if (candidate.stageKey === 'post-tt1') {
@@ -207,7 +206,7 @@ function createCaseDecision(input: {
     studentId: candidate?.studentId ?? '',
     semesterNumber: candidate?.semesterNumber ?? 0,
     sectionCode: candidate?.sectionCode ?? '',
-    stageKey: candidate?.stageKey ?? 'semester-start',
+    stageKey: candidate?.stageKey ?? 'pre-tt1',
     status: input.status,
     primarySourceKey: candidate?.primaryCandidate.sourceKey ?? input.priorCaseState?.primarySourceKey ?? null,
     supportingSourceKeys: input.status === 'watch'
@@ -335,14 +334,14 @@ export function governProofQueueStage(input: {
     const priorCaseState = priorCaseStateByKey.get(caseKey) ?? null
     const watchCandidate = watchCaseCandidates.get(caseKey) ?? null
     if (watchCandidate) {
-      const governanceReason = input.stageKey === 'semester-start'
-        ? 'semester_start_watch_only'
+      const governanceReason = input.stageKey === 'pre-tt1'
+        ? 'pre_tt1_watch_only'
         : openCaseCandidates.some(candidate => candidate.caseKey === caseKey)
           ? 'open_candidate_pruned_by_caps'
           : 'watch_only_after_governance'
       decisions.set(caseKey, createCaseDecision({
         candidate: watchCandidate,
-        status: priorCaseState?.open && input.stageKey === 'semester-close' ? 'resolved' : 'watch',
+        status: priorCaseState?.open && input.stageKey === 'post-see' ? 'resolved' : 'watch',
         priorCaseState,
         countsTowardCapacity: false,
         priorityRank: null,

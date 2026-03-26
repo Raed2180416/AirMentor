@@ -2835,12 +2835,10 @@ function OperationalWorkspace({
   
   const navItems = role === 'Course Leader' ? CL_NAV : role === 'Mentor' ? MENTOR_NAV : HOD_NAV
   const hasEntryStartedForOffering = useCallback((offId: string) => {
-    const hasDraft = Object.keys(draftBySection).some(key => key.startsWith(`${offId}::`))
-    const hasCells = Object.keys(cellValues).some(key => key.startsWith(`${offId}::`))
     const locks = lockByOffering[offId]
     const hasAnyLock = locks ? Object.values(locks).some(Boolean) : false
-    return hasDraft || hasCells || hasAnyLock
-  }, [cellValues, draftBySection, lockByOffering])
+    return hasAnyLock
+  }, [lockByOffering])
   const taskComposerOfferings = useMemo(() => {
     if (taskComposer.availableOfferingIds && taskComposer.availableOfferingIds.length > 0) {
       return allOfferings.filter(item => taskComposer.availableOfferingIds?.includes(item.offId))
@@ -3423,12 +3421,7 @@ function OperationalWorkspace({
 
   const handleSaveDraft = useCallback((offId: string, kind: EntryKind) => {
     setDraftBySection(prev => ({ ...prev, [`${offId}::${kind}`]: Date.now() }))
-    setSchemeByOffering(prev => ({
-      ...prev,
-      [offId]: prev[offId] ? { ...prev[offId], status: prev[offId].status === 'Needs Setup' ? 'Configured' : prev[offId].status } : defaultSchemeForOffering(allOfferings.find(item => item.offId === offId) ?? defaultOffering ?? allOfferings[0]),
-    }))
-    void persistEntryWorkspace(offId, kind, false)
-  }, [allOfferings, defaultOffering, persistEntryWorkspace])
+  }, [])
 
   const handleSubmitLock = useCallback((offId: string, kind: EntryKind) => {
     setLockByOffering(prev => ({
@@ -4801,7 +4794,7 @@ function OperationalWorkspace({
             {role === 'Course Leader' && page === 'scheme-setup' && selectedSchemeOffering && <LazySchemeSetupPage role={role} offering={selectedSchemeOffering} scheme={schemeByOffering[selectedSchemeOffering.offId] ?? defaultSchemeForOffering(selectedSchemeOffering)} hasEntryStarted={hasEntryStartedForOffering(selectedSchemeOffering.offId)} onSave={(next) => handleSaveScheme(selectedSchemeOffering.offId, next)} onBack={handleNavigateBack} />}
             {role === 'Course Leader' && page === 'calendar' && filteredCurrentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} meetings={calendarMeetings} resolvedTaskIds={resolvedTasks} timetable={filteredCurrentFacultyTimetable} adminMarkers={currentFacultyCalendarMarkers} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onUpdateMeeting={handleUpdateMeeting} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
             {role === 'Course Leader' && page === 'upload' && <LazyUploadPage key={`${uploadOffering?.offId ?? 'default'}-${uploadKind}`} role={role} offering={uploadOffering} defaultKind={uploadKind} onBack={handleNavigateBack} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} onRequestUnlock={handleRequestUnlock} availableOfferings={assignedOfferings} onOpenSchemeSetup={handleOpenSchemeSetup} />}
-            {role === 'Course Leader' && page === 'entry-workspace' && <LazyEntryWorkspacePage capabilities={capabilities} offeringId={entryOfferingId} kind={entryKind} onBack={handleNavigateBack} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} onRequestUnlock={handleRequestUnlock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onOpenTaskComposer={handleOpenTaskComposer} onUpdateStudentAttendance={handleUpdateStudentAttendance} schemeByOffering={schemeByOffering} ttBlueprintsByOffering={ttBlueprintsByOffering} lockAuditByTarget={lockAuditByTarget} />}
+            {role === 'Course Leader' && page === 'entry-workspace' && <LazyEntryWorkspacePage capabilities={capabilities} offeringId={entryOfferingId} kind={entryKind} onBack={handleNavigateBack} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} onRequestUnlock={handleRequestUnlock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onOpenTaskComposer={handleOpenTaskComposer} onUpdateStudentAttendance={handleUpdateStudentAttendance} schemeByOffering={schemeByOffering} ttBlueprintsByOffering={ttBlueprintsByOffering} lockAuditByTarget={lockAuditByTarget} availableOfferings={assignedOfferings} />}
             {role === 'Course Leader' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
 
             {role === 'Mentor' && page === 'mentees' && <MentorView mentees={assignedMentees} tasks={roleTasks} onOpenMentee={handleOpenMentee} />}

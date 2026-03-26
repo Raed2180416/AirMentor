@@ -449,6 +449,13 @@ export const simulationRuns = pgTable('simulation_runs', {
   policySnapshotJson: text('policy_snapshot_json').notNull(),
   engineVersionsJson: text('engine_versions_json').notNull(),
   metricsJson: text('metrics_json').notNull(),
+  progressJson: text('progress_json'),
+  startedAt: text('started_at'),
+  completedAt: text('completed_at'),
+  failureCode: text('failure_code'),
+  failureMessage: text('failure_message'),
+  workerLeaseToken: text('worker_lease_token'),
+  workerLeaseExpiresAt: text('worker_lease_expires_at'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 })

@@ -115,6 +115,16 @@ export async function buildApp(options: BuildAppOptions) {
     await registerModule(app, context)
   }
 
+  const { startProofRunWorker } = await import('./lib/proof-run-queue.js')
+  const stopProofRunWorker = startProofRunWorker({
+    db: context.db,
+    pool: context.pool,
+    clock: context.now,
+  })
+  app.addHook('onClose', async () => {
+    stopProofRunWorker()
+  })
+
   return app
 }
 

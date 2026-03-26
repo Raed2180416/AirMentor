@@ -982,7 +982,7 @@ function buildCorrelationArtifact(rows: PreparedRow[], now: string): Correlation
     withoutWeakAdverseCount: number
   }>()
   trainRows
-    .filter(row => row.sourceRefs.stageKey === 'semester-close')
+    .filter(row => row.sourceRefs.stageKey === 'post-see')
     .forEach(row => {
       const weakSet = new Set(row.sourceRefs.prerequisiteWeakCourseCodes)
       row.sourceRefs.prerequisiteCourseCodes.forEach(sourceCourseCode => {
@@ -1465,7 +1465,7 @@ class ProofRiskDatasetBuilder {
         this.correlations.weakQuestionWithoutCount += 1
         if (adverse) this.correlations.weakQuestionWithoutAdverseCount += 1
       }
-      if (sourceRefs.stageKey === 'semester-close') {
+      if (sourceRefs.stageKey === 'post-see') {
         const weakSet = new Set(sourceRefs.prerequisiteWeakCourseCodes)
         sourceRefs.prerequisiteCourseCodes.forEach(sourceCourseCode => {
           const edgeKey = `${sourceCourseCode}::${sourceRefs.courseCode}`

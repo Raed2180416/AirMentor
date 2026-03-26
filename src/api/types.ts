@@ -497,12 +497,11 @@ export type ApiResolvedBatchStagePolicy = {
 export type ApiStageEvidenceKind = 'attendance' | 'tt1' | 'tt2' | 'quiz' | 'assignment' | 'finals' | 'transcript'
 
 export type ApiStagePolicyStageKey =
-  | 'semester-start'
+  | 'pre-tt1'
   | 'post-tt1'
-  | 'post-reassessment'
   | 'post-tt2'
+  | 'post-assignments'
   | 'post-see'
-  | 'semester-close'
 
 export type ApiStagePolicyStage = {
   key: ApiStagePolicyStageKey
@@ -556,6 +555,11 @@ export type ApiProofDashboard = {
     activeFlag: boolean
     seed: number
     createdAt: string
+    startedAt: string | null
+    completedAt: string | null
+    failureCode: string | null
+    failureMessage: string | null
+    progress: Record<string, unknown> | null
     metrics: Record<string, unknown>
   }>
   activeRunDetail: {
@@ -563,7 +567,12 @@ export type ApiProofDashboard = {
     runLabel: string
     seed: number
     createdAt: string
+    startedAt: string | null
+    completedAt: string | null
     status: string
+    failureCode: string | null
+    failureMessage: string | null
+    progress: Record<string, unknown> | null
     monitoringSummary: {
       riskAssessmentCount: number
       activeReassessmentCount: number
@@ -1899,6 +1908,8 @@ export type ApiOfferingStageEligibility = {
     kind: ApiStageEvidenceKind
     required: boolean
     present: boolean
+    presentCount: number
+    expectedCount: number
     locked: boolean
   }>
 }

@@ -34,6 +34,7 @@ import {
   roleGrants,
   sectionOfferings,
   simulationStageCheckpoints,
+  simulationStageQueueCases,
   simulationStageOfferingProjections,
   simulationRuns,
   studentAssessmentScores,
@@ -284,7 +285,7 @@ const batchProvisioningSchema = z.object({
   createStudents: z.boolean().default(true),
   createMentors: z.boolean().default(true),
   createAttendanceScaffolding: z.boolean().default(true),
-  createAssessmentScaffolding: z.boolean().default(true),
+  createAssessmentScaffolding: z.boolean().default(false),
   createTranscriptScaffolding: z.boolean().default(true),
 })
 
@@ -1645,12 +1646,14 @@ async function buildOfferingStageEligibility(context: RouteContext, offeringId: 
     eq(studentEnrollments.academicStatus, 'active'),
   ))
   const activeStudentIds = activeEnrollments.map(row => row.studentId)
-  const [attendanceRows, assessmentRows, termResults, subjectResults, taskRows] = await Promise.all([
+  const [attendanceRows, assessmentRows, termResults, subjectResults, taskRows, batchRunRows, queueCaseRows] = await Promise.all([
     context.db.select().from(studentAttendanceSnapshots).where(eq(studentAttendanceSnapshots.offeringId, offeringId)),
     context.db.select().from(studentAssessmentScores).where(eq(studentAssessmentScores.offeringId, offeringId)),
     context.db.select().from(transcriptTermResults).where(eq(transcriptTermResults.termId, offering.termId)),
     context.db.select().from(transcriptSubjectResults),
     context.db.select().from(academicTasks).where(eq(academicTasks.offeringId, offeringId)),
+    term.batchId ? context.db.select().from(simulationRuns).where(eq(simulationRuns.batchId, term.batchId)) : Promise.resolve([]),
+    context.db.select().from(simulationStageQueueCases).where(eq(simulationStageQueueCases.primaryOfferingId, offeringId)),
   ])
   const transcriptByStudentId = new Map(termResults.map(row => [row.studentId, row]))
   const subjectResultSet = new Set(subjectResults
@@ -1669,6 +1672,16 @@ async function buildOfferingStageEligibility(context: RouteContext, offeringId: 
     const termResult = transcriptByStudentId.get(studentId)
     return termResult ? subjectResultSet.has(termResult.transcriptTermResultId) : false
   }).length
+  const activeRun = batchRunRows
+    .filter(row => row.activeFlag === 1)
+    .slice()
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt))[0] ?? null
+  const openQueueCases = activeRun
+    ? queueCaseRows.filter(row =>
+      row.simulationRunId === activeRun.simulationRunId
+      && row.status !== 'resolved'
+      && row.status !== 'idle')
+    : []
 
   const evidenceStatus = {
     attendance: {
@@ -1725,12 +1738,23 @@ async function buildOfferingStageEligibility(context: RouteContext, offeringId: 
       blockingReasons.push(`${kind} is not locked`)
     }
   })
-  if (targetStage?.requireQueueClearance && blockingTaskRows.length > 0) {
+  if (targetStage?.requireTaskClearance && blockingTaskRows.length > 0) {
     blockingReasons.push(`${blockingTaskRows.length} faculty action queue item(s) remain open`)
+  }
+  if (targetStage?.requireQueueClearance && openQueueCases.length > 0) {
+    blockingReasons.push(`${openQueueCases.length} proof queue case(s) remain open for this class`)
   }
   if (!targetStage) {
     blockingReasons.push('The offering is already at the final configured stage')
   }
+  const evidenceStatusList = Object.entries(evidenceStatus).map(([kind, evidence]) => ({
+    kind: kind as 'attendance' | 'tt1' | 'tt2' | 'quiz' | 'assignment' | 'finals' | 'transcript',
+    required: evidence.required,
+    present: evidence.presentCount >= evidence.expectedCount && evidence.expectedCount > 0,
+    presentCount: evidence.presentCount,
+    expectedCount: evidence.expectedCount,
+    locked: evidence.locked,
+  }))
   return {
     offeringId,
     batchId: term.batchId ?? null,
@@ -1739,8 +1763,8 @@ async function buildOfferingStageEligibility(context: RouteContext, offeringId: 
     nextStage,
     eligible: blockingReasons.length === 0,
     blockingReasons,
-    queueBurden: blockingTaskRows.length,
-    evidenceStatus,
+    queueBurden: blockingTaskRows.length + openQueueCases.length,
+    evidenceStatus: evidenceStatusList,
   }
 }
 
@@ -2345,8 +2369,8 @@ function inferStudentFallback(input: {
   const quiz2 = input.assessments?.quiz2
   const asgn1 = input.assessments?.asgn1
   const asgn2 = input.assessments?.asgn2
-  const totalClasses = input.attendanceSnapshot?.totalClasses ?? 45
-  const presentClasses = input.attendanceSnapshot?.presentClasses ?? Math.round((input.offering.attendance / 100) * totalClasses)
+  const totalClasses = input.attendanceSnapshot?.totalClasses ?? 0
+  const presentClasses = input.attendanceSnapshot?.presentClasses ?? 0
   return {
     id: `${input.offering.offId}::${input.student.studentId}`,
     usn: input.student.usn,
@@ -2372,7 +2396,7 @@ function inferStudentFallback(input: {
     interventions: input.interventions ?? [],
     flags: input.flags ?? {
       backlog: input.prevCgpa > 0 && input.prevCgpa < 5.5,
-      lowAttendance: input.offering.attendance > 0 && input.offering.attendance < 75,
+      lowAttendance: totalClasses > 0 && ((presentClasses / Math.max(1, totalClasses)) * 100) < 75,
       declining: false,
     },
   }
@@ -5349,7 +5373,12 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
 
     const refreshedEnrollments = await context.db.select().from(studentEnrollments).where(eq(studentEnrollments.termId, term.termId))
     const attendanceKeySet = new Set(existingAttendanceRows.map(row => `${row.studentId}::${row.offeringId}`))
-    const assessmentKeySet = new Set(existingAssessmentRows.map(row => `${row.studentId}::${row.offeringId}::${row.componentType}::${row.componentCode ?? ''}`))
+    const assessmentRowsByOfferingId = new Map<string, Array<typeof studentAssessmentScores.$inferSelect>>()
+    existingAssessmentRows
+      .filter(row => row.termId === term.termId)
+      .forEach(row => {
+        assessmentRowsByOfferingId.set(row.offeringId, [...(assessmentRowsByOfferingId.get(row.offeringId) ?? []), row])
+      })
     const transcriptByStudent = new Map(existingTranscriptRows.filter(row => row.termId === term.termId).map(row => [row.studentId, row]))
     const transcriptSubjectKeySet = new Set(existingTranscriptSubjectRows.map(row => `${row.transcriptTermResultId}::${row.courseCode}`))
     const enrollmentsBySection = new Map<string, typeof refreshedEnrollments>()
@@ -5362,15 +5391,29 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
       const stagePatch: Partial<typeof sectionOfferings.$inferInsert> = {
         studentCount: enrolledStudents.length,
         attendance: body.createAttendanceScaffolding ? 78 : offering.attendance,
-        tt1Done: body.createAssessmentScaffolding ? 1 : offering.tt1Done,
-        tt2Done: body.createAssessmentScaffolding ? 1 : offering.tt2Done,
-        tt1Locked: body.createAssessmentScaffolding ? 1 : offering.tt1Locked,
-        tt2Locked: body.createAssessmentScaffolding ? 1 : offering.tt2Locked,
-        quizLocked: body.createAssessmentScaffolding ? 1 : offering.quizLocked,
-        assignmentLocked: body.createAssessmentScaffolding ? 1 : offering.assignmentLocked,
-        finalsLocked: body.createAssessmentScaffolding ? 1 : offering.finalsLocked,
+        tt1Done: offering.tt1Done,
+        tt2Done: offering.tt2Done,
+        tt1Locked: offering.tt1Locked,
+        tt2Locked: offering.tt2Locked,
+        quizLocked: offering.quizLocked,
+        assignmentLocked: offering.assignmentLocked,
+        finalsLocked: offering.finalsLocked,
         version: offering.version + 1,
         updatedAt: now,
+      }
+      if (!body.createAssessmentScaffolding && offering.stage <= stageSeed.order) {
+        const seededAssessmentRows = assessmentRowsByOfferingId.get(offering.offeringId) ?? []
+        if (seededAssessmentRows.length > 0) {
+          await context.db.delete(studentAssessmentScores).where(eq(studentAssessmentScores.offeringId, offering.offeringId))
+          assessmentRowsByOfferingId.delete(offering.offeringId)
+        }
+        stagePatch.tt1Done = 0
+        stagePatch.tt2Done = 0
+        stagePatch.tt1Locked = 0
+        stagePatch.tt2Locked = 0
+        stagePatch.quizLocked = 0
+        stagePatch.assignmentLocked = 0
+        stagePatch.finalsLocked = 0
       }
       await context.db.update(sectionOfferings).set(stagePatch).where(eq(sectionOfferings.offeringId, offering.offeringId))
       for (const [index, enrollment] of enrolledStudents.entries()) {
@@ -5395,36 +5438,7 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
             attendanceKeySet.add(attendanceKey)
           }
         }
-        if (body.createAssessmentScaffolding) {
-          const componentSeeds = [
-            ['tt1', 'TT1', 25, 12 + (index % 11)],
-            ['tt2', 'TT2', 25, 13 + (index % 10)],
-            ['quiz1', 'Quiz 1', 10, 5 + (index % 5)],
-            ['quiz2', 'Quiz 2', 10, 5 + ((index + 1) % 5)],
-            ['asgn1', 'Assignment 1', 10, 6 + (index % 4)],
-            ['asgn2', 'Assignment 2', 10, 6 + ((index + 2) % 4)],
-            ['sem_end', 'SEE', 40, 20 + (index % 16)],
-          ] as const
-          for (const [componentType, componentCode, maxScore, score] of componentSeeds) {
-            const assessmentKey = `${enrollment.studentId}::${offering.offeringId}::${componentType}::${componentCode}`
-            if (assessmentKeySet.has(assessmentKey)) continue
-            await context.db.insert(studentAssessmentScores).values({
-              assessmentScoreId: createId('assessment'),
-              studentId: enrollment.studentId,
-              offeringId: offering.offeringId,
-              termId: term.termId,
-              componentType,
-              componentCode,
-              score,
-              maxScore,
-              evaluatedAt: now,
-              createdAt: now,
-              updatedAt: now,
-            })
-            createdAssessmentCount += 1
-            assessmentKeySet.add(assessmentKey)
-          }
-        }
+        void index
         if (body.createTranscriptScaffolding) {
           const transcript = transcriptByStudent.get(enrollment.studentId) ?? null
           const ensuredTranscript = transcript ?? {

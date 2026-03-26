@@ -15,6 +15,8 @@ const { firefox } = await import(`file://${playwrightRoot}/lib/node_modules/play
 const proofPlaybackSelectionStorageKey = 'airmentor-proof-playback-selection'
 const seededProofRoute = '#/admin/faculties/academic_faculty_engineering_and_technology/departments/dept_cse/branches/branch_mnc_btech/batches/batch_branch_mnc_btech_2023'
 const seededProofBatchId = 'batch_branch_mnc_btech_2023'
+const finalCheckpointButtonLabel = 'S6 · Post SEE'
+const finalCheckpointLabel = 'Post SEE'
 
 await mkdir(outputDir, { recursive: true })
 
@@ -260,6 +262,24 @@ async function readProofDashboard() {
   return adminApiRequest(`/api/admin/batches/${seededProofBatchId}/proof-dashboard`)
 }
 
+async function waitForProofCheckpoints(label, timeoutMs = 240_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const dashboard = await readProofDashboard()
+    const run = dashboard.activeRunDetail ?? null
+    if (run?.checkpoints?.length) {
+      console.log(`[smoke] ${label}: activeRun=${run.simulationRunId} status=${run.status} checkpoints=${run.checkpoints.length}`)
+      return dashboard
+    }
+    if (run?.status === 'failed') {
+      throw new Error(`Proof run ${run.simulationRunId} failed during ${label}: ${run.failureMessage ?? run.failureCode ?? 'unknown failure'}`)
+    }
+    console.log(`[smoke] waiting for proof checkpoints during ${label}: activeRun=${run?.simulationRunId ?? 'none'} status=${run?.status ?? 'none'} progress=${JSON.stringify(run?.progress ?? null)}`)
+    await page.waitForTimeout(2_500)
+  }
+  throw new Error(`Timed out waiting for proof checkpoints during ${label}`)
+}
+
 async function ensureProofRunReady() {
   let dashboard = await readProofDashboard()
   console.log(`[smoke] proof dashboard before prewarm: imports=${dashboard.imports?.length ?? 0} activeRun=${dashboard.activeRunDetail?.simulationRunId ?? 'none'} checkpoints=${dashboard.activeRunDetail?.checkpoints?.length ?? 0}`)
@@ -317,7 +337,10 @@ async function ensureProofRunReady() {
     await adminApiRequest(`/api/admin/proof-runs/${encodeURIComponent(dashboard.activeRunDetail.simulationRunId)}/recompute-risk`, {
       method: 'POST',
     })
-    dashboard = await readProofDashboard()
+    dashboard = await waitForProofCheckpoints('recompute-risk prewarm', 120_000).catch(async error => {
+      console.log(`[smoke] recompute-risk prewarm did not materialize checkpoints: ${error instanceof Error ? error.message : String(error)}`)
+      return readProofDashboard()
+    })
     console.log(`[smoke] proof dashboard after seeded baseline recompute: activeRun=${dashboard.activeRunDetail?.simulationRunId ?? 'none'} checkpoints=${dashboard.activeRunDetail?.checkpoints?.length ?? 0}`)
   }
 
@@ -330,7 +353,7 @@ async function ensureProofRunReady() {
         activate: true,
       }),
     })
-    dashboard = await readProofDashboard()
+    dashboard = await waitForProofCheckpoints('proof run creation')
     console.log(`[smoke] proof dashboard after run create: activeRun=${dashboard.activeRunDetail?.simulationRunId ?? 'none'} checkpoints=${dashboard.activeRunDetail?.checkpoints?.length ?? 0}`)
   }
 
@@ -427,9 +450,9 @@ async function openSeededProofRoute() {
   await expectVisible(
     proofControlPlane
       .locator('[data-proof-action="proof-select-checkpoint"]')
-      .filter({ hasText: 'S6 · Semester Close' })
+      .filter({ hasText: finalCheckpointButtonLabel })
       .first(),
-    'semester close checkpoint button',
+    'post-see checkpoint button',
   )
   return proofControlPlane
 }
@@ -470,8 +493,8 @@ try {
   markStep('open-seeded-proof-route')
   const proofControlPlane = await openSeededProofRoute()
   markStep('select-s6-semester-close')
-  await selectCheckpointByLabel(proofControlPlane, 'S6 · Semester Close')
-  await verifyPlaybackSelectionPersisted('Semester Close', proofControlPlane)
+  await selectCheckpointByLabel(proofControlPlane, finalCheckpointButtonLabel)
+  await verifyPlaybackSelectionPersisted(finalCheckpointLabel, proofControlPlane)
   markStep('reload-system-admin-proof-route')
   const refreshedSeededRouteUrl = buildSeededProofRouteUrl({ forceReload: true })
   console.log(`[smoke] refreshing seeded proof route: ${refreshedSeededRouteUrl}`)
@@ -481,7 +504,7 @@ try {
 
   markStep('reopen-seeded-proof-route-after-reload')
   const reloadedProofControlPlane = await openSeededProofRoute()
-  await verifyPlaybackSelectionPersisted('Semester Close', reloadedProofControlPlane)
+  await verifyPlaybackSelectionPersisted(finalCheckpointLabel, reloadedProofControlPlane)
   await saveContainerScreenshot(reloadedProofControlPlane, screenshots.systemAdmin, 'system admin proof control plane')
 
   const storedSelectionAfterReload = await readPlaybackSelectionParsed()
@@ -511,7 +534,7 @@ try {
   const teacherCheckpointOverlay = teacherProofPanel.locator('[data-proof-section="checkpoint-overlay"]')
   await expectVisible(teacherCheckpointOverlay, 'teacher checkpoint overlay')
   await expectContainerText(teacherCheckpointOverlay, /Checkpoint overlay/i, 'teacher checkpoint overlay heading')
-  await expectContainerText(teacherCheckpointOverlay, /Semester Close/i, 'teacher checkpoint playback sync')
+  await expectContainerText(teacherCheckpointOverlay, /Post SEE/i, 'teacher checkpoint playback sync')
   await saveContainerScreenshot(teacherProofPanel, screenshots.teacher, 'teacher proof panel')
 
   markStep('open-teacher-risk-explorer')
@@ -543,7 +566,7 @@ try {
   await expectProofCheckpointIdentity(teacherRiskExplorerSurface, storedSelectionAfterReload.simulationStageCheckpointId, 'teacher risk explorer')
   await expectProofStudentIdentity(teacherRiskExplorerSurface, trackedStudentId, 'teacher risk explorer')
   await expectContainerText(teacherRiskExplorerSurface, /Student Success Profile/i, 'risk explorer hero heading')
-  await expectContainerText(teacherRiskExplorerSurface, /Sem 6 · Semester Close/i, 'risk explorer checkpoint sync')
+  await expectContainerText(teacherRiskExplorerSurface, /Sem 6 · Post SEE/i, 'risk explorer checkpoint sync')
   const advancedDiagnosticsTab = page.getByRole('button', { name: 'Advanced Diagnostics', exact: true }).first()
   await expectVisible(advancedDiagnosticsTab, 'advanced diagnostics tab')
   await advancedDiagnosticsTab.click()
@@ -556,7 +579,7 @@ try {
   await expectVisible(backButton, 'risk explorer back button')
   await backButton.click()
   await expectVisible(teacherProofPanel, 'teacher proof panel after returning from risk explorer')
-  await expectContainerText(teacherProofPanel, 'Semester Close', 'teacher checkpoint persistence after risk explorer return')
+  await expectContainerText(teacherProofPanel, 'Post SEE', 'teacher checkpoint persistence after risk explorer return')
 
   markStep('open-teacher-student-shell')
   const teacherStudentShellButton = teacherRiskExplorerSource.locator('[data-proof-action="teacher-proof-open-student-shell"]').first()
@@ -571,7 +594,7 @@ try {
   await expectContainerText(studentShellSurface, /Student Shell/i, 'student shell heading')
   await expectContainerText(studentShellSurface, /deterministic proof explainer/i, 'student shell subtitle')
   await waitForProofHeading('No-action comparator')
-  await expectContainerText(studentShellSurface, /Sem 6 · Semester Close/i, 'student shell checkpoint sync')
+  await expectContainerText(studentShellSurface, /Sem 6 · Post SEE/i, 'student shell checkpoint sync')
   await saveContainerScreenshot(studentShellSurface, screenshots.studentShell, 'student shell surface')
 
   const shellSelection = await readPlaybackSelectionParsed()
@@ -591,7 +614,7 @@ try {
   markStep('assert-hod-proof-analytics')
   await expectProofCheckpointIdentity(hodProofAnalytics, storedSelectionAfterReload.simulationStageCheckpointId, 'HoD proof analytics')
   await expectContainerText(hodProofAnalytics, /Live HoD Analytics/i, 'HoD heading')
-  await expectContainerText(hodProofAnalytics, /Semester Close/i, 'HoD checkpoint sync')
+  await expectContainerText(hodProofAnalytics, /Post SEE/i, 'HoD checkpoint sync')
   await saveContainerScreenshot(hodProofAnalytics, screenshots.hod, 'HoD proof analytics')
 
   markStep('open-hod-student-shell')
@@ -669,7 +692,7 @@ try {
     await expectProofStudentIdentity(hodRiskExplorerSurface, hodTrackedStudentIdAfterReturn, 'HoD risk explorer')
     await expectContainerText(hodRiskExplorerSurface, /Student Success Profile/i, 'HoD risk explorer hero heading')
     await waitForProofHeading('Top Observable Drivers', 60_000)
-    await expectContainerText(hodRiskExplorerSurface, /Sem 6 · Semester Close/i, 'HoD risk explorer checkpoint sync')
+    await expectContainerText(hodRiskExplorerSurface, /Sem 6 · Post SEE/i, 'HoD risk explorer checkpoint sync')
     await saveContainerScreenshot(hodRiskExplorerSurface, screenshots.hodRiskExplorer, 'HoD risk explorer surface')
   }
 
