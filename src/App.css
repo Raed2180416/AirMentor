@@ -225,7 +225,7 @@ body,
 .app-shell button:not(:disabled):hover,
 .app-shell [role='button']:not([data-surface]):hover,
 .app-shell a:hover,
-.app-shell [data-pressable='true']:hover,
+.app-shell [data-pressable='true']:not([data-surface]):hover,
 .app-shell [data-tab='true']:hover,
 .app-shell [data-nav-item='true']:hover,
 .app-shell input:hover,
@@ -237,7 +237,7 @@ body,
 .app-shell button:not(:disabled):hover,
 .app-shell [role='button']:not([data-surface]):hover,
 .app-shell a:hover,
-.app-shell [data-pressable='true']:hover,
+.app-shell [data-pressable='true']:not([data-surface]):hover,
 .app-shell [data-tab='true']:hover {
 	opacity: 0.99;
 }

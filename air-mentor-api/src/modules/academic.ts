@@ -1718,7 +1718,7 @@ async function buildOfferingStageEligibility(context: RouteContext, offeringId: 
       required: !!targetStage?.requiredEvidence.includes('finals'),
       presentCount: hasScoresFor(['sem_end', 'see']),
       expectedCount,
-      locked: !!offering.finalsLocked || !!runtimeLock.finals,
+      locked: !!offering.finalsLocked,
     },
     transcript: {
       required: !!targetStage?.requiredEvidence.includes('transcript'),
@@ -2505,9 +2505,13 @@ function mapOfferingRow(input: {
   course: typeof courses.$inferSelect
   term: typeof academicTerms.$inferSelect
   department: typeof departments.$inferSelect | undefined
+  stagePolicy?: StagePolicyPayload
   computedCount?: number
 }) {
   const count = input.computedCount ?? input.offering.studentCount
+  const resolvedStage = input.stagePolicy?.stages.find(stage => stage.order === input.offering.stage)
+    ?? DEFAULT_STAGE_POLICY.stages.find(stage => stage.order === input.offering.stage)
+    ?? null
   return {
     id: input.course.courseId,
     offId: input.offering.offeringId,
@@ -2524,9 +2528,9 @@ function mapOfferingRow(input: {
     stage: input.offering.stage,
     stageInfo: {
       stage: input.offering.stage,
-      label: input.offering.stageLabel,
-      desc: input.offering.stageDescription,
-      color: input.offering.stageColor,
+      label: resolvedStage?.label ?? input.offering.stageLabel,
+      desc: resolvedStage?.description ?? input.offering.stageDescription,
+      color: resolvedStage?.color ?? input.offering.stageColor,
     },
     tt1Done: !!input.offering.tt1Done,
     tt2Done: !!input.offering.tt2Done,
@@ -2783,13 +2787,23 @@ async function buildAcademicBootstrap(
   }
 
   const resolvedPolicyByBatchId = new Map<string, ResolvedPolicy>()
+  const resolvedStagePolicyByBatchId = new Map<string, StagePolicyPayload>()
   const batchIds = Array.from(new Set(termRows.map(row => row.batchId).filter((value): value is string => !!value)))
-  const resolvedPolicies = await Promise.all(batchIds.map(async batchId => {
-    const resolved = await resolveBatchPolicy(context, batchId)
-    return [batchId, resolved.effectivePolicy] as const
-  }))
+  const [resolvedPolicies, resolvedStagePolicies] = await Promise.all([
+    Promise.all(batchIds.map(async batchId => {
+      const resolved = await resolveBatchPolicy(context, batchId)
+      return [batchId, resolved.effectivePolicy] as const
+    })),
+    Promise.all(batchIds.map(async batchId => {
+      const resolved = await resolveBatchStagePolicy(context, batchId)
+      return [batchId, resolved.effectivePolicy] as const
+    })),
+  ])
   for (const [batchId, policy] of resolvedPolicies) {
     resolvedPolicyByBatchId.set(batchId, policy)
+  }
+  for (const [batchId, policy] of resolvedStagePolicies) {
+    resolvedStagePolicyByBatchId.set(batchId, policy)
   }
   const activeRiskModelByBatchId = new Map<string, Awaited<ReturnType<typeof getProofRiskModelActive>>['production'] | null>()
   const activeModelRows = await Promise.all(batchIds.map(async batchId => {
@@ -2869,6 +2883,7 @@ async function buildAcademicBootstrap(
     const term = termById[offeringRow.termId]
     const branch = branchById[offeringRow.branchId]
     const department = branch ? departmentById[branch.departmentId] : undefined
+    const stagePolicy = term.batchId ? resolvedStagePolicyByBatchId.get(term.batchId) : undefined
     const enrollmentKey = `${offeringRow.termId}::${offeringRow.sectionCode}`
     const sectionEnrollments = enrollmentsByGroup.get(enrollmentKey) ?? []
     return mapOfferingRow({
@@ -2876,6 +2891,7 @@ async function buildAcademicBootstrap(
       course,
       term,
       department,
+      stagePolicy,
       computedCount: sectionEnrollments.length,
     })
   })
@@ -3513,7 +3529,7 @@ async function buildAcademicBootstrap(
         tt2: !!offering.tt2Locked,
         quiz: !!offering.quizLocked,
         assignment: !!offering.asgnLocked,
-        finals: !!offering.finalsLocked || !!runtimeLock.finals,
+        finals: !!offering.finalsLocked,
         attendance: !!runtimeLock.attendance,
       }]
     }),
@@ -5088,7 +5104,7 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
       .filter(Boolean)
     if (sections.length === 0) throw badRequest('At least one section label is required for provisioning')
 
-    const [resolvedBatchPolicy, resolvedStagePolicy, resolvedCurriculumFeatures, curriculumRows, courseRows, appointmentRows, facultyRows, existingOwnershipRows, existingOfferings, existingStudents, existingEnrollments, existingMentors, existingAttendanceRows, existingAssessmentRows, existingTranscriptRows, existingTranscriptSubjectRows, existingProfileRows, existingCalendars] = await Promise.all([
+    const [resolvedBatchPolicy, resolvedStagePolicy, resolvedCurriculumFeatures, curriculumRows, courseRows, appointmentRows, facultyRows, existingOwnershipRows, existingOfferings, existingStudents, existingEnrollments, existingMentors, existingAttendanceRows, existingAssessmentRows, existingTranscriptRows, existingTranscriptSubjectRows, existingProfileRows, existingCalendars, runtimeStudentPatches, runtimeDrafts, runtimeCellValues, runtimeLockByOffering, runtimeLockAuditByTarget] = await Promise.all([
       resolveBatchPolicy(context, params.batchId),
       resolveBatchStagePolicy(context, params.batchId),
       resolveBatchCurriculumFeatures(context, params.batchId),
@@ -5107,6 +5123,11 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
       context.db.select().from(transcriptSubjectResults),
       context.db.select().from(studentAcademicProfiles),
       context.db.select().from(facultyCalendarWorkspaces),
+      getAcademicRuntimeState(context, 'studentPatches') as Promise<Record<string, unknown>>,
+      getAcademicRuntimeState(context, 'drafts') as Promise<Record<string, number>>,
+      getAcademicRuntimeState(context, 'cellValues') as Promise<Record<string, number>>,
+      getAcademicRuntimeState(context, 'lockByOffering') as Promise<Record<string, Record<string, boolean>>>,
+      getAcademicRuntimeState(context, 'lockAuditByTarget') as Promise<Record<string, unknown>>,
     ])
     const scopedCurriculum = curriculumRows
       .filter(row => row.status !== 'deleted' && row.status !== 'archived' && row.semesterNumber === term.semesterNumber)
@@ -5295,6 +5316,7 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
     let createdAttendanceCount = 0
     let createdAssessmentCount = 0
     let createdTranscriptCount = 0
+    const resetOfferingIds = new Set<string>()
     const sectionEnrollments = existingEnrollments.filter(row => row.termId === term.termId && sections.includes(row.sectionCode) && row.academicStatus === 'active')
     const sectionCounts = new Map<string, number>()
     sections.forEach(sectionCode => sectionCounts.set(sectionCode, sectionEnrollments.filter(row => row.sectionCode === sectionCode).length))
@@ -5391,6 +5413,10 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
       const stagePatch: Partial<typeof sectionOfferings.$inferInsert> = {
         studentCount: enrolledStudents.length,
         attendance: body.createAttendanceScaffolding ? 78 : offering.attendance,
+        stage: offering.stage,
+        stageLabel: offering.stageLabel,
+        stageDescription: offering.stageDescription,
+        stageColor: offering.stageColor,
         tt1Done: offering.tt1Done,
         tt2Done: offering.tt2Done,
         tt1Locked: offering.tt1Locked,
@@ -5398,8 +5424,24 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
         quizLocked: offering.quizLocked,
         assignmentLocked: offering.assignmentLocked,
         finalsLocked: offering.finalsLocked,
+        pendingAction: offering.pendingAction,
         version: offering.version + 1,
         updatedAt: now,
+      }
+      if (offering.stage <= stageSeed.order) {
+        stagePatch.stage = stageSeed.order
+        stagePatch.stageLabel = stageSeed.label
+        stagePatch.stageDescription = stageSeed.description
+        stagePatch.stageColor = stageSeed.color
+        stagePatch.pendingAction = null
+      }
+      if (!body.createAttendanceScaffolding && offering.stage <= stageSeed.order) {
+        const seededAttendanceRows = existingAttendanceRows.filter(row => row.offeringId === offering.offeringId)
+        if (seededAttendanceRows.length > 0) {
+          await context.db.delete(studentAttendanceSnapshots).where(eq(studentAttendanceSnapshots.offeringId, offering.offeringId))
+        }
+        stagePatch.attendance = 0
+        resetOfferingIds.add(offering.offeringId)
       }
       if (!body.createAssessmentScaffolding && offering.stage <= stageSeed.order) {
         const seededAssessmentRows = assessmentRowsByOfferingId.get(offering.offeringId) ?? []
@@ -5414,6 +5456,7 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
         stagePatch.quizLocked = 0
         stagePatch.assignmentLocked = 0
         stagePatch.finalsLocked = 0
+        resetOfferingIds.add(offering.offeringId)
       }
       await context.db.update(sectionOfferings).set(stagePatch).where(eq(sectionOfferings.offeringId, offering.offeringId))
       for (const [index, enrollment] of enrolledStudents.entries()) {
@@ -5479,6 +5522,43 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
           }
         }
       }
+    }
+
+    if (resetOfferingIds.size > 0) {
+      const resetIds = Array.from(resetOfferingIds)
+      const shouldResetKey = (key: string) => resetIds.some(offeringId => key.startsWith(`${offeringId}::`))
+      const nextStudentPatches = Object.fromEntries(
+        Object.entries(runtimeStudentPatches).filter(([key]) => !shouldResetKey(key)),
+      )
+      const nextDrafts = Object.fromEntries(
+        Object.entries(runtimeDrafts).filter(([key]) => !shouldResetKey(key)),
+      )
+      const nextCellValues = Object.fromEntries(
+        Object.entries(runtimeCellValues).filter(([key]) => !shouldResetKey(key)),
+      )
+      const nextLockByOffering = Object.fromEntries(
+        Object.entries(runtimeLockByOffering).map(([offeringId, locks]) => {
+          if (!resetOfferingIds.has(offeringId)) return [offeringId, locks]
+          return [offeringId, {
+            tt1: false,
+            tt2: false,
+            quiz: false,
+            assignment: false,
+            finals: false,
+            attendance: false,
+          }]
+        }),
+      )
+      const nextLockAuditByTarget = Object.fromEntries(
+        Object.entries(runtimeLockAuditByTarget).filter(([key]) => !shouldResetKey(key)),
+      )
+      await Promise.all([
+        saveAcademicRuntimeState(context, 'studentPatches', nextStudentPatches),
+        saveAcademicRuntimeState(context, 'drafts', nextDrafts),
+        saveAcademicRuntimeState(context, 'cellValues', nextCellValues),
+        saveAcademicRuntimeState(context, 'lockByOffering', nextLockByOffering),
+        saveAcademicRuntimeState(context, 'lockAuditByTarget', nextLockAuditByTarget),
+      ])
     }
 
     await emitAuditEvent(context, {

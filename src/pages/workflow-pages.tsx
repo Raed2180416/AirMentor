@@ -458,7 +458,7 @@ export function UploadPage({
   availableOfferings?: Offering[]
   onOpenSchemeSetup: (offering?: Offering) => void
 }) {
-  const { getOfferingAttendancePatched, getSchemeForOffering, getStudentsPatched } = useAppSelectors()
+  const { getSchemeForOffering, getStudentsPatched } = useAppSelectors()
   const visibleOfferings = availableOfferings ?? (offering ? [offering] : [])
   const [selectedKind, setSelectedKind] = useState<EntryKind>(defaultKind)
   const [selectedOffId, setSelectedOffId] = useState<string>(offering?.offId ?? visibleOfferings[0]?.offId ?? '')
@@ -489,6 +489,7 @@ export function UploadPage({
     )
   }
   const scheme = getSchemeForOffering(selectedOffering)
+  const selectedStudents = getStudentsPatched(selectedOffering)
   const selectedCourseCode = selectedOffering.code
   const classOfferings = visibleOfferings.filter(item => item.code === selectedCourseCode)
   const lockMap = lockByOffering[selectedOffering.offId] ?? getEntryLockMap(selectedOffering)
@@ -497,11 +498,11 @@ export function UploadPage({
   const shouldShowSchemePrompt = !schemeReady && !hasInFlightEvaluation
 
   const completion = {
-    tt1: !!selectedOffering.tt1Locked,
-    tt2: !!selectedOffering.tt2Locked,
-    quiz: !!selectedOffering.quizLocked,
-    assignment: !!selectedOffering.asgnLocked,
-    attendance: getOfferingAttendancePatched(selectedOffering) >= 75,
+    tt1: !!selectedOffering.tt1Locked || selectedStudents.some(student => student.tt1Score !== null),
+    tt2: !!selectedOffering.tt2Locked || selectedStudents.some(student => student.tt2Score !== null),
+    quiz: !!selectedOffering.quizLocked || selectedStudents.some(student => student.quiz1 !== null || student.quiz2 !== null),
+    assignment: !!selectedOffering.asgnLocked || selectedStudents.some(student => student.asgn1 !== null || student.asgn2 !== null),
+    attendance: !!lockMap.attendance || selectedStudents.some(student => student.totalClasses > 0),
     finals: !!selectedOffering.finalsLocked,
   }
 

@@ -57,9 +57,16 @@ export function CourseDetail({
   const yearTint = yearColor(offering.year)
   const students = useMemo(() => getStudentsPatched(offering), [getStudentsPatched, offering])
   const cos = courseOutcomes && courseOutcomes.length > 0 ? courseOutcomes : (CO_MAP[offering.code] || CO_MAP.default)
+  const stageRail = [
+    'Pre TT1',
+    'Post TT1',
+    'Post TT2',
+    'Post Assignments',
+    'Post SEE',
+  ]
   const tabLocked = (tabId: string) => (tabId === 'tt2' && offering.stageInfo.stage < 2) || (tabId === 'risk' && offering.stage < 2)
   const activeTabContent = tab === 'overview'
-    ? <OverviewTab offering={offering} cos={cos} students={students} setTab={setTab} />
+    ? <OverviewTab offering={offering} cos={cos} students={students} scheme={scheme} setTab={setTab} />
     : tab === 'risk'
       ? <RiskTab offering={offering} students={students} onOpenStudent={onOpenStudent} />
       : tab === 'attendance'
@@ -103,15 +110,17 @@ export function CourseDetail({
             <Chip color={offering.stageInfo.color}>Stage {offering.stageInfo.stage}</Chip>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginTop: 14, maxWidth: 640 }}>
-            {['Start', 'TT1', 'Reassess', 'TT2', 'SEE', 'Close'].map((label, index) => (
-              <div key={label} style={{ display: 'flex', alignItems: 'center', flex: index < 5 ? 1 : 0 }}>
-                <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', ...mono, fontSize: 10, fontWeight: 700, background: index < offering.stageInfo.stage ? offering.stageInfo.color : T.border2, border: `2px solid ${index < offering.stageInfo.stage ? offering.stageInfo.color : T.dim}`, color: index < offering.stageInfo.stage ? '#fff' : T.dim }}>
-                  {index < offering.stageInfo.stage ? '✓' : index + 1}
+            {stageRail.map((label, index) => {
+              const stageReached = index + 1 <= offering.stageInfo.stage
+              return (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', flex: index < stageRail.length - 1 ? 1 : 0 }}>
+                <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', ...mono, fontSize: 10, fontWeight: 700, background: stageReached ? offering.stageInfo.color : T.border2, border: `2px solid ${stageReached ? offering.stageInfo.color : T.dim}`, color: stageReached ? '#fff' : T.dim }}>
+                  {stageReached ? '✓' : index + 1}
                 </div>
                 <span style={{ ...mono, fontSize: 9, color: T.dim, marginLeft: 6, whiteSpace: 'nowrap' }}>{label}</span>
-                {index < 5 && <div style={{ flex: 1, height: 2, background: index < offering.stageInfo.stage - 1 ? offering.stageInfo.color : T.border, margin: '0 8px' }} />}
+                {index < stageRail.length - 1 && <div style={{ flex: 1, height: 2, background: index < offering.stageInfo.stage - 1 ? offering.stageInfo.color : T.border, margin: '0 8px' }} />}
               </div>
-            ))}
+            )})}
           </div>
         </div>
         <div style={{ marginTop: 16, marginLeft: -32, marginRight: -32, borderTop: `1px solid ${T.border}` }}>
@@ -152,23 +161,27 @@ export function CourseDetail({
   )
 }
 
-function OverviewTab({ offering, cos, students, setTab }: { offering: Offering; cos: CODef[]; students: Student[]; setTab: (tab: string) => void }) {
-  const detained = students.filter(student => student.present / student.totalClasses < 0.65).length
-  const atRisk = students.filter(student => {
+function OverviewTab({ offering, cos, students, scheme, setTab }: { offering: Offering; cos: CODef[]; students: Student[]; scheme: SchemeState; setTab: (tab: string) => void }) {
+  const studentsWithAttendance = students.filter(student => student.totalClasses > 0)
+  const detained = studentsWithAttendance.filter(student => student.present / student.totalClasses < 0.65).length
+  const atRisk = studentsWithAttendance.filter(student => {
     const pct = student.present / student.totalClasses
     return pct >= 0.65 && pct < 0.75
   }).length
-  const good = students.length - detained - atRisk
+  const good = studentsWithAttendance.filter(student => student.present / student.totalClasses >= 0.75).length
   const highRisk = students.filter(student => student.riskBand === 'High').length
+  const hasAttendance = studentsWithAttendance.length > 0
+  const hasTt1Scores = students.some(student => student.tt1Score !== null)
+  const hasTt2Scores = students.some(student => student.tt2Score !== null)
+  const hasQuizScores = students.some(student => student.quiz1 !== null || student.quiz2 !== null)
+  const hasAssignmentScores = students.some(student => student.asgn1 !== null || student.asgn2 !== null)
   const checks = [
-    { label: 'Attendance tracked', done: true, tab: 'attendance' },
-    { label: 'TT1 paper CO mapped', done: offering.tt1Done, tab: 'tt1' },
-    { label: 'TT1 marks entered', done: offering.tt1Done, tab: 'tt1' },
-    { label: 'Quiz 1 marks entered', done: offering.tt1Done, tab: 'quizzes' },
-    { label: 'Assignment 1 entered', done: false, tab: 'assignments' },
-    { label: 'TT2 paper CO mapped', done: offering.stageInfo.stage >= 4, tab: 'tt2' },
-    { label: 'TT2 marks entered', done: offering.tt2Done, tab: 'tt2' },
-    { label: 'Attendance finalised', done: offering.stageInfo.stage >= 5, tab: 'attendance' },
+    { label: 'Scheme configured', done: scheme.status !== 'Needs Setup', tab: 'gradebook' },
+    { label: 'Attendance captured', done: hasAttendance, tab: 'attendance' },
+    { label: 'TT1 marks entered', done: hasTt1Scores || offering.tt1Done, tab: 'tt1' },
+    { label: 'Quiz marks entered', done: hasQuizScores, tab: 'quizzes' },
+    { label: 'Assignment marks entered', done: hasAssignmentScores, tab: 'assignments' },
+    { label: 'TT2 marks entered', done: hasTt2Scores || offering.tt2Done, tab: 'tt2' },
   ]
   const doneCount = checks.filter(check => check.done).length
 
@@ -202,6 +215,7 @@ function OverviewTab({ offering, cos, students, setTab }: { offering: Offering; 
                 </div>
               ))}
             </div>
+            {!hasAttendance && <div style={{ ...mono, fontSize: 10, color: T.warning, marginTop: 10 }}>Attendance has not been captured yet for this class.</div>}
             <div style={{ display: 'flex', gap: 0, height: 7, borderRadius: 6, overflow: 'hidden', marginTop: 12 }}>
               {[{ value: good, color: T.success }, { value: atRisk, color: T.warning }, { value: detained, color: T.danger }].map(metric => (
                 <div key={metric.color} style={{ flex: metric.value || 0.1, background: metric.color, minWidth: metric.value > 0 ? 2 : 0 }} />

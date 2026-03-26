@@ -42,7 +42,6 @@ export function buildFacultyTimetableTemplates(loadsByFacultyId: Map<string, Fac
     { id: 'slot_5', label: '13:30-14:30', startTime: '13:30', endTime: '14:30' },
     { id: 'slot_6', label: '14:30-15:30', startTime: '14:30', endTime: '15:30' },
   ] as const
-  const slotPositions = weekdays.flatMap(day => slots.map(slot => ({ day, slot })))
   const result: Record<string, Record<string, unknown>> = {}
 
   for (const [facultyId, entries] of loadsByFacultyId.entries()) {
@@ -53,25 +52,39 @@ export function buildFacultyTimetableTemplates(loadsByFacultyId: Map<string, Fac
       || left.sectionCode.localeCompare(right.sectionCode)
       || left.offeringId.localeCompare(right.offeringId)
     ))
-    const occupiedPositions = new Set<number>()
-    let cursor = Math.floor(stableUnit(`timetable-${facultyId}`) * slotPositions.length) % slotPositions.length
+    const occupiedPositions = new Set<string>()
+    const dayLoad = new Map(weekdays.map(day => [day, 0]))
+    const dayOffset = Math.floor(stableUnit(`timetable-day-${facultyId}`) * weekdays.length) % weekdays.length
+    const slotOffset = Math.floor(stableUnit(`timetable-slot-${facultyId}`) * slots.length) % slots.length
+    const orderedDays = weekdays.slice(dayOffset).concat(weekdays.slice(0, dayOffset))
 
-    const takeNextFreePosition = () => {
-      for (let offset = 0; offset < slotPositions.length; offset += 1) {
-        const candidateIndex = (cursor + offset) % slotPositions.length
-        if (occupiedPositions.has(candidateIndex)) continue
-        occupiedPositions.add(candidateIndex)
-        cursor = (candidateIndex + 1) % slotPositions.length
-        return slotPositions[candidateIndex]
+    const takeNextFreePosition = (usedDaysForEntry: Set<string>) => {
+      const preferredDays = [...orderedDays].sort((left, right) => {
+        const leftPenalty = usedDaysForEntry.has(left) ? 1 : 0
+        const rightPenalty = usedDaysForEntry.has(right) ? 1 : 0
+        if (leftPenalty !== rightPenalty) return leftPenalty - rightPenalty
+        return (dayLoad.get(left) ?? 0) - (dayLoad.get(right) ?? 0)
+      })
+      for (const day of preferredDays) {
+        for (let offset = 0; offset < slots.length; offset += 1) {
+          const slot = slots[(slotOffset + offset) % slots.length]!
+          const key = `${day}:${slot.id}`
+          if (occupiedPositions.has(key)) continue
+          occupiedPositions.add(key)
+          dayLoad.set(day, (dayLoad.get(day) ?? 0) + 1)
+          return { day, slot }
+        }
       }
       throw new Error(`Timetable builder exhausted weekly slot capacity for ${facultyId}`)
     }
 
     orderedEntries.forEach(entry => {
       const repeatCount = Math.max(1, Math.min(3, entry.weeklyHours))
+      const usedDaysForEntry = new Set<string>()
       for (let blockIndex = 0; blockIndex < repeatCount; blockIndex += 1) {
-        const position = takeNextFreePosition()
+        const position = takeNextFreePosition(usedDaysForEntry)
         const { day, slot } = position
+        usedDaysForEntry.add(day)
         classBlocks.push({
           id: `${facultyId}_${entry.offeringId}_${blockIndex + 1}`,
           facultyId,
@@ -102,4 +115,3 @@ export function buildFacultyTimetableTemplates(loadsByFacultyId: Map<string, Fac
 
   return result
 }
-

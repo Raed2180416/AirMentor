@@ -6862,6 +6862,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                                   </option>
                                 ))}
                               </SelectInput>
+                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6 }}>
+                                Selecting a course here loads its code, title, and credits into the editor below so you can rename it or adjust credits without leaving the semester view.
+                              </div>
                             </div>
                           </div>
 
