@@ -457,7 +457,7 @@ export function getEntryLockMap(offering: Offering): EntryLockMap {
     quiz: !!offering.quizLocked,
     assignment: !!offering.asgnLocked,
     attendance: false,
-    finals: false,
+    finals: !!offering.finalsLocked,
   }
 }
 

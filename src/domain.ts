@@ -1,5 +1,5 @@
 export type Role = 'Course Leader' | 'Mentor' | 'HoD'
-export type Stage = 1 | 2 | 3
+export type Stage = 1 | 2 | 3 | 4 | 5 | 6
 export type RiskBand = 'High' | 'Medium' | 'Low'
 export type TaskStatus = 'New' | 'In Progress' | 'Follow-up' | 'Resolved'
 
@@ -406,7 +406,7 @@ export function getNextScheduledDate(meta?: ScheduleMeta, currentDateISO?: strin
     const completed = new Set([...(meta.completedDatesISO ?? []), ...(meta.skippedDatesISO ?? [])])
     return (meta.customDates ?? [])
       .map(item => item.dateISO)
-      .filter(date => date >= todayISO && date > current && !completed.has(date))
+      .filter(date => date > current && !completed.has(date))
       .sort()[0]
   }
   if (!meta.preset) return undefined

@@ -7,11 +7,15 @@ import {
   academicFaculties,
   academicTerms,
   batches,
+  batchCurriculumFeatureBindings,
+  batchCurriculumFeatureOverrides,
   bridgeModules,
   branches,
   courseOutcomeOverrides,
   courseTopicPartitions,
   courses,
+  curriculumFeatureProfileCourses,
+  curriculumFeatureProfiles,
   curriculumEdges,
   curriculumImportVersions,
   curriculumNodes,
@@ -26,12 +30,22 @@ import {
   reassessmentEvents,
   roleGrants,
   riskAssessments,
+  riskModelArtifacts,
   sectionOfferings,
   simulationRuns,
+  stagePolicyOverrides,
 } from '../db/schema.js'
 import { badRequest, conflict, notFound } from '../lib/http-errors.js'
 import { createId } from '../lib/ids.js'
 import { parseJson, stringifyJson } from '../lib/json.js'
+import {
+  canonicalizeStagePolicy,
+  DEFAULT_STAGE_POLICY,
+  scopeTypeValues,
+  stagePolicyPayloadSchema,
+  type ScopeTypeValue,
+  type StagePolicyPayload,
+} from '../lib/stage-policy.js'
 import { emitAuditEvent, expectVersion, parseOrThrow, requireRole } from './support.js'
 
 const weekdaySchema = z.enum(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])
@@ -227,6 +241,56 @@ const policyFilterSchema = z.object({
   scopeId: z.string().min(1).optional(),
 })
 
+const stagePolicyOverrideCreateSchema = z.object({
+  scopeType: z.enum(scopeTypeValues),
+  scopeId: z.string().min(1),
+  policy: stagePolicyPayloadSchema,
+  status: z.string().min(1).default('active'),
+})
+
+const stagePolicyOverridePatchSchema = stagePolicyOverrideCreateSchema.extend({
+  version: z.number().int().positive(),
+})
+
+const stagePolicyFilterSchema = z.object({
+  scopeType: z.enum(scopeTypeValues).optional(),
+  scopeId: z.string().min(1).optional(),
+})
+
+const curriculumFeatureProfileCreateSchema = z.object({
+  name: z.string().min(1),
+  scopeType: z.enum(scopeTypeValues),
+  scopeId: z.string().min(1),
+  status: z.string().min(1).default('active'),
+})
+
+const curriculumFeatureProfilePatchSchema = curriculumFeatureProfileCreateSchema.extend({
+  version: z.number().int().positive(),
+})
+
+const curriculumFeatureProfileFilterSchema = z.object({
+  scopeType: z.enum(scopeTypeValues).optional(),
+  scopeId: z.string().min(1).optional(),
+})
+
+const curriculumFeatureBindingModeSchema = z.enum(['inherit-scope-profile', 'pin-profile', 'local-only'])
+
+const curriculumFeatureBindingSaveSchema = z.object({
+  bindingMode: curriculumFeatureBindingModeSchema,
+  curriculumFeatureProfileId: z.string().min(1).nullable().optional(),
+  status: z.string().min(1).default('active'),
+  version: z.number().int().positive().optional(),
+})
+
+const curriculumFeatureConfigTargetSchema = z.object({
+  targetMode: z.enum(['batch-local-override', 'scope-profile']).default('batch-local-override'),
+  targetScopeType: z.enum(scopeTypeValues).optional(),
+  targetScopeId: z.string().min(1).optional(),
+  curriculumFeatureProfileId: z.string().min(1).optional(),
+})
+
+const curriculumFeatureConfigSaveSchema = curriculumFeatureConfigPatchSchema.merge(curriculumFeatureConfigTargetSchema)
+
 export type PolicyPayload = z.infer<typeof policyPayloadSchema>
 export type ResolvedPolicy = {
   gradeBands: z.infer<typeof gradeBandSchema>[]
@@ -380,6 +444,86 @@ function mapPolicyOverride(row: typeof policyOverrides.$inferSelect) {
   }
 }
 
+function mapStagePolicyOverride(row: typeof stagePolicyOverrides.$inferSelect) {
+  return {
+    stagePolicyOverrideId: row.stagePolicyOverrideId,
+    scopeType: row.scopeType as ScopeTypeValue,
+    scopeId: row.scopeId,
+    policy: canonicalizeStagePolicy(parseJson(row.policyJson, DEFAULT_STAGE_POLICY)),
+    status: row.status,
+    version: row.version,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }
+}
+
+function mapCurriculumFeatureProfile(row: typeof curriculumFeatureProfiles.$inferSelect) {
+  return {
+    curriculumFeatureProfileId: row.curriculumFeatureProfileId,
+    name: row.name,
+    scopeType: row.scopeType as ScopeTypeValue,
+    scopeId: row.scopeId,
+    status: row.status,
+    version: row.version,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }
+}
+
+function mapBatchCurriculumFeatureBinding(row: typeof batchCurriculumFeatureBindings.$inferSelect | null) {
+  if (!row) return null
+  return {
+    batchId: row.batchId,
+    curriculumFeatureProfileId: row.curriculumFeatureProfileId,
+    bindingMode: row.bindingMode as 'inherit-scope-profile' | 'pin-profile' | 'local-only',
+    status: row.status,
+    version: row.version,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }
+}
+
+type CurriculumFeatureProfileCoursePayload = z.infer<typeof curriculumFeatureConfigPatchSchema>
+
+function mapCurriculumFeatureProfileCourse(row: typeof curriculumFeatureProfileCourses.$inferSelect) {
+  return {
+    curriculumFeatureProfileCourseId: row.curriculumFeatureProfileCourseId,
+    curriculumFeatureProfileId: row.curriculumFeatureProfileId,
+    courseId: row.courseId,
+    courseCode: row.courseCode,
+    title: row.title,
+    config: {
+      assessmentProfile: row.assessmentProfile,
+      outcomes: parseOrThrow(z.array(curriculumFeatureOutcomeSchema), parseJson(row.outcomesJson, [])),
+      prerequisites: parseOrThrow(z.array(curriculumFeatureEdgeSchema), parseJson(row.prerequisitesJson, [])),
+      bridgeModules: parseOrThrow(z.array(z.string()), parseJson(row.bridgeModulesJson, [])),
+      topicPartitions: parseOrThrow(curriculumFeatureTopicSchema, parseJson(row.topicPartitionsJson, {})),
+    } satisfies CurriculumFeatureProfileCoursePayload,
+    featureFingerprint: row.featureFingerprint,
+    status: row.status,
+    version: row.version,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }
+}
+
+function mapBatchCurriculumFeatureOverride(row: typeof batchCurriculumFeatureOverrides.$inferSelect) {
+  return {
+    batchCurriculumFeatureOverrideId: row.batchCurriculumFeatureOverrideId,
+    batchId: row.batchId,
+    curriculumCourseId: row.curriculumCourseId,
+    courseId: row.courseId,
+    courseCode: row.courseCode,
+    title: row.title,
+    override: parseOrThrow(curriculumFeatureConfigPatchSchema, parseJson(row.overrideJson, {})),
+    featureFingerprint: row.featureFingerprint,
+    status: row.status,
+    version: row.version,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }
+}
+
 function mapCourseOutcomeOverride(row: typeof courseOutcomeOverrides.$inferSelect) {
   const parsed = z.array(curriculumFeatureOutcomeSchema).safeParse(parseJson(row.outcomesJson, []))
   return {
@@ -406,6 +550,39 @@ function buildDefaultCourseOutcomes(courseCode: string, courseTitle: string) {
 
 function normalizeFeatureStringList(items: string[]) {
   return Array.from(new Set(items.map(item => item.trim()).filter(Boolean)))
+}
+
+function normalizeCurriculumFeaturePayload(payload: CurriculumFeatureProfileCoursePayload): CurriculumFeatureProfileCoursePayload {
+  return {
+    assessmentProfile: payload.assessmentProfile.trim(),
+    outcomes: payload.outcomes
+      .map(item => ({
+        id: item.id.trim(),
+        desc: item.desc.trim(),
+        bloom: item.bloom.trim(),
+      }))
+      .filter(item => item.id && item.desc && item.bloom)
+      .sort((left, right) => left.id.localeCompare(right.id)),
+    prerequisites: payload.prerequisites
+      .map(item => ({
+        sourceCourseCode: item.sourceCourseCode.trim(),
+        edgeKind: item.edgeKind,
+        rationale: item.rationale.trim(),
+      }))
+      .filter(item => item.sourceCourseCode && item.rationale)
+      .sort((left, right) => left.sourceCourseCode.localeCompare(right.sourceCourseCode) || left.rationale.localeCompare(right.rationale)),
+    bridgeModules: normalizeFeatureStringList(payload.bridgeModules).sort((left, right) => left.localeCompare(right)),
+    topicPartitions: {
+      tt1: normalizeFeatureStringList(payload.topicPartitions.tt1).sort((left, right) => left.localeCompare(right)),
+      tt2: normalizeFeatureStringList(payload.topicPartitions.tt2).sort((left, right) => left.localeCompare(right)),
+      see: normalizeFeatureStringList(payload.topicPartitions.see).sort((left, right) => left.localeCompare(right)),
+      workbook: normalizeFeatureStringList(payload.topicPartitions.workbook).sort((left, right) => left.localeCompare(right)),
+    },
+  }
+}
+
+function curriculumFeatureFingerprint(payload: CurriculumFeatureProfileCoursePayload) {
+  return buildSnapshotChecksum(normalizeCurriculumFeaturePayload(payload))
 }
 
 function sanitizeInternalCompilerId(courseCode: string, title: string) {
@@ -795,6 +972,599 @@ function mergePolicy(base: ResolvedPolicy, override: PolicyPayload): ResolvedPol
   }
 }
 
+type ScopeChainEntry = {
+  scopeType: ScopeTypeValue
+  scopeId: string
+}
+
+type BatchScopeContext = {
+  institution: typeof institutions.$inferSelect
+  batch: typeof batches.$inferSelect
+  branch: typeof branches.$inferSelect
+  department: typeof departments.$inferSelect
+  scopeChain: ScopeChainEntry[]
+}
+
+type MaterializedCurriculumFeatureItem = {
+  curriculumCourseId: string
+  curriculumImportVersionId: string | null
+  curriculumNodeId: string | null
+  courseId: string | null
+  semesterNumber: number
+  courseCode: string
+  title: string
+  credits: number
+  assessmentProfile: string
+  outcomes: z.infer<typeof curriculumFeatureOutcomeSchema>[]
+  outcomeOverride: ReturnType<typeof mapCourseOutcomeOverride> | null
+  prerequisites: Array<{
+    curriculumEdgeId: string
+    sourceCurriculumNodeId: string
+    sourceCourseCode: string
+    sourceTitle: string
+    edgeKind: string
+    rationale: string
+    status: string
+  }>
+  bridgeModules: string[]
+  topicPartitions: {
+    tt1: string[]
+    tt2: string[]
+    see: string[]
+    workbook: string[]
+  }
+}
+
+type ResolvedCurriculumFeatureItem = MaterializedCurriculumFeatureItem & {
+  resolvedConfig: CurriculumFeatureProfileCoursePayload
+  featureFingerprint: string
+  resolvedSource: {
+    mode: 'materialized' | 'scope-profile' | 'pinned-profile' | 'batch-local-override'
+    label: string
+    scopeType?: ScopeTypeValue
+    scopeId?: string
+    curriculumFeatureProfileId?: string | null
+  }
+  appliedProfiles: Array<ReturnType<typeof mapCurriculumFeatureProfile>>
+  localOverride: ReturnType<typeof mapBatchCurriculumFeatureOverride> | null
+}
+
+async function getBatchScopeContext(context: RouteContext, batchId: string): Promise<BatchScopeContext> {
+  const [institution] = await context.db.select().from(institutions)
+  if (!institution) throw notFound('Institution is not configured')
+
+  const [batch] = await context.db.select().from(batches).where(eq(batches.batchId, batchId))
+  if (!batch) throw notFound('Batch not found')
+  const [branch] = await context.db.select().from(branches).where(eq(branches.branchId, batch.branchId))
+  if (!branch) throw notFound('Branch not found')
+  const [department] = await context.db.select().from(departments).where(eq(departments.departmentId, branch.departmentId))
+  if (!department) throw notFound('Department not found')
+
+  return {
+    institution,
+    batch,
+    branch,
+    department,
+    scopeChain: [
+      { scopeType: 'institution', scopeId: institution.institutionId },
+      ...(department.academicFacultyId ? [{ scopeType: 'academic-faculty' as const, scopeId: department.academicFacultyId }] : []),
+      { scopeType: 'department', scopeId: department.departmentId },
+      { scopeType: 'branch', scopeId: branch.branchId },
+      { scopeType: 'batch', scopeId: batch.batchId },
+    ],
+  }
+}
+
+function formatScopeLabel(scope: ScopeChainEntry) {
+  return `${scope.scopeType}:${scope.scopeId}`
+}
+
+function matchesCourseReference(input: {
+  courseId?: string | null
+  courseCode: string
+  title: string
+}, candidate: {
+  courseId?: string | null
+  courseCode: string
+  title: string
+}) {
+  return (
+    (!!input.courseId && !!candidate.courseId && input.courseId === candidate.courseId)
+    || input.courseCode.toLowerCase() === candidate.courseCode.toLowerCase()
+    || input.title.toLowerCase() === candidate.title.toLowerCase()
+  )
+}
+
+async function loadMaterializedCurriculumFeatureBundle(context: RouteContext, batchId: string) {
+  const [batch] = await context.db.select().from(batches).where(eq(batches.batchId, batchId))
+  if (!batch) throw notFound('Batch not found')
+
+  const latestImport = await getLatestCurriculumImport(context, batchId)
+  const [curriculumRows, nodeRows, edgeRows, bridgeRows, topicRows, outcomeRows] = await Promise.all([
+    context.db.select().from(curriculumCourses).where(eq(curriculumCourses.batchId, batchId)),
+    latestImport ? context.db.select().from(curriculumNodes).where(eq(curriculumNodes.curriculumImportVersionId, latestImport.curriculumImportVersionId)) : Promise.resolve([]),
+    latestImport ? context.db.select().from(curriculumEdges).where(eq(curriculumEdges.curriculumImportVersionId, latestImport.curriculumImportVersionId)) : Promise.resolve([]),
+    latestImport ? context.db.select().from(bridgeModules).where(eq(bridgeModules.curriculumImportVersionId, latestImport.curriculumImportVersionId)) : Promise.resolve([]),
+    latestImport ? context.db.select().from(courseTopicPartitions).where(eq(courseTopicPartitions.curriculumImportVersionId, latestImport.curriculumImportVersionId)) : Promise.resolve([]),
+    context.db.select().from(courseOutcomeOverrides),
+  ])
+
+  const visibleCurriculumRows = curriculumRows
+    .filter(row => row.status !== 'deleted' && row.status !== 'archived')
+    .sort((left, right) => left.semesterNumber - right.semesterNumber || left.courseCode.localeCompare(right.courseCode))
+  const nodeById = new Map(nodeRows.map(row => [row.curriculumNodeId, row]))
+  const nodeKeySet = new Set(visibleCurriculumRows.map(row => `${row.semesterNumber}::${row.courseCode.toLowerCase()}`))
+  const nodeOnlyRows = nodeRows
+    .filter(row => row.status === 'active')
+    .filter(row => !nodeKeySet.has(`${row.semesterNumber}::${row.courseCode.toLowerCase()}`))
+    .map(row => ({
+      curriculumCourseId: `import:${row.curriculumNodeId}`,
+      batchId,
+      semesterNumber: row.semesterNumber,
+      courseId: row.courseId,
+      courseCode: row.courseCode,
+      title: row.title,
+      credits: row.credits,
+      status: 'active',
+      version: 1,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    }))
+
+  const items = [...visibleCurriculumRows, ...nodeOnlyRows].map(curriculumCourse => {
+    const node = findCurriculumNodeForCourse(nodeRows, curriculumCourse)
+    const activeOutcomeOverride = curriculumCourse.courseId
+      ? outcomeRows
+        .filter(row => row.courseId === curriculumCourse.courseId && row.scopeType === 'batch' && row.scopeId === batchId && row.status === 'active')
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0] ?? null
+      : null
+    const prerequisiteRows = node
+      ? edgeRows
+        .filter(row => row.targetCurriculumNodeId === node.curriculumNodeId && row.status === 'active')
+        .map(row => {
+          const sourceNode = nodeById.get(row.sourceCurriculumNodeId) ?? null
+          return {
+            curriculumEdgeId: row.curriculumEdgeId,
+            sourceCurriculumNodeId: row.sourceCurriculumNodeId,
+            sourceCourseCode: sourceNode?.courseCode ?? row.sourceCurriculumNodeId,
+            sourceTitle: sourceNode?.title ?? row.sourceCurriculumNodeId,
+            edgeKind: row.edgeKind,
+            rationale: row.rationale,
+            status: row.status,
+          }
+        })
+      : []
+    const bridgeRow = node
+      ? bridgeRows
+        .filter(row => row.curriculumNodeId === node.curriculumNodeId && row.status === 'active')
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0] ?? null
+      : null
+    const topicByKind = new Map(
+      (node ? topicRows.filter(row => row.curriculumNodeId === node.curriculumNodeId) : []).map(row => [
+        row.partitionKind,
+        normalizeFeatureStringList(parseJson(row.topicsJson, [] as string[])),
+      ]),
+    )
+    return {
+      curriculumCourseId: curriculumCourse.curriculumCourseId,
+      curriculumImportVersionId: latestImport?.curriculumImportVersionId ?? null,
+      curriculumNodeId: node?.curriculumNodeId ?? null,
+      courseId: curriculumCourse.courseId ?? node?.courseId ?? null,
+      semesterNumber: curriculumCourse.semesterNumber,
+      courseCode: curriculumCourse.courseCode,
+      title: curriculumCourse.title,
+      credits: curriculumCourse.credits,
+      assessmentProfile: node?.assessmentProfile ?? 'admin-authored',
+      outcomes: activeOutcomeOverride ? mapCourseOutcomeOverride(activeOutcomeOverride).outcomes : buildDefaultCourseOutcomes(curriculumCourse.courseCode, curriculumCourse.title),
+      outcomeOverride: activeOutcomeOverride ? mapCourseOutcomeOverride(activeOutcomeOverride) : null,
+      prerequisites: prerequisiteRows,
+      bridgeModules: bridgeRow ? normalizeFeatureStringList(parseJson(bridgeRow.moduleTitlesJson, [] as string[])) : [],
+      topicPartitions: {
+        tt1: topicByKind.get('tt1') ?? [],
+        tt2: topicByKind.get('tt2') ?? [],
+        see: topicByKind.get('see') ?? [],
+        workbook: topicByKind.get('workbook') ?? [],
+      },
+    } satisfies MaterializedCurriculumFeatureItem
+  })
+
+  return {
+    batchId,
+    curriculumImportVersion: latestImport
+      ? {
+          curriculumImportVersionId: latestImport.curriculumImportVersionId,
+          sourceLabel: latestImport.sourceLabel,
+          sourceType: latestImport.sourceType,
+          status: latestImport.status,
+          validationStatus: latestImport.validationStatus,
+          updatedAt: latestImport.updatedAt,
+        }
+      : null,
+    items,
+  }
+}
+
+function toCurriculumFeaturePayload(item: Pick<MaterializedCurriculumFeatureItem, 'assessmentProfile' | 'outcomes' | 'prerequisites' | 'bridgeModules' | 'topicPartitions'>): CurriculumFeatureProfileCoursePayload {
+  return normalizeCurriculumFeaturePayload({
+    assessmentProfile: item.assessmentProfile,
+    outcomes: item.outcomes,
+    prerequisites: item.prerequisites.map(prerequisite => ({
+      sourceCourseCode: prerequisite.sourceCourseCode,
+      edgeKind: prerequisite.edgeKind as 'explicit' | 'added',
+      rationale: prerequisite.rationale,
+    })),
+    bridgeModules: item.bridgeModules,
+    topicPartitions: item.topicPartitions,
+  })
+}
+
+function fromResolvedCurriculumFeaturePayload(
+  payload: CurriculumFeatureProfileCoursePayload,
+  item: Pick<MaterializedCurriculumFeatureItem, 'courseCode' | 'title'>,
+  batchItems: MaterializedCurriculumFeatureItem[],
+) {
+  return {
+    assessmentProfile: payload.assessmentProfile,
+    outcomes: payload.outcomes,
+    prerequisites: payload.prerequisites.map(prerequisite => {
+      const source = batchItems.find(candidate => candidate.courseCode.toLowerCase() === prerequisite.sourceCourseCode.toLowerCase())
+      return {
+        curriculumEdgeId: source?.curriculumNodeId ?? `${item.courseCode}:${prerequisite.sourceCourseCode}`,
+        sourceCurriculumNodeId: source?.curriculumNodeId ?? prerequisite.sourceCourseCode,
+        sourceCourseCode: prerequisite.sourceCourseCode,
+        sourceTitle: source?.title ?? prerequisite.sourceCourseCode,
+        edgeKind: prerequisite.edgeKind,
+        rationale: prerequisite.rationale,
+        status: 'active',
+      }
+    }),
+    bridgeModules: payload.bridgeModules,
+    topicPartitions: payload.topicPartitions,
+  }
+}
+
+function batchFeatureFingerprint(items: Array<{ curriculumCourseId: string; featureFingerprint: string }>) {
+  return buildSnapshotChecksum(items
+    .map(item => ({ curriculumCourseId: item.curriculumCourseId, featureFingerprint: item.featureFingerprint }))
+    .sort((left, right) => left.curriculumCourseId.localeCompare(right.curriculumCourseId)))
+}
+
+export async function resolveBatchStagePolicy(context: RouteContext, batchId: string) {
+  const scopeContext = await getBatchScopeContext(context, batchId)
+  const allOverrides = await context.db.select().from(stagePolicyOverrides)
+  let effectivePolicy: StagePolicyPayload = DEFAULT_STAGE_POLICY
+  const appliedOverrides: Array<ReturnType<typeof mapStagePolicyOverride> & { appliedAtScope: string }> = []
+
+  for (const scope of scopeContext.scopeChain) {
+    const override = allOverrides.find(item => item.scopeType === scope.scopeType && item.scopeId === scope.scopeId && item.status === 'active')
+    if (!override) continue
+    const mapped = mapStagePolicyOverride(override)
+    effectivePolicy = mapped.policy
+    appliedOverrides.push({
+      ...mapped,
+      appliedAtScope: formatScopeLabel(scope),
+    })
+  }
+
+  return {
+    batch: mapBatch(scopeContext.batch),
+    scopeChain: scopeContext.scopeChain,
+    appliedOverrides,
+    effectivePolicy,
+  }
+}
+
+export async function resolveBatchCurriculumFeatures(context: RouteContext, batchId: string) {
+  const scopeContext = await getBatchScopeContext(context, batchId)
+  const materializedBundle = await loadMaterializedCurriculumFeatureBundle(context, batchId)
+  const [profileRows, profileCourseRows, bindingRowRaw, overrideRowsRaw] = await Promise.all([
+    context.db.select().from(curriculumFeatureProfiles),
+    context.db.select().from(curriculumFeatureProfileCourses),
+    context.db.select().from(batchCurriculumFeatureBindings).where(eq(batchCurriculumFeatureBindings.batchId, batchId)).then(rows => rows[0] ?? null),
+    context.db.select().from(batchCurriculumFeatureOverrides).where(eq(batchCurriculumFeatureOverrides.batchId, batchId)),
+  ])
+
+  const binding = mapBatchCurriculumFeatureBinding(bindingRowRaw) ?? {
+    batchId,
+    curriculumFeatureProfileId: null,
+    bindingMode: 'inherit-scope-profile' as const,
+    status: 'active',
+    version: 1,
+    createdAt: '',
+    updatedAt: '',
+  }
+  const availableProfiles = profileRows
+    .filter(row => row.status === 'active')
+    .map(mapCurriculumFeatureProfile)
+    .filter(profile => scopeContext.scopeChain.some(scope => scope.scopeType === profile.scopeType && scope.scopeId === profile.scopeId))
+    .sort((left, right) => {
+      const leftIndex = scopeContext.scopeChain.findIndex(scope => scope.scopeType === left.scopeType && scope.scopeId === left.scopeId)
+      const rightIndex = scopeContext.scopeChain.findIndex(scope => scope.scopeType === right.scopeType && scope.scopeId === right.scopeId)
+      return leftIndex - rightIndex || left.updatedAt.localeCompare(right.updatedAt)
+    })
+  const profileCourses = profileCourseRows
+    .filter(row => row.status === 'active')
+    .map(mapCurriculumFeatureProfileCourse)
+  const localOverrides = overrideRowsRaw
+    .filter(row => row.status === 'active')
+    .map(mapBatchCurriculumFeatureOverride)
+
+  const items = materializedBundle.items.map(item => {
+    let resolvedPayload = toCurriculumFeaturePayload(item)
+    let resolvedSource: ResolvedCurriculumFeatureItem['resolvedSource'] = {
+      mode: 'materialized',
+      label: 'Batch materialized config',
+    }
+    const appliedProfiles: Array<ReturnType<typeof mapCurriculumFeatureProfile>> = []
+    if (binding.bindingMode !== 'local-only') {
+      for (const profile of availableProfiles) {
+        const profileCourse = profileCourses.find(row => (
+          row.curriculumFeatureProfileId === profile.curriculumFeatureProfileId
+          && matchesCourseReference({
+            courseId: item.courseId,
+            courseCode: item.courseCode,
+            title: item.title,
+          }, {
+            courseId: row.courseId,
+            courseCode: row.courseCode,
+            title: row.title,
+          })
+        ))
+        if (!profileCourse) continue
+        resolvedPayload = normalizeCurriculumFeaturePayload(profileCourse.config)
+        resolvedSource = {
+          mode: 'scope-profile',
+          label: profile.name,
+          scopeType: profile.scopeType,
+          scopeId: profile.scopeId,
+          curriculumFeatureProfileId: profile.curriculumFeatureProfileId,
+        }
+        appliedProfiles.push(profile)
+      }
+    }
+    if (binding.bindingMode === 'pin-profile' && binding.curriculumFeatureProfileId) {
+      const pinnedProfile = availableProfiles.find(profile => profile.curriculumFeatureProfileId === binding.curriculumFeatureProfileId)
+        ?? profileRows.filter(row => row.curriculumFeatureProfileId === binding.curriculumFeatureProfileId && row.status === 'active').map(mapCurriculumFeatureProfile)[0]
+        ?? null
+      const pinnedCourse = profileCourses.find(row => (
+        row.curriculumFeatureProfileId === binding.curriculumFeatureProfileId
+        && matchesCourseReference({
+          courseId: item.courseId,
+          courseCode: item.courseCode,
+          title: item.title,
+        }, {
+          courseId: row.courseId,
+          courseCode: row.courseCode,
+          title: row.title,
+        })
+      ))
+      if (pinnedProfile && pinnedCourse) {
+        resolvedPayload = normalizeCurriculumFeaturePayload(pinnedCourse.config)
+        resolvedSource = {
+          mode: 'pinned-profile',
+          label: pinnedProfile.name,
+          scopeType: pinnedProfile.scopeType,
+          scopeId: pinnedProfile.scopeId,
+          curriculumFeatureProfileId: pinnedProfile.curriculumFeatureProfileId,
+        }
+        if (!appliedProfiles.some(profile => profile.curriculumFeatureProfileId === pinnedProfile.curriculumFeatureProfileId)) {
+          appliedProfiles.push(pinnedProfile)
+        }
+      }
+    }
+    const localOverride = localOverrides.find(override => override.curriculumCourseId === item.curriculumCourseId) ?? null
+    if (localOverride) {
+      resolvedPayload = normalizeCurriculumFeaturePayload(localOverride.override)
+      resolvedSource = {
+        mode: 'batch-local-override',
+        label: 'Batch-local override',
+        scopeType: 'batch',
+        scopeId: batchId,
+        curriculumFeatureProfileId: null,
+      }
+    }
+
+    return {
+      ...item,
+      ...fromResolvedCurriculumFeaturePayload(resolvedPayload, item, materializedBundle.items),
+      resolvedConfig: resolvedPayload,
+      featureFingerprint: curriculumFeatureFingerprint(resolvedPayload),
+      resolvedSource,
+      appliedProfiles,
+      localOverride,
+    } satisfies ResolvedCurriculumFeatureItem
+  })
+
+  const activeProfileIds = Array.from(new Set(items
+    .map(item => item.resolvedSource.curriculumFeatureProfileId)
+    .filter((value): value is string => !!value)))
+  const primaryCurriculumFeatureProfileId = binding.curriculumFeatureProfileId
+    ?? activeProfileIds.at(-1)
+    ?? null
+
+  return {
+    batchId,
+    curriculumImportVersion: materializedBundle.curriculumImportVersion,
+    binding,
+    availableProfiles,
+    primaryCurriculumFeatureProfileId,
+    curriculumFeatureProfileFingerprint: batchFeatureFingerprint(items),
+    items,
+  }
+}
+
+async function materializeResolvedCurriculumFeatureItems(context: RouteContext, input: {
+  batchId: string
+  actorFacultyId?: string | null
+  now: string
+  items: Array<{
+    curriculumCourseId: string
+    resolvedConfig: CurriculumFeatureProfileCoursePayload
+  }>
+}) {
+  const editableImport = await ensureEditableCurriculumImport(context, {
+    batchId: input.batchId,
+    actorFacultyId: input.actorFacultyId,
+    now: input.now,
+  })
+  const batchCurriculumRows = (await context.db.select().from(curriculumCourses).where(eq(curriculumCourses.batchId, input.batchId)))
+    .filter(row => row.status !== 'deleted' && row.status !== 'archived')
+  const nodeRows = await context.db.select().from(curriculumNodes).where(eq(curriculumNodes.curriculumImportVersionId, editableImport.curriculumImportVersionId))
+  const nodeById = new Map(nodeRows.map(row => [row.curriculumNodeId, row]))
+
+  for (const item of input.items) {
+    const curriculumCourse = batchCurriculumRows.find(row => row.curriculumCourseId === item.curriculumCourseId)
+    if (!curriculumCourse) continue
+    const course = await ensureCourseRecordForCurriculumCourse(context, curriculumCourse)
+    const node = await upsertCurriculumNodeForCourse(context, {
+      batchId: input.batchId,
+      curriculumImportVersionId: editableImport.curriculumImportVersionId,
+      curriculumCourse,
+      courseId: course.courseId,
+      assessmentProfile: item.resolvedConfig.assessmentProfile,
+      now: input.now,
+    })
+    nodeById.set(node.curriculumNodeId, node)
+
+    const existingTargetEdgeRows = (await context.db.select().from(curriculumEdges).where(eq(curriculumEdges.curriculumImportVersionId, editableImport.curriculumImportVersionId)))
+      .filter(row => row.targetCurriculumNodeId === node.curriculumNodeId)
+    if (existingTargetEdgeRows.length > 0) {
+      await context.db.delete(curriculumEdges).where(inArray(curriculumEdges.curriculumEdgeId, existingTargetEdgeRows.map(row => row.curriculumEdgeId)))
+    }
+
+    const prerequisiteRows: Array<typeof curriculumEdges.$inferInsert> = []
+    for (const prerequisite of item.resolvedConfig.prerequisites) {
+      const sourceCourse = batchCurriculumRows.find(row => row.courseCode.toLowerCase() === prerequisite.sourceCourseCode.toLowerCase())
+      if (!sourceCourse) continue
+      const sourceCourseRecord = await ensureCourseRecordForCurriculumCourse(context, sourceCourse)
+      const sourceNode = findCurriculumNodeForCourse(Array.from(nodeById.values()), {
+        courseId: sourceCourseRecord.courseId,
+        courseCode: sourceCourse.courseCode,
+        title: sourceCourse.title,
+        semesterNumber: sourceCourse.semesterNumber,
+      }) ?? await upsertCurriculumNodeForCourse(context, {
+        batchId: input.batchId,
+        curriculumImportVersionId: editableImport.curriculumImportVersionId,
+        curriculumCourse: sourceCourse,
+        courseId: sourceCourseRecord.courseId,
+        now: input.now,
+      })
+      nodeById.set(sourceNode.curriculumNodeId, sourceNode)
+      if (sourceNode.curriculumNodeId === node.curriculumNodeId) continue
+      prerequisiteRows.push({
+        curriculumEdgeId: createId('curriculum_edge'),
+        curriculumImportVersionId: editableImport.curriculumImportVersionId,
+        batchId: input.batchId,
+        sourceCurriculumNodeId: sourceNode.curriculumNodeId,
+        targetCurriculumNodeId: node.curriculumNodeId,
+        edgeKind: prerequisite.edgeKind,
+        rationale: prerequisite.rationale,
+        status: 'active',
+        createdAt: input.now,
+        updatedAt: input.now,
+      })
+    }
+    if (prerequisiteRows.length > 0) {
+      await context.db.insert(curriculumEdges).values(prerequisiteRows)
+    }
+
+    const existingBridgeRows = (await context.db.select().from(bridgeModules).where(eq(bridgeModules.curriculumImportVersionId, editableImport.curriculumImportVersionId)))
+      .filter(row => row.curriculumNodeId === node.curriculumNodeId)
+    if (existingBridgeRows.length > 0) {
+      await context.db.delete(bridgeModules).where(inArray(bridgeModules.bridgeModuleId, existingBridgeRows.map(row => row.bridgeModuleId)))
+    }
+    if (item.resolvedConfig.bridgeModules.length > 0) {
+      await context.db.insert(bridgeModules).values({
+        bridgeModuleId: createId('bridge_module'),
+        curriculumImportVersionId: editableImport.curriculumImportVersionId,
+        curriculumNodeId: node.curriculumNodeId,
+        batchId: input.batchId,
+        moduleTitlesJson: stringifyJson(item.resolvedConfig.bridgeModules),
+        status: 'active',
+        createdAt: input.now,
+        updatedAt: input.now,
+      })
+    }
+
+    const existingTopicRows = (await context.db.select().from(courseTopicPartitions).where(eq(courseTopicPartitions.curriculumImportVersionId, editableImport.curriculumImportVersionId)))
+      .filter(row => row.curriculumNodeId === node.curriculumNodeId)
+    if (existingTopicRows.length > 0) {
+      await context.db.delete(courseTopicPartitions).where(inArray(courseTopicPartitions.courseTopicPartitionId, existingTopicRows.map(row => row.courseTopicPartitionId)))
+    }
+    await context.db.insert(courseTopicPartitions).values(([
+      ['tt1', item.resolvedConfig.topicPartitions.tt1],
+      ['tt2', item.resolvedConfig.topicPartitions.tt2],
+      ['see', item.resolvedConfig.topicPartitions.see],
+      ['workbook', item.resolvedConfig.topicPartitions.workbook],
+    ] as const).map(([partitionKind, topics]) => ({
+      courseTopicPartitionId: createId('course_topic_partition'),
+      curriculumImportVersionId: editableImport.curriculumImportVersionId,
+      curriculumNodeId: node.curriculumNodeId,
+      partitionKind,
+      topicsJson: stringifyJson(topics),
+      createdAt: input.now,
+      updatedAt: input.now,
+    })))
+
+    const batchOutcomeRows = (await context.db.select().from(courseOutcomeOverrides))
+      .filter(row => row.courseId === course.courseId && row.scopeType === 'batch' && row.scopeId === input.batchId)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    const currentOutcomeOverride = batchOutcomeRows[0] ?? null
+    if (currentOutcomeOverride) {
+      await context.db.update(courseOutcomeOverrides).set({
+        courseId: course.courseId,
+        scopeType: 'batch',
+        scopeId: input.batchId,
+        outcomesJson: stringifyJson(item.resolvedConfig.outcomes),
+        status: 'active',
+        version: currentOutcomeOverride.version + 1,
+        updatedAt: input.now,
+      }).where(eq(courseOutcomeOverrides.courseOutcomeOverrideId, currentOutcomeOverride.courseOutcomeOverrideId))
+    } else {
+      await context.db.insert(courseOutcomeOverrides).values({
+        courseOutcomeOverrideId: createId('course_outcome_override'),
+        courseId: course.courseId,
+        scopeType: 'batch',
+        scopeId: input.batchId,
+        outcomesJson: stringifyJson(item.resolvedConfig.outcomes),
+        status: 'active',
+        version: 1,
+        createdAt: input.now,
+        updatedAt: input.now,
+      })
+    }
+  }
+
+  await refreshCurriculumImportSummary(context, {
+    batchId: input.batchId,
+    curriculumImportVersionId: editableImport.curriculumImportVersionId,
+    now: input.now,
+  })
+
+  return editableImport.curriculumImportVersionId
+}
+
+async function listBatchesInScope(context: RouteContext, scopeType: ScopeTypeValue, scopeId: string) {
+  const [allBatches, allBranches, allDepartments] = await Promise.all([
+    context.db.select().from(batches),
+    context.db.select().from(branches),
+    context.db.select().from(departments),
+  ])
+  const branchById = new Map(allBranches.map(row => [row.branchId, row]))
+  const departmentById = new Map(allDepartments.map(row => [row.departmentId, row]))
+
+  return allBatches.filter(batch => {
+    const branch = branchById.get(batch.branchId)
+    const department = branch ? departmentById.get(branch.departmentId) : null
+    if (!branch || !department) return false
+    if (scopeType === 'institution') return true
+    if (scopeType === 'academic-faculty') return department.academicFacultyId === scopeId
+    if (scopeType === 'department') return department.departmentId === scopeId
+    if (scopeType === 'branch') return branch.branchId === scopeId
+    return batch.batchId === scopeId
+  })
+}
+
 type AcademicFacultyCascadeSummary = {
   departmentsDeleted: number
   branchesDeleted: number
@@ -925,44 +1695,28 @@ async function buildProofSandboxSummary(context: RouteContext, batchId: string) 
 }
 
 export async function resolveBatchPolicy(context: RouteContext, batchId: string) {
-  const [institution] = await context.db.select().from(institutions)
-  if (!institution) throw notFound('Institution is not configured')
-
-  const [batch] = await context.db.select().from(batches).where(eq(batches.batchId, batchId))
-  if (!batch) throw notFound('Batch not found')
-  const [branch] = await context.db.select().from(branches).where(eq(branches.branchId, batch.branchId))
-  if (!branch) throw notFound('Branch not found')
-  const [department] = await context.db.select().from(departments).where(eq(departments.departmentId, branch.departmentId))
-  if (!department) throw notFound('Department not found')
-
-  const scopeChain = [
-    { scopeType: 'institution', scopeId: institution.institutionId },
-    ...(department.academicFacultyId ? [{ scopeType: 'academic-faculty', scopeId: department.academicFacultyId }] : []),
-    { scopeType: 'department', scopeId: department.departmentId },
-    { scopeType: 'branch', scopeId: branch.branchId },
-    { scopeType: 'batch', scopeId: batch.batchId },
-  ] as const
+  const scopeContext = await getBatchScopeContext(context, batchId)
 
   const allOverrides = await context.db.select().from(policyOverrides)
   let effectivePolicy: ResolvedPolicy = DEFAULT_POLICY
   const appliedOverrides: Array<ReturnType<typeof mapPolicyOverride> & { appliedAtScope: string }> = []
 
-  for (const scope of scopeChain) {
+  for (const scope of scopeContext.scopeChain) {
     const override = allOverrides.find(item => item.scopeType === scope.scopeType && item.scopeId === scope.scopeId && item.status === 'active')
     if (!override) continue
     const mapped = mapPolicyOverride(override)
     effectivePolicy = mergePolicy(effectivePolicy, mapped.policy)
     appliedOverrides.push({
       ...mapped,
-      appliedAtScope: `${scope.scopeType}:${scope.scopeId}`,
+      appliedAtScope: formatScopeLabel(scope),
     })
   }
 
-  const proofSandbox = await buildProofSandboxSummary(context, batch.batchId)
+  const proofSandbox = await buildProofSandboxSummary(context, scopeContext.batch.batchId)
 
   return {
-    batch: mapBatch(batch),
-    scopeChain,
+    batch: mapBatch(scopeContext.batch),
+    scopeChain: scopeContext.scopeChain,
     appliedOverrides,
     effectivePolicy,
     proofSandbox,
@@ -1573,112 +2327,7 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
   }, async request => {
     requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(z.object({ batchId: z.string().min(1) }), request.params)
-    const [batch] = await context.db.select().from(batches).where(eq(batches.batchId, params.batchId))
-    if (!batch) throw notFound('Batch not found')
-
-    const latestImport = await getLatestCurriculumImport(context, params.batchId)
-    const [curriculumRows, nodeRows, edgeRows, bridgeRows, topicRows, outcomeRows] = await Promise.all([
-      context.db.select().from(curriculumCourses).where(eq(curriculumCourses.batchId, params.batchId)),
-      latestImport ? context.db.select().from(curriculumNodes).where(eq(curriculumNodes.curriculumImportVersionId, latestImport.curriculumImportVersionId)) : Promise.resolve([]),
-      latestImport ? context.db.select().from(curriculumEdges).where(eq(curriculumEdges.curriculumImportVersionId, latestImport.curriculumImportVersionId)) : Promise.resolve([]),
-      latestImport ? context.db.select().from(bridgeModules).where(eq(bridgeModules.curriculumImportVersionId, latestImport.curriculumImportVersionId)) : Promise.resolve([]),
-      latestImport ? context.db.select().from(courseTopicPartitions).where(eq(courseTopicPartitions.curriculumImportVersionId, latestImport.curriculumImportVersionId)) : Promise.resolve([]),
-      context.db.select().from(courseOutcomeOverrides),
-    ])
-
-    const visibleCurriculumRows = curriculumRows
-      .filter(row => row.status !== 'deleted' && row.status !== 'archived')
-      .sort((left, right) => left.semesterNumber - right.semesterNumber || left.courseCode.localeCompare(right.courseCode))
-    const nodeById = new Map(nodeRows.map(row => [row.curriculumNodeId, row]))
-    const nodeKeySet = new Set(visibleCurriculumRows.map(row => `${row.semesterNumber}::${row.courseCode.toLowerCase()}`))
-    const nodeOnlyRows = nodeRows
-      .filter(row => row.status === 'active')
-      .filter(row => !nodeKeySet.has(`${row.semesterNumber}::${row.courseCode.toLowerCase()}`))
-      .map(row => ({
-        curriculumCourseId: `import:${row.curriculumNodeId}`,
-        batchId: params.batchId,
-        semesterNumber: row.semesterNumber,
-        courseId: row.courseId,
-        courseCode: row.courseCode,
-        title: row.title,
-        credits: row.credits,
-        status: 'active',
-        version: 1,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-      }))
-
-    const items = [...visibleCurriculumRows, ...nodeOnlyRows].map(curriculumCourse => {
-      const node = findCurriculumNodeForCourse(nodeRows, curriculumCourse)
-      const activeOutcomeOverride = curriculumCourse.courseId
-        ? outcomeRows
-          .filter(row => row.courseId === curriculumCourse.courseId && row.scopeType === 'batch' && row.scopeId === params.batchId && row.status === 'active')
-          .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0] ?? null
-        : null
-      const prerequisiteRows = node
-        ? edgeRows
-          .filter(row => row.targetCurriculumNodeId === node.curriculumNodeId && row.status === 'active')
-          .map(row => {
-            const sourceNode = nodeById.get(row.sourceCurriculumNodeId) ?? null
-            return {
-              curriculumEdgeId: row.curriculumEdgeId,
-              sourceCurriculumNodeId: row.sourceCurriculumNodeId,
-              sourceCourseCode: sourceNode?.courseCode ?? row.sourceCurriculumNodeId,
-              sourceTitle: sourceNode?.title ?? row.sourceCurriculumNodeId,
-              edgeKind: row.edgeKind,
-              rationale: row.rationale,
-              status: row.status,
-            }
-          })
-        : []
-      const bridgeRow = node
-        ? bridgeRows
-          .filter(row => row.curriculumNodeId === node.curriculumNodeId && row.status === 'active')
-          .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0] ?? null
-        : null
-      const topicByKind = new Map(
-        (node ? topicRows.filter(row => row.curriculumNodeId === node.curriculumNodeId) : []).map(row => [
-          row.partitionKind,
-          normalizeFeatureStringList(parseJson(row.topicsJson, [] as string[])),
-        ]),
-      )
-      return {
-        curriculumCourseId: curriculumCourse.curriculumCourseId,
-        curriculumImportVersionId: latestImport?.curriculumImportVersionId ?? null,
-        curriculumNodeId: node?.curriculumNodeId ?? null,
-        courseId: curriculumCourse.courseId ?? node?.courseId ?? null,
-        semesterNumber: curriculumCourse.semesterNumber,
-        courseCode: curriculumCourse.courseCode,
-        title: curriculumCourse.title,
-        credits: curriculumCourse.credits,
-        assessmentProfile: node?.assessmentProfile ?? 'admin-authored',
-        outcomes: activeOutcomeOverride ? mapCourseOutcomeOverride(activeOutcomeOverride).outcomes : buildDefaultCourseOutcomes(curriculumCourse.courseCode, curriculumCourse.title),
-        outcomeOverride: activeOutcomeOverride ? mapCourseOutcomeOverride(activeOutcomeOverride) : null,
-        prerequisites: prerequisiteRows,
-        bridgeModules: bridgeRow ? normalizeFeatureStringList(parseJson(bridgeRow.moduleTitlesJson, [] as string[])) : [],
-        topicPartitions: {
-          tt1: topicByKind.get('tt1') ?? [],
-          tt2: topicByKind.get('tt2') ?? [],
-          see: topicByKind.get('see') ?? [],
-          workbook: topicByKind.get('workbook') ?? [],
-        },
-      }
-    })
-
-    return {
-      batchId: params.batchId,
-      curriculumImportVersion: latestImport
-        ? {
-            curriculumImportVersionId: latestImport.curriculumImportVersionId,
-            sourceLabel: latestImport.sourceLabel,
-            sourceType: latestImport.sourceType,
-            status: latestImport.status,
-            validationStatus: latestImport.validationStatus,
-            updatedAt: latestImport.updatedAt,
-          }
-        : null,
-      items,
-    }
+    return resolveBatchCurriculumFeatures(context, params.batchId)
   })
 
   app.put('/api/admin/batches/:batchId/curriculum-feature-config/:curriculumCourseId', {
@@ -1689,145 +2338,190 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
       batchId: z.string().min(1),
       curriculumCourseId: z.string().min(1),
     }), request.params)
-    const body = parseOrThrow(curriculumFeatureConfigPatchSchema, request.body)
+    const body = parseOrThrow(curriculumFeatureConfigSaveSchema, request.body)
     const [curriculumCourse] = await context.db.select().from(curriculumCourses).where(eq(curriculumCourses.curriculumCourseId, params.curriculumCourseId))
     if (!curriculumCourse || curriculumCourse.batchId !== params.batchId) throw notFound('Curriculum course not found')
+    const normalizedPayload = normalizeCurriculumFeaturePayload(body)
+    const beforeBatchFingerprints = new Map<string, string>()
+    const now = context.now()
+    const courseRecord = await ensureCourseRecordForCurriculumCourse(context, curriculumCourse)
 
-    const editableImport = await ensureEditableCurriculumImport(context, {
-      batchId: params.batchId,
-      actorFacultyId: auth.facultyId,
-      now: context.now(),
-    })
-    const course = await ensureCourseRecordForCurriculumCourse(context, curriculumCourse)
-    const node = await upsertCurriculumNodeForCourse(context, {
-      batchId: params.batchId,
-      curriculumImportVersionId: editableImport.curriculumImportVersionId,
-      curriculumCourse,
-      courseId: course.courseId,
-      assessmentProfile: body.assessmentProfile,
-      now: context.now(),
-    })
-
-    const batchCurriculumRows = (await context.db.select().from(curriculumCourses).where(eq(curriculumCourses.batchId, params.batchId)))
-      .filter(row => row.status !== 'deleted' && row.status !== 'archived')
-    const nodeRows = await context.db.select().from(curriculumNodes).where(eq(curriculumNodes.curriculumImportVersionId, editableImport.curriculumImportVersionId))
-    const existingTargetEdgeRows = node
-      ? (await context.db.select().from(curriculumEdges).where(eq(curriculumEdges.curriculumImportVersionId, editableImport.curriculumImportVersionId)))
-        .filter(row => row.targetCurriculumNodeId === node.curriculumNodeId)
-      : []
-    if (existingTargetEdgeRows.length > 0) {
-      await context.db.delete(curriculumEdges).where(inArray(curriculumEdges.curriculumEdgeId, existingTargetEdgeRows.map(row => row.curriculumEdgeId)))
-    }
-
-    const prerequisiteRows: Array<typeof curriculumEdges.$inferInsert> = []
-    for (const prerequisite of body.prerequisites) {
-      const sourceCourse = batchCurriculumRows.find(row => row.courseCode.toLowerCase() === prerequisite.sourceCourseCode.toLowerCase())
-      if (!sourceCourse) {
-        throw badRequest(`Prerequisite course ${prerequisite.sourceCourseCode} is not present in the selected batch curriculum.`)
+    if (body.targetMode === 'scope-profile') {
+      const targetScopeType = body.targetScopeType ?? 'branch'
+      const targetScopeId = body.targetScopeId
+        ?? (targetScopeType === 'batch' ? params.batchId : null)
+      if (!targetScopeId) throw badRequest('Scope profile save requires a target scope id')
+      await assertScopeExists(context, targetScopeType, targetScopeId)
+      const affectedCandidateBatches = await listBatchesInScope(context, targetScopeType, targetScopeId)
+      for (const candidate of affectedCandidateBatches) {
+        const resolved = await resolveBatchCurriculumFeatures(context, candidate.batchId)
+        beforeBatchFingerprints.set(candidate.batchId, resolved.curriculumFeatureProfileFingerprint)
       }
-      const sourceCourseRecord = await ensureCourseRecordForCurriculumCourse(context, sourceCourse)
-      const sourceNode = findCurriculumNodeForCourse(nodeRows, {
-        courseId: sourceCourseRecord.courseId,
-        courseCode: sourceCourse.courseCode,
-        title: sourceCourse.title,
-        semesterNumber: sourceCourse.semesterNumber,
-      }) ?? await upsertCurriculumNodeForCourse(context, {
-        batchId: params.batchId,
-        curriculumImportVersionId: editableImport.curriculumImportVersionId,
-        curriculumCourse: sourceCourse,
-        courseId: sourceCourseRecord.courseId,
-        now: context.now(),
-      })
-      if (sourceNode.curriculumNodeId === node.curriculumNodeId) continue
-      prerequisiteRows.push({
-        curriculumEdgeId: createId('curriculum_edge'),
-        curriculumImportVersionId: editableImport.curriculumImportVersionId,
-        batchId: params.batchId,
-        sourceCurriculumNodeId: sourceNode.curriculumNodeId,
-        targetCurriculumNodeId: node.curriculumNodeId,
-        edgeKind: prerequisite.edgeKind,
-        rationale: prerequisite.rationale,
-        status: 'active',
-        createdAt: context.now(),
-        updatedAt: context.now(),
-      })
-    }
-    if (prerequisiteRows.length > 0) {
-      await context.db.insert(curriculumEdges).values(prerequisiteRows)
-    }
 
-    const existingBridgeRows = (await context.db.select().from(bridgeModules).where(eq(bridgeModules.curriculumImportVersionId, editableImport.curriculumImportVersionId)))
-      .filter(row => row.curriculumNodeId === node.curriculumNodeId)
-    if (existingBridgeRows.length > 0) {
-      await context.db.delete(bridgeModules).where(inArray(bridgeModules.bridgeModuleId, existingBridgeRows.map(row => row.bridgeModuleId)))
-    }
-    const bridgeModulesList = normalizeFeatureStringList(body.bridgeModules)
-    if (bridgeModulesList.length > 0) {
-      await context.db.insert(bridgeModules).values({
-        bridgeModuleId: createId('bridge_module'),
-        curriculumImportVersionId: editableImport.curriculumImportVersionId,
-        curriculumNodeId: node.curriculumNodeId,
-        batchId: params.batchId,
-        moduleTitlesJson: stringifyJson(bridgeModulesList),
-        status: 'active',
-        createdAt: context.now(),
-        updatedAt: context.now(),
-      })
-    }
-
-    const existingTopicRows = (await context.db.select().from(courseTopicPartitions).where(eq(courseTopicPartitions.curriculumImportVersionId, editableImport.curriculumImportVersionId)))
-      .filter(row => row.curriculumNodeId === node.curriculumNodeId)
-    if (existingTopicRows.length > 0) {
-      await context.db.delete(courseTopicPartitions).where(inArray(courseTopicPartitions.courseTopicPartitionId, existingTopicRows.map(row => row.courseTopicPartitionId)))
-    }
-    const topicPartitionRows = ([
-      ['tt1', normalizeFeatureStringList(body.topicPartitions.tt1)],
-      ['tt2', normalizeFeatureStringList(body.topicPartitions.tt2)],
-      ['see', normalizeFeatureStringList(body.topicPartitions.see)],
-      ['workbook', normalizeFeatureStringList(body.topicPartitions.workbook)],
-    ] as const).map(([partitionKind, topics]) => ({
-      courseTopicPartitionId: createId('course_topic_partition'),
-      curriculumImportVersionId: editableImport.curriculumImportVersionId,
-      curriculumNodeId: node.curriculumNodeId,
-      partitionKind,
-      topicsJson: stringifyJson(topics),
-      createdAt: context.now(),
-      updatedAt: context.now(),
-    }))
-    await context.db.insert(courseTopicPartitions).values(topicPartitionRows)
-
-    const batchOutcomeRows = (await context.db.select().from(courseOutcomeOverrides))
-      .filter(row => row.courseId === course.courseId && row.scopeType === 'batch' && row.scopeId === params.batchId)
-      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-    const currentOutcomeOverride = batchOutcomeRows[0] ?? null
-    if (currentOutcomeOverride) {
-      await context.db.update(courseOutcomeOverrides).set({
-        courseId: course.courseId,
-        scopeType: 'batch',
-        scopeId: params.batchId,
-        outcomesJson: stringifyJson(body.outcomes),
-        status: 'active',
-        version: currentOutcomeOverride.version + 1,
-        updatedAt: context.now(),
-      }).where(eq(courseOutcomeOverrides.courseOutcomeOverrideId, currentOutcomeOverride.courseOutcomeOverrideId))
-    } else {
-      await context.db.insert(courseOutcomeOverrides).values({
-        courseOutcomeOverrideId: createId('course_outcome_override'),
-        courseId: course.courseId,
-        scopeType: 'batch',
-        scopeId: params.batchId,
-        outcomesJson: stringifyJson(body.outcomes),
+      const profileRow = body.curriculumFeatureProfileId
+        ? (await context.db.select().from(curriculumFeatureProfiles).where(eq(curriculumFeatureProfiles.curriculumFeatureProfileId, body.curriculumFeatureProfileId)))[0] ?? null
+        : (await context.db.select().from(curriculumFeatureProfiles)).find(row => row.scopeType === targetScopeType && row.scopeId === targetScopeId && row.status === 'active') ?? null
+      const ensuredProfile = profileRow ?? {
+        curriculumFeatureProfileId: createId('curriculum_feature_profile'),
+        name: `${targetScopeType.replace(/-/g, ' ')} feature profile`,
+        scopeType: targetScopeType,
+        scopeId: targetScopeId,
         status: 'active',
         version: 1,
-        createdAt: context.now(),
-        updatedAt: context.now(),
+        createdAt: now,
+        updatedAt: now,
+      }
+      if (!profileRow) {
+        await context.db.insert(curriculumFeatureProfiles).values(ensuredProfile)
+      }
+      const existingProfileCourse = (await context.db.select().from(curriculumFeatureProfileCourses))
+        .find(row => row.curriculumFeatureProfileId === ensuredProfile.curriculumFeatureProfileId && matchesCourseReference({
+          courseId: courseRecord.courseId,
+          courseCode: curriculumCourse.courseCode,
+          title: curriculumCourse.title,
+        }, {
+          courseId: row.courseId,
+          courseCode: row.courseCode,
+          title: row.title,
+        })) ?? null
+      const fingerprint = curriculumFeatureFingerprint(normalizedPayload)
+      if (existingProfileCourse) {
+        await context.db.update(curriculumFeatureProfileCourses).set({
+          courseId: courseRecord.courseId,
+          courseCode: curriculumCourse.courseCode,
+          title: curriculumCourse.title,
+          assessmentProfile: normalizedPayload.assessmentProfile,
+          outcomesJson: stringifyJson(normalizedPayload.outcomes),
+          prerequisitesJson: stringifyJson(normalizedPayload.prerequisites),
+          bridgeModulesJson: stringifyJson(normalizedPayload.bridgeModules),
+          topicPartitionsJson: stringifyJson(normalizedPayload.topicPartitions),
+          featureFingerprint: fingerprint,
+          status: 'active',
+          version: existingProfileCourse.version + 1,
+          updatedAt: now,
+        }).where(eq(curriculumFeatureProfileCourses.curriculumFeatureProfileCourseId, existingProfileCourse.curriculumFeatureProfileCourseId))
+      } else {
+        await context.db.insert(curriculumFeatureProfileCourses).values({
+          curriculumFeatureProfileCourseId: createId('curriculum_feature_profile_course'),
+          curriculumFeatureProfileId: ensuredProfile.curriculumFeatureProfileId,
+          courseId: courseRecord.courseId,
+          courseCode: curriculumCourse.courseCode,
+          title: curriculumCourse.title,
+          assessmentProfile: normalizedPayload.assessmentProfile,
+          outcomesJson: stringifyJson(normalizedPayload.outcomes),
+          prerequisitesJson: stringifyJson(normalizedPayload.prerequisites),
+          bridgeModulesJson: stringifyJson(normalizedPayload.bridgeModules),
+          topicPartitionsJson: stringifyJson(normalizedPayload.topicPartitions),
+          featureFingerprint: fingerprint,
+          status: 'active',
+          version: 1,
+          createdAt: now,
+          updatedAt: now,
+        })
+      }
+
+      const affectedBatchIds: string[] = []
+      let lastImportVersionId: string | null = null
+      for (const candidate of affectedCandidateBatches) {
+        const binding = await context.db.select().from(batchCurriculumFeatureBindings).where(eq(batchCurriculumFeatureBindings.batchId, candidate.batchId)).then(rows => rows[0] ?? null)
+        if (binding?.bindingMode === 'local-only' || binding?.status === 'archived') continue
+        const localOverride = await context.db.select().from(batchCurriculumFeatureOverrides).where(eq(batchCurriculumFeatureOverrides.batchId, candidate.batchId)).then(rows => rows.find(row => (
+          row.curriculumCourseId === params.curriculumCourseId
+          || row.courseId === courseRecord.courseId
+          || row.courseCode.toLowerCase() === curriculumCourse.courseCode.toLowerCase()
+        )) ?? null)
+        if (localOverride?.status === 'active') continue
+        const afterResolved = await resolveBatchCurriculumFeatures(context, candidate.batchId)
+        const matchingItems = afterResolved.items.filter(item => matchesCourseReference({
+          courseId: courseRecord.courseId,
+          courseCode: curriculumCourse.courseCode,
+          title: curriculumCourse.title,
+        }, item))
+        if (matchingItems.length === 0) continue
+        lastImportVersionId = await materializeResolvedCurriculumFeatureItems(context, {
+          batchId: candidate.batchId,
+          actorFacultyId: auth.facultyId,
+          now,
+          items: matchingItems.map(item => ({
+            curriculumCourseId: item.curriculumCourseId,
+            resolvedConfig: item.resolvedConfig,
+          })),
+        })
+        if ((beforeBatchFingerprints.get(candidate.batchId) ?? '') !== afterResolved.curriculumFeatureProfileFingerprint) {
+          affectedBatchIds.push(candidate.batchId)
+        }
+      }
+
+      await emitAuditEvent(context, {
+        entityType: 'CurriculumFeatureProfileCourse',
+        entityId: `${ensuredProfile.curriculumFeatureProfileId}:${params.curriculumCourseId}`,
+        action: 'updated',
+        actorRole: auth.activeRoleGrant.roleCode,
+        actorId: auth.facultyId,
+        after: {
+          curriculumFeatureProfileId: ensuredProfile.curriculumFeatureProfileId,
+          scopeType: ensuredProfile.scopeType,
+          scopeId: ensuredProfile.scopeId,
+          courseCode: curriculumCourse.courseCode,
+          config: normalizedPayload,
+          affectedBatchIds,
+        },
+      })
+
+      return {
+        ok: true,
+        batchId: params.batchId,
+        curriculumCourseId: params.curriculumCourseId,
+        curriculumImportVersionId: lastImportVersionId,
+        affectedBatchIds,
+        targetMode: body.targetMode,
+        curriculumFeatureProfileId: ensuredProfile.curriculumFeatureProfileId,
+      }
+    }
+
+    const beforeResolved = await resolveBatchCurriculumFeatures(context, params.batchId)
+    const existingOverride = (await context.db.select().from(batchCurriculumFeatureOverrides).where(eq(batchCurriculumFeatureOverrides.batchId, params.batchId)))
+      .find(row => row.curriculumCourseId === params.curriculumCourseId) ?? null
+    const fingerprint = curriculumFeatureFingerprint(normalizedPayload)
+    if (existingOverride) {
+      await context.db.update(batchCurriculumFeatureOverrides).set({
+        courseId: courseRecord.courseId,
+        courseCode: curriculumCourse.courseCode,
+        title: curriculumCourse.title,
+        overrideJson: stringifyJson(normalizedPayload),
+        featureFingerprint: fingerprint,
+        status: 'active',
+        version: existingOverride.version + 1,
+        updatedAt: now,
+      }).where(eq(batchCurriculumFeatureOverrides.batchCurriculumFeatureOverrideId, existingOverride.batchCurriculumFeatureOverrideId))
+    } else {
+      await context.db.insert(batchCurriculumFeatureOverrides).values({
+        batchCurriculumFeatureOverrideId: createId('batch_curriculum_feature_override'),
+        batchId: params.batchId,
+        curriculumCourseId: params.curriculumCourseId,
+        courseId: courseRecord.courseId,
+        courseCode: curriculumCourse.courseCode,
+        title: curriculumCourse.title,
+        overrideJson: stringifyJson(normalizedPayload),
+        featureFingerprint: fingerprint,
+        status: 'active',
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
       })
     }
 
-    await refreshCurriculumImportSummary(context, {
+    const afterResolved = await resolveBatchCurriculumFeatures(context, params.batchId)
+    const matchingItem = afterResolved.items.find(item => item.curriculumCourseId === params.curriculumCourseId)
+    if (!matchingItem) throw notFound('Resolved curriculum feature item not found after save')
+    const curriculumImportVersionId = await materializeResolvedCurriculumFeatureItems(context, {
       batchId: params.batchId,
-      curriculumImportVersionId: editableImport.curriculumImportVersionId,
-      now: context.now(),
+      actorFacultyId: auth.facultyId,
+      now,
+      items: [{
+        curriculumCourseId: params.curriculumCourseId,
+        resolvedConfig: matchingItem.resolvedConfig,
+      }],
     })
 
     await emitAuditEvent(context, {
@@ -1838,12 +2532,12 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
       actorId: auth.facultyId,
       after: {
         curriculumCourseId: params.curriculumCourseId,
-        curriculumImportVersionId: editableImport.curriculumImportVersionId,
-        assessmentProfile: body.assessmentProfile,
-        outcomes: body.outcomes,
-        prerequisites: body.prerequisites,
-        bridgeModules: bridgeModulesList,
-        topicPartitions: body.topicPartitions,
+        curriculumImportVersionId,
+        assessmentProfile: normalizedPayload.assessmentProfile,
+        outcomes: normalizedPayload.outcomes,
+        prerequisites: normalizedPayload.prerequisites,
+        bridgeModules: normalizedPayload.bridgeModules,
+        topicPartitions: normalizedPayload.topicPartitions,
       },
     })
 
@@ -1851,8 +2545,242 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
       ok: true,
       batchId: params.batchId,
       curriculumCourseId: params.curriculumCourseId,
-      curriculumImportVersionId: editableImport.curriculumImportVersionId,
+      curriculumImportVersionId,
+      affectedBatchIds: (beforeResolved.curriculumFeatureProfileFingerprint !== afterResolved.curriculumFeatureProfileFingerprint)
+        ? [params.batchId]
+        : [],
+      targetMode: body.targetMode,
+      curriculumFeatureProfileId: null,
     }
+  })
+
+  app.get('/api/admin/curriculum-feature-profiles', {
+    schema: { tags: ['admin-structure'], summary: 'List curriculum feature profiles' },
+  }, async request => {
+    requireRole(request, ['SYSTEM_ADMIN'])
+    const query = parseOrThrow(curriculumFeatureProfileFilterSchema, request.query)
+    const rows = await context.db.select().from(curriculumFeatureProfiles)
+    return {
+      items: rows
+        .filter(item => (!query.scopeType || item.scopeType === query.scopeType) && (!query.scopeId || item.scopeId === query.scopeId))
+        .map(mapCurriculumFeatureProfile),
+    }
+  })
+
+  app.post('/api/admin/curriculum-feature-profiles', {
+    schema: { tags: ['admin-structure'], summary: 'Create a curriculum feature profile' },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
+    const body = parseOrThrow(curriculumFeatureProfileCreateSchema, request.body)
+    await assertScopeExists(context, body.scopeType, body.scopeId)
+    const existing = await context.db.select().from(curriculumFeatureProfiles)
+    if (existing.some(item => item.scopeType === body.scopeType && item.scopeId === body.scopeId && item.status === 'active')) {
+      throw conflict('An active curriculum feature profile already exists for this scope')
+    }
+    const created = {
+      curriculumFeatureProfileId: createId('curriculum_feature_profile'),
+      name: body.name,
+      scopeType: body.scopeType,
+      scopeId: body.scopeId,
+      status: body.status,
+      version: 1,
+      createdAt: context.now(),
+      updatedAt: context.now(),
+    }
+    await context.db.insert(curriculumFeatureProfiles).values(created)
+    await emitAuditEvent(context, {
+      entityType: 'CurriculumFeatureProfile',
+      entityId: created.curriculumFeatureProfileId,
+      action: 'created',
+      actorRole: auth.activeRoleGrant.roleCode,
+      actorId: auth.facultyId,
+      after: mapCurriculumFeatureProfile(created),
+    })
+    return mapCurriculumFeatureProfile(created)
+  })
+
+  app.patch('/api/admin/curriculum-feature-profiles/:curriculumFeatureProfileId', {
+    schema: { tags: ['admin-structure'], summary: 'Update a curriculum feature profile' },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
+    const params = parseOrThrow(z.object({ curriculumFeatureProfileId: z.string().min(1) }), request.params)
+    const body = parseOrThrow(curriculumFeatureProfilePatchSchema, request.body)
+    await assertScopeExists(context, body.scopeType, body.scopeId)
+    const [current] = await context.db.select().from(curriculumFeatureProfiles).where(eq(curriculumFeatureProfiles.curriculumFeatureProfileId, params.curriculumFeatureProfileId))
+    if (!current) throw notFound('Curriculum feature profile not found')
+    expectVersion(current.version, body.version, 'CurriculumFeatureProfile', mapCurriculumFeatureProfile(current))
+    const rows = await context.db.select().from(curriculumFeatureProfiles)
+    const duplicate = rows.find(item => item.curriculumFeatureProfileId !== params.curriculumFeatureProfileId && item.scopeType === body.scopeType && item.scopeId === body.scopeId && item.status === 'active')
+    if (duplicate) throw conflict('An active curriculum feature profile already exists for this scope')
+    await context.db.update(curriculumFeatureProfiles).set({
+      name: body.name,
+      scopeType: body.scopeType,
+      scopeId: body.scopeId,
+      status: body.status,
+      version: current.version + 1,
+      updatedAt: context.now(),
+    }).where(eq(curriculumFeatureProfiles.curriculumFeatureProfileId, params.curriculumFeatureProfileId))
+    const [next] = await context.db.select().from(curriculumFeatureProfiles).where(eq(curriculumFeatureProfiles.curriculumFeatureProfileId, params.curriculumFeatureProfileId))
+    await emitAuditEvent(context, {
+      entityType: 'CurriculumFeatureProfile',
+      entityId: params.curriculumFeatureProfileId,
+      action: 'updated',
+      actorRole: auth.activeRoleGrant.roleCode,
+      actorId: auth.facultyId,
+      before: mapCurriculumFeatureProfile(current),
+      after: mapCurriculumFeatureProfile(next),
+    })
+    return mapCurriculumFeatureProfile(next)
+  })
+
+  app.put('/api/admin/batches/:batchId/curriculum-feature-binding', {
+    schema: { tags: ['admin-structure'], summary: 'Save a batch curriculum feature binding' },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
+    const params = parseOrThrow(z.object({ batchId: z.string().min(1) }), request.params)
+    const body = parseOrThrow(curriculumFeatureBindingSaveSchema, request.body)
+    const [batch] = await context.db.select().from(batches).where(eq(batches.batchId, params.batchId))
+    if (!batch) throw notFound('Batch not found')
+    if (body.bindingMode === 'pin-profile' && !body.curriculumFeatureProfileId) {
+      throw badRequest('Pinned profile binding requires a curriculum feature profile id')
+    }
+    if (body.curriculumFeatureProfileId) {
+      const [profile] = await context.db.select().from(curriculumFeatureProfiles).where(eq(curriculumFeatureProfiles.curriculumFeatureProfileId, body.curriculumFeatureProfileId))
+      if (!profile || profile.status !== 'active') throw notFound('Pinned curriculum feature profile not found')
+    }
+    const beforeResolved = await resolveBatchCurriculumFeatures(context, params.batchId)
+    const [current] = await context.db.select().from(batchCurriculumFeatureBindings).where(eq(batchCurriculumFeatureBindings.batchId, params.batchId))
+    const now = context.now()
+    if (current) {
+      if (body.version != null) expectVersion(current.version, body.version, 'BatchCurriculumFeatureBinding', mapBatchCurriculumFeatureBinding(current))
+      await context.db.update(batchCurriculumFeatureBindings).set({
+        curriculumFeatureProfileId: body.bindingMode === 'pin-profile' ? (body.curriculumFeatureProfileId ?? null) : null,
+        bindingMode: body.bindingMode,
+        status: body.status,
+        version: current.version + 1,
+        updatedAt: now,
+      }).where(eq(batchCurriculumFeatureBindings.batchId, params.batchId))
+    } else {
+      await context.db.insert(batchCurriculumFeatureBindings).values({
+        batchId: params.batchId,
+        curriculumFeatureProfileId: body.bindingMode === 'pin-profile' ? (body.curriculumFeatureProfileId ?? null) : null,
+        bindingMode: body.bindingMode,
+        status: body.status,
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      })
+    }
+    const afterResolved = await resolveBatchCurriculumFeatures(context, params.batchId)
+    const curriculumImportVersionId = afterResolved.items.length > 0
+      ? await materializeResolvedCurriculumFeatureItems(context, {
+          batchId: params.batchId,
+          actorFacultyId: auth.facultyId,
+          now,
+          items: afterResolved.items.map(item => ({
+            curriculumCourseId: item.curriculumCourseId,
+            resolvedConfig: item.resolvedConfig,
+          })),
+        })
+      : null
+    await emitAuditEvent(context, {
+      entityType: 'BatchCurriculumFeatureBinding',
+      entityId: params.batchId,
+      action: 'updated',
+      actorRole: auth.activeRoleGrant.roleCode,
+      actorId: auth.facultyId,
+      after: {
+        batchId: params.batchId,
+        bindingMode: body.bindingMode,
+        curriculumFeatureProfileId: body.curriculumFeatureProfileId ?? null,
+      },
+    })
+    return {
+      ok: true,
+      batchId: params.batchId,
+      curriculumImportVersionId,
+      affectedBatchIds: beforeResolved.curriculumFeatureProfileFingerprint !== afterResolved.curriculumFeatureProfileFingerprint ? [params.batchId] : [],
+      binding: afterResolved.binding,
+    }
+  })
+
+  app.get('/api/admin/stage-policy-overrides', {
+    schema: { tags: ['admin-structure'], summary: 'List stage policy overrides' },
+  }, async request => {
+    requireRole(request, ['SYSTEM_ADMIN'])
+    const query = parseOrThrow(stagePolicyFilterSchema, request.query)
+    const rows = await context.db.select().from(stagePolicyOverrides)
+    return {
+      items: rows
+        .filter(item => (!query.scopeType || item.scopeType === query.scopeType) && (!query.scopeId || item.scopeId === query.scopeId))
+        .map(mapStagePolicyOverride),
+    }
+  })
+
+  app.post('/api/admin/stage-policy-overrides', {
+    schema: { tags: ['admin-structure'], summary: 'Create stage policy override' },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
+    const body = parseOrThrow(stagePolicyOverrideCreateSchema, request.body)
+    await assertScopeExists(context, body.scopeType, body.scopeId)
+    const existing = await context.db.select().from(stagePolicyOverrides)
+    if (existing.some(item => item.scopeType === body.scopeType && item.scopeId === body.scopeId && item.status === 'active')) {
+      throw conflict('A stage policy override already exists for this scope')
+    }
+    const created = {
+      stagePolicyOverrideId: createId('stage_policy_override'),
+      scopeType: body.scopeType,
+      scopeId: body.scopeId,
+      policyJson: stringifyJson(body.policy),
+      status: body.status,
+      version: 1,
+      createdAt: context.now(),
+      updatedAt: context.now(),
+    }
+    await context.db.insert(stagePolicyOverrides).values(created)
+    await emitAuditEvent(context, {
+      entityType: 'StagePolicyOverride',
+      entityId: created.stagePolicyOverrideId,
+      action: 'created',
+      actorRole: auth.activeRoleGrant.roleCode,
+      actorId: auth.facultyId,
+      after: mapStagePolicyOverride(created),
+    })
+    return mapStagePolicyOverride(created)
+  })
+
+  app.patch('/api/admin/stage-policy-overrides/:stagePolicyOverrideId', {
+    schema: { tags: ['admin-structure'], summary: 'Update a stage policy override' },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
+    const params = parseOrThrow(z.object({ stagePolicyOverrideId: z.string().min(1) }), request.params)
+    const body = parseOrThrow(stagePolicyOverridePatchSchema, request.body)
+    await assertScopeExists(context, body.scopeType, body.scopeId)
+    const [current] = await context.db.select().from(stagePolicyOverrides).where(eq(stagePolicyOverrides.stagePolicyOverrideId, params.stagePolicyOverrideId))
+    if (!current) throw notFound('Stage policy override not found')
+    expectVersion(current.version, body.version, 'StagePolicyOverride', mapStagePolicyOverride(current))
+    const rows = await context.db.select().from(stagePolicyOverrides)
+    const duplicate = rows.find(item => item.stagePolicyOverrideId !== params.stagePolicyOverrideId && item.scopeType === body.scopeType && item.scopeId === body.scopeId && item.status === 'active')
+    if (duplicate) throw conflict('A stage policy override already exists for this scope')
+    await context.db.update(stagePolicyOverrides).set({
+      scopeType: body.scopeType,
+      scopeId: body.scopeId,
+      policyJson: stringifyJson(body.policy),
+      status: body.status,
+      version: current.version + 1,
+      updatedAt: context.now(),
+    }).where(eq(stagePolicyOverrides.stagePolicyOverrideId, params.stagePolicyOverrideId))
+    const [next] = await context.db.select().from(stagePolicyOverrides).where(eq(stagePolicyOverrides.stagePolicyOverrideId, params.stagePolicyOverrideId))
+    await emitAuditEvent(context, {
+      entityType: 'StagePolicyOverride',
+      entityId: params.stagePolicyOverrideId,
+      action: 'updated',
+      actorRole: auth.activeRoleGrant.roleCode,
+      actorId: auth.facultyId,
+      before: mapStagePolicyOverride(current),
+      after: mapStagePolicyOverride(next),
+    })
+    return mapStagePolicyOverride(next)
   })
 
   app.get('/api/admin/policy-overrides', {
@@ -1940,6 +2868,14 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
     requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(z.object({ batchId: z.string().min(1) }), request.params)
     return resolveBatchPolicy(context, params.batchId)
+  })
+
+  app.get('/api/admin/batches/:batchId/resolved-stage-policy', {
+    schema: { tags: ['admin-structure'], summary: 'Resolve the effective stage policy for a batch' },
+  }, async request => {
+    requireRole(request, ['SYSTEM_ADMIN'])
+    const params = parseOrThrow(z.object({ batchId: z.string().min(1) }), request.params)
+    return resolveBatchStagePolicy(context, params.batchId)
   })
 
   app.post('/api/admin/batches/:batchId/resolved-policy', {

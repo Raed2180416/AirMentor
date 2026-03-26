@@ -231,6 +231,71 @@ export const policyOverrides = pgTable('policy_overrides', {
   updatedAt: text('updated_at').notNull(),
 })
 
+export const stagePolicyOverrides = pgTable('stage_policy_overrides', {
+  stagePolicyOverrideId: text('stage_policy_override_id').primaryKey(),
+  scopeType: text('scope_type').notNull(),
+  scopeId: text('scope_id').notNull(),
+  policyJson: text('policy_json').notNull(),
+  status: text('status').notNull(),
+  version: integer('version').notNull().default(1),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
+export const curriculumFeatureProfiles = pgTable('curriculum_feature_profiles', {
+  curriculumFeatureProfileId: text('curriculum_feature_profile_id').primaryKey(),
+  name: text('name').notNull(),
+  scopeType: text('scope_type').notNull(),
+  scopeId: text('scope_id').notNull(),
+  status: text('status').notNull(),
+  version: integer('version').notNull().default(1),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
+export const curriculumFeatureProfileCourses = pgTable('curriculum_feature_profile_courses', {
+  curriculumFeatureProfileCourseId: text('curriculum_feature_profile_course_id').primaryKey(),
+  curriculumFeatureProfileId: text('curriculum_feature_profile_id').notNull().references(() => curriculumFeatureProfiles.curriculumFeatureProfileId),
+  courseId: text('course_id').references(() => courses.courseId),
+  courseCode: text('course_code').notNull(),
+  title: text('title').notNull(),
+  assessmentProfile: text('assessment_profile').notNull(),
+  outcomesJson: text('outcomes_json').notNull(),
+  prerequisitesJson: text('prerequisites_json').notNull(),
+  bridgeModulesJson: text('bridge_modules_json').notNull(),
+  topicPartitionsJson: text('topic_partitions_json').notNull(),
+  featureFingerprint: text('feature_fingerprint').notNull(),
+  status: text('status').notNull(),
+  version: integer('version').notNull().default(1),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
+export const batchCurriculumFeatureBindings = pgTable('batch_curriculum_feature_bindings', {
+  batchId: text('batch_id').primaryKey().references(() => batches.batchId),
+  curriculumFeatureProfileId: text('curriculum_feature_profile_id').references(() => curriculumFeatureProfiles.curriculumFeatureProfileId),
+  bindingMode: text('binding_mode').notNull(),
+  status: text('status').notNull(),
+  version: integer('version').notNull().default(1),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
+export const batchCurriculumFeatureOverrides = pgTable('batch_curriculum_feature_overrides', {
+  batchCurriculumFeatureOverrideId: text('batch_curriculum_feature_override_id').primaryKey(),
+  batchId: text('batch_id').notNull().references(() => batches.batchId),
+  curriculumCourseId: text('curriculum_course_id').notNull().references(() => curriculumCourses.curriculumCourseId),
+  courseId: text('course_id').references(() => courses.courseId),
+  courseCode: text('course_code').notNull(),
+  title: text('title').notNull(),
+  overrideJson: text('override_json').notNull(),
+  featureFingerprint: text('feature_fingerprint').notNull(),
+  status: text('status').notNull(),
+  version: integer('version').notNull().default(1),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
 export const curriculumImportVersions = pgTable('curriculum_import_versions', {
   curriculumImportVersionId: text('curriculum_import_version_id').primaryKey(),
   batchId: text('batch_id').notNull().references(() => batches.batchId),
@@ -368,6 +433,8 @@ export const simulationRuns = pgTable('simulation_runs', {
   simulationRunId: text('simulation_run_id').primaryKey(),
   batchId: text('batch_id').notNull().references(() => batches.batchId),
   curriculumImportVersionId: text('curriculum_import_version_id').references(() => curriculumImportVersions.curriculumImportVersionId),
+  curriculumFeatureProfileId: text('curriculum_feature_profile_id').references(() => curriculumFeatureProfiles.curriculumFeatureProfileId),
+  curriculumFeatureProfileFingerprint: text('curriculum_feature_profile_fingerprint'),
   parentSimulationRunId: text('parent_simulation_run_id'),
   runLabel: text('run_label').notNull(),
   status: text('status').notNull(),
@@ -704,6 +771,8 @@ export const riskModelArtifacts = pgTable('risk_model_artifacts', {
   riskModelArtifactId: text('risk_model_artifact_id').primaryKey(),
   batchId: text('batch_id').references(() => batches.batchId),
   simulationRunId: text('simulation_run_id').references(() => simulationRuns.simulationRunId),
+  curriculumFeatureProfileId: text('curriculum_feature_profile_id').references(() => curriculumFeatureProfiles.curriculumFeatureProfileId),
+  curriculumFeatureProfileFingerprint: text('curriculum_feature_profile_fingerprint'),
   artifactType: text('artifact_type').notNull(),
   modelFamily: text('model_family').notNull(),
   artifactVersion: text('artifact_version').notNull(),
@@ -879,9 +948,23 @@ export const sectionOfferings = pgTable('section_offerings', {
   tt2Locked: integer('tt2_locked').notNull().default(0),
   quizLocked: integer('quiz_locked').notNull().default(0),
   assignmentLocked: integer('assignment_locked').notNull().default(0),
+  finalsLocked: integer('finals_locked').notNull().default(0),
   pendingAction: text('pending_action'),
   status: text('status').notNull(),
   version: integer('version').notNull().default(1),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
+export const offeringStageAdvancementAudits = pgTable('offering_stage_advancement_audits', {
+  offeringStageAdvancementAuditId: text('offering_stage_advancement_audit_id').primaryKey(),
+  offeringId: text('offering_id').notNull().references(() => sectionOfferings.offeringId),
+  batchId: text('batch_id').references(() => batches.batchId),
+  termId: text('term_id').references(() => academicTerms.termId),
+  advancedByFacultyId: text('advanced_by_faculty_id').references(() => facultyProfiles.facultyId),
+  fromStageKey: text('from_stage_key').notNull(),
+  toStageKey: text('to_stage_key').notNull(),
+  auditJson: text('audit_json').notNull(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 })

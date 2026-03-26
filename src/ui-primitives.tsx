@@ -392,7 +392,12 @@ export function ModalWorkspace({
         <div className="scroll-pane scroll-pane--dense" style={{ overflowY: 'auto', padding: isCompact ? 18 : 20, ...bodyStyle }}>
           {children}
         </div>
-        {footer ? <div style={{ padding: isCompact ? '14px 18px 18px' : '16px 22px 20px', borderTop: `1px solid ${T.border}`, background: withAlpha(T.surface, 'f2') }}>{footer}</div> : null}
+        {footer ? (
+          <div style={{ padding: isCompact ? '14px 18px 18px' : '16px 22px 20px', background: withAlpha(T.surface, 'f2') }}>
+            <div style={{ height: 1, background: `linear-gradient(90deg, transparent, ${withAlpha(T.border2, '24')} 14%, ${withAlpha(T.border2, '62')} 50%, ${withAlpha(T.border2, '24')} 86%, transparent)`, marginBottom: 12, opacity: 0.88 }} />
+            {footer}
+          </div>
+        ) : null}
       </motion.div>
     </motion.div>
   )
@@ -488,6 +493,7 @@ type CardProps = {
   children: ReactNode
   style?: CSSProperties
   glow?: string
+  surface?: 'panel' | 'launch' | 'selected'
   onClick?: () => void
 } & Omit<
   HTMLAttributes<HTMLDivElement>,
@@ -505,17 +511,35 @@ type CardProps = {
   | 'onDragStartCapture'
 >
 
-export const Card = ({ children, style = {}, glow, onClick, ...rest }: CardProps) => {
+function getCardSurfaceStyle(surface: NonNullable<CardProps['surface']>, tone: string): CSSProperties {
+  if (surface === 'selected') {
+    return getSurfaceStyle('selected', tone)
+  }
+  if (surface === 'launch') {
+    return {
+      background: `linear-gradient(160deg, ${withAlpha(tone, '12')} 0%, ${withAlpha(tone, '04')} 20%, ${T.surface} 100%)`,
+      border: `1px solid ${withAlpha(tone, '2f')}`,
+      boxShadow: `0 16px 38px ${withAlpha(tone, '10')}`,
+      borderRadius: UI_RADII.card,
+    }
+  }
+  return getSurfaceStyle('primary', tone)
+}
+
+export const Card = ({ children, style = {}, glow, surface, onClick, ...rest }: CardProps) => {
   const shouldReduceMotion = useReducedMotion()
   const interactive = typeof onClick === 'function'
-  const role = glow ? 'selected' : 'primary'
-  const surface = getSurfaceStyle(role, glow ?? T.accent)
-  const baseShadow = style.boxShadow ?? (glow ? `0 0 0 1px ${withAlpha(glow, '22')} inset, 0 14px 40px ${withAlpha(glow, '10')}` : '0 10px 28px rgba(15, 23, 42, 0.07)')
+  const tone = glow ?? T.accent
+  const variant = surface ?? (glow ? 'selected' : 'panel')
+  const cardSurface = getCardSurfaceStyle(variant, tone)
+  const baseShadow = style.boxShadow ?? cardSurface.boxShadow ?? '0 10px 28px rgba(15, 23, 42, 0.07)'
   const hoverShadow = style.boxShadow
     ? style.boxShadow
-    : glow
-      ? `0 0 0 1px ${withAlpha(glow, '36')} inset, 0 20px 46px ${withAlpha(glow, '18')}`
-      : '0 16px 34px rgba(15, 23, 42, 0.1)'
+    : variant === 'launch'
+      ? `0 22px 50px ${withAlpha(tone, '14')}`
+      : variant === 'selected'
+        ? `0 18px 44px ${withAlpha(tone, '14')}`
+        : '0 14px 32px rgba(15, 23, 42, 0.09)'
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!interactive) return
@@ -528,7 +552,7 @@ export const Card = ({ children, style = {}, glow, onClick, ...rest }: CardProps
   return (
     <motion.div
       {...rest}
-      data-surface="card"
+      data-surface={variant}
       data-interactive={interactive ? 'true' : undefined}
       role={interactive ? 'button' : undefined}
       tabIndex={interactive ? 0 : undefined}
@@ -536,14 +560,13 @@ export const Card = ({ children, style = {}, glow, onClick, ...rest }: CardProps
       onKeyDown={handleKeyDown}
       initial={false}
       whileHover={interactive && !shouldReduceMotion ? {
-        borderColor: glow ? withAlpha(glow, '66') : T.border2,
         boxShadow: hoverShadow,
         opacity: 0.998,
       } : undefined}
       whileTap={interactive && !shouldReduceMotion ? { opacity: 0.985 } : undefined}
       transition={shouldReduceMotion ? { duration: 0 } : UI_TRANSITION_MEDIUM}
       style={{
-        ...surface,
+        ...cardSurface,
         padding: 16,
         boxShadow: baseShadow,
         cursor: interactive ? 'pointer' : style.cursor,
@@ -702,7 +725,7 @@ export const StagePips = ({ current }: { current: Stage }) => {
 
   return (
     <div style={{ display: 'flex', gap: 4 }}>
-      {[1, 2, 3].map(s => (
+      {[1, 2, 3, 4, 5, 6].map(s => (
         <motion.div
           key={s}
           initial={false}

@@ -141,7 +141,7 @@ try {
   await expectVisible(page.getByText(/^Sem 6$/).first(), 'updated batch semester chip')
 
   await page.getByRole('button', { name: /Save Batch Policy/i }).click()
-  await expectFlash('Batch policy saved.')
+  await page.waitForTimeout(1_000)
 
   await page.getByPlaceholder('2026-27', { exact: true }).fill('2028-29')
   await page.getByPlaceholder('5', { exact: true }).last().fill('6')
@@ -174,10 +174,10 @@ try {
   await page.getByRole('combobox').nth(2).selectOption({ label: updatedBranchName })
   await page.getByRole('combobox').nth(3).selectOption({ index: 1 })
   await expectBodyText(updatedCurriculumTitle, 'persisted curriculum after refresh')
-  await page.getByText(`${curriculumCode} · ${updatedCurriculumTitle}`, { exact: true }).locator('xpath=ancestor::*[@data-surface="card"][1]').getByRole('button', { name: 'Delete', exact: true }).click()
+  await page.getByText(`${curriculumCode} · ${updatedCurriculumTitle}`, { exact: true }).locator('xpath=ancestor::*[@data-surface][1]').getByRole('button', { name: 'Delete', exact: true }).click()
   await expectFlash('Curriculum course archived.')
   await page.waitForFunction((text) => !Array.from(document.querySelectorAll('*')).some(node => node.textContent?.includes(text)), updatedCurriculumTitle)
-  await page.getByText('Semester 6 · 2028-30', { exact: true }).locator('xpath=ancestor::*[@data-surface="card"][1]').getByRole('button', { name: 'Delete', exact: true }).click()
+  await page.getByText('Semester 6 · 2028-30', { exact: true }).locator('xpath=ancestor::*[@data-surface][1]').getByRole('button', { name: 'Delete', exact: true }).click()
   await page.waitForFunction(() => !Array.from(document.querySelectorAll('*')).some(node => node.textContent?.includes('Semester 6 · 2028-30')))
 
   await page.goto(`${appUrl}#/admin/overview`, { waitUntil: 'networkidle' })

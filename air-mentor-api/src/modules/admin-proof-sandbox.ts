@@ -24,7 +24,7 @@ import {
 } from '../lib/msruas-proof-control-plane.js'
 import { MSRUAS_PROOF_BATCH_ID } from '../lib/msruas-proof-sandbox.js'
 import { emitAuditEvent, parseOrThrow, requireRole } from './support.js'
-import { resolveBatchPolicy } from './admin-structure.js'
+import { resolveBatchCurriculumFeatures, resolveBatchPolicy } from './admin-structure.js'
 
 const batchParamsSchema = z.object({
   batchId: z.string().min(1),
@@ -252,10 +252,13 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
     const params = parseOrThrow(batchParamsSchema, request.params)
     const body = parseOrThrow(startRunSchema, request.body)
     const resolved = await resolveBatchPolicy(context, params.batchId)
+    const resolvedFeatures = await resolveBatchCurriculumFeatures(context, params.batchId)
     const result = await startProofSimulationRun(context.db, {
       batchId: params.batchId,
       curriculumImportVersionId: body.curriculumImportVersionId,
       policy: resolved.effectivePolicy,
+      curriculumFeatureProfileId: resolvedFeatures.primaryCurriculumFeatureProfileId,
+      curriculumFeatureProfileFingerprint: resolvedFeatures.curriculumFeatureProfileFingerprint,
       actorFacultyId: auth.facultyId,
       now: context.now(),
       seed: body.seed,

@@ -33,7 +33,7 @@ export interface Course {
   id: string; code: string; title: string; year: string; dept: string; sem: number
   sections: string[]; enrolled: number[]; att: number[]
   tt1Done: boolean; tt2Done: boolean
-  tt1Locked?: boolean; tt2Locked?: boolean; quizLocked?: boolean; asgnLocked?: boolean
+  tt1Locked?: boolean; tt2Locked?: boolean; quizLocked?: boolean; asgnLocked?: boolean; finalsLocked?: boolean
 }
 
 export interface Offering {
@@ -41,7 +41,7 @@ export interface Offering {
   section: string; count: number; attendance: number
   stage: Stage; stageInfo: StageInfo
   tt1Done: boolean; tt2Done: boolean
-  tt1Locked?: boolean; tt2Locked?: boolean; quizLocked?: boolean; asgnLocked?: boolean
+  tt1Locked?: boolean; tt2Locked?: boolean; quizLocked?: boolean; asgnLocked?: boolean; finalsLocked?: boolean
   pendingAction: string | null
   sections: string[]; enrolled: number[]; att: number[]
 }
@@ -243,7 +243,14 @@ export const T = {
 export const yearColor = (y: string): string =>
   ({ '1st Year': '#f59e0b', '2nd Year': '#6366f1', '3rd Year': '#10b981', '4th Year': '#ec4899' } as Record<string, string>)[y] || T.muted
 
-export const stageColor = (s: Stage): string => s === 1 ? '#f97316' : s === 2 ? '#3b82f6' : '#a855f7'
+export const stageColor = (s: Stage): string => (
+  s === 1 ? '#f97316'
+    : s === 2 ? '#3b82f6'
+      : s === 3 ? '#a855f7'
+        : s === 4 ? '#8b5cf6'
+          : s === 5 ? '#ef4444'
+            : '#10b981'
+)
 export const CO_COLORS = ['#6366f1', '#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6']
 
 export const mono: React.CSSProperties = { fontFamily: "'JetBrains Mono', monospace" }
@@ -306,6 +313,7 @@ export const OFFERINGS: Offering[] = COURSES.flatMap(c =>
     stage: YEAR_STAGES[c.year].stage, stageInfo: YEAR_STAGES[c.year],
     tt1Done: c.tt1Done, tt2Done: c.tt2Done,
     tt1Locked: c.tt1Locked ?? false, tt2Locked: c.tt2Locked ?? false,
+    finalsLocked: c.finalsLocked ?? !!(c.tt1Locked && c.tt2Locked),
     pendingAction: getPending(c, YEAR_STAGES[c.year].stage),
     sections: c.sections, enrolled: c.enrolled, att: c.att,
   }))
@@ -829,7 +837,7 @@ export const TEACHERS: TeacherInfo[] = FACULTY.map(faculty => {
   const avgAtt = offerings.length > 0
     ? Math.round(offerings.reduce((acc, offering) => acc + offering.attendance, 0) / offerings.length)
     : 0
-  const completenessChecks = offerings.flatMap(offering => [offering.tt1Locked ? 1 : 0, offering.tt2Locked ? 1 : 0, offering.quizLocked ? 1 : 0, offering.asgnLocked ? 1 : 0])
+  const completenessChecks = offerings.flatMap(offering => [offering.tt1Locked ? 1 : 0, offering.tt2Locked ? 1 : 0, offering.quizLocked ? 1 : 0, offering.asgnLocked ? 1 : 0, offering.finalsLocked ? 1 : 0])
   const completeness = completenessChecks.length > 0
     ? Math.round(completenessChecks.reduce((acc, check) => acc + check, 0) / completenessChecks.length * 100)
     : 0

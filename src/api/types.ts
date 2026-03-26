@@ -354,6 +354,8 @@ export type ApiPolicyOverride = {
   updatedAt: string
 }
 
+export type ApiScopeType = ApiPolicyOverride['scopeType']
+
 export type ApiResolvedBatchPolicy = {
   batch: ApiBatch
   scopeChain: Array<{
@@ -469,6 +471,54 @@ export type ApiResolvedBatchPolicy = {
       activeReassessmentCount: number
     }
   }
+}
+
+export type ApiStagePolicyOverride = {
+  stagePolicyOverrideId: string
+  scopeType: ApiScopeType
+  scopeId: string
+  policy: ApiStagePolicyPayload
+  status: string
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type ApiResolvedBatchStagePolicy = {
+  batch: ApiBatch
+  scopeChain: Array<{
+    scopeType: ApiScopeType
+    scopeId: string
+  }>
+  appliedOverrides: Array<ApiStagePolicyOverride & { appliedAtScope: string }>
+  effectivePolicy: ApiStagePolicyPayload
+}
+
+export type ApiStageEvidenceKind = 'attendance' | 'tt1' | 'tt2' | 'quiz' | 'assignment' | 'finals' | 'transcript'
+
+export type ApiStagePolicyStageKey =
+  | 'semester-start'
+  | 'post-tt1'
+  | 'post-reassessment'
+  | 'post-tt2'
+  | 'post-see'
+  | 'semester-close'
+
+export type ApiStagePolicyStage = {
+  key: ApiStagePolicyStageKey
+  label: string
+  description: string
+  order: number
+  semesterDayOffset: number
+  requiredEvidence: ApiStageEvidenceKind[]
+  requireQueueClearance: boolean
+  requireTaskClearance: boolean
+  advancementMode: 'admin-confirmed' | 'automatic'
+  color: string
+}
+
+export type ApiStagePolicyPayload = {
+  stages: ApiStagePolicyStage[]
 }
 
 export type ApiProofDashboard = {
@@ -1677,6 +1727,46 @@ export type ApiCurriculumFeatureConfigPayload = {
     see: string[]
     workbook: string[]
   }
+  targetMode?: 'batch-local-override' | 'scope-profile'
+  targetScopeType?: ApiScopeType
+  targetScopeId?: string
+  curriculumFeatureProfileId?: string | null
+}
+
+export type ApiCurriculumFeatureProfile = {
+  curriculumFeatureProfileId: string
+  name: string
+  scopeType: ApiScopeType
+  scopeId: string
+  status: string
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type ApiBatchCurriculumFeatureBinding = {
+  batchId: string
+  curriculumFeatureProfileId: string | null
+  bindingMode: 'inherit-scope-profile' | 'pin-profile' | 'local-only'
+  status: string
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type ApiBatchCurriculumFeatureOverride = {
+  batchCurriculumFeatureOverrideId: string
+  batchId: string
+  curriculumCourseId: string
+  courseId: string | null
+  courseCode: string
+  title: string
+  override: ApiCurriculumFeatureConfigPayload
+  featureFingerprint?: string | null
+  status: string
+  version: number
+  createdAt: string
+  updatedAt: string
 }
 
 export type ApiCurriculumFeatureConfigItem = {
@@ -1707,6 +1797,17 @@ export type ApiCurriculumFeatureConfigItem = {
     see: string[]
     workbook: string[]
   }
+  resolvedConfig?: ApiCurriculumFeatureConfigPayload
+  featureFingerprint?: string
+  resolvedSource?: {
+    mode: 'materialized' | 'scope-profile' | 'pinned-profile' | 'batch-local-override'
+    label: string
+    scopeType?: ApiScopeType
+    scopeId?: string
+    curriculumFeatureProfileId?: string | null
+  }
+  appliedProfiles?: ApiCurriculumFeatureProfile[]
+  localOverride?: ApiBatchCurriculumFeatureOverride | null
 }
 
 export type ApiCurriculumFeatureConfigBundle = {
@@ -1719,7 +1820,29 @@ export type ApiCurriculumFeatureConfigBundle = {
     validationStatus: string
     updatedAt: string
   } | null
+  binding?: ApiBatchCurriculumFeatureBinding
+  availableProfiles?: ApiCurriculumFeatureProfile[]
+  primaryCurriculumFeatureProfileId?: string | null
+  curriculumFeatureProfileFingerprint?: string
   items: ApiCurriculumFeatureConfigItem[]
+}
+
+export type ApiCurriculumFeatureConfigSaveResult = {
+  ok: true
+  batchId: string
+  curriculumCourseId: string
+  curriculumImportVersionId: string | null
+  affectedBatchIds?: string[]
+  targetMode?: 'batch-local-override' | 'scope-profile'
+  curriculumFeatureProfileId?: string | null
+}
+
+export type ApiCurriculumFeatureBindingSaveResult = {
+  ok: true
+  batchId: string
+  curriculumImportVersionId: string | null
+  affectedBatchIds: string[]
+  binding: ApiBatchCurriculumFeatureBinding
 }
 
 export type ApiAcademicMeeting = AcademicMeeting
@@ -1760,6 +1883,58 @@ export type ApiAdminOffering = Offering & {
   termId?: string
   branchId?: string
   version?: number
+  finalsLocked?: boolean
+}
+
+export type ApiOfferingStageEligibility = {
+  offeringId: string
+  batchId: string | null
+  policy: ApiStagePolicyPayload
+  currentStage: ApiStagePolicyStage
+  nextStage: ApiStagePolicyStage | null
+  eligible: boolean
+  blockingReasons: string[]
+  queueBurden: number
+  evidenceStatus: Array<{
+    kind: ApiStageEvidenceKind
+    required: boolean
+    present: boolean
+    locked: boolean
+  }>
+}
+
+export type ApiBatchProvisioningRequest = {
+  termId: string
+  sectionLabels?: string[]
+  mode?: 'live-empty' | 'mock' | 'manual'
+  studentsPerSection?: number
+  facultyPoolIds?: string[]
+  createStudents?: boolean
+  createMentors?: boolean
+  createAttendanceScaffolding?: boolean
+  createAssessmentScaffolding?: boolean
+  createTranscriptScaffolding?: boolean
+}
+
+export type ApiBatchProvisioningResponse = {
+  ok: true
+  batchId: string
+  termId: string
+  sections: string[]
+  affectedBatchIds: string[]
+  summary: {
+    createdOfferingCount: number
+    createdStudentCount: number
+    createdEnrollmentCount: number
+    createdMentorCount: number
+    createdAttendanceCount: number
+    createdAssessmentCount: number
+    createdTranscriptCount: number
+    facultyPoolCount: number
+    curriculumCourseCount: number
+  }
+  policyFingerprint: ApiStagePolicyPayload
+  curriculumFeatureProfileFingerprint: string
 }
 
 export type ApiAdminCalendarMarkerType =

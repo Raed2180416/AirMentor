@@ -25,10 +25,16 @@ import type {
   ApiAttendanceSnapshot,
   ApiAssessmentScore,
   ApiBatch,
+  ApiBatchCurriculumFeatureBinding,
+  ApiBatchProvisioningRequest,
+  ApiBatchProvisioningResponse,
   ApiBranch,
   ApiCourse,
+  ApiCurriculumFeatureBindingSaveResult,
   ApiCurriculumFeatureConfigBundle,
   ApiCurriculumFeatureConfigPayload,
+  ApiCurriculumFeatureConfigSaveResult,
+  ApiCurriculumFeatureProfile,
   ApiCourseOutcomeOverride,
   ApiCourseOutcomeScopeType,
   ApiCurriculumCourse,
@@ -40,6 +46,8 @@ import type {
   ApiMentorAssignment,
   ApiOfferingOwnership,
   ApiPolicyOverride,
+  ApiStagePolicyOverride,
+  ApiOfferingStageEligibility,
   ApiProofDashboard,
   ApiProofRunCheckpointDetail,
   ApiProofRunCheckpointStudentDetail,
@@ -47,6 +55,7 @@ import type {
   ApiProofReassessmentResolveResponse,
   ApiProofStudentEvidenceTimelineItem,
   ApiResolvedBatchPolicy,
+  ApiResolvedBatchStagePolicy,
   ApiResolvedCourseOutcomeSet,
   ApiRoleGrant,
   ApiSessionResponse,
@@ -178,6 +187,10 @@ export interface AirMentorApiClientLike {
   createPolicyOverride(payload: Pick<ApiPolicyOverride, 'scopeType' | 'scopeId' | 'policy' | 'status'>): Promise<ApiPolicyOverride>
   updatePolicyOverride(policyOverrideId: string, payload: Pick<ApiPolicyOverride, 'scopeType' | 'scopeId' | 'policy' | 'status' | 'version'>): Promise<ApiPolicyOverride>
   getResolvedBatchPolicy(batchId: string): Promise<ApiResolvedBatchPolicy>
+  listStagePolicyOverrides(filter?: { scopeType?: ApiStagePolicyOverride['scopeType']; scopeId?: string }): Promise<{ items: ApiStagePolicyOverride[] }>
+  createStagePolicyOverride(payload: Pick<ApiStagePolicyOverride, 'scopeType' | 'scopeId' | 'policy' | 'status'>): Promise<ApiStagePolicyOverride>
+  updateStagePolicyOverride(stagePolicyOverrideId: string, payload: Pick<ApiStagePolicyOverride, 'scopeType' | 'scopeId' | 'policy' | 'status' | 'version'>): Promise<ApiStagePolicyOverride>
+  getResolvedStagePolicy(batchId: string): Promise<ApiResolvedBatchStagePolicy>
   getProofDashboard(batchId: string): Promise<ApiProofDashboard>
   createProofImport(batchId: string, payload?: { sourcePath?: string }): Promise<{ curriculumImportVersionId: string; validation: Record<string, unknown>; completenessCertificate: Record<string, unknown> }>
   validateProofImport(curriculumImportVersionId: string): Promise<Record<string, unknown>>
@@ -211,6 +224,7 @@ export interface AirMentorApiClientLike {
     tt2Locked?: boolean
     quizLocked?: boolean
     assignmentLocked?: boolean
+    finalsLocked?: boolean
     pendingAction?: string | null
     status: string
   }): Promise<ApiAdminOffering>
@@ -232,10 +246,13 @@ export interface AirMentorApiClientLike {
     tt2Locked?: boolean
     quizLocked?: boolean
     assignmentLocked?: boolean
+    finalsLocked?: boolean
     pendingAction?: string | null
     status: string
     version: number
   }): Promise<ApiAdminOffering>
+  getOfferingStageEligibility(offeringId: string): Promise<ApiOfferingStageEligibility>
+  advanceOfferingStage(offeringId: string): Promise<ApiOfferingStageEligibility>
   listOfferingOwnership(): Promise<{ items: ApiOfferingOwnership[] }>
   createOfferingOwnership(payload: Pick<ApiOfferingOwnership, 'offeringId' | 'facultyId' | 'ownershipRole' | 'status'>): Promise<ApiOfferingOwnership>
   updateOfferingOwnership(ownershipId: string, payload: Pick<ApiOfferingOwnership, 'offeringId' | 'facultyId' | 'ownershipRole' | 'status' | 'version'>): Promise<ApiOfferingOwnership>
@@ -244,7 +261,12 @@ export interface AirMentorApiClientLike {
   updateCourseOutcomeOverride(courseOutcomeOverrideId: string, payload: Pick<ApiCourseOutcomeOverride, 'courseId' | 'scopeType' | 'scopeId' | 'outcomes' | 'status' | 'version'>): Promise<ApiCourseOutcomeOverride>
   getResolvedCourseOutcomes(offeringId: string): Promise<ApiResolvedCourseOutcomeSet>
   getCurriculumFeatureConfig(batchId: string): Promise<ApiCurriculumFeatureConfigBundle>
-  saveCurriculumFeatureConfig(batchId: string, curriculumCourseId: string, payload: ApiCurriculumFeatureConfigPayload): Promise<{ ok: true; batchId: string; curriculumCourseId: string; curriculumImportVersionId: string }>
+  listCurriculumFeatureProfiles(filter?: { scopeType?: ApiCurriculumFeatureProfile['scopeType']; scopeId?: string }): Promise<{ items: ApiCurriculumFeatureProfile[] }>
+  createCurriculumFeatureProfile(payload: Pick<ApiCurriculumFeatureProfile, 'name' | 'scopeType' | 'scopeId' | 'status'>): Promise<ApiCurriculumFeatureProfile>
+  updateCurriculumFeatureProfile(curriculumFeatureProfileId: string, payload: Pick<ApiCurriculumFeatureProfile, 'name' | 'scopeType' | 'scopeId' | 'status' | 'version'>): Promise<ApiCurriculumFeatureProfile>
+  saveCurriculumFeatureBinding(batchId: string, payload: Pick<ApiBatchCurriculumFeatureBinding, 'bindingMode' | 'curriculumFeatureProfileId' | 'status' | 'version'>): Promise<ApiCurriculumFeatureBindingSaveResult>
+  saveCurriculumFeatureConfig(batchId: string, curriculumCourseId: string, payload: ApiCurriculumFeatureConfigPayload): Promise<ApiCurriculumFeatureConfigSaveResult>
+  provisionBatch(batchId: string, payload: ApiBatchProvisioningRequest): Promise<ApiBatchProvisioningResponse>
   saveOfferingAssessmentScheme(offeringId: string, payload: { scheme: SchemeState }): Promise<{ offeringId: string; scheme: SchemeState; version: number; policySnapshot: unknown }>
   saveOfferingQuestionPaper(offeringId: string, kind: TTKind, payload: { blueprint: TermTestBlueprint }): Promise<{ paperId: string; offeringId: string; kind: TTKind; blueprint: TermTestBlueprint; version: number }>
   createAttendanceSnapshot(payload: Omit<ApiAttendanceSnapshot, 'attendanceSnapshotId'>): Promise<{ attendanceSnapshotId: string; ok: true }>
@@ -801,6 +823,32 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     return this.request<ApiResolvedBatchPolicy>(`/api/admin/batches/${batchId}/resolved-policy`)
   }
 
+  async listStagePolicyOverrides(filter?: { scopeType?: ApiStagePolicyOverride['scopeType']; scopeId?: string }) {
+    const searchParams = new URLSearchParams()
+    if (filter?.scopeType) searchParams.set('scopeType', filter.scopeType)
+    if (filter?.scopeId) searchParams.set('scopeId', filter.scopeId)
+    const query = searchParams.toString()
+    return this.request<{ items: ApiStagePolicyOverride[] }>(`/api/admin/stage-policy-overrides${query ? `?${query}` : ''}`)
+  }
+
+  async createStagePolicyOverride(payload: Pick<ApiStagePolicyOverride, 'scopeType' | 'scopeId' | 'policy' | 'status'>) {
+    return this.request<ApiStagePolicyOverride>('/api/admin/stage-policy-overrides', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async updateStagePolicyOverride(stagePolicyOverrideId: string, payload: Pick<ApiStagePolicyOverride, 'scopeType' | 'scopeId' | 'policy' | 'status' | 'version'>) {
+    return this.request<ApiStagePolicyOverride>(`/api/admin/stage-policy-overrides/${stagePolicyOverrideId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async getResolvedStagePolicy(batchId: string) {
+    return this.request<ApiResolvedBatchStagePolicy>(`/api/admin/batches/${batchId}/resolved-stage-policy`)
+  }
+
   async getProofDashboard(batchId: string) {
     return this.request<ApiProofDashboard>(`/api/admin/batches/${batchId}/proof-dashboard`)
   }
@@ -906,6 +954,7 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     tt2Locked?: boolean
     quizLocked?: boolean
     assignmentLocked?: boolean
+    finalsLocked?: boolean
     pendingAction?: string | null
     status: string
   }) {
@@ -933,6 +982,7 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     tt2Locked?: boolean
     quizLocked?: boolean
     assignmentLocked?: boolean
+    finalsLocked?: boolean
     pendingAction?: string | null
     status: string
     version: number
@@ -940,6 +990,17 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     return this.request<ApiAdminOffering>(`/api/admin/offerings/${offeringId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
+    })
+  }
+
+  async getOfferingStageEligibility(offeringId: string) {
+    return this.request<ApiOfferingStageEligibility>(`/api/admin/offerings/${offeringId}/stage-eligibility`)
+  }
+
+  async advanceOfferingStage(offeringId: string) {
+    return this.request<ApiOfferingStageEligibility>(`/api/admin/offerings/${offeringId}/advance-stage`, {
+      method: 'POST',
+      body: JSON.stringify({}),
     })
   }
 
@@ -992,14 +1053,50 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     return this.request<ApiCurriculumFeatureConfigBundle>(`/api/admin/batches/${batchId}/curriculum-feature-config`)
   }
 
+  async listCurriculumFeatureProfiles(filter?: { scopeType?: ApiCurriculumFeatureProfile['scopeType']; scopeId?: string }) {
+    const searchParams = new URLSearchParams()
+    if (filter?.scopeType) searchParams.set('scopeType', filter.scopeType)
+    if (filter?.scopeId) searchParams.set('scopeId', filter.scopeId)
+    const query = searchParams.toString()
+    return this.request<{ items: ApiCurriculumFeatureProfile[] }>(`/api/admin/curriculum-feature-profiles${query ? `?${query}` : ''}`)
+  }
+
+  async createCurriculumFeatureProfile(payload: Pick<ApiCurriculumFeatureProfile, 'name' | 'scopeType' | 'scopeId' | 'status'>) {
+    return this.request<ApiCurriculumFeatureProfile>('/api/admin/curriculum-feature-profiles', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async updateCurriculumFeatureProfile(curriculumFeatureProfileId: string, payload: Pick<ApiCurriculumFeatureProfile, 'name' | 'scopeType' | 'scopeId' | 'status' | 'version'>) {
+    return this.request<ApiCurriculumFeatureProfile>(`/api/admin/curriculum-feature-profiles/${curriculumFeatureProfileId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async saveCurriculumFeatureBinding(batchId: string, payload: Pick<ApiBatchCurriculumFeatureBinding, 'bindingMode' | 'curriculumFeatureProfileId' | 'status' | 'version'>) {
+    return this.request<ApiCurriculumFeatureBindingSaveResult>(`/api/admin/batches/${batchId}/curriculum-feature-binding`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+  }
+
   async saveCurriculumFeatureConfig(batchId: string, curriculumCourseId: string, payload: ApiCurriculumFeatureConfigPayload) {
-    return this.request<{ ok: true; batchId: string; curriculumCourseId: string; curriculumImportVersionId: string }>(
+    return this.request<ApiCurriculumFeatureConfigSaveResult>(
       `/api/admin/batches/${batchId}/curriculum-feature-config/${curriculumCourseId}`,
       {
         method: 'PUT',
         body: JSON.stringify(payload),
       },
     )
+  }
+
+  async provisionBatch(batchId: string, payload: ApiBatchProvisioningRequest) {
+    return this.request<ApiBatchProvisioningResponse>(`/api/admin/batches/${batchId}/provision`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
   }
 
   async saveOfferingAssessmentScheme(offeringId: string, payload: { scheme: SchemeState }) {

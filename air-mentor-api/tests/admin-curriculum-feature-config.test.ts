@@ -168,7 +168,7 @@ describe('admin curriculum feature config', () => {
           rationale: 'Required foundation for the proof-batch regression test.',
         },
       ],
-      bridgeModules: ['Vector refresher', 'Discrete structures remediation'],
+      bridgeModules: ['Discrete structures remediation', 'Vector refresher'],
       topicPartitions: {
         tt1: ['Module 1 foundations', 'Module 2 proofs'],
         tt2: ['Module 3 optimization'],

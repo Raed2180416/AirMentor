@@ -47,7 +47,7 @@ try {
   await page.goto(`${appUrl}#/admin/faculty-members`, { waitUntil: 'networkidle' })
   await page.locator('[data-nav-item="true"]').filter({ has: page.getByText(/Scoped|Unscoped/) }).first().click()
   await expectVisible(page.getByText(/^Faculty Detail$/).last(), 'faculty detail page')
-  const facultyDetailCard = page.getByText(/^Faculty Detail$/).last().locator('xpath=ancestor::*[@data-surface="card"][1]')
+  const facultyDetailCard = page.getByText(/^Faculty Detail$/).last().locator('xpath=ancestor::*[@data-surface][1]')
 
   await facultyDetailCard.getByRole('button', { name: 'Edit Faculty', exact: true }).click()
   await expectVisible(page.getByRole('button', { name: 'Save Faculty', exact: true }), 'faculty save button')
@@ -59,7 +59,7 @@ try {
   await expectFlash('Faculty profile updated.')
 
   await page.getByRole('button', { name: /^Appointments/ }).click()
-  const appointmentsCard = page.getByText(/^Appointments$/).last().locator('xpath=ancestor::*[@data-surface="card"][1]')
+  const appointmentsCard = page.getByText(/^Appointments$/).last().locator('xpath=ancestor::*[@data-surface][1]')
   await appointmentsCard.getByRole('button', { name: 'Edit', exact: true }).first().click()
   await appointmentsCard.getByRole('combobox').nth(0).selectOption({ label: 'Electronics and Communication Engineering' })
   await appointmentsCard.getByRole('combobox').nth(1).selectOption({ label: 'B.Tech ECE' })

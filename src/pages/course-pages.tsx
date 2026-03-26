@@ -102,14 +102,14 @@ export function CourseDetail({
             </div>
             <Chip color={offering.stageInfo.color}>Stage {offering.stageInfo.stage}</Chip>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginTop: 14, maxWidth: 460 }}>
-            {['Term Start', 'TT1', 'TT2', 'Finals'].map((label, index) => (
-              <div key={label} style={{ display: 'flex', alignItems: 'center', flex: index < 3 ? 1 : 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginTop: 14, maxWidth: 640 }}>
+            {['Start', 'TT1', 'Reassess', 'TT2', 'SEE', 'Close'].map((label, index) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', flex: index < 5 ? 1 : 0 }}>
                 <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', ...mono, fontSize: 10, fontWeight: 700, background: index < offering.stageInfo.stage ? offering.stageInfo.color : T.border2, border: `2px solid ${index < offering.stageInfo.stage ? offering.stageInfo.color : T.dim}`, color: index < offering.stageInfo.stage ? '#fff' : T.dim }}>
                   {index < offering.stageInfo.stage ? '✓' : index + 1}
                 </div>
                 <span style={{ ...mono, fontSize: 9, color: T.dim, marginLeft: 6, whiteSpace: 'nowrap' }}>{label}</span>
-                {index < 3 && <div style={{ flex: 1, height: 2, background: index < offering.stageInfo.stage - 1 ? offering.stageInfo.color : T.border, margin: '0 8px' }} />}
+                {index < 5 && <div style={{ flex: 1, height: 2, background: index < offering.stageInfo.stage - 1 ? offering.stageInfo.color : T.border, margin: '0 8px' }} />}
               </div>
             ))}
           </div>
@@ -166,9 +166,9 @@ function OverviewTab({ offering, cos, students, setTab }: { offering: Offering; 
     { label: 'TT1 marks entered', done: offering.tt1Done, tab: 'tt1' },
     { label: 'Quiz 1 marks entered', done: offering.tt1Done, tab: 'quizzes' },
     { label: 'Assignment 1 entered', done: false, tab: 'assignments' },
-    { label: 'TT2 paper CO mapped', done: offering.stageInfo.stage > 2, tab: 'tt2' },
+    { label: 'TT2 paper CO mapped', done: offering.stageInfo.stage >= 4, tab: 'tt2' },
     { label: 'TT2 marks entered', done: offering.tt2Done, tab: 'tt2' },
-    { label: 'Attendance finalised', done: offering.stageInfo.stage >= 3, tab: 'attendance' },
+    { label: 'Attendance finalised', done: offering.stageInfo.stage >= 5, tab: 'attendance' },
   ]
   const doneCount = checks.filter(check => check.done).length
 

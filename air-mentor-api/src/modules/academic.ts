@@ -5,25 +5,27 @@ import type { RouteContext } from '../app.js'
 import {
   academicCalendarAuditEvents,
   academicMeetings,
-  academicRuntimeState,
-  academicTerms,
-  academicTaskPlacements,
-  academicTaskTransitions,
-  academicTasks,
+	  academicRuntimeState,
+	  academicTerms,
+	  academicTaskPlacements,
+	  academicTaskTransitions,
+	  academicTasks,
   alertAcknowledgements,
   alertDecisions,
   alertOutcomes,
   batches,
   branches,
-  courseOutcomeOverrides,
-  courses,
-  departments,
+	  courseOutcomeOverrides,
+	  curriculumCourses,
+	  courses,
+	  departments,
   electiveRecommendations,
   facultyAppointments,
   facultyCalendarWorkspaces,
   facultyOfferingOwnerships,
   facultyProfiles,
   mentorAssignments,
+  offeringStageAdvancementAudits,
   offeringAssessmentSchemes,
   offeringQuestionPapers,
   reassessmentEvents,
@@ -47,6 +49,10 @@ import {
   userAccounts,
   institutions,
 } from '../db/schema.js'
+import {
+  buildFacultyTimetableTemplates,
+  weeklyContactHoursForCourse,
+} from '../lib/academic-provisioning.js'
 import { createId } from '../lib/ids.js'
 import { badRequest, forbidden, notFound } from '../lib/http-errors.js'
 import { inferObservableRisk } from '../lib/inference-engine.js'
@@ -71,7 +77,14 @@ import {
   requireAuth,
   requireRole,
 } from './support.js'
-import { DEFAULT_POLICY, resolveBatchPolicy, type ResolvedPolicy } from './admin-structure.js'
+import {
+  DEFAULT_POLICY,
+  resolveBatchCurriculumFeatures,
+  resolveBatchPolicy,
+  resolveBatchStagePolicy,
+  type ResolvedPolicy,
+} from './admin-structure.js'
+import { DEFAULT_STAGE_POLICY, type StagePolicyPayload } from '../lib/stage-policy.js'
 
 const academicRoleCodes = ['COURSE_LEADER', 'MENTOR', 'HOD'] as const
 const runtimeStateKeys = [
@@ -239,7 +252,7 @@ const offeringCreateSchema = z.object({
   yearLabel: z.string().min(1),
   attendance: z.number().int().min(0).max(100),
   studentCount: z.number().int().min(0),
-  stage: z.number().int().min(1).max(3),
+  stage: z.number().int().min(1).max(DEFAULT_STAGE_POLICY.stages.length),
   stageLabel: z.string().min(1),
   stageDescription: z.string().min(1),
   stageColor: z.string().min(1),
@@ -249,12 +262,30 @@ const offeringCreateSchema = z.object({
   tt2Locked: z.boolean().default(false),
   quizLocked: z.boolean().default(false),
   assignmentLocked: z.boolean().default(false),
+  finalsLocked: z.boolean().default(false),
   pendingAction: z.string().nullable().optional(),
   status: z.string().min(1),
 })
 
 const offeringPatchSchema = offeringCreateSchema.extend({
   version: z.number().int().positive(),
+})
+
+const adminOfferingParamsSchema = z.object({
+  offeringId: z.string().min(1),
+})
+
+const batchProvisioningSchema = z.object({
+  termId: z.string().min(1),
+  sectionLabels: z.array(z.string().min(1)).default([]),
+  mode: z.enum(['live-empty', 'mock', 'manual']).default('mock'),
+  studentsPerSection: z.number().int().min(1).max(200).default(60),
+  facultyPoolIds: z.array(z.string().min(1)).optional(),
+  createStudents: z.boolean().default(true),
+  createMentors: z.boolean().default(true),
+  createAttendanceScaffolding: z.boolean().default(true),
+  createAssessmentScaffolding: z.boolean().default(true),
+  createTranscriptScaffolding: z.boolean().default(true),
 })
 
 const ownershipCreateSchema = z.object({
@@ -1581,6 +1612,151 @@ async function getOfferingContext(context: RouteContext, offeringId: string) {
   return { offering, course, term, branch, department }
 }
 
+function stagePolicyForOffering(batchPolicy: { effectivePolicy: StagePolicyPayload } | null) {
+  return batchPolicy?.effectivePolicy ?? DEFAULT_STAGE_POLICY
+}
+
+function stageCountForPolicy(policy: StagePolicyPayload) {
+  return Math.max(1, policy.stages.length)
+}
+
+function offeringStageSnapshot(offering: typeof sectionOfferings.$inferSelect, policy: StagePolicyPayload) {
+  const currentOrder = Math.min(Math.max(1, offering.stage), policy.stages.length)
+  const currentStage = policy.stages.find(stage => stage.order === currentOrder) ?? policy.stages[0]
+  const nextStage = policy.stages.find(stage => stage.order === currentOrder + 1) ?? null
+  return {
+    currentOrder,
+    currentStage,
+    nextStage,
+  }
+}
+
+async function buildOfferingStageEligibility(context: RouteContext, offeringId: string) {
+  const { offering, course, term } = await getOfferingContext(context, offeringId)
+  const resolvedStagePolicy = term.batchId ? await resolveBatchStagePolicy(context, term.batchId) : null
+  const policy = stagePolicyForOffering(resolvedStagePolicy)
+  const { currentStage, nextStage } = offeringStageSnapshot(offering, policy)
+  const targetStage = nextStage
+  const runtimeLockByOffering = await getAcademicRuntimeState(context, 'lockByOffering') as Record<string, Record<string, boolean>>
+  const runtimeLock = runtimeLockByOffering[offeringId] ?? {}
+  const activeEnrollments = await context.db.select().from(studentEnrollments).where(and(
+    eq(studentEnrollments.termId, offering.termId),
+    eq(studentEnrollments.sectionCode, offering.sectionCode),
+    eq(studentEnrollments.academicStatus, 'active'),
+  ))
+  const activeStudentIds = activeEnrollments.map(row => row.studentId)
+  const [attendanceRows, assessmentRows, termResults, subjectResults, taskRows] = await Promise.all([
+    context.db.select().from(studentAttendanceSnapshots).where(eq(studentAttendanceSnapshots.offeringId, offeringId)),
+    context.db.select().from(studentAssessmentScores).where(eq(studentAssessmentScores.offeringId, offeringId)),
+    context.db.select().from(transcriptTermResults).where(eq(transcriptTermResults.termId, offering.termId)),
+    context.db.select().from(transcriptSubjectResults),
+    context.db.select().from(academicTasks).where(eq(academicTasks.offeringId, offeringId)),
+  ])
+  const transcriptByStudentId = new Map(termResults.map(row => [row.studentId, row]))
+  const subjectResultSet = new Set(subjectResults
+    .filter(row => row.courseCode.toLowerCase() === course.courseCode.toLowerCase())
+    .map(row => row.transcriptTermResultId))
+  const expectedCount = activeStudentIds.length
+  const hasScoresFor = (types: string[]) => {
+    const students = new Set(
+      assessmentRows
+        .filter(row => activeStudentIds.includes(row.studentId) && types.includes(row.componentType))
+        .map(row => row.studentId),
+    )
+    return students.size
+  }
+  const transcriptCount = activeStudentIds.filter(studentId => {
+    const termResult = transcriptByStudentId.get(studentId)
+    return termResult ? subjectResultSet.has(termResult.transcriptTermResultId) : false
+  }).length
+
+  const evidenceStatus = {
+    attendance: {
+      required: !!targetStage?.requiredEvidence.includes('attendance'),
+      presentCount: new Set(attendanceRows.filter(row => activeStudentIds.includes(row.studentId)).map(row => row.studentId)).size,
+      expectedCount,
+      locked: !!runtimeLock.attendance,
+    },
+    tt1: {
+      required: !!targetStage?.requiredEvidence.includes('tt1'),
+      presentCount: hasScoresFor(['tt1', 'tt1_leaf']),
+      expectedCount,
+      locked: !!offering.tt1Locked,
+    },
+    tt2: {
+      required: !!targetStage?.requiredEvidence.includes('tt2'),
+      presentCount: hasScoresFor(['tt2', 'tt2_leaf']),
+      expectedCount,
+      locked: !!offering.tt2Locked,
+    },
+    quiz: {
+      required: !!targetStage?.requiredEvidence.includes('quiz'),
+      presentCount: hasScoresFor(['quiz1', 'quiz2']),
+      expectedCount,
+      locked: !!offering.quizLocked,
+    },
+    assignment: {
+      required: !!targetStage?.requiredEvidence.includes('assignment'),
+      presentCount: hasScoresFor(['asgn1', 'asgn2']),
+      expectedCount,
+      locked: !!offering.assignmentLocked,
+    },
+    finals: {
+      required: !!targetStage?.requiredEvidence.includes('finals'),
+      presentCount: hasScoresFor(['sem_end', 'see']),
+      expectedCount,
+      locked: !!offering.finalsLocked || !!runtimeLock.finals,
+    },
+    transcript: {
+      required: !!targetStage?.requiredEvidence.includes('transcript'),
+      presentCount: transcriptCount,
+      expectedCount,
+      locked: transcriptCount >= expectedCount && expectedCount > 0,
+    },
+  }
+  const blockingTaskRows = taskRows.filter(row => row.status !== 'Resolved' && row.status !== 'Completed' && row.status !== 'Closed')
+  const blockingReasons: string[] = []
+  Object.entries(evidenceStatus).forEach(([kind, evidence]) => {
+    if (!evidence.required) return
+    if (evidence.presentCount < evidence.expectedCount) {
+      blockingReasons.push(`${kind} evidence is incomplete (${evidence.presentCount}/${evidence.expectedCount})`)
+    }
+    if (!evidence.locked) {
+      blockingReasons.push(`${kind} is not locked`)
+    }
+  })
+  if (targetStage?.requireQueueClearance && blockingTaskRows.length > 0) {
+    blockingReasons.push(`${blockingTaskRows.length} faculty action queue item(s) remain open`)
+  }
+  if (!targetStage) {
+    blockingReasons.push('The offering is already at the final configured stage')
+  }
+  return {
+    offeringId,
+    batchId: term.batchId ?? null,
+    policy,
+    currentStage,
+    nextStage,
+    eligible: blockingReasons.length === 0,
+    blockingReasons,
+    queueBurden: blockingTaskRows.length,
+    evidenceStatus,
+  }
+}
+
+const MOCK_FIRST_NAMES = ['Aarav', 'Ishita', 'Vihaan', 'Ananya', 'Advik', 'Meera', 'Reyansh', 'Kavya', 'Arjun', 'Diya', 'Krish', 'Nitya', 'Rohan', 'Saanvi', 'Dev', 'Mira', 'Kabir', 'Tara', 'Yash', 'Ira']
+const MOCK_LAST_NAMES = ['Sharma', 'Iyer', 'Nair', 'Reddy', 'Patel', 'Gupta', 'Joshi', 'Bhat', 'Rao', 'Singh', 'Krishnan', 'Menon', 'Kulkarni', 'Saxena', 'Varma']
+
+function mockStudentIdentity(index: number) {
+  const first = MOCK_FIRST_NAMES[index % MOCK_FIRST_NAMES.length]
+  const last = MOCK_LAST_NAMES[Math.floor(index / MOCK_FIRST_NAMES.length) % MOCK_LAST_NAMES.length]
+  return {
+    name: `${first} ${last}`,
+    email: `${first.toLowerCase()}.${last.toLowerCase()}${index + 1}@msruas.ac.in`,
+    phone: `9${String(700000000 + index).padStart(9, '0')}`,
+  }
+}
+
 async function assertSingleActiveOfferingOwner(
   context: RouteContext,
   offeringId: string,
@@ -2121,7 +2297,7 @@ function inferMenteeFallback(input: {
     title: string
     risk: number
     band: 'Low' | 'Medium' | 'High'
-    stage: 1 | 2 | 3
+    stage: number
   }>
   interventions?: Array<{ date: string; type: string; note: string }>
 }) {
@@ -2290,13 +2466,14 @@ function buildStudentHistoryRecord(input: {
 
 type AcademicStudentProjection = ReturnType<typeof inferStudentFallback> & Record<string, unknown>
 type AcademicMenteeProjection = ReturnType<typeof inferMenteeFallback> & Record<string, unknown>
-type AcademicOfferingProjection = Omit<ReturnType<typeof mapOfferingRow>, 'termId' | 'branchId' | 'tt1Locked' | 'tt2Locked' | 'quizLocked' | 'asgnLocked'> & {
+type AcademicOfferingProjection = Omit<ReturnType<typeof mapOfferingRow>, 'termId' | 'branchId' | 'tt1Locked' | 'tt2Locked' | 'quizLocked' | 'asgnLocked' | 'finalsLocked'> & {
   termId?: string
   branchId?: string
   tt1Locked?: boolean
   tt2Locked?: boolean
   quizLocked?: boolean
   asgnLocked?: boolean
+  finalsLocked?: boolean
 } & Record<string, unknown>
 
 function mapOfferingRow(input: {
@@ -2333,6 +2510,7 @@ function mapOfferingRow(input: {
     tt2Locked: !!input.offering.tt2Locked,
     quizLocked: !!input.offering.quizLocked,
     asgnLocked: !!input.offering.assignmentLocked,
+    finalsLocked: !!input.offering.finalsLocked,
     pendingAction: input.offering.pendingAction,
     sections: [input.offering.sectionCode],
     enrolled: [count],
@@ -2828,7 +3006,7 @@ async function buildAcademicBootstrap(
             weakCoCount: outcomeBreakdown.filter(item => item.overallAttainment > 0 && item.overallAttainment < 45).length,
             policy,
             activeModel: batchIdForOffering ? (activeRiskModelByBatchId.get(batchIdForOffering) ?? null) : null,
-            semesterProgress: Math.max(0.25, Math.min(1, offering.stage / 3)),
+            semesterProgress: Math.max(0.25, Math.min(1, offering.stage / DEFAULT_STAGE_POLICY.stages.length)),
           })
       const quizRawTotal = ['quiz1', 'quiz2'].reduce((sum, key) => sum + (assessmentMap[key]?.score ?? 0), 0)
       const assignmentRawTotal = ['asgn1', 'asgn2'].reduce((sum, key) => sum + (assessmentMap[key]?.score ?? 0), 0)
@@ -3021,7 +3199,7 @@ async function buildAcademicBootstrap(
               title: item.title,
               risk: matchingProjection?.riskProb ?? -1,
               band: matchingProjection?.riskBand ?? 'Low' as const,
-              stage: item.stage as 1 | 2 | 3,
+              stage: item.stage,
             }
           })
       : []
@@ -3100,7 +3278,12 @@ async function buildAcademicBootstrap(
     .map(year => ({
       year,
       color: ({ '1st Year': '#f59e0b', '2nd Year': '#6366f1', '3rd Year': '#10b981', '4th Year': '#ec4899' } as Record<string, string>)[year] ?? '#8892a4',
-      stageInfo: academicOfferings.find(offering => offering.year === year)?.stageInfo ?? { stage: 1, label: 'Stage 1', desc: 'Term Start → TT1', color: '#f97316' },
+      stageInfo: academicOfferings.find(offering => offering.year === year)?.stageInfo ?? {
+        stage: DEFAULT_STAGE_POLICY.stages[0].order,
+        label: DEFAULT_STAGE_POLICY.stages[0].label,
+        desc: DEFAULT_STAGE_POLICY.stages[0].description,
+        color: DEFAULT_STAGE_POLICY.stages[0].color,
+      },
       offerings: academicOfferings.filter(offering => offering.year === year),
     }))
     .filter(group => group.offerings.length > 0)
@@ -3112,7 +3295,7 @@ async function buildAcademicBootstrap(
     const avgAtt = offerings.length > 0
       ? Math.round(offerings.reduce((sum, offering) => sum + offering.attendance, 0) / offerings.length)
       : 0
-    const completenessChecks = offerings.flatMap(offering => [offering.tt1Locked ? 1 : 0, offering.tt2Locked ? 1 : 0, offering.quizLocked ? 1 : 0, offering.asgnLocked ? 1 : 0])
+    const completenessChecks = offerings.flatMap(offering => [offering.tt1Locked ? 1 : 0, offering.tt2Locked ? 1 : 0, offering.quizLocked ? 1 : 0, offering.asgnLocked ? 1 : 0, offering.finalsLocked ? 1 : 0])
     const completeness = completenessChecks.length > 0
       ? Math.round((completenessChecks.reduce((sum, value) => sum + value, 0) / completenessChecks.length) * 100)
       : 0
@@ -3306,8 +3489,8 @@ async function buildAcademicBootstrap(
         tt2: !!offering.tt2Locked,
         quiz: !!offering.quizLocked,
         assignment: !!offering.asgnLocked,
+        finals: !!offering.finalsLocked || !!runtimeLock.finals,
         attendance: !!runtimeLock.attendance,
-        finals: !!runtimeLock.finals,
       }]
     }),
   )
@@ -4364,7 +4547,9 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
           ? 'quizLocked'
           : params.kind === 'assignment'
             ? 'assignmentLocked'
-            : null
+            : params.kind === 'finals'
+              ? 'finalsLocked'
+              : null
     if (lockField && offering[lockField] === 1) {
       throw forbidden('This assessment dataset is locked')
     }
@@ -4800,6 +4985,533 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
     }
   })
 
+  app.get('/api/admin/offerings/:offeringId/stage-eligibility', {
+    schema: {
+      tags: ['academic-admin'],
+      summary: 'Compute whether an offering can advance to the next configured stage',
+    },
+  }, async request => {
+    requireRole(request, ['SYSTEM_ADMIN'])
+    const params = parseOrThrow(adminOfferingParamsSchema, request.params)
+    return buildOfferingStageEligibility(context, params.offeringId)
+  })
+
+  app.post('/api/admin/offerings/:offeringId/advance-stage', {
+    schema: {
+      tags: ['academic-admin'],
+      summary: 'Advance an offering to the next configured stage when all evidence is complete',
+    },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
+    const params = parseOrThrow(adminOfferingParamsSchema, request.params)
+    const eligibility = await buildOfferingStageEligibility(context, params.offeringId)
+    if (!eligibility.eligible || !eligibility.nextStage) {
+      throw badRequest('Offering cannot advance to the next stage', {
+        blockingReasons: eligibility.blockingReasons,
+      })
+    }
+    const [current] = await context.db.select().from(sectionOfferings).where(eq(sectionOfferings.offeringId, params.offeringId))
+    if (!current) throw notFound('Offering not found')
+    await context.db.update(sectionOfferings).set({
+      stage: eligibility.nextStage.order,
+      stageLabel: eligibility.nextStage.label,
+      stageDescription: eligibility.nextStage.description,
+      stageColor: eligibility.nextStage.color,
+      version: current.version + 1,
+      updatedAt: context.now(),
+    }).where(eq(sectionOfferings.offeringId, params.offeringId))
+    await context.db.insert(offeringStageAdvancementAudits).values({
+      offeringStageAdvancementAuditId: createId('offering_stage_advancement_audit'),
+      offeringId: params.offeringId,
+      batchId: eligibility.batchId,
+      termId: current.termId,
+      advancedByFacultyId: auth.facultyId ?? null,
+      fromStageKey: eligibility.currentStage.key,
+      toStageKey: eligibility.nextStage.key,
+      auditJson: stringifyJson({
+        fromStage: eligibility.currentStage,
+        toStage: eligibility.nextStage,
+        queueBurden: eligibility.queueBurden,
+        evidenceStatus: eligibility.evidenceStatus,
+      }),
+      createdAt: context.now(),
+      updatedAt: context.now(),
+    })
+    return buildOfferingStageEligibility(context, params.offeringId)
+  })
+
+  app.post('/api/admin/batches/:batchId/provision', {
+    schema: {
+      tags: ['academic-admin'],
+      summary: 'Provision offerings, ownership, timetables, students, mentors, and academic scaffolding for a batch term',
+    },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
+    const params = parseOrThrow(z.object({ batchId: z.string().min(1) }), request.params)
+    const body = parseOrThrow(batchProvisioningSchema, request.body)
+    const now = context.now()
+    const [batch] = await context.db.select().from(batches).where(eq(batches.batchId, params.batchId))
+    if (!batch) throw notFound('Batch not found')
+    const [branch] = await context.db.select().from(branches).where(eq(branches.branchId, batch.branchId))
+    if (!branch) throw notFound('Branch not found')
+    const [term] = await context.db.select().from(academicTerms).where(eq(academicTerms.termId, body.termId))
+    if (!term) throw notFound('Academic term not found')
+    if (term.batchId && term.batchId !== batch.batchId) throw badRequest('Term does not belong to the selected batch')
+    const [department] = await context.db.select().from(departments).where(eq(departments.departmentId, branch.departmentId))
+    if (!department) throw notFound('Department not found')
+    const sections = (body.sectionLabels.length > 0 ? body.sectionLabels : parseJson(batch.sectionLabelsJson, [] as string[]))
+      .map(item => item.trim())
+      .filter(Boolean)
+    if (sections.length === 0) throw badRequest('At least one section label is required for provisioning')
+
+    const [resolvedBatchPolicy, resolvedStagePolicy, resolvedCurriculumFeatures, curriculumRows, courseRows, appointmentRows, facultyRows, existingOwnershipRows, existingOfferings, existingStudents, existingEnrollments, existingMentors, existingAttendanceRows, existingAssessmentRows, existingTranscriptRows, existingTranscriptSubjectRows, existingProfileRows, existingCalendars] = await Promise.all([
+      resolveBatchPolicy(context, params.batchId),
+      resolveBatchStagePolicy(context, params.batchId),
+      resolveBatchCurriculumFeatures(context, params.batchId),
+      context.db.select().from(curriculumCourses).where(eq(curriculumCourses.batchId, params.batchId)),
+      context.db.select().from(courses),
+      context.db.select().from(facultyAppointments),
+      context.db.select().from(facultyProfiles),
+      context.db.select().from(facultyOfferingOwnerships),
+      context.db.select().from(sectionOfferings),
+      context.db.select().from(students),
+      context.db.select().from(studentEnrollments),
+      context.db.select().from(mentorAssignments),
+      context.db.select().from(studentAttendanceSnapshots),
+      context.db.select().from(studentAssessmentScores),
+      context.db.select().from(transcriptTermResults),
+      context.db.select().from(transcriptSubjectResults),
+      context.db.select().from(studentAcademicProfiles),
+      context.db.select().from(facultyCalendarWorkspaces),
+    ])
+    const scopedCurriculum = curriculumRows
+      .filter(row => row.status !== 'deleted' && row.status !== 'archived' && row.semesterNumber === term.semesterNumber)
+      .sort((left, right) => left.courseCode.localeCompare(right.courseCode))
+    if (scopedCurriculum.length === 0) {
+      throw badRequest('No active curriculum rows exist for the selected batch and semester')
+    }
+    const courseById = new Map(courseRows.map(row => [row.courseId, row]))
+    const featureByCurriculumCourseId = new Map(resolvedCurriculumFeatures.items.map(item => [item.curriculumCourseId, item]))
+    const stageSeed = resolvedStagePolicy.effectivePolicy.stages[0] ?? DEFAULT_STAGE_POLICY.stages[0]
+
+    const eligibleAppointments = appointmentRows.filter(row => (
+      (body.facultyPoolIds && body.facultyPoolIds.length > 0 ? body.facultyPoolIds.includes(row.facultyId) : true)
+      && row.status !== 'deleted'
+      && (row.branchId === branch.branchId || row.departmentId === department.departmentId)
+    ))
+    const facultyPool = facultyRows.filter(row => (
+      (body.facultyPoolIds && body.facultyPoolIds.length > 0 ? body.facultyPoolIds.includes(row.facultyId) : eligibleAppointments.some(appointment => appointment.facultyId === row.facultyId))
+      && row.status !== 'deleted'
+    ))
+    if (facultyPool.length === 0) throw badRequest('No active faculty pool is available for provisioning')
+
+    const offeringByKey = new Map<string, typeof sectionOfferings.$inferSelect>(
+      existingOfferings.map(row => [`${row.termId}::${row.courseId}::${row.sectionCode}`, row] as const),
+    )
+    const activeOwnershipByOfferingId = new Map(
+      existingOwnershipRows
+        .filter(row => row.status === 'active')
+        .map(row => [row.offeringId, row] as const),
+    )
+    const loadByFacultyId = new Map<string, number>(facultyPool.map(row => [row.facultyId, 0]))
+    activeOwnershipByOfferingId.forEach(row => {
+      loadByFacultyId.set(row.facultyId, (loadByFacultyId.get(row.facultyId) ?? 0) + 1)
+    })
+
+    const assignedLoads = new Map<string, Array<{ offeringId: string; courseCode: string; courseName: string; sectionCode: string; semesterNumber: number; weeklyHours: number }>>()
+    const provisionedOfferings: typeof sectionOfferings.$inferSelect[] = []
+    let createdOfferingCount = 0
+    for (const curriculumCourse of scopedCurriculum) {
+      const featureConfig = featureByCurriculumCourseId.get(curriculumCourse.curriculumCourseId)
+      const course = curriculumCourse.courseId ? courseById.get(curriculumCourse.courseId) : null
+      if (!course) continue
+      const weeklyHours = weeklyContactHoursForCourse({
+        title: course.title,
+        assessmentProfile: featureConfig?.assessmentProfile ?? 'admin-authored',
+        credits: curriculumCourse.credits,
+      })
+      for (const sectionCode of sections) {
+        const key = `${term.termId}::${course.courseId}::${sectionCode}`
+        const existingOffering = offeringByKey.get(key)
+        if (existingOffering) {
+          provisionedOfferings.push(existingOffering)
+          if (!activeOwnershipByOfferingId.has(existingOffering.offeringId)) {
+            const assignedFaculty = [...facultyPool].sort((left, right) => (
+              (loadByFacultyId.get(left.facultyId) ?? 0) - (loadByFacultyId.get(right.facultyId) ?? 0)
+              || left.facultyId.localeCompare(right.facultyId)
+            ))[0]
+            const createdOwnership = {
+              ownershipId: createId('ownership'),
+              offeringId: existingOffering.offeringId,
+              facultyId: assignedFaculty.facultyId,
+              ownershipRole: 'course-professor',
+              status: 'active',
+              version: 1,
+              createdAt: now,
+              updatedAt: now,
+            } as typeof facultyOfferingOwnerships.$inferSelect
+            await context.db.insert(facultyOfferingOwnerships).values(createdOwnership)
+            activeOwnershipByOfferingId.set(existingOffering.offeringId, createdOwnership)
+            loadByFacultyId.set(assignedFaculty.facultyId, (loadByFacultyId.get(assignedFaculty.facultyId) ?? 0) + weeklyHours)
+          }
+          continue
+        }
+        const created = {
+          offeringId: createId('offering'),
+          courseId: course.courseId,
+          termId: term.termId,
+          branchId: branch.branchId,
+          sectionCode,
+          yearLabel: `${Math.ceil(term.semesterNumber / 2)} Year`,
+          attendance: 0,
+          studentCount: 0,
+          stage: stageSeed.order,
+          stageLabel: stageSeed.label,
+          stageDescription: stageSeed.description,
+          stageColor: stageSeed.color,
+          tt1Done: 0,
+          tt2Done: 0,
+          tt1Locked: 0,
+          tt2Locked: 0,
+          quizLocked: 0,
+          assignmentLocked: 0,
+          finalsLocked: 0,
+          pendingAction: null,
+          status: 'active',
+          version: 1,
+          createdAt: now,
+          updatedAt: now,
+        }
+        await context.db.insert(sectionOfferings).values(created)
+        offeringByKey.set(key, created)
+        provisionedOfferings.push(created)
+        createdOfferingCount += 1
+        const assignedFaculty = [...facultyPool].sort((left, right) => (
+          (loadByFacultyId.get(left.facultyId) ?? 0) - (loadByFacultyId.get(right.facultyId) ?? 0)
+          || left.facultyId.localeCompare(right.facultyId)
+        ))[0]
+        loadByFacultyId.set(assignedFaculty.facultyId, (loadByFacultyId.get(assignedFaculty.facultyId) ?? 0) + weeklyHours)
+        assignedLoads.set(assignedFaculty.facultyId, [
+          ...(assignedLoads.get(assignedFaculty.facultyId) ?? []),
+          {
+            offeringId: created.offeringId,
+            courseCode: course.courseCode,
+            courseName: course.title,
+            sectionCode,
+            semesterNumber: term.semesterNumber,
+            weeklyHours,
+          },
+        ])
+        const existingOwnership = activeOwnershipByOfferingId.get(created.offeringId) ?? null
+        if (!existingOwnership) {
+          const createdOwnership = {
+            ownershipId: createId('ownership'),
+            offeringId: created.offeringId,
+            facultyId: assignedFaculty.facultyId,
+            ownershipRole: 'course-professor',
+            status: 'active',
+            version: 1,
+            createdAt: now,
+            updatedAt: now,
+          } as typeof facultyOfferingOwnerships.$inferSelect
+          await context.db.insert(facultyOfferingOwnerships).values(createdOwnership)
+          activeOwnershipByOfferingId.set(created.offeringId, createdOwnership)
+        }
+      }
+    }
+
+    for (const offering of provisionedOfferings) {
+      const existingOwnership = activeOwnershipByOfferingId.get(offering.offeringId) ?? null
+      if (existingOwnership) {
+        const course = courseById.get(offering.courseId)
+        const curriculumCourse = scopedCurriculum.find(row => row.courseId === offering.courseId)
+        const featureConfig = curriculumCourse ? featureByCurriculumCourseId.get(curriculumCourse.curriculumCourseId) : null
+        if (!course || !curriculumCourse) continue
+        assignedLoads.set(existingOwnership.facultyId, [
+          ...(assignedLoads.get(existingOwnership.facultyId) ?? []),
+          {
+            offeringId: offering.offeringId,
+            courseCode: course.courseCode,
+            courseName: course.title,
+            sectionCode: offering.sectionCode,
+            semesterNumber: term.semesterNumber,
+            weeklyHours: weeklyContactHoursForCourse({
+              title: course.title,
+              assessmentProfile: featureConfig?.assessmentProfile ?? 'admin-authored',
+              credits: curriculumCourse.credits,
+            }),
+          },
+        ])
+      }
+    }
+
+    const timetablePayload = buildFacultyTimetableTemplates(assignedLoads)
+    for (const [facultyId, template] of Object.entries(timetablePayload)) {
+      const existing = existingCalendars.find(row => row.facultyId === facultyId) ?? null
+      if (existing) {
+        await context.db.update(facultyCalendarWorkspaces).set({
+          templateJson: stringifyJson(template),
+          version: existing.version + 1,
+          updatedAt: now,
+        }).where(eq(facultyCalendarWorkspaces.facultyId, facultyId))
+      } else {
+        await context.db.insert(facultyCalendarWorkspaces).values({
+          facultyId,
+          templateJson: stringifyJson(template),
+          version: 1,
+          createdAt: now,
+          updatedAt: now,
+        })
+      }
+    }
+
+    let createdStudentCount = 0
+    let createdEnrollmentCount = 0
+    let createdMentorCount = 0
+    let createdAttendanceCount = 0
+    let createdAssessmentCount = 0
+    let createdTranscriptCount = 0
+    const sectionEnrollments = existingEnrollments.filter(row => row.termId === term.termId && sections.includes(row.sectionCode) && row.academicStatus === 'active')
+    const sectionCounts = new Map<string, number>()
+    sections.forEach(sectionCode => sectionCounts.set(sectionCode, sectionEnrollments.filter(row => row.sectionCode === sectionCode).length))
+    const institutionId = existingStudents[0]?.institutionId ?? (await context.db.select().from(institutions).limit(1))[0]?.institutionId
+    if (!institutionId) throw notFound('Institution is not configured')
+    const existingUsnSet = new Set(existingStudents.map(row => row.usn))
+    const profileStudentIds = new Set(existingProfileRows.map(row => row.studentId))
+
+    if (body.createStudents || body.mode === 'mock') {
+      for (const sectionCode of sections) {
+        const currentCount = sectionCounts.get(sectionCode) ?? 0
+        for (let offset = currentCount; offset < body.studentsPerSection; offset += 1) {
+          const globalIndex = sections.indexOf(sectionCode) * body.studentsPerSection + offset
+          const identity = mockStudentIdentity(globalIndex)
+          const usnBase = `1MS${String(batch.admissionYear).slice(-2)}${branch.code.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase()}${String(globalIndex + 1).padStart(3, '0')}`
+          const usn = existingUsnSet.has(usnBase) ? `${usnBase}${sectionCode}` : usnBase
+          existingUsnSet.add(usn)
+          const studentId = createId('student')
+          await context.db.insert(students).values({
+            studentId,
+            institutionId,
+            usn,
+            rollNumber: `${sectionCode}${String(offset + 1).padStart(3, '0')}`,
+            name: identity.name,
+            email: identity.email,
+            phone: identity.phone,
+            admissionDate: `${batch.admissionYear}-08-01`,
+            status: 'active',
+            version: 1,
+            createdAt: now,
+            updatedAt: now,
+          })
+          createdStudentCount += 1
+          await context.db.insert(studentEnrollments).values({
+            enrollmentId: createId('enrollment'),
+            studentId,
+            branchId: branch.branchId,
+            termId: term.termId,
+            sectionCode,
+            rosterOrder: offset + 1,
+            academicStatus: 'active',
+            startDate: term.startDate,
+            endDate: null,
+            version: 1,
+            createdAt: now,
+            updatedAt: now,
+          })
+          createdEnrollmentCount += 1
+          if (!profileStudentIds.has(studentId)) {
+            await context.db.insert(studentAcademicProfiles).values({
+              studentId,
+              prevCgpaScaled: 650 + ((globalIndex % 25) * 10),
+              createdAt: now,
+              updatedAt: now,
+            })
+            profileStudentIds.add(studentId)
+          }
+          if (body.createMentors && facultyPool.length > 0) {
+            const mentorFaculty = facultyPool[globalIndex % facultyPool.length]!
+            await context.db.insert(mentorAssignments).values({
+              assignmentId: createId('mentor_assignment'),
+              studentId,
+              facultyId: mentorFaculty.facultyId,
+              effectiveFrom: term.startDate,
+              effectiveTo: null,
+              source: 'sysadmin-provisioning',
+              version: 1,
+              createdAt: now,
+              updatedAt: now,
+            })
+            createdMentorCount += 1
+          }
+        }
+      }
+    }
+
+    const refreshedEnrollments = await context.db.select().from(studentEnrollments).where(eq(studentEnrollments.termId, term.termId))
+    const attendanceKeySet = new Set(existingAttendanceRows.map(row => `${row.studentId}::${row.offeringId}`))
+    const assessmentKeySet = new Set(existingAssessmentRows.map(row => `${row.studentId}::${row.offeringId}::${row.componentType}::${row.componentCode ?? ''}`))
+    const transcriptByStudent = new Map(existingTranscriptRows.filter(row => row.termId === term.termId).map(row => [row.studentId, row]))
+    const transcriptSubjectKeySet = new Set(existingTranscriptSubjectRows.map(row => `${row.transcriptTermResultId}::${row.courseCode}`))
+    const enrollmentsBySection = new Map<string, typeof refreshedEnrollments>()
+    sections.forEach(sectionCode => enrollmentsBySection.set(sectionCode, refreshedEnrollments.filter(row => row.sectionCode === sectionCode && row.academicStatus === 'active')))
+
+    for (const offering of provisionedOfferings) {
+      const enrolledStudents = enrollmentsBySection.get(offering.sectionCode) ?? []
+      const course = courseById.get(offering.courseId)
+      if (!course) continue
+      const stagePatch: Partial<typeof sectionOfferings.$inferInsert> = {
+        studentCount: enrolledStudents.length,
+        attendance: body.createAttendanceScaffolding ? 78 : offering.attendance,
+        tt1Done: body.createAssessmentScaffolding ? 1 : offering.tt1Done,
+        tt2Done: body.createAssessmentScaffolding ? 1 : offering.tt2Done,
+        tt1Locked: body.createAssessmentScaffolding ? 1 : offering.tt1Locked,
+        tt2Locked: body.createAssessmentScaffolding ? 1 : offering.tt2Locked,
+        quizLocked: body.createAssessmentScaffolding ? 1 : offering.quizLocked,
+        assignmentLocked: body.createAssessmentScaffolding ? 1 : offering.assignmentLocked,
+        finalsLocked: body.createAssessmentScaffolding ? 1 : offering.finalsLocked,
+        version: offering.version + 1,
+        updatedAt: now,
+      }
+      await context.db.update(sectionOfferings).set(stagePatch).where(eq(sectionOfferings.offeringId, offering.offeringId))
+      for (const [index, enrollment] of enrolledStudents.entries()) {
+        if (body.createAttendanceScaffolding) {
+          const attendanceKey = `${enrollment.studentId}::${offering.offeringId}`
+          if (!attendanceKeySet.has(attendanceKey)) {
+            const totalClasses = 50
+            const presentClasses = 36 + ((index + offering.sectionCode.charCodeAt(0)) % 12)
+            await context.db.insert(studentAttendanceSnapshots).values({
+              attendanceSnapshotId: createId('attendance'),
+              studentId: enrollment.studentId,
+              offeringId: offering.offeringId,
+              presentClasses,
+              totalClasses,
+              attendancePercent: Math.round((presentClasses / totalClasses) * 100),
+              source: 'sysadmin-provisioning',
+              capturedAt: now,
+              createdAt: now,
+              updatedAt: now,
+            })
+            createdAttendanceCount += 1
+            attendanceKeySet.add(attendanceKey)
+          }
+        }
+        if (body.createAssessmentScaffolding) {
+          const componentSeeds = [
+            ['tt1', 'TT1', 25, 12 + (index % 11)],
+            ['tt2', 'TT2', 25, 13 + (index % 10)],
+            ['quiz1', 'Quiz 1', 10, 5 + (index % 5)],
+            ['quiz2', 'Quiz 2', 10, 5 + ((index + 1) % 5)],
+            ['asgn1', 'Assignment 1', 10, 6 + (index % 4)],
+            ['asgn2', 'Assignment 2', 10, 6 + ((index + 2) % 4)],
+            ['sem_end', 'SEE', 40, 20 + (index % 16)],
+          ] as const
+          for (const [componentType, componentCode, maxScore, score] of componentSeeds) {
+            const assessmentKey = `${enrollment.studentId}::${offering.offeringId}::${componentType}::${componentCode}`
+            if (assessmentKeySet.has(assessmentKey)) continue
+            await context.db.insert(studentAssessmentScores).values({
+              assessmentScoreId: createId('assessment'),
+              studentId: enrollment.studentId,
+              offeringId: offering.offeringId,
+              termId: term.termId,
+              componentType,
+              componentCode,
+              score,
+              maxScore,
+              evaluatedAt: now,
+              createdAt: now,
+              updatedAt: now,
+            })
+            createdAssessmentCount += 1
+            assessmentKeySet.add(assessmentKey)
+          }
+        }
+        if (body.createTranscriptScaffolding) {
+          const transcript = transcriptByStudent.get(enrollment.studentId) ?? null
+          const ensuredTranscript = transcript ?? {
+            transcriptTermResultId: createId('transcript_term'),
+            studentId: enrollment.studentId,
+            termId: term.termId,
+            sgpaScaled: 720 + ((index % 15) * 8),
+            registeredCredits: scopedCurriculum.reduce((sum, item) => sum + item.credits, 0),
+            earnedCredits: scopedCurriculum.reduce((sum, item) => sum + item.credits, 0),
+            backlogCount: 0,
+            createdAt: now,
+            updatedAt: now,
+          }
+          if (!transcript) {
+            await context.db.insert(transcriptTermResults).values(ensuredTranscript)
+            transcriptByStudent.set(enrollment.studentId, ensuredTranscript)
+            createdTranscriptCount += 1
+          }
+          const subjectKey = `${ensuredTranscript.transcriptTermResultId}::${course.courseCode}`
+          if (!transcriptSubjectKeySet.has(subjectKey)) {
+            const score = 58 + (index % 28)
+            const gradeLabel = score >= 90 ? 'O' : score >= 80 ? 'A+' : score >= 70 ? 'A' : score >= 60 ? 'B+' : score >= 55 ? 'B' : score >= 50 ? 'C' : score >= 40 ? 'P' : 'F'
+            const gradePoint = gradeLabel === 'O' ? 10 : gradeLabel === 'A+' ? 9 : gradeLabel === 'A' ? 8 : gradeLabel === 'B+' ? 7 : gradeLabel === 'B' ? 6 : gradeLabel === 'C' ? 5 : gradeLabel === 'P' ? 4 : 0
+            await context.db.insert(transcriptSubjectResults).values({
+              transcriptSubjectResultId: createId('transcript_subject'),
+              transcriptTermResultId: ensuredTranscript.transcriptTermResultId,
+              courseCode: course.courseCode,
+              title: course.title,
+              credits: scopedCurriculum.find(item => item.courseId === course.courseId)?.credits ?? course.defaultCredits,
+              score,
+              gradeLabel,
+              gradePoint,
+              result: score >= 40 ? 'PASS' : 'FAIL',
+              createdAt: now,
+              updatedAt: now,
+            })
+            transcriptSubjectKeySet.add(subjectKey)
+          }
+        }
+      }
+    }
+
+    await emitAuditEvent(context, {
+      entityType: 'BatchProvisioning',
+      entityId: params.batchId,
+      action: 'executed',
+      actorRole: auth.activeRoleGrant.roleCode,
+      actorId: auth.facultyId ?? auth.userId,
+      after: {
+        batchId: params.batchId,
+        termId: term.termId,
+        sections,
+        mode: body.mode,
+      },
+      metadata: {
+        createdOfferingCount,
+        createdStudentCount,
+        createdEnrollmentCount,
+        createdMentorCount,
+        createdAttendanceCount,
+        createdAssessmentCount,
+        createdTranscriptCount,
+      },
+    })
+
+    return {
+      ok: true,
+      batchId: params.batchId,
+      termId: term.termId,
+      sections,
+      affectedBatchIds: [params.batchId],
+      summary: {
+        createdOfferingCount,
+        createdStudentCount,
+        createdEnrollmentCount,
+        createdMentorCount,
+        createdAttendanceCount,
+        createdAssessmentCount,
+        createdTranscriptCount,
+        facultyPoolCount: facultyPool.length,
+        curriculumCourseCount: scopedCurriculum.length,
+      },
+      policyFingerprint: resolvedBatchPolicy.effectivePolicy,
+      curriculumFeatureProfileFingerprint: resolvedCurriculumFeatures.curriculumFeatureProfileFingerprint,
+    }
+  })
+
   app.get('/api/admin/offerings', {
     schema: {
       tags: ['academic-admin'],
@@ -5014,6 +5726,7 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
       tt2Locked: body.tt2Locked ? 1 : 0,
       quizLocked: body.quizLocked ? 1 : 0,
       assignmentLocked: body.assignmentLocked ? 1 : 0,
+      finalsLocked: body.finalsLocked ? 1 : 0,
       pendingAction: body.pendingAction ?? null,
       status: body.status,
       version: 1,
@@ -5062,6 +5775,7 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
       tt2Locked: body.tt2Locked ? 1 : 0,
       quizLocked: body.quizLocked ? 1 : 0,
       assignmentLocked: body.assignmentLocked ? 1 : 0,
+      finalsLocked: body.finalsLocked ? 1 : 0,
       pendingAction: body.pendingAction ?? null,
       status: body.status,
       version: current.version + 1,

@@ -67,6 +67,10 @@ import {
   userAccounts,
   worldContextSnapshots,
 } from '../db/schema.js'
+import {
+  buildFacultyTimetableTemplates as sharedBuildFacultyTimetableTemplates,
+  weeklyContactHoursForCourse as sharedWeeklyContactHoursForCourse,
+} from './academic-provisioning.js'
 import { createId } from './ids.js'
 import { parseJson } from './json.js'
 import {
@@ -80,6 +84,7 @@ import {
 } from './msruas-curriculum-compiler.js'
 import { inferObservableRisk } from './inference-engine.js'
 import { buildMonitoringDecision } from './monitoring-engine.js'
+import { DEFAULT_STAGE_POLICY, type StagePolicyStageKey } from './stage-policy.js'
 import {
   PROOF_QUEUE_ACTIONABLE_LIFT_THRESHOLD,
   governProofQueueStage,
@@ -153,52 +158,15 @@ function isFacultyProofStudentVisible(input: {
 }
 const STUDENT_AGENT_CARD_VERSION = 1
 
-const PLAYBACK_STAGE_DEFS = [
-  {
-    key: 'semester-start',
-    label: 'Semester Start',
-    description: 'Opening checkpoint using early attendance and carryover history before TT1 closes.',
-    order: 1,
-    semesterDayOffset: 0,
-  },
-  {
-    key: 'post-tt1',
-    label: 'Post TT1',
-    description: 'First major risk checkpoint after TT1 evidence lands and the first queue decision is made.',
-    order: 2,
-    semesterDayOffset: 35,
-  },
-  {
-    key: 'post-reassessment',
-    label: 'Post Reassessment',
-    description: 'Follow-up window after the deterministic intervention path is opened but before TT2 is locked.',
-    order: 3,
-    semesterDayOffset: 49,
-  },
-  {
-    key: 'post-tt2',
-    label: 'Post TT2',
-    description: 'Checkpoint after TT2 where response is judged against the earlier intervention path.',
-    order: 4,
-    semesterDayOffset: 77,
-  },
-  {
-    key: 'post-see',
-    label: 'Post SEE',
-    description: 'Checkpoint after SEE where final risk, action effect, and advisory fit are recomputed.',
-    order: 5,
-    semesterDayOffset: 119,
-  },
-  {
-    key: 'semester-close',
-    label: 'Semester Close',
-    description: 'Closing checkpoint after transcript-grade consolidation and queue resolution.',
-    order: 6,
-    semesterDayOffset: 133,
-  },
-] as const
+const PLAYBACK_STAGE_DEFS = DEFAULT_STAGE_POLICY.stages.map(stage => ({
+  key: stage.key,
+  label: stage.label,
+  description: stage.description,
+  order: stage.order,
+  semesterDayOffset: stage.semesterDayOffset,
+}))
 
-type PlaybackStageKey = (typeof PLAYBACK_STAGE_DEFS)[number]['key']
+type PlaybackStageKey = StagePolicyStageKey
 
 type StudentAgentPanelLabel = 'Observed' | 'Policy Derived' | 'Simulation Internal' | 'Human Action Log'
 
@@ -1309,8 +1277,7 @@ function isLabLikeCourse(course: Pick<RuntimeCourse, 'title' | 'assessmentProfil
 }
 
 function weeklyContactHoursForCourse(course: Pick<RuntimeCourse, 'title' | 'assessmentProfile' | 'credits'>) {
-  const totalContactHours = course.credits * (isLabLikeCourse(course) ? 30 : 15)
-  return Math.max(2, Math.round(totalContactHours / 16))
+  return sharedWeeklyContactHoursForCourse(course)
 }
 
 function deterministicPolicyFromResolved(policy: ResolvedPolicy): MsruasDeterministicPolicy {
@@ -1613,71 +1580,7 @@ function simulateSemesterCourse(input: {
 }
 
 function buildTimetablePayload(loadsByFacultyId: Map<string, Array<{ offeringId: string; courseCode: string; courseName: string; sectionCode: string; semesterNumber: number; weeklyHours: number }>>) {
-  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] as const
-  const slots = [
-    { id: 'slot_1', label: '08:30-09:30', startTime: '08:30', endTime: '09:30' },
-    { id: 'slot_2', label: '09:30-10:30', startTime: '09:30', endTime: '10:30' },
-    { id: 'slot_3', label: '10:45-11:45', startTime: '10:45', endTime: '11:45' },
-    { id: 'slot_4', label: '11:45-12:45', startTime: '11:45', endTime: '12:45' },
-    { id: 'slot_5', label: '13:30-14:30', startTime: '13:30', endTime: '14:30' },
-    { id: 'slot_6', label: '14:30-15:30', startTime: '14:30', endTime: '15:30' },
-  ] as const
-  const result: Record<string, Record<string, unknown>> = {}
-  const slotPositions = weekdays.flatMap(day => slots.map(slot => ({ day, slot })))
-  for (const [facultyId, entries] of loadsByFacultyId.entries()) {
-    const classBlocks: Array<Record<string, unknown>> = []
-    const orderedEntries = [...entries].sort((left, right) => (
-      left.semesterNumber - right.semesterNumber
-      || left.courseCode.localeCompare(right.courseCode)
-      || left.sectionCode.localeCompare(right.sectionCode)
-      || left.offeringId.localeCompare(right.offeringId)
-    ))
-    const occupiedPositions = new Set<number>()
-    let cursor = Math.floor(stableUnit(`proof-timetable-${facultyId}`) * slotPositions.length) % slotPositions.length
-
-    const takeNextFreePosition = () => {
-      for (let offset = 0; offset < slotPositions.length; offset += 1) {
-        const candidateIndex = (cursor + offset) % slotPositions.length
-        if (occupiedPositions.has(candidateIndex)) continue
-        occupiedPositions.add(candidateIndex)
-        cursor = (candidateIndex + 1) % slotPositions.length
-        return slotPositions[candidateIndex]
-      }
-      throw new Error(`Proof timetable builder exhausted weekly slot capacity for ${facultyId}`)
-    }
-
-    orderedEntries.forEach(entry => {
-      const repeatCount = Math.max(1, Math.min(3, entry.weeklyHours))
-      for (let blockIndex = 0; blockIndex < repeatCount; blockIndex += 1) {
-        const position = takeNextFreePosition()
-        const { day, slot } = position
-        classBlocks.push({
-          id: `${facultyId}_${entry.offeringId}_${blockIndex + 1}`,
-          facultyId,
-          offeringId: entry.offeringId,
-          courseCode: entry.courseCode,
-          courseName: entry.courseName,
-          section: entry.sectionCode,
-          year: `${Math.ceil(entry.semesterNumber / 2)} Year`,
-          day,
-          kind: 'regular',
-          startMinutes: Number(slot.startTime.slice(0, 2)) * 60 + Number(slot.startTime.slice(3, 5)),
-          endMinutes: Number(slot.endTime.slice(0, 2)) * 60 + Number(slot.endTime.slice(3, 5)),
-          slotId: slot.id,
-          slotSpan: 1,
-        })
-      }
-    })
-    result[facultyId] = {
-      facultyId,
-      slots,
-      dayStartMinutes: 8 * 60 + 30,
-      dayEndMinutes: 15 * 60 + 30,
-      classBlocks,
-      updatedAt: Date.now(),
-    }
-  }
-  return result
+  return sharedBuildFacultyTimetableTemplates(loadsByFacultyId)
 }
 
 function normalizeFilterValue(value?: string | null) {
@@ -3095,6 +2998,7 @@ async function rebuildProofRiskArtifacts(db: AppDb, input: {
   challengerEvaluationPayload.coEvidenceDiagnostics = governedCoEvidenceDiagnostics
   challengerEvaluationPayload.uiParityDiagnostics = uiParityDiagnostics
   const existingRows = await db.select().from(riskModelArtifacts).where(eq(riskModelArtifacts.batchId, input.batchId))
+  const targetRun = runRows.find(row => row.simulationRunId === input.simulationRunId) ?? null
   if (existingRows.length > 0) {
     const activeArtifactIds = existingRows.filter(row => row.activeFlag === 1).map(row => row.riskModelArtifactId)
     if (activeArtifactIds.length > 0) {
@@ -3110,6 +3014,8 @@ async function rebuildProofRiskArtifacts(db: AppDb, input: {
       riskModelArtifactId: createId('risk_model_artifact'),
       batchId: input.batchId,
       simulationRunId: input.simulationRunId,
+      curriculumFeatureProfileId: targetRun?.curriculumFeatureProfileId ?? null,
+      curriculumFeatureProfileFingerprint: targetRun?.curriculumFeatureProfileFingerprint ?? null,
       artifactType: 'production',
       modelFamily: 'logistic-scorecard',
       artifactVersion: bundle.production.modelVersion,
@@ -3127,6 +3033,8 @@ async function rebuildProofRiskArtifacts(db: AppDb, input: {
       riskModelArtifactId: createId('risk_model_artifact'),
       batchId: input.batchId,
       simulationRunId: input.simulationRunId,
+      curriculumFeatureProfileId: targetRun?.curriculumFeatureProfileId ?? null,
+      curriculumFeatureProfileFingerprint: targetRun?.curriculumFeatureProfileFingerprint ?? null,
       artifactType: 'challenger',
       modelFamily: 'decision-stump',
       artifactVersion: bundle.challenger.modelVersion,
@@ -3144,6 +3052,8 @@ async function rebuildProofRiskArtifacts(db: AppDb, input: {
       riskModelArtifactId: createId('risk_model_artifact'),
       batchId: input.batchId,
       simulationRunId: input.simulationRunId,
+      curriculumFeatureProfileId: targetRun?.curriculumFeatureProfileId ?? null,
+      curriculumFeatureProfileFingerprint: targetRun?.curriculumFeatureProfileFingerprint ?? null,
       artifactType: 'correlation',
       modelFamily: 'association-summary',
       artifactVersion: bundle.correlations.artifactVersion,
@@ -6508,6 +6418,8 @@ export async function startProofSimulationRun(db: AppDb, input: {
   batchId: string
   curriculumImportVersionId: string
   policy: ResolvedPolicy
+  curriculumFeatureProfileId?: string | null
+  curriculumFeatureProfileFingerprint?: string | null
   actorFacultyId?: string | null
   now: string
   seed?: number
@@ -6554,6 +6466,8 @@ export async function startProofSimulationRun(db: AppDb, input: {
     simulationRunId,
     batchId: input.batchId,
     curriculumImportVersionId: input.curriculumImportVersionId,
+    curriculumFeatureProfileId: input.curriculumFeatureProfileId ?? null,
+    curriculumFeatureProfileFingerprint: input.curriculumFeatureProfileFingerprint ?? null,
     parentSimulationRunId: input.parentSimulationRunId ?? null,
     runLabel: input.runLabel ?? `MSRUAS proof rerun ${runSeed}`,
     status: activate ? 'active' : 'completed',
@@ -7639,6 +7553,8 @@ export async function restoreProofSimulationSnapshot(db: AppDb, input: {
     batchId: run.batchId,
     curriculumImportVersionId: String(payload.curriculumImportVersionId ?? run.curriculumImportVersionId ?? ''),
     policy: input.policy,
+    curriculumFeatureProfileId: run.curriculumFeatureProfileId ?? null,
+    curriculumFeatureProfileFingerprint: run.curriculumFeatureProfileFingerprint ?? null,
     actorFacultyId: input.actorFacultyId,
     now: input.now,
     seed: Number(payload.seed ?? run.seed),

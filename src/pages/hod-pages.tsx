@@ -378,32 +378,31 @@ export function HodView({
                   size="sm"
                   variant={!showActionNeededOnly ? 'primary' : 'ghost'}
                   onClick={() => setShowActionNeededOnly(false)}
-                >
+                  >
                   View All
                 </Btn>
               </div>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    <TH>Student</TH>
-                    <TH>Section</TH>
-                    <TH>Primary Course</TH>
-                    <TH>Risk</TH>
-                    <TH>Attendance</TH>
-                    <TH>TT Window</TH>
-                    <TH>Elective Fit</TH>
-                    <TH>Actions</TH>
-                  </tr>
-                </thead>
-                <tbody>
-                  {overviewStudents.length === 0 ? (
+              {overviewStudents.length === 0 ? (
+                <EmptyState
+                  title="No students in the current HoD watchlist"
+                  body="No students are in the current HoD watchlist for this scope."
+                />
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
                     <tr>
-                      <TD colSpan={8} style={{ color: T.muted }}>
-                        No students are in the current HoD watchlist for this scope.
-                      </TD>
+                      <TH>Student</TH>
+                      <TH>Section</TH>
+                      <TH>Primary Course</TH>
+                      <TH>Risk</TH>
+                      <TH>Attendance</TH>
+                      <TH>TT Window</TH>
+                      <TH>Elective Fit</TH>
+                      <TH>Actions</TH>
                     </tr>
-                  ) : null}
-                  {overviewStudents.map(row => {
+                  </thead>
+                  <tbody>
+                    {overviewStudents.map(row => {
                     const governedQueueState = resolveGovernedQueueState(row.currentReassessmentStatus)
                     const actionNeeded = governedQueueState === 'open'
                     return (
@@ -453,9 +452,10 @@ export function HodView({
                         </TD>
                       </tr>
                     )
-                  })}
-                </tbody>
-              </table>
+                    })}
+                  </tbody>
+                </table>
+              )}
             </TableCard>
           </div>
         ) : null}

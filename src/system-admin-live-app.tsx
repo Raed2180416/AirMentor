@@ -28,6 +28,7 @@ import { AirMentorApiClient, AirMentorApiError } from './api/client'
 import type {
   ApiAuditEvent,
   ApiAdminFacultyCalendar,
+  ApiBatchProvisioningRequest,
   ApiCurriculumFeatureConfigBundle,
   ApiCurriculumFeatureConfigPayload,
   ApiFacultyRecord,
@@ -36,15 +37,21 @@ import type {
   ApiAdminRequestDetail,
   ApiAdminSearchResult,
   ApiAdminRequestSummary,
+  ApiOfferingStageEligibility,
   ApiOfferingOwnership,
   ApiPolicyPayload,
   ApiProofDashboard,
   ApiProofRunCheckpointDetail,
   ApiResolvedBatchPolicy,
+  ApiResolvedBatchStagePolicy,
   ApiRoleCode,
+  ApiScopeType,
   ApiRoleGrant,
   ApiSessionResponse,
   ApiSimulationStageCheckpointSummary,
+  ApiStageEvidenceKind,
+  ApiStagePolicyOverride,
+  ApiStagePolicyPayload,
   ApiStudentEnrollment,
   ApiStudentRecord,
 } from './api/types'
@@ -264,9 +271,35 @@ type OwnershipFormState = {
   facultyId: string
 }
 
+type StagePolicyFormState = {
+  stages: Array<{
+    key: ApiStagePolicyPayload['stages'][number]['key']
+    label: string
+    description: string
+    semesterDayOffset: string
+    requiredEvidence: ApiStageEvidenceKind[]
+    requireQueueClearance: boolean
+    requireTaskClearance: boolean
+    advancementMode: ApiStagePolicyPayload['stages'][number]['advancementMode']
+    color: string
+  }>
+}
+
+type BatchProvisioningFormState = {
+  termId: string
+  sectionLabels: string
+  mode: ApiBatchProvisioningRequest['mode']
+  studentsPerSection: string
+  createStudents: boolean
+  createMentors: boolean
+  createAttendanceScaffolding: boolean
+  createAssessmentScaffolding: boolean
+  createTranscriptScaffolding: boolean
+}
+
 type StudentDetailTab = 'profile' | 'academic' | 'mentor' | 'progression' | 'history'
 type FacultyDetailTab = 'profile' | 'appointments' | 'permissions' | 'teaching' | 'timetable' | 'history'
-type UniversityTab = 'overview' | 'bands' | 'ce-see' | 'cgpa' | 'courses'
+type UniversityTab = 'overview' | 'bands' | 'ce-see' | 'cgpa' | 'stage' | 'courses' | 'provision'
 type EditingEntity =
   | 'academic-faculty'
   | 'department'
@@ -305,6 +338,12 @@ type HierarchyScopeInput = {
   branchId?: string | null
   batchId?: string | null
   sectionCode?: string | null
+}
+
+type ActiveAdminScope = {
+  scopeType: ApiScopeType
+  scopeId: string
+  label: string
 }
 
 const EMPTY_DATA: LiveAdminDataset = {
@@ -502,6 +541,183 @@ function buildCurriculumFeaturePayload(form: CurriculumFeatureFormState): ApiCur
   }
 }
 
+const DEFAULT_STAGE_POLICY: ApiStagePolicyPayload = {
+  stages: [
+    {
+      key: 'semester-start',
+      label: 'Semester Start',
+      description: 'Opening checkpoint using early attendance and carryover history before TT1 closes.',
+      order: 1,
+      semesterDayOffset: 0,
+      requiredEvidence: ['attendance'],
+      requireQueueClearance: true,
+      requireTaskClearance: true,
+      advancementMode: 'admin-confirmed',
+      color: '#2D8AF0',
+    },
+    {
+      key: 'post-tt1',
+      label: 'Post TT1',
+      description: 'First major risk checkpoint after TT1 evidence lands and the first queue decision is made.',
+      order: 2,
+      semesterDayOffset: 35,
+      requiredEvidence: ['attendance', 'tt1'],
+      requireQueueClearance: true,
+      requireTaskClearance: true,
+      advancementMode: 'admin-confirmed',
+      color: '#F59E0B',
+    },
+    {
+      key: 'post-reassessment',
+      label: 'Post Reassessment',
+      description: 'Follow-up window after the deterministic intervention path is opened but before TT2 is locked.',
+      order: 3,
+      semesterDayOffset: 49,
+      requiredEvidence: ['attendance', 'tt1'],
+      requireQueueClearance: true,
+      requireTaskClearance: true,
+      advancementMode: 'admin-confirmed',
+      color: '#F97316',
+    },
+    {
+      key: 'post-tt2',
+      label: 'Post TT2',
+      description: 'Checkpoint after TT2 where response is judged against the earlier intervention path.',
+      order: 4,
+      semesterDayOffset: 77,
+      requiredEvidence: ['attendance', 'tt1', 'tt2'],
+      requireQueueClearance: true,
+      requireTaskClearance: true,
+      advancementMode: 'admin-confirmed',
+      color: '#8B5CF6',
+    },
+    {
+      key: 'post-see',
+      label: 'Post SEE',
+      description: 'Checkpoint after SEE where final risk, action effect, and advisory fit are recomputed.',
+      order: 5,
+      semesterDayOffset: 119,
+      requiredEvidence: ['attendance', 'tt1', 'tt2', 'quiz', 'assignment', 'finals'],
+      requireQueueClearance: true,
+      requireTaskClearance: true,
+      advancementMode: 'admin-confirmed',
+      color: '#EF4444',
+    },
+    {
+      key: 'semester-close',
+      label: 'Semester Close',
+      description: 'Closing checkpoint after transcript-grade consolidation and queue resolution.',
+      order: 6,
+      semesterDayOffset: 133,
+      requiredEvidence: ['attendance', 'tt1', 'tt2', 'quiz', 'assignment', 'finals', 'transcript'],
+      requireQueueClearance: true,
+      requireTaskClearance: true,
+      advancementMode: 'admin-confirmed',
+      color: '#10B981',
+    },
+  ],
+}
+
+const STAGE_EVIDENCE_OPTIONS: ApiStageEvidenceKind[] = ['attendance', 'tt1', 'tt2', 'quiz', 'assignment', 'finals', 'transcript']
+
+function defaultStagePolicyForm(): StagePolicyFormState {
+  return {
+    stages: DEFAULT_STAGE_POLICY.stages.map(stage => ({
+      key: stage.key,
+      label: stage.label,
+      description: stage.description,
+      semesterDayOffset: String(stage.semesterDayOffset),
+      requiredEvidence: [...stage.requiredEvidence],
+      requireQueueClearance: stage.requireQueueClearance,
+      requireTaskClearance: stage.requireTaskClearance,
+      advancementMode: stage.advancementMode,
+      color: stage.color,
+    })),
+  }
+}
+
+function hydrateStagePolicyForm(policy: ApiStagePolicyPayload | null | undefined): StagePolicyFormState {
+  const source = policy?.stages?.length ? policy : DEFAULT_STAGE_POLICY
+  return {
+    stages: DEFAULT_STAGE_POLICY.stages.map(defaultStage => {
+      const stage = source.stages.find(item => item.key === defaultStage.key) ?? defaultStage
+      return {
+        key: stage.key,
+        label: stage.label,
+        description: stage.description,
+        semesterDayOffset: String(stage.semesterDayOffset),
+        requiredEvidence: [...stage.requiredEvidence],
+        requireQueueClearance: stage.requireQueueClearance,
+        requireTaskClearance: stage.requireTaskClearance,
+        advancementMode: stage.advancementMode,
+        color: stage.color,
+      }
+    }),
+  }
+}
+
+function buildStagePolicyPayload(form: StagePolicyFormState): ApiStagePolicyPayload {
+  return {
+    stages: form.stages.map((stage, index) => ({
+      key: stage.key,
+      label: requireText(`${stage.key} label`, stage.label),
+      description: requireText(`${stage.key} description`, stage.description),
+      order: index + 1,
+      semesterDayOffset: requireNonNegativeInteger(`${stage.key} semester day offset`, stage.semesterDayOffset),
+      requiredEvidence: [...stage.requiredEvidence],
+      requireQueueClearance: stage.requireQueueClearance,
+      requireTaskClearance: stage.requireTaskClearance,
+      advancementMode: stage.advancementMode,
+      color: requireText(`${stage.key} color`, stage.color),
+    })),
+  }
+}
+
+function defaultBatchProvisioningForm(): BatchProvisioningFormState {
+  return {
+    termId: '',
+    sectionLabels: 'A, B',
+    mode: 'mock',
+    studentsPerSection: '60',
+    createStudents: true,
+    createMentors: true,
+    createAttendanceScaffolding: true,
+    createAssessmentScaffolding: true,
+    createTranscriptScaffolding: true,
+  }
+}
+
+function buildBatchProvisioningPayload(form: BatchProvisioningFormState): ApiBatchProvisioningRequest {
+  return {
+    termId: requireText('Provisioning term', form.termId),
+    sectionLabels: parseCurriculumFeatureLines(form.sectionLabels.replace(/,/g, '\n')),
+    mode: form.mode ?? 'mock',
+    studentsPerSection: requirePositiveInteger('Students per section', form.studentsPerSection),
+    createStudents: form.createStudents,
+    createMentors: form.createMentors,
+    createAttendanceScaffolding: form.createAttendanceScaffolding,
+    createAssessmentScaffolding: form.createAssessmentScaffolding,
+    createTranscriptScaffolding: form.createTranscriptScaffolding,
+  }
+}
+
+function mergePolicyPayload(base: ApiResolvedBatchPolicy['effectivePolicy'], override: ApiPolicyPayload): ApiResolvedBatchPolicy['effectivePolicy'] {
+  return {
+    gradeBands: override.gradeBands ?? base.gradeBands,
+    ceSeeSplit: override.ceSeeSplit ?? base.ceSeeSplit,
+    ceComponentCaps: override.ceComponentCaps ?? base.ceComponentCaps,
+    workingCalendar: override.workingCalendar ?? base.workingCalendar,
+    attendanceRules: override.attendanceRules ?? base.attendanceRules,
+    condonationRules: override.condonationRules ?? base.condonationRules,
+    eligibilityRules: override.eligibilityRules ?? base.eligibilityRules,
+    passRules: override.passRules ?? base.passRules,
+    roundingRules: override.roundingRules ?? base.roundingRules,
+    sgpaCgpaRules: override.sgpaCgpaRules ?? base.sgpaCgpaRules,
+    progressionRules: override.progressionRules ?? base.progressionRules,
+    riskRules: override.riskRules ?? base.riskRules,
+  }
+}
+
 function defaultEnrollmentForm(): EnrollmentFormState {
   return {
     enrollmentId: '',
@@ -680,7 +896,7 @@ function hydratePolicyForm(policy: ApiResolvedBatchPolicy['effectivePolicy']): P
   }
 }
 
-function buildPolicyPayload(form: PolicyFormState): ApiPolicyPayload {
+function buildPolicyPayload(form: PolicyFormState): ApiResolvedBatchPolicy['effectivePolicy'] {
   return {
     gradeBands: [
       { grade: 'O', minimumMark: Number(form.oMin), maximumMark: 100, gradePoint: 10 },
@@ -784,6 +1000,12 @@ function requirePositiveInteger(label: string, value: string) {
   return parsed
 }
 
+function requireNonNegativeInteger(label: string, value: string) {
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed < 0) throw new Error(`${label} must be a non-negative whole number.`)
+  return parsed
+}
+
 function requirePositiveEvenInteger(label: string, value: string) {
   const parsed = requirePositiveInteger(label, value)
   if (parsed % 2 !== 0) throw new Error(`${label} must be an even whole number.`)
@@ -802,7 +1024,7 @@ function requireRange(label: string, value: string, minimum: number, maximum: nu
   return parsed
 }
 
-function buildValidatedPolicyPayload(form: PolicyFormState): ApiPolicyPayload {
+function buildValidatedPolicyPayload(form: PolicyFormState): ApiResolvedBatchPolicy['effectivePolicy'] {
   const oMin = requireRange('O grade minimum', form.oMin, 0, 100)
   const aPlusMin = requireRange('A+ minimum', form.aPlusMin, 0, 100)
   const aMin = requireRange('A minimum', form.aMin, 0, 100)
@@ -1144,6 +1366,37 @@ function matchesOfferingScope(offering: LiveAdminDataset['offerings'][number], d
   return true
 }
 
+function formatScopeTypeLabel(scopeType: ApiScopeType) {
+  switch (scopeType) {
+    case 'institution':
+      return 'Institution'
+    case 'academic-faculty':
+      return 'Faculty'
+    case 'department':
+      return 'Department'
+    case 'branch':
+      return 'Branch'
+    case 'batch':
+      return 'Batch'
+    default:
+      return scopeType
+  }
+}
+
+function matchesBatchScope(batch: LiveAdminDataset['batches'][number], data: LiveAdminDataset, scopeType: ApiScopeType, scopeId: string) {
+  if (scopeType === 'institution') return true
+  if (scopeType === 'batch') return batch.batchId === scopeId
+  if (scopeType === 'branch') return batch.branchId === scopeId
+  const branch = resolveBranch(data, batch.branchId)
+  if (!branch) return false
+  if (scopeType === 'department') return branch.departmentId === scopeId
+  if (scopeType === 'academic-faculty') {
+    const department = resolveDepartment(data, branch.departmentId)
+    return department?.academicFacultyId === scopeId
+  }
+  return false
+}
+
 function TeachingShellAdminTopBar({
   institutionName,
   adminName,
@@ -1384,6 +1637,7 @@ function SectionLaunchCard({
 }) {
   return (
     <Card
+      surface={active ? 'selected' : 'launch'}
       glow={active ? tone : undefined}
       onClick={onClick}
       style={{
@@ -1392,7 +1646,6 @@ function SectionLaunchCard({
         background: active
           ? `linear-gradient(160deg, ${withAlpha(tone, '20')} 0%, ${withAlpha(tone, '0f')} 18%, ${T.surface} 100%)`
           : `linear-gradient(160deg, ${withAlpha(tone, '10')} 0%, ${T.surface} 20%, ${T.surface2} 100%)`,
-        boxShadow: `inset 0 1px 0 ${withAlpha(tone, active ? '46' : '24')}`,
         display: 'grid',
         alignContent: 'space-between',
       }}
@@ -1589,11 +1842,21 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const [entityEditors, setEntityEditors] = useState<EntityEditorState>(() => defaultEntityEditorState())
   const [policyForm, setPolicyForm] = useState<PolicyFormState>(() => defaultPolicyForm())
   const [resolvedBatchPolicy, setResolvedBatchPolicy] = useState<ApiResolvedBatchPolicy | null>(null)
+  const [stagePolicyOverrides, setStagePolicyOverrides] = useState<ApiStagePolicyOverride[]>([])
+  const [resolvedStagePolicy, setResolvedStagePolicy] = useState<ApiResolvedBatchStagePolicy | null>(null)
+  const [stagePolicyForm, setStagePolicyForm] = useState<StagePolicyFormState>(() => defaultStagePolicyForm())
   const [proofDashboard, setProofDashboard] = useState<ApiProofDashboard | null>(null)
   const [proofDashboardLoading, setProofDashboardLoading] = useState(false)
   const [curriculumFeatureConfig, setCurriculumFeatureConfig] = useState<ApiCurriculumFeatureConfigBundle | null>(null)
   const [selectedCurriculumFeatureCourseId, setSelectedCurriculumFeatureCourseId] = useState('')
   const [curriculumFeatureForm, setCurriculumFeatureForm] = useState<CurriculumFeatureFormState>(() => defaultCurriculumFeatureForm())
+  const [curriculumFeatureTargetMode, setCurriculumFeatureTargetMode] = useState<'batch-local-override' | 'scope-profile'>('batch-local-override')
+  const [curriculumFeatureTargetScopeKey, setCurriculumFeatureTargetScopeKey] = useState('')
+  const [curriculumFeatureBindingMode, setCurriculumFeatureBindingMode] = useState<'inherit-scope-profile' | 'pin-profile' | 'local-only'>('inherit-scope-profile')
+  const [curriculumFeaturePinnedProfileId, setCurriculumFeaturePinnedProfileId] = useState('')
+  const [batchProvisioningForm, setBatchProvisioningForm] = useState<BatchProvisioningFormState>(() => defaultBatchProvisioningForm())
+  const [selectedStageOfferingId, setSelectedStageOfferingId] = useState('')
+  const [selectedStageEligibility, setSelectedStageEligibility] = useState<ApiOfferingStageEligibility | null>(null)
   const [selectedProofCheckpointId, setSelectedProofCheckpointId] = useState<string | null>(() => readProofPlaybackSelection()?.simulationStageCheckpointId ?? null)
   const [selectedProofCheckpointDetail, setSelectedProofCheckpointDetail] = useState<ApiProofRunCheckpointDetail | null>(null)
   const [selectedRequestDetail, setSelectedRequestDetail] = useState<ApiAdminRequestDetail | null>(null)
@@ -1777,11 +2040,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           throw error
         }
       }
-      const [institution, academicFaculties, departments, branches, batches, terms, facultyMembers, students, courses, curriculumCourses, policyOverrides, offerings, ownerships, requests, reminders] = await Promise.all([
+      const [institution, academicFaculties, departments, branches, batches, terms, facultyMembers, students, courses, curriculumCourses, policyOverrides, nextStagePolicyOverrides, offerings, ownerships, requests, reminders] = await Promise.all([
         safeInstitution(), apiClient.listAcademicFaculties(), apiClient.listDepartments(),
         apiClient.listBranches(), apiClient.listBatches(), apiClient.listTerms(),
         apiClient.listFaculty(), apiClient.listStudents(), apiClient.listCourses(),
-        apiClient.listCurriculumCourses(), apiClient.listPolicyOverrides(),
+        apiClient.listCurriculumCourses(), apiClient.listPolicyOverrides(), apiClient.listStagePolicyOverrides(),
         apiClient.listOfferings(), apiClient.listOfferingOwnership(), apiClient.listAdminRequests(),
         safeReminders(),
       ])
@@ -1793,6 +2056,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         offerings: offerings.items, ownerships: ownerships.items, requests: requests.items,
         reminders: reminders.items,
       })
+      setStagePolicyOverrides(nextStagePolicyOverrides.items)
     } catch (error) {
       setDataError(toErrorMessage(error))
     } finally {
@@ -1888,10 +2152,14 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   useEffect(() => {
     if (!route.batchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
       setResolvedBatchPolicy(null)
+      setResolvedStagePolicy(null)
       setProofDashboard(null)
       setCurriculumFeatureConfig(null)
       setSelectedCurriculumFeatureCourseId('')
       setCurriculumFeatureForm(defaultCurriculumFeatureForm())
+      setStagePolicyForm(defaultStagePolicyForm())
+      setSelectedStageOfferingId('')
+      setSelectedStageEligibility(null)
       return
     }
     let cancelled = false
@@ -1902,6 +2170,24 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         setResolvedBatchPolicy(next)
         setPolicyForm(hydratePolicyForm(next.effectivePolicy))
       } catch (error) { if (!cancelled) setActionError(toErrorMessage(error)) }
+    })()
+    return () => { cancelled = true }
+  }, [apiClient, route.batchId, session])
+
+  useEffect(() => {
+    if (!route.batchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
+      setResolvedStagePolicy(null)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const next = await apiClient.getResolvedStagePolicy(route.batchId!)
+        if (cancelled) return
+        setResolvedStagePolicy(next)
+      } catch (error) {
+        if (!cancelled) setActionError(toErrorMessage(error))
+      }
     })()
     return () => { cancelled = true }
   }, [apiClient, route.batchId, session])
@@ -1943,23 +2229,39 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     return () => { cancelled = true }
   }, [apiClient, route.batchId, session])
 
+  const autoRefreshProofBatches = useCallback(async (batchIds: string[], reason: string, overrideImportVersionId?: string | null) => {
+    const refreshedBatchIds: string[] = []
+    for (const batchId of Array.from(new Set(batchIds.filter(Boolean)))) {
+      const scopedConfig = batchId === route.batchId
+        ? curriculumFeatureConfig
+        : await apiClient.getCurriculumFeatureConfig(batchId)
+      const scopedDashboard = batchId === route.batchId
+        ? proofDashboard
+        : await apiClient.getProofDashboard(batchId)
+      const importVersionId = overrideImportVersionId
+        ?? scopedConfig?.curriculumImportVersion?.curriculumImportVersionId
+        ?? scopedDashboard?.imports[0]?.curriculumImportVersionId
+        ?? null
+      if (!importVersionId) continue
+      const activeRun = scopedDashboard?.activeRunDetail ?? null
+      await apiClient.createProofRun(batchId, {
+        curriculumImportVersionId: importVersionId,
+        seed: activeRun?.seed,
+        runLabel: `${activeRun?.runLabel ?? 'Sysadmin auto refresh'} · ${reason}`,
+        activate: true,
+      })
+      refreshedBatchIds.push(batchId)
+      if (batchId === route.batchId) {
+        await refreshProofDashboard(batchId)
+      }
+    }
+    return refreshedBatchIds
+  }, [apiClient, curriculumFeatureConfig, proofDashboard, refreshProofDashboard, route.batchId])
+
   const maybeAutoRefreshSelectedProofBatch = useCallback(async (reason: string, curriculumImportVersionId?: string | null) => {
-    if (!route.batchId) return null
-    const importVersionId = curriculumImportVersionId
-      ?? curriculumFeatureConfig?.curriculumImportVersion?.curriculumImportVersionId
-      ?? proofDashboard?.imports[0]?.curriculumImportVersionId
-      ?? null
-    if (!importVersionId) return null
-    const activeRun = proofDashboard?.activeRunDetail ?? null
-    const result = await apiClient.createProofRun(route.batchId, {
-      curriculumImportVersionId: importVersionId,
-      seed: activeRun?.seed,
-      runLabel: `${activeRun?.runLabel ?? 'Sysadmin auto refresh'} · ${reason}`,
-      activate: true,
-    })
-    await refreshProofDashboard(route.batchId)
-    return result
-  }, [apiClient, curriculumFeatureConfig?.curriculumImportVersion?.curriculumImportVersionId, proofDashboard, refreshProofDashboard, route.batchId])
+    if (!route.batchId) return []
+    return autoRefreshProofBatches([route.batchId], reason, curriculumImportVersionId)
+  }, [autoRefreshProofBatches, route.batchId])
 
   useEffect(() => {
     if (!route.batchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
@@ -1995,6 +2297,12 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     const selectedItem = items.find(item => item.curriculumCourseId === nextSelectedId) ?? null
     setCurriculumFeatureForm(hydrateCurriculumFeatureForm(selectedItem))
   }, [curriculumFeatureConfig, selectedCurriculumFeatureCourseId])
+
+  useEffect(() => {
+    const binding = curriculumFeatureConfig?.binding
+    setCurriculumFeatureBindingMode(binding?.bindingMode ?? 'inherit-scope-profile')
+    setCurriculumFeaturePinnedProfileId(binding?.curriculumFeatureProfileId ?? '')
+  }, [curriculumFeatureConfig?.binding?.bindingMode, curriculumFeatureConfig?.binding?.curriculumFeatureProfileId])
 
   const selectedRequestSummary = route.requestId ? data.requests.find(item => item.adminRequestId === route.requestId) ?? null : null
 
@@ -3047,7 +3355,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       resetCurriculumEditor()
       await refreshCurriculumFeatureConfig(selectedBatch.batchId)
       const rerun = await maybeAutoRefreshSelectedProofBatch(`${courseCodeForRefresh} curriculum refresh`)
-      if (rerun) {
+      if (rerun.length > 0) {
         setFlashMessage(`Curriculum course saved and proof batch refreshed for ${courseCodeForRefresh}.`)
       }
     })
@@ -3070,7 +3378,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       if (entityEditors.curriculum.curriculumCourseId === curriculumCourseId) resetCurriculumEditor()
       await refreshCurriculumFeatureConfig(current.batchId)
       const rerun = await maybeAutoRefreshSelectedProofBatch(`${current.courseCode} curriculum archive`)
-      setFlashMessage(rerun
+      setFlashMessage(rerun.length > 0
         ? `Curriculum course archived and proof batch refreshed for ${current.courseCode}.`
         : 'Curriculum course archived.')
     })
@@ -3080,39 +3388,72 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     if (!selectedBatch || !selectedCurriculumFeatureItem) return
     await runAction(async () => {
       const payload = buildCurriculumFeaturePayload(curriculumFeatureForm)
-      const saved = await apiClient.saveCurriculumFeatureConfig(selectedBatch.batchId, selectedCurriculumFeatureItem.curriculumCourseId, payload)
+      const [targetScopeType, targetScopeId] = curriculumFeatureTargetScopeKey.split('::')
+      const saved = await apiClient.saveCurriculumFeatureConfig(selectedBatch.batchId, selectedCurriculumFeatureItem.curriculumCourseId, {
+        ...payload,
+        targetMode: curriculumFeatureTargetMode,
+        targetScopeType: curriculumFeatureTargetMode === 'scope-profile' ? targetScopeType as ApiScopeType : undefined,
+        targetScopeId: curriculumFeatureTargetMode === 'scope-profile' ? targetScopeId : undefined,
+      })
       const nextBundle = await refreshCurriculumFeatureConfig(selectedBatch.batchId)
       const nextSelected = nextBundle.items.find(item => item.curriculumCourseId === selectedCurriculumFeatureItem.curriculumCourseId) ?? null
       setCurriculumFeatureForm(hydrateCurriculumFeatureForm(nextSelected))
-      const rerun = await maybeAutoRefreshSelectedProofBatch(`${selectedCurriculumFeatureItem.courseCode} feature refresh`, saved.curriculumImportVersionId)
-      setFlashMessage(rerun
-        ? `Curriculum model inputs saved and proof batch refreshed for ${selectedCurriculumFeatureItem.courseCode}.`
+      const refreshed = await autoRefreshProofBatches(saved.affectedBatchIds ?? [selectedBatch.batchId], `${selectedCurriculumFeatureItem.courseCode} feature refresh`, saved.curriculumImportVersionId)
+      setFlashMessage(refreshed.length > 0
+        ? `Curriculum model inputs saved and ${refreshed.length} affected batch proof run${refreshed.length === 1 ? '' : 's'} refreshed for ${selectedCurriculumFeatureItem.courseCode}.`
         : `Curriculum model inputs saved for ${selectedCurriculumFeatureItem.courseCode}.`)
     })
   }
 
-  const handleSaveBatchPolicy = async () => {
+  const handleSaveCurriculumFeatureBinding = async () => {
     if (!selectedBatch) return
     await runAction(async () => {
-      const existing = data.policyOverrides.find(item => item.scopeType === 'batch' && item.scopeId === selectedBatch.batchId) ?? null
-      const payload = { scopeType: 'batch' as const, scopeId: selectedBatch.batchId, policy: buildValidatedPolicyPayload(policyForm), status: 'active' }
-      if (existing) await apiClient.updatePolicyOverride(existing.policyOverrideId, { ...payload, version: existing.version })
-      else await apiClient.createPolicyOverride(payload)
-      setFlashMessage('Batch policy saved.')
-      const nextResolved = await apiClient.getResolvedBatchPolicy(selectedBatch.batchId)
-      setResolvedBatchPolicy(nextResolved)
-      const rerun = await maybeAutoRefreshSelectedProofBatch('policy refresh')
-      if (rerun) {
-        setFlashMessage('Batch policy saved and proof batch refreshed.')
-      }
+      const saved = await apiClient.saveCurriculumFeatureBinding(selectedBatch.batchId, {
+        bindingMode: curriculumFeatureBindingMode,
+        curriculumFeatureProfileId: curriculumFeatureBindingMode === 'pin-profile' ? (curriculumFeaturePinnedProfileId || null) : null,
+        status: 'active',
+        version: curriculumFeatureConfig?.binding?.version ?? 1,
+      })
+      await refreshCurriculumFeatureConfig(selectedBatch.batchId)
+      const refreshed = await autoRefreshProofBatches(saved.affectedBatchIds, 'curriculum feature binding refresh', saved.curriculumImportVersionId)
+      setFlashMessage(refreshed.length > 0
+        ? `Curriculum feature binding saved and ${refreshed.length} affected batch proof run${refreshed.length === 1 ? '' : 's'} refreshed.`
+        : 'Curriculum feature binding saved.')
     })
   }
 
-  const handleResetBatchPolicy = async () => {
-    if (!selectedBatch) return
-    const existing = data.policyOverrides.find(item => item.scopeType === 'batch' && item.scopeId === selectedBatch.batchId && isVisibleAdminRecord(item.status)) ?? null
+  const handleSaveScopePolicy = async () => {
+    if (!activeGovernanceScope) return
+    await runAction(async () => {
+      const existing = activeScopePolicyOverride
+      const payload = {
+        scopeType: activeGovernanceScope.scopeType,
+        scopeId: activeGovernanceScope.scopeId,
+        policy: buildValidatedPolicyPayload(policyForm),
+        status: 'active',
+      }
+      if (existing) await apiClient.updatePolicyOverride(existing.policyOverrideId, { ...payload, version: existing.version })
+      else await apiClient.createPolicyOverride(payload)
+      await loadAdminData()
+      if (selectedBatch) {
+        const nextResolved = await apiClient.getResolvedBatchPolicy(selectedBatch.batchId)
+        setResolvedBatchPolicy(nextResolved)
+      }
+      const refreshed = selectedBatch ? await maybeAutoRefreshSelectedProofBatch('policy refresh') : []
+      setFlashMessage(refreshed.length > 0
+        ? `${activeGovernanceScope.label} policy saved and proof batch refreshed.`
+        : `${activeGovernanceScope.label} policy saved.`)
+    })
+  }
+
+  const handleResetScopePolicy = async () => {
+    if (!activeGovernanceScope || !activeScopePolicyOverride) {
+      setFlashMessage('No local override exists at the current scope. This layer is already inheriting.')
+      return
+    }
+    const existing = activeScopePolicyOverride
     if (!existing) {
-      setFlashMessage('No batch override exists. The batch is already using inherited policy.')
+      setFlashMessage('No local override exists at the current scope. This layer is already inheriting.')
       return
     }
     await runAction(async () => {
@@ -3123,14 +3464,85 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         status: 'archived',
         version: existing.version,
       })
-      const nextResolved = await apiClient.getResolvedBatchPolicy(selectedBatch.batchId)
-      setResolvedBatchPolicy(nextResolved)
-      setPolicyForm(hydratePolicyForm(nextResolved.effectivePolicy))
-      setFlashMessage('Batch policy override reset to inherited defaults.')
-      const rerun = await maybeAutoRefreshSelectedProofBatch('policy reset')
-      if (rerun) {
-        setFlashMessage('Batch policy override reset and proof batch refreshed.')
+      await loadAdminData()
+      if (selectedBatch) {
+        const nextResolved = await apiClient.getResolvedBatchPolicy(selectedBatch.batchId)
+        setResolvedBatchPolicy(nextResolved)
+        setPolicyForm(hydratePolicyForm(nextResolved.effectivePolicy))
       }
+      const refreshed = selectedBatch ? await maybeAutoRefreshSelectedProofBatch('policy reset') : []
+      setFlashMessage(refreshed.length > 0
+        ? `${activeGovernanceScope.label} policy override reset and proof batch refreshed.`
+        : `${activeGovernanceScope.label} policy override reset to inherited defaults.`)
+    })
+  }
+
+  const handleSaveScopeStagePolicy = async () => {
+    if (!activeGovernanceScope) return
+    await runAction(async () => {
+      const payload = {
+        scopeType: activeGovernanceScope.scopeType,
+        scopeId: activeGovernanceScope.scopeId,
+        policy: buildStagePolicyPayload(stagePolicyForm),
+        status: 'active',
+      }
+      if (activeScopeStageOverride) await apiClient.updateStagePolicyOverride(activeScopeStageOverride.stagePolicyOverrideId, { ...payload, version: activeScopeStageOverride.version })
+      else await apiClient.createStagePolicyOverride(payload)
+      await loadAdminData()
+      if (selectedBatch) {
+        const nextResolved = await apiClient.getResolvedStagePolicy(selectedBatch.batchId)
+        setResolvedStagePolicy(nextResolved)
+      }
+      setFlashMessage(`${activeGovernanceScope.label} stage policy saved.`)
+    })
+  }
+
+  const handleResetScopeStagePolicy = async () => {
+    if (!activeGovernanceScope || !activeScopeStageOverride) {
+      setFlashMessage('No local stage policy exists at the current scope. This layer is already inheriting.')
+      return
+    }
+    await runAction(async () => {
+      await apiClient.updateStagePolicyOverride(activeScopeStageOverride.stagePolicyOverrideId, {
+        scopeType: activeScopeStageOverride.scopeType,
+        scopeId: activeScopeStageOverride.scopeId,
+        policy: activeScopeStageOverride.policy,
+        status: 'archived',
+        version: activeScopeStageOverride.version,
+      })
+      await loadAdminData()
+      if (selectedBatch) {
+        const nextResolved = await apiClient.getResolvedStagePolicy(selectedBatch.batchId)
+        setResolvedStagePolicy(nextResolved)
+      }
+      setFlashMessage(`${activeGovernanceScope.label} stage policy override reset to inherited defaults.`)
+    })
+  }
+
+  const handleAdvanceOfferingStage = async () => {
+    if (!selectedStageOffering) return
+    await runAction(async () => {
+      const nextEligibility = await apiClient.advanceOfferingStage(selectedStageOffering.offId)
+      setSelectedStageEligibility(nextEligibility)
+      await loadAdminData()
+      setFlashMessage(`${selectedStageOffering.code} · Section ${selectedStageOffering.section} advanced to ${nextEligibility.currentStage.label}.`)
+    })
+  }
+
+  const handleProvisionBatch = async () => {
+    if (!selectedBatch) return
+    await runAction(async () => {
+      const payload = buildBatchProvisioningPayload(batchProvisioningForm)
+      const result = await apiClient.provisionBatch(selectedBatch.batchId, payload)
+      await loadAdminData()
+      await refreshCurriculumFeatureConfig(selectedBatch.batchId)
+      const refreshed = await autoRefreshProofBatches(result.affectedBatchIds, 'batch provisioning refresh')
+      if (selectedBatch.batchId === route.batchId) {
+        await refreshProofDashboard(selectedBatch.batchId)
+      }
+      setFlashMessage(
+        `Provisioned ${result.summary.createdStudentCount} students, ${result.summary.createdOfferingCount} offerings, ${result.summary.createdMentorCount} mentor links, and ${refreshed.length} proof refresh${refreshed.length === 1 ? '' : 'es'} for ${selectedBatch.batchLabel}.`,
+      )
     })
   }
 
@@ -3180,7 +3592,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       await refreshCurriculumFeatureConfig(selectedBatch.batchId)
       await refreshProofDashboard(selectedBatch.batchId)
       setFlashMessage(
-        rerun
+        rerun.length > 0
           ? 'Latest proof import approved, synced into the batch curriculum snapshot, and republished as the active proof run.'
           : 'Latest proof import approved and synced into the batch curriculum snapshot.',
       )
@@ -3402,14 +3814,14 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           version: current.version,
         })
         const rerun = await maybeAutoRefreshSelectedProofBatch(`${selectedStudent.name} enrollment refresh`)
-        setFlashMessage(rerun ? 'Enrollment updated and proof batch refreshed.' : 'Enrollment updated.')
+        setFlashMessage(rerun.length > 0 ? 'Enrollment updated and proof batch refreshed.' : 'Enrollment updated.')
       })
       return
     }
     await runAction(async () => {
       await apiClient.createEnrollment(selectedStudent.studentId, payload)
       const rerun = await maybeAutoRefreshSelectedProofBatch(`${selectedStudent.name} enrollment refresh`)
-      setFlashMessage(rerun ? 'Enrollment created and proof batch refreshed.' : 'Enrollment created.')
+      setFlashMessage(rerun.length > 0 ? 'Enrollment created and proof batch refreshed.' : 'Enrollment created.')
     })
   }
 
@@ -3804,67 +4216,6 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     }
   }
 
-  // --- Boot / auth screens ---
-  if (booting) {
-    return <PageShell size="narrow" style={{ paddingTop: 48 }}><Card><div style={{ ...mono, fontSize: 11, color: T.muted }}>Restoring system admin session…</div></Card></PageShell>
-  }
-
-  if (!session) {
-    return (
-      <AuthPageShell>
-        <div style={{ minHeight: 'calc(100vh - 60px)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24, alignItems: 'stretch' }}>
-          <Card style={{ padding: 28, background: `radial-gradient(circle at top left, ${T.accent}24, transparent 36%), radial-gradient(circle at bottom right, ${T.success}16, transparent 28%), linear-gradient(160deg, ${T.surface}, ${T.surface2})`, display: 'grid', alignContent: 'space-between', minHeight: 520 }} glow={T.accent}>
-            <div style={{ display: 'grid', gap: 18 }}>
-              <HeroBadge><Compass size={12} /> System Admin Live Mode</HeroBadge>
-              <div>
-                <div style={{ ...sora, fontSize: 42, fontWeight: 800, color: T.text, lineHeight: 1.02, maxWidth: 560 }}>Govern curriculum, policy, and year-specific control from one place.</div>
-                <div style={{ ...mono, fontSize: 12, color: T.muted, marginTop: 16, lineHeight: 1.9, maxWidth: 560 }}>This workspace is connected to the live backend at `{apiBaseUrl}`. Use it for academic faculties, branches, batches, policy overrides, requests, and the student or faculty records that depend on them.</div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
-                <AuthFeature title="Hierarchy" body="Academic faculty, department, branch, and batch stay aligned so year-wise policy divergence is explicit instead of buried." color={T.accent} />
-                <AuthFeature title="Governance" body="CE/SEE limits, grade bands, working calendar, and SGPA or CGPA rules remain centrally controlled but overrideable at the right level." color={T.success} />
-                <AuthFeature title="Operations" body="Search, requests, and teaching ownership stay visible together so the sysadmin flow feels like one control plane instead of a setup dead-end." color={T.orange} />
-              </div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginTop: 24 }}>
-              <div style={{ ...mono, fontSize: 11, color: T.muted }}>Need the teaching workspace instead? Return to the portal selector and sign in as faculty.</div>
-              {onExitPortal ? <Btn variant="ghost" onClick={onExitPortal}><ChevronLeft size={14} /> Portal Selector</Btn> : null}
-            </div>
-          </Card>
-          <Card style={{ padding: 28, display: 'grid', alignContent: 'center', background: `linear-gradient(180deg, ${T.surface}, ${T.surface2})` }}>
-            <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Secure Session</div>
-            <div style={{ ...sora, fontSize: 28, fontWeight: 800, color: T.text, marginTop: 10 }}>Sign in to manage the live hierarchy.</div>
-            <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 10, lineHeight: 1.8 }}>Use the seeded sysadmin account or your assigned live admin credentials. Session state and theme preferences are restored automatically after sign-in.</div>
-            <form onSubmit={handleLogin} style={{ marginTop: 22, display: 'grid', gap: 14 }}>
-              <div><FieldLabel>Username Or Email</FieldLabel><TextInput value={identifier} onChange={event => setIdentifier(event.target.value)} placeholder="sysadmin" /></div>
-              <div><FieldLabel>Password</FieldLabel><TextInput type="password" value={password} onChange={event => setPassword(event.target.value)} placeholder="••••••••" /></div>
-              {authError ? <InfoBanner tone="error" message={authError} /> : null}
-              <div style={{ display: 'flex', gap: 12, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
-                {onExitPortal ? <Btn variant="ghost" onClick={onExitPortal}>Back To Portal</Btn> : <span />}
-                <Btn type="submit" disabled={authBusy}>{authBusy ? 'Signing In…' : 'Sign In'}</Btn>
-              </div>
-            </form>
-          </Card>
-        </div>
-      </AuthPageShell>
-    )
-  }
-
-  if (session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
-    return (
-      <PageShell size="narrow" style={{ paddingTop: 48 }}>
-        <Card style={{ padding: 28 }}>
-          <div style={{ ...sora, fontSize: 22, fontWeight: 800, color: T.text }}>System admin role required</div>
-          <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 8 }}>You are currently in `{session.activeRoleGrant.roleCode}` context. Switch to your system-admin grant to use the configuration workspace.</div>
-          <div style={{ display: 'flex', gap: 12, marginTop: 18 }}>
-            {systemAdminGrant ? <Btn onClick={handleSwitchToSystemAdmin} disabled={authBusy}>Switch To System Admin</Btn> : null}
-            <Btn variant="ghost" onClick={handleLogout}>Log Out</Btn>
-          </div>
-        </Card>
-      </PageShell>
-    )
-  }
-
   // --- Computed ---
   const facultyDepartments = listDepartmentsForAcademicFaculty(data, selectedAcademicFaculty?.academicFacultyId)
   const departmentBranches = listBranchesForDepartment(data, selectedDepartment?.departmentId)
@@ -3877,6 +4228,90 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const activeBatchPolicyOverride = selectedBatch
     ? data.policyOverrides.find(item => item.scopeType === 'batch' && item.scopeId === selectedBatch.batchId && isVisibleAdminRecord(item.status)) ?? null
     : null
+  const activeScopeChain = useMemo<ActiveAdminScope[]>(() => {
+    const chain: ActiveAdminScope[] = []
+    if (data.institution) {
+      chain.push({
+        scopeType: 'institution',
+        scopeId: data.institution.institutionId,
+        label: data.institution.name,
+      })
+    }
+    if (selectedAcademicFaculty) {
+      chain.push({
+        scopeType: 'academic-faculty',
+        scopeId: selectedAcademicFaculty.academicFacultyId,
+        label: selectedAcademicFaculty.name,
+      })
+    }
+    if (selectedDepartment) {
+      chain.push({
+        scopeType: 'department',
+        scopeId: selectedDepartment.departmentId,
+        label: selectedDepartment.name,
+      })
+    }
+    if (selectedBranch) {
+      chain.push({
+        scopeType: 'branch',
+        scopeId: selectedBranch.branchId,
+        label: selectedBranch.name,
+      })
+    }
+    if (selectedBatch) {
+      chain.push({
+        scopeType: 'batch',
+        scopeId: selectedBatch.batchId,
+        label: `Batch ${selectedBatch.batchLabel}`,
+      })
+    }
+    return chain
+  }, [data.institution, selectedAcademicFaculty, selectedBatch, selectedBranch, selectedDepartment])
+  const activeGovernanceScope = activeScopeChain.at(-1) ?? null
+  const scopePolicyOverrides = useMemo(() => (
+    activeScopeChain.flatMap(scope => {
+      const match = data.policyOverrides.find(item => item.scopeType === scope.scopeType && item.scopeId === scope.scopeId && isVisibleAdminRecord(item.status))
+      return match ? [{ ...match, appliedAtScope: `${scope.scopeType}:${scope.scopeId}` }] : []
+    })
+  ), [activeScopeChain, data.policyOverrides])
+  const scopeStageOverrides = useMemo(() => (
+    activeScopeChain.flatMap(scope => {
+      const match = stagePolicyOverrides.find(item => item.scopeType === scope.scopeType && item.scopeId === scope.scopeId && isVisibleAdminRecord(item.status))
+      return match ? [{ ...match, appliedAtScope: `${scope.scopeType}:${scope.scopeId}` }] : []
+    })
+  ), [activeScopeChain, stagePolicyOverrides])
+  const effectiveScopePolicy = useMemo(() => {
+    if (activeGovernanceScope?.scopeType === 'batch' && resolvedBatchPolicy?.batch.batchId === activeGovernanceScope.scopeId) {
+      return resolvedBatchPolicy.effectivePolicy
+    }
+    return scopePolicyOverrides.reduce<ApiResolvedBatchPolicy['effectivePolicy']>(
+      (policy, override) => mergePolicyPayload(policy, override.policy),
+      buildValidatedPolicyPayload(defaultPolicyForm()),
+    )
+  }, [activeGovernanceScope?.scopeId, activeGovernanceScope?.scopeType, resolvedBatchPolicy, scopePolicyOverrides])
+  const effectiveScopeStagePolicy = useMemo(() => {
+    if (activeGovernanceScope?.scopeType === 'batch' && resolvedStagePolicy?.batch.batchId === activeGovernanceScope.scopeId) {
+      return resolvedStagePolicy.effectivePolicy
+    }
+    return scopeStageOverrides.at(-1)?.policy ?? DEFAULT_STAGE_POLICY
+  }, [activeGovernanceScope?.scopeId, activeGovernanceScope?.scopeType, resolvedStagePolicy, scopeStageOverrides])
+  const activeScopePolicyOverride = activeGovernanceScope
+    ? data.policyOverrides.find(item => item.scopeType === activeGovernanceScope.scopeType && item.scopeId === activeGovernanceScope.scopeId && isVisibleAdminRecord(item.status)) ?? null
+    : null
+  const activeScopeStageOverride = activeGovernanceScope
+    ? stagePolicyOverrides.find(item => item.scopeType === activeGovernanceScope.scopeType && item.scopeId === activeGovernanceScope.scopeId && isVisibleAdminRecord(item.status)) ?? null
+    : null
+  const curriculumFeatureTargetScopeOptions = activeScopeChain
+  const curriculumFeatureProfileOptions = curriculumFeatureConfig?.availableProfiles ?? []
+  const governanceScopeSummary = activeGovernanceScope
+    ? `${formatScopeTypeLabel(activeGovernanceScope.scopeType)} scope`
+    : 'Institution scope'
+  const policyOverrideTrail = scopePolicyOverrides.length
+    ? scopePolicyOverrides.map(item => `${formatScopeTypeLabel(item.scopeType)} · ${activeScopeChain.find(scope => scope.scopeType === item.scopeType && scope.scopeId === item.scopeId)?.label ?? item.scopeType}`).join(' -> ')
+    : 'Institution defaults only'
+  const stageOverrideTrail = scopeStageOverrides.length
+    ? scopeStageOverrides.map(item => `${formatScopeTypeLabel(item.scopeType)} · ${activeScopeChain.find(scope => scope.scopeType === item.scopeType && scope.scopeId === item.scopeId)?.label ?? item.scopeType}`).join(' -> ')
+    : 'Institution defaults only'
   const visibleAcademicFaculties = data.academicFaculties.filter(item => isAcademicFacultyVisible(data, item))
   const visibleDepartments = data.departments.filter(item => isDepartmentVisible(data, item))
   const visibleBranches = data.branches.filter(item => isBranchVisible(data, item))
@@ -4176,18 +4611,30 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       icon: <GraduationCap size={13} />,
       description: 'Pass mark, repeat-course policy, and promotion guardrails for progression.',
     },
+    {
+      id: 'stage' as const,
+      label: 'Stage Gates',
+      icon: <Clock3 size={13} />,
+      description: 'Configure inherited stage gates and advance individual classes only when evidence is complete.',
+    },
     ...(selectedBranch ? [{
       id: 'courses' as const,
       label: 'Courses',
       icon: <BookOpen size={13} />,
       description: 'Semester-wise curriculum rows, credits, and scoped course leader assignments.',
     }] : []),
+    ...(selectedBatch ? [{
+      id: 'provision' as const,
+      label: 'Provision',
+      icon: <Plus size={13} />,
+      description: 'Seed sections, students, ownerships, mentor links, timetables, and assessment scaffolding for live verification.',
+    }] : []),
   ] satisfies Array<{ id: UniversityTab; label: string; icon: ReactNode; description: string }>
   const activeUniversityTab = universityTabOptions.find(item => item.id === universityTab) ?? universityTabOptions[0]
-  const universityWorkspaceLabel = selectedBatch && universityTab !== 'overview'
+  const universityWorkspaceLabel = activeGovernanceScope && universityTab !== 'overview'
     ? `${universityContextLabel} · ${activeUniversityTab.label}`
     : universityContextLabel
-  const universityWorkspaceTabCards = selectedBatch
+  const universityWorkspaceTabCards = activeGovernanceScope
     ? universityTabOptions.filter(item => item.id !== 'overview')
     : []
   const showInlineActionQueue = showActionQueue && viewportWidth >= 1480
@@ -4300,8 +4747,49 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const visibleOfferings = [...data.offerings]
     .filter(item => isOfferingVisible(data, item))
     .sort((left, right) => `${left.code}-${left.year}-${left.section}`.localeCompare(`${right.code}-${right.year}-${right.section}`))
+  const batchTermIds = new Set(batchTerms.map(item => item.termId))
+  const currentSemesterTerm = selectedBatch
+    ? batchTerms.find(item => item.semesterNumber === selectedBatch.currentSemester && isVisibleAdminRecord(item.status)) ?? batchTerms[0] ?? null
+    : null
+  const batchOfferings = selectedBatch
+    ? visibleOfferings
+        .filter(item => item.termId ? batchTermIds.has(item.termId) : false)
+        .filter(item => !selectedSectionCode || item.section === selectedSectionCode)
+    : []
   const visibleOfferingById = new Map(visibleOfferings.map(item => [item.offId, item]))
   const activeVisibleOwnerships = data.ownerships.filter(item => item.status === 'active' && isFacultyMemberVisible(data, item.facultyId) && visibleOfferingById.has(item.offeringId))
+  const batchScopeForProvisioning = selectedBatch
+    ? {
+        academicFacultyId: selectedAcademicFaculty?.academicFacultyId ?? null,
+        departmentId: selectedDepartment?.departmentId ?? null,
+        branchId: selectedBranch?.branchId ?? null,
+        batchId: selectedBatch.batchId,
+        sectionCode: null,
+      }
+    : null
+  const batchFacultyPool = batchScopeForProvisioning
+    ? visibleFacultyMembers.filter(item => matchesFacultyScope(item, data, batchScopeForProvisioning))
+    : []
+  const batchStudents = selectedBatch
+    ? data.students
+        .filter(item => isStudentVisible(data, item))
+        .filter(item => item.activeAcademicContext?.batchId === selectedBatch.batchId)
+        .filter(item => !selectedSectionCode || item.activeAcademicContext?.sectionCode === selectedSectionCode)
+    : []
+  const batchOfferingsWithoutOwner = batchOfferings.filter(offering => !activeVisibleOwnerships.some(ownership => ownership.offeringId === offering.offId))
+  const batchStudentsWithoutEnrollment = batchStudents.filter(student => !findLatestEnrollment(student))
+  const batchStudentsWithoutMentor = batchStudents.filter(student => !student.activeMentorAssignment)
+  const batchOfferingsWithoutRoster = batchOfferings.filter(offering => !batchStudents.some(student => (
+    student.activeAcademicContext?.termId === offering.termId
+    && student.activeAcademicContext?.sectionCode === offering.section
+  )))
+  const selectedStageOffering = batchOfferings.find(item => item.offId === selectedStageOfferingId) ?? batchOfferings[0] ?? null
+  const selectedCurriculumFeatureTargetScope = curriculumFeatureTargetScopeKey
+    ? curriculumFeatureTargetScopeOptions.find(scope => `${scope.scopeType}::${scope.scopeId}` === curriculumFeatureTargetScopeKey) ?? null
+    : null
+  const curriculumFeatureAffectedBatchPreview = selectedCurriculumFeatureTargetScope
+    ? visibleBatches.filter(batch => matchesBatchScope(batch, data, selectedCurriculumFeatureTargetScope.scopeType, selectedCurriculumFeatureTargetScope.scopeId))
+    : []
   const overviewScopedStudents = overviewHierarchyScope
     ? data.students
         .filter(item => isStudentVisible(data, item))
@@ -4403,6 +4891,84 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     })
   const facultyCalendarRecurringBlocks = facultyCalendar?.template?.classBlocks.filter(item => !item.dateISO) ?? []
   const facultyCalendarExtraBlocks = facultyCalendar?.template?.classBlocks.filter(item => !!item.dateISO) ?? []
+
+  useEffect(() => {
+    if (!activeGovernanceScope) return
+    setPolicyForm(hydratePolicyForm(effectiveScopePolicy))
+  }, [
+    activeGovernanceScope?.scopeId,
+    activeGovernanceScope?.scopeType,
+    activeScopePolicyOverride?.policyOverrideId,
+    activeScopePolicyOverride?.version,
+    effectiveScopePolicy,
+  ])
+
+  useEffect(() => {
+    if (!activeGovernanceScope) {
+      setStagePolicyForm(defaultStagePolicyForm())
+      return
+    }
+    setStagePolicyForm(hydrateStagePolicyForm(effectiveScopeStagePolicy))
+  }, [
+    activeGovernanceScope?.scopeId,
+    activeGovernanceScope?.scopeType,
+    activeScopeStageOverride?.stagePolicyOverrideId,
+    activeScopeStageOverride?.version,
+    effectiveScopeStagePolicy,
+  ])
+
+  useEffect(() => {
+    setBatchProvisioningForm(prev => ({
+      ...prev,
+      termId: currentSemesterTerm?.termId ?? prev.termId,
+      sectionLabels: selectedBatch?.sectionLabels.join(', ') ?? prev.sectionLabels,
+    }))
+  }, [currentSemesterTerm?.termId, selectedBatch?.batchId, selectedBatch?.sectionLabels])
+
+  useEffect(() => {
+    const availableKeys = new Set(curriculumFeatureTargetScopeOptions.map(scope => `${scope.scopeType}::${scope.scopeId}`))
+    if (availableKeys.size === 0) {
+      setCurriculumFeatureTargetScopeKey('')
+      return
+    }
+    setCurriculumFeatureTargetScopeKey(current => {
+      if (current && availableKeys.has(current)) return current
+      const preferred = selectedBranch
+        ? `branch::${selectedBranch.branchId}`
+        : activeGovernanceScope
+          ? `${activeGovernanceScope.scopeType}::${activeGovernanceScope.scopeId}`
+          : null
+      return preferred && availableKeys.has(preferred) ? preferred : Array.from(availableKeys)[0]!
+    })
+  }, [activeGovernanceScope, curriculumFeatureTargetScopeOptions, selectedBranch])
+
+  useEffect(() => {
+    if (!selectedStageOffering) {
+      setSelectedStageOfferingId('')
+      setSelectedStageEligibility(null)
+      return
+    }
+    if (selectedStageOffering.offId !== selectedStageOfferingId) {
+      setSelectedStageOfferingId(selectedStageOffering.offId)
+    }
+  }, [selectedStageOffering, selectedStageOfferingId])
+
+  useEffect(() => {
+    if (!selectedStageOfferingId || !selectedBatch) {
+      setSelectedStageEligibility(null)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const next = await apiClient.getOfferingStageEligibility(selectedStageOfferingId)
+        if (!cancelled) setSelectedStageEligibility(next)
+      } catch (error) {
+        if (!cancelled) setActionError(toErrorMessage(error))
+      }
+    })()
+    return () => { cancelled = true }
+  }, [apiClient, selectedBatch, selectedStageOfferingId])
   const scopeOptions = (() => {
     if (roleGrantForm.scopeType === 'institution') {
       return data.institution ? [{ value: data.institution.institutionId, label: data.institution.name }] : []
@@ -4579,6 +5145,66 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const canNavigateBack = routeHistory.length > 0
 
   // --- Main workspace ---
+  if (booting) {
+    return <PageShell size="narrow" style={{ paddingTop: 48 }}><Card><div style={{ ...mono, fontSize: 11, color: T.muted }}>Restoring system admin session…</div></Card></PageShell>
+  }
+
+  if (!session) {
+    return (
+      <AuthPageShell>
+        <div style={{ minHeight: 'calc(100vh - 60px)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24, alignItems: 'stretch' }}>
+          <Card style={{ padding: 28, background: `radial-gradient(circle at top left, ${T.accent}24, transparent 36%), radial-gradient(circle at bottom right, ${T.success}16, transparent 28%), linear-gradient(160deg, ${T.surface}, ${T.surface2})`, display: 'grid', alignContent: 'space-between', minHeight: 520 }} glow={T.accent}>
+            <div style={{ display: 'grid', gap: 18 }}>
+              <HeroBadge><Compass size={12} /> System Admin Live Mode</HeroBadge>
+              <div>
+                <div style={{ ...sora, fontSize: 42, fontWeight: 800, color: T.text, lineHeight: 1.02, maxWidth: 560 }}>Govern curriculum, policy, and year-specific control from one place.</div>
+                <div style={{ ...mono, fontSize: 12, color: T.muted, marginTop: 16, lineHeight: 1.9, maxWidth: 560 }}>This workspace is connected to the live backend at `{apiBaseUrl}`. Use it for academic faculties, branches, batches, policy overrides, requests, and the student or faculty records that depend on them.</div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
+                <AuthFeature title="Hierarchy" body="Academic faculty, department, branch, and batch stay aligned so year-wise policy divergence is explicit instead of buried." color={T.accent} />
+                <AuthFeature title="Governance" body="CE/SEE limits, grade bands, working calendar, and SGPA or CGPA rules remain centrally controlled but overrideable at the right level." color={T.success} />
+                <AuthFeature title="Operations" body="Search, requests, and teaching ownership stay visible together so the sysadmin flow feels like one control plane instead of a setup dead-end." color={T.orange} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginTop: 24 }}>
+              <div style={{ ...mono, fontSize: 11, color: T.muted }}>Need the teaching workspace instead? Return to the portal selector and sign in as faculty.</div>
+              {onExitPortal ? <Btn variant="ghost" onClick={onExitPortal}><ChevronLeft size={14} /> Portal Selector</Btn> : null}
+            </div>
+          </Card>
+          <Card style={{ padding: 28, display: 'grid', alignContent: 'center', background: `linear-gradient(180deg, ${T.surface}, ${T.surface2})` }}>
+            <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Secure Session</div>
+            <div style={{ ...sora, fontSize: 28, fontWeight: 800, color: T.text, marginTop: 10 }}>Sign in to manage the live hierarchy.</div>
+            <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 10, lineHeight: 1.8 }}>Use the seeded sysadmin account or your assigned live admin credentials. Session state and theme preferences are restored automatically after sign-in.</div>
+            <form onSubmit={handleLogin} style={{ marginTop: 22, display: 'grid', gap: 14 }}>
+              <div><FieldLabel>Username Or Email</FieldLabel><TextInput value={identifier} onChange={event => setIdentifier(event.target.value)} placeholder="sysadmin" /></div>
+              <div><FieldLabel>Password</FieldLabel><TextInput type="password" value={password} onChange={event => setPassword(event.target.value)} placeholder="••••••••" /></div>
+              {authError ? <InfoBanner tone="error" message={authError} /> : null}
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+                {onExitPortal ? <Btn variant="ghost" onClick={onExitPortal}>Back To Portal</Btn> : <span />}
+                <Btn type="submit" disabled={authBusy}>{authBusy ? 'Signing In…' : 'Sign In'}</Btn>
+              </div>
+            </form>
+          </Card>
+        </div>
+      </AuthPageShell>
+    )
+  }
+
+  if (session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
+    return (
+      <PageShell size="narrow" style={{ paddingTop: 48 }}>
+        <Card style={{ padding: 28 }}>
+          <div style={{ ...sora, fontSize: 22, fontWeight: 800, color: T.text }}>System admin role required</div>
+          <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 8 }}>You are currently in `{session.activeRoleGrant.roleCode}` context. Switch to your system-admin grant to use the configuration workspace.</div>
+          <div style={{ display: 'flex', gap: 12, marginTop: 18 }}>
+            {systemAdminGrant ? <Btn onClick={handleSwitchToSystemAdmin} disabled={authBusy}>Switch To System Admin</Btn> : null}
+            <Btn variant="ghost" onClick={handleLogout}>Log Out</Btn>
+          </div>
+        </Card>
+      </PageShell>
+    )
+  }
+
   return (
     <div className="app-shell" style={{ minHeight: '100vh', background: `linear-gradient(180deg, ${T.bg}, ${T.surface2})`, color: T.text }}>
       <TeachingShellAdminTopBar
@@ -5656,7 +6282,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </Card>
 
                   <div>
-                    <SectionHeading title="Batch Policy Override" eyebrow="Governance" caption="Adjust deterministic MSRUAS attendance, condonation, grading, and operational limits here, or reset the batch back to inherited defaults." />
+                    <SectionHeading title="Scope Governance Override" eyebrow="Governance" caption={`Adjust deterministic MSRUAS attendance, condonation, grading, and operational limits at ${activeGovernanceScope?.label ?? 'the active scope'}, or reset this layer back to inheritance.`} />
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                      <Chip color={activeScopePolicyOverride ? T.orange : T.dim}>{activeScopePolicyOverride ? `${governanceScopeSummary} override` : `${governanceScopeSummary} inheriting`}</Chip>
+                      <Chip color={T.accent}>{policyOverrideTrail}</Chip>
+                    </div>
                   </div>
 
                   <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', marginTop: 14 }}>
@@ -5720,8 +6350,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   <InfoBanner message="Course leaders now manage the internal TT, quiz, and assignment weightages inside the teaching workspace. Sysadmin controls only the CE/SEE split and max component counts here." />
 
                   <div style={{ marginTop: 14, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                    <Btn onClick={handleSaveBatchPolicy}><CheckCircle2 size={14} /> Save Batch Policy</Btn>
-                    <Btn variant="ghost" onClick={() => void handleResetBatchPolicy()}>Reset To Inherited</Btn>
+                    <Btn onClick={handleSaveScopePolicy}><CheckCircle2 size={14} /> Save {activeGovernanceScope ? formatScopeTypeLabel(activeGovernanceScope.scopeType) : 'Scope'} Policy</Btn>
+                    <Btn variant="ghost" onClick={() => void handleResetScopePolicy()}>Reset This Scope</Btn>
                   </div>
 
                   <div style={{ display: 'grid', gap: 10, marginTop: 18, borderTop: `1px solid ${T.border}`, paddingTop: 18 }}>
@@ -5788,9 +6418,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               )}
 
               {universityTab === 'bands' && (
-                selectedBatch ? (
+                activeGovernanceScope ? (
                   <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
-                    <SectionHeading title="Academic Bands" eyebrow="Evaluation" caption="Current repo defaults seed the table; save here to keep a batch-specific override." />
+                    <SectionHeading title="Academic Bands" eyebrow="Evaluation" caption={`Resolved grade bands for ${activeGovernanceScope.label}. Save here to create or update the local override at this exact scope.`} />
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <Chip color={activeScopePolicyOverride ? T.orange : T.dim}>{activeScopePolicyOverride ? `${governanceScopeSummary} override` : `${governanceScopeSummary} inheriting`}</Chip>
+                      <Chip color={T.accent}>{policyOverrideTrail}</Chip>
+                    </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
                       <div><FieldLabel>O Minimum</FieldLabel><TextInput value={policyForm.oMin} onChange={event => setPolicyForm(prev => ({ ...prev, oMin: event.target.value }))} /></div>
                       <div><FieldLabel>A+ Minimum</FieldLabel><TextInput value={policyForm.aPlusMin} onChange={event => setPolicyForm(prev => ({ ...prev, aPlusMin: event.target.value }))} /></div>
@@ -5801,17 +6435,21 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                       <div><FieldLabel>P Minimum</FieldLabel><TextInput value={policyForm.pMin} onChange={event => setPolicyForm(prev => ({ ...prev, pMin: event.target.value }))} /></div>
                     </div>
                     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                      <Btn onClick={handleSaveBatchPolicy}><CheckCircle2 size={14} /> Save Bands</Btn>
-                      <Btn variant="ghost" onClick={() => void handleResetBatchPolicy()}>Reset To Inherited</Btn>
+                      <Btn onClick={handleSaveScopePolicy}><CheckCircle2 size={14} /> Save Bands</Btn>
+                      <Btn variant="ghost" onClick={() => void handleResetScopePolicy()}>Reset This Scope</Btn>
                     </div>
                   </Card>
-                ) : <EmptyState title="Select a year" body="Bands are editable once year scope is selected." />
+                ) : <EmptyState title="No governance scope" body="Select a faculty, department, branch, or year to author a local override. Institution defaults remain available when no deeper scope is selected." />
               )}
 
               {universityTab === 'ce-see' && (
-                selectedBatch ? (
+                activeGovernanceScope ? (
                   <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
-                    <SectionHeading title="CE / SEE Split" eyebrow="Assessment" caption="Configure the admin-owned CE/SEE split and the component count limits that the teaching workspace must respect." />
+                    <SectionHeading title="CE / SEE Split" eyebrow="Assessment" caption={`Configure the CE/SEE split, component caps, and working calendar at ${activeGovernanceScope.label}. Deeper scopes inherit this unless they create a local override.`} />
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <Chip color={activeScopePolicyOverride ? T.orange : T.dim}>{activeScopePolicyOverride ? `${governanceScopeSummary} override` : `${governanceScopeSummary} inheriting`}</Chip>
+                      <Chip color={T.accent}>{policyOverrideTrail}</Chip>
+                    </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
                       <div><FieldLabel>CE</FieldLabel><TextInput value={policyForm.ce} onChange={event => setPolicyForm(prev => ({ ...prev, ce: event.target.value }))} /></div>
                       <div><FieldLabel>SEE</FieldLabel><TextInput value={policyForm.see} onChange={event => setPolicyForm(prev => ({ ...prev, see: event.target.value }))} /></div>
@@ -5821,23 +6459,33 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                       <div><FieldLabel>Day Start</FieldLabel><TextInput value={policyForm.dayStart} onChange={event => setPolicyForm(prev => ({ ...prev, dayStart: event.target.value }))} /></div>
                       <div><FieldLabel>Day End</FieldLabel><TextInput value={policyForm.dayEnd} onChange={event => setPolicyForm(prev => ({ ...prev, dayEnd: event.target.value }))} /></div>
                     </div>
-                    <InfoBanner message="Internal TT, quiz, and assignment weight splits are now configured by the Course Leader inside teaching profile. This policy page only defines the total CE pool plus the allowed component counts." />
+                    <InfoBanner message="Internal TT, quiz, and assignment weight splits stay in teaching profile. Sysadmin owns the CE/SEE totals, caps, and inherited calendar guardrails here." />
                     <div>
                       <FieldLabel>Working Days</FieldLabel>
                       <DayToggle days={WEEKDAYS} selected={policyForm.workingDays} onChange={next => setPolicyForm(prev => ({ ...prev, workingDays: next as PolicyFormState['workingDays'] }))} />
                     </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+                      <div><FieldLabel>Coursework Weeks</FieldLabel><TextInput value={policyForm.courseworkWeeks} onChange={event => setPolicyForm(prev => ({ ...prev, courseworkWeeks: event.target.value }))} /></div>
+                      <div><FieldLabel>Exam Prep Weeks</FieldLabel><TextInput value={policyForm.examPreparationWeeks} onChange={event => setPolicyForm(prev => ({ ...prev, examPreparationWeeks: event.target.value }))} /></div>
+                      <div><FieldLabel>SEE Weeks</FieldLabel><TextInput value={policyForm.seeWeeks} onChange={event => setPolicyForm(prev => ({ ...prev, seeWeeks: event.target.value }))} /></div>
+                      <div><FieldLabel>Total Weeks</FieldLabel><TextInput value={policyForm.totalWeeks} onChange={event => setPolicyForm(prev => ({ ...prev, totalWeeks: event.target.value }))} /></div>
+                    </div>
                     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                      <Btn onClick={handleSaveBatchPolicy}><CheckCircle2 size={14} /> Save CE / SEE</Btn>
-                      <Btn variant="ghost" onClick={() => void handleResetBatchPolicy()}>Reset To Inherited</Btn>
+                      <Btn onClick={handleSaveScopePolicy}><CheckCircle2 size={14} /> Save CE / SEE</Btn>
+                      <Btn variant="ghost" onClick={() => void handleResetScopePolicy()}>Reset This Scope</Btn>
                     </div>
                   </Card>
-                ) : <EmptyState title="Select a year" body="CE/SEE rules are editable once year scope is selected." />
+                ) : <EmptyState title="No governance scope" body="Select a faculty, department, branch, or year to author CE/SEE rules at that layer." />
               )}
 
               {universityTab === 'cgpa' && (
-                selectedBatch ? (
+                activeGovernanceScope ? (
                   <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
-                    <SectionHeading title="CGPA And Progression" eyebrow="Rules" caption="Use the current repo defaults as a starting point, then tune promotion rules per year." />
+                    <SectionHeading title="CGPA And Progression" eyebrow="Rules" caption={`Configure pass rules, progression, and risk thresholds for ${activeGovernanceScope.label}. Deeper scopes inherit these values until locally overridden.`} />
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <Chip color={activeScopePolicyOverride ? T.orange : T.dim}>{activeScopePolicyOverride ? `${governanceScopeSummary} override` : `${governanceScopeSummary} inheriting`}</Chip>
+                      <Chip color={T.accent}>{policyOverrideTrail}</Chip>
+                    </div>
                     <Card style={{ padding: 14, background: T.surface2 }}>
                       <div style={{ ...mono, fontSize: 11, color: T.text, lineHeight: 1.9 }}>
                         CE + SEE → M → Letter Grade → Grade Point<br />
@@ -5848,6 +6496,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
                       <div><FieldLabel>Pass Mark Percent</FieldLabel><TextInput value={policyForm.passMarkPercent} onChange={event => setPolicyForm(prev => ({ ...prev, passMarkPercent: event.target.value }))} /></div>
                       <div><FieldLabel>Minimum CGPA For Promotion</FieldLabel><TextInput value={policyForm.minimumCgpaForPromotion} onChange={event => setPolicyForm(prev => ({ ...prev, minimumCgpaForPromotion: event.target.value }))} /></div>
+                      <div><FieldLabel>SGPA / CGPA Decimals</FieldLabel><TextInput value={policyForm.sgpaCgpaDecimals} onChange={event => setPolicyForm(prev => ({ ...prev, sgpaCgpaDecimals: event.target.value }))} /></div>
                       <div><FieldLabel>High Risk Attendance Below</FieldLabel><TextInput value={policyForm.highRiskAttendancePercentBelow} onChange={event => setPolicyForm(prev => ({ ...prev, highRiskAttendancePercentBelow: event.target.value }))} /></div>
                       <div><FieldLabel>Medium Risk Attendance Below</FieldLabel><TextInput value={policyForm.mediumRiskAttendancePercentBelow} onChange={event => setPolicyForm(prev => ({ ...prev, mediumRiskAttendancePercentBelow: event.target.value }))} /></div>
                       <div><FieldLabel>High Risk CGPA Below</FieldLabel><TextInput value={policyForm.highRiskCgpaBelow} onChange={event => setPolicyForm(prev => ({ ...prev, highRiskCgpaBelow: event.target.value }))} /></div>
@@ -5870,11 +6519,251 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                      <Btn onClick={handleSaveBatchPolicy}><CheckCircle2 size={14} /> Save CGPA Rules</Btn>
-                      <Btn variant="ghost" onClick={() => void handleResetBatchPolicy()}>Reset To Inherited</Btn>
+                      <Btn onClick={handleSaveScopePolicy}><CheckCircle2 size={14} /> Save CGPA Rules</Btn>
+                      <Btn variant="ghost" onClick={() => void handleResetScopePolicy()}>Reset This Scope</Btn>
                     </div>
                   </Card>
-                ) : <EmptyState title="Select a year" body="CGPA and progression rules are editable once year scope is selected." />
+                ) : <EmptyState title="No governance scope" body="Select a faculty, department, branch, or year to author CGPA and progression rules at that layer." />
+              )}
+
+              {universityTab === 'stage' && (
+                activeGovernanceScope ? (
+                  <div style={{ display: 'grid', gap: 12 }}>
+                    <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
+                      <SectionHeading title="Stage Policy" eyebrow="Lifecycle" caption={`Configure inherited class-stage gates at ${activeGovernanceScope.label}. Runtime offerings now advance only through this resolved policy.`} />
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <Chip color={activeScopeStageOverride ? T.orange : T.dim}>{activeScopeStageOverride ? `${governanceScopeSummary} override` : `${governanceScopeSummary} inheriting`}</Chip>
+                        <Chip color={T.accent}>{stageOverrideTrail}</Chip>
+                      </div>
+                      {stagePolicyForm.stages.map((stage, index) => (
+                        <Card key={stage.key} style={{ padding: 14, background: T.surface2, display: 'grid', gap: 10 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <div>
+                              <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>{stage.label || `Stage ${index + 1}`}</div>
+                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{stage.key}</div>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <FieldLabel>Color</FieldLabel>
+                              <TextInput
+                                type="color"
+                                value={stage.color}
+                                onChange={event => setStagePolicyForm(prev => ({
+                                  ...prev,
+                                  stages: prev.stages.map((item, itemIndex) => itemIndex === index ? { ...item, color: event.target.value } : item),
+                                }))}
+                                style={{ minHeight: 42, padding: 6 }}
+                              />
+                            </div>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: viewportWidth < 1180 ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+                            <div><FieldLabel>Label</FieldLabel><TextInput value={stage.label} onChange={event => setStagePolicyForm(prev => ({ ...prev, stages: prev.stages.map((item, itemIndex) => itemIndex === index ? { ...item, label: event.target.value } : item) }))} /></div>
+                            <div><FieldLabel>Semester Day Offset</FieldLabel><TextInput value={stage.semesterDayOffset} onChange={event => setStagePolicyForm(prev => ({ ...prev, stages: prev.stages.map((item, itemIndex) => itemIndex === index ? { ...item, semesterDayOffset: event.target.value } : item) }))} /></div>
+                            <div style={{ gridColumn: '1 / -1' }}><FieldLabel>Description</FieldLabel><TextAreaInput value={stage.description} rows={3} onChange={event => setStagePolicyForm(prev => ({ ...prev, stages: prev.stages.map((item, itemIndex) => itemIndex === index ? { ...item, description: event.target.value } : item) }))} /></div>
+                            <div>
+                              <FieldLabel>Advancement Mode</FieldLabel>
+                              <SelectInput value={stage.advancementMode} onChange={event => setStagePolicyForm(prev => ({ ...prev, stages: prev.stages.map((item, itemIndex) => itemIndex === index ? { ...item, advancementMode: event.target.value as StagePolicyFormState['stages'][number]['advancementMode'] } : item) }))}>
+                                <option value="admin-confirmed">Admin confirmed</option>
+                                <option value="automatic">Automatic</option>
+                              </SelectInput>
+                            </div>
+                            <div style={{ display: 'grid', gap: 8 }}>
+                              <FieldLabel>Required Evidence</FieldLabel>
+                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                {STAGE_EVIDENCE_OPTIONS.map(kind => (
+                                  <label key={`${stage.key}:${kind}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 10px', borderRadius: 10, border: `1px solid ${T.border2}`, background: T.surface, ...mono, fontSize: 10, color: T.text }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={stage.requiredEvidence.includes(kind)}
+                                      onChange={event => setStagePolicyForm(prev => ({
+                                        ...prev,
+                                        stages: prev.stages.map((item, itemIndex) => itemIndex === index ? {
+                                          ...item,
+                                          requiredEvidence: event.target.checked
+                                            ? [...item.requiredEvidence, kind]
+                                            : item.requiredEvidence.filter(entry => entry !== kind),
+                                        } : item),
+                                      }))}
+                                    />
+                                    {kind}
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                            <div style={{ display: 'grid', gap: 8, alignContent: 'start' }}>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${T.border2}`, background: T.surface, ...mono, fontSize: 11, color: T.text }}>
+                                <input type="checkbox" checked={stage.requireQueueClearance} onChange={event => setStagePolicyForm(prev => ({ ...prev, stages: prev.stages.map((item, itemIndex) => itemIndex === index ? { ...item, requireQueueClearance: event.target.checked } : item) }))} />
+                                Require action queue clearance
+                              </label>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${T.border2}`, background: T.surface, ...mono, fontSize: 11, color: T.text }}>
+                                <input type="checkbox" checked={stage.requireTaskClearance} onChange={event => setStagePolicyForm(prev => ({ ...prev, stages: prev.stages.map((item, itemIndex) => itemIndex === index ? { ...item, requireTaskClearance: event.target.checked } : item) }))} />
+                                Require faculty task clearance
+                              </label>
+                            </div>
+                          </div>
+                        </Card>
+                      ))}
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        <Btn onClick={handleSaveScopeStagePolicy}><CheckCircle2 size={14} /> Save Stage Policy</Btn>
+                        <Btn variant="ghost" onClick={() => void handleResetScopeStagePolicy()}>Reset This Scope</Btn>
+                      </div>
+                    </Card>
+
+                    {selectedBatch ? (
+                      <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
+                        <SectionHeading title="Class Stage Control" eyebrow="Runtime" caption="The next stage can move only when the required evidence is present and locked, and when queue or faculty-task blockers are clear." />
+                        {batchOfferings.length === 0 ? (
+                          <EmptyState title="No live offerings in this batch" body="Provision the selected batch first, or create the missing section offerings for the active term." />
+                        ) : (
+                          <>
+                            <div style={{ display: 'grid', gridTemplateColumns: viewportWidth < 1180 ? 'minmax(0, 1fr)' : 'minmax(260px, 0.8fr) minmax(0, 1fr)', gap: 10 }}>
+                              <div>
+                                <FieldLabel>Offering</FieldLabel>
+                                <SelectInput value={selectedStageOfferingId} onChange={event => setSelectedStageOfferingId(event.target.value)}>
+                                  {batchOfferings.map(offering => (
+                                    <option key={offering.offId} value={offering.offId}>
+                                      {`${offering.code} · ${offering.title} · Sec ${offering.section}`}
+                                    </option>
+                                  ))}
+                                </SelectInput>
+                              </div>
+                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                                <Chip color={selectedStageEligibility?.eligible ? T.success : T.warning}>
+                                  {selectedStageEligibility?.eligible ? 'Advance eligible' : 'Blocked'}
+                                </Chip>
+                                {selectedStageEligibility?.currentStage ? <Chip color={selectedStageEligibility.currentStage.color}>{`Current · ${selectedStageEligibility.currentStage.label}`}</Chip> : null}
+                                {selectedStageEligibility?.nextStage ? <Chip color={selectedStageEligibility.nextStage.color}>{`Next · ${selectedStageEligibility.nextStage.label}`}</Chip> : <Chip color={T.dim}>Final stage</Chip>}
+                              </div>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+                              <Card style={{ padding: 12, background: T.surface2 }}>
+                                <div style={{ ...mono, fontSize: 10, color: T.dim }}>Queue Burden</div>
+                                <div style={{ ...sora, fontSize: 18, fontWeight: 700, color: T.text, marginTop: 6 }}>{selectedStageEligibility?.queueBurden ?? 0}</div>
+                              </Card>
+                              <Card style={{ padding: 12, background: T.surface2 }}>
+                                <div style={{ ...mono, fontSize: 10, color: T.dim }}>Required Evidence</div>
+                                <div style={{ ...sora, fontSize: 18, fontWeight: 700, color: T.text, marginTop: 6 }}>{selectedStageEligibility?.evidenceStatus.filter(item => item.required).length ?? 0}</div>
+                              </Card>
+                              <Card style={{ padding: 12, background: T.surface2 }}>
+                                <div style={{ ...mono, fontSize: 10, color: T.dim }}>Locked Evidence</div>
+                                <div style={{ ...sora, fontSize: 18, fontWeight: 700, color: T.text, marginTop: 6 }}>{selectedStageEligibility?.evidenceStatus.filter(item => item.required && item.locked).length ?? 0}</div>
+                              </Card>
+                            </div>
+                            <div style={{ display: 'grid', gap: 8 }}>
+                              {(selectedStageEligibility?.evidenceStatus ?? []).map(item => (
+                                <Card key={item.kind} style={{ padding: 12, background: T.surface2, display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                                  <div>
+                                    <div style={{ ...mono, fontSize: 11, color: T.text, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{item.kind}</div>
+                                    <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{item.required ? 'Required for next stage.' : 'Not required at this stage.'}</div>
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                    <Chip color={item.required ? T.accent : T.dim}>{item.required ? 'Required' : 'Optional'}</Chip>
+                                    <Chip color={item.present ? T.success : T.warning}>{item.present ? 'Present' : 'Missing'}</Chip>
+                                    <Chip color={item.locked ? T.success : T.warning}>{item.locked ? 'Locked' : 'Unlocked'}</Chip>
+                                  </div>
+                                </Card>
+                              ))}
+                            </div>
+                            {selectedStageEligibility?.blockingReasons.length ? (
+                              <Card style={{ padding: 14, background: T.surface2, display: 'grid', gap: 8 }}>
+                                <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>Blocking Reasons</div>
+                                {selectedStageEligibility.blockingReasons.map(reason => (
+                                  <div key={reason} style={{ ...mono, fontSize: 10, color: T.warning, lineHeight: 1.8 }}>{reason}</div>
+                                ))}
+                              </Card>
+                            ) : (
+                              <InfoBanner message="All configured requirements for the next stage are currently satisfied." />
+                            )}
+                            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                              <Btn onClick={() => void handleAdvanceOfferingStage()} disabled={!selectedStageEligibility?.eligible || !selectedStageEligibility?.nextStage}>
+                                <CheckCircle2 size={14} />
+                                {selectedStageEligibility?.nextStage ? `Advance To ${selectedStageEligibility.nextStage.label}` : 'Final Stage Reached'}
+                              </Btn>
+                            </div>
+                          </>
+                        )}
+                      </Card>
+                    ) : null}
+                  </div>
+                ) : <EmptyState title="No governance scope" body="Select a faculty, department, branch, or year to configure stage policy." />
+              )}
+
+              {universityTab === 'provision' && (
+                selectedBatch ? (
+                  <div style={{ display: 'grid', gap: 12 }}>
+                    <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
+                      <SectionHeading title="Batch Provisioning" eyebrow="Live Wiring" caption="Seed the selected batch with live offerings, section rosters, mentor assignments, assessment scaffolding, and teacher ownerships so the teaching portfolio shows real data." />
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+                        <Card style={{ padding: 12, background: T.surface2 }}><div style={{ ...mono, fontSize: 10, color: T.dim }}>Sections</div><div style={{ ...sora, fontSize: 18, fontWeight: 700, color: T.text, marginTop: 6 }}>{selectedBatch.sectionLabels.join(', ')}</div></Card>
+                        <Card style={{ padding: 12, background: T.surface2 }}><div style={{ ...mono, fontSize: 10, color: T.dim }}>Faculty Pool</div><div style={{ ...sora, fontSize: 18, fontWeight: 700, color: T.text, marginTop: 6 }}>{batchFacultyPool.length}</div></Card>
+                        <Card style={{ padding: 12, background: T.surface2 }}><div style={{ ...mono, fontSize: 10, color: T.dim }}>Visible Students</div><div style={{ ...sora, fontSize: 18, fontWeight: 700, color: T.text, marginTop: 6 }}>{batchStudents.length}</div></Card>
+                        <Card style={{ padding: 12, background: T.surface2 }}><div style={{ ...mono, fontSize: 10, color: T.dim }}>Live Offerings</div><div style={{ ...sora, fontSize: 18, fontWeight: 700, color: T.text, marginTop: 6 }}>{batchOfferings.length}</div></Card>
+                      </div>
+                      <InfoBanner message="Provisioning uses the currently scoped faculty pool, assigns course ownerships using the shared MSRUAS allocator, publishes timetable workspaces, creates section rosters, and refreshes affected proof batches." />
+                      <div style={{ display: 'grid', gridTemplateColumns: viewportWidth < 1180 ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+                        <div>
+                          <FieldLabel>Term</FieldLabel>
+                          <SelectInput value={batchProvisioningForm.termId} onChange={event => setBatchProvisioningForm(prev => ({ ...prev, termId: event.target.value }))}>
+                            <option value="">Select term</option>
+                            {batchTerms.map(term => (
+                              <option key={term.termId} value={term.termId}>
+                                {`Semester ${term.semesterNumber} · ${term.academicYearLabel}`}
+                              </option>
+                            ))}
+                          </SelectInput>
+                        </div>
+                        <div>
+                          <FieldLabel>Mode</FieldLabel>
+                          <SelectInput value={batchProvisioningForm.mode ?? 'mock'} onChange={event => setBatchProvisioningForm(prev => ({ ...prev, mode: event.target.value as BatchProvisioningFormState['mode'] }))}>
+                            <option value="mock">Mock</option>
+                            <option value="live-empty">Live empty</option>
+                            <option value="manual">Manual</option>
+                          </SelectInput>
+                        </div>
+                        <div><FieldLabel>Section Labels</FieldLabel><TextInput value={batchProvisioningForm.sectionLabels} onChange={event => setBatchProvisioningForm(prev => ({ ...prev, sectionLabels: event.target.value }))} placeholder="A, B" /></div>
+                        <div><FieldLabel>Students Per Section</FieldLabel><TextInput value={batchProvisioningForm.studentsPerSection} onChange={event => setBatchProvisioningForm(prev => ({ ...prev, studentsPerSection: event.target.value }))} placeholder="60" /></div>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: viewportWidth < 1180 ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+                        {[
+                          ['createStudents', 'Create synthetic students'],
+                          ['createMentors', 'Create mentor assignments'],
+                          ['createAttendanceScaffolding', 'Create attendance scaffolding'],
+                          ['createAssessmentScaffolding', 'Create assessment scaffolding'],
+                          ['createTranscriptScaffolding', 'Create transcript scaffolding'],
+                        ].map(([key, label]) => (
+                          <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${T.border2}`, background: T.surface2, ...mono, fontSize: 11, color: T.text }}>
+                            <input
+                              type="checkbox"
+                              checked={batchProvisioningForm[key as keyof BatchProvisioningFormState] as boolean}
+                              onChange={event => setBatchProvisioningForm(prev => ({ ...prev, [key]: event.target.checked }))}
+                            />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        <Btn onClick={() => void handleProvisionBatch()} disabled={!batchProvisioningForm.termId || batchFacultyPool.length === 0}>
+                          <Plus size={14} />
+                          Provision Batch
+                        </Btn>
+                        {currentSemesterTerm ? <Chip color={T.accent}>{`Default term · Semester ${currentSemesterTerm.semesterNumber}`}</Chip> : <Chip color={T.warning}>Create a term first</Chip>}
+                        {batchFacultyPool.length === 0 ? <Chip color={T.danger}>No scoped faculty pool available</Chip> : null}
+                      </div>
+                    </Card>
+
+                    <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
+                      <SectionHeading title="Consistency Validator" eyebrow="Readiness" caption="Use these live counts to confirm the selected batch is fully wired for teacher and mentor views." />
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+                        <Card style={{ padding: 12, background: T.surface2 }}><div style={{ ...mono, fontSize: 10, color: T.dim }}>Offerings Missing Owner</div><div style={{ ...sora, fontSize: 18, fontWeight: 700, color: T.text, marginTop: 6 }}>{batchOfferingsWithoutOwner.length}</div></Card>
+                        <Card style={{ padding: 12, background: T.surface2 }}><div style={{ ...mono, fontSize: 10, color: T.dim }}>Students Missing Enrollment</div><div style={{ ...sora, fontSize: 18, fontWeight: 700, color: T.text, marginTop: 6 }}>{batchStudentsWithoutEnrollment.length}</div></Card>
+                        <Card style={{ padding: 12, background: T.surface2 }}><div style={{ ...mono, fontSize: 10, color: T.dim }}>Students Missing Mentor</div><div style={{ ...sora, fontSize: 18, fontWeight: 700, color: T.text, marginTop: 6 }}>{batchStudentsWithoutMentor.length}</div></Card>
+                        <Card style={{ padding: 12, background: T.surface2 }}><div style={{ ...mono, fontSize: 10, color: T.dim }}>Offerings Without Visible Roster</div><div style={{ ...sora, fontSize: 18, fontWeight: 700, color: T.text, marginTop: 6 }}>{batchOfferingsWithoutRoster.length}</div></Card>
+                      </div>
+                      <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                        This validator uses the live relational graph already loaded in sysadmin: ownerships, active enrollments, mentor links, and offering-section rosters. Published timetable workspaces remain visible in each faculty timetable workspace after provisioning.
+                      </div>
+                    </Card>
+                  </div>
+                ) : <EmptyState title="Select a year" body="Provisioning runs at year scope because sections, offerings, rosters, and mentor links all hang from the batch." />
               )}
 
               {universityTab === 'courses' && (
@@ -5943,43 +6832,112 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                         </div>
                       </form>
                       <Card style={{ padding: 16, background: T.surface2, display: 'grid', gap: 12 }}>
-                        <SectionHeading title="Model Inputs" eyebrow="Risk Model" caption="Manage the course outcomes, prerequisite edges, bridge modules, and topic partitions that feed the proof model and world generation for this batch." />
+                        <SectionHeading title="Model Inputs" eyebrow="Risk Model" caption="Manage course outcomes, prerequisite edges, bridge modules, and topic partitions through batch-local overrides or shared scope profiles that feed retraining and world generation." />
                         {curriculumFeatureItems.length === 0 ? (
                           <EmptyState title="No model input bundle yet" body="Save at least one curriculum row first. The sysadmin editor will then project those rows into the proof curriculum snapshot." />
                         ) : (
                           <>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1fr) minmax(0, 1fr)', gap: 10 }}>
-                              <div>
-                                <FieldLabel>Course</FieldLabel>
-                                <SelectInput
-                                  value={selectedCurriculumFeatureCourseId}
-                                  onChange={event => {
-                                    const nextId = event.target.value
-                                    setSelectedCurriculumFeatureCourseId(nextId)
-                                    const nextItem = curriculumFeatureItems.find(item => item.curriculumCourseId === nextId) ?? null
-                                    setCurriculumFeatureForm(hydrateCurriculumFeatureForm(nextItem))
-                                  }}
-                                >
-                                  {curriculumFeatureItems.map(item => (
-                                    <option key={item.curriculumCourseId} value={item.curriculumCourseId}>
-                                      {`Sem ${item.semesterNumber} · ${item.courseCode} · ${item.title}`}
-                                    </option>
-                                  ))}
-                                </SelectInput>
-                              </div>
-                              <div style={{ display: 'grid', gap: 8 }}>
-                                <FieldLabel>Snapshot Status</FieldLabel>
-                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                  <Chip color={curriculumFeatureConfig?.curriculumImportVersion ? T.accent : T.dim}>
-                                    {curriculumFeatureConfig?.curriculumImportVersion
-                                      ? `${curriculumFeatureConfig.curriculumImportVersion.sourceLabel} · ${curriculumFeatureConfig.curriculumImportVersion.validationStatus}`
-                                      : 'No import snapshot yet'}
-                                  </Chip>
-                                  {selectedCurriculumFeatureItem?.outcomeOverride ? <Chip color={T.success}>Batch outcome override active</Chip> : <Chip color={T.dim}>Using default outcomes</Chip>}
+                            <div style={{ display: 'grid', gap: 10 }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: viewportWidth < 1180 ? 'minmax(0, 1fr)' : 'minmax(260px, 1fr) minmax(0, 1fr)', gap: 10 }}>
+                                <div>
+                                  <FieldLabel>Course</FieldLabel>
+                                  <SelectInput
+                                    value={selectedCurriculumFeatureCourseId}
+                                    onChange={event => {
+                                      const nextId = event.target.value
+                                      setSelectedCurriculumFeatureCourseId(nextId)
+                                      const nextItem = curriculumFeatureItems.find(item => item.curriculumCourseId === nextId) ?? null
+                                      setCurriculumFeatureForm(hydrateCurriculumFeatureForm(nextItem))
+                                    }}
+                                  >
+                                    {curriculumFeatureItems.map(item => (
+                                      <option key={item.curriculumCourseId} value={item.curriculumCourseId}>
+                                        {`Sem ${item.semesterNumber} · ${item.courseCode} · ${item.title}`}
+                                      </option>
+                                    ))}
+                                  </SelectInput>
+                                </div>
+                                <div style={{ display: 'grid', gap: 8 }}>
+                                  <FieldLabel>Resolved Snapshot</FieldLabel>
+                                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                    <Chip color={curriculumFeatureConfig?.curriculumImportVersion ? T.accent : T.dim}>
+                                      {curriculumFeatureConfig?.curriculumImportVersion
+                                        ? `${curriculumFeatureConfig.curriculumImportVersion.sourceLabel} · ${curriculumFeatureConfig.curriculumImportVersion.validationStatus}`
+                                        : 'No import snapshot yet'}
+                                    </Chip>
+                                    {curriculumFeatureConfig?.curriculumFeatureProfileFingerprint ? <Chip color={T.success}>{`Fingerprint ${curriculumFeatureConfig.curriculumFeatureProfileFingerprint.slice(0, 8)}`}</Chip> : null}
+                                    {selectedCurriculumFeatureItem?.resolvedSource ? <Chip color={T.warning}>{selectedCurriculumFeatureItem.resolvedSource.label}</Chip> : null}
+                                    {selectedCurriculumFeatureItem?.localOverride ? <Chip color={T.orange}>Batch-local override active</Chip> : <Chip color={T.dim}>No batch-local override</Chip>}
+                                  </div>
                                 </div>
                               </div>
+
+                              <Card style={{ padding: 12, background: T.surface, display: 'grid', gap: 10 }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: viewportWidth < 1180 ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+                                  <div>
+                                    <FieldLabel>Batch Binding Mode</FieldLabel>
+                                    <SelectInput value={curriculumFeatureBindingMode} onChange={event => setCurriculumFeatureBindingMode(event.target.value as typeof curriculumFeatureBindingMode)}>
+                                      <option value="inherit-scope-profile">Inherit scope profile</option>
+                                      <option value="pin-profile">Pin specific profile</option>
+                                      <option value="local-only">Local only</option>
+                                    </SelectInput>
+                                  </div>
+                                  <div>
+                                    <FieldLabel>Pinned Profile</FieldLabel>
+                                    <SelectInput
+                                      value={curriculumFeaturePinnedProfileId}
+                                      disabled={curriculumFeatureBindingMode !== 'pin-profile'}
+                                      onChange={event => setCurriculumFeaturePinnedProfileId(event.target.value)}
+                                    >
+                                      <option value="">Select profile</option>
+                                      {curriculumFeatureProfileOptions.map(profile => (
+                                        <option key={profile.curriculumFeatureProfileId} value={profile.curriculumFeatureProfileId}>
+                                          {`${formatScopeTypeLabel(profile.scopeType)} · ${profile.name}`}
+                                        </option>
+                                      ))}
+                                    </SelectInput>
+                                  </div>
+                                  <div>
+                                    <FieldLabel>Save Target Mode</FieldLabel>
+                                    <SelectInput value={curriculumFeatureTargetMode} onChange={event => setCurriculumFeatureTargetMode(event.target.value as typeof curriculumFeatureTargetMode)}>
+                                      <option value="batch-local-override">Batch-local override</option>
+                                      <option value="scope-profile">Scope profile</option>
+                                    </SelectInput>
+                                  </div>
+                                  <div>
+                                    <FieldLabel>Target Scope</FieldLabel>
+                                    <SelectInput
+                                      value={curriculumFeatureTargetScopeKey}
+                                      disabled={curriculumFeatureTargetMode !== 'scope-profile'}
+                                      onChange={event => setCurriculumFeatureTargetScopeKey(event.target.value)}
+                                    >
+                                      {curriculumFeatureTargetScopeOptions.map(scope => (
+                                        <option key={`${scope.scopeType}:${scope.scopeId}`} value={`${scope.scopeType}::${scope.scopeId}`}>
+                                          {`${formatScopeTypeLabel(scope.scopeType)} · ${scope.label}`}
+                                        </option>
+                                      ))}
+                                    </SelectInput>
+                                  </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                  <Chip color={curriculumFeatureConfig?.binding?.bindingMode === 'local-only' ? T.orange : T.accent}>
+                                    {`Current binding · ${curriculumFeatureConfig?.binding?.bindingMode ?? 'inherit-scope-profile'}`}
+                                  </Chip>
+                                  {selectedCurriculumFeatureItem?.appliedProfiles?.map(profile => (
+                                    <Chip key={profile.curriculumFeatureProfileId} color={T.success}>{`${formatScopeTypeLabel(profile.scopeType)} · ${profile.name}`}</Chip>
+                                  ))}
+                                  {curriculumFeatureTargetMode === 'scope-profile' && selectedCurriculumFeatureTargetScope ? (
+                                    <Chip color={T.warning}>{`${curriculumFeatureAffectedBatchPreview.length} affected batch${curriculumFeatureAffectedBatchPreview.length === 1 ? '' : 'es'} in target scope`}</Chip>
+                                  ) : null}
+                                </div>
+                                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                                  <Btn type="button" onClick={() => void handleSaveCurriculumFeatureBinding()} disabled={curriculumFeatureBindingMode === 'pin-profile' && !curriculumFeaturePinnedProfileId}>
+                                    Save Binding
+                                  </Btn>
+                                </div>
+                              </Card>
                             </div>
-                            <InfoBanner message="Outcome line format: CO1 | Apply | Description. Prerequisite line format: COURSE_CODE | explicit|added | rationale. Saving here updates the batch proof snapshot and, when proof data exists for this batch, triggers an automatic rerun." />
+                            <InfoBanner message="Outcome line format: CO1 | Apply | Description. Prerequisite line format: COURSE_CODE | explicit|added | rationale. Saving to a scope profile updates that shared feature category and only refreshes affected batches whose resolved fingerprints change." />
                             <div style={{ display: 'grid', gridTemplateColumns: viewportWidth < 1240 ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
                               <div><FieldLabel>Assessment Profile</FieldLabel><TextInput value={curriculumFeatureForm.assessmentProfile} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, assessmentProfile: event.target.value }))} placeholder="admin-authored" /></div>
                               <div><FieldLabel>Bridge Modules</FieldLabel><TextAreaInput value={curriculumFeatureForm.bridgeModulesText} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, bridgeModulesText: event.target.value }))} rows={4} placeholder={'Bridge topic 1\nBridge topic 2'} /></div>
@@ -5991,8 +6949,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                               <div><FieldLabel>Workbook Topics</FieldLabel><TextAreaInput value={curriculumFeatureForm.workbookTopicsText} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, workbookTopicsText: event.target.value }))} rows={4} placeholder={'Workbook topic 1\nWorkbook topic 2'} /></div>
                             </div>
                             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                              <Btn type="button" onClick={() => void handleSaveCurriculumFeatureConfig()} disabled={!selectedCurriculumFeatureItem}>Save Model Inputs</Btn>
+                              <Btn type="button" onClick={() => void handleSaveCurriculumFeatureConfig()} disabled={!selectedCurriculumFeatureItem}>{curriculumFeatureTargetMode === 'scope-profile' ? 'Save Shared Model Inputs' : 'Save Model Inputs'}</Btn>
                               {selectedCurriculumFeatureItem ? <Chip color={T.warning}>{`${selectedCurriculumFeatureItem.prerequisites.length} prerequisites · ${selectedCurriculumFeatureItem.bridgeModules.length} bridge modules`}</Chip> : null}
+                              {curriculumFeatureTargetMode === 'scope-profile' && selectedCurriculumFeatureTargetScope ? <Chip color={T.accent}>{`${formatScopeTypeLabel(selectedCurriculumFeatureTargetScope.scopeType)} · ${selectedCurriculumFeatureTargetScope.label}`}</Chip> : null}
                             </div>
                           </>
                         )}

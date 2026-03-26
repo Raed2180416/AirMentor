@@ -101,6 +101,7 @@ import {
   getSegmentedButtonStyle,
   getSegmentedGroupStyle,
   getShellBarStyle,
+  withAlpha,
 } from './ui-primitives'
 import { AirMentorApiClient, AirMentorApiError } from './api/client'
 import type {
@@ -129,6 +130,12 @@ const LazyUploadPage = lazy(() => import('./pages/workflow-pages').then(module =
 const LazyEntryWorkspacePage = lazy(() => import('./pages/workflow-pages').then(module => ({ default: module.EntryWorkspacePage })))
 const LazyHodView = lazy(() => import('./pages/hod-pages').then(module => ({ default: module.HodView })))
 const LazyCalendarTimetablePage = lazy(() => import('./pages/calendar-pages').then(module => ({ default: module.CalendarTimetablePage })))
+
+const subtleDividerStyle = {
+  height: 1,
+  background: `linear-gradient(90deg, transparent, ${withAlpha(T.border2, '26')} 14%, ${withAlpha(T.border2, '62')} 50%, ${withAlpha(T.border2, '26')} 86%, transparent)`,
+  opacity: 0.9,
+}
 
 type TaskPlacementDraft = {
   dateISO: string
@@ -740,52 +747,54 @@ export function FacultyProfilePage({
                 <Card data-proof-section="monitoring-queue" style={{ padding: 10, background: T.surface2, display: 'grid', gap: 6 }}>
                   <div style={{ ...mono, fontSize: 10, color: T.text }}>Monitoring queue</div>
                   {proofOps.monitoringQueue.length > 0 ? proofOps.monitoringQueue.slice(0, 3).map(item => (
-                    <div
-                      key={item.riskAssessmentId}
-                      data-proof-row="teacher-monitoring-item"
-                      data-proof-student-id={item.studentId}
-                      style={{ display: 'grid', gap: 4, borderTop: `1px solid ${T.border2}`, paddingTop: 8, marginTop: 2 }}
-                    >
-                      <div style={{ ...mono, fontSize: 10, color: T.text }}>
-                        {item.studentName} · {item.courseCode} · {item.riskBand} · {item.recommendedAction}
-                      </div>
-                      <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
-                        Evidence: attendance {item.observedEvidence.attendancePct}%, TT1 {item.observedEvidence.tt1Pct}%, TT2 {item.observedEvidence.tt2Pct}%, quiz {item.observedEvidence.quizPct}%, assignment {item.observedEvidence.assignmentPct}%, SEE {item.observedEvidence.seePct}%, weak COs {item.observedEvidence.weakCoCount}, weak questions {item.observedEvidence.weakQuestionCount}, CGPA {item.observedEvidence.cgpa}, backlogs {item.observedEvidence.backlogCount}.
-                      </div>
-                      {item.observedEvidence.interventionRecoveryStatus ? (
-                        <div style={{ ...mono, fontSize: 10, color: T.dim }}>
-                          Intervention recovery status: {item.observedEvidence.interventionRecoveryStatus}.
+                    <div key={item.riskAssessmentId} style={{ display: 'grid', gap: 8 }}>
+                      <div style={subtleDividerStyle} aria-hidden="true" />
+                      <div
+                        data-proof-row="teacher-monitoring-item"
+                        data-proof-student-id={item.studentId}
+                        style={{ display: 'grid', gap: 4 }}
+                      >
+                        <div style={{ ...mono, fontSize: 10, color: T.text }}>
+                          {item.studentName} · {item.courseCode} · {item.riskBand} · {item.recommendedAction}
                         </div>
-                      ) : null}
-                      {item.observedEvidence.coEvidenceMode ? (
-                        <div style={{ ...mono, fontSize: 10, color: T.dim }}>
-                          CO evidence mode: {item.observedEvidence.coEvidenceMode}.
+                        <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
+                          Evidence: attendance {item.observedEvidence.attendancePct}%, TT1 {item.observedEvidence.tt1Pct}%, TT2 {item.observedEvidence.tt2Pct}%, quiz {item.observedEvidence.quizPct}%, assignment {item.observedEvidence.assignmentPct}%, SEE {item.observedEvidence.seePct}%, weak COs {item.observedEvidence.weakCoCount}, weak questions {item.observedEvidence.weakQuestionCount}, CGPA {item.observedEvidence.cgpa}, backlogs {item.observedEvidence.backlogCount}.
                         </div>
-                      ) : null}
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {item.drivers.slice(0, 3).map(driver => (
-                          <Chip key={`${item.riskAssessmentId}-${driver.feature}`} color={driver.impact >= 0 ? T.danger : T.success}>{driver.label}</Chip>
-                        ))}
-                        {item.riskChangeFromPreviousCheckpointScaled != null ? <Chip color={item.riskChangeFromPreviousCheckpointScaled > 0 ? T.danger : item.riskChangeFromPreviousCheckpointScaled < 0 ? T.success : T.dim}>{`Δ ${item.riskChangeFromPreviousCheckpointScaled > 0 ? '+' : ''}${item.riskChangeFromPreviousCheckpointScaled}`}</Chip> : null}
-                        {item.counterfactualLiftScaled != null ? <Chip color={item.counterfactualLiftScaled > 0 ? T.success : item.counterfactualLiftScaled < 0 ? T.warning : T.dim}>{`Lift ${item.counterfactualLiftScaled > 0 ? '+' : ''}${item.counterfactualLiftScaled}`}</Chip> : null}
-                        <Btn
-                          size="sm"
-                          variant="ghost"
-                          dataProofAction="teacher-proof-open-risk-explorer"
-                          dataProofEntityId={item.studentId}
-                          onClick={() => onOpenRiskExplorer(item.studentId)}
-                        >
-                          Open Risk Explorer
-                        </Btn>
-                        <Btn
-                          size="sm"
-                          variant="ghost"
-                          dataProofAction="teacher-proof-open-student-shell"
-                          dataProofEntityId={item.studentId}
-                          onClick={() => onOpenStudentShell(item.studentId)}
-                        >
-                          Open Student Shell
-                        </Btn>
+                        {item.observedEvidence.interventionRecoveryStatus ? (
+                          <div style={{ ...mono, fontSize: 10, color: T.dim }}>
+                            Intervention recovery status: {item.observedEvidence.interventionRecoveryStatus}.
+                          </div>
+                        ) : null}
+                        {item.observedEvidence.coEvidenceMode ? (
+                          <div style={{ ...mono, fontSize: 10, color: T.dim }}>
+                            CO evidence mode: {item.observedEvidence.coEvidenceMode}.
+                          </div>
+                        ) : null}
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {item.drivers.slice(0, 3).map(driver => (
+                            <Chip key={`${item.riskAssessmentId}-${driver.feature}`} color={driver.impact >= 0 ? T.danger : T.success}>{driver.label}</Chip>
+                          ))}
+                          {item.riskChangeFromPreviousCheckpointScaled != null ? <Chip color={item.riskChangeFromPreviousCheckpointScaled > 0 ? T.danger : item.riskChangeFromPreviousCheckpointScaled < 0 ? T.success : T.dim}>{`Δ ${item.riskChangeFromPreviousCheckpointScaled > 0 ? '+' : ''}${item.riskChangeFromPreviousCheckpointScaled}`}</Chip> : null}
+                          {item.counterfactualLiftScaled != null ? <Chip color={item.counterfactualLiftScaled > 0 ? T.success : item.counterfactualLiftScaled < 0 ? T.warning : T.dim}>{`Lift ${item.counterfactualLiftScaled > 0 ? '+' : ''}${item.counterfactualLiftScaled}`}</Chip> : null}
+                          <Btn
+                            size="sm"
+                            variant="ghost"
+                            dataProofAction="teacher-proof-open-risk-explorer"
+                            dataProofEntityId={item.studentId}
+                            onClick={() => onOpenRiskExplorer(item.studentId)}
+                          >
+                            Open Risk Explorer
+                          </Btn>
+                          <Btn
+                            size="sm"
+                            variant="ghost"
+                            dataProofAction="teacher-proof-open-student-shell"
+                            dataProofEntityId={item.studentId}
+                            onClick={() => onOpenStudentShell(item.studentId)}
+                          >
+                            Open Student Shell
+                          </Btn>
+                        </div>
                       </div>
                     </div>
                   )) : (
@@ -1638,7 +1647,8 @@ function ActionQueue({ role, tasks, resolvedTaskIds, onResolveTask, onUndoTask, 
                 {t.scheduleMeta?.mode === 'scheduled' && t.scheduleMeta.status !== 'ended' && <button aria-label="Pause or resume recurrence" title={t.scheduleMeta.status === 'paused' ? 'Resume recurrence' : 'Pause recurrence'} onClick={event => { event.stopPropagation(); onToggleSchedulePause(t.id) }} style={buttonStyle(T.warning)}>{t.scheduleMeta.status === 'paused' ? 'Resume' : 'Pause'}</button>}
                 {t.scheduleMeta?.mode === 'scheduled' && t.scheduleMeta.status !== 'ended' && <button aria-label="Edit recurrence" title="Edit recurrence" onClick={event => { event.stopPropagation(); onEditSchedule(t.id) }} style={buttonStyle(T.accent)}>Edit schedule</button>}
               </div>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', borderTop: `1px solid ${T.border}`, paddingTop: 8 }}>
+              <div style={subtleDividerStyle} aria-hidden="true" />
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {!t.scheduleMeta && <button aria-label="Dismiss task" title="Dismiss task to history" onClick={event => { event.stopPropagation(); onDismissTask(t.id) }} style={buttonStyle(T.muted)}>Dismiss</button>}
                   {t.scheduleMeta?.mode === 'scheduled' && <button aria-label="Dismiss recurring task" title="Dismiss recurring task" onClick={event => { event.stopPropagation(); onDismissSeries(t.id) }} style={buttonStyle(T.danger)}>Dismiss</button>}
@@ -2862,6 +2872,20 @@ function OperationalWorkspace({
     const assignedOfferingIds = new Set(assignedOfferings.map(item => item.offId))
     return allYearGroups.filter(group => group.offerings.some(item => assignedOfferingIds.has(item.offId)))
   }, [allYearGroups, assignedOfferings])
+  const sidebarCompletenessRows = useMemo(() => {
+    const scopedStudents = assignedOfferings.flatMap(offeringItem => getStudentsPatched(offeringItem))
+    if (scopedStudents.length === 0) return []
+
+    const safeAverageAttendance = Math.round(
+      scopedStudents.reduce((sum, student) => sum + Math.round((student.present / Math.max(1, student.totalClasses)) * 100), 0) / scopedStudents.length,
+    )
+
+    return [
+      { lbl: 'TT1 Marks', pct: Math.round((scopedStudents.filter(student => student.tt1Score !== null).length / scopedStudents.length) * 100) },
+      { lbl: 'Attendance', pct: safeAverageAttendance },
+      { lbl: 'Quizzes', pct: Math.round((scopedStudents.filter(student => student.quiz1 !== null || student.quiz2 !== null).length / scopedStudents.length) * 100) },
+    ]
+  }, [assignedOfferings, getStudentsPatched])
   const canNavigateBack = routeHistory.length > 0
     || page !== getHomePage(role)
     || !!offering
@@ -4673,7 +4697,8 @@ function OperationalWorkspace({
 
                 {/* Year Stages — Course Leader only */}
                 {role === 'Course Leader' && (
-                  <div style={{ padding: '12px 0', borderTop: `1px solid ${T.border}`, marginTop: 12 }}>
+                  <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+                    <div style={subtleDividerStyle} aria-hidden="true" />
                     <div style={{ ...mono, fontSize: 8, color: T.dim, letterSpacing: '0.12em', textTransform: 'uppercase' as const, marginBottom: 8 }}>Year Stages</div>
                     {sidebarYearGroups.map(g => (
                       <div key={g.year} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
@@ -4687,13 +4712,10 @@ function OperationalWorkspace({
 
                 {/* Data completeness */}
                 {role === 'Course Leader' && (
-                  <div style={{ padding: '10px 0', borderTop: `1px solid ${T.border}` }}>
+                  <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+                    <div style={subtleDividerStyle} aria-hidden="true" />
                     <div style={{ ...mono, fontSize: 8, color: T.dim, letterSpacing: '0.12em', textTransform: 'uppercase' as const, marginBottom: 8 }}>Data Completeness</div>
-                    {[
-                      { lbl: 'TT1 Marks', pct: 64 },
-                      { lbl: 'Attendance', pct: 82 },
-                      { lbl: 'Quizzes', pct: 36 },
-                    ].map(d => (
+                    {sidebarCompletenessRows.length > 0 ? sidebarCompletenessRows.map(d => (
                       <div key={d.lbl} style={{ marginBottom: 6 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
                           <span style={{ ...mono, fontSize: 9, color: T.muted }}>{d.lbl}</span>
@@ -4701,11 +4723,16 @@ function OperationalWorkspace({
                         </div>
                         <Bar val={d.pct} color={d.pct >= 80 ? T.success : d.pct >= 50 ? T.warning : T.danger} h={3} />
                       </div>
-                    ))}
+                    )) : (
+                      <div style={{ ...mono, fontSize: 9, color: T.dim, lineHeight: 1.7 }}>
+                        No live student data is available in this scope yet.
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-              <div style={{ padding: '12px', borderTop: `1px solid ${T.border}` }}>
+              <div style={{ padding: '12px' }}>
+                <div style={subtleDividerStyle} aria-hidden="true" />
                 <button
                   type="button"
                   aria-label={sidebarToggleLabel}
