@@ -1,4 +1,1 @@
-providers = ["node", "python"]
-
-[phases.setup]
-nixPkgs = ["python311", "uv"]
+providers = ["node"]
