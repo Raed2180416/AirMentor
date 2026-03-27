@@ -72,6 +72,14 @@ import {
   scoreObservableRiskWithModel,
 } from '../lib/proof-risk-model.js'
 import {
+  buildGraphAwarePrerequisiteSummary,
+  buildMissingGraphAwarePrerequisiteSummary,
+  type GraphAwareFeatureCompleteness,
+  type GraphAwareFeatureProvenance,
+  type GraphAwarePrerequisiteSummary,
+  type GraphAwarePrerequisiteSummaryCompleteness,
+} from '../lib/graph-summary.js'
+import {
   emitAuditEvent,
   expectVersion,
   parseOrThrow,
@@ -80,6 +88,7 @@ import {
 } from './support.js'
 import {
   DEFAULT_POLICY,
+  enqueueProofRefreshForBatches,
   resolveBatchCurriculumFeatures,
   resolveBatchPolicy,
   resolveBatchStagePolicy,
@@ -1094,8 +1103,25 @@ function roundToTwo(value: number) {
   return Math.round(value * 100) / 100
 }
 
+function normalizeCourseCode(courseCode: string) {
+  return courseCode.trim().toUpperCase()
+}
+
 function normalizeTranscriptCourseKey(courseCode: string) {
   return courseCode.replace(/\(.*repeat.*\)/i, '').replace(/R$/i, '').trim()
+}
+
+function courseFamilyForCode(courseCode: string) {
+  const normalized = normalizeCourseCode(courseCode)
+  const match = normalized.match(/^[A-Z]+/)
+  return match?.[0] ?? (normalized || 'GENERAL')
+}
+
+type CourseHistoryRecord = {
+  courseCode: string
+  semesterNumber: number
+  score: number
+  result: string
 }
 
 function scoreToGradeBand(score: number, policy: ResolvedPolicy) {
@@ -1420,6 +1446,7 @@ function computeRiskFromActiveModelOrPolicy(input: {
   policy: ResolvedPolicy
   activeModel?: Awaited<ReturnType<typeof getProofRiskModelActive>>['production'] | null
   semesterProgress?: number
+  prerequisiteSummary: GraphAwarePrerequisiteSummary
 }) {
   const {
     attendancePct,
@@ -1434,6 +1461,7 @@ function computeRiskFromActiveModelOrPolicy(input: {
     policy,
     activeModel = null,
     semesterProgress = 1,
+    prerequisiteSummary,
   } = input
   const featurePayload = buildObservableFeaturePayload({
     attendancePct,
@@ -1448,9 +1476,12 @@ function computeRiskFromActiveModelOrPolicy(input: {
     weakCoCount,
     weakQuestionCount: 0,
     interventionResponseScore: null,
-    prerequisiteAveragePct: 0,
-    prerequisiteFailureCount: 0,
-    prerequisiteCourseCodes: [],
+    prerequisiteAveragePct: prerequisiteSummary.prerequisiteAveragePct,
+    prerequisiteFailureCount: prerequisiteSummary.prerequisiteFailureCount,
+    prerequisiteCourseCodes: prerequisiteSummary.prerequisiteCourseCodes,
+    downstreamDependencyLoad: prerequisiteSummary.downstreamDependencyLoad,
+    weakPrerequisiteChainCount: prerequisiteSummary.weakPrerequisiteChainCount,
+    repeatedWeakPrerequisiteFamilyCount: prerequisiteSummary.repeatedWeakPrerequisiteFamilyCount,
     sectionRiskRate: 0,
     semesterProgress,
   })
@@ -1474,6 +1505,9 @@ function computeRiskFromActiveModelOrPolicy(input: {
   return {
     riskProb: inference.riskProb,
     riskBand: inference.riskBand,
+    riskCompleteness: prerequisiteSummary.featureCompleteness,
+    featureCompleteness: prerequisiteSummary.featureCompleteness,
+    featureProvenance: prerequisiteSummary.featureProvenance,
   }
 }
 
@@ -2357,7 +2391,13 @@ function inferStudentFallback(input: {
   }
   assessments?: Record<string, { score: number; maxScore: number; evaluatedAt: string }>
   interventions?: Array<{ date: string; type: string; note: string }>
-  risk?: { riskProb: number; riskBand: 'Low' | 'Medium' | 'High' }
+  risk?: {
+    riskProb: number
+    riskBand: 'Low' | 'Medium' | 'High'
+    riskCompleteness?: GraphAwarePrerequisiteSummaryCompleteness | null
+    featureCompleteness?: GraphAwareFeatureCompleteness | null
+    featureProvenance?: GraphAwareFeatureProvenance | null
+  }
   reasons?: Array<{ label: string; impact: number; feature: string }>
   coScores?: Array<{ coId: string; attainment: number }>
   whatIf?: Array<{ label: string; current: string; target: string; currentRisk: number; newRisk: number }>
@@ -2390,6 +2430,9 @@ function inferStudentFallback(input: {
     currentCgpa: input.currentCgpa ?? input.prevCgpa,
     riskProb: input.risk?.riskProb ?? null,
     riskBand: input.risk?.riskBand ?? null,
+    riskCompleteness: input.risk?.riskCompleteness ?? null,
+    featureCompleteness: input.risk?.featureCompleteness ?? null,
+    featureProvenance: input.risk?.featureProvenance ?? null,
     reasons: input.reasons ?? [],
     coScores: input.coScores ?? [],
     whatIf: input.whatIf ?? [],
@@ -2785,6 +2828,29 @@ async function buildAcademicBootstrap(
   for (const row of transcriptSubjectRows) {
     transcriptSubjectsByTermResultId.set(row.transcriptTermResultId, [...(transcriptSubjectsByTermResultId.get(row.transcriptTermResultId) ?? []), row])
   }
+  const transcriptTermResultById = new Map(transcriptTermRows.map(row => [row.transcriptTermResultId, row] as const))
+  const latestTranscriptSubjectByStudentCourseCode = new Map<string, (typeof transcriptSubjectRows)[number]>()
+  for (const row of transcriptSubjectRows) {
+    const termResult = transcriptTermResultById.get(row.transcriptTermResultId)
+    if (!termResult) continue
+    const key = `${termResult.studentId}::${normalizeCourseCode(row.courseCode)}`
+    const current = latestTranscriptSubjectByStudentCourseCode.get(key)
+    if (!current || row.updatedAt > current.updatedAt) {
+      latestTranscriptSubjectByStudentCourseCode.set(key, row)
+    }
+  }
+  const transcriptSubjectHistoryByStudentCourseCode = new Map<string, CourseHistoryRecord>()
+  for (const row of latestTranscriptSubjectByStudentCourseCode.values()) {
+    const termResult = transcriptTermResultById.get(row.transcriptTermResultId)
+    if (!termResult) continue
+    const term = termById[termResult.termId]
+    transcriptSubjectHistoryByStudentCourseCode.set(`${termResult.studentId}::${normalizeCourseCode(row.courseCode)}`, {
+      courseCode: normalizeCourseCode(row.courseCode),
+      semesterNumber: term?.semesterNumber ?? 0,
+      score: row.score,
+      result: row.result === 'PASS' ? 'Passed' : row.result === 'FAIL' ? 'Failed' : row.result,
+    })
+  }
 
   const resolvedPolicyByBatchId = new Map<string, ResolvedPolicy>()
   const resolvedStagePolicyByBatchId = new Map<string, StagePolicyPayload>()
@@ -2812,6 +2878,41 @@ async function buildAcademicBootstrap(
   }))
   for (const [batchId, activeModel] of activeModelRows) {
     activeRiskModelByBatchId.set(batchId, activeModel)
+  }
+
+  const resolvedCurriculumFeaturesByBatchId = new Map<string, Awaited<ReturnType<typeof resolveBatchCurriculumFeatures>>>()
+  const resolvedCurriculumFeatureRows = await Promise.all(batchIds.map(async batchId => {
+    const resolved = await resolveBatchCurriculumFeatures(context, batchId)
+    return [batchId, resolved] as const
+  }))
+  for (const [batchId, resolved] of resolvedCurriculumFeatureRows) {
+    resolvedCurriculumFeaturesByBatchId.set(batchId, resolved)
+  }
+
+  const curriculumGraphByBatchId = new Map<string, {
+    prerequisiteGraphByGraphKey: Map<string, string[]>
+    downstreamGraphByGraphKey: Map<string, string[]>
+  }>()
+  for (const [batchId, resolved] of resolvedCurriculumFeaturesByBatchId.entries()) {
+    const prerequisiteGraphByGraphKey = new Map<string, string[]>()
+    const downstreamGraphByGraphKey = new Map<string, string[]>()
+    for (const item of resolved.items) {
+      const graphKey = normalizeCourseCode(item.courseCode)
+      const prerequisiteCodes = Array.from(new Set(item.resolvedConfig.prerequisites
+        .map(prerequisite => normalizeCourseCode(prerequisite.sourceCourseCode))
+        .filter(code => code.length > 0)))
+      prerequisiteGraphByGraphKey.set(graphKey, prerequisiteCodes)
+      for (const prerequisiteCode of prerequisiteCodes) {
+        downstreamGraphByGraphKey.set(prerequisiteCode, Array.from(new Set([
+          ...(downstreamGraphByGraphKey.get(prerequisiteCode) ?? []),
+          graphKey,
+        ])))
+      }
+    }
+    curriculumGraphByBatchId.set(batchId, {
+      prerequisiteGraphByGraphKey,
+      downstreamGraphByGraphKey,
+    })
   }
 
   const studentTranscriptAnalyticsByStudentId = new Map<string, ReturnType<typeof computeTranscriptAnalytics>>()
@@ -3029,10 +3130,44 @@ async function buildAcademicBootstrap(
       })
       const persistedRisk = latestRiskAssessmentByStudentOffering.get(runtimeKey)
       const batchIdForOffering = offeringRow ? (termById[offeringRow.termId]?.batchId ?? null) : null
+      const batchGraph = batchIdForOffering ? curriculumGraphByBatchId.get(batchIdForOffering) ?? null : null
+      const resolvedCurriculumFeatureBundle = batchIdForOffering ? (resolvedCurriculumFeaturesByBatchId.get(batchIdForOffering) ?? null) : null
+      const prerequisiteSource = {
+        courseCode: normalizeCourseCode(offering.code),
+        semesterNumber: offering.sem,
+        score: averageNullable(outcomeBreakdown.map(item => item.overallAttainment)) ?? 0,
+        result: persistedRisk?.riskBand === 'High' ? 'Failed' : 'Ongoing',
+      }
+      const prerequisiteSummary = batchGraph
+        ? buildGraphAwarePrerequisiteSummary({
+            source: prerequisiteSource,
+            sourceGraphKey: prerequisiteSource.courseCode,
+            historicalSourceKeyForGraphKey: graphKey => `${student.studentId}::${normalizeCourseCode(graphKey)}`,
+            sourceByHistoricalKey: transcriptSubjectHistoryByStudentCourseCode,
+            prerequisiteGraphByGraphKey: batchGraph.prerequisiteGraphByGraphKey,
+            downstreamGraphByGraphKey: batchGraph.downstreamGraphByGraphKey,
+            graphAvailable: true,
+            curriculumImportVersionId: resolvedCurriculumFeatureBundle?.curriculumImportVersion?.curriculumImportVersionId ?? null,
+            curriculumFeatureProfileFingerprint: resolvedCurriculumFeatureBundle?.curriculumFeatureProfileFingerprint ?? null,
+            getSemesterNumber: source => source.semesterNumber,
+            getFinalMark: source => source.score,
+            getResult: source => source.result,
+            getCourseCode: source => source.courseCode,
+            getCourseFamily: courseFamilyForCode,
+          })
+        : buildMissingGraphAwarePrerequisiteSummary({
+            graphAvailable: false,
+            historyAvailable: false,
+            curriculumImportVersionId: resolvedCurriculumFeatureBundle?.curriculumImportVersion?.curriculumImportVersionId ?? null,
+            curriculumFeatureProfileFingerprint: resolvedCurriculumFeatureBundle?.curriculumFeatureProfileFingerprint ?? null,
+          })
       const risk = persistedRisk
         ? {
             riskProb: persistedRisk.riskProbScaled / 100,
             riskBand: persistedRisk.riskBand as 'Low' | 'Medium' | 'High',
+            riskCompleteness: prerequisiteSummary.featureCompleteness,
+            featureCompleteness: prerequisiteSummary.featureCompleteness,
+            featureProvenance: prerequisiteSummary.featureProvenance,
           }
         : computeRiskFromActiveModelOrPolicy({
             attendancePct,
@@ -3047,6 +3182,7 @@ async function buildAcademicBootstrap(
             policy,
             activeModel: batchIdForOffering ? (activeRiskModelByBatchId.get(batchIdForOffering) ?? null) : null,
             semesterProgress: Math.max(0.25, Math.min(1, offering.stage / DEFAULT_STAGE_POLICY.stages.length)),
+            prerequisiteSummary,
           })
       const quizRawTotal = ['quiz1', 'quiz2'].reduce((sum, key) => sum + (assessmentMap[key]?.score ?? 0), 0)
       const assignmentRawTotal = ['asgn1', 'asgn2'].reduce((sum, key) => sum + (assessmentMap[key]?.score ?? 0), 0)
@@ -5584,6 +5720,13 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
       },
     })
 
+    const proofRefresh = await enqueueProofRefreshForBatches(context, {
+      batchIds: [params.batchId],
+      actorFacultyId: auth.facultyId ?? null,
+      now: context.now(),
+      curriculumImportVersionId: resolvedCurriculumFeatures.curriculumImportVersion?.curriculumImportVersionId ?? null,
+    })
+
     return {
       ok: true,
       batchId: params.batchId,
@@ -5603,6 +5746,7 @@ export async function registerAcademicRoutes(app: FastifyInstance, context: Rout
       },
       policyFingerprint: resolvedBatchPolicy.effectivePolicy,
       curriculumFeatureProfileFingerprint: resolvedCurriculumFeatures.curriculumFeatureProfileFingerprint,
+      proofRefresh,
     }
   })
 

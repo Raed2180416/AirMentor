@@ -296,6 +296,28 @@ export const batchCurriculumFeatureOverrides = pgTable('batch_curriculum_feature
   updatedAt: text('updated_at').notNull(),
 })
 
+export const curriculumLinkageCandidates = pgTable('curriculum_linkage_candidates', {
+  curriculumLinkageCandidateId: text('curriculum_linkage_candidate_id').primaryKey(),
+  batchId: text('batch_id').notNull().references(() => batches.batchId),
+  curriculumCourseId: text('curriculum_course_id').notNull().references(() => curriculumCourses.curriculumCourseId),
+  sourceCurriculumCourseId: text('source_curriculum_course_id').references(() => curriculumCourses.curriculumCourseId),
+  sourceCourseId: text('source_course_id').references(() => courses.courseId),
+  sourceCourseCode: text('source_course_code').notNull(),
+  sourceTitle: text('source_title').notNull(),
+  targetCourseCode: text('target_course_code').notNull(),
+  targetTitle: text('target_title').notNull(),
+  edgeKind: text('edge_kind').notNull(),
+  rationale: text('rationale').notNull(),
+  confidenceScaled: integer('confidence_scaled').notNull(),
+  sourcesJson: text('sources_json').notNull(),
+  signalSummaryJson: text('signal_summary_json').notNull(),
+  status: text('status').notNull(),
+  reviewNote: text('review_note'),
+  version: integer('version').notNull().default(1),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
 export const curriculumImportVersions = pgTable('curriculum_import_versions', {
   curriculumImportVersionId: text('curriculum_import_version_id').primaryKey(),
   batchId: text('batch_id').notNull().references(() => batches.batchId),

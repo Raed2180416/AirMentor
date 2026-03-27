@@ -53,6 +53,7 @@ export function getEntryAccessState(input: { stage: number; kind: EntryKind; isL
     isLocked: input.isLocked,
     canEdit,
     canOpenWorkspace: isApplicableForStage && !input.isLocked,
+    canOpenSetup: input.stage <= 1 && !input.isLocked,
   }
 }
 

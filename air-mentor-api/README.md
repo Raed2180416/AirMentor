@@ -9,6 +9,7 @@ Node/TypeScript backend for the AirMentor admin-foundation slice.
 - PostgreSQL
 - Zod
 - Vitest
+- Optional local Python NLP helper for curriculum linkage review
 
 ## Quick Start
 
@@ -19,6 +20,11 @@ Node/TypeScript backend for the AirMentor admin-foundation slice.
 5. Run `npm run dev`.
 
 The API is backend-only. Opening `http://127.0.0.1:4000/` returns a small API info payload; the admin UI itself should be opened from the frontend dev server, typically `http://127.0.0.1:5173/`.
+
+Curriculum linkage review can use the local Python helper in `scripts/curriculum_linkage_nlp.py` when `spacy` and `sentence-transformers` are installed from `requirements.txt`. The helper is best-effort; if Python dependencies are missing, the TypeScript linkage code falls back to the existing heuristic path.
+To run the helper locally, install the Python deps in `air-mentor-api` with:
+
+- `python3 -m pip install -r requirements.txt`
 
 For local browser access from Vite, the default CORS allowlist already includes:
 - `http://127.0.0.1:5173`

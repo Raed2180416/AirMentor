@@ -1065,6 +1065,27 @@ export type ApiStudentAgentCard = {
     currentStatus: {
       riskBand: string | null
       riskProbScaled: number | null
+      riskCompleteness?: {
+        graphAvailable: boolean
+        historyAvailable: boolean
+        complete: boolean
+        missing: Array<'graph' | 'history'>
+        fallbackMode: 'graph-aware' | 'policy-only'
+      } | null
+      featureCompleteness?: {
+        graphAvailable: boolean
+        historyAvailable: boolean
+        complete: boolean
+        missing: Array<'graph' | 'history'>
+        fallbackMode: 'graph-aware' | 'policy-only'
+      } | null
+      featureProvenance?: {
+        curriculumImportVersionId: string | null
+        curriculumFeatureProfileFingerprint: string | null
+        graphNodeCount: number
+        graphEdgeCount: number
+        historyCourseCount: number
+      } | null
       previousRiskBand?: string | null
       previousRiskProbScaled?: number | null
       riskChangeFromPreviousCheckpointScaled?: number | null
@@ -1198,6 +1219,22 @@ export type ApiStudentAgentCard = {
   citations: ApiStudentAgentCitation[]
 }
 
+export type ApiFeatureCompleteness = {
+  graphAvailable: boolean
+  historyAvailable: boolean
+  complete: boolean
+  missing: Array<'graph' | 'history'>
+  fallbackMode: 'graph-aware' | 'policy-only'
+}
+
+export type ApiFeatureProvenance = {
+  curriculumImportVersionId: string | null
+  curriculumFeatureProfileFingerprint: string | null
+  graphNodeCount: number
+  graphEdgeCount: number
+  historyCourseCount: number
+}
+
 export type ApiStudentRiskExplorer = {
   simulationRunId: string
   simulationStageCheckpointId: string | null
@@ -1205,6 +1242,9 @@ export type ApiStudentRiskExplorer = {
   runContext: ApiStudentAgentCard['runContext']
   checkpointContext: ApiStudentAgentCard['checkpointContext']
   student: ApiStudentAgentCard['student']
+  riskCompleteness?: ApiFeatureCompleteness | null
+  featureCompleteness: ApiFeatureCompleteness
+  featureProvenance: ApiFeatureProvenance
   modelProvenance: {
     modelVersion: string | null
     calibrationVersion: string | null
@@ -1262,6 +1302,7 @@ export type ApiStudentRiskExplorer = {
     prerequisitePressureScaled: number | null
     prerequisiteAveragePct: number | null
     prerequisiteFailureCount: number | null
+    completeness?: ApiFeatureCompleteness | null
   }
   weakCourseOutcomes: ApiStudentAgentCard['topicAndCo']['weakCourseOutcomes']
   questionPatterns: ApiStudentAgentCard['topicAndCo']['questionPatterns']
@@ -1836,12 +1877,25 @@ export type ApiCurriculumFeatureConfigBundle = {
   items: ApiCurriculumFeatureConfigItem[]
 }
 
+export type ApiProofRefresh = {
+  affectedBatchIds: string[]
+  queuedSimulationRunIds: string[]
+  curriculumImportVersionId: string | null
+}
+
+export type ApiCurriculumLinkageGenerationStatus = {
+  status: 'ok' | 'degraded' | 'error'
+  warnings: string[]
+  provider: 'python-nlp' | 'typescript-fallback'
+}
+
 export type ApiCurriculumFeatureConfigSaveResult = {
   ok: true
   batchId: string
   curriculumCourseId: string
   curriculumImportVersionId: string | null
   affectedBatchIds?: string[]
+  proofRefresh?: ApiProofRefresh
   targetMode?: 'batch-local-override' | 'scope-profile'
   curriculumFeatureProfileId?: string | null
 }
@@ -1851,7 +1905,53 @@ export type ApiCurriculumFeatureBindingSaveResult = {
   batchId: string
   curriculumImportVersionId: string | null
   affectedBatchIds: string[]
+  proofRefresh?: ApiProofRefresh
   binding: ApiBatchCurriculumFeatureBinding
+}
+
+export type ApiCurriculumBootstrapResult = {
+  ok: true
+  batchId: string
+  manifestKey: 'msruas-mnc-seed'
+  affectedBatchIds: string[]
+  proofRefresh?: ApiProofRefresh
+  candidateGenerationStatus: ApiCurriculumLinkageGenerationStatus
+  curriculumImportVersionId: string | null
+  curriculumFeatureProfileId: string
+  curriculumFeatureProfileFingerprint: string
+  createdCourseCount: number
+  upsertedProfileCourseCount: number
+  generatedCandidateCount: number
+}
+
+export type ApiCurriculumLinkageCandidate = {
+  curriculumLinkageCandidateId: string
+  batchId: string
+  curriculumCourseId: string
+  sourceCurriculumCourseId?: string | null
+  sourceCourseId?: string | null
+  sourceCourseCode: string
+  sourceTitle: string
+  targetCourseCode: string
+  targetTitle: string
+  edgeKind: 'explicit' | 'added'
+  rationale: string
+  confidenceScaled: number
+  sources: string[]
+  signalSummary: Record<string, unknown>
+  status: string
+  reviewNote?: string | null
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type ApiCurriculumLinkageCandidateRegenerateResult = {
+  ok: true
+  batchId: string
+  curriculumCourseId: string | null
+  items: ApiCurriculumLinkageCandidate[]
+  candidateGenerationStatus: ApiCurriculumLinkageGenerationStatus
 }
 
 export type ApiAcademicMeeting = AcademicMeeting
@@ -1933,6 +2033,7 @@ export type ApiBatchProvisioningResponse = {
   termId: string
   sections: string[]
   affectedBatchIds: string[]
+  proofRefresh?: ApiProofRefresh
   summary: {
     createdOfferingCount: number
     createdStudentCount: number

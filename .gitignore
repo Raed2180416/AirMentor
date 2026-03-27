@@ -15,6 +15,10 @@ output/*
 !output/admin-readiness/
 !output/admin-readiness/**
 test-results/
+.venv/
+__pycache__/
+*.pyc
+.mypy_cache/
 
 # Editor directories and files
 .vscode/*

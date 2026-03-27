@@ -30,6 +30,8 @@ import type {
   ApiAdminFacultyCalendar,
   ApiBatchProvisioningRequest,
   ApiCurriculumFeatureConfigBundle,
+  ApiCurriculumLinkageCandidate,
+  ApiCurriculumLinkageGenerationStatus,
   ApiCurriculumFeatureConfigPayload,
   ApiFacultyRecord,
   ApiFacultyAppointment,
@@ -1836,6 +1838,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const [proofDashboard, setProofDashboard] = useState<ApiProofDashboard | null>(null)
   const [proofDashboardLoading, setProofDashboardLoading] = useState(false)
   const [curriculumFeatureConfig, setCurriculumFeatureConfig] = useState<ApiCurriculumFeatureConfigBundle | null>(null)
+  const [curriculumLinkageCandidates, setCurriculumLinkageCandidates] = useState<ApiCurriculumLinkageCandidate[]>([])
+  const [curriculumLinkageGenerationStatus, setCurriculumLinkageGenerationStatus] = useState<ApiCurriculumLinkageGenerationStatus | null>(null)
+  const [curriculumLinkageCandidatesLoading, setCurriculumLinkageCandidatesLoading] = useState(false)
+  const [curriculumLinkageReviewNote, setCurriculumLinkageReviewNote] = useState('')
   const [selectedCurriculumFeatureCourseId, setSelectedCurriculumFeatureCourseId] = useState('')
   const [selectedCurriculumSemester, setSelectedCurriculumSemester] = useState('')
   const [selectedCurriculumCourseId, setSelectedCurriculumCourseId] = useState('')
@@ -2188,6 +2194,17 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     return next
   }, [apiClient])
 
+  const refreshCurriculumLinkageCandidates = useCallback(async (batchId: string) => {
+    setCurriculumLinkageCandidatesLoading(true)
+    try {
+      const next = await apiClient.listCurriculumLinkageCandidates(batchId)
+      setCurriculumLinkageCandidates(next.items)
+      return next.items
+    } finally {
+      setCurriculumLinkageCandidatesLoading(false)
+    }
+  }, [apiClient])
+
   const refreshProofDashboard = useCallback(async (batchId: string) => {
     setProofDashboardLoading(true)
     try {
@@ -2229,7 +2246,14 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     return () => window.clearInterval(timer)
   }, [proofDashboard?.activeRunDetail?.status, refreshProofDashboard, route.batchId])
 
-  const autoRefreshProofBatches = useCallback(async (batchIds: string[], reason: string, overrideImportVersionId?: string | null) => {
+  const getQueuedProofRefreshCount = useCallback((value: unknown) => {
+    if (!value || typeof value !== 'object') return 0
+    const proofRefresh = (value as { proofRefresh?: { queuedSimulationRunIds?: unknown } }).proofRefresh
+    if (!proofRefresh || !Array.isArray(proofRefresh.queuedSimulationRunIds)) return 0
+    return proofRefresh.queuedSimulationRunIds.length
+  }, [])
+
+  const queueProofRefreshBatches = useCallback(async (batchIds: string[], reason: string, overrideImportVersionId?: string | null) => {
     const refreshedBatchIds: string[] = []
     for (const batchId of Array.from(new Set(batchIds.filter(Boolean)))) {
       const scopedConfig = batchId === route.batchId
@@ -2247,7 +2271,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       await apiClient.createProofRun(batchId, {
         curriculumImportVersionId: importVersionId,
         seed: activeRun?.seed,
-        runLabel: `${activeRun?.runLabel ?? 'Sysadmin auto refresh'} · ${reason}`,
+        runLabel: `${activeRun?.runLabel ?? 'Sysadmin refresh'} · ${reason}`,
         activate: true,
       })
       refreshedBatchIds.push(batchId)
@@ -2258,14 +2282,17 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     return refreshedBatchIds
   }, [apiClient, curriculumFeatureConfig, proofDashboard, refreshProofDashboard, route.batchId])
 
-  const maybeAutoRefreshSelectedProofBatch = useCallback(async (reason: string, curriculumImportVersionId?: string | null) => {
+  const queueSelectedProofRefresh = useCallback(async (reason: string, curriculumImportVersionId?: string | null) => {
     if (!route.batchId) return []
-    return autoRefreshProofBatches([route.batchId], reason, curriculumImportVersionId)
-  }, [autoRefreshProofBatches, route.batchId])
+    return queueProofRefreshBatches([route.batchId], reason, curriculumImportVersionId)
+  }, [queueProofRefreshBatches, route.batchId])
 
   useEffect(() => {
     if (!route.batchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
       setCurriculumFeatureConfig(null)
+      setCurriculumLinkageCandidates([])
+      setCurriculumLinkageGenerationStatus(null)
+      setCurriculumLinkageReviewNote('')
       setSelectedCurriculumFeatureCourseId('')
       setCurriculumFeatureForm(defaultCurriculumFeatureForm())
       return
@@ -2278,6 +2305,29 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         setCurriculumFeatureConfig(next)
       } catch (error) {
         if (!cancelled) setActionError(toErrorMessage(error))
+      }
+    })()
+    return () => { cancelled = true }
+  }, [apiClient, route.batchId, session])
+
+  useEffect(() => {
+    if (!route.batchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
+      setCurriculumLinkageCandidates([])
+      setCurriculumLinkageGenerationStatus(null)
+      setCurriculumLinkageCandidatesLoading(false)
+      return
+    }
+    let cancelled = false
+    setCurriculumLinkageCandidatesLoading(true)
+    void (async () => {
+      try {
+        const next = await apiClient.listCurriculumLinkageCandidates(route.batchId!)
+        if (cancelled) return
+        setCurriculumLinkageCandidates(next.items)
+      } catch (error) {
+        if (!cancelled) setActionError(toErrorMessage(error))
+      } finally {
+        if (!cancelled) setCurriculumLinkageCandidatesLoading(false)
       }
     })()
     return () => { cancelled = true }
@@ -2433,16 +2483,15 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   )
   const studentRegistryHasScope = hasHierarchyScopeSelection(studentRegistryScope)
   const selectedStudentRecord = resolveStudent(data, route.studentId)
-  const selectedStudent = selectedStudentRecord && isStudentVisible(data, selectedStudentRecord) && (
-    route.section !== 'students'
-      || (studentRegistryHasScope && matchesStudentScope(selectedStudentRecord, data, studentRegistryScope))
-  )
+  const selectedStudent = selectedStudentRecord && isStudentVisible(data, selectedStudentRecord)
     ? selectedStudentRecord
     : null
   const selectedFacultyRecord = resolveFacultyMember(data, route.facultyMemberId)
   const selectedFacultyMember = selectedFacultyRecord && isFacultyMemberVisible(data, selectedFacultyRecord)
     ? selectedFacultyRecord
     : null
+  const selectedStudentRouteIsExplicit = route.section === 'students' && !!route.studentId
+  const selectedStudentScopeMismatch = !!selectedStudent && studentRegistryHasScope && !matchesStudentScope(selectedStudent, data, studentRegistryScope)
 
   useEffect(() => {
     if (!proofDashboard?.activeRunDetail || activeRunCheckpoints.length === 0) {
@@ -2507,7 +2556,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           sectionCode: toOptionalScopeValue(selectedSectionCode),
         }
       : route.section === 'students'
-        ? (studentRegistryHasScope ? studentRegistryScope : null)
+        ? studentRegistryScope
         : route.section === 'faculty-members'
           ? (hasHierarchyScopeSelection(facultyRegistryScope) ? facultyRegistryScope : null)
           : {
@@ -2517,7 +2566,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               batchId: toOptionalScopeValue(registryScope?.batchId),
               sectionCode: toOptionalScopeValue(registryScope?.sectionCode),
             }
-    if (!query || (route.section === 'students' && !studentRegistryHasScope)) {
+    if (!query) {
       setServerSearchResults([])
       return
     }
@@ -2554,13 +2603,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
   useEffect(() => {
     if (route.section !== 'students' || !route.studentId || !session || dataLoading || data.students.length === 0 || selectedStudent) return
-    if (!studentRegistryHasScope) {
-      setActionError('Select a faculty, department, branch, year, or section before opening student records.')
-    } else {
-      setActionError('That student is outside the active academic scope.')
-    }
+    setActionError('That student is no longer available in the active workspace.')
     navigate({ section: 'students' }, { recordHistory: false })
-  }, [data.students.length, dataLoading, navigate, route.section, route.studentId, selectedStudent, session, studentRegistryHasScope])
+  }, [data.students.length, dataLoading, navigate, route.section, route.studentId, selectedStudent, session])
 
   const searchResults = useMemo(() => {
     const activeSearchScope = route.section === 'faculties'
@@ -2572,7 +2617,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           sectionCode: toOptionalScopeValue(selectedSectionCode),
         }
       : route.section === 'students'
-        ? (studentRegistryHasScope ? studentRegistryScope : null)
+        ? studentRegistryScope
         : route.section === 'faculty-members'
           ? (hasHierarchyScopeSelection(facultyRegistryScope) ? facultyRegistryScope : null)
           : {
@@ -3355,11 +3400,82 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         setFlashMessage('Curriculum course created.')
       }
       resetCurriculumEditor()
+      await loadAdminData()
       await refreshCurriculumFeatureConfig(selectedBatch.batchId)
-      const rerun = await maybeAutoRefreshSelectedProofBatch(`${courseCodeForRefresh} curriculum refresh`)
-      if (rerun.length > 0) {
-        setFlashMessage(`Curriculum course saved and proof batch refreshed for ${courseCodeForRefresh}.`)
-      }
+      await refreshCurriculumLinkageCandidates(selectedBatch.batchId)
+      await refreshProofDashboard(selectedBatch.batchId)
+      setFlashMessage(`Curriculum course saved for ${courseCodeForRefresh}. Any required proof refresh is now queued by the backend.`)
+    })
+  }
+
+  const handleBootstrapCurriculumManifest = async () => {
+    if (!selectedBatch) return
+    await runAction(async () => {
+      const result = await apiClient.bootstrapCurriculum(selectedBatch.batchId, { manifestKey: 'msruas-mnc-seed' })
+      setCurriculumLinkageGenerationStatus(result.candidateGenerationStatus)
+      await loadAdminData()
+      await refreshCurriculumFeatureConfig(selectedBatch.batchId)
+      await refreshCurriculumLinkageCandidates(selectedBatch.batchId)
+      await refreshProofDashboard(selectedBatch.batchId)
+      const queuedCount = getQueuedProofRefreshCount(result)
+      const generationNote = result.candidateGenerationStatus.status === 'ok'
+        ? ''
+        : ` Candidate generation ran in ${result.candidateGenerationStatus.status} mode via ${result.candidateGenerationStatus.provider.replace('-', ' ')}.`
+      setFlashMessage(
+        queuedCount > 0
+          ? `Bootstrap imported ${result.createdCourseCount} live course rows, synced ${result.upsertedProfileCourseCount} profile items, generated ${result.generatedCandidateCount} linkage candidates, and queued ${queuedCount} proof refresh${queuedCount === 1 ? '' : 'es'}.${generationNote}`
+          : `Bootstrap imported ${result.createdCourseCount} live course rows, synced ${result.upsertedProfileCourseCount} profile items, and generated ${result.generatedCandidateCount} linkage candidates.${generationNote}`,
+      )
+    })
+  }
+
+  const handleRegenerateCurriculumLinkageCandidates = async () => {
+    if (!selectedBatch) return
+    await runAction(async () => {
+      const result = await apiClient.regenerateCurriculumLinkageCandidates(selectedBatch.batchId, {
+        curriculumCourseId: selectedCurriculumFeatureItem?.curriculumCourseId,
+      })
+      setCurriculumLinkageGenerationStatus(result.candidateGenerationStatus)
+      await refreshCurriculumLinkageCandidates(selectedBatch.batchId)
+      const generationNote = result.candidateGenerationStatus.status === 'ok'
+        ? ''
+        : ` Candidate generation ran in ${result.candidateGenerationStatus.status} mode via ${result.candidateGenerationStatus.provider.replace('-', ' ')}.`
+      setFlashMessage(
+        result.items.length > 0
+          ? `Regenerated ${result.items.length} linkage candidate${result.items.length === 1 ? '' : 's'} for ${selectedCurriculumFeatureItem?.courseCode ?? 'the selected scope'}.${generationNote}`
+          : `No linkage candidates were generated for ${selectedCurriculumFeatureItem?.courseCode ?? 'the selected scope'}.${generationNote}`,
+      )
+    })
+  }
+
+  const handleApproveCurriculumLinkageCandidate = async (curriculumLinkageCandidateId: string) => {
+    if (!selectedBatch) return
+    await runAction(async () => {
+      const result = await apiClient.approveCurriculumLinkageCandidate(selectedBatch.batchId, curriculumLinkageCandidateId, {
+        reviewNote: curriculumLinkageReviewNote.trim() || undefined,
+      })
+      await refreshCurriculumFeatureConfig(selectedBatch.batchId)
+      await refreshCurriculumLinkageCandidates(selectedBatch.batchId)
+      await refreshProofDashboard(selectedBatch.batchId)
+      const queuedCount = getQueuedProofRefreshCount(result)
+      setCurriculumLinkageReviewNote('')
+      setFlashMessage(
+        queuedCount > 0
+          ? `Curriculum linkage approved and ${queuedCount} affected batch proof run${queuedCount === 1 ? '' : 's'} queued.`
+          : 'Curriculum linkage approved.',
+      )
+    })
+  }
+
+  const handleRejectCurriculumLinkageCandidate = async (curriculumLinkageCandidateId: string) => {
+    if (!selectedBatch) return
+    await runAction(async () => {
+      await apiClient.rejectCurriculumLinkageCandidate(selectedBatch.batchId, curriculumLinkageCandidateId, {
+        reviewNote: curriculumLinkageReviewNote.trim() || undefined,
+      })
+      await refreshCurriculumLinkageCandidates(selectedBatch.batchId)
+      setCurriculumLinkageReviewNote('')
+      setFlashMessage('Curriculum linkage candidate rejected.')
     })
   }
 
@@ -3378,11 +3494,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         version: current.version,
       })
       if (entityEditors.curriculum.curriculumCourseId === curriculumCourseId) resetCurriculumEditor()
+      await loadAdminData()
       await refreshCurriculumFeatureConfig(current.batchId)
-      const rerun = await maybeAutoRefreshSelectedProofBatch(`${current.courseCode} curriculum archive`)
-      setFlashMessage(rerun.length > 0
-        ? `Curriculum course archived and proof batch refreshed for ${current.courseCode}.`
-        : 'Curriculum course archived.')
+      await refreshCurriculumLinkageCandidates(current.batchId)
+      await refreshProofDashboard(current.batchId)
+      setFlashMessage(`Curriculum course archived for ${current.courseCode}. Any required proof refresh is now queued by the backend.`)
     })
   }
 
@@ -3398,11 +3514,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         targetScopeId: curriculumFeatureTargetMode === 'scope-profile' ? targetScopeId : undefined,
       })
       const nextBundle = await refreshCurriculumFeatureConfig(selectedBatch.batchId)
+      await refreshCurriculumLinkageCandidates(selectedBatch.batchId)
       const nextSelected = nextBundle.items.find(item => item.curriculumCourseId === selectedCurriculumFeatureItem.curriculumCourseId) ?? null
       setCurriculumFeatureForm(hydrateCurriculumFeatureForm(nextSelected))
-      const refreshed = await autoRefreshProofBatches(saved.affectedBatchIds ?? [selectedBatch.batchId], `${selectedCurriculumFeatureItem.courseCode} feature refresh`, saved.curriculumImportVersionId)
-      setFlashMessage(refreshed.length > 0
-        ? `Curriculum model inputs saved and ${refreshed.length} affected batch proof run${refreshed.length === 1 ? '' : 's'} refreshed for ${selectedCurriculumFeatureItem.courseCode}.`
+      await refreshProofDashboard(selectedBatch.batchId)
+      const queuedCount = getQueuedProofRefreshCount(saved)
+      setFlashMessage(queuedCount > 0
+        ? `Curriculum model inputs saved and ${queuedCount} affected batch proof run${queuedCount === 1 ? '' : 's'} queued for ${selectedCurriculumFeatureItem.courseCode}.`
         : `Curriculum model inputs saved for ${selectedCurriculumFeatureItem.courseCode}.`)
     })
   }
@@ -3417,9 +3535,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         version: curriculumFeatureConfig?.binding?.version ?? 1,
       })
       await refreshCurriculumFeatureConfig(selectedBatch.batchId)
-      const refreshed = await autoRefreshProofBatches(saved.affectedBatchIds, 'curriculum feature binding refresh', saved.curriculumImportVersionId)
-      setFlashMessage(refreshed.length > 0
-        ? `Curriculum feature binding saved and ${refreshed.length} affected batch proof run${refreshed.length === 1 ? '' : 's'} refreshed.`
+      await refreshCurriculumLinkageCandidates(selectedBatch.batchId)
+      await refreshProofDashboard(selectedBatch.batchId)
+      const queuedCount = getQueuedProofRefreshCount(saved)
+      setFlashMessage(queuedCount > 0
+        ? `Curriculum feature binding saved and ${queuedCount} affected batch proof run${queuedCount === 1 ? '' : 's'} queued.`
         : 'Curriculum feature binding saved.')
     })
   }
@@ -3441,7 +3561,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         const nextResolved = await apiClient.getResolvedBatchPolicy(selectedBatch.batchId)
         setResolvedBatchPolicy(nextResolved)
       }
-      const refreshed = selectedBatch ? await maybeAutoRefreshSelectedProofBatch('policy refresh') : []
+      const refreshed = selectedBatch ? await queueSelectedProofRefresh('policy refresh') : []
       setFlashMessage(refreshed.length > 0
         ? `${activeGovernanceScope.label} policy saved and proof batch refreshed.`
         : `${activeGovernanceScope.label} policy saved.`)
@@ -3472,7 +3592,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         setResolvedBatchPolicy(nextResolved)
         setPolicyForm(hydratePolicyForm(nextResolved.effectivePolicy))
       }
-      const refreshed = selectedBatch ? await maybeAutoRefreshSelectedProofBatch('policy reset') : []
+      const refreshed = selectedBatch ? await queueSelectedProofRefresh('policy reset') : []
       setFlashMessage(refreshed.length > 0
         ? `${activeGovernanceScope.label} policy override reset and proof batch refreshed.`
         : `${activeGovernanceScope.label} policy override reset to inherited defaults.`)
@@ -3538,12 +3658,14 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       const result = await apiClient.provisionBatch(selectedBatch.batchId, payload)
       await loadAdminData()
       await refreshCurriculumFeatureConfig(selectedBatch.batchId)
-      const refreshed = await autoRefreshProofBatches(result.affectedBatchIds, 'batch provisioning refresh')
       if (selectedBatch.batchId === route.batchId) {
         await refreshProofDashboard(selectedBatch.batchId)
       }
+      const queuedCount = getQueuedProofRefreshCount(result)
       setFlashMessage(
-        `Provisioned ${result.summary.createdStudentCount} students, ${result.summary.createdOfferingCount} offerings, ${result.summary.createdMentorCount} mentor links, and ${refreshed.length} proof refresh${refreshed.length === 1 ? '' : 'es'} for ${selectedBatch.batchLabel}.`,
+        queuedCount > 0
+          ? `Provisioned ${result.summary.createdStudentCount} students, ${result.summary.createdOfferingCount} offerings, ${result.summary.createdMentorCount} mentor links, and ${queuedCount} proof refresh${queuedCount === 1 ? '' : 'es'} for ${selectedBatch.batchLabel}.`
+          : `Provisioned ${result.summary.createdStudentCount} students, ${result.summary.createdOfferingCount} offerings, and ${result.summary.createdMentorCount} mentor links for ${selectedBatch.batchLabel}.`,
       )
     })
   }
@@ -3590,7 +3712,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     if (!latestImport) return
     await runAction(async () => {
       await apiClient.approveProofImport(latestImport.curriculumImportVersionId)
-      const rerun = await maybeAutoRefreshSelectedProofBatch('proof import approval', latestImport.curriculumImportVersionId)
+      const rerun = await queueSelectedProofRefresh('proof import approval', latestImport.curriculumImportVersionId)
       await refreshCurriculumFeatureConfig(selectedBatch.batchId)
       await refreshProofDashboard(selectedBatch.batchId)
       setFlashMessage(
@@ -3824,14 +3946,14 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           ...payload,
           version: current.version,
         })
-        const rerun = await maybeAutoRefreshSelectedProofBatch(`${selectedStudent.name} enrollment refresh`)
+        const rerun = await queueSelectedProofRefresh(`${selectedStudent.name} enrollment refresh`)
         setFlashMessage(rerun.length > 0 ? 'Enrollment updated and proof batch refreshed.' : 'Enrollment updated.')
       })
       return
     }
     await runAction(async () => {
       await apiClient.createEnrollment(selectedStudent.studentId, payload)
-      const rerun = await maybeAutoRefreshSelectedProofBatch(`${selectedStudent.name} enrollment refresh`)
+      const rerun = await queueSelectedProofRefresh(`${selectedStudent.name} enrollment refresh`)
       setFlashMessage(rerun.length > 0 ? 'Enrollment created and proof batch refreshed.' : 'Enrollment created.')
     })
   }
@@ -4249,6 +4371,12 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     ?? null
   const curriculumFeatureItems = curriculumFeatureConfig?.items ?? []
   const selectedCurriculumFeatureItem = curriculumFeatureItems.find(item => item.curriculumCourseId === selectedCurriculumFeatureCourseId) ?? null
+  const selectedCurriculumLinkageCandidates = useMemo(
+    () => selectedCurriculumFeatureItem
+      ? curriculumLinkageCandidates.filter(candidate => candidate.curriculumCourseId === selectedCurriculumFeatureItem.curriculumCourseId)
+      : [],
+    [curriculumLinkageCandidates, selectedCurriculumFeatureItem],
+  )
   const selectedFacultyAssignments = selectedFacultyMember ? listFacultyAssignments(data, selectedFacultyMember.facultyId) : []
   const activeBatchPolicyOverride = selectedBatch
     ? data.policyOverrides.find(item => item.scopeType === 'batch' && item.scopeId === selectedBatch.batchId && isVisibleAdminRecord(item.status)) ?? null
@@ -4857,6 +4985,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         .filter(item => isStudentVisible(data, item))
         .filter(item => matchesStudentScope(item, data, overviewHierarchyScope))
     : []
+  const overviewGlobalStudents = data.students.filter(item => isStudentVisible(data, item))
   const overviewScopedFaculty = overviewHierarchyScope
     ? visibleFacultyMembers.filter(item => matchesFacultyScope(item, data, overviewHierarchyScope))
     : []
@@ -4869,35 +4998,35 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const overviewVisibleStudentCount = overviewScopedStudents.length
   const overviewVisibleMentoredCount = overviewScopedStudents.filter(item => item.activeMentorAssignment).length
   const overviewVisibleMentorGapCount = overviewScopedStudents.filter(item => !item.activeMentorAssignment).length
+  const overviewGlobalStudentCount = overviewGlobalStudents.length
+  const overviewGlobalMentoredCount = overviewGlobalStudents.filter(item => item.activeMentorAssignment).length
   const overviewVisibleFacultyCount = overviewScopedFaculty.length
   const overviewVisibleOwnershipCount = overviewScopedOwnerships.length
   const normalizedStudentRegistrySearch = studentRegistrySearch.trim().toLowerCase()
   const normalizedFacultyRegistrySearch = facultyRegistrySearch.trim().toLowerCase()
-  const studentRegistryItems = studentRegistryHasScope
-    ? data.students
-        .filter(item => isStudentVisible(data, item))
-        .filter(item => matchesStudentScope(item, data, studentRegistryScope))
-        .filter(item => {
-          if (!normalizedStudentRegistrySearch) return true
-          const searchableText = [
-            item.name,
-            item.usn,
-            item.rollNumber ?? '',
-            item.email ?? '',
-            item.phone ?? '',
-            item.activeAcademicContext?.departmentName ?? '',
-            item.activeAcademicContext?.branchName ?? '',
-            item.activeAcademicContext?.batchLabel ?? '',
-            item.activeAcademicContext?.sectionCode ?? '',
-          ].join(' ').toLowerCase()
-          return searchableText.includes(normalizedStudentRegistrySearch)
-        })
-        .sort((left, right) => {
-          const leftKey = `${left.activeAcademicContext?.departmentName ?? ''}-${left.activeAcademicContext?.branchName ?? ''}-${left.name}-${left.usn}`
-          const rightKey = `${right.activeAcademicContext?.departmentName ?? ''}-${right.activeAcademicContext?.branchName ?? ''}-${right.name}-${right.usn}`
-          return leftKey.localeCompare(rightKey)
-        })
-    : []
+  const studentRegistryItems = data.students
+    .filter(item => isStudentVisible(data, item))
+    .filter(item => !studentRegistryHasScope || matchesStudentScope(item, data, studentRegistryScope))
+    .filter(item => {
+      if (!normalizedStudentRegistrySearch) return true
+      const searchableText = [
+        item.name,
+        item.usn,
+        item.rollNumber ?? '',
+        item.email ?? '',
+        item.phone ?? '',
+        item.activeAcademicContext?.departmentName ?? '',
+        item.activeAcademicContext?.branchName ?? '',
+        item.activeAcademicContext?.batchLabel ?? '',
+        item.activeAcademicContext?.sectionCode ?? '',
+      ].join(' ').toLowerCase()
+      return searchableText.includes(normalizedStudentRegistrySearch)
+    })
+    .sort((left, right) => {
+      const leftKey = `${left.activeAcademicContext?.departmentName ?? ''}-${left.activeAcademicContext?.branchName ?? ''}-${left.name}-${left.usn}`
+      const rightKey = `${right.activeAcademicContext?.departmentName ?? ''}-${right.activeAcademicContext?.branchName ?? ''}-${right.name}-${right.usn}`
+      return leftKey.localeCompare(rightKey)
+    })
   const facultyRegistryItems = data.facultyMembers
     .filter(item => isFacultyMemberVisible(data, item))
     .filter(item => matchesFacultyScope(item, data, {
@@ -4929,10 +5058,14 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     })
   const studentRegistryCaption = studentRegistryHasScope
     ? `Canonical identity, enrollment correction, mentor linkage, promotion review, and audit history. Filtered to ${studentRegistryScopeLabel ?? 'the selected academic scope'}.`
-    : 'Canonical identity, enrollment correction, mentor linkage, promotion review, and audit history. Select a faculty, department, branch, year, or section to load the student registry.'
+    : selectedStudentRouteIsExplicit
+      ? 'Canonical identity, enrollment correction, mentor linkage, promotion review, and audit history. The global registry remains open while the explicit student drilldown is focused on the right.'
+      : 'Canonical identity, enrollment correction, mentor linkage, promotion review, and audit history. Global student registry is open; apply filters to narrow the scope.'
   const studentRegistryEmptyMessage = studentRegistryHasScope
     ? 'No students match the current academic scope.'
-    : 'Select a faculty, department, branch, year, or section to load students. Unscoped student registry stays empty by design.'
+    : selectedStudentRouteIsExplicit
+      ? 'No students match the current global filters. The explicit student drilldown is already open on the right.'
+      : 'No students match the current global filters.'
   const termsForEnrollment = visibleTerms.filter(item => !enrollmentForm.branchId || item.branchId === enrollmentForm.branchId)
   const branchesForAppointment = visibleBranches.filter(item => !appointmentForm.departmentId || item.departmentId === appointmentForm.departmentId)
   const selectedFacultyOwnerships = selectedFacultyMember
@@ -5376,10 +5509,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                     title="Students"
                     caption={overviewHierarchyScope
                       ? `${overviewVisibleStudentCount} records · ${overviewVisibleMentoredCount} mentored`
-                      : '0 records · scope required'}
+                      : `${overviewGlobalStudentCount} records · ${overviewGlobalMentoredCount} mentored`}
                     helper={overviewHierarchyScope
                       ? `Canonical student identity, mentor linkage, and semester progression filtered to ${overviewScopeLabel ?? 'the active academic scope'}.`
-                      : 'Select a faculty, department, branch, year, or section in the university workspace before student totals appear here.'}
+                      : 'Open the full global student registry directly, or set a faculty, department, branch, year, or section in the university workspace to preserve scope.'}
                     icon={<GraduationCap size={18} />}
                     tone={ADMIN_SECTION_TONES.students}
                     active={false}
@@ -6860,6 +6993,21 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                 selectedBatch ? (
                     <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
                       <SectionHeading title="Semester Courses" eyebrow="Curriculum" caption="Semester-wise course rows, credits, and scoped course leader visibility for the selected year." />
+                      <Card style={{ padding: 14, background: T.surface2, display: 'grid', gap: 10 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                          <div style={{ display: 'grid', gap: 6 }}>
+                            <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>Manifest Bootstrap</div>
+                            <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                              Import the supported MNC manifest into live curriculum rows and shared branch-scope feature authoring. Semesters 7 and 8 stay visible as placeholders until you author real rows.
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            <Chip color={T.accent}>{`${curriculumFeatureItems.length} authored feature row${curriculumFeatureItems.length === 1 ? '' : 's'}`}</Chip>
+                            <Chip color={T.warning}>{`${curriculumLinkageCandidates.filter(candidate => candidate.status === 'pending').length} pending link${curriculumLinkageCandidates.filter(candidate => candidate.status === 'pending').length === 1 ? '' : 's'}`}</Chip>
+                            <Btn type="button" variant="ghost" onClick={() => void handleBootstrapCurriculumManifest()}>Bootstrap MNC Sem 1-6</Btn>
+                          </div>
+                        </div>
+                      </Card>
                       {curriculumSemesterEntries.length === 0 ? <EmptyState title="No semester rows yet" body="Add the first course row below." /> : (
                         <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 12 }}>
                           <div style={{ display: 'grid', gridTemplateColumns: viewportWidth < 1024 ? 'minmax(0, 1fr)' : '180px minmax(0, 1fr)', gap: 10 }}>
@@ -7063,6 +7211,82 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                                 </div>
                               </Card>
                             </div>
+                            <Card style={{ padding: 12, background: T.surface, display: 'grid', gap: 10 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                                <div style={{ display: 'grid', gap: 6 }}>
+                                  <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>Curriculum Linkage Review</div>
+                                  <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                                    Deterministic matching leads, semantic overlap follows, and local Ollama assist is optional. Nothing changes the active graph until you approve a candidate or edit prerequisites directly.
+                                  </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                  <Chip color={selectedCurriculumLinkageCandidates.some(candidate => candidate.status === 'pending') ? T.warning : T.dim}>
+                                    {`${selectedCurriculumLinkageCandidates.filter(candidate => candidate.status === 'pending').length} pending`}
+                                  </Chip>
+                                  <Chip color={T.accent}>{`${selectedCurriculumLinkageCandidates.length} total for selected course`}</Chip>
+                                  {curriculumLinkageGenerationStatus ? (
+                                    <Chip color={curriculumLinkageGenerationStatus.status === 'ok' ? T.success : curriculumLinkageGenerationStatus.status === 'error' ? T.danger : T.warning}>
+                                      {`Generator · ${curriculumLinkageGenerationStatus.status} · ${curriculumLinkageGenerationStatus.provider === 'python-nlp' ? 'python nlp' : 'ts fallback'}`}
+                                    </Chip>
+                                  ) : null}
+                                  <Btn type="button" variant="ghost" onClick={() => void handleRegenerateCurriculumLinkageCandidates()} disabled={!selectedCurriculumFeatureItem}>
+                                    Regenerate Selected Course
+                                  </Btn>
+                                </div>
+                              </div>
+                              {curriculumLinkageGenerationStatus?.warnings.length ? (
+                                <InfoBanner message={curriculumLinkageGenerationStatus.warnings.join(' ')} tone={curriculumLinkageGenerationStatus.status === 'error' ? 'error' : 'neutral'} />
+                              ) : null}
+                              <div>
+                                <FieldLabel>Review Note</FieldLabel>
+                                <TextAreaInput
+                                  value={curriculumLinkageReviewNote}
+                                  onChange={event => setCurriculumLinkageReviewNote(event.target.value)}
+                                  rows={3}
+                                  placeholder="Optional review note saved with approve/reject actions."
+                                />
+                              </div>
+                              {curriculumLinkageCandidatesLoading ? (
+                                <InfoBanner message="Refreshing curriculum linkage candidates for the selected batch." />
+                              ) : !selectedCurriculumFeatureItem ? (
+                                <EmptyState title="Select a model-input course" body="Choose a course above to review candidate prerequisite and cross-course links for that one curriculum row." />
+                              ) : selectedCurriculumLinkageCandidates.length === 0 ? (
+                                <EmptyState title="No linkage candidates" body="This course currently has no pending or reviewed candidate edges. Regenerate after editing outcomes, topics, or bridge modules." />
+                              ) : (
+                                <div style={{ display: 'grid', gap: 10 }}>
+                                  {selectedCurriculumLinkageCandidates.map(candidate => (
+                                    <Card key={candidate.curriculumLinkageCandidateId} style={{ padding: 12, background: T.surface2, display: 'grid', gap: 8 }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                                        <div style={{ display: 'grid', gap: 4 }}>
+                                          <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{`${candidate.sourceCourseCode} -> ${candidate.targetCourseCode}`}</div>
+                                          <div style={{ ...mono, fontSize: 10, color: T.muted }}>
+                                            {`${candidate.sourceTitle} -> ${candidate.targetTitle}`}
+                                          </div>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                          <Chip color={candidate.status === 'approved' ? T.success : candidate.status === 'rejected' ? T.danger : T.warning}>{candidate.status}</Chip>
+                                          <Chip color={candidate.edgeKind === 'explicit' ? T.accent : T.orange}>{candidate.edgeKind}</Chip>
+                                          <Chip color={T.dim}>{`${candidate.confidenceScaled}% confidence`}</Chip>
+                                        </div>
+                                      </div>
+                                      <div style={{ ...mono, fontSize: 10, color: T.text, lineHeight: 1.8 }}>{candidate.rationale}</div>
+                                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                        {candidate.sources.map(source => <Chip key={`${candidate.curriculumLinkageCandidateId}:${source}`} color={T.dim}>{source}</Chip>)}
+                                      </div>
+                                      {candidate.reviewNote ? <div style={{ ...mono, fontSize: 10, color: T.warning, lineHeight: 1.8 }}>{`Review note · ${candidate.reviewNote}`}</div> : null}
+                                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                        <Btn type="button" variant="ghost" onClick={() => void handleApproveCurriculumLinkageCandidate(candidate.curriculumLinkageCandidateId)} disabled={candidate.status !== 'pending'}>
+                                          Approve Link
+                                        </Btn>
+                                        <Btn type="button" variant="danger" onClick={() => void handleRejectCurriculumLinkageCandidate(candidate.curriculumLinkageCandidateId)} disabled={candidate.status !== 'pending'}>
+                                          Reject Link
+                                        </Btn>
+                                      </div>
+                                    </Card>
+                                  ))}
+                                </div>
+                              )}
+                            </Card>
                             <InfoBanner message="Outcome line format: CO1 | Apply | Description. Prerequisite line format: COURSE_CODE | explicit|added | rationale. Saving to a scope profile updates that shared feature category and only refreshes affected batches whose resolved fingerprints change." />
                             <div style={{ display: 'grid', gridTemplateColumns: viewportWidth < 1240 ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
                               <div><FieldLabel>Assessment Profile</FieldLabel><TextInput value={curriculumFeatureForm.assessmentProfile} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, assessmentProfile: event.target.value }))} placeholder="admin-authored" /></div>
@@ -7105,15 +7329,16 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </div>
                   <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
                     {activeUniversityRegistryScope
-                      ? `Open the student registry scoped to ${activeUniversityRegistryScope.label}.`
-                      : 'Select a faculty, department, branch, year, or section first, then open the student registry.'}
+                      ? `Launch #/admin/students with ${activeUniversityRegistryScope.label} preserved as the current scope.`
+                      : 'Launch the full global #/admin/students registry, or preserve the current hierarchy scope if one is active.'}
                   </div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <Chip color={activeUniversityRegistryScope ? ADMIN_SECTION_TONES.students : T.dim}>{scopedUniversityStudents.length} visible</Chip>
-                    {selectedSectionCode ? <Chip color={T.accent}>Section scope</Chip> : selectedBatch ? <Chip color={T.accent}>Year scope</Chip> : selectedBranch ? <Chip color={T.accent}>Branch scope</Chip> : selectedDepartment ? <Chip color={T.accent}>Department scope</Chip> : selectedAcademicFaculty ? <Chip color={T.accent}>Faculty scope</Chip> : <Chip color={T.dim}>Scope required</Chip>}
+                    {selectedSectionCode ? <Chip color={T.accent}>Section scope</Chip> : selectedBatch ? <Chip color={T.accent}>Year scope</Chip> : selectedBranch ? <Chip color={T.accent}>Branch scope</Chip> : selectedDepartment ? <Chip color={T.accent}>Department scope</Chip> : selectedAcademicFaculty ? <Chip color={T.accent}>Faculty scope</Chip> : <Chip color={T.dim}>Global registry</Chip>}
                   </div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <Btn type="button" variant="ghost" onClick={() => handleOpenScopedRegistry('students')}>Open Scoped Students</Btn>
+                    <Btn type="button" variant="ghost" onClick={() => handleOpenScopedRegistry('students')}>Open #/admin/students</Btn>
+                    <Btn type="button" variant="ghost" onClick={() => handleOpenFullRegistry('students')}>Open All Students</Btn>
                   </div>
                 </Card>
 
@@ -7155,7 +7380,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   <Btn type="button" onClick={() => { navigate({ section: 'students' }); resetStudentEditors() }}><Plus size={14} /> New Student</Btn>
                   <Chip color={T.accent}>{studentRegistryItems.length} active</Chip>
                   <Chip color={T.warning}>{studentRegistryItems.filter(item => !item.activeMentorAssignment).length} mentor gaps</Chip>
-                  {studentRegistryScopeLabel ? <Chip color={ADMIN_SECTION_TONES.students}>{studentRegistryScopeLabel}</Chip> : <Chip color={T.dim}>Scope required</Chip>}
+                  {studentRegistryScopeLabel ? <Chip color={ADMIN_SECTION_TONES.students}>{studentRegistryScopeLabel}</Chip> : <Chip color={T.dim}>All students</Chip>}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: registryFilterColumns, gap: 10 }}>
                   <div>
@@ -7269,22 +7494,31 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   background: isLightTheme(themeMode) ? fadeColor(T.surface, 'f0') : fadeColor(T.surface, 'ea'),
                   backdropFilter: 'blur(12px)',
                 }}
+                data-proof-surface="system-admin-student-drilldown"
+                data-proof-student-id={selectedStudent?.studentId ?? undefined}
               >
                 <SectionHeading
                   title={selectedStudent ? selectedStudent.name : 'Create Student'}
                   eyebrow="Student Workspace"
                   caption={selectedStudent
-                    ? 'Identity, academic context, mentor linkage, progression review, and history now stay in one focused workspace.'
+                    ? `Identity, academic context, mentor linkage, progression review, and history stay in one focused workspace.${selectedStudentRouteIsExplicit ? ' Opened from the explicit /admin/students/:id path.' : ''}`
                     : 'Create the student identity first, then move through academic context, mentoring, and progression from the tabs below.'}
                 />
                 {selectedStudent ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(128px, 1fr))', gap: 10 }}>
-                    <AdminMiniStat label="CGPA" value={selectedStudent.currentCgpa.toFixed(2)} tone={T.success} />
-                    <AdminMiniStat label="Semester" value={String(selectedStudent.activeAcademicContext?.semesterNumber ?? '—')} tone={T.accent} />
-                    <AdminMiniStat label="Enrollments" value={String(selectedStudent.enrollments.length)} tone={T.warning} />
-                    <AdminMiniStat label="Mentor Links" value={String(selectedStudent.mentorAssignments.length)} tone={ADMIN_SECTION_TONES['faculty-members']} />
-                    <AdminMiniStat label="Audit Events" value={String(studentAuditEvents.length)} tone={T.orange} />
-                  </div>
+                  <>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <Chip color={selectedStudentRouteIsExplicit ? T.accent : T.dim}>{selectedStudentRouteIsExplicit ? 'Direct drilldown' : 'Scoped registry'}</Chip>
+                      <Chip color={selectedStudentScopeMismatch ? T.warning : T.success}>{selectedStudentScopeMismatch ? 'Outside current scope' : 'Scope aligned'}</Chip>
+                      <Chip color={selectedStudentPolicyLoading ? T.dim : selectedStudentPolicy ? T.success : T.dim}>{selectedStudentPolicyLoading ? 'Loading policy…' : selectedStudentPolicy ? 'Policy loaded' : 'Policy unavailable'}</Chip>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(128px, 1fr))', gap: 10 }}>
+                      <AdminMiniStat label="CGPA" value={selectedStudent.currentCgpa.toFixed(2)} tone={T.success} />
+                      <AdminMiniStat label="Semester" value={String(selectedStudent.activeAcademicContext?.semesterNumber ?? '—')} tone={T.accent} />
+                      <AdminMiniStat label="Enrollments" value={String(selectedStudent.enrollments.length)} tone={T.warning} />
+                      <AdminMiniStat label="Mentor Links" value={String(selectedStudent.mentorAssignments.length)} tone={ADMIN_SECTION_TONES['faculty-members']} />
+                      <AdminMiniStat label="Audit Events" value={String(studentAuditEvents.length)} tone={T.orange} />
+                    </div>
+                  </>
                 ) : null}
                 <AdminDetailTabs
                   activeTab={studentDetailTab}
@@ -7300,15 +7534,42 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               </Card>
 
               {studentDetailTab === 'profile' && (
-              <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
+              <Card style={{ padding: 18, display: 'grid', gap: 14 }} data-proof-surface="system-admin-student-profile" data-proof-student-id={selectedStudent?.studentId ?? undefined}>
                 <SectionHeading title={selectedStudent ? 'Student Detail' : 'Create Student'} eyebrow={selectedStudent ? selectedStudent.name : 'New record'} caption="Save the identity record first, then maintain enrollment, mentor, and promotion details below." />
                 {selectedStudent ? (
                   <>
+                    {!selectedStudentPolicy && !selectedStudentPolicyLoading ? <InfoBanner message="No resolved batch policy snapshot is loaded for this student yet. Progression guidance falls back to the default guardrails until a policy is available." /> : null}
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <Chip color={T.accent}>{selectedStudent.usn}</Chip>
                       <Chip color={T.success}>CGPA {selectedStudent.currentCgpa.toFixed(2)}</Chip>
                       <Chip color={T.warning}>{selectedStudent.activeAcademicContext?.departmentName ?? 'No department'}</Chip>
                       <Chip color={selectedStudent.status === 'active' ? T.success : T.danger}>{selectedStudent.status}</Chip>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
+                      <Card style={{ padding: 14, background: T.surface2 }}>
+                        <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Policy Snapshot</div>
+                        <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>
+                          {selectedStudentPolicyLoading ? 'Loading policy…' : selectedStudentPolicy ? `Min CGPA ${selectedStudentPromotionRules.minimumCgpaForPromotion.toFixed(1)}` : 'No policy snapshot'}
+                        </div>
+                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
+                          {selectedStudentPolicyLoading ? 'Awaiting policy resolution…' : selectedStudentPolicy ? `Pass threshold ${selectedStudentPromotionRules.passMarkPercent}% · backlog guard ${selectedStudentPromotionRules.requireNoActiveBacklogs ? 'on' : 'off'}` : 'Configured defaults only until batch policy loads.'}
+                        </div>
+                      </Card>
+                      <Card style={{ padding: 14, background: T.surface2 }}>
+                        <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Academic Lineage</div>
+                        <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedStudent.activeAcademicContext ? `${selectedStudent.activeAcademicContext.branchName ?? 'Branch'} · Sem ${selectedStudent.activeAcademicContext.semesterNumber ?? '—'}` : 'No active academic context'}</div>
+                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{selectedStudent.activeAcademicContext?.sectionCode ? `Section ${selectedStudent.activeAcademicContext.sectionCode}` : 'No section assigned'}</div>
+                      </Card>
+                      <Card style={{ padding: 14, background: T.surface2 }}>
+                        <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Mentor Link</div>
+                        <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedStudent.activeMentorAssignment ? 'Mentor linked' : 'No mentor linked'}</div>
+                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{selectedStudent.mentorAssignments.length} historical assignment{selectedStudent.mentorAssignments.length === 1 ? '' : 's'}</div>
+                      </Card>
+                      <Card style={{ padding: 14, background: T.surface2 }}>
+                        <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Audit Trail</div>
+                        <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{studentAuditEvents.length} events</div>
+                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{studentAuditLoading ? 'Loading history…' : studentAuditEvents.length > 0 ? 'Change history is available.' : 'No audit events recorded yet.'}</div>
+                      </Card>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
                       <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Name</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedStudent.name}</div></Card>
@@ -7321,7 +7582,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                       <Btn type="button" size="sm" onClick={() => setEditingEntity('student-profile')}>Edit Student</Btn>
                       <Btn type="button" size="sm" variant="danger" onClick={() => void handleArchiveStudent()}>Delete Student</Btn>
-                      <Btn type="button" size="sm" variant="ghost" onClick={() => { navigate({ section: 'students' }); resetStudentEditors() }}>New Student</Btn>
+                      <Btn type="button" size="sm" variant="ghost" onClick={() => { navigate({ section: 'students' }); resetStudentEditors() }}>Back to Registry</Btn>
+                      <Btn type="button" size="sm" variant="ghost" onClick={() => { navigate({ section: 'students' }); resetStudentEditors() }}>{selectedStudent ? 'Create Student' : 'New Student'}</Btn>
                     </div>
                   </>
                 ) : (
@@ -7482,6 +7744,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   <EmptyState title="No active academic context" body="Create or restore an enrollment before using the promotion panel." />
                 ) : (
                   <>
+                    {!selectedStudentPolicy && !selectedStudentPolicyLoading ? <InfoBanner message="No resolved batch policy snapshot is loaded for this student. The progression panel is using the default guardrails only." /> : null}
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <Chip color={selectedStudentPromotionRecommended ? T.success : T.warning}>{selectedStudentPromotionRecommended ? 'Recommended' : 'Hold for review'}</Chip>
                       <Chip color={T.accent}>Current CGPA {selectedStudent.currentCgpa.toFixed(2)}</Chip>

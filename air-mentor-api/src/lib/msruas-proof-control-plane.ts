@@ -116,6 +116,14 @@ import {
   type ProductionRiskModelArtifact,
 } from './proof-risk-model.js'
 import {
+  buildGraphAwarePrerequisiteSummary,
+  buildMissingGraphAwarePrerequisiteSummary,
+  type GraphAwareFeatureCompleteness,
+  type GraphAwareFeatureProvenance,
+  type GraphAwarePrerequisiteSummary,
+  type GraphAwarePrerequisiteSummaryCompleteness,
+} from './graph-summary.js'
+import {
   calculateCgpa,
   calculateSgpa,
   evaluateCourseStatus,
@@ -198,6 +206,11 @@ type StudentAgentTimelineItem = {
   occurredAt: string
   semesterNumber: number | null
   citations: StudentAgentCitation[]
+}
+
+type ObservableSourceRefsWithFeatureMetadata = ObservableSourceRefs & {
+  featureCompleteness: GraphAwareFeatureCompleteness
+  featureProvenance: GraphAwareFeatureProvenance
 }
 
 type StudentAgentCardPayload = {
@@ -285,6 +298,9 @@ type StudentAgentCardPayload = {
     currentStatus: {
       riskBand: string | null
       riskProbScaled: number | null
+      riskCompleteness?: GraphAwarePrerequisiteSummaryCompleteness | null
+      featureCompleteness?: GraphAwareFeatureCompleteness | null
+      featureProvenance?: GraphAwareFeatureProvenance | null
       previousRiskBand?: string | null
       previousRiskProbScaled?: number | null
       riskChangeFromPreviousCheckpointScaled?: number | null
@@ -425,6 +441,9 @@ type StudentRiskExplorerPayload = {
   runContext: StudentAgentCardPayload['runContext']
   checkpointContext: StudentAgentCardPayload['checkpointContext']
   student: StudentAgentCardPayload['student']
+  riskCompleteness?: GraphAwareFeatureCompleteness | null
+  featureCompleteness: GraphAwareFeatureCompleteness
+  featureProvenance: GraphAwareFeatureProvenance
   modelProvenance: {
     modelVersion: string | null
     calibrationVersion: string | null
@@ -471,6 +490,7 @@ type StudentRiskExplorerPayload = {
     prerequisitePressureScaled: number | null
     prerequisiteAveragePct: number | null
     prerequisiteFailureCount: number | null
+    completeness?: GraphAwarePrerequisiteSummaryCompleteness | null
   }
   weakCourseOutcomes: StudentAgentCardPayload['topicAndCo']['weakCourseOutcomes']
   questionPatterns: StudentAgentCardPayload['topicAndCo']['questionPatterns']
@@ -2580,83 +2600,65 @@ function courseDisciplineFamily(courseCode: string) {
   return match?.[0] ?? (normalized || 'GENERAL')
 }
 
-function collectGraphDistances(startNodeId: string, adjacency: Map<string, string[]>) {
-  const distances = new Map<string, number>()
-  const queue: Array<{ nodeId: string; distance: number }> = [{ nodeId: startNodeId, distance: 0 }]
-  while (queue.length > 0) {
-    const current = queue.shift()
-    if (!current) continue
-    const nextNodeIds = adjacency.get(current.nodeId) ?? []
-    nextNodeIds.forEach(nextNodeId => {
-      const nextDistance = current.distance + 1
-      const existing = distances.get(nextNodeId)
-      if (existing != null && existing <= nextDistance) return
-      distances.set(nextNodeId, nextDistance)
-      queue.push({ nodeId: nextNodeId, distance: nextDistance })
-    })
-  }
-  return distances
-}
-
 function prerequisiteSummaryForSource(input: {
   source: StageCourseProjectionSource
   sourceByStudentNodeId: Map<string, StageCourseProjectionSource>
   prerequisiteNodeIdsByTargetNodeId: Map<string, string[]>
   downstreamNodeIdsBySourceNodeId: Map<string, string[]>
+  curriculumImportVersionId?: string | null
+  curriculumFeatureProfileFingerprint?: string | null
 }) {
+  const nodeCourseCodeByNodeId = new Map<string, string>()
+  for (const row of input.sourceByStudentNodeId.values()) {
+    if (!row.curriculumNodeId) continue
+    nodeCourseCodeByNodeId.set(row.curriculumNodeId, row.courseCode.trim().toUpperCase())
+  }
+  const prerequisiteGraphByGraphKey = new Map<string, string[]>()
+  for (const [targetNodeId, prerequisiteNodeIds] of input.prerequisiteNodeIdsByTargetNodeId.entries()) {
+    const targetCourseCode = nodeCourseCodeByNodeId.get(targetNodeId)
+    if (!targetCourseCode) continue
+    const prerequisiteCourseCodes = Array.from(new Set(prerequisiteNodeIds
+      .map((nodeId: string) => nodeCourseCodeByNodeId.get(nodeId))
+      .filter((value: string | undefined): value is string => !!value)))
+    prerequisiteGraphByGraphKey.set(targetCourseCode, prerequisiteCourseCodes)
+  }
+  const downstreamGraphByGraphKey = new Map<string, string[]>()
+  for (const [sourceNodeId, downstreamNodeIds] of input.downstreamNodeIdsBySourceNodeId.entries()) {
+    const sourceCourseCode = nodeCourseCodeByNodeId.get(sourceNodeId)
+    if (!sourceCourseCode) continue
+    const downstreamCourseCodes = Array.from(new Set(downstreamNodeIds
+      .map((nodeId: string) => nodeCourseCodeByNodeId.get(nodeId))
+      .filter((value: string | undefined): value is string => !!value)))
+    downstreamGraphByGraphKey.set(sourceCourseCode, downstreamCourseCodes)
+  }
+  const sourceByHistoricalKey = new Map<string, StageCourseProjectionSource>()
+  for (const row of input.sourceByStudentNodeId.values()) {
+    sourceByHistoricalKey.set(`${row.studentId}::${row.courseCode.trim().toUpperCase()}`, row)
+  }
   if (!input.source.curriculumNodeId) {
-    return {
-      prerequisiteAveragePct: 0,
-      prerequisiteFailureCount: 0,
-      prerequisiteCourseCodes: [] as string[],
-      prerequisiteWeakCourseCodes: [] as string[],
-      downstreamDependencyLoad: 0,
-      weakPrerequisiteChainCount: 0,
-      repeatedWeakPrerequisiteFamilyCount: 0,
-    }
+    return buildMissingGraphAwarePrerequisiteSummary({
+      graphAvailable: false,
+      historyAvailable: false,
+      curriculumImportVersionId: input.curriculumImportVersionId ?? null,
+      curriculumFeatureProfileFingerprint: input.curriculumFeatureProfileFingerprint ?? null,
+    })
   }
-  const prerequisiteNodeIds = input.prerequisiteNodeIdsByTargetNodeId.get(input.source.curriculumNodeId) ?? []
-  const transitivePrerequisiteDistances = collectGraphDistances(input.source.curriculumNodeId, input.prerequisiteNodeIdsByTargetNodeId)
-  const prerequisiteSources = prerequisiteNodeIds
-    .map(nodeId => input.sourceByStudentNodeId.get(`${input.source.studentId}::${nodeId}`) ?? null)
-    .filter((row): row is StageCourseProjectionSource => !!row)
-    .filter(row => row.semesterNumber < input.source.semesterNumber)
-  const transitivePrerequisiteSources = [...transitivePrerequisiteDistances.entries()]
-    .map(([nodeId, distance]) => ({
-      source: input.sourceByStudentNodeId.get(`${input.source.studentId}::${nodeId}`) ?? null,
-      distance,
-    }))
-    .filter((entry): entry is { source: StageCourseProjectionSource; distance: number } => !!entry.source)
-    .filter(entry => entry.source.semesterNumber < input.source.semesterNumber)
-  const prerequisiteAveragePct = prerequisiteSources.length > 0
-    ? roundToOne(average(prerequisiteSources.map(row => row.finalMark)))
-    : 0
-  const prerequisiteFailureCount = prerequisiteSources.filter(row => row.result !== 'Passed').length
-  const prerequisiteWeakCourseCodes = prerequisiteSources
-    .filter(row => row.result !== 'Passed' || row.finalMark < 55)
-    .map(row => row.courseCode)
-  const weakTransitiveSources = transitivePrerequisiteSources.filter(entry =>
-    entry.source.result !== 'Passed' || entry.source.finalMark < 55)
-  const repeatedWeakPrerequisiteFamilyCount = [...weakTransitiveSources.reduce((accumulator, entry) => {
-    const family = courseDisciplineFamily(entry.source.courseCode)
-    accumulator.set(family, (accumulator.get(family) ?? 0) + 1)
-    return accumulator
-  }, new Map<string, number>()).values()].filter(count => count >= 2).length
-  const downstreamDependencyLoad = (() => {
-    const downstreamDistances = collectGraphDistances(input.source.curriculumNodeId!, input.downstreamNodeIdsBySourceNodeId)
-    if (downstreamDistances.size === 0) return 0
-    const weightedLoad = [...downstreamDistances.values()].reduce((sum, distance) => sum + (1 / Math.max(1, distance)), 0)
-    return roundToFour(clamp(weightedLoad / 4, 0, 1))
-  })()
-  return {
-    prerequisiteAveragePct,
-    prerequisiteFailureCount,
-    prerequisiteCourseCodes: prerequisiteSources.map(row => row.courseCode),
-    prerequisiteWeakCourseCodes,
-    downstreamDependencyLoad,
-    weakPrerequisiteChainCount: weakTransitiveSources.length,
-    repeatedWeakPrerequisiteFamilyCount,
-  }
+  return buildGraphAwarePrerequisiteSummary({
+    source: input.source,
+    sourceGraphKey: input.source.courseCode.trim().toUpperCase(),
+    historicalSourceKeyForGraphKey: graphKey => `${input.source.studentId}::${graphKey.trim().toUpperCase()}`,
+    sourceByHistoricalKey,
+    prerequisiteGraphByGraphKey,
+    downstreamGraphByGraphKey,
+    graphAvailable: true,
+    curriculumImportVersionId: input.curriculumImportVersionId ?? null,
+    curriculumFeatureProfileFingerprint: input.curriculumFeatureProfileFingerprint ?? null,
+    getSemesterNumber: row => row.semesterNumber,
+    getFinalMark: row => row.finalMark,
+    getResult: row => row.result,
+    getCourseCode: row => row.courseCode.trim().toUpperCase(),
+    getCourseFamily: courseDisciplineFamily,
+  })
 }
 
 function downstreamCarryoverLabelForSource(input: {
@@ -4619,6 +4621,8 @@ export async function rebuildSimulationStagePlayback(db: AppDb, input: {
             sourceByStudentNodeId,
             prerequisiteNodeIdsByTargetNodeId,
             downstreamNodeIdsBySourceNodeId,
+            curriculumImportVersionId: run.curriculumImportVersionId ?? null,
+            curriculumFeatureProfileFingerprint: run.curriculumFeatureProfileFingerprint ?? null,
           })
           const downstreamCarryover = downstreamCarryoverLabelForSource({
             source,
@@ -4631,7 +4635,7 @@ export async function rebuildSimulationStagePlayback(db: AppDb, input: {
             policy: input.policy,
             templatesById: templateById,
           })
-          const sourceRefs: ObservableSourceRefs = {
+          const sourceRefs: ObservableSourceRefsWithFeatureMetadata = {
             simulationRunId: input.simulationRunId,
             simulationStageCheckpointId: checkpoint.simulationStageCheckpointId,
             studentId: source.studentId,
@@ -4645,6 +4649,9 @@ export async function rebuildSimulationStagePlayback(db: AppDb, input: {
             stageKey: stage.key,
             prerequisiteCourseCodes: prerequisiteSummary.prerequisiteCourseCodes,
             prerequisiteWeakCourseCodes: prerequisiteSummary.prerequisiteWeakCourseCodes,
+            prerequisiteCompleteness: prerequisiteSummary.featureCompleteness,
+            featureCompleteness: prerequisiteSummary.featureCompleteness,
+            featureProvenance: prerequisiteSummary.featureProvenance,
             weakCourseOutcomeCodes: evidence.weakCourseOutcomes.map(item => item.coCode),
             dominantQuestionTopics: evidence.questionPatterns.commonWeakTopics,
           }
@@ -5189,6 +5196,8 @@ export async function rebuildSimulationStagePlayback(db: AppDb, input: {
           sourceByStudentNodeId,
           prerequisiteNodeIdsByTargetNodeId,
           downstreamNodeIdsBySourceNodeId,
+          curriculumImportVersionId: run.curriculumImportVersionId ?? null,
+          curriculumFeatureProfileFingerprint: run.curriculumFeatureProfileFingerprint ?? null,
         })
         const downstreamCarryover = downstreamCarryoverLabelForSource({
           source,
@@ -5201,23 +5210,26 @@ export async function rebuildSimulationStagePlayback(db: AppDb, input: {
           policy: input.policy,
           templatesById: templateById,
         })
-        const sourceRefs: ObservableSourceRefs = {
-          simulationRunId: input.simulationRunId,
-          simulationStageCheckpointId: checkpoint.simulationStageCheckpointId,
-          studentId: source.studentId,
-          offeringId: source.offeringId,
+        const sourceRefs: ObservableSourceRefsWithFeatureMetadata = {
+            simulationRunId: input.simulationRunId,
+            simulationStageCheckpointId: checkpoint.simulationStageCheckpointId,
+            studentId: source.studentId,
+            offeringId: source.offeringId,
           semesterNumber: source.semesterNumber,
           sectionCode: source.sectionCode,
           courseCode: source.courseCode,
           courseTitle: source.courseTitle,
           courseFamily: source.courseFamily,
           coEvidenceMode: dominantCoEvidenceMode(source.coRows),
-          stageKey: stage.key,
-          prerequisiteCourseCodes: prerequisiteSummary.prerequisiteCourseCodes,
-          prerequisiteWeakCourseCodes: prerequisiteSummary.prerequisiteWeakCourseCodes,
-          weakCourseOutcomeCodes: evidence.weakCourseOutcomes.map(item => item.coCode),
-          dominantQuestionTopics: evidence.questionPatterns.commonWeakTopics,
-        }
+            stageKey: stage.key,
+            prerequisiteCourseCodes: prerequisiteSummary.prerequisiteCourseCodes,
+            prerequisiteWeakCourseCodes: prerequisiteSummary.prerequisiteWeakCourseCodes,
+            prerequisiteCompleteness: prerequisiteSummary.featureCompleteness,
+            featureCompleteness: prerequisiteSummary.featureCompleteness,
+            featureProvenance: prerequisiteSummary.featureProvenance,
+            weakCourseOutcomeCodes: evidence.weakCourseOutcomes.map(item => item.coCode),
+            dominantQuestionTopics: evidence.questionPatterns.commonWeakTopics,
+          }
         const featurePayload = buildObservableFeaturePayload({
           attendancePct: evidence.attendancePct,
           attendanceHistory: includedAttendanceForSourceStage(source, stage.key),
@@ -8296,7 +8308,7 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       observedUpdatedAt: row.updatedAt,
       resolutionRow: latestResolutionRow,
     })
-    const fallbackSourceRefs: ObservableSourceRefs = stageEvidence?.sourceRefs ?? {
+    const fallbackSourceRefs: ObservableSourceRefsWithFeatureMetadata = (stageEvidence?.sourceRefs as ObservableSourceRefsWithFeatureMetadata | null) ?? {
       simulationRunId: input.simulationRunId,
       simulationStageCheckpointId: null,
       studentId: row.studentId,
@@ -8310,6 +8322,18 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       stageKey: null,
       prerequisiteCourseCodes: [],
       prerequisiteWeakCourseCodes: [],
+      prerequisiteCompleteness: buildMissingGraphAwarePrerequisiteSummary({
+        graphAvailable: false,
+        historyAvailable: false,
+      }).featureCompleteness,
+      featureCompleteness: buildMissingGraphAwarePrerequisiteSummary({
+        graphAvailable: false,
+        historyAvailable: false,
+      }).featureCompleteness,
+      featureProvenance: buildMissingGraphAwarePrerequisiteSummary({
+        graphAvailable: false,
+        historyAvailable: false,
+      }).featureProvenance,
       weakCourseOutcomeCodes: [],
       dominantQuestionTopics: [],
     }
@@ -10721,7 +10745,7 @@ function dominantCoEvidenceMode(rows: Array<typeof studentCoStates.$inferSelect>
 
 type ProofRiskInferenceContext = {
   featurePayload: ObservableFeaturePayload | null
-  sourceRefs: ObservableSourceRefs | null
+  sourceRefs: ObservableSourceRefsWithFeatureMetadata | null
   featureSchemaVersion: string | null
   evidenceWindow: string | null
   inferred: ModelBackedRiskOutput | null
@@ -10742,7 +10766,7 @@ async function loadProofRiskInferenceContext(db: AppDb, input: {
   const activeArtifacts = await loadActiveProofRiskArtifacts(db, input.batchId)
 
   let featurePayload: ObservableFeaturePayload | null = null
-  let sourceRefs: ObservableSourceRefs | null = null
+  let sourceRefs: ObservableSourceRefsWithFeatureMetadata | null = null
   let featureSchemaVersion: string | null = null
   let evidenceWindow: string | null = null
 
@@ -10781,7 +10805,7 @@ async function loadProofRiskInferenceContext(db: AppDb, input: {
       const [evidenceRow] = await db.select().from(riskEvidenceSnapshots).where(eq(riskEvidenceSnapshots.riskEvidenceSnapshotId, evidenceSnapshotId))
       if (evidenceRow) {
         featurePayload = parseJson(evidenceRow.featureJson, null as ObservableFeaturePayload | null)
-        sourceRefs = parseJson(evidenceRow.sourceRefsJson, null as ObservableSourceRefs | null)
+        sourceRefs = parseJson(evidenceRow.sourceRefsJson, null as ObservableSourceRefsWithFeatureMetadata | null)
         featureSchemaVersion = evidenceRow.featureSchemaVersion
         evidenceWindow = evidenceRow.evidenceWindow
       }
@@ -10797,7 +10821,7 @@ async function loadProofRiskInferenceContext(db: AppDb, input: {
     )) ?? evidenceRows.find(row => row.simulationStageCheckpointId === null) ?? null
     if (activeEvidenceRow) {
       featurePayload = parseJson(activeEvidenceRow.featureJson, null as ObservableFeaturePayload | null)
-      sourceRefs = parseJson(activeEvidenceRow.sourceRefsJson, null as ObservableSourceRefs | null)
+      sourceRefs = parseJson(activeEvidenceRow.sourceRefsJson, null as ObservableSourceRefsWithFeatureMetadata | null)
       featureSchemaVersion = activeEvidenceRow.featureSchemaVersion
       evidenceWindow = activeEvidenceRow.evidenceWindow
     }
@@ -11751,9 +11775,23 @@ export async function buildStudentAgentCard(db: AppDb, input: {
   })
   const overallHeadDisplay = headDisplayState(proofRiskInference.inferred, 'overallCourseRisk')
     ?? proofRiskInference.fallbackOverallHeadDisplay
+  const fallbackFeatureSummary = buildMissingGraphAwarePrerequisiteSummary({
+    graphAvailable: false,
+    historyAvailable: false,
+    curriculumImportVersionId: String(run.curriculumImportVersionId ?? null),
+    curriculumFeatureProfileFingerprint: run.curriculumFeatureProfileFingerprint ?? null,
+  })
+  const featureCompleteness = proofRiskInference.sourceRefs?.featureCompleteness
+    ?? proofRiskInference.sourceRefs?.prerequisiteCompleteness
+    ?? fallbackFeatureSummary.featureCompleteness
+  const featureProvenance = proofRiskInference.sourceRefs?.featureProvenance
+    ?? fallbackFeatureSummary.featureProvenance
   currentStatus = {
     ...currentStatus,
     riskProbScaled: displayableHeadProbabilityScaled(proofRiskInference.inferred, 'overallCourseRisk'),
+    riskCompleteness: featureCompleteness,
+    featureCompleteness,
+    featureProvenance,
   }
 
   const simulationTags = behaviorProfile ? [
@@ -11999,6 +12037,24 @@ export async function buildStudentRiskExplorer(db: AppDb, input: {
   })
   const inferred = proofRiskInference.inferred
   const overallHeadDisplay = headDisplayState(inferred, 'overallCourseRisk')
+  const fallbackFeatureSummary = buildMissingGraphAwarePrerequisiteSummary({
+    graphAvailable: false,
+    historyAvailable: false,
+    curriculumImportVersionId: String(run.curriculumImportVersionId ?? null),
+    curriculumFeatureProfileFingerprint: run.curriculumFeatureProfileFingerprint ?? null,
+  })
+  const featureCompleteness = proofRiskInference.sourceRefs?.featureCompleteness
+    ?? proofRiskInference.sourceRefs?.prerequisiteCompleteness
+    ?? fallbackFeatureSummary.featureCompleteness
+  const featureProvenance = proofRiskInference.sourceRefs?.featureProvenance
+    ?? fallbackFeatureSummary.featureProvenance
+  const currentStatus = {
+    ...card.overview.currentStatus,
+    riskProbScaled: displayableHeadProbabilityScaled(proofRiskInference.inferred, 'overallCourseRisk'),
+    riskCompleteness: featureCompleteness,
+    featureCompleteness,
+    featureProvenance,
+  }
 
   const currentSemesterNumber = card.checkpointContext?.semesterNumber ?? card.student.currentSemester
   const currentSemesterSummary = card.overview.semesterSummaries.find(item => item.semesterNumber === currentSemesterNumber) ?? null
@@ -12021,6 +12077,9 @@ export async function buildStudentRiskExplorer(db: AppDb, input: {
     runContext: card.runContext,
     checkpointContext: card.checkpointContext,
     student: card.student,
+    riskCompleteness: featureCompleteness,
+    featureCompleteness,
+    featureProvenance,
     modelProvenance: {
       modelVersion: inferred?.modelVersion ?? null,
       calibrationVersion: inferred?.calibrationVersion ?? null,
@@ -12045,7 +12104,7 @@ export async function buildStudentRiskExplorer(db: AppDb, input: {
     trainedRiskHeadDisplays: inferred?.headDisplay ?? null,
     derivedScenarioHeads,
     currentEvidence: card.overview.currentEvidence,
-    currentStatus: card.overview.currentStatus,
+    currentStatus,
     topDrivers: inferred?.observableDrivers ?? [],
     crossCourseDrivers: inferred?.crossCourseDrivers ?? [],
     prerequisiteMap: {
@@ -12054,6 +12113,7 @@ export async function buildStudentRiskExplorer(db: AppDb, input: {
       prerequisitePressureScaled: proofRiskInference.featurePayload?.prerequisitePressure ?? null,
       prerequisiteAveragePct: proofRiskInference.featurePayload?.prerequisiteAveragePct ?? null,
       prerequisiteFailureCount: proofRiskInference.featurePayload?.prerequisiteFailureCount ?? null,
+      completeness: featureCompleteness,
     },
     weakCourseOutcomes: card.topicAndCo.weakCourseOutcomes,
     questionPatterns: card.topicAndCo.questionPatterns,

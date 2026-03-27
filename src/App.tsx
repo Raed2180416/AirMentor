@@ -2565,7 +2565,13 @@ function OperationalWorkspace({
   const [schemeByOffering, setSchemeByOffering] = useState<Record<string, SchemeState>>(() => repositories.entryData.getSchemeStateSnapshot(allOfferings))
   const [ttBlueprintsByOffering, setTtBlueprintsByOffering] = useState<Record<string, Record<TTKind, TermTestBlueprint>>>(() => repositories.entryData.getBlueprintSnapshot(allOfferings))
   const [lockAuditByTarget, setLockAuditByTarget] = useState<Record<string, QueueTransition[]>>(() => repositories.locksAudit.getLockAuditSnapshot())
-  const selectors = useMemo(() => createAppSelectors({ studentPatches, schemeByOffering, ttBlueprintsByOffering, studentsByOffering }), [schemeByOffering, studentPatches, studentsByOffering, ttBlueprintsByOffering])
+  const selectors = useMemo(() => createAppSelectors({
+    studentPatches,
+    schemeByOffering,
+    ttBlueprintsByOffering,
+    studentsByOffering,
+    studentSourceMode: 'live',
+  }), [schemeByOffering, studentPatches, studentsByOffering, ttBlueprintsByOffering])
   const { getStudentsPatched } = selectors
 
   const allowedRoles = useMemo(() => (currentTeacher?.allowedRoles ?? []).filter(candidate => String(candidate) !== 'SYSTEM_ADMIN'), [currentTeacher])
@@ -3318,32 +3324,35 @@ function OperationalWorkspace({
     }
 
     const currentScheme = schemeByOffering[offId] ?? defaultSchemeForOffering(targetOffering)
+    if (students.length === 0) return null
     if (kind === 'tt1' || kind === 'tt2') {
       const blueprint = ttBlueprintsByOffering[offId]?.[kind] ?? getFallbackBlueprintSet(offId)[kind]
       const leaves = flattenBlueprintLeaves(blueprint.nodes)
       if (leaves.length === 0) return null
+      const entries = students.map(student => {
+        const patch = getPatch(student.id)
+        const patchScores = kind === 'tt1' ? patch.tt1LeafScores : patch.tt2LeafScores
+        const components = leaves.map(leaf => {
+          const key = toCellKey(offId, kind, student.id, leaf.id)
+          const score = cellValues[key] ?? patchScores?.[leaf.id]
+          if (typeof score !== 'number') return null
+          return {
+            componentCode: leaf.id,
+            score,
+            maxScore: leaf.maxMarks,
+          }
+        })
+        if (components.some(component => component === null)) return null
+        return {
+          studentId: student.id,
+          components: components as Array<{ componentCode: string; score: number; maxScore: number }>,
+        }
+      })
+      if (entries.some(entry => entry === null)) return null
       return {
         kind,
         payload: {
-          entries: students.map(student => {
-            const patch = getPatch(student.id)
-            const patchScores = kind === 'tt1' ? patch.tt1LeafScores : patch.tt2LeafScores
-            const rawTotal = kind === 'tt1' ? student.tt1Score : student.tt2Score
-            const rawMax = kind === 'tt1' ? student.tt1Max : student.tt2Max
-            return {
-              studentId: student.id,
-              components: leaves.map(leaf => {
-                const key = toCellKey(offId, kind, student.id, leaf.id)
-                const fallbackValue = patchScores?.[leaf.id]
-                  ?? (rawTotal !== null ? Math.round((rawTotal / Math.max(1, rawMax)) * leaf.maxMarks) : 0)
-                return {
-                  componentCode: leaf.id,
-                  score: cellValues[key] ?? fallbackValue,
-                  maxScore: leaf.maxMarks,
-                }
-              }),
-            }
-          }),
+          entries: entries as Array<{ studentId: string; components: Array<{ componentCode: string; score: number; maxScore: number }> }>,
         },
       }
     }

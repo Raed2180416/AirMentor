@@ -21,6 +21,8 @@
           packages = with pkgs; [
             git
             nodejs_24
+            python311
+            uv
             playwright-test
           ];
 
@@ -30,6 +32,7 @@
 
             echo "AirMentor dev shell ready."
             echo "Playwright is available through the wrapped Nix runtime."
+            echo "Python is available for the curriculum linkage helper."
             echo "Try: playwright --version"
             echo "Smoke: bash scripts/playwright-smoke.sh http://127.0.0.1:5173"
           '';

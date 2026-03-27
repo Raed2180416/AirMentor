@@ -78,6 +78,7 @@ describe('selectors', () => {
         [cs401a.offId]: defaultSchemeForOffering(cs401a),
       },
       ttBlueprintsByOffering: {},
+      studentSourceMode: 'seeded',
     })
 
     const students = selectors.getStudentsPatched(cs401a)

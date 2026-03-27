@@ -26,6 +26,7 @@ export type SelectorState = {
   schemeByOffering: Record<string, SchemeState>
   ttBlueprintsByOffering: Record<string, Record<TTKind, TermTestBlueprint>>
   studentsByOffering?: Record<string, Student[]>
+  studentSourceMode: 'live' | 'seeded'
 }
 
 function clampNumber(value: number, min: number, max: number) {
@@ -474,9 +475,9 @@ export function createAppSelectors(state: SelectorState) {
     const blueprints = getBlueprintsForOffering(offering)
     const tt1Leaves = flattenBlueprintLeaves(blueprints.tt1.nodes)
     const tt2Leaves = flattenBlueprintLeaves(blueprints.tt2.nodes)
-    const baseStudents = state.studentsByOffering
-      ? (state.studentsByOffering[offering.offId] ?? [])
-      : getStudents(offering)
+    const baseStudents = state.studentSourceMode === 'live'
+      ? (state.studentsByOffering?.[offering.offId] ?? [])
+      : (state.studentsByOffering?.[offering.offId] ?? getStudents(offering))
     return baseStudents.map(student => {
       const patch = getStudentPatch(offering.offId, student.id)
       if (!state.studentPatches[toStudentPatchKey(offering.offId, student.id)]) {

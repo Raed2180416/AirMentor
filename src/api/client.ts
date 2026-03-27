@@ -31,10 +31,13 @@ import type {
   ApiBranch,
   ApiCourse,
   ApiCurriculumFeatureBindingSaveResult,
+  ApiCurriculumBootstrapResult,
   ApiCurriculumFeatureConfigBundle,
   ApiCurriculumFeatureConfigPayload,
   ApiCurriculumFeatureConfigSaveResult,
   ApiCurriculumFeatureProfile,
+  ApiCurriculumLinkageCandidate,
+  ApiCurriculumLinkageCandidateRegenerateResult,
   ApiCourseOutcomeOverride,
   ApiCourseOutcomeScopeType,
   ApiCurriculumCourse,
@@ -262,6 +265,11 @@ export interface AirMentorApiClientLike {
   updateCourseOutcomeOverride(courseOutcomeOverrideId: string, payload: Pick<ApiCourseOutcomeOverride, 'courseId' | 'scopeType' | 'scopeId' | 'outcomes' | 'status' | 'version'>): Promise<ApiCourseOutcomeOverride>
   getResolvedCourseOutcomes(offeringId: string): Promise<ApiResolvedCourseOutcomeSet>
   getCurriculumFeatureConfig(batchId: string): Promise<ApiCurriculumFeatureConfigBundle>
+  bootstrapCurriculum(batchId: string, payload?: { manifestKey?: ApiCurriculumBootstrapResult['manifestKey'] }): Promise<ApiCurriculumBootstrapResult>
+  listCurriculumLinkageCandidates(batchId: string, filter?: { curriculumCourseId?: string }): Promise<{ items: ApiCurriculumLinkageCandidate[] }>
+  regenerateCurriculumLinkageCandidates(batchId: string, payload?: { curriculumCourseId?: string }): Promise<ApiCurriculumLinkageCandidateRegenerateResult>
+  approveCurriculumLinkageCandidate(batchId: string, curriculumLinkageCandidateId: string, payload?: { reviewNote?: string }): Promise<{ ok: true; batchId: string; curriculumLinkageCandidateId: string; affectedBatchIds: string[]; curriculumImportVersionId: string | null; proofRefresh?: { affectedBatchIds: string[]; queuedSimulationRunIds: string[]; curriculumImportVersionId: string | null } }>
+  rejectCurriculumLinkageCandidate(batchId: string, curriculumLinkageCandidateId: string, payload?: { reviewNote?: string }): Promise<{ ok: true; batchId: string; curriculumLinkageCandidateId: string }>
   listCurriculumFeatureProfiles(filter?: { scopeType?: ApiCurriculumFeatureProfile['scopeType']; scopeId?: string }): Promise<{ items: ApiCurriculumFeatureProfile[] }>
   createCurriculumFeatureProfile(payload: Pick<ApiCurriculumFeatureProfile, 'name' | 'scopeType' | 'scopeId' | 'status'>): Promise<ApiCurriculumFeatureProfile>
   updateCurriculumFeatureProfile(curriculumFeatureProfileId: string, payload: Pick<ApiCurriculumFeatureProfile, 'name' | 'scopeType' | 'scopeId' | 'status' | 'version'>): Promise<ApiCurriculumFeatureProfile>
@@ -1059,6 +1067,47 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
 
   async getCurriculumFeatureConfig(batchId: string) {
     return this.request<ApiCurriculumFeatureConfigBundle>(`/api/admin/batches/${batchId}/curriculum-feature-config`)
+  }
+
+  async bootstrapCurriculum(batchId: string, payload?: { manifestKey?: ApiCurriculumBootstrapResult['manifestKey'] }) {
+    return this.request<ApiCurriculumBootstrapResult>(`/api/admin/batches/${batchId}/curriculum/bootstrap`, {
+      method: 'POST',
+      body: JSON.stringify(payload ?? {}),
+    })
+  }
+
+  async listCurriculumLinkageCandidates(batchId: string, filter?: { curriculumCourseId?: string }) {
+    const searchParams = new URLSearchParams()
+    if (filter?.curriculumCourseId) searchParams.set('curriculumCourseId', filter.curriculumCourseId)
+    const query = searchParams.toString()
+    return this.request<{ items: ApiCurriculumLinkageCandidate[] }>(`/api/admin/batches/${batchId}/curriculum/linkage-candidates${query ? `?${query}` : ''}`)
+  }
+
+  async regenerateCurriculumLinkageCandidates(batchId: string, payload?: { curriculumCourseId?: string }) {
+    return this.request<ApiCurriculumLinkageCandidateRegenerateResult>(`/api/admin/batches/${batchId}/curriculum/linkage-candidates/regenerate`, {
+      method: 'POST',
+      body: JSON.stringify(payload ?? {}),
+    })
+  }
+
+  async approveCurriculumLinkageCandidate(batchId: string, curriculumLinkageCandidateId: string, payload?: { reviewNote?: string }) {
+    return this.request<{ ok: true; batchId: string; curriculumLinkageCandidateId: string; affectedBatchIds: string[]; curriculumImportVersionId: string | null; proofRefresh?: { affectedBatchIds: string[]; queuedSimulationRunIds: string[]; curriculumImportVersionId: string | null } }>(
+      `/api/admin/batches/${batchId}/curriculum/linkage-candidates/${curriculumLinkageCandidateId}/approve`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload ?? {}),
+      },
+    )
+  }
+
+  async rejectCurriculumLinkageCandidate(batchId: string, curriculumLinkageCandidateId: string, payload?: { reviewNote?: string }) {
+    return this.request<{ ok: true; batchId: string; curriculumLinkageCandidateId: string }>(
+      `/api/admin/batches/${batchId}/curriculum/linkage-candidates/${curriculumLinkageCandidateId}/reject`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload ?? {}),
+      },
+    )
   }
 
   async listCurriculumFeatureProfiles(filter?: { scopeType?: ApiCurriculumFeatureProfile['scopeType']; scopeId?: string }) {

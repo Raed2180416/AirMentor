@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { inferObservableDrivers, inferObservableRisk, type ObservableInferenceInput, type ObservableInferenceOutput } from './inference-engine.js'
 import { parseJson } from './json.js'
+import type { GraphAwarePrerequisiteSummaryCompleteness } from './graph-summary.js'
 
 export const RISK_FEATURE_SCHEMA_VERSION = 'observable-risk-features-v3'
 export const RISK_PRODUCTION_MODEL_VERSION = 'observable-risk-logit-v5'
@@ -137,6 +138,7 @@ export type ObservableSourceRefs = {
   prerequisiteWeakCourseCodes: string[]
   weakCourseOutcomeCodes: string[]
   dominantQuestionTopics: string[]
+  prerequisiteCompleteness?: GraphAwarePrerequisiteSummaryCompleteness | null
 }
 
 export type ObservableRiskEvidenceRow = {

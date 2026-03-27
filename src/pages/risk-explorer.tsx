@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Activity, Eye, TrendingDown } from 'lucide-react'
 import { T, mono, sora } from '../data'
 import type { Role } from '../domain'
-import type { ApiRiskHeadDisplay, ApiStudentRiskExplorer } from '../api/types'
+import type { ApiFeatureCompleteness, ApiFeatureProvenance, ApiRiskHeadDisplay, ApiStudentRiskExplorer } from '../api/types'
 import { Btn, Card, Chip, PageBackButton, PageShell } from '../ui-primitives'
 import { EmptyState, InfoBanner, MetricCard } from '../system-admin-ui'
 
@@ -51,6 +51,20 @@ function renderHeadHelper(display: ApiRiskHeadDisplay | undefined, baseHelper: s
   if (display?.calibrationMethod) pieces.push(`Calibration ${display.calibrationMethod}`)
   if (display?.supportWarning) pieces.push(display.supportWarning)
   return pieces.join(' · ')
+}
+
+function renderFeatureCompletenessLabel(featureCompleteness: ApiFeatureCompleteness | null) {
+  if (!featureCompleteness) return 'Unavailable'
+  return featureCompleteness.fallbackMode === 'graph-aware' ? 'Graph aware' : 'Policy only'
+}
+
+function renderFeatureProvenanceValue(featureProvenance: ApiFeatureProvenance | null) {
+  if (!featureProvenance) return 'No provenance available'
+  const fingerprint = featureProvenance.curriculumFeatureProfileFingerprint
+    ? featureProvenance.curriculumFeatureProfileFingerprint.slice(0, 8)
+    : 'none'
+  const importVersion = featureProvenance.curriculumImportVersionId ?? 'none'
+  return `Import ${importVersion} · Fingerprint ${fingerprint} · Nodes ${featureProvenance.graphNodeCount} · Edges ${featureProvenance.graphEdgeCount} · History ${featureProvenance.historyCourseCount}`
 }
 
 function DriverList({
@@ -155,6 +169,8 @@ export function RiskExplorerPage({
   const headDisplays = explorer.trainedRiskHeadDisplays ?? {}
   const policyComparison = explorer.policyComparison ?? explorer.currentStatus.policyComparison ?? null
   const counterfactual = explorer.counterfactual
+  const featureCompleteness = explorer.featureCompleteness ?? explorer.riskCompleteness ?? explorer.prerequisiteMap.completeness ?? null
+  const featureProvenance = explorer.featureProvenance ?? null
   const policyComparisonCandidates = policyComparison && 'candidates' in policyComparison
     ? policyComparison.candidates
     : []
@@ -228,6 +244,7 @@ export function RiskExplorerPage({
               {explorer.modelProvenance.calibrationMethod ? <Chip color={T.orange}>{`Cal ${explorer.modelProvenance.calibrationMethod}`}</Chip> : null}
               {explorer.modelProvenance.displayProbabilityAllowed === false ? <Chip color={T.warning}>Band only</Chip> : null}
               {explorer.modelProvenance.coEvidenceMode ? <Chip color={T.dim}>{explorer.modelProvenance.coEvidenceMode}</Chip> : null}
+              {featureCompleteness ? <Chip color={featureCompleteness.complete ? T.success : T.warning}>{renderFeatureCompletenessLabel(featureCompleteness)}</Chip> : null}
               {explorer.checkpointContext ? <Chip color={T.orange}>{`Sem ${explorer.checkpointContext.semesterNumber} · ${explorer.checkpointContext.stageLabel}`}</Chip> : null}
               {explorer.checkpointContext?.stageAdvanceBlocked ? <Chip color={T.danger}>Stage blocked</Chip> : null}
               {explorer.trainedRiskHeads.currentRiskBand ? <Chip color={explorer.trainedRiskHeads.currentRiskBand === 'High' ? T.danger : explorer.trainedRiskHeads.currentRiskBand === 'Medium' ? T.warning : T.success}>{explorer.trainedRiskHeads.currentRiskBand}</Chip> : null}
@@ -235,6 +252,12 @@ export function RiskExplorerPage({
           </div>
           <InfoBanner message={`Proof context ${explorer.runContext.runLabel} · ${explorer.runContext.status} · created ${new Date(explorer.runContext.createdAt).toLocaleString('en-IN')} · model ${explorer.modelProvenance.modelVersion ?? 'fallback'}${explorer.modelProvenance.calibrationVersion ? ` · calibration ${explorer.modelProvenance.calibrationVersion}` : ''}${explorer.checkpointContext ? ` · checkpoint ${explorer.checkpointContext.stageLabel}` : ''}.`} />
           {explorer.modelProvenance.supportWarning ? <InfoBanner tone="neutral" message={explorer.modelProvenance.supportWarning} /> : null}
+          {featureCompleteness && !featureCompleteness.complete ? (
+            <InfoBanner
+              tone="neutral"
+              message={`Feature fallback is ${featureCompleteness.fallbackMode}. Missing: ${featureCompleteness.missing.join(' · ') || 'none'}.`}
+            />
+          ) : null}
           {explorer.checkpointContext?.stageAdvanceBlocked ? (
             <InfoBanner
               tone="error"
@@ -244,6 +267,27 @@ export function RiskExplorerPage({
           <div data-proof-section="authority-banner">
             <InfoBanner message="Authoritative proof surface for checkpoint-bound analysis. Trained heads are proof-backed for this selected evidence window; derived scenario heads and policy comparisons remain advisory." />
           </div>
+          <Card style={{ padding: 14, display: 'grid', gap: 10, background: T.surface2 }}>
+            <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Feature Completeness</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {featureCompleteness ? (
+                <>
+                  <Chip color={featureCompleteness.complete ? T.success : T.warning}>{featureCompleteness.complete ? 'Complete' : 'Incomplete'}</Chip>
+                  <Chip color={featureCompleteness.fallbackMode === 'graph-aware' ? T.success : T.warning}>{renderFeatureCompletenessLabel(featureCompleteness)}</Chip>
+                  <Chip color={featureCompleteness.graphAvailable ? T.success : T.danger}>Graph {featureCompleteness.graphAvailable ? 'available' : 'missing'}</Chip>
+                  <Chip color={featureCompleteness.historyAvailable ? T.success : T.danger}>History {featureCompleteness.historyAvailable ? 'available' : 'missing'}</Chip>
+                </>
+              ) : (
+                <Chip color={T.dim}>Unavailable</Chip>
+              )}
+            </div>
+            <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+              {featureCompleteness ? `Missing dimensions: ${featureCompleteness.missing.join(' · ') || 'none'}.` : 'No completeness metadata is attached to this proof payload.'}
+            </div>
+            <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+              {renderFeatureProvenanceValue(featureProvenance)}
+            </div>
+          </Card>
         </Card>
 
         {error ? <div data-proof-section="load-error"><InfoBanner tone="error" message={error} /></div> : null}

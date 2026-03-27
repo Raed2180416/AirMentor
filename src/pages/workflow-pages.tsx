@@ -43,6 +43,7 @@ import {
   toCellKey,
 } from '../page-utils'
 import { Bar, Btn, Card, Chip, FieldInput, FieldSelect, HScrollArea, PageBackButton, PageShell, TD, TH } from '../ui-primitives'
+import { EmptyState } from '../system-admin-ui'
 
 export function AllStudentsPage({
   onBack,
@@ -527,6 +528,11 @@ export function UploadPage({
           <div style={{ marginTop: 8 }}><Btn size="sm" variant="ghost" onClick={() => onOpenSchemeSetup(selectedOffering)}>Open Scheme Setup</Btn></div>
         </Card>
       )}
+      {selectedStudents.length === 0 && (
+        <Card style={{ marginBottom: 12, padding: '12px 14px' }} glow={T.dim}>
+          <div style={{ ...mono, fontSize: 11, color: T.muted }}>No live roster is configured for this offering yet. Entry stays unconfigured until studentsByOffering is supplied by the backend.</div>
+        </Card>
+      )}
       <div style={{ marginBottom: 18, display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'end' }}>
         <div>
           <label htmlFor="entry-course-select" style={{ ...mono, fontSize: 10, color: T.muted, marginRight: 8 }}>Course:</label>
@@ -561,11 +567,15 @@ export function UploadPage({
             <Card
               key={item.kind}
               glow={selectedKind === item.kind ? T.accent : undefined}
-              style={{ padding: '18px 20px', cursor: (!access.isApplicableForStage || access.isLocked) ? 'not-allowed' : 'pointer', opacity: access.isLocked ? 0.8 : 1 }}
+              style={{ padding: '18px 20px', cursor: schemeReady && (!access.isApplicableForStage || access.isLocked) ? 'not-allowed' : 'pointer', opacity: access.isLocked ? 0.8 : 1 }}
               onClick={() => {
                 setSelectedKind(item.kind)
+                if (!schemeReady && access.canOpenSetup) {
+                  onOpenSchemeSetup(selectedOffering)
+                  return
+                }
                 if (!access.isApplicableForStage) return
-                if (!schemeReady) {
+                if (!schemeReady && !access.isLocked) {
                   onOpenSchemeSetup(selectedOffering)
                   return
                 }
@@ -577,7 +587,7 @@ export function UploadPage({
               <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 4 }}>{item.title}</div>
               <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 12, lineHeight: 1.5 }}>{item.desc}</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <Chip color={completion[item.kind] ? T.success : T.warning} size={10}>{completion[item.kind] ? 'Completed' : 'Pending Entry'}</Chip>
+                <Chip color={selectedStudents.length === 0 ? T.dim : completion[item.kind] ? T.success : T.warning} size={10}>{selectedStudents.length === 0 ? 'No roster configured' : completion[item.kind] ? 'Completed' : 'Pending Entry'}</Chip>
                 {access.isLocked && <Chip color={T.danger} size={10}>Locked</Chip>}
                 {!access.isApplicableForStage && <Chip color={T.warning} size={10}>Stage N/A</Chip>}
               </div>
@@ -709,6 +719,11 @@ export function EntryWorkspacePage({
           const leaves = blueprint ? flattenBlueprintLeaves(blueprint.nodes) : []
           const dynamicComponents = kind === 'quiz' ? currentScheme.quizComponents : kind === 'assignment' ? currentScheme.assignmentComponents : []
           const draftKey = `${section.offId}::${kind}`
+          const hasIncompleteTtLeaves = (kind === 'tt1' || kind === 'tt2') && students.some(student => {
+            const exactPatch = getStudentPatch(section.offId, student.id)
+            const exactLeafScores = kind === 'tt1' ? exactPatch.tt1LeafScores : exactPatch.tt2LeafScores
+            return leaves.some(leaf => cellValues[toCellKey(section.offId, kind, student.id, leaf.id)] === undefined && exactLeafScores?.[leaf.id] === undefined)
+          })
 
           return (
             <Card key={section.offId} style={{ padding: 0, overflow: 'hidden' }}>
@@ -719,148 +734,159 @@ export function EntryWorkspacePage({
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <Chip color={sectionAccess.isApplicableForStage ? T.blue : T.dim} size={9}>{sectionAccess.isApplicableForStage ? 'Stage Applicable' : 'Locked by Stage'}</Chip>
+                  {students.length === 0 ? <Chip color={T.dim} size={9}>Roster unconfigured</Chip> : null}
+                  {hasIncompleteTtLeaves ? <Chip color={T.warning} size={9}>Explicit TT leaf values required</Chip> : null}
                   {draftBySection[draftKey] && <Chip color={T.success} size={9}>Draft saved</Chip>}
-                  <Btn size="sm" onClick={() => onSaveDraft(section.offId, kind)} variant="ghost">Save Draft</Btn>
-                  <Btn size="sm" onClick={() => onSubmitLock(section.offId, kind)}>{sectionAccess.canEdit ? 'Submit & Lock' : sectionAccess.isLocked ? 'Locked' : 'View Only'}</Btn>
+                  <Btn size="sm" onClick={() => onSaveDraft(section.offId, kind)} variant="ghost" disabled={students.length === 0}>Save Draft</Btn>
+                  <Btn size="sm" onClick={() => onSubmitLock(section.offId, kind)} disabled={students.length === 0 || hasIncompleteTtLeaves}>{sectionAccess.canEdit ? 'Submit & Lock' : sectionAccess.isLocked ? 'Locked' : 'View Only'}</Btn>
                 </div>
               </div>
 
-              <HScrollArea>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr>
-                      <TH>USN</TH><TH>Name</TH>
-                      {(kind === 'tt1' || kind === 'tt2') && leaves.map(leaf => <TH key={leaf.id}>{leaf.label}/{leaf.maxMarks}</TH>)}
-                      {(kind === 'quiz' || kind === 'assignment') && dynamicComponents.map(component => <TH key={component.id}>{component.label} /{component.rawMax}</TH>)}
-                      {kind === 'attendance' && <TH>Present</TH>}
-                      {kind === 'attendance' && <TH>Total Classes</TH>}
-                      {kind === 'finals' && <TH>SEE /{currentScheme.finalsMax}</TH>}
-                      <TH>Current</TH><TH>Profile</TH><TH>Task</TH>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {students.slice(0, 25).map(student => {
-                      const projection = deriveAcademicProjection({ offering: section, student, scheme: currentScheme })
-                      const exactPatch = getStudentPatch(section.offId, student.id)
-                      return (
-                        <tr key={student.id} data-dense-row="true">
-                          <TD style={{ ...mono, fontSize: 10, color: T.accent }}>{student.usn}</TD>
-                          <TD style={{ ...sora, fontSize: 11, color: T.text }}>{student.name}</TD>
-                          {(kind === 'tt1' || kind === 'tt2') && leaves.map(leaf => {
-                            const exactLeafScores = kind === 'tt1' ? exactPatch.tt1LeafScores : exactPatch.tt2LeafScores
-                            return (
-                              <TD key={leaf.id}>
+              {students.length === 0 ? (
+                <div style={{ padding: 14 }}>
+                  <EmptyState
+                    title="No live roster configured"
+                    body="This section has no students in studentsByOffering yet, so assessment entry remains unconfigured until the backend supplies a roster."
+                  />
+                </div>
+              ) : (
+                <HScrollArea>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        <TH>USN</TH><TH>Name</TH>
+                        {(kind === 'tt1' || kind === 'tt2') && leaves.map(leaf => <TH key={leaf.id}>{leaf.label}/{leaf.maxMarks}</TH>)}
+                        {(kind === 'quiz' || kind === 'assignment') && dynamicComponents.map(component => <TH key={component.id}>{component.label} /{component.rawMax}</TH>)}
+                        {kind === 'attendance' && <TH>Present</TH>}
+                        {kind === 'attendance' && <TH>Total Classes</TH>}
+                        {kind === 'finals' && <TH>SEE /{currentScheme.finalsMax}</TH>}
+                        <TH>Current</TH><TH>Profile</TH><TH>Task</TH>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {students.slice(0, 25).map(student => {
+                        const projection = deriveAcademicProjection({ offering: section, student, scheme: currentScheme })
+                        const exactPatch = getStudentPatch(section.offId, student.id)
+                        return (
+                          <tr key={student.id} data-dense-row="true">
+                            <TD style={{ ...mono, fontSize: 10, color: T.accent }}>{student.usn}</TD>
+                            <TD style={{ ...sora, fontSize: 11, color: T.text }}>{student.name}</TD>
+                            {(kind === 'tt1' || kind === 'tt2') && leaves.map(leaf => {
+                              const exactLeafScores = kind === 'tt1' ? exactPatch.tt1LeafScores : exactPatch.tt2LeafScores
+                              return (
+                                <TD key={leaf.id}>
+                                  <input
+                                    aria-label={`${kind.toUpperCase()} marks for ${student.name}, ${leaf.label}`}
+                                    title={`Enter ${kind.toUpperCase()} marks for ${student.name}, ${leaf.label}`}
+                                    placeholder="0"
+                                    type="number"
+                                    inputMode="numeric"
+                                    min={0}
+                                    max={leaf.maxMarks}
+                                    disabled={!sectionAccess.canEdit}
+                                    value={cellValues[toCellKey(section.offId, kind, student.id, leaf.id)] ?? exactLeafScores?.[leaf.id] ?? ''}
+                                    onKeyDown={shouldBlockNumericKey}
+                                    onChange={event => onCellValueChange(toCellKey(section.offId, kind, student.id, leaf.id), parseInputValue(event.target.value, 0, leaf.maxMarks))}
+                                    style={{ width: 58, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }}
+                                  />
+                                </TD>
+                              )
+                            })}
+                            {(kind === 'quiz' || kind === 'assignment') && dynamicComponents.map((component, index) => {
+                              const max = component.rawMax
+                              const currentScore = kind === 'quiz' ? (index === 0 ? student.quiz1 : student.quiz2) : (index === 0 ? student.asgn1 : student.asgn2)
+                              const exactScores = kind === 'quiz' ? exactPatch.quizScores : exactPatch.assignmentScores
+                              return (
+                                <TD key={component.id}>
+                                  <input
+                                    aria-label={`${component.label} marks for ${student.name}`}
+                                    title={`Enter ${component.label} marks for ${student.name}`}
+                                    placeholder="0"
+                                    type="number"
+                                    inputMode="numeric"
+                                    min={0}
+                                    max={max}
+                                    disabled={!sectionAccess.canEdit}
+                                    value={cellValues[toCellKey(section.offId, kind, student.id, component.id)] ?? exactScores?.[component.id] ?? (currentScore ?? '')}
+                                    onKeyDown={shouldBlockNumericKey}
+                                    onChange={event => onCellValueChange(toCellKey(section.offId, kind, student.id, component.id), parseInputValue(event.target.value, 0, max))}
+                                    style={{ width: 72, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }}
+                                  />
+                                </TD>
+                              )
+                            })}
+                            {kind === 'attendance' && (
+                              <TD>
                                 <input
-                                  aria-label={`${kind.toUpperCase()} marks for ${student.name}, ${leaf.label}`}
-                                  title={`Enter ${kind.toUpperCase()} marks for ${student.name}, ${leaf.label}`}
+                                  aria-label={`Attendance present classes for ${student.name}`}
+                                  title={`Enter attendance present count for ${student.name}`}
                                   placeholder="0"
                                   type="number"
                                   inputMode="numeric"
                                   min={0}
-                                  max={leaf.maxMarks}
+                                  max={999}
                                   disabled={!sectionAccess.canEdit}
-                                  value={cellValues[toCellKey(section.offId, kind, student.id, leaf.id)] ?? exactLeafScores?.[leaf.id] ?? ''}
+                                  value={cellValues[toCellKey(section.offId, kind, student.id, 'present')] ?? exactPatch.present ?? student.present}
                                   onKeyDown={shouldBlockNumericKey}
-                                  onChange={event => onCellValueChange(toCellKey(section.offId, kind, student.id, leaf.id), parseInputValue(event.target.value, 0, leaf.maxMarks))}
-                                  style={{ width: 58, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }}
+                                  onChange={event => {
+                                    const next = parseInputValue(event.target.value, 0, 999)
+                                    onCellValueChange(toCellKey(section.offId, kind, student.id, 'present'), next)
+                                    onUpdateStudentAttendance(section.offId, student.id, { present: next })
+                                  }}
+                                  style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }}
                                 />
                               </TD>
-                            )
-                          })}
-                          {(kind === 'quiz' || kind === 'assignment') && dynamicComponents.map((component, index) => {
-                            const max = component.rawMax
-                            const currentScore = kind === 'quiz' ? (index === 0 ? student.quiz1 : student.quiz2) : (index === 0 ? student.asgn1 : student.asgn2)
-                            const exactScores = kind === 'quiz' ? exactPatch.quizScores : exactPatch.assignmentScores
-                            return (
-                              <TD key={component.id}>
+                            )}
+                            {kind === 'attendance' && (
+                              <TD>
                                 <input
-                                  aria-label={`${component.label} marks for ${student.name}`}
-                                  title={`Enter ${component.label} marks for ${student.name}`}
+                                  aria-label={`Total classes for ${student.name}`}
+                                  title={`Enter total classes conducted for ${student.name}`}
                                   placeholder="0"
                                   type="number"
                                   inputMode="numeric"
-                                  min={0}
-                                  max={max}
+                                  min={1}
+                                  max={999}
                                   disabled={!sectionAccess.canEdit}
-                                  value={cellValues[toCellKey(section.offId, kind, student.id, component.id)] ?? exactScores?.[component.id] ?? (currentScore ?? '')}
+                                  value={cellValues[toCellKey(section.offId, kind, student.id, 'total')] ?? exactPatch.totalClasses ?? student.totalClasses}
                                   onKeyDown={shouldBlockNumericKey}
-                                  onChange={event => onCellValueChange(toCellKey(section.offId, kind, student.id, component.id), parseInputValue(event.target.value, 0, max))}
+                                  onChange={event => {
+                                    const nextTotal = parseInputValue(event.target.value, 1, 999)
+                                    onCellValueChange(toCellKey(section.offId, kind, student.id, 'total'), nextTotal)
+                                    onUpdateStudentAttendance(section.offId, student.id, { totalClasses: nextTotal })
+                                  }}
+                                  style={{ width: 84, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }}
+                                />
+                              </TD>
+                            )}
+                            {kind === 'finals' && (
+                              <TD>
+                                <input
+                                  aria-label={`SEE marks for ${student.name}`}
+                                  title={`Enter SEE marks for ${student.name}`}
+                                  type="number"
+                                  inputMode="numeric"
+                                  min={0}
+                                  max={currentScheme.finalsMax}
+                                  disabled={!sectionAccess.canEdit}
+                                  value={cellValues[toCellKey(section.offId, kind, student.id, 'see')] ?? exactPatch.seeScore ?? ''}
+                                  onKeyDown={shouldBlockNumericKey}
+                                  onChange={event => onCellValueChange(toCellKey(section.offId, kind, student.id, 'see'), parseInputValue(event.target.value, 0, currentScheme.finalsMax))}
+                                  placeholder="Enter"
                                   style={{ width: 72, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }}
                                 />
                               </TD>
-                            )
-                          })}
-                          {kind === 'attendance' && (
-                            <TD>
-                              <input
-                                aria-label={`Attendance present classes for ${student.name}`}
-                                title={`Enter attendance present count for ${student.name}`}
-                                placeholder="0"
-                                type="number"
-                                inputMode="numeric"
-                                min={0}
-                                max={999}
-                                disabled={!sectionAccess.canEdit}
-                                value={cellValues[toCellKey(section.offId, kind, student.id, 'present')] ?? exactPatch.present ?? student.present}
-                                onKeyDown={shouldBlockNumericKey}
-                                onChange={event => {
-                                  const next = parseInputValue(event.target.value, 0, 999)
-                                  onCellValueChange(toCellKey(section.offId, kind, student.id, 'present'), next)
-                                  onUpdateStudentAttendance(section.offId, student.id, { present: next })
-                                }}
-                                style={{ width: 64, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }}
-                              />
-                            </TD>
-                          )}
-                          {kind === 'attendance' && (
-                            <TD>
-                              <input
-                                aria-label={`Total classes for ${student.name}`}
-                                title={`Enter total classes conducted for ${student.name}`}
-                                placeholder="0"
-                                type="number"
-                                inputMode="numeric"
-                                min={1}
-                                max={999}
-                                disabled={!sectionAccess.canEdit}
-                                value={cellValues[toCellKey(section.offId, kind, student.id, 'total')] ?? exactPatch.totalClasses ?? student.totalClasses}
-                                onKeyDown={shouldBlockNumericKey}
-                                onChange={event => {
-                                  const nextTotal = parseInputValue(event.target.value, 1, 999)
-                                  onCellValueChange(toCellKey(section.offId, kind, student.id, 'total'), nextTotal)
-                                  onUpdateStudentAttendance(section.offId, student.id, { totalClasses: nextTotal })
-                                }}
-                                style={{ width: 84, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }}
-                              />
-                            </TD>
-                          )}
-                          {kind === 'finals' && (
-                            <TD>
-                              <input
-                                aria-label={`SEE marks for ${student.name}`}
-                                title={`Enter SEE marks for ${student.name}`}
-                                type="number"
-                                inputMode="numeric"
-                                min={0}
-                                max={currentScheme.finalsMax}
-                                disabled={!sectionAccess.canEdit}
-                                value={cellValues[toCellKey(section.offId, kind, student.id, 'see')] ?? exactPatch.seeScore ?? ''}
-                                onKeyDown={shouldBlockNumericKey}
-                                onChange={event => onCellValueChange(toCellKey(section.offId, kind, student.id, 'see'), parseInputValue(event.target.value, 0, currentScheme.finalsMax))}
-                                placeholder="Enter"
-                                style={{ width: 72, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }}
-                              />
-                            </TD>
-                          )}
-                          <TD><div style={{ ...mono, fontSize: 10, color: T.muted }}>CE {projection.ce60.toFixed(1)}/{currentScheme.policyContext.ce}<br />CGPA {projection.predictedCgpa.toFixed(2)}</div></TD>
-                          <TD><button aria-label={`Open ${student.name} profile`} title="Open profile" onClick={() => onOpenStudent(student, section)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Eye size={13} /></button></TD>
-                          <TD><button aria-label={`Add task for ${student.name}`} title="Add task" onClick={() => onOpenTaskComposer({ offeringId: section.offId, studentId: student.id, taskType: 'Follow-up' })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.success, ...mono, fontSize: 11 }}>+Task</button></TD>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </HScrollArea>
+                            )}
+                            <TD><div style={{ ...mono, fontSize: 10, color: T.muted }}>CE {projection.ce60.toFixed(1)}/{currentScheme.policyContext.ce}<br />CGPA {projection.predictedCgpa.toFixed(2)}</div></TD>
+                            <TD><button aria-label={`Open ${student.name} profile`} title="Open profile" onClick={() => onOpenStudent(student, section)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Eye size={13} /></button></TD>
+                            <TD><button aria-label={`Add task for ${student.name}`} title="Add task" onClick={() => onOpenTaskComposer({ offeringId: section.offId, studentId: student.id, taskType: 'Follow-up' })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.success, ...mono, fontSize: 11 }}>+Task</button></TD>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </HScrollArea>
+              )}
             </Card>
           )
         })}

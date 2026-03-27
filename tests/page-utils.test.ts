@@ -23,6 +23,7 @@ describe('page utils', () => {
       isLocked: false,
       canEdit: true,
       canOpenWorkspace: true,
+      canOpenSetup: false,
     })
 
     expect(getEntryAccessState({
@@ -35,6 +36,7 @@ describe('page utils', () => {
       isLocked: false,
       canEdit: false,
       canOpenWorkspace: false,
+      canOpenSetup: true,
     })
 
     expect(getEntryAccessState({
@@ -47,6 +49,7 @@ describe('page utils', () => {
       isLocked: true,
       canEdit: false,
       canOpenWorkspace: false,
+      canOpenSetup: false,
     })
   })
 })

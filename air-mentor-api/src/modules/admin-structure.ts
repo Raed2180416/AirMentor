@@ -16,6 +16,7 @@ import {
   courses,
   curriculumFeatureProfileCourses,
   curriculumFeatureProfiles,
+  curriculumLinkageCandidates,
   curriculumEdges,
   curriculumImportVersions,
   curriculumNodes,
@@ -38,6 +39,12 @@ import {
 import { badRequest, conflict, notFound } from '../lib/http-errors.js'
 import { createId } from '../lib/ids.js'
 import { parseJson, stringifyJson } from '../lib/json.js'
+import {
+  buildCurriculumLinkageCandidates,
+  buildManifestPayloadItems,
+  supportedCurriculumManifestKeySchema,
+} from '../lib/curriculum-linkage.js'
+import { enqueueProofSimulationRun } from '../lib/proof-run-queue.js'
 import {
   canonicalizeStagePolicy,
   DEFAULT_STAGE_POLICY,
@@ -291,6 +298,18 @@ const curriculumFeatureConfigTargetSchema = z.object({
 
 const curriculumFeatureConfigSaveSchema = curriculumFeatureConfigPatchSchema.merge(curriculumFeatureConfigTargetSchema)
 
+const curriculumBootstrapSchema = z.object({
+  manifestKey: supportedCurriculumManifestKeySchema.default('msruas-mnc-seed'),
+})
+
+const curriculumLinkageCandidateRegenerateSchema = z.object({
+  curriculumCourseId: z.string().min(1).optional(),
+})
+
+const curriculumLinkageCandidateReviewSchema = z.object({
+  reviewNote: z.string().trim().max(2000).optional().nullable(),
+})
+
 export type PolicyPayload = z.infer<typeof policyPayloadSchema>
 export type ResolvedPolicy = {
   gradeBands: z.infer<typeof gradeBandSchema>[]
@@ -524,6 +543,30 @@ function mapBatchCurriculumFeatureOverride(row: typeof batchCurriculumFeatureOve
   }
 }
 
+function mapCurriculumLinkageCandidate(row: typeof curriculumLinkageCandidates.$inferSelect) {
+  return {
+    curriculumLinkageCandidateId: row.curriculumLinkageCandidateId,
+    batchId: row.batchId,
+    curriculumCourseId: row.curriculumCourseId,
+    sourceCurriculumCourseId: row.sourceCurriculumCourseId,
+    sourceCourseId: row.sourceCourseId,
+    sourceCourseCode: row.sourceCourseCode,
+    sourceTitle: row.sourceTitle,
+    targetCourseCode: row.targetCourseCode,
+    targetTitle: row.targetTitle,
+    edgeKind: row.edgeKind as 'explicit' | 'added',
+    rationale: row.rationale,
+    confidenceScaled: row.confidenceScaled,
+    sources: parseOrThrow(z.array(z.string()), parseJson(row.sourcesJson, [])),
+    signalSummary: parseJson(row.signalSummaryJson, {} as Record<string, unknown>),
+    status: row.status,
+    reviewNote: row.reviewNote,
+    version: row.version,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }
+}
+
 function mapCourseOutcomeOverride(row: typeof courseOutcomeOverrides.$inferSelect) {
   const parsed = z.array(curriculumFeatureOutcomeSchema).safeParse(parseJson(row.outcomesJson, []))
   return {
@@ -579,6 +622,35 @@ function normalizeCurriculumFeaturePayload(payload: CurriculumFeatureProfileCour
       workbook: normalizeFeatureStringList(payload.topicPartitions.workbook).sort((left, right) => left.localeCompare(right)),
     },
   }
+}
+
+type CurriculumEdgeValidationError = {
+  targetCourseCode: string
+  sourceCourseCode: string
+  message: string
+}
+
+type ProofRefreshSummary = {
+  affectedBatchIds: string[]
+  queuedSimulationRunIds: string[]
+  curriculumImportVersionId: string | null
+}
+
+function createEmptyProofRefresh(curriculumImportVersionId: string | null = null): ProofRefreshSummary {
+  return {
+    affectedBatchIds: [],
+    queuedSimulationRunIds: [],
+    curriculumImportVersionId,
+  }
+}
+
+function formatCurriculumEdgeValidationMessage(errors: CurriculumEdgeValidationError[]) {
+  const preview = errors
+    .slice(0, 6)
+    .map(error => `${error.targetCourseCode} <- ${error.sourceCourseCode}: ${error.message}`)
+    .join('; ')
+  const remainder = errors.length > 6 ? ` (+${errors.length - 6} more)` : ''
+  return `Invalid curriculum prerequisite configuration. ${preview}${remainder}`
 }
 
 function curriculumFeatureFingerprint(payload: CurriculumFeatureProfileCoursePayload) {
@@ -1223,9 +1295,23 @@ function fromResolvedCurriculumFeaturePayload(
   }
 }
 
-function batchFeatureFingerprint(items: Array<{ curriculumCourseId: string; featureFingerprint: string }>) {
+function batchFeatureFingerprint(items: Array<{
+  curriculumCourseId: string
+  courseCode: string
+  title: string
+  semesterNumber: number
+  credits: number
+  featureFingerprint: string
+}>) {
   return buildSnapshotChecksum(items
-    .map(item => ({ curriculumCourseId: item.curriculumCourseId, featureFingerprint: item.featureFingerprint }))
+    .map(item => ({
+      curriculumCourseId: item.curriculumCourseId,
+      courseCode: item.courseCode,
+      title: item.title,
+      semesterNumber: item.semesterNumber,
+      credits: item.credits,
+      featureFingerprint: item.featureFingerprint,
+    }))
     .sort((left, right) => left.curriculumCourseId.localeCompare(right.curriculumCourseId)))
 }
 
@@ -1409,6 +1495,11 @@ async function materializeResolvedCurriculumFeatureItems(context: RouteContext, 
   })
   const batchCurriculumRows = (await context.db.select().from(curriculumCourses).where(eq(curriculumCourses.batchId, input.batchId)))
     .filter(row => row.status !== 'deleted' && row.status !== 'archived')
+  validateResolvedCurriculumFeatureItems({
+    batchId: input.batchId,
+    batchCurriculumRows,
+    items: input.items,
+  })
   const nodeRows = await context.db.select().from(curriculumNodes).where(eq(curriculumNodes.curriculumImportVersionId, editableImport.curriculumImportVersionId))
   const nodeById = new Map(nodeRows.map(row => [row.curriculumNodeId, row]))
 
@@ -1544,6 +1635,197 @@ async function materializeResolvedCurriculumFeatureItems(context: RouteContext, 
   return editableImport.curriculumImportVersionId
 }
 
+function validateResolvedCurriculumFeatureItems(input: {
+  batchId: string
+  batchCurriculumRows: Array<typeof curriculumCourses.$inferSelect>
+  items: Array<{
+    curriculumCourseId: string
+    resolvedConfig: CurriculumFeatureProfileCoursePayload
+  }>
+}) {
+  const rowByCourseId = new Map(input.batchCurriculumRows.map(row => [row.curriculumCourseId, row]))
+  const rowByCourseCode = new Map(input.batchCurriculumRows.map(row => [row.courseCode.trim().toLowerCase(), row]))
+  const errors: CurriculumEdgeValidationError[] = []
+
+  for (const item of input.items) {
+    const targetRow = rowByCourseId.get(item.curriculumCourseId)
+    if (!targetRow) {
+      errors.push({
+        targetCourseCode: item.curriculumCourseId,
+        sourceCourseCode: '?',
+        message: `Target course is not an authored active curriculum row in batch ${input.batchId}.`,
+      })
+      continue
+    }
+    const seenEdges = new Set<string>()
+    for (const prerequisite of item.resolvedConfig.prerequisites) {
+      const normalizedSourceCourseCode = prerequisite.sourceCourseCode.trim().toLowerCase()
+      const sourceRow = rowByCourseCode.get(normalizedSourceCourseCode) ?? null
+      const edgeKey = `${normalizedSourceCourseCode}::${targetRow.curriculumCourseId}::${prerequisite.edgeKind}`
+      if (seenEdges.has(edgeKey)) {
+        errors.push({
+          targetCourseCode: targetRow.courseCode,
+          sourceCourseCode: prerequisite.sourceCourseCode,
+          message: `Duplicate ${prerequisite.edgeKind} prerequisite edge.`,
+        })
+        continue
+      }
+      seenEdges.add(edgeKey)
+      if (!sourceRow) {
+        errors.push({
+          targetCourseCode: targetRow.courseCode,
+          sourceCourseCode: prerequisite.sourceCourseCode,
+          message: 'Source course is not present in authored active curriculum rows.',
+        })
+        continue
+      }
+      if (
+        sourceRow.curriculumCourseId === targetRow.curriculumCourseId
+        || sourceRow.courseCode.trim().toLowerCase() === targetRow.courseCode.trim().toLowerCase()
+      ) {
+        errors.push({
+          targetCourseCode: targetRow.courseCode,
+          sourceCourseCode: sourceRow.courseCode,
+          message: 'Self-referential prerequisite edges are not allowed.',
+        })
+        continue
+      }
+      if ((prerequisite.edgeKind === 'explicit' || prerequisite.edgeKind === 'added') && sourceRow.semesterNumber >= targetRow.semesterNumber) {
+        errors.push({
+          targetCourseCode: targetRow.courseCode,
+          sourceCourseCode: sourceRow.courseCode,
+          message: `Prerequisite edges require an earlier semester. Found semester ${sourceRow.semesterNumber} -> ${targetRow.semesterNumber}.`,
+        })
+      }
+    }
+  }
+
+  if (errors.length > 0) {
+    throw badRequest(formatCurriculumEdgeValidationMessage(errors))
+  }
+}
+
+function validateCurriculumFeaturePayloadForCourse(input: {
+  batchId: string
+  batchCurriculumRows: Array<typeof curriculumCourses.$inferSelect>
+  curriculumCourseId: string
+  payload: CurriculumFeatureProfileCoursePayload
+}) {
+  validateResolvedCurriculumFeatureItems({
+    batchId: input.batchId,
+    batchCurriculumRows: input.batchCurriculumRows,
+    items: [{
+      curriculumCourseId: input.curriculumCourseId,
+      resolvedConfig: input.payload,
+    }],
+  })
+}
+
+async function rematerializeResolvedBatchCurriculum(context: RouteContext, input: {
+  batchId: string
+  actorFacultyId?: string | null
+  now: string
+}) {
+  const resolved = await resolveBatchCurriculumFeatures(context, input.batchId)
+  const curriculumImportVersionId = resolved.items.length > 0
+    ? await materializeResolvedCurriculumFeatureItems(context, {
+        batchId: input.batchId,
+        actorFacultyId: input.actorFacultyId,
+        now: input.now,
+        items: resolved.items.map(item => ({
+          curriculumCourseId: item.curriculumCourseId,
+          resolvedConfig: item.resolvedConfig,
+        })),
+      })
+    : null
+  return {
+    resolved,
+    curriculumImportVersionId,
+  }
+}
+
+function expandCurriculumLinkageNeighborhood(input: {
+  items: Array<{
+    curriculumCourseId: string
+    prerequisites: Array<{ sourceCourseCode: string }>
+    courseCode: string
+  }>
+  targetCurriculumCourseIds: string[]
+}) {
+  const itemsById = new Map(input.items.map(item => [item.curriculumCourseId, item]))
+  const itemByCourseCode = new Map(input.items.map(item => [item.courseCode.trim().toLowerCase(), item]))
+  const expandedIds = new Set(input.targetCurriculumCourseIds)
+  for (const targetId of input.targetCurriculumCourseIds) {
+    const targetItem = itemsById.get(targetId)
+    if (!targetItem) continue
+    targetItem.prerequisites.forEach(prerequisite => {
+      const sourceItem = itemByCourseCode.get(prerequisite.sourceCourseCode.trim().toLowerCase())
+      if (sourceItem) expandedIds.add(sourceItem.curriculumCourseId)
+    })
+    input.items.forEach(candidate => {
+      if (candidate.prerequisites.some(prerequisite => prerequisite.sourceCourseCode.trim().toLowerCase() === targetItem.courseCode.trim().toLowerCase())) {
+        expandedIds.add(candidate.curriculumCourseId)
+      }
+    })
+  }
+  return Array.from(expandedIds)
+}
+
+export async function enqueueProofRefreshForBatches(context: RouteContext, input: {
+  batchIds: string[]
+  actorFacultyId?: string | null
+  now: string
+  curriculumImportVersionId?: string | null
+}) {
+  const uniqueBatchIds = Array.from(new Set(input.batchIds.filter(Boolean)))
+  if (uniqueBatchIds.length === 0) {
+    return createEmptyProofRefresh(input.curriculumImportVersionId ?? null)
+  }
+
+  const queuedSimulationRunIds: string[] = []
+  let lastCurriculumImportVersionId = input.curriculumImportVersionId ?? null
+
+  for (const batchId of uniqueBatchIds) {
+    const [resolvedPolicy, resolvedFeatures] = await Promise.all([
+      resolveBatchPolicy(context, batchId),
+      resolveBatchCurriculumFeatures(context, batchId),
+    ])
+    const curriculumImportVersionId = resolvedFeatures.curriculumImportVersion?.curriculumImportVersionId
+      ?? input.curriculumImportVersionId
+      ?? null
+    if (!curriculumImportVersionId) continue
+    lastCurriculumImportVersionId = curriculumImportVersionId
+    const runRows = await context.db.select().from(simulationRuns).where(eq(simulationRuns.batchId, batchId))
+    const existingQueuedRun = runRows
+      .filter(row =>
+        (row.status === 'queued' || row.status === 'running')
+        && row.curriculumImportVersionId === curriculumImportVersionId
+        && (row.curriculumFeatureProfileFingerprint ?? '') === resolvedFeatures.curriculumFeatureProfileFingerprint
+      )
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt))[0] ?? null
+    if (existingQueuedRun) {
+      queuedSimulationRunIds.push(existingQueuedRun.simulationRunId)
+      continue
+    }
+    const queued = await enqueueProofSimulationRun(context.db, {
+      batchId,
+      curriculumImportVersionId,
+      policy: resolvedPolicy.effectivePolicy,
+      curriculumFeatureProfileId: resolvedFeatures.primaryCurriculumFeatureProfileId ?? null,
+      curriculumFeatureProfileFingerprint: resolvedFeatures.curriculumFeatureProfileFingerprint,
+      now: input.now,
+      activate: true,
+    })
+    queuedSimulationRunIds.push(queued.simulationRunId)
+  }
+
+  return {
+    affectedBatchIds: uniqueBatchIds,
+    queuedSimulationRunIds,
+    curriculumImportVersionId: lastCurriculumImportVersionId,
+  } satisfies ProofRefreshSummary
+}
+
 async function listBatchesInScope(context: RouteContext, scopeType: ScopeTypeValue, scopeId: string) {
   const [allBatches, allBranches, allDepartments] = await Promise.all([
     context.db.select().from(batches),
@@ -1619,6 +1901,484 @@ async function assertScopeExists(context: RouteContext, scopeType: z.infer<typeo
   const [row] = await context.db.select().from(batches).where(eq(batches.batchId, scopeId))
   if (!row) throw notFound('Batch scope not found')
   return row
+}
+
+async function upsertCurriculumFeatureProfileCourseRecord(context: RouteContext, input: {
+  curriculumFeatureProfileId: string
+  curriculumCourse: typeof curriculumCourses.$inferSelect
+  courseId: string
+  payload: CurriculumFeatureProfileCoursePayload
+  now: string
+}) {
+  const existingRows = await context.db.select().from(curriculumFeatureProfileCourses)
+  const existing = existingRows.find(row => (
+    row.curriculumFeatureProfileId === input.curriculumFeatureProfileId
+    && matchesCourseReference({
+      courseId: input.courseId,
+      courseCode: input.curriculumCourse.courseCode,
+      title: input.curriculumCourse.title,
+    }, {
+      courseId: row.courseId,
+      courseCode: row.courseCode,
+      title: row.title,
+    })
+  )) ?? null
+  const featureFingerprint = curriculumFeatureFingerprint(input.payload)
+  if (existing) {
+    await context.db.update(curriculumFeatureProfileCourses).set({
+      courseId: input.courseId,
+      courseCode: input.curriculumCourse.courseCode,
+      title: input.curriculumCourse.title,
+      assessmentProfile: input.payload.assessmentProfile,
+      outcomesJson: stringifyJson(input.payload.outcomes),
+      prerequisitesJson: stringifyJson(input.payload.prerequisites),
+      bridgeModulesJson: stringifyJson(input.payload.bridgeModules),
+      topicPartitionsJson: stringifyJson(input.payload.topicPartitions),
+      featureFingerprint,
+      status: 'active',
+      version: existing.version + 1,
+      updatedAt: input.now,
+    }).where(eq(curriculumFeatureProfileCourses.curriculumFeatureProfileCourseId, existing.curriculumFeatureProfileCourseId))
+    return existing.curriculumFeatureProfileCourseId
+  }
+
+  const profileCourseId = createId('curriculum_feature_profile_course')
+  await context.db.insert(curriculumFeatureProfileCourses).values({
+    curriculumFeatureProfileCourseId: profileCourseId,
+    curriculumFeatureProfileId: input.curriculumFeatureProfileId,
+    courseId: input.courseId,
+    courseCode: input.curriculumCourse.courseCode,
+    title: input.curriculumCourse.title,
+    assessmentProfile: input.payload.assessmentProfile,
+    outcomesJson: stringifyJson(input.payload.outcomes),
+    prerequisitesJson: stringifyJson(input.payload.prerequisites),
+    bridgeModulesJson: stringifyJson(input.payload.bridgeModules),
+    topicPartitionsJson: stringifyJson(input.payload.topicPartitions),
+    featureFingerprint,
+    status: 'active',
+    version: 1,
+    createdAt: input.now,
+    updatedAt: input.now,
+  })
+  return profileCourseId
+}
+
+async function regenerateCurriculumLinkageCandidatesForBatch(context: RouteContext, input: {
+  batchId: string
+  targetCurriculumCourseIds?: string[] | null
+  now: string
+}) {
+  const resolved = await resolveBatchCurriculumFeatures(context, input.batchId)
+  const expandedTargetIds = input.targetCurriculumCourseIds?.length
+    ? expandCurriculumLinkageNeighborhood({
+        items: resolved.items.map(item => ({
+          curriculumCourseId: item.curriculumCourseId,
+          courseCode: item.courseCode,
+          prerequisites: item.prerequisites,
+        })),
+        targetCurriculumCourseIds: input.targetCurriculumCourseIds,
+      })
+    : null
+  const targetSet = expandedTargetIds?.length ? new Set(expandedTargetIds) : null
+  const nextCandidateResult = await buildCurriculumLinkageCandidates({
+    manifestKey: 'msruas-mnc-seed',
+    items: resolved.items.map(item => ({
+      curriculumCourseId: item.curriculumCourseId,
+      semesterNumber: item.semesterNumber,
+      courseCode: item.courseCode,
+      title: item.title,
+      outcomes: item.outcomes,
+      prerequisites: item.prerequisites,
+      bridgeModules: item.bridgeModules,
+      topicPartitions: item.topicPartitions,
+    })),
+    targetCurriculumCourseIds: expandedTargetIds ?? null,
+  })
+  const nextCandidates = nextCandidateResult.items
+
+  const existingRows = await context.db.select().from(curriculumLinkageCandidates).where(eq(curriculumLinkageCandidates.batchId, input.batchId))
+  const rowsToSupersede = existingRows.filter(row => (
+    row.status === 'pending'
+    && (!targetSet || targetSet.has(row.curriculumCourseId))
+  ))
+  if (rowsToSupersede.length > 0) {
+    await context.db.update(curriculumLinkageCandidates).set({
+      status: 'superseded',
+      updatedAt: input.now,
+    }).where(inArray(curriculumLinkageCandidates.curriculumLinkageCandidateId, rowsToSupersede.map(row => row.curriculumLinkageCandidateId)))
+  }
+
+  const curriculumRows = (await context.db.select().from(curriculumCourses).where(eq(curriculumCourses.batchId, input.batchId)))
+    .filter(row => row.status !== 'deleted' && row.status !== 'archived')
+  const curriculumRowById = new Map(curriculumRows.map(row => [row.curriculumCourseId, row]))
+  const curriculumRowByCourseCode = new Map(curriculumRows.map(row => [row.courseCode.toLowerCase(), row]))
+
+  const inserted: Array<ReturnType<typeof mapCurriculumLinkageCandidate>> = []
+  for (const candidate of nextCandidates) {
+    const targetCourse = curriculumRowById.get(candidate.curriculumCourseId)
+    if (!targetCourse) continue
+    const sourceCourse = curriculumRowByCourseCode.get(candidate.sourceCourseCode.toLowerCase()) ?? null
+    const candidateId = createId('curriculum_linkage_candidate')
+    const row = {
+      curriculumLinkageCandidateId: candidateId,
+      batchId: input.batchId,
+      curriculumCourseId: candidate.curriculumCourseId,
+      sourceCurriculumCourseId: sourceCourse?.curriculumCourseId ?? null,
+      sourceCourseId: sourceCourse?.courseId ?? null,
+      sourceCourseCode: candidate.sourceCourseCode,
+      sourceTitle: candidate.sourceTitle,
+      targetCourseCode: candidate.targetCourseCode,
+      targetTitle: candidate.targetTitle,
+      edgeKind: candidate.edgeKind,
+      rationale: candidate.rationale,
+      confidenceScaled: candidate.confidenceScaled,
+      sourcesJson: stringifyJson(candidate.sources),
+      signalSummaryJson: stringifyJson(candidate.signalSummary),
+      status: 'pending',
+      reviewNote: null,
+      version: 1,
+      createdAt: input.now,
+      updatedAt: input.now,
+    }
+    await context.db.insert(curriculumLinkageCandidates).values(row)
+    inserted.push(mapCurriculumLinkageCandidate(row))
+  }
+
+  return {
+    items: inserted,
+    candidateGenerationStatus: nextCandidateResult.candidateGenerationStatus,
+  }
+}
+
+async function bootstrapCurriculumManifestForBatch(context: RouteContext, input: {
+  batchId: string
+  manifestKey: z.infer<typeof supportedCurriculumManifestKeySchema>
+  actorFacultyId?: string | null
+  now: string
+}) {
+  const [batch] = await context.db.select().from(batches).where(eq(batches.batchId, input.batchId))
+  if (!batch) throw notFound('Batch not found')
+  const [branch] = await context.db.select().from(branches).where(eq(branches.branchId, batch.branchId))
+  if (!branch) throw notFound('Branch not found')
+  const manifestItems = buildManifestPayloadItems(input.manifestKey)
+  const profileRows = await context.db.select().from(curriculumFeatureProfiles)
+  const activeBranchProfile = profileRows.find(row => row.scopeType === 'branch' && row.scopeId === branch.branchId && row.status === 'active') ?? null
+  const profile = activeBranchProfile ?? {
+    curriculumFeatureProfileId: createId('curriculum_feature_profile'),
+    name: `${branch.name} feature profile`,
+    scopeType: 'branch',
+    scopeId: branch.branchId,
+    status: 'active',
+    version: 1,
+    createdAt: input.now,
+    updatedAt: input.now,
+  }
+  if (!activeBranchProfile) {
+    await context.db.insert(curriculumFeatureProfiles).values(profile)
+  }
+
+  const existingCurriculumRows = await context.db.select().from(curriculumCourses).where(eq(curriculumCourses.batchId, input.batchId))
+  const existingBySemesterAndCode = new Map(existingCurriculumRows.map(row => [`${row.semesterNumber}::${row.courseCode.toLowerCase()}`, row] as const))
+  let createdCourseCount = 0
+  let upsertedProfileCourseCount = 0
+
+  for (const manifestCourse of manifestItems) {
+    const key: `${number}::${string}` = `${manifestCourse.semesterNumber}::${manifestCourse.courseCode.toLowerCase()}`
+    const existingCourse = existingBySemesterAndCode.get(key) ?? null
+    let curriculumCourse = existingCourse
+    if (!curriculumCourse) {
+      const created = {
+        curriculumCourseId: createId('curriculum_course'),
+        batchId: input.batchId,
+        semesterNumber: manifestCourse.semesterNumber,
+        courseId: null,
+        courseCode: manifestCourse.courseCode,
+        title: manifestCourse.title,
+        credits: manifestCourse.credits,
+        status: 'active',
+        version: 1,
+        createdAt: input.now,
+        updatedAt: input.now,
+      }
+      await context.db.insert(curriculumCourses).values(created)
+      existingBySemesterAndCode.set(key, created)
+      curriculumCourse = created
+      createdCourseCount += 1
+    } else {
+      await context.db.update(curriculumCourses).set({
+        courseCode: manifestCourse.courseCode,
+        title: manifestCourse.title,
+        credits: manifestCourse.credits,
+        status: 'active',
+        version: curriculumCourse.version + 1,
+        updatedAt: input.now,
+      }).where(eq(curriculumCourses.curriculumCourseId, curriculumCourse.curriculumCourseId))
+      curriculumCourse = {
+        ...curriculumCourse,
+        courseCode: manifestCourse.courseCode,
+        title: manifestCourse.title,
+        credits: manifestCourse.credits,
+        status: 'active',
+        version: curriculumCourse.version + 1,
+        updatedAt: input.now,
+      }
+    }
+    const courseRecord = await ensureCourseRecordForCurriculumCourse(context, curriculumCourse)
+    await upsertCurriculumFeatureProfileCourseRecord(context, {
+      curriculumFeatureProfileId: profile.curriculumFeatureProfileId,
+      curriculumCourse,
+      courseId: courseRecord.courseId,
+      payload: normalizeCurriculumFeaturePayload({
+        assessmentProfile: manifestCourse.assessmentProfile,
+        outcomes: manifestCourse.outcomes,
+        prerequisites: manifestCourse.prerequisites,
+        bridgeModules: manifestCourse.bridgeModules,
+        topicPartitions: manifestCourse.topicPartitions,
+      }),
+      now: input.now,
+    })
+    upsertedProfileCourseCount += 1
+  }
+
+  const resolved = await resolveBatchCurriculumFeatures(context, input.batchId)
+  const curriculumImportVersionId = resolved.items.length > 0
+    ? await materializeResolvedCurriculumFeatureItems(context, {
+        batchId: input.batchId,
+        actorFacultyId: input.actorFacultyId,
+        now: input.now,
+        items: resolved.items.map(item => ({
+          curriculumCourseId: item.curriculumCourseId,
+          resolvedConfig: item.resolvedConfig,
+        })),
+      })
+    : null
+
+  const candidateResult = await regenerateCurriculumLinkageCandidatesForBatch(context, {
+    batchId: input.batchId,
+    now: input.now,
+  })
+
+  return {
+    curriculumImportVersionId,
+    curriculumFeatureProfileId: profile.curriculumFeatureProfileId,
+    curriculumFeatureProfileFingerprint: resolved.curriculumFeatureProfileFingerprint,
+    createdCourseCount,
+    upsertedProfileCourseCount,
+    generatedCandidateCount: candidateResult.items.length,
+    candidateGenerationStatus: candidateResult.candidateGenerationStatus,
+  }
+}
+
+async function approveCurriculumLinkageCandidate(context: RouteContext, input: {
+  batchId: string
+  curriculumLinkageCandidateId: string
+  actorFacultyId?: string | null
+  reviewNote?: string | null
+  now: string
+}) {
+  const [candidateRow] = await context.db.select().from(curriculumLinkageCandidates).where(eq(curriculumLinkageCandidates.curriculumLinkageCandidateId, input.curriculumLinkageCandidateId))
+  if (!candidateRow || candidateRow.batchId !== input.batchId) throw notFound('Curriculum linkage candidate not found')
+  if (candidateRow.status !== 'pending') throw badRequest('Only pending linkage candidates can be approved')
+
+  const resolved = await resolveBatchCurriculumFeatures(context, input.batchId)
+  const targetItem = resolved.items.find(item => item.curriculumCourseId === candidateRow.curriculumCourseId)
+  if (!targetItem) throw notFound('Resolved curriculum feature item not found')
+  if (targetItem.prerequisites.some(item => item.sourceCourseCode.toLowerCase() === candidateRow.sourceCourseCode.toLowerCase() && item.edgeKind === candidateRow.edgeKind)) {
+    await context.db.update(curriculumLinkageCandidates).set({
+      status: 'approved',
+      reviewNote: input.reviewNote ?? 'Already present in resolved prerequisites.',
+      version: candidateRow.version + 1,
+      updatedAt: input.now,
+    }).where(eq(curriculumLinkageCandidates.curriculumLinkageCandidateId, candidateRow.curriculumLinkageCandidateId))
+    return {
+      curriculumImportVersionId: resolved.curriculumImportVersion?.curriculumImportVersionId ?? null,
+      affectedBatchIds: [] as string[],
+      proofRefresh: createEmptyProofRefresh(resolved.curriculumImportVersion?.curriculumImportVersionId ?? null),
+    }
+  }
+
+  const nextPayload = normalizeCurriculumFeaturePayload({
+    assessmentProfile: targetItem.resolvedConfig.assessmentProfile,
+    outcomes: targetItem.resolvedConfig.outcomes,
+    prerequisites: [
+      ...targetItem.resolvedConfig.prerequisites,
+      {
+        sourceCourseCode: candidateRow.sourceCourseCode,
+        edgeKind: candidateRow.edgeKind as 'explicit' | 'added',
+        rationale: candidateRow.rationale,
+      },
+    ],
+    bridgeModules: targetItem.resolvedConfig.bridgeModules,
+    topicPartitions: targetItem.resolvedConfig.topicPartitions,
+  })
+
+  const currentProfileId = targetItem.resolvedSource.curriculumFeatureProfileId ?? null
+  const targetScopeType = targetItem.resolvedSource.scopeType ?? 'batch'
+  const targetScopeId = targetItem.resolvedSource.scopeId ?? input.batchId
+  const [curriculumCourse] = await context.db.select().from(curriculumCourses).where(eq(curriculumCourses.curriculumCourseId, candidateRow.curriculumCourseId))
+  if (!curriculumCourse) throw notFound('Curriculum course not found')
+  const courseRecord = await ensureCourseRecordForCurriculumCourse(context, curriculumCourse)
+  const beforeResolved = await resolveBatchCurriculumFeatures(context, input.batchId)
+  let curriculumImportVersionId: string | null = null
+  let affectedBatchIds: string[] = []
+
+  if (currentProfileId && targetItem.resolvedSource.mode !== 'batch-local-override') {
+    const targetBatches = await listBatchesInScope(context, targetScopeType, targetScopeId)
+    const beforeFingerprints = new Map<string, string>()
+    for (const batch of targetBatches) {
+      const resolvedBatch = await resolveBatchCurriculumFeatures(context, batch.batchId)
+      beforeFingerprints.set(batch.batchId, resolvedBatch.curriculumFeatureProfileFingerprint)
+    }
+    for (const batch of targetBatches) {
+      const batchCurriculumRows = (await context.db.select().from(curriculumCourses).where(eq(curriculumCourses.batchId, batch.batchId)))
+        .filter(row => row.status !== 'deleted' && row.status !== 'archived')
+      const targetCurriculumCourse = batchCurriculumRows.find(row => matchesCourseReference({
+        courseId: courseRecord.courseId,
+        courseCode: curriculumCourse.courseCode,
+        title: curriculumCourse.title,
+      }, row)) ?? null
+      if (!targetCurriculumCourse) continue
+      validateCurriculumFeaturePayloadForCourse({
+        batchId: batch.batchId,
+        batchCurriculumRows,
+        curriculumCourseId: targetCurriculumCourse.curriculumCourseId,
+        payload: nextPayload,
+      })
+    }
+    await upsertCurriculumFeatureProfileCourseRecord(context, {
+      curriculumFeatureProfileId: currentProfileId,
+      curriculumCourse,
+      courseId: courseRecord.courseId,
+      payload: nextPayload,
+      now: input.now,
+    })
+    for (const batch of targetBatches) {
+      const afterResolved = await resolveBatchCurriculumFeatures(context, batch.batchId)
+      const matchingItems = afterResolved.items.filter(item => matchesCourseReference({
+        courseId: courseRecord.courseId,
+        courseCode: curriculumCourse.courseCode,
+        title: curriculumCourse.title,
+      }, item))
+      if (matchingItems.length === 0) continue
+      validateResolvedCurriculumFeatureItems({
+        batchId: batch.batchId,
+        batchCurriculumRows: (await context.db.select().from(curriculumCourses).where(eq(curriculumCourses.batchId, batch.batchId)))
+          .filter(row => row.status !== 'deleted' && row.status !== 'archived'),
+        items: matchingItems.map(item => ({
+          curriculumCourseId: item.curriculumCourseId,
+          resolvedConfig: item.resolvedConfig,
+        })),
+      })
+      curriculumImportVersionId = await materializeResolvedCurriculumFeatureItems(context, {
+        batchId: batch.batchId,
+        actorFacultyId: input.actorFacultyId,
+        now: input.now,
+        items: matchingItems.map(item => ({
+          curriculumCourseId: item.curriculumCourseId,
+          resolvedConfig: item.resolvedConfig,
+        })),
+      })
+      if ((beforeFingerprints.get(batch.batchId) ?? '') !== afterResolved.curriculumFeatureProfileFingerprint) {
+        affectedBatchIds.push(batch.batchId)
+      }
+    }
+  } else {
+    validateCurriculumFeaturePayloadForCourse({
+      batchId: input.batchId,
+      batchCurriculumRows: (await context.db.select().from(curriculumCourses).where(eq(curriculumCourses.batchId, input.batchId)))
+        .filter(row => row.status !== 'deleted' && row.status !== 'archived'),
+      curriculumCourseId: curriculumCourse.curriculumCourseId,
+      payload: nextPayload,
+    })
+    const existingOverride = (await context.db.select().from(batchCurriculumFeatureOverrides).where(eq(batchCurriculumFeatureOverrides.batchId, input.batchId)))
+      .find(row => row.curriculumCourseId === curriculumCourse.curriculumCourseId) ?? null
+    const fingerprint = curriculumFeatureFingerprint(nextPayload)
+    if (existingOverride) {
+      await context.db.update(batchCurriculumFeatureOverrides).set({
+        courseId: courseRecord.courseId,
+        courseCode: curriculumCourse.courseCode,
+        title: curriculumCourse.title,
+        overrideJson: stringifyJson(nextPayload),
+        featureFingerprint: fingerprint,
+        status: 'active',
+        version: existingOverride.version + 1,
+        updatedAt: input.now,
+      }).where(eq(batchCurriculumFeatureOverrides.batchCurriculumFeatureOverrideId, existingOverride.batchCurriculumFeatureOverrideId))
+    } else {
+      await context.db.insert(batchCurriculumFeatureOverrides).values({
+        batchCurriculumFeatureOverrideId: createId('batch_curriculum_feature_override'),
+        batchId: input.batchId,
+        curriculumCourseId: curriculumCourse.curriculumCourseId,
+        courseId: courseRecord.courseId,
+        courseCode: curriculumCourse.courseCode,
+        title: curriculumCourse.title,
+        overrideJson: stringifyJson(nextPayload),
+        featureFingerprint: fingerprint,
+        status: 'active',
+        version: 1,
+        createdAt: input.now,
+        updatedAt: input.now,
+      })
+    }
+    const afterResolved = await resolveBatchCurriculumFeatures(context, input.batchId)
+    const matchingItem = afterResolved.items.find(item => item.curriculumCourseId === curriculumCourse.curriculumCourseId)
+    if (matchingItem) {
+      validateResolvedCurriculumFeatureItems({
+        batchId: input.batchId,
+        batchCurriculumRows: (await context.db.select().from(curriculumCourses).where(eq(curriculumCourses.batchId, input.batchId)))
+          .filter(row => row.status !== 'deleted' && row.status !== 'archived'),
+        items: [{
+          curriculumCourseId: curriculumCourse.curriculumCourseId,
+          resolvedConfig: matchingItem.resolvedConfig,
+        }],
+      })
+      curriculumImportVersionId = await materializeResolvedCurriculumFeatureItems(context, {
+        batchId: input.batchId,
+        actorFacultyId: input.actorFacultyId,
+        now: input.now,
+        items: [{
+          curriculumCourseId: curriculumCourse.curriculumCourseId,
+          resolvedConfig: matchingItem.resolvedConfig,
+        }],
+      })
+      affectedBatchIds = beforeResolved.curriculumFeatureProfileFingerprint !== afterResolved.curriculumFeatureProfileFingerprint
+        ? [input.batchId]
+        : []
+    }
+  }
+
+  const proofRefresh = await enqueueProofRefreshForBatches(context, {
+    batchIds: affectedBatchIds,
+    actorFacultyId: input.actorFacultyId,
+    now: input.now,
+    curriculumImportVersionId,
+  })
+
+  await context.db.update(curriculumLinkageCandidates).set({
+    status: 'approved',
+    reviewNote: input.reviewNote ?? null,
+    version: candidateRow.version + 1,
+    updatedAt: input.now,
+  }).where(eq(curriculumLinkageCandidates.curriculumLinkageCandidateId, candidateRow.curriculumLinkageCandidateId))
+
+  const sameTargetPending = await context.db.select().from(curriculumLinkageCandidates).where(eq(curriculumLinkageCandidates.batchId, input.batchId))
+  const rowsToSupersede = sameTargetPending.filter(row => (
+    row.status === 'pending'
+    && row.curriculumCourseId === candidateRow.curriculumCourseId
+    && row.sourceCourseCode.toLowerCase() === candidateRow.sourceCourseCode.toLowerCase()
+  ))
+  if (rowsToSupersede.length > 0) {
+    await context.db.update(curriculumLinkageCandidates).set({
+      status: 'superseded',
+      updatedAt: input.now,
+    }).where(inArray(curriculumLinkageCandidates.curriculumLinkageCandidateId, rowsToSupersede.map(row => row.curriculumLinkageCandidateId)))
+  }
+
+  return {
+    curriculumImportVersionId,
+    affectedBatchIds,
+    proofRefresh,
+  }
 }
 
 async function buildProofSandboxSummary(context: RouteContext, batchId: string) {
@@ -2245,6 +3005,8 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
       const [course] = await context.db.select().from(courses).where(eq(courses.courseId, body.courseId))
       if (!course) throw notFound('Course not found')
     }
+    const now = context.now()
+    const beforeResolved = await resolveBatchCurriculumFeatures(context, body.batchId)
     const created = {
       curriculumCourseId: createId('curriculum_course'),
       batchId: body.batchId,
@@ -2255,14 +3017,33 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
       credits: body.credits,
       status: body.status,
       version: 1,
-      createdAt: context.now(),
-      updatedAt: context.now(),
+      createdAt: now,
+      updatedAt: now,
     }
     await context.db.insert(curriculumCourses).values(created)
     await syncCurriculumCourseIntoImport(context, {
       curriculumCourse: created,
       actorFacultyId: auth.facultyId,
-      now: context.now(),
+      now,
+    })
+    const { resolved: afterResolved, curriculumImportVersionId } = await rematerializeResolvedBatchCurriculum(context, {
+      batchId: created.batchId,
+      actorFacultyId: auth.facultyId,
+      now,
+    })
+    await regenerateCurriculumLinkageCandidatesForBatch(context, {
+      batchId: created.batchId,
+      targetCurriculumCourseIds: [created.curriculumCourseId],
+      now,
+    })
+    const affectedBatchIds = beforeResolved.curriculumFeatureProfileFingerprint !== afterResolved.curriculumFeatureProfileFingerprint
+      ? [created.batchId]
+      : []
+    const proofRefresh = await enqueueProofRefreshForBatches(context, {
+      batchIds: affectedBatchIds,
+      actorFacultyId: auth.facultyId,
+      now,
+      curriculumImportVersionId,
     })
     const [persisted] = await context.db.select().from(curriculumCourses).where(eq(curriculumCourses.curriculumCourseId, created.curriculumCourseId))
     await emitAuditEvent(context, {
@@ -2273,7 +3054,10 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
       actorId: auth.facultyId,
       after: mapCurriculumCourse(persisted ?? created),
     })
-    return mapCurriculumCourse(persisted ?? created)
+    return {
+      ...mapCurriculumCourse(persisted ?? created),
+      proofRefresh,
+    }
   })
 
   app.patch('/api/admin/curriculum-courses/:curriculumCourseId', {
@@ -2291,6 +3075,13 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
     const [current] = await context.db.select().from(curriculumCourses).where(eq(curriculumCourses.curriculumCourseId, params.curriculumCourseId))
     if (!current) throw notFound('Curriculum course not found')
     expectVersion(current.version, body.version, 'CurriculumCourse', mapCurriculumCourse(current))
+    const now = context.now()
+    const beforeResolvedByBatchId = new Map<string, string>([
+      [current.batchId, (await resolveBatchCurriculumFeatures(context, current.batchId)).curriculumFeatureProfileFingerprint],
+    ])
+    if (body.batchId !== current.batchId) {
+      beforeResolvedByBatchId.set(body.batchId, (await resolveBatchCurriculumFeatures(context, body.batchId)).curriculumFeatureProfileFingerprint)
+    }
     await context.db.update(curriculumCourses).set({
       batchId: body.batchId,
       semesterNumber: body.semesterNumber,
@@ -2300,14 +3091,47 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
       credits: body.credits,
       status: body.status,
       version: current.version + 1,
-      updatedAt: context.now(),
+      updatedAt: now,
     }).where(eq(curriculumCourses.curriculumCourseId, params.curriculumCourseId))
     const [next] = await context.db.select().from(curriculumCourses).where(eq(curriculumCourses.curriculumCourseId, params.curriculumCourseId))
     if (!next) throw notFound('Curriculum course not found after update')
     await syncCurriculumCourseIntoImport(context, {
       curriculumCourse: next,
       actorFacultyId: auth.facultyId,
-      now: context.now(),
+      now,
+    })
+    const { resolved: afterResolved, curriculumImportVersionId } = await rematerializeResolvedBatchCurriculum(context, {
+      batchId: next.batchId,
+      actorFacultyId: auth.facultyId,
+      now,
+    })
+    let previousBatchImportVersionId: string | null = null
+    if (current.batchId !== next.batchId) {
+      const previousBatchRematerialized = await rematerializeResolvedBatchCurriculum(context, {
+        batchId: current.batchId,
+        actorFacultyId: auth.facultyId,
+        now,
+      })
+      previousBatchImportVersionId = previousBatchRematerialized.curriculumImportVersionId
+      await regenerateCurriculumLinkageCandidatesForBatch(context, {
+        batchId: current.batchId,
+        now,
+      })
+    }
+    await regenerateCurriculumLinkageCandidatesForBatch(context, {
+      batchId: next.batchId,
+      targetCurriculumCourseIds: [next.curriculumCourseId],
+      now,
+    })
+    const affectedBatchIds = Array.from(new Set([
+      ...((beforeResolvedByBatchId.get(next.batchId) ?? '') !== afterResolved.curriculumFeatureProfileFingerprint ? [next.batchId] : []),
+      ...(current.batchId !== next.batchId && previousBatchImportVersionId !== null ? [current.batchId] : []),
+    ]))
+    const proofRefresh = await enqueueProofRefreshForBatches(context, {
+      batchIds: affectedBatchIds,
+      actorFacultyId: auth.facultyId,
+      now,
+      curriculumImportVersionId: curriculumImportVersionId ?? previousBatchImportVersionId,
     })
     const [persisted] = await context.db.select().from(curriculumCourses).where(eq(curriculumCourses.curriculumCourseId, params.curriculumCourseId))
     await emitAuditEvent(context, {
@@ -2319,7 +3143,10 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
       before: mapCurriculumCourse(current),
       after: mapCurriculumCourse(persisted ?? next),
     })
-    return mapCurriculumCourse(persisted ?? next)
+    return {
+      ...mapCurriculumCourse(persisted ?? next),
+      proofRefresh,
+    }
   })
 
   app.get('/api/admin/batches/:batchId/curriculum-feature-config', {
@@ -2328,6 +3155,160 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
     requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(z.object({ batchId: z.string().min(1) }), request.params)
     return resolveBatchCurriculumFeatures(context, params.batchId)
+  })
+
+  app.post('/api/admin/batches/:batchId/curriculum/bootstrap', {
+    schema: { tags: ['admin-structure'], summary: 'Bootstrap a supported curriculum manifest into the selected batch' },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
+    const params = parseOrThrow(z.object({ batchId: z.string().min(1) }), request.params)
+    const body = parseOrThrow(curriculumBootstrapSchema, request.body ?? {})
+    const now = context.now()
+    const result = await bootstrapCurriculumManifestForBatch(context, {
+      batchId: params.batchId,
+      manifestKey: body.manifestKey,
+      actorFacultyId: auth.facultyId,
+      now,
+    })
+    const proofRefresh = await enqueueProofRefreshForBatches(context, {
+      batchIds: [params.batchId],
+      actorFacultyId: auth.facultyId,
+      now,
+      curriculumImportVersionId: result.curriculumImportVersionId,
+    })
+    await emitAuditEvent(context, {
+      entityType: 'CurriculumBootstrap',
+      entityId: `${params.batchId}:${body.manifestKey}`,
+      action: 'updated',
+      actorRole: auth.activeRoleGrant.roleCode,
+      actorId: auth.facultyId,
+      after: {
+        batchId: params.batchId,
+        manifestKey: body.manifestKey,
+        ...result,
+      },
+    })
+    return {
+      ok: true,
+      batchId: params.batchId,
+      manifestKey: body.manifestKey,
+      affectedBatchIds: [params.batchId],
+      proofRefresh,
+      ...result,
+    }
+  })
+
+  app.get('/api/admin/batches/:batchId/curriculum/linkage-candidates', {
+    schema: { tags: ['admin-structure'], summary: 'List persisted curriculum linkage candidates for a batch' },
+  }, async request => {
+    requireRole(request, ['SYSTEM_ADMIN'])
+    const params = parseOrThrow(z.object({ batchId: z.string().min(1) }), request.params)
+    const query = parseOrThrow(z.object({ curriculumCourseId: z.string().min(1).optional() }), request.query)
+    const rows = await context.db.select().from(curriculumLinkageCandidates).where(eq(curriculumLinkageCandidates.batchId, params.batchId))
+    return {
+      items: rows
+        .filter(row => row.status !== 'superseded')
+        .filter(row => !query.curriculumCourseId || row.curriculumCourseId === query.curriculumCourseId)
+        .map(mapCurriculumLinkageCandidate)
+        .sort((left, right) => right.confidenceScaled - left.confidenceScaled || left.targetCourseCode.localeCompare(right.targetCourseCode)),
+    }
+  })
+
+  app.post('/api/admin/batches/:batchId/curriculum/linkage-candidates/regenerate', {
+    schema: { tags: ['admin-structure'], summary: 'Regenerate curriculum linkage candidates for a batch or one course' },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
+    const params = parseOrThrow(z.object({ batchId: z.string().min(1) }), request.params)
+    const body = parseOrThrow(curriculumLinkageCandidateRegenerateSchema, request.body ?? {})
+    const result = await regenerateCurriculumLinkageCandidatesForBatch(context, {
+      batchId: params.batchId,
+      targetCurriculumCourseIds: body.curriculumCourseId ? [body.curriculumCourseId] : null,
+      now: context.now(),
+    })
+    await emitAuditEvent(context, {
+      entityType: 'CurriculumLinkageCandidate',
+      entityId: `${params.batchId}:${body.curriculumCourseId ?? 'all'}`,
+      action: 'updated',
+      actorRole: auth.activeRoleGrant.roleCode,
+      actorId: auth.facultyId,
+      after: {
+        batchId: params.batchId,
+        curriculumCourseId: body.curriculumCourseId ?? null,
+        generatedCount: result.items.length,
+        candidateGenerationStatus: result.candidateGenerationStatus,
+      },
+    })
+    return {
+      ok: true,
+      batchId: params.batchId,
+      curriculumCourseId: body.curriculumCourseId ?? null,
+      items: result.items,
+      candidateGenerationStatus: result.candidateGenerationStatus,
+    }
+  })
+
+  app.post('/api/admin/batches/:batchId/curriculum/linkage-candidates/:curriculumLinkageCandidateId/approve', {
+    schema: { tags: ['admin-structure'], summary: 'Approve a curriculum linkage candidate' },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
+    const params = parseOrThrow(z.object({
+      batchId: z.string().min(1),
+      curriculumLinkageCandidateId: z.string().min(1),
+    }), request.params)
+    const body = parseOrThrow(curriculumLinkageCandidateReviewSchema, request.body ?? {})
+    const result = await approveCurriculumLinkageCandidate(context, {
+      batchId: params.batchId,
+      curriculumLinkageCandidateId: params.curriculumLinkageCandidateId,
+      actorFacultyId: auth.facultyId,
+      reviewNote: body.reviewNote ?? null,
+      now: context.now(),
+    })
+    return {
+      ok: true,
+      batchId: params.batchId,
+      curriculumLinkageCandidateId: params.curriculumLinkageCandidateId,
+      ...result,
+    }
+  })
+
+  app.post('/api/admin/batches/:batchId/curriculum/linkage-candidates/:curriculumLinkageCandidateId/reject', {
+    schema: { tags: ['admin-structure'], summary: 'Reject a curriculum linkage candidate' },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
+    const params = parseOrThrow(z.object({
+      batchId: z.string().min(1),
+      curriculumLinkageCandidateId: z.string().min(1),
+    }), request.params)
+    const body = parseOrThrow(curriculumLinkageCandidateReviewSchema, request.body ?? {})
+    const [current] = await context.db.select().from(curriculumLinkageCandidates).where(eq(curriculumLinkageCandidates.curriculumLinkageCandidateId, params.curriculumLinkageCandidateId))
+    if (!current || current.batchId !== params.batchId) throw notFound('Curriculum linkage candidate not found')
+    const now = context.now()
+    await context.db.update(curriculumLinkageCandidates).set({
+      status: 'rejected',
+      reviewNote: body.reviewNote ?? null,
+      version: current.version + 1,
+      updatedAt: now,
+    }).where(eq(curriculumLinkageCandidates.curriculumLinkageCandidateId, params.curriculumLinkageCandidateId))
+    await emitAuditEvent(context, {
+      entityType: 'CurriculumLinkageCandidate',
+      entityId: params.curriculumLinkageCandidateId,
+      action: 'updated',
+      actorRole: auth.activeRoleGrant.roleCode,
+      actorId: auth.facultyId,
+      before: mapCurriculumLinkageCandidate(current),
+      after: mapCurriculumLinkageCandidate({
+        ...current,
+        status: 'rejected',
+        reviewNote: body.reviewNote ?? null,
+        version: current.version + 1,
+        updatedAt: now,
+      }),
+    })
+    return {
+      ok: true,
+      batchId: params.batchId,
+      curriculumLinkageCandidateId: params.curriculumLinkageCandidateId,
+    }
   })
 
   app.put('/api/admin/batches/:batchId/curriculum-feature-config/:curriculumCourseId', {
@@ -2345,6 +3326,8 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
     const beforeBatchFingerprints = new Map<string, string>()
     const now = context.now()
     const courseRecord = await ensureCourseRecordForCurriculumCourse(context, curriculumCourse)
+    const activeBatchCurriculumRows = (await context.db.select().from(curriculumCourses).where(eq(curriculumCourses.batchId, params.batchId)))
+      .filter(row => row.status !== 'deleted' && row.status !== 'archived')
 
     if (body.targetMode === 'scope-profile') {
       const targetScopeType = body.targetScopeType ?? 'branch'
@@ -2356,6 +3339,24 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
       for (const candidate of affectedCandidateBatches) {
         const resolved = await resolveBatchCurriculumFeatures(context, candidate.batchId)
         beforeBatchFingerprints.set(candidate.batchId, resolved.curriculumFeatureProfileFingerprint)
+      }
+      for (const candidate of affectedCandidateBatches) {
+        const candidateCurriculumRows = candidate.batchId === params.batchId
+          ? activeBatchCurriculumRows
+          : (await context.db.select().from(curriculumCourses).where(eq(curriculumCourses.batchId, candidate.batchId)))
+            .filter(row => row.status !== 'deleted' && row.status !== 'archived')
+        const targetCurriculumCourse = candidateCurriculumRows.find(row => matchesCourseReference({
+          courseId: courseRecord.courseId,
+          courseCode: curriculumCourse.courseCode,
+          title: curriculumCourse.title,
+        }, row)) ?? null
+        if (!targetCurriculumCourse) continue
+        validateCurriculumFeaturePayloadForCourse({
+          batchId: candidate.batchId,
+          batchCurriculumRows: candidateCurriculumRows,
+          curriculumCourseId: targetCurriculumCourse.curriculumCourseId,
+          payload: normalizedPayload,
+        })
       }
 
       const profileRow = body.curriculumFeatureProfileId
@@ -2447,10 +3448,21 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
             resolvedConfig: item.resolvedConfig,
           })),
         })
+        await regenerateCurriculumLinkageCandidatesForBatch(context, {
+          batchId: candidate.batchId,
+          targetCurriculumCourseIds: matchingItems.map(item => item.curriculumCourseId),
+          now,
+        })
         if ((beforeBatchFingerprints.get(candidate.batchId) ?? '') !== afterResolved.curriculumFeatureProfileFingerprint) {
           affectedBatchIds.push(candidate.batchId)
         }
       }
+      const proofRefresh = await enqueueProofRefreshForBatches(context, {
+        batchIds: affectedBatchIds,
+        actorFacultyId: auth.facultyId,
+        now,
+        curriculumImportVersionId: lastImportVersionId,
+      })
 
       await emitAuditEvent(context, {
         entityType: 'CurriculumFeatureProfileCourse',
@@ -2474,12 +3486,19 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
         curriculumCourseId: params.curriculumCourseId,
         curriculumImportVersionId: lastImportVersionId,
         affectedBatchIds,
+        proofRefresh,
         targetMode: body.targetMode,
         curriculumFeatureProfileId: ensuredProfile.curriculumFeatureProfileId,
       }
     }
 
     const beforeResolved = await resolveBatchCurriculumFeatures(context, params.batchId)
+    validateCurriculumFeaturePayloadForCourse({
+      batchId: params.batchId,
+      batchCurriculumRows: activeBatchCurriculumRows,
+      curriculumCourseId: params.curriculumCourseId,
+      payload: normalizedPayload,
+    })
     const existingOverride = (await context.db.select().from(batchCurriculumFeatureOverrides).where(eq(batchCurriculumFeatureOverrides.batchId, params.batchId)))
       .find(row => row.curriculumCourseId === params.curriculumCourseId) ?? null
     const fingerprint = curriculumFeatureFingerprint(normalizedPayload)
@@ -2523,6 +3542,20 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
         resolvedConfig: matchingItem.resolvedConfig,
       }],
     })
+    await regenerateCurriculumLinkageCandidatesForBatch(context, {
+      batchId: params.batchId,
+      targetCurriculumCourseIds: [params.curriculumCourseId],
+      now,
+    })
+    const affectedBatchIds = (beforeResolved.curriculumFeatureProfileFingerprint !== afterResolved.curriculumFeatureProfileFingerprint)
+      ? [params.batchId]
+      : []
+    const proofRefresh = await enqueueProofRefreshForBatches(context, {
+      batchIds: affectedBatchIds,
+      actorFacultyId: auth.facultyId,
+      now,
+      curriculumImportVersionId,
+    })
 
     await emitAuditEvent(context, {
       entityType: 'CurriculumFeatureConfig',
@@ -2546,9 +3579,8 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
       batchId: params.batchId,
       curriculumCourseId: params.curriculumCourseId,
       curriculumImportVersionId,
-      affectedBatchIds: (beforeResolved.curriculumFeatureProfileFingerprint !== afterResolved.curriculumFeatureProfileFingerprint)
-        ? [params.batchId]
-        : [],
+      affectedBatchIds,
+      proofRefresh,
       targetMode: body.targetMode,
       curriculumFeatureProfileId: null,
     }
@@ -2683,6 +3715,13 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
           })),
         })
       : null
+    const affectedBatchIds = beforeResolved.curriculumFeatureProfileFingerprint !== afterResolved.curriculumFeatureProfileFingerprint ? [params.batchId] : []
+    const proofRefresh = await enqueueProofRefreshForBatches(context, {
+      batchIds: affectedBatchIds,
+      actorFacultyId: auth.facultyId,
+      now,
+      curriculumImportVersionId,
+    })
     await emitAuditEvent(context, {
       entityType: 'BatchCurriculumFeatureBinding',
       entityId: params.batchId,
@@ -2699,7 +3738,8 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
       ok: true,
       batchId: params.batchId,
       curriculumImportVersionId,
-      affectedBatchIds: beforeResolved.curriculumFeatureProfileFingerprint !== afterResolved.curriculumFeatureProfileFingerprint ? [params.batchId] : [],
+      affectedBatchIds,
+      proofRefresh,
       binding: afterResolved.binding,
     }
   })
