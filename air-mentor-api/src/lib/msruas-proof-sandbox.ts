@@ -763,7 +763,6 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
   }))
   await db.insert(courses).values(courseRows)
 
-  const courseByTitle = new Map(curriculumSeed.courses.map((course, index) => [course.title, { ...course, courseId: courseRows[index].courseId }]))
   const curriculumNodeRows: Array<typeof curriculumNodes.$inferInsert> = curriculumSeed.courses.map((course, index) => ({
     curriculumNodeId: `curriculum_node_${course.internalCompilerId.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
     curriculumImportVersionId: MSRUAS_PROOF_CURRICULUM_IMPORT_ID,
@@ -1301,7 +1300,6 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
         const faculty = offeringFacultyById.get(offering.offeringId)
         const course = sem6Courses.find(item => item.title === courseRows.find(row => row.courseId === offering.courseId)?.title)
         if (!faculty || !course) return
-        const weeklyHours = weeklyContactHoursForCourse(course)
         const attendancePct = clamp(
           Math.round(60 + (trajectory.latentBase.attendanceDiscipline * 28) + (trajectory.latentBase.selfRegulation * 7) - (offeringIndex % 3) * 2 + stableBetween(`${trajectory.studentId}-${offering.offeringId}-att`, -9, 7)),
           58,

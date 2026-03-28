@@ -15,7 +15,7 @@ import {
   getStudents,
 } from '../../src/data.ts'
 import { createLocalAirMentorRepositories } from '../../src/repositories.ts'
-import { createTransition, type QueueTransition, type SharedTask, type TaskType } from '../../src/domain.ts'
+import { type QueueTransition, type SharedTask, type TaskType } from '../../src/domain.ts'
 
 const BASE_NOW_ISO = '2026-03-16T00:00:00.000Z'
 const BASE_NOW = new Date(BASE_NOW_ISO).getTime()
@@ -303,7 +303,7 @@ function requireAcademicDataModule() {
   return { generateTasks: (awaitImportCache.generateTasks ??= getGenerateTasks()) }
 }
 
-let awaitImportCache: { generateTasks?: () => SharedTask[] } = {}
+const awaitImportCache: { generateTasks?: () => SharedTask[] } = {}
 
 function getGenerateTasks() {
   const mod = (globalThis as unknown as { __academicDataModule?: { generateTasks: () => SharedTask[] } }).__academicDataModule
@@ -599,7 +599,6 @@ async function main() {
     }))
 
     const studentHistoryByUsn = Object.fromEntries(Array.from(uniqueStudents.values()).map(student => {
-      const term = terms.find(item => item.termId === student.enrollment.termId)
       const yearLabel = OFFERINGS.find(offering => offering.section === student.enrollment.sectionCode && `term_${offering.dept.toLowerCase()}_sem${offering.sem}` === student.enrollment.termId)?.year
       return [student.usn, getStudentHistoryRecord({
         usn: student.usn,

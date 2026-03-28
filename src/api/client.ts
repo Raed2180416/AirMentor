@@ -5,6 +5,12 @@ import type {
   ApiAcademicMeeting,
   ApiAcademicHodProofCourseRollup,
   ApiAcademicHodProofFacultyRollup,
+  ApiAcademicCalendarAuditListResponse,
+  ApiAcademicTaskListResponse,
+  ApiAcademicTaskPlacementListResponse,
+  ApiAppendAcademicCalendarAuditRequest,
+  ApiAppendAcademicCalendarAuditResponse,
+  ApiDeleteAcademicTaskPlacementResponse,
   ApiProofReassessmentAcknowledgeRequest,
   ApiProofReassessmentAcknowledgeResponse,
   ApiAcademicHodProofReassessment,
@@ -14,6 +20,10 @@ import type {
   ApiAcademicLoginFaculty,
   ApiAcademicTerm,
   ApiAcademicRuntimeKey,
+  ApiUpsertAcademicTaskPlacementRequest,
+  ApiUpsertAcademicTaskPlacementResponse,
+  ApiUpsertAcademicTaskRequest,
+  ApiUpsertAcademicTaskResponse,
   ApiAdminRequestDetail,
   ApiAdminReminder,
   ApiAdminSearchResult,
@@ -37,6 +47,7 @@ import type {
   ApiCurriculumFeatureConfigSaveResult,
   ApiCurriculumFeatureProfile,
   ApiCurriculumLinkageCandidate,
+  ApiCurriculumLinkageApprovalResult,
   ApiCurriculumLinkageCandidateRegenerateResult,
   ApiCourseOutcomeOverride,
   ApiCourseOutcomeScopeType,
@@ -77,12 +88,9 @@ import type {
 } from './types.js'
 import type {
   MeetingStatus,
-  CalendarAuditEvent,
   EntryKind,
   FacultyTimetableTemplate,
   SchemeState,
-  SharedTask,
-  TaskCalendarPlacement,
   TTKind,
   TermTestBlueprint,
 } from '../domain.js'
@@ -118,10 +126,17 @@ export interface AirMentorApiClientLike {
   getAcademicStudentAgentTimeline(studentId: string, filter?: { simulationRunId?: string; simulationStageCheckpointId?: string }): Promise<{ items: ApiStudentAgentTimelineItem[] }>
   startAcademicStudentAgentSession(studentId: string, payload?: { simulationRunId?: string; simulationStageCheckpointId?: string }): Promise<ApiStudentAgentSession>
   sendAcademicStudentAgentMessage(sessionId: string, payload: { prompt: string }): Promise<{ items: ApiStudentAgentMessage[] }>
-  saveAcademicRuntimeSlice<T>(stateKey: ApiAcademicRuntimeKey, payload: T): Promise<{ ok: true; stateKey: ApiAcademicRuntimeKey }>
-  syncAcademicTasks(payload: { tasks: SharedTask[] }): Promise<{ ok: true; count: number }>
-  syncAcademicTaskPlacements(payload: { placements: Record<string, TaskCalendarPlacement> }): Promise<{ ok: true; count: number }>
-  syncAcademicCalendarAudit(payload: { events: CalendarAuditEvent[] }): Promise<{ ok: true; count: number }>
+  saveAcademicDrafts(payload: Record<string, number>): Promise<{ ok: true; stateKey: ApiAcademicRuntimeKey }>
+  saveAcademicCellValues(payload: Record<string, number>): Promise<{ ok: true; stateKey: ApiAcademicRuntimeKey }>
+  saveAcademicLockByOffering(payload: Record<string, Record<string, boolean>>): Promise<{ ok: true; stateKey: ApiAcademicRuntimeKey }>
+  saveAcademicLockAuditByTarget(payload: Record<string, Array<{ action: string; actorRole: string; at?: number }>>): Promise<{ ok: true; stateKey: ApiAcademicRuntimeKey }>
+  listAcademicTasks(): Promise<ApiAcademicTaskListResponse>
+  saveAcademicTask(taskId: string, payload: ApiUpsertAcademicTaskRequest): Promise<ApiUpsertAcademicTaskResponse>
+  listAcademicTaskPlacements(): Promise<ApiAcademicTaskPlacementListResponse>
+  saveAcademicTaskPlacement(taskId: string, payload: ApiUpsertAcademicTaskPlacementRequest): Promise<ApiUpsertAcademicTaskPlacementResponse>
+  deleteAcademicTaskPlacement(taskId: string, expectedUpdatedAt?: number): Promise<ApiDeleteAcademicTaskPlacementResponse>
+  listAcademicCalendarAuditEvents(): Promise<ApiAcademicCalendarAuditListResponse>
+  appendAcademicCalendarAuditEvent(payload: ApiAppendAcademicCalendarAuditRequest): Promise<ApiAppendAcademicCalendarAuditResponse>
   saveFacultyCalendarWorkspace(facultyId: string, payload: { template: FacultyTimetableTemplate }): Promise<{ facultyId: string; template: FacultyTimetableTemplate; version: number; directEditWindowEndsAt: string | null; classEditingLocked: boolean }>
   createAcademicMeeting(payload: { studentId: string; offeringId?: string | null; title: string; notes?: string | null; dateISO: string; startMinutes: number; endMinutes: number; status?: MeetingStatus }): Promise<ApiAcademicMeeting>
   updateAcademicMeeting(meetingId: string, payload: { studentId: string; offeringId?: string | null; title: string; notes?: string | null; dateISO: string; startMinutes: number; endMinutes: number; status: MeetingStatus; version: number }): Promise<ApiAcademicMeeting>
@@ -268,7 +283,7 @@ export interface AirMentorApiClientLike {
   bootstrapCurriculum(batchId: string, payload?: { manifestKey?: ApiCurriculumBootstrapResult['manifestKey'] }): Promise<ApiCurriculumBootstrapResult>
   listCurriculumLinkageCandidates(batchId: string, filter?: { curriculumCourseId?: string }): Promise<{ items: ApiCurriculumLinkageCandidate[] }>
   regenerateCurriculumLinkageCandidates(batchId: string, payload?: { curriculumCourseId?: string }): Promise<ApiCurriculumLinkageCandidateRegenerateResult>
-  approveCurriculumLinkageCandidate(batchId: string, curriculumLinkageCandidateId: string, payload?: { reviewNote?: string }): Promise<{ ok: true; batchId: string; curriculumLinkageCandidateId: string; affectedBatchIds: string[]; curriculumImportVersionId: string | null; proofRefresh?: { affectedBatchIds: string[]; queuedSimulationRunIds: string[]; curriculumImportVersionId: string | null } }>
+  approveCurriculumLinkageCandidate(batchId: string, curriculumLinkageCandidateId: string, payload?: { reviewNote?: string }): Promise<ApiCurriculumLinkageApprovalResult>
   rejectCurriculumLinkageCandidate(batchId: string, curriculumLinkageCandidateId: string, payload?: { reviewNote?: string }): Promise<{ ok: true; batchId: string; curriculumLinkageCandidateId: string }>
   listCurriculumFeatureProfiles(filter?: { scopeType?: ApiCurriculumFeatureProfile['scopeType']; scopeId?: string }): Promise<{ items: ApiCurriculumFeatureProfile[] }>
   createCurriculumFeatureProfile(payload: Pick<ApiCurriculumFeatureProfile, 'name' | 'scopeType' | 'scopeId' | 'status'>): Promise<ApiCurriculumFeatureProfile>
@@ -316,9 +331,22 @@ function getDefaultFetch(): FetchLike {
   return globalThis.fetch.bind(globalThis) as FetchLike
 }
 
+function isMutatingRequestMethod(method: string | undefined) {
+  const normalizedMethod = (method ?? 'GET').toUpperCase()
+  return normalizedMethod === 'POST' || normalizedMethod === 'PUT' || normalizedMethod === 'PATCH' || normalizedMethod === 'DELETE'
+}
+
+function toHeaderRecord(headers?: HeadersInit) {
+  if (!headers) return {}
+  if (headers instanceof Headers) return Object.fromEntries(headers.entries())
+  if (Array.isArray(headers)) return Object.fromEntries(headers)
+  return { ...headers }
+}
+
 export class AirMentorApiClient implements AirMentorApiClientLike {
   private readonly baseUrl: string
   private readonly fetchImpl: FetchLike
+  private csrfToken: string | null = null
 
   constructor(baseUrl: string, fetchImpl?: FetchLike) {
     this.baseUrl = baseUrl.replace(/\/$/, '')
@@ -338,6 +366,7 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
 
   async logout() {
     await this.request('/api/session', { method: 'DELETE' })
+    this.csrfToken = null
   }
 
   async switchRoleContext(roleGrantId: string) {
@@ -480,30 +509,72 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     })
   }
 
-  async saveAcademicRuntimeSlice<T>(stateKey: ApiAcademicRuntimeKey, payload: T) {
-    return this.request<{ ok: true; stateKey: ApiAcademicRuntimeKey }>(`/api/academic/runtime/${stateKey}`, {
+  async saveAcademicDrafts(payload: Record<string, number>) {
+    return this.request<{ ok: true; stateKey: ApiAcademicRuntimeKey }>('/api/academic/runtime/drafts', {
       method: 'PUT',
       body: JSON.stringify(payload),
     })
   }
 
-  async syncAcademicTasks(payload: { tasks: SharedTask[] }) {
-    return this.request<{ ok: true; count: number }>('/api/academic/tasks/sync', {
+  async saveAcademicCellValues(payload: Record<string, number>) {
+    return this.request<{ ok: true; stateKey: ApiAcademicRuntimeKey }>('/api/academic/runtime/cell-values', {
       method: 'PUT',
       body: JSON.stringify(payload),
     })
   }
 
-  async syncAcademicTaskPlacements(payload: { placements: Record<string, TaskCalendarPlacement> }) {
-    return this.request<{ ok: true; count: number }>('/api/academic/task-placements/sync', {
+  async saveAcademicLockByOffering(payload: Record<string, Record<string, boolean>>) {
+    return this.request<{ ok: true; stateKey: ApiAcademicRuntimeKey }>('/api/academic/runtime/lock-by-offering', {
       method: 'PUT',
       body: JSON.stringify(payload),
     })
   }
 
-  async syncAcademicCalendarAudit(payload: { events: CalendarAuditEvent[] }) {
-    return this.request<{ ok: true; count: number }>('/api/academic/calendar-audit/sync', {
+  async saveAcademicLockAuditByTarget(payload: Record<string, Array<{ action: string; actorRole: string; at?: number }>>) {
+    return this.request<{ ok: true; stateKey: ApiAcademicRuntimeKey }>('/api/academic/runtime/lock-audit-by-target', {
       method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async listAcademicTasks() {
+    return this.request<ApiAcademicTaskListResponse>('/api/academic/tasks')
+  }
+
+  async saveAcademicTask(taskId: string, payload: ApiUpsertAcademicTaskRequest) {
+    return this.request<ApiUpsertAcademicTaskResponse>(`/api/academic/tasks/${encodeURIComponent(taskId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async listAcademicTaskPlacements() {
+    return this.request<ApiAcademicTaskPlacementListResponse>('/api/academic/task-placements')
+  }
+
+  async saveAcademicTaskPlacement(taskId: string, payload: ApiUpsertAcademicTaskPlacementRequest) {
+    return this.request<ApiUpsertAcademicTaskPlacementResponse>(`/api/academic/task-placements/${encodeURIComponent(taskId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async deleteAcademicTaskPlacement(taskId: string, expectedUpdatedAt?: number) {
+    const searchParams = new URLSearchParams()
+    if (typeof expectedUpdatedAt === 'number') searchParams.set('expectedUpdatedAt', String(expectedUpdatedAt))
+    const query = searchParams.toString()
+    return this.request<ApiDeleteAcademicTaskPlacementResponse>(`/api/academic/task-placements/${encodeURIComponent(taskId)}${query ? `?${query}` : ''}`, {
+      method: 'DELETE',
+    })
+  }
+
+  async listAcademicCalendarAuditEvents() {
+    return this.request<ApiAcademicCalendarAuditListResponse>('/api/academic/calendar-audit')
+  }
+
+  async appendAcademicCalendarAuditEvent(payload: ApiAppendAcademicCalendarAuditRequest) {
+    return this.request<ApiAppendAcademicCalendarAuditResponse>('/api/academic/calendar-audit', {
+      method: 'POST',
       body: JSON.stringify(payload),
     })
   }
@@ -1091,7 +1162,7 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
   }
 
   async approveCurriculumLinkageCandidate(batchId: string, curriculumLinkageCandidateId: string, payload?: { reviewNote?: string }) {
-    return this.request<{ ok: true; batchId: string; curriculumLinkageCandidateId: string; affectedBatchIds: string[]; curriculumImportVersionId: string | null; proofRefresh?: { affectedBatchIds: string[]; queuedSimulationRunIds: string[]; curriculumImportVersionId: string | null } }>(
+    return this.request<ApiCurriculumLinkageApprovalResult>(
       `/api/admin/batches/${batchId}/curriculum/linkage-candidates/${curriculumLinkageCandidateId}/approve`,
       {
         method: 'POST',
@@ -1335,14 +1406,17 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
 
   private async request<T>(path: string, init?: RequestInit) {
     const hasBody = init?.body !== undefined
+    const method = (init?.method ?? 'GET').toUpperCase()
     const resolvedHeaders = {
       ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
-      ...(init?.headers ?? {}),
+      ...toHeaderRecord(init?.headers),
+      ...(isMutatingRequestMethod(method) && this.csrfToken ? { 'X-AirMentor-CSRF': this.csrfToken } : {}),
     }
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
       credentials: 'include',
-      headers: resolvedHeaders,
       ...init,
+      headers: resolvedHeaders,
+      method,
     })
 
     if (response.status === 204) {
@@ -1355,10 +1429,17 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
       : await response.text()
 
     if (!response.ok) {
+      if (response.status === 401) {
+        this.csrfToken = null
+      }
       const message = typeof payload === 'object' && payload && 'message' in payload
         ? String(payload.message)
         : response.statusText || 'API request failed'
       throw new AirMentorApiError(response.status, message, payload)
+    }
+
+    if (payload && typeof payload === 'object' && 'csrfToken' in payload && typeof payload.csrfToken === 'string') {
+      this.csrfToken = payload.csrfToken
     }
 
     return payload as T

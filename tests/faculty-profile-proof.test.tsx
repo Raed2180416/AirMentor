@@ -1,11 +1,11 @@
-import { createElement } from 'react'
+import { createElement, type ComponentProps } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { FacultyProfilePage } from '../src/App'
 
 describe('FacultyProfilePage proof mode', () => {
   it('renders explicit proof authority labeling alongside the teacher proof panel', () => {
-    const markup = renderToStaticMarkup(createElement(FacultyProfilePage, {
+    const props: ComponentProps<typeof FacultyProfilePage> = {
       currentTeacher: {
         facultyId: 'mnc_t1',
         name: 'Dr. Asha Rao',
@@ -14,7 +14,7 @@ describe('FacultyProfilePage proof mode', () => {
         roleTitle: 'Professor',
         email: 'asha.rao@example.edu',
         menteeIds: ['student_001', 'student_002'],
-      } as any,
+      },
       activeRole: 'Course Leader',
       profile: {
         displayName: 'Dr. Asha Rao',
@@ -98,7 +98,7 @@ describe('FacultyProfilePage proof mode', () => {
             },
           ],
         },
-      } as any,
+      },
       calendarMarkers: [],
       loading: false,
       error: '',
@@ -108,7 +108,8 @@ describe('FacultyProfilePage proof mode', () => {
       onBack: () => {},
       onOpenStudentShell: () => {},
       onOpenRiskExplorer: () => {},
-    }))
+    }
+    const markup = renderToStaticMarkup(createElement(FacultyProfilePage, props))
 
     expect(markup).toContain('data-proof-section="proof-mode-authority"')
     expect(markup).toContain('Proof mode is active')

@@ -404,7 +404,7 @@ export function ModalWorkspace({
 }
 
 export const Chip = ({ children, color = T.muted, size = 11 }: { children: ReactNode; color?: string; size?: number }) => (
-  <span style={{ ...mono, fontSize: size, padding: '3px 8px', borderRadius: UI_RADII.chip, background: withAlpha(color, '12'), color, border: `1px solid ${withAlpha(color, '28')}`, whiteSpace: 'nowrap' as const, display: 'inline-block' }}>{children}</span>
+  <span style={{ ...mono, fontSize: size, padding: '3px 8px', borderRadius: UI_RADII.chip, background: withAlpha(color, '08'), color, border: `1px solid ${withAlpha(color, '18')}`, whiteSpace: 'nowrap' as const, display: 'inline-block' }}>{children}</span>
 )
 
 export function HScrollArea({ children, style }: { children: ReactNode; style?: CSSProperties }) {
@@ -645,6 +645,10 @@ export const Btn = ({
   dataProofAction,
   dataProofEntityId,
   ariaLabel,
+  ariaControls,
+  ariaSelected,
+  id,
+  role,
   title,
 }: {
   children: ReactNode
@@ -656,12 +660,22 @@ export const Btn = ({
   dataProofAction?: string
   dataProofEntityId?: string
   ariaLabel?: string
+  ariaControls?: string
+  ariaSelected?: boolean
+  id?: string
+  role?: string
   title?: string
 }) => {
   const shouldReduceMotion = useReducedMotion()
   const pad = size === 'sm' ? '8px 12px' : size === 'lg' ? '12px 18px' : '10px 14px'
   const fs = size === 'sm' ? 11 : size === 'lg' ? 14 : 12
-  const v = variant === 'ghost' ? { bg: 'transparent', border: T.border2, color: T.text } : variant === 'danger' ? { bg: T.danger, border: T.danger, color: '#fff' } : { bg: T.accent, border: T.accent, color: '#fff' }
+  const accessiblePrimaryAccent = (T.accent === '#3b82f6' || T.accent === '#5ea0ff') ? '#1d4ed8' : T.accent
+  const accessibleDangerAccent = T.danger === '#ef4444' ? '#dc2626' : T.danger
+  const v = variant === 'ghost'
+    ? { bg: 'transparent', border: T.border2, color: T.text }
+    : variant === 'danger'
+      ? { bg: accessibleDangerAccent, border: accessibleDangerAccent, color: '#fff' }
+      : { bg: accessiblePrimaryAccent, border: accessiblePrimaryAccent, color: '#fff' }
   const baseShadow = disabled
     ? 'none'
     : variant === 'ghost'
@@ -675,12 +689,16 @@ export const Btn = ({
 
   return (
     <motion.button
+      id={id}
       type={type}
       disabled={disabled}
       data-pressable="true"
       data-proof-action={dataProofAction}
       data-proof-entity-id={dataProofEntityId}
+      role={role}
       aria-label={ariaLabel}
+      aria-controls={ariaControls}
+      aria-selected={ariaSelected}
       title={title}
       onClick={onClick}
       initial={false}

@@ -1,0 +1,459 @@
+import assert from 'node:assert/strict'
+import { mkdir, writeFile } from 'node:fs/promises'
+import path from 'node:path'
+
+const playwrightRoot = process.env.PLAYWRIGHT_ROOT
+const appUrl = process.env.PLAYWRIGHT_APP_URL ?? 'http://127.0.0.1:4173'
+const outputDir = process.env.PLAYWRIGHT_OUTPUT_DIR ?? 'output/playwright'
+const firefoxExecutablePath = process.env.PLAYWRIGHT_FIREFOX_EXECUTABLE_PATH || undefined
+
+assert(playwrightRoot, 'PLAYWRIGHT_ROOT is required')
+
+const { firefox } = await import(`file://${playwrightRoot}/lib/node_modules/playwright/index.mjs`)
+
+const proofPlaybackSelectionStorageKey = 'airmentor-proof-playback-selection'
+const seededProofRoute = '#/admin/faculties/academic_faculty_engineering_and_technology/departments/dept_cse/branches/branch_mnc_btech/batches/batch_branch_mnc_btech_2023'
+const seededProofBatchId = 'batch_branch_mnc_btech_2023'
+const requestSummary = /Grant additional mentor mapping coverage/i
+const finalCheckpointButtonLabel = 'S6 · Post SEE'
+
+await mkdir(outputDir, { recursive: true })
+
+const successScreenshot = path.join(outputDir, 'system-admin-live-keyboard-regression.png')
+const failureScreenshot = path.join(outputDir, 'system-admin-live-keyboard-regression-failure.png')
+const failureTrace = path.join(outputDir, 'system-admin-live-keyboard-regression-failure.zip')
+const failureHtml = path.join(outputDir, 'system-admin-live-keyboard-regression-failure.html')
+let currentStep = 'launch-browser'
+
+const browser = await firefox.launch({
+  headless: true,
+  ...(firefoxExecutablePath ? { executablePath: firefoxExecutablePath } : {}),
+})
+const context = await browser.newContext({ viewport: { width: 1440, height: 1280 } })
+await context.tracing.start({ screenshots: true, snapshots: true, sources: true })
+const page = await context.newPage()
+page.on('console', message => {
+  console.log(`[browser:${message.type()}] ${message.text()}`)
+})
+page.on('pageerror', error => {
+  console.error(`[pageerror] ${error.stack ?? error.message}`)
+})
+page.on('requestfailed', request => {
+  console.error(`[requestfailed] ${request.method()} ${request.url()} :: ${request.failure()?.errorText ?? 'unknown'}`)
+})
+page.on('response', response => {
+  if (response.status() >= 400) {
+    console.error(`[response:${response.status()}] ${response.url()}`)
+  }
+})
+
+function markStep(label) {
+  currentStep = label
+  console.log(`[keyboard] step: ${label}`)
+}
+
+async function expectVisible(locator, description, timeout = 30_000) {
+  await locator.waitFor({ state: 'visible', timeout })
+  assert(await locator.isVisible(), `${description} should be visible`)
+}
+
+async function expectText(locator, pattern, description) {
+  await expectVisible(locator, description)
+  const text = (await locator.textContent().catch(() => '')) ?? ''
+  if (pattern instanceof RegExp) {
+    assert(pattern.test(text), `${description} should match ${pattern}, received ${text}`)
+    return
+  }
+  assert(text.includes(pattern), `${description} should include ${pattern}, received ${text}`)
+}
+
+async function focusAndActivate(locator, description, key = 'Enter') {
+  await expectVisible(locator, description)
+  await locator.scrollIntoViewIfNeeded().catch(() => {})
+  await locator.focus()
+  const isFocused = await locator.evaluate(node => node === document.activeElement)
+  assert.equal(isFocused, true, `${description} should receive focus before keyboard activation`)
+  await page.keyboard.press(key)
+}
+
+async function expectFocused(locator, description) {
+  await expectVisible(locator, description)
+  const isFocused = await locator.evaluate(node => node === document.activeElement)
+  assert.equal(isFocused, true, `${description} should have focus`)
+}
+
+async function adminApiRequest(apiPath, init = {}) {
+  const { body, ...restInit } = init
+  const response = await page.evaluate(async request => {
+    const csrfToken = document.cookie
+      .split('; ')
+      .find(item => item.startsWith('airmentor_csrf='))
+      ?.slice('airmentor_csrf='.length) ?? null
+    const browserResponse = await fetch(request.apiPath, {
+      method: request.method,
+      headers: {
+        accept: 'application/json',
+        ...(csrfToken ? { 'x-airmentor-csrf': decodeURIComponent(csrfToken) } : {}),
+        ...(request.body === undefined ? {} : { 'content-type': 'application/json' }),
+      },
+      body: request.body === undefined
+        ? undefined
+        : typeof request.body === 'string'
+          ? request.body
+          : JSON.stringify(request.body),
+      credentials: 'include',
+    })
+    const contentType = browserResponse.headers.get('content-type') ?? ''
+    const text = await browserResponse.text().catch(() => '')
+    return {
+      ok: browserResponse.ok,
+      status: browserResponse.status,
+      contentType,
+      text,
+    }
+  }, {
+    apiPath,
+    method: restInit.method ?? 'GET',
+    body,
+  })
+  if (!response.ok) {
+    throw new Error(`Admin API ${apiPath} failed with ${response.status}: ${response.text.slice(0, 800)}`)
+  }
+  return response.contentType.includes('application/json')
+    ? JSON.parse(response.text)
+    : response.text
+}
+
+async function readProofDashboard() {
+  return adminApiRequest(`/api/admin/batches/${seededProofBatchId}/proof-dashboard`)
+}
+
+async function waitForProofCheckpoints(label, timeoutMs = 240_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const dashboard = await readProofDashboard()
+    const run = dashboard.activeRunDetail ?? null
+    if (run?.checkpoints?.length) return dashboard
+    if (run?.status === 'failed') {
+      throw new Error(`Proof run ${run.simulationRunId} failed during ${label}: ${run.failureMessage ?? run.failureCode ?? 'unknown failure'}`)
+    }
+    await page.waitForTimeout(2_500)
+  }
+  throw new Error(`Timed out waiting for proof checkpoints during ${label}`)
+}
+
+async function ensureProofRunReady() {
+  let dashboard = await readProofDashboard()
+  if (dashboard.activeRunDetail?.checkpoints?.length) return dashboard
+
+  if (!dashboard.imports?.length) {
+    await adminApiRequest(`/api/admin/batches/${seededProofBatchId}/proof-imports`, {
+      method: 'POST',
+      body: {},
+    })
+    dashboard = await readProofDashboard()
+  }
+
+  let latestImport = dashboard.imports?.[0] ?? null
+  assert(latestImport, 'proof import should exist after prewarm import creation')
+
+  if (latestImport.status !== 'validated' && latestImport.status !== 'approved') {
+    await adminApiRequest(`/api/admin/proof-imports/${encodeURIComponent(latestImport.curriculumImportVersionId)}/validate`, {
+      method: 'POST',
+    })
+    dashboard = await readProofDashboard()
+    latestImport = dashboard.imports?.[0] ?? latestImport
+  }
+
+  if ((dashboard.crosswalkReviewQueue?.length ?? 0) > 0) {
+    await adminApiRequest(`/api/admin/proof-imports/${encodeURIComponent(latestImport.curriculumImportVersionId)}/review-crosswalks`, {
+      method: 'POST',
+      body: {
+        reviews: dashboard.crosswalkReviewQueue.map(item => ({
+          officialCodeCrosswalkId: item.officialCodeCrosswalkId,
+          reviewStatus: 'accepted-with-note',
+          overrideReason: 'Deterministic keyboard regression prewarm.',
+        })),
+      },
+    })
+    dashboard = await readProofDashboard()
+    latestImport = dashboard.imports?.[0] ?? latestImport
+  }
+
+  if (latestImport.status !== 'approved') {
+    await adminApiRequest(`/api/admin/proof-imports/${encodeURIComponent(latestImport.curriculumImportVersionId)}/approve`, {
+      method: 'POST',
+    })
+    dashboard = await readProofDashboard()
+    latestImport = dashboard.imports?.find(item => item.status === 'approved') ?? dashboard.imports?.[0] ?? latestImport
+  }
+
+  if (!dashboard.activeRunDetail?.checkpoints?.length) {
+    await adminApiRequest(`/api/admin/batches/${seededProofBatchId}/proof-runs`, {
+      method: 'POST',
+      body: {
+        curriculumImportVersionId: latestImport.curriculumImportVersionId,
+        activate: true,
+      },
+    })
+    dashboard = await waitForProofCheckpoints('proof run creation')
+  }
+
+  assert(dashboard.activeRunDetail?.checkpoints?.length, 'proof run checkpoints should exist after prewarm')
+  return dashboard
+}
+
+async function waitForSystemAdminShellReady() {
+  const readinessChecks = [
+    expectVisible(page.getByRole('button', { name: 'Logout', exact: true }), 'system admin logout action'),
+    expectVisible(page.getByText('Operations Dashboard', { exact: true }).first(), 'system admin operations dashboard heading'),
+  ]
+  await Promise.any(readinessChecks)
+  await page.waitForTimeout(500)
+}
+
+async function loginAsSystemAdmin() {
+  await page.goto(appUrl, { waitUntil: 'networkidle' })
+  await page.getByRole('button', { name: /Open System Admin/i }).click()
+  await expectVisible(page.getByText(/System Admin Live Mode/), 'system admin login')
+  await page.getByPlaceholder('sysadmin', { exact: true }).fill('sysadmin')
+  await page.getByPlaceholder('••••••••', { exact: true }).fill('admin1234')
+  await page.getByRole('button', { name: 'Sign In', exact: true }).click()
+  await waitForSystemAdminShellReady()
+}
+
+async function primeSeededProofRouteState() {
+  const routeStorageKey = `airmentor-admin-ui:${seededProofRoute}`
+  await page.evaluate(storageKey => {
+    window.sessionStorage.setItem(storageKey, JSON.stringify({
+      tab: 'overview',
+      sectionCode: null,
+    }))
+  }, routeStorageKey)
+}
+
+function buildSeededProofRouteUrl(forceReload = false) {
+  const baseUrl = appUrl.replace(/\/$/, '')
+  const query = forceReload ? `/?keyboard-reload=${Date.now()}` : '/'
+  return `${baseUrl}${query}${seededProofRoute}`
+}
+
+function buildPortalHomeUrl() {
+  return `${appUrl.replace(/\/$/, '')}/#/home`
+}
+
+function escapeRegex(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function visibleProofSurface(name) {
+  return page.locator(`[data-proof-surface="${name}"]:visible`).first()
+}
+
+async function openSeededProofRoute(forceReload = false, reloadAttempt = 0) {
+  await primeSeededProofRouteState()
+  const seededRouteUrl = buildSeededProofRouteUrl(forceReload)
+  await page.goto(seededRouteUrl, { waitUntil: 'domcontentloaded' })
+  await page.waitForFunction(expectedHash => window.location.hash === expectedHash, seededProofRoute)
+  await page.waitForTimeout(500)
+  await expectVisible(page.getByText('Batch 2023 Proof', { exact: true }).last(), 'seeded proof batch breadcrumb')
+  let proofControlPlane = visibleProofSurface('system-admin-proof-control-plane')
+  if (!(await proofControlPlane.isVisible().catch(() => false))) {
+    const overviewTab = page.locator('button[data-tab="true"]').filter({ hasText: 'Overview' }).first()
+    await focusAndActivate(overviewTab, 'batch overview workspace tab')
+    await page.waitForTimeout(250)
+    proofControlPlane = visibleProofSurface('system-admin-proof-control-plane')
+  }
+  await expectVisible(proofControlPlane, 'system admin proof control plane')
+  const checkpointPlayback = proofControlPlane.locator('[data-proof-section="checkpoint-playback"]').first()
+  if (!(await checkpointPlayback.isVisible().catch(() => false))) {
+    await ensureProofRunReady()
+    try {
+      await checkpointPlayback.waitFor({ state: 'visible', timeout: 15_000 })
+    } catch {
+      if (reloadAttempt >= 1) {
+        throw new Error('Checkpoint playback card did not become visible on the seeded proof route')
+      }
+      return openSeededProofRoute(true, reloadAttempt + 1)
+    }
+  }
+  await expectVisible(checkpointPlayback, 'checkpoint playback card', 180_000)
+  return proofControlPlane
+}
+
+async function readPlaybackSelection() {
+  const raw = await page.evaluate(key => window.localStorage.getItem(key), proofPlaybackSelectionStorageKey)
+  assert(raw, 'checkpoint playback selection should be stored in localStorage')
+  return JSON.parse(raw)
+}
+
+async function openAcademicPortal(options = {}) {
+  const { normalizeHomeUrl = false } = options
+  if (normalizeHomeUrl) {
+    await page.goto(buildPortalHomeUrl(), { waitUntil: 'domcontentloaded' })
+  }
+  await focusAndActivate(page.getByRole('button', { name: /Open Academic Portal/i }), 'open academic portal')
+  await expectVisible(page.getByText(/Teaching Workspace Live Mode/), 'academic login')
+  await page.locator('#teacher-username').fill('devika.shetty')
+  await page.locator('#teacher-password').fill('faculty1234')
+  await page.getByRole('button', { name: 'Sign In', exact: true }).click()
+}
+
+async function openFacultyProfileProofPanel() {
+  const teacherProofPanel = visibleProofSurface('teacher-proof-panel')
+  if (await teacherProofPanel.isVisible().catch(() => false)) return teacherProofPanel
+  const facultyProfileButton = page.locator('[data-proof-action="open-faculty-profile"]').first()
+  await focusAndActivate(facultyProfileButton, 'faculty profile navigation')
+  await expectVisible(teacherProofPanel, 'teacher proof panel')
+  return teacherProofPanel
+}
+
+async function resolveTeacherProofActionSource(teacherProofPanel) {
+  const teacherMonitoringQueue = teacherProofPanel.locator('[data-proof-section="monitoring-queue"]').first()
+  await expectVisible(teacherMonitoringQueue, 'teacher monitoring queue')
+  const teacherMonitoringRow = teacherMonitoringQueue.locator('[data-proof-row="teacher-monitoring-item"]').first()
+  if (await teacherMonitoringRow.isVisible().catch(() => false)) return teacherMonitoringRow
+  const teacherElectiveFitRow = teacherProofPanel.locator('[data-proof-row="teacher-elective-fit"]').first()
+  if (await teacherElectiveFitRow.isVisible().catch(() => false)) return teacherElectiveFitRow
+  return null
+}
+
+try {
+  markStep('login-system-admin')
+  await loginAsSystemAdmin()
+
+  markStep('request-flow-keyboard')
+  await focusAndActivate(page.getByRole('button', { name: 'Requests', exact: true }).first(), 'requests navigation')
+  await expectVisible(page.getByText(/^Requests$/).last(), 'requests heading')
+  const requestButton = page.getByRole('button', { name: requestSummary }).first()
+  await focusAndActivate(requestButton, 'request list item')
+  await expectVisible(page.getByText(requestSummary).last(), 'selected request detail')
+  assert(/#\/admin\/requests\//.test(page.url()), `expected deep-linked request URL, got ${page.url()}`)
+  const requestAction = page.getByRole('button', { name: /Take Review|Approve|Mark Implemented|Close/ }).first()
+  await focusAndActivate(requestAction, 'request advance action', ' ')
+  await expectVisible(page.getByText('Request advanced.', { exact: true }), 'request advance flash')
+
+  markStep('student-modal-focus-trap')
+  await focusAndActivate(page.getByRole('button', { name: 'Students', exact: true }).first(), 'students navigation')
+  const studentRegistryButton = page.getByRole('button', { name: /Aarav Sharma.*1MS23CS001/i }).first()
+  await focusAndActivate(studentRegistryButton, 'student registry selection', ' ')
+  await expectVisible(page.getByText('Student Detail', { exact: true }).first(), 'student detail heading')
+  const editStudentButton = page.getByRole('button', { name: 'Edit Student', exact: true }).first()
+  await focusAndActivate(editStudentButton, 'edit student action')
+  const closeDialogButton = page.getByRole('button', { name: 'Close dialog', exact: true }).first()
+  await expectFocused(closeDialogButton, 'dialog close button')
+  await page.keyboard.press('Shift+Tab')
+  const saveStudentButton = page.getByRole('button', { name: 'Save Student', exact: true }).first()
+  await expectFocused(saveStudentButton, 'save student button after reverse tab wrap')
+  await page.keyboard.press('Tab')
+  await expectFocused(closeDialogButton, 'dialog close button after forward tab wrap')
+  await page.keyboard.press('Escape')
+  await expectVisible(editStudentButton, 'edit student action after dialog close')
+  await expectFocused(editStudentButton, 'edit student action after dialog close')
+
+  markStep('proof-dashboard-keyboard')
+  await ensureProofRunReady()
+  let proofControlPlane = await openSeededProofRoute()
+  const firstCheckpointButton = proofControlPlane.locator('[data-proof-action="proof-select-checkpoint"]').first()
+  const firstCheckpointLabel = ((await firstCheckpointButton.textContent().catch(() => '')) ?? '').trim()
+  const firstCheckpointStageLabel = firstCheckpointLabel.includes('·')
+    ? firstCheckpointLabel.split('·').slice(1).join('·').trim()
+    : firstCheckpointLabel
+  const finalCheckpointButton = proofControlPlane
+    .locator('[data-proof-action="proof-select-checkpoint"]')
+    .filter({ hasText: finalCheckpointButtonLabel })
+    .first()
+  await focusAndActivate(finalCheckpointButton, 'final checkpoint selection')
+  const selectedCheckpointBanner = proofControlPlane.locator('[data-proof-section="selected-checkpoint-banner"]').first()
+  await expectText(selectedCheckpointBanner, /Post SEE/i, 'selected checkpoint banner after final checkpoint')
+  await focusAndActivate(proofControlPlane.getByRole('button', { name: 'Reset To Start', exact: true }), 'reset playback button')
+  await expectText(selectedCheckpointBanner, new RegExp(escapeRegex(firstCheckpointStageLabel), 'i'), 'selected checkpoint banner after reset')
+  const playToEndButton = proofControlPlane.getByRole('button', { name: 'Play To End', exact: true })
+  await expectVisible(playToEndButton, 'play to end button')
+  if (await playToEndButton.isDisabled()) {
+    await expectText(selectedCheckpointBanner, new RegExp(escapeRegex(firstCheckpointStageLabel), 'i'), 'selected checkpoint banner when play to end is gated')
+  } else {
+    await focusAndActivate(playToEndButton, 'play to end button')
+    await expectText(selectedCheckpointBanner, /Post SEE/i, 'selected checkpoint banner after play to end')
+  }
+  await readPlaybackSelection()
+
+  markStep('switch-to-academic-portal')
+  await focusAndActivate(page.getByRole('button', { name: 'Logout', exact: true }), 'logout action')
+  await expectVisible(page.getByRole('button', { name: /Open Academic Portal/i }), 'portal home after sysadmin logout', 60_000)
+  await openAcademicPortal({ normalizeHomeUrl: true })
+  const courseLeaderRoleButton = page.locator('[data-proof-action="switch-role"][data-proof-entity-id="Course Leader"]').first()
+  await focusAndActivate(courseLeaderRoleButton, 'course leader role switcher')
+  const teacherProofPanel = await openFacultyProfileProofPanel()
+  await expectVisible(teacherProofPanel, 'teacher proof panel after keyboard navigation')
+
+  markStep('teacher-risk-and-shell-keyboard')
+  let teacherProofActionSource = await resolveTeacherProofActionSource(teacherProofPanel)
+  if (!teacherProofActionSource) {
+    await expectText(teacherProofPanel, /No active run is linked to this faculty context\./i, 'teacher proof panel empty active-run state')
+    await expectText(teacherProofPanel, /No governed queue items are currently linked to this profile\./i, 'teacher proof panel empty monitoring state')
+  } else {
+    const riskExplorerButton = teacherProofActionSource.locator('[data-proof-action="teacher-proof-open-risk-explorer"]').first()
+    await focusAndActivate(riskExplorerButton, 'teacher risk explorer action')
+    const riskExplorerSurface = visibleProofSurface('risk-explorer')
+    await expectVisible(riskExplorerSurface, 'teacher risk explorer surface', 60_000)
+    const riskExplorerBackButton = page.locator('[data-proof-action="risk-explorer-back"]').first()
+    await focusAndActivate(riskExplorerBackButton, 'risk explorer back button')
+    await expectVisible(teacherProofPanel, 'teacher proof panel after risk explorer return')
+
+    teacherProofActionSource = await resolveTeacherProofActionSource(teacherProofPanel)
+    assert(teacherProofActionSource, 'teacher proof action source should still exist after returning from risk explorer')
+    const studentShellButton = teacherProofActionSource.locator('[data-proof-action="teacher-proof-open-student-shell"]').first()
+    await focusAndActivate(studentShellButton, 'teacher student shell action')
+    const studentShellSurface = visibleProofSurface('student-shell')
+    await expectVisible(studentShellSurface, 'teacher student shell surface', 60_000)
+    const studentShellBackButton = page.locator('[data-proof-action="student-shell-back"]').first()
+    await focusAndActivate(studentShellBackButton, 'student shell back button')
+    await expectVisible(teacherProofPanel, 'teacher proof panel after student shell return')
+  }
+
+  markStep('proof-playback-restore-reset')
+  await focusAndActivate(page.getByRole('button', { name: 'Logout', exact: true }), 'academic logout action')
+  await expectVisible(page.getByRole('button', { name: /Open System Admin/i }), 'portal home after academic logout', 60_000)
+  await loginAsSystemAdmin()
+  proofControlPlane = await openSeededProofRoute(true)
+  const restoreBanner = page
+    .locator('[data-restore-banner="true"]')
+    .filter({ hasText: /Proof playback (restored|reset required)/i })
+    .first()
+  if (await restoreBanner.isVisible().catch(() => false)) {
+    const resetPlaybackButton = restoreBanner.getByRole('button', { name: 'Reset playback', exact: true }).first()
+    await focusAndActivate(resetPlaybackButton, 'restore banner reset playback button')
+    await restoreBanner.waitFor({ state: 'hidden', timeout: 30_000 })
+  } else {
+    const restoredCheckpointBanner = proofControlPlane.locator('[data-proof-section="selected-checkpoint-banner"]').first()
+    await expectText(
+      restoredCheckpointBanner,
+      new RegExp(escapeRegex(firstCheckpointStageLabel), 'i'),
+      'selected checkpoint banner after safe playback fallback',
+    )
+  }
+
+  await page.screenshot({ path: successScreenshot, fullPage: true })
+  console.log(`System admin live keyboard regression passed. Screenshot: ${successScreenshot}`)
+  await context.tracing.stop()
+} catch (error) {
+  try {
+    console.error(`[keyboard] current step: ${currentStep}`)
+    console.error(`[keyboard] failure url: ${page.url()}`)
+    const html = await page.content().catch(() => '')
+    if (html) {
+      await writeFile(failureHtml, html, 'utf8')
+      console.error(`Failure HTML: ${failureHtml}`)
+    }
+    await page.screenshot({ path: failureScreenshot, fullPage: true })
+    await context.tracing.stop({ path: failureTrace })
+    console.error(`System admin live keyboard regression failed. Screenshot: ${failureScreenshot}`)
+    console.error(`Trace: ${failureTrace}`)
+  } catch {
+    // Preserve the root failure.
+  }
+  throw error
+} finally {
+  await browser.close()
+}

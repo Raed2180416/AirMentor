@@ -1,4 +1,4 @@
-import { and, desc, eq, or, asc } from 'drizzle-orm'
+import { and, desc, eq, asc } from 'drizzle-orm'
 import type { FastifyRequest } from 'fastify'
 import { z, type ZodType } from 'zod'
 import {
@@ -16,7 +16,6 @@ import type { RouteContext } from '../app.js'
 import { createId } from '../lib/ids.js'
 import { conflict, forbidden, unauthorized, badRequest } from '../lib/http-errors.js'
 import { parseJson, stringifyJson } from '../lib/json.js'
-import { nowIso } from '../lib/time.js'
 
 export const sessionCookieSchema = z.object({
   roleGrantId: z.string().min(1),
@@ -49,7 +48,7 @@ export async function resolveRequestAuth(context: RouteContext, sessionId: strin
   if (!sessionId) return null
   const [session] = await context.db.select().from(sessions).where(eq(sessions.sessionId, sessionId))
   if (!session) return null
-  if (new Date(session.expiresAt).getTime() <= new Date(nowIso()).getTime()) return null
+  if (new Date(session.expiresAt).getTime() <= new Date(context.now()).getTime()) return null
 
   const [user] = await context.db.select().from(userAccounts).where(eq(userAccounts.userId, session.userId))
   if (!user || user.status !== 'active') return null

@@ -21,6 +21,7 @@ import {
   BrandMark,
   Card,
   Chip,
+  Btn,
   FieldInput,
   FieldSelect,
   FieldTextarea,
@@ -88,7 +89,7 @@ export function getStatusColor(status: string): string {
 }
 
 export function FieldLabel({ children }: { children: ReactNode }) {
-  return <label style={{ ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: T.dim, display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{children}</label>
+  return <label style={{ ...mono, fontSize: UI_FONT_SIZES.meta, color: T.muted, display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{children}</label>
 }
 
 export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
@@ -142,10 +143,54 @@ export function SearchField({
 }
 
 export function InfoBanner({ tone = 'neutral', message }: { tone?: 'neutral' | 'error' | 'success'; message: string }) {
+  const color = tone === 'error' ? T.danger : tone === 'success' ? T.success : T.text
+  const accent = tone === 'error' ? T.danger : tone === 'success' ? T.success : T.accent
+  return (
+    <div
+      role={tone === 'error' ? 'alert' : 'status'}
+      aria-live={tone === 'error' ? 'assertive' : 'polite'}
+      style={{ ...mono, fontSize: UI_FONT_SIZES.body, color, border: `1px solid ${accent}40`, background: `${accent}12`, borderRadius: 14, padding: '11px 13px', lineHeight: 1.7 }}
+    >
+      {message}
+    </div>
+  )
+}
+
+export function RestoreBanner({
+  title,
+  message,
+  tone = 'neutral',
+  actionLabel = 'Reset',
+  onAction,
+}: {
+  title: string
+  message: string
+  tone?: 'neutral' | 'error' | 'success'
+  actionLabel?: string
+  onAction: () => void
+}) {
   const color = tone === 'error' ? T.danger : tone === 'success' ? T.success : T.accent
   return (
-    <div style={{ ...mono, fontSize: UI_FONT_SIZES.body, color, border: `1px solid ${color}40`, background: `${color}12`, borderRadius: 14, padding: '11px 13px', lineHeight: 1.7 }}>
-      {message}
+    <div
+      data-restore-banner="true"
+      role={tone === 'error' ? 'alert' : 'status'}
+      aria-live={tone === 'error' ? 'assertive' : 'polite'}
+      style={{
+        borderRadius: 16,
+        border: `1px solid ${color}40`,
+        background: `linear-gradient(180deg, ${color}12, ${T.surface})`,
+        padding: '12px 14px',
+        display: 'grid',
+        gap: 12,
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        <div style={{ display: 'grid', gap: 4, minWidth: 0, flex: 1 }}>
+          <div style={{ ...sora, fontSize: 14, fontWeight: 800, color: T.text }}>{title}</div>
+          <div style={{ ...mono, fontSize: UI_FONT_SIZES.body, color: T.muted, lineHeight: 1.8 }}>{message}</div>
+        </div>
+        <Btn type="button" variant="ghost" onClick={onAction}>{actionLabel}</Btn>
+      </div>
     </div>
   )
 }

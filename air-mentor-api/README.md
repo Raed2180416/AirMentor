@@ -55,6 +55,7 @@ Use seeding on the shared Railway database only when you intentionally want a fu
 
 For a GitHub Pages frontend deployed on a different origin from the API, set:
 - `CORS_ALLOWED_ORIGINS=https://raed2180416.github.io`
+- `CSRF_SECRET=...`
 - `SESSION_COOKIE_SECURE=true`
 - `SESSION_COOKIE_SAME_SITE=none`
 
@@ -66,8 +67,9 @@ The frontend on GitHub Pages and the API on Railway are deployed separately.
 If the UI starts calling routes such as `/api/admin/reminders` and the live API
 returns `Route ... not found`, the frontend is newer than the Railway deploy.
 
-For the previous completed full governed mock-data validation snapshot, see:
-- [full-mock-data-validation-2026-03-23.md](/home/raed/projects/air-mentor-ui/docs/full-mock-data-validation-2026-03-23.md)
+For the current governed verification and remaining-gap status, see:
+- [41-current-state-reconciliation-and-gap-analysis.md](/home/raed/projects/air-mentor-ui/audit/41-current-state-reconciliation-and-gap-analysis.md)
+- [42-audit-navigation-and-document-status.md](/home/raed/projects/air-mentor-ui/audit/42-audit-navigation-and-document-status.md)
 
 This repo now includes [deploy-railway-api.yml](/home/raed/projects/air-mentor-ui/.github/workflows/deploy-railway-api.yml)
 to redeploy the backend from `main`. To enable it in GitHub:

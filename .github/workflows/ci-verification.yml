@@ -1,0 +1,156 @@
+name: CI Verification
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-verification-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repo-hygiene:
+    name: Repo hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check removed prototype and temp artifacts stay removed
+        run: |
+          banned_paths=(
+            "caludeui.jsx"
+            "chatgpt.jsx"
+            "Pre_Project_Presentation_Template_8th Sem 1.pdf"
+            "docs/backend-parity-checklist.md"
+            "docs/sysadmin-redesign-spec.md"
+            "msruasdocs/B.Tech. in Artficaial Intelligence and Machine Learning.pdf"
+            "msruasdocs/B.Tech. in Computer Science & Engineering.pdf"
+            "msruasdocs/B.Tech. in Information Science & Engineering.pdf"
+            "msruasdocs/B.Tech. in Mathematics and Computing.pdf"
+            "msruasdocs/msruas-examination-regulations.pdf"
+            "src/system-admin-mock-app.tsx"
+            "src/system-admin-mock-data.ts"
+            "tests/system-admin-mock-data.test.ts"
+            "scripts/system-admin-mock-acceptance.mjs"
+            "scripts/playwright-admin-mock-acceptance.sh"
+          )
+          for path in "${banned_paths[@]}"; do
+            if [ -e "$path" ]; then
+              echo "Banned artifact is present again: $path"
+              exit 1
+            fi
+          done
+
+          if find . -maxdepth 1 -type f -name 'tmp_*.cjs' | grep -q .; then
+            echo "Temporary root tmp_*.cjs artifacts must not be committed."
+            find . -maxdepth 1 -type f -name 'tmp_*.cjs'
+            exit 1
+          fi
+
+          if [ -d "air-mentor-api/output" ]; then
+            echo "air-mentor-api/output must remain a generated local artifact, not a committed directory."
+            exit 1
+          fi
+
+  lint-guardrails:
+    name: Lint guardrails
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint startup diagnostics and telemetry slices
+        run: >
+          npx eslint
+          src/startup-diagnostics.ts
+          src/telemetry.ts
+          tests/frontend-startup-diagnostics.test.ts
+          tests/frontend-telemetry.test.ts
+          air-mentor-api/src/startup-diagnostics.ts
+          air-mentor-api/src/lib/telemetry.ts
+          air-mentor-api/tests/startup-diagnostics.test.ts
+
+  lint:
+    name: Lint verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run lint
+        run: npm run lint
+
+  frontend:
+    name: Frontend verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run frontend tests
+        run: npm test -- --reporter=dot
+
+      - name: Build frontend
+        env:
+          VITE_AIRMENTOR_API_BASE_URL: ${{ vars.VITE_AIRMENTOR_API_BASE_URL }}
+        run: npm run build
+
+  backend-fast:
+    name: Backend fast verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build API
+        run: npm --workspace air-mentor-api run build
+
+      - name: Run backend fast tests
+        run: npm --workspace air-mentor-api test -- --reporter=dot

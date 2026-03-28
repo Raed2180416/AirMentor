@@ -458,23 +458,18 @@ export function UploadPage({
   onRequestUnlock: (offeringId: string, kind: EntryKind) => void
   availableOfferings?: Offering[]
   onOpenSchemeSetup: (offering?: Offering) => void
-}) {
+  }) {
   const { getSchemeForOffering, getStudentsPatched } = useAppSelectors()
   const visibleOfferings = availableOfferings ?? (offering ? [offering] : [])
   const [selectedKind, setSelectedKind] = useState<EntryKind>(defaultKind)
-  const [selectedOffId, setSelectedOffId] = useState<string>(offering?.offId ?? visibleOfferings[0]?.offId ?? '')
+  const [selectedOffIdState, setSelectedOffIdState] = useState<string>(offering?.offId ?? visibleOfferings[0]?.offId ?? '')
   const [unlockRequested, setUnlockRequested] = useState<EntryKind | null>(null)
 
-  useEffect(() => {
-    if (visibleOfferings.length === 0) {
-      if (selectedOffId !== '') setSelectedOffId('')
-      return
-    }
-    const nextSelection = visibleOfferings.some(item => item.offId === selectedOffId)
-      ? selectedOffId
-      : (offering?.offId ?? visibleOfferings[0]?.offId ?? '')
-    if (nextSelection !== selectedOffId) setSelectedOffId(nextSelection)
-  }, [offering?.offId, selectedOffId, visibleOfferings])
+  const selectedOffId = visibleOfferings.length === 0
+    ? ''
+    : (visibleOfferings.some(item => item.offId === selectedOffIdState)
+        ? selectedOffIdState
+        : (offering?.offId ?? visibleOfferings[0]?.offId ?? ''))
 
   const selected = ENTRY_CATALOG.find(item => item.kind === selectedKind) ?? ENTRY_CATALOG[0]
   const selectedOffering = visibleOfferings.find(item => item.offId === selectedOffId) ?? offering ?? visibleOfferings[0] ?? null
@@ -539,7 +534,7 @@ export function UploadPage({
           <select id="entry-course-select" aria-label="Select course" title="Select course" value={selectedCourseCode} onChange={event => {
             const code = event.target.value
             const firstClass = visibleOfferings.find(item => item.code === code)
-            if (firstClass) setSelectedOffId(firstClass.offId)
+            if (firstClass) setSelectedOffIdState(firstClass.offId)
           }} style={{ width: '100%', ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 10px' }}>
             {Array.from(new Set(visibleOfferings.map(item => item.code))).map(code => {
               const first = visibleOfferings.find(item => item.code === code)
@@ -549,11 +544,11 @@ export function UploadPage({
         </div>
         <div>
           <label htmlFor="entry-class-select" style={{ ...mono, fontSize: 10, color: T.muted, marginRight: 8 }}>Class:</label>
-          <select id="entry-class-select" aria-label="Select class" title="Select class" value={selectedOffId} onChange={event => setSelectedOffId(event.target.value)} style={{ width: '100%', ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 10px' }}>
+          <select id="entry-class-select" aria-label="Select class" title="Select class" value={selectedOffId} onChange={event => setSelectedOffIdState(event.target.value)} style={{ width: '100%', ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '7px 10px' }}>
             {classOfferings.map(item => <option key={item.offId} value={item.offId}>{item.year} · Sec {item.section} · {getStudentsPatched(item).length} students</option>)}
           </select>
         </div>
-        <Btn size="sm" onClick={() => setSelectedOffId(selectedOffId)}>Select Class</Btn>
+        <Btn size="sm" onClick={() => setSelectedOffIdState(selectedOffId)}>Select Class</Btn>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         {ENTRY_CATALOG.map(item => {
@@ -647,8 +642,11 @@ export function EntryWorkspacePage({
   const groupedSections = selectedOffering
     ? availableOfferings.filter(item => item.code === selectedOffering.code && item.year === selectedOffering.year)
     : []
-  const [selectedClassOffId, setSelectedClassOffId] = useState<string>('all')
+  const [selectedClassOffIdState, setSelectedClassOffIdState] = useState<string>('all')
   const selected = ENTRY_CATALOG.find(item => item.kind === kind) ?? ENTRY_CATALOG[0]
+  const selectedClassOffId = selectedClassOffIdState === 'all' || groupedSections.some(section => section.offId === selectedClassOffIdState)
+    ? selectedClassOffIdState
+    : offeringId
   if (!selectedOffering) {
     return (
       <PageShell size="wide">
@@ -670,10 +668,6 @@ export function EntryWorkspacePage({
   const visibleSections = selectedClassOffId === 'all' ? groupedSections : groupedSections.filter(section => section.offId === selectedClassOffId)
   const latestAudit = lockAuditByTarget[`${selectedOffering.offId}::${kind}`]?.at(-1)
 
-  useEffect(() => {
-    setSelectedClassOffId(offeringId)
-  }, [offeringId])
-
   return (
     <PageShell size="wide">
       <PageBackButton onClick={onBack} />
@@ -684,7 +678,7 @@ export function EntryWorkspacePage({
         </div>
         <div style={{ minWidth: 280 }}>
           <label htmlFor="entry-workspace-class" style={{ ...mono, fontSize: 10, color: T.muted, display: 'block', marginBottom: 4 }}>Class</label>
-          <select id="entry-workspace-class" value={selectedClassOffId} onChange={event => setSelectedClassOffId(event.target.value)} style={{ width: '100%', ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
+          <select id="entry-workspace-class" value={selectedClassOffId} onChange={event => setSelectedClassOffIdState(event.target.value)} style={{ width: '100%', ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
             <option value="all">All mapped classes for {selectedOffering.code}</option>
             {groupedSections.map(section => <option key={section.offId} value={section.offId}>{section.year} · Sec {section.section} · {getStudentsPatched(section).length} students</option>)}
           </select>

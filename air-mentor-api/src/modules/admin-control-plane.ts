@@ -15,6 +15,8 @@ import {
   courses,
   departments,
   facultyAppointments,
+  facultyCalendarAdminWorkspaces,
+  facultyCalendarWorkspaces,
   facultyOfferingOwnerships,
   facultyProfiles,
   mentorAssignments,
@@ -29,7 +31,6 @@ import { createId } from '../lib/ids.js'
 import { forbidden, notFound } from '../lib/http-errors.js'
 import { parseJson, stringifyJson } from '../lib/json.js'
 import {
-  createAdminRequestTransition,
   emitAuditEvent,
   getAuditEventsForEntity,
   mapAuditEvent,
@@ -185,6 +186,106 @@ async function saveRuntimeSlice(context: RouteContext, stateKey: string, payload
   })
 }
 
+function mapFacultyCalendarTemplateRow(row: typeof facultyCalendarWorkspaces.$inferSelect) {
+  const parsed = facultyCalendarTemplateSchema.safeParse(parseJson(row.templateJson, {}))
+  return parsed.success ? parsed.data : null
+}
+
+function mapFacultyCalendarAdminWorkspaceRow(row: typeof facultyCalendarAdminWorkspaces.$inferSelect) {
+  const parsed = facultyCalendarWorkspaceSchema.safeParse(parseJson(row.workspaceJson, {}))
+  return parsed.success ? parsed.data : null
+}
+
+async function loadFacultyCalendarTemplate(context: RouteContext, facultyId: string) {
+  const [templateRow] = await context.db
+    .select()
+    .from(facultyCalendarWorkspaces)
+    .where(eq(facultyCalendarWorkspaces.facultyId, facultyId))
+  const templateFromTable = templateRow ? mapFacultyCalendarTemplateRow(templateRow) : null
+  if (templateFromTable) return templateFromTable
+  const timetablePayload = await getRuntimeSlice(context, 'timetableByFacultyId', {} as Record<string, unknown>)
+  const parsedFallback = facultyCalendarTemplateSchema.safeParse(timetablePayload?.[facultyId])
+  return parsedFallback.success ? parsedFallback.data : null
+}
+
+async function loadFacultyCalendarAdminWorkspace(context: RouteContext, facultyId: string) {
+  const [workspaceRow] = await context.db
+    .select()
+    .from(facultyCalendarAdminWorkspaces)
+    .where(eq(facultyCalendarAdminWorkspaces.facultyId, facultyId))
+  const workspaceFromTable = workspaceRow ? mapFacultyCalendarAdminWorkspaceRow(workspaceRow) : null
+  if (workspaceFromTable) return workspaceFromTable
+  const workspacePayload = await getRuntimeSlice(context, 'adminCalendarByFacultyId', {} as Record<string, unknown>)
+  const parsedFallback = facultyCalendarWorkspaceSchema.safeParse(workspacePayload?.[facultyId])
+  return parsedFallback.success ? parsedFallback.data : { publishedAt: null, markers: [] }
+}
+
+async function saveFacultyCalendarTemplateProjection(
+  context: RouteContext,
+  facultyId: string,
+  template: z.infer<typeof facultyCalendarTemplateSchema> | null,
+) {
+  const [currentTemplateRow, timetablePayload] = await Promise.all([
+    context.db.select().from(facultyCalendarWorkspaces).where(eq(facultyCalendarWorkspaces.facultyId, facultyId)).then(rows => rows[0] ?? null),
+    getRuntimeSlice(context, 'timetableByFacultyId', {} as Record<string, unknown>),
+  ])
+  const now = context.now()
+  if (template) {
+    if (currentTemplateRow) {
+      await context.db.update(facultyCalendarWorkspaces).set({
+        templateJson: stringifyJson(template),
+        version: currentTemplateRow.version + 1,
+        updatedAt: now,
+      }).where(eq(facultyCalendarWorkspaces.facultyId, facultyId))
+    } else {
+      await context.db.insert(facultyCalendarWorkspaces).values({
+        facultyId,
+        templateJson: stringifyJson(template),
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      })
+    }
+  } else if (currentTemplateRow) {
+    await context.db.delete(facultyCalendarWorkspaces).where(eq(facultyCalendarWorkspaces.facultyId, facultyId))
+  }
+  const nextTimetablePayload = { ...timetablePayload }
+  if (template) nextTimetablePayload[facultyId] = template
+  else delete nextTimetablePayload[facultyId]
+  await saveRuntimeSlice(context, 'timetableByFacultyId', nextTimetablePayload)
+}
+
+async function saveFacultyCalendarAdminWorkspaceProjection(
+  context: RouteContext,
+  facultyId: string,
+  workspace: z.infer<typeof facultyCalendarWorkspaceSchema>,
+) {
+  const [currentWorkspaceRow, workspacePayload] = await Promise.all([
+    context.db.select().from(facultyCalendarAdminWorkspaces).where(eq(facultyCalendarAdminWorkspaces.facultyId, facultyId)).then(rows => rows[0] ?? null),
+    getRuntimeSlice(context, 'adminCalendarByFacultyId', {} as Record<string, unknown>),
+  ])
+  const now = context.now()
+  if (currentWorkspaceRow) {
+    await context.db.update(facultyCalendarAdminWorkspaces).set({
+      workspaceJson: stringifyJson(workspace),
+      version: currentWorkspaceRow.version + 1,
+      updatedAt: now,
+    }).where(eq(facultyCalendarAdminWorkspaces.facultyId, facultyId))
+  } else {
+    await context.db.insert(facultyCalendarAdminWorkspaces).values({
+      facultyId,
+      workspaceJson: stringifyJson(workspace),
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    })
+  }
+  await saveRuntimeSlice(context, 'adminCalendarByFacultyId', {
+    ...workspacePayload,
+    [facultyId]: workspace,
+  })
+}
+
 function mapReminder(row: typeof adminReminders.$inferSelect) {
   return {
     reminderId: row.reminderId,
@@ -258,8 +359,6 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
       if ((query.departmentId || query.academicFacultyId) && !scopedBranchIds.has(row.branchId)) return false
       return true
     })
-    const scopedBatchIds = new Set(scopedBatches.map(row => row.batchId))
-
     const results: Array<{
       key: string
       entityType: string
@@ -511,21 +610,17 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
   }, async request => {
     requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(facultyCalendarParamsSchema, request.params)
-    const [profile, timetablePayload, workspacePayload] = await Promise.all([
+    const [profile, template, workspace] = await Promise.all([
       context.db.select().from(facultyProfiles).where(eq(facultyProfiles.facultyId, params.facultyId)).then(rows => rows[0] ?? null),
-      getRuntimeSlice(context, 'timetableByFacultyId', {} as Record<string, unknown>),
-      getRuntimeSlice(context, 'adminCalendarByFacultyId', {} as Record<string, unknown>),
+      loadFacultyCalendarTemplate(context, params.facultyId),
+      loadFacultyCalendarAdminWorkspace(context, params.facultyId),
     ])
     if (!profile) throw notFound('Faculty profile not found')
-    const rawTemplate = timetablePayload?.[params.facultyId]
-    const rawWorkspace = workspacePayload?.[params.facultyId]
-    const parsedWorkspace = facultyCalendarWorkspaceSchema.safeParse(rawWorkspace)
-    const workspace = parsedWorkspace.success ? parsedWorkspace.data : { publishedAt: null, markers: [] }
     const publishedAt = workspace.publishedAt ?? null
     const directEditWindowEndsAt = publishedAt ? addDays(publishedAt, 14) : null
     return {
       facultyId: params.facultyId,
-      template: rawTemplate && typeof rawTemplate === 'object' ? rawTemplate : null,
+      template,
       workspace,
       directEditWindowEndsAt,
       classEditingLocked: !!directEditWindowEndsAt && new Date(directEditWindowEndsAt).getTime() < new Date(context.now()).getTime(),
@@ -538,17 +633,13 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
     const auth = requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(facultyCalendarParamsSchema, request.params)
     const body = parseOrThrow(facultyCalendarSaveSchema, request.body)
-    const [profile, timetablePayload, workspacePayload] = await Promise.all([
+    const [profile, currentTemplate, currentWorkspace] = await Promise.all([
       context.db.select().from(facultyProfiles).where(eq(facultyProfiles.facultyId, params.facultyId)).then(rows => rows[0] ?? null),
-      getRuntimeSlice(context, 'timetableByFacultyId', {} as Record<string, unknown>),
-      getRuntimeSlice(context, 'adminCalendarByFacultyId', {} as Record<string, unknown>),
+      loadFacultyCalendarTemplate(context, params.facultyId),
+      loadFacultyCalendarAdminWorkspace(context, params.facultyId),
     ])
     if (!profile) throw notFound('Faculty profile not found')
 
-    const currentTemplate = timetablePayload?.[params.facultyId] ?? null
-    const currentWorkspace = facultyCalendarWorkspaceSchema.safeParse(workspacePayload?.[params.facultyId]).success
-      ? facultyCalendarWorkspaceSchema.parse(workspacePayload?.[params.facultyId])
-      : { publishedAt: null, markers: [] }
     const directEditWindowEndsAt = currentWorkspace.publishedAt ? addDays(currentWorkspace.publishedAt, 14) : null
     const classEditingLocked = !!directEditWindowEndsAt && new Date(directEditWindowEndsAt).getTime() < new Date(context.now()).getTime()
     const templateChanged = stringifyJson(currentTemplate) !== stringifyJson(body.template)
@@ -568,17 +659,9 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
         }),
     }
 
-    const nextTimetablePayload = { ...timetablePayload }
-    if (body.template) nextTimetablePayload[params.facultyId] = body.template
-    else delete nextTimetablePayload[params.facultyId]
-    const nextWorkspacePayload = {
-      ...workspacePayload,
-      [params.facultyId]: nextWorkspace,
-    }
-
     await Promise.all([
-      saveRuntimeSlice(context, 'timetableByFacultyId', nextTimetablePayload),
-      saveRuntimeSlice(context, 'adminCalendarByFacultyId', nextWorkspacePayload),
+      saveFacultyCalendarTemplateProjection(context, params.facultyId, body.template),
+      saveFacultyCalendarAdminWorkspaceProjection(context, params.facultyId, nextWorkspace),
     ])
 
     await emitAuditEvent(context, {
@@ -644,8 +727,8 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
       requestRows,
       reassessmentRows,
       alertDecisionRows,
-      timetableRuntimeRows,
-      calendarRuntimeRows,
+      timetableRows,
+      calendarWorkspaceRows,
       viewerAppointmentRows,
     ] = await Promise.all([
       context.db.select().from(facultyProfiles).where(eq(facultyProfiles.facultyId, params.facultyId)),
@@ -664,8 +747,8 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
       context.db.select().from(adminRequests),
       context.db.select().from(reassessmentEvents),
       context.db.select().from(alertDecisions),
-      context.db.select().from(academicRuntimeState).where(eq(academicRuntimeState.stateKey, 'timetableByFacultyId')),
-      context.db.select().from(academicRuntimeState).where(eq(academicRuntimeState.stateKey, 'adminCalendarByFacultyId')),
+      context.db.select().from(facultyCalendarWorkspaces).where(eq(facultyCalendarWorkspaces.facultyId, params.facultyId)),
+      context.db.select().from(facultyCalendarAdminWorkspaces).where(eq(facultyCalendarAdminWorkspaces.facultyId, params.facultyId)),
       auth.activeRoleGrant.roleCode === 'HOD' && auth.facultyId
         ? context.db.select().from(facultyAppointments).where(eq(facultyAppointments.facultyId, auth.facultyId))
         : Promise.resolve([]),
@@ -692,15 +775,8 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
     const termById = Object.fromEntries(termRows.map(row => [row.termId, row]))
     const courseById = Object.fromEntries(courseRows.map(row => [row.courseId, row]))
     const primaryAppointment = appointmentRows.find(row => row.isPrimary === 1) ?? appointmentRows[0] ?? null
-    const timetablePayload = timetableRuntimeRows[0] ? parseJson(timetableRuntimeRows[0].payloadJson, {} as Record<string, unknown>) : {}
-    const timetableTemplate = timetablePayload && typeof timetablePayload === 'object'
-      ? (timetablePayload as Record<string, unknown>)[params.facultyId]
-      : null
-    const calendarWorkspacePayload = calendarRuntimeRows[0] ? parseJson(calendarRuntimeRows[0].payloadJson, {} as Record<string, unknown>) : {}
-    const parsedCalendarWorkspace = calendarWorkspacePayload && typeof calendarWorkspacePayload === 'object'
-      ? facultyCalendarWorkspaceSchema.safeParse((calendarWorkspacePayload as Record<string, unknown>)[params.facultyId])
-      : null
-    const calendarWorkspace = parsedCalendarWorkspace?.success ? parsedCalendarWorkspace.data : null
+    const timetableTemplate = timetableRows[0] ? mapFacultyCalendarTemplateRow(timetableRows[0]) : null
+    const calendarWorkspace = calendarWorkspaceRows[0] ? mapFacultyCalendarAdminWorkspaceRow(calendarWorkspaceRows[0]) : null
 
     const activeOwnerships = ownershipRows.filter(row => row.status === 'active')
     const leaderLikeOwnerships = activeOwnerships.filter(row => isLeaderLikeOwnershipRole(row.ownershipRole))
@@ -889,9 +965,9 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
       })),
       timetableStatus: {
         hasTemplate: !!timetableTemplate,
-        publishedAt: timetableTemplate ? (calendarWorkspace?.publishedAt ?? timetableRuntimeRows[0]?.updatedAt ?? null) : null,
+        publishedAt: timetableTemplate ? (calendarWorkspace?.publishedAt ?? timetableRows[0]?.updatedAt ?? null) : null,
         directEditWindowEndsAt: timetableTemplate
-          ? (calendarWorkspace?.publishedAt ? addDays(calendarWorkspace.publishedAt, 14) : (timetableRuntimeRows[0]?.updatedAt ? addDays(timetableRuntimeRows[0].updatedAt, 14) : null))
+          ? (calendarWorkspace?.publishedAt ? addDays(calendarWorkspace.publishedAt, 14) : (timetableRows[0]?.updatedAt ? addDays(timetableRows[0].updatedAt, 14) : null))
           : null,
       },
       requestSummary: {

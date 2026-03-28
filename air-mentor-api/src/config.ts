@@ -8,9 +8,14 @@ export type AppConfig = {
   host: string
   corsAllowedOrigins: string[]
   sessionCookieName: string
+  csrfCookieName: string
+  csrfSecret: string
+  csrfSecretConfigured: boolean
   sessionCookieSecure: boolean
   sessionCookieSameSite: 'lax' | 'strict' | 'none'
   sessionTtlHours: number
+  loginRateLimitWindowMs: number
+  loginRateLimitMaxAttempts: number
   defaultThemeMode: string
 }
 
@@ -49,21 +54,43 @@ function parseSameSite(value: string | undefined, fallback: 'lax' | 'strict' | '
   return fallback
 }
 
+function isLocalOrigin(origin: string) {
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin.trim())
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
+  const databaseUrl = env.DATABASE_URL ?? env.RAILWAY_TEST_DATABASE_URL ?? 'postgres://postgres:postgres@127.0.0.1:5432/airmentor'
+  const sessionCookieName = env.SESSION_COOKIE_NAME ?? 'airmentor_session'
+  const corsAllowedOrigins = parseStringList(env.CORS_ALLOWED_ORIGINS, [
+    'http://127.0.0.1:5173',
+    'http://localhost:5173',
+    'http://127.0.0.1:4173',
+    'http://localhost:4173',
+  ])
+  const productionLikeTarget = env.NODE_ENV === 'production'
+    || corsAllowedOrigins.some(origin => !isLocalOrigin(origin))
+  const sessionCookieSameSite = parseSameSite(
+    env.SESSION_COOKIE_SAME_SITE,
+    productionLikeTarget ? 'none' : 'lax',
+  )
+  const sessionCookieSecure = parseBoolean(
+    env.SESSION_COOKIE_SECURE,
+    productionLikeTarget || sessionCookieSameSite === 'none',
+  )
   return {
-    databaseUrl: env.DATABASE_URL ?? env.RAILWAY_TEST_DATABASE_URL ?? 'postgres://postgres:postgres@127.0.0.1:5432/airmentor',
+    databaseUrl,
     port: parseNumber(env.PORT, 4000),
     host: env.HOST ?? '127.0.0.1',
-    corsAllowedOrigins: parseStringList(env.CORS_ALLOWED_ORIGINS, [
-      'http://127.0.0.1:5173',
-      'http://localhost:5173',
-      'http://127.0.0.1:4173',
-      'http://localhost:4173',
-    ]),
-    sessionCookieName: env.SESSION_COOKIE_NAME ?? 'airmentor_session',
-    sessionCookieSecure: parseBoolean(env.SESSION_COOKIE_SECURE, false),
-    sessionCookieSameSite: parseSameSite(env.SESSION_COOKIE_SAME_SITE, 'lax'),
+    corsAllowedOrigins,
+    sessionCookieName,
+    csrfCookieName: env.CSRF_COOKIE_NAME ?? 'airmentor_csrf',
+    csrfSecret: env.CSRF_SECRET ?? `${databaseUrl}::${sessionCookieName}`,
+    csrfSecretConfigured: Boolean(env.CSRF_SECRET),
+    sessionCookieSecure,
+    sessionCookieSameSite,
     sessionTtlHours: parseNumber(env.SESSION_TTL_HOURS, 24 * 7),
+    loginRateLimitWindowMs: parseNumber(env.LOGIN_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
+    loginRateLimitMaxAttempts: parseNumber(env.LOGIN_RATE_LIMIT_MAX_ATTEMPTS, 8),
     defaultThemeMode: env.DEFAULT_THEME_MODE ?? 'frosted-focus-light',
   }
 }

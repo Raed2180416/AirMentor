@@ -48,6 +48,7 @@ export type ApiUiPreferences = {
 
 export type ApiSessionResponse = {
   sessionId: string
+  csrfToken: string
   user: {
     userId: string
     username: string
@@ -561,6 +562,12 @@ export type ApiProofDashboard = {
     failureMessage: string | null
     progress: Record<string, unknown> | null
     metrics: Record<string, unknown>
+    queueAgeSeconds?: number | null
+    leaseState?: 'leased' | 'expired' | 'released' | null
+    leaseExpiresAt?: string | null
+    retryState?: 'retryable' | 'retry-of-previous-run' | null
+    retryOfSimulationRunId?: string | null
+    failureState?: 'none' | 'retryable'
   }>
   activeRunDetail: {
     simulationRunId: string
@@ -663,6 +670,34 @@ export type ApiProofDashboard = {
         correlations?: Record<string, unknown> | null
       } | null
       correlations: Record<string, unknown> | null
+    }
+    queueDiagnostics?: {
+      queuedRunCount: number
+      runningRunCount: number
+      failedRunCount: number
+      retryableRunCount: number
+      retryInFlightCount: number
+      oldestQueuedRunAgeSeconds: number | null
+      expiredLeaseRunCount: number
+    }
+    workerDiagnostics?: {
+      queueAgeSeconds: number | null
+      leaseState: 'leased' | 'expired' | 'released' | null
+      leaseExpiresAt: string | null
+      retryState: 'retryable' | 'retry-of-previous-run' | null
+      retryOfSimulationRunId: string | null
+      failureState: 'none' | 'retryable'
+      progressPhase: string | null
+      progressPercent: number | null
+    } | null
+    checkpointReadiness?: {
+      totalCheckpointCount: number
+      readyCheckpointCount: number
+      blockedCheckpointCount: number
+      playbackBlockedCheckpointCount: number
+      totalBlockingQueueItemCount: number
+      firstBlockedCheckpointId: string | null
+      lastReadyCheckpointId: string | null
     }
     teacherAllocationLoad: Array<{
       teacherLoadProfileId: string
@@ -1736,6 +1771,61 @@ export type ApiAcademicRuntimeState = {
   calendarAudit: CalendarAuditEvent[]
 }
 
+export type ApiAcademicTaskRecord = SharedTask & {
+  version: number
+}
+
+export type ApiAcademicTaskListResponse = {
+  items: ApiAcademicTaskRecord[]
+}
+
+export type ApiUpsertAcademicTaskRequest = {
+  task: SharedTask
+  expectedVersion?: number
+}
+
+export type ApiUpsertAcademicTaskResponse = {
+  task: ApiAcademicTaskRecord
+  created: boolean
+}
+
+export type ApiAcademicTaskPlacementRecord = TaskCalendarPlacement
+
+export type ApiAcademicTaskPlacementListResponse = {
+  items: ApiAcademicTaskPlacementRecord[]
+}
+
+export type ApiUpsertAcademicTaskPlacementRequest = {
+  placement: TaskCalendarPlacement
+  expectedUpdatedAt?: number
+}
+
+export type ApiUpsertAcademicTaskPlacementResponse = {
+  placement: ApiAcademicTaskPlacementRecord
+  created: boolean
+}
+
+export type ApiDeleteAcademicTaskPlacementResponse = {
+  ok: true
+  taskId: string
+  deleted: boolean
+}
+
+export type ApiAcademicCalendarAuditRecord = CalendarAuditEvent
+
+export type ApiAcademicCalendarAuditListResponse = {
+  items: ApiAcademicCalendarAuditRecord[]
+}
+
+export type ApiAppendAcademicCalendarAuditRequest = {
+  event: CalendarAuditEvent
+}
+
+export type ApiAppendAcademicCalendarAuditResponse = {
+  event: ApiAcademicCalendarAuditRecord
+  created: boolean
+}
+
 export type ApiCourseOutcomeScopeType = 'institution' | 'branch' | 'batch' | 'offering'
 
 export type ApiCourseOutcome = {
@@ -1881,6 +1971,9 @@ export type ApiProofRefresh = {
   affectedBatchIds: string[]
   queuedSimulationRunIds: string[]
   curriculumImportVersionId: string | null
+  failedBatchIds: string[]
+  status: 'not-needed' | 'queued' | 'degraded'
+  warning: string | null
 }
 
 export type ApiCurriculumLinkageGenerationStatus = {
@@ -1952,6 +2045,18 @@ export type ApiCurriculumLinkageCandidateRegenerateResult = {
   curriculumCourseId: string | null
   items: ApiCurriculumLinkageCandidate[]
   candidateGenerationStatus: ApiCurriculumLinkageGenerationStatus
+}
+
+export type ApiCurriculumLinkageApprovalResult = {
+  ok: true
+  batchId: string
+  curriculumLinkageCandidateId: string
+  approvalSucceeded: true
+  proofRefreshQueued: boolean
+  proofRefreshWarning: string | null
+  affectedBatchIds: string[]
+  curriculumImportVersionId: string | null
+  proofRefresh?: ApiProofRefresh
 }
 
 export type ApiAcademicMeeting = AcademicMeeting

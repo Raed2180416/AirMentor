@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { BellRing, CalendarDays, ChevronLeft, ChevronRight, Clock3, GripVertical, Plus, Save, Sparkles, Trash2, X } from 'lucide-react'
 import type { Offering } from './data'
 import { T, mono, sora } from './data'
@@ -369,7 +369,7 @@ export function SystemAdminTimetableEditor({
     }))
   }, [dayStartMinutes, draftTemplate.classBlocks, draftWorkspace.markers, weekDates])
 
-  const resolvePreview = (pointerEvent: PointerEvent, sourceInteraction: InteractionState | null): InteractionPreview | null => {
+  const resolvePreview = useCallback((pointerEvent: PointerEvent, sourceInteraction: InteractionState | null): InteractionPreview | null => {
     const entry = Object.entries(columnRefs.current).find(([, node]) => {
       if (!node) return false
       const rect = node.getBoundingClientRect()
@@ -395,7 +395,124 @@ export function SystemAdminTimetableEditor({
       return { dateISO, day, startMinutes: next.startMinutes, endMinutes: next.endMinutes }
     }
     return null
-  }
+  }, [dayEndMinutes, dayStartMinutes, timedEventsByDate])
+
+  const applyClassChange = useCallback((blockId: string, preview: InteractionPreview) => {
+    if (classEditingLocked) return
+    setDraftTemplate(current => {
+      const block = current.classBlocks.find(item => item.id === blockId)
+      if (!block) return current
+      const nextBlock: FacultyTimetableClassBlock = {
+        ...block,
+        day: preview.day,
+        dateISO: block.kind === 'extra' ? preview.dateISO : undefined,
+        startMinutes: preview.startMinutes,
+        endMinutes: preview.endMinutes,
+      }
+      const collisionPool = current.classBlocks.filter(item => item.id === blockId || classBlockOccursOnDate(item, preview.dateISO, preview.day))
+      const reflowed = reflowClassDayRanges({
+        blocks: collisionPool.map(item => item.id === blockId ? nextBlock : item),
+        targetId: blockId,
+        desiredStartMinutes: preview.startMinutes,
+        desiredEndMinutes: preview.endMinutes,
+        dayStartMinutes: current.dayStartMinutes,
+        dayEndMinutes: current.dayEndMinutes,
+        snapThresholdMinutes: 14,
+      })
+      if (!reflowed) return current
+      return {
+        ...current,
+        updatedAt: Date.now(),
+        classBlocks: current.classBlocks.map(item => {
+          if (!reflowed.rangesById[item.id] && item.id !== blockId) return item
+          const range = reflowed.rangesById[item.id]
+          if (item.id === blockId) {
+            return {
+              ...nextBlock,
+              startMinutes: range?.startMinutes ?? preview.startMinutes,
+              endMinutes: range?.endMinutes ?? preview.endMinutes,
+            }
+          }
+          if (!range) return item
+          return {
+            ...item,
+            startMinutes: range.startMinutes,
+            endMinutes: range.endMinutes,
+          }
+        }),
+      }
+    })
+  }, [classEditingLocked])
+
+  const applyClassResize = useCallback((blockId: string, preview: InteractionPreview) => {
+    if (classEditingLocked) return
+    setDraftTemplate(current => {
+      const block = current.classBlocks.find(item => item.id === blockId)
+      if (!block) return current
+      const nextBlock: FacultyTimetableClassBlock = {
+        ...block,
+        startMinutes: preview.startMinutes,
+        endMinutes: preview.endMinutes,
+      }
+      const focusDateISO = block.dateISO ?? preview.dateISO
+      const collisionPool = current.classBlocks.filter(item => item.id === blockId || classBlockOccursOnDate(item, focusDateISO, block.day))
+      const reflowed = reflowClassDayRanges({
+        blocks: collisionPool.map(item => item.id === blockId ? nextBlock : item),
+        targetId: blockId,
+        desiredStartMinutes: preview.startMinutes,
+        desiredEndMinutes: preview.endMinutes,
+        dayStartMinutes: current.dayStartMinutes,
+        dayEndMinutes: current.dayEndMinutes,
+        snapThresholdMinutes: 14,
+      })
+      if (!reflowed) return current
+      return {
+        ...current,
+        updatedAt: Date.now(),
+        classBlocks: current.classBlocks.map(item => {
+          const range = reflowed.rangesById[item.id]
+          if (item.id === blockId) {
+            return {
+              ...item,
+              startMinutes: range?.startMinutes ?? preview.startMinutes,
+              endMinutes: range?.endMinutes ?? preview.endMinutes,
+            }
+          }
+          if (!range) return item
+          return {
+            ...item,
+            startMinutes: range.startMinutes,
+            endMinutes: range.endMinutes,
+          }
+        }),
+      }
+    })
+  }, [classEditingLocked])
+
+  const applyMarkerChange = useCallback((markerId: string, preview: InteractionPreview) => {
+    setDraftWorkspace(current => ({
+      ...current,
+      markers: sortMarkers(current.markers.map(marker => marker.markerId === markerId ? {
+        ...marker,
+        dateISO: preview.dateISO,
+        startMinutes: preview.startMinutes,
+        endMinutes: preview.endMinutes,
+        updatedAt: Date.now(),
+      } : marker)),
+    }))
+  }, [])
+
+  const applyMarkerResize = useCallback((markerId: string, preview: InteractionPreview) => {
+    setDraftWorkspace(current => ({
+      ...current,
+      markers: sortMarkers(current.markers.map(marker => marker.markerId === markerId ? {
+        ...marker,
+        startMinutes: preview.startMinutes,
+        endMinutes: preview.endMinutes,
+        updatedAt: Date.now(),
+      } : marker)),
+    }))
+  }, [])
 
   useEffect(() => {
     if (!interaction) return undefined
@@ -460,124 +577,7 @@ export function SystemAdminTimetableEditor({
       window.removeEventListener('pointerup', handlePointerUp)
       window.removeEventListener('keydown', handleEscape)
     }
-  }, [interaction, timedEventsByDate])
-
-  function applyClassChange(blockId: string, preview: InteractionPreview) {
-    if (classEditingLocked) return
-    setDraftTemplate(current => {
-      const block = current.classBlocks.find(item => item.id === blockId)
-      if (!block) return current
-      const nextBlock: FacultyTimetableClassBlock = {
-        ...block,
-        day: preview.day,
-        dateISO: block.kind === 'extra' ? preview.dateISO : undefined,
-        startMinutes: preview.startMinutes,
-        endMinutes: preview.endMinutes,
-      }
-      const collisionPool = current.classBlocks.filter(item => item.id === blockId || classBlockOccursOnDate(item, preview.dateISO, preview.day))
-      const reflowed = reflowClassDayRanges({
-        blocks: collisionPool.map(item => item.id === blockId ? nextBlock : item),
-        targetId: blockId,
-        desiredStartMinutes: preview.startMinutes,
-        desiredEndMinutes: preview.endMinutes,
-        dayStartMinutes: current.dayStartMinutes,
-        dayEndMinutes: current.dayEndMinutes,
-        snapThresholdMinutes: 14,
-      })
-      if (!reflowed) return current
-      return {
-        ...current,
-        updatedAt: Date.now(),
-        classBlocks: current.classBlocks.map(item => {
-          if (!reflowed.rangesById[item.id] && item.id !== blockId) return item
-          const range = reflowed.rangesById[item.id]
-          if (item.id === blockId) {
-            return {
-              ...nextBlock,
-              startMinutes: range?.startMinutes ?? preview.startMinutes,
-              endMinutes: range?.endMinutes ?? preview.endMinutes,
-            }
-          }
-          if (!range) return item
-          return {
-            ...item,
-            startMinutes: range.startMinutes,
-            endMinutes: range.endMinutes,
-          }
-        }),
-      }
-    })
-  }
-
-  function applyClassResize(blockId: string, preview: InteractionPreview) {
-    if (classEditingLocked) return
-    setDraftTemplate(current => {
-      const block = current.classBlocks.find(item => item.id === blockId)
-      if (!block) return current
-      const nextBlock: FacultyTimetableClassBlock = {
-        ...block,
-        startMinutes: preview.startMinutes,
-        endMinutes: preview.endMinutes,
-      }
-      const focusDateISO = block.dateISO ?? preview.dateISO
-      const collisionPool = current.classBlocks.filter(item => item.id === blockId || classBlockOccursOnDate(item, focusDateISO, block.day))
-      const reflowed = reflowClassDayRanges({
-        blocks: collisionPool.map(item => item.id === blockId ? nextBlock : item),
-        targetId: blockId,
-        desiredStartMinutes: preview.startMinutes,
-        desiredEndMinutes: preview.endMinutes,
-        dayStartMinutes: current.dayStartMinutes,
-        dayEndMinutes: current.dayEndMinutes,
-        snapThresholdMinutes: 14,
-      })
-      if (!reflowed) return current
-      return {
-        ...current,
-        updatedAt: Date.now(),
-        classBlocks: current.classBlocks.map(item => {
-          const range = reflowed.rangesById[item.id]
-          if (item.id === blockId) {
-            return {
-              ...item,
-              startMinutes: range?.startMinutes ?? preview.startMinutes,
-              endMinutes: range?.endMinutes ?? preview.endMinutes,
-            }
-          }
-          if (!range) return item
-          return {
-            ...item,
-            startMinutes: range.startMinutes,
-            endMinutes: range.endMinutes,
-          }
-        }),
-      }
-    })
-  }
-
-  function applyMarkerChange(markerId: string, preview: InteractionPreview) {
-    setDraftWorkspace(current => ({
-      ...current,
-      markers: sortMarkers(current.markers.map(marker => marker.markerId === markerId ? {
-        ...marker,
-        dateISO: preview.dateISO,
-        startMinutes: preview.startMinutes,
-        endMinutes: preview.endMinutes,
-        updatedAt: Date.now(),
-      } : marker)),
-    }))
-  }
-
-  function applyMarkerResize(markerId: string, preview: InteractionPreview) {
-    setDraftWorkspace(current => ({
-      ...current,
-      markers: sortMarkers(current.markers.map(marker => marker.markerId === markerId ? {
-        ...marker,
-        startMinutes: preview.startMinutes,
-        endMinutes: preview.endMinutes,
-        updatedAt: Date.now(),
-      } : marker)),
-    }))
-  }
+  }, [applyClassChange, applyClassResize, applyMarkerChange, applyMarkerResize, interaction, resolvePreview])
 
   const handleSave = async () => {
     setSaving(true)

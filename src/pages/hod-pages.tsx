@@ -90,12 +90,27 @@ function TabButton({
   active,
   onClick,
   children,
+  ariaControls,
 }: {
   active: boolean
   onClick: () => void
   children: string
+  ariaControls: string
 }) {
-  return <Btn size="sm" variant={active ? 'primary' : 'ghost'} onClick={onClick}>{children}</Btn>
+  const tabId = children.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+  return (
+    <Btn
+      size="sm"
+      variant={active ? 'primary' : 'ghost'}
+      onClick={onClick}
+      id={`hod-tab-${tabId}`}
+      role="tab"
+      ariaControls={ariaControls}
+      ariaSelected={active}
+    >
+      {children}
+    </Btn>
+  )
 }
 
 export function HodView({
@@ -156,6 +171,7 @@ export function HodView({
     return reassessmentRows.filter(row => row.assignedToRole.toLowerCase() === 'hod' || selectedFaculty.permissions.includes(row.assignedToRole))
   }, [reassessmentRows, selectedFaculty])
   const checkpointContext = summary?.activeRunContext?.checkpointContext ?? null
+  const activePanelId = `hod-panel-${activeTab}`
 
   const filteredStudents = useMemo(() => {
     if (showActionNeededOnly) {
@@ -244,13 +260,14 @@ export function HodView({
           <MetricCard label="Overload Flags" value={String(summary.facultyLoadSummary.overloadedFacultyCount)} helper="Faculty load profiles exceeding the current semester threshold." />
         </div>
 
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <TabButton active={activeTab === 'overview'} onClick={() => setActiveTab('overview')}>Overview</TabButton>
-          <TabButton active={activeTab === 'courses'} onClick={() => setActiveTab('courses')}>Course Hotspots</TabButton>
-          <TabButton active={activeTab === 'faculty'} onClick={() => setActiveTab('faculty')}>Faculty Operations</TabButton>
-          <TabButton active={activeTab === 'reassessments'} onClick={() => setActiveTab('reassessments')}>Reassessment Audit</TabButton>
+        <div role="tablist" aria-label="HoD proof sections" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <TabButton active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} ariaControls="hod-panel-overview">Overview</TabButton>
+          <TabButton active={activeTab === 'courses'} onClick={() => setActiveTab('courses')} ariaControls="hod-panel-courses">Course Hotspots</TabButton>
+          <TabButton active={activeTab === 'faculty'} onClick={() => setActiveTab('faculty')} ariaControls="hod-panel-faculty">Faculty Operations</TabButton>
+          <TabButton active={activeTab === 'reassessments'} onClick={() => setActiveTab('reassessments')} ariaControls="hod-panel-reassessments">Reassessment Audit</TabButton>
         </div>
 
+        <div id={activePanelId} role="tabpanel" aria-labelledby={`hod-tab-${activeTab === 'overview' ? 'overview' : activeTab === 'courses' ? 'course-hotspots' : activeTab === 'faculty' ? 'faculty-operations' : 'reassessment-audit'}`} data-proof-section={`hod-panel-${activeTab}`} style={{ display: 'grid', gap: 16 }}>
         {activeTab === 'overview' ? (
           <div style={{ display: 'grid', gap: 16 }}>
             <SectionHeading
@@ -606,6 +623,7 @@ export function HodView({
             </table>
           </TableCard>
         ) : null}
+        </div>
       </div>
 
       {selectedStudent ? (

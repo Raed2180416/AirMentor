@@ -27,6 +27,14 @@ async function expectFlash(message) {
   await expectVisible(page.getByText(message, { exact: true }), `flash "${message}"`)
 }
 
+async function focusAndActivate(locator, description, key = 'Enter') {
+  await expectVisible(locator, description)
+  await locator.focus()
+  const isFocused = await locator.evaluate(node => node === document.activeElement)
+  assert.equal(isFocused, true, `${description} should receive focus before keyboard activation`)
+  await page.keyboard.press(key)
+}
+
 async function findVisibleRequestAction() {
   for (const action of ['Take Review', 'Approve', 'Mark Implemented', 'Close']) {
     const button = page.getByRole('button', { name: action, exact: true })
@@ -43,7 +51,7 @@ async function advanceRequestToClosed() {
     const nextAction = await findVisibleRequestAction()
     assert(nextAction, 'Expected a visible request action button before closure')
 
-    await nextAction.button.click()
+    await focusAndActivate(nextAction.button, `${nextAction.action} request action`)
     await expectFlash('Request advanced.')
     await page.waitForFunction((previousAction) => {
       const hasClosed = Array.from(document.querySelectorAll('*')).some(node => node.textContent?.trim() === 'Closed')
@@ -65,11 +73,11 @@ try {
   await page.getByPlaceholder('••••••••', { exact: true }).fill('admin1234')
   await page.getByRole('button', { name: 'Sign In', exact: true }).click()
 
-  await page.getByRole('button', { name: 'Requests', exact: true }).click()
+  await focusAndActivate(page.getByRole('button', { name: 'Requests', exact: true }), 'requests navigation')
   await expectVisible(page.getByText(/^Requests$/).last(), 'requests heading')
 
   const requestSummary = /Grant additional mentor mapping coverage/i
-  await page.getByRole('button', { name: requestSummary }).first().click()
+  await focusAndActivate(page.getByRole('button', { name: requestSummary }).first(), 'request summary row')
   await expectVisible(page.getByText(requestSummary).last(), 'selected request detail title')
   assert(/#\/admin\/requests\//.test(page.url()), `expected deep-linked request URL, got ${page.url()}`)
 

@@ -10,6 +10,12 @@ body {
 	transition: background-color var(--ui-medium, 220ms) var(--ui-ease, cubic-bezier(0.22, 1, 0.36, 1)), color var(--ui-medium, 220ms) var(--ui-ease, cubic-bezier(0.22, 1, 0.36, 1));
 }
 
+input::placeholder,
+textarea::placeholder {
+	color: var(--app-muted, #4d647f);
+	opacity: 0.95;
+}
+
 #root {
 	background: var(--app-bg, #edf3f8);
 	color: var(--app-text, #11243d);
@@ -41,6 +47,7 @@ input[type=number]::-webkit-outer-spin-button { opacity: 0.3; }
 	--app-border: #d5e3f2;
 	--app-text: #11243d;
 	--app-muted: #4d647f;
+	--app-dim: #5a6f88;
 	--app-accent: #3b82f6;
 	--app-autofill-bg: #edf5ff;
 	--app-autofill-text: #11243d;

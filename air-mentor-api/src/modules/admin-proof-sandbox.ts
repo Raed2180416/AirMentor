@@ -18,7 +18,6 @@ import {
   recomputeObservedOnlyRisk,
   restoreProofSimulationSnapshot,
   reviewProofCrosswalks,
-  startProofSimulationRun,
   validateProofCurriculumImport,
   archiveProofSimulationRun,
 } from '../lib/msruas-proof-control-plane.js'

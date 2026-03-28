@@ -425,29 +425,6 @@ function selectGovernedCorpusRuns(
   }
 }
 
-function selectCompleteGovernedRunIds(input: {
-  runRows: Array<typeof simulationRuns.$inferSelect>
-  checkpointRows: Array<typeof simulationStageCheckpoints.$inferSelect>
-  evidenceRows: Array<typeof riskEvidenceSnapshots.$inferSelect>
-}) {
-  const checkpointCountByRunId = new Map<string, number>()
-  input.checkpointRows.forEach(row => {
-    checkpointCountByRunId.set(row.simulationRunId, (checkpointCountByRunId.get(row.simulationRunId) ?? 0) + 1)
-  })
-  const stageEvidenceCountByRunId = new Map<string, number>()
-  input.evidenceRows
-    .filter(row => !!row.simulationRunId && !!row.simulationStageCheckpointId)
-    .forEach(row => {
-      const runId = row.simulationRunId!
-      stageEvidenceCountByRunId.set(runId, (stageEvidenceCountByRunId.get(runId) ?? 0) + 1)
-    })
-  return new Set(
-    input.runRows
-      .filter(row => (checkpointCountByRunId.get(row.simulationRunId) ?? 0) >= 36 && (stageEvidenceCountByRunId.get(row.simulationRunId) ?? 0) > 0)
-      .map(row => row.simulationRunId),
-  )
-}
-
 function selectCompleteGovernedRunIdsFromCounts(input: {
   runRows: Array<typeof simulationRuns.$inferSelect>
   checkpointCountByRunId: Map<string, number>
@@ -457,12 +434,6 @@ function selectCompleteGovernedRunIdsFromCounts(input: {
     input.runRows
       .filter(row => (input.checkpointCountByRunId.get(row.simulationRunId) ?? 0) >= 36 && (input.stageEvidenceCountByRunId.get(row.simulationRunId) ?? 0) > 0)
       .map(row => row.simulationRunId),
-  )
-}
-
-function countRowsBy<T extends string | number>(values: T[]) {
-  return Object.fromEntries(
-    values.reduce((map, value) => map.set(String(value), (map.get(String(value)) ?? 0) + 1), new Map<string, number>()).entries(),
   )
 }
 
@@ -641,7 +612,6 @@ async function main() {
     const selectedGovernedRunIdList = [...selectedGovernedRunIds].sort()
     const [
       artifactRows,
-      checkpointRows,
       modelActiveResponse,
       modelEvaluationResponse,
       modelCorrelationResponse,
@@ -1031,7 +1001,7 @@ async function main() {
       .sort((left, right) => right.cases - left.cases || right.averageImmediateBenefitScaled - left.averageImmediateBenefitScaled)
 
     const stageRollups: StageRollup[] = Array.from(stageRollupSeed.entries())
-      .map(([stageKey, data]) => {
+      .map(([_stageKey, data]) => {
         const uniqueStudentCount = data.uniqueStudents.size
         const openQueueStudentCount = data.openQueueStudents.size
         const watchStudentCount = [...data.watchStudents].filter(studentId => !data.openQueueStudents.has(studentId)).length

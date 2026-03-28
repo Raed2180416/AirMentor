@@ -36,6 +36,7 @@ import {
   electiveOptions,
   electiveRecommendations,
   facultyAppointments,
+  facultyCalendarAdminWorkspaces,
   facultyCalendarWorkspaces,
   courseOutcomeOverrides,
   facultyOfferingOwnerships,
@@ -301,6 +302,7 @@ export async function seedIntoDatabase(db: AppDb, client: { query: (sql: string,
   await db.delete(academicTasks)
   await db.delete(academicMeetings)
   await db.delete(facultyCalendarWorkspaces)
+  await db.delete(facultyCalendarAdminWorkspaces)
   await db.delete(offeringQuestionPapers)
   await db.delete(offeringAssessmentSchemes)
   await db.delete(facultyOfferingOwnerships)
@@ -631,6 +633,33 @@ export async function seedIntoDatabase(db: AppDb, client: { query: (sql: string,
         version: 1,
         updatedAt: now,
       })))
+
+      const runtimePayload = seedData.academicAssets.runtime as Record<string, unknown>
+      const timetablePayload = (runtimePayload.timetableByFacultyId as Record<string, unknown> | undefined) ?? {}
+      const timetableEntries = Object.entries(timetablePayload)
+        .filter(([, payload]) => payload && typeof payload === 'object')
+      if (timetableEntries.length > 0) {
+        await db.insert(facultyCalendarWorkspaces).values(timetableEntries.map(([facultyId, payload]) => ({
+          facultyId,
+          templateJson: JSON.stringify(payload),
+          version: 1,
+          createdAt: now,
+          updatedAt: now,
+        })))
+      }
+
+      const adminWorkspacePayload = (runtimePayload.adminCalendarByFacultyId as Record<string, unknown> | undefined) ?? {}
+      const adminWorkspaceEntries = Object.entries(adminWorkspacePayload)
+        .filter(([, payload]) => payload && typeof payload === 'object')
+      if (adminWorkspaceEntries.length > 0) {
+        await db.insert(facultyCalendarAdminWorkspaces).values(adminWorkspaceEntries.map(([facultyId, payload]) => ({
+          facultyId,
+          workspaceJson: JSON.stringify(payload),
+          version: 1,
+          createdAt: now,
+          updatedAt: now,
+        })))
+      }
     }
   }
 

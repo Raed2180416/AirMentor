@@ -224,6 +224,13 @@ describe('HodView', () => {
 
     expect(markup).toContain('Live HoD Analytics')
     expect(markup).toContain('data-proof-surface="hod-proof-analytics"')
+    expect(markup).toContain('role="tablist"')
+    expect(markup).toContain('aria-label="HoD proof sections"')
+    expect(markup).toContain('role="tab"')
+    expect(markup).toContain('aria-controls="hod-panel-overview"')
+    expect(markup).toContain('aria-selected="true"')
+    expect(markup).toContain('role="tabpanel"')
+    expect(markup).toContain('data-proof-section="hod-panel-overview"')
     expect(markup).toContain('sourced from live proof records')
     expect(markup).toContain('Post TT1')
     expect(markup).toContain('Course Hotspots')

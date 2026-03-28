@@ -6,6 +6,8 @@ import type { Pool } from 'pg'
 import type { AppConfig } from './config.js'
 import type { AppDb } from './db/client.js'
 import { AppError } from './lib/http-errors.js'
+import { buildCsrfToken, readSingleHeaderValue, secureTokenEquals } from './lib/csrf.js'
+import { emitOperationalEvent, normalizeTelemetryError } from './lib/telemetry.js'
 
 export type BuildAppOptions = {
   config: AppConfig
@@ -27,17 +29,48 @@ export async function buildApp(options: BuildAppOptions) {
     now: options.clock ?? (() => new Date().toISOString()),
   }
 
+  await app.register(fastifyCookie)
   app.decorateRequest('auth', null)
 
   app.addHook('onRequest', async (request, reply) => {
     if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) return
     const origin = request.headers.origin
     if (!origin || !context.config.corsAllowedOrigins.includes(origin)) {
+      emitOperationalEvent('security.forbidden_origin', {
+        method: request.method,
+        route: request.url,
+        origin: origin ?? null,
+      }, { level: 'warn' })
       return reply.status(403).send({
         error: 'FORBIDDEN_ORIGIN',
         message: 'Unsafe requests must originate from an allowed frontend origin.',
       })
     }
+    const sessionId = request.cookies[context.config.sessionCookieName]
+    if (!sessionId) return
+    const csrfHeader = readSingleHeaderValue(request.headers['x-airmentor-csrf'])
+    const csrfCookie = request.cookies[context.config.csrfCookieName] ?? ''
+    const expectedToken = buildCsrfToken(context.config.csrfSecret, sessionId)
+    let failureReason: string | null = null
+
+    if (!csrfHeader) failureReason = 'missing_header'
+    else if (!csrfCookie) failureReason = 'missing_cookie'
+    else if (!secureTokenEquals(csrfCookie, expectedToken)) failureReason = 'cookie_mismatch'
+    else if (!secureTokenEquals(csrfHeader, expectedToken)) failureReason = 'header_mismatch'
+
+    if (!failureReason) return
+
+    emitOperationalEvent('security.csrf.rejected', {
+      method: request.method,
+      route: request.url,
+      origin: origin ?? null,
+      reason: failureReason,
+      sessionCookiePresent: true,
+    }, { level: 'warn' })
+    return reply.status(403).send({
+      error: 'FORBIDDEN_CSRF',
+      message: 'Authenticated write requests must include a valid CSRF token.',
+    })
   })
 
   await app.register(fastifyCors, {
@@ -51,7 +84,6 @@ export async function buildApp(options: BuildAppOptions) {
       callback(null, context.config.corsAllowedOrigins.includes(origin))
     },
   })
-  await app.register(fastifyCookie)
   await app.register(fastifySwagger, {
     openapi: {
       info: {
@@ -61,9 +93,17 @@ export async function buildApp(options: BuildAppOptions) {
     },
   })
 
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error, request, reply) => {
+    const route = request.routeOptions.url ?? request.url
     if (error instanceof AppError || (typeof error === 'object' && error !== null && 'statusCode' in error && 'code' in error)) {
       const typedError = error as AppError
+      emitOperationalEvent('request.error', {
+        method: request.method,
+        route,
+        statusCode: typedError.statusCode,
+        code: typedError.code,
+        error: normalizeTelemetryError(error),
+      }, { level: typedError.statusCode >= 500 ? 'error' : 'warn' })
       void reply.status(typedError.statusCode).send({
         error: typedError.code,
         message: typedError.message,
@@ -71,6 +111,13 @@ export async function buildApp(options: BuildAppOptions) {
       })
       return
     }
+    emitOperationalEvent('request.error', {
+      method: request.method,
+      route,
+      statusCode: 500,
+      code: 'INTERNAL_SERVER_ERROR',
+      error: normalizeTelemetryError(error),
+    }, { level: 'error' })
     app.log.error(error)
     console.error(error)
     void reply.status(500).send({
@@ -139,9 +186,10 @@ export function sendCookie(
   secure: boolean,
   sameSite: 'lax' | 'strict' | 'none',
   expiresAt: string,
+  httpOnly = true,
 ) {
   reply.setCookie(name, value, {
-    httpOnly: true,
+    httpOnly,
     sameSite,
     path: '/',
     secure,

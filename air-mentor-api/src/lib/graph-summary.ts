@@ -49,12 +49,6 @@ function average(values: number[]) {
   return filtered.reduce((sum, value) => sum + value, 0) / filtered.length
 }
 
-function safeRatio(numerator: number, denominator: number) {
-  if (!Number.isFinite(numerator)) return 0
-  if (!Number.isFinite(denominator) || denominator <= 0) return 0
-  return clamp(numerator / denominator, 0, 1)
-}
-
 function normalizeGraphKey(value: string) {
   return value.trim().toUpperCase()
 }

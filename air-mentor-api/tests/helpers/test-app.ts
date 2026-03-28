@@ -9,9 +9,35 @@ import { loadConfig } from '../../src/config.js'
 import { createDb, createPool, type AppDb } from '../../src/db/client.js'
 import { runSqlMigrations } from '../../src/db/migrate.js'
 import { seedIntoDatabase } from '../../src/db/seed.js'
+import { buildCsrfToken } from '../../src/lib/csrf.js'
 
 export const TEST_NOW = '2026-03-16T00:00:00.000Z'
 export const TEST_ORIGIN = 'http://127.0.0.1:5173'
+
+function readCookieValue(cookieHeader: unknown, name: string) {
+  const rawCookieHeader = Array.isArray(cookieHeader)
+    ? cookieHeader.join('; ')
+    : typeof cookieHeader === 'string'
+      ? cookieHeader
+      : ''
+  if (!rawCookieHeader) return null
+  const entries = rawCookieHeader.split(';')
+  for (const entry of entries) {
+    const [cookieName, ...valueParts] = entry.trim().split('=')
+    if (cookieName === name) return valueParts.join('=')
+  }
+  return null
+}
+
+function appendCookieValue(cookieHeader: unknown, name: string, value: string) {
+  const rawCookieHeader = Array.isArray(cookieHeader)
+    ? cookieHeader.join('; ')
+    : typeof cookieHeader === 'string'
+      ? cookieHeader
+      : ''
+  if (!rawCookieHeader) return `${name}=${value}`
+  return `${rawCookieHeader}; ${name}=${value}`
+}
 
 function findFreePort() {
   return new Promise<number>((resolve, reject) => {
@@ -76,11 +102,39 @@ export async function createTestApp(options?: {
       clock: () => TEST_NOW,
     })
     await app.ready()
+    const rawInject = app.inject.bind(app)
+    app.inject = (async (options: Parameters<typeof rawInject>[0]) => {
+      if (!options || typeof options === 'string') {
+        return rawInject(options)
+      }
+      const method = (options.method ?? 'GET').toUpperCase()
+      if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+        return rawInject(options)
+      }
+      const headers = { ...(options.headers ?? {}) } as Record<string, unknown>
+      const sessionId = readCookieValue(headers.cookie, config.sessionCookieName)
+      if (!sessionId) {
+        return rawInject(options)
+      }
+      const csrfToken = buildCsrfToken(config.csrfSecret, sessionId)
+      if (!readCookieValue(headers.cookie, config.csrfCookieName)) {
+        headers.cookie = appendCookieValue(headers.cookie, config.csrfCookieName, csrfToken)
+      }
+      if (!headers['x-airmentor-csrf'] && !headers['X-AirMentor-CSRF']) {
+        headers['x-airmentor-csrf'] = csrfToken
+      }
+      return rawInject({
+        ...options,
+        headers,
+      })
+    }) as typeof app.inject
 
     const activePool = pool
     return {
       app,
+      rawInject,
       db,
+      config,
       embeddedPostgres,
       pool: activePool,
       async close() {
@@ -108,7 +162,8 @@ export async function loginAs(app: Awaited<ReturnType<typeof createTestApp>>['ap
     payload: { identifier, password },
   })
   const setCookie = response.headers['set-cookie']
-  const cookie = Array.isArray(setCookie) ? setCookie[0] : setCookie
+  const setCookieValues = Array.isArray(setCookie) ? setCookie : [setCookie]
+  const cookie = setCookieValues.find(value => readCookieValue(value ?? '', 'airmentor_session')) ?? setCookieValues[0]
   if (!cookie) {
     throw new Error(`Expected login for ${identifier} to return a session cookie`)
   }

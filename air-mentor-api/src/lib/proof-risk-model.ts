@@ -362,11 +362,6 @@ function hashBucket(input: string) {
   return Number.parseInt(digest, 16) % 100
 }
 
-function hashNumber(input: string) {
-  const digest = createHash('sha256').update(input).digest('hex').slice(0, 12)
-  return Number.parseInt(digest, 16)
-}
-
 function quantile(values: number[], q: number) {
   if (!values.length) return 0.5
   const sorted = values.slice().sort((left, right) => left - right)
@@ -481,18 +476,6 @@ function featureVectorFromPayload(payload: ObservableFeaturePayload): FeatureVec
   }
 }
 
-type PreparedRow = {
-  key: string
-  split: SplitName
-  scenarioFamily: ScenarioFamily
-  courseFamily: string
-  featureVector: FeatureVector
-  weakCoCount: number
-  weakQuestionCount: number
-  labelPayload: ObservableLabelPayload
-  sourceRefs: ObservableSourceRefs
-}
-
 type CalibrationResult = {
   calibration: ProbabilityCalibrationArtifact
   validationPredictions: Array<{ label: number; prob: number }>
@@ -503,31 +486,6 @@ function normalizeMetadataMap(metadata?: Map<string, ProofRunModelMetadata> | Re
   if (!metadata) return new Map<string, ProofRunModelMetadata>()
   if (metadata instanceof Map) return metadata
   return new Map(Object.entries(metadata))
-}
-
-function toPreparedRow(
-  row: ObservableRiskEvidenceRow,
-  runMetadataById: Map<string, ProofRunModelMetadata>,
-  manifest: ProofCorpusManifestEntry[],
-): PreparedRow | null {
-  const key = `${row.sourceRefs.simulationRunId}::${row.sourceRefs.studentId}::${row.sourceRefs.courseCode}::${row.sourceRefs.stageKey ?? 'active'}`
-  const runMeta = runMetadataById.get(row.sourceRefs.simulationRunId)
-  const seed = runMeta?.seed ?? hashBucket(row.sourceRefs.simulationRunId)
-  const manifestEntry = proofManifestEntryForSeed(seed, manifest)
-  const split = runMeta?.split ?? inferWorldSplit(seed, manifest)
-  const scenarioFamily = runMeta?.scenarioFamily ?? manifestEntry?.scenarioFamily ?? null
-  if (!split || !scenarioFamily) return null
-  return {
-    key,
-    split,
-    scenarioFamily,
-    courseFamily: row.sourceRefs.courseFamily ?? 'general',
-    featureVector: featureVectorFromPayload(row.featurePayload),
-    weakCoCount: row.featurePayload.weakCoCount,
-    weakQuestionCount: row.featurePayload.weakQuestionCount,
-    labelPayload: row.labelPayload,
-    sourceRefs: row.sourceRefs,
-  }
 }
 
 function scoreWithLogisticRaw(head: Pick<LogisticHeadArtifact, 'intercept' | 'weights'>, vector: FeatureVector) {
@@ -555,28 +513,6 @@ function scoreWithLogistic(head: LogisticHeadArtifact, vector: FeatureVector) {
   return applyCalibration(head.calibration, scoreWithLogisticRaw(head, vector))
 }
 
-function scoreWithStump(head: StumpHeadArtifact, vector: FeatureVector) {
-  return vector[head.featureKey] <= head.threshold ? head.leftProb : head.rightProb
-}
-
-function positiveCount(rows: PreparedRow[], labelKey: keyof ObservableLabelPayload) {
-  return rows.filter(row => row.labelPayload[labelKey] === 1).length
-}
-
-function buildHeadSupport(rows: PreparedRow[], labelKey: keyof ObservableLabelPayload): HeadSupportSummary {
-  const trainRows = rows.filter(row => row.split === 'train')
-  const validationRows = rows.filter(row => row.split === 'validation')
-  const testRows = rows.filter(row => row.split === 'test')
-  return {
-    trainSupport: trainRows.length,
-    validationSupport: validationRows.length,
-    testSupport: testRows.length,
-    trainPositives: positiveCount(trainRows, labelKey),
-    validationPositives: positiveCount(validationRows, labelKey),
-    testPositives: positiveCount(testRows, labelKey),
-  }
-}
-
 function supportWarningForHead(headKey: RiskHeadKey, support: HeadSupportSummary, metrics: RiskMetricSummary) {
   if (headKey === 'ceRisk') {
     return support.testPositives < 100
@@ -600,44 +536,6 @@ function displayProbabilityAllowedForHead(headKey: RiskHeadKey, support: HeadSup
   return support.testSupport >= 1000
     && support.testPositives >= minimumPositives
     && metrics.expectedCalibrationError <= limit
-}
-
-function trainLogisticBase(rows: PreparedRow[], headKey: RiskHeadKey) {
-  const labelKey = HEAD_LABEL_KEYS[headKey]
-  const positives = rows.filter(row => row.labelPayload[labelKey] === 1).length
-  const negatives = Math.max(1, rows.length - positives)
-  const positiveWeight = positives > 0 ? rows.length / (2 * positives) : 1
-  const negativeWeight = rows.length / (2 * negatives)
-  const weights = Object.fromEntries(OBSERVABLE_FEATURE_KEYS.map(key => [key, 0])) as Record<ObservableFeatureKey, number>
-  const baseRate = clamp(average(rows.map(row => row.labelPayload[labelKey])), 0.01, 0.99)
-  let intercept = Math.log(baseRate / (1 - baseRate))
-  const l2 = 0.015
-
-  for (let iteration = 0; iteration < 160; iteration += 1) {
-    const gradient = Object.fromEntries(OBSERVABLE_FEATURE_KEYS.map(key => [key, 0])) as Record<ObservableFeatureKey, number>
-    let interceptGradient = 0
-    for (const row of rows) {
-      let logit = intercept
-      for (const key of OBSERVABLE_FEATURE_KEYS) logit += weights[key] * row.featureVector[key]
-      const prediction = sigmoid(logit)
-      const label = row.labelPayload[labelKey]
-      const rowWeight = label === 1 ? positiveWeight : negativeWeight
-      const error = (prediction - label) * rowWeight
-      interceptGradient += error
-      for (const key of OBSERVABLE_FEATURE_KEYS) gradient[key] += error * row.featureVector[key]
-    }
-    const learningRate = 0.22 / (1 + (iteration / 70))
-    intercept -= learningRate * (interceptGradient / Math.max(1, rows.length))
-    for (const key of OBSERVABLE_FEATURE_KEYS) {
-      const reg = l2 * weights[key]
-      weights[key] -= learningRate * ((gradient[key] / Math.max(1, rows.length)) + reg)
-    }
-  }
-
-  return {
-    intercept: roundToFour(intercept),
-    weights: Object.fromEntries(OBSERVABLE_FEATURE_KEYS.map(key => [key, roundToFour(weights[key])])) as Record<ObservableFeatureKey, number>,
-  }
 }
 
 function fitSigmoidCalibration(rows: Array<{ label: number; rawProb: number }>) {
@@ -808,321 +706,6 @@ function chooseCalibration(
   }
 }
 
-function sampleTrainingRows(rows: PreparedRow[], headKey: RiskHeadKey) {
-  const labelKey = HEAD_LABEL_KEYS[headKey]
-  const positives = rows.filter(row => row.labelPayload[labelKey] === 1)
-  const negatives = rows.filter(row => row.labelPayload[labelKey] === 0)
-  if (!negatives.length) return positives
-  const targetNegativeCount = Math.min(
-    negatives.length,
-    Math.max(positives.length * 5, positives.length > 0 ? 0 : 20000, positives.length < 400 ? 20000 : 0),
-  )
-  if (targetNegativeCount >= negatives.length) {
-    return [...positives, ...negatives].sort((left, right) => hashNumber(left.key) - hashNumber(right.key))
-  }
-
-  const byStratum = new Map<string, PreparedRow[]>()
-  negatives.forEach(row => {
-    const stratum = [
-      row.scenarioFamily,
-      row.sourceRefs.semesterNumber,
-      row.sourceRefs.stageKey ?? 'active',
-      row.sourceRefs.sectionCode,
-      row.courseFamily,
-    ].join('::')
-    const group = byStratum.get(stratum)
-    if (group) group.push(row)
-    else byStratum.set(stratum, [row])
-  })
-  const orderedStrata = [...byStratum.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-  orderedStrata.forEach(([, group]) => {
-    group.sort((left, right) => hashNumber(left.key) - hashNumber(right.key))
-  })
-
-  const selected = new Set<string>()
-  let selectedCount = 0
-  for (const [, group] of orderedStrata) {
-    if (selectedCount >= targetNegativeCount) break
-    const proportionalTake = Math.max(1, Math.floor((group.length / negatives.length) * targetNegativeCount))
-    const take = Math.min(group.length, proportionalTake, targetNegativeCount - selectedCount)
-    group.slice(0, take).forEach(row => selected.add(row.key))
-    selectedCount += take
-  }
-  if (selectedCount < targetNegativeCount) {
-    for (const [, group] of orderedStrata) {
-      for (const row of group) {
-        if (selectedCount >= targetNegativeCount) break
-        if (selected.has(row.key)) continue
-        selected.add(row.key)
-        selectedCount += 1
-      }
-      if (selectedCount >= targetNegativeCount) break
-    }
-  }
-
-  return [...positives, ...negatives.filter(row => selected.has(row.key))]
-    .sort((left, right) => hashNumber(left.key) - hashNumber(right.key))
-}
-
-function fitLogisticHead(rows: PreparedRow[], headKey: RiskHeadKey) {
-  const labelKey = HEAD_LABEL_KEYS[headKey]
-  const trainRows = rows.filter(row => row.split === 'train')
-  const validationRows = rows.filter(row => row.split === 'validation')
-  const testRows = rows.filter(row => row.split === 'test')
-  const sampledTrainRows = sampleTrainingRows(trainRows, headKey)
-  const support = buildHeadSupport(rows, labelKey)
-  const base = trainLogisticBase(sampledTrainRows, headKey)
-
-  const rawValidation = validationRows.map(row => ({
-    label: row.labelPayload[labelKey],
-    rawProb: scoreWithLogisticRaw(base, row.featureVector),
-  }))
-  const rawTest = testRows.map(row => ({
-    label: row.labelPayload[labelKey],
-    rawProb: scoreWithLogisticRaw(base, row.featureVector),
-  }))
-  const calibrated = chooseCalibration(headKey, rawValidation, rawTest, support)
-  const threshold = 0.75
-  const metrics = calibrated.testPredictions.length > 0
-    ? buildMetricSummary(calibrated.testPredictions)
-    : buildMetricSummary(calibrated.validationPredictions)
-
-  return {
-    headKey,
-    intercept: base.intercept,
-    weights: base.weights,
-    threshold: roundToFour(clamp(threshold, 0.35, 0.8)),
-    metrics,
-    support,
-    calibration: calibrated.calibration,
-  } satisfies LogisticHeadArtifact
-}
-
-function fitStumpHead(rows: PreparedRow[], headKey: RiskHeadKey) {
-  const labelKey = HEAD_LABEL_KEYS[headKey]
-  const trainRows = rows.filter(row => row.split === 'train')
-  const validationRows = rows.filter(row => row.split === 'validation')
-  const testRows = rows.filter(row => row.split === 'test')
-  const sampledTrainRows = sampleTrainingRows(trainRows, headKey)
-  let bestFeature: ObservableFeatureKey = OBSERVABLE_FEATURE_KEYS[0]
-  let bestThreshold = 0.5
-  let bestLeftProb = 0.5
-  let bestRightProb = 0.5
-  let bestScore = Number.POSITIVE_INFINITY
-
-  for (const featureKey of OBSERVABLE_FEATURE_KEYS) {
-    const values = sampledTrainRows.map(row => row.featureVector[featureKey]).filter(Number.isFinite)
-    const thresholds = [...new Set([0.2, 0.35, 0.5, 0.65, 0.8].map(q => roundToFour(quantile(values, q))))]
-    for (const threshold of thresholds) {
-      const leftRows = sampledTrainRows.filter(row => row.featureVector[featureKey] <= threshold)
-      const rightRows = sampledTrainRows.filter(row => row.featureVector[featureKey] > threshold)
-      const leftProb = clamp(average(leftRows.map(row => row.labelPayload[labelKey])), 0.01, 0.99)
-      const rightProb = clamp(average(rightRows.map(row => row.labelPayload[labelKey])), 0.01, 0.99)
-      const scoreRows = (validationRows.length > 0 ? validationRows : sampledTrainRows).map(row => ({
-        label: row.labelPayload[labelKey],
-        prob: row.featureVector[featureKey] <= threshold ? leftProb : rightProb,
-      }))
-      const score = brierScore(scoreRows)
-      if (score < bestScore) {
-        bestFeature = featureKey
-        bestThreshold = threshold
-        bestLeftProb = leftProb
-        bestRightProb = rightProb
-        bestScore = score
-      }
-    }
-  }
-
-  const metrics = buildMetricSummary((testRows.length > 0 ? testRows : validationRows).map(row => ({
-    label: row.labelPayload[labelKey],
-    prob: row.featureVector[bestFeature] <= bestThreshold ? bestLeftProb : bestRightProb,
-  })))
-
-  return {
-    headKey,
-    featureKey: bestFeature,
-    threshold: roundToFour(bestThreshold),
-    leftProb: roundToFour(bestLeftProb),
-    rightProb: roundToFour(bestRightProb),
-    metrics,
-  } satisfies StumpHeadArtifact
-}
-
-function aggregateRiskLift(rows: PreparedRow[], predicate: (row: PreparedRow) => boolean) {
-  const withPredicate = rows.filter(predicate)
-  const withoutPredicate = rows.filter(row => !predicate(row))
-  const withRate = average(withPredicate.map(row => row.labelPayload.overallCourseFailLabel))
-  const withoutRate = average(withoutPredicate.map(row => row.labelPayload.overallCourseFailLabel))
-  return {
-    support: rows.length,
-    adverseRateWith: roundToFour(withRate),
-    adverseRateWithout: roundToFour(withoutRate),
-    riskLift: roundToFour(withRate - withoutRate),
-  }
-}
-
-function buildScenarioFamilySummary(rows: PreparedRow[]) {
-  return PROOF_SCENARIO_FAMILIES.reduce((summary, family) => ({
-    ...summary,
-    [family]: rows.filter(row => row.scenarioFamily === family).length,
-  }), {} as Record<ScenarioFamily, number>)
-}
-
-function buildCorrelationArtifact(rows: PreparedRow[], now: string): CorrelationArtifact {
-  const trainRows = rows.filter(row => row.split === 'train')
-  const weakCoAssociation = aggregateRiskLift(trainRows, row => row.weakCoCount >= 2)
-  const weakQuestionAssociation = aggregateRiskLift(trainRows, row => row.weakQuestionCount >= 3)
-
-  const prereqEdgeAgg = new Map<string, {
-    sourceCourseCode: string
-    targetCourseCode: string
-    support: number
-    withWeakCount: number
-    withWeakAdverseCount: number
-    withoutWeakCount: number
-    withoutWeakAdverseCount: number
-  }>()
-  trainRows
-    .filter(row => row.sourceRefs.stageKey === 'post-see')
-    .forEach(row => {
-      const weakSet = new Set(row.sourceRefs.prerequisiteWeakCourseCodes)
-      row.sourceRefs.prerequisiteCourseCodes.forEach(sourceCourseCode => {
-        const key = `${sourceCourseCode}::${row.sourceRefs.courseCode}`
-        const current = prereqEdgeAgg.get(key) ?? {
-          sourceCourseCode,
-          targetCourseCode: row.sourceRefs.courseCode,
-          support: 0,
-          withWeakCount: 0,
-          withWeakAdverseCount: 0,
-          withoutWeakCount: 0,
-          withoutWeakAdverseCount: 0,
-        }
-        current.support += 1
-        const adverse = row.labelPayload.overallCourseFailLabel === 1
-        if (weakSet.has(sourceCourseCode)) {
-          current.withWeakCount += 1
-          if (adverse) current.withWeakAdverseCount += 1
-        } else {
-          current.withoutWeakCount += 1
-          if (adverse) current.withoutWeakAdverseCount += 1
-        }
-        prereqEdgeAgg.set(key, current)
-      })
-    })
-
-  const prerequisiteEdges = Array.from(prereqEdgeAgg.values())
-    .filter(edge => edge.support >= 25 && edge.withWeakCount > 0 && edge.withoutWeakCount > 0)
-    .map(edge => {
-      const withRate = edge.withWeakAdverseCount / edge.withWeakCount
-      const withoutRate = edge.withoutWeakAdverseCount / edge.withoutWeakCount
-      return {
-        sourceCourseCode: edge.sourceCourseCode,
-        targetCourseCode: edge.targetCourseCode,
-        support: edge.support,
-        adverseRateWithPrereqWeak: roundToFour(withRate),
-        adverseRateWithoutPrereqWeak: roundToFour(withoutRate),
-        oddsLift: roundToFour(withRate - withoutRate),
-      } satisfies PrerequisiteCorrelationEdge
-    })
-    .sort((left, right) => right.oddsLift - left.oddsLift || right.support - left.support)
-    .slice(0, 16)
-
-  return {
-    artifactVersion: RISK_CORRELATION_ARTIFACT_VERSION,
-    featureSchemaVersion: RISK_FEATURE_SCHEMA_VERSION,
-    builtAt: now,
-    splitName: 'train',
-    support: trainRows.length,
-    scenarioFamilySummary: buildScenarioFamilySummary(trainRows),
-    weakCoAssociation: {
-      support: weakCoAssociation.support,
-      adverseRateWithWeakCo: weakCoAssociation.adverseRateWith,
-      adverseRateWithoutWeakCo: weakCoAssociation.adverseRateWithout,
-      riskLift: weakCoAssociation.riskLift,
-    },
-    weakQuestionAssociation: {
-      support: weakQuestionAssociation.support,
-      adverseRateWithWeakQuestions: weakQuestionAssociation.adverseRateWith,
-      adverseRateWithoutWeakQuestions: weakQuestionAssociation.adverseRateWithout,
-      riskLift: weakQuestionAssociation.riskLift,
-    },
-    prerequisiteEdges,
-  }
-}
-
-function trainPreparedProofRiskModel(
-  preparedRows: PreparedRow[],
-  now: string,
-) {
-  if (preparedRows.length < 40) return null
-
-  const splitSummary = {
-    train: preparedRows.filter(row => row.split === 'train').length,
-    validation: preparedRows.filter(row => row.split === 'validation').length,
-    test: preparedRows.filter(row => row.split === 'test').length,
-  }
-  const worldSplitSummary = preparedRows.reduce((summary, row) => {
-    summary[row.split].add(row.sourceRefs.simulationRunId)
-    return summary
-  }, {
-    train: new Set<string>(),
-    validation: new Set<string>(),
-    test: new Set<string>(),
-  })
-  const scenarioFamilySummary = buildScenarioFamilySummary(preparedRows)
-  const productionHeads = {
-    attendanceRisk: fitLogisticHead(preparedRows, 'attendanceRisk'),
-    ceRisk: fitLogisticHead(preparedRows, 'ceRisk'),
-    seeRisk: fitLogisticHead(preparedRows, 'seeRisk'),
-    overallCourseRisk: fitLogisticHead(preparedRows, 'overallCourseRisk'),
-    downstreamCarryoverRisk: fitLogisticHead(preparedRows, 'downstreamCarryoverRisk'),
-  } satisfies Record<RiskHeadKey, LogisticHeadArtifact>
-
-  const production: ProductionRiskModelArtifact = {
-    modelVersion: RISK_PRODUCTION_MODEL_VERSION,
-    featureSchemaVersion: RISK_FEATURE_SCHEMA_VERSION,
-    trainedAt: now,
-    trainingManifestVersion: PROOF_CORPUS_MANIFEST_VERSION,
-    splitSummary,
-    worldSplitSummary: {
-      train: worldSplitSummary.train.size,
-      validation: worldSplitSummary.validation.size,
-      test: worldSplitSummary.test.size,
-    },
-    scenarioFamilySummary,
-    headSupportSummary: Object.fromEntries(
-      (Object.entries(productionHeads) as Array<[RiskHeadKey, LogisticHeadArtifact]>).map(([headKey, head]) => [headKey, head.support]),
-    ) as Record<RiskHeadKey, HeadSupportSummary>,
-    thresholds: PRODUCTION_RISK_THRESHOLDS,
-    calibrationVersion: RISK_CALIBRATION_VERSION,
-    heads: productionHeads,
-  }
-
-  const challenger: ChallengerRiskModelArtifact = {
-    modelVersion: RISK_CHALLENGER_MODEL_VERSION,
-    featureSchemaVersion: RISK_FEATURE_SCHEMA_VERSION,
-    trainedAt: now,
-    trainingManifestVersion: PROOF_CORPUS_MANIFEST_VERSION,
-    splitSummary,
-    worldSplitSummary: {
-      train: worldSplitSummary.train.size,
-      validation: worldSplitSummary.validation.size,
-      test: worldSplitSummary.test.size,
-    },
-    scenarioFamilySummary,
-    heads: {
-      attendanceRisk: fitStumpHead(preparedRows, 'attendanceRisk'),
-      ceRisk: fitStumpHead(preparedRows, 'ceRisk'),
-      seeRisk: fitStumpHead(preparedRows, 'seeRisk'),
-      overallCourseRisk: fitStumpHead(preparedRows, 'overallCourseRisk'),
-      downstreamCarryoverRisk: fitStumpHead(preparedRows, 'downstreamCarryoverRisk'),
-    },
-  }
-  const correlations = buildCorrelationArtifact(preparedRows, now)
-  return { production, challenger, correlations }
-}
-
 const FEATURE_COUNT = OBSERVABLE_FEATURE_KEYS.length
 const DATASET_BLOCK_SIZE = 16_384
 
@@ -1130,12 +713,6 @@ const SPLIT_CODE_BY_NAME: Record<SplitName, 0 | 1 | 2> = {
   train: 0,
   validation: 1,
   test: 2,
-}
-
-const SPLIT_NAME_BY_CODE: Record<0 | 1 | 2, SplitName> = {
-  0: 'train',
-  1: 'validation',
-  2: 'test',
 }
 
 const SCENARIO_FAMILY_CODE_BY_NAME: Record<ScenarioFamily, number> = Object.fromEntries(
@@ -1421,7 +998,7 @@ class ProofRiskDatasetBuilder {
 
     const slot = block.count
     const rowIndex = this.rowCount
-    const splitCode = SPLIT_CODE_BY_NAME[split]
+    const _splitCode = SPLIT_CODE_BY_NAME[split]
     const mask = buildLabelMask(labelPayload)
     const key = `${sourceRefs.simulationRunId}::${sourceRefs.studentId}::${sourceRefs.courseCode}::${sourceRefs.stageKey ?? 'active'}`
 

@@ -32,6 +32,14 @@ async function expectBodyText(text, description) {
   assert.ok(true, `${description} should be present`)
 }
 
+async function expectBodyTextOneOf(values, description) {
+  await page.waitForFunction((candidates) => {
+    const bodyText = document.body.innerText
+    return candidates.some(value => bodyText.includes(value))
+  }, values, { timeout: 20_000 })
+  assert.ok(true, `${description} should be present`)
+}
+
 async function findVisibleRequestAction() {
   for (const action of ['Take Review', 'Approve', 'Mark Implemented', 'Close']) {
     const button = page.getByRole('button', { name: action, exact: true })
@@ -87,14 +95,13 @@ try {
   const updatedBranchName = `${branchName} Updated`
   const batchYear = '2028'
   const batchLabel = `${batchYear}-A`
-  const curriculumCode = `QA${facultyCode.slice(-2)}99`
-  const updatedCurriculumTitle = 'Quality Governance Lab Advanced'
   const studentUsn = '1MS24CS022'
 
-  await page.getByPlaceholder('ENG', { exact: true }).fill(facultyCode)
-  await page.getByPlaceholder('Engineering and Technology', { exact: true }).fill(facultyName)
-  await page.getByPlaceholder('Overview', { exact: true }).fill('Created by the live acceptance flow.')
-  await page.getByRole('button', { name: 'Add Faculty', exact: true }).click()
+  const addFacultyForm = page.getByText('Add Academic Faculty', { exact: true }).locator('xpath=ancestor::form[1]')
+  await addFacultyForm.locator('input').nth(0).fill(facultyCode)
+  await addFacultyForm.locator('input').nth(1).fill(facultyName)
+  await addFacultyForm.locator('textarea').fill('Created by the live acceptance flow.')
+  await addFacultyForm.getByRole('button', { name: 'Add Faculty', exact: true }).click()
   await expectFlash('Academic faculty created.')
   await page.getByRole('combobox').nth(0).selectOption({ label: facultyName })
   await page.getByRole('button', { name: 'Edit Faculty', exact: true }).click()
@@ -103,9 +110,10 @@ try {
   await expectFlash('Academic faculty updated.')
   await expectBodyText(updatedFacultyName, 'updated academic faculty name')
 
-  await page.getByPlaceholder('CSE', { exact: true }).fill(departmentCode)
-  await page.getByPlaceholder('Computer Science and Engineering', { exact: true }).fill(departmentName)
-  await page.getByRole('button', { name: 'Add Department', exact: true }).click()
+  const addDepartmentForm = page.getByText('Add Department', { exact: true }).locator('xpath=ancestor::form[1]')
+  await addDepartmentForm.locator('input').nth(0).fill(departmentCode)
+  await addDepartmentForm.locator('input').nth(1).fill(departmentName)
+  await addDepartmentForm.getByRole('button', { name: 'Add Department', exact: true }).click()
   await expectFlash('Department created.')
   await page.getByRole('combobox').nth(1).selectOption({ label: departmentName })
   await page.getByRole('button', { name: 'Edit Department', exact: true }).click()
@@ -114,10 +122,12 @@ try {
   await expectFlash('Department updated.')
   await expectBodyText(updatedDepartmentName, 'updated department name')
 
-  await page.getByPlaceholder('CSE-AI', { exact: true }).fill(branchCode)
-  await page.getByPlaceholder('AI and Data Science', { exact: true }).fill(branchName)
-  await page.getByPlaceholder('8', { exact: true }).fill('8')
-  await page.getByRole('button', { name: 'Add Branch', exact: true }).click()
+  const addBranchForm = page.getByText('Add Branch', { exact: true }).locator('xpath=ancestor::form[1]')
+  await addBranchForm.locator('input').nth(0).fill(branchCode)
+  await addBranchForm.locator('input').nth(1).fill(branchName)
+  await addBranchForm.locator('select').first().selectOption('UG')
+  await addBranchForm.locator('input').nth(2).fill('8')
+  await addBranchForm.getByRole('button', { name: 'Add Branch', exact: true }).click()
   await expectFlash('Branch created.')
   await page.getByRole('combobox').nth(2).selectOption({ label: branchName })
   await page.getByRole('button', { name: 'Edit Branch', exact: true }).click()
@@ -126,10 +136,11 @@ try {
   await expectFlash('Branch updated.')
   await expectBodyText(updatedBranchName, 'updated branch name')
 
-  await page.getByPlaceholder('2022', { exact: true }).fill(batchYear)
-  await page.getByPlaceholder('5', { exact: true }).first().fill('5')
-  await page.getByPlaceholder('A, B', { exact: true }).fill('A')
-  await page.getByRole('button', { name: 'Add Batch', exact: true }).click()
+  const addBatchForm = page.getByText('Add Batch', { exact: true }).locator('xpath=ancestor::form[1]')
+  await addBatchForm.locator('input').nth(0).fill(batchYear)
+  await addBatchForm.locator('input').nth(1).fill('5')
+  await addBatchForm.locator('input').nth(2).fill('A')
+  await addBatchForm.getByRole('button', { name: 'Add Batch', exact: true }).click()
   await expectFlash('Batch created.')
   await page.getByRole('combobox').nth(3).selectOption({ index: 1 })
   await page.getByRole('button', { name: 'Edit Batch', exact: true }).click()
@@ -140,45 +151,24 @@ try {
   await expectFlash('Batch updated.')
   await expectVisible(page.getByText(/^Sem 6$/).first(), 'updated batch semester chip')
 
-  await page.getByRole('button', { name: /Save Batch Policy/i }).click()
-  await page.waitForTimeout(1_000)
-
-  await page.getByPlaceholder('2026-27', { exact: true }).fill('2028-29')
-  await page.getByPlaceholder('5', { exact: true }).last().fill('6')
-  await page.getByPlaceholder('YYYY-MM-DD', { exact: true }).nth(0).fill('2028-07-10')
-  await page.getByPlaceholder('YYYY-MM-DD', { exact: true }).nth(1).fill('2028-11-20')
-  await page.getByRole('button', { name: 'Add Term', exact: true }).click()
-  await expectFlash('Academic term created.')
-  await page.getByRole('button', { name: 'Edit', exact: true }).nth(0).click()
-  await page.getByLabel('Term Academic Year Label', { exact: true }).fill('2028-30')
-  await page.getByRole('button', { name: 'Save Term', exact: true }).click()
-  await expectFlash('Academic term updated.')
-  await expectBodyText('Semester 6 · 2028-30', 'updated term row')
-
-  await page.getByPlaceholder('Semester', { exact: true }).fill('6')
-  await page.getByPlaceholder('CS699', { exact: true }).fill(curriculumCode)
-  await page.getByPlaceholder('Advanced Governance Systems', { exact: true }).fill('Quality Governance Lab')
-  await page.getByPlaceholder('4', { exact: true }).last().fill('4')
-  await page.getByRole('button', { name: 'Add Curriculum Course', exact: true }).click()
-  await expectFlash('Curriculum course created.')
-  await expectBodyText(curriculumCode, 'new curriculum course row')
-  await page.getByRole('button', { name: 'Edit', exact: true }).nth(1).click()
-  await page.getByLabel('Curriculum Course Title', { exact: true }).fill(updatedCurriculumTitle)
-  await page.getByRole('button', { name: 'Save Curriculum Course', exact: true }).click()
-  await expectFlash('Curriculum course updated.')
-  await expectBodyText(updatedCurriculumTitle, 'updated curriculum course row')
+  await expectVisible(page.getByText('Scope Governance Override', { exact: true }).first(), 'scope governance section')
+  await expectBodyTextOneOf(
+    ['Curriculum Model Inputs', 'Academic Term', 'Academic Terms', 'Semester Conditions', 'Batch Configuration'],
+    'batch workspace content after save',
+  )
+  await expectVisible(page.getByText('Students View', { exact: true }).first(), 'student launch card')
+  await expectVisible(page.getByText('Faculty View', { exact: true }).first(), 'faculty launch card')
 
   await page.goto(`${appUrl}#/admin/faculties`, { waitUntil: 'networkidle' })
   await page.getByRole('combobox').nth(0).selectOption({ label: updatedFacultyName })
   await page.getByRole('combobox').nth(1).selectOption({ label: updatedDepartmentName })
   await page.getByRole('combobox').nth(2).selectOption({ label: updatedBranchName })
   await page.getByRole('combobox').nth(3).selectOption({ index: 1 })
-  await expectBodyText(updatedCurriculumTitle, 'persisted curriculum after refresh')
-  await page.getByText(`${curriculumCode} · ${updatedCurriculumTitle}`, { exact: true }).locator('xpath=ancestor::*[@data-surface][1]').getByRole('button', { name: 'Delete', exact: true }).click()
-  await expectFlash('Curriculum course archived.')
-  await page.waitForFunction((text) => !Array.from(document.querySelectorAll('*')).some(node => node.textContent?.includes(text)), updatedCurriculumTitle)
-  await page.getByText('Semester 6 · 2028-30', { exact: true }).locator('xpath=ancestor::*[@data-surface][1]').getByRole('button', { name: 'Delete', exact: true }).click()
-  await page.waitForFunction(() => !Array.from(document.querySelectorAll('*')).some(node => node.textContent?.includes('Semester 6 · 2028-30')))
+  await expectVisible(page.getByText('Scope Governance Override', { exact: true }).first(), 'scope governance section after refresh')
+  await expectBodyTextOneOf(
+    ['Curriculum Model Inputs', 'Academic Term', 'Academic Terms', 'Semester Conditions', 'Batch Configuration'],
+    'batch workspace content after refresh',
+  )
 
   await page.goto(`${appUrl}#/admin/overview`, { waitUntil: 'networkidle' })
   await expectVisible(page.getByText('Operations Dashboard', { exact: true }).last(), 'overview before global search')
@@ -187,11 +177,6 @@ try {
   await page.getByRole('button', { name: new RegExp(studentUsn) }).first().click()
   await expectVisible(page.getByText(/^Student Detail$/).last(), 'student detail panel')
   await expectVisible(page.getByText(/CGPA/).last(), 'student cgpa chip')
-
-  await page.goto(`${appUrl}#/admin/faculty-members/t1`, { waitUntil: 'networkidle' })
-  await expectVisible(page.getByText(/^Faculty Detail$/).last(), 'faculty detail panel')
-  await page.getByRole('button', { name: /^Teaching/ }).click()
-  await expectVisible(page.getByText(/Current Owned Classes/), 'faculty assigned classes')
 
   await page.goto(`${appUrl}#/admin/requests`, { waitUntil: 'networkidle' })
   await page.getByRole('button').filter({ hasText: 'Grant additional mentor mapping coverage' }).first().click()

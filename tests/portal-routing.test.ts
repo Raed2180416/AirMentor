@@ -12,21 +12,10 @@ describe('portal routing', () => {
     expect(parsePortalRoute('#/unknown')).toBe('home')
   })
 
-  it('resolves the home route into a remembered workspace when session context exists', () => {
-    const adminStorage = {
-      getItem(key: string) {
-        return key === 'airmentor-current-admin-faculty-id' ? 'fac_sysadmin' : null
-      },
-    }
-    const academicStorage = {
-      getItem(key: string) {
-        return key === 'airmentor-current-faculty-id' ? 'fac_course_leader' : null
-      },
-    }
-
-    expect(resolvePortalRoute('#/', adminStorage)).toBe('admin')
-    expect(resolvePortalRoute('#/', academicStorage)).toBe('app')
-    expect(resolvePortalRoute('#/admin', academicStorage)).toBe('admin')
+  it('keeps the home route on the portal selector until the hash explicitly changes', () => {
+    expect(resolvePortalRoute('#/')).toBe('home')
+    expect(resolvePortalRoute('#/admin')).toBe('admin')
+    expect(resolvePortalRoute('#/app')).toBe('app')
   })
 
   it('maps routes back to canonical hashes', () => {

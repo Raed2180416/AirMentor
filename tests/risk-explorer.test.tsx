@@ -1,11 +1,11 @@
-import { createElement } from 'react'
+import { createElement, type ComponentProps } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { RiskExplorerPage } from '../src/pages/risk-explorer'
 
 describe('RiskExplorerPage', () => {
   it('renders proof-backed model provenance, trained heads, and bounded counterfactual copy', () => {
-    const props: any = {
+    const props: ComponentProps<typeof RiskExplorerPage> = {
       role: 'Course Leader',
       studentId: 'mnc_student_001',
       onBack: () => {},
@@ -167,6 +167,13 @@ describe('RiskExplorerPage', () => {
     expect(markup).toContain('data-proof-surface="risk-explorer"')
     expect(markup).toContain('data-proof-action="risk-explorer-back"')
     expect(markup).toContain('data-proof-section="authority-banner"')
+    expect(markup).toContain('role="tablist"')
+    expect(markup).toContain('aria-label="Risk explorer sections"')
+    expect(markup).toContain('role="tab"')
+    expect(markup).toContain('aria-controls="risk-explorer-panel-overview"')
+    expect(markup).toContain('aria-selected="true"')
+    expect(markup).toContain('role="tabpanel"')
+    expect(markup).toContain('data-proof-section="risk-explorer-panel-overview"')
     expect(markupAdvanced).toContain('data-proof-section="derived-risk-heads"')
     expect(markupDetails).toContain('data-proof-section="current-evidence"')
     expect(markup).toContain('data-proof-section="current-status"')
@@ -183,6 +190,7 @@ describe('RiskExplorerPage', () => {
     expect(markupAdvanced).toContain('Policy Comparison')
     expect(markupAdvanced).toContain('Advisory comparison only.')
     expect(markupAdvanced).toContain('Cross-Course And Prerequisite Pressure')
+    expect(markup).not.toContain('Assign ')
     expect(markup).not.toContain('AI says')
   })
 

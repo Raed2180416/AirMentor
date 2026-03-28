@@ -12,17 +12,38 @@ describe('http smoke', () => {
   it('logs in, restores session, and switches role context through the frontend client', async () => {
     current = await createTestApp()
     const address = await current.app.listen({ port: 0, host: '127.0.0.1' })
-    let cookieHeader = ''
+    const cookieJar = new Map<string, string>()
+
+    function readCookieHeader() {
+      return Array.from(cookieJar.entries()).map(([name, value]) => `${name}=${value}`).join('; ')
+    }
+
+    function rememberResponseCookies(response: Response) {
+      const setCookieValues = typeof response.headers.getSetCookie === 'function'
+        ? response.headers.getSetCookie()
+        : (() => {
+            const value = response.headers.get('set-cookie')
+            return value ? [value] : []
+          })()
+      for (const item of setCookieValues) {
+        const [cookiePair] = item.split(';')
+        const [cookieName, ...cookieValueParts] = cookiePair.split('=')
+        if (!cookieName) continue
+        cookieJar.set(cookieName, cookieValueParts.join('='))
+      }
+    }
 
     const cookieAwareFetch: typeof fetch = async (input, init) => {
       const headers = new Headers(init?.headers)
       headers.set('origin', TEST_ORIGIN)
+      const cookieHeader = readCookieHeader()
       if (cookieHeader) headers.set('cookie', cookieHeader)
-      const response = await fetch(input, { ...init, headers })
-      const setCookie = response.headers.get('set-cookie')
-      if (setCookie) {
-        cookieHeader = setCookie.split(';')[0]
+      if (['POST', 'PUT', 'PATCH', 'DELETE'].includes((init?.method ?? 'GET').toUpperCase())) {
+        const csrfToken = cookieJar.get('airmentor_csrf')
+        if (csrfToken) headers.set('x-airmentor-csrf', csrfToken)
       }
+      const response = await fetch(input, { ...init, headers })
+      rememberResponseCookies(response)
       return response
     }
 

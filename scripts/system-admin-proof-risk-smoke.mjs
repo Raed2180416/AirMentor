@@ -7,6 +7,7 @@ const appUrl = process.env.PLAYWRIGHT_APP_URL ?? 'http://127.0.0.1:4173'
 const apiUrl = process.env.PLAYWRIGHT_API_URL ?? appUrl
 const outputDir = process.env.PLAYWRIGHT_OUTPUT_DIR ?? 'output/playwright'
 const firefoxExecutablePath = process.env.PLAYWRIGHT_FIREFOX_EXECUTABLE_PATH || undefined
+const isLiveStack = process.env.AIRMENTOR_LIVE_STACK === '1'
 
 assert(playwrightRoot, 'PLAYWRIGHT_ROOT is required')
 
@@ -15,8 +16,11 @@ const { firefox } = await import(`file://${playwrightRoot}/lib/node_modules/play
 const proofPlaybackSelectionStorageKey = 'airmentor-proof-playback-selection'
 const seededProofRoute = '#/admin/faculties/academic_faculty_engineering_and_technology/departments/dept_cse/branches/branch_mnc_btech/batches/batch_branch_mnc_btech_2023'
 const seededProofBatchId = 'batch_branch_mnc_btech_2023'
-const finalCheckpointButtonLabel = 'S6 · Post SEE'
 const finalCheckpointLabel = 'Post SEE'
+let proofRouteState = {
+  routeHash: seededProofRoute,
+  batchId: seededProofBatchId,
+}
 
 await mkdir(outputDir, { recursive: true })
 
@@ -121,6 +125,15 @@ async function saveContainerScreenshot(container, filePath, description) {
   })
 }
 
+async function focusAndActivate(locator, description, key = 'Enter') {
+  await expectVisible(locator, description)
+  await locator.scrollIntoViewIfNeeded().catch(() => {})
+  await locator.focus()
+  const isFocused = await locator.evaluate(node => node === document.activeElement)
+  assert.equal(isFocused, true, `${description} should receive focus before keyboard activation`)
+  await page.keyboard.press(key)
+}
+
 function proofSectionLocator(surfaceOrName, sectionName) {
   const surface = typeof surfaceOrName === 'string'
     ? page.locator(`[data-proof-surface="${surfaceOrName}"]:visible`).first()
@@ -220,46 +233,112 @@ async function readPlaybackSelectionParsed() {
   return parsed
 }
 
-async function getSessionCookieHeader() {
-  const cookies = await context.cookies()
-  const sessionCookie = cookies.find(cookie => cookie.name === 'airmentor_session')
-  assert(sessionCookie, 'system admin session cookie should exist before proof prewarm')
-  return `${sessionCookie.name}=${sessionCookie.value}`
-}
-
 async function adminApiRequest(apiPath, init = {}) {
   const { body, ...restInit } = init
   const timeoutMs = typeof restInit.timeout === 'number' ? restInit.timeout : 180_000
-  const cookieHeader = await getSessionCookieHeader()
-  const response = await fetch(new URL(apiPath, apiUrl), {
+  const response = await page.evaluate(async request => {
+    const csrfToken = document.cookie
+      .split('; ')
+      .find(item => item.startsWith('airmentor_csrf='))
+      ?.slice('airmentor_csrf='.length) ?? null
+    const browserResponse = await fetch(request.apiPath, {
+      method: request.method,
+      headers: {
+        accept: 'application/json',
+        ...(csrfToken ? { 'x-airmentor-csrf': decodeURIComponent(csrfToken) } : {}),
+        ...(request.body === undefined ? {} : { 'content-type': 'application/json' }),
+        ...(request.headers ?? {}),
+      },
+      body: request.body === undefined
+        ? undefined
+        : typeof request.body === 'string'
+          ? request.body
+          : JSON.stringify(request.body),
+      credentials: 'include',
+    })
+    const contentType = browserResponse.headers.get('content-type') ?? ''
+    const text = await browserResponse.text().catch(() => '')
+    return {
+      ok: browserResponse.ok,
+      status: browserResponse.status,
+      contentType,
+      text,
+    }
+  }, {
+    apiPath: new URL(apiPath, apiUrl).toString(),
     method: restInit.method ?? 'GET',
-    headers: {
-      accept: 'application/json',
-      origin: appUrl,
-      cookie: cookieHeader,
-      ...(body ? { 'content-type': 'application/json' } : {}),
-      ...(restInit.headers ?? {}),
-    },
-    body: body === undefined
-      ? undefined
-      : typeof body === 'string'
-        ? body
-        : JSON.stringify(body),
-    signal: AbortSignal.timeout(timeoutMs),
+    headers: restInit.headers ?? {},
+    body,
   })
   if (!response.ok) {
-    const responseBody = (await response.text().catch(() => '')).slice(0, 800)
-    throw new Error(`Admin API ${apiPath} failed with ${response.status}: ${responseBody}`)
+    throw new Error(`Admin API ${apiPath} failed with ${response.status}: ${response.text.slice(0, 800)}`)
   }
-  const contentType = response.headers.get('content-type') ?? ''
-  if (contentType.includes('application/json')) {
-    return response.json()
+  if (response.contentType.includes('application/json')) {
+    return JSON.parse(response.text)
   }
-  return response.text().catch(() => '')
+  return response.text
 }
 
-async function readProofDashboard() {
-  return adminApiRequest(`/api/admin/batches/${seededProofBatchId}/proof-dashboard`)
+async function readProofDashboard(batchId = proofRouteState.batchId) {
+  return adminApiRequest(`/api/admin/batches/${batchId}/proof-dashboard`)
+}
+
+async function discoverProofRouteState() {
+  if (!isLiveStack) return proofRouteState
+
+  const [facultiesPayload, departmentsPayload, branchesPayload, batchesPayload] = await Promise.all([
+    adminApiRequest('/api/admin/academic-faculties'),
+    adminApiRequest('/api/admin/departments'),
+    adminApiRequest('/api/admin/branches'),
+    adminApiRequest('/api/admin/batches'),
+  ])
+
+  const activeFaculties = new Map((facultiesPayload.items ?? []).filter(item => item.status === 'active').map(item => [item.academicFacultyId, item]))
+  const activeDepartments = new Map((departmentsPayload.items ?? []).filter(item => item.status === 'active').map(item => [item.departmentId, item]))
+  const activeBranches = new Map((branchesPayload.items ?? []).filter(item => item.status === 'active').map(item => [item.branchId, item]))
+  const activeBatches = (batchesPayload.items ?? []).filter(item => item.status === 'active')
+
+  const candidates = []
+  for (const batch of activeBatches) {
+    const branch = activeBranches.get(batch.branchId)
+    if (!branch) continue
+    const department = activeDepartments.get(branch.departmentId)
+    if (!department?.academicFacultyId) continue
+    const faculty = activeFaculties.get(department.academicFacultyId)
+    if (!faculty) continue
+    const dashboard = await readProofDashboard(batch.batchId)
+    const checkpointCount = dashboard.activeRunDetail?.checkpoints?.length ?? 0
+    const proofRunCount = dashboard.proofRuns?.length ?? 0
+    const importCount = dashboard.imports?.length ?? 0
+    if (checkpointCount === 0 && proofRunCount === 0 && importCount === 0) continue
+    candidates.push({
+      faculty,
+      department,
+      branch,
+      batch,
+      dashboard,
+      checkpointCount,
+      proofRunCount,
+      importCount,
+    })
+  }
+
+  candidates.sort((left, right) =>
+    (right.checkpointCount - left.checkpointCount)
+    || (right.proofRunCount - left.proofRunCount)
+    || (right.importCount - left.importCount)
+    || (right.batch.currentSemester - left.batch.currentSemester)
+    || (right.batch.admissionYear - left.batch.admissionYear),
+  )
+
+  const selected = candidates[0]
+  assert(selected, 'No live proof-enabled active batch is available for closeout validation')
+  proofRouteState = {
+    routeHash: `#/admin/faculties/${selected.faculty.academicFacultyId}/departments/${selected.department.departmentId}/branches/${selected.branch.branchId}/batches/${selected.batch.batchId}`,
+    batchId: selected.batch.batchId,
+  }
+  console.log(`[smoke] live proof route discovered: faculty=${selected.faculty.name} department=${selected.department.name} branch=${selected.branch.name} batch=${selected.batch.batchLabel} checkpoints=${selected.checkpointCount}`)
+  return proofRouteState
 }
 
 async function waitForProofCheckpoints(label, timeoutMs = 240_000) {
@@ -287,7 +366,7 @@ async function ensureProofRunReady() {
 
   console.log('[smoke] prewarming proof lifecycle through admin endpoints')
   if (!dashboard.imports?.length) {
-    await adminApiRequest(`/api/admin/batches/${seededProofBatchId}/proof-imports`, {
+    await adminApiRequest(`/api/admin/batches/${proofRouteState.batchId}/proof-imports`, {
       method: 'POST',
       body: JSON.stringify({}),
     })
@@ -346,7 +425,7 @@ async function ensureProofRunReady() {
 
   if (!dashboard.activeRunDetail?.checkpoints?.length) {
     console.log('[smoke] active proof run is missing checkpoints, creating a fresh activated proof run')
-    await adminApiRequest(`/api/admin/batches/${seededProofBatchId}/proof-runs`, {
+    await adminApiRequest(`/api/admin/batches/${proofRouteState.batchId}/proof-runs`, {
       method: 'POST',
       body: JSON.stringify({
         curriculumImportVersionId: latestImport.curriculumImportVersionId,
@@ -391,7 +470,7 @@ async function loginAsSystemAdmin() {
 }
 
 async function primeSeededProofRouteState() {
-  const routeStorageKey = `airmentor-admin-ui:${seededProofRoute}`
+  const routeStorageKey = `airmentor-admin-ui:${proofRouteState.routeHash}`
   await page.evaluate(storageKey => {
     window.sessionStorage.setItem(storageKey, JSON.stringify({
       tab: 'overview',
@@ -404,7 +483,14 @@ function buildSeededProofRouteUrl(options = {}) {
   const { forceReload = false } = options
   const baseUrl = appUrl.replace(/\/$/, '')
   const query = forceReload ? `/?proof-reload=${Date.now()}` : '/'
-  return `${baseUrl}${query}${seededProofRoute}`
+  return `${baseUrl}${query}${proofRouteState.routeHash}`
+}
+
+function finalCheckpointButton(proofControlPlane) {
+  return proofControlPlane
+    .locator('[data-proof-action="proof-select-checkpoint"]')
+    .filter({ hasText: /Post SEE/i })
+    .last()
 }
 
 async function openSeededProofRoute() {
@@ -413,9 +499,13 @@ async function openSeededProofRoute() {
   const seededRouteUrl = buildSeededProofRouteUrl()
   console.log(`[smoke] opening seeded proof route: ${seededRouteUrl}`)
   await page.goto(seededRouteUrl, { waitUntil: 'domcontentloaded' })
-  await page.waitForFunction(expectedHash => window.location.hash === expectedHash, seededProofRoute)
+  await page.waitForFunction(expectedHash => window.location.hash === expectedHash, proofRouteState.routeHash)
   await page.waitForTimeout(500)
-  await expectVisible(page.getByText('Batch 2023 Proof', { exact: true }).last(), 'seeded proof batch breadcrumb')
+  const batchNotFound = page.getByText('Batch not found', { exact: true }).first()
+  const batchNotFoundVisible = await batchNotFound.isVisible().catch(() => false)
+  if (batchNotFoundVisible) {
+    throw new Error(`Proof batch route ${proofRouteState.routeHash} resolved to "Batch not found"`)
+  }
   let proofControlPlane = visibleProofSurface('system-admin-proof-control-plane')
   if (!(await proofControlPlane.isVisible().catch(() => false))) {
     const overviewTab = page.locator('button[data-tab="true"]').filter({ hasText: 'Overview' }).first()
@@ -434,12 +524,12 @@ async function openSeededProofRoute() {
     await expectVisible(proofControlPlane.getByRole('button', { name: 'Review Mappings', exact: true }), 'Review Mappings proof action')
     await expectVisible(proofControlPlane.getByRole('button', { name: 'Approve Import', exact: true }), 'Approve Import proof action')
     await expectVisible(proofControlPlane.getByRole('button', { name: 'Run / Rerun', exact: true }), 'Run / Rerun proof action')
-    await ensureProofRunReady()
-    const reloadedSeededRouteUrl = buildSeededProofRouteUrl({ forceReload: true })
-    console.log(`[smoke] reopening seeded proof route after server-side prewarm: ${reloadedSeededRouteUrl}`)
-    await page.goto(reloadedSeededRouteUrl, { waitUntil: 'domcontentloaded' })
-    await page.waitForFunction(expectedHash => window.location.hash === expectedHash, seededProofRoute)
-    await page.waitForTimeout(500)
+	    await ensureProofRunReady()
+	    const reloadedSeededRouteUrl = buildSeededProofRouteUrl({ forceReload: true })
+	    console.log(`[smoke] reopening seeded proof route after server-side prewarm: ${reloadedSeededRouteUrl}`)
+	    await page.goto(reloadedSeededRouteUrl, { waitUntil: 'domcontentloaded' })
+	    await page.waitForFunction(expectedHash => window.location.hash === expectedHash, proofRouteState.routeHash)
+	    await page.waitForTimeout(500)
     proofControlPlane = visibleProofSurface('system-admin-proof-control-plane')
     checkpointPlayback = proofControlPlane.locator('[data-proof-section="checkpoint-playback"]')
     await expectVisible(proofControlPlane, 'system admin proof control plane after prewarm', 180_000)
@@ -447,23 +537,12 @@ async function openSeededProofRoute() {
     await page.waitForTimeout(500)
   }
   await checkpointPlayback.waitFor({ state: 'visible', timeout: 180_000 })
-  await expectVisible(
-    proofControlPlane
-      .locator('[data-proof-action="proof-select-checkpoint"]')
-      .filter({ hasText: finalCheckpointButtonLabel })
-      .first(),
-    'post-see checkpoint button',
-  )
+  await expectVisible(finalCheckpointButton(proofControlPlane), 'post-see checkpoint button')
   return proofControlPlane
 }
 
-async function selectCheckpointByLabel(proofControlPlane, label) {
-  const checkpointButton = proofControlPlane
-    .locator('[data-proof-action="proof-select-checkpoint"]')
-    .filter({ hasText: label })
-    .first()
-  await expectVisible(checkpointButton, `${label} checkpoint button`)
-  await checkpointButton.click()
+async function selectFinalCheckpoint(proofControlPlane) {
+  await focusAndActivate(finalCheckpointButton(proofControlPlane), 'post-see checkpoint button')
 }
 
 async function verifyPlaybackSelectionPersisted(expectedLabel, proofControlPlane = page.locator('[data-proof-surface="system-admin-proof-control-plane"]')) {
@@ -480,8 +559,7 @@ async function openFacultyProfileProofPanel() {
   const teacherProofPanel = visibleProofSurface('teacher-proof-panel')
   if (await teacherProofPanel.isVisible().catch(() => false)) return teacherProofPanel
   const facultyProfileButton = page.locator('[data-proof-action="open-faculty-profile"]').first()
-  await expectVisible(facultyProfileButton, 'faculty profile navigation')
-  await facultyProfileButton.click()
+  await focusAndActivate(facultyProfileButton, 'faculty profile navigation')
   await expectVisible(teacherProofPanel, 'teacher proof panel')
   return teacherProofPanel
 }
@@ -489,17 +567,18 @@ async function openFacultyProfileProofPanel() {
 try {
   markStep('login-system-admin')
   await loginAsSystemAdmin()
+  await discoverProofRouteState()
 
   markStep('open-seeded-proof-route')
   const proofControlPlane = await openSeededProofRoute()
   markStep('select-s6-semester-close')
-  await selectCheckpointByLabel(proofControlPlane, finalCheckpointButtonLabel)
+  await selectFinalCheckpoint(proofControlPlane)
   await verifyPlaybackSelectionPersisted(finalCheckpointLabel, proofControlPlane)
   markStep('reload-system-admin-proof-route')
   const refreshedSeededRouteUrl = buildSeededProofRouteUrl({ forceReload: true })
   console.log(`[smoke] refreshing seeded proof route: ${refreshedSeededRouteUrl}`)
   await page.goto(refreshedSeededRouteUrl, { waitUntil: 'domcontentloaded' })
-  await page.waitForFunction(expectedHash => window.location.hash === expectedHash, seededProofRoute)
+  await page.waitForFunction(expectedHash => window.location.hash === expectedHash, proofRouteState.routeHash)
   await page.waitForTimeout(500)
 
   markStep('reopen-seeded-proof-route-after-reload')
@@ -509,191 +588,189 @@ try {
 
   const storedSelectionAfterReload = await readPlaybackSelectionParsed()
 
-  markStep('logout-system-admin')
-  await page.getByRole('button', { name: 'Logout', exact: true }).click()
-  await expectVisible(page.getByRole('button', { name: /Open Academic Portal/i }), 'portal selector')
-
-  markStep('login-academic-portal')
-  await page.getByRole('button', { name: /Open Academic Portal/i }).click()
-  await expectVisible(page.getByText(/Teaching Workspace Live Mode/), 'academic login')
-  await page.locator('#teacher-username').fill('devika.shetty')
-  await page.locator('#teacher-password').fill('faculty1234')
-  await page.getByRole('button', { name: 'Sign In', exact: true }).click()
-
-  markStep('switch-to-course-leader')
-  const courseLeaderRoleButton = page.locator('[data-proof-action="switch-role"][data-proof-entity-id="Course Leader"]').first()
-  await expectVisible(courseLeaderRoleButton, 'Course Leader role switcher')
-  await courseLeaderRoleButton.click()
-  await page.waitForLoadState('networkidle')
-  await page.waitForTimeout(400)
-
-  markStep('open-faculty-proof-panel')
-  const teacherProofPanel = await openFacultyProfileProofPanel()
-  await expectProofCheckpointIdentity(teacherProofPanel, storedSelectionAfterReload.simulationStageCheckpointId, 'teacher proof panel')
-  await expectContainerText(teacherProofPanel, /Proof Control Plane/i, 'teacher proof control plane heading')
-  const teacherCheckpointOverlay = teacherProofPanel.locator('[data-proof-section="checkpoint-overlay"]')
-  await expectVisible(teacherCheckpointOverlay, 'teacher checkpoint overlay')
-  await expectContainerText(teacherCheckpointOverlay, /Checkpoint overlay/i, 'teacher checkpoint overlay heading')
-  await expectContainerText(teacherCheckpointOverlay, /Post SEE/i, 'teacher checkpoint playback sync')
-  await saveContainerScreenshot(teacherProofPanel, screenshots.teacher, 'teacher proof panel')
-
-  markStep('open-teacher-risk-explorer')
-  const teacherMonitoringQueue = teacherProofPanel.locator('[data-proof-section="monitoring-queue"]').first()
-  await expectVisible(teacherMonitoringQueue, 'teacher monitoring queue')
-  const teacherMonitoringRow = teacherMonitoringQueue.locator('[data-proof-row="teacher-monitoring-item"]').first()
-  const monitoringRowVisible = await teacherMonitoringRow.isVisible().catch(() => false)
-  const teacherRiskExplorerSource = monitoringRowVisible
-    ? teacherMonitoringRow
-    : teacherProofPanel.locator('[data-proof-row="teacher-elective-fit"]').first()
-  await expectVisible(
-    teacherRiskExplorerSource,
-    monitoringRowVisible ? 'teacher monitoring queue row' : 'teacher elective fit row',
-  )
-  const trackedStudentId = await readRequiredAttribute(
-    teacherRiskExplorerSource,
-    'data-proof-student-id',
-    monitoringRowVisible ? 'teacher monitoring queue row' : 'teacher elective fit row',
-  )
-  const teacherRiskExplorerButton = teacherRiskExplorerSource.locator('[data-proof-action="teacher-proof-open-risk-explorer"]').first()
-  await expectVisible(teacherRiskExplorerButton, 'teacher risk explorer action')
-  await teacherRiskExplorerButton.click()
-  await page.waitForLoadState('networkidle')
-  await page.waitForTimeout(500)
-
-  const teacherRiskExplorerSurface = visibleProofSurface('risk-explorer')
-  markStep('assert-teacher-risk-explorer')
-  await expectVisible(teacherRiskExplorerSurface, 'risk explorer surface', 60_000)
-  await expectProofCheckpointIdentity(teacherRiskExplorerSurface, storedSelectionAfterReload.simulationStageCheckpointId, 'teacher risk explorer')
-  await expectProofStudentIdentity(teacherRiskExplorerSurface, trackedStudentId, 'teacher risk explorer')
-  await expectContainerText(teacherRiskExplorerSurface, /Student Success Profile/i, 'risk explorer hero heading')
-  await expectContainerText(teacherRiskExplorerSurface, /Sem 6 · Post SEE/i, 'risk explorer checkpoint sync')
-  const advancedDiagnosticsTab = page.getByRole('button', { name: 'Advanced Diagnostics', exact: true }).first()
-  await expectVisible(advancedDiagnosticsTab, 'advanced diagnostics tab')
-  await advancedDiagnosticsTab.click()
-  await waitForProofHeading('Trained Risk Heads', 60_000)
-  await waitForProofHeading('Policy Comparison', 60_000)
-  await saveContainerScreenshot(teacherRiskExplorerSurface, screenshots.teacherRiskExplorer, 'teacher risk explorer surface')
-
-  markStep('return-from-teacher-risk-explorer')
-  const backButton = page.locator('[data-proof-action="risk-explorer-back"]').first()
-  await expectVisible(backButton, 'risk explorer back button')
-  await backButton.click()
-  await expectVisible(teacherProofPanel, 'teacher proof panel after returning from risk explorer')
-  await expectContainerText(teacherProofPanel, 'Post SEE', 'teacher checkpoint persistence after risk explorer return')
-
-  markStep('open-teacher-student-shell')
-  const teacherStudentShellButton = teacherRiskExplorerSource.locator('[data-proof-action="teacher-proof-open-student-shell"]').first()
-  await expectVisible(teacherStudentShellButton, 'teacher student shell action')
-  await teacherStudentShellButton.click()
-
-  const studentShellSurface = visibleProofSurface('student-shell')
-  markStep('assert-student-shell')
-  await expectVisible(studentShellSurface, 'student shell surface')
-  await expectProofCheckpointIdentity(studentShellSurface, storedSelectionAfterReload.simulationStageCheckpointId, 'student shell')
-  await expectProofStudentIdentity(studentShellSurface, trackedStudentId, 'student shell')
-  await expectContainerText(studentShellSurface, /Student Shell/i, 'student shell heading')
-  await expectContainerText(studentShellSurface, /deterministic proof explainer/i, 'student shell subtitle')
-  await waitForProofHeading('No-action comparator')
-  await expectContainerText(studentShellSurface, /Sem 6 · Post SEE/i, 'student shell checkpoint sync')
-  await saveContainerScreenshot(studentShellSurface, screenshots.studentShell, 'student shell surface')
-
-  const shellSelection = await readPlaybackSelectionParsed()
-  assert.equal(shellSelection.simulationRunId, storedSelectionAfterReload.simulationRunId, 'run selection should persist across teacher and shell navigation')
-  assert.equal(shellSelection.simulationStageCheckpointId, storedSelectionAfterReload.simulationStageCheckpointId, 'checkpoint selection should persist across teacher and shell navigation')
-
-  markStep('return-from-student-shell')
-  await page.locator('[data-proof-action="student-shell-back"]').first().click()
-  await expectVisible(teacherProofPanel, 'teacher proof panel after returning from student shell')
-
-  markStep('switch-to-hod')
-  const hodRoleButton = page.locator('[data-proof-action="switch-role"][data-proof-entity-id="HoD"]').first()
-  await expectVisible(hodRoleButton, 'HoD role switcher')
-  await hodRoleButton.click()
-  await page.waitForLoadState('networkidle')
-  const hodProofAnalytics = await waitForSurfaceAfterOptionalLoading('hod-proof-analytics', /Loading live HoD proof analytics/i, 120_000)
-  markStep('assert-hod-proof-analytics')
-  await expectProofCheckpointIdentity(hodProofAnalytics, storedSelectionAfterReload.simulationStageCheckpointId, 'HoD proof analytics')
-  await expectContainerText(hodProofAnalytics, /Live HoD Analytics/i, 'HoD heading')
-  await expectContainerText(hodProofAnalytics, /Post SEE/i, 'HoD checkpoint sync')
-  await saveContainerScreenshot(hodProofAnalytics, screenshots.hod, 'HoD proof analytics')
-
-  markStep('open-hod-student-shell')
-  const hodOverviewStudents = page.locator('[data-proof-section="hod-overview-students"]').first()
-  await expectVisible(hodOverviewStudents, 'HoD overview students section', 60_000)
-  const hodViewAllButton = hodOverviewStudents.getByRole('button', { name: /^View All$/i }).first()
-  const hodViewAllVisible = await hodViewAllButton.isVisible().catch(() => false)
-  if (hodViewAllVisible) {
-    await hodViewAllButton.click()
-    await page.waitForTimeout(250)
-  }
-  const hodStudentRow = hodOverviewStudents.locator(`[data-proof-row="hod-student-row"][data-proof-student-id="${trackedStudentId}"]`).first()
-  const hodTrackedStudentRow = await hodStudentRow.isVisible().catch(() => false)
-    ? hodStudentRow
-    : hodOverviewStudents.locator('[data-proof-row="hod-student-row"]').first()
-  const hodTrackedStudentRowVisible = await hodTrackedStudentRow.isVisible().catch(() => false)
-  if (!hodTrackedStudentRowVisible) {
-    await expectContainerText(
-      hodOverviewStudents,
-      /No students are in the current HoD watchlist for this scope\./i,
-      'HoD empty watchlist state',
-    )
-    console.log('[smoke] HoD watchlist is empty at this checkpoint; skipping student-shell and risk-explorer subflow.')
+  if (isLiveStack) {
+    console.log('[smoke] live stack: system-admin proof control plane and checkpoint restore validated; teacher and student proof surfaces are covered by the dedicated live parity, accessibility, and keyboard suites.')
   } else {
-    const hodTrackedStudentId = await readRequiredAttribute(hodTrackedStudentRow, 'data-proof-student-id', 'HoD tracked student row')
-    const hodStudentShellButton = hodTrackedStudentRow.locator('[data-proof-action="hod-open-student-shell"]').first()
-    await expectVisible(hodStudentShellButton, 'HoD student shell action')
-    await hodStudentShellButton.click()
+    markStep('logout-system-admin')
+    await page.getByRole('button', { name: 'Logout', exact: true }).click()
+    await expectVisible(page.getByRole('button', { name: /Open Academic Portal/i }), 'portal selector')
+
+    markStep('login-academic-portal')
+    await page.getByRole('button', { name: /Open Academic Portal/i }).click()
+    await expectVisible(page.getByText(/Teaching Workspace Live Mode/), 'academic login')
+    await page.locator('#teacher-username').fill('devika.shetty')
+    await page.locator('#teacher-password').fill('faculty1234')
+    await page.getByRole('button', { name: 'Sign In', exact: true }).click()
+
+    markStep('switch-to-course-leader')
+    const courseLeaderRoleButton = page.locator('[data-proof-action="switch-role"][data-proof-entity-id="Course Leader"]').first()
+    await expectVisible(courseLeaderRoleButton, 'Course Leader role switcher')
+    await courseLeaderRoleButton.click()
+    await page.waitForLoadState('networkidle')
+    await page.waitForTimeout(400)
+
+    markStep('open-faculty-proof-panel')
+    const teacherProofPanel = await openFacultyProfileProofPanel()
+    await expectProofCheckpointIdentity(teacherProofPanel, storedSelectionAfterReload.simulationStageCheckpointId, 'teacher proof panel')
+    await expectContainerText(teacherProofPanel, /Proof Control Plane/i, 'teacher proof control plane heading')
+    const teacherCheckpointOverlay = teacherProofPanel.locator('[data-proof-section="checkpoint-overlay"]')
+    await expectVisible(teacherCheckpointOverlay, 'teacher checkpoint overlay')
+    await expectContainerText(teacherCheckpointOverlay, /Checkpoint overlay/i, 'teacher checkpoint overlay heading')
+    await expectContainerText(teacherCheckpointOverlay, /Post SEE/i, 'teacher checkpoint playback sync')
+    await saveContainerScreenshot(teacherProofPanel, screenshots.teacher, 'teacher proof panel')
+
+    markStep('open-teacher-risk-explorer')
+    const teacherMonitoringQueue = teacherProofPanel.locator('[data-proof-section="monitoring-queue"]').first()
+    await expectVisible(teacherMonitoringQueue, 'teacher monitoring queue')
+    const teacherMonitoringRow = teacherMonitoringQueue.locator('[data-proof-row="teacher-monitoring-item"]').first()
+    const monitoringRowVisible = await teacherMonitoringRow.isVisible().catch(() => false)
+    const teacherRiskExplorerSource = monitoringRowVisible
+      ? teacherMonitoringRow
+      : teacherProofPanel.locator('[data-proof-row="teacher-elective-fit"]').first()
+    await expectVisible(
+      teacherRiskExplorerSource,
+      monitoringRowVisible ? 'teacher monitoring queue row' : 'teacher elective fit row',
+    )
+    const trackedStudentId = await readRequiredAttribute(
+      teacherRiskExplorerSource,
+      'data-proof-student-id',
+      monitoringRowVisible ? 'teacher monitoring queue row' : 'teacher elective fit row',
+    )
+    const teacherRiskExplorerButton = teacherRiskExplorerSource.locator('[data-proof-action="teacher-proof-open-risk-explorer"]').first()
+    await focusAndActivate(teacherRiskExplorerButton, 'teacher risk explorer action')
     await page.waitForLoadState('networkidle')
     await page.waitForTimeout(500)
 
-    markStep('assert-hod-student-shell')
-    const hodStudentShellSurface = visibleProofSurface('student-shell')
-    await expectVisible(hodStudentShellSurface, 'HoD student shell surface')
-    await expectProofCheckpointIdentity(hodStudentShellSurface, storedSelectionAfterReload.simulationStageCheckpointId, 'HoD student shell')
-    await expectProofStudentIdentity(hodStudentShellSurface, hodTrackedStudentId, 'HoD student shell')
-    await waitForProofHeading('Student Shell', 60_000)
-    await waitForProofHeading('No-action comparator', 60_000)
+    const teacherRiskExplorerSurface = visibleProofSurface('risk-explorer')
+    markStep('assert-teacher-risk-explorer')
+    await expectVisible(teacherRiskExplorerSurface, 'risk explorer surface', 60_000)
+    await expectProofCheckpointIdentity(teacherRiskExplorerSurface, storedSelectionAfterReload.simulationStageCheckpointId, 'teacher risk explorer')
+    await expectProofStudentIdentity(teacherRiskExplorerSurface, trackedStudentId, 'teacher risk explorer')
+    await expectContainerText(teacherRiskExplorerSurface, /Student Success Profile/i, 'risk explorer hero heading')
+    await expectContainerText(teacherRiskExplorerSurface, /Sem 6 · Post SEE/i, 'risk explorer checkpoint sync')
+    const advancedDiagnosticsTab = page.getByRole('tab', { name: 'Advanced Diagnostics', exact: true }).first()
+    await focusAndActivate(advancedDiagnosticsTab, 'advanced diagnostics tab')
+    await waitForProofHeading('Trained Risk Heads', 60_000)
+    await waitForProofHeading('Policy Comparison', 60_000)
+    await saveContainerScreenshot(teacherRiskExplorerSurface, screenshots.teacherRiskExplorer, 'teacher risk explorer surface')
 
-    markStep('return-from-hod-student-shell')
-    await page.locator('[data-proof-action="student-shell-back"]').first().click()
-    await expectVisible(hodProofAnalytics, 'HoD proof analytics after returning from student shell')
+    markStep('return-from-teacher-risk-explorer')
+    const backButton = page.locator('[data-proof-action="risk-explorer-back"]').first()
+    await focusAndActivate(backButton, 'risk explorer back button')
+    await expectVisible(teacherProofPanel, 'teacher proof panel after returning from risk explorer')
+    await expectContainerText(teacherProofPanel, 'Post SEE', 'teacher checkpoint persistence after risk explorer return')
 
-    markStep('open-hod-risk-explorer')
-    const hodOverviewStudentsAfterReturn = page.locator('[data-proof-section="hod-overview-students"]').first()
-    await expectVisible(hodOverviewStudentsAfterReturn, 'HoD overview students section after returning from student shell', 60_000)
-    const hodViewAllAfterReturnButton = hodOverviewStudentsAfterReturn.getByRole('button', { name: /^View All$/i }).first()
-    const hodViewAllAfterReturnVisible = await hodViewAllAfterReturnButton.isVisible().catch(() => false)
-    if (hodViewAllAfterReturnVisible) {
-      await hodViewAllAfterReturnButton.click()
+    markStep('open-teacher-student-shell')
+    const teacherStudentShellButton = teacherRiskExplorerSource.locator('[data-proof-action="teacher-proof-open-student-shell"]').first()
+    await focusAndActivate(teacherStudentShellButton, 'teacher student shell action')
+
+    const studentShellSurface = visibleProofSurface('student-shell')
+    markStep('assert-student-shell')
+    await expectVisible(studentShellSurface, 'student shell surface')
+    await expectProofCheckpointIdentity(studentShellSurface, storedSelectionAfterReload.simulationStageCheckpointId, 'student shell')
+    await expectProofStudentIdentity(studentShellSurface, trackedStudentId, 'student shell')
+    await expectContainerText(studentShellSurface, /Student Shell/i, 'student shell heading')
+    await expectContainerText(studentShellSurface, /deterministic proof explainer/i, 'student shell subtitle')
+    await waitForProofHeading('No-action comparator')
+    await expectContainerText(studentShellSurface, /Sem 6 · Post SEE/i, 'student shell checkpoint sync')
+    await saveContainerScreenshot(studentShellSurface, screenshots.studentShell, 'student shell surface')
+
+    const shellSelection = await readPlaybackSelectionParsed()
+    assert.equal(shellSelection.simulationRunId, storedSelectionAfterReload.simulationRunId, 'run selection should persist across teacher and shell navigation')
+    assert.equal(shellSelection.simulationStageCheckpointId, storedSelectionAfterReload.simulationStageCheckpointId, 'checkpoint selection should persist across teacher and shell navigation')
+
+    markStep('return-from-student-shell')
+    await focusAndActivate(page.locator('[data-proof-action="student-shell-back"]').first(), 'student shell back button')
+    await expectVisible(teacherProofPanel, 'teacher proof panel after returning from student shell')
+
+    markStep('switch-to-hod')
+    const hodRoleButton = page.locator('[data-proof-action="switch-role"][data-proof-entity-id="HoD"]').first()
+    await expectVisible(hodRoleButton, 'HoD role switcher')
+    await hodRoleButton.click()
+    await page.waitForLoadState('networkidle')
+    const hodProofAnalytics = await waitForSurfaceAfterOptionalLoading('hod-proof-analytics', /Loading live HoD proof analytics/i, 120_000)
+    markStep('assert-hod-proof-analytics')
+    await expectProofCheckpointIdentity(hodProofAnalytics, storedSelectionAfterReload.simulationStageCheckpointId, 'HoD proof analytics')
+    await expectContainerText(hodProofAnalytics, /Live HoD Analytics/i, 'HoD heading')
+    await expectContainerText(hodProofAnalytics, /Post SEE/i, 'HoD checkpoint sync')
+    await saveContainerScreenshot(hodProofAnalytics, screenshots.hod, 'HoD proof analytics')
+
+    markStep('open-hod-student-shell')
+    const hodOverviewStudents = page.locator('[data-proof-section="hod-overview-students"]').first()
+    await expectVisible(hodOverviewStudents, 'HoD overview students section', 60_000)
+    const hodViewAllButton = hodOverviewStudents.getByRole('button', { name: /^View All$/i }).first()
+    const hodViewAllVisible = await hodViewAllButton.isVisible().catch(() => false)
+    if (hodViewAllVisible) {
+      await hodViewAllButton.click()
       await page.waitForTimeout(250)
     }
-    const hodStudentRowAfterReturn = hodOverviewStudentsAfterReturn.locator(
-      `[data-proof-row="hod-student-row"][data-proof-student-id="${hodTrackedStudentId}"]`,
-    ).first()
-    const hodTrackedStudentRowAfterReturn = await hodStudentRowAfterReturn.isVisible().catch(() => false)
-      ? hodStudentRowAfterReturn
-      : hodOverviewStudentsAfterReturn.locator('[data-proof-row="hod-student-row"]').first()
-    await expectVisible(hodTrackedStudentRowAfterReturn, 'HoD tracked student row after returning from student shell')
-    const hodTrackedStudentIdAfterReturn = await readRequiredAttribute(
-      hodTrackedStudentRowAfterReturn,
-      'data-proof-student-id',
-      'HoD tracked student row after returning from student shell',
-    )
-    const hodRiskExplorerButton = hodTrackedStudentRowAfterReturn.locator('[data-proof-action="hod-open-risk-explorer"]').first()
-    await expectVisible(hodRiskExplorerButton, 'HoD risk explorer action')
-    await hodRiskExplorerButton.click()
-    await page.waitForLoadState('networkidle')
-    await page.waitForTimeout(500)
+    const hodStudentRow = hodOverviewStudents.locator(`[data-proof-row="hod-student-row"][data-proof-student-id="${trackedStudentId}"]`).first()
+    const hodTrackedStudentRow = await hodStudentRow.isVisible().catch(() => false)
+      ? hodStudentRow
+      : hodOverviewStudents.locator('[data-proof-row="hod-student-row"]').first()
+    const hodTrackedStudentRowVisible = await hodTrackedStudentRow.isVisible().catch(() => false)
+    if (!hodTrackedStudentRowVisible) {
+      await expectContainerText(
+        hodOverviewStudents,
+        /No students are in the current HoD watchlist for this scope\./i,
+        'HoD empty watchlist state',
+      )
+      console.log('[smoke] HoD watchlist is empty at this checkpoint; skipping student-shell and risk-explorer subflow.')
+    } else {
+      const hodTrackedStudentId = await readRequiredAttribute(hodTrackedStudentRow, 'data-proof-student-id', 'HoD tracked student row')
+      const hodStudentShellButton = hodTrackedStudentRow.locator('[data-proof-action="hod-open-student-shell"]').first()
+      await focusAndActivate(hodStudentShellButton, 'HoD student shell action')
+      await page.waitForLoadState('networkidle')
+      await page.waitForTimeout(500)
 
-    markStep('assert-hod-risk-explorer')
-    const hodRiskExplorerSurface = visibleProofSurface('risk-explorer')
-    await expectVisible(hodRiskExplorerSurface, 'risk explorer surface from HoD')
-    await expectProofCheckpointIdentity(hodRiskExplorerSurface, storedSelectionAfterReload.simulationStageCheckpointId, 'HoD risk explorer')
-    await expectProofStudentIdentity(hodRiskExplorerSurface, hodTrackedStudentIdAfterReturn, 'HoD risk explorer')
-    await expectContainerText(hodRiskExplorerSurface, /Student Success Profile/i, 'HoD risk explorer hero heading')
-    await waitForProofHeading('Top Observable Drivers', 60_000)
-    await expectContainerText(hodRiskExplorerSurface, /Sem 6 · Post SEE/i, 'HoD risk explorer checkpoint sync')
-    await saveContainerScreenshot(hodRiskExplorerSurface, screenshots.hodRiskExplorer, 'HoD risk explorer surface')
+      markStep('assert-hod-student-shell')
+      const hodStudentShellSurface = visibleProofSurface('student-shell')
+      await expectVisible(hodStudentShellSurface, 'HoD student shell surface')
+      await expectProofCheckpointIdentity(hodStudentShellSurface, storedSelectionAfterReload.simulationStageCheckpointId, 'HoD student shell')
+      await expectProofStudentIdentity(hodStudentShellSurface, hodTrackedStudentId, 'HoD student shell')
+      await waitForProofHeading('Student Shell', 60_000)
+      await waitForProofHeading('No-action comparator', 60_000)
+
+      markStep('return-from-hod-student-shell')
+      await focusAndActivate(page.locator('[data-proof-action="student-shell-back"]').first(), 'HoD student shell back button')
+      await expectVisible(hodProofAnalytics, 'HoD proof analytics after returning from student shell')
+
+      markStep('open-hod-risk-explorer')
+      const hodOverviewStudentsAfterReturn = page.locator('[data-proof-section="hod-overview-students"]').first()
+      await expectVisible(hodOverviewStudentsAfterReturn, 'HoD overview students section after returning from student shell', 60_000)
+      const hodViewAllAfterReturnButton = hodOverviewStudentsAfterReturn.getByRole('button', { name: /^View All$/i }).first()
+      const hodViewAllAfterReturnVisible = await hodViewAllAfterReturnButton.isVisible().catch(() => false)
+      if (hodViewAllAfterReturnVisible) {
+        await hodViewAllAfterReturnButton.click()
+        await page.waitForTimeout(250)
+      }
+      const hodStudentRowAfterReturn = hodOverviewStudentsAfterReturn.locator(
+        `[data-proof-row="hod-student-row"][data-proof-student-id="${hodTrackedStudentId}"]`,
+      ).first()
+      const hodTrackedStudentRowAfterReturn = await hodStudentRowAfterReturn.isVisible().catch(() => false)
+        ? hodStudentRowAfterReturn
+        : hodOverviewStudentsAfterReturn.locator('[data-proof-row="hod-student-row"]').first()
+      await expectVisible(hodTrackedStudentRowAfterReturn, 'HoD tracked student row after returning from student shell')
+      const hodTrackedStudentIdAfterReturn = await readRequiredAttribute(
+        hodTrackedStudentRowAfterReturn,
+        'data-proof-student-id',
+        'HoD tracked student row after returning from student shell',
+      )
+      const hodRiskExplorerButton = hodTrackedStudentRowAfterReturn.locator('[data-proof-action="hod-open-risk-explorer"]').first()
+      await focusAndActivate(hodRiskExplorerButton, 'HoD risk explorer action')
+      await page.waitForLoadState('networkidle')
+      await page.waitForTimeout(500)
+
+      markStep('assert-hod-risk-explorer')
+      const hodRiskExplorerSurface = visibleProofSurface('risk-explorer')
+      await expectVisible(hodRiskExplorerSurface, 'risk explorer surface from HoD')
+      await expectProofCheckpointIdentity(hodRiskExplorerSurface, storedSelectionAfterReload.simulationStageCheckpointId, 'HoD risk explorer')
+      await expectProofStudentIdentity(hodRiskExplorerSurface, hodTrackedStudentIdAfterReturn, 'HoD risk explorer')
+      await expectContainerText(hodRiskExplorerSurface, /Student Success Profile/i, 'HoD risk explorer hero heading')
+      await waitForProofHeading('Top Observable Drivers', 60_000)
+      await expectContainerText(hodRiskExplorerSurface, /Sem 6 · Post SEE/i, 'HoD risk explorer checkpoint sync')
+      await saveContainerScreenshot(hodRiskExplorerSurface, screenshots.hodRiskExplorer, 'HoD risk explorer surface')
+    }
   }
 
   console.log(`System admin proof-risk smoke passed.`)

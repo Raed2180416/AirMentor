@@ -22,6 +22,7 @@ class MemoryStorage implements Pick<Storage, 'getItem' | 'setItem' | 'removeItem
 function createSessionResponse(overrides?: Partial<ApiSessionResponse>): ApiSessionResponse {
   return {
     sessionId: 'session-1',
+    csrfToken: 'csrf-session-1',
     user: {
       userId: 'user-1',
       username: 'sysadmin',
@@ -146,7 +147,6 @@ describe('HTTP repository mode', () => {
       }),
       listAcademicLoginFaculty: vi.fn(async () => ({ items: [] })),
       getAcademicBootstrap: vi.fn(async () => academicBootstrap),
-      saveAcademicRuntimeSlice: vi.fn(async stateKey => ({ ok: true as const, stateKey })),
       getUiPreferences: vi.fn(async () => preferencesResponse),
       saveUiPreferences: vi.fn(async ({ themeMode, version }) => ({
         userId: 'user-1',
@@ -232,7 +232,6 @@ describe('HTTP repository mode', () => {
     }))
     const client = {
       saveFacultyCalendarWorkspace,
-      saveAcademicRuntimeSlice: vi.fn(async stateKey => ({ ok: true as const, stateKey })),
     } as unknown as AirMentorApiClientLike
 
     const bootstrap: ApiAcademicBootstrap = {
@@ -352,5 +351,359 @@ describe('HTTP repository mode', () => {
     await repositories.calendar.saveTimetableTemplates(snapshot)
 
     expect(saveFacultyCalendarWorkspace).not.toHaveBeenCalled()
+  })
+
+  it('clears HTTP-mode local cache and storage without bulk-resetting runtime state through the generic API', async () => {
+    const storage = new MemoryStorage()
+    storage.setItem(AIRMENTOR_STORAGE_KEYS.themeMode, 'frosted-focus-dark')
+    storage.setItem(AIRMENTOR_STORAGE_KEYS.currentFacultyId, 'faculty-academic')
+
+    const saveAcademicDrafts = vi.fn(async () => ({ ok: true as const, stateKey: 'drafts' as const }))
+    const saveAcademicCellValues = vi.fn(async () => ({ ok: true as const, stateKey: 'cellValues' as const }))
+    const saveAcademicLockByOffering = vi.fn(async () => ({ ok: true as const, stateKey: 'lockByOffering' as const }))
+    const saveAcademicLockAuditByTarget = vi.fn(async () => ({ ok: true as const, stateKey: 'lockAuditByTarget' as const }))
+    const createAcademicMeeting = vi.fn(async () => ({
+      meetingId: 'meeting-2',
+      version: 1,
+      facultyId: 'fac-course-leader',
+      studentId: 'student-2',
+      studentName: 'Diya Nair',
+      studentUsn: '1MS23CS002',
+      title: 'Recovery follow-up',
+      notes: 'Escalated locally',
+      dateISO: '2026-03-23',
+      startMinutes: 660,
+      endMinutes: 690,
+      status: 'scheduled' as const,
+      createdByFacultyId: 'fac-course-leader',
+      createdAt: 1_710_000_010_000,
+      updatedAt: 1_710_000_010_000,
+    }))
+
+    const bootstrap: ApiAcademicBootstrap = {
+      professor: {
+        name: 'Dr. Kavitha Rao',
+        id: 'FET-CSE-2018-047',
+        dept: 'Computer Science & Engineering',
+        role: 'Associate Professor',
+        initials: 'KR',
+        email: 'kavitha.rao@msruas.ac.in',
+      },
+      faculty: [],
+      offerings: [],
+      yearGroups: [],
+      mentees: [],
+      teachers: [],
+      subjectRuns: [],
+      studentsByOffering: {},
+      studentHistoryByUsn: {},
+      courseOutcomesByOffering: {},
+      assessmentSchemesByOffering: {},
+      questionPapersByOffering: {},
+      coAttainmentByOffering: {},
+      meetings: [
+        {
+          meetingId: 'meeting-1',
+          version: 1,
+          facultyId: 'fac-course-leader',
+          studentId: 'student-1',
+          studentName: 'Aarav Sharma',
+          studentUsn: '1MS23CS001',
+          title: 'Baseline review',
+          notes: 'Original server snapshot',
+          dateISO: '2026-03-21',
+          startMinutes: 600,
+          endMinutes: 630,
+          status: 'scheduled',
+          createdByFacultyId: 'fac-course-leader',
+          createdAt: 1_710_000_000_000,
+          updatedAt: 1_710_000_000_000,
+        },
+      ],
+      runtime: {
+        studentPatches: {},
+        schemeByOffering: {},
+        ttBlueprintsByOffering: {},
+        drafts: {
+          'draft-1': 5,
+        },
+        cellValues: {},
+        lockByOffering: {},
+        lockAuditByTarget: {},
+        tasks: [],
+        resolvedTasks: {},
+        timetableByFacultyId: {},
+        adminCalendarByFacultyId: {},
+        taskPlacements: {},
+        calendarAudit: [],
+      },
+    }
+
+    const repositories = createAirMentorRepositories({
+      storage,
+      repositoryMode: 'http',
+      apiClient: createApiClientMock({
+        saveAcademicDrafts,
+        saveAcademicCellValues,
+        saveAcademicLockByOffering,
+        saveAcademicLockAuditByTarget,
+        createAcademicMeeting,
+      }),
+      academicBootstrap: bootstrap,
+    })
+
+    await repositories.entryData.saveDrafts({ 'draft-1': 9, 'draft-2': 3 })
+    expect(saveAcademicDrafts).toHaveBeenCalledTimes(1)
+    expect(repositories.entryData.getDraftSnapshot()).toEqual({ 'draft-1': 9, 'draft-2': 3 })
+    await repositories.entryData.saveCellValues({ 'cell-1': 84 })
+    expect(saveAcademicCellValues).toHaveBeenCalledTimes(1)
+    await repositories.locksAudit.saveLocks({ off_001: { attendance: true } })
+    expect(saveAcademicLockByOffering).toHaveBeenCalledTimes(1)
+    await repositories.locksAudit.saveLockAudit({
+      off_001: [{ action: 'lock', actorRole: 'Course Leader', at: 1_710_000_012_000 }],
+    })
+    expect(saveAcademicLockAuditByTarget).toHaveBeenCalledTimes(1)
+
+    await repositories.calendar.createMeeting({
+      studentId: 'student-2',
+      title: 'Recovery follow-up',
+      notes: 'Escalated locally',
+      dateISO: '2026-03-23',
+      startMinutes: 660,
+      endMinutes: 690,
+      status: 'scheduled',
+    })
+    expect(repositories.calendar.getMeetingsSnapshot()).toHaveLength(2)
+
+    saveAcademicDrafts.mockClear()
+    saveAcademicCellValues.mockClear()
+    saveAcademicLockByOffering.mockClear()
+    saveAcademicLockAuditByTarget.mockClear()
+
+    await repositories.clearPersistedState()
+
+    expect(saveAcademicDrafts).not.toHaveBeenCalled()
+    expect(saveAcademicCellValues).not.toHaveBeenCalled()
+    expect(saveAcademicLockByOffering).not.toHaveBeenCalled()
+    expect(saveAcademicLockAuditByTarget).not.toHaveBeenCalled()
+    expect(repositories.entryData.getDraftSnapshot()).toEqual(bootstrap.runtime.drafts)
+    expect(repositories.calendar.getMeetingsSnapshot()).toEqual(bootstrap.meetings)
+    expect(storage.getItem(AIRMENTOR_STORAGE_KEYS.themeMode)).toBeNull()
+    expect(storage.getItem(AIRMENTOR_STORAGE_KEYS.currentFacultyId)).toBeNull()
+  })
+
+  it('uses the narrow academic runtime contracts for per-entity task, placement, and calendar-audit writes', async () => {
+    const storage = new MemoryStorage()
+    const saveAcademicTask = vi.fn(async (_taskId: string, payload: { task: { id: string }; expectedVersion?: number }) => ({
+      task: {
+        ...payload.task,
+        version: payload.expectedVersion ? payload.expectedVersion + 1 : 1,
+      },
+      created: !payload.expectedVersion,
+    }))
+    const saveAcademicTaskPlacement = vi.fn(async (_taskId: string, payload: { placement: { taskId: string } }) => ({
+      placement: payload.placement,
+      created: false,
+    }))
+    const deleteAcademicTaskPlacement = vi.fn(async (taskId: string) => ({
+      ok: true as const,
+      taskId,
+      deleted: true,
+    }))
+    const appendAcademicCalendarAuditEvent = vi.fn(async (payload: { event: { id: string } }) => ({
+      event: payload.event,
+      created: true,
+    }))
+
+    const bootstrap: ApiAcademicBootstrap = {
+      professor: {
+        name: 'Dr. Kavitha Rao',
+        id: 'FET-CSE-2018-047',
+        dept: 'Computer Science & Engineering',
+        role: 'Associate Professor',
+        initials: 'KR',
+        email: 'kavitha.rao@msruas.ac.in',
+      },
+      faculty: [],
+      offerings: [],
+      yearGroups: [],
+      mentees: [],
+      teachers: [],
+      subjectRuns: [],
+      studentsByOffering: {},
+      studentHistoryByUsn: {},
+      courseOutcomesByOffering: {},
+      assessmentSchemesByOffering: {},
+      questionPapersByOffering: {},
+      coAttainmentByOffering: {},
+      meetings: [],
+      runtime: {
+        studentPatches: {},
+        schemeByOffering: {},
+        ttBlueprintsByOffering: {},
+        drafts: {},
+        cellValues: {},
+        lockByOffering: {},
+        lockAuditByTarget: {},
+        tasks: [
+          {
+            id: 'task-1',
+            studentId: 'student-1',
+            studentName: 'Aarav Sharma',
+            studentUsn: '1MS23CS001',
+            offeringId: 'off-1',
+            courseCode: 'MCC301A',
+            courseName: 'Graph Theory',
+            year: '3rd Year',
+            riskProb: 0.62,
+            riskBand: 'Medium',
+            title: 'Follow-up',
+            due: 'Today',
+            status: 'In Progress',
+            actionHint: 'Meet the student',
+            priority: 62,
+            createdAt: 1_710_000_000_000,
+            updatedAt: 1_710_000_000_500,
+            assignedTo: 'Course Leader',
+          },
+        ],
+        resolvedTasks: {},
+        timetableByFacultyId: {},
+        adminCalendarByFacultyId: {},
+        taskPlacements: {
+          'task-1': {
+            taskId: 'task-1',
+            dateISO: '2026-03-20',
+            placementMode: 'timed',
+            startMinutes: 570,
+            endMinutes: 600,
+            updatedAt: 1_710_000_001_000,
+          },
+        },
+        calendarAudit: [
+          {
+            id: 'audit-1',
+            facultyId: 'fac-1',
+            actorRole: 'Course Leader',
+            actorFacultyId: 'fac-1',
+            timestamp: 1_710_000_001_500,
+            actionKind: 'task-scheduled',
+            targetType: 'task',
+            targetId: 'task-1',
+            note: 'Scheduled task-1.',
+            after: {
+              dateISO: '2026-03-20',
+              startMinutes: 570,
+              endMinutes: 600,
+              placementMode: 'timed',
+              offeringId: 'off-1',
+            },
+          },
+        ],
+      },
+    }
+
+    const repositories = createAirMentorRepositories({
+      storage,
+      repositoryMode: 'http',
+      apiClient: createApiClientMock({
+        saveAcademicTask,
+        saveAcademicTaskPlacement,
+        deleteAcademicTaskPlacement,
+        appendAcademicCalendarAuditEvent,
+      }),
+      academicBootstrap: bootstrap,
+    })
+
+    await repositories.tasks.saveTasks([
+      {
+        ...bootstrap.runtime.tasks[0],
+        title: 'Follow-up: confirm recovery plan',
+        updatedAt: 1_710_000_002_000,
+      },
+      {
+        id: 'task-2',
+        studentId: 'student-2',
+        studentName: 'Diya Nair',
+        studentUsn: '1MS23CS002',
+        offeringId: 'off-1',
+        courseCode: 'MCC301A',
+        courseName: 'Graph Theory',
+        year: '3rd Year',
+        riskProb: 0.71,
+        riskBand: 'High',
+        title: 'Escalate mentoring',
+        due: 'Tomorrow',
+        status: 'New',
+        actionHint: 'Escalate to mentor',
+        priority: 71,
+        createdAt: 1_710_000_002_500,
+        updatedAt: 1_710_000_002_500,
+        assignedTo: 'Course Leader',
+      },
+    ])
+
+    await repositories.calendar.saveTaskPlacements({
+      'task-2': {
+        taskId: 'task-2',
+        dateISO: '2026-03-21',
+        placementMode: 'timed',
+        startMinutes: 630,
+        endMinutes: 660,
+        updatedAt: 1_710_000_003_000,
+      },
+    })
+
+    await repositories.calendar.saveCalendarAudit([
+      ...bootstrap.runtime.calendarAudit,
+      {
+        id: 'audit-2',
+        facultyId: 'fac-1',
+        actorRole: 'Course Leader',
+        actorFacultyId: 'fac-1',
+        timestamp: 1_710_000_003_500,
+        actionKind: 'task-created-and-scheduled',
+        targetType: 'task',
+        targetId: 'task-2',
+        note: 'Created and scheduled task-2.',
+        after: {
+          dateISO: '2026-03-21',
+          startMinutes: 630,
+          endMinutes: 660,
+          placementMode: 'timed',
+          offeringId: 'off-1',
+        },
+      },
+    ])
+
+    expect(saveAcademicTask).toHaveBeenCalledTimes(2)
+    expect(saveAcademicTask).toHaveBeenNthCalledWith(1, 'task-1', expect.objectContaining({
+      expectedVersion: undefined,
+      task: expect.objectContaining({
+        id: 'task-1',
+        title: 'Follow-up: confirm recovery plan',
+      }),
+    }))
+    expect(saveAcademicTask).toHaveBeenNthCalledWith(2, 'task-2', expect.objectContaining({
+      task: expect.objectContaining({
+        id: 'task-2',
+      }),
+    }))
+
+    expect(saveAcademicTaskPlacement).toHaveBeenCalledTimes(1)
+    expect(saveAcademicTaskPlacement).toHaveBeenCalledWith('task-2', expect.objectContaining({
+      expectedUpdatedAt: undefined,
+      placement: expect.objectContaining({
+        taskId: 'task-2',
+      }),
+    }))
+    expect(deleteAcademicTaskPlacement).toHaveBeenCalledWith('task-1', 1_710_000_001_000)
+
+    expect(appendAcademicCalendarAuditEvent).toHaveBeenCalledTimes(1)
+    expect(appendAcademicCalendarAuditEvent).toHaveBeenCalledWith(expect.objectContaining({
+      event: expect.objectContaining({
+        id: 'audit-2',
+      }),
+    }))
   })
 })

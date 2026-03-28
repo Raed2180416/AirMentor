@@ -12,7 +12,7 @@ export const THEME_PRESETS: Record<ThemeMode, typeof T> = {
     border2: '#c6d8ec',
     text: '#11243d',
     muted: '#4d647f',
-    dim: '#8ea1b8',
+    dim: '#5a6f88',
     accent: '#3b82f6',
     accentLight: '#70a6ff',
   },

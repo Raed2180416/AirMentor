@@ -15,23 +15,8 @@ export function parsePortalRoute(hash: string | null | undefined): PortalRoute {
   return 'home'
 }
 
-type StorageLike = Pick<Storage, 'getItem'>
-
-export function resolvePortalRoute(
-  hash: string | null | undefined,
-  storageLike?: StorageLike | null,
-): PortalRoute {
-  const parsedRoute = parsePortalRoute(hash)
-  if (parsedRoute !== 'home') return parsedRoute
-  if (!storageLike) return 'home'
-
-  if (storageLike.getItem(AIRMENTOR_STORAGE_KEYS.currentAdminFacultyId)) return 'admin'
-  if (
-    storageLike.getItem(AIRMENTOR_STORAGE_KEYS.currentFacultyId)
-    || storageLike.getItem(AIRMENTOR_STORAGE_KEYS.legacyCurrentTeacherId)
-  ) return 'app'
-
-  return 'home'
+export function resolvePortalRoute(hash: string | null | undefined): PortalRoute {
+  return parsePortalRoute(hash)
 }
 
 export function getPortalHash(route: PortalRoute) {

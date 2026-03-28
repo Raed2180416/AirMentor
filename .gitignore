@@ -12,13 +12,13 @@ dist
 dist-ssr
 *.local
 output/*
-!output/admin-readiness/
-!output/admin-readiness/**
+air-mentor-api/output/
 test-results/
 .venv/
 __pycache__/
 *.pyc
 .mypy_cache/
+tmp_*.cjs
 
 # Editor directories and files
 .vscode/*

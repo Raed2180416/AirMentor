@@ -1,15 +1,15 @@
-import { Suspense, lazy, useState, useMemo, useCallback, useEffect, useRef, type FormEvent, type InputHTMLAttributes, type ReactNode } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  Bell, Calendar, CheckCircle, ChevronLeft, ChevronRight,
-  GraduationCap, LayoutDashboard, ListTodo, Mail, Phone, Search, Shield, Upload, Users, X,
+  Calendar, CheckCircle,
+  GraduationCap, LayoutDashboard, ListTodo, Mail, Phone, Shield, Upload, Users, X,
   AlertTriangle, TrendingDown, BookOpen, Target, Activity, Eye, MessageSquare,
 } from 'lucide-react'
 import {
-  CO_COLORS, T, mono, sora, yearColor,
+  CO_COLORS, T, mono, sora,
   PAPER_MAP,
   hydrateAcademicData,
-  type Offering, type Student, type YearGroup,
+  type Offering, type Student,
   type Mentee, type StudentHistoryRecord,
 } from './data'
 import {
@@ -72,16 +72,22 @@ import {
   createAppSelectors,
   isPatchEmpty,
 } from './selectors'
-import { inferKindFromPendingAction, toCellKey } from './page-utils'
+import { toCellKey } from './page-utils'
 import { AIRMENTOR_STORAGE_KEYS, createAirMentorRepositories, type AirMentorRepositories } from './repositories'
 import { PortalEntryScreen } from './portal-entry'
 import { clearPortalWorkspaceHints, getPortalHash, hashBelongsToPortalRoute, navigateToPortal, resolvePortalRoute, type PortalRoute } from './portal-routing'
 import { SystemAdminApp } from './system-admin-app'
+import {
+  AcademicFacultyContextUnavailableState,
+  AcademicSessionBoundary,
+} from './academic-session-shell'
+import { AcademicWorkspaceSidebar } from './academic-workspace-sidebar'
+import { AcademicWorkspaceTopbar } from './academic-workspace-topbar'
+import { AcademicWorkspaceRouteSurface } from './academic-workspace-route-surface'
 import { InfoBanner, MetricCard } from './system-admin-ui'
 import { applyThemePreset, isLightTheme } from './theme'
 import {
   Bar,
-  BrandMark,
   Btn,
   Card,
   Chip,
@@ -92,7 +98,6 @@ import {
   PageBackButton,
   PageShell,
   RiskBadge,
-  StagePips,
   UI_FONT_SIZES,
   UI_TRANSITION_FAST,
   UI_TRANSITION_MEDIUM,
@@ -100,7 +105,6 @@ import {
   getIconButtonStyle,
   getSegmentedButtonStyle,
   getSegmentedGroupStyle,
-  getShellBarStyle,
   withAlpha,
 } from './ui-primitives'
 import { AirMentorApiClient, AirMentorApiError } from './api/client'
@@ -117,19 +121,10 @@ import type {
   ApiStudentAgentTimelineItem,
   ApiStudentRiskExplorer,
 } from './api/types'
-import { PROOF_PLAYBACK_SELECTION_STORAGE_KEY, readProofPlaybackSelection, writeProofPlaybackSelection } from './proof-playback'
+import { clearProofPlaybackSelection, PROOF_PLAYBACK_SELECTION_STORAGE_KEY, readProofPlaybackSelection } from './proof-playback'
+import { collectFrontendStartupDiagnostics } from './startup-diagnostics'
+import { emitClientOperationalEvent, normalizeClientTelemetryError } from './telemetry'
 import './App.css'
-
-const LazyCourseDetail = lazy(() => import('./pages/course-pages').then(module => ({ default: module.CourseDetail })))
-const LazyAllStudentsPage = lazy(() => import('./pages/workflow-pages').then(module => ({ default: module.AllStudentsPage })))
-const LazyStudentHistoryPage = lazy(() => import('./pages/workflow-pages').then(module => ({ default: module.StudentHistoryPage })))
-const LazyStudentShellPage = lazy(() => import('./pages/student-shell').then(module => ({ default: module.StudentShellPage })))
-const LazyRiskExplorerPage = lazy(() => import('./pages/risk-explorer').then(module => ({ default: module.RiskExplorerPage })))
-const LazySchemeSetupPage = lazy(() => import('./pages/workflow-pages').then(module => ({ default: module.SchemeSetupPage })))
-const LazyUploadPage = lazy(() => import('./pages/workflow-pages').then(module => ({ default: module.UploadPage })))
-const LazyEntryWorkspacePage = lazy(() => import('./pages/workflow-pages').then(module => ({ default: module.EntryWorkspacePage })))
-const LazyHodView = lazy(() => import('./pages/hod-pages').then(module => ({ default: module.HodView })))
-const LazyCalendarTimetablePage = lazy(() => import('./pages/calendar-pages').then(module => ({ default: module.CalendarTimetablePage })))
 
 const subtleDividerStyle = {
   height: 1,
@@ -194,17 +189,6 @@ type RouteSnapshot = {
 }
 
 const CLASS_SNAP_THRESHOLD_MINUTES = 14
-
-function RouteLoadingFallback({ label = 'Loading workspace...' }: { label?: string }) {
-  return (
-    <PageShell size="standard">
-      <Card style={{ maxWidth: 420, marginTop: 24 }}>
-        <div style={{ ...sora, fontWeight: 700, fontSize: 16, color: T.text, marginBottom: 6 }}>Preparing page</div>
-        <div style={{ ...mono, fontSize: 11, color: T.muted }}>{label}</div>
-      </Card>
-    </PageShell>
-  )
-}
 
 function getHomePage(role: Role): PageId {
   return role === 'Course Leader' ? 'dashboard' : role === 'Mentor' ? 'mentees' : 'department'
@@ -283,202 +267,33 @@ function parseTimeToMinutes(value: string, fallback: number) {
   return (hours * 60) + minutes
 }
 
-function AuthFieldLabel({ children }: { children: string }) {
-  return <label style={{ ...mono, fontSize: 10, color: T.muted, display: 'block', marginBottom: 6 }}>{children}</label>
-}
-
-function AuthInput(props: InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} style={{ width: '100%', ...mono, fontSize: 11, borderRadius: 10, border: `1px solid ${T.border2}`, background: T.surface2, color: T.text, padding: '10px 12px', ...(props.style ?? {}) }} />
-}
-
-function AuthNotice({ message, tone = 'neutral' }: { message: string; tone?: 'neutral' | 'error' | 'success' }) {
-  const color = tone === 'error' ? T.danger : tone === 'success' ? T.success : T.accent
-  return <div style={{ ...mono, fontSize: 11, color, border: `1px solid ${color}40`, background: `${color}12`, borderRadius: 10, padding: '10px 12px' }}>{message}</div>
-}
-
-function AuthHeroPill({ children, color = T.accent }: { children: ReactNode; color?: string }) {
-  return (
-    <span style={{ ...mono, fontSize: 10, color, border: `1px solid ${color}30`, background: `${color}12`, borderRadius: 999, padding: '6px 10px', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-      {children}
-    </span>
-  )
-}
-
-function AuthHeroFeature({ title, body, color }: { title: string; body: string; color: string }) {
-  return (
-    <div style={{ borderRadius: 18, padding: 16, background: `${color}10`, border: `1px solid ${color}22`, boxShadow: `0 18px 40px ${color}10` }}>
-      <div style={{ ...mono, fontSize: 10, color, textTransform: 'uppercase', letterSpacing: '0.12em' }}>{title}</div>
-      <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 8, lineHeight: 1.8 }}>{body}</div>
-    </div>
-  )
-}
-
-function AuthPageShell({ children }: { children: ReactNode }) {
-  return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: `radial-gradient(circle at top left, ${T.accent}16, transparent 28%), radial-gradient(circle at bottom right, ${T.success}14, transparent 30%), linear-gradient(180deg, ${T.bg}, ${T.surface2})`,
-        padding: 'clamp(18px, 3vw, 30px)',
-      }}
-    >
-      <PageShell size="wide" style={{ paddingTop: 12 }}>
-        {children}
-      </PageShell>
-    </div>
-  )
-}
-
-function LoginPage({
-  facultyOptions = [],
-  helperText = '',
-  modeLabel = 'Teaching Workspace',
-  heroBody = 'Use the academic portal for course delivery, mentor follow-up, grading operations, and timetable-aware teaching workflows.',
-  busy = false,
-  externalError = '',
-  onBackToPortal,
-  onLogin,
+function createRemedialPlan({
+  selectedStudentId,
+  title,
+  ownerRole,
+  dueDateISO,
+  checkInDatesISO,
+  steps,
 }: {
-  facultyOptions?: ApiAcademicLoginFaculty[]
-  helperText?: string
-  modeLabel?: string
-  heroBody?: string
-  busy?: boolean
-  externalError?: string
-  onBackToPortal?: () => void
-  onLogin: (identifier: string, password: string) => Promise<void> | void
-}) {
-  const [identifier, setIdentifier] = useState('')
-  const [password, setPassword] = useState('')
-  const [err, setErr] = useState('')
-  const selectedOption = useMemo(() => {
-    const key = identifier.trim().toLowerCase()
-    if (!key) return null
-    return facultyOptions.find(option => option.username.toLowerCase() === key) ?? null
-  }, [facultyOptions, identifier])
-
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault()
-    if (!identifier.trim()) {
-      setErr('Username is required.')
-      return
-    }
-    try {
-      setErr('')
-      await onLogin(identifier.trim(), password)
-    } catch (error) {
-      setErr(error instanceof Error ? error.message : 'Login failed')
-    }
+  selectedStudentId: string
+  title: string
+  ownerRole: Role
+  dueDateISO: string
+  checkInDatesISO: string[]
+  steps: string[]
+}): RemedialPlan {
+  const createdAt = Date.now()
+  return {
+    planId: `plan-${selectedStudentId}-${createdAt}`,
+    title,
+    createdAt,
+    ownerRole,
+    dueDateISO,
+    checkInDatesISO,
+    steps: steps.map((label, index) => ({ id: `step-${index + 1}`, label })),
   }
-
-  return (
-    <AuthPageShell>
-      <div style={{ minHeight: 'calc(100vh - 60px)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24, alignItems: 'stretch' }}>
-        <Card
-          style={{
-            padding: 28,
-            background: `radial-gradient(circle at top left, ${T.success}22, transparent 34%), radial-gradient(circle at 82% 86%, ${T.accent}18, transparent 28%), linear-gradient(160deg, ${T.surface}, ${T.surface2})`,
-            display: 'grid',
-            alignContent: 'space-between',
-            minHeight: 520,
-          }}
-          glow={T.success}
-        >
-          <div style={{ display: 'grid', gap: 18 }}>
-            <AuthHeroPill color={T.success}>
-              <BookOpen size={12} />
-              {modeLabel}
-            </AuthHeroPill>
-            <div>
-              <div style={{ ...sora, fontSize: 42, fontWeight: 800, color: T.text, lineHeight: 1.02, maxWidth: 560 }}>
-                Teach, mentor, and run daily academic operations from one place.
-              </div>
-              <div style={{ ...mono, fontSize: 12, color: T.muted, marginTop: 16, lineHeight: 1.9, maxWidth: 560 }}>
-                {heroBody}
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
-              <AuthHeroFeature title="Teaching" body="Course leaders should immediately see classes, offerings, evaluation setup limits, and entry workflows without hunting through role-specific dead ends." color={T.success} />
-              <AuthHeroFeature title="Mentoring" body="Mentors need fast access to student history, intervention queues, and escalation context, with academic records linked back to the right batch and semester." color={T.accent} />
-              <AuthHeroFeature title="Scheduling" body="Faculty should manage weekly execution cleanly while still seeing the default timetable, temporary exceptions, and the permanent-change request path." color={T.orange} />
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginTop: 24 }}>
-            <div style={{ ...mono, fontSize: 11, color: T.muted }}>Need the system-admin workspace instead? Return to the portal selector and switch context there.</div>
-            {onBackToPortal ? (
-              <Btn variant="ghost" onClick={onBackToPortal} disabled={busy}>
-                Portal Selector
-              </Btn>
-            ) : null}
-          </div>
-        </Card>
-
-        <Card style={{ padding: 28, display: 'grid', alignContent: 'space-between', minHeight: 520, background: `radial-gradient(circle at top right, ${T.success}12, transparent 28%), radial-gradient(circle at bottom left, ${T.accent}10, transparent 24%), linear-gradient(180deg, ${T.surface}, ${T.surface2})` }}>
-          <div style={{ width: '100%', maxWidth: 680, margin: '0 auto' }}>
-            <div style={{ ...mono, fontSize: 10, color: T.success, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Secure Session</div>
-            <div style={{ ...sora, fontSize: 28, fontWeight: 800, color: T.text, marginTop: 10 }}>Sign in to enter the teaching workspace.</div>
-            <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 10, lineHeight: 1.8 }}>
-              Sign in using your username and password. {helperText}
-            </div>
-
-            <form onSubmit={event => { void handleSubmit(event) }} style={{ marginTop: 22, display: 'grid', gap: 14 }}>
-              <div>
-                <AuthFieldLabel>Username</AuthFieldLabel>
-                <AuthInput
-                  id="teacher-username"
-                  value={identifier}
-                  onChange={event => setIdentifier(event.target.value)}
-                  disabled={busy}
-                  placeholder="e.g. kavitha.rao"
-                  autoComplete="username"
-                />
-              </div>
-
-              {selectedOption ? (
-                <div style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 12px' }}>
-                  <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 4 }}>Selected profile</div>
-                  <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text }}>{selectedOption.displayName || selectedOption.name}</div>
-                  <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
-                    {`${selectedOption.departmentCode ?? selectedOption.dept ?? 'Faculty'}${selectedOption.designation ? ` · ${selectedOption.designation}` : selectedOption.roleTitle ? ` · ${selectedOption.roleTitle}` : ''}${selectedOption.allowedRoles?.length ? ` · ${selectedOption.allowedRoles.join(' / ')}` : ` · Faculty ID ${selectedOption.facultyId}`}`}
-                  </div>
-                </div>
-              ) : null}
-
-              <div>
-                <AuthFieldLabel>Password</AuthFieldLabel>
-                <AuthInput id="teacher-password" type="password" value={password} onChange={event => setPassword(event.target.value)} disabled={busy} placeholder="••••••••" autoComplete="current-password" />
-              </div>
-
-              {err ? <AuthNotice message={err} tone="error" /> : null}
-              {!!externalError ? <AuthNotice message={externalError} tone="error" /> : null}
-
-              <div style={{ display: 'flex', gap: 12, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
-                {onBackToPortal ? (
-                  <Btn type="button" variant="ghost" onClick={onBackToPortal} disabled={busy}>
-                    Back To Portal
-                  </Btn>
-                ) : <span />}
-                <Btn type="submit" disabled={busy}>
-                  <Shield size={14} />
-                  {busy ? 'Signing In...' : 'Sign In'}
-                </Btn>
-              </div>
-            </form>
-          </div>
-
-          <div style={{ width: '100%', maxWidth: 680, margin: '24px auto 0', borderRadius: 16, border: `1px solid ${T.border}`, background: T.surface2, padding: '14px 16px' }}>
-            <div style={{ ...mono, fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>After Sign-In</div>
-            <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 8, lineHeight: 1.8 }}>
-              The workspace restores your role-aware context, current teaching assignments, and the linked mentoring views that belong to the selected faculty profile.
-            </div>
-          </div>
-        </Card>
-      </div>
-    </AuthPageShell>
-  )
 }
+
 
 export function FacultyProfilePage({
   currentTeacher,
@@ -885,7 +700,7 @@ function suggestTaskForStudent(s?: Student) {
   return { taskType: 'Follow-up' as TaskType, dueDateISO: toISO(7), note: `General follow-up with ${s.name.split(' ')[0]}.` }
 }
 
-function RequiredNoteModal({ title, description, submitLabel, onClose, onSubmit }: { title: string; description: string; submitLabel: string; onClose: () => void; onSubmit: (note: string) => void }) {
+export function RequiredNoteModal({ title, description, submitLabel, onClose, onSubmit }: { title: string; description: string; submitLabel: string; onClose: () => void; onSubmit: (note: string) => void }) {
   const [note, setNote] = useState('')
   return (
     <motion.div
@@ -922,7 +737,7 @@ function RequiredNoteModal({ title, description, submitLabel, onClose, onSubmit 
   )
 }
 
-function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }: { role: Role; offerings: Offering[]; initialState: TaskComposerState; onClose: () => void; onSubmit: (input: TaskCreateInput) => void }) {
+export function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }: { role: Role; offerings: Offering[]; initialState: TaskComposerState; onClose: () => void; onSubmit: (input: TaskCreateInput) => void }) {
   const { getStudentsPatched } = useAppSelectors()
   const [selectedYear, setSelectedYear] = useState<string>('')
   const [selectedDept, setSelectedDept] = useState<string>('')
@@ -1040,15 +855,14 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
               const scheduleMeta = getScheduleMeta()
               const effectiveDueDateISO = scheduleMeta?.nextDueDateISO ?? dueDateISO
               if (!planTitle.trim() || !effectiveDueDateISO || sanitized.length === 0) return
-              const plan: RemedialPlan = {
-                planId: `plan-${selectedStudentId}-${Date.now()}`,
+              const plan = createRemedialPlan({
+                selectedStudentId,
                 title: planTitle.trim(),
-                createdAt: Date.now(),
                 ownerRole: role,
                 dueDateISO: effectiveDueDateISO,
                 checkInDatesISO: [checkIn1, checkIn2].filter(Boolean),
-                steps: sanitized.map((label, index) => ({ id: `step-${index + 1}`, label })),
-              }
+                steps: sanitized,
+              })
               onSubmit({
                 offeringId: selectedOffering.offId,
                 studentId: selectedStudentId,
@@ -1196,7 +1010,7 @@ function TaskComposerModal({ role, offerings, initialState, onClose, onSubmit }:
    STUDENT DRAWER — OBSERVABLE WATCH, CO, INTERVENTIONS
    ══════════════════════════════════════════════════════════════ */
 
-function StudentDrawer({
+export function StudentDrawer({
   student,
   offering,
   historyByUsn,
@@ -1475,7 +1289,7 @@ function StudentDrawer({
    ACTION QUEUE (Right Sidebar)
    ══════════════════════════════════════════════════════════════ */
 
-function ActionQueue({ role, tasks, resolvedTaskIds, onResolveTask, onUndoTask, onOpenStudent, onOpenTaskComposer, onRemedialCheckIn, onReassignTask, onOpenUnlockReview, onOpenQueueHistory, onApproveUnlock, onRejectUnlock, onResetComplete, onToggleSchedulePause, onEditSchedule, onDismissTask, onDismissSeries }: { role: Role; tasks: SharedTask[]; resolvedTaskIds: Record<string, number>; onResolveTask: (id: string) => void; onUndoTask: (id: string) => void; onOpenStudent: (task: SharedTask) => void; onOpenTaskComposer: (input?: { offeringId?: string; studentId?: string; taskType?: TaskType }) => void; onRemedialCheckIn: (taskId: string) => void; onReassignTask: (taskId: string, toRole: Role) => void; onOpenUnlockReview: (taskId: string) => void; onOpenQueueHistory: () => void; onApproveUnlock: (taskId: string) => void; onRejectUnlock: (taskId: string) => void; onResetComplete: (taskId: string) => void; onToggleSchedulePause: (taskId: string) => void; onEditSchedule: (taskId: string) => void; onDismissTask: (taskId: string) => void; onDismissSeries: (taskId: string) => void }) {
+export function ActionQueue({ role, tasks, resolvedTaskIds, onResolveTask, onUndoTask, onOpenStudent, onOpenTaskComposer, onRemedialCheckIn, onReassignTask, onOpenUnlockReview, onOpenQueueHistory, onApproveUnlock, onRejectUnlock, onResetComplete, onToggleSchedulePause, onEditSchedule, onDismissTask, onDismissSeries }: { role: Role; tasks: SharedTask[]; resolvedTaskIds: Record<string, number>; onResolveTask: (id: string) => void; onUndoTask: (id: string) => void; onOpenStudent: (task: SharedTask) => void; onOpenTaskComposer: (input?: { offeringId?: string; studentId?: string; taskType?: TaskType }) => void; onRemedialCheckIn: (taskId: string) => void; onReassignTask: (taskId: string, toRole: Role) => void; onOpenUnlockReview: (taskId: string) => void; onOpenQueueHistory: () => void; onApproveUnlock: (taskId: string) => void; onRejectUnlock: (taskId: string) => void; onResetComplete: (taskId: string) => void; onToggleSchedulePause: (taskId: string) => void; onEditSchedule: (taskId: string) => void; onDismissTask: (taskId: string) => void; onDismissSeries: (taskId: string) => void }) {
   const todayISO = toTodayISO()
   const [showQueueHelp, setShowQueueHelp] = useState(false)
   const active = tasks
@@ -1697,763 +1511,6 @@ function ActionQueue({ role, tasks, resolvedTaskIds, onResolveTask, onUndoTask, 
 }
 
 /* ══════════════════════════════════════════════════════════════
-   COURSE LEADER: DASHBOARD
-   ══════════════════════════════════════════════════════════════ */
-
-function CLDashboard({ offerings, pendingTaskCount, onOpenCourse, onOpenStudent, onOpenUpload, onOpenCalendar, onOpenPendingActions, teacherInitials, greetingHeadline, greetingMeta, greetingSubline }: { offerings: Offering[]; pendingTaskCount: number; onOpenCourse: (o: Offering) => void; onOpenStudent: (s: Student, o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void; onOpenCalendar: () => void; onOpenPendingActions: () => void; teacherInitials: string; greetingHeadline: string; greetingMeta: string; greetingSubline: string }) {
-  const { getStudentsPatched } = useAppSelectors()
-  const total = offerings.reduce((a, o) => a + getStudentsPatched(o).length, 0)
-  const allAtRisk = useMemo(() => offerings.flatMap(o => getStudentsPatched(o)), [getStudentsPatched, offerings])
-  const highRiskStudents = useMemo(() => allAtRisk.filter(s => s.riskBand === 'High'), [allAtRisk])
-  const highRiskCount = allAtRisk.filter(s => s.riskBand === 'High').length
-  const yearGroups = useMemo(() => {
-    return Array.from(new Set(offerings.map(o => o.year))).map(year => {
-      const sample = offerings.find(o => o.year === year) ?? offerings[0]
-      return { year, color: yearColor(year), stageInfo: sample.stageInfo, offerings: offerings.filter(o => o.year === year) }
-    })
-  }, [offerings])
-
-  return (
-    <PageShell size="wide">
-      {/* Greeting */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
-        <div style={{ width: 50, height: 50, borderRadius: 14, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 18, color: '#fff' }}>{teacherInitials}</div>
-        <div>
-          <div style={{ ...sora, fontWeight: 700, fontSize: 18, color: T.text }}>{greetingHeadline}</div>
-          <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 2 }}>{greetingSubline}</div>
-          <div style={{ ...mono, fontSize: 10, color: T.accent, marginTop: 3 }}>{greetingMeta}</div>
-        </div>
-        <div style={{ marginLeft: 'auto' }}>
-          <Btn size="sm" onClick={onOpenCalendar}>Open Calendar / Timetable</Btn>
-        </div>
-      </div>
-
-      {/* Stat Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
-        {[
-          { icon: '👥', label: 'Total Students', val: total, color: T.success },
-          { icon: '‼️', label: 'High Watch Students', val: highRiskCount, color: T.danger },
-          { icon: '🎯', label: 'Pending Actions', val: pendingTaskCount, color: T.warning, action: onOpenPendingActions },
-        ].map((s, i) => (
-          <Card key={i} glow={s.color} style={{ padding: '14px 18px', cursor: s.action ? 'pointer' : 'default' }} onClick={s.action}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 22 }}>{s.icon}</span>
-              <div>
-                <div style={{ ...sora, fontWeight: 800, fontSize: 24, color: s.color }}>{s.val}</div>
-                <div style={{ ...mono, fontSize: 10, color: T.muted }}>{s.label}</div>
-              </div>
-            </div>
-          </Card>
-        ))}
-      </div>
-
-      {/* Priority Alerts */}
-      {highRiskCount > 0 && (
-        <Card glow={T.danger} style={{ padding: '18px 22px', marginBottom: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-            <AlertTriangle size={16} color={T.danger} />
-            <div style={{ ...sora, fontWeight: 700, fontSize: 15, color: T.danger }}>Priority Alerts</div>
-            <div style={{ ...mono, fontSize: 11, color: T.muted }}>— {highRiskCount} students are above the alert threshold on the current evidence window</div>
-          </div>
-          <div className="scroll-pane scroll-pane--dense" style={{ maxHeight: 300, overflowY: 'auto', paddingRight: 4 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
-              {highRiskStudents.map(s => {
-              const off = offerings.find(o => getStudentsPatched(o).some(st => st.id === s.id))
-              return (
-                <div key={s.id} onClick={() => off && onOpenStudent(s as unknown as Student, off)}
-                  style={{ background: T.surface2, border: `1px solid ${T.danger}25`, borderRadius: 8, padding: '10px 14px', cursor: 'pointer', transition: 'background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease' }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = T.danger + '60')} onMouseLeave={e => (e.currentTarget.style.borderColor = T.danger + '25')}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                    <div style={{ ...sora, fontWeight: 600, fontSize: 13, color: T.text }}>{s.name}</div>
-                    <div style={{ ...sora, fontWeight: 800, fontSize: 16, color: T.danger }}>{Math.round(s.riskProb! * 100)}%</div>
-                  </div>
-                  <div style={{ ...mono, fontSize: 10, color: T.muted }}>{off?.code ?? 'Course'} · {off?.year ?? ''} · Sec {off?.section ?? ''}</div>
-                  {s.reasons[0] && <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 4 }}>↳ {s.reasons[0].label}</div>}
-                  <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' }}>
-                    <button aria-label="Copy student phone number" title="Copy phone" onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(s.phone) }}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent, padding: 0 }}><Phone size={11} /></button>
-                    <span style={{ ...mono, fontSize: 9, color: T.accent }}>Contact →</span>
-                  </div>
-                </div>
-              )
-              })}
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {/* Year Sections */}
-      {yearGroups.map(g => <YearSection key={g.year} group={g} onOpenCourse={onOpenCourse} onOpenUpload={onOpenUpload} />)}
-
-    </PageShell>
-  )
-}
-
-function YearSection({ group, onOpenCourse, onOpenUpload }: { group: YearGroup; onOpenCourse: (o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void }) {
-  const { getStudentsPatched, getOfferingAttendancePatched } = useAppSelectors()
-  const { year, color, stageInfo, offerings } = group
-  const [collapsed, setCollapsed] = useState(false)
-  const totalStudents = offerings.reduce((a, o) => a + getStudentsPatched(o).length, 0)
-  const avgAtt = Math.round(offerings.reduce((a, o) => a + getOfferingAttendancePatched(o), 0) / (offerings.length || 1))
-  const highRiskCount = offerings.filter(o => o.stage >= 2).reduce((a, o) => a + getStudentsPatched(o).filter(s => s.riskBand === 'High').length, 0)
-  const pendingCount = offerings.filter(o => o.pendingAction).length
-
-  return (
-    <div style={{ marginBottom: 22 }}>
-      <div data-pressable="true" onClick={() => setCollapsed(c => !c)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', background: `${color}0c`, border: `1px solid ${color}28`, borderRadius: collapsed ? 10 : '10px 10px 0 0', marginBottom: collapsed ? 0 : 12, cursor: 'pointer', transition: 'background-color 0.2s ease, border-color 0.2s ease, border-radius 0.2s ease, margin-bottom 0.2s ease', flexWrap: 'wrap' }}>
-        <div style={{ ...sora, fontWeight: 800, fontSize: 13, color, background: `${color}18`, border: `1px solid ${color}40`, padding: '3px 12px', borderRadius: 6 }}>{year}</div>
-        <Chip color={stageInfo.color}>{stageInfo.label} · {stageInfo.desc}</Chip>
-        <StagePips current={stageInfo.stage} />
-        <div style={{ ...mono, fontSize: 11, color: T.muted }}>{offerings.length} class{offerings.length > 1 ? 'es' : ''} · {totalStudents} students · {avgAtt}% att</div>
-        {highRiskCount > 0 && <Chip color={T.danger} size={9}>🔴 {highRiskCount} high risk</Chip>}
-        {pendingCount > 0 && <Chip color={T.warning} size={9}>⚡ {pendingCount} data flags</Chip>}
-        <div style={{ ...mono, fontSize: 12, color: T.dim, marginLeft: 'auto' }}>{collapsed ? '▸' : '▾'}</div>
-      </div>
-      {!collapsed && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 12 }}>
-          {offerings.map(o => <OfferingCard key={o.offId} o={o} yc={color} onOpen={onOpenCourse} onOpenUpload={onOpenUpload} />)}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function OfferingCard({ o, yc, onOpen, onOpenUpload }: { o: Offering; yc: string; onOpen: (o: Offering) => void; onOpenUpload: (o?: Offering, kind?: EntryKind) => void }) {
-  const { getStudentsPatched, getOfferingAttendancePatched } = useAppSelectors()
-  const sc = o.stageInfo.color
-  const avgAtt = getOfferingAttendancePatched(o)
-  const ac = avgAtt >= 75 ? T.success : avgAtt >= 65 ? T.warning : T.danger
-  const studentCount = getStudentsPatched(o).length
-  const checks = [o.tt1Done, o.tt2Done, avgAtt >= 75]
-  const highRisk = o.stage >= 2 ? getStudentsPatched(o).filter(s => s.riskBand === 'High').length : 0
-
-  return (
-    <Card onClick={() => onOpen(o)} glow={yc} style={{ position: 'relative', overflow: 'hidden', padding: '16px 18px', borderRadius: 12 }}>
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg,${yc},${sc})` }} />
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-        <div>
-          <div style={{ ...mono, fontSize: 10, color: yc, marginBottom: 2 }}>{o.code} · {o.dept} · Sec {o.section}</div>
-          <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, lineHeight: 1.25 }}>{o.title}</div>
-        </div>
-        <Chip color={sc} size={10}>{o.stageInfo.label}</Chip>
-      </div>
-      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 10 }}>
-        <Chip color={T.dim} size={9}>{studentCount} students</Chip>
-        <Chip color={ac} size={9}>{avgAtt}% att</Chip>
-        {highRisk > 0 && <Chip color={T.danger} size={9}>🔴 {highRisk} at risk</Chip>}
-      </div>
-      <div style={{ display: 'flex', gap: 5, alignItems: 'center', marginBottom: 8 }}>
-        {['TT1', 'TT2', 'Att'].map((lbl, i) => (
-          <div key={lbl} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <div style={{ width: 6, height: 6, borderRadius: '50%', background: checks[i] ? T.success : T.border2, border: `1.5px solid ${checks[i] ? T.success : T.dim}` }} />
-            <span style={{ ...mono, fontSize: 9, color: T.dim }}>{lbl}</span>
-          </div>
-        ))}
-        <StagePips current={o.stageInfo.stage} />
-      </div>
-      {o.pendingAction
-        ? <div style={{ background: '#f59e0b0c', border: '1px solid #f59e0b25', borderRadius: 6, padding: '6px 10px', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 11 }}>⚡</span>
-            <span style={{ ...mono, fontSize: 10, color: T.warning }}>{o.pendingAction}</span>
-            <button onClick={(e) => { e.stopPropagation(); onOpenUpload(o, inferKindFromPendingAction(o.pendingAction)) }} style={{ ...mono, fontSize: 9, color: T.accent, marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer' }}>Open in Hub →</button>
-          </div>
-        : <div style={{ background: '#10b9810c', border: '1px solid #10b98125', borderRadius: 6, padding: '6px 10px', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 11 }}>✓</span>
-            <span style={{ ...mono, fontSize: 10, color: T.success }}>All caught up</span>
-          </div>
-      }
-    </Card>
-  )
-}
-
-/* ══════════════════════════════════════════════════════════════
-   MENTOR VIEW — Student-centric, cross-subject risk
-   ══════════════════════════════════════════════════════════════ */
-
-function MentorView({ mentees, tasks, onOpenMentee }: { mentees: Mentee[]; tasks: SharedTask[]; onOpenMentee: (m: Mentee) => void }) {
-  const [searchQuery, setSearchQuery] = useState('')
-  const [activeFilter, setActiveFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all')
-  const sorted = [...mentees].sort((a, b) => b.avs - a.avs)
-  const highRisk = mentees.filter(m => m.avs >= 0.6).length
-  const medRisk = mentees.filter(m => m.avs >= 0.35 && m.avs < 0.6).length
-  const lowRisk = mentees.filter(m => m.avs >= 0 && m.avs < 0.35).length
-  const filteredMentees = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase()
-    return sorted.filter(m => {
-      const byRisk =
-        activeFilter === 'all'
-          ? true
-          : activeFilter === 'high'
-            ? m.avs >= 0.6
-            : activeFilter === 'medium'
-              ? m.avs >= 0.35 && m.avs < 0.6
-              : m.avs >= 0 && m.avs < 0.35
-      if (!byRisk) return false
-      if (!query) return true
-      const matchesText = [
-        m.name,
-        m.usn,
-        m.dept,
-        m.year,
-        m.section,
-        ...m.courseRisks.map(cr => `${cr.code} ${cr.title}`),
-      ].join(' ').toLowerCase()
-      return matchesText.includes(query)
-    })
-  }, [activeFilter, searchQuery, sorted])
-  const pendingMentorActions = useMemo(() => {
-    const menteeByUsn = new Map(mentees.map(m => [m.usn, m]))
-    return tasks
-      .filter(task =>
-        task.assignedTo === 'Mentor'
-        && !task.dismissal
-        && task.status !== 'Resolved'
-        && menteeByUsn.has(task.studentUsn),
-      )
-      .sort((a, b) => {
-        if (a.priority !== b.priority) return b.priority - a.priority
-        const aDue = a.dueDateISO ?? '9999-12-31'
-        const bDue = b.dueDateISO ?? '9999-12-31'
-        return aDue.localeCompare(bDue)
-      })
-      .slice(0, 6)
-  }, [mentees, tasks])
-
-  return (
-    <PageShell size="standard">
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Users size={22} color={T.accent} />
-          <div>
-            <div style={{ ...sora, fontWeight: 700, fontSize: 20, color: T.text }}>My Mentees</div>
-            <div style={{ ...mono, fontSize: 11, color: T.muted }}>Student-centric view · Cross-course watchlist summary from current observable evidence</div>
-          </div>
-        </div>
-        <div style={{ minWidth: 220, flex: '1 1 280px', maxWidth: 360, position: 'relative' }}>
-          <Search size={14} color={T.dim} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
-          <input
-            value={searchQuery}
-            onChange={event => setSearchQuery(event.target.value)}
-            placeholder="Search mentee, USN, or course"
-            style={{
-              width: '100%',
-              padding: '9px 34px 9px 30px',
-              borderRadius: 8,
-              border: `1px solid ${T.border}`,
-              background: T.surface2,
-              color: T.text,
-              ...mono,
-              fontSize: 10,
-              outline: 'none',
-            }}
-          />
-          {searchQuery && (
-            <button
-              aria-label="Clear mentee search"
-              title="Clear search"
-              onClick={() => setSearchQuery('')}
-              style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', color: T.dim, cursor: 'pointer', display: 'flex' }}
-            >
-              <X size={13} />
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 22 }}>
-        {[
-          { lbl: 'Total Mentees', val: mentees.length, col: T.accent, key: 'all' as const, clickable: true },
-          { lbl: 'High Vulnerability', val: highRisk, col: T.danger, key: 'high' as const, clickable: true },
-          { lbl: 'Medium Risk', val: medRisk, col: T.warning, key: 'medium' as const, clickable: true },
-          { lbl: 'Low Risk', val: lowRisk, col: T.success, key: 'low' as const, clickable: true },
-        ].map((x, i) => (
-          <Card
-            key={i}
-            glow={x.col}
-            onClick={x.clickable ? () => setActiveFilter(x.key) : undefined}
-            style={{
-              padding: '12px 16px',
-              cursor: x.clickable ? 'pointer' : 'default',
-              border: x.clickable && activeFilter === x.key ? `1px solid ${x.col}` : undefined,
-              boxShadow: x.clickable && activeFilter === x.key ? `0 0 0 1px ${x.col}25 inset` : undefined,
-            }}
-          >
-            <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: x.col }}>{x.val}</div>
-            <div style={{ ...mono, fontSize: 9, color: T.muted }}>{x.lbl}</div>
-          </Card>
-        ))}
-      </div>
-
-      <Card style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
-          <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text }}>Action Queue (Pending Actions)</div>
-          <Chip color={pendingMentorActions.length > 0 ? T.warning : T.success} size={9}>
-            {pendingMentorActions.length} active
-          </Chip>
-        </div>
-        {pendingMentorActions.length > 0 ? (
-          <div style={{ display: 'grid', gap: 8 }}>
-            {pendingMentorActions.map(task => {
-              const target = mentees.find(m => m.usn === task.studentUsn || m.id === task.studentId)
-              return (
-                <div key={task.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, border: `1px solid ${T.border}`, background: T.surface2, borderRadius: 8, padding: '9px 10px' }}>
-                  <div>
-                    <div style={{ ...mono, fontSize: 11, color: T.text }}>{task.title}</div>
-                    <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 3 }}>{task.studentName} · {task.courseCode} · {task.due}</div>
-                  </div>
-                  {target && (
-                    <button
-                      onClick={() => onOpenMentee(target)}
-                      style={{ ...mono, fontSize: 10, color: T.accent, border: `1px solid ${T.border2}`, background: 'transparent', borderRadius: 6, height: 28, padding: '0 10px', cursor: 'pointer', alignSelf: 'center', flexShrink: 0 }}
-                    >
-                      Open Student
-                    </button>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        ) : (
-          <div style={{ ...mono, fontSize: 11, color: T.dim }}>No pending mentor actions right now.</div>
-        )}
-      </Card>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {filteredMentees.map(m => {
-          const avsBand = m.avs >= 0.6 ? 'High' : m.avs >= 0.35 ? 'Medium' : m.avs >= 0 ? 'Low' : null
-          const avsCol = avsBand === 'High' ? T.danger : avsBand === 'Medium' ? T.warning : avsBand === 'Low' ? T.success : T.dim
-          return (
-            <Card key={m.id} glow={avsCol} style={{ padding: '16px 20px', cursor: 'pointer' }} onClick={() => onOpenMentee(m)}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-                <div>
-                  <div style={{ ...sora, fontWeight: 700, fontSize: 15, color: T.text }}>{m.name}</div>
-                  <div style={{ ...mono, fontSize: 10, color: T.accent, marginTop: 1 }}>{m.usn} · {m.year} · Sec {m.section} · {m.dept}</div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  {m.avs >= 0 ? (
-                    <>
-                      <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: avsCol }}>{Math.round(m.avs * 100)}%</div>
-                      <div style={{ ...mono, fontSize: 9, color: T.muted }}>Aggregate Vulnerability</div>
-                    </>
-                  ) : (
-                    <Chip color={T.dim} size={10}>Awaiting TT1</Chip>
-                  )}
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-                {m.courseRisks.map(cr => {
-                  const rCol = cr.risk >= 0.7 ? T.danger : cr.risk >= 0.35 ? T.warning : cr.risk >= 0 ? T.success : T.dim
-                  return (
-                    <div key={cr.code} style={{ flex: '1 1 140px', background: T.surface2, borderRadius: 6, padding: '8px 10px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                        <span style={{ ...mono, fontSize: 10, color: T.muted }}>{cr.code}</span>
-                        <span style={{ ...mono, fontSize: 10, fontWeight: 700, color: rCol }}>{cr.risk >= 0 ? `${Math.round(cr.risk * 100)}%` : '—'}</span>
-                      </div>
-                      <Bar val={cr.risk >= 0 ? cr.risk * 100 : 0} color={rCol} h={4} />
-                      <div style={{ ...mono, fontSize: 8, color: T.dim, marginTop: 2 }}>{cr.title.slice(0, 25)}</div>
-                    </div>
-                  )
-                })}
-              </div>
-
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                {m.interventions.length > 0 ? (
-                  <>
-                    <Chip color={T.warning} size={9}>Last: {m.interventions[m.interventions.length - 1].date}</Chip>
-                    <span style={{ ...mono, fontSize: 10, color: T.muted }}>{m.interventions[m.interventions.length - 1].note.slice(0, 40)}…</span>
-                  </>
-                ) : (
-                  <span style={{ ...mono, fontSize: 10, color: T.dim }}>No interventions logged</span>
-                )}
-                {m.prevCgpa > 0 && <Chip color={T.dim} size={9}>CGPA: {m.prevCgpa.toFixed(1)}</Chip>}
-                <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
-                  <button aria-label={`Copy ${m.name} phone number`} title="Copy phone" onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(m.phone) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Phone size={13} /></button>
-                  <button aria-label={`Email ${m.name}`} title="Email" onClick={e => e.stopPropagation()} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Mail size={13} /></button>
-                </div>
-              </div>
-            </Card>
-          )
-        })}
-        {filteredMentees.length === 0 && (
-          <Card style={{ padding: '16px 18px' }}>
-            <div style={{ ...mono, fontSize: 11, color: T.muted }}>
-              No mentees found for this filter.
-            </div>
-          </Card>
-        )}
-      </div>
-    </PageShell>
-  )
-}
-
-function MenteeDetailPage({
-  mentee,
-  history,
-  onBack,
-  onOpenHistory,
-}: {
-  mentee: Mentee
-  history: StudentHistoryRecord | null
-  onBack: () => void
-  onOpenHistory: (mentee: Mentee) => void
-}) {
-  const [activeInsight, setActiveInsight] = useState<'risk' | 'cgpa'>('risk')
-  const avgCourseRisk = mentee.avs >= 0 ? Math.round(mentee.courseRisks.filter(r => r.risk >= 0).reduce((acc, risk) => acc + risk.risk, 0) / Math.max(1, mentee.courseRisks.filter(r => r.risk >= 0).length) * 100) : null
-  const sgpaSeries = useMemo(
-    () => history
-      ? [...history.terms]
-          .sort((a, b) => a.semesterNumber - b.semesterNumber)
-          .map(term => ({ label: `S${term.semesterNumber}`, value: term.sgpa }))
-      : [],
-    [history],
-  )
-  const maxSgpa = sgpaSeries.reduce((best, point) => point.value > best.value ? point : best, sgpaSeries[0] ?? { label: 'S1', value: 0 })
-  const minSgpa = sgpaSeries.reduce((worst, point) => point.value < worst.value ? point : worst, sgpaSeries[0] ?? { label: 'S1', value: 0 })
-  const subjectStats = useMemo(() => {
-    const allSubjects = history ? history.terms.flatMap(term => term.subjects.map(subject => ({ ...subject, termLabel: term.label }))) : []
-    const best = allSubjects.reduce((winner, subject) => subject.score > winner.score ? subject : winner, allSubjects[0] ?? null)
-    const lowest = allSubjects.reduce((loser, subject) => subject.score < loser.score ? subject : loser, allSubjects[0] ?? null)
-    return { best, lowest }
-  }, [history])
-  const riskDrivers = [...mentee.courseRisks]
-    .filter(r => r.risk >= 0)
-    .sort((a, b) => b.risk - a.risk)
-    .slice(0, 3)
-  const prioritizedCourseRisks = useMemo(
-    () => [...mentee.courseRisks].filter(risk => risk.risk >= 0).sort((left, right) => right.risk - left.risk),
-    [mentee.courseRisks],
-  )
-  const totalRiskWeight = useMemo(
-    () => prioritizedCourseRisks.reduce((sum, risk) => sum + risk.risk, 0),
-    [prioritizedCourseRisks],
-  )
-
-  if (!history) {
-    return (
-      <PageShell size="standard">
-        <PageBackButton onClick={onBack} />
-        <Card>
-          <div style={{ ...sora, fontWeight: 700, fontSize: 18, color: T.text }}>Student History Unavailable</div>
-          <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 8, lineHeight: 1.8 }}>
-            The backend did not return a transcript history for {mentee.name}. No seeded fallback is shown in the live teaching workspace.
-          </div>
-          <div style={{ marginTop: 14 }}>
-            <Btn size="sm" variant="ghost" onClick={onBack}>Back</Btn>
-          </div>
-        </Card>
-      </PageShell>
-    )
-  }
-
-  return (
-    <PageShell size="standard">
-      <PageBackButton onClick={onBack} />
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 22 }}>
-        <div>
-          <div style={{ ...sora, fontWeight: 700, fontSize: 22, color: T.text }}>{mentee.name}</div>
-          <div style={{ ...mono, fontSize: 11, color: T.accent, marginTop: 3 }}>{mentee.usn} · {mentee.year} · Sec {mentee.section} · {mentee.dept}</div>
-          <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 6 }}>Mentor workspace with intervention context, summary academics, and transcript entry point.</div>
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <Btn size="sm" variant="ghost" onClick={() => navigator.clipboard.writeText(mentee.phone)}><Phone size={12} /> Copy Phone</Btn>
-          <Btn size="sm" disabled={!history} onClick={() => onOpenHistory(mentee)}><Eye size={12} /> View Student History</Btn>
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 18 }}>
-        <Card
-          glow={mentee.avs >= 0.6 ? T.danger : mentee.avs >= 0.35 ? T.warning : T.success}
-          onClick={() => setActiveInsight('risk')}
-          style={{ padding: '12px 16px', cursor: 'pointer', border: activeInsight === 'risk' ? `1px solid ${T.accent}` : undefined }}
-        >
-          <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: mentee.avs >= 0.6 ? T.danger : mentee.avs >= 0.35 ? T.warning : T.success }}>
-            {mentee.avs >= 0 ? `${Math.round(mentee.avs * 100)}%` : 'Awaiting TT1'}
-          </div>
-          <div style={{ ...mono, fontSize: 9, color: T.muted }}>Aggregate Watch Score (click for why)</div>
-        </Card>
-        <Card
-          glow={mentee.prevCgpa >= 7 ? T.success : mentee.prevCgpa >= 6 ? T.warning : T.danger}
-          onClick={() => setActiveInsight('cgpa')}
-          style={{ padding: '12px 16px', cursor: 'pointer', border: activeInsight === 'cgpa' ? `1px solid ${T.accent}` : undefined }}
-        >
-          <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: mentee.prevCgpa >= 7 ? T.success : mentee.prevCgpa >= 6 ? T.warning : T.danger }}>
-            {mentee.prevCgpa > 0 ? mentee.prevCgpa.toFixed(1) : '—'}
-          </div>
-          <div style={{ ...mono, fontSize: 9, color: T.muted }}>Prev CGPA (click for trend)</div>
-        </Card>
-        <Card glow={T.accent} style={{ padding: '12px 16px' }}>
-          <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: T.accent }}>{mentee.courseRisks.length}</div>
-          <div style={{ ...mono, fontSize: 9, color: T.muted }}>Tracked Courses</div>
-        </Card>
-        <Card glow={T.warning} style={{ padding: '12px 16px' }}>
-          <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: T.warning }}>{mentee.interventions.length}</div>
-          <div style={{ ...mono, fontSize: 9, color: T.muted }}>Interventions Logged</div>
-        </Card>
-      </div>
-
-      {activeInsight === 'risk' && (
-        <Card style={{ marginBottom: 14 }}>
-          <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 8 }}>Why The Aggregate Watch Score Is {mentee.avs >= 0 ? `${Math.round(mentee.avs * 100)}%` : 'unavailable'}</div>
-          {riskDrivers.length > 0 ? (
-            <div style={{ display: 'grid', gap: 8 }}>
-              {riskDrivers.map(driver => {
-                const color = driver.risk >= 0.7 ? T.danger : driver.risk >= 0.35 ? T.warning : T.success
-                const contribution = totalRiskWeight > 0 ? Math.round((driver.risk / totalRiskWeight) * 100) : 0
-                return (
-                  <div key={driver.code} style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: '9px 10px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                      <div>
-                        <div style={{ ...mono, fontSize: 11, color: T.text }}>{driver.code} · {driver.title}</div>
-                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 2 }}>
-                          {driver.risk >= 0.7 ? 'Major contributor' : driver.risk >= 0.35 ? 'Medium contributor' : 'Minor contributor'} · ~{contribution}% of current total
-                        </div>
-                      </div>
-                      <div style={{ ...sora, fontWeight: 700, fontSize: 16, color }}>{Math.round(driver.risk * 100)}%</div>
-                    </div>
-                    <div style={{ marginTop: 6 }}>
-                      <Bar val={driver.risk * 100} color={color} h={4} />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          ) : (
-            <div style={{ ...mono, fontSize: 11, color: T.dim }}>Risk breakdown will appear after course-level data is available.</div>
-          )}
-        </Card>
-      )}
-
-      {activeInsight === 'cgpa' && (
-        <Card style={{ marginBottom: 14 }}>
-          <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 10 }}>Previous GPA Trend & Subject Highlights</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 14 }}>
-            <div>
-              <div style={{ ...mono, fontSize: 10, color: T.muted, marginBottom: 8 }}>SGPA by semester</div>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 100 }}>
-                {sgpaSeries.map(point => (
-                  <div key={point.label} style={{ flex: 1, minWidth: 30 }}>
-                    <div style={{ height: `${Math.max(10, Math.round((point.value / 10) * 100))}%`, background: T.accent + 'aa', border: `1px solid ${T.accent}66`, borderRadius: '6px 6px 3px 3px' }} />
-                    <div style={{ ...mono, fontSize: 9, color: T.muted, textAlign: 'center', marginTop: 5 }}>{point.label}</div>
-                    <div style={{ ...mono, fontSize: 8, color: T.dim, textAlign: 'center' }}>{point.value.toFixed(2)}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div style={{ display: 'grid', gap: 7, alignContent: 'start' }}>
-              <div style={{ ...mono, fontSize: 11, color: T.text }}>Max SGPA: <span style={{ color: T.success }}>{maxSgpa.value.toFixed(2)}</span> ({maxSgpa.label})</div>
-              <div style={{ ...mono, fontSize: 11, color: T.text }}>Min SGPA: <span style={{ color: T.danger }}>{minSgpa.value.toFixed(2)}</span> ({minSgpa.label})</div>
-              <div style={{ ...mono, fontSize: 11, color: T.text }}>
-                Best Subject: <span style={{ color: T.success }}>{subjectStats.best ? `${subjectStats.best.code} (${subjectStats.best.score})` : '—'}</span>
-              </div>
-              <div style={{ ...mono, fontSize: 11, color: T.text }}>
-                Lowest Subject: <span style={{ color: T.warning }}>{subjectStats.lowest ? `${subjectStats.lowest.code} (${subjectStats.lowest.score})` : '—'}</span>
-              </div>
-              <div style={{ ...mono, fontSize: 10, color: T.muted }}>
-                {subjectStats.best?.title ?? 'No subject data'} | {subjectStats.lowest?.title ?? 'No subject data'}
-              </div>
-            </div>
-          </div>
-        </Card>
-      )}
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, alignItems: 'start' }}>
-        <Card>
-          <div style={{ ...sora, fontWeight: 700, fontSize: 15, color: T.text, marginBottom: 10 }}>Mentor Priority Queue</div>
-          <div style={{ display: 'grid', gap: 10 }}>
-            {prioritizedCourseRisks.map((risk, index) => {
-              const color = risk.risk >= 0.7 ? T.danger : risk.risk >= 0.35 ? T.warning : risk.risk >= 0 ? T.success : T.dim
-              const guidance = risk.risk >= 0.7
-                ? 'Immediate 1:1 check-in and weekly follow-up'
-                : risk.risk >= 0.5
-                  ? 'Create remedial task and review after next assessment'
-                  : risk.risk >= 0.35
-                    ? 'Monitor attendance and assign targeted practice'
-                    : 'Keep under watch and reinforce consistency'
-              return (
-                <div key={risk.code} style={{ background: T.surface2, borderRadius: 8, padding: '10px 12px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
-                    <div>
-                      <div style={{ ...sora, fontWeight: 600, fontSize: 13, color: T.text }}>P{index + 1} · {risk.code}</div>
-                      <div style={{ ...mono, fontSize: 10, color: T.muted }}>{risk.title}</div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ ...sora, fontWeight: 800, fontSize: 18, color }}>{risk.risk >= 0 ? `${Math.round(risk.risk * 100)}%` : '—'}</div>
-                      <div style={{ ...mono, fontSize: 9, color: T.dim }}>{risk.risk >= 0 ? `${risk.band} watch band` : 'Awaiting data'}</div>
-                    </div>
-                  </div>
-                  <div style={{ ...mono, fontSize: 10, color: T.muted, marginBottom: 6 }}>{guidance}</div>
-                  <Bar val={risk.risk >= 0 ? risk.risk * 100 : 0} color={color} h={5} />
-                </div>
-              )
-            })}
-            {prioritizedCourseRisks.length === 0 && <div style={{ ...mono, fontSize: 11, color: T.dim }}>Course priorities will appear once risk inputs are available.</div>}
-          </div>
-        </Card>
-
-        <div style={{ display: 'grid', gap: 14 }}>
-          <Card>
-            <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 8 }}>Mentor Summary</div>
-            <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.6 }}>
-              {avgCourseRisk !== null ? `Average course risk is ${avgCourseRisk}%.` : 'No score-based risk yet.'}
-              {' '}Previous-semester CGPA is {history.currentCgpa > 0 ? history.currentCgpa.toFixed(2) : 'not yet available'}.
-            </div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
-              {mentee.courseRisks.filter(r => r.risk >= 0.5).map(r => <Chip key={r.code} color={r.risk >= 0.7 ? T.danger : T.warning} size={9}>{r.code}</Chip>)}
-              {mentee.courseRisks.every(r => r.risk < 0.5) && <Chip color={T.success} size={9}>No current high-risk courses</Chip>}
-            </div>
-          </Card>
-
-          <Card>
-            <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 8 }}>Intervention Timeline</div>
-            {mentee.interventions.length > 0 ? mentee.interventions.map((entry, index) => (
-              <div key={`${entry.date}-${index}`} style={{ display: 'flex', gap: 10, padding: '8px 0', borderBottom: index < mentee.interventions.length - 1 ? `1px solid ${T.border}` : 'none' }}>
-                <div style={{ ...mono, fontSize: 10, color: T.dim, minWidth: 56 }}>{entry.date}</div>
-                <Chip color={T.warning} size={9}>{entry.type}</Chip>
-                <div style={{ ...mono, fontSize: 11, color: T.muted }}>{entry.note}</div>
-              </div>
-            )) : (
-              <div style={{ ...mono, fontSize: 11, color: T.dim }}>No interventions logged for this mentee yet.</div>
-            )}
-          </Card>
-        </div>
-      </div>
-    </PageShell>
-  )
-}
-
-function UnlockReviewPage({ task, offering, onBack, onApprove, onReject, onResetComplete }: { task: SharedTask; offering: Offering | null; onBack: () => void; onApprove: () => void; onReject: () => void; onResetComplete: () => void }) {
-  return (
-    <PageShell size="narrow">
-      <PageBackButton onClick={onBack} />
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ ...sora, fontWeight: 700, fontSize: 21, color: T.text }}>Unlock Review</div>
-        <div style={{ ...mono, fontSize: 11, color: T.accent, marginTop: 4 }}>{task.courseCode} · {offering?.title ?? task.courseName} · {task.unlockRequest?.kind.toUpperCase()}</div>
-      </div>
-      <Card glow={task.unlockRequest?.status === 'Rejected' ? T.danger : T.warning} style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-          <Chip color={T.accent} size={9}>Requested by: {task.unlockRequest?.requestedByRole ?? task.sourceRole}</Chip>
-          <Chip color={task.unlockRequest?.status === 'Rejected' ? T.danger : task.unlockRequest?.status === 'Reset Completed' ? T.success : T.warning} size={9}>Status: {task.unlockRequest?.status ?? 'Pending'}</Chip>
-          <Chip color={T.dim} size={9}>Submitted: {formatDateTime(task.unlockRequest?.requestedAt)}</Chip>
-        </div>
-        <div style={{ ...mono, fontSize: 11, color: T.muted }}>{task.actionHint}</div>
-      </Card>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: 16 }}>
-        <Card>
-          <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 10 }}>Request Details</div>
-          <div style={{ display: 'grid', gap: 6 }}>
-            <div style={{ ...mono, fontSize: 11, color: T.muted }}>Offering: {offering?.code ?? task.courseCode} · Sec {offering?.section ?? '—'}</div>
-            <div style={{ ...mono, fontSize: 11, color: T.muted }}>Current owner: {task.assignedTo}</div>
-            <div style={{ ...mono, fontSize: 11, color: T.muted }}>Reason: {task.actionHint}</div>
-            <div style={{ ...mono, fontSize: 11, color: T.muted }}>Teacher note: {task.unlockRequest?.requestNote ?? task.requestNote ?? 'No request note captured'}</div>
-            {task.unlockRequest?.handoffNote && <div style={{ ...mono, fontSize: 11, color: T.muted }}>Handoff note: {task.unlockRequest.handoffNote}</div>}
-            <div style={{ ...mono, fontSize: 11, color: T.muted }}>Latest review note: {task.unlockRequest?.reviewNote ?? 'No review note yet'}</div>
-          </div>
-        </Card>
-        <Card>
-          <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 10 }}>Decision Flow</div>
-          <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 10 }}>Approve to allow a correction cycle, reject if the lock should stand, and then complete reset/unlock explicitly.</div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {task.unlockRequest?.status === 'Pending' && (
-              <>
-                <Btn size="sm" onClick={onApprove}>Approve</Btn>
-                <Btn size="sm" variant="danger" onClick={onReject}>Reject</Btn>
-              </>
-            )}
-            {task.unlockRequest?.status === 'Approved' && <Btn size="sm" onClick={onResetComplete}>Reset & Unlock</Btn>}
-            {(task.unlockRequest?.status === 'Rejected' || task.unlockRequest?.status === 'Reset Completed') && <Chip color={task.unlockRequest.status === 'Rejected' ? T.danger : T.success} size={9}>Decision completed</Chip>}
-          </div>
-        </Card>
-      </div>
-
-      <Card style={{ marginTop: 16 }}>
-        <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 10 }}>Transition History</div>
-        <div style={{ display: 'grid', gap: 8 }}>
-          {(task.transitionHistory ?? []).map(transition => (
-            <div key={transition.id} style={{ display: 'flex', gap: 10, borderBottom: `1px solid ${T.border}`, paddingBottom: 8 }}>
-              <div style={{ ...mono, fontSize: 10, color: T.dim, minWidth: 112 }}>{formatDateTime(transition.at)}</div>
-              <div>
-                <div style={{ ...mono, fontSize: 11, color: T.text }}>{transition.action}</div>
-                <div style={{ ...mono, fontSize: 10, color: T.muted }}>{transition.note}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
-    </PageShell>
-  )
-}
-
-function QueueHistoryPage({ role, tasks, resolvedTaskIds, onBack, onOpenTaskStudent, onOpenUnlockReview, onRestoreTask }: { role: Role; tasks: SharedTask[]; resolvedTaskIds: Record<string, number>; onBack: () => void; onOpenTaskStudent: (task: SharedTask) => void; onOpenUnlockReview: (taskId: string) => void; onRestoreTask: (taskId: string) => void }) {
-  const [filter, setFilter] = useState<'all' | 'active' | 'resolved' | 'dismissed'>('all')
-  const visible = tasks
-    .filter(task => {
-      if (filter === 'all') return true
-      if (filter === 'active') return !resolvedTaskIds[task.id] && !task.dismissal
-      if (filter === 'resolved') return !!resolvedTaskIds[task.id]
-      return !!task.dismissal
-    })
-    .sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt))
-
-  return (
-    <PageShell size="standard">
-      <PageBackButton onClick={onBack} />
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-        <div>
-          <div style={{ ...sora, fontWeight: 700, fontSize: 21, color: T.text }}>Queue History</div>
-          <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 4 }}>{role} view of active, resolved, and reassigned items.</div>
-        </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          {(['all', 'active', 'resolved', 'dismissed'] as const).map(option => (
-            <button key={option} data-tab="true" onClick={() => setFilter(option)} style={{ ...mono, fontSize: 10, padding: '5px 8px', borderRadius: 4, border: `1px solid ${filter === option ? T.accent : T.border}`, background: filter === option ? T.accent + '18' : 'transparent', color: filter === option ? T.accentLight : T.muted, cursor: 'pointer' }}>
-              {option.toUpperCase()}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gap: 12 }}>
-        {visible.map(task => (
-          <Card key={task.id} onClick={() => onOpenTaskStudent(task)}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', marginBottom: 10, flexWrap: 'wrap' }}>
-              <div>
-                <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text }}>{task.title}</div>
-                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 3 }}>{task.studentName} · {task.studentUsn} · {task.courseCode || 'Mentor context'}</div>
-                <div style={{ ...mono, fontSize: 9, color: T.dim, marginTop: 4 }}>Open the related student context directly from anywhere on this card.</div>
-              </div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <Chip color={resolvedTaskIds[task.id] ? T.success : task.dismissal ? T.muted : T.warning} size={9}>{resolvedTaskIds[task.id] ? 'Resolved' : task.dismissal ? 'Dismissed' : 'Active'}</Chip>
-                {task.dismissal && <Chip color={task.dismissal.kind === 'series' ? T.danger : T.muted} size={9}>{task.dismissal.kind === 'series' ? 'Series dismissed' : 'Dismissed'}</Chip>}
-                <Chip color={task.assignedTo === 'HoD' ? T.danger : task.assignedTo === 'Mentor' ? T.warning : T.accent} size={9}>{task.assignedTo}</Chip>
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gap: 8, marginBottom: 10 }}>
-              {(task.transitionHistory ?? []).map(transition => (
-                <div key={transition.id} style={{ display: 'flex', gap: 10, borderBottom: `1px solid ${T.border}`, paddingBottom: 8 }}>
-                  <div style={{ ...mono, fontSize: 10, color: T.dim, minWidth: 112 }}>{formatDateTime(transition.at)}</div>
-                  <div>
-                    <div style={{ ...mono, fontSize: 11, color: T.text }}>{transition.action}</div>
-                    <div style={{ ...mono, fontSize: 10, color: T.muted }}>{transition.note}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <div onClick={event => event.stopPropagation()}><Btn size="sm" variant="ghost" onClick={() => onOpenTaskStudent(task)}>Open Student</Btn></div>
-              {task.dismissal && <div onClick={event => event.stopPropagation()}><Btn size="sm" onClick={() => onRestoreTask(task.id)}>{task.dismissal.kind === 'series' ? 'Resume series' : 'Restore'}</Btn></div>}
-              {task.unlockRequest && role === 'HoD' && <div onClick={event => event.stopPropagation()}><Btn size="sm" onClick={() => onOpenUnlockReview(task.id)}>Open Unlock Review</Btn></div>}
-            </div>
-          </Card>
-        ))}
-      </div>
-    </PageShell>
-  )
-}
-
-/* ══════════════════════════════════════════════════════════════
    HOD VIEW — Teacher-centric with drill-down
    ══════════════════════════════════════════════════════════════ */
 
@@ -2496,7 +1553,8 @@ type OperationalWorkspaceProps = {
   sendStudentAgentMessage?: (sessionId: string, payload: { prompt: string }) => Promise<{ items: ApiStudentAgentMessage[] }>
   loadStudentRiskExplorer?: (studentId: string) => Promise<ApiStudentRiskExplorer>
   academicBootstrap: ApiAcademicBootstrap
-  proofPlaybackNotice?: string
+  proofPlaybackNotice?: { tone: 'neutral' | 'error'; message: string } | null
+  onResetProofPlaybackSelection: () => Promise<void> | void
 }
 
 function OperationalWorkspace({
@@ -2514,6 +1572,7 @@ function OperationalWorkspace({
   loadStudentRiskExplorer,
   academicBootstrap,
   proofPlaybackNotice,
+  onResetProofPlaybackSelection,
 }: OperationalWorkspaceProps) {
   const facultyAccounts = academicBootstrap.faculty
   const allOfferings = academicBootstrap.offerings
@@ -2524,7 +1583,6 @@ function OperationalWorkspace({
   const defaultOffering = allOfferings[0] ?? null
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => repositories.sessionPreferences.getThemeSnapshot() ?? normalizeThemeMode(null))
   const [isCompactTopbar, setIsCompactTopbar] = useState(() => window.innerWidth < 980)
-  const [showTopbarMenu, setShowTopbarMenu] = useState(false)
   const [now, setNow] = useState(() => new Date())
   const [currentTeacherId, setCurrentTeacherId] = useState<string | null>(initialTeacherId)
   const currentTeacher = useMemo<FacultyAccount | null>(() => currentTeacherId ? (facultyAccounts.find(faculty => faculty.facultyId === currentTeacherId) ?? null) : null, [currentTeacherId, facultyAccounts])
@@ -3031,7 +2089,6 @@ function OperationalWorkspace({
     const mockTeacher = params.get('mockTeacher')
     if (mockTeacher && currentTeacherId !== mockTeacher) {
       const mockFaculty = facultyAccounts.find(faculty => faculty.facultyId === mockTeacher)
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCurrentTeacherId(mockTeacher)
       if (mockFaculty) {
         const nextRole = mockFaculty.allowedRoles[0]
@@ -3183,7 +2240,7 @@ function OperationalWorkspace({
   const handleOpenMentee = useCallback((m: Mentee) => {
     setSelectedMentee(m)
     setPage('mentee-detail')
-  }, [studentHistoryByUsn])
+  }, [])
   const handleOpenHistoryFromMentee = useCallback((m: Mentee) => {
     const nextHistory = buildHistoryProfile({ mentee: m, historyByUsn: studentHistoryByUsn })
     if (!nextHistory) return
@@ -3191,7 +2248,7 @@ function OperationalWorkspace({
     setHistoryStudentId(m.id.replace(/^mentee-/, ''))
     setHistoryBackPage('mentee-detail')
     setPage('student-history')
-  }, [])
+  }, [studentHistoryByUsn])
   const handleOpenStudentShell = useCallback((studentId: string, backPage?: PageId) => {
     setStudentShellStudentId(studentId)
     setHistoryBackPage(backPage ?? page)
@@ -3225,7 +2282,7 @@ function OperationalWorkspace({
     else setUploadOffering(assignedOfferings[0] ?? defaultOffering)
     setUploadKind(kind)
     setPage('upload')
-  }, [assignedOfferings])
+  }, [assignedOfferings, defaultOffering])
   const handleOpenWorkspace = useCallback((offeringId: string, kind: EntryKind) => {
     setEntryOfferingId(offeringId)
     setEntryKind(kind)
@@ -3236,7 +2293,7 @@ function OperationalWorkspace({
     if (!target) return
     setSchemeOfferingId(target.offId)
     setPage('scheme-setup')
-  }, [assignedOfferings, offering, uploadOffering])
+  }, [assignedOfferings, defaultOffering, offering, uploadOffering])
   const handleToggleActionQueue = useCallback(() => {
     setShowActionQueue(current => {
       if (current) return false
@@ -3279,7 +2336,6 @@ function OperationalWorkspace({
       setHistoryBackPage(null)
       setTaskComposer(prev => ({ ...prev, isOpen: false, placement: undefined, availableOfferingIds: undefined }))
       setPendingNoteAction(null)
-      setShowTopbarMenu(false)
     }
 
     setRoleChangeError('')
@@ -3406,7 +2462,7 @@ function OperationalWorkspace({
         entries: finalEntries,
       },
     }
-  }, [cellValues, getFallbackBlueprintSet, schemeByOffering, selectors, ttBlueprintsByOffering])
+  }, [allOfferings, cellValues, getFallbackBlueprintSet, schemeByOffering, selectors, ttBlueprintsByOffering])
 
   const persistEntryWorkspace = useCallback(async (offId: string, kind: EntryKind, lock = false) => {
     if (kind === 'attendance') {
@@ -3948,14 +3004,14 @@ function OperationalWorkspace({
         after: { day: item.day, dateISO: item.dateISO, startMinutes: nextRange.startMinutes, endMinutes: nextRange.endMinutes, offeringId: item.offeringId },
       }))
     })
-  }, [appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, role])
+  }, [allOfferings, appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, role])
 
   const handleOpenCourseFromCalendar = useCallback((offeringId: string) => {
     if (role === 'Mentor') return
     const targetOffering = allOfferings.find(item => item.offId === offeringId)
     if (!targetOffering) return
     handleOpenCourse(targetOffering)
-  }, [handleOpenCourse, role])
+  }, [allOfferings, handleOpenCourse, role])
 
   const handleOpenActionQueueFromCalendar = useCallback(() => {
     setShowActionQueue(true)
@@ -3998,7 +3054,7 @@ function OperationalWorkspace({
       availableOfferingIds: input?.availableOfferingIds,
       placement: input?.placement,
     })
-  }, [assignedOfferings, getStudentsPatched, offering, uploadOffering])
+  }, [allOfferings, assignedOfferings, defaultOffering, getStudentsPatched, offering, uploadOffering])
 
   const handleRequestUnlock = useCallback((offeringId: string, kind: EntryKind) => {
     setPendingNoteAction({ type: 'unlock-request', offeringId, kind })
@@ -4086,7 +3142,7 @@ function OperationalWorkspace({
         },
       }))
     }
-  }, [appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, getStudentsPatched, repositories, role])
+  }, [allOfferings, appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, getStudentsPatched, repositories, role])
 
   const handleRemedialCheckIn = useCallback((taskId: string) => {
     setAllTasksList(prev => prev.map(task => {
@@ -4202,7 +3258,7 @@ function OperationalWorkspace({
       void repositories.tasks.upsertTask(nextTask)
       return existing ? prev.map(task => task.id === id ? nextTask : task) : [nextTask, ...prev]
     })
-  }, [appendLockAudit, currentTeacherId, repositories, role])
+  }, [allOfferings, appendLockAudit, currentTeacherId, repositories, role])
 
   const submitStudentHandoff = useCallback((studentId: string, offeringId: string, mode: 'escalate' | 'mentor', note: string) => {
     const off = allOfferings.find(item => item.offId === offeringId)
@@ -4270,7 +3326,7 @@ function OperationalWorkspace({
       void repositories.tasks.upsertTask(nextTask)
       return existing ? prev.map(task => task.id === id ? nextTask : task) : [nextTask, ...prev]
     })
-  }, [currentTeacherId, getStudentsPatched, repositories, role])
+  }, [allOfferings, currentTeacherId, getStudentsPatched, repositories, role])
 
   const commitTaskReassignment = useCallback((taskId: string, toRole: Role, note: string) => {
     setResolvedTasks(prev => {
@@ -4324,7 +3380,7 @@ function OperationalWorkspace({
       offeringId: resolvedOffering.offId,
       title: `Escalate ${student.name} to HoD`,
     })
-  }, [getStudentsPatched])
+  }, [allOfferings, getStudentsPatched])
 
   const handleOpenStudentMentorHandoff = useCallback((student: Student, currentOffering?: Offering) => {
     const resolvedOffering = currentOffering ?? allOfferings.find(item => getStudentsPatched(item).some(candidate => candidate.id === student.id))
@@ -4336,7 +3392,7 @@ function OperationalWorkspace({
       offeringId: resolvedOffering.offId,
       title: `Defer ${student.name} to Mentor`,
     })
-  }, [getStudentsPatched])
+  }, [allOfferings, getStudentsPatched])
 
   const handleSubmitRequiredNote = useCallback((note: string) => {
     const action = pendingNoteAction
@@ -4358,7 +3414,7 @@ function OperationalWorkspace({
       }, offeringForScheme),
     }))
     setPage('upload')
-  }, [hasEntryStartedForOffering, role])
+  }, [allOfferings, defaultOffering, hasEntryStartedForOffering, role])
 
   const handleApproveUnlock = useCallback((taskId: string) => {
     setAllTasksList(prev => prev.map(task => task.id === taskId ? ({
@@ -4433,7 +3489,7 @@ function OperationalWorkspace({
       transitionHistory: [...(item.transitionHistory ?? []), createTransition({ action: 'Reset completed and unlocked', actorRole: 'HoD', actorTeacherId: currentTeacherId ?? undefined, fromOwner: 'HoD', toOwner: item.sourceRole === 'Mentor' ? 'Mentor' : 'Course Leader', note: 'Entry dataset is unlocked for correction.' })],
     }) : item))
     setResolvedTasks(prev => ({ ...prev, [taskId]: Date.now() }))
-  }, [allTasksList, appendLockAudit, currentTeacherId])
+  }, [allOfferings, allTasksList, appendLockAudit, currentTeacherId, defaultOffering])
 
   const handleOpenTaskStudent = useCallback((task: SharedTask) => {
     const mentorMatch = assignedMentees.find(mentee => mentee.usn === task.studentUsn || mentee.id === task.studentId) ?? allMentees.find(mentee => mentee.usn === task.studentUsn || mentee.id === task.studentId)
@@ -4458,7 +3514,7 @@ function OperationalWorkspace({
         setPage('student-history')
       }
     }
-  }, [assignedMentees, assignedOfferings, getStudentsPatched, handleOpenStudent, page, role, studentHistoryByUsn])
+  }, [allMentees, allOfferings, assignedMentees, assignedOfferings, getStudentsPatched, handleOpenStudent, page, role, studentHistoryByUsn])
 
   const pendingNoteMeta = useMemo(() => {
     if (!pendingNoteAction) return null
@@ -4483,23 +3539,14 @@ function OperationalWorkspace({
       description: `Add the sender note for ${off?.code ?? 'the selected class'} so the receiving owner sees the full context.`,
       submitLabel: pendingNoteAction.mode === 'escalate' ? 'Escalate with Note' : 'Defer with Note',
     }
-  }, [pendingNoteAction])
+  }, [allOfferings, pendingNoteAction])
 
   if (!currentTeacher) {
     return (
-      <AuthPageShell>
-        <Card style={{ maxWidth: 760, margin: '0 auto', display: 'grid', gap: 12 }}>
-          <div style={{ ...sora, fontSize: 22, fontWeight: 800, color: T.text }}>Faculty Context Unavailable</div>
-          <InfoBanner tone="error" message="The active faculty profile is no longer available, so this teaching session cannot be restored safely." />
-          <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.8 }}>
-            Sign back in to refresh the faculty context after admin changes or manual cleanup.
-          </div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <Btn onClick={() => { void onLogout() }}>Return to Login</Btn>
-            <Btn variant="ghost" onClick={exitToPortal}>Back to Portal</Btn>
-          </div>
-        </Card>
-      </AuthPageShell>
+      <AcademicFacultyContextUnavailableState
+        onLogout={() => { void onLogout() }}
+        onBackToPortal={exitToPortal}
+      />
     )
   }
 
@@ -4515,7 +3562,6 @@ function OperationalWorkspace({
     setHistoryBackPage(null)
     setTaskComposer(prev => ({ ...prev, isOpen: false, placement: undefined, availableOfferingIds: undefined }))
     setPendingNoteAction(null)
-    setShowTopbarMenu(false)
     void onLogout()
   }
 
@@ -4526,336 +3572,174 @@ function OperationalWorkspace({
       ? 'Loading calendar workspace...'
     : page === 'student-shell'
       ? 'Loading student shell...'
-    : page === 'risk-explorer'
+      : page === 'risk-explorer'
       ? 'Loading risk explorer...'
-    : page === 'upload' || page === 'entry-workspace' || page === 'scheme-setup'
-      ? 'Loading entry workflow...'
+      : page === 'upload' || page === 'entry-workspace' || page === 'scheme-setup'
+        ? 'Loading entry workflow...'
       : page === 'department'
         ? 'Loading department view...'
         : 'Loading workspace...'
 
+  const selectedMenteeHistory = selectedMentee ? buildHistoryProfile({ mentee: selectedMentee, historyByUsn: studentHistoryByUsn }) : null
+  const selectedUnlockTaskOffering = selectedUnlockTask ? allOfferings.find(item => item.offId === selectedUnlockTask.offeringId) ?? null : null
+  const handleOpenStudentShellFromHistory = (studentId: string) => handleOpenStudentShell(studentId, historyBackPage ?? page)
+  const handleOpenRiskExplorerFromHistory = (studentId: string) => handleOpenRiskExplorer(studentId, historyBackPage ?? page)
+  const academicWorkspace = {
+    role,
+    page,
+    currentTeacher,
+    facultyProfile,
+    facultyProfileLoading,
+    facultyProfileError,
+    currentFacultyCalendarMarkers,
+    pendingActionCount,
+    assignedOfferings,
+    filteredCurrentFacultyTimetable,
+    greetingHeadline,
+    greetingMeta,
+    greetingSubline,
+    handleNavigateBack,
+    handleOpenStudentShell,
+    handleOpenRiskExplorer,
+    handleOpenCourse,
+    handleOpenStudent,
+    handleOpenUpload,
+    handleOpenCalendar,
+    handleToggleActionQueue,
+    handleOpenHistoryFromStudent,
+    handleOpenHistoryFromMentee,
+    courseInitialTab,
+    offering,
+    selectedSchemeOffering,
+    schemeByOffering,
+    defaultSchemeForOffering,
+    lockByOffering,
+    ttBlueprintsByOffering,
+    getEntryLockMap,
+    getFallbackBlueprintSet,
+    academicBootstrap,
+    handleUpdateBlueprint,
+    handleOpenEntryHub,
+    handleOpenSchemeSetup,
+    hasEntryStartedForOffering,
+    handleSaveScheme,
+    allowedRoles,
+    calendarOfferings,
+    mergedCalendarTasks,
+    calendarMeetings,
+    resolvedTasks,
+    taskPlacements,
+    handleScheduleTask,
+    handleUpdateMeeting,
+    handleMoveClassBlock,
+    handleResizeClassBlock,
+    handleEditClassTiming,
+    handleCreateExtraClass,
+    handleOpenTaskComposer,
+    handleOpenCourseFromCalendar,
+    handleOpenActionQueueFromCalendar,
+    handleUpdateTimetableBounds,
+    handleDismissTask,
+    handleDismissSeries,
+    uploadOffering,
+    uploadKind,
+    handleOpenWorkspace,
+    handleRequestUnlock,
+    entryOfferingId,
+    entryKind,
+    draftBySection,
+    handleSaveDraft,
+    handleSubmitLock,
+    cellValues,
+    handleCellValueChange,
+    handleUpdateStudentAttendance,
+    lockAuditByTarget,
+    capabilities,
+    roleTasks,
+    handleOpenTaskStudent,
+    handleOpenUnlockReview,
+    handleRestoreTask,
+    assignedMentees,
+    selectedMentee,
+    selectedMenteeHistory,
+    handleOpenMentee,
+    allTasksList,
+    calendarAuditEvents,
+    hodProofAnalytics,
+    hodProofLoading,
+    hodProofError,
+    handleOpenQueueHistory,
+    selectedUnlockTask,
+    selectedUnlockTaskOffering,
+    handleApproveUnlock,
+    handleRejectUnlock,
+    handleResetComplete,
+    historyProfile,
+    historyStudentId,
+    studentShellStudentId,
+    handleOpenStudentShellFromHistory,
+    handleOpenRiskExplorerFromHistory,
+    loadStudentAgentCard,
+    loadStudentAgentTimeline,
+    startStudentAgentSession,
+    sendStudentAgentMessage,
+    loadStudentRiskExplorer,
+  }
+
   return (
     <AppSelectorsContext.Provider value={selectors}>
     <div className="app-shell" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: T.bg, color: T.text, overflowX: 'hidden' }}>
-      {/* ═══ TOP BAR ═══ */}
-      <div className={`top-bar-shell ${isCompactTopbar ? 'top-bar-shell--compact' : ''}`} style={{ ...getShellBarStyle(themeMode), display: 'flex', alignItems: 'center', gap: 16, padding: '10px 20px' }}>
-        {/* Brand */}
-        <button aria-label="Go to dashboard" title="Go to dashboard" onClick={handleGoHome} className="top-bar-brand" style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
-          <BrandMark size={36} />
-          <div style={{ minWidth: 0 }}>
-            <div style={{ ...sora, fontWeight: 800, fontSize: 15, color: T.text }}>AirMentor</div>
-            <div className="top-bar-greeting" style={{ ...mono, fontSize: UI_FONT_SIZES.micro, color: T.dim }}>AI Mentor Intelligence</div>
-          </div>
-        </button>
-
-        {isCompactTopbar && (
-          <button className="top-control-btn" aria-label={sidebarToggleLabel} title={sidebarToggleLabel} onClick={() => setSidebarCollapsed(c => !c)} style={{ ...getIconButtonStyle({ subtle: false }), width: 'auto', padding: '0 10px', color: T.muted }}>
-            <motion.span animate={{ rotate: sidebarCollapsed ? 0 : 180 }} transition={{ duration: 0.18 }} style={{ display: 'inline-flex', alignItems: 'center' }}>
-              <ChevronRight size={14} />
-            </motion.span>
-          </button>
-        )}
-
-        {/* Role Switcher */}
-        <div className="top-bar-role-switcher" style={{ ...getSegmentedGroupStyle(), marginLeft: 16 }}>
-          {allowedRoles.map(r => (
-            <button key={r} onClick={() => handleRoleChange(r)}
-              disabled={roleChangeBusy}
-              data-tab="true"
-              data-proof-action="switch-role"
-              data-proof-entity-id={r}
-              style={getSegmentedButtonStyle({ active: role === r, compact: isCompactTopbar })}>
-              {roleChangeBusy && role !== r ? `${r}` : r}
-            </button>
-          ))}
-        </div>
-
-        <div className="top-bar-controls" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
-          {canNavigateBack ? (
-            <button
-              className="top-control-btn"
-              aria-label="Go back"
-              title="Go back"
-              onClick={handleNavigateBack}
-              style={{ ...getIconButtonStyle({ subtle: true }), width: 'auto', padding: '0 12px', color: T.muted, display: 'inline-flex', alignItems: 'center', gap: 6, ...mono, fontSize: UI_FONT_SIZES.eyebrow }}
-            >
-              <ChevronLeft size={14} />
-              Back
-            </button>
-          ) : null}
-          <div className="top-bar-clock" style={{ ...getIconButtonStyle({ subtle: false }), width: 'auto', padding: '0 10px', ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: T.dim, display: 'flex', alignItems: 'center', background: T.surface2 }}>
-            {formattedCurrentTime}
-          </div>
-
-          <button className="top-control-btn" aria-label={isLightTheme(themeMode) ? 'Switch to dark mode' : 'Switch to light mode'} title={isLightTheme(themeMode) ? 'Dark mode' : 'Light mode'} onClick={() => {
-            setThemeMode(isLightTheme(themeMode) ? 'frosted-focus-dark' : 'frosted-focus-light')
-          }} style={{ ...getIconButtonStyle({ subtle: false }), color: T.muted }}>{isLightTheme(themeMode) ? '🌙' : '☀️'}</button>
-
-          <button className="top-control-btn" aria-label={showActionQueue ? 'Hide action queue' : 'Show action queue'} title={showActionQueue ? 'Hide action queue' : 'Show action queue'} onClick={handleToggleActionQueue} style={{ ...getIconButtonStyle({ active: showActionQueue }), color: showActionQueue ? T.accent : T.muted, position: 'relative' }}>
-            <Bell size={14} />
-            {pendingActionCount > 0 && <div style={{ position: 'absolute', top: -6, right: -6, minWidth: 16, height: 16, borderRadius: 8, background: T.danger, color: '#fff', ...mono, fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>{pendingActionCount}</div>}
-          </button>
-
-          {isCompactTopbar && (
-            <>
-              <button className="top-control-btn" aria-label={showTopbarMenu ? 'Close more controls' : 'Open more controls'} title="More" onClick={() => setShowTopbarMenu(v => !v)} style={{ ...getIconButtonStyle({ active: showTopbarMenu, subtle: false }), width: 'auto', padding: '0 10px', color: showTopbarMenu ? T.accent : T.muted, ...mono, fontSize: UI_FONT_SIZES.eyebrow }}>More</button>
-              {showTopbarMenu && (
-                <div className="top-bar-more-menu" style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 38, minWidth: 200, padding: 10, borderRadius: 14, border: `1px solid ${T.border}`, background: `linear-gradient(180deg, ${T.surface}, ${T.surface2})`, boxShadow: '0 18px 42px rgba(2,6,23,0.26)', display: 'grid', gap: 8, zIndex: 70 }}>
-                  <button onClick={handleLogout} style={{ ...getIconButtonStyle({ subtle: true }), width: '100%', padding: '0 10px', color: T.muted, ...mono, fontSize: UI_FONT_SIZES.eyebrow, textAlign: 'left', justifyContent: 'flex-start' }}>
-                    Logout
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-
-          {!isCompactTopbar && (
-            <button className="top-control-btn" aria-label="Logout" title="Logout" data-proof-action="logout" onClick={handleLogout} style={{ ...getIconButtonStyle({ subtle: true }), width: 'auto', padding: '0 12px', color: T.muted, ...mono, fontSize: UI_FONT_SIZES.eyebrow }}>
-              Logout
-            </button>
-          )}
-        </div>
-      </div>
+      <AcademicWorkspaceTopbar
+        themeMode={themeMode}
+        isCompactTopbar={isCompactTopbar}
+        sidebarCollapsed={sidebarCollapsed}
+        sidebarToggleLabel={sidebarToggleLabel}
+        allowedRoles={allowedRoles}
+        role={role}
+        roleChangeBusy={roleChangeBusy}
+        canNavigateBack={canNavigateBack}
+        formattedCurrentTime={formattedCurrentTime}
+        showActionQueue={showActionQueue}
+        pendingActionCount={pendingActionCount}
+        onGoHome={handleGoHome}
+        onToggleSidebar={() => setSidebarCollapsed(current => !current)}
+        onRoleChange={handleRoleChange}
+        onNavigateBack={handleNavigateBack}
+        onToggleTheme={() => setThemeMode(isLightTheme(themeMode) ? 'frosted-focus-dark' : 'frosted-focus-light')}
+        onToggleActionQueue={handleToggleActionQueue}
+        onLogout={handleLogout}
+      />
 
       {/* ═══ MAIN LAYOUT ═══ */}
       <div className="app-main" style={{ display: 'flex', flex: 1, minWidth: 0, position: 'relative' }}>
-        {!isCompactTopbar && sidebarCollapsed && (
-          <motion.button
-            type="button"
-            aria-label={sidebarToggleLabel}
-            title={sidebarToggleLabel}
-            onClick={() => setSidebarCollapsed(false)}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 10 }}
-            transition={{ duration: 0.18, ease: 'easeOut' }}
-            style={{
-              position: 'fixed',
-              left: 18,
-              bottom: 18,
-              zIndex: 30,
-              width: 42,
-              height: 42,
-              borderRadius: 999,
-              background: T.surface,
-              border: `1px solid ${T.border2}`,
-              color: T.muted,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 14px 30px rgba(2,6,23,0.18)',
-            }}
-          >
-            <ChevronRight size={16} />
-          </motion.button>
-        )}
+        <AcademicWorkspaceSidebar
+          currentTeacher={currentTeacher}
+          role={role}
+          page={page}
+          historyBackPage={historyBackPage}
+          navItems={navItems}
+          sidebarYearGroups={sidebarYearGroups}
+          sidebarCompletenessRows={sidebarCompletenessRows}
+          sidebarCollapsed={sidebarCollapsed}
+          sidebarToggleLabel={sidebarToggleLabel}
+          isCompactTopbar={isCompactTopbar}
+          onOpenFacultyProfile={() => setPage('faculty-profile')}
+          onSelectNavItem={nextPage => {
+            setPage(nextPage)
+            setOffering(null)
+          }}
+          onExpandSidebar={() => setSidebarCollapsed(false)}
+          onCollapseSidebar={() => setSidebarCollapsed(true)}
+        />
 
-        {/* Left Sidebar */}
-        <AnimatePresence>
-          {!sidebarCollapsed && (
-            <motion.div initial={{ width: 0, opacity: 0 }} animate={{ width: 210, opacity: 1 }} exit={{ width: 0, opacity: 0 }} transition={{ duration: 0.2 }}
-              style={{ background: T.surface, borderRight: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', position: 'sticky', top: 54, height: 'calc(100vh - 54px)', flexShrink: 0, overflow: 'hidden' }}>
-              <div style={{ padding: '10px 12px', minWidth: 210, flex: 1, overflowY: 'auto' }}>
-                {/* Profile */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 8px', marginBottom: 10 }}>
-                  <div style={{ width: 28, height: 28, borderRadius: 7, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 10, color: '#fff', flexShrink: 0 }}>{currentTeacher.initials}</div>
-                  <div style={{ overflow: 'hidden' }}>
-                    <div style={{ ...sora, fontWeight: 600, fontSize: 11, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentTeacher.name}</div>
-                    <div style={{ ...mono, fontSize: 9, color: T.dim }}>{role}</div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  data-proof-action="open-faculty-profile"
-                  onClick={() => setPage('faculty-profile')}
-                  style={{ width: '100%', marginBottom: 12, borderRadius: 8, border: `1px solid ${page === 'faculty-profile' ? T.accent : T.border}`, background: page === 'faculty-profile' ? `${T.accent}14` : T.surface2, color: page === 'faculty-profile' ? T.accentLight : T.muted, cursor: 'pointer', padding: '8px 10px', textAlign: 'left', ...mono, fontSize: 10 }}
-                >
-                  Faculty Profile
-                </button>
-
-                {/* Nav */}
-                <nav>
-                  {navItems.map(item => {
-                    const Icon = item.icon
-                    const active = page === item.id
-                      || ((page === 'course') && item.id === (role === 'HoD' ? 'department' : role === 'Mentor' ? 'mentees' : 'dashboard'))
-                      || ((page === 'student-history') && item.id === (historyBackPage === 'students' ? 'students' : role === 'HoD' ? 'department' : role === 'Mentor' ? 'mentees' : 'dashboard'))
-                      || ((page === 'student-shell') && item.id === (historyBackPage === 'students' ? 'students' : role === 'HoD' ? 'department' : role === 'Mentor' ? 'mentees' : 'dashboard'))
-                      || ((page === 'risk-explorer') && item.id === (historyBackPage === 'students' ? 'students' : role === 'HoD' ? 'department' : role === 'Mentor' ? 'mentees' : 'dashboard'))
-                      || ((page === 'upload' || page === 'entry-workspace' || page === 'scheme-setup') && item.id === 'upload')
-                      || ((page === 'queue-history' || page === 'unlock-review') && item.id === 'queue-history')
-                      || ((page === 'mentee-detail') && item.id === 'mentees')
-                    return (
-                      <button key={item.id} onClick={() => { setPage(item.id); setOffering(null) }}
-                        data-nav-item="true"
-                        data-active={active ? 'true' : 'false'}
-                        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', background: active ? T.accent + '18' : 'transparent', color: active ? T.accentLight : T.muted, ...sora, fontWeight: 500, fontSize: 12, marginBottom: 2, transition: 'background-color 0.15s ease, color 0.15s ease', textAlign: 'left' as const }}>
-                        <Icon size={15} /> {item.label}
-                      </button>
-                    )
-                  })}
-                </nav>
-
-                {/* Year Stages — Course Leader only */}
-                {role === 'Course Leader' && (
-                  <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
-                    <div style={subtleDividerStyle} aria-hidden="true" />
-                    <div style={{ ...mono, fontSize: 8, color: T.dim, letterSpacing: '0.12em', textTransform: 'uppercase' as const, marginBottom: 8 }}>Year Stages</div>
-                    {sidebarYearGroups.map(g => (
-                      <div key={g.year} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
-                        <div style={{ width: 6, height: 6, borderRadius: 2, background: g.color, flexShrink: 0 }} />
-                        <span style={{ ...mono, fontSize: 9, color: T.muted, flex: 1 }}>{g.year}</span>
-                        <span style={{ ...mono, fontSize: 8, color: g.stageInfo.color }}>{g.stageInfo.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Data completeness */}
-                {role === 'Course Leader' && (
-                  <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
-                    <div style={subtleDividerStyle} aria-hidden="true" />
-                    <div style={{ ...mono, fontSize: 8, color: T.dim, letterSpacing: '0.12em', textTransform: 'uppercase' as const, marginBottom: 8 }}>Data Completeness</div>
-                    {sidebarCompletenessRows.length > 0 ? sidebarCompletenessRows.map(d => (
-                      <div key={d.lbl} style={{ marginBottom: 6 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                          <span style={{ ...mono, fontSize: 9, color: T.muted }}>{d.lbl}</span>
-                          <span style={{ ...mono, fontSize: 9, color: d.pct >= 80 ? T.success : d.pct >= 50 ? T.warning : T.danger }}>{d.pct}%</span>
-                        </div>
-                        <Bar val={d.pct} color={d.pct >= 80 ? T.success : d.pct >= 50 ? T.warning : T.danger} h={3} />
-                      </div>
-                    )) : (
-                      <div style={{ ...mono, fontSize: 9, color: T.dim, lineHeight: 1.7 }}>
-                        No live student data is available in this scope yet.
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-              <div style={{ padding: '12px' }}>
-                <div style={subtleDividerStyle} aria-hidden="true" />
-                <button
-                  type="button"
-                  aria-label={sidebarToggleLabel}
-                  title={sidebarToggleLabel}
-                  onClick={() => setSidebarCollapsed(true)}
-                  style={{
-                    width: '100%',
-                    borderRadius: 10,
-                    border: `1px solid ${T.border2}`,
-                    background: T.surface2,
-                    color: T.muted,
-                    cursor: 'pointer',
-                    padding: '10px 12px',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 10,
-                    ...mono,
-                    fontSize: 11,
-                  }}
-                >
-                  <span>Collapse sidebar</span>
-                  <motion.span animate={{ rotate: 180 }} transition={{ duration: 0.18 }} style={{ display: 'inline-flex', alignItems: 'center' }}>
-                    <ChevronRight size={14} />
-                  </motion.span>
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Center Content */}
-        <div className={`scroll-pane app-content app-content--${layoutMode}`} style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: 'calc(100vh - 54px)' }}>
-          {proofPlaybackNotice ? (
-            <div style={{ padding: '16px 20px 0' }}>
-              <div data-proof-section="proof-playback-notice">
-                <InfoBanner message={proofPlaybackNotice} />
-              </div>
-            </div>
-          ) : null}
-          {roleChangeError ? (
-            <div style={{ padding: '16px 20px 0' }}>
-              <InfoBanner tone="error" message={roleChangeError} />
-            </div>
-          ) : null}
-          <Suspense fallback={<RouteLoadingFallback label={routeLoadingLabel} />}>
-            {page === 'faculty-profile' && (
-              <FacultyProfilePage
-                currentTeacher={currentTeacher}
-                activeRole={role}
-                profile={facultyProfile}
-                calendarMarkers={currentFacultyCalendarMarkers}
-                loading={facultyProfileLoading}
-                error={facultyProfileError}
-                pendingTaskCount={pendingActionCount}
-                assignedOfferings={assignedOfferings}
-                currentFacultyTimetable={filteredCurrentFacultyTimetable}
-                onBack={handleNavigateBack}
-                onOpenStudentShell={studentId => handleOpenStudentShell(studentId, 'faculty-profile')}
-                onOpenRiskExplorer={studentId => handleOpenRiskExplorer(studentId, 'faculty-profile')}
-              />
-            )}
-            {role === 'Course Leader' && page === 'dashboard' && <CLDashboard offerings={assignedOfferings} pendingTaskCount={pendingActionCount} onOpenCourse={handleOpenCourse} onOpenStudent={handleOpenStudent} onOpenUpload={handleOpenUpload} onOpenCalendar={handleOpenCalendar} onOpenPendingActions={handleToggleActionQueue} teacherInitials={currentTeacher.initials} greetingHeadline={greetingHeadline} greetingMeta={greetingMeta} greetingSubline={greetingSubline} />}
-            {role === 'Course Leader' && page === 'students' && <LazyAllStudentsPage offerings={assignedOfferings} onBack={handleNavigateBack} onOpenStudent={handleOpenStudent} onOpenHistory={handleOpenHistoryFromStudent} onOpenUpload={handleOpenUpload} />}
-            {role === 'Course Leader' && page === 'course' && offering && <LazyCourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? getFallbackBlueprintSet(offering.offId)} courseOutcomes={academicBootstrap?.courseOutcomesByOffering?.[offering.offId]} coAttainmentRows={academicBootstrap?.coAttainmentByOffering?.[offering.offId]} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleNavigateBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
-            {role === 'Course Leader' && page === 'scheme-setup' && selectedSchemeOffering && <LazySchemeSetupPage role={role} offering={selectedSchemeOffering} scheme={schemeByOffering[selectedSchemeOffering.offId] ?? defaultSchemeForOffering(selectedSchemeOffering)} hasEntryStarted={hasEntryStartedForOffering(selectedSchemeOffering.offId)} onSave={(next) => handleSaveScheme(selectedSchemeOffering.offId, next)} onBack={handleNavigateBack} />}
-            {role === 'Course Leader' && page === 'calendar' && filteredCurrentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} meetings={calendarMeetings} resolvedTaskIds={resolvedTasks} timetable={filteredCurrentFacultyTimetable} adminMarkers={currentFacultyCalendarMarkers} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onUpdateMeeting={handleUpdateMeeting} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
-            {role === 'Course Leader' && page === 'upload' && <LazyUploadPage key={`${uploadOffering?.offId ?? 'default'}-${uploadKind}`} role={role} offering={uploadOffering} defaultKind={uploadKind} onBack={handleNavigateBack} onOpenWorkspace={handleOpenWorkspace} lockByOffering={lockByOffering} onRequestUnlock={handleRequestUnlock} availableOfferings={assignedOfferings} onOpenSchemeSetup={handleOpenSchemeSetup} />}
-            {role === 'Course Leader' && page === 'entry-workspace' && <LazyEntryWorkspacePage capabilities={capabilities} offeringId={entryOfferingId} kind={entryKind} onBack={handleNavigateBack} lockByOffering={lockByOffering} draftBySection={draftBySection} onSaveDraft={handleSaveDraft} onSubmitLock={handleSubmitLock} onRequestUnlock={handleRequestUnlock} cellValues={cellValues} onCellValueChange={handleCellValueChange} onOpenStudent={handleOpenStudent} onOpenTaskComposer={handleOpenTaskComposer} onUpdateStudentAttendance={handleUpdateStudentAttendance} schemeByOffering={schemeByOffering} ttBlueprintsByOffering={ttBlueprintsByOffering} lockAuditByTarget={lockAuditByTarget} availableOfferings={assignedOfferings} />}
-            {role === 'Course Leader' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
-
-            {role === 'Mentor' && page === 'mentees' && <MentorView mentees={assignedMentees} tasks={roleTasks} onOpenMentee={handleOpenMentee} />}
-            {role === 'Mentor' && page === 'mentee-detail' && selectedMentee && <MenteeDetailPage mentee={selectedMentee} history={buildHistoryProfile({ mentee: selectedMentee, historyByUsn: studentHistoryByUsn })} onBack={handleNavigateBack} onOpenHistory={handleOpenHistoryFromMentee} />}
-            {role === 'Mentor' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
-            {role === 'Mentor' && page === 'calendar' && filteredCurrentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} meetings={calendarMeetings} resolvedTaskIds={resolvedTasks} timetable={filteredCurrentFacultyTimetable} adminMarkers={currentFacultyCalendarMarkers} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onUpdateMeeting={handleUpdateMeeting} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
-
-            {role === 'HoD' && page === 'department' && (
-              <LazyHodView
-                onOpenQueueHistory={handleOpenQueueHistory}
-                onOpenStudentShell={studentId => handleOpenStudentShell(studentId, 'department')}
-                onOpenRiskExplorer={studentId => handleOpenRiskExplorer(studentId, 'department')}
-                onOpenCourse={handleOpenCourse}
-                onOpenStudent={handleOpenStudent}
-                tasks={allTasksList}
-                calendarAuditEvents={calendarAuditEvents}
-                summary={hodProofAnalytics?.summary ?? null}
-                courseRollups={hodProofAnalytics?.courses ?? []}
-                facultyRollups={hodProofAnalytics?.faculty ?? []}
-                studentWatchRows={hodProofAnalytics?.students ?? []}
-                reassessmentRows={hodProofAnalytics?.reassessments ?? []}
-                loading={hodProofLoading}
-                error={hodProofError}
-              />
-            )}
-            {role === 'HoD' && page === 'course' && offering && <LazyCourseDetail key={`${offering.offId}-${courseInitialTab ?? 'overview'}`} offering={offering} scheme={schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)} lockMap={lockByOffering[offering.offId] ?? getEntryLockMap(offering)} blueprints={ttBlueprintsByOffering[offering.offId] ?? getFallbackBlueprintSet(offering.offId)} courseOutcomes={academicBootstrap?.courseOutcomesByOffering?.[offering.offId]} coAttainmentRows={academicBootstrap?.coAttainmentByOffering?.[offering.offId]} onUpdateBlueprint={(kind, next) => handleUpdateBlueprint(offering.offId, kind, next)} onBack={handleNavigateBack} onOpenStudent={s => handleOpenStudent(s, offering)} onOpenEntryHub={(kind) => handleOpenEntryHub(offering, kind)} onOpenSchemeSetup={() => handleOpenSchemeSetup(offering)} initialTab={courseInitialTab} />}
-            {role === 'HoD' && page === 'unlock-review' && selectedUnlockTask && <UnlockReviewPage task={selectedUnlockTask} offering={allOfferings.find(item => item.offId === selectedUnlockTask.offeringId) ?? null} onBack={handleNavigateBack} onApprove={() => handleApproveUnlock(selectedUnlockTask.id)} onReject={() => handleRejectUnlock(selectedUnlockTask.id)} onResetComplete={() => handleResetComplete(selectedUnlockTask.id)} />}
-            {role === 'HoD' && page === 'queue-history' && <QueueHistoryPage role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onBack={handleNavigateBack} onOpenTaskStudent={handleOpenTaskStudent} onOpenUnlockReview={handleOpenUnlockReview} onRestoreTask={handleRestoreTask} />}
-            {role === 'HoD' && page === 'calendar' && filteredCurrentFacultyTimetable && <LazyCalendarTimetablePage currentTeacher={currentTeacher} activeRole={role} allowedRoles={allowedRoles} facultyOfferings={calendarOfferings} mergedTasks={mergedCalendarTasks} meetings={calendarMeetings} resolvedTaskIds={resolvedTasks} timetable={filteredCurrentFacultyTimetable} adminMarkers={currentFacultyCalendarMarkers} taskPlacements={taskPlacements} onBack={handleNavigateBack} onScheduleTask={handleScheduleTask} onUpdateMeeting={handleUpdateMeeting} onMoveClassBlock={handleMoveClassBlock} onResizeClassBlock={handleResizeClassBlock} onEditClassTiming={handleEditClassTiming} onCreateExtraClass={handleCreateExtraClass} onOpenTaskComposer={handleOpenTaskComposer} onOpenCourse={handleOpenCourseFromCalendar} onOpenActionQueue={handleOpenActionQueueFromCalendar} onUpdateTimetableBounds={handleUpdateTimetableBounds} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />}
-
-            {page === 'student-history' && historyProfile && <LazyStudentHistoryPage role={role} history={historyProfile} studentId={historyStudentId} onBack={handleNavigateBack} onOpenStudentShell={studentId => handleOpenStudentShell(studentId, historyBackPage ?? page)} onOpenRiskExplorer={studentId => handleOpenRiskExplorer(studentId, historyBackPage ?? page)} />}
-            {page === 'student-shell' && studentShellStudentId && (
-              <LazyStudentShellPage
-                role={role}
-                studentId={studentShellStudentId}
-                onBack={handleNavigateBack}
-                loadCard={loadStudentAgentCard}
-                loadTimeline={loadStudentAgentTimeline}
-                startSession={startStudentAgentSession}
-                sendMessage={sendStudentAgentMessage}
-              />
-            )}
-            {page === 'risk-explorer' && studentShellStudentId && (
-              <LazyRiskExplorerPage
-                role={role}
-                studentId={studentShellStudentId}
-                onBack={handleNavigateBack}
-                loadExplorer={loadStudentRiskExplorer}
-              />
-            )}
-          </Suspense>
-        </div>
+        <AcademicWorkspaceRouteSurface
+          workspace={academicWorkspace}
+          layoutMode={layoutMode}
+          proofPlaybackNotice={proofPlaybackNotice}
+          routeError={roleChangeError}
+          routeLoadingLabel={routeLoadingLabel}
+          onResetProofPlaybackSelection={onResetProofPlaybackSelection}
+        />
 
         {/* Right Sidebar — Action Queue */}
         <AnimatePresence>
@@ -4933,6 +3817,10 @@ function getAcademicApiBaseUrl() {
 export function OperationalApp() {
   const apiBaseUrl = getAcademicApiBaseUrl()
   const apiClient = useMemo(() => (apiBaseUrl ? new AirMentorApiClient(apiBaseUrl) : null), [apiBaseUrl])
+  const startupDiagnostics = useMemo(
+    () => collectFrontendStartupDiagnostics({ apiBaseUrl }),
+    [apiBaseUrl],
+  )
   const remoteSessionRepositories = useMemo(() => (
     apiClient
       ? createAirMentorRepositories({
@@ -4949,11 +3837,28 @@ export function OperationalApp() {
   const [remoteBootstrap, setRemoteBootstrap] = useState<ApiAcademicBootstrap | null>(null)
   const [loginFaculty, setLoginFaculty] = useState<ApiAcademicLoginFaculty[]>([])
   const [playbackCheckpointId, setPlaybackCheckpointId] = useState<string | null>(() => readProofPlaybackSelection()?.simulationStageCheckpointId ?? null)
-  const [proofPlaybackNotice, setProofPlaybackNotice] = useState('')
+  const [proofPlaybackNotice, setProofPlaybackNotice] = useState<{ tone: 'neutral' | 'error'; message: string } | null>(null)
   const handleReturnToPortal = useCallback(() => {
     if (typeof window !== 'undefined') clearPortalWorkspaceHints(window.localStorage)
     navigateToPortal('home')
   }, [])
+
+  useEffect(() => {
+    startupDiagnostics.forEach(diagnostic => {
+      emitClientOperationalEvent('startup.diagnostic', {
+        workspace: 'academic',
+        ...diagnostic,
+      }, {
+        level: diagnostic.level === 'error' ? 'error' : diagnostic.level === 'warning' ? 'warn' : 'info',
+      })
+    })
+    emitClientOperationalEvent('startup.ready', {
+      workspace: 'academic',
+      apiBaseUrl: apiBaseUrl || null,
+      diagnosticCount: startupDiagnostics.length,
+      errorCount: startupDiagnostics.filter(item => item.level === 'error').length,
+    })
+  }, [apiBaseUrl, startupDiagnostics])
 
   const fetchAcademicBootstrap = useCallback(async () => {
     if (!apiClient) return null
@@ -4979,24 +3884,72 @@ export function OperationalApp() {
     }
     const selection = readProofPlaybackSelection()
     try {
-      const snapshot = restrictAcademicBootstrap(await apiClient.getAcademicBootstrap(selection?.simulationStageCheckpointId ? {
-        simulationStageCheckpointId: selection.simulationStageCheckpointId,
+      const requestedCheckpointId = selection?.simulationStageCheckpointId ?? null
+      const snapshot = restrictAcademicBootstrap(await apiClient.getAcademicBootstrap(requestedCheckpointId ? {
+        simulationStageCheckpointId: requestedCheckpointId,
       } : undefined))
-      if (!selection?.simulationStageCheckpointId || snapshot.proofPlayback?.simulationStageCheckpointId === selection.simulationStageCheckpointId) {
-        setProofPlaybackNotice('')
+      const restoredCheckpointId = snapshot.proofPlayback?.simulationStageCheckpointId ?? null
+      if (requestedCheckpointId && restoredCheckpointId === requestedCheckpointId) {
+        const restoredCheckpointLabel = snapshot.proofPlayback?.stageLabel ?? 'selected checkpoint'
+        const semesterLabel = snapshot.proofPlayback?.semesterNumber != null
+          ? `Semester ${snapshot.proofPlayback.semesterNumber}`
+          : 'the selected semester'
+        setProofPlaybackNotice({
+          tone: 'neutral',
+          message: `Proof playback restored to ${semesterLabel} · ${restoredCheckpointLabel}. Use Reset playback to return to the active proof-run view.`,
+        })
+        emitClientOperationalEvent('proof.playback.restored', {
+          workspace: 'academic',
+          simulationStageCheckpointId: restoredCheckpointId,
+          semesterLabel,
+          stageLabel: restoredCheckpointLabel,
+        })
+      } else if (requestedCheckpointId) {
+        clearProofPlaybackSelection()
+        setProofPlaybackNotice({
+          tone: 'error',
+          message: 'Saved proof playback checkpoint is no longer available in this academic scope. Reset playback to return to the active proof-run view.',
+        })
+        emitClientOperationalEvent('proof.playback.invalidated', {
+          workspace: 'academic',
+          requestedCheckpointId,
+        }, { level: 'warn' })
+      } else {
+        setProofPlaybackNotice(null)
       }
       return syncSnapshot(snapshot)
     } catch (error) {
       const invalidSelection = selection?.simulationStageCheckpointId
         && error instanceof AirMentorApiError
         && (error.status === 403 || error.status === 404)
-      if (!invalidSelection) throw error
-      writeProofPlaybackSelection(null)
-      setProofPlaybackNotice('The selected proof playback checkpoint is no longer accessible in this academic scope. The portal reverted to the active proof-run view.')
+      if (!invalidSelection) {
+        emitClientOperationalEvent('academic.bootstrap.load_failed', {
+          workspace: 'academic',
+          requestedCheckpointId: selection?.simulationStageCheckpointId ?? null,
+          error: normalizeClientTelemetryError(error),
+        }, { level: 'error' })
+        throw error
+      }
+      clearProofPlaybackSelection()
+      setProofPlaybackNotice({
+        tone: 'error',
+        message: 'The selected proof playback checkpoint is no longer accessible in this academic scope. Reset playback to return to the active proof-run view.',
+      })
+      emitClientOperationalEvent('proof.playback.inaccessible', {
+        workspace: 'academic',
+        requestedCheckpointId: selection?.simulationStageCheckpointId ?? null,
+        error: normalizeClientTelemetryError(error),
+      }, { level: 'warn' })
       const snapshot = restrictAcademicBootstrap(await apiClient.getAcademicBootstrap())
       return syncSnapshot(snapshot)
     }
   }, [apiClient])
+
+  const handleResetProofPlaybackSelection = useCallback(async () => {
+    clearProofPlaybackSelection()
+    setProofPlaybackNotice(null)
+    await fetchAcademicBootstrap().catch(() => undefined)
+  }, [fetchAcademicBootstrap])
 
   useEffect(() => {
     if (typeof window === 'undefined' || !remoteSession?.faculty?.facultyId) return undefined
@@ -5028,6 +3981,12 @@ export function OperationalApp() {
         }
         const restoredRole = restoredSession ? mapApiRoleToRole(restoredSession.activeRoleGrant.roleCode) : null
         if (restoredSession?.faculty?.facultyId && restoredRole) {
+          emitClientOperationalEvent('auth.session.restored', {
+            workspace: 'academic',
+            sessionId: restoredSession.sessionId,
+            facultyId: restoredSession.faculty.facultyId,
+            activeRole: restoredSession.activeRoleGrant.roleCode,
+          })
           setRemoteSession(restoredSession)
           await fetchAcademicBootstrap()
         } else {
@@ -5036,6 +3995,10 @@ export function OperationalApp() {
         }
       } catch (error) {
         if (cancelled) return
+        emitClientOperationalEvent('auth.session.restore_failed', {
+          workspace: 'academic',
+          error: normalizeClientTelemetryError(error),
+        }, { level: 'warn' })
         setAuthError(error instanceof Error ? error.message : 'Could not restore the academic portal session.')
         setRemoteSession(null)
         setRemoteBootstrap(null)
@@ -5104,84 +4067,146 @@ export function OperationalApp() {
 
   const remoteInitialRole = remoteSession ? mapApiRoleToRole(remoteSession.activeRoleGrant.roleCode) : null
 
-  if (!apiClient || !remoteSessionRepositories) {
-    return (
-      <AuthPageShell>
-        <Card style={{ maxWidth: 760, margin: '0 auto', display: 'grid', gap: 12 }}>
-          <div style={{ ...sora, fontSize: 22, fontWeight: 800, color: T.text }}>Teaching Workspace</div>
-          <InfoBanner tone="error" message="VITE_AIRMENTOR_API_BASE_URL is required. Mock mode has been removed." />
-          <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.8 }}>
-            Configure the API URL so the teaching workspace runs entirely from system-admin managed backend data.
-          </div>
-          <div>
-            <Btn variant="ghost" onClick={handleReturnToPortal}>Back to Portal</Btn>
-          </div>
-        </Card>
-      </AuthPageShell>
-    )
-  }
+  const loadAcademicFacultyProfile = useCallback(async (facultyId: string) => {
+    if (!apiClient) throw new Error('Academic backend is unavailable.')
+    try {
+      return await apiClient.getAcademicFacultyProfile(facultyId, playbackCheckpointId ? {
+        simulationStageCheckpointId: playbackCheckpointId,
+      } : undefined)
+    } catch (error) {
+      emitClientOperationalEvent('proof.faculty_profile.load_failed', {
+        workspace: 'academic',
+        facultyId,
+        simulationStageCheckpointId: playbackCheckpointId,
+        error: normalizeClientTelemetryError(error),
+      }, { level: 'warn' })
+      throw error
+    }
+  }, [apiClient, playbackCheckpointId])
 
-  const loadAcademicFacultyProfile = useCallback((facultyId: string) => apiClient.getAcademicFacultyProfile(facultyId, playbackCheckpointId ? {
-    simulationStageCheckpointId: playbackCheckpointId,
-  } : undefined), [apiClient, playbackCheckpointId])
-  const loadAcademicHodProofAnalytics = useCallback(() => apiClient.getAcademicHodProofBundle(playbackCheckpointId ? {
-    simulationStageCheckpointId: playbackCheckpointId,
-  } : undefined), [apiClient, playbackCheckpointId])
-  const loadAcademicStudentAgentCard = useCallback((studentId: string) => apiClient.getAcademicStudentAgentCard(studentId, playbackCheckpointId ? {
-    simulationStageCheckpointId: playbackCheckpointId,
-  } : undefined), [apiClient, playbackCheckpointId])
-  const loadAcademicStudentAgentTimeline = useCallback((studentId: string) => apiClient.getAcademicStudentAgentTimeline(studentId, playbackCheckpointId ? {
-    simulationStageCheckpointId: playbackCheckpointId,
-  } : undefined), [apiClient, playbackCheckpointId])
-  const startAcademicStudentAgentSession = useCallback((studentId: string) => apiClient.startAcademicStudentAgentSession(studentId, playbackCheckpointId ? {
-    simulationStageCheckpointId: playbackCheckpointId,
-  } : undefined), [apiClient, playbackCheckpointId])
-  const sendAcademicStudentAgentMessage = useCallback((sessionId: string, payload: { prompt: string }) => apiClient.sendAcademicStudentAgentMessage(sessionId, payload), [apiClient])
-  const loadAcademicStudentRiskExplorer = useCallback((studentId: string) => apiClient.getAcademicStudentRiskExplorer(studentId, playbackCheckpointId ? {
-    simulationStageCheckpointId: playbackCheckpointId,
-  } : undefined), [apiClient, playbackCheckpointId])
+  const loadAcademicHodProofAnalytics = useCallback(async () => {
+    if (!apiClient) throw new Error('Academic backend is unavailable.')
+    try {
+      return await apiClient.getAcademicHodProofBundle(playbackCheckpointId ? {
+        simulationStageCheckpointId: playbackCheckpointId,
+      } : undefined)
+    } catch (error) {
+      emitClientOperationalEvent('proof.analytics.load_failed', {
+        workspace: 'academic',
+        simulationStageCheckpointId: playbackCheckpointId,
+        error: normalizeClientTelemetryError(error),
+      }, { level: 'warn' })
+      throw error
+    }
+  }, [apiClient, playbackCheckpointId])
 
-  if (booting) return <RouteLoadingFallback label="Restoring academic session..." />
+  const loadAcademicStudentAgentCard = useCallback(async (studentId: string) => {
+    if (!apiClient) throw new Error('Academic backend is unavailable.')
+    try {
+      return await apiClient.getAcademicStudentAgentCard(studentId, playbackCheckpointId ? {
+        simulationStageCheckpointId: playbackCheckpointId,
+      } : undefined)
+    } catch (error) {
+      emitClientOperationalEvent('proof.student_shell.load_failed', {
+        workspace: 'academic',
+        studentId,
+        simulationStageCheckpointId: playbackCheckpointId,
+        error: normalizeClientTelemetryError(error),
+      }, { level: 'warn' })
+      throw error
+    }
+  }, [apiClient, playbackCheckpointId])
 
-  if (!remoteSession || !remoteSession.faculty?.facultyId || !remoteInitialRole || !remoteBootstrap || !remoteRepositories) {
-    return (
-      <LoginPage
-        facultyOptions={loginFaculty}
-        helperText=""
-        modeLabel="Teaching Workspace Live Mode"
-        heroBody="Sign in against the live backend so course leaders, mentors, and HoDs land in their actual system-admin managed teaching context."
-        busy={authBusy}
-        externalError={authError}
-        onBackToPortal={handleReturnToPortal}
-        onLogin={handleRemoteLogin}
-      />
-    )
-  }
+  const loadAcademicStudentAgentTimeline = useCallback(async (studentId: string) => {
+    if (!apiClient) throw new Error('Academic backend is unavailable.')
+    try {
+      return await apiClient.getAcademicStudentAgentTimeline(studentId, playbackCheckpointId ? {
+        simulationStageCheckpointId: playbackCheckpointId,
+      } : undefined)
+    } catch (error) {
+      emitClientOperationalEvent('proof.student_timeline.load_failed', {
+        workspace: 'academic',
+        studentId,
+        simulationStageCheckpointId: playbackCheckpointId,
+        error: normalizeClientTelemetryError(error),
+      }, { level: 'warn' })
+      throw error
+    }
+  }, [apiClient, playbackCheckpointId])
+
+  const startAcademicStudentAgentSession = useCallback(async (studentId: string) => {
+    if (!apiClient) throw new Error('Academic backend is unavailable.')
+    return apiClient.startAcademicStudentAgentSession(studentId, playbackCheckpointId ? {
+      simulationStageCheckpointId: playbackCheckpointId,
+    } : undefined)
+  }, [apiClient, playbackCheckpointId])
+
+  const sendAcademicStudentAgentMessage = useCallback((sessionId: string, payload: { prompt: string }) => {
+    if (!apiClient) throw new Error('Academic backend is unavailable.')
+    return apiClient.sendAcademicStudentAgentMessage(sessionId, payload)
+  }, [apiClient])
+
+  const loadAcademicStudentRiskExplorer = useCallback(async (studentId: string) => {
+    if (!apiClient) throw new Error('Academic backend is unavailable.')
+    try {
+      return await apiClient.getAcademicStudentRiskExplorer(studentId, playbackCheckpointId ? {
+        simulationStageCheckpointId: playbackCheckpointId,
+      } : undefined)
+    } catch (error) {
+      emitClientOperationalEvent('proof.risk_explorer.load_failed', {
+        workspace: 'academic',
+        studentId,
+        simulationStageCheckpointId: playbackCheckpointId,
+        error: normalizeClientTelemetryError(error),
+      }, { level: 'warn' })
+      throw error
+    }
+  }, [apiClient, playbackCheckpointId])
+
+  const workspaceSession = remoteSession
+  const workspaceRole = remoteInitialRole
+  const workspaceBootstrap = remoteBootstrap
+  const workspaceRepositories = remoteRepositories
+  const workspaceReady = Boolean(remoteSession?.faculty?.facultyId && remoteInitialRole && remoteBootstrap && remoteRepositories)
 
   return (
-      <OperationalWorkspace
-        repositories={remoteRepositories}
-        initialTeacherId={remoteSession.faculty.facultyId}
-      initialRole={remoteInitialRole}
-      onLogout={handleRemoteLogout}
-      onRoleChange={handleRemoteRoleChange}
-      loadFacultyProfile={loadAcademicFacultyProfile}
-      loadHodProofAnalytics={loadAcademicHodProofAnalytics}
-      loadStudentAgentCard={loadAcademicStudentAgentCard}
-      loadStudentAgentTimeline={loadAcademicStudentAgentTimeline}
-      startStudentAgentSession={startAcademicStudentAgentSession}
-        sendStudentAgentMessage={sendAcademicStudentAgentMessage}
-        loadStudentRiskExplorer={loadAcademicStudentRiskExplorer}
-        academicBootstrap={remoteBootstrap}
-        proofPlaybackNotice={proofPlaybackNotice}
-      />
-    )
+    <AcademicSessionBoundary
+      backendReady={Boolean(apiClient && remoteSessionRepositories)}
+      booting={booting}
+      sessionReady={workspaceReady}
+      facultyOptions={loginFaculty}
+      authBusy={authBusy}
+      authError={authError}
+      onBackToPortal={handleReturnToPortal}
+      onLogin={handleRemoteLogin}
+    >
+      {workspaceReady ? (
+        <OperationalWorkspace
+          repositories={workspaceRepositories!}
+          initialTeacherId={workspaceSession!.faculty!.facultyId}
+          initialRole={workspaceRole!}
+          onLogout={handleRemoteLogout}
+          onRoleChange={handleRemoteRoleChange}
+          loadFacultyProfile={loadAcademicFacultyProfile}
+          loadHodProofAnalytics={loadAcademicHodProofAnalytics}
+          loadStudentAgentCard={loadAcademicStudentAgentCard}
+          loadStudentAgentTimeline={loadAcademicStudentAgentTimeline}
+          startStudentAgentSession={startAcademicStudentAgentSession}
+          sendStudentAgentMessage={sendAcademicStudentAgentMessage}
+          loadStudentRiskExplorer={loadAcademicStudentRiskExplorer}
+          academicBootstrap={workspaceBootstrap!}
+          proofPlaybackNotice={proofPlaybackNotice}
+          onResetProofPlaybackSelection={handleResetProofPlaybackSelection}
+        />
+      ) : null}
+    </AcademicSessionBoundary>
+  )
 }
 
 function PortalRouterApp() {
   const [route, setRoute] = useState<PortalRoute>(() => {
     if (typeof window === 'undefined') return 'home'
-    return resolvePortalRoute(window.location.hash, window.localStorage)
+    return resolvePortalRoute(window.location.hash)
   })
 
   const handleSelectAcademic = useCallback(() => {
@@ -5204,7 +4229,7 @@ function PortalRouterApp() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const syncRoute = () => setRoute(resolvePortalRoute(window.location.hash, window.localStorage))
+    const syncRoute = () => setRoute(resolvePortalRoute(window.location.hash))
     syncRoute()
     window.addEventListener('hashchange', syncRoute)
     return () => window.removeEventListener('hashchange', syncRoute)

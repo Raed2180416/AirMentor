@@ -45,6 +45,10 @@ function TabButton({
       size="sm"
       variant={active ? 'primary' : 'ghost'}
       onClick={onClick}
+      id={`student-shell-tab-${proofTab}`}
+      role="tab"
+      ariaControls={`student-shell-panel-${proofTab}`}
+      ariaSelected={active}
       dataProofAction="student-shell-tab"
       dataProofEntityId={proofTab}
     >
@@ -329,7 +333,7 @@ export function StudentShellPage({
           </div>
 
           <div style={{ display: 'grid', gap: 14 }}>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div role="tablist" aria-label="Student shell sections" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <TabButton active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} proofTab="overview">Overview</TabButton>
               <TabButton active={activeTab === 'topic-co'} onClick={() => setActiveTab('topic-co')} proofTab="topic-co">Topic & CO</TabButton>
               <TabButton active={activeTab === 'assessment'} onClick={() => setActiveTab('assessment')} proofTab="assessment">Assessment Evidence</TabButton>
@@ -339,7 +343,13 @@ export function StudentShellPage({
             </div>
 
             {activeTab === 'overview' ? (
-              <div data-proof-section="overview-panel" style={{ display: 'grid', gap: 14 }}>
+              <div
+                id="student-shell-panel-overview"
+                role="tabpanel"
+                aria-labelledby="student-shell-tab-overview"
+                data-proof-section="overview-panel"
+                style={{ display: 'grid', gap: 14 }}
+              >
                 <Card data-proof-section="overview-observed-evidence" style={{ padding: 16, display: 'grid', gap: 10 }}>
                   <PanelLabel label={card.overview.observedLabel} />
                   <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Current observed evidence</div>
@@ -402,7 +412,13 @@ export function StudentShellPage({
             ) : null}
 
             {activeTab === 'topic-co' ? (
-              <div data-proof-section="topic-co-panel" style={{ display: 'grid', gap: 14 }}>
+              <div
+                id="student-shell-panel-topic-co"
+                role="tabpanel"
+                aria-labelledby="student-shell-tab-topic-co"
+                data-proof-section="topic-co-panel"
+                style={{ display: 'grid', gap: 14 }}
+              >
                 <Card data-proof-section="topic-buckets" style={{ padding: 16, display: 'grid', gap: 10 }}>
                   <PanelLabel label={card.topicAndCo.panelLabel} />
                   <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Topic buckets</div>
@@ -441,7 +457,13 @@ export function StudentShellPage({
             ) : null}
 
             {activeTab === 'assessment' ? (
-              <div data-proof-section="assessment-panel" style={{ display: 'grid', gap: 14 }}>
+              <div
+                id="student-shell-panel-assessment"
+                role="tabpanel"
+                aria-labelledby="student-shell-tab-assessment"
+                data-proof-section="assessment-panel"
+                style={{ display: 'grid', gap: 14 }}
+              >
                 <Card data-proof-section="assessment-evidence" style={{ padding: 16, display: 'grid', gap: 10 }}>
                   <PanelLabel label={card.assessmentEvidence.panelLabel} />
                   <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Observed course evidence</div>
@@ -474,7 +496,13 @@ export function StudentShellPage({
             ) : null}
 
             {activeTab === 'interventions' ? (
-              <div data-proof-section="interventions-panel" style={{ display: 'grid', gap: 14 }}>
+              <div
+                id="student-shell-panel-interventions"
+                role="tabpanel"
+                aria-labelledby="student-shell-tab-interventions"
+                data-proof-section="interventions-panel"
+                style={{ display: 'grid', gap: 14 }}
+              >
                 <Card data-proof-section="reassessments" style={{ padding: 16, display: 'grid', gap: 10 }}>
                   <PanelLabel label={card.interventions.panelLabel} />
                   <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Reassessments</div>
@@ -506,38 +534,45 @@ export function StudentShellPage({
             ) : null}
 
             {activeTab === 'timeline' ? (
-              <Card data-proof-section="timeline-panel" style={{ padding: 16, display: 'grid', gap: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-                  <div>
-                    <PanelLabel label="Observed" />
-                    <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text, marginTop: 6 }}>Bounded proof timeline</div>
+              <div id="student-shell-panel-timeline" role="tabpanel" aria-labelledby="student-shell-tab-timeline">
+                <Card data-proof-section="timeline-panel" style={{ padding: 16, display: 'grid', gap: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                    <div>
+                      <PanelLabel label="Observed" />
+                      <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text, marginTop: 6 }}>Bounded proof timeline</div>
+                    </div>
+                    {timelineLoading ? <Chip color={T.dim}>Loading timeline...</Chip> : null}
                   </div>
-                  {timelineLoading ? <Chip color={T.dim}>Loading timeline...</Chip> : null}
-                </div>
-                {timelineBySemester.length > 0 ? timelineBySemester.map(([semesterNumber, items]) => (
-                  <Card key={`timeline-${semesterNumber}`} style={{ padding: 12, background: T.surface2 }}>
-                    <div style={{ ...mono, fontSize: 10, color: T.text }}>
-                      {semesterNumber > 0 ? `Semester ${semesterNumber}` : 'Cross-semester log'}
-                    </div>
-                    <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
-                      {items.map(item => (
-                        <Card key={item.timelineItemId} style={{ padding: 10, background: T.surface }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                            <PanelLabel label={item.panelLabel} />
-                            <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.title}</div>
-                          </div>
-                          <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.8 }}>{item.detail}</div>
-                          <CitationList citations={item.citations} />
-                        </Card>
-                      ))}
-                    </div>
-                  </Card>
-                )) : <EmptyState title="No timeline entries" body="The proof card does not currently expose timeline items." />}
-              </Card>
+                  {timelineBySemester.length > 0 ? timelineBySemester.map(([semesterNumber, items]) => (
+                    <Card key={`timeline-${semesterNumber}`} style={{ padding: 12, background: T.surface2 }}>
+                      <div style={{ ...mono, fontSize: 10, color: T.text }}>
+                        {semesterNumber > 0 ? `Semester ${semesterNumber}` : 'Cross-semester log'}
+                      </div>
+                      <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
+                        {items.map(item => (
+                          <Card key={item.timelineItemId} style={{ padding: 10, background: T.surface }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                              <PanelLabel label={item.panelLabel} />
+                              <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.title}</div>
+                            </div>
+                            <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.8 }}>{item.detail}</div>
+                            <CitationList citations={item.citations} />
+                          </Card>
+                        ))}
+                      </div>
+                    </Card>
+                  )) : <EmptyState title="No timeline entries" body="The proof card does not currently expose timeline items." />}
+                </Card>
+              </div>
             ) : null}
 
             {activeTab === 'chat' ? (
-              <div style={{ display: 'grid', gap: 14 }}>
+              <div
+                id="student-shell-panel-chat"
+                role="tabpanel"
+                aria-labelledby="student-shell-tab-chat"
+                style={{ display: 'grid', gap: 14 }}
+              >
                 <Card data-proof-section="chat-panel" style={{ padding: 16, display: 'grid', gap: 12 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                     <div>
@@ -545,6 +580,11 @@ export function StudentShellPage({
                       <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text, marginTop: 6 }}>Deterministic shell chat</div>
                       <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 6, lineHeight: 1.8 }}>
                         The shell replies only from the stored card. It cannot predict future certainty, override policy-derived records, or disclose hidden simulation internals{card.checkpointContext ? ` beyond the selected checkpoint ${card.checkpointContext.stageLabel}` : ''}.
+                      </div>
+                      <div aria-label="Message type legend" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                        <Chip color={T.warning}>Guardrail</Chip>
+                        <Chip color={T.accent}>Session Intro</Chip>
+                        <Chip color={T.success}>Deterministic Reply</Chip>
                       </div>
                     </div>
                     {!session ? (

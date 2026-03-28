@@ -1,0 +1,86 @@
+name: Proof and Browser Cadence
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'air-mentor-api/**'
+      - 'scripts/**'
+      - '.github/workflows/proof-browser-cadence.yml'
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: proof-browser-cadence
+  cancel-in-progress: true
+
+jobs:
+  proof-rc:
+    name: Proof RC backend suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run proof-rc backend suite
+        run: npm --workspace air-mentor-api run test:proof-rc -- --reporter=dot
+
+  browser-suites:
+    name: Browser proof suites
+    needs: proof-rc
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Proof risk smoke
+            script: scripts/playwright-admin-live-proof-risk-smoke.sh
+          - name: Accessibility regression
+            script: scripts/playwright-admin-live-accessibility-regression.sh
+          - name: Keyboard regression
+            script: scripts/playwright-admin-live-keyboard-regression.sh
+          - name: Request flow
+            script: scripts/playwright-admin-live-request-flow.sh
+          - name: Teaching parity
+            script: scripts/playwright-admin-live-teaching-parity.sh
+          - name: Admin acceptance
+            script: scripts/playwright-admin-live-acceptance.sh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright CLI
+        run: npm install -g playwright
+
+      - name: Install Firefox browser
+        run: playwright install --with-deps firefox
+
+      - name: Run ${{ matrix.name }}
+        env:
+          AIRMENTOR_API_DIR: ${{ github.workspace }}/air-mentor-api
+        run: bash ${{ matrix.script }}

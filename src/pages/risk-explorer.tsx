@@ -97,12 +97,30 @@ function TabButton({
   active,
   onClick,
   children,
+  proofTab,
+  ariaControls,
 }: {
   active: boolean
   onClick: () => void
   children: string
+  proofTab: 'overview' | 'details' | 'advanced'
+  ariaControls: string
 }) {
-  return <Btn size="sm" variant={active ? 'primary' : 'ghost'} onClick={onClick}>{children}</Btn>
+  return (
+    <Btn
+      size="sm"
+      variant={active ? 'primary' : 'ghost'}
+      onClick={onClick}
+      id={`risk-explorer-tab-${proofTab}`}
+      role="tab"
+      ariaControls={ariaControls}
+      ariaSelected={active}
+      dataProofAction="risk-explorer-tab"
+      dataProofEntityId={proofTab}
+    >
+      {children}
+    </Btn>
+  )
 }
 
 export function RiskExplorerPage({
@@ -130,18 +148,18 @@ export function RiskExplorerPage({
   useEffect(() => {
     if (!loadExplorer) return
     let cancelled = false
-    setLoading(true)
-    setError('')
-    void loadExplorer(studentId)
-      .then(result => {
+    void (async () => {
+      setLoading(true)
+      setError('')
+      try {
+        const result = await loadExplorer(studentId)
         if (!cancelled) setExplorer(result)
-      })
-      .catch(nextError => {
+      } catch (nextError) {
         if (!cancelled) setError(nextError instanceof Error ? nextError.message : 'Could not load the risk explorer.')
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setLoading(false)
-      })
+      }
+    })()
     return () => {
       cancelled = true
     }
@@ -177,6 +195,7 @@ export function RiskExplorerPage({
   const policyComparisonRationale = policyComparison
     ? ('policyRationale' in policyComparison ? policyComparison.policyRationale : policyComparison.rationale)
     : ''
+  const activePanelId = `risk-explorer-panel-${activeTab}`
   const trainedHeads = [
     {
       key: 'attendanceRisk',
@@ -292,14 +311,13 @@ export function RiskExplorerPage({
 
         {error ? <div data-proof-section="load-error"><InfoBanner tone="error" message={error} /></div> : null}
         
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', borderBottom: `1px solid ${T.surface2}`, paddingBottom: 12 }}>
-          <TabButton active={activeTab === 'overview'} onClick={() => setActiveTab('overview')}>Overview</TabButton>
-          <TabButton active={activeTab === 'details'} onClick={() => setActiveTab('details')}>Assessment Details</TabButton>
-          <TabButton active={activeTab === 'advanced'} onClick={() => setActiveTab('advanced')}>Advanced Diagnostics</TabButton>
-        </div>
+        <div role="tablist" aria-label="Risk explorer sections" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', borderBottom: `1px solid ${T.surface2}`, paddingBottom: 12 }}>
+          <TabButton active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} proofTab="overview" ariaControls="risk-explorer-panel-overview">Overview</TabButton>
+          <TabButton active={activeTab === 'details'} onClick={() => setActiveTab('details')} proofTab="details" ariaControls="risk-explorer-panel-details">Assessment Details</TabButton>
+          <TabButton active={activeTab === 'advanced'} onClick={() => setActiveTab('advanced')} proofTab="advanced" ariaControls="risk-explorer-panel-advanced">Advanced Diagnostics</TabButton>
         </div>
 
-        <div style={{ display: 'grid', gap: 14 }}>
+        <div id={activePanelId} role="tabpanel" aria-labelledby={`risk-explorer-tab-${activeTab}`} data-proof-section={`risk-explorer-panel-${activeTab}`} style={{ display: 'grid', gap: 14 }}>
           {activeTab === 'advanced' && (
             <>
               <Card data-proof-section="trained-risk-heads" style={{ padding: 16, display: 'grid', gap: 10 }}>
@@ -351,7 +369,7 @@ export function RiskExplorerPage({
                       Action Plan: {explorer.currentStatus.recommendedAction ?? 'None'}
                     </div>
                     {explorer.currentStatus.recommendedAction ? (
-                      <Btn size="sm" variant="primary">Assign {explorer.currentStatus.recommendedAction.replace(/-/g, ' ')}</Btn>
+                      <Chip color={T.accent}>{`Suggested ${explorer.currentStatus.recommendedAction.replace(/-/g, ' ')}`}</Chip>
                     ) : null}
                   </div>
                   <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
@@ -510,8 +528,6 @@ export function RiskExplorerPage({
               )}
             </div>
           </div>
-        </div>
-
         {activeTab === 'details' && (
           <Card data-proof-section="component-evidence-grid" style={{ padding: 16, display: 'grid', gap: 10, marginTop: 14 }}>
             <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Component Evidence Grid</div>
@@ -529,6 +545,8 @@ export function RiskExplorerPage({
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
           <Btn variant="ghost" dataProofAction="risk-explorer-back-bottom" onClick={onBack}>Back</Btn>
         </div>
+        </div>
+      </div>
       </PageShell>
   )
 }

@@ -1,5 +1,8 @@
+import { useEffect, useMemo } from 'react'
 import { SystemAdminLiveApp } from './system-admin-live-app'
 import { T, mono, sora } from './data'
+import { collectFrontendStartupDiagnostics } from './startup-diagnostics'
+import { emitClientOperationalEvent } from './telemetry'
 import { Btn, Card } from './ui-primitives'
 
 type SystemAdminAppProps = {
@@ -8,6 +11,28 @@ type SystemAdminAppProps = {
 
 export function SystemAdminApp(props: SystemAdminAppProps = {}) {
   const apiBaseUrl = import.meta.env.VITE_AIRMENTOR_API_BASE_URL?.trim() || ''
+  const startupDiagnostics = useMemo(
+    () => collectFrontendStartupDiagnostics({ apiBaseUrl }),
+    [apiBaseUrl],
+  )
+
+  useEffect(() => {
+    startupDiagnostics.forEach(diagnostic => {
+      emitClientOperationalEvent('startup.diagnostic', {
+        workspace: 'system-admin',
+        ...diagnostic,
+      }, {
+        level: diagnostic.level === 'error' ? 'error' : diagnostic.level === 'warning' ? 'warn' : 'info',
+      })
+    })
+    emitClientOperationalEvent('startup.ready', {
+      workspace: 'system-admin',
+      apiBaseUrl: apiBaseUrl || null,
+      diagnosticCount: startupDiagnostics.length,
+      errorCount: startupDiagnostics.filter(item => item.level === 'error').length,
+    })
+  }, [apiBaseUrl, startupDiagnostics])
+
   if (!apiBaseUrl) {
     return (
       <div

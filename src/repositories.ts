@@ -90,6 +90,10 @@ function deepClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
+function jsonEqual(left: unknown, right: unknown) {
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
 function normalizePersistedTask(task: Partial<SharedTask>): SharedTask {
   const createdAt = typeof task.createdAt === 'number' ? task.createdAt : Date.now()
   const assignedTo = task.assignedTo ?? 'Course Leader'
@@ -538,13 +542,37 @@ function createHttpAcademicRepositories({
   const resolvedStorage = resolveStorage(storage)
   const baselineRuntime = deepClone(bootstrap.runtime)
   const runtimeCache = deepClone(bootstrap.runtime)
+  const baselineSchemeCache = deepClone(bootstrap.assessmentSchemesByOffering)
   const schemeCache = deepClone(bootstrap.assessmentSchemesByOffering)
+  const baselineQuestionPaperCache = deepClone(bootstrap.questionPapersByOffering)
   const questionPaperCache = deepClone(bootstrap.questionPapersByOffering)
+  const baselineMeetingCache = deepClone(bootstrap.meetings ?? [])
   const meetingCache = deepClone(bootstrap.meetings ?? [])
+  const taskVersionCache = new Map<string, number>()
+  type FirstPartyRuntimeSliceKey = 'drafts' | 'cellValues' | 'lockByOffering' | 'lockAuditByTarget'
+  for (const task of bootstrap.runtime.tasks ?? []) {
+    const version = (task as SharedTask & { version?: unknown }).version
+    if (typeof version === 'number' && Number.isFinite(version)) {
+      taskVersionCache.set(task.id, version)
+    }
+  }
 
-  async function persistRuntimeSlice<T>(stateKey: ApiAcademicRuntimeKey, payload: T) {
+  async function persistRuntimeSlice<T>(stateKey: FirstPartyRuntimeSliceKey, payload: T) {
     ;(runtimeCache as Record<string, unknown>)[stateKey] = deepClone(payload)
-    await client.saveAcademicRuntimeSlice(stateKey, payload)
+    switch (stateKey) {
+      case 'drafts':
+        await client.saveAcademicDrafts(payload as Record<string, number>)
+        return
+      case 'cellValues':
+        await client.saveAcademicCellValues(payload as Record<string, number>)
+        return
+      case 'lockByOffering':
+        await client.saveAcademicLockByOffering(payload as Record<string, Record<string, boolean>>)
+        return
+      case 'lockAuditByTarget':
+        await client.saveAcademicLockAuditByTarget(payload as Record<string, Array<{ action: string; actorRole: string; at?: number }>>)
+        return
+    }
   }
 
   return {
@@ -601,7 +629,7 @@ function createHttpAcademicRepositories({
       },
       async saveSchemeState(next) {
         const writes = Object.entries(next).filter(([offeringId, scheme]) => {
-          return JSON.stringify(schemeCache[offeringId] ?? null) !== JSON.stringify(scheme)
+          return !jsonEqual(schemeCache[offeringId] ?? null, scheme)
         })
         await Promise.all(writes.map(async ([offeringId, scheme]) => {
           await client.saveOfferingAssessmentScheme(offeringId, { scheme })
@@ -611,7 +639,7 @@ function createHttpAcademicRepositories({
       async saveBlueprintState(next) {
         const writes = Object.entries(next).flatMap(([offeringId, kinds]) => {
           return (['tt1', 'tt2'] as const)
-            .filter(kind => JSON.stringify(questionPaperCache[offeringId]?.[kind] ?? null) !== JSON.stringify(kinds[kind]))
+            .filter(kind => !jsonEqual(questionPaperCache[offeringId]?.[kind] ?? null, kinds[kind]))
             .map(kind => ({ offeringId, kind, blueprint: kinds[kind] }))
         })
         await Promise.all(writes.map(async ({ offeringId, kind, blueprint }) => {
@@ -652,8 +680,17 @@ function createHttpAcademicRepositories({
         return deepClone(runtimeCache.resolvedTasks ?? {})
       },
       async saveTasks(next) {
+        const previousTasks = deepClone(runtimeCache.tasks ?? [])
+        const previousTasksById = new Map(previousTasks.map(task => [task.id, task]))
         runtimeCache.tasks = deepClone(next)
-        await client.syncAcademicTasks({ tasks: next })
+        const writes = next.filter(task => !jsonEqual(previousTasksById.get(task.id) ?? null, task))
+        await Promise.all(writes.map(async task => {
+          const response = await client.saveAcademicTask(task.id, {
+            task,
+            expectedVersion: taskVersionCache.get(task.id),
+          })
+          taskVersionCache.set(task.id, response.task.version)
+        }))
       },
       async saveResolvedTasks(next) {
         runtimeCache.resolvedTasks = deepClone(next)
@@ -687,7 +724,7 @@ function createHttpAcademicRepositories({
       async saveTimetableTemplates(next) {
         const previousTemplates = deepClone(runtimeCache.timetableByFacultyId ?? {})
         const writes = Object.entries(next).filter(([facultyId, template]) => {
-          return JSON.stringify(previousTemplates[facultyId] ?? null) !== JSON.stringify(template)
+          return !jsonEqual(previousTemplates[facultyId] ?? null, template)
         })
         runtimeCache.timetableByFacultyId = deepClone(next)
         await Promise.all(writes.map(async ([facultyId, template]) => {
@@ -695,12 +732,31 @@ function createHttpAcademicRepositories({
         }))
       },
       async saveTaskPlacements(next) {
+        const previousPlacements = deepClone(runtimeCache.taskPlacements ?? {})
         runtimeCache.taskPlacements = deepClone(next)
-        await client.syncAcademicTaskPlacements({ placements: next })
+        const upserts = Object.entries(next).filter(([taskId, placement]) => {
+          return !jsonEqual(previousPlacements[taskId] ?? null, placement)
+        })
+        const deletes = Object.keys(previousPlacements).filter(taskId => !(taskId in next))
+        await Promise.all([
+          ...upserts.map(async ([taskId, placement]) => {
+            await client.saveAcademicTaskPlacement(taskId, {
+              placement,
+              expectedUpdatedAt: previousPlacements[taskId]?.updatedAt,
+            })
+          }),
+          ...deletes.map(async taskId => {
+            await client.deleteAcademicTaskPlacement(taskId, previousPlacements[taskId]?.updatedAt)
+          }),
+        ])
       },
       async saveCalendarAudit(next) {
+        const previousEventsById = new Map((runtimeCache.calendarAudit ?? []).map(event => [event.id, event]))
         runtimeCache.calendarAudit = deepClone(next)
-        await client.syncAcademicCalendarAudit({ events: next })
+        const writes = next.filter(event => !jsonEqual(previousEventsById.get(event.id) ?? null, event))
+        await Promise.all(writes.map(async event => {
+          await client.appendAcademicCalendarAuditEvent({ event })
+        }))
       },
       async createMeeting(payload) {
         const created = await client.createAcademicMeeting(payload)
@@ -714,10 +770,20 @@ function createHttpAcademicRepositories({
       },
     },
     async clearPersistedState() {
-      for (const key of runtimeStateKeys(bootstrap.runtime)) {
-        const payload = deepClone(baselineRuntime[key])
-        ;(runtimeCache as Record<string, unknown>)[key] = payload
-        await client.saveAcademicRuntimeSlice(key, payload)
+      runtimeStateKeys(bootstrap.runtime).forEach(key => {
+        ;(runtimeCache as Record<string, unknown>)[key] = deepClone(baselineRuntime[key])
+      })
+      Object.keys(schemeCache).forEach(key => delete schemeCache[key])
+      Object.assign(schemeCache, deepClone(baselineSchemeCache))
+      Object.keys(questionPaperCache).forEach(key => delete questionPaperCache[key])
+      Object.assign(questionPaperCache, deepClone(baselineQuestionPaperCache))
+      meetingCache.splice(0, meetingCache.length, ...deepClone(baselineMeetingCache))
+      taskVersionCache.clear()
+      for (const task of baselineRuntime.tasks ?? []) {
+        const version = (task as SharedTask & { version?: unknown }).version
+        if (typeof version === 'number' && Number.isFinite(version)) {
+          taskVersionCache.set(task.id, version)
+        }
       }
       if (!resolvedStorage) return
       AIRMENTOR_STORAGE_KEY_LIST.forEach(key => resolvedStorage.removeItem(key))

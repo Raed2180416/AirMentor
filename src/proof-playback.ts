@@ -35,3 +35,8 @@ export function writeProofPlaybackSelection(selection: ProofPlaybackSelection | 
   }
   window.localStorage.setItem(PROOF_PLAYBACK_SELECTION_STORAGE_KEY, JSON.stringify(selection))
 }
+
+export function clearProofPlaybackSelection() {
+  if (!hasWindow()) return
+  window.localStorage.removeItem(PROOF_PLAYBACK_SELECTION_STORAGE_KEY)
+}

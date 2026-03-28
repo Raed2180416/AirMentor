@@ -31,7 +31,6 @@ import {
   reassessmentEvents,
   roleGrants,
   riskAssessments,
-  riskModelArtifacts,
   sectionOfferings,
   simulationRuns,
   stagePolicyOverrides,
@@ -39,6 +38,7 @@ import {
 import { badRequest, conflict, notFound } from '../lib/http-errors.js'
 import { createId } from '../lib/ids.js'
 import { parseJson, stringifyJson } from '../lib/json.js'
+import { emitOperationalEvent, normalizeTelemetryError } from '../lib/telemetry.js'
 import {
   buildCurriculumLinkageCandidates,
   buildManifestPayloadItems,
@@ -634,6 +634,9 @@ type ProofRefreshSummary = {
   affectedBatchIds: string[]
   queuedSimulationRunIds: string[]
   curriculumImportVersionId: string | null
+  failedBatchIds: string[]
+  status: 'not-needed' | 'queued' | 'degraded'
+  warning: string | null
 }
 
 function createEmptyProofRefresh(curriculumImportVersionId: string | null = null): ProofRefreshSummary {
@@ -641,6 +644,9 @@ function createEmptyProofRefresh(curriculumImportVersionId: string | null = null
     affectedBatchIds: [],
     queuedSimulationRunIds: [],
     curriculumImportVersionId,
+    failedBatchIds: [],
+    status: 'not-needed',
+    warning: null,
   }
 }
 
@@ -1783,46 +1789,66 @@ export async function enqueueProofRefreshForBatches(context: RouteContext, input
   }
 
   const queuedSimulationRunIds: string[] = []
+  const failedBatchIds: string[] = []
+  const warnings: string[] = []
   let lastCurriculumImportVersionId = input.curriculumImportVersionId ?? null
 
   for (const batchId of uniqueBatchIds) {
-    const [resolvedPolicy, resolvedFeatures] = await Promise.all([
-      resolveBatchPolicy(context, batchId),
-      resolveBatchCurriculumFeatures(context, batchId),
-    ])
-    const curriculumImportVersionId = resolvedFeatures.curriculumImportVersion?.curriculumImportVersionId
-      ?? input.curriculumImportVersionId
-      ?? null
-    if (!curriculumImportVersionId) continue
-    lastCurriculumImportVersionId = curriculumImportVersionId
-    const runRows = await context.db.select().from(simulationRuns).where(eq(simulationRuns.batchId, batchId))
-    const existingQueuedRun = runRows
-      .filter(row =>
-        (row.status === 'queued' || row.status === 'running')
-        && row.curriculumImportVersionId === curriculumImportVersionId
-        && (row.curriculumFeatureProfileFingerprint ?? '') === resolvedFeatures.curriculumFeatureProfileFingerprint
-      )
-      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt))[0] ?? null
-    if (existingQueuedRun) {
-      queuedSimulationRunIds.push(existingQueuedRun.simulationRunId)
-      continue
+    try {
+      const [resolvedPolicy, resolvedFeatures] = await Promise.all([
+        resolveBatchPolicy(context, batchId),
+        resolveBatchCurriculumFeatures(context, batchId),
+      ])
+      const curriculumImportVersionId = resolvedFeatures.curriculumImportVersion?.curriculumImportVersionId
+        ?? input.curriculumImportVersionId
+        ?? null
+      if (!curriculumImportVersionId) {
+        failedBatchIds.push(batchId)
+        warnings.push(`No materialized curriculum import is available yet for batch ${batchId}.`)
+        continue
+      }
+      lastCurriculumImportVersionId = curriculumImportVersionId
+      const runRows = await context.db.select().from(simulationRuns).where(eq(simulationRuns.batchId, batchId))
+      const existingQueuedRun = runRows
+        .filter(row =>
+          (row.status === 'queued' || row.status === 'running')
+          && row.curriculumImportVersionId === curriculumImportVersionId
+          && (row.curriculumFeatureProfileFingerprint ?? '') === resolvedFeatures.curriculumFeatureProfileFingerprint
+        )
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt))[0] ?? null
+      if (existingQueuedRun) {
+        queuedSimulationRunIds.push(existingQueuedRun.simulationRunId)
+        continue
+      }
+      const queued = await enqueueProofSimulationRun(context.db, {
+        batchId,
+        curriculumImportVersionId,
+        policy: resolvedPolicy.effectivePolicy,
+        curriculumFeatureProfileId: resolvedFeatures.primaryCurriculumFeatureProfileId ?? null,
+        curriculumFeatureProfileFingerprint: resolvedFeatures.curriculumFeatureProfileFingerprint,
+        now: input.now,
+        activate: true,
+      })
+      queuedSimulationRunIds.push(queued.simulationRunId)
+    } catch (error) {
+      failedBatchIds.push(batchId)
+      warnings.push(`Proof refresh could not be queued for batch ${batchId}.`)
+      emitOperationalEvent('curriculum.proof_refresh.enqueue_failed', {
+        batchId,
+        actorFacultyId: input.actorFacultyId ?? null,
+        curriculumImportVersionId: input.curriculumImportVersionId ?? null,
+        error: normalizeTelemetryError(error),
+      }, { level: 'error' })
     }
-    const queued = await enqueueProofSimulationRun(context.db, {
-      batchId,
-      curriculumImportVersionId,
-      policy: resolvedPolicy.effectivePolicy,
-      curriculumFeatureProfileId: resolvedFeatures.primaryCurriculumFeatureProfileId ?? null,
-      curriculumFeatureProfileFingerprint: resolvedFeatures.curriculumFeatureProfileFingerprint,
-      now: input.now,
-      activate: true,
-    })
-    queuedSimulationRunIds.push(queued.simulationRunId)
   }
 
   return {
     affectedBatchIds: uniqueBatchIds,
     queuedSimulationRunIds,
     curriculumImportVersionId: lastCurriculumImportVersionId,
+    failedBatchIds,
+    status: failedBatchIds.length > 0 ? 'degraded' : queuedSimulationRunIds.length > 0 ? 'queued' : 'not-needed',
+    warning: warnings.length > 0 ? warnings.join(' ') : null,
   } satisfies ProofRefreshSummary
 }
 
@@ -3220,10 +3246,26 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
     const auth = requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(z.object({ batchId: z.string().min(1) }), request.params)
     const body = parseOrThrow(curriculumLinkageCandidateRegenerateSchema, request.body ?? {})
-    const result = await regenerateCurriculumLinkageCandidatesForBatch(context, {
+    let result
+    try {
+      result = await regenerateCurriculumLinkageCandidatesForBatch(context, {
+        batchId: params.batchId,
+        targetCurriculumCourseIds: body.curriculumCourseId ? [body.curriculumCourseId] : null,
+        now: context.now(),
+      })
+    } catch (error) {
+      emitOperationalEvent('curriculum.linkage.regeneration_failed', {
+        batchId: params.batchId,
+        curriculumCourseId: body.curriculumCourseId ?? null,
+        error: normalizeTelemetryError(error),
+      }, { level: 'error' })
+      throw error
+    }
+    emitOperationalEvent('curriculum.linkage.regenerated', {
       batchId: params.batchId,
-      targetCurriculumCourseIds: body.curriculumCourseId ? [body.curriculumCourseId] : null,
-      now: context.now(),
+      curriculumCourseId: body.curriculumCourseId ?? null,
+      generatedCount: result.items.length,
+      candidateGenerationStatus: result.candidateGenerationStatus,
     })
     await emitAuditEvent(context, {
       entityType: 'CurriculumLinkageCandidate',
@@ -3256,17 +3298,39 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
       curriculumLinkageCandidateId: z.string().min(1),
     }), request.params)
     const body = parseOrThrow(curriculumLinkageCandidateReviewSchema, request.body ?? {})
-    const result = await approveCurriculumLinkageCandidate(context, {
+    let result
+    try {
+      result = await approveCurriculumLinkageCandidate(context, {
+        batchId: params.batchId,
+        curriculumLinkageCandidateId: params.curriculumLinkageCandidateId,
+        actorFacultyId: auth.facultyId,
+        reviewNote: body.reviewNote ?? null,
+        now: context.now(),
+      })
+    } catch (error) {
+      emitOperationalEvent('curriculum.linkage.approval_failed', {
+        batchId: params.batchId,
+        curriculumLinkageCandidateId: params.curriculumLinkageCandidateId,
+        error: normalizeTelemetryError(error),
+      }, { level: 'error' })
+      throw error
+    }
+    emitOperationalEvent('curriculum.linkage.approved', {
       batchId: params.batchId,
       curriculumLinkageCandidateId: params.curriculumLinkageCandidateId,
-      actorFacultyId: auth.facultyId,
-      reviewNote: body.reviewNote ?? null,
-      now: context.now(),
+      affectedBatchIds: result.affectedBatchIds,
+      curriculumImportVersionId: result.curriculumImportVersionId,
+      proofRefreshQueued: result.proofRefresh.status !== 'degraded',
+      proofRefreshWarning: result.proofRefresh.warning,
+      proofRefresh: result.proofRefresh,
     })
     return {
       ok: true,
       batchId: params.batchId,
       curriculumLinkageCandidateId: params.curriculumLinkageCandidateId,
+      approvalSucceeded: true,
+      proofRefreshQueued: result.proofRefresh.status !== 'degraded',
+      proofRefreshWarning: result.proofRefresh.warning,
       ...result,
     }
   })

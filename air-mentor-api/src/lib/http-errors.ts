@@ -30,3 +30,7 @@ export function notFound(message = 'Resource not found') {
 export function conflict(message: string, current?: unknown) {
   return new AppError(409, 'CONFLICT', message, current ? { current } : undefined)
 }
+
+export function tooManyRequests(message = 'Too many requests') {
+  return new AppError(429, 'TOO_MANY_REQUESTS', message)
+}

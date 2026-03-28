@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   academicRuntimeState,
   facultyAppointments,
+  facultyCalendarAdminWorkspaces,
   facultyOfferingOwnerships,
   mentorAssignments,
   officialCodeCrosswalks,
@@ -485,6 +486,25 @@ describe('admin control plane routes', () => {
     expect(dashboard.activeRunDetail.coverageDiagnostics).toMatchObject({
       behaviorProfileCoverage: { count: 120, expected: 120 },
     })
+    expect(dashboard.activeRunDetail.queueDiagnostics).toMatchObject({
+      queuedRunCount: expect.any(Number),
+      runningRunCount: expect.any(Number),
+      failedRunCount: expect.any(Number),
+      retryableRunCount: expect.any(Number),
+      retryInFlightCount: expect.any(Number),
+      expiredLeaseRunCount: expect.any(Number),
+    })
+    expect(dashboard.activeRunDetail.workerDiagnostics).toMatchObject({
+      leaseState: expect.any(String),
+      failureState: expect.any(String),
+    })
+    expect(dashboard.activeRunDetail.checkpointReadiness).toMatchObject({
+      totalCheckpointCount: dashboard.activeRunDetail.checkpoints.length,
+      readyCheckpointCount: expect.any(Number),
+      blockedCheckpointCount: expect.any(Number),
+      playbackBlockedCheckpointCount: expect.any(Number),
+      totalBlockingQueueItemCount: expect.any(Number),
+    })
     expect(dashboard.activeRunDetail.coverageDiagnostics.topicStateCoverage.count).toBeGreaterThan(0)
     expect(dashboard.activeRunDetail.coverageDiagnostics.coStateCoverage.count).toBeGreaterThan(0)
     expect(dashboard.activeRunDetail.coverageDiagnostics.questionTemplateCoverage.count).toBeGreaterThan(0)
@@ -703,6 +723,13 @@ describe('admin control plane routes', () => {
         counterfactualLiftScaled: expect.any(Number),
       })
     }
+    const staleCheckpointResponse = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/proof-runs/not-the-active-run/checkpoints/${firstCheckpointId}`,
+      headers: { cookie: adminLogin.cookie },
+    })
+    expect(staleCheckpointResponse.statusCode).toBe(404)
+    expect(staleCheckpointResponse.json().message).toMatch(/selected proof run/i)
 
     const checkpointStudentResponse = await current.app.inject({
       method: 'GET',
@@ -789,6 +816,7 @@ describe('admin control plane routes', () => {
       status: 'active',
     })
     expect(afterDashboard.activeRunDetail.checkpoints.length).toBeGreaterThan(0)
+    expect(afterDashboard.activeRunDetail.checkpointReadiness?.totalCheckpointCount).toBe(afterDashboard.activeRunDetail.checkpoints.length)
     expect(afterDashboard.activeRunDetail.modelDiagnostics.production).toMatchObject({
       artifactVersion: expect.stringContaining('observable-risk-logit'),
       modelFamily: 'logistic-scorecard',
@@ -1115,17 +1143,19 @@ describe('admin control plane routes', () => {
     const [calendarRow] = await current.db.select().from(academicRuntimeState).where(eq(academicRuntimeState.stateKey, 'adminCalendarByFacultyId'))
     expect(calendarRow).toBeTruthy()
     const currentPayload = JSON.parse(calendarRow.payloadJson) as Record<string, unknown>
-    await current.db.update(academicRuntimeState).set({
-      payloadJson: JSON.stringify({
-        ...currentPayload,
-        t1: {
-          ...(currentPayload.t1 as Record<string, unknown>),
-          publishedAt: '2026-02-01T00:00:00.000Z',
-        },
+    const [calendarWorkspaceRow] = await current.db
+      .select()
+      .from(facultyCalendarAdminWorkspaces)
+      .where(eq(facultyCalendarAdminWorkspaces.facultyId, 't1'))
+    expect(calendarWorkspaceRow).toBeTruthy()
+    await current.db.update(facultyCalendarAdminWorkspaces).set({
+      workspaceJson: JSON.stringify({
+        ...(currentPayload.t1 as Record<string, unknown>),
+        publishedAt: '2026-02-01T00:00:00.000Z',
       }),
-      version: calendarRow.version + 1,
+      version: (calendarWorkspaceRow?.version ?? 0) + 1,
       updatedAt: '2026-03-16T00:00:00.000Z',
-    }).where(eq(academicRuntimeState.stateKey, 'adminCalendarByFacultyId'))
+    }).where(eq(facultyCalendarAdminWorkspaces.facultyId, 't1'))
 
     const markerOnlySave = await current.app.inject({
       method: 'PUT',

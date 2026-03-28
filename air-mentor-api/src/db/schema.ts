@@ -103,6 +103,14 @@ export const sessions = pgTable('sessions', {
   lastSeenAt: text('last_seen_at').notNull(),
 })
 
+export const loginRateLimitWindows = pgTable('login_rate_limit_windows', {
+  attemptKey: text('attempt_key').primaryKey(),
+  failureCount: integer('failure_count').notNull().default(0),
+  windowStartedAt: text('window_started_at').notNull(),
+  lastFailedAt: text('last_failed_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
 export const uiPreferences = pgTable('ui_preferences', {
   userId: text('user_id').primaryKey().references(() => userAccounts.userId),
   themeMode: text('theme_mode').notNull(),
@@ -1183,6 +1191,14 @@ export const facultyCalendarWorkspaces = pgTable('faculty_calendar_workspaces', 
   updatedAt: text('updated_at').notNull(),
 })
 
+export const facultyCalendarAdminWorkspaces = pgTable('faculty_calendar_admin_workspaces', {
+  facultyId: text('faculty_id').primaryKey().references(() => facultyProfiles.facultyId),
+  workspaceJson: text('workspace_json').notNull(),
+  version: integer('version').notNull().default(1),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
 export const academicCalendarAuditEvents = pgTable('academic_calendar_audit_events', {
   auditEventId: text('audit_event_id').primaryKey(),
   facultyId: text('faculty_id').notNull().references(() => facultyProfiles.facultyId),
@@ -1303,6 +1319,7 @@ export const allTables = {
   userAccounts,
   userPasswordCredentials,
   sessions,
+  loginRateLimitWindows,
   uiPreferences,
   facultyProfiles,
   facultyAppointments,
@@ -1337,6 +1354,7 @@ export const allTables = {
   academicTaskTransitions,
   academicTaskPlacements,
   facultyCalendarWorkspaces,
+  facultyCalendarAdminWorkspaces,
   academicCalendarAuditEvents,
   academicMeetings,
   simulationRuns,

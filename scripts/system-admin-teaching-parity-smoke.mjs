@@ -4,6 +4,7 @@ import path from 'node:path'
 
 const playwrightRoot = process.env.PLAYWRIGHT_ROOT
 const appUrl = process.env.PLAYWRIGHT_APP_URL ?? 'http://127.0.0.1:5173'
+const apiUrl = process.env.PLAYWRIGHT_API_URL ?? appUrl
 const outputDir = process.env.PLAYWRIGHT_OUTPUT_DIR ?? 'output/playwright'
 
 assert(playwrightRoot, 'PLAYWRIGHT_ROOT is required')
@@ -21,7 +22,7 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 1400 } })
 const updatedDisplayName = 'Dr. Kavitha Rao QA'
 const updatedPhone = '+91-9000001111'
 const updatedDesignation = 'Senior Associate Professor'
-const teachingPassword = 'faculty1234'
+const teachingPasswordCandidates = ['faculty1234', '1234']
 
 async function expectVisible(locator, description) {
   await locator.waitFor({ state: 'visible', timeout: 20_000 })
@@ -30,6 +31,23 @@ async function expectVisible(locator, description) {
 
 async function expectFlash(message) {
   await expectVisible(page.getByText(message, { exact: true }), `flash "${message}"`)
+}
+
+async function resolveTeachingPassword(username) {
+  const sessionUrl = new URL('/api/session/login', apiUrl)
+  const origin = new URL(appUrl).origin
+  for (const password of teachingPasswordCandidates) {
+    const response = await fetch(sessionUrl, {
+      method: 'POST',
+      headers: {
+        origin,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ identifier: username, password }),
+    })
+    if (response.ok) return password
+  }
+  throw new Error(`Could not resolve a working teaching password for ${username}`)
 }
 
 try {
@@ -44,8 +62,7 @@ try {
 
   await expectVisible(page.getByText('Operations Dashboard', { exact: true }).last(), 'sysadmin dashboard')
 
-  await page.goto(`${appUrl}#/admin/faculty-members`, { waitUntil: 'networkidle' })
-  await page.locator('[data-nav-item="true"]').filter({ has: page.getByText(/Scoped|Unscoped/) }).first().click()
+  await page.goto(`${appUrl}#/admin/faculty-members/t1`, { waitUntil: 'networkidle' })
   await expectVisible(page.getByText(/^Faculty Detail$/).last(), 'faculty detail page')
   const facultyDetailCard = page.getByText(/^Faculty Detail$/).last().locator('xpath=ancestor::*[@data-surface][1]')
 
@@ -58,7 +75,9 @@ try {
   await page.getByRole('button', { name: 'Save Faculty', exact: true }).click()
   await expectFlash('Faculty profile updated.')
 
-  await page.getByRole('button', { name: /^Appointments/ }).click()
+  const appointmentsSwitch = page.locator('button, [role="tab"]').filter({ hasText: /^Appointments/ }).first()
+  await expectVisible(appointmentsSwitch, 'appointments switcher')
+  await appointmentsSwitch.click()
   const appointmentsCard = page.getByText(/^Appointments$/).last().locator('xpath=ancestor::*[@data-surface][1]')
   await appointmentsCard.getByRole('button', { name: 'Edit', exact: true }).first().click()
   await appointmentsCard.getByRole('combobox').nth(0).selectOption({ label: 'Electronics and Communication Engineering' })
@@ -84,6 +103,7 @@ try {
   ))
   await page.waitForFunction((username) => (document.querySelector('#teacher-username') instanceof HTMLInputElement) && document.querySelector('#teacher-username').value === username, teachingUsername)
 
+  const teachingPassword = await resolveTeachingPassword(teachingUsername)
   await page.locator('#teacher-password').fill(teachingPassword)
   await page.getByRole('button', { name: 'Sign In', exact: true }).click()
 

@@ -14,6 +14,7 @@ import { createId } from './ids.js'
 import { parseJson } from './json.js'
 import { startProofSimulationRun } from './msruas-proof-control-plane.js'
 import { MSRUAS_PROOF_BATCH_ID, PROOF_FACULTY } from './msruas-proof-sandbox.js'
+import { emitOperationalEvent, normalizeTelemetryError } from './telemetry.js'
 
 const WORKER_POLL_MS = 5_000
 const WORKER_LEASE_MS = 60_000
@@ -181,6 +182,15 @@ export async function enqueueProofSimulationRun(db: AppDb, input: {
     createdAt: input.now,
     updatedAt: input.now,
   })
+  emitOperationalEvent('proof.run.queued', {
+    simulationRunId,
+    batchId: input.batchId,
+    curriculumImportVersionId: input.curriculumImportVersionId,
+    curriculumFeatureProfileId: input.curriculumFeatureProfileId ?? null,
+    curriculumFeatureProfileFingerprint: input.curriculumFeatureProfileFingerprint ?? null,
+    sourceType: queueMetadata.sourceType,
+    requestedActivate: activateRequested,
+  })
   return {
     simulationRunId,
     status: 'queued',
@@ -223,6 +233,11 @@ export async function retryQueuedProofSimulationRun(db: AppDb, input: {
     workerLeaseExpiresAt: null,
     updatedAt: input.now,
   }).where(eq(simulationRuns.simulationRunId, input.simulationRunId))
+  emitOperationalEvent('proof.run.requeued', {
+    simulationRunId: run.simulationRunId,
+    batchId: run.batchId,
+    curriculumImportVersionId: run.curriculumImportVersionId,
+  })
   return {
     simulationRunId: run.simulationRunId,
     status: 'queued',
@@ -377,6 +392,12 @@ export function startProofRunWorker(input: {
         schedule(WORKER_POLL_MS)
         return
       }
+      emitOperationalEvent('proof.run.claimed', {
+        simulationRunId: claimed.simulation_run_id,
+        batchId: claimed.batch_id,
+        leaseToken,
+        priorStatus: claimed.status,
+      })
 
       const heartbeat = setInterval(() => {
         void heartbeatProofRunLease(input.pool, {
@@ -393,6 +414,11 @@ export function startProofRunWorker(input: {
           leaseToken,
           now: now(),
         })
+        emitOperationalEvent('proof.run.executed', {
+          simulationRunId: claimed.simulation_run_id,
+          batchId: claimed.batch_id,
+          leaseToken,
+        })
       } catch (error) {
         await failProofRun(input.pool, {
           simulationRunId: claimed.simulation_run_id,
@@ -400,6 +426,12 @@ export function startProofRunWorker(input: {
           now: now(),
           error,
         })
+        emitOperationalEvent('proof.run.failed', {
+          simulationRunId: claimed.simulation_run_id,
+          batchId: claimed.batch_id,
+          leaseToken,
+          error: normalizeTelemetryError(error),
+        }, { level: 'error' })
         console.error('Proof worker execution failed', error)
       } finally {
         clearInterval(heartbeat)
