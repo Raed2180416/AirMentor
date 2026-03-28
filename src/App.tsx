@@ -1739,6 +1739,10 @@ function OperationalWorkspace({
   const [taskPlacements, setTaskPlacements] = useState<Record<string, TaskCalendarPlacement>>(() => repositories.calendar.getTaskPlacementsSnapshot())
   const [calendarAuditEvents, setCalendarAuditEvents] = useState<CalendarAuditEvent[]>(() => repositories.calendar.getCalendarAuditSnapshot())
   const [academicMeetings, setAcademicMeetings] = useState<AcademicMeeting[]>(() => repositories.calendar.getMeetingsSnapshot())
+  const hydratedLockSnapshotRef = useRef(JSON.stringify(lockByOffering))
+  const hydratedDraftSnapshotRef = useRef(JSON.stringify(draftBySection))
+  const hydratedCellValueSnapshotRef = useRef(JSON.stringify(cellValues))
+  const hydratedLockAuditSnapshotRef = useRef(JSON.stringify(lockAuditByTarget))
   const hydratedTimetableSnapshotRef = useRef(JSON.stringify(timetableByFacultyId))
   const hydratedBlueprintSnapshotRef = useRef(JSON.stringify(ttBlueprintsByOffering))
   const timetableHydrationSkipRef = useRef(0)
@@ -1759,6 +1763,10 @@ function OperationalWorkspace({
     const nextCalendarAuditEvents = repositories.calendar.getCalendarAuditSnapshot()
     const nextAcademicMeetings = repositories.calendar.getMeetingsSnapshot()
 
+    hydratedLockSnapshotRef.current = JSON.stringify(nextLockByOffering)
+    hydratedDraftSnapshotRef.current = JSON.stringify(nextDraftBySection)
+    hydratedCellValueSnapshotRef.current = JSON.stringify(nextCellValues)
+    hydratedLockAuditSnapshotRef.current = JSON.stringify(nextLockAuditByTarget)
     hydratedTimetableSnapshotRef.current = JSON.stringify(nextTimetableByFacultyId)
     hydratedBlueprintSnapshotRef.current = JSON.stringify(nextTtBlueprintsByOffering)
     timetableHydrationSkipRef.current = 2
@@ -1779,9 +1787,36 @@ function OperationalWorkspace({
     setAcademicMeetings(nextAcademicMeetings)
   }, [allOfferings, facultyAccounts, repositories])
 
-  useEffect(() => { void repositories.locksAudit.saveLocks(lockByOffering) }, [lockByOffering, repositories])
-  useEffect(() => { void repositories.entryData.saveDrafts(draftBySection) }, [draftBySection, repositories])
-  useEffect(() => { void repositories.entryData.saveCellValues(cellValues) }, [cellValues, repositories])
+  useEffect(() => {
+    const serialized = JSON.stringify(lockByOffering)
+    if (serialized === hydratedLockSnapshotRef.current) return
+    const previousSnapshot = hydratedLockSnapshotRef.current
+    hydratedLockSnapshotRef.current = serialized
+    void repositories.locksAudit.saveLocks(lockByOffering).catch(error => {
+      hydratedLockSnapshotRef.current = previousSnapshot
+      console.error('Could not persist lock state.', error)
+    })
+  }, [lockByOffering, repositories])
+  useEffect(() => {
+    const serialized = JSON.stringify(draftBySection)
+    if (serialized === hydratedDraftSnapshotRef.current) return
+    const previousSnapshot = hydratedDraftSnapshotRef.current
+    hydratedDraftSnapshotRef.current = serialized
+    void repositories.entryData.saveDrafts(draftBySection).catch(error => {
+      hydratedDraftSnapshotRef.current = previousSnapshot
+      console.error('Could not persist draft state.', error)
+    })
+  }, [draftBySection, repositories])
+  useEffect(() => {
+    const serialized = JSON.stringify(cellValues)
+    if (serialized === hydratedCellValueSnapshotRef.current) return
+    const previousSnapshot = hydratedCellValueSnapshotRef.current
+    hydratedCellValueSnapshotRef.current = serialized
+    void repositories.entryData.saveCellValues(cellValues).catch(error => {
+      hydratedCellValueSnapshotRef.current = previousSnapshot
+      console.error('Could not persist cell values.', error)
+    })
+  }, [cellValues, repositories])
   useEffect(() => { void repositories.tasks.saveTasks(allTasksList) }, [allTasksList, repositories])
   useEffect(() => { void repositories.tasks.saveResolvedTasks(resolvedTasks) }, [repositories, resolvedTasks])
   useEffect(() => {
@@ -1821,7 +1856,16 @@ function OperationalWorkspace({
       console.error('Could not persist question-paper blueprints.', error)
     })
   }, [page, repositories, role, ttBlueprintsByOffering])
-  useEffect(() => { void repositories.locksAudit.saveLockAudit(lockAuditByTarget) }, [lockAuditByTarget, repositories])
+  useEffect(() => {
+    const serialized = JSON.stringify(lockAuditByTarget)
+    if (serialized === hydratedLockAuditSnapshotRef.current) return
+    const previousSnapshot = hydratedLockAuditSnapshotRef.current
+    hydratedLockAuditSnapshotRef.current = serialized
+    void repositories.locksAudit.saveLockAudit(lockAuditByTarget).catch(error => {
+      hydratedLockAuditSnapshotRef.current = previousSnapshot
+      console.error('Could not persist lock audit.', error)
+    })
+  }, [lockAuditByTarget, repositories])
 
   const supervisedOfferingIds = useMemo(() => new Set(assignedOfferings.map(o => o.offId)), [assignedOfferings])
   const supervisedMenteeIds = useMemo(() => new Set(assignedMentees.map(m => m.id)), [assignedMentees])
