@@ -4,8 +4,10 @@ import path from 'node:path'
 
 const playwrightRoot = process.env.PLAYWRIGHT_ROOT
 const appUrl = process.env.PLAYWRIGHT_APP_URL ?? 'http://127.0.0.1:4173'
+const apiUrl = process.env.PLAYWRIGHT_API_URL ?? appUrl
 const outputDir = process.env.PLAYWRIGHT_OUTPUT_DIR ?? 'output/playwright'
 const firefoxExecutablePath = process.env.PLAYWRIGHT_FIREFOX_EXECUTABLE_PATH || undefined
+const isLiveStack = process.env.AIRMENTOR_LIVE_STACK === '1'
 
 assert(playwrightRoot, 'PLAYWRIGHT_ROOT is required')
 
@@ -15,7 +17,12 @@ const proofPlaybackSelectionStorageKey = 'airmentor-proof-playback-selection'
 const seededProofRoute = '#/admin/faculties/academic_faculty_engineering_and_technology/departments/dept_cse/branches/branch_mnc_btech/batches/batch_branch_mnc_btech_2023'
 const seededProofBatchId = 'batch_branch_mnc_btech_2023'
 const requestSummary = /Grant additional mentor mapping coverage/i
-const finalCheckpointButtonLabel = 'S6 · Post SEE'
+const teachingPasswordCandidates = ['faculty1234', '1234']
+const defaultTeachingUsername = isLiveStack ? 'kavitha.rao' : 'devika.shetty'
+let proofRouteState = {
+  routeHash: seededProofRoute,
+  batchId: seededProofBatchId,
+}
 
 await mkdir(outputDir, { recursive: true })
 
@@ -112,7 +119,7 @@ async function adminApiRequest(apiPath, init = {}) {
       text,
     }
   }, {
-    apiPath,
+    apiPath: new URL(apiPath, apiUrl).toString(),
     method: restInit.method ?? 'GET',
     body,
   })
@@ -125,7 +132,85 @@ async function adminApiRequest(apiPath, init = {}) {
 }
 
 async function readProofDashboard() {
-  return adminApiRequest(`/api/admin/batches/${seededProofBatchId}/proof-dashboard`)
+  return adminApiRequest(`/api/admin/batches/${proofRouteState.batchId}/proof-dashboard`)
+}
+
+async function readProofDashboardForBatch(batchId) {
+  return adminApiRequest(`/api/admin/batches/${batchId}/proof-dashboard`)
+}
+
+async function discoverProofRouteState() {
+  if (!isLiveStack) return proofRouteState
+
+  const [facultiesPayload, departmentsPayload, branchesPayload, batchesPayload] = await Promise.all([
+    adminApiRequest('/api/admin/academic-faculties'),
+    adminApiRequest('/api/admin/departments'),
+    adminApiRequest('/api/admin/branches'),
+    adminApiRequest('/api/admin/batches'),
+  ])
+
+  const activeFaculties = new Map((facultiesPayload.items ?? []).filter(item => item.status === 'active').map(item => [item.academicFacultyId, item]))
+  const activeDepartments = new Map((departmentsPayload.items ?? []).filter(item => item.status === 'active').map(item => [item.departmentId, item]))
+  const activeBranches = new Map((branchesPayload.items ?? []).filter(item => item.status === 'active').map(item => [item.branchId, item]))
+  const activeBatches = (batchesPayload.items ?? []).filter(item => item.status === 'active')
+
+  const candidates = []
+  for (const batch of activeBatches) {
+    const branch = activeBranches.get(batch.branchId)
+    if (!branch) continue
+    const department = activeDepartments.get(branch.departmentId)
+    if (!department?.academicFacultyId) continue
+    const faculty = activeFaculties.get(department.academicFacultyId)
+    if (!faculty) continue
+    const dashboard = await readProofDashboardForBatch(batch.batchId)
+    const checkpointCount = dashboard.activeRunDetail?.checkpoints?.length ?? 0
+    const proofRunCount = dashboard.proofRuns?.length ?? 0
+    const importCount = dashboard.imports?.length ?? 0
+    if (checkpointCount === 0 && proofRunCount === 0 && importCount === 0) continue
+    candidates.push({
+      faculty,
+      department,
+      branch,
+      batch,
+      checkpointCount,
+      proofRunCount,
+      importCount,
+    })
+  }
+
+  candidates.sort((left, right) =>
+    (right.checkpointCount - left.checkpointCount)
+    || (right.proofRunCount - left.proofRunCount)
+    || (right.importCount - left.importCount)
+    || (right.batch.currentSemester - left.batch.currentSemester)
+    || (right.batch.admissionYear - left.batch.admissionYear),
+  )
+
+  const selected = candidates[0]
+  assert(selected, 'No live proof-enabled active batch is available for keyboard validation')
+  proofRouteState = {
+    routeHash: `#/admin/faculties/${selected.faculty.academicFacultyId}/departments/${selected.department.departmentId}/branches/${selected.branch.branchId}/batches/${selected.batch.batchId}`,
+    batchId: selected.batch.batchId,
+  }
+  console.log(`[keyboard] live proof route discovered: faculty=${selected.faculty.name} department=${selected.department.name} branch=${selected.branch.name} batch=${selected.batch.batchLabel} checkpoints=${selected.checkpointCount}`)
+  return proofRouteState
+}
+
+async function resolveTeachingPassword(username) {
+  const sessionUrl = new URL('/api/session/login', apiUrl)
+  const origin = new URL(appUrl).origin
+  for (const password of teachingPasswordCandidates) {
+    const response = await fetch(sessionUrl, {
+      method: 'POST',
+      headers: {
+        origin,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ identifier: username, password }),
+    })
+    if (response.ok) return password
+  }
+  throw new Error(`Could not resolve a working teaching password for ${username}`)
 }
 
 async function waitForProofCheckpoints(label, timeoutMs = 240_000) {
@@ -147,7 +232,7 @@ async function ensureProofRunReady() {
   if (dashboard.activeRunDetail?.checkpoints?.length) return dashboard
 
   if (!dashboard.imports?.length) {
-    await adminApiRequest(`/api/admin/batches/${seededProofBatchId}/proof-imports`, {
+    await adminApiRequest(`/api/admin/batches/${proofRouteState.batchId}/proof-imports`, {
       method: 'POST',
       body: {},
     })
@@ -189,7 +274,7 @@ async function ensureProofRunReady() {
   }
 
   if (!dashboard.activeRunDetail?.checkpoints?.length) {
-    await adminApiRequest(`/api/admin/batches/${seededProofBatchId}/proof-runs`, {
+    await adminApiRequest(`/api/admin/batches/${proofRouteState.batchId}/proof-runs`, {
       method: 'POST',
       body: {
         curriculumImportVersionId: latestImport.curriculumImportVersionId,
@@ -223,7 +308,7 @@ async function loginAsSystemAdmin() {
 }
 
 async function primeSeededProofRouteState() {
-  const routeStorageKey = `airmentor-admin-ui:${seededProofRoute}`
+  const routeStorageKey = `airmentor-admin-ui:${proofRouteState.routeHash}`
   await page.evaluate(storageKey => {
     window.sessionStorage.setItem(storageKey, JSON.stringify({
       tab: 'overview',
@@ -235,7 +320,7 @@ async function primeSeededProofRouteState() {
 function buildSeededProofRouteUrl(forceReload = false) {
   const baseUrl = appUrl.replace(/\/$/, '')
   const query = forceReload ? `/?keyboard-reload=${Date.now()}` : '/'
-  return `${baseUrl}${query}${seededProofRoute}`
+  return `${baseUrl}${query}${proofRouteState.routeHash}`
 }
 
 function buildPortalHomeUrl() {
@@ -254,9 +339,12 @@ async function openSeededProofRoute(forceReload = false, reloadAttempt = 0) {
   await primeSeededProofRouteState()
   const seededRouteUrl = buildSeededProofRouteUrl(forceReload)
   await page.goto(seededRouteUrl, { waitUntil: 'domcontentloaded' })
-  await page.waitForFunction(expectedHash => window.location.hash === expectedHash, seededProofRoute)
+  await page.waitForFunction(expectedHash => window.location.hash === expectedHash, proofRouteState.routeHash)
   await page.waitForTimeout(500)
-  await expectVisible(page.getByText('Batch 2023 Proof', { exact: true }).last(), 'seeded proof batch breadcrumb')
+  const batchNotFound = page.getByText('Batch not found', { exact: true }).first()
+  if (await batchNotFound.isVisible().catch(() => false)) {
+    throw new Error(`Proof batch route ${proofRouteState.routeHash} resolved to "Batch not found"`)
+  }
   let proofControlPlane = visibleProofSurface('system-admin-proof-control-plane')
   if (!(await proofControlPlane.isVisible().catch(() => false))) {
     const overviewTab = page.locator('button[data-tab="true"]').filter({ hasText: 'Overview' }).first()
@@ -294,8 +382,9 @@ async function openAcademicPortal(options = {}) {
   }
   await focusAndActivate(page.getByRole('button', { name: /Open Academic Portal/i }), 'open academic portal')
   await expectVisible(page.getByText(/Teaching Workspace Live Mode/), 'academic login')
-  await page.locator('#teacher-username').fill('devika.shetty')
-  await page.locator('#teacher-password').fill('faculty1234')
+  const teachingPassword = await resolveTeachingPassword(defaultTeachingUsername)
+  await page.locator('#teacher-username').fill(defaultTeachingUsername)
+  await page.locator('#teacher-password').fill(teachingPassword)
   await page.getByRole('button', { name: 'Sign In', exact: true }).click()
 }
 
@@ -321,6 +410,7 @@ async function resolveTeacherProofActionSource(teacherProofPanel) {
 try {
   markStep('login-system-admin')
   await loginAsSystemAdmin()
+  await discoverProofRouteState()
 
   markStep('request-flow-keyboard')
   await focusAndActivate(page.getByRole('button', { name: 'Requests', exact: true }).first(), 'requests navigation')
@@ -361,7 +451,7 @@ try {
     : firstCheckpointLabel
   const finalCheckpointButton = proofControlPlane
     .locator('[data-proof-action="proof-select-checkpoint"]')
-    .filter({ hasText: finalCheckpointButtonLabel })
+    .filter({ hasText: /Post SEE/i })
     .first()
   await focusAndActivate(finalCheckpointButton, 'final checkpoint selection')
   const selectedCheckpointBanner = proofControlPlane.locator('[data-proof-section="selected-checkpoint-banner"]').first()
