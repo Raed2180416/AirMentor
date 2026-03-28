@@ -529,6 +529,14 @@ async function resolveTeacherProofActionSource(teacherProofPanel) {
   return null
 }
 
+async function assertTeacherProofPanelBaseline(teacherProofPanel) {
+  await runAccessibilityTreeAssertion(teacherProofPanel, 'Teacher proof panel tree', [
+    { name: 'Proof Control Plane' },
+    { name: 'Monitoring queue' },
+    { name: 'Semester-6 elective fit' },
+  ])
+}
+
 try {
   markStep('login-system-admin')
   await loginAsSystemAdmin()
@@ -583,15 +591,11 @@ try {
   const teacherProofPanel = await openFacultyProfileProofPanel()
   await runScopedAxeScan(teacherProofPanel, 'Teacher proof panel')
   const teacherProofActionSource = await resolveTeacherProofActionSource(teacherProofPanel)
+  await assertTeacherProofPanelBaseline(teacherProofPanel)
   if (teacherProofActionSource) {
-    await runAccessibilityTreeAssertion(teacherProofPanel, 'Teacher proof panel tree', [
+    await runAccessibilityTreeAssertion(teacherProofPanel, 'Teacher proof panel actions tree', [
       { role: 'button', name: 'Open Risk Explorer' },
       { role: 'button', name: 'Open Student Shell' },
-    ])
-  } else {
-    await runAccessibilityTreeAssertion(teacherProofPanel, 'Teacher proof panel tree', [
-      { name: 'No active run is linked to this faculty context.' },
-      { name: 'No governed queue items are currently linked to this profile.' },
     ])
   }
 

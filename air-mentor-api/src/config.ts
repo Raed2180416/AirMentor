@@ -80,7 +80,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   return {
     databaseUrl,
     port: parseNumber(env.PORT, 4000),
-    host: env.HOST ?? '127.0.0.1',
+    host: env.HOST ?? (productionLikeTarget ? '0.0.0.0' : '127.0.0.1'),
     corsAllowedOrigins,
     sessionCookieName,
     csrfCookieName: env.CSRF_COOKIE_NAME ?? 'airmentor_csrf',

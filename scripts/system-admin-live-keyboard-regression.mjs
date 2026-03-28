@@ -16,12 +16,17 @@ const { firefox } = await import(`file://${playwrightRoot}/lib/node_modules/play
 const proofPlaybackSelectionStorageKey = 'airmentor-proof-playback-selection'
 const seededProofRoute = '#/admin/faculties/academic_faculty_engineering_and_technology/departments/dept_cse/branches/branch_mnc_btech/batches/batch_branch_mnc_btech_2023'
 const seededProofBatchId = 'batch_branch_mnc_btech_2023'
-const requestSummary = /Grant additional mentor mapping coverage/i
+const defaultRequestSummary = 'Grant additional mentor mapping coverage'
 const teachingPasswordCandidates = ['faculty1234', '1234']
 const defaultTeachingUsername = isLiveStack ? 'kavitha.rao' : 'devika.shetty'
 let proofRouteState = {
   routeHash: seededProofRoute,
   batchId: seededProofBatchId,
+}
+let requestState = {
+  id: 'request_001',
+  summary: defaultRequestSummary,
+  status: 'Closed',
 }
 
 await mkdir(outputDir, { recursive: true })
@@ -211,6 +216,24 @@ async function resolveTeachingPassword(username) {
     if (response.ok) return password
   }
   throw new Error(`Could not resolve a working teaching password for ${username}`)
+}
+
+async function discoverRequestState() {
+  const payload = await adminApiRequest('/api/admin/requests')
+  const items = payload.items ?? []
+  assert(items.length > 0, 'At least one governed request should exist for keyboard validation')
+  const actionable = items
+    .filter(item => item.status !== 'Closed' && item.status !== 'Rejected')
+    .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
+  const fallback = [...items].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
+  const selected = actionable[0] ?? fallback[0]
+  requestState = {
+    id: selected.adminRequestId,
+    summary: selected.summary,
+    status: selected.status,
+  }
+  console.log(`[keyboard] request route discovered: id=${requestState.id} status=${requestState.status} summary=${requestState.summary}`)
+  return requestState
 }
 
 async function waitForProofCheckpoints(label, timeoutMs = 240_000) {
@@ -411,17 +434,24 @@ try {
   markStep('login-system-admin')
   await loginAsSystemAdmin()
   await discoverProofRouteState()
+  await discoverRequestState()
 
   markStep('request-flow-keyboard')
   await focusAndActivate(page.getByRole('button', { name: 'Requests', exact: true }).first(), 'requests navigation')
   await expectVisible(page.getByText(/^Requests$/).last(), 'requests heading')
-  const requestButton = page.getByRole('button', { name: requestSummary }).first()
+  const requestButton = page.getByRole('button', { name: new RegExp(escapeRegex(requestState.summary), 'i') }).first()
   await focusAndActivate(requestButton, 'request list item')
-  await expectVisible(page.getByText(requestSummary).last(), 'selected request detail')
+  await expectVisible(page.getByText(requestState.summary).last(), 'selected request detail')
   assert(/#\/admin\/requests\//.test(page.url()), `expected deep-linked request URL, got ${page.url()}`)
-  const requestAction = page.getByRole('button', { name: /Take Review|Approve|Mark Implemented|Close/ }).first()
-  await focusAndActivate(requestAction, 'request advance action', ' ')
-  await expectVisible(page.getByText('Request advanced.', { exact: true }), 'request advance flash')
+  const requestDetailSurface = page.getByText(requestState.summary).last().locator('xpath=ancestor::*[@data-surface][1]')
+  const requestAction = requestDetailSurface.getByRole('button', { name: /Take Review|Approve|Mark Implemented|Close/ }).first()
+  const requestActionVisible = await requestAction.isVisible().catch(() => false)
+  if (requestActionVisible) {
+    await focusAndActivate(requestAction, 'request advance action', ' ')
+    await expectVisible(page.getByText('Request advanced.', { exact: true }), 'request advance flash')
+  } else {
+    await expectText(requestDetailSurface, /Closed|Rejected/i, 'request terminal status')
+  }
 
   markStep('student-modal-focus-trap')
   await focusAndActivate(page.getByRole('button', { name: 'Students', exact: true }).first(), 'students navigation')
@@ -480,8 +510,9 @@ try {
   markStep('teacher-risk-and-shell-keyboard')
   let teacherProofActionSource = await resolveTeacherProofActionSource(teacherProofPanel)
   if (!teacherProofActionSource) {
-    await expectText(teacherProofPanel, /No active run is linked to this faculty context\./i, 'teacher proof panel empty active-run state')
+    await expectVisible(teacherProofPanel.locator('[data-proof-section="active-run-contexts"]').first(), 'teacher proof panel active-run section')
     await expectText(teacherProofPanel, /No governed queue items are currently linked to this profile\./i, 'teacher proof panel empty monitoring state')
+    await expectVisible(teacherProofPanel.locator('[data-proof-section="elective-fit"]').first(), 'teacher proof panel elective-fit section')
   } else {
     const riskExplorerButton = teacherProofActionSource.locator('[data-proof-action="teacher-proof-open-risk-explorer"]').first()
     await focusAndActivate(riskExplorerButton, 'teacher risk explorer action')

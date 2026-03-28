@@ -22,6 +22,7 @@ describe('loadConfig', () => {
     expect(config.sessionCookieSecure).toBe(true)
     expect(config.sessionCookieSameSite).toBe('none')
     expect(config.csrfSecretConfigured).toBe(true)
+    expect(config.host).toBe('0.0.0.0')
   })
 
   it('respects explicit cookie overrides', () => {
