@@ -18,6 +18,8 @@ const systemAdminIdentifier = process.env.AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER
 const systemAdminPassword = process.env.AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD?.trim() ?? ''
 const desiredCsrfSecret = process.env.RAILWAY_CSRF_SECRET?.trim() ?? ''
 const syncRailwayServiceVars = process.env.SYNC_RAILWAY_SERVICE_VARS === '1' || process.env.SYNC_RAILWAY_SERVICE_VARS === 'true'
+const sessionContractMaxAttempts = Math.max(1, Number.parseInt(process.env.RAILWAY_LIVE_SESSION_CONTRACT_MAX_ATTEMPTS ?? '36', 10) || 36)
+const sessionContractRetryDelayMs = Math.max(0, Number.parseInt(process.env.RAILWAY_LIVE_SESSION_CONTRACT_RETRY_DELAY_MS ?? '5000', 10) || 5000)
 
 function runRailway(args, options = {}) {
   const command = process.env.RAILWAY_CLI_BIN ?? 'railway'
@@ -94,7 +96,12 @@ function isLocalDatabaseUrl(value) {
 function readSetCookieValues(headers) {
   if (typeof headers.getSetCookie === 'function') return headers.getSetCookie()
   const singleHeader = headers.get('set-cookie')
-  return singleHeader ? [singleHeader] : []
+  return singleHeader
+    ? singleHeader
+      .split(/,(?=\s*[^;,=\s]+=[^;]+)/g)
+      .map(item => item.trim())
+      .filter(Boolean)
+    : []
 }
 
 function buildCookieHeader(setCookieValues) {
@@ -105,6 +112,10 @@ function buildCookieHeader(setCookieValues) {
     pairs.push(cookiePair)
   }
   return pairs.join('; ')
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 function loadVariableSnapshot() {
@@ -563,68 +574,117 @@ async function runSessionContract() {
   }
 
   const loginUrl = new URL('/api/session/login', apiBaseUrl).toString()
-  const response = await fetch(loginUrl, {
-    method: 'POST',
-    headers: {
-      origin: expectedFrontendOrigin,
-      'content-type': 'application/json',
-      accept: 'application/json',
-    },
-    body: JSON.stringify({
-      identifier: systemAdminIdentifier,
-      password: systemAdminPassword,
-    }),
-  })
+  const attempts = []
+  let finalAttempt = null
 
-  const setCookieValues = readSetCookieValues(response.headers)
-  const text = await response.text()
-  let body = null
-  try {
-    body = text ? JSON.parse(text) : null
-  } catch {
-    body = text
-  }
+  for (let attemptNumber = 1; attemptNumber <= sessionContractMaxAttempts; attemptNumber += 1) {
+    const issues = []
+    let response = null
+    let responseStatus = null
+    let body = null
+    let bodyText = ''
+    let setCookieValues = []
+    let restore = null
 
-  const issues = []
-  if (response.status !== 200) {
-    issues.push(`login returned ${response.status} instead of 200`)
-  }
-  if (typeof body?.csrfToken !== 'string' || body.csrfToken.length === 0) {
-    issues.push('login body is missing csrfToken')
-  }
-  if (!setCookieValues.some(item => item.includes('airmentor_session='))) {
-    issues.push('login response did not set airmentor_session')
-  }
-  if (!setCookieValues.some(item => item.includes('airmentor_csrf='))) {
-    issues.push('login response did not set airmentor_csrf')
-  }
-
-  const restore = issues.length === 0
-    ? await fetch(new URL('/api/session', apiBaseUrl), {
+    try {
+      response = await fetch(loginUrl, {
+        method: 'POST',
         headers: {
           origin: expectedFrontendOrigin,
+          'content-type': 'application/json',
           accept: 'application/json',
-          cookie: buildCookieHeader(setCookieValues),
         },
-      }).then(async response => ({
-          status: response.status,
-          ok: response.ok,
-          body: await response.text(),
-        }))
-    : null
-
-  if (restore && !restore.ok) {
-    issues.push(`session restore returned ${restore.status} instead of 200`)
-  } else if (restore) {
-    try {
-      const parsedRestore = JSON.parse(restore.body)
-      if (parsedRestore?.user?.username !== systemAdminIdentifier) {
-        issues.push('session restore returned the wrong user')
+        body: JSON.stringify({
+          identifier: systemAdminIdentifier,
+          password: systemAdminPassword,
+        }),
+      })
+      responseStatus = response.status
+      setCookieValues = readSetCookieValues(response.headers)
+      bodyText = await response.text()
+      try {
+        body = bodyText ? JSON.parse(bodyText) : null
+      } catch {
+        body = bodyText
       }
-    } catch {
-      issues.push('session restore response was not valid JSON')
+    } catch (error) {
+      issues.push(`login request failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+
+    if (responseStatus !== 200) {
+      issues.push(`login returned ${responseStatus ?? 'network_error'} instead of 200`)
+    }
+    if (typeof body?.csrfToken !== 'string' || body.csrfToken.length === 0) {
+      issues.push('login body is missing csrfToken')
+    }
+    if (!setCookieValues.some(item => item.includes('airmentor_session='))) {
+      issues.push('login response did not set airmentor_session')
+    }
+    if (!setCookieValues.some(item => item.includes('airmentor_csrf='))) {
+      issues.push('login response did not set airmentor_csrf')
+    }
+
+    if (issues.length === 0) {
+      try {
+        restore = await fetch(new URL('/api/session', apiBaseUrl), {
+          headers: {
+            origin: expectedFrontendOrigin,
+            accept: 'application/json',
+            cookie: buildCookieHeader(setCookieValues),
+          },
+        }).then(async restoreResponse => ({
+          status: restoreResponse.status,
+          ok: restoreResponse.ok,
+          body: await restoreResponse.text(),
+        }))
+      } catch (error) {
+        restore = {
+          status: null,
+          ok: false,
+          body: '',
+        }
+        issues.push(`session restore request failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+
+    if (restore && !restore.ok) {
+      issues.push(`session restore returned ${restore.status ?? 'network_error'} instead of 200`)
+    } else if (restore) {
+      try {
+        const parsedRestore = JSON.parse(restore.body)
+        if (parsedRestore?.user?.username !== systemAdminIdentifier) {
+          issues.push('session restore returned the wrong user')
+        }
+      } catch {
+        issues.push('session restore response was not valid JSON')
+      }
+    }
+
+    const attempt = {
+      attempt: attemptNumber,
+      status: responseStatus,
+      hasCsrfToken: typeof body?.csrfToken === 'string',
+      hasSessionCookie: setCookieValues.some(item => item.includes('airmentor_session=')),
+      hasCsrfCookie: setCookieValues.some(item => item.includes('airmentor_csrf=')),
+      restoreStatus: restore?.status ?? null,
+      issues,
+      bodyPreview: typeof bodyText === 'string' && bodyText.length > 0
+        ? bodyText.slice(0, 240)
+        : null,
+    }
+    attempts.push(attempt)
+    finalAttempt = attempt
+
+    if (issues.length === 0) {
+      break
+    }
+
+    if (attemptNumber < sessionContractMaxAttempts) {
+      await sleep(sessionContractRetryDelayMs)
     }
   }
+
+  const issues = finalAttempt?.issues ?? ['session-contract verification did not record any attempts']
 
   const report = {
     mode: 'session-contract',
@@ -633,13 +693,20 @@ async function runSessionContract() {
     expectedFrontendOrigin,
     identifier: systemAdminIdentifier,
     status: issues.length === 0 ? 'passed' : 'failed',
-    response: {
-      status: response.status,
-      hasCsrfToken: typeof body?.csrfToken === 'string',
-      hasSessionCookie: setCookieValues.some(item => item.includes('airmentor_session=')),
-      hasCsrfCookie: setCookieValues.some(item => item.includes('airmentor_csrf=')),
-      restoreStatus: restore?.status ?? null,
+    retryWindow: {
+      maxAttempts: sessionContractMaxAttempts,
+      retryDelayMs: sessionContractRetryDelayMs,
+      attemptsUsed: attempts.length,
+      recoveredAfterAttempt: issues.length === 0 ? attempts.length : null,
     },
+    response: {
+      status: finalAttempt?.status ?? null,
+      hasCsrfToken: finalAttempt?.hasCsrfToken ?? false,
+      hasSessionCookie: finalAttempt?.hasSessionCookie ?? false,
+      hasCsrfCookie: finalAttempt?.hasCsrfCookie ?? false,
+      restoreStatus: finalAttempt?.restoreStatus ?? null,
+    },
+    attempts,
     issues,
   }
   await writeJsonReport('railway-live-session-contract.json', report)
@@ -653,7 +720,7 @@ async function runSessionContract() {
     process.exit(1)
   }
 
-  console.log(`Railway live session-contract verification passed. Report: ${path.join(outputDir, 'railway-live-session-contract.json')}`)
+  console.log(`Railway live session-contract verification passed after ${attempts.length} attempt(s). Report: ${path.join(outputDir, 'railway-live-session-contract.json')}`)
 }
 
 function sanitizeVariableSnapshot(variables) {

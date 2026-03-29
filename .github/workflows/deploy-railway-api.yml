@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'air-mentor-api/**'
+      - 'scripts/check-railway-deploy-readiness.mjs'
       - '.github/workflows/deploy-railway-api.yml'
   workflow_dispatch:
 
