@@ -57,3 +57,4 @@ npm --workspace air-mentor-api run verify:live-session-contract
 npm run verify:proof-closure:live
 AIRMENTOR_LIVE_STACK=1 npm run playwright:admin-live:teaching-parity
 AIRMENTOR_LIVE_STACK=1 npm run playwright:admin-live:acceptance
+node scripts/closeout-stage-02-success.mjs
