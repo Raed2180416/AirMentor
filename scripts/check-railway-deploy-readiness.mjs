@@ -118,6 +118,11 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+function shouldRetrySessionContractAttempt(attempt) {
+  if (!attempt || attempt.issues.length === 0) return false
+  return ![401, 429].includes(attempt.status ?? 0)
+}
+
 function loadVariableSnapshot() {
   const inlineJson = process.env.RAILWAY_VARIABLES_JSON?.trim()
   if (inlineJson) {
@@ -585,6 +590,7 @@ async function runSessionContract() {
     let bodyText = ''
     let setCookieValues = []
     let restore = null
+    let retryAbortReason = null
 
     try {
       response = await fetch(loginUrl, {
@@ -613,6 +619,12 @@ async function runSessionContract() {
 
     if (responseStatus !== 200) {
       issues.push(`login returned ${responseStatus ?? 'network_error'} instead of 200`)
+    }
+    if (responseStatus === 401) {
+      issues.push('login credentials were rejected; verify AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD before retrying live verification')
+    }
+    if (responseStatus === 429) {
+      issues.push('login rate limit is active; clear or wait out the live throttle window before retrying verification')
     }
     if (typeof body?.csrfToken !== 'string' || body.csrfToken.length === 0) {
       issues.push('login body is missing csrfToken')
@@ -660,6 +672,16 @@ async function runSessionContract() {
       }
     }
 
+    const bodyMessage = typeof body?.message === 'string' ? body.message : null
+    if (issues.length > 0 && responseStatus === 401 && bodyMessage === 'Invalid credentials') {
+      retryAbortReason = 'login credentials were rejected; retry aborted to avoid tripping the live rate limiter'
+    } else if (issues.length > 0 && responseStatus === 429) {
+      retryAbortReason = 'login is rate limited; retry aborted because the live identifier is currently locked out'
+    }
+    if (retryAbortReason) {
+      issues.push(retryAbortReason)
+    }
+
     const attempt = {
       attempt: attemptNumber,
       status: responseStatus,
@@ -668,6 +690,7 @@ async function runSessionContract() {
       hasCsrfCookie: setCookieValues.some(item => item.includes('airmentor_csrf=')),
       restoreStatus: restore?.status ?? null,
       issues,
+      retryAbortReason,
       bodyPreview: typeof bodyText === 'string' && bodyText.length > 0
         ? bodyText.slice(0, 240)
         : null,
@@ -679,7 +702,11 @@ async function runSessionContract() {
       break
     }
 
-    if (attemptNumber < sessionContractMaxAttempts) {
+    if (retryAbortReason) {
+      break
+    }
+
+    if (attemptNumber < sessionContractMaxAttempts && shouldRetrySessionContractAttempt(attempt)) {
       await sleep(sessionContractRetryDelayMs)
     }
   }
@@ -698,6 +725,8 @@ async function runSessionContract() {
       retryDelayMs: sessionContractRetryDelayMs,
       attemptsUsed: attempts.length,
       recoveredAfterAttempt: issues.length === 0 ? attempts.length : null,
+      stoppedEarly: Boolean(finalAttempt?.retryAbortReason),
+      stopReason: finalAttempt?.retryAbortReason ?? null,
     },
     response: {
       status: finalAttempt?.status ?? null,

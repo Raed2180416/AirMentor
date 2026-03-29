@@ -72,7 +72,7 @@ async function makeBootSmokeAppDir() {
   return dir
 }
 
-async function startSessionContractServer(mode: 'transient-login' | 'always-401') {
+async function startSessionContractServer(mode: 'transient-login' | 'always-401' | 'always-503') {
   const dir = await mkdtemp(path.join(tmpdir(), 'airmentor-session-contract-server-'))
   tempDirs.push(dir)
   const scriptPath = path.join(dir, 'session-contract-server.mjs')
@@ -93,7 +93,12 @@ async function startSessionContractServer(mode: 'transient-login' | 'always-401'
       '    }',
       "    if (mode === 'always-401') {",
       "      res.writeHead(401, { 'content-type': 'application/json' })",
-      "      res.end(JSON.stringify({ error: 'invalid_credentials' }))",
+      "      res.end(JSON.stringify({ error: 'UNAUTHORIZED', message: 'Invalid credentials' }))",
+      '      return',
+      '    }',
+      "    if (mode === 'always-503') {",
+      "      res.writeHead(503, { 'content-type': 'application/json' })",
+      "      res.end(JSON.stringify({ error: 'warming_up', message: 'Service warming up' }))",
       '      return',
       '    }',
       "    res.writeHead(200, {",
@@ -295,10 +300,10 @@ describe('Railway deploy readiness script', () => {
     expect(report.attempts[1].status).toBe(200)
   })
 
-  it('fails the live session contract after exhausting the retry window', { timeout: 15_000 }, async () => {
+  it('fails the live session contract after exhausting the retry window for transient non-credential failures', { timeout: 15_000 }, async () => {
     const outputDir = await makeOutputDir()
     const appDir = await makeBootSmokeAppDir()
-    const apiBaseUrl = await startSessionContractServer('always-401')
+    const apiBaseUrl = await startSessionContractServer('always-503')
 
     const result = spawnSync('node', [scriptPath, 'session-contract'], {
       cwd: appDir,
@@ -320,7 +325,39 @@ describe('Railway deploy readiness script', () => {
     const report = JSON.parse(await readFile(path.join(outputDir, 'railway-live-session-contract.json'), 'utf8'))
     expect(report.status).toBe('failed')
     expect(report.retryWindow.attemptsUsed).toBe(2)
+    expect(report.retryWindow.stoppedEarly).toBe(false)
     expect(report.attempts).toHaveLength(2)
-    expect(report.issues).toContain('login returned 401 instead of 200')
+    expect(report.issues).toContain('login returned 503 instead of 200')
+  })
+
+  it('fails fast on explicit invalid credentials to avoid tripping the rate limiter', { timeout: 15_000 }, async () => {
+    const outputDir = await makeOutputDir()
+    const appDir = await makeBootSmokeAppDir()
+    const apiBaseUrl = await startSessionContractServer('always-401')
+
+    const result = spawnSync('node', [scriptPath, 'session-contract'], {
+      cwd: appDir,
+      encoding: 'utf8',
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        RAILWAY_PUBLIC_API_URL: apiBaseUrl,
+        EXPECTED_FRONTEND_ORIGIN: liveOrigin,
+        AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER: 'sysadmin',
+        AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD: 'wrong-password',
+        RAILWAY_LIVE_SESSION_CONTRACT_MAX_ATTEMPTS: '5',
+        RAILWAY_LIVE_SESSION_CONTRACT_RETRY_DELAY_MS: '0',
+        RAILWAY_DIAGNOSTIC_OUTPUT_DIR: outputDir,
+      },
+    })
+
+    expect(result.status).toBe(1)
+    const report = JSON.parse(await readFile(path.join(outputDir, 'railway-live-session-contract.json'), 'utf8'))
+    expect(report.status).toBe('failed')
+    expect(report.retryWindow.attemptsUsed).toBe(1)
+    expect(report.retryWindow.stoppedEarly).toBe(true)
+    expect(report.retryWindow.stopReason).toContain('retry aborted')
+    expect(report.attempts).toHaveLength(1)
+    expect(report.attempts[0].retryAbortReason).toContain('rate limiter')
   })
 })
