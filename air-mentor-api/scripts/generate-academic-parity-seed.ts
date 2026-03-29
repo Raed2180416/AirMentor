@@ -13,6 +13,7 @@ import {
   TEACHERS,
   getStudentHistoryRecord,
   getStudents,
+  type Task as SeedTask,
 } from '../../src/data.ts'
 import { createLocalAirMentorRepositories } from '../../src/repositories.ts'
 import { type QueueTransition, type SharedTask, type TaskType } from '../../src/domain.ts'
@@ -303,17 +304,17 @@ function requireAcademicDataModule() {
   return { generateTasks: (awaitImportCache.generateTasks ??= getGenerateTasks()) }
 }
 
-const awaitImportCache: { generateTasks?: () => SharedTask[] } = {}
+const awaitImportCache: { generateTasks?: () => SeedTask[] } = {}
 
 function getGenerateTasks() {
-  const mod = (globalThis as unknown as { __academicDataModule?: { generateTasks: () => SharedTask[] } }).__academicDataModule
+  const mod = (globalThis as unknown as { __academicDataModule?: { generateTasks: () => SeedTask[] } }).__academicDataModule
   if (mod) return mod.generateTasks
   throw new Error('Academic data module cache is unavailable.')
 }
 
 async function main() {
   const academicDataModule = await import('../../src/data.ts')
-  ;(globalThis as unknown as { __academicDataModule?: { generateTasks: () => SharedTask[] } }).__academicDataModule = {
+  ;(globalThis as unknown as { __academicDataModule?: { generateTasks: () => SeedTask[] } }).__academicDataModule = {
     generateTasks: academicDataModule.generateTasks,
   }
 

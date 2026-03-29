@@ -101,6 +101,15 @@ describe('student agent shell', () => {
     expect(checkpointCardResponse.statusCode).toBe(200)
     expect(checkpointCardResponse.json()).toMatchObject({
       simulationStageCheckpointId: selectedCheckpoint.simulationStageCheckpointId,
+      scopeDescriptor: {
+        scopeType: 'student',
+        simulationRunId: activeRun.simulationRunId,
+        studentId: accessibleStudentId,
+      },
+      resolvedFrom: {
+        kind: 'proof-checkpoint',
+        scopeId: selectedCheckpoint.simulationStageCheckpointId,
+      },
       checkpointContext: {
         simulationStageCheckpointId: selectedCheckpoint.simulationStageCheckpointId,
         stageKey: selectedCheckpoint.stageKey,
@@ -111,6 +120,9 @@ describe('student agent shell', () => {
         counterfactualLiftScaled: expect.any(Number),
       },
     })
+    expect(checkpointCardResponse.json().scopeMode).toBe('proof')
+    expect(checkpointCardResponse.json().countSource).toBe('proof-checkpoint')
+    expect(checkpointCardResponse.json().activeOperationalSemester).toBe(6)
     expect(checkpointCardResponse.json().summaryRail.currentRiskDisplayProbabilityAllowed === false
       ? checkpointCardResponse.json().summaryRail.currentRiskSupportWarning
       : true).toBeTruthy()
@@ -253,5 +265,74 @@ describe('student agent shell', () => {
     })
     expect(adminResponse.statusCode).toBe(200)
     expect(adminResponse.json().simulationRunId).toBe(activeRun.simulationRunId)
+  })
+
+  it('uses the activated proof semester for the default student shell while keeping checkpoint playback separate', async () => {
+    current = await createTestApp()
+    const login = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+    const roleResponse = login.body.activeRoleGrant.roleCode === 'COURSE_LEADER'
+      ? login.body
+      : (await switchToRole(login.cookie, login.body.availableRoleGrants, 'COURSE_LEADER')).json()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const [activeRun] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    expect(activeRun).toBeTruthy()
+    const recomputeRiskResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRun.simulationRunId}/recompute-risk`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+    expect(recomputeRiskResponse.statusCode).toBe(200)
+    const checkpointRows = await current.db.select().from(simulationStageCheckpoints).where(
+      eq(simulationStageCheckpoints.simulationRunId, activeRun.simulationRunId),
+    ).orderBy(asc(simulationStageCheckpoints.semesterNumber), asc(simulationStageCheckpoints.stageOrder))
+    const playbackCheckpoint = checkpointRows.find(row => row.semesterNumber > 4) ?? checkpointRows.at(-1)
+    expect(playbackCheckpoint).toBeTruthy()
+
+    const activateSemesterResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRun.simulationRunId}/activate-semester`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: { semesterNumber: 4 },
+    })
+    expect(activateSemesterResponse.statusCode).toBe(200)
+
+    const ownershipRows = await current.db.select().from(facultyOfferingOwnerships).where(and(
+      eq(facultyOfferingOwnerships.facultyId, roleResponse.faculty.facultyId),
+      eq(facultyOfferingOwnerships.status, 'active'),
+    ))
+    const ownedOfferingIds = new Set(ownershipRows.map(row => row.offeringId))
+    const observedRows = await current.db.select().from(studentObservedSemesterStates).where(
+      eq(studentObservedSemesterStates.simulationRunId, activeRun.simulationRunId),
+    )
+    const accessibleStudentId = observedRows.find(row => {
+      const offeringId = getObservedOfferingId(row)
+      return !!offeringId && ownedOfferingIds.has(offeringId)
+    })?.studentId
+    expect(accessibleStudentId).toBeTruthy()
+
+    const [defaultCardResponse, checkpointCardResponse] = await Promise.all([
+      current.app.inject({
+        method: 'GET',
+        url: `/api/academic/student-shell/students/${accessibleStudentId}/card`,
+        headers: { cookie: login.cookie },
+      }),
+      current.app.inject({
+        method: 'GET',
+        url: `/api/academic/student-shell/students/${accessibleStudentId}/card?simulationStageCheckpointId=${encodeURIComponent(playbackCheckpoint!.simulationStageCheckpointId)}`,
+        headers: { cookie: login.cookie },
+      }),
+    ])
+
+    expect(defaultCardResponse.statusCode).toBe(200)
+    expect(checkpointCardResponse.statusCode).toBe(200)
+    expect(defaultCardResponse.json().countSource).toBe('proof-run')
+    expect(defaultCardResponse.json().activeOperationalSemester).toBe(4)
+    expect(defaultCardResponse.json().student.currentSemester).toBe(4)
+    expect(checkpointCardResponse.json().countSource).toBe('proof-checkpoint')
+    expect(checkpointCardResponse.json().simulationStageCheckpointId).toBe(playbackCheckpoint!.simulationStageCheckpointId)
+    expect(checkpointCardResponse.json().activeOperationalSemester).toBe(4)
+    expect(checkpointCardResponse.json().student.currentSemester).toBe(playbackCheckpoint!.semesterNumber)
   })
 })

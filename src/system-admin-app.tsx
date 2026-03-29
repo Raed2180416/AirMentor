@@ -11,9 +11,10 @@ type SystemAdminAppProps = {
 
 export function SystemAdminApp(props: SystemAdminAppProps = {}) {
   const apiBaseUrl = import.meta.env.VITE_AIRMENTOR_API_BASE_URL?.trim() || ''
+  const telemetrySinkUrl = import.meta.env.VITE_AIRMENTOR_TELEMETRY_SINK_URL?.trim() || ''
   const startupDiagnostics = useMemo(
-    () => collectFrontendStartupDiagnostics({ apiBaseUrl }),
-    [apiBaseUrl],
+    () => collectFrontendStartupDiagnostics({ apiBaseUrl, telemetrySinkUrl }),
+    [apiBaseUrl, telemetrySinkUrl],
   )
 
   useEffect(() => {
@@ -28,10 +29,11 @@ export function SystemAdminApp(props: SystemAdminAppProps = {}) {
     emitClientOperationalEvent('startup.ready', {
       workspace: 'system-admin',
       apiBaseUrl: apiBaseUrl || null,
+      telemetrySinkConfigured: Boolean(telemetrySinkUrl),
       diagnosticCount: startupDiagnostics.length,
       errorCount: startupDiagnostics.filter(item => item.level === 'error').length,
     })
-  }, [apiBaseUrl, startupDiagnostics])
+  }, [apiBaseUrl, startupDiagnostics, telemetrySinkUrl])
 
   if (!apiBaseUrl) {
     return (

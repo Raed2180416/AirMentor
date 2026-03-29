@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { resolveSystemAdminLiveCredentials } from './system-admin-live-auth.mjs'
 
 const playwrightRoot = process.env.PLAYWRIGHT_ROOT
 const appUrl = process.env.PLAYWRIGHT_APP_URL ?? 'http://127.0.0.1:4173'
@@ -21,6 +22,9 @@ let proofRouteState = {
   routeHash: seededProofRoute,
   batchId: seededProofBatchId,
 }
+const systemAdminCredentials = resolveSystemAdminLiveCredentials({
+  scriptLabel: 'System admin proof-risk smoke',
+})
 
 await mkdir(outputDir, { recursive: true })
 
@@ -235,48 +239,86 @@ async function readPlaybackSelectionParsed() {
 
 async function adminApiRequest(apiPath, init = {}) {
   const { body, ...restInit } = init
-  const timeoutMs = typeof restInit.timeout === 'number' ? restInit.timeout : 180_000
-  const response = await page.evaluate(async request => {
-    const csrfToken = document.cookie
-      .split('; ')
-      .find(item => item.startsWith('airmentor_csrf='))
-      ?.slice('airmentor_csrf='.length) ?? null
-    const browserResponse = await fetch(request.apiPath, {
-      method: request.method,
-      headers: {
-        accept: 'application/json',
-        ...(csrfToken ? { 'x-airmentor-csrf': decodeURIComponent(csrfToken) } : {}),
-        ...(request.body === undefined ? {} : { 'content-type': 'application/json' }),
-        ...(request.headers ?? {}),
-      },
-      body: request.body === undefined
-        ? undefined
-        : typeof request.body === 'string'
-          ? request.body
-          : JSON.stringify(request.body),
-      credentials: 'include',
+  const requestUrl = new URL(apiPath, apiUrl).toString()
+  let payload
+  if (isLiveStack) {
+    payload = await page.evaluate(async request => {
+      const csrfToken = document.cookie
+        .split('; ')
+        .find(item => item.startsWith('airmentor_csrf='))
+        ?.slice('airmentor_csrf='.length) ?? null
+      const browserResponse = await fetch(request.apiPath, {
+        method: request.method,
+        headers: {
+          accept: 'application/json',
+          ...(csrfToken ? { 'x-airmentor-csrf': decodeURIComponent(csrfToken) } : {}),
+          ...(request.body === undefined ? {} : { 'content-type': 'application/json' }),
+          ...(request.headers ?? {}),
+        },
+        body: request.body === undefined
+          ? undefined
+          : typeof request.body === 'string'
+            ? request.body
+            : JSON.stringify(request.body),
+        credentials: 'include',
+      })
+      const contentType = browserResponse.headers.get('content-type') ?? ''
+      const text = await browserResponse.text().catch(() => '')
+      return {
+        ok: browserResponse.ok,
+        status: browserResponse.status,
+        contentType,
+        text,
+      }
+    }, {
+      apiPath: requestUrl,
+      method: restInit.method ?? 'GET',
+      body,
+      headers: restInit.headers ?? {},
     })
-    const contentType = browserResponse.headers.get('content-type') ?? ''
-    const text = await browserResponse.text().catch(() => '')
-    return {
-      ok: browserResponse.ok,
-      status: browserResponse.status,
-      contentType,
-      text,
+  } else {
+    const timeoutMs = typeof restInit.timeout === 'number' ? restInit.timeout : 180_000
+    const requestCookies = await context.cookies(requestUrl, appUrl, apiUrl)
+    const csrfToken = requestCookies.find(cookie => cookie.name === 'airmentor_csrf')?.value ?? null
+    const cookieHeader = requestCookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ')
+    const controller = new AbortController()
+    const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs)
+    let response
+    try {
+      response = await fetch(requestUrl, {
+        method: restInit.method ?? 'GET',
+        headers: {
+          accept: 'application/json',
+          origin: new URL(appUrl).origin,
+          ...(csrfToken ? { 'x-airmentor-csrf': decodeURIComponent(csrfToken) } : {}),
+          ...(cookieHeader ? { cookie: cookieHeader } : {}),
+          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+          ...(restInit.headers ?? {}),
+        },
+        body: body === undefined
+          ? undefined
+          : typeof body === 'string'
+            ? body
+            : JSON.stringify(body),
+        signal: controller.signal,
+      })
+    } finally {
+      clearTimeout(timeoutHandle)
     }
-  }, {
-    apiPath: new URL(apiPath, apiUrl).toString(),
-    method: restInit.method ?? 'GET',
-    headers: restInit.headers ?? {},
-    body,
-  })
-  if (!response.ok) {
-    throw new Error(`Admin API ${apiPath} failed with ${response.status}: ${response.text.slice(0, 800)}`)
+    payload = {
+      ok: response.ok,
+      status: response.status,
+      contentType: response.headers.get('content-type') ?? '',
+      text: await response.text().catch(() => ''),
+    }
   }
-  if (response.contentType.includes('application/json')) {
-    return JSON.parse(response.text)
+  if (!payload.ok) {
+    throw new Error(`Admin API ${apiPath} failed with ${payload.status}: ${payload.text.slice(0, 800)}`)
   }
-  return response.text
+  if (payload.contentType.includes('application/json')) {
+    return JSON.parse(payload.text)
+  }
+  return payload.text
 }
 
 async function readProofDashboard(batchId = proofRouteState.batchId) {
@@ -461,8 +503,8 @@ async function loginAsSystemAdmin() {
   await page.goto(appUrl, { waitUntil: 'networkidle' })
   await page.getByRole('button', { name: /Open System Admin/i }).click()
   await expectVisible(page.getByText(/System Admin Live Mode/), 'system admin login')
-  await page.getByPlaceholder('sysadmin', { exact: true }).fill('sysadmin')
-  await page.getByPlaceholder('••••••••', { exact: true }).fill('admin1234')
+  await page.getByPlaceholder('sysadmin', { exact: true }).fill(systemAdminCredentials.identifier)
+  await page.getByPlaceholder('••••••••', { exact: true }).fill(systemAdminCredentials.password)
   await page.getByRole('button', { name: 'Sign In', exact: true }).click()
   await page.waitForTimeout(500)
   console.log(`[smoke] cookies after login: ${JSON.stringify(await context.cookies())}`)

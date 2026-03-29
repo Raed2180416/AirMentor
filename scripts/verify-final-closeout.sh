@@ -2,7 +2,7 @@
 set -euo pipefail
 
 npm run lint
-npm run inventory:compat-routes
+npm run inventory:compat-routes -- --assert-runtime-clean
 npm run verify:proof-closure:proof-rc
 npm run playwright:admin-live:acceptance
 npm run playwright:admin-live:request-flow

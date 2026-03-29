@@ -47,6 +47,20 @@ This document gives deeper, subsystem-specific coverage of the proof sandbox, pr
    - `proofRefreshQueued`
    - `proofRefreshWarning`
 
+## MSRUAS Curriculum Compiler (Critical Component Analysis)
+Source: `air-mentor-api/src/lib/msruas-curriculum-compiler.ts`
+
+**What it does (Technical):**
+This 348-line utility is a strict ingest compiler. It opens the physical MSRUAS curriculum `.xlsx` file, reads six specific sheets (`Courses`, `ExplicitEdges`, `AddedEdges`, `OfficialElectives`, etc.), runs a Depth-First Search (DFS) to prove no prerequisite cycles exist (`detectCycle`), and compiles it into the JSON graph that powers the entire sandbox simulation. It ends with `validateCompiledCurriculum`, which enforces an exact checksum: exactly 36 courses, 118 credits, 24 explicit edges, etc.
+
+**What it means (Non-Technical):**
+This is the "bridge" between the human-readable Excel sheet the university provides and the strict data format the AI requires. Think of it as a highly suspicious border guard: if the Excel sheet changes even slightly—like adding a single 1-credit course—the guard rejects the entire file to prevent the AI from running on bad data. 
+
+**Identified Issues & Gaps:**
+1. **Hyper-Rigid Validation:** The validation step hardcodes the *exact* metrics of the 2023 MNC batch. Any attempt to compile a newer semester or a different branch's curriculum will instantaneously fail. The schema is not generic; it is tightly bound to one exact syllabus snapshot.
+2. **Brittle Local File Paths:** The compiler includes a hardcoded path pointing to a local machine (`/home/raed/Downloads/airmentor_curriculum_compiler_reconciled.xlsx`). This makes the script unusable in CI/CD pipelines or on a production server without file-system hacking.
+3. **Invisible Operational Execution:** This compiler is a developer-only tool. It is not wired into the Admin UI. If an admin wants to update the curriculum workbook, a developer must manually run this compiler on their local machine, generate the JSON, and commit it to the repository.
+
 ## Current-state reconciliation (2026-03-28)
 - The original audit correctly identified proof and linkage as the most operationally complex subsystem, but the operator surface is materially stronger now:
   - queue health, lease state, retry/failure, and checkpoint readiness are visible in the proof dashboard

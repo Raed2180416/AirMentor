@@ -199,6 +199,27 @@ describe('AirMentorApiClient', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(10, 'http://127.0.0.1:4000/api/admin/proof-runs/run_001/checkpoints/checkpoint_001/students/student_001', expect.any(Object))
   })
 
+  it('threads proof semester activation through the API client', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => new Response(JSON.stringify({
+      ok: true,
+      simulationRunId: 'run_001',
+      batchId: 'batch_001',
+      activeOperationalSemester: 4,
+      previousOperationalSemester: 6,
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }))
+    const client = new AirMentorApiClient('http://127.0.0.1:4000', fetchMock as typeof fetch)
+
+    await client.activateProofSemester('run_001', { semesterNumber: 4 })
+
+    expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:4000/api/admin/proof-runs/run_001/activate-semester', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ semesterNumber: 4 }),
+    }))
+  })
+
   it('threads the additive academic runtime resource routes through the API client', async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL) => new Response(JSON.stringify({
       ok: true,

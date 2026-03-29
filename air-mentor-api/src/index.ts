@@ -1,28 +1,39 @@
 import { createPool, createDb } from './db/client.js'
 import { loadConfig } from './config.js'
 import { buildApp } from './app.js'
-import { emitOperationalEvent } from './lib/telemetry.js'
+import { emitOperationalEvent, configureOperationalTelemetryPersistence } from './lib/telemetry.js'
+import { persistOperationalTelemetryEvent } from './lib/operational-event-store.js'
 import { assertStartupDiagnostics } from './startup-diagnostics.js'
 
 async function main() {
   const config = loadConfig()
+  const pool = createPool(config.databaseUrl)
+  const db = createDb(pool)
+  const disposeTelemetryPersistence = configureOperationalTelemetryPersistence(event =>
+    persistOperationalTelemetryEvent(db, event),
+  )
   const diagnostics = assertStartupDiagnostics(config)
   diagnostics.forEach(diagnostic => {
     emitOperationalEvent('startup.diagnostic', diagnostic, {
       level: diagnostic.level === 'error' ? 'error' : diagnostic.level === 'warning' ? 'warn' : 'info',
     })
   })
-  const pool = createPool(config.databaseUrl)
-  const db = createDb(pool)
-  const app = await buildApp({ config, db, pool })
-  await app.listen({ port: config.port, host: config.host })
-  emitOperationalEvent('startup.ready', {
-    host: config.host,
-    port: config.port,
-    corsAllowedOrigins: config.corsAllowedOrigins,
-    sessionCookieSecure: config.sessionCookieSecure,
-    sessionCookieSameSite: config.sessionCookieSameSite,
-  })
+  try {
+    const app = await buildApp({ config, db, pool })
+    await app.listen({ port: config.port, host: config.host })
+    emitOperationalEvent('startup.ready', {
+      host: config.host,
+      port: config.port,
+      corsAllowedOrigins: config.corsAllowedOrigins,
+      telemetrySinkConfigured: Boolean(config.telemetrySinkUrl),
+      sessionCookieSecure: config.sessionCookieSecure,
+      sessionCookieSameSite: config.sessionCookieSameSite,
+    })
+  } catch (error) {
+    disposeTelemetryPersistence()
+    await pool.end().catch(() => undefined)
+    throw error
+  }
 }
 
 main().catch(error => {

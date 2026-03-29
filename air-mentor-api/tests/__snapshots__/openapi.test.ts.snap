@@ -99,6 +99,7 @@ exports[`openapi > publishes the implemented route surface 1`] = `
   "/api/admin/proof-models/correlations",
   "/api/admin/proof-models/evaluation",
   "/api/admin/proof-runs/{simulationRunId}/activate",
+  "/api/admin/proof-runs/{simulationRunId}/activate-semester",
   "/api/admin/proof-runs/{simulationRunId}/archive",
   "/api/admin/proof-runs/{simulationRunId}/checkpoints",
   "/api/admin/proof-runs/{simulationRunId}/checkpoints/{checkpointId}",

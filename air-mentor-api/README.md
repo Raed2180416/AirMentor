@@ -77,18 +77,75 @@ to redeploy the backend from `main`. To enable it in GitHub:
 1. Add the repository secret `RAILWAY_TOKEN`.
 2. Add the repository variable `RAILWAY_SERVICE` with the Railway service name.
 3. Optionally add `RAILWAY_ENVIRONMENT` if the service deploys anywhere other than the default environment.
+4. Add `RAILWAY_ALLOWED_FRONTEND_ORIGIN=https://raed2180416.github.io` if you want the deploy preflight to verify the expected GitHub Pages origin explicitly.
+5. Add `RAILWAY_PUBLIC_API_URL=https://your-airmentor-api.up.railway.app` to enable post-deploy live health verification.
+6. Optionally add the live session-contract secrets if you want the deploy workflow to verify the current login contract after rollout:
+   - repository variable `AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER`
+   - repository secret `AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD`
 
 The workflow builds `air-mentor-api`, then runs `railway up` from the API directory.
 `air-mentor-api/railway.json` keeps the deploy behavior consistent by running
 `npm run db:migrate` before starting the app.
 
-If you also set the repository variable `RAILWAY_PUBLIC_API_URL`, the workflow
-will run a post-deploy `GET /health` check against the live Railway service.
+If you also set `RAILWAY_PUBLIC_API_URL`, the workflow will:
+- run a post-deploy `GET /health` check against the live Railway service
+- capture better failure diagnostics when Railway never becomes healthy
+- optionally verify that the live login response returns the current `csrfToken` + `airmentor_csrf` contract
+If `RAILWAY_ALLOWED_FRONTEND_ORIGIN` is configured, the workflow will also preflight the
+Railway service variables before deploy so missing `CSRF_SECRET`,
+`CORS_ALLOWED_ORIGINS`, or loopback `HOST` drift fails before `railway up`.
+If the repository secret `RAILWAY_CSRF_SECRET` is configured, that same preflight
+step can also sync the deterministic Railway service variables that this repo
+owns before deploy:
+
+- `CSRF_SECRET`
+- `CORS_ALLOWED_ORIGINS`
+- `SESSION_COOKIE_SECURE=true`
+- `SESSION_COOKIE_SAME_SITE=none`
+- `HOST=0.0.0.0`
+
+If `AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER` and
+`AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD` are configured, the workflow will also
+verify the live login/session contract and capture a diagnostic JSON artifact on
+failure.
+
+The deploy workflow now uses `scripts/check-railway-deploy-readiness.mjs` in
+three modes:
+
+- `preflight` checks the Railway service variables before deploy and fails early
+  with a clear list of missing or misaligned settings.
+- `session-contract` verifies the live login/session contract after deploy and
+  records whether the API returns `csrfToken` and both cookies.
+- `diagnostics` captures the latest Railway deployment list, deployment/build
+  logs, and a redacted variable snapshot on failure.
+
+The preflight check enforces the production-like API contract expected by the
+repo:
+
+- `CORS_ALLOWED_ORIGINS` must include `RAILWAY_ALLOWED_FRONTEND_ORIGIN`
+- `CSRF_SECRET` must be explicitly set
+- `SESSION_COOKIE_SECURE=true`
+- `SESSION_COOKIE_SAME_SITE=none`
+- `DATABASE_URL` must not be the local default Postgres URL
+- `HOST` must be unset or `0.0.0.0`
 
 For the GitHub Pages frontend deploy, set the repository variable
 `VITE_AIRMENTOR_API_BASE_URL` to the live Railway API origin, for example:
 
 - `https://your-airmentor-api.up.railway.app`
+
+Recommended repository variables and secrets for the full closeout path:
+
+- `RAILWAY_ALLOWED_FRONTEND_ORIGIN=https://<your-pages-origin>`
+- `RAILWAY_PUBLIC_API_URL=https://<your-railway-origin>`
+- `AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER=sysadmin`
+- secret `RAILWAY_CSRF_SECRET=<strong-random-secret>`
+- secret `AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD=<live-system-admin-password>`
+
+Optional external telemetry forwarding is supported via:
+
+- `AIRMENTOR_TELEMETRY_SINK_URL=https://<your-log-ingest-endpoint>`
+- `AIRMENTOR_TELEMETRY_SINK_BEARER_TOKEN=<optional-bearer-token>`
 
 ## Proof Release Checklist
 

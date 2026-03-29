@@ -17,7 +17,7 @@ Use these first if the goal is to understand the repo as it exists now:
 - `44-final-closeout-evidence-2026-03-28.md`
 
 ## Subsystem audits with current-state reconciliation
-These documents still contain their original audit structure, but now also include explicit `Current-state reconciliation (2026-03-28)` sections that tell you what changed:
+These documents still contain their original audit structure, but now also include explicit `Current-state reconciliation (2026-03-29)` sections that tell you what changed:
 
 - `02-system-architecture-overview.md`
 - `03-frontend-audit.md`
@@ -45,16 +45,23 @@ These are still useful, but they should not be treated as the current-state ledg
   - This is now a historical baseline plan. Read it together with `16` and `41`.
 
 ## Current unresolved work
-As of `2026-03-28`, the primary unresolved items are:
+As of `2026-03-29`, the primary unresolved items are:
 
 1. Repo-local implementation work is closed enough that the remaining work is now closeout verification, not major refactoring.
-   - Use `npm run verify:final-closeout` for the deterministic local + seeded-browser confidence bar.
+   - `npm run verify:final-closeout` is the deterministic local + seeded-browser confidence bar, and the `2026-03-29` rerun is green after a harness-only accessibility fix was applied and the failed step plus remaining steps were rerun successfully.
+   - Use `npm --workspace air-mentor-api run deploy:railway:preflight` and `npm --workspace air-mentor-api run verify:live-session-contract` when the question is Railway deployment health rather than product code.
+   - Use `npm run inventory:compat-routes -- --assert-runtime-clean` to keep deprecated compatibility callers explicitly absent during closeout.
 2. Compatibility governance remains intentionally open.
    - The deprecated `/sync` and generic `/api/academic/runtime/:stateKey` routes are still live as compatibility surfaces.
    - Use `npm run inventory:compat-routes` to confirm they still have no first-party runtime callers.
-3. Manual and deployed operational closeout is intentionally separate from repo-local completion.
-   - Use `43-manual-closeout-checklist.md` for the remaining screen-reader, deployed cookie/origin/CSRF, deprecated-route inventory, and post-deploy smoke steps.
-   - Use `44-final-closeout-evidence-2026-03-28.md` for dated automated and deployed evidence.
+3. Deployed operational closeout is now green as well.
+   - The live GitHub Pages browser flows are passing, the live session-security bar is passing, and GitHub Actions deploy run `23694196459` completed successfully after the Railway production service was given an explicit `CSRF_SECRET`.
+   - The deploy workflow now includes Railway variable preflight, live session-contract verification, and a diagnostics artifact on failure.
+   - The acceptance and request-flow scripts now emit structured JSON reports, and the deploy workflow now captures `railway up` stdout/stderr while using readiness health-mode verification.
+   - Use `44-final-closeout-evidence-2026-03-28.md` for the exact run IDs, probe output, and artifact paths.
+4. Manual closeout remains intentionally separate from automated completion.
+   - Use `43-manual-closeout-checklist.md` for the remaining screen-reader, compatibility-route retirement, product-intent/UX, and post-deploy review items.
+   - The live accessibility regression now also writes `output/playwright/system-admin-live-screen-reader-preflight.md` to make that review deterministic.
 
 ## Recommended reading order
 1. `41-current-state-reconciliation-and-gap-analysis.md`

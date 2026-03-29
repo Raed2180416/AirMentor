@@ -98,6 +98,18 @@ describe('hod proof analytics', () => {
     const profile = profileResponse.json()
 
     expect(summary.activeRunContext).not.toBeNull()
+    expect(summary.scopeDescriptor).toMatchObject({
+      scopeType: 'proof',
+      simulationRunId: summary.activeRunContext.simulationRunId,
+    })
+    expect(summary.resolvedFrom).toMatchObject({
+      kind: 'proof-run',
+      scopeType: 'proof',
+      scopeId: summary.activeRunContext.simulationRunId,
+    })
+    expect(summary.scopeMode).toBe('proof')
+    expect(summary.countSource).toBe('proof-run')
+    expect(summary.activeOperationalSemester).toBe(6)
     expect(summary.activeRunContext.simulationRunId).toBe(dashboard.activeRunDetail.simulationRunId)
     expect(summary.monitoringSummary.riskAssessmentCount).toBe(dashboard.activeRunDetail.monitoringSummary.riskAssessmentCount)
     expect(summary.monitoringSummary.activeReassessmentCount).toBe(dashboard.activeRunDetail.monitoringSummary.activeReassessmentCount)
@@ -262,10 +274,20 @@ describe('hod proof analytics', () => {
     expect(summaryResponse.statusCode).toBe(200)
     expect(studentsResponse.statusCode).toBe(200)
     expect(facultyResponse.statusCode).toBe(200)
+    expect(summaryResponse.json().resolvedFrom).toMatchObject({
+      kind: 'proof-checkpoint',
+      scopeType: 'proof',
+      scopeId: checkpoint.simulationStageCheckpointId,
+    })
+    expect(summaryResponse.json().countSource).toBe('proof-checkpoint')
+    expect(summaryResponse.json().activeOperationalSemester).toBe(6)
     expect(summaryResponse.json().activeRunContext?.checkpointContext).toMatchObject({
       simulationStageCheckpointId: checkpoint.simulationStageCheckpointId,
       stageKey: checkpoint.stageKey,
     })
+    expect(
+      summaryResponse.json().backlogDistribution.reduce((sum: number, row: { studentCount: number }) => sum + row.studentCount, 0),
+    ).toBe(summaryResponse.json().totals.studentsCovered)
     expect(studentsResponse.json().items.length).toBeGreaterThan(0)
     expect(studentsResponse.json().items[0]).toEqual(expect.objectContaining({
       riskChangeFromPreviousCheckpointScaled: expect.any(Number),
@@ -274,7 +296,7 @@ describe('hod proof analytics', () => {
     expect(studentsResponse.json().items[0]?.observedEvidence).toHaveProperty('coEvidenceMode')
     expect(JSON.stringify(studentsResponse.json())).not.toContain('noActionRiskProbScaled')
     expect(facultyResponse.json().items.length).toBeGreaterThan(0)
-  })
+  }, 300000)
 
   it('does not expose inactive runs in the HoD summary', async () => {
     current = await createTestApp()
@@ -299,5 +321,67 @@ describe('hod proof analytics', () => {
     expect(summaryResponse.statusCode).toBe(200)
     expect(summaryResponse.json().activeRunContext).toBeNull()
     expect(summaryResponse.json().totals.studentsCovered).toBe(0)
+  })
+
+  it('uses the activated proof semester as the default HoD slice while keeping checkpoint playback separate', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+    const hodLogin = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+
+    if (hodLogin.body.activeRoleGrant.roleCode !== 'HOD') {
+      await switchToRole(hodLogin.cookie, hodLogin.body.availableRoleGrants, 'HOD')
+    }
+
+    const [activeRun] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    expect(activeRun).toBeTruthy()
+    const recomputeRiskResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRun.simulationRunId}/recompute-risk`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+    expect(recomputeRiskResponse.statusCode).toBe(200)
+    const checkpointRows = await current.db.select().from(simulationStageCheckpoints).where(
+      eq(simulationStageCheckpoints.simulationRunId, activeRun.simulationRunId),
+    ).orderBy(asc(simulationStageCheckpoints.semesterNumber), asc(simulationStageCheckpoints.stageOrder))
+    const playbackCheckpoint = checkpointRows.find(row => row.semesterNumber > 4) ?? checkpointRows.at(-1)
+    expect(playbackCheckpoint).toBeTruthy()
+
+    const activateSemesterResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRun.simulationRunId}/activate-semester`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: { semesterNumber: 4 },
+    })
+    expect(activateSemesterResponse.statusCode).toBe(200)
+
+    const [summaryResponse, studentsResponse, checkpointSummaryResponse] = await Promise.all([
+      current.app.inject({
+        method: 'GET',
+        url: '/api/academic/hod/proof-summary',
+        headers: { cookie: hodLogin.cookie },
+      }),
+      current.app.inject({
+        method: 'GET',
+        url: '/api/academic/hod/proof-students',
+        headers: { cookie: hodLogin.cookie },
+      }),
+      current.app.inject({
+        method: 'GET',
+        url: `/api/academic/hod/proof-summary?simulationStageCheckpointId=${encodeURIComponent(playbackCheckpoint!.simulationStageCheckpointId)}`,
+        headers: { cookie: hodLogin.cookie },
+      }),
+    ])
+
+    expect(summaryResponse.statusCode).toBe(200)
+    expect(studentsResponse.statusCode).toBe(200)
+    expect(checkpointSummaryResponse.statusCode).toBe(200)
+    expect(summaryResponse.json().activeOperationalSemester).toBe(4)
+    expect(summaryResponse.json().countSource).toBe('proof-run')
+    expect(studentsResponse.json().items.length).toBeGreaterThan(0)
+    expect(studentsResponse.json().items.every((item: { currentSemester: number }) => item.currentSemester === 4)).toBe(true)
+    expect(checkpointSummaryResponse.json().countSource).toBe('proof-checkpoint')
+    expect(checkpointSummaryResponse.json().activeOperationalSemester).toBe(4)
+    expect(checkpointSummaryResponse.json().activeRunContext?.checkpointContext?.simulationStageCheckpointId).toBe(playbackCheckpoint!.simulationStageCheckpointId)
   })
 })

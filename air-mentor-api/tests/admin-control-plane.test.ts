@@ -479,6 +479,7 @@ describe('admin control plane routes', () => {
     expect(dashboard.activeRunDetail).toMatchObject({
       simulationRunId: runId,
       status: 'active',
+      activeOperationalSemester: 6,
     })
     expect(dashboard.activeRunDetail.checkpoints.length).toBeGreaterThan(0)
     expect(dashboard.activeRunDetail.teacherAllocationLoad.length).toBeGreaterThan(0)
@@ -669,6 +670,18 @@ describe('admin control plane routes', () => {
     expect(profileResponse.statusCode).toBe(200)
     const profile = profileResponse.json()
     expect(profile.proofOperations.activeRunContexts.some((item: { simulationRunId: string }) => item.simulationRunId === runId)).toBe(true)
+    expect(profile.proofOperations.scopeDescriptor).toMatchObject({
+      scopeType: 'proof',
+      simulationRunId: runId,
+    })
+    expect(profile.proofOperations.resolvedFrom).toMatchObject({
+      kind: 'proof-run',
+      scopeType: 'proof',
+      scopeId: runId,
+    })
+    expect(profile.proofOperations.scopeMode).toBe('proof')
+    expect(profile.proofOperations.countSource).toBe('proof-run')
+    expect(profile.proofOperations.activeOperationalSemester).toBe(6)
     expect(profile.proofOperations.monitoringQueue.length).toBeGreaterThan(0)
     expect(profile.proofOperations.electiveFits.length).toBeGreaterThan(0)
     expect(profile.proofOperations.monitoringQueue[0]).toMatchObject({
@@ -765,6 +778,12 @@ describe('admin control plane routes', () => {
       headers: { cookie: facultyLogin.cookie },
     })
     expect(facultyProfileCheckpointResponse.statusCode).toBe(200)
+    expect(facultyProfileCheckpointResponse.json().proofOperations.resolvedFrom).toMatchObject({
+      kind: 'proof-checkpoint',
+      scopeType: 'proof',
+      scopeId: firstCheckpointId,
+    })
+    expect(facultyProfileCheckpointResponse.json().proofOperations.countSource).toBe('proof-checkpoint')
     expect(facultyProfileCheckpointResponse.json().proofOperations.selectedCheckpoint).toMatchObject({
       simulationStageCheckpointId: firstCheckpointId,
       stageAdvanceBlocked: expect.any(Boolean),
@@ -778,6 +797,62 @@ describe('admin control plane routes', () => {
       expect(facultyProfileCheckpointResponse.json().proofOperations.monitoringQueue[0].observedEvidence).toHaveProperty('coEvidenceMode')
     }
   })
+
+  it('activates a proof operational semester without mutating checkpoint playback state', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const dashboardBefore = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/batches/${MSRUAS_PROOF_BATCH_ID}/proof-dashboard`,
+      headers: { cookie: adminLogin.cookie },
+    })
+    expect(dashboardBefore.statusCode).toBe(200)
+    const activeRunId = dashboardBefore.json().activeRunDetail?.simulationRunId as string | undefined
+    expect(activeRunId).toBeTruthy()
+    const recomputeRiskResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRunId}/recompute-risk`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+    expect(recomputeRiskResponse.statusCode).toBe(200)
+
+    const activateSemesterResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRunId}/activate-semester`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: { semesterNumber: 4 },
+    })
+
+    expect(activateSemesterResponse.statusCode).toBe(200)
+    expect(activateSemesterResponse.json()).toEqual({
+      ok: true,
+      simulationRunId: activeRunId,
+      batchId: MSRUAS_PROOF_BATCH_ID,
+      activeOperationalSemester: 4,
+      previousOperationalSemester: 6,
+    })
+
+    const [run] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, activeRunId!))
+    expect(run?.activeOperationalSemester).toBe(4)
+
+    const dashboardAfter = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/batches/${MSRUAS_PROOF_BATCH_ID}/proof-dashboard`,
+      headers: { cookie: adminLogin.cookie },
+    })
+    expect(dashboardAfter.statusCode).toBe(200)
+    expect(dashboardAfter.json().activeRunDetail).toMatchObject({
+      simulationRunId: activeRunId,
+      activeOperationalSemester: 4,
+    })
+    expect(dashboardAfter.json().activeRunDetail.checkpoints.some((item: { semesterNumber: number }) => item.semesterNumber === 6)).toBe(true)
+    expect(dashboardAfter.json().lifecycleAudit.some((item: { actionType: string; payload?: { activeOperationalSemester?: number } }) => (
+      item.actionType === 'semester-activated'
+      && item.payload?.activeOperationalSemester === 4
+    ))).toBe(true)
+  }, 300000)
 
   proofRcIt('recomputes the seeded baseline active proof run when it starts without checkpoints', async () => {
     current = await createTestApp()

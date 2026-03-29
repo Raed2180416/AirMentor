@@ -71,6 +71,8 @@ else
   fi
 fi
 
+ensure_system_admin_live_credentials
+
 echo "Running focused system admin live request flow..."
 echo "Frontend URL: $app_url"
 echo "Backend URL: $api_base_url"

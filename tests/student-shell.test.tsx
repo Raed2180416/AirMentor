@@ -17,6 +17,26 @@ describe('StudentShellPage', () => {
         cardVersion: 1,
         sourceSnapshotHash: 'hash_001',
         disclaimer: 'Simulation UX only. Formal academic status remains policy-derived, and this shell cannot change institutional records.',
+        scopeDescriptor: {
+          scopeType: 'student',
+          scopeId: 'mnc_student_001',
+          label: 'Aarav Sharma · Section A · 2023 Mathematics and Computing',
+          batchId: 'batch_mnc_2023',
+          sectionCode: 'A',
+          branchName: 'B.Tech Mathematics and Computing',
+          simulationRunId: 'run_001',
+          simulationStageCheckpointId: 'checkpoint_001',
+          studentId: 'mnc_student_001',
+        },
+        resolvedFrom: {
+          kind: 'proof-checkpoint',
+          scopeType: 'proof',
+          scopeId: 'checkpoint_001',
+          label: 'Post TT1 · Proof Run 1',
+        },
+        scopeMode: 'proof',
+        countSource: 'proof-checkpoint',
+        activeOperationalSemester: 6,
         runContext: {
           simulationRunId: 'run_001',
           runLabel: 'Proof Run 1',
@@ -256,6 +276,8 @@ describe('StudentShellPage', () => {
     expect(markup).toContain('deterministic proof explainer')
     expect(markup).toContain('Simulation UX only. Formal academic status remains policy-derived')
     expect(markup).toContain('Authoritative bounded proof explainer for the selected checkpoint')
+    expect(markup).toContain('Checkpoint-bound proof counts')
+    expect(markup).toContain('operational semester 6')
     expect(markup).toContain('Post TT1')
     expect(markup).toContain('Deterministic shell chat')
     expect(markup).toContain('Student shell does not make future-certainty claims.')
@@ -295,6 +317,26 @@ describe('StudentShellPage', () => {
         cardVersion: 1,
         sourceSnapshotHash: 'hash_003',
         disclaimer: 'Simulation UX only. Formal academic status remains policy-derived, and this shell cannot change institutional records.',
+        scopeDescriptor: {
+          scopeType: 'student',
+          scopeId: 'mnc_student_003',
+          label: 'Meera Iyer · Section B · 2023 Mathematics and Computing',
+          batchId: 'batch_mnc_2023',
+          sectionCode: 'B',
+          branchName: 'B.Tech Mathematics and Computing',
+          simulationRunId: 'run_003',
+          simulationStageCheckpointId: 'checkpoint_003',
+          studentId: 'mnc_student_003',
+        },
+        resolvedFrom: {
+          kind: 'proof-checkpoint',
+          scopeType: 'proof',
+          scopeId: 'checkpoint_003',
+          label: 'Checkpoint 003 · Proof Run 3',
+        },
+        scopeMode: 'proof',
+        countSource: 'proof-checkpoint',
+        activeOperationalSemester: 6,
         runContext: {
           simulationRunId: 'run_003',
           runLabel: 'Proof Run 3',

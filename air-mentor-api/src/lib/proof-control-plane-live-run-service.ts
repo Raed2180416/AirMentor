@@ -237,6 +237,7 @@ export async function startLiveBatchProofSimulationRun(
     facultyCount: new Set(ownershipRows.filter(row => relevantOfferingIds.has(row.offeringId ?? '')).map(row => row.facultyId)).size,
     semesterStart: activeTerm.semesterNumber,
     semesterEnd: activeTerm.semesterNumber,
+    activeOperationalSemester: activeTerm.semesterNumber,
     sourceType: 'live-runtime' as const,
     policySnapshotJson: JSON.stringify(input.policy),
     engineVersionsJson: JSON.stringify({

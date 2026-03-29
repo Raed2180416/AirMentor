@@ -10,6 +10,7 @@ import type {
   ApiAcademicHodProofStudentWatch,
   ApiAcademicHodProofSummary,
 } from '../api/types'
+import { describeProofAvailability, describeProofProvenance } from '../proof-provenance'
 import { Btn, Card, Chip, ModalWorkspace, PageShell, RiskBadge, TH, TD } from '../ui-primitives'
 import { EmptyState, InfoBanner, MetricCard, SectionHeading, formatDateTime, getStatusColor } from '../system-admin-ui'
 
@@ -232,6 +233,8 @@ export function HodView({
           </div>
 
           <InfoBanner message={`Active run ${summary.activeRunContext.runLabel} · seed ${summary.activeRunContext.seed} · created ${formatDateTime(summary.activeRunContext.createdAt)} · sourced from live proof records${checkpointContext ? ` · checkpoint ${checkpointContext.stageLabel} (semester ${checkpointContext.semesterNumber})` : ''}.`} />
+          <InfoBanner tone="neutral" message={describeProofProvenance(summary)} />
+          <InfoBanner tone="neutral" message={describeProofAvailability(summary)} />
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Chip color={T.accent}>{summary.activeRunContext.batchLabel}</Chip>

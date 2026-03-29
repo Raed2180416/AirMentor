@@ -12,9 +12,17 @@ afterEach(async () => {
 })
 
 type RuntimeChangeSet = {
-  task: Record<string, unknown>
-  placement: Record<string, unknown>
-  auditEvent: Record<string, unknown>
+  task: Record<string, unknown> & { id: string }
+  placement: Record<string, unknown> & { taskId: string }
+  auditEvent: Record<string, unknown> & { id: string }
+}
+
+type AcademicBootstrapRuntimeView = {
+  runtime: {
+    tasks: Array<{ id: string }>
+    taskPlacements: Record<string, Record<string, unknown> | undefined>
+    calendarAudit: Array<{ id: string }>
+  }
 }
 
 async function loginCourseLeader(app: FastifyInstance) {
@@ -247,6 +255,9 @@ async function applyRuntimeChanges(
     payload: { tasks: [finalTask] },
   })
   expect(taskSyncResponse.statusCode).toBe(200)
+  expect(taskSyncResponse.headers.deprecation).toBe('true')
+  expect(taskSyncResponse.headers['x-airmentor-compatibility-route']).toBe('true')
+  expect(String(taskSyncResponse.headers.link ?? '')).toContain('/api/academic/tasks')
 
   const taskSyncUpdateResponse = await app.inject({
     method: 'PUT',
@@ -272,6 +283,9 @@ async function applyRuntimeChanges(
     },
   })
   expect(taskPlacementSyncResponse.statusCode).toBe(200)
+  expect(taskPlacementSyncResponse.headers.deprecation).toBe('true')
+  expect(taskPlacementSyncResponse.headers['x-airmentor-compatibility-route']).toBe('true')
+  expect(String(taskPlacementSyncResponse.headers.link ?? '')).toContain('/api/academic/task-placements')
 
   const calendarAuditSyncResponse = await app.inject({
     method: 'PUT',
@@ -282,6 +296,9 @@ async function applyRuntimeChanges(
     },
   })
   expect(calendarAuditSyncResponse.statusCode).toBe(200)
+  expect(calendarAuditSyncResponse.headers.deprecation).toBe('true')
+  expect(calendarAuditSyncResponse.headers['x-airmentor-compatibility-route']).toBe('true')
+  expect(String(calendarAuditSyncResponse.headers.link ?? '')).toContain('/api/academic/calendar-audit')
 }
 
 async function readRuntimeProjection(app: FastifyInstance, cookie: string, changeSet: RuntimeChangeSet) {
@@ -291,7 +308,7 @@ async function readRuntimeProjection(app: FastifyInstance, cookie: string, chang
     headers: { cookie },
   })
   expect(response.statusCode).toBe(200)
-  const bootstrap = response.json()
+  const bootstrap = response.json() as AcademicBootstrapRuntimeView
   return {
     task: bootstrap.runtime.tasks.find((item: { id: string }) => item.id === changeSet.task.id) ?? null,
     placement: bootstrap.runtime.taskPlacements[changeSet.placement.taskId] ?? null,
@@ -347,6 +364,48 @@ describe('academic runtime narrow routes', () => {
       await narrowApp.close()
       await syncApp.close()
     }
+  })
+
+  it('marks the generic runtime slice endpoint as a deprecated compatibility surface', async () => {
+    current = await createTestApp()
+    const cookie = await loginCourseLeader(current.app)
+    const scope = await pickRuntimeScope(current.app, cookie)
+
+    const response = await current.app.inject({
+      method: 'PUT',
+      url: '/api/academic/runtime/tasks',
+      headers: { cookie, origin: TEST_ORIGIN },
+      payload: [{
+        id: 'compat-runtime-task',
+        studentId: scope.targetStudent.id,
+        offeringId: scope.targetOffering.offId,
+        title: 'Compatibility runtime write',
+      }],
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.headers.deprecation).toBe('true')
+    expect(response.headers['x-airmentor-compatibility-route']).toBe('true')
+    expect(String(response.headers.warning ?? '')).toContain('deprecated compatibility route')
+  })
+
+  it('marks deprecated compatibility routes with explicit deprecation headers', async () => {
+    current = await createTestApp()
+    const cookie = await loginCourseLeader(current.app)
+    const scope = await pickRuntimeScope(current.app, cookie)
+    const changeSet = buildRuntimeChangeSet(scope)
+
+    const taskSyncResponse = await current.app.inject({
+      method: 'PUT',
+      url: '/api/academic/tasks/sync',
+      headers: { cookie, origin: TEST_ORIGIN },
+      payload: { tasks: [changeSet.task] },
+    })
+
+    expect(taskSyncResponse.statusCode).toBe(200)
+    expect(taskSyncResponse.headers.deprecation).toBe('true')
+    expect(taskSyncResponse.headers.sunset).toBe('2026-12-31T00:00:00Z')
+    expect(String(taskSyncResponse.headers.warning ?? '')).toContain('/api/academic/tasks/sync')
   })
 
   it('leaves the legacy runtime shadow untouched when per-entity writes persist authoritative rows', async () => {
@@ -435,7 +494,7 @@ describe('academic runtime narrow routes', () => {
       headers: { cookie },
     })
     expect(response.statusCode).toBe(200)
-    const bootstrap = response.json()
+    const bootstrap = response.json() as AcademicBootstrapRuntimeView
     expect(bootstrap.runtime.tasks.some((item: { id: string }) => item.id === changeSet.task.id)).toBe(true)
     expect(bootstrap.runtime.taskPlacements[changeSet.placement.taskId]).toMatchObject({
       taskId: changeSet.placement.taskId,
@@ -515,7 +574,7 @@ describe('academic runtime narrow routes', () => {
       headers: { cookie },
     })
     expect(response.statusCode).toBe(200)
-    const bootstrap = response.json()
+    const bootstrap = response.json() as AcademicBootstrapRuntimeView
 
     expect(bootstrap.runtime.tasks.some((item: { id: string }) => item.id === changeSet.task.id)).toBe(true)
     expect(bootstrap.runtime.tasks.some((item: { id: string }) => item.id === shadowTaskId)).toBe(false)

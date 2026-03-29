@@ -1594,7 +1594,9 @@ function offeringStageSnapshot(offering: typeof sectionOfferings.$inferSelect, p
 
 async function buildOfferingStageEligibility(context: RouteContext, offeringId: string) {
   const { offering, course, term } = await getOfferingContext(context, offeringId)
-  const resolvedStagePolicy = term.batchId ? await resolveBatchStagePolicy(context, term.batchId) : null
+  const resolvedStagePolicy = term.batchId
+    ? await resolveBatchStagePolicy(context, term.batchId, { sectionCode: offering.sectionCode })
+    : null
   const policy = stagePolicyForOffering(resolvedStagePolicy)
   const { currentStage, nextStage } = offeringStageSnapshot(offering, policy)
   const targetStage = nextStage

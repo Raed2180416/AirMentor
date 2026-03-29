@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm'
+import { and, asc, desc, eq } from 'drizzle-orm'
 import type { AppDb } from '../db/client.js'
 import {
   alertAcknowledgements,
@@ -8,6 +8,7 @@ import {
   curriculumValidationResults,
   facultyProfiles,
   officialCodeCrosswalks,
+  operationalTelemetryEvents,
   reassessmentEvents,
   reassessmentResolutions,
   riskAssessments,
@@ -246,6 +247,7 @@ export async function buildProofBatchDashboard(db: AppDb, batchId: string, deps:
     alertRows,
     resolutionRows,
     acknowledgementRows,
+    recentOperationalEventRows,
     facultyRows,
     studentRows,
     offeringRows,
@@ -272,6 +274,7 @@ export async function buildProofBatchDashboard(db: AppDb, batchId: string, deps:
     db.select().from(alertDecisions),
     db.select().from(reassessmentResolutions).where(eq(reassessmentResolutions.batchId, batchId)),
     db.select().from(alertAcknowledgements).where(eq(alertAcknowledgements.batchId, batchId)),
+    db.select().from(operationalTelemetryEvents).orderBy(desc(operationalTelemetryEvents.eventTimestamp), desc(operationalTelemetryEvents.createdAt)).limit(12),
     db.select().from(facultyProfiles),
     db.select().from(students),
     db.select().from(sectionOfferings).where(eq(sectionOfferings.branchId, MSRUAS_PROOF_BRANCH_ID)),
@@ -487,6 +490,7 @@ export async function buildProofBatchDashboard(db: AppDb, batchId: string, deps:
       simulationRunId: activeRun.simulationRunId,
       runLabel: activeRun.runLabel,
       seed: activeRun.seed,
+      activeOperationalSemester: activeRun.activeOperationalSemester,
       createdAt: activeRun.createdAt,
       startedAt: activeRun.startedAt,
       completedAt: activeRun.completedAt,
@@ -560,5 +564,14 @@ export async function buildProofBatchDashboard(db: AppDb, batchId: string, deps:
         createdByFacultyName: row.createdByFacultyId ? (facultyById.get(row.createdByFacultyId)?.displayName ?? row.createdByFacultyId) : null,
         createdAt: row.createdAt,
       })),
+    recentOperationalEvents: recentOperationalEventRows.map(row => ({
+      operationalTelemetryEventId: row.operationalTelemetryEventId,
+      source: row.source as 'backend' | 'client',
+      name: row.name,
+      level: row.level as 'info' | 'warn' | 'error',
+      timestamp: row.eventTimestamp,
+      details: parseJson(row.payloadJson, {} as Record<string, unknown>),
+      createdAt: row.createdAt,
+    })),
   }
 }

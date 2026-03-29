@@ -9,6 +9,7 @@ import type {
   ApiStudentAgentSession,
   ApiStudentAgentTimelineItem,
 } from '../api/types'
+import { describeProofAvailability, describeProofProvenance } from '../proof-provenance'
 import { Btn, Card, Chip, FieldInput, PageBackButton, PageShell } from '../ui-primitives'
 import { EmptyState, InfoBanner, MetricCard } from '../system-admin-ui'
 
@@ -265,6 +266,8 @@ export function StudentShellPage({
           <InfoBanner message={`Active proof context ${card.runContext.runLabel} · ${card.runContext.status} · created ${new Date(card.runContext.createdAt).toLocaleString('en-IN')} · deterministic shell mode${card.checkpointContext ? ` · checkpoint ${card.checkpointContext.stageLabel} (semester ${card.checkpointContext.semesterNumber})` : ''}.`} />
           <div data-proof-section="authority-banner">
             <InfoBanner message="Authoritative bounded proof explainer for the selected checkpoint. Summary, timeline, and chat all bind to this proof card only; the chat cannot override policy-derived records or disclose hidden state." />
+            <InfoBanner tone="neutral" message={describeProofProvenance(card)} />
+            <InfoBanner tone="neutral" message={describeProofAvailability(card)} />
           </div>
         </Card>
 

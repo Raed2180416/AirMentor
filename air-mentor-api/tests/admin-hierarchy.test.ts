@@ -14,6 +14,7 @@ import {
   roleGrants,
   sectionOfferings,
 } from '../src/db/schema.js'
+import { DEFAULT_STAGE_POLICY } from '../src/lib/stage-policy.js'
 import { createTestApp, loginAs, TEST_ORIGIN } from './helpers/test-app.js'
 
 let current: Awaited<ReturnType<typeof createTestApp>> | null = null
@@ -201,6 +202,21 @@ describe('admin hierarchy routes', () => {
     expect(resolvedResponse.statusCode).toBe(200)
     const resolved = resolvedResponse.json()
     expect(resolved.batch.batchId).toBe(batch.batchId)
+    expect(resolved.scopeDescriptor).toMatchObject({
+      scopeType: 'batch',
+      scopeId: batch.batchId,
+      batchId: batch.batchId,
+      sectionCode: null,
+      branchName: branch.name,
+    })
+    expect(resolved.resolvedFrom).toMatchObject({
+      kind: 'policy-override',
+      scopeType: 'batch',
+      scopeId: batch.batchId,
+    })
+    expect(resolved.scopeMode).toBe('batch')
+    expect(resolved.countSource).toBe('operational-semester')
+    expect(resolved.activeOperationalSemester).toBe(5)
     expect(resolved.scopeChain.some((item: { scopeType: string; scopeId: string }) => item.scopeType === 'batch' && item.scopeId === batch.batchId)).toBe(true)
     expect(resolved.effectivePolicy.ceSeeSplit).toEqual({ ce: 55, see: 45 })
     expect(resolved.effectivePolicy.ceComponentCaps.maxAssignments).toBe(3)
@@ -213,6 +229,321 @@ describe('admin hierarchy routes', () => {
       highRiskBacklogCount: 3,
       mediumRiskBacklogCount: 1,
     })
+  })
+
+  it('resolves section policy overrides after batch overrides and rejects invalid section scope ids', async () => {
+    current = await createTestApp()
+    const login = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const branchesResponse = await current.app.inject({
+      method: 'GET',
+      url: '/api/admin/branches',
+      headers: { cookie: login.cookie },
+    })
+    expect(branchesResponse.statusCode).toBe(200)
+    const [branch] = branchesResponse.json().items
+    expect(branch).toBeTruthy()
+
+    const batchCreate = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/batches',
+      headers: { cookie: login.cookie, origin: TEST_ORIGIN },
+      payload: {
+        branchId: branch.branchId,
+        admissionYear: 2026,
+        batchLabel: '2026',
+        currentSemester: 3,
+        sectionLabels: ['A', 'B'],
+        status: 'active',
+      },
+    })
+    expect(batchCreate.statusCode).toBe(200)
+    const batch = batchCreate.json()
+    const sectionScopeId = `${batch.batchId}::A`
+
+    const batchPolicyCreate = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/policy-overrides',
+      headers: { cookie: login.cookie, origin: TEST_ORIGIN },
+      payload: {
+        scopeType: 'batch',
+        scopeId: batch.batchId,
+        policy: {
+          ceSeeSplit: {
+            ce: 58,
+            see: 42,
+          },
+          ceComponentCaps: {
+            termTestsWeight: 25,
+            quizWeight: 10,
+            assignmentWeight: 25,
+            maxTermTests: 2,
+            maxQuizzes: 2,
+            maxAssignments: 3,
+          },
+        },
+        status: 'active',
+      },
+    })
+    expect(batchPolicyCreate.statusCode).toBe(200)
+
+    const sectionPolicyCreate = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/policy-overrides',
+      headers: { cookie: login.cookie, origin: TEST_ORIGIN },
+      payload: {
+        scopeType: 'section',
+        scopeId: sectionScopeId,
+        policy: {
+          ceSeeSplit: {
+            ce: 65,
+            see: 35,
+          },
+        },
+        status: 'active',
+      },
+    })
+    expect(sectionPolicyCreate.statusCode).toBe(200)
+    const sectionPolicyOverride = sectionPolicyCreate.json()
+
+    const resolvedSectionResponse = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/batches/${batch.batchId}/resolved-policy?sectionCode=a`,
+      headers: { cookie: login.cookie },
+    })
+    expect(resolvedSectionResponse.statusCode).toBe(200)
+    const resolvedSection = resolvedSectionResponse.json()
+    expect(resolvedSection.scopeChain).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scopeType: 'batch', scopeId: batch.batchId }),
+      expect.objectContaining({ scopeType: 'section', scopeId: sectionScopeId }),
+    ]))
+    expect(resolvedSection.scopeDescriptor).toMatchObject({
+      scopeType: 'section',
+      scopeId: sectionScopeId,
+      batchId: batch.batchId,
+      sectionCode: 'A',
+    })
+    expect(resolvedSection.resolvedFrom).toMatchObject({
+      kind: 'policy-override',
+      scopeType: 'section',
+      scopeId: sectionScopeId,
+    })
+    expect(resolvedSection.scopeMode).toBe('section')
+    expect(resolvedSection.countSource).toBe('operational-semester')
+    expect(resolvedSection.activeOperationalSemester).toBe(3)
+    expect(resolvedSection.appliedOverrides).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scopeType: 'batch', scopeId: batch.batchId }),
+      expect.objectContaining({ scopeType: 'section', scopeId: sectionScopeId, appliedAtScope: `section:${sectionScopeId}` }),
+    ]))
+    expect(resolvedSection.effectivePolicy.ceSeeSplit).toEqual({ ce: 65, see: 35 })
+    expect(resolvedSection.effectivePolicy.ceComponentCaps.maxAssignments).toBe(3)
+
+    const archiveSectionPolicy = await current.app.inject({
+      method: 'PATCH',
+      url: `/api/admin/policy-overrides/${sectionPolicyOverride.policyOverrideId}`,
+      headers: { cookie: login.cookie, origin: TEST_ORIGIN },
+      payload: {
+        scopeType: sectionPolicyOverride.scopeType,
+        scopeId: sectionPolicyOverride.scopeId,
+        policy: sectionPolicyOverride.policy,
+        status: 'archived',
+        version: sectionPolicyOverride.version,
+      },
+    })
+    expect(archiveSectionPolicy.statusCode).toBe(200)
+
+    const resolvedFallbackResponse = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/batches/${batch.batchId}/resolved-policy?sectionCode=A`,
+      headers: { cookie: login.cookie },
+    })
+    expect(resolvedFallbackResponse.statusCode).toBe(200)
+    const resolvedFallback = resolvedFallbackResponse.json()
+    expect(resolvedFallback.scopeChain).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scopeType: 'section', scopeId: sectionScopeId }),
+    ]))
+    expect(resolvedFallback.resolvedFrom).toMatchObject({
+      kind: 'policy-override',
+      scopeType: 'batch',
+      scopeId: batch.batchId,
+    })
+    expect(resolvedFallback.appliedOverrides.some((item: { scopeType: string }) => item.scopeType === 'section')).toBe(false)
+    expect(resolvedFallback.effectivePolicy.ceSeeSplit).toEqual({ ce: 58, see: 42 })
+
+    const malformedScopeResponse = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/policy-overrides',
+      headers: { cookie: login.cookie, origin: TEST_ORIGIN },
+      payload: {
+        scopeType: 'section',
+        scopeId: `${batch.batchId}:A`,
+        policy: {
+          ceSeeSplit: {
+            ce: 66,
+            see: 34,
+          },
+        },
+        status: 'active',
+      },
+    })
+    expect(malformedScopeResponse.statusCode).toBe(400)
+    expect(malformedScopeResponse.json().message).toMatch(/section scope ids must use the canonical/i)
+
+    const unknownSectionResponse = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/policy-overrides',
+      headers: { cookie: login.cookie, origin: TEST_ORIGIN },
+      payload: {
+        scopeType: 'section',
+        scopeId: `${batch.batchId}::Z`,
+        policy: {
+          ceSeeSplit: {
+            ce: 67,
+            see: 33,
+          },
+        },
+        status: 'active',
+      },
+    })
+    expect(unknownSectionResponse.statusCode).toBe(404)
+    expect(unknownSectionResponse.json().message).toMatch(/section scope not found/i)
+  })
+
+  it('resolves section stage policy overrides after batch overrides and rolls back to batch policy', async () => {
+    current = await createTestApp()
+    const login = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const branchesResponse = await current.app.inject({
+      method: 'GET',
+      url: '/api/admin/branches',
+      headers: { cookie: login.cookie },
+    })
+    expect(branchesResponse.statusCode).toBe(200)
+    const [branch] = branchesResponse.json().items
+    expect(branch).toBeTruthy()
+
+    const batchCreate = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/batches',
+      headers: { cookie: login.cookie, origin: TEST_ORIGIN },
+      payload: {
+        branchId: branch.branchId,
+        admissionYear: 2027,
+        batchLabel: '2027',
+        currentSemester: 1,
+        sectionLabels: ['A'],
+        status: 'active',
+      },
+    })
+    expect(batchCreate.statusCode).toBe(200)
+    const batch = batchCreate.json()
+    const sectionScopeId = `${batch.batchId}::A`
+
+    const batchStagePolicy = {
+      stages: DEFAULT_STAGE_POLICY.stages.map(stage => (
+        stage.key === 'post-tt1'
+          ? { ...stage, label: 'Batch TT1 Gate', semesterDayOffset: 39 }
+          : stage
+      )),
+    }
+    const sectionStagePolicy = {
+      stages: DEFAULT_STAGE_POLICY.stages.map(stage => (
+        stage.key === 'post-tt1'
+          ? { ...stage, label: 'Section TT1 Gate', semesterDayOffset: 44 }
+          : stage
+      )),
+    }
+
+    const batchStagePolicyCreate = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/stage-policy-overrides',
+      headers: { cookie: login.cookie, origin: TEST_ORIGIN },
+      payload: {
+        scopeType: 'batch',
+        scopeId: batch.batchId,
+        policy: batchStagePolicy,
+        status: 'active',
+      },
+    })
+    expect(batchStagePolicyCreate.statusCode).toBe(200)
+
+    const sectionStagePolicyCreate = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/stage-policy-overrides',
+      headers: { cookie: login.cookie, origin: TEST_ORIGIN },
+      payload: {
+        scopeType: 'section',
+        scopeId: sectionScopeId,
+        policy: sectionStagePolicy,
+        status: 'active',
+      },
+    })
+    expect(sectionStagePolicyCreate.statusCode).toBe(200)
+    const sectionStageOverride = sectionStagePolicyCreate.json()
+
+    const resolvedSectionResponse = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/batches/${batch.batchId}/resolved-stage-policy?sectionCode=A`,
+      headers: { cookie: login.cookie },
+    })
+    expect(resolvedSectionResponse.statusCode).toBe(200)
+    const resolvedSection = resolvedSectionResponse.json()
+    expect(resolvedSection.scopeChain).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scopeType: 'batch', scopeId: batch.batchId }),
+      expect.objectContaining({ scopeType: 'section', scopeId: sectionScopeId }),
+    ]))
+    expect(resolvedSection.scopeDescriptor).toMatchObject({
+      scopeType: 'section',
+      scopeId: sectionScopeId,
+      batchId: batch.batchId,
+      sectionCode: 'A',
+    })
+    expect(resolvedSection.resolvedFrom).toMatchObject({
+      kind: 'policy-override',
+      scopeType: 'section',
+      scopeId: sectionScopeId,
+    })
+    expect(resolvedSection.scopeMode).toBe('section')
+    expect(resolvedSection.countSource).toBe('operational-semester')
+    expect(resolvedSection.activeOperationalSemester).toBe(1)
+    expect(resolvedSection.appliedOverrides).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scopeType: 'batch', scopeId: batch.batchId }),
+      expect.objectContaining({ scopeType: 'section', scopeId: sectionScopeId, appliedAtScope: `section:${sectionScopeId}` }),
+    ]))
+    expect(resolvedSection.effectivePolicy.stages.find((stage: { key: string }) => stage.key === 'post-tt1')).toEqual(
+      expect.objectContaining({ label: 'Section TT1 Gate', semesterDayOffset: 44 }),
+    )
+
+    const archiveSectionStagePolicy = await current.app.inject({
+      method: 'PATCH',
+      url: `/api/admin/stage-policy-overrides/${sectionStageOverride.stagePolicyOverrideId}`,
+      headers: { cookie: login.cookie, origin: TEST_ORIGIN },
+      payload: {
+        scopeType: sectionStageOverride.scopeType,
+        scopeId: sectionStageOverride.scopeId,
+        policy: sectionStageOverride.policy,
+        status: 'archived',
+        version: sectionStageOverride.version,
+      },
+    })
+    expect(archiveSectionStagePolicy.statusCode).toBe(200)
+
+    const resolvedFallbackResponse = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/batches/${batch.batchId}/resolved-stage-policy?sectionCode=A`,
+      headers: { cookie: login.cookie },
+    })
+    expect(resolvedFallbackResponse.statusCode).toBe(200)
+    const resolvedFallback = resolvedFallbackResponse.json()
+    expect(resolvedFallback.appliedOverrides.some((item: { scopeType: string }) => item.scopeType === 'section')).toBe(false)
+    expect(resolvedFallback.resolvedFrom).toMatchObject({
+      kind: 'policy-override',
+      scopeType: 'batch',
+      scopeId: batch.batchId,
+    })
+    expect(resolvedFallback.effectivePolicy.stages.find((stage: { key: string }) => stage.key === 'post-tt1')).toEqual(
+      expect.objectContaining({ label: 'Batch TT1 Gate', semesterDayOffset: 39 }),
+    )
   })
 
   it('returns current cgpa and active academic context in the student admin list', async () => {

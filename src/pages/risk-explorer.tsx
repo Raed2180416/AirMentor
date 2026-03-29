@@ -3,6 +3,7 @@ import { Activity, Eye, TrendingDown } from 'lucide-react'
 import { T, mono, sora } from '../data'
 import type { Role } from '../domain'
 import type { ApiFeatureCompleteness, ApiFeatureProvenance, ApiRiskHeadDisplay, ApiStudentRiskExplorer } from '../api/types'
+import { describeProofAvailability, describeProofProvenance } from '../proof-provenance'
 import { Btn, Card, Chip, PageBackButton, PageShell } from '../ui-primitives'
 import { EmptyState, InfoBanner, MetricCard } from '../system-admin-ui'
 
@@ -285,6 +286,8 @@ export function RiskExplorerPage({
           ) : null}
           <div data-proof-section="authority-banner">
             <InfoBanner message="Authoritative proof surface for checkpoint-bound analysis. Trained heads are proof-backed for this selected evidence window; derived scenario heads and policy comparisons remain advisory." />
+            <InfoBanner tone="neutral" message={describeProofProvenance(explorer)} />
+            <InfoBanner tone="neutral" message={describeProofAvailability(explorer)} />
           </div>
           <Card style={{ padding: 14, display: 'grid', gap: 10, background: T.surface2 }}>
             <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Feature Completeness</div>

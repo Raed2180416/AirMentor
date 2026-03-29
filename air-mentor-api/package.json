@@ -15,6 +15,8 @@
     "test:proof-rc": "AIRMENTOR_BACKEND_SUITE=proof-rc node scripts/run-vitest-suite.mjs",
     "test:all": "npm run test && npm run test:proof-rc",
     "evaluate:proof-risk-model": "tsx scripts/evaluate-proof-risk-model.ts",
+    "deploy:railway:preflight": "node ../scripts/check-railway-deploy-readiness.mjs preflight",
+    "verify:live-session-contract": "node ../scripts/check-railway-deploy-readiness.mjs session-contract",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts"
   },

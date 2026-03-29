@@ -1,7 +1,34 @@
 import { z } from 'zod'
 
-export const scopeTypeValues = ['institution', 'academic-faculty', 'department', 'branch', 'batch'] as const
+export const scopeTypeValues = ['institution', 'academic-faculty', 'department', 'branch', 'batch', 'section'] as const
 export type ScopeTypeValue = (typeof scopeTypeValues)[number]
+
+const SECTION_SCOPE_SEPARATOR = '::'
+
+export function normalizeSectionCode(sectionCode: string) {
+  return sectionCode.trim().toUpperCase()
+}
+
+export function encodeSectionScopeId(batchId: string, sectionCode: string) {
+  const normalizedBatchId = batchId.trim()
+  const normalizedSectionCode = normalizeSectionCode(sectionCode)
+  if (!normalizedBatchId || !normalizedSectionCode) {
+    throw new Error('Section scope ids require both a batch id and a section code.')
+  }
+  return `${normalizedBatchId}${SECTION_SCOPE_SEPARATOR}${normalizedSectionCode}`
+}
+
+export function decodeSectionScopeId(scopeId: string) {
+  const [batchId, sectionCode, ...remainder] = scopeId.split(SECTION_SCOPE_SEPARATOR)
+  if (remainder.length > 0) return null
+  const normalizedBatchId = batchId?.trim() ?? ''
+  const normalizedSectionCode = normalizeSectionCode(sectionCode ?? '')
+  if (!normalizedBatchId || !normalizedSectionCode) return null
+  return {
+    batchId: normalizedBatchId,
+    sectionCode: normalizedSectionCode,
+  }
+}
 
 export const stagePolicyStageKeyValues = [
   'pre-tt1',

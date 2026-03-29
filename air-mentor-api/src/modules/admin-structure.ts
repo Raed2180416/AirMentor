@@ -47,7 +47,10 @@ import {
 import { enqueueProofSimulationRun } from '../lib/proof-run-queue.js'
 import {
   canonicalizeStagePolicy,
+  decodeSectionScopeId,
   DEFAULT_STAGE_POLICY,
+  encodeSectionScopeId,
+  normalizeSectionCode,
   scopeTypeValues,
   stagePolicyPayloadSchema,
   type ScopeTypeValue,
@@ -56,7 +59,7 @@ import {
 import { emitAuditEvent, expectVersion, parseOrThrow, requireRole } from './support.js'
 
 const weekdaySchema = z.enum(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])
-export const scopeTypeSchema = z.enum(['institution', 'academic-faculty', 'department', 'branch', 'batch'])
+export const scopeTypeSchema = z.enum(scopeTypeValues)
 
 const gradeBandSchema = z.object({
   grade: z.string().min(1),
@@ -246,6 +249,10 @@ const policyOverridePatchSchema = policyOverrideCreateSchema.extend({
 const policyFilterSchema = z.object({
   scopeType: scopeTypeSchema.optional(),
   scopeId: z.string().min(1).optional(),
+})
+
+const resolvedPolicyQuerySchema = z.object({
+  sectionCode: z.string().trim().min(1).optional(),
 })
 
 const stagePolicyOverrideCreateSchema = z.object({
@@ -453,7 +460,7 @@ function mapCurriculumCourse(row: typeof curriculumCourses.$inferSelect) {
 function mapPolicyOverride(row: typeof policyOverrides.$inferSelect) {
   return {
     policyOverrideId: row.policyOverrideId,
-    scopeType: row.scopeType,
+    scopeType: row.scopeType as ScopeTypeValue,
     scopeId: row.scopeId,
     policy: parseJson(row.policyJson, {} as PolicyPayload),
     status: row.status,
@@ -1060,7 +1067,12 @@ type BatchScopeContext = {
   batch: typeof batches.$inferSelect
   branch: typeof branches.$inferSelect
   department: typeof departments.$inferSelect
+  sectionCode: string | null
   scopeChain: ScopeChainEntry[]
+}
+
+type BatchResolutionOptions = {
+  sectionCode?: string | null
 }
 
 type MaterializedCurriculumFeatureItem = {
@@ -1107,7 +1119,31 @@ type ResolvedCurriculumFeatureItem = MaterializedCurriculumFeatureItem & {
   localOverride: ReturnType<typeof mapBatchCurriculumFeatureOverride> | null
 }
 
-async function getBatchScopeContext(context: RouteContext, batchId: string): Promise<BatchScopeContext> {
+function listBatchSectionLabels(batch: typeof batches.$inferSelect) {
+  return parseJson(batch.sectionLabelsJson, [] as string[])
+    .map(normalizeSectionCode)
+    .filter(Boolean)
+}
+
+function resolveBatchSectionScope(batch: typeof batches.$inferSelect, requestedSectionCode?: string | null) {
+  if (!requestedSectionCode) return null
+  const sectionCode = normalizeSectionCode(requestedSectionCode)
+  const knownSectionLabels = listBatchSectionLabels(batch)
+  if (!knownSectionLabels.includes(sectionCode)) {
+    throw notFound('Section scope not found')
+  }
+  return {
+    sectionCode,
+    scopeId: encodeSectionScopeId(batch.batchId, sectionCode),
+  }
+}
+
+function scopeReferencesDeletedBatch(scopeId: string, batchIds: Set<string>) {
+  const parsed = decodeSectionScopeId(scopeId)
+  return parsed ? batchIds.has(parsed.batchId) : false
+}
+
+async function getBatchScopeContext(context: RouteContext, batchId: string, requestedSectionCode?: string | null): Promise<BatchScopeContext> {
   const [institution] = await context.db.select().from(institutions)
   if (!institution) throw notFound('Institution is not configured')
 
@@ -1117,24 +1153,71 @@ async function getBatchScopeContext(context: RouteContext, batchId: string): Pro
   if (!branch) throw notFound('Branch not found')
   const [department] = await context.db.select().from(departments).where(eq(departments.departmentId, branch.departmentId))
   if (!department) throw notFound('Department not found')
+  const sectionScope = resolveBatchSectionScope(batch, requestedSectionCode)
 
   return {
     institution,
     batch,
     branch,
     department,
+    sectionCode: sectionScope?.sectionCode ?? null,
     scopeChain: [
       { scopeType: 'institution', scopeId: institution.institutionId },
       ...(department.academicFacultyId ? [{ scopeType: 'academic-faculty' as const, scopeId: department.academicFacultyId }] : []),
       { scopeType: 'department', scopeId: department.departmentId },
       { scopeType: 'branch', scopeId: branch.branchId },
       { scopeType: 'batch', scopeId: batch.batchId },
+      ...(sectionScope ? [{ scopeType: 'section' as const, scopeId: sectionScope.scopeId }] : []),
     ],
   }
 }
 
 function formatScopeLabel(scope: ScopeChainEntry) {
   return `${scope.scopeType}:${scope.scopeId}`
+}
+
+function describeScopeDescriptor(scopeContext: BatchScopeContext, scope: ScopeChainEntry) {
+  if (scope.scopeType === 'institution') return scopeContext.institution.name
+  if (scope.scopeType === 'academic-faculty') return scopeContext.department.academicFacultyId ?? scope.scopeId
+  if (scope.scopeType === 'department') return scopeContext.department.name
+  if (scope.scopeType === 'branch') return scopeContext.branch.name
+  if (scope.scopeType === 'batch') return scopeContext.batch.batchLabel
+  return `Section ${scopeContext.sectionCode ?? scope.scopeId.split('::').at(-1) ?? scope.scopeId}`
+}
+
+function buildResolvedPolicyProvenance(
+  scopeContext: BatchScopeContext,
+  appliedOverrides: ReadonlyArray<{ scopeType: string; scopeId: string }>,
+) {
+  const activeScope = scopeContext.scopeChain.at(-1) ?? { scopeType: 'batch' as const, scopeId: scopeContext.batch.batchId }
+  const resolvedScope = appliedOverrides.at(-1) ?? null
+  const resolvedFromScope = resolvedScope
+    ? scopeContext.scopeChain.find(scope => scope.scopeType === resolvedScope.scopeType && scope.scopeId === resolvedScope.scopeId) ?? activeScope
+    : scopeContext.scopeChain[0]
+  return {
+    scopeDescriptor: {
+      scopeType: activeScope.scopeType,
+      scopeId: activeScope.scopeId,
+      label: describeScopeDescriptor(scopeContext, activeScope),
+      batchId: scopeContext.batch.batchId,
+      sectionCode: scopeContext.sectionCode,
+      branchName: scopeContext.branch.name,
+      simulationRunId: null,
+      simulationStageCheckpointId: null,
+      studentId: null,
+    },
+    resolvedFrom: {
+      kind: resolvedScope ? 'policy-override' : 'default-policy',
+      scopeType: resolvedFromScope.scopeType,
+      scopeId: resolvedFromScope.scopeId,
+      label: resolvedScope
+        ? `${describeScopeDescriptor(scopeContext, resolvedFromScope)} override`
+        : 'Institution default policy',
+    },
+    scopeMode: activeScope.scopeType,
+    countSource: 'operational-semester' as const,
+    activeOperationalSemester: scopeContext.batch.currentSemester,
+  }
 }
 
 function matchesCourseReference(input: {
@@ -1321,8 +1404,8 @@ function batchFeatureFingerprint(items: Array<{
     .sort((left, right) => left.curriculumCourseId.localeCompare(right.curriculumCourseId)))
 }
 
-export async function resolveBatchStagePolicy(context: RouteContext, batchId: string) {
-  const scopeContext = await getBatchScopeContext(context, batchId)
+export async function resolveBatchStagePolicy(context: RouteContext, batchId: string, options: BatchResolutionOptions = {}) {
+  const scopeContext = await getBatchScopeContext(context, batchId, options.sectionCode ?? null)
   const allOverrides = await context.db.select().from(stagePolicyOverrides)
   let effectivePolicy: StagePolicyPayload = DEFAULT_STAGE_POLICY
   const appliedOverrides: Array<ReturnType<typeof mapStagePolicyOverride> & { appliedAtScope: string }> = []
@@ -1337,9 +1420,11 @@ export async function resolveBatchStagePolicy(context: RouteContext, batchId: st
       appliedAtScope: formatScopeLabel(scope),
     })
   }
+  const countProvenance = buildResolvedPolicyProvenance(scopeContext, appliedOverrides)
 
   return {
     batch: mapBatch(scopeContext.batch),
+    ...countProvenance,
     scopeChain: scopeContext.scopeChain,
     appliedOverrides,
     effectivePolicy,
@@ -1924,6 +2009,19 @@ async function assertScopeExists(context: RouteContext, scopeType: z.infer<typeo
     if (!row) throw notFound('Branch scope not found')
     return row
   }
+  if (scopeType === 'section') {
+    const parsed = decodeSectionScopeId(scopeId)
+    if (!parsed) throw badRequest('Section scope ids must use the canonical <batchId>::<SECTION> format.')
+    const [batch] = await context.db.select().from(batches).where(eq(batches.batchId, parsed.batchId))
+    if (!batch) throw notFound('Section scope not found')
+    const knownSectionLabels = listBatchSectionLabels(batch)
+    if (!knownSectionLabels.includes(parsed.sectionCode)) throw notFound('Section scope not found')
+    return {
+      batch,
+      sectionCode: parsed.sectionCode,
+      scopeId: encodeSectionScopeId(batch.batchId, parsed.sectionCode),
+    }
+  }
   const [row] = await context.db.select().from(batches).where(eq(batches.batchId, scopeId))
   if (!row) throw notFound('Batch scope not found')
   return row
@@ -2480,8 +2578,8 @@ async function buildProofSandboxSummary(context: RouteContext, batchId: string) 
   }
 }
 
-export async function resolveBatchPolicy(context: RouteContext, batchId: string) {
-  const scopeContext = await getBatchScopeContext(context, batchId)
+export async function resolveBatchPolicy(context: RouteContext, batchId: string, options: BatchResolutionOptions = {}) {
+  const scopeContext = await getBatchScopeContext(context, batchId, options.sectionCode ?? null)
 
   const allOverrides = await context.db.select().from(policyOverrides)
   let effectivePolicy: ResolvedPolicy = DEFAULT_POLICY
@@ -2499,9 +2597,11 @@ export async function resolveBatchPolicy(context: RouteContext, batchId: string)
   }
 
   const proofSandbox = await buildProofSandboxSummary(context, scopeContext.batch.batchId)
+  const countProvenance = buildResolvedPolicyProvenance(scopeContext, appliedOverrides)
 
   return {
     batch: mapBatch(scopeContext.batch),
+    ...countProvenance,
     scopeChain: scopeContext.scopeChain,
     appliedOverrides,
     effectivePolicy,
@@ -2823,6 +2923,7 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
         || (item.scopeType === 'department' && departmentIds.has(item.scopeId))
         || (item.scopeType === 'branch' && branchIds.has(item.scopeId))
         || (item.scopeType === 'batch' && batchIds.has(item.scopeId))
+        || (item.scopeType === 'section' && scopeReferencesDeletedBatch(item.scopeId, batchIds))
       ) && item.status !== 'deleted')) {
         const next = {
           ...row,
@@ -2881,6 +2982,7 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
         || (item.scopeType === 'department' && departmentIds.has(item.scopeId))
         || (item.scopeType === 'branch' && branchIds.has(item.scopeId))
         || (item.scopeType === 'batch' && batchIds.has(item.scopeId))
+        || (item.scopeType === 'section' && scopeReferencesDeletedBatch(item.scopeId, batchIds))
       ) && item.status !== 'deleted')) {
         const next = {
           ...row,
@@ -3971,7 +4073,8 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
   }, async request => {
     requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(z.object({ batchId: z.string().min(1) }), request.params)
-    return resolveBatchPolicy(context, params.batchId)
+    const query = parseOrThrow(resolvedPolicyQuerySchema, request.query)
+    return resolveBatchPolicy(context, params.batchId, { sectionCode: query.sectionCode ?? null })
   })
 
   app.get('/api/admin/batches/:batchId/resolved-stage-policy', {
@@ -3979,7 +4082,8 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
   }, async request => {
     requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(z.object({ batchId: z.string().min(1) }), request.params)
-    return resolveBatchStagePolicy(context, params.batchId)
+    const query = parseOrThrow(resolvedPolicyQuerySchema, request.query)
+    return resolveBatchStagePolicy(context, params.batchId, { sectionCode: query.sectionCode ?? null })
   })
 
   app.post('/api/admin/batches/:batchId/resolved-policy', {

@@ -8,6 +8,8 @@ function createConfig(overrides?: Partial<AppConfig>): AppConfig {
     port: 4000,
     host: '127.0.0.1',
     corsAllowedOrigins: ['http://127.0.0.1:5173'],
+    telemetrySinkUrl: null,
+    telemetrySinkBearerToken: null,
     sessionCookieName: 'airmentor_session',
     csrfCookieName: 'airmentor_csrf',
     csrfSecret: 'test-csrf-secret',
@@ -67,5 +69,19 @@ describe('startup diagnostics', () => {
     }))
 
     expect(diagnostics.filter(item => item.level === 'error').map(item => item.code)).toContain('CSRF_SECRET_REQUIRED')
+  })
+
+  it('does not warn when production-like deployments rely on local telemetry retention without an external sink', () => {
+    const diagnostics = collectStartupDiagnostics(createConfig({
+      corsAllowedOrigins: ['https://raed2180416.github.io'],
+      telemetrySinkUrl: null,
+      telemetrySinkBearerToken: null,
+      sessionCookieSecure: true,
+      sessionCookieSameSite: 'none',
+      host: '0.0.0.0',
+      databaseUrl: 'postgres://railway.internal/airmentor',
+    }))
+
+    expect(diagnostics.some(item => item.code === 'TELEMETRY_SINK_NOT_CONFIGURED')).toBe(false)
   })
 })

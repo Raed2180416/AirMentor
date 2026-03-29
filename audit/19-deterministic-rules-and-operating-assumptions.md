@@ -600,6 +600,21 @@ Source: `scripts/dev-live.sh`, `scripts/live-admin-common.sh`, `air-mentor-api/s
   - `AIRMENTOR_UI_PROXY_API_TARGET="$api_base_url"`
   - `VITE_AIRMENTOR_API_BASE_URL="/"`.
 
+## 11. Faculty Timetable Provisioning Rules (Critical Component Analysis)
+
+Source: `air-mentor-api/src/lib/academic-provisioning.ts`
+
+**What it does (Technical):**
+This 118-line file artificially generates faculty timetables from scratch. It takes a list of faculty teaching loads and iteratively assigns them to fixed weekly grid slots. It relies on a custom deterministic pseudo-random hashing function (`stableUnit`) seeded by the `facultyId`. It uses primitive string matching to find words like 'lab' or 'workshop' (`isLabLikeCourse`), boosting the required contact hours for those courses. It then walks through a fixed 6-slot day (08:30 to 15:30), penalizes slots that clump classes together on the same day, and forcibly injects the courses.
+
+**What it means (Non-Technical):**
+When administrators look at the "Faculty Calendar" in the UI, they are seeing a generated illusion. Rather than loading real historical timetables, this script uses a math formula to aggressively play Tetris with the faculty's classes until their required hours are met. It ensures that every time you reset the sandbox, the calendar looks exactly the same, but it doesn't represent actual rooms or student conflicts.
+
+**Identified Issues & Gaps:**
+1. **Naïve Hardcoded Slots:** The script assumes the university runs exactly 6 strictly defined time slots from 08:30 to 15:30. It cannot handle evening classes, irregular block seminars, or dynamic scheduling. 
+2. **Silent Capacity Crashes:** If a faculty member's teaching load exceeds available slots in the grid, the script throws a fatal error (`Timetable builder exhausted weekly slot capacity`) and crashes the entire bootstrapping process, rather than gracefully degrading or flagging a conflict.
+3. **Fragile String Matching:** The determination of whether a class is a "Lab" (which doubles its hour footprint) is based on looking for the string "lab", "project", or "workshop" in the title. A course titled "Laboratory Diagnostics" would silently miss the trigger if spelled out, breaking load assumptions.
+
 ## Findings
 
 ### Summary judgment

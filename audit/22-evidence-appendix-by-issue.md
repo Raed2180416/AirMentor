@@ -11,7 +11,7 @@ This appendix is the hard-evidence layer for the issue catalog. For each AM issu
   - orchestration hotspots in `src/App.tsx`, `src/system-admin-live-app.tsx`, `air-mentor-api/src/modules/academic.ts`, and `air-mentor-api/src/lib/msruas-proof-control-plane.ts`
   - seeded integration tests and browser scripts
 
-## Current-state reconciliation (2026-03-28)
+## Current-state reconciliation (2026-03-29)
 | Issue | Current status | Reconciliation summary |
 | --- | --- | --- |
 | AM-001 | Partial | hotspot sizes are materially lower and route/shell seams now exist, but the main orchestrators still remain large |
@@ -21,22 +21,22 @@ This appendix is the hard-evidence layer for the issue catalog. For each AM issu
 | AM-005 | Mostly resolved | proof trust framing is clearer, with adjacent trust legend copy in the student shell; remaining uncertainty is about deployed-user interpretation rather than missing repo-local controls |
 | AM-006 | Mostly resolved | proof services are extracted further, including playback governance and seeded semester generation, but the main proof facade still remains large |
 | AM-007 | Partial | linkage approval now has an explicit degraded contract, but helper/runtime brittleness remains |
-| AM-008 | Partial | CI, diagnostics, repo-native telemetry, and repo hygiene gates now exist; external observability still does not |
-| AM-009 | Mostly resolved | keyboard regression, live axe/browser accessibility regression, and accessibility-tree assertions all exist; screen-reader-specific evidence is still incomplete |
+| AM-008 | Mostly resolved | CI, diagnostics, repo-native telemetry, local retained events, proof-dashboard surfacing, optional sink forwarding, and Railway deploy diagnostics now exist; live sink provisioning still does not |
+| AM-009 | Mostly resolved | keyboard regression, live axe/browser accessibility regression, accessibility-tree assertions, direct modal focus tests, and a generated screen-reader preflight transcript now exist; final human assistive-technology validation is still incomplete |
 | AM-010 | Resolved | mock-admin runtime surface is gone and the root prototype/temp clutter was removed |
-| AM-011 | Partial | queue/checkpoint diagnostics are now visible, but deep operability still depends on internal knowledge |
+| AM-011 | Partial | queue/checkpoint diagnostics and recent operational events are now visible, but deep operability still depends on internal knowledge |
 | AM-012 | Partial | authoritative-first bootstrap, compatibility-only shadow routes, and central observed-state decoding now exist, but immutable replay snapshots remain JSON-heavy by design |
-| AM-013 | Mostly resolved | non-deploy CI and scheduled proof/browser flows now exist, and `verify:final-closeout*` now encode the deterministic closeout bar, but release discipline still matters operationally |
+| AM-013 | Mostly resolved | non-deploy CI and scheduled proof/browser flows now exist, `verify:final-closeout` is green repo-locally, compatibility-route inventory now runs in assert mode, and `verify:final-closeout:live` is now green against the deployed stack |
 | AM-014 | Partial | restore/process density is better surfaced but still cognitively heavy |
-| AM-015 | Partial | startup diagnostics and repo hygiene gates exist, but environment drift can still break the product |
-| AM-016 | Mostly resolved | rate limiting and CSRF exist; production-like startup now requires an explicit CSRF secret, and rate limiting is now DB-backed |
+| AM-015 | Partial | startup diagnostics, repo hygiene gates, compatibility-route assertions, deploy-log capture, and readiness-health checks exist, and the previously stale Railway rollout was resolved on `2026-03-29`; environment drift still remains a future operational risk |
+| AM-016 | Mostly resolved | rate limiting and CSRF exist; production-like startup now requires an explicit CSRF secret, rate limiting is now DB-backed, and both local and live session-security checks now pass |
 
 ## Key workflows and contracts
 ### AM-001
 - Exact files: `src/App.tsx`, `src/system-admin-live-app.tsx`, `air-mentor-api/src/modules/academic.ts`, `air-mentor-api/src/lib/msruas-proof-control-plane.ts`
 - Exact symbols: `OperationalApp`, `SystemAdminLiveApp`, `buildAcademicBootstrap`, `registerAcademicRoutes`, `buildStudentAgentCard`, `buildStudentRiskExplorer`, `startStudentAgentSession`, `sendStudentAgentMessage`
 - Exact routes/tables: `/api/academic/bootstrap`, `/api/academic/student-shell/*`, `/api/academic/students/:studentId/risk-explorer`, proof tables in `schema.ts`
-- Evidence: current hotspot LOC counts are 4,257, 7,205, 3,862, and 4,079 respectively; extracted shells and route registrars now exist, but each file still owns multiple distinct responsibilities instead of one narrow domain seam
+- Evidence: current hotspot LOC counts are 4,301, 7,205, 3,862, and 4,108 respectively; extracted shells and route registrars now exist, but each file still owns multiple distinct responsibilities instead of one narrow domain seam
 - Why it supports the issue: the implementation concentration is directly observable in file size, symbol breadth, and route ownership
 - Status: partially resolved but still directly evidenced
 - Additional proof that would reduce remaining uncertainty: git change-frequency analysis by file and incident history by hotspot
@@ -81,7 +81,7 @@ This appendix is the hard-evidence layer for the issue catalog. For each AM issu
 - Exact files: `air-mentor-api/src/lib/msruas-proof-control-plane.ts`, `air-mentor-api/src/lib/proof-control-plane-playback-reset-service.ts`, `air-mentor-api/src/lib/proof-control-plane-playback-governance-service.ts`, `air-mentor-api/src/lib/proof-control-plane-rebuild-context-service.ts`, `air-mentor-api/src/lib/proof-control-plane-section-risk-service.ts`, `air-mentor-api/src/lib/proof-control-plane-seeded-bootstrap-service.ts`, `air-mentor-api/src/lib/proof-control-plane-seeded-scaffolding-service.ts`, `air-mentor-api/src/lib/proof-control-plane-seeded-semester-service.ts`, `air-mentor-api/src/lib/proof-control-plane-stage-summary-service.ts`, `air-mentor-api/src/modules/academic.ts`, `air-mentor-api/src/modules/admin-proof-sandbox.ts`, `air-mentor-api/src/lib/proof-run-queue.ts`
 - Exact symbols: `startProofSimulationRun`, `rebuildSimulationStagePlayback`, `buildStudentAgentCard`, `buildStudentRiskExplorer`, `startStudentAgentSession`, `sendStudentAgentMessage`, exported proof sandbox route registrar
 - Exact routes/tables: proof dashboard/import/run/checkpoint routes; `simulation_runs`, `simulation_stage_checkpoints`, `risk_assessments`, `student_agent_cards`, `student_agent_sessions`, `student_agent_messages`
-- Evidence: the main facade is now 4,079 lines even after preserving stable exports, while playback governance and seeded semester generation have moved into dedicated services; route modules still call into the facade for multiple user journeys
+- Evidence: the main facade is now 4,108 lines even after preserving stable exports, while playback governance and seeded semester generation have moved into dedicated services; route modules still call into the facade for multiple user journeys
 - Why it supports the issue: the proof platform’s most important logic is architecturally concentrated in one place
 - Status: partially resolved but still directly evidenced
 - Additional proof: change-frequency correlation showing unrelated proof features repeatedly co-changing in the same file
@@ -96,21 +96,21 @@ This appendix is the hard-evidence layer for the issue catalog. For each AM issu
 - Additional proof: automated quality scoring for approved vs rejected candidate sets and runtime-health metrics for the helper path
 
 ### AM-008
-- Exact files: `.github/workflows/ci-verification.yml`, `.github/workflows/proof-browser-cadence.yml`, `src/startup-diagnostics.ts`, `src/telemetry.ts`, `air-mentor-api/src/startup-diagnostics.ts`, `air-mentor-api/src/lib/telemetry.ts`, runtime-wide absence of an external telemetry/exporter layer
-- Exact symbols: repo-native operational events and startup diagnostics now exist, but there is still no Sentry/metrics exporter/tracing backend in the repo
-- Exact routes/tables: audit-style persistence in `audit_events`; no general-purpose external metrics or event sink route
-- Evidence: package manifests still contain no external observability SDK; CI and structured telemetry now exist inside the repo, but external runtime observability is still absent
+- Exact files: `.github/workflows/ci-verification.yml`, `.github/workflows/proof-browser-cadence.yml`, `.github/workflows/deploy-railway-api.yml`, `src/startup-diagnostics.ts`, `src/telemetry.ts`, `air-mentor-api/src/startup-diagnostics.ts`, `air-mentor-api/src/lib/telemetry.ts`, `air-mentor-api/src/lib/operational-event-store.ts`, `air-mentor-api/src/lib/proof-control-plane-batch-service.ts`, `src/system-admin-proof-dashboard-workspace.tsx`, `scripts/check-railway-deploy-readiness.mjs`, `scripts/verify-live-session-contract.mjs`
+- Exact symbols: repo-native operational events, optional sink forwarding, startup diagnostics, Railway variable preflight, live session-contract diagnostics, retained local event persistence, and proof-dashboard event surfacing now exist, but there is still no provisioned production sink in the live environment
+- Exact routes/tables: audit-style persistence in `audit_events`; `operational_telemetry_events`; no general-purpose external metrics or event sink route
+- Evidence: CI, structured telemetry, local operational-event retention, proof-dashboard surfacing, optional sink forwarding, Railway variable preflight, and live session-contract diagnostics now exist inside the repo, but no production sink is provisioned or evidenced in the live environment
 - Why it supports the issue: the observability gap is evidenced by missing instrumentation surfaces across the repo
 - Status: partially resolved; residual issue is directly evidenced by what is still absent
-- Additional proof: production environment inventory confirming no external telemetry layer exists outside the repo
+- Additional proof: production environment inventory confirming the sink path is configured and receiving events
 
 ### AM-009
-- Exact files: `src/ui-primitives.tsx`, `src/system-admin-ui.tsx`, `src/system-admin-live-app.tsx`, `src/App.tsx`, `src/pages/student-shell.tsx`, `src/pages/risk-explorer.tsx`
+- Exact files: `src/ui-primitives.tsx`, `src/system-admin-ui.tsx`, `src/system-admin-live-app.tsx`, `src/App.tsx`, `src/pages/student-shell.tsx`, `src/pages/risk-explorer.tsx`, `src/system-admin-faculties-workspace.tsx`, `src/system-admin-hierarchy-workspace-shell.tsx`, `tests/system-admin-accessibility-contracts.test.tsx`, `tests/ui-primitives-modal.test.tsx`
 - Exact symbols: custom buttons, cards, tabs, surfaces, inline shell controls
 - Exact routes/tables: frontend-only concern; no dedicated a11y service layer
-- Evidence: large custom control layer and dense inline-style layouts remain; live keyboard regression, live axe/browser accessibility regression, and accessibility-tree assertions now exist; major proof tab rails now expose explicit `tablist` / `tab` / `aria-selected` semantics, but screen-reader-specific verification is still absent
+- Evidence: large custom control layer and dense inline-style layouts remain; live keyboard regression, live axe/browser accessibility regression, accessibility-tree assertions, the generated `output/playwright/system-admin-live-screen-reader-preflight.md` artifact, and direct modal/tab contract tests now exist; major proof tab rails now expose explicit `tablist` / `tab` / `aria-selected` semantics
 - Why it supports the issue: accessibility and cognitive-load risks are structural and under-tested
-- Status: partially resolved; live regression coverage now exists for keyboard and axe/browser checks, but manual assistive-technology validation is still not evidenced
+- Status: partially resolved; live regression coverage now exists for keyboard, axe/browser, accessibility-tree, and screen-reader-preflight evidence, but manual assistive-technology validation is still not evidenced
 - Additional proof: screen-reader walkthrough recordings or equivalent manual verification notes
 
 ### AM-010
@@ -123,10 +123,10 @@ This appendix is the hard-evidence layer for the issue catalog. For each AM issu
 - Additional proof: n/a beyond keeping generated artifacts ignored
 
 ### AM-011
-- Exact files: `air-mentor-api/src/lib/proof-run-queue.ts`, `air-mentor-api/src/app.ts`, `air-mentor-api/src/modules/admin-proof-sandbox.ts`, `scripts/system-admin-proof-risk-smoke.mjs`
+- Exact files: `air-mentor-api/src/lib/proof-run-queue.ts`, `air-mentor-api/src/app.ts`, `air-mentor-api/src/modules/admin-proof-sandbox.ts`, `air-mentor-api/src/lib/proof-control-plane-batch-service.ts`, `src/system-admin-proof-dashboard-workspace.tsx`, `scripts/system-admin-proof-risk-smoke.mjs`
 - Exact symbols: `startProofRunWorker`, queue metadata builders, proof-run lifecycle routes
 - Exact routes/tables: proof-run create/retry/activate/archive/recompute/restore; `simulation_runs`, `simulation_stage_checkpoints`, `simulation_lifecycle_audits`, `simulation_reset_snapshots`
-- Evidence: queue worker uses poll/lease/heartbeat; proof dashboard now surfaces queue age, lease state, retry/failure, and checkpoint readiness, but missing checkpoints still often require smoke-script prewarm or manual route operations
+- Evidence: queue worker uses poll/lease/heartbeat; proof dashboard now surfaces queue age, lease state, retry/failure, checkpoint readiness, and recent operational events, but missing checkpoints still often require smoke-script prewarm or manual route operations
 - Why it supports the issue: queue correctness exists, but queue operability depends on code knowledge and scripts
 - Status: partially resolved but still directly evidenced
 - Additional proof: queue age/failure metrics or production incident history
@@ -145,7 +145,7 @@ This appendix is the hard-evidence layer for the issue catalog. For each AM issu
 - Exact files: `air-mentor-api/scripts/run-vitest-suite.mjs`, root `package.json`, `.github/workflows/deploy-pages.yml`, `.github/workflows/deploy-railway-api.yml`, browser scripts in `scripts/`
 - Exact symbols: `proofRcFiles` set in the backend runner; `verify:proof-closure*` and `verify:final-closeout*` scripts in root package
 - Exact routes/tables: indirect; this issue is about detection paths rather than product routes
-- Evidence: proof-heavy test files are intentionally excluded from the fast suite; non-deploy CI and scheduled browser/proof cadence now exist; `verify:final-closeout` and `verify:final-closeout:live` now encode the explicit local and deployed closeout bar
+- Evidence: proof-heavy test files are intentionally excluded from the fast suite; non-deploy CI and scheduled browser/proof cadence now exist; `verify:final-closeout` and `verify:final-closeout:live` now encode the explicit local and deployed closeout bar; both the repo-local and live closeout bars are now green
 - Why it supports the issue: the green baseline is not equivalent to full product confidence
 - Status: mostly resolved but residual issue remains directly evidenced
 - Additional proof: CI run history showing whether proof-closure or proof-rc flows are regularly executed
@@ -160,10 +160,10 @@ This appendix is the hard-evidence layer for the issue catalog. For each AM issu
 - Additional proof: user task-completion/error data for request progression
 
 ### AM-015
-- Exact files: `vite.config.ts`, `src/system-admin-app.tsx`, `src/App.tsx`, `air-mentor-api/src/config.ts`, `.github/workflows/deploy-pages.yml`, `.github/workflows/deploy-railway-api.yml`, `air-mentor-api/railway.json`, `scripts/dev-live.sh`, `air-mentor-api/scripts/start-seeded-server.ts`
-- Exact symbols: env-dependent app bootstrapping, Railway health verification, local-live proxy setup
+- Exact files: `vite.config.ts`, `src/system-admin-app.tsx`, `src/App.tsx`, `air-mentor-api/src/config.ts`, `.github/workflows/deploy-pages.yml`, `.github/workflows/deploy-railway-api.yml`, `air-mentor-api/railway.json`, `scripts/dev-live.sh`, `air-mentor-api/scripts/start-seeded-server.ts`, `scripts/check-railway-deploy-readiness.mjs`
+- Exact symbols: env-dependent app bootstrapping, Railway health verification, boot-smoke diagnostics, deploy-log capture, local-live proxy setup
 - Exact routes/tables: `/health` is used by Railway post-deploy validation when configured
-- Evidence: frontend runtime can hard-stop without API base URL; Railway deploy can no-op when env vars are missing; local-live path depends on same-origin proxying and seeded-server assumptions
+- Evidence: frontend runtime can hard-stop without API base URL; Railway deploy can no-op when env vars are missing; local-live path depends on same-origin proxying and seeded-server assumptions; GitHub Actions deploy run `23691251599` built successfully and then failed repeated `/health` checks with `service unavailable`; `air-mentor-api/src/startup-diagnostics.ts` now hard-fails production-like startup when `CSRF_SECRET` is absent; `scripts/check-railway-deploy-readiness.mjs` now supports boot-smoke and health modes plus deploy-log capture; GitHub Actions deploy run `23694196459` then succeeded after the Railway production service was given an explicit `CSRF_SECRET`
 - Why it supports the issue: environment drift becomes a first-order product failure mode
 - Status: confirmed directly
 - Additional proof: deployment environment inventory across staging/production
@@ -172,7 +172,7 @@ This appendix is the hard-evidence layer for the issue catalog. For each AM issu
 - Exact files: `air-mentor-api/src/modules/session.ts`, `air-mentor-api/src/app.ts`, `air-mentor-api/src/config.ts`, `air-mentor-api/src/lib/csrf.ts`, `air-mentor-api/src/startup-diagnostics.ts`
 - Exact symbols: login, session restore, role switch, cookie config, origin checks, CSRF token builder, startup cookie/origin diagnostics
 - Exact routes/tables: `/api/session/login`, `/api/session`, `/api/session/role-context`, `sessions`, `user_password_credentials`
-- Evidence: login rate limiting and CSRF now exist, throttling state is now persisted in `login_rate_limit_windows`, production-like startup requires an explicit `CSRF_SECRET`, and cookie posture is environment-aware; the remaining gap is broader deployment hardening and dependency on deployment correctness
+- Evidence: login rate limiting and CSRF now exist, throttling state is now persisted in `login_rate_limit_windows`, production-like startup requires an explicit `CSRF_SECRET`, cookie posture is environment-aware, and both the local and live session-security regressions now pass against the deployed Railway stack
 - Why it supports the issue: the session model is coherent but lightly hardened
 - Status: partially resolved but still directly evidenced
 - Additional proof: external WAF/reverse-proxy policies, if any, that mitigate abuse outside the repo

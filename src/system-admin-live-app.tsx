@@ -25,13 +25,17 @@ import {
 } from 'lucide-react'
 import { AirMentorApiClient, AirMentorApiError } from './api/client'
 import type {
+  ApiAcademicFaculty,
   ApiAuditEvent,
   ApiAdminFacultyCalendar,
   ApiBatchProvisioningRequest,
+  ApiBatch,
+  ApiBranch,
   ApiCurriculumFeatureConfigBundle,
   ApiCurriculumLinkageCandidate,
   ApiCurriculumLinkageGenerationStatus,
   ApiCurriculumFeatureConfigPayload,
+  ApiDepartment,
   ApiFacultyRecord,
   ApiFacultyAppointment,
   ApiMentorAssignment,
@@ -139,7 +143,7 @@ type SystemAdminLiveAppProps = {
   onExitPortal?: () => void
 }
 
-type PolicyFormState = {
+export type PolicyFormState = {
   oMin: string
   aPlusMin: string
   aMin: string
@@ -205,7 +209,7 @@ type CurriculumFeatureFormState = {
   workbookTopicsText: string
 }
 
-type EntityEditorState = {
+export type EntityEditorState = {
   academicFaculty: StructureFormState['academicFaculty']
   department: StructureFormState['department']
   branch: StructureFormState['branch']
@@ -277,7 +281,7 @@ type OwnershipFormState = {
   facultyId: string
 }
 
-type StagePolicyFormState = {
+export type StagePolicyFormState = {
   stages: Array<{
     key: ApiStagePolicyPayload['stages'][number]['key']
     label: string
@@ -291,7 +295,7 @@ type StagePolicyFormState = {
   }>
 }
 
-type BatchProvisioningFormState = {
+export type BatchProvisioningFormState = {
   termId: string
   sectionLabels: string
   mode: ApiBatchProvisioningRequest['mode']
@@ -789,6 +793,85 @@ function normalizeHierarchyScope(scope: HierarchyScopeInput | null): LiveAdminSe
   }
 }
 
+function normalizeAdminSectionCode(sectionCode: string) {
+  return sectionCode.trim().toUpperCase()
+}
+
+export function buildAdminSectionScopeId(batchId: string, sectionCode: string) {
+  const normalizedBatchId = batchId.trim()
+  const normalizedSectionCode = normalizeAdminSectionCode(sectionCode)
+  if (!normalizedBatchId || !normalizedSectionCode) {
+    throw new Error('Section scope ids require both a batch id and a section code.')
+  }
+  return `${normalizedBatchId}::${normalizedSectionCode}`
+}
+
+function parseAdminSectionScopeId(scopeId: string) {
+  const [batchId, sectionCode, ...remainder] = scopeId.split('::')
+  if (remainder.length > 0) return null
+  const normalizedBatchId = batchId?.trim() ?? ''
+  const normalizedSectionCode = normalizeAdminSectionCode(sectionCode ?? '')
+  if (!normalizedBatchId || !normalizedSectionCode) return null
+  return {
+    batchId: normalizedBatchId,
+    sectionCode: normalizedSectionCode,
+  }
+}
+
+export function buildAdminActiveScopeChain(input: {
+  institution: LiveAdminDataset['institution']
+  academicFaculty: ApiAcademicFaculty | null
+  department: ApiDepartment | null
+  branch: ApiBranch | null
+  batch: ApiBatch | null
+  sectionCode: string | null
+}) {
+  const chain: ActiveAdminScope[] = []
+  if (input.institution) {
+    chain.push({
+      scopeType: 'institution',
+      scopeId: input.institution.institutionId,
+      label: input.institution.name,
+    })
+  }
+  if (input.academicFaculty) {
+    chain.push({
+      scopeType: 'academic-faculty',
+      scopeId: input.academicFaculty.academicFacultyId,
+      label: input.academicFaculty.name,
+    })
+  }
+  if (input.department) {
+    chain.push({
+      scopeType: 'department',
+      scopeId: input.department.departmentId,
+      label: input.department.name,
+    })
+  }
+  if (input.branch) {
+    chain.push({
+      scopeType: 'branch',
+      scopeId: input.branch.branchId,
+      label: input.branch.name,
+    })
+  }
+  if (input.batch) {
+    chain.push({
+      scopeType: 'batch',
+      scopeId: input.batch.batchId,
+      label: `Batch ${input.batch.batchLabel}`,
+    })
+  }
+  if (input.batch && input.sectionCode) {
+    chain.push({
+      scopeType: 'section',
+      scopeId: buildAdminSectionScopeId(input.batch.batchId, input.sectionCode),
+      label: `Section ${normalizeAdminSectionCode(input.sectionCode)}`,
+    })
+  }
+  return chain
+}
+
 function describeRegistryScope(data: LiveAdminDataset, scope?: LiveAdminSearchScope | null) {
   if (!hasHierarchyScopeSelection(scope)) return null
   if (scope?.sectionCode) {
@@ -1265,7 +1348,7 @@ function createAdminWorkspaceSnapshot(input: Omit<AdminWorkspaceSnapshot, 'scrol
   }
 }
 
-function getAdminWorkspaceSnapshotKey(snapshot: Omit<AdminWorkspaceSnapshot, 'scrollY'> | AdminWorkspaceSnapshot) {
+export function getAdminWorkspaceSnapshotKey(snapshot: Omit<AdminWorkspaceSnapshot, 'scrollY'> | AdminWorkspaceSnapshot) {
   return `${routeToHash(snapshot.route)}::${snapshot.universityTab}::${snapshot.selectedSectionCode ?? ''}`
 }
 
@@ -1356,6 +1439,8 @@ function formatScopeTypeLabel(scopeType: ApiScopeType) {
       return 'Branch'
     case 'batch':
       return 'Batch'
+    case 'section':
+      return 'Section'
     default:
       return scopeType
   }
@@ -1364,6 +1449,7 @@ function formatScopeTypeLabel(scopeType: ApiScopeType) {
 function matchesBatchScope(batch: LiveAdminDataset['batches'][number], data: LiveAdminDataset, scopeType: ApiScopeType, scopeId: string) {
   if (scopeType === 'institution') return true
   if (scopeType === 'batch') return batch.batchId === scopeId
+  if (scopeType === 'section') return parseAdminSectionScopeId(scopeId)?.batchId === batch.batchId
   if (scopeType === 'branch') return batch.branchId === scopeId
   const branch = resolveBranch(data, batch.branchId)
   if (!branch) return false
@@ -1709,16 +1795,18 @@ function ActionQueueCard({
   )
 }
 
-function AdminDetailTabs({
+export function AdminDetailTabs({
   tabs,
   activeTab,
   onChange,
   ariaLabel = 'Admin detail sections',
+  idBase = 'admin-detail',
 }: {
   tabs: Array<{ id: string; label: string; count?: string | number; disabled?: boolean }>
   activeTab: string
   onChange: (tabId: string) => void
   ariaLabel?: string
+  idBase?: string
 }) {
   return (
     <div role="tablist" aria-label={ariaLabel} style={{ ...getSegmentedGroupStyle(), flexWrap: 'wrap', width: 'fit-content', maxWidth: '100%', alignItems: 'center', justifyContent: 'flex-start', rowGap: 6 }}>
@@ -1726,7 +1814,9 @@ function AdminDetailTabs({
         <button
           key={tab.id}
           type="button"
+          id={`${idBase}-tab-${tab.id}`}
           role="tab"
+          aria-controls={`${idBase}-panel-${tab.id}`}
           aria-selected={activeTab === tab.id}
           data-tab="true"
           disabled={tab.disabled}
@@ -1749,6 +1839,26 @@ function AdminDetailTabs({
           {tab.disabled && tab.count == null ? <span style={{ ...mono, fontSize: 9, color: T.dim }}>Locked</span> : null}
         </button>
       ))}
+    </div>
+  )
+}
+
+export function AdminDetailTabPanel({
+  idBase,
+  tabId,
+  children,
+}: {
+  idBase: string
+  tabId: string
+  children: ReactNode
+}) {
+  return (
+    <div
+      id={`${idBase}-panel-${tabId}`}
+      role="tabpanel"
+      aria-labelledby={`${idBase}-tab-${tabId}`}
+    >
+      {children}
     </div>
   )
 }
@@ -2185,14 +2295,14 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     let cancelled = false
     void (async () => {
       try {
-        const next = await apiClient.getResolvedBatchPolicy(route.batchId!)
+        const next = await apiClient.getResolvedBatchPolicy(route.batchId!, { sectionCode: selectedSectionCode })
         if (cancelled) return
         setResolvedBatchPolicy(next)
         setPolicyForm(hydratePolicyForm(next.effectivePolicy))
       } catch (error) { if (!cancelled) setActionError(toErrorMessage(error)) }
     })()
     return () => { cancelled = true }
-  }, [apiClient, route.batchId, session])
+  }, [apiClient, route.batchId, selectedSectionCode, session])
 
   useEffect(() => {
     if (!route.batchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
@@ -2202,7 +2312,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     let cancelled = false
     void (async () => {
       try {
-        const next = await apiClient.getResolvedStagePolicy(route.batchId!)
+        const next = await apiClient.getResolvedStagePolicy(route.batchId!, { sectionCode: selectedSectionCode })
         if (cancelled) return
         setResolvedStagePolicy(next)
       } catch (error) {
@@ -2210,7 +2320,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       }
     })()
     return () => { cancelled = true }
-  }, [apiClient, route.batchId, session])
+  }, [apiClient, route.batchId, selectedSectionCode, session])
 
   const refreshCurriculumFeatureConfig = useCallback(async (batchId: string) => {
     const next = await apiClient.getCurriculumFeatureConfig(batchId)
@@ -2550,6 +2660,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     : null
   const selectedStudentActiveAcademicContext = selectedStudent?.activeAcademicContext ?? null
   const selectedStudentPolicyBatchId = selectedStudentActiveAcademicContext?.batchId ?? null
+  const selectedStudentPolicySectionCode = selectedStudentActiveAcademicContext?.sectionCode ?? null
   const selectedFacultyRecord = resolveFacultyMember(data, route.facultyMemberId)
   const selectedFacultyMember = selectedFacultyRecord && isFacultyMemberVisible(data, selectedFacultyRecord)
     ? selectedFacultyRecord
@@ -2928,7 +3039,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     setSelectedStudentPolicyLoading(true)
     void (async () => {
       try {
-        const next = await apiClient.getResolvedBatchPolicy(selectedStudentPolicyBatchId)
+        const next = await apiClient.getResolvedBatchPolicy(selectedStudentPolicyBatchId, { sectionCode: selectedStudentPolicySectionCode })
         if (!cancelled) setSelectedStudentPolicy(next)
       } catch {
         if (!cancelled) setSelectedStudentPolicy(null)
@@ -2937,7 +3048,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       }
     })()
     return () => { cancelled = true }
-  }, [apiClient, selectedStudentPolicyBatchId])
+  }, [apiClient, selectedStudentPolicyBatchId, selectedStudentPolicySectionCode])
 
   useEffect(() => {
     if (!selectedStudent) {
@@ -3764,7 +3875,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       else await apiClient.createPolicyOverride(payload)
       await loadAdminData()
       if (selectedBatch) {
-        const nextResolved = await apiClient.getResolvedBatchPolicy(selectedBatch.batchId)
+        const nextResolved = await apiClient.getResolvedBatchPolicy(selectedBatch.batchId, { sectionCode: selectedSectionCode })
         setResolvedBatchPolicy(nextResolved)
       }
       const refreshed = selectedBatch ? await queueSelectedProofRefresh('policy refresh') : []
@@ -3794,7 +3905,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       })
       await loadAdminData()
       if (selectedBatch) {
-        const nextResolved = await apiClient.getResolvedBatchPolicy(selectedBatch.batchId)
+        const nextResolved = await apiClient.getResolvedBatchPolicy(selectedBatch.batchId, { sectionCode: selectedSectionCode })
         setResolvedBatchPolicy(nextResolved)
         setPolicyForm(hydratePolicyForm(nextResolved.effectivePolicy))
       }
@@ -3818,7 +3929,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       else await apiClient.createStagePolicyOverride(payload)
       await loadAdminData()
       if (selectedBatch) {
-        const nextResolved = await apiClient.getResolvedStagePolicy(selectedBatch.batchId)
+        const nextResolved = await apiClient.getResolvedStagePolicy(selectedBatch.batchId, { sectionCode: selectedSectionCode })
         setResolvedStagePolicy(nextResolved)
       }
       setFlashMessage(`${activeGovernanceScope.label} stage policy saved.`)
@@ -3840,7 +3951,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       })
       await loadAdminData()
       if (selectedBatch) {
-        const nextResolved = await apiClient.getResolvedStagePolicy(selectedBatch.batchId)
+        const nextResolved = await apiClient.getResolvedStagePolicy(selectedBatch.batchId, { sectionCode: selectedSectionCode })
         setResolvedStagePolicy(nextResolved)
       }
       setFlashMessage(`${activeGovernanceScope.label} stage policy override reset to inherited defaults.`)
@@ -3958,6 +4069,17 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       await apiClient.activateProofRun(simulationRunId)
       await refreshProofDashboard(selectedBatch.batchId)
       setFlashMessage('Selected proof run is now active.')
+    })
+  }
+
+  const handleActivateProofSemester = async (simulationRunId: string, semesterNumber: number) => {
+    if (!selectedBatch) return
+    await runAction(async () => {
+      await apiClient.activateProofSemester(simulationRunId, {
+        semesterNumber: semesterNumber as 1 | 2 | 3 | 4 | 5 | 6,
+      })
+      await refreshProofDashboard(selectedBatch.batchId)
+      setFlashMessage(`Proof operational semester switched to Semester ${semesterNumber}.`)
     })
   }
 
@@ -4630,45 +4752,14 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       },
     }))
   }, [entityEditors.curriculum.curriculumCourseId, entityEditors.curriculum.semesterNumber, selectedBatch?.currentSemester, selectedCurriculumSemester])
-  const activeScopeChain = useMemo<ActiveAdminScope[]>(() => {
-    const chain: ActiveAdminScope[] = []
-    if (data.institution) {
-      chain.push({
-        scopeType: 'institution',
-        scopeId: data.institution.institutionId,
-        label: data.institution.name,
-      })
-    }
-    if (selectedAcademicFaculty) {
-      chain.push({
-        scopeType: 'academic-faculty',
-        scopeId: selectedAcademicFaculty.academicFacultyId,
-        label: selectedAcademicFaculty.name,
-      })
-    }
-    if (selectedDepartment) {
-      chain.push({
-        scopeType: 'department',
-        scopeId: selectedDepartment.departmentId,
-        label: selectedDepartment.name,
-      })
-    }
-    if (selectedBranch) {
-      chain.push({
-        scopeType: 'branch',
-        scopeId: selectedBranch.branchId,
-        label: selectedBranch.name,
-      })
-    }
-    if (selectedBatch) {
-      chain.push({
-        scopeType: 'batch',
-        scopeId: selectedBatch.batchId,
-        label: `Batch ${selectedBatch.batchLabel}`,
-      })
-    }
-    return chain
-  }, [data.institution, selectedAcademicFaculty, selectedBatch, selectedBranch, selectedDepartment])
+  const activeScopeChain = useMemo<ActiveAdminScope[]>(() => buildAdminActiveScopeChain({
+    institution: data.institution,
+    academicFaculty: selectedAcademicFaculty,
+    department: selectedDepartment,
+    branch: selectedBranch,
+    batch: selectedBatch,
+    sectionCode: selectedSectionCode,
+  }), [data.institution, selectedAcademicFaculty, selectedBatch, selectedBranch, selectedDepartment, selectedSectionCode])
   const activeGovernanceScope = activeScopeChain.at(-1) ?? null
   const activeGovernanceScopeId = activeGovernanceScope?.scopeId ?? null
   const activeGovernanceScopeType = activeGovernanceScope?.scopeType ?? null
@@ -4685,27 +4776,37 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     })
   ), [activeScopeChain, stagePolicyOverrides])
   const effectiveScopePolicy = useMemo(() => {
-    if (activeGovernanceScopeType === 'batch' && resolvedBatchPolicy?.batch.batchId === activeGovernanceScopeId) {
+    if (
+      activeGovernanceScope
+      && resolvedBatchPolicy
+      && resolvedBatchPolicy.batch.batchId === selectedBatch?.batchId
+      && resolvedBatchPolicy.scopeChain.some(scope => scope.scopeType === activeGovernanceScope.scopeType && scope.scopeId === activeGovernanceScope.scopeId)
+    ) {
       return resolvedBatchPolicy.effectivePolicy
     }
     return scopePolicyOverrides.reduce<ApiResolvedBatchPolicy['effectivePolicy']>(
       (policy, override) => mergePolicyPayload(policy, override.policy),
       buildValidatedPolicyPayload(defaultPolicyForm()),
     )
-  }, [activeGovernanceScopeId, activeGovernanceScopeType, resolvedBatchPolicy, scopePolicyOverrides])
+  }, [activeGovernanceScope, resolvedBatchPolicy, scopePolicyOverrides, selectedBatch?.batchId])
   const effectiveScopeStagePolicy = useMemo(() => {
-    if (activeGovernanceScopeType === 'batch' && resolvedStagePolicy?.batch.batchId === activeGovernanceScopeId) {
+    if (
+      activeGovernanceScope
+      && resolvedStagePolicy
+      && resolvedStagePolicy.batch.batchId === selectedBatch?.batchId
+      && resolvedStagePolicy.scopeChain.some(scope => scope.scopeType === activeGovernanceScope.scopeType && scope.scopeId === activeGovernanceScope.scopeId)
+    ) {
       return resolvedStagePolicy.effectivePolicy
     }
     return scopeStageOverrides.at(-1)?.policy ?? DEFAULT_STAGE_POLICY
-  }, [activeGovernanceScopeId, activeGovernanceScopeType, resolvedStagePolicy, scopeStageOverrides])
+  }, [activeGovernanceScope, resolvedStagePolicy, scopeStageOverrides, selectedBatch?.batchId])
   const activeScopePolicyOverride = activeGovernanceScope
     ? data.policyOverrides.find(item => item.scopeType === activeGovernanceScope.scopeType && item.scopeId === activeGovernanceScope.scopeId && isVisibleAdminRecord(item.status)) ?? null
     : null
   const activeScopeStageOverride = activeGovernanceScope
     ? stagePolicyOverrides.find(item => item.scopeType === activeGovernanceScope.scopeType && item.scopeId === activeGovernanceScope.scopeId && isVisibleAdminRecord(item.status)) ?? null
     : null
-  const curriculumFeatureTargetScopeOptions = activeScopeChain
+  const curriculumFeatureTargetScopeOptions = activeScopeChain.filter(scope => scope.scopeType !== 'section')
   const curriculumFeatureProfileOptions = curriculumFeatureConfig?.availableProfiles ?? []
   const governanceScopeSummary = activeGovernanceScope
     ? `${formatScopeTypeLabel(activeGovernanceScope.scopeType)} scope`
@@ -5865,6 +5966,47 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             stickyShadow={isLightTheme(themeMode) ? '0 18px 32px rgba(15, 23, 42, 0.08)' : '0 18px 32px rgba(2, 6, 23, 0.32)'}
             activeBatchPolicyOverride={activeBatchPolicyOverride}
             activeGovernanceScope={activeGovernanceScope}
+            activeScopePolicyOverride={activeScopePolicyOverride}
+            activeScopeStageOverride={activeScopeStageOverride}
+            governanceScopeSummary={governanceScopeSummary}
+            policyOverrideTrail={policyOverrideTrail}
+            stageOverrideTrail={stageOverrideTrail}
+            policyForm={policyForm}
+            setPolicyForm={setPolicyForm}
+            stagePolicyForm={stagePolicyForm}
+            setStagePolicyForm={setStagePolicyForm}
+            handleSaveScopePolicy={handleSaveScopePolicy}
+            handleResetScopePolicy={handleResetScopePolicy}
+            handleSaveScopeStagePolicy={handleSaveScopeStagePolicy}
+            handleResetScopeStagePolicy={handleResetScopeStagePolicy}
+            entityEditors={entityEditors}
+            setEntityEditors={setEntityEditors}
+            batchTerms={batchTerms}
+            currentSemesterTerm={currentSemesterTerm}
+            startEditingTerm={startEditingTerm}
+            resetTermEditor={resetTermEditor}
+            handleSaveTerm={handleSaveTerm}
+            handleArchiveTerm={handleArchiveTerm}
+            selectedCurriculumSemester={selectedCurriculumSemester}
+            setSelectedCurriculumSemester={setSelectedCurriculumSemester}
+            curriculumSemesterEntries={curriculumSemesterEntries}
+            selectedCurriculumCourseId={selectedCurriculumCourseId}
+            startEditingCurriculumCourse={startEditingCurriculumCourse}
+            resetCurriculumEditor={resetCurriculumEditor}
+            handleSaveCurriculumCourse={handleSaveCurriculumCourse}
+            handleArchiveCurriculumCourse={handleArchiveCurriculumCourse}
+            handleBootstrapCurriculumManifest={handleBootstrapCurriculumManifest}
+            scopedCourseLeaderFaculty={scopedCourseLeaderFaculty}
+            getScopedCourseLeaderState={getScopedCourseLeaderState}
+            handleAssignCurriculumCourseLeader={handleAssignCurriculumCourseLeader}
+            batchProvisioningForm={batchProvisioningForm}
+            setBatchProvisioningForm={setBatchProvisioningForm}
+            handleProvisionBatch={handleProvisionBatch}
+            batchFacultyPool={batchFacultyPool}
+            batchOfferingsWithoutOwner={batchOfferingsWithoutOwner}
+            batchStudentsWithoutEnrollment={batchStudentsWithoutEnrollment}
+            batchStudentsWithoutMentor={batchStudentsWithoutMentor}
+            batchOfferingsWithoutRoster={batchOfferingsWithoutRoster}
             activeUniversityRegistryScope={activeUniversityRegistryScope}
             activeUniversityStudentScopeChipLabel={activeUniversityStudentScopeChipLabel}
             activeUniversityFacultyScopeChipLabel={activeUniversityFacultyScopeChipLabel}
@@ -5935,6 +6077,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               onCreateProofRun: handleCreateProofRun,
               onRecomputeProofRunRisk: handleRecomputeProofRunRisk,
               onActivateProofRun: handleActivateProofRun,
+              onActivateProofSemester: handleActivateProofSemester,
               onRetryProofRun: handleRetryProofRun,
               onArchiveProofRun: handleArchiveProofRun,
               onRestoreProofSnapshot: handleRestoreProofSnapshot,
@@ -6121,6 +6264,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   activeTab={studentDetailTab}
                   onChange={tabId => setStudentDetailTab(tabId as StudentDetailTab)}
                   ariaLabel="Student detail sections"
+                  idBase="student-detail"
                   tabs={[
                     { id: 'profile', label: 'Profile' },
                     { id: 'academic', label: 'Academic', count: selectedStudent?.enrollments.length ?? 0, disabled: !selectedStudent },
@@ -6132,11 +6276,12 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               </Card>
 
               {studentDetailTab === 'profile' && (
+              <AdminDetailTabPanel idBase="student-detail" tabId="profile">
               <Card style={{ padding: 18, display: 'grid', gap: 14 }} data-proof-surface="system-admin-student-profile" data-proof-student-id={selectedStudent?.studentId ?? undefined}>
                 <SectionHeading title={selectedStudent ? 'Student Detail' : 'Create Student'} eyebrow={selectedStudent ? selectedStudent.name : 'New record'} caption="Save the identity record first, then maintain enrollment, mentor, and promotion details below." />
                 {selectedStudent ? (
                   <>
-                    {!selectedStudentPolicy && !selectedStudentPolicyLoading ? <InfoBanner message="No resolved batch policy snapshot is loaded for this student yet. Progression guidance falls back to the default guardrails until a policy is available." /> : null}
+                    {!selectedStudentPolicy && !selectedStudentPolicyLoading ? <InfoBanner message="No resolved scope policy snapshot is loaded for this student yet. Progression guidance falls back to the default guardrails until a policy is available." /> : null}
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <Chip color={T.accent}>{selectedStudent.usn}</Chip>
                       <Chip color={T.success}>CGPA {selectedStudent.currentCgpa.toFixed(2)}</Chip>
@@ -6150,7 +6295,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                           {selectedStudentPolicyLoading ? 'Loading policy…' : selectedStudentPolicy ? `Min CGPA ${selectedStudentPromotionRules.minimumCgpaForPromotion.toFixed(1)}` : 'No policy snapshot'}
                         </div>
                         <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
-                          {selectedStudentPolicyLoading ? 'Awaiting policy resolution…' : selectedStudentPolicy ? `Pass threshold ${selectedStudentPromotionRules.passMarkPercent}% · backlog guard ${selectedStudentPromotionRules.requireNoActiveBacklogs ? 'on' : 'off'}` : 'Configured defaults only until batch policy loads.'}
+                          {selectedStudentPolicyLoading ? 'Awaiting policy resolution…' : selectedStudentPolicy ? `Pass threshold ${selectedStudentPromotionRules.passMarkPercent}% · backlog guard ${selectedStudentPromotionRules.requireNoActiveBacklogs ? 'on' : 'off'}` : 'Configured defaults only until a resolved scope policy loads.'}
                         </div>
                       </Card>
                       <Card style={{ padding: 14, background: T.surface2 }}>
@@ -6201,9 +6346,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </form>
                 )}
               </Card>
+              </AdminDetailTabPanel>
               )}
 
               {studentDetailTab === 'academic' && (
+              <AdminDetailTabPanel idBase="student-detail" tabId="academic">
               <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
                 <SectionHeading title="Academic Context" eyebrow="Enrollment" caption="Keep branch, term, section, and academic standing aligned with the canonical term structure." />
                 {!selectedStudent ? <EmptyState title="Save the student first" body="Enrollment editing becomes available after the student record exists." /> : (
@@ -6280,9 +6427,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </>
                 )}
               </Card>
+              </AdminDetailTabPanel>
               )}
 
               {studentDetailTab === 'mentor' && (
+              <AdminDetailTabPanel idBase="student-detail" tabId="mentor">
               <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
                 <SectionHeading title="Mentor Linkage" eyebrow="Faculty" caption="Only faculty with an active mentor permission are shown as eligible mentors." />
                 {!selectedStudent ? <EmptyState title="Save the student first" body="Mentor assignment becomes available after the student record exists." /> : (
@@ -6333,16 +6482,18 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </>
                 )}
               </Card>
+              </AdminDetailTabPanel>
               )}
 
               {studentDetailTab === 'progression' && (
+              <AdminDetailTabPanel idBase="student-detail" tabId="progression">
               <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
                 <SectionHeading title="Promotion Review" eyebrow="Semester Progression" caption="Recommendations use the configured CGPA rule and backlog guard, then wait for explicit admin confirmation." />
                 {!selectedStudent ? <EmptyState title="Select a student" body="Promotion review appears when a student with an academic context is selected." /> : !selectedStudent.activeAcademicContext ? (
                   <EmptyState title="No active academic context" body="Create or restore an enrollment before using the promotion panel." />
                 ) : (
                   <>
-                    {!selectedStudentPolicy && !selectedStudentPolicyLoading ? <InfoBanner message="No resolved batch policy snapshot is loaded for this student. The progression panel is using the default guardrails only." /> : null}
+                    {!selectedStudentPolicy && !selectedStudentPolicyLoading ? <InfoBanner message="No resolved scope policy snapshot is loaded for this student. The progression panel is using the default guardrails only." /> : null}
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <Chip color={selectedStudentPromotionRecommended ? T.success : T.warning}>{selectedStudentPromotionRecommended ? 'Recommended' : 'Hold for review'}</Chip>
                       <Chip color={T.accent}>Current CGPA {selectedStudent.currentCgpa.toFixed(2)}</Chip>
@@ -6369,9 +6520,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </>
                 )}
               </Card>
+              </AdminDetailTabPanel>
               )}
 
               {studentDetailTab === 'history' && (
+              <AdminDetailTabPanel idBase="student-detail" tabId="history">
               <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
                 <SectionHeading title="History" eyebrow="Audit Trail" caption="Every student, enrollment, and mentor change lands here so deletions and corrections stay traceable." />
                 {studentAuditLoading ? <InfoBanner message="Loading audit history…" /> : null}
@@ -6389,6 +6542,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </div>
                 )}
               </Card>
+              </AdminDetailTabPanel>
               )}
             </div>
           </div>
@@ -6544,6 +6698,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   activeTab={facultyDetailTab}
                   onChange={tabId => setFacultyDetailTab(tabId as FacultyDetailTab)}
                   ariaLabel="Faculty detail sections"
+                  idBase="faculty-detail"
                   tabs={[
                     { id: 'profile', label: 'Profile' },
                     { id: 'appointments', label: 'Appointments', count: selectedFacultyMember?.appointments.length ?? 0, disabled: !selectedFacultyMember },
@@ -6556,6 +6711,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               </Card>
 
               {facultyDetailTab === 'profile' && (
+              <AdminDetailTabPanel idBase="faculty-detail" tabId="profile">
               <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
                 <SectionHeading title={selectedFacultyMember ? 'Faculty Detail' : 'Create Faculty'} eyebrow={selectedFacultyMember ? selectedFacultyMember.displayName : 'New profile'} caption="Master identity stays admin-owned. Teaching workflow actions continue in the teaching workspace." />
                 {selectedFacultyMember ? (
@@ -6597,9 +6753,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </form>
                 )}
               </Card>
+              </AdminDetailTabPanel>
               )}
 
               {facultyDetailTab === 'appointments' && (
+              <AdminDetailTabPanel idBase="faculty-detail" tabId="appointments">
               <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
                 <SectionHeading title="Appointments" eyebrow="Canonical Affiliation" caption="Department and branch affiliation stay canonical here, even when HoD visibility rolls up external teaching activity." />
                 {!selectedFacultyMember ? <EmptyState title="Save the faculty profile first" body="Appointments become available after the faculty record exists." /> : (
@@ -6665,9 +6823,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </>
                 )}
               </Card>
+              </AdminDetailTabPanel>
               )}
 
               {facultyDetailTab === 'permissions' && (
+              <AdminDetailTabPanel idBase="faculty-detail" tabId="permissions">
               <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
                 <SectionHeading title="Permissions" eyebrow="Role Grants" caption="Mentor, HoD, Course Leader, and System Admin permissions stay separate from actual class ownership." />
                 {!selectedFacultyMember ? <EmptyState title="Save the faculty profile first" body="Permissions become available after the faculty record exists." /> : (
@@ -6739,9 +6899,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </>
                 )}
               </Card>
+              </AdminDetailTabPanel>
               )}
 
               {facultyDetailTab === 'teaching' && (
+              <AdminDetailTabPanel idBase="faculty-detail" tabId="teaching">
               <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
                 <SectionHeading title="Class Ownership" eyebrow="Single Owner Assignment" caption="System admin assigns classes here as a single-owner list. Ownership role stays fixed and no class can belong to more than one professor at the same time." />
                 {!selectedFacultyMember ? <EmptyState title="Save the faculty profile first" body="Teaching ownership becomes available after the faculty record exists." /> : (
@@ -6802,9 +6964,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </>
                 )}
               </Card>
+              </AdminDetailTabPanel>
               )}
 
               {facultyDetailTab === 'timetable' && (
+              <AdminDetailTabPanel idBase="faculty-detail" tabId="timetable">
               <Card style={{ padding: 18, display: 'grid', gap: 14 }}>
                 <SectionHeading title="Timetable Planner" eyebrow="Calendar-First Review" caption="System admin starts with a calendar summary here, then expands into the full planner only when a wider review surface is needed." />
                 {!selectedFacultyMember ? <EmptyState title="Select or create a faculty member first" body="Timetable planning becomes available once the faculty profile exists." /> : facultyCalendarLoading && !facultyCalendar ? (
@@ -6896,9 +7060,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </div>
                 )}
               </Card>
+              </AdminDetailTabPanel>
               )}
 
               {facultyDetailTab === 'history' && (
+              <AdminDetailTabPanel idBase="faculty-detail" tabId="history">
               <Card style={{ padding: 18, display: 'grid', gap: 12 }}>
                 <SectionHeading title="History" eyebrow="Audit Trail" caption="Profile, appointment, permission, and class-ownership changes all land here for restore and review." />
                 {facultyAuditLoading ? <InfoBanner message="Loading audit history…" /> : null}
@@ -6916,6 +7082,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   </div>
                 )}
               </Card>
+              </AdminDetailTabPanel>
               )}
             </div>
           </div>

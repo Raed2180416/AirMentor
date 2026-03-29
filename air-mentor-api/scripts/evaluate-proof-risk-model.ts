@@ -617,9 +617,6 @@ async function main() {
       modelCorrelationResponse,
     ] = await Promise.all([
       current.db.select().from(riskModelArtifacts).where(eq(riskModelArtifacts.batchId, MSRUAS_PROOF_BATCH_ID)),
-      current.db.select().from(simulationStageCheckpoints).where(
-        inArray(simulationStageCheckpoints.simulationRunId, selectedGovernedRunIdList),
-      ).orderBy(asc(simulationStageCheckpoints.semesterNumber), asc(simulationStageCheckpoints.stageOrder)),
       getProofRiskModelActive(current.db, { batchId: MSRUAS_PROOF_BATCH_ID }),
       getProofRiskModelEvaluation(current.db, { batchId: MSRUAS_PROOF_BATCH_ID, simulationRunId: null }),
       getProofRiskModelCorrelations(current.db, { batchId: MSRUAS_PROOF_BATCH_ID }),

@@ -4,6 +4,7 @@ import { z } from 'zod'
 import type { RouteContext } from '../app.js'
 import { simulationRuns } from '../db/schema.js'
 import {
+  activateProofOperationalSemester,
   activateProofSimulationRun,
   approveProofCurriculumImport,
   buildProofBatchDashboard,
@@ -84,6 +85,17 @@ const startRunSchema = z.object({
 
 const restoreSnapshotSchema = z.object({
   simulationResetSnapshotId: z.string().min(1).optional(),
+})
+
+const activateSemesterSchema = z.object({
+  semesterNumber: z.union([
+    z.literal(1),
+    z.literal(2),
+    z.literal(3),
+    z.literal(4),
+    z.literal(5),
+    z.literal(6),
+  ]),
 })
 
 const proofModelQuerySchema = z.object({
@@ -316,6 +328,29 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
       actorId: auth.facultyId,
     })
     return { ok: true }
+  })
+
+  app.post('/api/admin/proof-runs/:simulationRunId/activate-semester', {
+    schema: { tags: ['admin-proof'], summary: 'Activate the operational semester for a proof simulation run' },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
+    const params = parseOrThrow(runParamsSchema, request.params)
+    const body = parseOrThrow(activateSemesterSchema, request.body)
+    const result = await activateProofOperationalSemester(context.db, {
+      simulationRunId: params.simulationRunId,
+      semesterNumber: body.semesterNumber,
+      actorFacultyId: auth.facultyId,
+      now: context.now(),
+    })
+    await emitAuditEvent(context, {
+      entityType: 'ProofSimulationRun',
+      entityId: params.simulationRunId,
+      action: 'ActivatedSemester',
+      actorRole: auth.activeRoleGrant.roleCode,
+      actorId: auth.facultyId,
+      after: result,
+    })
+    return result
   })
 
   app.post('/api/admin/proof-runs/:simulationRunId/archive', {

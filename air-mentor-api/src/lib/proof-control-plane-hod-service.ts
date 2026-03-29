@@ -32,6 +32,10 @@ import {
 } from '../db/schema.js'
 import { parseJson } from './json.js'
 import { parseObservedStateRow } from './proof-observed-state.js'
+import {
+  buildProofCountProvenance,
+  buildUnavailableCountProvenance,
+} from './proof-provenance.js'
 import { queueDecisionTypeFromStatus } from './proof-control-plane-access.js'
 
 type ProofCheckpointSummaryLike = {
@@ -50,6 +54,39 @@ type ProofCheckpointSummaryLike = {
   playbackAccessible?: boolean
   blockedByCheckpointId?: string | null
   blockedProgressionReason?: string | null
+}
+
+type HodProofAnalyticsResult = {
+  summary: {
+    activeRunContext: Record<string, unknown> | null
+    [key: string]: unknown
+  }
+  courses: Array<Record<string, unknown>>
+  faculty: Array<Record<string, unknown>>
+  students: Array<Record<string, unknown> & {
+    studentId?: string
+  }>
+  reassessments: Array<Record<string, unknown>>
+}
+
+function resolveOperationalCheckpointSummary(
+  checkpointRows: Array<typeof simulationStageCheckpoints.$inferSelect>,
+  semesterNumber: number,
+  deps: Pick<ProofControlPlaneHodServiceDeps, 'parseProofCheckpointSummary' | 'withProofPlaybackGate'>,
+) {
+  const summaries = deps.withProofPlaybackGate(
+    checkpointRows
+      .slice()
+      .sort((left, right) => left.semesterNumber - right.semesterNumber || left.stageOrder - right.stageOrder)
+      .map(deps.parseProofCheckpointSummary),
+  )
+  const semesterSummaries = summaries.filter(item => item.semesterNumber === semesterNumber)
+  return semesterSummaries
+    .slice()
+    .reverse()
+    .find(item => item.playbackAccessible !== false)
+    ?? semesterSummaries.at(-1)
+    ?? null
 }
 
 export type ProofControlPlaneHodServiceDeps = {
@@ -82,7 +119,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
     courseCode?: string
     studentId?: string
   }
-}, deps: ProofControlPlaneHodServiceDeps) {
+}, deps: ProofControlPlaneHodServiceDeps): Promise<HodProofAnalyticsResult> {
   const {
     average,
     buildEvidenceTimelineFromRows,
@@ -174,7 +211,14 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
   const activeBranch = activeBatch ? (branchById.get(activeBatch.branchId) ?? null) : null
   const scopeMatchesActiveBatch = !!(activeBranch && scopeBranchIds.has(activeBranch.branchId))
   const activeRunId = activeRun?.simulationRunId ?? null
-  const currentSemester = input.filters?.semester ?? activeBatch?.currentSemester ?? 6
+  const currentSemester = input.filters?.semester ?? activeRun?.activeOperationalSemester ?? activeBatch?.currentSemester ?? 6
+  const operationalCheckpointSummary = activeRunId
+    ? resolveOperationalCheckpointSummary(
+      stageCheckpointRows.filter(row => row.simulationRunId === activeRunId),
+      currentSemester,
+      { parseProofCheckpointSummary, withProofPlaybackGate },
+    )
+    : null
   const activeTermIds = new Set(
     termRows
       .filter(row => row.batchId === activeBatch?.batchId)
@@ -185,6 +229,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
   const emptyResponse = {
     summary: {
       activeRunContext: null,
+      ...buildUnavailableCountProvenance(),
       scope: {
         departmentNames: uniqueSorted(Array.from(scopeDepartmentIds).map(departmentId => departmentById.get(departmentId)?.name ?? departmentId)),
         branchNames: uniqueSorted(Array.from(scopeBranchIds).map(branchId => branchById.get(branchId)?.name ?? branchId)),
@@ -279,6 +324,18 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
       return row.status === 'Open' && governance.primaryCase && governance.countsTowardCapacity
     })
     const scopedStudentIds = new Set(checkpointStudentRows.map(row => row.studentId))
+    const latestCheckpointTranscriptByStudent = new Map<string, typeof transcriptRows[number]>()
+    transcriptRows
+      .filter(row => scopedStudentIds.has(row.studentId))
+      .sort((left, right) => {
+        const leftSemester = termById.get(left.termId)?.semesterNumber ?? 0
+        const rightSemester = termById.get(right.termId)?.semesterNumber ?? 0
+        return leftSemester - rightSemester || left.updatedAt.localeCompare(right.updatedAt)
+      })
+      .forEach(row => {
+        latestCheckpointTranscriptByStudent.set(row.studentId, row)
+      })
+    const latestCheckpointBacklogRows = Array.from(latestCheckpointTranscriptByStudent.values())
     const currentSemesterLoadRows = loadRows
       .filter(row => row.simulationRunId === activeRunId)
       .filter(row => row.semesterNumber === checkpoint.semesterNumber)
@@ -302,6 +359,17 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
       return facultyAppointments.some(row => scopeDepartmentIds.has(row.departmentId) || (row.branchId ? scopeBranchIds.has(row.branchId) : false))
     })
 
+    const countProvenance = buildProofCountProvenance({
+      activeOperationalSemester: activeRun.activeOperationalSemester ?? activeBatch.currentSemester,
+      batchId: activeBatch.batchId,
+      batchLabel: activeBatch.batchLabel,
+      branchName: activeBranch.name,
+      sectionCode: input.filters?.section ?? null,
+      simulationRunId: activeRun.simulationRunId,
+      runLabel: activeRun.runLabel,
+      simulationStageCheckpointId: checkpoint.simulationStageCheckpointId,
+      checkpointLabel: checkpointSummary.stageLabel,
+    })
     const facultyRowsForHod = facultyIdsInScope
       .filter(facultyId => matchesTextFilter(facultyId, input.filters?.facultyId))
       .map(facultyId => {
@@ -567,7 +635,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
 
     return {
       summary: {
-      activeRunContext: {
+        activeRunContext: {
           simulationRunId: activeRun.simulationRunId,
           batchId: activeBatch.batchId,
           batchLabel: activeBatch.batchLabel,
@@ -579,6 +647,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
           sourceLabel: 'Live proof records',
           checkpointContext: checkpointSummary,
         },
+        ...countProvenance,
         scope: {
           departmentNames: uniqueSorted(Array.from(scopeDepartmentIds).map(departmentId => departmentById.get(departmentId)?.name ?? departmentId)),
           branchNames: uniqueSorted(Array.from(scopeBranchIds).map(branchId => branchById.get(branchId)?.name ?? branchId)),
@@ -615,7 +684,9 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
           .filter(row => row.batchId === activeBatch.batchId && row.semesterNumber <= checkpoint.semesterNumber)
           .sort((left, right) => left.semesterNumber - right.semesterNumber)
           .map(term => {
-            const termTranscripts = transcriptRows.filter(row => row.termId === term.termId)
+            const termTranscripts = transcriptRows
+              .filter(row => row.termId === term.termId)
+              .filter(row => scopedStudentIds.has(row.studentId))
             const highPressureCount = termTranscripts.filter(row => row.backlogCount >= 2).length
             const reviewCount = termTranscripts.filter(row => row.backlogCount === 1).length
             const stableCount = termTranscripts.filter(row => row.backlogCount === 0).length
@@ -629,7 +700,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
           }),
         backlogDistribution: ['0', '1', '2', '3+'].map(bucket => ({
           bucket,
-          studentCount: transcriptRows.filter(row => bucketBacklogCount(row.backlogCount) === bucket).length,
+          studentCount: latestCheckpointBacklogRows.filter(row => bucketBacklogCount(row.backlogCount) === bucket).length,
         })),
         electiveDistribution: checkpoint.stageKey === 'post-see'
           ? Array.from(new Map(electiveRows.filter(row => row.simulationRunId === activeRunId).map(row => [row.stream, {
@@ -651,6 +722,41 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
   }
 
   if (!activeRun || !activeBatch || !activeBranch || !activeRunId || !scopeMatchesActiveBatch) return emptyResponse
+
+  if (
+    !input.filters?.simulationStageCheckpointId
+    && activeRun.activeOperationalSemester != null
+    && activeRun.activeOperationalSemester !== activeBatch.currentSemester
+    && operationalCheckpointSummary
+  ) {
+    const checkpointResult = await buildHodProofAnalytics(db, {
+      facultyId: input.facultyId,
+      now: input.now,
+      filters: {
+        ...input.filters,
+        simulationStageCheckpointId: operationalCheckpointSummary.simulationStageCheckpointId,
+      },
+    }, deps)
+    const countProvenance = buildProofCountProvenance({
+      activeOperationalSemester: activeRun.activeOperationalSemester ?? activeBatch.currentSemester,
+      batchId: activeBatch.batchId,
+      batchLabel: activeBatch.batchLabel,
+      branchName: activeBranch.name,
+      sectionCode: input.filters?.section ?? null,
+      simulationRunId: activeRun.simulationRunId,
+      runLabel: activeRun.runLabel,
+    })
+    const checkpointActiveRunContext = checkpointResult.summary.activeRunContext
+    const { checkpointContext: _checkpointContext, ...activeRunContext } = checkpointActiveRunContext ?? {}
+    return {
+      ...checkpointResult,
+      summary: {
+        ...checkpointResult.summary,
+        ...countProvenance,
+        activeRunContext: checkpointActiveRunContext ? activeRunContext : null,
+      },
+    }
+  }
 
   const activeOfferings = sectionOfferingRows
     .filter(row => activeTermIds.has(row.termId))
@@ -1113,10 +1219,20 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
     acknowledgementCount: activeAcknowledgements.length,
     resolutionCount: activeResolutions.length,
   }
+  const countProvenance = buildProofCountProvenance({
+    activeOperationalSemester: activeRun.activeOperationalSemester ?? activeBatch.currentSemester,
+    batchId: activeBatch.batchId,
+    batchLabel: activeBatch.batchLabel,
+    branchName: activeBranch.name,
+    sectionCode: input.filters?.section ?? null,
+    simulationRunId: activeRun.simulationRunId,
+    runLabel: activeRun.runLabel,
+  })
 
   return {
     summary: {
       activeRunContext,
+      ...countProvenance,
       scope: {
         departmentNames: uniqueSorted(Array.from(scopeDepartmentIds).map(departmentId => departmentById.get(departmentId)?.name ?? departmentId)),
         branchNames: uniqueSorted(Array.from(scopeBranchIds).map(branchId => branchById.get(branchId)?.name ?? branchId)),

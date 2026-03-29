@@ -3,6 +3,22 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { RiskExplorerPage } from '../src/pages/risk-explorer'
 
+const completeFeatureCompleteness = {
+  graphAvailable: true,
+  historyAvailable: true,
+  complete: true,
+  missing: [],
+  fallbackMode: 'graph-aware' as const,
+}
+
+const completeFeatureProvenance = {
+  curriculumImportVersionId: 'import_001',
+  curriculumFeatureProfileFingerprint: 'fingerprint_001',
+  graphNodeCount: 42,
+  graphEdgeCount: 84,
+  historyCourseCount: 12,
+}
+
 describe('RiskExplorerPage', () => {
   it('renders proof-backed model provenance, trained heads, and bounded counterfactual copy', () => {
     const props: ComponentProps<typeof RiskExplorerPage> = {
@@ -13,6 +29,26 @@ describe('RiskExplorerPage', () => {
         simulationRunId: 'run_001',
         simulationStageCheckpointId: 'checkpoint_001',
         disclaimer: 'Simulation-calibrated proof analysis only. Formal academic status remains policy-derived.',
+        scopeDescriptor: {
+          scopeType: 'student',
+          scopeId: 'mnc_student_001',
+          label: 'Aarav Sharma · Section A · 2023 Mathematics and Computing',
+          batchId: 'batch_mnc_2023',
+          sectionCode: 'A',
+          branchName: 'B.Tech Mathematics and Computing',
+          simulationRunId: 'run_001',
+          simulationStageCheckpointId: 'checkpoint_001',
+          studentId: 'mnc_student_001',
+        },
+        resolvedFrom: {
+          kind: 'proof-checkpoint',
+          scopeType: 'proof',
+          scopeId: 'checkpoint_001',
+          label: 'Post TT1 · Proof Run 1',
+        },
+        scopeMode: 'proof',
+        countSource: 'proof-checkpoint',
+        activeOperationalSemester: 6,
         runContext: {
           simulationRunId: 'run_001',
           runLabel: 'Proof Run 1',
@@ -48,6 +84,8 @@ describe('RiskExplorerPage', () => {
           evidenceWindow: 'post-tt1',
           simulationCalibrated: true,
         },
+        featureCompleteness: completeFeatureCompleteness,
+        featureProvenance: completeFeatureProvenance,
         trainedRiskHeads: {
           currentRiskBand: 'High',
           currentRiskProbScaled: 78,
@@ -184,6 +222,8 @@ describe('RiskExplorerPage', () => {
     expect(markupDetails).toContain('data-proof-section="component-evidence-grid"')
     expect(markup).toContain('Simulation-calibrated proof analysis only')
     expect(markup).toContain('Authoritative proof surface for checkpoint-bound analysis')
+    expect(markup).toContain('Checkpoint-bound proof counts')
+    expect(markup).toContain('operational semester 6')
     expect(markup).toContain('risk-prod-v1')
     expect(markupAdvanced).toContain('Trained Risk Heads')
     expect(markupAdvanced).toContain('Derived Scenario Heads')
@@ -203,6 +243,26 @@ describe('RiskExplorerPage', () => {
         simulationRunId: 'run_002',
         simulationStageCheckpointId: 'checkpoint_002',
         disclaimer: 'Simulation-calibrated proof analysis only. Formal academic status remains policy-derived.',
+        scopeDescriptor: {
+          scopeType: 'student',
+          scopeId: 'mnc_student_002',
+          label: 'Nandini Rao · Section B · 2023 Mathematics and Computing',
+          batchId: 'batch_mnc_2023',
+          sectionCode: 'B',
+          branchName: 'B.Tech Mathematics and Computing',
+          simulationRunId: 'run_002',
+          simulationStageCheckpointId: 'checkpoint_002',
+          studentId: 'mnc_student_002',
+        },
+        resolvedFrom: {
+          kind: 'proof-checkpoint',
+          scopeType: 'proof',
+          scopeId: 'checkpoint_002',
+          label: 'Post SEE · Proof Run 2',
+        },
+        scopeMode: 'proof',
+        countSource: 'proof-checkpoint',
+        activeOperationalSemester: 6,
         runContext: {
           simulationRunId: 'run_002',
           runLabel: 'Proof Run 2',
@@ -250,6 +310,8 @@ describe('RiskExplorerPage', () => {
             },
           },
         },
+        featureCompleteness: completeFeatureCompleteness,
+        featureProvenance: completeFeatureProvenance,
         trainedRiskHeads: {
           currentRiskBand: 'Medium',
           currentRiskProbScaled: 48,

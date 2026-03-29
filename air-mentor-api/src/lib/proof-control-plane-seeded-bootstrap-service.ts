@@ -101,6 +101,7 @@ export async function prepareSeededProofRunBootstrap(
     facultyCount: deps.PROOF_FACULTY.length,
     semesterStart: 1,
     semesterEnd: 6,
+    activeOperationalSemester: 6,
     sourceType: 'simulation' as const,
     policySnapshotJson: JSON.stringify(input.policy),
     engineVersionsJson: JSON.stringify({

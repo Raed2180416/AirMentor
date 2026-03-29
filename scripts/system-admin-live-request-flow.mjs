@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { resolveSystemAdminLiveCredentials } from './system-admin-live-auth.mjs'
 
 const playwrightRoot = process.env.PLAYWRIGHT_ROOT
 const appUrl = process.env.PLAYWRIGHT_APP_URL ?? 'http://127.0.0.1:4173'
@@ -14,6 +15,16 @@ await mkdir(outputDir, { recursive: true })
 
 const successScreenshot = path.join(outputDir, 'system-admin-live-request-flow.png')
 const failureScreenshot = path.join(outputDir, 'system-admin-live-request-flow-failure.png')
+const successReport = path.join(outputDir, 'system-admin-live-request-flow-report.json')
+const failureReport = path.join(outputDir, 'system-admin-live-request-flow-failure.json')
+const report = {
+  generatedAt: new Date().toISOString(),
+  appUrl,
+  checks: [],
+}
+const systemAdminCredentials = resolveSystemAdminLiveCredentials({
+  scriptLabel: 'System admin live request flow',
+})
 
 const browser = await firefox.launch({ headless: true })
 const page = await browser.newPage({ viewport: { width: 1440, height: 1200 } })
@@ -69,12 +80,14 @@ try {
   await page.getByRole('button', { name: /Open System Admin/i }).click()
   await expectVisible(page.getByText(/System Admin Live Mode/), 'live admin login')
 
-  await page.getByPlaceholder('sysadmin', { exact: true }).fill('sysadmin')
-  await page.getByPlaceholder('••••••••', { exact: true }).fill('admin1234')
+  await page.getByPlaceholder('sysadmin', { exact: true }).fill(systemAdminCredentials.identifier)
+  await page.getByPlaceholder('••••••••', { exact: true }).fill(systemAdminCredentials.password)
   await page.getByRole('button', { name: 'Sign In', exact: true }).click()
+  report.checks.push({ name: 'system-admin-login', status: 'passed' })
 
   await focusAndActivate(page.getByRole('button', { name: 'Requests', exact: true }), 'requests navigation')
   await expectVisible(page.getByText(/^Requests$/).last(), 'requests heading')
+  report.checks.push({ name: 'request-list-open', status: 'passed' })
 
   const requestSummary = /Grant additional mentor mapping coverage/i
   await focusAndActivate(page.getByRole('button', { name: requestSummary }).first(), 'request summary row')
@@ -83,18 +96,27 @@ try {
 
   await expectVisible(page.getByText(/Linked Targets/i), 'linked targets section')
   await expectVisible(page.getByText(/Status History/i), 'status history section')
+  report.checks.push({ name: 'request-detail-open', status: 'passed', summary: 'Grant additional mentor mapping coverage' })
 
   await page.reload({ waitUntil: 'networkidle' })
   await expectVisible(page.getByText(requestSummary).last(), 'request detail after reload')
   assert(/#\/admin\/requests\//.test(page.url()), `expected request URL after reload, got ${page.url()}`)
+  report.checks.push({ name: 'request-deep-link-persists', status: 'passed' })
 
   await advanceRequestToClosed()
   await expectVisible(page.getByText(/^Closed$/).first(), 'closed request status')
+  report.checks.push({ name: 'request-closeout', status: 'passed' })
 
+  await writeFile(successReport, `${JSON.stringify(report, null, 2)}\n`, 'utf8')
   await page.screenshot({ path: successScreenshot, fullPage: true })
   console.log(`System admin live request flow passed. Screenshot: ${successScreenshot}`)
 } catch (error) {
   try {
+    await writeFile(failureReport, `${JSON.stringify({
+      ...report,
+      failedAt: new Date().toISOString(),
+      error: error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) },
+    }, null, 2)}\n`, 'utf8')
     await page.screenshot({ path: failureScreenshot, fullPage: true })
     console.error(`System admin live request flow failed. Screenshot: ${failureScreenshot}`)
   } catch {

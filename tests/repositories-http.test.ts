@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { AIRMENTOR_STORAGE_KEYS, createAirMentorRepositories, createLocalAirMentorRepositories } from '../src/repositories'
 import type { AirMentorApiClientLike } from '../src/api/client'
 import type { ApiAcademicBootstrap, ApiLoginRequest, ApiSessionResponse, ApiUiPreferences } from '../src/api/types'
+import type { CalendarAuditEvent, SharedTask, TaskCalendarPlacement } from '../src/domain'
 
 class MemoryStorage implements Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> {
   private readonly data = new Map<string, string>()
@@ -457,10 +458,26 @@ describe('HTTP repository mode', () => {
     expect(repositories.entryData.getDraftSnapshot()).toEqual({ 'draft-1': 9, 'draft-2': 3 })
     await repositories.entryData.saveCellValues({ 'cell-1': 84 })
     expect(saveAcademicCellValues).toHaveBeenCalledTimes(1)
-    await repositories.locksAudit.saveLocks({ off_001: { attendance: true } })
+    await repositories.locksAudit.saveLocks({
+      off_001: {
+        attendance: true,
+        tt1: false,
+        tt2: false,
+        quiz: false,
+        assignment: false,
+        finals: false,
+      },
+    })
     expect(saveAcademicLockByOffering).toHaveBeenCalledTimes(1)
     await repositories.locksAudit.saveLockAudit({
-      off_001: [{ action: 'lock', actorRole: 'Course Leader', at: 1_710_000_012_000 }],
+      off_001: [{
+        id: 'transition-lock-1',
+        action: 'lock',
+        actorRole: 'Course Leader',
+        toOwner: 'Course Leader',
+        note: 'Local lock persisted for attendance.',
+        at: 1_710_000_012_000,
+      }],
     })
     expect(saveAcademicLockAuditByTarget).toHaveBeenCalledTimes(1)
 
@@ -494,14 +511,14 @@ describe('HTTP repository mode', () => {
 
   it('uses the narrow academic runtime contracts for per-entity task, placement, and calendar-audit writes', async () => {
     const storage = new MemoryStorage()
-    const saveAcademicTask = vi.fn(async (_taskId: string, payload: { task: { id: string }; expectedVersion?: number }) => ({
+    const saveAcademicTask = vi.fn(async (_taskId: string, payload: { task: SharedTask; expectedVersion?: number }) => ({
       task: {
         ...payload.task,
         version: payload.expectedVersion ? payload.expectedVersion + 1 : 1,
       },
       created: !payload.expectedVersion,
     }))
-    const saveAcademicTaskPlacement = vi.fn(async (_taskId: string, payload: { placement: { taskId: string } }) => ({
+    const saveAcademicTaskPlacement = vi.fn(async (_taskId: string, payload: { placement: TaskCalendarPlacement }) => ({
       placement: payload.placement,
       created: false,
     }))
@@ -510,7 +527,7 @@ describe('HTTP repository mode', () => {
       taskId,
       deleted: true,
     }))
-    const appendAcademicCalendarAuditEvent = vi.fn(async (payload: { event: { id: string } }) => ({
+    const appendAcademicCalendarAuditEvent = vi.fn(async (payload: { event: CalendarAuditEvent }) => ({
       event: payload.event,
       created: true,
     }))

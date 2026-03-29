@@ -2,6 +2,9 @@ import { readFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
 
 const repoRoot = process.cwd()
+const args = new Set(process.argv.slice(2))
+const outputJson = args.has('--json')
+const assertRuntimeClean = args.has('--assert-runtime-clean')
 
 const trackedRoots = [
   '.github',
@@ -98,47 +101,75 @@ const findings = routePatterns.map(({ route, snippets }) => {
       })
     })
   }
-  return { route, references }
-})
-
-const output = [
-  '# Academic Compatibility Route Inventory',
-  '',
-  `Generated: ${new Date().toISOString()}`,
-  '',
-]
-
-for (const finding of findings) {
-  const byClass = new Map()
-  for (const reference of finding.references) {
-    const current = byClass.get(reference.classification) ?? []
-    current.push(reference)
-    byClass.set(reference.classification, current)
-  }
-
-  output.push(`## ${finding.route}`)
-  output.push('')
-  const runtimeCallers = finding.references.filter(reference => (
+  const runtimeCallers = references.filter(reference => (
     reference.classification === 'first-party-frontend'
     || reference.classification === 'first-party-backend'
   ))
-  output.push(runtimeCallers.length === 0
-    ? '- first-party runtime callers: none'
-    : `- first-party runtime callers: ${runtimeCallers.length}`)
-  if (finding.references.length === 0) {
+  return { route, references, runtimeCallers }
+})
+
+const generatedAt = new Date().toISOString()
+
+if (outputJson) {
+  console.log(JSON.stringify({
+    generatedAt,
+    findings,
+    runtimeCallerCount: findings.reduce((count, finding) => count + finding.runtimeCallers.length, 0),
+  }, null, 2))
+} else {
+  const output = [
+  '# Academic Compatibility Route Inventory',
+  '',
+  `Generated: ${generatedAt}`,
+  '',
+  ]
+
+  for (const finding of findings) {
+    const byClass = new Map()
+    for (const reference of finding.references) {
+      const current = byClass.get(reference.classification) ?? []
+      current.push(reference)
+      byClass.set(reference.classification, current)
+    }
+
+    output.push(`## ${finding.route}`)
     output.push('')
-    continue
+    output.push(finding.runtimeCallers.length === 0
+      ? '- first-party runtime callers: none'
+      : `- first-party runtime callers: ${finding.runtimeCallers.length}`)
+    if (finding.references.length === 0) {
+      output.push('')
+      continue
+    }
+
+    for (const classification of ['first-party-frontend', 'first-party-backend', 'route-definition', 'tests', 'scripts', 'ci', 'audit-docs', 'other']) {
+      const references = byClass.get(classification)
+      if (!references || references.length === 0) continue
+      output.push(`- ${classification}:`)
+      for (const reference of references) {
+        output.push(`  - ${reference.path}:${reference.line}`)
+      }
+    }
+    output.push('')
   }
 
-  for (const classification of ['first-party-frontend', 'first-party-backend', 'route-definition', 'tests', 'scripts', 'ci', 'audit-docs', 'other']) {
-    const references = byClass.get(classification)
-    if (!references || references.length === 0) continue
-    output.push(`- ${classification}:`)
-    for (const reference of references) {
-      output.push(`  - ${reference.path}:${reference.line}`)
-    }
-  }
-  output.push('')
+  console.log(output.join('\n'))
 }
 
-console.log(output.join('\n'))
+if (assertRuntimeClean) {
+  const leakedRuntimeCallers = findings.flatMap(finding =>
+    finding.runtimeCallers.map(reference => ({
+      route: finding.route,
+      path: reference.path,
+      line: reference.line,
+      classification: reference.classification,
+    })),
+  )
+  if (leakedRuntimeCallers.length > 0) {
+    const summary = leakedRuntimeCallers
+      .map(reference => `${reference.route} -> ${reference.path}:${reference.line}`)
+      .join(' | ')
+    console.error(`Compatibility route inventory failed: first-party runtime callers remain. ${summary}`)
+    process.exitCode = 1
+  }
+}

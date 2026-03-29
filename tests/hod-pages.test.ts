@@ -38,6 +38,26 @@ describe('HodView', () => {
             nextCheckpointId: 'checkpoint_002',
           },
         },
+        scopeDescriptor: {
+          scopeType: 'proof',
+          scopeId: 'checkpoint_001',
+          label: '2023 Mathematics and Computing',
+          batchId: 'batch_001',
+          sectionCode: null,
+          branchName: 'B.Tech Mathematics and Computing',
+          simulationRunId: 'run_001',
+          simulationStageCheckpointId: 'checkpoint_001',
+          studentId: null,
+        },
+        resolvedFrom: {
+          kind: 'proof-checkpoint',
+          scopeType: 'proof',
+          scopeId: 'checkpoint_001',
+          label: 'Post TT1 · Proof Run 1',
+        },
+        scopeMode: 'proof',
+        countSource: 'proof-checkpoint',
+        activeOperationalSemester: 6,
         scope: {
           departmentNames: ['School of Computing'],
           branchNames: ['Mathematics and Computing'],
@@ -232,6 +252,8 @@ describe('HodView', () => {
     expect(markup).toContain('role="tabpanel"')
     expect(markup).toContain('data-proof-section="hod-panel-overview"')
     expect(markup).toContain('sourced from live proof records')
+    expect(markup).toContain('Checkpoint-bound proof counts')
+    expect(markup).toContain('operational semester 6')
     expect(markup).toContain('Post TT1')
     expect(markup).toContain('Course Hotspots')
     expect(markup).toContain('TT Window')
@@ -273,6 +295,26 @@ describe('HodView', () => {
             nextCheckpointId: 'checkpoint_002',
           },
         },
+        scopeDescriptor: {
+          scopeType: 'proof',
+          scopeId: 'checkpoint_001',
+          label: '2023 Mathematics and Computing',
+          batchId: 'batch_001',
+          sectionCode: null,
+          branchName: 'B.Tech Mathematics and Computing',
+          simulationRunId: 'run_001',
+          simulationStageCheckpointId: 'checkpoint_001',
+          studentId: null,
+        },
+        resolvedFrom: {
+          kind: 'proof-checkpoint',
+          scopeType: 'proof',
+          scopeId: 'checkpoint_001',
+          label: 'Post TT1 · Proof Run 1',
+        },
+        scopeMode: 'proof',
+        countSource: 'proof-checkpoint',
+        activeOperationalSemester: 6,
         scope: {
           departmentNames: ['School of Computing'],
           branchNames: ['Mathematics and Computing'],
@@ -397,6 +439,26 @@ describe('HodView', () => {
           sourceLabel: 'Live proof records',
           checkpointContext: null,
         },
+        scopeDescriptor: {
+          scopeType: 'proof',
+          scopeId: 'run_001',
+          label: '2023 Mathematics and Computing',
+          batchId: 'batch_001',
+          sectionCode: null,
+          branchName: 'B.Tech Mathematics and Computing',
+          simulationRunId: 'run_001',
+          simulationStageCheckpointId: null,
+          studentId: null,
+        },
+        resolvedFrom: {
+          kind: 'proof-run',
+          scopeType: 'proof',
+          scopeId: 'run_001',
+          label: 'Proof Run 1',
+        },
+        scopeMode: 'proof',
+        countSource: 'proof-run',
+        activeOperationalSemester: 6,
         scope: {
           departmentNames: ['Computer Science and Engineering'],
           branchNames: ['Mathematics and Computing'],

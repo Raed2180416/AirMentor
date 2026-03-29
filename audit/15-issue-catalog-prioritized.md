@@ -7,27 +7,27 @@ This is the canonical issue ledger for the forensic audit. Each issue uses one s
 - The issues below are grounded in active code, tests, scripts, configs, or tracked artifacts.
 - Repeated manifestations are intentionally grouped under shared root issues rather than listed as separate local defects.
 
-## Current-state reconciliation (2026-03-28)
+## Current-state reconciliation (2026-03-29)
 This issue catalog was authored before several remediation slices landed. The canonical current-state status is now:
 
 | Issue | Current status | Reconciliation note |
 | --- | --- | --- |
 | AM-001 | Partial | frontend shells, backend route ownership, and proof services are split, but the hotspot files are still large |
 | AM-002 | Mostly resolved | `#/` is neutral again and restore state is explicit/resettable; low-risk convenience persistence still remains |
-| AM-003 | Mostly resolved | narrow task/task-placement/calendar routes exist, `/sync` routes are now compatibility-only and deprecated, narrow per-entity writes no longer update runtime shadow, first-party runtime writes no longer use the generic runtime route, shadow-only task/placement/calendar extras are ignored once authoritative rows exist, and observed-state decoding is centralized; compatibility-retirement work still remains |
+| AM-003 | Mostly resolved | narrow task/task-placement/calendar routes exist, `/sync` routes are now compatibility-only, deprecated, and explicitly marked with deprecation headers, narrow per-entity writes no longer update runtime shadow, first-party runtime writes no longer use the generic runtime route, shadow-only task/placement/calendar extras are ignored once authoritative rows exist, and observed-state decoding is centralized; compatibility-retirement work still remains |
 | AM-004 | Partial | academic access is more centralized, but full scope logic is still not unified end-to-end |
 | AM-005 | Mostly resolved | proof restore/blocking/diagnostic messaging improved, the student-shell trust legend now sits next to the deterministic shell surface, and remaining validation is mainly deployed/user-interpretation work |
 | AM-006 | Mostly resolved | proof dashboard/access/batch/checkpoint/playback/playback-reset/playback-governance/policy/rebuild-context/section-risk/runtime/live-run/seeded-bootstrap/seeded-scaffolding/seeded-semester/seeded-run/stage-summary/tail services now exist, and `msruas-proof-control-plane.ts` is materially smaller, though still a large facade |
 | AM-007 | Partial | curriculum linkage approval now separates approval from proof-refresh queue success; helper brittleness remains |
-| AM-008 | Partial | CI workflows, telemetry, startup diagnostics, and repo hygiene gates now exist; external production observability still does not |
-| AM-009 | Mostly resolved | shell structure improved and live keyboard, axe/browser, and accessibility-tree regression coverage now exist; screen-reader-specific verification is still absent |
+| AM-008 | Mostly resolved | CI workflows, telemetry, local retained operational events, proof-dashboard surfacing, startup diagnostics, repo hygiene gates, optional telemetry sink forwarding, and Railway deploy preflight/diagnostics now exist; live sink provisioning and broader production analytics still remain |
+| AM-009 | Mostly resolved | shell structure improved and live keyboard, axe/browser, accessibility-tree regression coverage, direct modal focus-trap/restore coverage, and a generated screen-reader preflight transcript now exist; the remaining gap is the final human assistive-tech pass |
 | AM-010 | Resolved | mock-admin runtime/tests/scripts are gone and the root prototype/temp/PDF clutter has been removed or ignored appropriately |
-| AM-011 | Partial | proof dashboard now exposes queue/lease/retry/checkpoint diagnostics; operability is improved but still not fully mature |
+| AM-011 | Partial | proof dashboard now exposes queue/lease/retry/checkpoint diagnostics and recent operational events; operability is improved but still not fully mature |
 | AM-012 | Partial | authoritative-first bootstrap, compatibility-only shadow routes, and central observed-state decoding exist, but immutable replay snapshots still remain JSON-heavy by design |
-| AM-013 | Mostly resolved | non-deploy verification and proof-browser cadence now exist, and `verify:final-closeout*` now provide an explicit deterministic closeout bar; artifact freshness and release discipline remain operational concerns |
+| AM-013 | Mostly resolved | non-deploy verification and proof-browser cadence now exist, `verify:final-closeout*` now provide an explicit deterministic closeout bar, compatibility-route inventory assert mode is enforced by the closeout scripts, and the live closeout bar is now green against the deployed Pages + Railway stack |
 | AM-014 | Partial | restore-state visibility is better, but request/process complexity still remains |
-| AM-015 | Partial | startup diagnostics, repo hygiene gates, and CI checks exist; deployment/env drift is still a product risk |
-| AM-016 | Mostly resolved | login throttling and CSRF tokens exist; throttling is now DB-backed, and production-like startup requires an explicit CSRF secret |
+| AM-015 | Partial | startup diagnostics, repo hygiene gates, CI checks, Railway variable preflight, Railway deploy log capture, and readiness-health checks now exist; deployment/env drift is still a product risk, but the stale live Railway rollout was resolved on `2026-03-29` |
+| AM-016 | Mostly resolved | login throttling and CSRF tokens exist; throttling is now DB-backed, production-like startup requires an explicit CSRF secret, and both repo-local and live session-security checks are now green |
 
 The detailed issue bodies below still matter, but some older evidence lines are now historical rather than current. Use [41 Current-State Reconciliation And Gap Analysis](./41-current-state-reconciliation-and-gap-analysis.md) together with this catalog when deciding what is actually still open.
 
@@ -406,16 +406,19 @@ Type: systemic | cross-layer | tech-debt amplifier
 Detection gap: This issue is itself a detection gap.
 
 #### Summary
-AirMentor has audit tables and tests, but it lacks a broader production observability layer. That prevents the team from measuring user pain, proof degradation, or operational failures with confidence.
+AirMentor has audit tables and tests, and it now retains operational telemetry locally and surfaces recent events in the proof dashboard. It still lacks a broader production observability layer, which prevents the team from measuring user pain, proof degradation, or operational failures with confidence.
 
 #### Where it appears
 - Runtime code across frontend and backend
 - `air-mentor-api/src/app.ts`
+- `air-mentor-api/src/lib/operational-event-store.ts`
+- `air-mentor-api/src/lib/proof-control-plane-batch-service.ts`
+- `src/system-admin-proof-dashboard-workspace.tsx`
 - absence of analytics or error-reporting integrations in tracked runtime code
 - smoke scripts rely on console output rather than production telemetry
 
 #### What is happening
-The platform mostly depends on tests, audit tables, manual debugging, and acceptance scripts rather than structured runtime metrics, tracing, error aggregation, or product analytics.
+The platform mostly depends on tests, audit tables, manual debugging, and acceptance scripts rather than structured runtime metrics, tracing, error aggregation, or product analytics. The repo-local telemetry path now persists retained events, but that is still not the same as a provisioned observability stack.
 
 #### Why this is a problem
 - Technical consequence: hard-to-diagnose regressions and degraded paths.
@@ -439,6 +442,7 @@ The repository invested heavily in correctness-by-construction and seeded verifi
 #### Recommended fix
 - Add metrics, tracing, and error aggregation for key journeys.
 - Record proof-run lifecycle metrics, bootstrap latency, shell/risk load failures, and linkage helper failures.
+- Keep the retained local event surface and proof-dashboard observability card, but do not mistake them for a production sink.
 - Add product analytics around role usage, proof surface entry, and abandonment points.
 
 #### Priority rationale
@@ -448,10 +452,10 @@ This is prerequisite infrastructure for scaling quality work efficiently.
 Severity: Medium
 Confidence: Medium
 Type: systemic | product/UX mismatch
-Detection gap: Dedicated live keyboard, axe/browser, and accessibility-tree regression now exist, but screen-reader-oriented verification is still absent.
+Detection gap: Dedicated live keyboard, axe/browser, accessibility-tree regression, and a generated screen-reader preflight transcript now exist, but the final human assistive-technology pass is still absent.
 
 #### Summary
-The product’s custom dense UIs likely create keyboard, focus, semantic, and cognitive accessibility problems, especially on admin and proof-heavy screens.
+The product’s custom dense UIs likely create keyboard, focus, semantic, and cognitive accessibility problems, especially on admin and proof-heavy screens. The repo now has direct modal focus and tab-semantics coverage, but that does not eliminate the underlying density risk.
 
 #### Where it appears
 - `src/ui-primitives.tsx`
@@ -460,9 +464,11 @@ The product’s custom dense UIs likely create keyboard, focus, semantic, and co
 - `src/pages/student-shell.tsx`
 - `src/pages/risk-explorer.tsx`
 - `src/pages/hod-pages.tsx`
+- `tests/system-admin-accessibility-contracts.test.tsx`
+- `tests/ui-primitives-modal.test.tsx`
 
 #### What is happening
-The app uses large amounts of custom-styled inline UI with dense layouts and bespoke interactions. Live accessibility automation now exists, but the product still depends heavily on custom semantics and dense information hierarchy.
+The app uses large amounts of custom-styled inline UI with dense layouts and bespoke interactions. Live accessibility automation now exists, and the modal focus contract plus tab semantics are covered directly, but the product still depends heavily on custom semantics and dense information hierarchy.
 
 #### Why this is a problem
 - Technical consequence: accessibility bugs are hard to systematically prevent.
@@ -484,6 +490,7 @@ UI implementation prioritized feature coverage and visual control over reusable 
 
 #### Recommended fix
 - Add accessibility test automation and extract accessible primitives.
+- Keep the existing direct contract tests for tab semantics and modal focus behavior as regression guards.
 - Simplify information hierarchy on high-density screens.
 
 #### Priority rationale
@@ -533,13 +540,15 @@ Type: systemic | cross-layer | tech-debt amplifier
 Detection gap: Queue health is not richly surfaced to operators or telemetry.
 
 #### Summary
-The proof queue has sensible lease mechanics, but its operability depends on code understanding and manual scripts more than rich runtime visibility.
+The proof queue has sensible lease mechanics, and the proof dashboard now exposes queue diagnostics plus recent operational events, but its operability still depends on code understanding and manual scripts more than rich runtime visibility.
 
 #### Where it appears
 - `air-mentor-api/src/lib/proof-run-queue.ts`
 - `air-mentor-api/src/app.ts`
 - `air-mentor-api/src/modules/admin-proof-sandbox.ts`
 - `scripts/system-admin-proof-risk-smoke.mjs`
+- `air-mentor-api/src/lib/proof-control-plane-batch-service.ts`
+- `src/system-admin-proof-dashboard-workspace.tsx`
 
 #### What is happening
 Queued proof runs are claimed, heartbeated, and finalized by a background worker. When checkpoints are missing, operators or smoke scripts may need to recompute or prewarm lifecycle steps to restore expected proof state.
@@ -565,6 +574,7 @@ The worker design is functional, but observability and operator tooling did not 
 #### Recommended fix
 - Add queue dashboards and metrics.
 - Surface stale or incomplete proof state explicitly in the UI.
+- Keep the recent operational-event feed in the proof dashboard because it makes operator state easier to audit.
 - Record retry counts and checkpoint materialization latency.
 
 #### Priority rationale
@@ -621,7 +631,7 @@ Type: systemic | tech-debt amplifier
 Detection gap: Heavy proof and browser flows are not part of the main fast verification baseline.
 
 #### Summary
-The repository’s automated coverage is better than average for a product this size, but the strongest holistic proof/admin flows are either browser scripts outside default runs or proof-rc-gated backend tests.
+The repository’s automated coverage is better than average for a product this size, but the strongest holistic proof/admin flows are either browser scripts outside default runs or proof-rc-gated backend tests. The closeout scripts now also assert compatibility-route caller cleanliness and collect structured JSON evidence from the key browser flows.
 
 #### Where it appears
 - frontend tests under `tests/`
@@ -635,9 +645,12 @@ The repository’s automated coverage is better than average for a product this 
 - `scripts/system-admin-teaching-parity-smoke.mjs`
 - `.github/workflows/deploy-pages.yml`
 - `.github/workflows/deploy-railway-api.yml`
+- `scripts/report-compat-route-callers.mjs`
+- `scripts/verify-final-closeout.sh`
+- `scripts/verify-final-closeout-live.sh`
 
 #### What is happening
-Fast baseline tests validate many contracts, while the heaviest end-to-end scenarios still depend on proof-rc and browser suites that are separate from the default fast baseline. The backend runner hard-codes proof-heavy exclusions, the root `verify:proof-closure*` scripts still encode a stronger integrated proof confidence bar than a plain local green run, and CI is now materially stronger because non-deploy verification and scheduled proof/browser cadence exist.
+Fast baseline tests validate many contracts, while the heaviest end-to-end scenarios still depend on proof-rc and browser suites that are separate from the default fast baseline. The backend runner hard-codes proof-heavy exclusions, the root `verify:proof-closure*` scripts still encode a stronger integrated proof confidence bar than a plain local green run, the closeout scripts now assert compatibility-route cleanliness, and CI is materially stronger because non-deploy verification and scheduled proof/browser cadence exist.
 
 #### Why this is a problem
 - Technical consequence: some important regressions will escape default verification.
@@ -722,7 +735,7 @@ Type: cross-layer | tech-debt amplifier
 Detection gap: Environment drift is mostly caught only when deployments or local live runs fail.
 
 #### Summary
-AirMentor depends on coordinated frontend, backend, proxy, and deployment configuration. Misconfiguration quickly becomes a user-visible outage or a frontend hard-stop.
+AirMentor depends on coordinated frontend, backend, proxy, and deployment configuration. Misconfiguration quickly becomes a user-visible outage or a frontend hard-stop, so the Railway deploy workflow now captures deploy logs and uses an explicit readiness-health probe.
 
 #### Where it appears
 - `vite.config.ts`
@@ -732,9 +745,10 @@ AirMentor depends on coordinated frontend, backend, proxy, and deployment config
 - `.github/workflows/deploy-railway-api.yml`
 - `air-mentor-api/railway.json`
 - `air-mentor-api/src/config.ts`
+- `scripts/check-railway-deploy-readiness.mjs`
 
 #### What is happening
-The frontend expects `VITE_AIRMENTOR_API_BASE_URL`, optionally relies on a local proxy target, and the backend expects correct cookie, origin, DB, and Railway settings. Local live mode also assumes seeded-server bootstrapping, embedded Postgres, dynamic API-port allocation, and a same-origin Vite proxy path. Startup diagnostics now exist, but environment correctness still depends on configuration discipline.
+The frontend expects `VITE_AIRMENTOR_API_BASE_URL`, optionally relies on a local proxy target, and the backend expects correct cookie, origin, DB, and Railway settings. Local live mode also assumes seeded-server bootstrapping, embedded Postgres, dynamic API-port allocation, and a same-origin Vite proxy path. Startup diagnostics now exist, the Railway readiness script has boot-smoke and health-check modes, and environment correctness still depends on configuration discipline.
 
 #### Why this is a problem
 - Technical consequence: local/live parity is configuration-sensitive.
@@ -758,6 +772,7 @@ The app is split across separate deployment targets with several environment-con
 #### Recommended fix
 - Keep startup diagnostics and clearer environment validation in place.
 - Document and enforce required env combinations for each deployment mode.
+- Preserve captured Railway deploy stdout/stderr so failed rollouts are diagnosable.
 - Add stronger preflight verification in CI for the live path.
 
 #### Priority rationale

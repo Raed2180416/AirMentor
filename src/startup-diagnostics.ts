@@ -1,3 +1,5 @@
+import { resolveClientTelemetrySinkUrl } from './telemetry'
+
 export type FrontendStartupDiagnostic = {
   level: 'info' | 'warning' | 'error'
   code: string
@@ -6,6 +8,7 @@ export type FrontendStartupDiagnostic = {
 
 type FrontendStartupInput = {
   apiBaseUrl: string
+  telemetrySinkUrl?: string
   locationHref?: string
 }
 
@@ -27,6 +30,8 @@ export function collectFrontendStartupDiagnostics(input: FrontendStartupInput) {
     ?? (typeof window !== 'undefined' ? window.location.href : 'http://localhost/')
   const locationUrl = new URL(locationHref)
   const productionLike = isProductionLikeLocation(locationUrl)
+  const telemetrySinkUrl = resolveClientTelemetrySinkUrl(input.telemetrySinkUrl ?? undefined, input.apiBaseUrl)
+  const explicitTelemetrySinkUrl = input.telemetrySinkUrl?.trim() || ''
 
   diagnostics.push({
     level: 'info',
@@ -100,6 +105,33 @@ export function collectFrontendStartupDiagnostics(input: FrontendStartupInput) {
       code: 'LOCAL_FRONTEND_REMOTE_API',
       message: 'Local frontend is pointed at a remote API base URL; verify the cookie and CORS posture before using this as a dev default.',
     })
+  }
+
+  if (productionLike && !telemetrySinkUrl) {
+    diagnostics.push({
+      level: 'warning',
+      code: 'TELEMETRY_SINK_NOT_CONFIGURED',
+      message: 'Production-like frontend origins should route client telemetry either through the backend relay or to an explicit external sink.',
+    })
+  }
+
+  if (productionLike && explicitTelemetrySinkUrl) {
+    if (!hasAbsoluteScheme(explicitTelemetrySinkUrl)) {
+      diagnostics.push({
+        level: 'warning',
+        code: 'PRODUCTION_LIKE_REQUIRES_ABSOLUTE_TELEMETRY_SINK',
+        message: 'Production-like frontend origins should use an absolute telemetry sink URL.',
+      })
+    } else {
+      const telemetryUrl = new URL(explicitTelemetrySinkUrl)
+      if (locationUrl.protocol === 'https:' && telemetryUrl.protocol !== 'https:') {
+        diagnostics.push({
+          level: 'warning',
+          code: 'HTTPS_PAGE_REQUIRES_HTTPS_TELEMETRY_SINK',
+          message: 'HTTPS frontend origins should forward telemetry to an HTTPS sink.',
+        })
+      }
+    }
   }
 
   return diagnostics

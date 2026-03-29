@@ -121,6 +121,7 @@ import type {
   ApiStudentAgentTimelineItem,
   ApiStudentRiskExplorer,
 } from './api/types'
+import { describeProofAvailability, describeProofProvenance } from './proof-provenance'
 import { clearProofPlaybackSelection, PROOF_PLAYBACK_SELECTION_STORAGE_KEY, readProofPlaybackSelection } from './proof-playback'
 import { collectFrontendStartupDiagnostics } from './startup-diagnostics'
 import { emitClientOperationalEvent, normalizeClientTelemetryError } from './telemetry'
@@ -393,6 +394,8 @@ export function FacultyProfilePage({
         {proofOps ? (
           <div data-proof-section="proof-mode-authority">
             <InfoBanner message="Proof mode is active. Use the Proof Control Plane, Risk Explorer, and Student Shell for checkpoint-bound evidence. Other faculty-profile cards on this page remain operational context and may not reflect the selected proof checkpoint." />
+            <InfoBanner tone="neutral" message={describeProofProvenance(proofOps)} />
+            <InfoBanner tone="neutral" message={describeProofAvailability(proofOps)} />
           </div>
         ) : null}
 
@@ -526,6 +529,7 @@ export function FacultyProfilePage({
                 This panel only surfaces rerunnable proof data: active simulation runs, observed risk queue items, and elective-fit summaries. It does not expose latent-state internals.
               </div>
               <InfoBanner message="Authoritative proof panel for this faculty scope. Use this card and the linked proof routes for checkpoint-bound evidence; surrounding faculty-profile cards remain operational context." />
+              {proofOps ? <InfoBanner tone="neutral" message={describeProofProvenance(proofOps)} /> : null}
             </div>
                 {proofOps ? (
                   <>
@@ -3860,10 +3864,11 @@ function getAcademicApiBaseUrl() {
 
 export function OperationalApp() {
   const apiBaseUrl = getAcademicApiBaseUrl()
+  const telemetrySinkUrl = import.meta.env.VITE_AIRMENTOR_TELEMETRY_SINK_URL?.trim() || ''
   const apiClient = useMemo(() => (apiBaseUrl ? new AirMentorApiClient(apiBaseUrl) : null), [apiBaseUrl])
   const startupDiagnostics = useMemo(
-    () => collectFrontendStartupDiagnostics({ apiBaseUrl }),
-    [apiBaseUrl],
+    () => collectFrontendStartupDiagnostics({ apiBaseUrl, telemetrySinkUrl }),
+    [apiBaseUrl, telemetrySinkUrl],
   )
   const remoteSessionRepositories = useMemo(() => (
     apiClient
@@ -3899,10 +3904,11 @@ export function OperationalApp() {
     emitClientOperationalEvent('startup.ready', {
       workspace: 'academic',
       apiBaseUrl: apiBaseUrl || null,
+      telemetrySinkConfigured: Boolean(telemetrySinkUrl),
       diagnosticCount: startupDiagnostics.length,
       errorCount: startupDiagnostics.filter(item => item.level === 'error').length,
     })
-  }, [apiBaseUrl, startupDiagnostics])
+  }, [apiBaseUrl, startupDiagnostics, telemetrySinkUrl])
 
   const fetchAcademicBootstrap = useCallback(async () => {
     if (!apiClient) return null

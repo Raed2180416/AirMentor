@@ -86,6 +86,8 @@ else
   fi
 fi
 
+ensure_system_admin_live_credentials
+
 echo "Running session security smoke..."
 echo "Frontend URL: $app_url"
 echo "Backend URL: $api_base_url"

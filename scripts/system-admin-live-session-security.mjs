@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { resolveSystemAdminLiveCredentials } from './system-admin-live-auth.mjs'
 
 const appUrl = process.env.PLAYWRIGHT_APP_URL ?? 'http://127.0.0.1:4173'
 const apiUrl = process.env.PLAYWRIGHT_API_URL ?? appUrl
 const outputDir = process.env.PLAYWRIGHT_OUTPUT_DIR ?? 'output/playwright'
-const identifier = process.env.AIRMENTOR_LOGIN_IDENTIFIER ?? 'sysadmin'
-const password = process.env.AIRMENTOR_LOGIN_PASSWORD ?? 'admin1234'
+const { identifier, password } = resolveSystemAdminLiveCredentials({
+  scriptLabel: 'System admin live session security smoke',
+  identifierAliases: ['AIRMENTOR_LOGIN_IDENTIFIER'],
+  passwordAliases: ['AIRMENTOR_LOGIN_PASSWORD'],
+})
 
 await mkdir(outputDir, { recursive: true })
 

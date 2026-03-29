@@ -10,23 +10,34 @@ This document summarizes what AirMentor is trying to be, what the codebase curre
 - The proof and AI layer is not a generic conversational AI stack. It is a hybrid system composed of deterministic academic rules, observable-risk model artifacts, deterministic monitoring heuristics, graph-aware curriculum summaries, queue governance rules, seeded simulation, and bounded faculty-facing proof UIs. The main orchestration lives in `air-mentor-api/src/lib/msruas-proof-control-plane.ts`.
 - The deterministic operating surface is larger than the earlier summary made explicit. Portal auto-routing, request transitions, session keepalive/default-role behavior, timetable lock windows, queue thresholds, probability-display suppression, and proof-playback fallback behavior are all hard-coded. Those rules are enumerated in [19 Deterministic Rules And Operating Assumptions](./19-deterministic-rules-and-operating-assumptions.md).
 - Verified baseline from the current repository state:
+  - `npm run verify:final-closeout` now passes repo-locally.
   - `npm test -- --reporter=dot` passed across 18 frontend test files and 72 tests.
   - `npm --workspace air-mentor-api test -- --reporter=dot` passed the fast backend suite across 19 backend test files.
   - `npm run build` passed.
   - `npm --workspace air-mentor-api run build` passed.
 
-## Current-state reconciliation (2026-03-28)
+## Current-state reconciliation (2026-03-29)
 - The repo is no longer in the same state as the original forensic pass. The authoritative current-state reconciliation is [41 Current-State Reconciliation And Gap Analysis](./41-current-state-reconciliation-and-gap-analysis.md).
 - Four original audit claims are now materially outdated:
   - `#/` no longer auto-enters stored workspaces; `src/portal-routing.ts` now keeps `#/` on `home`.
   - non-deploy CI and scheduled proof/browser verification now exist in `.github/workflows/ci-verification.yml` and `.github/workflows/proof-browser-cadence.yml`.
   - explicit CSRF tokens and login throttling now exist in `air-mentor-api/src/app.ts` and `air-mentor-api/src/modules/session.ts`, and production-like startup now hard-fails if `CSRF_SECRET` is missing.
+  - the Railway deploy workflow is no longer a blind `railway up`; it now runs a Railway variable preflight, exercises the configured `preDeployCommand` plus startup path against an embedded Postgres smoke environment, can probe the live login/session contract, and uploads failure diagnostics when deploys still fail.
   - the mock-admin runtime path and the root-level prototype/temp/PDF artifacts called out in AM-010 have now been removed; remaining repo-noise pressure is limited to ignored/generated outputs rather than tracked runtime confusion.
+- Operational closeout is now narrower than the original audit implied:
+  - the repo-local closeout suite is green
+  - the live GitHub Pages browser flows are green
+  - the live Railway session-security bar is now green as well after the production service was given an explicit `CSRF_SECRET` and GitHub Actions run `23694196459` completed successfully
+  - the remaining closeout work is now manual accessibility / UX signoff and compatibility-route retirement governance rather than a live deployment blocker
+- Repo-native operational telemetry is now retained locally and surfaced in the proof dashboard’s `Recent Operational Events` card, so the repo now explains more failure modes without requiring an external sink.
+- Compatibility-route inventory now has an assert mode and is enforced by the final closeout scripts, so first-party callers for the deprecated academic runtime routes stay explicitly zero.
+- The acceptance and request-flow browser scripts now emit structured JSON reports, and the Railway deploy workflow now captures `railway up` stdout/stderr while using the readiness script’s explicit health mode.
+- Accessibility coverage is no longer only implicit: tab semantics, modal focus-trap/restore, and the critical admin/proof tab rails are now directly covered by tests.
 - The hotspot risk is reduced but not closed. The major files are smaller than during the initial pass, and route/shell/service extraction has landed, but the main orchestrators still remain large:
-  - `src/App.tsx` at 4,257 LOC
+  - `src/App.tsx` at 4,301 LOC
   - `src/system-admin-live-app.tsx` at 7,205 LOC
   - `air-mentor-api/src/modules/academic.ts` at 3,862 LOC
-  - `air-mentor-api/src/lib/msruas-proof-control-plane.ts` at 4,079 LOC
+  - `air-mentor-api/src/lib/msruas-proof-control-plane.ts` at 4,108 LOC
 
 ## Key workflows and contracts
 | Area | Confirmed contract |
@@ -60,7 +71,7 @@ That concentration creates most of the downstream problems: hard-to-predict cros
 - Runtime orchestration is oversized and coupled across UI, storage, role context, proof playback, and data fetches. This is the main maintainability problem. See `AM-001`, `AM-003`, and `AM-012` in [Issue catalog](./15-issue-catalog-prioritized.md).
 - The client persistence model is split across backend state, local storage, session storage, and in-memory React state. This creates hidden state and makes route reload behavior hard to reason about. See `AM-002` and `AM-014`.
 - The proof platform is sophisticated, but its orchestration is concentrated in one 12k-line engine and a second 6k-line route module. That is a major long-term correctness and onboarding risk. See `AM-006`.
-- External observability is still weak. There is no production telemetry stack, no user-flow analytics, and no error aggregation integration in the repo, even though startup diagnostics, repo-native telemetry, and deterministic closeout scripts now exist. See `AM-008`.
+- External observability is no longer absent repo-locally. The repo now supports optional telemetry sink forwarding and deploy-failure diagnostics, but it still does not provision or operate a production sink, user-flow analytics layer, or full error aggregation stack by itself. See `AM-008`.
 
 ## Implications
 - **User trust risk:** the proof UIs are careful, but surrounding UX can still feel opaque because checkpoint selection, role switching, route restoration, and hidden persisted state shape what the user sees without always explaining why.
@@ -70,10 +81,10 @@ That concentration creates most of the downstream problems: hard-to-predict cros
 
 ## Recommendations
 1. Keep `npm run verify:final-closeout` as the deterministic repo-local release bar.
-2. Run `PLAYWRIGHT_APP_URL=<live-pages-url> PLAYWRIGHT_API_URL=<live-railway-url> npm run verify:final-closeout:live` before claiming operational closeout.
+2. Keep `PLAYWRIGHT_APP_URL=<live-pages-url> PLAYWRIGHT_API_URL=<live-railway-url> AIRMENTOR_LIVE_STACK=1 npm run verify:final-closeout:live` as the deployed confidence bar.
 3. Keep compatibility routes on a retirement path, but do not remove them until caller inventory is empty and release-cycle evidence is green.
-4. Complete the remaining human-run screen-reader and deployed cookie/origin/CSRF checks recorded in the audit pack.
-5. Add external production observability before materially expanding the proof feature set.
+4. Complete the remaining human-run screen-reader and product-intent/UX checks recorded in the audit pack.
+5. Provision the telemetry sink path and keep the new Railway deploy diagnostics active in production before materially expanding the proof feature set.
 
 ## Confirmed facts vs inference
 ### Confirmed facts

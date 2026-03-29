@@ -346,7 +346,7 @@ export type ApiPolicyPayload = {
 
 export type ApiPolicyOverride = {
   policyOverrideId: string
-  scopeType: 'institution' | 'academic-faculty' | 'department' | 'branch' | 'batch'
+  scopeType: 'institution' | 'academic-faculty' | 'department' | 'branch' | 'batch' | 'section'
   scopeId: string
   policy: ApiPolicyPayload
   status: string
@@ -357,10 +357,37 @@ export type ApiPolicyOverride = {
 
 export type ApiScopeType = ApiPolicyOverride['scopeType']
 
+export type ApiScopeDescriptor = {
+  scopeType: ApiScopeType | 'proof' | 'student'
+  scopeId: string
+  label: string
+  batchId: string | null
+  sectionCode: string | null
+  branchName: string | null
+  simulationRunId: string | null
+  simulationStageCheckpointId: string | null
+  studentId: string | null
+}
+
+export type ApiResolvedFrom = {
+  kind: 'default-policy' | 'policy-override' | 'proof-run' | 'proof-checkpoint' | 'proof-unavailable'
+  scopeType: ApiScopeType | 'proof' | 'student' | null
+  scopeId: string | null
+  label: string
+}
+
+export type ApiScopeMode = ApiScopeType | 'proof'
+export type ApiCountSource = 'operational-semester' | 'proof-run' | 'proof-checkpoint' | 'unavailable'
+
 export type ApiResolvedBatchPolicy = {
   batch: ApiBatch
+  scopeDescriptor: ApiScopeDescriptor
+  resolvedFrom: ApiResolvedFrom
+  scopeMode: ApiScopeMode
+  countSource: ApiCountSource
+  activeOperationalSemester: number | null
   scopeChain: Array<{
-    scopeType: 'institution' | 'academic-faculty' | 'department' | 'branch' | 'batch'
+    scopeType: ApiScopeType
     scopeId: string
   }>
   appliedOverrides: Array<ApiPolicyOverride & { appliedAtScope: string }>
@@ -487,6 +514,11 @@ export type ApiStagePolicyOverride = {
 
 export type ApiResolvedBatchStagePolicy = {
   batch: ApiBatch
+  scopeDescriptor: ApiScopeDescriptor
+  resolvedFrom: ApiResolvedFrom
+  scopeMode: ApiScopeMode
+  countSource: ApiCountSource
+  activeOperationalSemester: number | null
   scopeChain: Array<{
     scopeType: ApiScopeType
     scopeId: string
@@ -573,6 +605,7 @@ export type ApiProofDashboard = {
     simulationRunId: string
     runLabel: string
     seed: number
+    activeOperationalSemester: number | null
     createdAt: string
     startedAt: string | null
     completedAt: string | null
@@ -745,6 +778,27 @@ export type ApiProofDashboard = {
     createdByFacultyName: string | null
     createdAt: string
   }>
+  recentOperationalEvents: Array<{
+    operationalTelemetryEventId: string
+    source: 'backend' | 'client'
+    name: string
+    level: 'info' | 'warn' | 'error'
+    timestamp: string
+    details: Record<string, unknown>
+    createdAt: string
+  }>
+}
+
+export type ApiActivateProofSemesterRequest = {
+  semesterNumber: 1 | 2 | 3 | 4 | 5 | 6
+}
+
+export type ApiActivateProofSemesterResponse = {
+  ok: true
+  simulationRunId: string
+  batchId: string
+  activeOperationalSemester: number
+  previousOperationalSemester: number | null
 }
 
 export type ApiSimulationStageCheckpointSummary = {
@@ -1022,6 +1076,11 @@ export type ApiStudentAgentCard = {
   cardVersion: number
   sourceSnapshotHash: string
   disclaimer: string
+  scopeDescriptor: ApiScopeDescriptor
+  resolvedFrom: ApiResolvedFrom
+  scopeMode: ApiScopeMode
+  countSource: ApiCountSource
+  activeOperationalSemester: number | null
   runContext: {
     simulationRunId: string
     runLabel: string
@@ -1274,6 +1333,11 @@ export type ApiStudentRiskExplorer = {
   simulationRunId: string
   simulationStageCheckpointId: string | null
   disclaimer: string
+  scopeDescriptor: ApiScopeDescriptor
+  resolvedFrom: ApiResolvedFrom
+  scopeMode: ApiScopeMode
+  countSource: ApiCountSource
+  activeOperationalSemester: number | null
   runContext: ApiStudentAgentCard['runContext']
   checkpointContext: ApiStudentAgentCard['checkpointContext']
   student: ApiStudentAgentCard['student']
@@ -1348,6 +1412,11 @@ export type ApiStudentRiskExplorer = {
 }
 
 export type ApiFacultyProofOperations = {
+  scopeDescriptor: ApiScopeDescriptor
+  resolvedFrom: ApiResolvedFrom
+  scopeMode: ApiScopeMode
+  countSource: ApiCountSource
+  activeOperationalSemester: number | null
   activeRunContexts: Array<{
     batchId: string
     batchLabel: string
@@ -1441,6 +1510,11 @@ export type ApiAcademicHodProofRunContext = {
 
 export type ApiAcademicHodProofSummary = {
   activeRunContext: ApiAcademicHodProofRunContext | null
+  scopeDescriptor: ApiScopeDescriptor
+  resolvedFrom: ApiResolvedFrom
+  scopeMode: ApiScopeMode
+  countSource: ApiCountSource
+  activeOperationalSemester: number | null
   scope: {
     departmentNames: string[]
     branchNames: string[]

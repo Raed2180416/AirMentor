@@ -13,6 +13,12 @@ import {
   type LiveAdminDataset,
   type LiveAdminRoute,
 } from './system-admin-live-data'
+import type {
+  BatchProvisioningFormState,
+  EntityEditorState,
+  PolicyFormState,
+  StagePolicyFormState,
+} from './system-admin-live-app'
 import {
   EmptyState,
   InfoBanner,
@@ -29,7 +35,18 @@ import {
 import { SystemAdminHierarchyWorkspaceShell } from './system-admin-hierarchy-workspace-shell'
 import { SystemAdminProofDashboardWorkspace } from './system-admin-proof-dashboard-workspace'
 import { SystemAdminScopedRegistryLaunches } from './system-admin-scoped-registry-launches'
-import type { ApiAcademicFaculty, ApiBatch, ApiBranch, ApiDepartment, ApiFacultyRecord, ApiPolicyOverride, ApiScopeType, ApiStudentRecord } from './api/types'
+import type {
+  ApiAcademicFaculty,
+  ApiBatch,
+  ApiBranch,
+  ApiDepartment,
+  ApiFacultyRecord,
+  ApiPolicyOverride,
+  ApiScopeType,
+  ApiStageEvidenceKind,
+  ApiStagePolicyOverride,
+  ApiStudentRecord,
+} from './api/types'
 import type { ApiCurriculumFeatureConfigBundle, ApiCurriculumLinkageCandidate, ApiCurriculumLinkageGenerationStatus } from './api/types'
 
 type RestoreNotice = { tone: 'neutral' | 'error'; message: string } | null
@@ -81,6 +98,8 @@ function formatScopeTypeLabel(scopeType: ApiScopeType) {
       return 'Branch'
     case 'batch':
       return 'Batch'
+    case 'section':
+      return 'Section'
     default:
       return scopeType
   }
@@ -102,12 +121,110 @@ type TabCard = {
 }
 
 type WorkspaceMetaScope = {
+  scopeType: ApiScopeType
+  scopeId: string
   label: string
+}
+
+type CurriculumSemesterEntry = {
+  semesterNumber: number
+  courses: LiveAdminDataset['curriculumCourses']
 }
 
 type ScopedRegistryScope = {
   label: string
 } | null
+
+type HierarchyWorkspaceTabOption = {
+  id: string
+  label: string
+  icon: ReactNode
+}
+
+export function describeGovernanceResolutionMessage(activeGovernanceScope: WorkspaceMetaScope | null) {
+  const resolvedScopeType = activeGovernanceScope?.scopeType ?? 'institution'
+  return `Resolved from ${formatScopeTypeLabel(resolvedScopeType)} scope. Applied overrides inherit through the active hierarchy chain, ending at ${formatScopeTypeLabel(resolvedScopeType).toLowerCase()}.`
+}
+
+const STAGE_EVIDENCE_OPTIONS: ApiStageEvidenceKind[] = ['attendance', 'tt1', 'tt2', 'quiz', 'assignment', 'finals', 'transcript']
+
+function LabeledField({
+  label,
+  children,
+  hint,
+}: {
+  label: string
+  children: ReactNode
+  hint?: string
+}) {
+  return (
+    <div style={{ display: 'grid', gap: 6 }}>
+      <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
+      {children}
+      {hint ? <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>{hint}</div> : null}
+    </div>
+  )
+}
+
+function ToggleField({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string
+  checked: boolean
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: T.text }}>
+      <input type="checkbox" checked={checked} onChange={event => onChange(event.target.checked)} />
+      <span style={{ ...mono, fontSize: 10 }}>{label}</span>
+    </label>
+  )
+}
+
+export function SystemAdminHierarchyWorkspaceTabs({
+  tabs,
+  activeTab,
+  onChange,
+}: {
+  tabs: HierarchyWorkspaceTabOption[]
+  activeTab: string
+  onChange: (tabId: string) => void
+}) {
+  return (
+    <div role="tablist" aria-label="Hierarchy workspace sections" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      {tabs.map(tab => (
+        <button
+          key={tab.id}
+          type="button"
+          id={`university-tab-${tab.id}`}
+          role="tab"
+          aria-controls={`university-panel-${tab.id}`}
+          aria-selected={activeTab === tab.id}
+          data-tab="true"
+          onClick={() => onChange(tab.id)}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            borderRadius: 8,
+            border: `1px solid ${activeTab === tab.id ? T.accent : T.border}`,
+            background: activeTab === tab.id ? `${T.accent}16` : 'transparent',
+            color: activeTab === tab.id ? T.accentLight : T.muted,
+            cursor: 'pointer',
+            padding: '8px 12px',
+            ...mono,
+            fontSize: 10,
+          }}
+        >
+          {tab.icon}
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 type SystemAdminFacultiesWorkspaceProps = {
   data: LiveAdminDataset
@@ -153,6 +270,52 @@ type SystemAdminFacultiesWorkspaceProps = {
   stickyShadow: string
   activeBatchPolicyOverride: ApiPolicyOverride | null
   activeGovernanceScope: WorkspaceMetaScope | null
+  activeScopePolicyOverride: ApiPolicyOverride | null
+  activeScopeStageOverride: ApiStagePolicyOverride | null
+  governanceScopeSummary: string
+  policyOverrideTrail: string
+  stageOverrideTrail: string
+  policyForm: PolicyFormState
+  setPolicyForm: Dispatch<SetStateAction<PolicyFormState>>
+  stagePolicyForm: StagePolicyFormState
+  setStagePolicyForm: Dispatch<SetStateAction<StagePolicyFormState>>
+  handleSaveScopePolicy: () => Promise<void>
+  handleResetScopePolicy: () => Promise<void>
+  handleSaveScopeStagePolicy: () => Promise<void>
+  handleResetScopeStagePolicy: () => Promise<void>
+  entityEditors: Pick<EntityEditorState, 'term' | 'curriculum'>
+  setEntityEditors: Dispatch<SetStateAction<EntityEditorState>>
+  batchTerms: LiveAdminDataset['terms']
+  currentSemesterTerm: LiveAdminDataset['terms'][number] | null
+  startEditingTerm: (termId: string) => void
+  resetTermEditor: () => void
+  handleSaveTerm: FormEventHandler<HTMLFormElement>
+  handleArchiveTerm: (termId: string) => Promise<void>
+  selectedCurriculumSemester: string
+  setSelectedCurriculumSemester: Dispatch<SetStateAction<string>>
+  curriculumSemesterEntries: CurriculumSemesterEntry[]
+  selectedCurriculumCourseId: string
+  startEditingCurriculumCourse: (curriculumCourseId: string) => void
+  resetCurriculumEditor: () => void
+  handleSaveCurriculumCourse: FormEventHandler<HTMLFormElement>
+  handleArchiveCurriculumCourse: (curriculumCourseId: string) => Promise<void>
+  handleBootstrapCurriculumManifest: () => Promise<void>
+  scopedCourseLeaderFaculty: ApiFacultyRecord[]
+  getScopedCourseLeaderState: (curriculumCourseId: string) => {
+    matchingOfferings: LiveAdminDataset['offerings']
+    leaderIds: string[]
+    selectedFacultyId: string
+    hasMultipleLeaders: boolean
+  }
+  handleAssignCurriculumCourseLeader: (curriculumCourseId: string, facultyId: string) => Promise<void>
+  batchProvisioningForm: BatchProvisioningFormState
+  setBatchProvisioningForm: Dispatch<SetStateAction<BatchProvisioningFormState>>
+  handleProvisionBatch: () => Promise<void>
+  batchFacultyPool: ApiFacultyRecord[]
+  batchOfferingsWithoutOwner: LiveAdminDataset['offerings']
+  batchStudentsWithoutEnrollment: ApiStudentRecord[]
+  batchStudentsWithoutMentor: ApiStudentRecord[]
+  batchOfferingsWithoutRoster: LiveAdminDataset['offerings']
   activeUniversityRegistryScope: ScopedRegistryScope
   activeUniversityStudentScopeChipLabel: string
   activeUniversityFacultyScopeChipLabel: string
@@ -228,6 +391,30 @@ export function SystemAdminFacultiesWorkspace({
   stickyShadow,
   activeBatchPolicyOverride,
   activeGovernanceScope,
+  activeScopePolicyOverride,
+  activeScopeStageOverride,
+  governanceScopeSummary,
+  policyOverrideTrail,
+  stageOverrideTrail,
+  policyForm,
+  setPolicyForm,
+  stagePolicyForm,
+  setStagePolicyForm,
+  handleSaveScopePolicy,
+  handleResetScopePolicy,
+  handleSaveScopeStagePolicy,
+  handleResetScopeStagePolicy,
+  entityEditors,
+  setEntityEditors,
+  batchTerms,
+  currentSemesterTerm,
+  startEditingTerm,
+  resetTermEditor,
+  handleSaveTerm,
+  handleArchiveTerm,
+  selectedCurriculumSemester,
+  setSelectedCurriculumSemester,
+  curriculumSemesterEntries,
   activeUniversityRegistryScope,
   activeUniversityStudentScopeChipLabel,
   activeUniversityFacultyScopeChipLabel,
@@ -238,6 +425,23 @@ export function SystemAdminFacultiesWorkspace({
   selectedCurriculumFeatureCourseId,
   setSelectedCurriculumFeatureCourseId,
   selectedCurriculumFeatureItem,
+  selectedCurriculumCourseId,
+  startEditingCurriculumCourse,
+  resetCurriculumEditor,
+  handleSaveCurriculumCourse,
+  handleArchiveCurriculumCourse,
+  handleBootstrapCurriculumManifest,
+  scopedCourseLeaderFaculty,
+  getScopedCourseLeaderState,
+  handleAssignCurriculumCourseLeader,
+  batchProvisioningForm,
+  setBatchProvisioningForm,
+  handleProvisionBatch,
+  batchFacultyPool,
+  batchOfferingsWithoutOwner,
+  batchStudentsWithoutEnrollment,
+  batchStudentsWithoutMentor,
+  batchOfferingsWithoutRoster,
   curriculumFeatureProfileOptions,
   curriculumFeatureBindingMode,
   setCurriculumFeatureBindingMode,
@@ -369,34 +573,6 @@ export function SystemAdminFacultiesWorkspace({
     </button>
   ))
 
-  const tabActions = universityTabOptions.map(tab => (
-    <button
-      key={tab.id}
-      type="button"
-      role="tab"
-      aria-controls={`university-panel-${tab.id}`}
-      aria-selected={universityTab === tab.id}
-      data-tab="true"
-      onClick={() => updateUniversityTab(tab.id)}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        borderRadius: 8,
-        border: `1px solid ${universityTab === tab.id ? T.accent : T.border}`,
-        background: universityTab === tab.id ? `${T.accent}16` : 'transparent',
-        color: universityTab === tab.id ? T.accentLight : T.muted,
-        cursor: 'pointer',
-        padding: '8px 12px',
-        ...mono,
-        fontSize: 10,
-      }}
-    >
-      {tab.icon}
-      {tab.label}
-    </button>
-  ))
-
   const workspaceMeta = (
     <>
       {selectedBranch ? <Chip color={T.success}>{selectedBranch.programLevel}</Chip> : null}
@@ -478,6 +654,370 @@ export function SystemAdminFacultiesWorkspace({
   const selectedCurriculumFeatureTargetScopeChip = selectedCurriculumFeatureTargetScope
     ? `${formatScopeTypeLabel(selectedCurriculumFeatureTargetScope.scopeType)} · ${selectedCurriculumFeatureTargetScope.label}`
     : null
+  const selectedCurriculumSemesterEntry = curriculumSemesterEntries.find(entry => String(entry.semesterNumber) === selectedCurriculumSemester) ?? null
+  const selectedCurriculumSemesterCourses = selectedCurriculumSemesterEntry?.courses ?? []
+  const policyStatusChips = (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <Chip color={activeScopePolicyOverride ? T.orange : T.dim}>{activeScopePolicyOverride ? 'Local override active' : 'Inherited policy'}</Chip>
+      <Chip color={T.accent}>{governanceScopeSummary}</Chip>
+      <Chip color={T.warning}>{policyOverrideTrail}</Chip>
+    </div>
+  )
+  const stagePolicyStatusChips = (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <Chip color={activeScopeStageOverride ? T.orange : T.dim}>{activeScopeStageOverride ? 'Local stage override active' : 'Inherited stage policy'}</Chip>
+      <Chip color={T.accent}>{governanceScopeSummary}</Chip>
+      <Chip color={T.warning}>{stageOverrideTrail}</Chip>
+    </div>
+  )
+  const policyActions = (
+    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+      <Btn type="button" onClick={() => void handleSaveScopePolicy()}>Save Scope Governance</Btn>
+      <Btn type="button" variant="ghost" onClick={() => void handleResetScopePolicy()}>Reset To Inherited Policy</Btn>
+    </div>
+  )
+  const stagePolicyActions = (
+    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+      <Btn type="button" onClick={() => void handleSaveScopeStagePolicy()}>Save Stage Policy</Btn>
+      <Btn type="button" variant="ghost" onClick={() => void handleResetScopeStagePolicy()}>Reset To Inherited Stage Policy</Btn>
+    </div>
+  )
+  const governanceBandsPanel = selectedBatch && universityTab === 'bands' ? (
+    <Card style={{ padding: 18, display: 'grid', gap: 16 }}>
+      <SectionHeading title="Academic Bands" eyebrow="Evaluation" caption={`Resolved grade bands for ${activeGovernanceScope?.label ?? 'the active scope'}. Save here to create or update the local override at this exact scope.`} />
+      {policyStatusChips}
+      <InfoBanner message={describeGovernanceResolutionMessage(activeGovernanceScope)} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
+        <LabeledField label="O minimum"><TextInput value={policyForm.oMin} onChange={event => setPolicyForm(prev => ({ ...prev, oMin: event.target.value }))} /></LabeledField>
+        <LabeledField label="A+ minimum"><TextInput value={policyForm.aPlusMin} onChange={event => setPolicyForm(prev => ({ ...prev, aPlusMin: event.target.value }))} /></LabeledField>
+        <LabeledField label="A minimum"><TextInput value={policyForm.aMin} onChange={event => setPolicyForm(prev => ({ ...prev, aMin: event.target.value }))} /></LabeledField>
+        <LabeledField label="B+ minimum"><TextInput value={policyForm.bPlusMin} onChange={event => setPolicyForm(prev => ({ ...prev, bPlusMin: event.target.value }))} /></LabeledField>
+        <LabeledField label="B minimum"><TextInput value={policyForm.bMin} onChange={event => setPolicyForm(prev => ({ ...prev, bMin: event.target.value }))} /></LabeledField>
+        <LabeledField label="C minimum"><TextInput value={policyForm.cMin} onChange={event => setPolicyForm(prev => ({ ...prev, cMin: event.target.value }))} /></LabeledField>
+        <LabeledField label="P minimum"><TextInput value={policyForm.pMin} onChange={event => setPolicyForm(prev => ({ ...prev, pMin: event.target.value }))} /></LabeledField>
+      </div>
+      <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+        Grade bands descend from O to P. Validation happens on save and will reject any upward gaps or invalid thresholds.
+      </div>
+      {policyActions}
+    </Card>
+  ) : null
+  const governanceCeSeePanel = selectedBatch && universityTab === 'ce-see' ? (
+    <Card style={{ padding: 18, display: 'grid', gap: 16 }}>
+      <SectionHeading title="CE / SEE Split" eyebrow="Assessment" caption={`Configure the CE/SEE split, component caps, attendance, condonation, and working calendar at ${activeGovernanceScope?.label ?? 'the active scope'}.`} />
+      {policyStatusChips}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+        <LabeledField label="CE"><TextInput value={policyForm.ce} onChange={event => setPolicyForm(prev => ({ ...prev, ce: event.target.value }))} /></LabeledField>
+        <LabeledField label="SEE"><TextInput value={policyForm.see} onChange={event => setPolicyForm(prev => ({ ...prev, see: event.target.value }))} /></LabeledField>
+        <LabeledField label="Term test weight"><TextInput value={policyForm.termTestsWeight} onChange={event => setPolicyForm(prev => ({ ...prev, termTestsWeight: event.target.value }))} /></LabeledField>
+        <LabeledField label="Quiz weight"><TextInput value={policyForm.quizWeight} onChange={event => setPolicyForm(prev => ({ ...prev, quizWeight: event.target.value }))} /></LabeledField>
+        <LabeledField label="Assignment weight"><TextInput value={policyForm.assignmentWeight} onChange={event => setPolicyForm(prev => ({ ...prev, assignmentWeight: event.target.value }))} /></LabeledField>
+        <LabeledField label="Max term tests"><TextInput value={policyForm.maxTermTests} onChange={event => setPolicyForm(prev => ({ ...prev, maxTermTests: event.target.value }))} /></LabeledField>
+        <LabeledField label="Max quizzes"><TextInput value={policyForm.maxQuizzes} onChange={event => setPolicyForm(prev => ({ ...prev, maxQuizzes: event.target.value }))} /></LabeledField>
+        <LabeledField label="Max assignments"><TextInput value={policyForm.maxAssignments} onChange={event => setPolicyForm(prev => ({ ...prev, maxAssignments: event.target.value }))} /></LabeledField>
+      </div>
+      <Card style={{ padding: 14, background: T.surface2, display: 'grid', gap: 12 }}>
+        <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>Working Calendar</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+          <LabeledField label="Day start"><TextInput value={policyForm.dayStart} onChange={event => setPolicyForm(prev => ({ ...prev, dayStart: event.target.value }))} /></LabeledField>
+          <LabeledField label="Day end"><TextInput value={policyForm.dayEnd} onChange={event => setPolicyForm(prev => ({ ...prev, dayEnd: event.target.value }))} /></LabeledField>
+          <LabeledField label="Coursework weeks"><TextInput value={policyForm.courseworkWeeks} onChange={event => setPolicyForm(prev => ({ ...prev, courseworkWeeks: event.target.value }))} /></LabeledField>
+          <LabeledField label="Exam prep weeks"><TextInput value={policyForm.examPreparationWeeks} onChange={event => setPolicyForm(prev => ({ ...prev, examPreparationWeeks: event.target.value }))} /></LabeledField>
+          <LabeledField label="SEE weeks"><TextInput value={policyForm.seeWeeks} onChange={event => setPolicyForm(prev => ({ ...prev, seeWeeks: event.target.value }))} /></LabeledField>
+          <LabeledField label="Total weeks"><TextInput value={policyForm.totalWeeks} onChange={event => setPolicyForm(prev => ({ ...prev, totalWeeks: event.target.value }))} /></LabeledField>
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const).map(day => (
+            <ToggleField
+              key={day}
+              label={day}
+              checked={policyForm.workingDays.includes(day)}
+              onChange={checked => setPolicyForm(prev => ({
+                ...prev,
+                workingDays: checked
+                  ? prev.workingDays.includes(day) ? prev.workingDays : [...prev.workingDays, day]
+                  : prev.workingDays.filter(item => item !== day),
+              }))}
+            />
+          ))}
+        </div>
+      </Card>
+      <Card style={{ padding: 14, background: T.surface2, display: 'grid', gap: 12 }}>
+        <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>Attendance And Eligibility</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+          <LabeledField label="Minimum attendance %"><TextInput value={policyForm.minimumAttendancePercent} onChange={event => setPolicyForm(prev => ({ ...prev, minimumAttendancePercent: event.target.value }))} /></LabeledField>
+          <LabeledField label="Condonation floor %"><TextInput value={policyForm.condonationFloorPercent} onChange={event => setPolicyForm(prev => ({ ...prev, condonationFloorPercent: event.target.value }))} /></LabeledField>
+          <LabeledField label="Condonation shortage %"><TextInput value={policyForm.condonationShortagePercent} onChange={event => setPolicyForm(prev => ({ ...prev, condonationShortagePercent: event.target.value }))} /></LabeledField>
+          <LabeledField label="Minimum CE for SEE"><TextInput value={policyForm.minimumCeForSeeEligibility} onChange={event => setPolicyForm(prev => ({ ...prev, minimumCeForSeeEligibility: event.target.value }))} /></LabeledField>
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <ToggleField label="Condonation requires approval" checked={policyForm.condonationRequiresApproval} onChange={checked => setPolicyForm(prev => ({ ...prev, condonationRequiresApproval: checked }))} />
+          <ToggleField label="Allow condonation for SEE eligibility" checked={policyForm.allowCondonationForSeeEligibility} onChange={checked => setPolicyForm(prev => ({ ...prev, allowCondonationForSeeEligibility: checked }))} />
+        </div>
+      </Card>
+      {policyActions}
+    </Card>
+  ) : null
+  const governanceCgpaPanel = selectedBatch && universityTab === 'cgpa' ? (
+    <Card style={{ padding: 18, display: 'grid', gap: 16 }}>
+      <SectionHeading title="CGPA And Progression" eyebrow="Rules" caption={`Configure pass thresholds, rounding, repeat handling, progression, and risk thresholds for ${activeGovernanceScope?.label ?? 'the active scope'}.`} />
+      {policyStatusChips}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+        <LabeledField label="Minimum CE mark"><TextInput value={policyForm.minimumCeMark} onChange={event => setPolicyForm(prev => ({ ...prev, minimumCeMark: event.target.value }))} /></LabeledField>
+        <LabeledField label="Minimum SEE mark"><TextInput value={policyForm.minimumSeeMark} onChange={event => setPolicyForm(prev => ({ ...prev, minimumSeeMark: event.target.value }))} /></LabeledField>
+        <LabeledField label="Minimum overall mark"><TextInput value={policyForm.minimumOverallMark} onChange={event => setPolicyForm(prev => ({ ...prev, minimumOverallMark: event.target.value }))} /></LabeledField>
+        <LabeledField label="SGPA / CGPA decimals"><TextInput value={policyForm.sgpaCgpaDecimals} onChange={event => setPolicyForm(prev => ({ ...prev, sgpaCgpaDecimals: event.target.value }))} /></LabeledField>
+        <LabeledField label="Repeat-course policy">
+          <select value={policyForm.repeatedCoursePolicy} onChange={event => setPolicyForm(prev => ({ ...prev, repeatedCoursePolicy: event.target.value as PolicyFormState['repeatedCoursePolicy'] }))} style={{ width: '100%' }}>
+            <option value="latest-attempt">Latest attempt</option>
+            <option value="best-attempt">Best attempt</option>
+          </select>
+        </LabeledField>
+      </div>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <ToggleField label="Apply rounding before status determination" checked={policyForm.applyBeforeStatusDetermination} onChange={checked => setPolicyForm(prev => ({ ...prev, applyBeforeStatusDetermination: checked }))} />
+      </div>
+      <Card style={{ padding: 14, background: T.surface2, display: 'grid', gap: 12 }}>
+        <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>Progression</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+          <LabeledField label="Pass mark %"><TextInput value={policyForm.passMarkPercent} onChange={event => setPolicyForm(prev => ({ ...prev, passMarkPercent: event.target.value }))} /></LabeledField>
+          <LabeledField label="Minimum CGPA"><TextInput value={policyForm.minimumCgpaForPromotion} onChange={event => setPolicyForm(prev => ({ ...prev, minimumCgpaForPromotion: event.target.value }))} /></LabeledField>
+        </div>
+        <ToggleField label="Require no active backlogs" checked={policyForm.requireNoActiveBacklogs} onChange={checked => setPolicyForm(prev => ({ ...prev, requireNoActiveBacklogs: checked }))} />
+      </Card>
+      <Card style={{ padding: 14, background: T.surface2, display: 'grid', gap: 12 }}>
+        <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>Risk Thresholds</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+          <LabeledField label="High-risk attendance below"><TextInput value={policyForm.highRiskAttendancePercentBelow} onChange={event => setPolicyForm(prev => ({ ...prev, highRiskAttendancePercentBelow: event.target.value }))} /></LabeledField>
+          <LabeledField label="Medium-risk attendance below"><TextInput value={policyForm.mediumRiskAttendancePercentBelow} onChange={event => setPolicyForm(prev => ({ ...prev, mediumRiskAttendancePercentBelow: event.target.value }))} /></LabeledField>
+          <LabeledField label="High-risk CGPA below"><TextInput value={policyForm.highRiskCgpaBelow} onChange={event => setPolicyForm(prev => ({ ...prev, highRiskCgpaBelow: event.target.value }))} /></LabeledField>
+          <LabeledField label="Medium-risk CGPA below"><TextInput value={policyForm.mediumRiskCgpaBelow} onChange={event => setPolicyForm(prev => ({ ...prev, mediumRiskCgpaBelow: event.target.value }))} /></LabeledField>
+          <LabeledField label="High-risk backlog count"><TextInput value={policyForm.highRiskBacklogCount} onChange={event => setPolicyForm(prev => ({ ...prev, highRiskBacklogCount: event.target.value }))} /></LabeledField>
+          <LabeledField label="Medium-risk backlog count"><TextInput value={policyForm.mediumRiskBacklogCount} onChange={event => setPolicyForm(prev => ({ ...prev, mediumRiskBacklogCount: event.target.value }))} /></LabeledField>
+        </div>
+      </Card>
+      {policyActions}
+    </Card>
+  ) : null
+  const stagePolicyPanel = selectedBatch && universityTab === 'stage' ? (
+    <Card style={{ padding: 18, display: 'grid', gap: 16 }}>
+      <SectionHeading title="Stage Policy" eyebrow="Lifecycle" caption={`Configure inherited class-stage gates at ${activeGovernanceScope?.label ?? 'the active scope'}.`} />
+      {stagePolicyStatusChips}
+      <InfoBanner message="Stage gates are now edited directly from the extracted faculties workspace. Save to apply the current scope, or reset to inherit from the next resolved layer." />
+      <div style={{ display: 'grid', gap: 12 }}>
+        {stagePolicyForm.stages.map((stage, index) => (
+          <Card key={stage.key} style={{ padding: 14, background: T.surface2, display: 'grid', gap: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>{stage.label || `Stage ${index + 1}`}</div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{stage.key}</div>
+              </div>
+              <Chip color={T.accent}>{`Offset day ${stage.semesterDayOffset}`}</Chip>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+              <LabeledField label="Label"><TextInput value={stage.label} onChange={event => setStagePolicyForm(prev => ({ ...prev, stages: prev.stages.map((item, itemIndex) => itemIndex === index ? { ...item, label: event.target.value } : item) }))} /></LabeledField>
+              <LabeledField label="Semester day offset"><TextInput value={stage.semesterDayOffset} onChange={event => setStagePolicyForm(prev => ({ ...prev, stages: prev.stages.map((item, itemIndex) => itemIndex === index ? { ...item, semesterDayOffset: event.target.value } : item) }))} /></LabeledField>
+              <LabeledField label="Advancement mode">
+                <select value={stage.advancementMode} onChange={event => setStagePolicyForm(prev => ({ ...prev, stages: prev.stages.map((item, itemIndex) => itemIndex === index ? { ...item, advancementMode: event.target.value as StagePolicyFormState['stages'][number]['advancementMode'] } : item) }))} style={{ width: '100%' }}>
+                  <option value="admin-confirmed">Admin confirmed</option>
+                  <option value="automatic">Automatic</option>
+                </select>
+              </LabeledField>
+              <LabeledField label="Color"><TextInput value={stage.color} onChange={event => setStagePolicyForm(prev => ({ ...prev, stages: prev.stages.map((item, itemIndex) => itemIndex === index ? { ...item, color: event.target.value } : item) }))} /></LabeledField>
+            </div>
+            <LabeledField label="Description"><TextAreaInput value={stage.description} onChange={event => setStagePolicyForm(prev => ({ ...prev, stages: prev.stages.map((item, itemIndex) => itemIndex === index ? { ...item, description: event.target.value } : item) }))} rows={3} /></LabeledField>
+            <div style={{ display: 'grid', gap: 8 }}>
+              <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Required evidence</div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                {STAGE_EVIDENCE_OPTIONS.map(option => (
+                  <ToggleField
+                    key={`${stage.key}:${option}`}
+                    label={option}
+                    checked={stage.requiredEvidence.includes(option)}
+                    onChange={checked => setStagePolicyForm(prev => ({
+                      ...prev,
+                      stages: prev.stages.map((item, itemIndex) => itemIndex === index ? {
+                        ...item,
+                        requiredEvidence: checked
+                          ? item.requiredEvidence.includes(option) ? item.requiredEvidence : [...item.requiredEvidence, option]
+                          : item.requiredEvidence.filter(evidence => evidence !== option),
+                      } : item),
+                    }))}
+                  />
+                ))}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <ToggleField label="Require queue clearance" checked={stage.requireQueueClearance} onChange={checked => setStagePolicyForm(prev => ({ ...prev, stages: prev.stages.map((item, itemIndex) => itemIndex === index ? { ...item, requireQueueClearance: checked } : item) }))} />
+              <ToggleField label="Require task clearance" checked={stage.requireTaskClearance} onChange={checked => setStagePolicyForm(prev => ({ ...prev, stages: prev.stages.map((item, itemIndex) => itemIndex === index ? { ...item, requireTaskClearance: checked } : item) }))} />
+            </div>
+          </Card>
+        ))}
+      </div>
+      {stagePolicyActions}
+    </Card>
+  ) : null
+  const coursesPanel = selectedBranch && universityTab === 'courses' ? (
+    selectedBatch ? (
+      <Card style={{ padding: 18, display: 'grid', gap: 16 }}>
+        <SectionHeading title="Terms, Curriculum, And Course Leaders" eyebrow="Courses" caption={`Operate semester navigation, curriculum rows, and course-leader ownership directly for Batch ${selectedBatch.batchLabel}${selectedSectionCode ? ` · Section ${selectedSectionCode}` : ''}.`} />
+        <Card style={{ padding: 14, background: T.surface2, display: 'grid', gap: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div>
+              <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>Academic Terms</div>
+              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.8 }}>Semester navigation is now owned here instead of relying on the legacy shell.</div>
+            </div>
+            {currentSemesterTerm ? <Chip color={T.success}>{`Current sem term · ${currentSemesterTerm.academicYearLabel}`}</Chip> : <Chip color={T.warning}>No term mapped to current semester</Chip>}
+          </div>
+          {batchTerms.length === 0 ? <EmptyState title="No academic terms yet" body="Create the first semester term here before provisioning or assigning course leaders." /> : (
+            <div style={{ display: 'grid', gap: 10 }}>
+              {batchTerms.map(term => (
+                <Card key={term.termId} style={{ padding: 12, background: T.surface, display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <div style={{ display: 'grid', gap: 4 }}>
+                    <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{`${term.academicYearLabel} · Semester ${term.semesterNumber}`}</div>
+                    <div style={{ ...mono, fontSize: 10, color: T.muted }}>{`${term.startDate} to ${term.endDate}`}</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <Btn type="button" size="sm" variant="ghost" onClick={() => startEditingTerm(term.termId)}>Edit Term</Btn>
+                    <Btn type="button" size="sm" variant="danger" onClick={() => void handleArchiveTerm(term.termId)}>Archive</Btn>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+          <form onSubmit={handleSaveTerm} style={{ display: 'grid', gap: 10, borderTop: `1px solid ${T.border}`, paddingTop: 12 }}>
+            <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>{entityEditors.term.termId ? 'Edit Term' : 'Add Term'}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+              <LabeledField label="Academic year"><TextInput value={entityEditors.term.academicYearLabel} onChange={event => setEntityEditors(prev => ({ ...prev, term: { ...prev.term, academicYearLabel: event.target.value } }))} /></LabeledField>
+              <LabeledField label="Semester number"><TextInput value={entityEditors.term.semesterNumber} onChange={event => setEntityEditors(prev => ({ ...prev, term: { ...prev.term, semesterNumber: event.target.value } }))} /></LabeledField>
+              <LabeledField label="Start date"><TextInput value={entityEditors.term.startDate} onChange={event => setEntityEditors(prev => ({ ...prev, term: { ...prev.term, startDate: event.target.value } }))} placeholder="YYYY-MM-DD" /></LabeledField>
+              <LabeledField label="End date"><TextInput value={entityEditors.term.endDate} onChange={event => setEntityEditors(prev => ({ ...prev, term: { ...prev.term, endDate: event.target.value } }))} placeholder="YYYY-MM-DD" /></LabeledField>
+            </div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <Btn type="submit">{entityEditors.term.termId ? 'Save Term' : 'Create Term'}</Btn>
+              <Btn type="button" variant="ghost" onClick={resetTermEditor}>Clear Editor</Btn>
+            </div>
+          </form>
+        </Card>
+        <Card style={{ padding: 14, background: T.surface2, display: 'grid', gap: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div>
+              <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>Curriculum Rows</div>
+              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.8 }}>Semester-wise curriculum editing and course-leader assignment now live in the extracted workspace.</div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <LabeledField label="Semester">
+                <select value={selectedCurriculumSemester} onChange={event => setSelectedCurriculumSemester(event.target.value)} style={{ width: 160 }}>
+                  {curriculumSemesterEntries.map(entry => (
+                    <option key={entry.semesterNumber} value={String(entry.semesterNumber)}>
+                      {`Semester ${entry.semesterNumber}`}
+                    </option>
+                  ))}
+                </select>
+              </LabeledField>
+              <Btn type="button" variant="ghost" onClick={() => void handleBootstrapCurriculumManifest()}>Bootstrap From Manifest</Btn>
+            </div>
+          </div>
+          {selectedCurriculumSemesterCourses.length === 0 ? <EmptyState title="No curriculum rows for this semester" body="Create the first course row below or bootstrap the governed manifest into this batch." /> : (
+            <div style={{ display: 'grid', gap: 10 }}>
+              {selectedCurriculumSemesterCourses.map(course => {
+                const leaderState = getScopedCourseLeaderState(course.curriculumCourseId)
+                return (
+                  <Card key={course.curriculumCourseId} style={{ padding: 12, background: T.surface, display: 'grid', gap: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <div style={{ display: 'grid', gap: 4 }}>
+                        <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{`${course.courseCode} · ${course.title}`}</div>
+                        <div style={{ ...mono, fontSize: 10, color: T.muted }}>{`${course.credits} credits · ${leaderState.matchingOfferings.length} live offering${leaderState.matchingOfferings.length === 1 ? '' : 's'}`}</div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <Btn type="button" size="sm" variant="ghost" onClick={() => startEditingCurriculumCourse(course.curriculumCourseId)}>Edit</Btn>
+                        <Btn type="button" size="sm" variant="danger" onClick={() => void handleArchiveCurriculumCourse(course.curriculumCourseId)}>Archive</Btn>
+                      </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 320px)', gap: 10 }}>
+                      <LabeledField label="Course leader" hint={leaderState.hasMultipleLeaders ? 'Multiple leader-like ownerships exist across the matching live offerings.' : undefined}>
+                        <select value={leaderState.selectedFacultyId} onChange={event => void handleAssignCurriculumCourseLeader(course.curriculumCourseId, event.target.value)} style={{ width: '100%' }}>
+                          <option value="">Clear leader assignment</option>
+                          {scopedCourseLeaderFaculty.map(faculty => (
+                            <option key={faculty.facultyId} value={faculty.facultyId}>{faculty.displayName}</option>
+                          ))}
+                        </select>
+                      </LabeledField>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {leaderState.leaderIds.length === 0 ? <Chip color={T.warning}>No leader assigned</Chip> : leaderState.leaderIds.map(facultyId => {
+                        const faculty = scopedCourseLeaderFaculty.find(item => item.facultyId === facultyId)
+                        return <Chip key={`${course.curriculumCourseId}:${facultyId}`} color={leaderState.hasMultipleLeaders ? T.warning : T.success}>{faculty?.displayName ?? facultyId}</Chip>
+                      })}
+                    </div>
+                  </Card>
+                )
+              })}
+            </div>
+          )}
+          <form onSubmit={handleSaveCurriculumCourse} style={{ display: 'grid', gap: 10, borderTop: `1px solid ${T.border}`, paddingTop: 12 }}>
+            <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>{entityEditors.curriculum.curriculumCourseId ? 'Edit Curriculum Row' : 'Add Curriculum Row'}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+              <LabeledField label="Semester number"><TextInput value={entityEditors.curriculum.semesterNumber} onChange={event => setEntityEditors(prev => ({ ...prev, curriculum: { ...prev.curriculum, semesterNumber: event.target.value } }))} /></LabeledField>
+              <LabeledField label="Course code"><TextInput value={entityEditors.curriculum.courseCode} onChange={event => setEntityEditors(prev => ({ ...prev, curriculum: { ...prev.curriculum, courseCode: event.target.value } }))} /></LabeledField>
+              <LabeledField label="Course title"><TextInput value={entityEditors.curriculum.title} onChange={event => setEntityEditors(prev => ({ ...prev, curriculum: { ...prev.curriculum, title: event.target.value } }))} /></LabeledField>
+              <LabeledField label="Credits"><TextInput value={entityEditors.curriculum.credits} onChange={event => setEntityEditors(prev => ({ ...prev, curriculum: { ...prev.curriculum, credits: event.target.value } }))} /></LabeledField>
+            </div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <Btn type="submit">{entityEditors.curriculum.curriculumCourseId ? 'Save Curriculum Row' : 'Create Curriculum Row'}</Btn>
+              <Btn type="button" variant="ghost" onClick={resetCurriculumEditor}>Clear Editor</Btn>
+              <Chip color={selectedCurriculumCourseId ? T.accent : T.dim}>{selectedCurriculumCourseId ? `Selected row ${selectedCurriculumCourseId}` : 'No row selected'}</Chip>
+            </div>
+          </form>
+        </Card>
+      </Card>
+    ) : (
+      <EmptyState title="Select a year first" body="Terms and curriculum editing unlock once a batch is selected within the chosen branch." />
+    )
+  ) : null
+  const provisionPanel = selectedBatch && universityTab === 'provision' ? (
+    <Card style={{ padding: 18, display: 'grid', gap: 16 }}>
+      <SectionHeading title="Provisioning" eyebrow="Operations" caption={`Launch deterministic student, mentor, ownership, and scaffolding generation for Batch ${selectedBatch.batchLabel}${selectedSectionCode ? ` · Section ${selectedSectionCode}` : ''}.`} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(132px, 1fr))', gap: 10 }}>
+        <AdminMiniStat label="Faculty In Scope" value={String(batchFacultyPool.length)} tone={T.accent} />
+        <AdminMiniStat label="Offerings Without Owner" value={String(batchOfferingsWithoutOwner.length)} tone={batchOfferingsWithoutOwner.length ? T.warning : T.success} />
+        <AdminMiniStat label="Students Without Enrollment" value={String(batchStudentsWithoutEnrollment.length)} tone={batchStudentsWithoutEnrollment.length ? T.warning : T.success} />
+        <AdminMiniStat label="Students Without Mentor" value={String(batchStudentsWithoutMentor.length)} tone={batchStudentsWithoutMentor.length ? T.warning : T.success} />
+        <AdminMiniStat label="Offerings Without Roster" value={String(batchOfferingsWithoutRoster.length)} tone={batchOfferingsWithoutRoster.length ? T.warning : T.success} />
+      </div>
+      <form style={{ display: 'grid', gap: 12 }} onSubmit={event => { event.preventDefault(); void handleProvisionBatch() }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+          <LabeledField label="Provisioning term">
+            <select value={batchProvisioningForm.termId} onChange={event => setBatchProvisioningForm(prev => ({ ...prev, termId: event.target.value }))} style={{ width: '100%' }}>
+              <option value="">{currentSemesterTerm ? 'Use current semester term' : 'Select term'}</option>
+              {batchTerms.map(term => (
+                <option key={term.termId} value={term.termId}>{`${term.academicYearLabel} · Semester ${term.semesterNumber}`}</option>
+              ))}
+            </select>
+          </LabeledField>
+          <LabeledField label="Mode">
+            <select value={batchProvisioningForm.mode} onChange={event => setBatchProvisioningForm(prev => ({ ...prev, mode: event.target.value as BatchProvisioningFormState['mode'] }))} style={{ width: '100%' }}>
+              <option value="mock">Mock</option>
+              <option value="live">Live</option>
+            </select>
+          </LabeledField>
+          <LabeledField label="Sections"><TextInput value={batchProvisioningForm.sectionLabels} onChange={event => setBatchProvisioningForm(prev => ({ ...prev, sectionLabels: event.target.value }))} placeholder="A, B" /></LabeledField>
+          <LabeledField label="Students per section"><TextInput value={batchProvisioningForm.studentsPerSection} onChange={event => setBatchProvisioningForm(prev => ({ ...prev, studentsPerSection: event.target.value }))} /></LabeledField>
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <ToggleField label="Create students" checked={batchProvisioningForm.createStudents} onChange={checked => setBatchProvisioningForm(prev => ({ ...prev, createStudents: checked }))} />
+          <ToggleField label="Create mentors" checked={batchProvisioningForm.createMentors} onChange={checked => setBatchProvisioningForm(prev => ({ ...prev, createMentors: checked }))} />
+          <ToggleField label="Create attendance scaffolding" checked={batchProvisioningForm.createAttendanceScaffolding} onChange={checked => setBatchProvisioningForm(prev => ({ ...prev, createAttendanceScaffolding: checked }))} />
+          <ToggleField label="Create assessment scaffolding" checked={batchProvisioningForm.createAssessmentScaffolding} onChange={checked => setBatchProvisioningForm(prev => ({ ...prev, createAssessmentScaffolding: checked }))} />
+          <ToggleField label="Create transcript scaffolding" checked={batchProvisioningForm.createTranscriptScaffolding} onChange={checked => setBatchProvisioningForm(prev => ({ ...prev, createTranscriptScaffolding: checked }))} />
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <Btn type="submit">Run Provisioning</Btn>
+          {currentSemesterTerm ? <Chip color={T.success}>{`Current semester term ${currentSemesterTerm.academicYearLabel}`}</Chip> : <Chip color={T.warning}>Add a term before running provisioning</Chip>}
+        </div>
+      </form>
+    </Card>
+  ) : null
 
   return (
     <SystemAdminHierarchyWorkspaceShell
@@ -512,7 +1052,9 @@ export function SystemAdminFacultiesWorkspace({
         ? 'Use the editor cards below or the sticky tabs here to jump straight into the exact year-level control surface.'
         : 'This area behaves as a scoped navigator plus metadata surface until a year is selected.'}
       workspaceMeta={workspaceMeta}
-      tabActions={<div role="tablist" aria-label="Hierarchy workspace sections" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{tabActions}</div>}
+      tabActions={<SystemAdminHierarchyWorkspaceTabs tabs={universityTabOptions} activeTab={universityTab} onChange={tabId => updateUniversityTab(tabId)} />}
+      workspacePanelId={`university-panel-${universityTab}`}
+      workspacePanelLabelledBy={`university-tab-${universityTab}`}
       overviewNavigator={overviewNavigator}
       yearEditors={yearEditors}
     >
@@ -734,41 +1276,9 @@ export function SystemAdminFacultiesWorkspace({
             <Btn type="button" size="sm" onClick={() => setEditingEntity('batch' as never)}>Edit Batch</Btn>
           </div>
 
-          <InfoBanner message={`Resolved from ${activeGovernanceScope ? formatScopeTypeLabel('batch' as ApiScopeType) : 'scope'}. Applied overrides are inherited from the active hierarchy scope and batch policy layers.`} />
+          <InfoBanner message={describeGovernanceResolutionMessage(activeGovernanceScope)} />
 
           <SystemAdminProofDashboardWorkspace {...proofDashboardProps} />
-
-          <div>
-            <SectionHeading title="Scope Governance Override" eyebrow="Governance" caption={`Adjust deterministic MSRUAS attendance, condonation, grading, and operational limits at ${activeGovernanceScope?.label ?? 'the active scope'}, or reset this layer back to inheritance.`} />
-            <div style={{ marginTop: 12, display: 'grid', gap: 12 }}>
-              <InfoBanner message="Governance controls remain in this workspace to preserve the current scope behavior while the route surface is being decomposed." />
-            </div>
-          </div>
-
-          <Card style={{ padding: 16, background: T.surface2, display: 'grid', gap: 12 }}>
-            <SectionHeading title="Academic Bands" eyebrow="Evaluation" caption={`Resolved grade bands for ${activeGovernanceScope?.label ?? 'the active scope'}. Save here to create or update the local override at this exact scope.`} />
-            <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
-              This surface is retained verbatim during the Stage 2 move to keep the existing evaluation semantics intact.
-            </div>
-          </Card>
-          <Card style={{ padding: 16, background: T.surface2, display: 'grid', gap: 12 }}>
-            <SectionHeading title="CE / SEE Split" eyebrow="Assessment" caption={`Configure the CE/SEE split, component caps, and working calendar at ${activeGovernanceScope?.label ?? 'the active scope'}. Deeper scopes inherit this unless they create a local override.`} />
-            <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
-              This area stays inline until the next stage splits the backend contract and its state model.
-            </div>
-          </Card>
-          <Card style={{ padding: 16, background: T.surface2, display: 'grid', gap: 12 }}>
-            <SectionHeading title="CGPA And Progression" eyebrow="Rules" caption={`Configure pass rules, progression, and risk thresholds for ${activeGovernanceScope?.label ?? 'the active scope'}. Deeper scopes inherit these values until locally overridden.`} />
-            <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
-              These controls remain stable for the current Stage 2 extraction.
-            </div>
-          </Card>
-          <Card style={{ padding: 16, background: T.surface2, display: 'grid', gap: 12 }}>
-            <SectionHeading title="Stage Policy" eyebrow="Lifecycle" caption={`Configure inherited class-stage gates at ${activeGovernanceScope?.label ?? 'the active scope'}. Runtime offerings now advance only through this resolved policy.`} />
-            <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
-              The stage policy block is intentionally unchanged while the workspace is extracted.
-            </div>
-          </Card>
 
           <Card style={{ padding: 16, background: T.surface2, display: 'grid', gap: 12 }}>
             <SectionHeading title="Curriculum Model Inputs" eyebrow="Curriculum" caption="Manage course outcomes, prerequisite edges, bridge modules, and topic partitions through batch-local overrides or shared scope profiles that feed retraining and world generation." />
@@ -964,6 +1474,13 @@ export function SystemAdminFacultiesWorkspace({
           </Card>
         </Card>
       )}
+
+      {governanceBandsPanel}
+      {governanceCeSeePanel}
+      {governanceCgpaPanel}
+      {stagePolicyPanel}
+      {coursesPanel}
+      {provisionPanel}
 
       {selectedBranch ? (
         <Card style={{ padding: 18, display: 'grid', gap: 10 }}>

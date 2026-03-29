@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import path from 'node:path'
+import { resolveSystemAdminLiveCredentials } from './system-admin-live-auth.mjs'
 
 const require = createRequire(import.meta.url)
 const axeScriptPath = require.resolve('axe-core/axe.min.js')
@@ -24,6 +25,7 @@ const teachingPasswordCandidates = ['faculty1234', '1234']
 const defaultTeachingUsername = isLiveStack ? 'kavitha.rao' : 'devika.shetty'
 const requestSummary = /Grant additional mentor mapping coverage/i
 const reportPath = path.join(outputDir, 'system-admin-live-accessibility-report.json')
+const screenReaderTranscriptPath = path.join(outputDir, 'system-admin-live-screen-reader-preflight.md')
 const successScreenshot = path.join(outputDir, 'system-admin-live-accessibility-regression.png')
 const failureScreenshot = path.join(outputDir, 'system-admin-live-accessibility-regression-failure.png')
 const failureTrace = path.join(outputDir, 'system-admin-live-accessibility-regression-failure.zip')
@@ -34,6 +36,9 @@ let proofRouteState = {
   routeHash: seededProofRoute,
   batchId: seededProofBatchId,
 }
+const systemAdminCredentials = resolveSystemAdminLiveCredentials({
+  scriptLabel: 'System admin live accessibility regression',
+})
 
 const browser = await firefox.launch({
   headless: true,
@@ -121,6 +126,52 @@ function flattenAccessibilityTree(node, acc = []) {
   const children = Array.isArray(node.children) ? node.children : []
   children.forEach(child => flattenAccessibilityTree(child, acc))
   return acc
+}
+
+function buildScreenReaderTranscript(items) {
+  const lines = [
+    '# AirMentor Screen Reader Preflight',
+    '',
+    `Generated: ${new Date().toISOString()}`,
+    '',
+    'This transcript is generated from the live accessibility regression accessibility-tree and aria-snapshot checks.',
+    'It is meant to make the remaining human screen-reader review deterministic, not to replace a real NVDA/JAWS/VoiceOver pass.',
+    '',
+  ]
+
+  for (const item of items) {
+    lines.push(`## ${item.label}`)
+    lines.push('')
+    if (item.scope === 'accessibility-tree' && Array.isArray(item.nodes)) {
+      const visibleNodes = item.nodes
+        .filter(node => node.role || node.name)
+        .slice(0, 40)
+      if (visibleNodes.length === 0) {
+        lines.push('- no nodes recorded')
+      } else {
+        for (const node of visibleNodes) {
+          lines.push(`- ${node.role ?? 'node'}${node.name ? `: ${node.name}` : ''}`)
+        }
+      }
+    } else if (item.scope === 'aria-snapshot' && typeof item.snapshot === 'string') {
+      lines.push('```text')
+      lines.push(item.snapshot.trim())
+      lines.push('```')
+    } else if (Array.isArray(item.violations)) {
+      const blocking = item.violations.filter(violation => violation.impact === 'serious' || violation.impact === 'critical')
+      lines.push(blocking.length === 0 ? '- no blocking violations' : `- blocking violations: ${blocking.length}`)
+    } else {
+      lines.push(`- scope: ${item.scope}`)
+    }
+    lines.push('')
+  }
+
+  return `${lines.join('\n')}\n`
+}
+
+function assertAccessibilityEvidenceRecorded(items) {
+  const skipped = items.filter(item => item.scope === 'accessibility-tree-skipped')
+  assert.equal(skipped.length, 0, 'Accessibility regression must record accessibility-tree or aria-snapshot evidence for every declared tree assertion.')
 }
 
 async function runAccessibilityTreeAssertion(locator, label, expectedNodes) {
@@ -435,8 +486,8 @@ async function loginAsSystemAdmin() {
   await page.getByRole('button', { name: /Open System Admin/i }).click()
   await expectVisible(page.getByText(/System Admin Live Mode/), 'system admin login')
   await runPageAxeScan('System admin login')
-  await page.getByPlaceholder('sysadmin', { exact: true }).fill('sysadmin')
-  await page.getByPlaceholder('••••••••', { exact: true }).fill('admin1234')
+  await page.getByPlaceholder('sysadmin', { exact: true }).fill(systemAdminCredentials.identifier)
+  await page.getByPlaceholder('••••••••', { exact: true }).fill(systemAdminCredentials.password)
   await page.getByRole('button', { name: 'Sign In', exact: true }).click()
   await waitForSystemAdminShellReady()
 }
@@ -559,6 +610,11 @@ try {
   const studentRegistryButton = page.getByRole('button', { name: /Aarav Sharma.*1MS23CS001/i }).first()
   await studentRegistryButton.click()
   await expectVisible(page.getByText('Student Detail', { exact: true }).first(), 'student detail heading')
+  await runAccessibilityTreeAssertion(page.locator('[role="tablist"][aria-label="Student detail sections"]').first(), 'System admin student detail tabs', [
+    { role: 'tab', name: 'Profile' },
+    { role: 'tab', name: 'Academic' },
+    { role: 'tab', name: 'Mentor' },
+  ])
   const editStudentButton = page.getByRole('button', { name: 'Edit Student', exact: true }).first()
   await editStudentButton.click()
   const studentDialog = page.locator('[role="dialog"]:visible').first()
@@ -574,6 +630,9 @@ try {
   await ensureProofRunReady()
   const proofControlPlane = await openSeededProofRoute()
   await page.evaluate(key => window.localStorage.getItem(key), proofPlaybackSelectionStorageKey)
+  await runAccessibilityTreeAssertion(page.locator('[role="tablist"][aria-label="Hierarchy workspace sections"]').first(), 'System admin hierarchy workspace tabs', [
+    { role: 'tab', name: 'Overview' },
+  ])
   await runScopedAxeScan(proofControlPlane, 'System admin proof dashboard')
   await runAccessibilityTreeAssertion(proofControlPlane, 'System admin proof dashboard tree', [
     { name: 'Queue Health' },
@@ -624,9 +683,26 @@ try {
     ])
   }
 
+  markStep('faculty-detail-tabs-a11y')
+  await page.getByRole('button', { name: 'Logout', exact: true }).click()
+  await expectVisible(page.getByRole('button', { name: /Open System Admin/i }), 'portal home before system admin relogin', 60_000)
+  await loginAsSystemAdmin()
+  await page.goto(`${appUrl.replace(/\/$/, '')}/#/admin/overview`, { waitUntil: 'networkidle' })
+  await page.getByRole('textbox', { name: 'Admin search' }).fill('kavitha.rao')
+  await page.getByRole('button', { name: /Dr\. Kavitha Rao|Kavitha Rao/i }).first().click()
+  await expectVisible(page.getByText('Faculty Detail', { exact: true }).first(), 'faculty detail heading')
+  await runAccessibilityTreeAssertion(page.locator('[role="tablist"][aria-label="Faculty detail sections"]').first(), 'System admin faculty detail tabs', [
+    { role: 'tab', name: 'Profile' },
+    { role: 'tab', name: 'Appointments' },
+    { role: 'tab', name: 'Permissions' },
+  ])
+
+  assertAccessibilityEvidenceRecorded(reports)
   await writeFile(reportPath, JSON.stringify(reports, null, 2))
+  await writeFile(screenReaderTranscriptPath, buildScreenReaderTranscript(reports), 'utf8')
   await page.screenshot({ path: successScreenshot, fullPage: true })
   console.log(`System admin live accessibility regression passed. Report: ${reportPath}`)
+  console.log(`Screen-reader preflight transcript: ${screenReaderTranscriptPath}`)
   console.log(`Screenshot: ${successScreenshot}`)
   await context.tracing.stop()
 } catch (error) {
@@ -639,9 +715,11 @@ try {
       console.error(`Failure HTML: ${failureHtml}`)
     }
     await writeFile(reportPath, JSON.stringify(reports, null, 2))
+    await writeFile(screenReaderTranscriptPath, buildScreenReaderTranscript(reports), 'utf8')
     await page.screenshot({ path: failureScreenshot, fullPage: true })
     await context.tracing.stop({ path: failureTrace })
     console.error(`System admin live accessibility regression failed. Report: ${reportPath}`)
+    console.error(`Screen-reader preflight transcript: ${screenReaderTranscriptPath}`)
     console.error(`Screenshot: ${failureScreenshot}`)
     console.error(`Trace: ${failureTrace}`)
   } catch {

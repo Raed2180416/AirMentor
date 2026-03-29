@@ -64,6 +64,10 @@ import {
   type ProofControlPlaneBatchServiceDeps,
 } from './proof-control-plane-batch-service.js'
 import {
+  activateProofOperationalSemester as activateProofOperationalSemesterService,
+  type ProofControlPlaneActivationServiceDeps,
+} from './proof-control-plane-activation-service.js'
+import {
   parseProofCheckpointSummary,
   queueProjectionAssignedFacultyId,
   queueStatusPriority,
@@ -167,6 +171,13 @@ import {
   type GraphAwareFeatureProvenance,
   type GraphAwarePrerequisiteSummaryCompleteness,
 } from './graph-summary.js'
+import type {
+  CountProvenanceValue,
+  CountSourceValue,
+  ResolvedFromValue,
+  ScopeDescriptorValue,
+  ScopeModeValue,
+} from './proof-provenance.js'
 import {
   calculateCgpa,
   calculateSgpa,
@@ -232,6 +243,12 @@ export type ObservableSourceRefsWithFeatureMetadata = ObservableSourceRefs & {
   featureProvenance: GraphAwareFeatureProvenance
 }
 
+export type ProofScopeDescriptor = ScopeDescriptorValue
+export type ProofResolvedFrom = ResolvedFromValue
+export type ProofScopeMode = ScopeModeValue
+export type ProofCountSource = CountSourceValue
+export type ProofCountProvenance = CountProvenanceValue
+
 export type StudentAgentCardPayload = {
   studentAgentCardId: string
   simulationRunId: string
@@ -239,6 +256,11 @@ export type StudentAgentCardPayload = {
   cardVersion: number
   sourceSnapshotHash: string
   disclaimer: string
+  scopeDescriptor: ProofScopeDescriptor
+  resolvedFrom: ProofResolvedFrom
+  scopeMode: ProofScopeMode
+  countSource: ProofCountSource
+  activeOperationalSemester: number | null
   runContext: {
     simulationRunId: string
     runLabel: string
@@ -457,6 +479,11 @@ export type StudentRiskExplorerPayload = {
   simulationRunId: string
   simulationStageCheckpointId: string | null
   disclaimer: string
+  scopeDescriptor: ProofScopeDescriptor
+  resolvedFrom: ProofResolvedFrom
+  scopeMode: ProofScopeMode
+  countSource: ProofCountSource
+  activeOperationalSemester: number | null
   runContext: StudentAgentCardPayload['runContext']
   checkpointContext: StudentAgentCardPayload['checkpointContext']
   student: StudentAgentCardPayload['student']
@@ -3805,6 +3832,7 @@ export async function activateProofSimulationRun(db: AppDb, input: {
   await db.update(simulationRuns).set({
     activeFlag: 1,
     status: 'active',
+    activeOperationalSemester: run.activeOperationalSemester ?? run.semesterEnd,
     updatedAt: input.now,
   }).where(eq(simulationRuns.simulationRunId, run.simulationRunId))
   await publishOperationalProjection(db, {
@@ -3971,6 +3999,11 @@ const proofControlPlaneBatchServiceDeps: ProofControlPlaneBatchServiceDeps = {
   withProofPlaybackGate,
 }
 
+const proofControlPlaneActivationServiceDeps: ProofControlPlaneActivationServiceDeps = {
+  emitSimulationAudit,
+  publishOperationalProjection,
+}
+
 const proofControlPlaneHodServiceDeps: ProofControlPlaneHodServiceDeps = {
   average,
   buildEvidenceTimelineFromRows,
@@ -4011,6 +4044,15 @@ export async function getProofRunCheckpointStudentDetail(db: AppDb, input: {
 
 export async function buildProofBatchDashboard(db: AppDb, batchId: string) {
   return buildProofBatchDashboardService(db, batchId, proofControlPlaneBatchServiceDeps)
+}
+
+export async function activateProofOperationalSemester(db: AppDb, input: {
+  simulationRunId: string
+  semesterNumber: number
+  actorFacultyId?: string | null
+  now: string
+}) {
+  return activateProofOperationalSemesterService(db, input, proofControlPlaneActivationServiceDeps)
 }
 
 export async function buildHodProofAnalytics(db: AppDb, input: {

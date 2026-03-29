@@ -64,6 +64,10 @@ import type {
   StudentAgentTimelineItem,
   StudentRiskExplorerPayload,
 } from './msruas-proof-control-plane.js'
+import {
+  buildProofCountProvenance,
+  buildUnavailableCountProvenance,
+} from './proof-provenance.js'
 
 const STUDENT_AGENT_CARD_VERSION = 1
 
@@ -83,6 +87,48 @@ type ProofCheckpointSummaryLike = {
   playbackAccessible?: boolean
   blockedByCheckpointId?: string | null
   blockedProgressionReason?: string | null
+}
+
+type FacultyProofViewResult = {
+  scopeDescriptor: unknown
+  resolvedFrom: unknown
+  scopeMode: unknown
+  countSource: unknown
+  activeOperationalSemester: number | null
+  activeRunContexts: Array<{
+    batchId: string
+    batchLabel: string
+    branchName: string | null
+    simulationRunId: string
+    runLabel: string
+    status: string
+    seed: number
+    createdAt: string
+    [key: string]: unknown
+  }>
+  selectedCheckpoint: ProofCheckpointSummaryLike | null
+  monitoringQueue: Array<Record<string, unknown>>
+  electiveFits: Array<Record<string, unknown>>
+}
+
+function resolveOperationalCheckpointSummary(
+  checkpointRows: Array<typeof simulationStageCheckpoints.$inferSelect>,
+  semesterNumber: number,
+  deps: Pick<ProofControlPlaneTailServiceDeps, 'parseProofCheckpointSummary' | 'withProofPlaybackGate'>,
+) {
+  const summaries = deps.withProofPlaybackGate(
+    checkpointRows
+      .slice()
+      .sort((left, right) => left.semesterNumber - right.semesterNumber || left.stageOrder - right.stageOrder)
+      .map(deps.parseProofCheckpointSummary),
+  )
+  const semesterSummaries = summaries.filter(item => item.semesterNumber === semesterNumber)
+  return semesterSummaries
+    .slice()
+    .reverse()
+    .find(item => item.playbackAccessible !== false)
+    ?? semesterSummaries.at(-1)
+    ?? null
 }
 
 type EvidenceTimelineItem = {
@@ -124,7 +170,7 @@ export async function buildFacultyProofView(db: AppDb, input: {
   facultyId: string
   viewerRoleCode?: string | null
   simulationStageCheckpointId?: string | null
-}, deps: ProofControlPlaneTailServiceDeps) {
+}, deps: ProofControlPlaneTailServiceDeps): Promise<FacultyProofViewResult> {
   const facultyId = input.facultyId
   const viewerRoleCode = input.viewerRoleCode as FacultyProofViewerRole
   if (input.simulationStageCheckpointId) {
@@ -274,8 +320,19 @@ export async function buildFacultyProofView(db: AppDb, input: {
         })
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
       : []
+    const countProvenance = buildProofCountProvenance({
+      activeOperationalSemester: run.activeOperationalSemester ?? batch?.currentSemester ?? checkpoint.semesterNumber ?? null,
+      batchId: run.batchId,
+      batchLabel: batch?.batchLabel ?? run.batchId,
+      branchName: branch?.name ?? null,
+      simulationRunId: run.simulationRunId,
+      runLabel: run.runLabel,
+      simulationStageCheckpointId: checkpoint.simulationStageCheckpointId,
+      checkpointLabel: checkpointSummary.stageLabel,
+    })
 
     return {
+      ...countProvenance,
       activeRunContexts: [{
         batchId: run.batchId,
         batchLabel: batch?.batchLabel ?? run.batchId,
@@ -338,7 +395,40 @@ export async function buildFacultyProofView(db: AppDb, input: {
   const relevantOfferingIds = new Set(ownershipRows.filter(row => row.status === 'active').map(row => row.offeringId))
   const relevantStudentIds = new Set(mentorRows.filter(row => row.effectiveTo === null).map(row => row.studentId))
   const selectedBatch = selectedActiveRun ? (batchRows.find(row => row.batchId === selectedActiveRun.batchId) ?? null) : null
-  const selectedCurrentSemester = selectedBatch?.currentSemester ?? 6
+  const selectedCurrentSemester = selectedActiveRun?.activeOperationalSemester ?? selectedBatch?.currentSemester ?? 6
+  const operationalCheckpointSummary = selectedActiveRun
+    ? resolveOperationalCheckpointSummary(
+      await db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, selectedActiveRun.simulationRunId)),
+      selectedCurrentSemester,
+      deps,
+    )
+    : null
+  if (
+    !input.simulationStageCheckpointId
+    && selectedActiveRun
+    && selectedBatch
+    && selectedActiveRun.activeOperationalSemester != null
+    && selectedActiveRun.activeOperationalSemester !== selectedBatch.currentSemester
+    && operationalCheckpointSummary
+  ) {
+    const checkpointView = await buildFacultyProofView(db, {
+      ...input,
+      simulationStageCheckpointId: operationalCheckpointSummary.simulationStageCheckpointId,
+    }, deps)
+    const countProvenance = buildProofCountProvenance({
+      activeOperationalSemester: selectedActiveRun.activeOperationalSemester ?? selectedBatch.currentSemester ?? null,
+      batchId: selectedActiveRun.batchId,
+      batchLabel: selectedBatch.batchLabel,
+      branchName: branchRows.find(row => row.branchId === selectedBatch.branchId)?.name ?? null,
+      simulationRunId: selectedActiveRun.simulationRunId,
+      runLabel: selectedActiveRun.runLabel,
+    })
+    return {
+      ...checkpointView,
+      ...countProvenance,
+      selectedCheckpoint: null,
+    }
+  }
   const selectedActiveTermIds = new Set(
     termRows
       .filter(row => row.batchId === selectedBatch?.batchId)
@@ -499,8 +589,19 @@ export async function buildFacultyProofView(db: AppDb, input: {
       createdAt: run.createdAt,
     }
   })
+  const countProvenance = selectedActiveRun
+    ? buildProofCountProvenance({
+        activeOperationalSemester: selectedActiveRun.activeOperationalSemester ?? selectedBatch?.currentSemester ?? null,
+        batchId: selectedActiveRun.batchId,
+        batchLabel: selectedBatch?.batchLabel ?? selectedActiveRun.batchId,
+        branchName: selectedBatch ? (branchById.get(selectedBatch.branchId)?.name ?? null) : null,
+        simulationRunId: selectedActiveRun.simulationRunId,
+        runLabel: selectedActiveRun.runLabel,
+      })
+    : buildUnavailableCountProvenance()
 
   return {
+    ...countProvenance,
     activeRunContexts,
     selectedCheckpoint: null,
     monitoringQueue: queueItems,
@@ -1056,7 +1157,7 @@ export async function buildStudentAgentCard(db: AppDb, input: {
   simulationRunId: string
   studentId: string
   simulationStageCheckpointId?: string | null
-}, deps: ProofControlPlaneTailServiceDeps) {
+}, deps: ProofControlPlaneTailServiceDeps): Promise<StudentAgentCardPayload> {
   const [
     run,
     student,
@@ -1152,7 +1253,43 @@ export async function buildStudentAgentCard(db: AppDb, input: {
 
   const batch = batchRows.find(row => row.batchId === run.batchId) ?? null
   const branch = batch ? (branchRows.find(row => row.branchId === batch.branchId) ?? null) : null
+  if (
+    !input.simulationStageCheckpointId
+    && run.activeOperationalSemester != null
+    && batch
+    && run.activeOperationalSemester !== batch.currentSemester
+  ) {
+    const operationalCheckpointSummary = resolveOperationalCheckpointSummary(
+      await db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, input.simulationRunId)),
+      run.activeOperationalSemester,
+      deps,
+    )
+    if (operationalCheckpointSummary) {
+      const checkpointCard = await buildStudentAgentCard(db, {
+        ...input,
+        simulationStageCheckpointId: operationalCheckpointSummary.simulationStageCheckpointId,
+      }, deps)
+      const countProvenance = buildProofCountProvenance({
+        activeOperationalSemester: run.activeOperationalSemester ?? batch.currentSemester ?? null,
+        batchId: run.batchId,
+        batchLabel: batch.batchLabel,
+        branchName: branch?.name ?? null,
+        sectionCode: checkpointCard.student.sectionCode ?? null,
+        simulationRunId: run.simulationRunId,
+        runLabel: run.runLabel,
+        studentId: student.studentId,
+        studentLabel: student.name,
+      })
+      return {
+        ...checkpointCard,
+        ...countProvenance,
+        simulationStageCheckpointId: null,
+        checkpointContext: null,
+      }
+    }
+  }
   const currentSemester = stageCheckpoint?.semesterNumber
+    ?? run.activeOperationalSemester
     ?? behaviorProfile?.currentSemester
     ?? batch?.currentSemester
     ?? Math.max(1, ...observedRows.map(row => row.semesterNumber))
@@ -1669,6 +1806,19 @@ export async function buildStudentAgentCard(db: AppDb, input: {
     `Mentor track: ${String(parseJson(behaviorProfile.profileJson, {} as Record<string, unknown>).mentorTrack ?? 'unspecified')}`,
     ...(topicBuckets.highUncertainty.length > 0 ? ['High uncertainty topics present'] : []),
   ] : []
+  const countProvenance = buildProofCountProvenance({
+    activeOperationalSemester: run.activeOperationalSemester ?? batch?.currentSemester ?? null,
+    batchId: run.batchId,
+    batchLabel: batch?.batchLabel ?? run.batchId,
+    branchName: branch?.name ?? null,
+    sectionCode: currentObservedState?.sectionCode ?? topicRows[0]?.sectionCode ?? null,
+    simulationRunId: run.simulationRunId,
+    runLabel: run.runLabel,
+    simulationStageCheckpointId: stageCheckpoint?.simulationStageCheckpointId ?? null,
+    checkpointLabel: checkpointContext?.stageLabel ?? null,
+    studentId: student.studentId,
+    studentLabel: student.name,
+  })
 
   const provisionalCard = {
     studentAgentCardId: '',
@@ -1677,6 +1827,7 @@ export async function buildStudentAgentCard(db: AppDb, input: {
     cardVersion: STUDENT_AGENT_CARD_VERSION,
     sourceSnapshotHash: '',
     disclaimer: 'Simulation UX only. Formal academic status remains policy-derived, and this shell cannot change institutional records.',
+    ...countProvenance,
     runContext: {
       simulationRunId: run.simulationRunId,
       runLabel: run.runLabel,
@@ -1956,6 +2107,11 @@ export async function buildStudentRiskExplorer(db: AppDb, input: {
     simulationRunId: card.simulationRunId,
     simulationStageCheckpointId: card.simulationStageCheckpointId,
     disclaimer: 'Risk explorer is a proof-mode analysis surface. Trained heads are simulation-calibrated, observable-only, and advisory. Derived scenario heads are not separate trained models.',
+    scopeDescriptor: card.scopeDescriptor,
+    resolvedFrom: card.resolvedFrom,
+    scopeMode: card.scopeMode,
+    countSource: card.countSource,
+    activeOperationalSemester: card.activeOperationalSemester,
     runContext: card.runContext,
     checkpointContext: card.checkpointContext,
     student: card.student,

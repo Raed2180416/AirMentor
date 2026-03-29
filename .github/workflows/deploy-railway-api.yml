@@ -55,6 +55,17 @@ jobs:
         if: steps.railway-config.outputs.ready == 'true'
         run: npm install -g @railway/cli
 
+      - name: Railway deploy preflight
+        if: steps.railway-config.outputs.ready == 'true'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE }}
+          RAILWAY_ENVIRONMENT: ${{ vars.RAILWAY_ENVIRONMENT }}
+          EXPECTED_FRONTEND_ORIGIN: ${{ vars.RAILWAY_ALLOWED_FRONTEND_ORIGIN || 'https://raed2180416.github.io' }}
+          RAILWAY_CSRF_SECRET: ${{ secrets.RAILWAY_CSRF_SECRET }}
+          SYNC_RAILWAY_SERVICE_VARS: 'true'
+        run: node ../scripts/check-railway-deploy-readiness.mjs preflight
+
       - name: Deploy to Railway
         if: steps.railway-config.outputs.ready == 'true'
         env:
@@ -62,22 +73,62 @@ jobs:
           RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE }}
           RAILWAY_ENVIRONMENT: ${{ vars.RAILWAY_ENVIRONMENT }}
         run: |
+          mkdir -p output
           command=(railway up --ci --service "$RAILWAY_SERVICE")
           if [ -n "$RAILWAY_ENVIRONMENT" ]; then
             command+=(--environment "$RAILWAY_ENVIRONMENT")
           fi
-          "${command[@]}"
+          "${command[@]}" \
+            > >(tee output/railway-up.stdout.log) \
+            2> >(tee output/railway-up.stderr.log >&2)
 
       - name: Verify Railway health
         if: steps.railway-config.outputs.ready == 'true' && vars.RAILWAY_PUBLIC_API_URL != ''
         env:
           RAILWAY_PUBLIC_API_URL: ${{ vars.RAILWAY_PUBLIC_API_URL }}
-        run: |
-          node -e "const base = process.env.RAILWAY_PUBLIC_API_URL; const url = new URL('/health', base); fetch(url).then(async response => { if (!response.ok) { const body = await response.text().catch(() => ''); throw new Error(`Healthcheck failed: ${response.status} ${body}`) } }).catch(error => { console.error(error.message); process.exit(1) })"
+        run: node ../scripts/check-railway-deploy-readiness.mjs health
 
       - name: Railway health verification not configured
         if: steps.railway-config.outputs.ready == 'true' && vars.RAILWAY_PUBLIC_API_URL == ''
         run: echo "Skipping post-deploy /health verification because RAILWAY_PUBLIC_API_URL is not configured."
+
+      - name: Verify Railway live session contract
+        if: steps.railway-config.outputs.ready == 'true' && vars.RAILWAY_PUBLIC_API_URL != ''
+        env:
+          RAILWAY_PUBLIC_API_URL: ${{ vars.RAILWAY_PUBLIC_API_URL }}
+          EXPECTED_FRONTEND_ORIGIN: ${{ vars.RAILWAY_ALLOWED_FRONTEND_ORIGIN || 'https://raed2180416.github.io' }}
+          AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER: ${{ vars.AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER }}
+          AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD: ${{ secrets.AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD }}
+        run: |
+          if [ -z "${AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER:-}" ] || [ -z "${AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD:-}" ]; then
+            echo "Skipping Railway live session contract verification because AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER or AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD is not configured."
+            exit 0
+          fi
+          node ../scripts/check-railway-deploy-readiness.mjs session-contract
+
+      - name: Railway live session contract verification not configured
+        if: steps.railway-config.outputs.ready == 'true' && vars.RAILWAY_PUBLIC_API_URL == ''
+        run: echo "Skipping Railway live session contract verification because RAILWAY_PUBLIC_API_URL is not configured."
+
+      - name: Capture Railway failure diagnostics
+        if: failure() && steps.railway-config.outputs.ready == 'true'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE }}
+          RAILWAY_ENVIRONMENT: ${{ vars.RAILWAY_ENVIRONMENT }}
+          RAILWAY_PUBLIC_API_URL: ${{ vars.RAILWAY_PUBLIC_API_URL }}
+          EXPECTED_FRONTEND_ORIGIN: ${{ vars.RAILWAY_ALLOWED_FRONTEND_ORIGIN || 'https://raed2180416.github.io' }}
+          AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER: ${{ vars.AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER }}
+          AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD: ${{ secrets.AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD }}
+        run: node ../scripts/check-railway-deploy-readiness.mjs diagnostics || true
+
+      - name: Upload Railway diagnostics
+        if: failure() && steps.railway-config.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: railway-api-diagnostics
+          path: air-mentor-api/output
+          if-no-files-found: ignore
 
       - name: Railway deployment not configured
         if: steps.railway-config.outputs.ready != 'true'

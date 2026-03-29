@@ -48,4 +48,24 @@ describe('collectFrontendStartupDiagnostics', () => {
 
     expect(diagnostics.some(item => item.code === 'PRODUCTION_LIKE_REQUIRES_ABSOLUTE_API' && item.level === 'error')).toBe(true)
   })
+
+  it('accepts the derived backend telemetry relay for a production-like frontend', () => {
+    const diagnostics = collectFrontendStartupDiagnostics({
+      apiBaseUrl: 'https://air-mentor-api.up.railway.app',
+      telemetrySinkUrl: '',
+      locationHref: 'https://raed.github.io/air-mentor-ui/',
+    })
+
+    expect(diagnostics.some(item => item.code === 'TELEMETRY_SINK_NOT_CONFIGURED')).toBe(false)
+  })
+
+  it('warns when a production-like frontend uses a relative telemetry sink', () => {
+    const diagnostics = collectFrontendStartupDiagnostics({
+      apiBaseUrl: 'https://air-mentor-api.up.railway.app',
+      telemetrySinkUrl: '/telemetry',
+      locationHref: 'https://raed.github.io/air-mentor-ui/',
+    })
+
+    expect(diagnostics.some(item => item.code === 'PRODUCTION_LIKE_REQUIRES_ABSOLUTE_TELEMETRY_SINK' && item.level === 'warning')).toBe(true)
+  })
 })

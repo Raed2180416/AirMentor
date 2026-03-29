@@ -11,6 +11,21 @@ backend_log=""
 backend_ready_file=""
 api_base_url=""
 
+ensure_system_admin_live_credentials() {
+  local live_stack_mode="${AIRMENTOR_LIVE_STACK:-0}"
+
+  if [[ "$live_stack_mode" == "1" ]]; then
+    if [[ -z "${AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER:-}" || -z "${AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD:-}" ]]; then
+      echo "AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER and AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD are required when AIRMENTOR_LIVE_STACK=1." >&2
+      exit 1
+    fi
+    return 0
+  fi
+
+  export AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER="${AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER:-sysadmin}"
+  export AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD="${AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD:-admin1234}"
+}
+
 resolve_api_repo_dir() {
   if [[ ! -d "$api_repo_dir" ]]; then
     echo "Live admin backend repo not found at $api_repo_dir" >&2

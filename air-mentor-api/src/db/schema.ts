@@ -475,6 +475,7 @@ export const simulationRuns = pgTable('simulation_runs', {
   facultyCount: integer('faculty_count').notNull(),
   semesterStart: integer('semester_start').notNull(),
   semesterEnd: integer('semester_end').notNull(),
+  activeOperationalSemester: integer('active_operational_semester').notNull(),
   sourceType: text('source_type').notNull(),
   policySnapshotJson: text('policy_snapshot_json').notNull(),
   engineVersionsJson: text('engine_versions_json').notNull(),
@@ -1297,6 +1298,16 @@ export const auditEvents = pgTable('audit_events', {
   createdAt: text('created_at').notNull(),
 })
 
+export const operationalTelemetryEvents = pgTable('operational_telemetry_events', {
+  operationalTelemetryEventId: text('operational_telemetry_event_id').primaryKey(),
+  source: text('source').notNull(),
+  name: text('name').notNull(),
+  level: text('level').notNull(),
+  eventTimestamp: text('event_timestamp').notNull(),
+  payloadJson: text('payload_json').notNull(),
+  createdAt: text('created_at').notNull(),
+})
+
 export const adminReminders = pgTable('admin_reminders', {
   reminderId: text('reminder_id').primaryKey(),
   facultyId: text('faculty_id').notNull().references(() => facultyProfiles.facultyId),
@@ -1396,6 +1407,7 @@ export const allTables = {
   adminRequestNotes,
   adminRequestTransitions,
   auditEvents,
+  operationalTelemetryEvents,
   adminReminders,
 }
 

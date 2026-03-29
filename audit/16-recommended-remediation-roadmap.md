@@ -1,6 +1,6 @@
 # AirMentor Recommended Remediation Roadmap
 
-## Current-state reconciliation (2026-03-28)
+## Current-state reconciliation (2026-03-29)
 - This roadmap remains directionally useful, but it now needs to be read as a progress-tracked document rather than a fresh plan.
 - Current stage status:
   - Stage 0: complete enough to close
@@ -12,11 +12,12 @@
   - Stage 6: complete enough to close repo-locally
   - Stage 7: complete enough to close repo-locally
 - The remaining highest-value work is now:
+  - keep `PLAYWRIGHT_APP_URL=<live-pages-url> PLAYWRIGHT_API_URL=<live-railway-url> AIRMENTOR_LIVE_STACK=1 npm run verify:final-closeout:live` as the deployed closeout bar
   - keep deprecated compatibility routes until caller inventory is empty and release-cycle evidence is green
-  - run the deterministic closeout suites:
-    - `npm run verify:final-closeout`
-    - `PLAYWRIGHT_APP_URL=<live-pages-url> PLAYWRIGHT_API_URL=<live-railway-url> npm run verify:final-closeout:live`
+  - keep `npm run inventory:compat-routes` in assert mode inside closeout so deprecated runtime callers stay explicitly absent
+  - preserve the structured JSON reports emitted by the acceptance and request-flow browser scripts because they are now part of the closeout evidence chain
   - finish the remaining manual accessibility validation work, especially screen-reader-oriented review, now that live keyboard/axe flows and explicit proof-tab semantics are in place
+  - provision and operate the external telemetry sink path now that repo-native instrumentation and retained operational events already exist
 - See [41 Current-State Reconciliation And Gap Analysis](./41-current-state-reconciliation-and-gap-analysis.md) for exact evidence.
 
 ## What this area does

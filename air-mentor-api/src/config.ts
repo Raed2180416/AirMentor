@@ -7,6 +7,8 @@ export type AppConfig = {
   port: number
   host: string
   corsAllowedOrigins: string[]
+  telemetrySinkUrl: string | null
+  telemetrySinkBearerToken: string | null
   sessionCookieName: string
   csrfCookieName: string
   csrfSecret: string
@@ -82,6 +84,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     port: parseNumber(env.PORT, 4000),
     host: env.HOST ?? (productionLikeTarget ? '0.0.0.0' : '127.0.0.1'),
     corsAllowedOrigins,
+    telemetrySinkUrl: env.AIRMENTOR_TELEMETRY_SINK_URL?.trim() || null,
+    telemetrySinkBearerToken: env.AIRMENTOR_TELEMETRY_SINK_BEARER_TOKEN?.trim() || null,
     sessionCookieName,
     csrfCookieName: env.CSRF_COOKIE_NAME ?? 'airmentor_csrf',
     csrfSecret: env.CSRF_SECRET ?? `${databaseUrl}::${sessionCookieName}`,

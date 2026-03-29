@@ -936,6 +936,7 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
     facultyCount: PROOF_FACULTY.length,
     semesterStart: 1,
     semesterEnd: 6,
+    activeOperationalSemester: 6,
     sourceType: 'simulation',
     policySnapshotJson: JSON.stringify(policy),
     engineVersionsJson: JSON.stringify({

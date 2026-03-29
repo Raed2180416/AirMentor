@@ -100,6 +100,22 @@ export async function registerAcademicRuntimeRoutes(
   const taskPlacementDeleteQuerySchema = z.object({
     expectedUpdatedAt: z.coerce.number().int().nonnegative().optional(),
   })
+  const compatibilityRouteSuccessors: Partial<Record<string, string>> = {
+    '/api/academic/tasks/sync': '/api/academic/tasks',
+    '/api/academic/task-placements/sync': '/api/academic/task-placements',
+    '/api/academic/calendar-audit/sync': '/api/academic/calendar-audit',
+  }
+
+  function markCompatibilityRouteUsage(reply: { header: (name: string, value: string) => unknown }, route: string) {
+    reply.header('Deprecation', 'true')
+    reply.header('Sunset', '2026-12-31T00:00:00Z')
+    reply.header('Warning', `299 AirMentor "${route} is a deprecated compatibility route; migrate to the authoritative academic endpoints."`)
+    reply.header('X-AirMentor-Compatibility-Route', 'true')
+    const successor = compatibilityRouteSuccessors[route]
+    if (successor) {
+      reply.header('Link', `<${successor}>; rel="successor-version"`)
+    }
+  }
 
   function taskRecordWithVersion(
     row: typeof academicTasks.$inferSelect,
@@ -531,11 +547,12 @@ export async function registerAcademicRuntimeRoutes(
       summary: 'Persist a single academic runtime slice',
       deprecated: true,
     },
-  }, async request => {
+  }, async (request, reply) => {
     requireRole(request, [...academicRoleCodes])
     const auth = requireAuth(request)
     const params = parseOrThrow(z.object({ stateKey: runtimeStateKeySchema }), request.params)
     const body = parseOrThrow(runtimeSliceSchemas[params.stateKey] as z.ZodTypeAny, request.body)
+    markCompatibilityRouteUsage(reply, '/api/academic/runtime/:stateKey')
     const [current] = await context.db.select().from(academicRuntimeState).where(eq(academicRuntimeState.stateKey, params.stateKey))
     if (current) {
       await context.db.update(academicRuntimeState).set({
@@ -619,10 +636,11 @@ export async function registerAcademicRuntimeRoutes(
       summary: 'Persist the authoritative academic action queue projection for the active teaching role',
       deprecated: true,
     },
-  }, async request => {
+  }, async (request, reply) => {
     const auth = requireRole(request, [...academicRoleCodes])
     if (!auth.facultyId) throw forbidden('Faculty context is required')
     const body = parseOrThrow(taskSyncSchema, request.body)
+    markCompatibilityRouteUsage(reply, '/api/academic/tasks/sync')
     for (const task of body.tasks) {
       await persistAcademicTask(auth, task)
     }
@@ -676,10 +694,11 @@ export async function registerAcademicRuntimeRoutes(
       summary: 'Persist task placements for the active teaching role',
       deprecated: true,
     },
-  }, async request => {
+  }, async (request, reply) => {
     const auth = requireRole(request, [...academicRoleCodes])
     if (!auth.facultyId) throw forbidden('Faculty context is required')
     const body = parseOrThrow(taskPlacementSyncSchema, request.body)
+    markCompatibilityRouteUsage(reply, '/api/academic/task-placements/sync')
     for (const [taskId, placement] of Object.entries(body.placements)) {
       if (placement.taskId !== taskId) throw badRequest('Task placement payload does not match its record key')
       await persistAcademicTaskPlacement(auth, placement)
@@ -755,9 +774,10 @@ export async function registerAcademicRuntimeRoutes(
       summary: 'Persist faculty calendar audit events',
       deprecated: true,
     },
-  }, async request => {
+  }, async (request, reply) => {
     const auth = requireRole(request, [...academicRoleCodes])
     const body = parseOrThrow(calendarAuditSyncSchema, request.body)
+    markCompatibilityRouteUsage(reply, '/api/academic/calendar-audit/sync')
     for (const event of body.events) {
       await appendAcademicCalendarAuditEvent(auth, event)
     }
@@ -1075,7 +1095,9 @@ export async function registerAcademicRuntimeRoutes(
     const body = parseOrThrow(assessmentCommitSchema, request.body)
     await assertCourseLeaderCanManageOffering(context, auth.facultyId, params.offeringId)
     const { offering, term, course, department } = await getOfferingContext(context, params.offeringId)
-    const policy = term.batchId ? (await resolveBatchPolicy(context, term.batchId)).effectivePolicy : DEFAULT_POLICY
+    const policy = term.batchId
+      ? (await resolveBatchPolicy(context, term.batchId, { sectionCode: offering.sectionCode })).effectivePolicy
+      : DEFAULT_POLICY
     const schemeRow = await context.db
       .select()
       .from(offeringAssessmentSchemes)
@@ -1245,7 +1267,9 @@ export async function registerAcademicRuntimeRoutes(
     const body = parseOrThrow(offeringSchemeUpsertSchema, request.body)
     await assertCourseLeaderCanManageOffering(context, auth.facultyId, params.offeringId)
     const { offering, term } = await getOfferingContext(context, params.offeringId)
-    const policy = term.batchId ? (await resolveBatchPolicy(context, term.batchId)).effectivePolicy : DEFAULT_POLICY
+    const policy = term.batchId
+      ? (await resolveBatchPolicy(context, term.batchId, { sectionCode: offering.sectionCode })).effectivePolicy
+      : DEFAULT_POLICY
     const canonicalScheme = canonicalizeSchemeState(body.scheme, policy)
     validateSchemeAgainstPolicy(canonicalScheme, policy)
     const now = context.now()

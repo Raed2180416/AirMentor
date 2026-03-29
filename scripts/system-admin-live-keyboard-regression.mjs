@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { resolveSystemAdminLiveCredentials } from './system-admin-live-auth.mjs'
 
 const playwrightRoot = process.env.PLAYWRIGHT_ROOT
 const appUrl = process.env.PLAYWRIGHT_APP_URL ?? 'http://127.0.0.1:4173'
@@ -35,7 +36,19 @@ const successScreenshot = path.join(outputDir, 'system-admin-live-keyboard-regre
 const failureScreenshot = path.join(outputDir, 'system-admin-live-keyboard-regression-failure.png')
 const failureTrace = path.join(outputDir, 'system-admin-live-keyboard-regression-failure.zip')
 const failureHtml = path.join(outputDir, 'system-admin-live-keyboard-regression-failure.html')
+const successReport = path.join(outputDir, 'system-admin-live-keyboard-regression-report.json')
+const failureReport = path.join(outputDir, 'system-admin-live-keyboard-regression-failure.json')
 let currentStep = 'launch-browser'
+const report = {
+  generatedAt: new Date().toISOString(),
+  appUrl,
+  apiUrl,
+  liveStack: isLiveStack,
+  checks: [],
+}
+const systemAdminCredentials = resolveSystemAdminLiveCredentials({
+  scriptLabel: 'System admin live keyboard regression',
+})
 
 const browser = await firefox.launch({
   headless: true,
@@ -62,6 +75,10 @@ page.on('response', response => {
 function markStep(label) {
   currentStep = label
   console.log(`[keyboard] step: ${label}`)
+}
+
+async function writeReport(targetPath, payload) {
+  await writeFile(targetPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
 }
 
 async function expectVisible(locator, description, timeout = 30_000) {
@@ -324,8 +341,8 @@ async function loginAsSystemAdmin() {
   await page.goto(appUrl, { waitUntil: 'networkidle' })
   await page.getByRole('button', { name: /Open System Admin/i }).click()
   await expectVisible(page.getByText(/System Admin Live Mode/), 'system admin login')
-  await page.getByPlaceholder('sysadmin', { exact: true }).fill('sysadmin')
-  await page.getByPlaceholder('••••••••', { exact: true }).fill('admin1234')
+  await page.getByPlaceholder('sysadmin', { exact: true }).fill(systemAdminCredentials.identifier)
+  await page.getByPlaceholder('••••••••', { exact: true }).fill(systemAdminCredentials.password)
   await page.getByRole('button', { name: 'Sign In', exact: true }).click()
   await waitForSystemAdminShellReady()
 }
@@ -452,6 +469,7 @@ try {
   } else {
     await expectText(requestDetailSurface, /Closed|Rejected/i, 'request terminal status')
   }
+  report.checks.push({ name: 'request_flow_keyboard_navigation', status: 'passed' })
 
   markStep('student-modal-focus-trap')
   await focusAndActivate(page.getByRole('button', { name: 'Students', exact: true }).first(), 'students navigation')
@@ -470,6 +488,7 @@ try {
   await page.keyboard.press('Escape')
   await expectVisible(editStudentButton, 'edit student action after dialog close')
   await expectFocused(editStudentButton, 'edit student action after dialog close')
+  report.checks.push({ name: 'modal_focus_trap_and_restore', status: 'passed' })
 
   markStep('proof-dashboard-keyboard')
   await ensureProofRunReady()
@@ -497,6 +516,7 @@ try {
     await expectText(selectedCheckpointBanner, /Post SEE/i, 'selected checkpoint banner after play to end')
   }
   await readPlaybackSelection()
+  report.checks.push({ name: 'proof_dashboard_checkpoint_keyboard_controls', status: 'passed' })
 
   markStep('switch-to-academic-portal')
   await focusAndActivate(page.getByRole('button', { name: 'Logout', exact: true }), 'logout action')
@@ -506,6 +526,7 @@ try {
   await focusAndActivate(courseLeaderRoleButton, 'course leader role switcher')
   const teacherProofPanel = await openFacultyProfileProofPanel()
   await expectVisible(teacherProofPanel, 'teacher proof panel after keyboard navigation')
+  report.checks.push({ name: 'portal_role_switch_keyboard_navigation', status: 'passed' })
 
   markStep('teacher-risk-and-shell-keyboard')
   let teacherProofActionSource = await resolveTeacherProofActionSource(teacherProofPanel)
@@ -532,6 +553,7 @@ try {
     await focusAndActivate(studentShellBackButton, 'student shell back button')
     await expectVisible(teacherProofPanel, 'teacher proof panel after student shell return')
   }
+  report.checks.push({ name: 'teacher_proof_surface_keyboard_navigation', status: 'passed' })
 
   markStep('proof-playback-restore-reset')
   await focusAndActivate(page.getByRole('button', { name: 'Logout', exact: true }), 'academic logout action')
@@ -554,8 +576,10 @@ try {
       'selected checkpoint banner after safe playback fallback',
     )
   }
+  report.checks.push({ name: 'proof_playback_restore_reset_keyboard_path', status: 'passed' })
 
   await page.screenshot({ path: successScreenshot, fullPage: true })
+  await writeReport(successReport, report)
   console.log(`System admin live keyboard regression passed. Screenshot: ${successScreenshot}`)
   await context.tracing.stop()
 } catch (error) {
@@ -567,6 +591,10 @@ try {
       await writeFile(failureHtml, html, 'utf8')
       console.error(`Failure HTML: ${failureHtml}`)
     }
+    report.error = error instanceof Error
+      ? { message: error.message, stack: error.stack ?? null, step: currentStep }
+      : { message: String(error), step: currentStep }
+    await writeReport(failureReport, report)
     await page.screenshot({ path: failureScreenshot, fullPage: true })
     await context.tracing.stop({ path: failureTrace })
     console.error(`System admin live keyboard regression failed. Screenshot: ${failureScreenshot}`)

@@ -94,6 +94,11 @@ describe('student risk explorer', () => {
 
 	    const riskExplorer = riskExplorerResponse.json() as {
 	      simulationStageCheckpointId: string | null
+	      scopeDescriptor: { scopeType: string; simulationRunId: string | null; studentId: string | null }
+	      resolvedFrom: { kind: string; scopeId: string | null }
+	      scopeMode: string
+	      countSource: string
+	      activeOperationalSemester: number | null
 	      checkpointContext: { simulationStageCheckpointId: string; stageKey: string; stageAdvanceBlocked?: boolean }
 	      modelProvenance: {
 	        simulationCalibrated: true
@@ -136,6 +141,15 @@ describe('student risk explorer', () => {
 
     expect(riskExplorer).toMatchObject({
       simulationStageCheckpointId: selectedCheckpoint.simulationStageCheckpointId,
+      scopeDescriptor: {
+        scopeType: 'student',
+        simulationRunId: activeRun.simulationRunId,
+        studentId: accessibleStudentId,
+      },
+      resolvedFrom: {
+        kind: 'proof-checkpoint',
+        scopeId: selectedCheckpoint.simulationStageCheckpointId,
+      },
       checkpointContext: {
         simulationStageCheckpointId: selectedCheckpoint.simulationStageCheckpointId,
         stageKey: selectedCheckpoint.stageKey,
@@ -149,6 +163,9 @@ describe('student risk explorer', () => {
         counterfactualLiftScaled: expect.any(Number),
       },
     })
+    expect(riskExplorer.scopeMode).toBe('proof')
+    expect(riskExplorer.countSource).toBe('proof-checkpoint')
+    expect(riskExplorer.activeOperationalSemester).toBe(6)
     expect(riskExplorer.trainedRiskHeads.currentRiskBand).toBeTruthy()
     const overallCourseHeadDisplay = riskExplorer.trainedRiskHeadDisplays?.overallCourseRisk ?? null
     if (overallCourseHeadDisplay?.displayProbabilityAllowed === false) {
@@ -216,5 +233,72 @@ describe('student risk explorer', () => {
     })
     expect(adminResponse.statusCode).toBe(200)
     expect(adminResponse.json().simulationRunId).toBe(activeRun.simulationRunId)
+  })
+
+  it('uses the activated proof semester for the default risk explorer while keeping checkpoint playback separate', async () => {
+    current = await createTestApp()
+    const login = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+    const roleResponse = login.body.activeRoleGrant.roleCode === 'COURSE_LEADER'
+      ? login.body
+      : (await switchToRole(login.cookie, login.body.availableRoleGrants, 'COURSE_LEADER')).json()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const [activeRun] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    expect(activeRun).toBeTruthy()
+    const recomputeRiskResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRun.simulationRunId}/recompute-risk`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+    expect(recomputeRiskResponse.statusCode).toBe(200)
+    const checkpointRows = await current.db.select().from(simulationStageCheckpoints).where(
+      eq(simulationStageCheckpoints.simulationRunId, activeRun.simulationRunId),
+    ).orderBy(asc(simulationStageCheckpoints.semesterNumber), asc(simulationStageCheckpoints.stageOrder))
+    const playbackCheckpoint = checkpointRows.find(row => row.semesterNumber > 4) ?? checkpointRows.at(-1)
+    expect(playbackCheckpoint).toBeTruthy()
+
+    const activateSemesterResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRun.simulationRunId}/activate-semester`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: { semesterNumber: 4 },
+    })
+    expect(activateSemesterResponse.statusCode).toBe(200)
+
+    const ownershipRows = await current.db.select().from(facultyOfferingOwnerships).where(and(
+      eq(facultyOfferingOwnerships.facultyId, roleResponse.faculty.facultyId),
+      eq(facultyOfferingOwnerships.status, 'active'),
+    ))
+    const ownedOfferingIds = new Set(ownershipRows.map(row => row.offeringId))
+    const observedRows = await current.db.select().from(studentObservedSemesterStates).where(
+      eq(studentObservedSemesterStates.simulationRunId, activeRun.simulationRunId),
+    )
+    const accessibleStudentId = observedRows.find(row => {
+      const offeringId = getObservedOfferingId(row)
+      return !!offeringId && ownedOfferingIds.has(offeringId)
+    })?.studentId
+    expect(accessibleStudentId).toBeTruthy()
+
+    const [defaultExplorerResponse, checkpointExplorerResponse] = await Promise.all([
+      current.app.inject({
+        method: 'GET',
+        url: `/api/academic/students/${accessibleStudentId}/risk-explorer`,
+        headers: { cookie: login.cookie },
+      }),
+      current.app.inject({
+        method: 'GET',
+        url: `/api/academic/students/${accessibleStudentId}/risk-explorer?simulationStageCheckpointId=${encodeURIComponent(playbackCheckpoint!.simulationStageCheckpointId)}`,
+        headers: { cookie: login.cookie },
+      }),
+    ])
+
+    expect(defaultExplorerResponse.statusCode).toBe(200)
+    expect(checkpointExplorerResponse.statusCode).toBe(200)
+    expect(defaultExplorerResponse.json().countSource).toBe('proof-run')
+    expect(defaultExplorerResponse.json().activeOperationalSemester).toBe(4)
+    expect(checkpointExplorerResponse.json().countSource).toBe('proof-checkpoint')
+    expect(checkpointExplorerResponse.json().activeOperationalSemester).toBe(4)
+    expect(checkpointExplorerResponse.json().simulationStageCheckpointId).toBe(playbackCheckpoint!.simulationStageCheckpointId)
   })
 })

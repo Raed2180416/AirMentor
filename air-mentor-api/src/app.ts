@@ -7,7 +7,8 @@ import type { AppConfig } from './config.js'
 import type { AppDb } from './db/client.js'
 import { AppError } from './lib/http-errors.js'
 import { buildCsrfToken, readSingleHeaderValue, secureTokenEquals } from './lib/csrf.js'
-import { emitOperationalEvent, normalizeTelemetryError } from './lib/telemetry.js'
+import { emitOperationalEvent, normalizeTelemetryError, configureOperationalTelemetryPersistence } from './lib/telemetry.js'
+import { persistOperationalTelemetryEvent } from './lib/operational-event-store.js'
 
 export type BuildAppOptions = {
   config: AppConfig
@@ -28,17 +29,21 @@ export async function buildApp(options: BuildAppOptions) {
     ...options,
     now: options.clock ?? (() => new Date().toISOString()),
   }
+  const disposeTelemetryPersistence = configureOperationalTelemetryPersistence(event =>
+    persistOperationalTelemetryEvent(context.db, event, context.now()),
+  )
 
   await app.register(fastifyCookie)
   app.decorateRequest('auth', null)
 
   app.addHook('onRequest', async (request, reply) => {
     if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) return
+    const requestPath = request.url.split('?')[0] ?? request.url
     const origin = request.headers.origin
     if (!origin || !context.config.corsAllowedOrigins.includes(origin)) {
       emitOperationalEvent('security.forbidden_origin', {
         method: request.method,
-        route: request.url,
+        route: requestPath,
         origin: origin ?? null,
       }, { level: 'warn' })
       return reply.status(403).send({
@@ -46,6 +51,7 @@ export async function buildApp(options: BuildAppOptions) {
         message: 'Unsafe requests must originate from an allowed frontend origin.',
       })
     }
+    if (requestPath === '/api/client-telemetry') return
     const sessionId = request.cookies[context.config.sessionCookieName]
     if (!sessionId) return
     const csrfHeader = readSingleHeaderValue(request.headers['x-airmentor-csrf'])
@@ -62,7 +68,7 @@ export async function buildApp(options: BuildAppOptions) {
 
     emitOperationalEvent('security.csrf.rejected', {
       method: request.method,
-      route: request.url,
+      route: requestPath,
       origin: origin ?? null,
       reason: failureReason,
       sessionCookiePresent: true,
@@ -143,6 +149,7 @@ export async function buildApp(options: BuildAppOptions) {
   const { registerCourseRoutes } = await import('./modules/courses.js')
   const { registerAdminRequestRoutes } = await import('./modules/admin-requests.js')
   const { registerAdminProofSandboxRoutes } = await import('./modules/admin-proof-sandbox.js')
+  const { registerClientTelemetryRoutes } = await import('./modules/client-telemetry.js')
   const { registerAcademicRoutes } = await import('./modules/academic.js')
   const { registerAdminControlPlaneRoutes } = await import('./modules/admin-control-plane.js')
   modules.push(
@@ -154,6 +161,7 @@ export async function buildApp(options: BuildAppOptions) {
     registerCourseRoutes,
     registerAdminRequestRoutes,
     registerAdminProofSandboxRoutes,
+    registerClientTelemetryRoutes,
     registerAcademicRoutes,
     registerAdminControlPlaneRoutes,
   )
@@ -169,6 +177,7 @@ export async function buildApp(options: BuildAppOptions) {
     clock: context.now,
   })
   app.addHook('onClose', async () => {
+    disposeTelemetryPersistence()
     stopProofRunWorker()
   })
 

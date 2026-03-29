@@ -3,6 +3,8 @@ import type {
   ApiAcademicFaculty,
   ApiAcademicHodProofBundle,
   ApiAcademicMeeting,
+  ApiActivateProofSemesterRequest,
+  ApiActivateProofSemesterResponse,
   ApiAcademicHodProofCourseRollup,
   ApiAcademicHodProofFacultyRollup,
   ApiAcademicCalendarAuditListResponse,
@@ -204,11 +206,11 @@ export interface AirMentorApiClientLike {
   listPolicyOverrides(filter?: { scopeType?: ApiPolicyOverride['scopeType']; scopeId?: string }): Promise<{ items: ApiPolicyOverride[] }>
   createPolicyOverride(payload: Pick<ApiPolicyOverride, 'scopeType' | 'scopeId' | 'policy' | 'status'>): Promise<ApiPolicyOverride>
   updatePolicyOverride(policyOverrideId: string, payload: Pick<ApiPolicyOverride, 'scopeType' | 'scopeId' | 'policy' | 'status' | 'version'>): Promise<ApiPolicyOverride>
-  getResolvedBatchPolicy(batchId: string): Promise<ApiResolvedBatchPolicy>
+  getResolvedBatchPolicy(batchId: string, filter?: { sectionCode?: string | null }): Promise<ApiResolvedBatchPolicy>
   listStagePolicyOverrides(filter?: { scopeType?: ApiStagePolicyOverride['scopeType']; scopeId?: string }): Promise<{ items: ApiStagePolicyOverride[] }>
   createStagePolicyOverride(payload: Pick<ApiStagePolicyOverride, 'scopeType' | 'scopeId' | 'policy' | 'status'>): Promise<ApiStagePolicyOverride>
   updateStagePolicyOverride(stagePolicyOverrideId: string, payload: Pick<ApiStagePolicyOverride, 'scopeType' | 'scopeId' | 'policy' | 'status' | 'version'>): Promise<ApiStagePolicyOverride>
-  getResolvedStagePolicy(batchId: string): Promise<ApiResolvedBatchStagePolicy>
+  getResolvedStagePolicy(batchId: string, filter?: { sectionCode?: string | null }): Promise<ApiResolvedBatchStagePolicy>
   getProofDashboard(batchId: string): Promise<ApiProofDashboard>
   createProofImport(batchId: string, payload?: { sourcePath?: string }): Promise<{ curriculumImportVersionId: string; validation: Record<string, unknown>; completenessCertificate: Record<string, unknown> }>
   validateProofImport(curriculumImportVersionId: string): Promise<Record<string, unknown>>
@@ -217,6 +219,7 @@ export interface AirMentorApiClientLike {
   createProofRun(batchId: string, payload: { curriculumImportVersionId: string; seed?: number; runLabel?: string; activate?: boolean }): Promise<{ simulationRunId: string; status: string; activeFlag: boolean; createdAt: string; startedAt: string | null; completedAt: string | null; failureCode: string | null; failureMessage: string | null; progress: Record<string, unknown> | null }>
   retryProofRun(simulationRunId: string): Promise<{ simulationRunId: string; status: string; activeFlag: boolean; createdAt: string; startedAt: string | null; completedAt: string | null; failureCode: string | null; failureMessage: string | null; progress: Record<string, unknown> | null }>
   activateProofRun(simulationRunId: string): Promise<{ ok: true }>
+  activateProofSemester(simulationRunId: string, payload: ApiActivateProofSemesterRequest): Promise<ApiActivateProofSemesterResponse>
   archiveProofRun(simulationRunId: string): Promise<{ ok: true }>
   recomputeProofRunRisk(simulationRunId: string): Promise<{ ok: true }>
   restoreProofRunSnapshot(simulationRunId: string, payload?: { simulationResetSnapshotId?: string }): Promise<{ simulationRunId: string; activeFlag: boolean }>
@@ -899,8 +902,11 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     })
   }
 
-  async getResolvedBatchPolicy(batchId: string) {
-    return this.request<ApiResolvedBatchPolicy>(`/api/admin/batches/${batchId}/resolved-policy`)
+  async getResolvedBatchPolicy(batchId: string, filter?: { sectionCode?: string | null }) {
+    const searchParams = new URLSearchParams()
+    if (filter?.sectionCode) searchParams.set('sectionCode', filter.sectionCode)
+    const query = searchParams.toString()
+    return this.request<ApiResolvedBatchPolicy>(`/api/admin/batches/${batchId}/resolved-policy${query ? `?${query}` : ''}`)
   }
 
   async listStagePolicyOverrides(filter?: { scopeType?: ApiStagePolicyOverride['scopeType']; scopeId?: string }) {
@@ -925,8 +931,11 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     })
   }
 
-  async getResolvedStagePolicy(batchId: string) {
-    return this.request<ApiResolvedBatchStagePolicy>(`/api/admin/batches/${batchId}/resolved-stage-policy`)
+  async getResolvedStagePolicy(batchId: string, filter?: { sectionCode?: string | null }) {
+    const searchParams = new URLSearchParams()
+    if (filter?.sectionCode) searchParams.set('sectionCode', filter.sectionCode)
+    const query = searchParams.toString()
+    return this.request<ApiResolvedBatchStagePolicy>(`/api/admin/batches/${batchId}/resolved-stage-policy${query ? `?${query}` : ''}`)
   }
 
   async getProofDashboard(batchId: string) {
@@ -979,6 +988,13 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     return this.request<{ ok: true }>(`/api/admin/proof-runs/${simulationRunId}/activate`, {
       method: 'POST',
       body: JSON.stringify({}),
+    })
+  }
+
+  async activateProofSemester(simulationRunId: string, payload: ApiActivateProofSemesterRequest) {
+    return this.request<ApiActivateProofSemesterResponse>(`/api/admin/proof-runs/${simulationRunId}/activate-semester`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
     })
   }
 

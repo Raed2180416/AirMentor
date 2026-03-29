@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
+import { resolveSystemAdminLiveCredentials } from './system-admin-live-auth.mjs'
 
 const playwrightRoot = process.env.PLAYWRIGHT_ROOT
 const appUrl = process.env.PLAYWRIGHT_APP_URL ?? 'http://127.0.0.1:5173'
@@ -15,6 +16,9 @@ await mkdir(outputDir, { recursive: true })
 
 const successScreenshot = path.join(outputDir, 'system-admin-teaching-parity-smoke.png')
 const failureScreenshot = path.join(outputDir, 'system-admin-teaching-parity-smoke-failure.png')
+const systemAdminCredentials = resolveSystemAdminLiveCredentials({
+  scriptLabel: 'System admin teaching parity smoke',
+})
 
 const browser = await firefox.launch({ headless: true })
 const page = await browser.newPage({ viewport: { width: 1440, height: 1400 } })
@@ -56,8 +60,8 @@ try {
   await page.getByRole('button', { name: /Open System Admin/i }).click()
   await expectVisible(page.getByText(/System Admin Live Mode/), 'system admin login')
 
-  await page.getByPlaceholder('sysadmin', { exact: true }).fill('sysadmin')
-  await page.getByPlaceholder('••••••••', { exact: true }).fill('admin1234')
+  await page.getByPlaceholder('sysadmin', { exact: true }).fill(systemAdminCredentials.identifier)
+  await page.getByPlaceholder('••••••••', { exact: true }).fill(systemAdminCredentials.password)
   await page.getByRole('button', { name: 'Sign In', exact: true }).click()
 
   await expectVisible(page.getByText('Operations Dashboard', { exact: true }).last(), 'sysadmin dashboard')

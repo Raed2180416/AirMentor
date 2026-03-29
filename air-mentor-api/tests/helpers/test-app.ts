@@ -4,6 +4,7 @@ import net from 'node:net'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import EmbeddedPostgres from 'embedded-postgres'
+import type { InjectOptions } from 'light-my-request'
 import { buildApp } from '../../src/app.js'
 import { loadConfig } from '../../src/config.js'
 import { createDb, createPool, type AppDb } from '../../src/db/client.js'
@@ -103,7 +104,7 @@ export async function createTestApp(options?: {
     })
     await app.ready()
     const rawInject = app.inject.bind(app)
-    app.inject = (async (options: Parameters<typeof rawInject>[0]) => {
+    app.inject = (async (options: string | InjectOptions) => {
       if (!options || typeof options === 'string') {
         return rawInject(options)
       }
@@ -125,7 +126,7 @@ export async function createTestApp(options?: {
       }
       return rawInject({
         ...options,
-        headers,
+        headers: headers as InjectOptions['headers'],
       })
     }) as typeof app.inject
 

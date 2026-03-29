@@ -66,10 +66,14 @@ This document audits automated verification, seeded integration coverage, browse
 - The original “no structured observability surfaces” finding is also now incomplete. The repo now has:
   - frontend telemetry in `src/telemetry.ts`
   - backend telemetry in `air-mentor-api/src/lib/telemetry.ts`
+  - local operational-event retention in `air-mentor-api/src/lib/operational-event-store.ts`
+  - proof-dashboard surfacing of recent retained events in `air-mentor-api/src/lib/proof-control-plane-batch-service.ts` and `src/system-admin-proof-dashboard-workspace.tsx`
+  - optional external telemetry sink forwarding in both telemetry modules
   - frontend startup diagnostics in `src/startup-diagnostics.ts`
   - backend startup diagnostics in `air-mentor-api/src/startup-diagnostics.ts`
-  - coverage in `tests/frontend-telemetry.test.ts`, `tests/frontend-startup-diagnostics.test.ts`, and `air-mentor-api/tests/startup-diagnostics.test.ts`
-- The issue is not closed. What remains open is the absence of an external production telemetry stack, broader deploy/runtime preflight coverage, and deeper operational failure-mode coverage.
+  - Railway deploy preflight and live session-contract diagnostics in `.github/workflows/deploy-railway-api.yml`
+  - coverage in `tests/frontend-telemetry.test.ts`, `tests/frontend-startup-diagnostics.test.ts`, `tests/system-admin-proof-dashboard-workspace.test.tsx`, `air-mentor-api/tests/client-telemetry.test.ts`, `air-mentor-api/tests/telemetry.test.ts`, `air-mentor-api/tests/admin-proof-observability.test.ts`, and `air-mentor-api/tests/startup-diagnostics.test.ts`
+- The issue is narrower now. What remains open is production provisioning of an external sink, broader runtime analytics, and deeper operational failure-mode coverage beyond the current deploy preflight, retained local events, and log artifacts.
 
 ## Key workflows and contracts
 ### What automated tests currently validate
@@ -94,7 +98,7 @@ This document audits automated verification, seeded integration coverage, browse
   - expect a Playwright browser bundle and seeded credentials
 
 ### What the current suite does not validate well
-- Production observability behavior against an external telemetry backend because the repo-native instrumentation stops at structured events and diagnostics.
+- Production observability behavior against a provisioned external telemetry backend because the repo now supports sink forwarding and local retained events but does not configure or operate the sink by itself.
 - Full multi-user conflict behavior for storage-backed runtime slices.
 - Screen-reader-oriented verification beyond the new keyboard and live axe/browser regression flows.
 - End-to-end deployment wiring through GitHub Pages plus Railway.
@@ -110,18 +114,18 @@ This document audits automated verification, seeded integration coverage, browse
 ### Testing and observability weaknesses
 - The strongest end-to-end flows are outside the default CI-facing commands.
 - The skipped proof-rc coverage means the heaviest proof control plane scenarios are not always part of the fast baseline.
-- There is now integrated repo-native telemetry and startup diagnostics, but there is still no external analytics, tracing, or error-aggregation layer.
+- There is now integrated repo-native telemetry, local operational-event retention, optional sink forwarding, startup diagnostics, and Railway deploy preflight/health capture, but there is still no provisioned analytics, tracing, or error-aggregation layer in the live environment.
 - Deployment workflows can report success while skipping real deployment or post-deploy verification if Railway variables are missing or `RAILWAY_PUBLIC_API_URL` is unset.
 
 ## Implications
 - **Engineering consequence:** test confidence is good for contracts and seeded route behavior, weaker for holistic browser UX and operational failure modes.
-- **Operational consequence:** without telemetry, the team cannot easily distinguish “the proof system is healthy but the UX is confusing” from “the proof system is silently degraded.”
+- **Operational consequence:** without a provisioned sink, the team still cannot reliably distinguish “the proof system is healthy but the UX is confusing” from “the proof system is silently degraded.”
 - **Product consequence:** quality improvements are harder to prioritize because little production evidence is being collected.
 
 ## Recommendations
 - Keep the new CI and proof-browser cadence workflows authoritative and make sure they stay green as the proof surfaces continue to split.
 - Keep `verify:proof-closure` and `verify:proof-closure:proof-rc` aligned with the workflows so local and CI confidence bars do not drift.
-- Extend the current structured metrics and error reporting into an external runtime telemetry stack if production evidence becomes necessary.
+- Provision the new sink-capable telemetry path into an external runtime telemetry stack before relying on production evidence for proof expansion; the repo-local retained-event surface is already useful, but it is not a substitute for production observability.
 - Keep the new browser accessibility regression suite aligned with the live keyboard flow and extend it when new high-risk screens are added.
 - Track proof-rc suite execution explicitly in CI rather than leaving the heavy proof flow mostly optional.
 - Add freshness checks for tracked proof-risk evaluation artifacts so committed reports cannot silently drift from current code.

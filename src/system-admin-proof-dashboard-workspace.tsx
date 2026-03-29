@@ -4,6 +4,7 @@ import type {
   ApiSimulationStageCheckpointSummary,
 } from './api/types'
 import { T, mono, sora } from './data'
+import { describeProofAvailability, describeProofProvenance, type ProofProvenanceLike } from './proof-provenance'
 import { InfoBanner, RestoreBanner } from './system-admin-ui'
 import { Btn, Card, Chip } from './ui-primitives'
 
@@ -33,6 +34,17 @@ function formatAgeSeconds(seconds: number | null | undefined) {
 function formatLeaseState(leaseState: 'leased' | 'expired' | 'released' | null | undefined) {
   if (!leaseState) return 'unleased'
   return leaseState
+}
+
+function formatOperationalEventDetails(details: Record<string, unknown>) {
+  const summaryEntries = Object.entries(details).slice(0, 3).map(([key, value]) => {
+    if (value == null) return `${key}: null`
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      return `${key}: ${String(value)}`
+    }
+    return `${key}: ${JSON.stringify(value)}`
+  })
+  return summaryEntries.length > 0 ? summaryEntries.join(' · ') : 'No additional details.'
 }
 
 type SystemAdminProofDashboardWorkspaceProps = {
@@ -71,6 +83,7 @@ type SystemAdminProofDashboardWorkspaceProps = {
   onCreateProofRun: () => void
   onRecomputeProofRunRisk: () => void
   onActivateProofRun: (simulationRunId: string) => void
+  onActivateProofSemester: (simulationRunId: string, semesterNumber: number) => void
   onRetryProofRun: (simulationRunId: string) => void
   onArchiveProofRun: (simulationRunId: string) => void
   onRestoreProofSnapshot: (simulationRunId: string, simulationResetSnapshotId?: string) => void
@@ -119,6 +132,7 @@ export function SystemAdminProofDashboardWorkspace({
   onCreateProofRun,
   onRecomputeProofRunRisk,
   onActivateProofRun,
+  onActivateProofSemester,
   onRetryProofRun,
   onArchiveProofRun,
   onRestoreProofSnapshot,
@@ -135,10 +149,46 @@ export function SystemAdminProofDashboardWorkspace({
   const activeQueueDiagnostics = activeRunDetail?.queueDiagnostics
   const activeWorkerDiagnostics = activeRunDetail?.workerDiagnostics ?? null
   const activeCheckpointReadiness = activeRunDetail?.checkpointReadiness
+  const activeOperationalSemester = activeRunDetail?.activeOperationalSemester ?? null
+  const availableOperationalSemesters = Array.from(new Set(
+    activeRunCheckpoints
+      .map(item => item.semesterNumber)
+      .filter((value): value is number => Number.isFinite(value)),
+  )).sort((left, right) => left - right)
+  const playbackOverridesActiveSemester = !!(
+    selectedProofCheckpoint
+    && activeOperationalSemester != null
+    && selectedProofCheckpoint.semesterNumber !== activeOperationalSemester
+  )
   const lifecycleAudit = proofDashboard?.lifecycleAudit ?? []
+  const recentOperationalEvents = proofDashboard?.recentOperationalEvents ?? []
   const productionEvaluation = activeProductionDiagnostics?.evaluation
   const productionEvaluationKeys = productionEvaluation && typeof productionEvaluation === 'object'
     ? Object.keys(productionEvaluation as Record<string, unknown>).slice(0, 5).join(' · ') || 'none'
+    : null
+  const dashboardProvenance: ProofProvenanceLike | null = activeRunDetail
+    ? {
+        scopeDescriptor: {
+          scopeType: 'proof',
+          scopeId: selectedProofCheckpoint?.simulationStageCheckpointId ?? activeRunDetail.simulationRunId,
+          label: selectedProofCheckpoint ? `System admin proof route · ${selectedProofCheckpoint.stageLabel}` : 'System admin proof route',
+          batchId: null,
+          sectionCode: null,
+          branchName: null,
+          simulationRunId: activeRunDetail.simulationRunId,
+          simulationStageCheckpointId: selectedProofCheckpoint?.simulationStageCheckpointId ?? null,
+          studentId: null,
+        },
+        resolvedFrom: {
+          kind: selectedProofCheckpoint ? 'proof-checkpoint' : 'proof-run',
+          scopeType: 'proof',
+          scopeId: selectedProofCheckpoint?.simulationStageCheckpointId ?? activeRunDetail.simulationRunId,
+          label: selectedProofCheckpoint ? `${selectedProofCheckpoint.stageLabel} · ${activeRunDetail.runLabel}` : activeRunDetail.runLabel,
+        },
+        scopeMode: 'proof',
+        countSource: selectedProofCheckpoint ? 'proof-checkpoint' : 'proof-run',
+        activeOperationalSemester,
+      }
     : null
 
   return (
@@ -161,6 +211,14 @@ export function SystemAdminProofDashboardWorkspace({
       </div>
 
       {proofDashboardLoading ? <InfoBanner message="Loading proof control-plane data..." /> : null}
+      {dashboardProvenance ? <InfoBanner tone="neutral" message={describeProofProvenance(dashboardProvenance)} /> : null}
+      {dashboardProvenance ? <InfoBanner tone="neutral" message={describeProofAvailability(dashboardProvenance)} /> : null}
+      {playbackOverridesActiveSemester ? (
+        <InfoBanner
+          tone="neutral"
+          message={`Playback override active. The dashboard is pinned to Semester ${selectedProofCheckpoint?.semesterNumber} · ${selectedProofCheckpoint?.stageLabel}, while the operational semester remains Semester ${activeOperationalSemester}.`}
+        />
+      ) : null}
 
       {activeRunDetail ? (
         <div style={{ display: 'grid', gap: 14 }}>
@@ -195,6 +253,26 @@ export function SystemAdminProofDashboardWorkspace({
             <Card style={{ padding: 12, background: T.surface }}>
               <div style={{ ...mono, fontSize: 10, color: T.dim }}>Snapshots</div>
               <div style={{ ...mono, fontSize: 11, color: T.text, marginTop: 4 }}>{activeRunSnapshots.length} saved</div>
+            </Card>
+            <Card style={{ padding: 12, background: T.surface }}>
+              <div style={{ ...mono, fontSize: 10, color: T.dim }}>Operational Semester</div>
+              <div style={{ ...mono, fontSize: 11, color: T.text, marginTop: 4 }}>
+                {activeOperationalSemester != null ? `Semester ${activeOperationalSemester}` : 'Unavailable'}
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                {availableOperationalSemesters.map(semesterNumber => (
+                  <Btn
+                    key={semesterNumber}
+                    size="sm"
+                    variant={semesterNumber === activeOperationalSemester ? 'solid' : 'ghost'}
+                    dataProofAction={`proof-activate-semester-${semesterNumber}`}
+                    disabled={semesterNumber === activeOperationalSemester}
+                    onClick={() => onActivateProofSemester(activeRunDetail.simulationRunId, semesterNumber)}
+                  >
+                    Sem {semesterNumber}
+                  </Btn>
+                ))}
+              </div>
             </Card>
             <Card style={{ padding: 12, background: T.surface }}>
               <div style={{ ...mono, fontSize: 10, color: T.dim }}>Queue Health</div>
@@ -624,6 +702,29 @@ export function SystemAdminProofDashboardWorkspace({
                   </div>
                 </Card>
               )) : <div style={{ ...mono, fontSize: 10, color: T.muted }}>No proof lifecycle audit entries yet.</div>}
+            </Card>
+
+            <Card style={{ padding: 12, background: T.surface, display: 'grid', gap: 8 }}>
+              <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>Recent Operational Events</div>
+              {recentOperationalEvents.length ? recentOperationalEvents.slice(0, 8).map(item => (
+                <Card key={item.operationalTelemetryEventId} style={{ padding: 10, background: T.surface2 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.name}</div>
+                      <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.7 }}>
+                        {formatOperationalEventDetails(item.details)}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      <Chip color={item.level === 'error' ? T.danger : item.level === 'warn' ? T.warning : T.accent} size={9}>{item.level}</Chip>
+                      <Chip color={item.source === 'client' ? T.success : T.dim} size={9}>{item.source}</Chip>
+                    </div>
+                  </div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6 }}>
+                    {new Date(item.timestamp).toLocaleString('en-IN')}
+                  </div>
+                </Card>
+              )) : <div style={{ ...mono, fontSize: 10, color: T.muted }}>No recent operational events retained yet.</div>}
             </Card>
           </div>
         </div>

@@ -25,6 +25,8 @@ type SystemAdminHierarchyWorkspaceShellProps = {
   workspaceHelperText: string
   workspaceMeta?: ReactNode
   tabActions: ReactNode
+  workspacePanelId?: string
+  workspacePanelLabelledBy?: string
   overviewNavigator?: ReactNode
   yearEditors?: ReactNode
   children: ReactNode
@@ -50,6 +52,8 @@ export function SystemAdminHierarchyWorkspaceShell({
   workspaceHelperText,
   workspaceMeta,
   tabActions,
+  workspacePanelId,
+  workspacePanelLabelledBy,
   overviewNavigator,
   yearEditors,
   children,
@@ -118,9 +122,16 @@ export function SystemAdminHierarchyWorkspaceShell({
             </div>
           </Card>
 
-          {overviewNavigator}
-          {yearEditors}
-          {children}
+          <div
+            id={workspacePanelId}
+            role={workspacePanelId ? 'tabpanel' : undefined}
+            aria-labelledby={workspacePanelId && workspacePanelLabelledBy ? workspacePanelLabelledBy : undefined}
+            style={{ display: 'grid', gap: 14 }}
+          >
+            {overviewNavigator}
+            {yearEditors}
+            {children}
+          </div>
         </div>
       </div>
     </div>
