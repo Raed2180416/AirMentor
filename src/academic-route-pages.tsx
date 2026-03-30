@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import { AlertTriangle, Eye, Mail, Phone, Search, Users, X } from 'lucide-react'
 import { T, mono, sora, yearColor, type Mentee, type Offering, type Student, type StudentHistoryRecord, type YearGroup } from './data'
 import { type EntryKind, type Role, type SharedTask } from './domain'
+import type { ApiAcademicFacultyProfile } from './api/types'
+import { AcademicProofSummaryStrip } from './academic-proof-summary-strip'
 import { useAppSelectors } from './selectors'
 import { inferKindFromPendingAction } from './page-utils'
 import { Bar, Btn, Card, Chip, PageBackButton, PageShell, StagePips } from './ui-primitives'
@@ -14,6 +16,7 @@ function formatDateTime(timestamp?: number) {
 type CLDashboardProps = {
   offerings: Offering[]
   pendingTaskCount: number
+  proofProfile?: ApiAcademicFacultyProfile | null
   onOpenCourse: (offering: Offering) => void
   onOpenStudent: (student: Student, offering: Offering) => void
   onOpenUpload: (offering?: Offering, kind?: EntryKind) => void
@@ -28,6 +31,7 @@ type CLDashboardProps = {
 export function CLDashboard({
   offerings,
   pendingTaskCount,
+  proofProfile,
   onOpenCourse,
   onOpenStudent,
   onOpenUpload,
@@ -52,6 +56,7 @@ export function CLDashboard({
 
   return (
     <PageShell size="wide">
+      <AcademicProofSummaryStrip profile={proofProfile ?? null} surfaceId="course-leader-dashboard" surfaceLabel="Course Leader Dashboard" />
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
         <div style={{ width: 50, height: 50, borderRadius: 14, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 18, color: '#fff' }}>{teacherInitials}</div>
         <div>
@@ -241,10 +246,20 @@ function OfferingCard({
 type MentorViewProps = {
   mentees: Mentee[]
   tasks: SharedTask[]
+  proofProfile?: ApiAcademicFacultyProfile | null
   onOpenMentee: (mentee: Mentee) => void
+  onOpenStudentShell?: (studentId: string) => void
+  onOpenRiskExplorer?: (studentId: string) => void
 }
 
-export function MentorView({ mentees, tasks, onOpenMentee }: MentorViewProps) {
+export function MentorView({
+  mentees,
+  tasks,
+  proofProfile,
+  onOpenMentee,
+  onOpenStudentShell,
+  onOpenRiskExplorer,
+}: MentorViewProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [activeFilter, setActiveFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all')
   const sorted = [...mentees].sort((left, right) => right.avs - left.avs)
@@ -295,6 +310,7 @@ export function MentorView({ mentees, tasks, onOpenMentee }: MentorViewProps) {
 
   return (
     <PageShell size="standard">
+      <AcademicProofSummaryStrip profile={proofProfile ?? null} surfaceId="mentor-view" surfaceLabel="Mentor View" />
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <Users size={22} color={T.accent} />
@@ -376,12 +392,30 @@ export function MentorView({ mentees, tasks, onOpenMentee }: MentorViewProps) {
                     <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 3 }}>{task.studentName} · {task.courseCode} · {task.due}</div>
                   </div>
                   {target ? (
-                    <button
-                      onClick={() => onOpenMentee(target)}
-                      style={{ ...mono, fontSize: 10, color: T.accent, border: `1px solid ${T.border2}`, background: 'transparent', borderRadius: 6, height: 28, padding: '0 10px', cursor: 'pointer', alignSelf: 'center', flexShrink: 0 }}
-                    >
-                      Open Student
-                    </button>
+                    <div style={{ display: 'flex', gap: 6, alignSelf: 'center', flexWrap: 'wrap', flexShrink: 0 }}>
+                      <button
+                        onClick={() => onOpenMentee(target)}
+                        style={{ ...mono, fontSize: 10, color: T.accent, border: `1px solid ${T.border2}`, background: 'transparent', borderRadius: 6, height: 28, padding: '0 10px', cursor: 'pointer' }}
+                      >
+                        Open Student
+                      </button>
+                      {onOpenRiskExplorer ? (
+                        <button
+                          onClick={() => onOpenRiskExplorer(target.id.replace(/^mentee-/, ''))}
+                          style={{ ...mono, fontSize: 10, color: T.accent, border: `1px solid ${T.border2}`, background: 'transparent', borderRadius: 6, height: 28, padding: '0 10px', cursor: 'pointer' }}
+                        >
+                          Risk Explorer
+                        </button>
+                      ) : null}
+                      {onOpenStudentShell ? (
+                        <button
+                          onClick={() => onOpenStudentShell(target.id.replace(/^mentee-/, ''))}
+                          style={{ ...mono, fontSize: 10, color: T.accent, border: `1px solid ${T.border2}`, background: 'transparent', borderRadius: 6, height: 28, padding: '0 10px', cursor: 'pointer' }}
+                        >
+                          Student Shell
+                        </button>
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
               )
@@ -442,6 +476,32 @@ export function MentorView({ mentees, tasks, onOpenMentee }: MentorViewProps) {
                 )}
                 {mentee.prevCgpa > 0 ? <Chip color={T.dim} size={9}>CGPA: {mentee.prevCgpa.toFixed(1)}</Chip> : null}
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+                  {onOpenRiskExplorer ? (
+                    <button
+                      aria-label={`Open ${mentee.name} in risk explorer`}
+                      title="Risk Explorer"
+                      onClick={event => {
+                        event.stopPropagation()
+                        onOpenRiskExplorer(mentee.id.replace(/^mentee-/, ''))
+                      }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}
+                    >
+                      <AlertTriangle size={13} />
+                    </button>
+                  ) : null}
+                  {onOpenStudentShell ? (
+                    <button
+                      aria-label={`Open ${mentee.name} in student shell`}
+                      title="Student Shell"
+                      onClick={event => {
+                        event.stopPropagation()
+                        onOpenStudentShell(mentee.id.replace(/^mentee-/, ''))
+                      }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}
+                    >
+                      <Eye size={13} />
+                    </button>
+                  ) : null}
                   <button aria-label={`Copy ${mentee.name} phone number`} title="Copy phone" onClick={event => { event.stopPropagation(); void navigator.clipboard.writeText(mentee.phone) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Phone size={13} /></button>
                   <button aria-label={`Email ${mentee.name}`} title="Email" onClick={event => event.stopPropagation()} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Mail size={13} /></button>
                 </div>
@@ -464,9 +524,18 @@ type MenteeDetailPageProps = {
   history: StudentHistoryRecord | null
   onBack: () => void
   onOpenHistory: (mentee: Mentee) => void
+  onOpenStudentShell?: (studentId: string) => void
+  onOpenRiskExplorer?: (studentId: string) => void
 }
 
-export function MenteeDetailPage({ mentee, history, onBack, onOpenHistory }: MenteeDetailPageProps) {
+export function MenteeDetailPage({
+  mentee,
+  history,
+  onBack,
+  onOpenHistory,
+  onOpenStudentShell,
+  onOpenRiskExplorer,
+}: MenteeDetailPageProps) {
   const [activeInsight, setActiveInsight] = useState<'risk' | 'cgpa'>('risk')
   const avgCourseRisk = mentee.avs >= 0 ? Math.round(mentee.courseRisks.filter(risk => risk.risk >= 0).reduce((sum, risk) => sum + risk.risk, 0) / Math.max(1, mentee.courseRisks.filter(risk => risk.risk >= 0).length) * 100) : null
   const sgpaSeries = useMemo(
@@ -527,6 +596,8 @@ export function MenteeDetailPage({ mentee, history, onBack, onOpenHistory }: Men
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <Btn size="sm" variant="ghost" onClick={() => void navigator.clipboard.writeText(mentee.phone)}><Phone size={12} /> Copy Phone</Btn>
           <Btn size="sm" disabled={!history} onClick={() => onOpenHistory(mentee)}><Eye size={12} /> View Student History</Btn>
+          {onOpenRiskExplorer ? <Btn size="sm" variant="ghost" onClick={() => onOpenRiskExplorer(mentee.id.replace(/^mentee-/, ''))}><AlertTriangle size={12} /> Risk Explorer</Btn> : null}
+          {onOpenStudentShell ? <Btn size="sm" variant="ghost" onClick={() => onOpenStudentShell(mentee.id.replace(/^mentee-/, ''))}><Eye size={12} /> Student Shell</Btn> : null}
         </div>
       </div>
 
@@ -760,20 +831,26 @@ type QueueHistoryPageProps = {
   role: Role
   tasks: SharedTask[]
   resolvedTaskIds: Record<string, number>
+  proofProfile?: ApiAcademicFacultyProfile | null
   onBack: () => void
   onOpenTaskStudent: (task: SharedTask) => void
   onOpenUnlockReview: (taskId: string) => void
   onRestoreTask: (taskId: string) => void
+  onOpenStudentShell?: (studentId: string) => void
+  onOpenRiskExplorer?: (studentId: string) => void
 }
 
 export function QueueHistoryPage({
   role,
   tasks,
   resolvedTaskIds,
+  proofProfile,
   onBack,
   onOpenTaskStudent,
   onOpenUnlockReview,
   onRestoreTask,
+  onOpenStudentShell,
+  onOpenRiskExplorer,
 }: QueueHistoryPageProps) {
   const [filter, setFilter] = useState<'all' | 'active' | 'resolved' | 'dismissed'>('all')
   const visible = tasks
@@ -788,6 +865,7 @@ export function QueueHistoryPage({
   return (
     <PageShell size="standard">
       <PageBackButton onClick={onBack} />
+      <AcademicProofSummaryStrip profile={proofProfile ?? null} surfaceId="queue-history" surfaceLabel="Queue History" />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <div>
           <div style={{ ...sora, fontWeight: 700, fontSize: 21, color: T.text }}>Queue History</div>
@@ -832,6 +910,8 @@ export function QueueHistoryPage({
 
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <div onClick={event => event.stopPropagation()}><Btn size="sm" variant="ghost" onClick={() => onOpenTaskStudent(task)}>Open Student</Btn></div>
+              {onOpenRiskExplorer ? <div onClick={event => event.stopPropagation()}><Btn size="sm" variant="ghost" onClick={() => onOpenRiskExplorer(task.studentId)}>Risk Explorer</Btn></div> : null}
+              {onOpenStudentShell ? <div onClick={event => event.stopPropagation()}><Btn size="sm" variant="ghost" onClick={() => onOpenStudentShell(task.studentId)}>Student Shell</Btn></div> : null}
               {task.dismissal ? <div onClick={event => event.stopPropagation()}><Btn size="sm" onClick={() => onRestoreTask(task.id)}>{task.dismissal.kind === 'series' ? 'Resume series' : 'Restore'}</Btn></div> : null}
               {task.unlockRequest && role === 'HoD' ? <div onClick={event => event.stopPropagation()}><Btn size="sm" onClick={() => onOpenUnlockReview(task.id)}>Open Unlock Review</Btn></div> : null}
             </div>

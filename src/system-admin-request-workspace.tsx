@@ -63,7 +63,7 @@ export function SystemAdminRequestWorkspace({
           ))}
         </Card>
 
-        <Card style={{ padding: 18, display: 'grid', gap: 14, alignContent: 'start' }}>
+        <Card data-request-detail="true" style={{ padding: 18, display: 'grid', gap: 14, alignContent: 'start' }}>
           {!selectedRequestId ? (
             <EmptyState title="Select a request" body="Choose a request from the left to inspect details, linked targets, and implementation status." />
           ) : requestDetailLoading && !selectedRequest ? (

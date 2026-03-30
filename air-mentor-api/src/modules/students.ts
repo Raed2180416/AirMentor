@@ -15,6 +15,7 @@ import {
 } from '../db/schema.js'
 import { createId } from '../lib/ids.js'
 import { notFound } from '../lib/http-errors.js'
+import { resolveBatchPolicy } from './admin-structure.js'
 import { emitAuditEvent, expectVersion, parseOrThrow, requireRole } from './support.js'
 
 const studentCreateSchema = z.object({
@@ -150,6 +151,63 @@ function mapStudentRecord(params: {
   }
 }
 
+type StudentRecord = ReturnType<typeof mapStudentRecord>
+type ResolvedBatchPolicySnapshot = Awaited<ReturnType<typeof resolveBatchPolicy>>
+type RecordProofProvenance = {
+  scopeDescriptor: {
+    scopeType: string
+    scopeId: string
+    label: string
+    batchId: string | null
+    sectionCode: string | null
+    branchName: string | null
+    simulationRunId: string | null
+    simulationStageCheckpointId: string | null
+    studentId: string | null
+  } | null
+  resolvedFrom: {
+    kind: string
+    scopeType: string | null
+    scopeId: string | null
+    label: string
+  } | null
+  scopeMode: string | null
+  countSource: 'operational-semester' | 'proof-run' | 'proof-checkpoint' | 'unavailable' | null
+  activeOperationalSemester: number | null
+}
+type StudentRecordWithProvenance = StudentRecord & Partial<RecordProofProvenance>
+
+function buildStudentScopeCacheKey(batchId: string, sectionCode?: string | null) {
+  return `${batchId}::${(sectionCode ?? '').trim().toUpperCase()}`
+}
+
+async function enrichStudentRecordWithProvenance(
+  context: RouteContext,
+  student: StudentRecord,
+  cache: Map<string, ResolvedBatchPolicySnapshot>,
+): Promise<StudentRecordWithProvenance> {
+  const batchId = student.activeAcademicContext?.batchId
+  if (!batchId) return student
+  const sectionCode = student.activeAcademicContext?.sectionCode ?? null
+  const cacheKey = buildStudentScopeCacheKey(batchId, sectionCode)
+  let resolvedPolicy = cache.get(cacheKey)
+  if (!resolvedPolicy) {
+    resolvedPolicy = await resolveBatchPolicy(context, batchId, { sectionCode })
+    cache.set(cacheKey, resolvedPolicy)
+  }
+  return {
+    ...student,
+    scopeDescriptor: {
+      ...resolvedPolicy.scopeDescriptor,
+      studentId: student.studentId,
+    },
+    resolvedFrom: resolvedPolicy.resolvedFrom,
+    scopeMode: resolvedPolicy.scopeMode,
+    countSource: resolvedPolicy.countSource,
+    activeOperationalSemester: resolvedPolicy.activeOperationalSemester,
+  }
+}
+
 export async function registerStudentRoutes(app: FastifyInstance, context: RouteContext) {
   app.get('/api/admin/students', {
     schema: { tags: ['students'], summary: 'List students with enrollment and mentor assignment context' },
@@ -163,17 +221,22 @@ export async function registerStudentRoutes(app: FastifyInstance, context: Route
     const branchRows = await context.db.select().from(branches)
     const departmentRows = await context.db.select().from(departments)
     const batchRows = await context.db.select().from(batches)
+    const provenanceCache = new Map<string, ResolvedBatchPolicySnapshot>()
     return {
-      items: studentRows.map(student => mapStudentRecord({
-        student,
-        enrollmentRows,
-        assignmentRows,
-        profileRows,
-        termRows,
-        branchRows,
-        departmentRows,
-        batchRows,
-      })),
+      items: await Promise.all(studentRows.map(student => enrichStudentRecordWithProvenance(
+        context,
+        mapStudentRecord({
+          student,
+          enrollmentRows,
+          assignmentRows,
+          profileRows,
+          termRows,
+          branchRows,
+          departmentRows,
+          batchRows,
+        }),
+        provenanceCache,
+      ))),
     }
   })
 
@@ -215,7 +278,7 @@ export async function registerStudentRoutes(app: FastifyInstance, context: Route
     const branchRows = await context.db.select().from(branches)
     const departmentRows = await context.db.select().from(departments)
     const batchRows = await context.db.select().from(batches)
-    return mapStudentRecord({
+    return enrichStudentRecordWithProvenance(context, mapStudentRecord({
       student: created,
       enrollmentRows,
       assignmentRows,
@@ -224,7 +287,7 @@ export async function registerStudentRoutes(app: FastifyInstance, context: Route
       branchRows,
       departmentRows,
       batchRows,
-    })
+    }), new Map())
   })
 
   app.patch('/api/admin/students/:studentId', {
@@ -264,7 +327,7 @@ export async function registerStudentRoutes(app: FastifyInstance, context: Route
     const branchRows = await context.db.select().from(branches)
     const departmentRows = await context.db.select().from(departments)
     const batchRows = await context.db.select().from(batches)
-    return mapStudentRecord({
+    return enrichStudentRecordWithProvenance(context, mapStudentRecord({
       student: next,
       enrollmentRows,
       assignmentRows,
@@ -273,7 +336,7 @@ export async function registerStudentRoutes(app: FastifyInstance, context: Route
       branchRows,
       departmentRows,
       batchRows,
-    })
+    }), new Map())
   })
 
   app.post('/api/admin/students/:studentId/enrollments', {

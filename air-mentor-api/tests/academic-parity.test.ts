@@ -1,6 +1,12 @@
-import { eq } from 'drizzle-orm'
+import { and, asc, eq } from 'drizzle-orm'
 import { afterEach, describe, expect, it } from 'vitest'
-import { academicAssets } from '../src/db/schema.js'
+import {
+  academicAssets,
+  facultyOfferingOwnerships,
+  mentorAssignments,
+  simulationRuns,
+  simulationStageCheckpoints,
+} from '../src/db/schema.js'
 import { createTestApp, loginAs, TEST_ORIGIN } from './helpers/test-app.js'
 
 let current: Awaited<ReturnType<typeof createTestApp>> | null = null
@@ -55,7 +61,75 @@ async function grantCourseOwnership(cookie: string, offeringId: string, facultyI
   expect(response.statusCode).toBe(200)
 }
 
+async function switchToRole(cookie: string, availableRoleGrants: Array<{ grantId: string; roleCode: string }>, roleCode: string) {
+  if (!current) throw new Error('Test app is not initialized')
+  const roleGrantId = availableRoleGrants.find(grant => grant.roleCode === roleCode)?.grantId
+  expect(roleGrantId).toBeTruthy()
+  const response = await current.app.inject({
+    method: 'POST',
+    url: '/api/session/role-context',
+    headers: { cookie, origin: TEST_ORIGIN },
+    payload: { roleGrantId },
+  })
+  expect(response.statusCode).toBe(200)
+  return response
+}
+
 describe('academic bootstrap', () => {
+  it('keeps faculty-profile proof context and linked proof drilldowns aligned for the active teaching role', async () => {
+    current = await createTestApp()
+    const login = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+
+    const response = await current.app.inject({
+      method: 'GET',
+      url: '/api/academic/faculty-profile/mnc_t1',
+      headers: { cookie: login.cookie },
+    })
+
+    expect(response.statusCode).toBe(200)
+    const profile = response.json()
+    expect(profile.currentOwnedClasses.length).toBeGreaterThan(0)
+    expect(profile.currentBatchContexts.length).toBeGreaterThan(0)
+    expect(profile.subjectRunCourseLeaderScope.length).toBeGreaterThan(0)
+    expect(profile.mentorScope.activeStudentCount).toBeGreaterThan(0)
+    expect(profile.requestSummary.openCount).toBeGreaterThanOrEqual(0)
+    expect(profile.reassessmentSummary.openCount).toBeGreaterThanOrEqual(0)
+    expect(profile.proofOperations).toMatchObject({
+      scopeMode: 'proof',
+      countSource: expect.stringMatching(/^proof-/),
+      activeOperationalSemester: expect.any(Number),
+      scopeDescriptor: expect.objectContaining({
+        batchId: expect.any(String),
+        label: expect.any(String),
+      }),
+      resolvedFrom: expect.objectContaining({
+        kind: expect.any(String),
+        label: expect.any(String),
+      }),
+    })
+    expect(profile.proofOperations.monitoringQueue.length).toBeGreaterThan(0)
+
+    const firstQueueStudentId = profile.proofOperations.monitoringQueue[0]?.studentId
+    expect(firstQueueStudentId).toBeTruthy()
+    if (!firstQueueStudentId) throw new Error('Expected a checkpoint-bound faculty queue student')
+
+    const [riskExplorerResponse, studentShellResponse] = await Promise.all([
+      current.app.inject({
+        method: 'GET',
+        url: `/api/academic/students/${firstQueueStudentId}/risk-explorer`,
+        headers: { cookie: login.cookie },
+      }),
+      current.app.inject({
+        method: 'GET',
+        url: `/api/academic/student-shell/students/${firstQueueStudentId}/card`,
+        headers: { cookie: login.cookie },
+      }),
+    ])
+
+    expect(riskExplorerResponse.statusCode).toBe(200)
+    expect(studentShellResponse.statusCode).toBe(200)
+  })
+
   it('exposes non-overlapping faculty timetable blocks in the proof bootstrap for course-leader playback', async () => {
     current = await createTestApp()
     const login = await loginAs(current.app, 'devika.shetty', 'faculty1234')
@@ -678,5 +752,115 @@ describe('academic bootstrap', () => {
       completedCreditsForCgpa: expect.any(Number),
       progressionStatus: expect.stringMatching(/Eligible|Review|Hold/),
     })
+  })
+
+  it('keeps faculty-profile proof payloads and student drilldowns scoped for course leaders and mentors', async () => {
+    current = await createTestApp()
+    const login = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const [activeRun] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    expect(activeRun).toBeTruthy()
+    await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRun.simulationRunId}/recompute-risk`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+
+    const [selectedCheckpoint] = await current.db.select().from(simulationStageCheckpoints).where(and(
+      eq(simulationStageCheckpoints.simulationRunId, activeRun.simulationRunId),
+      eq(simulationStageCheckpoints.semesterNumber, 6),
+    )).orderBy(asc(simulationStageCheckpoints.stageOrder))
+    expect(selectedCheckpoint).toBeTruthy()
+
+    const facultyId = login.body.faculty.facultyId as string
+    const ownedOfferingRows = await current.db.select().from(facultyOfferingOwnerships).where(and(
+      eq(facultyOfferingOwnerships.facultyId, facultyId),
+      eq(facultyOfferingOwnerships.status, 'active'),
+    ))
+    const ownedOfferingIds = new Set(ownedOfferingRows.map(row => row.offeringId))
+    expect(ownedOfferingIds.size).toBeGreaterThan(0)
+
+    const mentorRows = await current.db.select().from(mentorAssignments).where(eq(mentorAssignments.facultyId, facultyId))
+    const mentorStudentIds = new Set(mentorRows.filter(row => row.effectiveTo === null).map(row => row.studentId))
+    expect(mentorStudentIds.size).toBeGreaterThan(0)
+
+    let activeSessionBody = login.body
+    const loadProfileForRole = async (roleCode: 'COURSE_LEADER' | 'MENTOR', simulationStageCheckpointId?: string) => {
+      activeSessionBody = activeSessionBody.activeRoleGrant.roleCode === roleCode
+        ? activeSessionBody
+        : (await switchToRole(login.cookie, login.body.availableRoleGrants, roleCode)).json()
+      const response = await current!.app.inject({
+        method: 'GET',
+        url: `/api/academic/faculty-profile/${facultyId}${simulationStageCheckpointId ? `?simulationStageCheckpointId=${encodeURIComponent(simulationStageCheckpointId)}` : ''}`,
+        headers: { cookie: login.cookie },
+      })
+      expect(response.statusCode).toBe(200)
+      return response.json()
+    }
+
+    const courseLeaderCheckpointProfile = await loadProfileForRole('COURSE_LEADER', selectedCheckpoint.simulationStageCheckpointId)
+    expect(courseLeaderCheckpointProfile.proofOperations.scopeDescriptor).toMatchObject({
+      scopeType: 'proof',
+      simulationStageCheckpointId: selectedCheckpoint.simulationStageCheckpointId,
+    })
+    expect(courseLeaderCheckpointProfile.proofOperations.resolvedFrom).toMatchObject({
+      kind: 'proof-checkpoint',
+      scopeType: 'proof',
+      scopeId: selectedCheckpoint.simulationStageCheckpointId,
+    })
+    expect(courseLeaderCheckpointProfile.proofOperations.scopeMode).toBe('proof')
+    expect(courseLeaderCheckpointProfile.proofOperations.countSource).toBe('proof-checkpoint')
+    expect(courseLeaderCheckpointProfile.proofOperations.activeOperationalSemester).toBe(6)
+    expect(Array.isArray(courseLeaderCheckpointProfile.proofOperations.monitoringQueue)).toBe(true)
+
+    const courseLeaderProfile = await loadProfileForRole('COURSE_LEADER')
+    expect(courseLeaderProfile.currentOwnedClasses.every((item: { offeringId: string }) => ownedOfferingIds.has(item.offeringId))).toBe(true)
+    expect(courseLeaderProfile.proofOperations.monitoringQueue.every((item: { offeringId: string }) => ownedOfferingIds.has(item.offeringId))).toBe(true)
+    if (courseLeaderProfile.proofOperations.monitoringQueue[0]) {
+      const studentId = courseLeaderProfile.proofOperations.monitoringQueue[0].studentId as string
+      const [riskExplorerResponse, studentShellResponse] = await Promise.all([
+        current.app.inject({
+          method: 'GET',
+          url: `/api/academic/students/${studentId}/risk-explorer?simulationStageCheckpointId=${encodeURIComponent(selectedCheckpoint.simulationStageCheckpointId)}`,
+          headers: { cookie: login.cookie },
+        }),
+        current.app.inject({
+          method: 'GET',
+          url: `/api/academic/student-shell/students/${studentId}/card?simulationStageCheckpointId=${encodeURIComponent(selectedCheckpoint.simulationStageCheckpointId)}`,
+          headers: { cookie: login.cookie },
+        }),
+      ])
+      expect(riskExplorerResponse.statusCode).toBe(200)
+      expect(studentShellResponse.statusCode).toBe(200)
+    }
+
+    const mentorCheckpointProfile = await loadProfileForRole('MENTOR', selectedCheckpoint.simulationStageCheckpointId)
+    expect(mentorCheckpointProfile.proofOperations.scopeMode).toBe('proof')
+    expect(mentorCheckpointProfile.proofOperations.countSource).toBe('proof-checkpoint')
+    expect(Array.isArray(mentorCheckpointProfile.proofOperations.monitoringQueue)).toBe(true)
+
+    const mentorProfile = await loadProfileForRole('MENTOR')
+    expect(mentorProfile.mentorScope.activeStudentCount).toBe(mentorStudentIds.size)
+    expect(mentorProfile.proofOperations.monitoringQueue.every((item: { studentId: string }) => mentorStudentIds.has(item.studentId))).toBe(true)
+    expect(mentorProfile.proofOperations.electiveFits.every((item: { studentId: string }) => mentorStudentIds.has(item.studentId))).toBe(true)
+    if (mentorProfile.proofOperations.monitoringQueue[0]) {
+      const studentId = mentorProfile.proofOperations.monitoringQueue[0].studentId as string
+      const [riskExplorerResponse, studentShellResponse] = await Promise.all([
+        current.app.inject({
+          method: 'GET',
+          url: `/api/academic/students/${studentId}/risk-explorer?simulationStageCheckpointId=${encodeURIComponent(selectedCheckpoint.simulationStageCheckpointId)}`,
+          headers: { cookie: login.cookie },
+        }),
+        current.app.inject({
+          method: 'GET',
+          url: `/api/academic/student-shell/students/${studentId}/card?simulationStageCheckpointId=${encodeURIComponent(selectedCheckpoint.simulationStageCheckpointId)}`,
+          headers: { cookie: login.cookie },
+        }),
+      ])
+      expect(riskExplorerResponse.statusCode).toBe(200)
+      expect(studentShellResponse.statusCode).toBe(200)
+    }
   })
 })

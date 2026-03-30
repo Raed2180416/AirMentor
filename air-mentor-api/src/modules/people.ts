@@ -3,12 +3,18 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import type { RouteContext } from '../app.js'
 import {
+  academicFaculties,
+  academicTerms,
+  batches,
+  branches,
+  departments,
   facultyAppointments,
   facultyOfferingOwnerships,
   facultyProfiles,
   institutions,
   mentorAssignments,
   roleGrants,
+  sectionOfferings,
   uiPreferences,
   userAccounts,
   userPasswordCredentials,
@@ -16,6 +22,7 @@ import {
 import { createId } from '../lib/ids.js'
 import { notFound } from '../lib/http-errors.js'
 import { hashPassword } from '../lib/passwords.js'
+import { resolveBatchPolicy } from './admin-structure.js'
 import { emitAuditEvent, expectVersion, parseOrThrow, requireRole } from './support.js'
 
 const facultyCreateSchema = z.object({
@@ -70,12 +77,103 @@ const roleGrantPatchSchema = roleGrantCreateSchema.extend({
   version: z.number().int().positive(),
 })
 
-function mapAppointment(row: typeof facultyAppointments.$inferSelect) {
+type PeopleReferenceData = {
+  institution: typeof institutions.$inferSelect | null
+  academicFacultyById: Map<string, typeof academicFaculties.$inferSelect>
+  departmentById: Map<string, typeof departments.$inferSelect>
+  branchById: Map<string, typeof branches.$inferSelect>
+  batchById: Map<string, typeof batches.$inferSelect>
+  termById: Map<string, typeof academicTerms.$inferSelect>
+  offeringById: Map<string, typeof sectionOfferings.$inferSelect>
+  ownerships: Array<typeof facultyOfferingOwnerships.$inferSelect>
+}
+
+type FacultyRecord = ReturnType<typeof mapFacultyRecord>
+type ResolvedBatchPolicySnapshot = Awaited<ReturnType<typeof resolveBatchPolicy>>
+type RecordProofProvenance = {
+  scopeDescriptor: {
+    scopeType: string
+    scopeId: string
+    label: string
+    batchId: string | null
+    sectionCode: string | null
+    branchName: string | null
+    simulationRunId: string | null
+    simulationStageCheckpointId: string | null
+    studentId: string | null
+  } | null
+  resolvedFrom: {
+    kind: string
+    scopeType: string | null
+    scopeId: string | null
+    label: string
+  } | null
+  scopeMode: string | null
+  countSource: 'operational-semester' | 'proof-run' | 'proof-checkpoint' | 'unavailable' | null
+  activeOperationalSemester: number | null
+}
+type FacultyRecordWithProvenance = FacultyRecord & Partial<RecordProofProvenance>
+type ProvenanceScopeType = 'institution' | 'academic-faculty' | 'department' | 'branch' | 'batch' | 'section' | 'proof'
+
+const SUPPORTED_PROVENANCE_SCOPE_TYPES = new Set([
+  'institution',
+  'academic-faculty',
+  'department',
+  'branch',
+  'batch',
+  'section',
+] as const)
+
+function normalizeProvenanceScopeType(scopeType: string) {
+  return SUPPORTED_PROVENANCE_SCOPE_TYPES.has(scopeType as 'institution' | 'academic-faculty' | 'department' | 'branch' | 'batch' | 'section')
+    ? scopeType as ProvenanceScopeType
+    : 'proof'
+}
+
+async function loadPeopleReferenceData(context: RouteContext): Promise<PeopleReferenceData> {
+  const [
+    institution,
+    academicFacultyRows,
+    departmentRows,
+    branchRows,
+    batchRows,
+    termRows,
+    offeringRows,
+    ownershipRows,
+  ] = await Promise.all([
+    context.db.select().from(institutions).then(rows => rows[0] ?? null),
+    context.db.select().from(academicFaculties),
+    context.db.select().from(departments),
+    context.db.select().from(branches),
+    context.db.select().from(batches),
+    context.db.select().from(academicTerms),
+    context.db.select().from(sectionOfferings),
+    context.db.select().from(facultyOfferingOwnerships),
+  ])
+  return {
+    institution,
+    academicFacultyById: new Map(academicFacultyRows.map(row => [row.academicFacultyId, row])),
+    departmentById: new Map(departmentRows.map(row => [row.departmentId, row])),
+    branchById: new Map(branchRows.map(row => [row.branchId, row])),
+    batchById: new Map(batchRows.map(row => [row.batchId, row])),
+    termById: new Map(termRows.map(row => [row.termId, row])),
+    offeringById: new Map(offeringRows.map(row => [row.offeringId, row])),
+    ownerships: ownershipRows,
+  }
+}
+
+function mapAppointment(row: typeof facultyAppointments.$inferSelect, references?: PeopleReferenceData) {
+  const department = references?.departmentById.get(row.departmentId) ?? null
+  const branch = row.branchId ? references?.branchById.get(row.branchId) ?? null : null
   return {
     appointmentId: row.appointmentId,
     facultyId: row.facultyId,
     departmentId: row.departmentId,
+    departmentName: department?.name ?? null,
+    departmentCode: department?.code ?? null,
     branchId: row.branchId,
+    branchName: branch?.name ?? null,
+    branchCode: branch?.code ?? null,
     isPrimary: row.isPrimary === 1,
     startDate: row.startDate,
     endDate: row.endDate,
@@ -86,13 +184,35 @@ function mapAppointment(row: typeof facultyAppointments.$inferSelect) {
   }
 }
 
-function mapRoleGrant(row: typeof roleGrants.$inferSelect) {
+function buildRoleGrantScopeLabel(row: typeof roleGrants.$inferSelect, references?: PeopleReferenceData) {
+  if (!references) return null
+  if (row.scopeType === 'institution') return references.institution?.name ?? row.scopeId
+  if (row.scopeType === 'academic-faculty') return references.academicFacultyById.get(row.scopeId)?.name ?? row.scopeId
+  if (row.scopeType === 'department') return references.departmentById.get(row.scopeId)?.name ?? row.scopeId
+  if (row.scopeType === 'branch') return references.branchById.get(row.scopeId)?.name ?? row.scopeId
+  if (row.scopeType === 'batch') return references.batchById.get(row.scopeId)?.batchLabel ?? row.scopeId
+  if (row.scopeType === 'offering') {
+    const offering = references.offeringById.get(row.scopeId)
+    if (!offering) return row.scopeId
+    const branch = references.branchById.get(offering.branchId)
+    return `${branch?.name ?? offering.branchId} · Section ${offering.sectionCode}`
+  }
+  if (row.scopeType === 'section') {
+    const [batchId, sectionCode] = row.scopeId.split('::')
+    const batchLabel = batchId ? references.batchById.get(batchId)?.batchLabel ?? batchId : row.scopeId
+    return sectionCode ? `${batchLabel} · Section ${sectionCode}` : row.scopeId
+  }
+  return row.scopeId
+}
+
+function mapRoleGrant(row: typeof roleGrants.$inferSelect, references?: PeopleReferenceData) {
   return {
     grantId: row.grantId,
     facultyId: row.facultyId,
     roleCode: row.roleCode,
     scopeType: row.scopeType,
     scopeId: row.scopeId,
+    scopeLabel: buildRoleGrantScopeLabel(row, references),
     startDate: row.startDate,
     endDate: row.endDate,
     status: row.status,
@@ -121,6 +241,7 @@ function mapFacultyRecord(params: {
   user: typeof userAccounts.$inferSelect | undefined
   appointments: Array<typeof facultyAppointments.$inferSelect>
   grants: Array<typeof roleGrants.$inferSelect>
+  references?: PeopleReferenceData
 }) {
   return {
     facultyId: params.profile.facultyId,
@@ -134,8 +255,150 @@ function mapFacultyRecord(params: {
     joinedOn: params.profile.joinedOn,
     status: params.profile.status,
     version: params.profile.version,
-    appointments: params.appointments.map(mapAppointment),
-    roleGrants: params.grants.map(mapRoleGrant),
+    createdAt: params.profile.createdAt,
+    updatedAt: params.profile.updatedAt,
+    appointments: params.appointments.map(item => mapAppointment(item, params.references)),
+    roleGrants: params.grants.map(item => mapRoleGrant(item, params.references)),
+  }
+}
+
+function isActiveRow(status: string, endDate?: string | null) {
+  return status === 'active' && !endDate
+}
+
+function pickFacultyScopeSource(
+  faculty: FacultyRecord,
+  references: PeopleReferenceData,
+): { scopeType: string; scopeId: string; label: string; batchId?: string; sectionCode?: string | null } | null {
+  const activeOwnership = references.ownerships
+    .filter(item => item.facultyId === faculty.facultyId && item.status === 'active')
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt) || left.ownershipId.localeCompare(right.ownershipId))[0]
+  if (activeOwnership) {
+    const offering = references.offeringById.get(activeOwnership.offeringId)
+    const term = offering ? references.termById.get(offering.termId) ?? null : null
+    const batch = term?.batchId ? references.batchById.get(term.batchId) ?? null : null
+    if (batch) {
+      return {
+        scopeType: 'section',
+        scopeId: `${batch.batchId}::${offering?.sectionCode ?? ''}`.replace(/::$/, ''),
+        label: batch.batchLabel,
+        batchId: batch.batchId,
+        sectionCode: offering?.sectionCode ?? null,
+      }
+    }
+  }
+
+  const activeBatchGrant = faculty.roleGrants.find(grant => grant.status === 'active' && grant.scopeType === 'batch')
+  if (activeBatchGrant) {
+    return {
+      scopeType: 'batch',
+      scopeId: activeBatchGrant.scopeId,
+      label: activeBatchGrant.scopeLabel ?? activeBatchGrant.scopeId,
+      batchId: activeBatchGrant.scopeId,
+      sectionCode: null,
+    }
+  }
+
+  const activeScopeGrant = faculty.roleGrants
+    .filter(grant => isActiveRow(grant.status, grant.endDate))
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || left.grantId.localeCompare(right.grantId))[0]
+  if (activeScopeGrant) {
+    const normalizedScopeType = normalizeProvenanceScopeType(activeScopeGrant.scopeType)
+    return {
+      scopeType: normalizedScopeType,
+      scopeId: activeScopeGrant.scopeId,
+      label: activeScopeGrant.scopeLabel ?? `${activeScopeGrant.scopeType}:${activeScopeGrant.scopeId}`,
+      sectionCode: null,
+    }
+  }
+
+  const primaryAppointment = faculty.appointments.find(appointment => appointment.isPrimary && appointment.status === 'active')
+    ?? faculty.appointments.find(appointment => appointment.status === 'active')
+    ?? null
+  if (primaryAppointment?.branchId) {
+    return {
+      scopeType: 'branch',
+      scopeId: primaryAppointment.branchId,
+      label: primaryAppointment.branchName ?? primaryAppointment.branchId,
+      sectionCode: null,
+    }
+  }
+  if (primaryAppointment) {
+    return {
+      scopeType: 'department',
+      scopeId: primaryAppointment.departmentId,
+      label: primaryAppointment.departmentName ?? primaryAppointment.departmentId,
+      sectionCode: null,
+    }
+  }
+  if (references.institution) {
+    return {
+      scopeType: 'institution',
+      scopeId: references.institution.institutionId,
+      label: references.institution.name,
+      sectionCode: null,
+    }
+  }
+  return null
+}
+
+async function enrichFacultyRecordWithProvenance(
+  context: RouteContext,
+  faculty: FacultyRecord,
+  references: PeopleReferenceData,
+  cache: Map<string, ResolvedBatchPolicySnapshot>,
+): Promise<FacultyRecordWithProvenance> {
+  const scopeSource = pickFacultyScopeSource(faculty, references)
+  if (!scopeSource) {
+    return {
+      ...faculty,
+      scopeDescriptor: null,
+      resolvedFrom: null,
+      scopeMode: null,
+      countSource: null,
+      activeOperationalSemester: null,
+    }
+  }
+
+  if (scopeSource.batchId) {
+    const cacheKey = `${scopeSource.batchId}::${(scopeSource.sectionCode ?? '').trim().toUpperCase()}`
+    let resolvedPolicy = cache.get(cacheKey)
+    if (!resolvedPolicy) {
+      resolvedPolicy = await resolveBatchPolicy(context, scopeSource.batchId, { sectionCode: scopeSource.sectionCode ?? null })
+      cache.set(cacheKey, resolvedPolicy)
+    }
+    return {
+      ...faculty,
+      scopeDescriptor: resolvedPolicy.scopeDescriptor,
+      resolvedFrom: resolvedPolicy.resolvedFrom,
+      scopeMode: resolvedPolicy.scopeMode,
+      countSource: resolvedPolicy.countSource,
+      activeOperationalSemester: resolvedPolicy.activeOperationalSemester,
+    }
+  }
+
+  return {
+    ...faculty,
+    scopeDescriptor: {
+      scopeType: scopeSource.scopeType as ProvenanceScopeType,
+      scopeId: scopeSource.scopeId,
+      label: scopeSource.label,
+      batchId: null,
+      sectionCode: null,
+      branchName: scopeSource.scopeType === 'branch' ? scopeSource.label : null,
+      simulationRunId: null,
+      simulationStageCheckpointId: null,
+      studentId: null,
+    },
+    resolvedFrom: {
+      kind: 'proof-unavailable',
+      scopeType: scopeSource.scopeType as ProvenanceScopeType,
+      scopeId: scopeSource.scopeId,
+      label: scopeSource.label,
+    },
+    scopeMode: scopeSource.scopeType as ProvenanceScopeType,
+    countSource: 'unavailable',
+    activeOperationalSemester: null,
   }
 }
 
@@ -144,17 +407,22 @@ export async function registerPeopleRoutes(app: FastifyInstance, context: RouteC
     schema: { tags: ['people'], summary: 'List faculty master records' },
   }, async request => {
     requireRole(request, ['SYSTEM_ADMIN'])
-    const profiles = await context.db.select().from(facultyProfiles)
-    const users = await context.db.select().from(userAccounts)
-    const appointments = await context.db.select().from(facultyAppointments)
-    const grants = await context.db.select().from(roleGrants)
+    const [profiles, users, appointments, grants, references] = await Promise.all([
+      context.db.select().from(facultyProfiles),
+      context.db.select().from(userAccounts),
+      context.db.select().from(facultyAppointments),
+      context.db.select().from(roleGrants),
+      loadPeopleReferenceData(context),
+    ])
+    const provenanceCache = new Map<string, ResolvedBatchPolicySnapshot>()
     return {
-      items: profiles.map(profile => mapFacultyRecord({
+      items: await Promise.all(profiles.map(profile => enrichFacultyRecordWithProvenance(context, mapFacultyRecord({
         profile,
         user: users.find(item => item.userId === profile.userId),
         appointments: appointments.filter(item => item.facultyId === profile.facultyId),
         grants: grants.filter(item => item.facultyId === profile.facultyId),
-      })),
+        references,
+      }), references, provenanceCache))),
     }
   })
 
@@ -218,12 +486,14 @@ export async function registerPeopleRoutes(app: FastifyInstance, context: RouteC
     })
     const [createdProfile] = await context.db.select().from(facultyProfiles).where(eq(facultyProfiles.facultyId, facultyId))
     const [createdUser] = await context.db.select().from(userAccounts).where(eq(userAccounts.userId, userId))
-    return mapFacultyRecord({
+    const references = await loadPeopleReferenceData(context)
+    return enrichFacultyRecordWithProvenance(context, mapFacultyRecord({
       profile: createdProfile,
       user: createdUser,
       appointments: [],
       grants: [],
-    })
+      references,
+    }), references, new Map())
   })
 
   app.patch('/api/admin/faculty/:facultyId', {
@@ -375,11 +645,13 @@ export async function registerPeopleRoutes(app: FastifyInstance, context: RouteC
     const [nextUser] = await context.db.select().from(userAccounts).where(eq(userAccounts.userId, current.userId))
     const appointments = await context.db.select().from(facultyAppointments).where(eq(facultyAppointments.facultyId, params.facultyId))
     const grants = await context.db.select().from(roleGrants).where(eq(roleGrants.facultyId, params.facultyId))
+    const references = await loadPeopleReferenceData(context)
     const payload = mapFacultyRecord({
       profile: next,
       user: nextUser,
       appointments,
       grants,
+      references,
     })
     await emitAuditEvent(context, {
       entityType: 'FacultyProfile',
@@ -401,7 +673,7 @@ export async function registerPeopleRoutes(app: FastifyInstance, context: RouteC
           }
         : undefined,
     })
-    return payload
+    return enrichFacultyRecordWithProvenance(context, payload, references, new Map())
   })
 
   app.post('/api/admin/faculty/:facultyId/appointments', {
@@ -433,7 +705,7 @@ export async function registerPeopleRoutes(app: FastifyInstance, context: RouteC
       actorId: auth.facultyId,
       after: mapAppointment(created),
     })
-    return mapAppointment(created)
+    return mapAppointment(created, await loadPeopleReferenceData(context))
   })
 
   app.patch('/api/admin/appointments/:appointmentId', {
@@ -466,7 +738,7 @@ export async function registerPeopleRoutes(app: FastifyInstance, context: RouteC
       before: mapAppointment(current),
       after: mapAppointment(next),
     })
-    return mapAppointment(next)
+    return mapAppointment(next, await loadPeopleReferenceData(context))
   })
 
   app.post('/api/admin/faculty/:facultyId/role-grants', {
@@ -498,7 +770,7 @@ export async function registerPeopleRoutes(app: FastifyInstance, context: RouteC
       actorId: auth.facultyId,
       after: mapRoleGrant(created),
     })
-    return mapRoleGrant(created)
+    return mapRoleGrant(created, await loadPeopleReferenceData(context))
   })
 
   app.patch('/api/admin/role-grants/:grantId', {
@@ -531,6 +803,6 @@ export async function registerPeopleRoutes(app: FastifyInstance, context: RouteC
       before: mapRoleGrant(current),
       after: mapRoleGrant(next),
     })
-    return mapRoleGrant(next)
+    return mapRoleGrant(next, await loadPeopleReferenceData(context))
   })
 }

@@ -141,5 +141,37 @@ describe('admin foundation routes', () => {
     expect(audit.statusCode).toBe(200)
     expect(audit.json().transitions).toHaveLength(5)
     expect(audit.json().auditEvents.length).toBeGreaterThanOrEqual(4)
+
+    const detail = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/requests/${request.adminRequestId}`,
+      headers: { cookie: adminLogin.cookie },
+    })
+    expect(detail.statusCode).toBe(200)
+    const detailJson = detail.json()
+    // Verify notes and transitions are included and sorted
+    expect(detailJson.notes.length).toBeGreaterThanOrEqual(4)
+    expect(detailJson.transitions.length).toBe(5)
+    const transitionsSorted = [...detailJson.transitions].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    expect(detailJson.transitions).toEqual(transitionsSorted)
+    const notesSorted = [...detailJson.notes].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    expect(detailJson.notes).toEqual(notesSorted)
+
+    // Test the ?scope=open filter
+    const allRequests = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/requests`,
+      headers: { cookie: adminLogin.cookie },
+    })
+    expect(allRequests.statusCode).toBe(200)
+    expect(allRequests.json().items.some((r: any) => r.status === 'Closed')).toBe(true)
+
+    const openRequests = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/requests?scope=open`,
+      headers: { cookie: adminLogin.cookie },
+    })
+    expect(openRequests.statusCode).toBe(200)
+    expect(openRequests.json().items.some((r: any) => r.status === 'Closed')).toBe(false)
   })
 })

@@ -12,6 +12,15 @@ describe('portal routing', () => {
     expect(parsePortalRoute('#/unknown')).toBe('home')
   })
 
+  it('parses admin routes into structured LiveAdminRoutes', async () => {
+    // import late since it's a UI component to avoid unnecessary dom setup for routing tests elsewhere
+    const { parseAdminRoute } = await import('../src/system-admin-live-app')
+    expect(parseAdminRoute('#/admin/requests/request_001')).toEqual({
+      section: 'requests',
+      requestId: 'request_001',
+    })
+  })
+
   it('keeps the home route on the portal selector until the hash explicitly changes', () => {
     expect(resolvePortalRoute('#/')).toBe('home')
     expect(resolvePortalRoute('#/admin')).toBe('admin')

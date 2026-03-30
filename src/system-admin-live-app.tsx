@@ -64,8 +64,11 @@ import { T, mono, sora } from './data'
 import { normalizeThemeMode, type ThemeMode } from './domain'
 import { AIRMENTOR_STORAGE_KEYS, createAirMentorRepositories } from './repositories'
 import {
+  defaultRegistryFilter,
   compareAdminTimestampsDesc,
   deriveCurrentYearLabel,
+  findLatestEnrollment,
+  findLatestMentorAssignment,
   hasHierarchyScopeSelection,
   isAcademicFacultyVisible,
   isBatchVisible,
@@ -83,6 +86,7 @@ import {
   listDepartmentsForAcademicFaculty,
   listFacultyAssignments,
   listTermsForBatch,
+  hydrateRegistryFilter,
   resolveAcademicFaculty,
   resolveBatch,
   resolveBranch,
@@ -90,10 +94,23 @@ import {
   resolveFacultyMember,
   resolveStudent,
   searchLiveAdminWorkspace,
+  type LiveAdminProofProvenance,
   type LiveAdminDataset,
   type LiveAdminRoute,
   type LiveAdminSearchScope,
+  type RegistryFilterState,
+  type UniversityScopeState,
 } from './system-admin-live-data'
+import {
+  computeOverviewScopedCounts,
+  describeRegistryScope,
+  isCurrentRoleGrant,
+  isLeaderLikeOwnership,
+  matchesFacultyScope,
+  matchesStudentScope,
+  type HierarchyScopeInput,
+} from './system-admin-overview-helpers'
+import { describeProofAvailability, describeProofProvenance } from './proof-provenance'
 import {
   AdminBreadcrumbs,
   DayToggle,
@@ -325,30 +342,7 @@ type AdminWorkspaceSnapshot = {
   scrollY: number
 }
 
-type UniversityScopeState = {
-  academicFacultyId: string | null
-  departmentId: string | null
-  branchId: string | null
-  batchId: string | null
-  sectionCode: string | null
-  label: string
-}
-
-type RegistryFilterState = {
-  academicFacultyId: string
-  departmentId: string
-  branchId: string
-  batchId: string
-  sectionCode: string
-}
-
-type HierarchyScopeInput = {
-  academicFacultyId?: string | null
-  departmentId?: string | null
-  branchId?: string | null
-  batchId?: string | null
-  sectionCode?: string | null
-}
+// HierarchyScopeInput is now imported from './system-admin-overview-helpers'
 
 type ActiveAdminScope = {
   scopeType: ApiScopeType
@@ -386,7 +380,33 @@ function applyFacultyVisibilityRules(facultyMembers: ApiFacultyRecord[]) {
   })
 }
 
-function parseAdminRoute(hash: string): LiveAdminRoute {
+type ProvenancedRecord = Partial<LiveAdminProofProvenance>
+
+function hasRecordProofProvenance(record: ProvenancedRecord | null | undefined): record is LiveAdminProofProvenance {
+  return !!record?.scopeDescriptor
+    && !!record.resolvedFrom
+    && !!record.scopeMode
+    && !!record.countSource
+}
+
+export function formatRecordProofBanner(record: ProvenancedRecord | null | undefined) {
+  if (!hasRecordProofProvenance(record)) return null
+  return record.countSource === 'unavailable'
+    ? describeProofAvailability(record)
+    : describeProofProvenance(record)
+}
+
+export function formatFacultyGrantScopeLabel(grant: Pick<ApiRoleGrant, 'scopeLabel' | 'scopeType' | 'scopeId'>) {
+  return grant.scopeLabel ?? `${grant.scopeType}:${grant.scopeId}`
+}
+
+export function formatFacultyAppointmentLabel(appointment: Pick<ApiFacultyAppointment, 'departmentId' | 'departmentName' | 'departmentCode' | 'branchId' | 'branchName' | 'branchCode'>) {
+  const departmentLabel = appointment.departmentName ?? appointment.departmentCode ?? appointment.departmentId
+  const branchLabel = appointment.branchName ?? appointment.branchCode ?? appointment.branchId
+  return branchLabel ? `${departmentLabel} · ${branchLabel}` : departmentLabel
+}
+
+export function parseAdminRoute(hash: string): LiveAdminRoute {
   const cleaned = hash.replace(/^#\/admin/, '').replace(/^\/+/, '')
   if (!cleaned) return { section: 'overview' }
   const parts = cleaned.split('/').filter(Boolean)
@@ -752,26 +772,6 @@ function defaultFacultyForm(): FacultyFormState {
   }
 }
 
-function defaultRegistryFilter(): RegistryFilterState {
-  return {
-    academicFacultyId: '',
-    departmentId: '',
-    branchId: '',
-    batchId: '',
-    sectionCode: '',
-  }
-}
-
-function hydrateRegistryFilter(scope: UniversityScopeState | null): RegistryFilterState {
-  return {
-    academicFacultyId: scope?.academicFacultyId ?? '',
-    departmentId: scope?.departmentId ?? '',
-    branchId: scope?.branchId ?? '',
-    batchId: scope?.batchId ?? '',
-    sectionCode: scope?.sectionCode ?? '',
-  }
-}
-
 function toRegistrySearchScope(filter: RegistryFilterState): LiveAdminSearchScope | null {
   return {
     academicFacultyId: filter.academicFacultyId || undefined,
@@ -872,24 +872,7 @@ export function buildAdminActiveScopeChain(input: {
   return chain
 }
 
-function describeRegistryScope(data: LiveAdminDataset, scope?: LiveAdminSearchScope | null) {
-  if (!hasHierarchyScopeSelection(scope)) return null
-  if (scope?.sectionCode) {
-    const branch = resolveBranch(data, scope.branchId)
-    const batch = resolveBatch(data, scope.batchId)
-    return [`Section ${scope.sectionCode}`, batch ? `Batch ${batch.batchLabel}` : null, branch?.code ?? null].filter(Boolean).join(' · ')
-  }
-  if (scope?.batchId) {
-    const batch = resolveBatch(data, scope.batchId)
-    const branch = resolveBranch(data, scope.branchId)
-    if (!batch) return branch?.name ?? 'Selected year'
-    return [`${deriveCurrentYearLabel(batch.currentSemester)}`, `Batch ${batch.batchLabel}`, branch?.code ?? null].filter(Boolean).join(' · ')
-  }
-  if (scope?.branchId) return resolveBranch(data, scope.branchId)?.name ?? 'Selected branch'
-  if (scope?.departmentId) return resolveDepartment(data, scope.departmentId)?.name ?? 'Selected department'
-  if (scope?.academicFacultyId) return resolveAcademicFaculty(data, scope.academicFacultyId)?.name ?? 'Selected faculty'
-  return null
-}
+// describeRegistryScope is now imported from './system-admin-overview-helpers'
 
 function fadeColor(hexColor: string, alpha: string) {
   const trimmed = hexColor.trim()
@@ -1290,26 +1273,7 @@ function formatDiagnosticSummary(summary: Record<string, unknown> | null | undef
   return entries.length > 0 ? entries.join(' · ') : 'Unavailable'
 }
 
-function isLeaderLikeOwnership(role: string) {
-  const normalized = role.trim().toLowerCase()
-  return normalized.includes('course') || normalized.includes('leader') || normalized.includes('owner') || normalized.includes('primary')
-}
-
-function isCurrentRoleGrant(grant: ApiRoleGrant) {
-  return grant.status === 'active'
-}
-
-function findLatestEnrollment(student: { enrollments: ApiStudentEnrollment[]; activeAcademicContext: { enrollmentId: string } | null }) {
-  return student.enrollments.find(item => item.enrollmentId === student.activeAcademicContext?.enrollmentId)
-    ?? [...student.enrollments].sort((left, right) => right.startDate.localeCompare(left.startDate))[0]
-    ?? null
-}
-
-function findLatestMentorAssignment(student: { mentorAssignments: ApiMentorAssignment[]; activeMentorAssignment: ApiMentorAssignment | null }) {
-  return student.activeMentorAssignment
-    ?? [...student.mentorAssignments].sort((left, right) => right.effectiveFrom.localeCompare(left.effectiveFrom))[0]
-    ?? null
-}
+// isLeaderLikeOwnership and isCurrentRoleGrant are now imported from './system-admin-overview-helpers'
 
 function summarizeAuditEvent(event: ApiAuditEvent) {
   const action = event.action.replace(/[_-]+/g, ' ')
@@ -1352,80 +1316,7 @@ export function getAdminWorkspaceSnapshotKey(snapshot: Omit<AdminWorkspaceSnapsh
   return `${routeToHash(snapshot.route)}::${snapshot.universityTab}::${snapshot.selectedSectionCode ?? ''}`
 }
 
-function matchesStudentScope(student: LiveAdminDataset['students'][number], data: LiveAdminDataset, scope: HierarchyScopeInput | null) {
-  if (!scope) return true
-  const context = student.activeAcademicContext
-  if (!context) return false
-  if (scope.academicFacultyId) {
-    const department = context.departmentId ? resolveDepartment(data, context.departmentId) : null
-    if (department?.academicFacultyId !== scope.academicFacultyId) return false
-  }
-  if (scope.departmentId && context.departmentId !== scope.departmentId) return false
-  if (scope.branchId && context.branchId !== scope.branchId) return false
-  if (scope.batchId && context.batchId !== scope.batchId) return false
-  if (scope.sectionCode && context.sectionCode !== scope.sectionCode) return false
-  return true
-}
-
-function matchesFacultyScope(member: LiveAdminDataset['facultyMembers'][number], data: LiveAdminDataset, scope: HierarchyScopeInput | null) {
-  if (!scope) return true
-  const hasScopedSelection = Boolean(scope.academicFacultyId || scope.departmentId || scope.branchId || scope.batchId || scope.sectionCode)
-  if (!hasScopedSelection) return true
-
-  const batchTermIds = scope.batchId
-    ? new Set(
-        data.terms
-          .filter(item => item.batchId === scope.batchId && isTermVisible(data, item))
-          .map(item => item.termId),
-      )
-    : null
-
-  const appointmentMatch = member.appointments.some(appointment => {
-    if (!isVisibleAdminRecord(appointment.status)) return false
-    if (scope.departmentId && appointment.departmentId !== scope.departmentId) return false
-    if (scope.branchId && appointment.branchId !== scope.branchId) return false
-    if (scope.academicFacultyId) {
-      const department = resolveDepartment(data, appointment.departmentId)
-      if (department?.academicFacultyId !== scope.academicFacultyId) return false
-    }
-    return true
-  })
-
-  const ownershipMatch = data.ownerships.some(ownership => {
-    if (ownership.facultyId !== member.facultyId || ownership.status !== 'active') return false
-    const offering = data.offerings.find(item => item.offId === ownership.offeringId)
-    if (!offering || !isOfferingVisible(data, offering)) return false
-    const matchedDepartment = data.departments.find(item => item.code.toLowerCase() === offering.dept.toLowerCase())
-    if (scope.academicFacultyId && matchedDepartment?.academicFacultyId !== scope.academicFacultyId) return false
-    if (scope.departmentId && matchedDepartment?.departmentId !== scope.departmentId) return false
-    if (scope.branchId && offering.branchId !== scope.branchId) return false
-    if (batchTermIds && (!offering.termId || !batchTermIds.has(offering.termId))) return false
-    if (scope.sectionCode && offering.section !== scope.sectionCode) return false
-    return true
-  })
-
-  return appointmentMatch || ownershipMatch
-}
-
-function matchesOfferingScope(offering: LiveAdminDataset['offerings'][number], data: LiveAdminDataset, scope: HierarchyScopeInput | null) {
-  if (!scope) return true
-  const hasScopedSelection = Boolean(scope.academicFacultyId || scope.departmentId || scope.branchId || scope.batchId || scope.sectionCode)
-  if (!hasScopedSelection) return true
-  if (!isOfferingVisible(data, offering)) return false
-
-  const branch = offering.branchId ? resolveBranch(data, offering.branchId) : null
-  const department = branch
-    ? resolveDepartment(data, branch.departmentId)
-    : data.departments.find(item => item.code.toLowerCase() === offering.dept.toLowerCase()) ?? null
-  const term = offering.termId ? data.terms.find(item => item.termId === offering.termId) ?? null : null
-
-  if (scope.academicFacultyId && department?.academicFacultyId !== scope.academicFacultyId) return false
-  if (scope.departmentId && department?.departmentId !== scope.departmentId) return false
-  if (scope.branchId && offering.branchId !== scope.branchId) return false
-  if (scope.batchId && term?.batchId !== scope.batchId) return false
-  if (scope.sectionCode && offering.section !== scope.sectionCode) return false
-  return true
-}
+// matchesStudentScope, matchesFacultyScope, and matchesOfferingScope are now imported from './system-admin-overview-helpers'
 
 function formatScopeTypeLabel(scopeType: ApiScopeType) {
   switch (scopeType) {
@@ -2666,6 +2557,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     ? selectedFacultyRecord
     : null
   const selectedFacultyId = selectedFacultyMember?.facultyId ?? null
+  const selectedStudentProofBanner = formatRecordProofBanner(selectedStudent as unknown as ProvenancedRecord | null)
+  const selectedFacultyProofBanner = formatRecordProofBanner(selectedFacultyMember as unknown as ProvenancedRecord | null)
   const selectedStudentRouteIsExplicit = route.section === 'students' && !!route.studentId
   const selectedStudentScopeMismatch = !!selectedStudent && studentRegistryHasScope && !matchesStudentScope(selectedStudent, data, studentRegistryScope)
 
@@ -5317,28 +5210,15 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const curriculumFeatureAffectedBatchPreview = selectedCurriculumFeatureTargetScope
     ? visibleBatches.filter(batch => matchesBatchScope(batch, data, selectedCurriculumFeatureTargetScope.scopeType, selectedCurriculumFeatureTargetScope.scopeId))
     : []
-  const overviewScopedStudents = overviewHierarchyScope
-    ? data.students
-        .filter(item => isStudentVisible(data, item))
-        .filter(item => matchesStudentScope(item, data, overviewHierarchyScope))
-    : []
-  const overviewGlobalStudents = data.students.filter(item => isStudentVisible(data, item))
-  const overviewScopedFaculty = overviewHierarchyScope
-    ? visibleFacultyMembers.filter(item => matchesFacultyScope(item, data, overviewHierarchyScope))
-    : []
-  const overviewScopedOwnerships = overviewHierarchyScope
-    ? activeVisibleOwnerships.filter(item => {
-        const offering = visibleOfferingById.get(item.offeringId)
-        return offering ? matchesOfferingScope(offering, data, overviewHierarchyScope) : false
-      })
-    : []
-  const overviewVisibleStudentCount = overviewScopedStudents.length
-  const overviewVisibleMentoredCount = overviewScopedStudents.filter(item => item.activeMentorAssignment).length
-  const overviewVisibleMentorGapCount = overviewScopedStudents.filter(item => !item.activeMentorAssignment).length
-  const overviewGlobalStudentCount = overviewGlobalStudents.length
-  const overviewGlobalMentoredCount = overviewGlobalStudents.filter(item => item.activeMentorAssignment).length
-  const overviewVisibleFacultyCount = overviewScopedFaculty.length
-  const overviewVisibleOwnershipCount = overviewScopedOwnerships.length
+  const overviewCounts = computeOverviewScopedCounts(data, overviewHierarchyScope)
+  const overviewGlobalCounts = computeOverviewScopedCounts(data, null)
+  const overviewVisibleStudentCount = overviewCounts.studentCount
+  const overviewVisibleMentoredCount = overviewCounts.mentoredCount
+  const overviewVisibleMentorGapCount = overviewCounts.mentorGapCount
+  const overviewGlobalStudentCount = overviewGlobalCounts.studentCount
+  const overviewGlobalMentoredCount = overviewGlobalCounts.mentoredCount
+  const overviewVisibleFacultyCount = overviewCounts.facultyCount
+  const overviewVisibleOwnershipCount = overviewCounts.ownershipCount
   const normalizedStudentRegistrySearch = studentRegistrySearch.trim().toLowerCase()
   const normalizedFacultyRegistrySearch = facultyRegistrySearch.trim().toLowerCase()
   const studentRegistryItems = data.students
@@ -6288,6 +6168,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                       <Chip color={T.warning}>{selectedStudent.activeAcademicContext?.departmentName ?? 'No department'}</Chip>
                       <Chip color={selectedStudent.status === 'active' ? T.success : T.danger}>{selectedStudent.status}</Chip>
                     </div>
+                    {selectedStudentProofBanner ? <InfoBanner tone="neutral" message={selectedStudentProofBanner} /> : null}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
                       <Card style={{ padding: 14, background: T.surface2 }}>
                         <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Policy Snapshot</div>
@@ -6719,8 +6600,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <Chip color={T.accent}>{selectedFacultyMember.employeeCode}</Chip>
                       <Chip color={T.warning}>{resolveDepartment(data, getPrimaryAppointmentDepartmentId(selectedFacultyMember))?.name ?? 'No primary department'}</Chip>
-                      {selectedFacultyMember.roleGrants.filter(isCurrentRoleGrant).map(grant => <Chip key={grant.grantId} color={T.success}>{grant.roleCode}</Chip>)}
+                      {selectedFacultyMember.roleGrants.filter(isCurrentRoleGrant).map(grant => <Chip key={grant.grantId} color={T.success}>{formatFacultyGrantScopeLabel(grant)}</Chip>)}
                     </div>
+                    {selectedFacultyProofBanner ? <InfoBanner tone="neutral" message={selectedFacultyProofBanner} /> : null}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
                       <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Display Name</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedFacultyMember.displayName}</div></Card>
                       <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Username</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedFacultyMember.username}</div></Card>
@@ -6764,13 +6646,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   <>
                     <div style={{ display: 'grid', gap: 8 }}>
                       {selectedFacultyMember.appointments.length === 0 ? <InfoBanner message="No appointments recorded yet." /> : selectedFacultyMember.appointments.map(appointment => {
-                        const department = resolveDepartment(data, appointment.departmentId)
-                        const branch = resolveBranch(data, appointment.branchId)
                         return (
                           <Card key={appointment.appointmentId} style={{ padding: 12, background: T.surface2 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                               <div>
-                                <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{department?.name ?? 'Unknown department'}{branch ? ` · ${branch.name}` : ''}</div>
+                                <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{formatFacultyAppointmentLabel(appointment)}</div>
                                 <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{appointment.isPrimary ? 'Primary appointment' : 'Supporting appointment'} · {formatDate(appointment.startDate)} to {appointment.endDate ? formatDate(appointment.endDate) : 'Active'}</div>
                               </div>
                               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -6838,7 +6718,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                             <div>
                               <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{grant.roleCode}</div>
-                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{grant.scopeType}:{grant.scopeId} · {grant.startDate ?? 'No start'} to {grant.endDate ?? 'Active'} · {grant.status}</div>
+                              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{formatFacultyGrantScopeLabel(grant)} · {grant.startDate ?? 'No start'} to {grant.endDate ?? 'Active'} · {grant.status}</div>
                             </div>
                             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                               <Btn type="button" size="sm" variant="ghost" onClick={() => startEditingRoleGrant(grant)}>Edit</Btn>

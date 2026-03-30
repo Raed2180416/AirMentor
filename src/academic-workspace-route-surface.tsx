@@ -1,6 +1,6 @@
 import { lazy } from 'react'
 import { AcademicWorkspaceContentShell } from './academic-workspace-content-shell'
-import { FacultyProfilePage } from './App'
+import { FacultyProfilePage } from './academic-faculty-profile-page'
 import { CLDashboard, MentorView, MenteeDetailPage, UnlockReviewPage, QueueHistoryPage } from './academic-route-pages'
 import type { LayoutMode } from './domain'
 import type { Role } from './domain'
@@ -57,6 +57,7 @@ export function AcademicWorkspaceRouteSurface({
           assignedOfferings={workspace.assignedOfferings}
           currentFacultyTimetable={workspace.filteredCurrentFacultyTimetable}
           onBack={workspace.handleNavigateBack}
+          onOpenStudentProfile={workspace.handleOpenStudentProfile}
           onOpenStudentShell={workspace.handleOpenStudentShell}
           onOpenRiskExplorer={workspace.handleOpenRiskExplorer}
         />
@@ -65,6 +66,7 @@ export function AcademicWorkspaceRouteSurface({
         <CLDashboard
           offerings={workspace.assignedOfferings}
           pendingTaskCount={workspace.pendingActionCount}
+          proofProfile={workspace.facultyProfile}
           onOpenCourse={workspace.handleOpenCourse}
           onOpenStudent={workspace.handleOpenStudent}
           onOpenUpload={workspace.handleOpenUpload}
@@ -170,15 +172,42 @@ export function AcademicWorkspaceRouteSurface({
         />
       )}
       {role === 'Course Leader' && page === 'queue-history' && (
-        <QueueHistoryPage role={role} tasks={workspace.roleTasks} resolvedTaskIds={workspace.resolvedTasks} onBack={workspace.handleNavigateBack} onOpenTaskStudent={workspace.handleOpenTaskStudent} onOpenUnlockReview={workspace.handleOpenUnlockReview} onRestoreTask={workspace.handleRestoreTask} />
+        <QueueHistoryPage role={role} tasks={workspace.roleTasks} resolvedTaskIds={workspace.resolvedTasks} proofProfile={workspace.facultyProfile} onBack={workspace.handleNavigateBack} onOpenTaskStudent={workspace.handleOpenTaskStudent} onOpenUnlockReview={workspace.handleOpenUnlockReview} onRestoreTask={workspace.handleRestoreTask} />
       )}
 
-      {role === 'Mentor' && page === 'mentees' && <MentorView mentees={workspace.assignedMentees} tasks={workspace.roleTasks} onOpenMentee={workspace.handleOpenMentee} />}
+      {role === 'Mentor' && page === 'mentees' && (
+        <MentorView
+          mentees={workspace.assignedMentees}
+          tasks={workspace.roleTasks}
+          proofProfile={workspace.facultyProfile}
+          onOpenMentee={workspace.handleOpenMentee}
+          onOpenStudentShell={workspace.handleOpenStudentShell}
+          onOpenRiskExplorer={workspace.handleOpenRiskExplorer}
+        />
+      )}
       {role === 'Mentor' && page === 'mentee-detail' && workspace.selectedMentee && workspace.selectedMenteeHistory && (
-        <MenteeDetailPage mentee={workspace.selectedMentee} history={workspace.selectedMenteeHistory} onBack={workspace.handleNavigateBack} onOpenHistory={workspace.handleOpenHistoryFromMentee} />
+        <MenteeDetailPage
+          mentee={workspace.selectedMentee}
+          history={workspace.selectedMenteeHistory}
+          onBack={workspace.handleNavigateBack}
+          onOpenHistory={workspace.handleOpenHistoryFromMentee}
+          onOpenStudentShell={workspace.handleOpenStudentShell}
+          onOpenRiskExplorer={workspace.handleOpenRiskExplorer}
+        />
       )}
       {role === 'Mentor' && page === 'queue-history' && (
-        <QueueHistoryPage role={role} tasks={workspace.roleTasks} resolvedTaskIds={workspace.resolvedTasks} onBack={workspace.handleNavigateBack} onOpenTaskStudent={workspace.handleOpenTaskStudent} onOpenUnlockReview={workspace.handleOpenUnlockReview} onRestoreTask={workspace.handleRestoreTask} />
+        <QueueHistoryPage
+          role={role}
+          tasks={workspace.roleTasks}
+          resolvedTaskIds={workspace.resolvedTasks}
+          proofProfile={workspace.facultyProfile}
+          onBack={workspace.handleNavigateBack}
+          onOpenTaskStudent={workspace.handleOpenTaskStudent}
+          onOpenUnlockReview={workspace.handleOpenUnlockReview}
+          onRestoreTask={workspace.handleRestoreTask}
+          onOpenStudentShell={workspace.handleOpenStudentShell}
+          onOpenRiskExplorer={workspace.handleOpenRiskExplorer}
+        />
       )}
       {role === 'Mentor' && page === 'calendar' && workspace.filteredCurrentFacultyTimetable && (
         <LazyCalendarTimetablePage
@@ -247,7 +276,18 @@ export function AcademicWorkspaceRouteSurface({
         <UnlockReviewPage task={workspace.selectedUnlockTask} offering={workspace.selectedUnlockTaskOffering} onBack={workspace.handleNavigateBack} onApprove={() => workspace.handleApproveUnlock(workspace.selectedUnlockTask.id)} onReject={() => workspace.handleRejectUnlock(workspace.selectedUnlockTask.id)} onResetComplete={() => workspace.handleResetComplete(workspace.selectedUnlockTask.id)} />
       )}
       {role === 'HoD' && page === 'queue-history' && (
-        <QueueHistoryPage role={role} tasks={workspace.roleTasks} resolvedTaskIds={workspace.resolvedTasks} onBack={workspace.handleNavigateBack} onOpenTaskStudent={workspace.handleOpenTaskStudent} onOpenUnlockReview={workspace.handleOpenUnlockReview} onRestoreTask={workspace.handleRestoreTask} />
+        <QueueHistoryPage
+          role={role}
+          tasks={workspace.roleTasks}
+          resolvedTaskIds={workspace.resolvedTasks}
+          proofProfile={workspace.facultyProfile}
+          onBack={workspace.handleNavigateBack}
+          onOpenTaskStudent={workspace.handleOpenTaskStudent}
+          onOpenUnlockReview={workspace.handleOpenUnlockReview}
+          onRestoreTask={workspace.handleRestoreTask}
+          onOpenStudentShell={workspace.handleOpenStudentShell}
+          onOpenRiskExplorer={workspace.handleOpenRiskExplorer}
+        />
       )}
       {role === 'HoD' && page === 'calendar' && workspace.filteredCurrentFacultyTimetable && (
         <LazyCalendarTimetablePage

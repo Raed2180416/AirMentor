@@ -175,6 +175,11 @@ export type ApiFacultyRecord = {
   version: number
   createdAt: string
   updatedAt: string
+  scopeDescriptor?: ApiScopeDescriptor | null
+  resolvedFrom?: ApiResolvedFrom | null
+  scopeMode?: ApiScopeMode | null
+  countSource?: ApiCountSource | null
+  activeOperationalSemester?: number | null
   appointments: ApiFacultyAppointment[]
   roleGrants: ApiRoleGrant[]
 }
@@ -220,6 +225,11 @@ export type ApiStudentRecord = {
   createdAt: string
   updatedAt: string
   currentCgpa: number
+  scopeDescriptor?: ApiScopeDescriptor | null
+  resolvedFrom?: ApiResolvedFrom | null
+  scopeMode?: ApiScopeMode | null
+  countSource?: ApiCountSource | null
+  activeOperationalSemester?: number | null
   activeAcademicContext: {
     enrollmentId: string
     branchId: string

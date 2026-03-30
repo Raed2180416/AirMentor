@@ -39,7 +39,7 @@ export function SystemAdminHistoryWorkspace({
   const [renderedAtMs] = useState(() => Date.now())
 
   return (
-    <div style={{ display: 'grid', gap: 16 }}>
+    <div data-history-workspace="true" style={{ display: 'grid', gap: 16 }}>
       <SectionHeading
         title="History And Restore"
         eyebrow="Audit + Recycle Bin"

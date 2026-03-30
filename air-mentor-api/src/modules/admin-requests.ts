@@ -194,8 +194,13 @@ export async function registerAdminRequestRoutes(app: FastifyInstance, context: 
     const filtered = auth.activeRoleGrant.roleCode === 'SYSTEM_ADMIN'
       ? rows
       : rows.filter(item => item.requestedByFacultyId === auth.facultyId)
+    const query = request.query as Record<string, string | undefined>
+    const scopeFilter = query.scope?.toLowerCase()
+    const scoped = scopeFilter === 'open'
+      ? filtered.filter(item => item.status !== 'Closed')
+      : filtered
     return {
-      items: filtered.map(row => {
+      items: scoped.map(row => {
         const requester = faculty.find(item => item.facultyId === row.requestedByFacultyId)
         const owner = faculty.find(item => item.facultyId === row.ownedByFacultyId)
         return {

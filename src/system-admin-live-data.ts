@@ -10,11 +10,36 @@ import type {
   ApiCurriculumCourse,
   ApiDepartment,
   ApiFacultyRecord,
+  ApiMentorAssignment,
   ApiInstitution,
   ApiOfferingOwnership,
   ApiPolicyOverride,
+  ApiResolvedBatchPolicy,
+  ApiStudentEnrollment,
   ApiStudentRecord,
 } from './api/types'
+
+export type UniversityScopeState = {
+  academicFacultyId: string | null
+  departmentId: string | null
+  branchId: string | null
+  batchId: string | null
+  sectionCode: string | null
+  label: string
+}
+
+export type RegistryFilterState = {
+  academicFacultyId: string
+  departmentId: string
+  branchId: string
+  batchId: string
+  sectionCode: string
+}
+
+export type LiveAdminProofProvenance = Pick<
+  ApiResolvedBatchPolicy,
+  'scopeDescriptor' | 'resolvedFrom' | 'scopeMode' | 'countSource' | 'activeOperationalSemester'
+>
 
 export type LiveAdminSectionId = 'overview' | 'faculties' | 'students' | 'faculty-members' | 'requests' | 'history'
 
@@ -95,6 +120,26 @@ export function compareAdminTimestampsDesc(left?: string | null, right?: string 
   if (!leftValue) return 1
   if (!rightValue) return -1
   return rightValue.localeCompare(leftValue)
+}
+
+export function defaultRegistryFilter(): RegistryFilterState {
+  return {
+    academicFacultyId: '',
+    departmentId: '',
+    branchId: '',
+    batchId: '',
+    sectionCode: '',
+  }
+}
+
+export function hydrateRegistryFilter(scope: UniversityScopeState | null): RegistryFilterState {
+  return {
+    academicFacultyId: scope?.academicFacultyId ?? '',
+    departmentId: scope?.departmentId ?? '',
+    branchId: scope?.branchId ?? '',
+    batchId: scope?.batchId ?? '',
+    sectionCode: scope?.sectionCode ?? '',
+  }
 }
 
 function toAcademicFaculty(data: LiveAdminDataset, candidate?: ApiAcademicFaculty | string | null) {
@@ -274,6 +319,24 @@ export function listCurriculumBySemester(data: LiveAdminDataset, batchId?: strin
 
 export function getPrimaryAppointmentDepartmentId(facultyMember: ApiFacultyRecord) {
   return facultyMember.appointments.find(item => item.isPrimary)?.departmentId ?? facultyMember.appointments[0]?.departmentId ?? null
+}
+
+export function findLatestEnrollment(student: {
+  enrollments: ApiStudentEnrollment[]
+  activeAcademicContext: { enrollmentId: string } | null
+}) {
+  return student.enrollments.find(item => item.enrollmentId === student.activeAcademicContext?.enrollmentId)
+    ?? [...student.enrollments].sort((left, right) => right.startDate.localeCompare(left.startDate))[0]
+    ?? null
+}
+
+export function findLatestMentorAssignment(student: {
+  mentorAssignments: ApiMentorAssignment[]
+  activeMentorAssignment: ApiMentorAssignment | null
+}) {
+  return student.activeMentorAssignment
+    ?? [...student.mentorAssignments].sort((left, right) => right.effectiveFrom.localeCompare(left.effectiveFrom))[0]
+    ?? null
 }
 
 export function listFacultyAssignments(data: LiveAdminDataset, facultyId: string) {

@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  defaultRegistryFilter,
   compareAdminTimestampsDesc,
   deriveCurrentYearLabel,
+  findLatestEnrollment,
+  findLatestMentorAssignment,
+  hydrateRegistryFilter,
   isBatchVisible,
   isBranchVisible,
   isCourseVisible,
@@ -275,6 +279,106 @@ describe('system-admin-live-data', () => {
     ])
   })
 
+  it('hydrates registry filters from scope and falls back to empty defaults', () => {
+    expect(defaultRegistryFilter()).toEqual({
+      academicFacultyId: '',
+      departmentId: '',
+      branchId: '',
+      batchId: '',
+      sectionCode: '',
+    })
+    expect(hydrateRegistryFilter({
+      academicFacultyId: 'af_eng',
+      departmentId: 'dept_cse',
+      branchId: 'branch_cse',
+      batchId: 'batch_2022',
+      sectionCode: 'A',
+      label: 'Engineering and Technology · Computer Science and Engineering · Batch 2022 · Section A',
+    })).toEqual({
+      academicFacultyId: 'af_eng',
+      departmentId: 'dept_cse',
+      branchId: 'branch_cse',
+      batchId: 'batch_2022',
+      sectionCode: 'A',
+    })
+    expect(hydrateRegistryFilter(null)).toEqual(defaultRegistryFilter())
+  })
+
+  it('prefers active enrollment and mentor assignment but falls back to the newest records', () => {
+    const enrollments = [
+      {
+        enrollmentId: 'enroll_old',
+        studentId: 'student_1',
+        branchId: 'branch_cse',
+        termId: 'term_5',
+        sectionCode: 'B',
+        rosterOrder: 2,
+        academicStatus: 'regular',
+        startDate: '2024-01-01',
+        endDate: null,
+        version: 1,
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      },
+      {
+        enrollmentId: 'enroll_new',
+        studentId: 'student_1',
+        branchId: 'branch_cse',
+        termId: 'term_5',
+        sectionCode: 'A',
+        rosterOrder: 1,
+        academicStatus: 'regular',
+        startDate: '2025-01-01',
+        endDate: null,
+        version: 1,
+        createdAt: '2025-01-01T00:00:00.000Z',
+        updatedAt: '2025-01-01T00:00:00.000Z',
+      },
+    ]
+    const mentorAssignments = [
+      {
+        assignmentId: 'mentor_old',
+        studentId: 'student_1',
+        facultyId: 'fac_1',
+        effectiveFrom: '2024-01-01',
+        effectiveTo: null,
+        source: 'manual',
+        version: 1,
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      },
+      {
+        assignmentId: 'mentor_new',
+        studentId: 'student_1',
+        facultyId: 'fac_2',
+        effectiveFrom: '2025-01-01',
+        effectiveTo: null,
+        source: 'manual',
+        version: 1,
+        createdAt: '2025-01-01T00:00:00.000Z',
+        updatedAt: '2025-01-01T00:00:00.000Z',
+      },
+    ]
+
+    expect(findLatestEnrollment({
+      enrollments,
+      activeAcademicContext: { enrollmentId: 'enroll_old' },
+    })?.enrollmentId).toBe('enroll_old')
+    expect(findLatestEnrollment({
+      enrollments,
+      activeAcademicContext: null,
+    })?.enrollmentId).toBe('enroll_new')
+
+    expect(findLatestMentorAssignment({
+      mentorAssignments,
+      activeMentorAssignment: mentorAssignments[0],
+    })?.assignmentId).toBe('mentor_old')
+    expect(findLatestMentorAssignment({
+      mentorAssignments,
+      activeMentorAssignment: null,
+    })?.assignmentId).toBe('mentor_new')
+  })
+
   it('derives the current year label from the active semester', () => {
     expect(deriveCurrentYearLabel(5)).toBe('3rd Year')
   })
@@ -390,5 +494,34 @@ describe('system-admin-live-data', () => {
     expect(searchLiveAdminWorkspace(scopedDataset, 'Aisha', { section: 'students' })).toHaveLength(0)
     expect(searchLiveAdminWorkspace(scopedDataset, 'Aria', { section: 'students', scope: { batchId: 'batch_2022', sectionCode: 'A' } })).toHaveLength(0)
     expect(searchLiveAdminWorkspace(scopedDataset, 'Aisha', { section: 'students', scope: { batchId: 'batch_2022', sectionCode: 'A' } })[0]?.route.studentId).toBe('student_1')
+  })
+
+  it('scores scoped requests appropriately', () => {
+    const requestDataset: LiveAdminDataset = {
+      ...dataset,
+      requests: [
+        {
+          ...dataset.requests[0],
+          adminRequestId: 'req_batch',
+          scopeType: 'batch',
+          scopeId: 'batch_2022',
+          summary: 'Mentor gap in batch 2022',
+        },
+        {
+          ...dataset.requests[0],
+          adminRequestId: 'req_inst',
+          scopeType: 'institution',
+          scopeId: 'inst_1',
+          summary: 'Global issue',
+        },
+      ],
+    }
+    const results = searchLiveAdminWorkspace(requestDataset, 'issue', { section: 'requests' })
+    expect(results).toHaveLength(1)
+    expect(results[0].route.section).toBe('requests')
+    
+    // Exact request matches should surface
+    const batchMatches = searchLiveAdminWorkspace(requestDataset, 'gap', { section: 'requests', scope: { batchId: 'batch_2022' } })
+    expect(batchMatches[0].route.requestId).toBe('req_batch')
   })
 })

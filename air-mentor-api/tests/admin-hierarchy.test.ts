@@ -559,9 +559,203 @@ describe('admin hierarchy routes', () => {
     expect(response.statusCode).toBe(200)
     const items = response.json().items
     expect(items.length).toBeGreaterThan(0)
-    expect(items[0].currentCgpa).toBeTypeOf('number')
-    expect(items[0].activeAcademicContext?.termId).toBeTruthy()
-    expect(items[0].activeAcademicContext?.batchId).toBeTruthy()
+    const student = items.find((item: { activeAcademicContext?: { batchId?: string | null } | null }) => item.activeAcademicContext?.batchId)
+    expect(student).toBeTruthy()
+    expect(student.currentCgpa).toBeTypeOf('number')
+    expect(student.activeAcademicContext?.termId).toBeTruthy()
+    expect(student.activeAcademicContext?.batchId).toBeTruthy()
+    expect(student.scopeDescriptor).toMatchObject({
+      scopeType: 'section',
+      studentId: student.studentId,
+      sectionCode: student.activeAcademicContext?.sectionCode,
+    })
+    expect(student.resolvedFrom).toBeTruthy()
+    expect(student.scopeMode).toBe('section')
+    expect(student.countSource).toBe('operational-semester')
+    expect(student.activeOperationalSemester).toBeTypeOf('number')
+  })
+
+  it('returns labeled appointments, grants, and provenance in the faculty admin list', async () => {
+    current = await createTestApp()
+    const login = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const branchesResponse = await current.app.inject({
+      method: 'GET',
+      url: '/api/admin/branches',
+      headers: { cookie: login.cookie },
+    })
+    expect(branchesResponse.statusCode).toBe(200)
+    const branch = branchesResponse.json().items[0]
+    expect(branch).toBeTruthy()
+
+    const coursesResponse = await current.app.inject({
+      method: 'GET',
+      url: '/api/admin/courses',
+      headers: { cookie: login.cookie },
+    })
+    expect(coursesResponse.statusCode).toBe(200)
+    const course = coursesResponse.json().items[0]
+    expect(course).toBeTruthy()
+
+    const batchCreate = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/batches',
+      headers: { cookie: login.cookie, origin: TEST_ORIGIN },
+      payload: {
+        branchId: branch.branchId,
+        admissionYear: 2024,
+        batchLabel: '2024',
+        currentSemester: 3,
+        sectionLabels: ['A'],
+        status: 'active',
+      },
+    })
+    expect(batchCreate.statusCode).toBe(200)
+    const batch = batchCreate.json()
+
+    const termCreate = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/terms',
+      headers: { cookie: login.cookie, origin: TEST_ORIGIN },
+      payload: {
+        branchId: branch.branchId,
+        batchId: batch.batchId,
+        academicYearLabel: '2026-27',
+        semesterNumber: 3,
+        startDate: '2026-08-01',
+        endDate: '2026-12-10',
+        status: 'active',
+      },
+    })
+    expect(termCreate.statusCode).toBe(200)
+    const term = termCreate.json()
+
+    const facultyCreate = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/faculty',
+      headers: { cookie: login.cookie, origin: TEST_ORIGIN },
+      payload: {
+        username: 'scope.labels',
+        email: 'scope.labels@airmentor.local',
+        phone: '+91 9000000000',
+        password: 'faculty1234',
+        employeeCode: 'FAC-SEC-01',
+        displayName: 'Scope Labels',
+        designation: 'Assistant Professor',
+        joinedOn: '2026-01-10',
+        status: 'active',
+      },
+    })
+    expect(facultyCreate.statusCode).toBe(200)
+    const faculty = facultyCreate.json()
+
+    const appointmentCreate = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/faculty/${faculty.facultyId}/appointments`,
+      headers: { cookie: login.cookie, origin: TEST_ORIGIN },
+      payload: {
+        departmentId: branch.departmentId,
+        branchId: branch.branchId,
+        isPrimary: true,
+        startDate: '2026-01-10',
+        status: 'active',
+      },
+    })
+    expect(appointmentCreate.statusCode).toBe(200)
+
+    const roleGrantCreate = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/faculty/${faculty.facultyId}/role-grants`,
+      headers: { cookie: login.cookie, origin: TEST_ORIGIN },
+      payload: {
+        roleCode: 'MENTOR',
+        scopeType: 'branch',
+        scopeId: branch.branchId,
+        startDate: '2026-01-10',
+        status: 'active',
+      },
+    })
+    expect(roleGrantCreate.statusCode).toBe(200)
+
+    const offeringCreate = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/offerings',
+      headers: { cookie: login.cookie, origin: TEST_ORIGIN },
+      payload: {
+        courseId: course.courseId,
+        termId: term.termId,
+        branchId: branch.branchId,
+        sectionCode: 'A',
+        yearLabel: '2nd Year',
+        attendance: 0,
+        studentCount: 0,
+        stage: 1,
+        stageLabel: 'Stage 1',
+        stageDescription: 'Setup',
+        stageColor: '#2563eb',
+        tt1Done: false,
+        tt2Done: false,
+        tt1Locked: false,
+        tt2Locked: false,
+        quizLocked: false,
+        assignmentLocked: false,
+        pendingAction: 'Assign owner',
+        status: 'active',
+      },
+    })
+    expect(offeringCreate.statusCode).toBe(200)
+    const offering = offeringCreate.json()
+
+    const ownershipCreate = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/offering-ownership',
+      headers: { cookie: login.cookie, origin: TEST_ORIGIN },
+      payload: {
+        offeringId: offering.offeringId,
+        facultyId: faculty.facultyId,
+        ownershipRole: 'owner',
+        status: 'active',
+      },
+    })
+    expect(ownershipCreate.statusCode).toBe(200)
+
+    const facultyResponse = await current.app.inject({
+      method: 'GET',
+      url: '/api/admin/faculty',
+      headers: { cookie: login.cookie },
+    })
+    expect(facultyResponse.statusCode).toBe(200)
+    const facultyItems = facultyResponse.json().items
+    const listedFaculty = facultyItems.find((item: { facultyId: string }) => item.facultyId === faculty.facultyId)
+    expect(listedFaculty).toBeTruthy()
+    expect(listedFaculty.createdAt).toBeTruthy()
+    expect(listedFaculty.updatedAt).toBeTruthy()
+    expect(listedFaculty.appointments[0]).toMatchObject({
+      departmentId: branch.departmentId,
+      departmentName: expect.any(String),
+      departmentCode: expect.any(String),
+      branchId: branch.branchId,
+      branchName: expect.any(String),
+      branchCode: expect.any(String),
+      isPrimary: true,
+    })
+    expect(listedFaculty.roleGrants[0]).toMatchObject({
+      roleCode: 'MENTOR',
+      scopeType: 'branch',
+      scopeId: branch.branchId,
+      scopeLabel: branch.name,
+    })
+    expect(listedFaculty.scopeDescriptor).toMatchObject({
+      scopeType: 'section',
+      batchId: batch.batchId,
+      sectionCode: 'A',
+    })
+    expect(listedFaculty.resolvedFrom).toBeTruthy()
+    expect(['default-policy', 'policy-override']).toContain(listedFaculty.resolvedFrom.kind)
+    expect(listedFaculty.resolvedFrom.label).toBeTruthy()
+    expect(listedFaculty.scopeMode).toBe('section')
+    expect(listedFaculty.countSource).toBe('operational-semester')
+    expect(listedFaculty.activeOperationalSemester).toBe(batch.currentSemester)
   })
 
   it('allows archiving an academic faculty without moving its departments first', async () => {
