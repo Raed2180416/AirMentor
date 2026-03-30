@@ -112,6 +112,10 @@ import {
 } from './system-admin-overview-helpers'
 import { describeProofAvailability, describeProofProvenance } from './proof-provenance'
 import {
+  collectAdminQueueDismissKeys,
+  mergeAdminQueueDismissKeys,
+} from './system-admin-action-queue'
+import {
   AdminBreadcrumbs,
   DayToggle,
   EmptyState,
@@ -120,6 +124,7 @@ import {
   HeroBadge,
   InfoBanner,
   ModalFrame,
+  QueueBulkActions,
   RestoreBanner,
   SearchField,
   SectionHeading,
@@ -371,6 +376,7 @@ const DEFAULT_PROGRESSION_RULES = {
   requireNoActiveBacklogs: true,
 }
 const ADMIN_DISMISSED_QUEUE_STORAGE_KEY = 'airmentor-admin-dismissed-queue-items'
+const ADMIN_INLINE_ACTION_QUEUE_MIN_VIEWPORT = 1400
 
 function applyFacultyVisibilityRules(facultyMembers: ApiFacultyRecord[]) {
   return [...facultyMembers].sort((left, right) => {
@@ -1359,6 +1365,7 @@ function TeachingShellAdminTopBar({
   now,
   themeMode,
   actionCount,
+  showActionQueue,
   canNavigateBack,
   onNavigateBack,
   onToggleTheme,
@@ -1373,6 +1380,7 @@ function TeachingShellAdminTopBar({
   now: Date
   themeMode: ThemeMode
   actionCount: number
+  showActionQueue: boolean
   canNavigateBack: boolean
   onNavigateBack: () => void
   onToggleTheme: () => void
@@ -1415,7 +1423,13 @@ function TeachingShellAdminTopBar({
           <button type="button" aria-label={isLightTheme(themeMode) ? 'Switch to dark mode' : 'Switch to light mode'} title={isLightTheme(themeMode) ? 'Dark mode' : 'Light mode'} onClick={onToggleTheme} style={{ ...getIconButtonStyle({ subtle: false }), color: T.muted, ...mono, fontSize: 14, lineHeight: 1 }}>
             {isLightTheme(themeMode) ? '🌙' : '☀️'}
           </button>
-          <button type="button" aria-label="Open action queue" onClick={onToggleQueue} style={{ ...getIconButtonStyle({ active: actionCount > 0 }), color: actionCount > 0 ? T.accent : T.muted, position: 'relative' }}>
+          <button
+            type="button"
+            aria-label={showActionQueue ? 'Hide action queue' : 'Show action queue'}
+            title={showActionQueue ? 'Hide action queue' : 'Show action queue'}
+            onClick={onToggleQueue}
+            style={{ ...getIconButtonStyle({ active: showActionQueue }), color: showActionQueue ? T.accent : T.muted, position: 'relative' }}
+          >
             <Bell size={14} />
             {actionCount > 0 ? (
               <span style={{ position: 'absolute', top: -6, right: -6, minWidth: 16, height: 16, borderRadius: 8, background: T.danger, color: '#fff', ...mono, fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>
@@ -1671,7 +1685,7 @@ function ActionQueueCard({
   onClick?: () => void
 }) {
   return (
-    <Card onClick={onClick} style={{ padding: 12, background: `linear-gradient(180deg, ${T.surface2}, ${T.surface})`, cursor: onClick ? 'pointer' : undefined }}>
+    <Card data-action-queue-card="true" onClick={onClick} style={{ padding: 12, background: `linear-gradient(180deg, ${T.surface2}, ${T.surface})`, cursor: onClick ? 'pointer' : undefined }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
         <div>
           <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{title}</div>
@@ -1962,7 +1976,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     setDismissedQueueItemKeys(existing => existing.includes(key) ? existing : [...existing, key])
   }, [])
 
-  const clearDismissedQueueItems = useCallback(() => {
+  const restoreAllHiddenQueueItems = useCallback(() => {
     setDismissedQueueItemKeys([])
   }, [])
 
@@ -4776,8 +4790,16 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const pendingReminders = data.reminders
     .filter(item => item.status === 'pending')
     .filter(item => !dismissedQueueItemKeys.includes(`reminder:${item.reminderId}`))
-  const actionQueueCount = openRequests.length + pendingReminders.length
   const visibleHiddenQueueItems = [...archivedItems, ...deletedItems].filter(item => !dismissedQueueItemKeys.includes(`hidden:${item.key}`))
+  const visibleQueueDismissKeys = useMemo(() => collectAdminQueueDismissKeys({
+    requestIds: openRequests.map(item => item.adminRequestId),
+    reminderIds: pendingReminders.map(item => item.reminderId),
+    hiddenItemKeys: visibleHiddenQueueItems.map(item => item.key),
+  }), [openRequests, pendingReminders, visibleHiddenQueueItems])
+  const actionQueueCount = openRequests.length + pendingReminders.length + visibleHiddenQueueItems.length
+  const hideAllVisibleQueueItems = useCallback(() => {
+    setDismissedQueueItemKeys(existing => mergeAdminQueueDismissKeys(existing, visibleQueueDismissKeys))
+  }, [visibleQueueDismissKeys])
   const selectorSections = selectedBatch?.sectionLabels ?? []
   const activeUniversityScope = route.section === 'faculties'
     ? {
@@ -5057,7 +5079,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const universityWorkspaceTabCards = activeGovernanceScope
     ? universityTabOptions.filter(item => item.id !== 'overview')
     : []
-  const showInlineActionQueue = showActionQueue && viewportWidth >= 1480
+  const showInlineActionQueue = showActionQueue && viewportWidth >= ADMIN_INLINE_ACTION_QUEUE_MIN_VIEWPORT
   const registryIsSingleColumn = viewportWidth < 1180
   const registryPageColumns = viewportWidth < 1180 ? 'minmax(0, 1fr)' : 'minmax(320px, 420px) minmax(0, 1fr)'
   const universityWorkspaceColumns = viewportWidth < 1220 ? 'minmax(0, 1fr)' : '260px minmax(0, 1fr)'
@@ -5626,6 +5648,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         now={now}
         themeMode={themeMode}
         actionCount={actionQueueCount}
+        showActionQueue={showInlineActionQueue}
         canNavigateBack={canNavigateBack}
         onNavigateBack={handleNavigateBack}
         onToggleTheme={() => persistTheme(themeMode === 'frosted-focus-light' ? 'frosted-focus-dark' : 'frosted-focus-light')}
@@ -7019,13 +7042,19 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
             <Bell size={16} color={T.accent} />
             <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>Action Queue</div>
-            <Chip color={T.danger} size={10}>{actionQueueCount} active</Chip>
+            <Chip color={T.danger} size={10}>{actionQueueCount} visible</Chip>
           </div>
           <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 14 }}>
             Requests go first. {remindersSupported ? 'Personal reminders stay private to the signed-in system admin.' : 'Private reminders are hidden until the live API supports `/api/admin/reminders`.'}
           </div>
+          <QueueBulkActions
+            canHideAll={visibleQueueDismissKeys.length > 0}
+            hiddenCount={dismissedQueueItemKeys.length}
+            onHideAll={hideAllVisibleQueueItems}
+            onRestoreAll={restoreAllHiddenQueueItems}
+          />
 
-          <div style={{ ...mono, fontSize: 9, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Requests</div>
+          <div style={{ ...mono, fontSize: 9, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 18, marginBottom: 8 }}>Requests</div>
           <div style={{ display: 'grid', gap: 8 }}>
             {openRequests.slice(0, 8).map(request => (
               <ActionQueueCard
@@ -7087,13 +7116,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             ))}
             {visibleHiddenQueueItems.length === 0 ? <div style={{ ...mono, fontSize: 10, color: T.dim }}>Nothing hidden right now.</div> : null}
           </div>
+          {actionQueueCount === 0 && dismissedQueueItemKeys.length > 0 ? (
+            <div style={{ marginTop: 18 }}>
+              <InfoBanner message="Everything in this action queue is currently hidden. Use Restore all hidden to bring requests, reminders, and restore-ready records back into view." />
+            </div>
+          ) : null}
 
           <div style={{ position: 'sticky', bottom: 0, paddingTop: 12, marginTop: 16, background: `linear-gradient(180deg, ${fadeColor(T.surface, '00')} 0%, ${T.surface} 35%)` }}>
-            {dismissedQueueItemKeys.length > 0 ? (
-              <button type="button" onClick={clearDismissedQueueItems} style={{ width: '100%', marginBottom: 8, border: `1px solid ${T.border}`, borderRadius: 12, cursor: 'pointer', background: T.surface, color: T.muted, padding: '9px 12px', ...mono, fontSize: 10 }}>
-                Restore Hidden Queue Items
-              </button>
-            ) : null}
             <button type="button" onClick={() => void handleCreateReminder()} disabled={!remindersSupported} style={{ width: '100%', border: 'none', borderRadius: 10, cursor: remindersSupported ? 'pointer' : 'not-allowed', background: remindersSupported ? T.accent : T.surface3, color: remindersSupported ? '#fff' : T.dim, padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, ...sora, fontWeight: 700, fontSize: 12 }}>
               <Plus size={14} />
               {remindersSupported ? 'Quick Add Reminder' : 'Reminder API Unavailable'}

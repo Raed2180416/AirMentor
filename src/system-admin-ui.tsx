@@ -195,6 +195,46 @@ export function RestoreBanner({
   )
 }
 
+export function QueueBulkActions({
+  canHideAll,
+  hiddenCount,
+  onHideAll,
+  onRestoreAll,
+}: {
+  canHideAll: boolean
+  hiddenCount: number
+  onHideAll: () => void
+  onRestoreAll: () => void
+}) {
+  return (
+    <div
+      data-queue-bulk-actions="true"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 10,
+        flexWrap: 'wrap',
+        borderRadius: 14,
+        border: `1px solid ${T.border}`,
+        background: `linear-gradient(180deg, ${T.surface2}, ${T.surface})`,
+        padding: '10px 12px',
+      }}
+    >
+      <div style={{ display: 'grid', gap: 4 }}>
+        <div style={{ ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: T.text, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Queue Controls</div>
+        <div data-queue-hidden-count={hiddenCount > 0 ? String(hiddenCount) : '0'} style={{ ...mono, fontSize: UI_FONT_SIZES.meta, color: T.muted }}>
+          {hiddenCount > 0 ? `${hiddenCount} hidden right now.` : 'Nothing hidden right now.'}
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <Btn type="button" variant="ghost" onClick={onHideAll} disabled={!canHideAll}>Hide all</Btn>
+        <Btn type="button" variant="ghost" onClick={onRestoreAll} disabled={hiddenCount === 0}>Restore all hidden</Btn>
+      </div>
+    </div>
+  )
+}
+
 export function MetricCard({ label, value, helper, onClick }: { label: string; value: string; helper: string; onClick?: () => void }) {
   return (
     <Card style={{ padding: 18, cursor: onClick ? 'pointer' : undefined }} onClick={onClick}>

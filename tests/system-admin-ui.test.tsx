@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { RestoreBanner } from '../src/system-admin-ui'
+import { QueueBulkActions, RestoreBanner } from '../src/system-admin-ui'
 
 describe('RestoreBanner', () => {
   it('renders explicit restore messaging and a reset action', () => {
@@ -16,5 +16,21 @@ describe('RestoreBanner', () => {
     expect(markup).toContain('Proof playback restored')
     expect(markup).toContain('Reset playback')
     expect(markup).toContain('Semester 6')
+  })
+})
+
+describe('QueueBulkActions', () => {
+  it('renders hide-all and restore-all-hidden controls with hidden-count messaging', () => {
+    const markup = renderToStaticMarkup(createElement(QueueBulkActions, {
+      canHideAll: true,
+      hiddenCount: 3,
+      onHideAll: () => {},
+      onRestoreAll: () => {},
+    }))
+
+    expect(markup).toContain('data-queue-bulk-actions="true"')
+    expect(markup).toContain('Hide all')
+    expect(markup).toContain('Restore all hidden')
+    expect(markup).toContain('3 hidden right now.')
   })
 })
