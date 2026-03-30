@@ -26,7 +26,10 @@ import {
   MSRUAS_PROOF_CURRICULUM_IMPORT_ID,
   MSRUAS_PROOF_SIMULATION_RUN_ID,
 } from '../src/lib/msruas-proof-sandbox.js'
-import { validateProofCurriculumImport } from '../src/lib/msruas-proof-control-plane.js'
+import {
+  createProofCurriculumImport,
+  validateProofCurriculumImport,
+} from '../src/lib/msruas-proof-control-plane.js'
 import { DEFAULT_POLICY } from '../src/modules/admin-structure.js'
 
 const TEST_NOW = '2026-03-31T00:00:00.000Z'
@@ -210,5 +213,45 @@ describe('msruas proof sandbox seed recovery', () => {
     expect(batchRows).toHaveLength(1)
     expect(importRows).toHaveLength(1)
     expect(runRows).toHaveLength(1)
+  })
+
+  it('rebuilds the canonical proof batch shell when the proof cohort already exists', async () => {
+    current = await createProofSeedTestDb()
+
+    await ensureMsruasProofSandboxSeeded(current.db, {
+      now: TEST_NOW,
+      policy: DEFAULT_POLICY,
+    })
+    await current.pool.query('TRUNCATE TABLE batches CASCADE')
+
+    const result = await createProofCurriculumImport(current.db, {
+      batchId: MSRUAS_PROOF_BATCH_ID,
+      now: TEST_NOW,
+    })
+
+    expect(result.curriculumImportVersionId).toBeTruthy()
+    expect(result.validation).toMatchObject({
+      semesterCoverage: [1, 6],
+      courseCount: 36,
+      totalCredits: 118,
+    })
+
+    const [batch] = await current.db.select().from(batches).where(eq(batches.batchId, MSRUAS_PROOF_BATCH_ID))
+    const importRows = await current.db.select().from(curriculumImportVersions).where(eq(curriculumImportVersions.batchId, MSRUAS_PROOF_BATCH_ID))
+
+    expect(batch).toMatchObject({
+      batchId: MSRUAS_PROOF_BATCH_ID,
+      branchId: MSRUAS_PROOF_BRANCH_ID,
+      currentSemester: 6,
+      status: 'active',
+    })
+    expect(importRows).toHaveLength(1)
+    expect(importRows[0]).toMatchObject({
+      curriculumImportVersionId: result.curriculumImportVersionId,
+      batchId: MSRUAS_PROOF_BATCH_ID,
+      status: 'validated',
+    })
+    expect(importRows[0]?.sourcePath).toBeTruthy()
+    expect(importRows[0]?.sourceType === 'workbook' || importRows[0]?.sourceType === 'bundled-json').toBe(true)
   })
 })

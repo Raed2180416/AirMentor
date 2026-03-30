@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { and, asc, count, desc, eq, gt, inArray, isNotNull } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gt, inArray, isNotNull, like } from 'drizzle-orm'
 import type { AppDb } from '../db/client.js'
 import {
   academicRuntimeState,
@@ -46,6 +46,7 @@ import {
   studentObservedSemesterStates,
   studentInterventions,
   studentQuestionResults,
+  students,
   studentTopicStates,
   simulationQuestionTemplates,
   teacherAllocations,
@@ -195,6 +196,7 @@ import {
   MSRUAS_PROOF_DEPARTMENT_ID,
   PROOF_FACULTY,
   PROOF_TERM_DEFS,
+  ensureMsruasProofBatchStructure,
   seedMsruasProofSandbox,
 } from './msruas-proof-sandbox.js'
 import { DEFAULT_POLICY, type ResolvedPolicy } from '../modules/admin-structure.js'
@@ -222,20 +224,38 @@ function resolveCurriculumImportCompileSourcePath(sourcePath?: string | null) {
 }
 
 async function seedProofSandboxIfMissing(db: AppDb, now: string) {
-  const [existingBatch, institution, existingProofFacultyRows, existingProofUserRows] = await Promise.all([
+  const expectedProofFacultyCount = PROOF_FACULTY.length
+  const expectedProofStudentCount = 120
+  const [existingBatch, institution, existingProofFacultyRows, existingProofUserRows, existingProofStudentRows] = await Promise.all([
     db.select().from(batches).where(eq(batches.batchId, MSRUAS_PROOF_BATCH_ID)).then(rows => rows[0] ?? null),
     db.select().from(institutions).then(rows => rows[0] ?? null),
     db.select().from(facultyProfiles).where(inArray(facultyProfiles.facultyId, PROOF_FACULTY.map(faculty => faculty.facultyId))),
     db.select().from(userAccounts).where(inArray(userAccounts.userId, PROOF_FACULTY.map(faculty => faculty.userId))),
+    db.select().from(students).where(like(students.studentId, 'mnc_student_%')),
   ])
   if (existingBatch) return null
-  if (existingProofFacultyRows.length > 0 || existingProofUserRows.length > 0) {
-    throw new Error(`Proof sandbox roots are partially present; refusing automatic bootstrap without the canonical batch. faculty=${existingProofFacultyRows.length} users=${existingProofUserRows.length}`)
-  }
   if (!institution) throw new Error('Institution not found for proof sandbox bootstrap')
   const [existingProofBranch] = await db.select().from(branches).where(eq(branches.branchId, MSRUAS_PROOF_BRANCH_ID))
   if (existingProofBranch && existingProofBranch.departmentId !== MSRUAS_PROOF_DEPARTMENT_ID) {
     throw new Error(`Proof sandbox branch ${MSRUAS_PROOF_BRANCH_ID} is bound to ${existingProofBranch.departmentId}; refusing automatic bootstrap.`)
+  }
+  const proofFacultyCount = existingProofFacultyRows.length
+  const proofUserCount = existingProofUserRows.length
+  const proofStudentCount = existingProofStudentRows.length
+  const hasCompleteProofCohort = (
+    proofFacultyCount === expectedProofFacultyCount
+    && proofUserCount === expectedProofFacultyCount
+    && proofStudentCount === expectedProofStudentCount
+  )
+  const hasNoProofCohort = proofFacultyCount === 0 && proofUserCount === 0 && proofStudentCount === 0
+  if (hasCompleteProofCohort) {
+    await ensureMsruasProofBatchStructure(db, now)
+    return null
+  }
+  if (!hasNoProofCohort) {
+    throw new Error(
+      `Proof sandbox cohort is partially present; refusing automatic bootstrap without canonical batch recovery. faculty=${proofFacultyCount}/${expectedProofFacultyCount} users=${proofUserCount}/${expectedProofFacultyCount} students=${proofStudentCount}/${expectedProofStudentCount}`,
+    )
   }
   return seedMsruasProofSandbox(db, {
     institutionId: institution.institutionId,
