@@ -214,7 +214,13 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
   if (input.roleScopeType === 'branch' && input.roleScopeId) {
     scopeBranchIds.add(input.roleScopeId)
   }
-  const activeRun = runRows.find(row => row.activeFlag === 1) ?? null
+  const requestedCheckpoint = input.filters?.simulationStageCheckpointId
+    ? stageCheckpointRows.find(row => row.simulationStageCheckpointId === input.filters?.simulationStageCheckpointId) ?? null
+    : null
+  const activeRunCandidates = runRows.filter(row => row.activeFlag === 1)
+  const activeRun = requestedCheckpoint
+    ? activeRunCandidates.find(row => row.simulationRunId === requestedCheckpoint.simulationRunId) ?? null
+    : activeRunCandidates[0] ?? null
   const activeBatch = activeRun ? (batchById.get(activeRun.batchId) ?? null) : null
   const activeBranch = activeBatch ? (branchById.get(activeBatch.branchId) ?? null) : null
   const activeDepartmentId = activeBranch?.departmentId ?? null
@@ -302,7 +308,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
 
   if (input.filters?.simulationStageCheckpointId) {
     if (!activeRun || !activeBatch || !activeBranch || !activeRunId || !scopeMatchesActiveBatch) return emptyResponse
-    const checkpoint = stageCheckpointRows.find(row => row.simulationStageCheckpointId === input.filters?.simulationStageCheckpointId) ?? null
+    const checkpoint = requestedCheckpoint
     if (!checkpoint || checkpoint.simulationRunId !== activeRunId) return emptyResponse
     const checkpointSummary = withProofPlaybackGate(
       stageCheckpointRows
