@@ -15,14 +15,19 @@ import {
   sectionOfferings,
   simulationRuns,
   simulationQuestionTemplates,
+  studentAssessmentScores,
+  studentAttendanceSnapshots,
   studentBehaviorProfiles,
   studentCoStates,
   studentObservedSemesterStates,
   studentQuestionResults,
   studentTopicStates,
   studentInterventionResponseStates,
+  transcriptSubjectResults,
+  transcriptTermResults,
 } from '../src/db/schema.js'
-import { MSRUAS_PROOF_BATCH_ID } from '../src/lib/msruas-proof-sandbox.js'
+import { parseObservedStateRow } from '../src/lib/proof-observed-state.js'
+import { MSRUAS_PROOF_BATCH_ID, PROOF_TERM_DEFS } from '../src/lib/msruas-proof-sandbox.js'
 import { PROOF_CORPUS_MANIFEST } from '../src/lib/proof-risk-model.js'
 import { createTestApp, loginAs, TEST_ORIGIN } from './helpers/test-app.js'
 
@@ -73,6 +78,52 @@ function timetableRangesOverlap(
   right: { startMinutes: number; endMinutes: number },
 ) {
   return left.startMinutes < right.endMinutes && right.startMinutes < left.endMinutes
+}
+
+async function readPublishedOperationalProjectionCounts(simulationRunId: string) {
+  if (!current) throw new Error('Test app is not initialized')
+
+  const observedRows = await current.db.select().from(studentObservedSemesterStates).where(
+    eq(studentObservedSemesterStates.simulationRunId, simulationRunId),
+  )
+  const proofStudentIds = new Set(observedRows.map(row => row.studentId))
+  const proofOfferingIds = new Set(
+    observedRows
+      .map(row => {
+        const payload = parseObservedStateRow(row)
+        return typeof payload.offeringId === 'string' && payload.offeringId.length > 0
+          ? payload.offeringId
+          : null
+      })
+      .filter((value): value is string => value != null),
+  )
+  const proofTermIds = new Set(PROOF_TERM_DEFS.map(term => term.termId))
+
+  const transcriptRows = (await current.db.select().from(transcriptTermResults)).filter(row => (
+    proofStudentIds.has(row.studentId)
+    && proofTermIds.has(row.termId)
+  ))
+  const transcriptTermIds = new Set(transcriptRows.map(row => row.transcriptTermResultId))
+  const transcriptSubjectCount = (await current.db.select().from(transcriptSubjectResults)).filter(row => (
+    transcriptTermIds.has(row.transcriptTermResultId)
+  )).length
+  const attendanceCount = (await current.db.select().from(studentAttendanceSnapshots)).filter(row => (
+    proofStudentIds.has(row.studentId)
+    && proofOfferingIds.has(row.offeringId)
+    && row.source.startsWith('proof-run:')
+  )).length
+  const assessmentCount = (await current.db.select().from(studentAssessmentScores)).filter(row => (
+    proofStudentIds.has(row.studentId)
+    && proofOfferingIds.has(row.offeringId)
+    && row.termId === 'term_mnc_sem6'
+  )).length
+
+  return {
+    transcriptTermCount: transcriptRows.length,
+    transcriptSubjectCount,
+    attendanceCount,
+    assessmentCount,
+  }
 }
 
 describe('admin control plane routes', () => {
@@ -1047,6 +1098,58 @@ describe('admin control plane routes', () => {
       item.actionType === 'semester-activated'
       && item.payload?.activeOperationalSemester === 4
     ))).toBe(true)
+  }, 300000)
+
+  it('re-activates proof semesters without duplicating the published operational projection', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const dashboardBefore = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/batches/${MSRUAS_PROOF_BATCH_ID}/proof-dashboard`,
+      headers: { cookie: adminLogin.cookie },
+    })
+    expect(dashboardBefore.statusCode).toBe(200)
+    const activeRunId = dashboardBefore.json().activeRunDetail?.simulationRunId as string | undefined
+    expect(activeRunId).toBeTruthy()
+
+    const activateSemesterFour = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRunId}/activate-semester`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: { semesterNumber: 4 },
+    })
+    expect(activateSemesterFour.statusCode).toBe(200)
+
+    const countsAfterSemesterFour = await readPublishedOperationalProjectionCounts(activeRunId!)
+    expect(countsAfterSemesterFour).toMatchObject({
+      transcriptTermCount: expect.any(Number),
+      transcriptSubjectCount: expect.any(Number),
+      attendanceCount: expect.any(Number),
+      assessmentCount: expect.any(Number),
+    })
+    expect(countsAfterSemesterFour.transcriptTermCount).toBeGreaterThan(0)
+    expect(countsAfterSemesterFour.transcriptSubjectCount).toBeGreaterThan(0)
+    expect(countsAfterSemesterFour.attendanceCount).toBeGreaterThan(0)
+    expect(countsAfterSemesterFour.assessmentCount).toBeGreaterThan(0)
+
+    const restoreSemesterSix = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRunId}/activate-semester`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: { semesterNumber: 6 },
+    })
+    expect(restoreSemesterSix.statusCode).toBe(200)
+    expect(restoreSemesterSix.json()).toMatchObject({
+      ok: true,
+      simulationRunId: activeRunId,
+      batchId: MSRUAS_PROOF_BATCH_ID,
+      activeOperationalSemester: 6,
+      previousOperationalSemester: 4,
+    })
+
+    const countsAfterSemesterSix = await readPublishedOperationalProjectionCounts(activeRunId!)
+    expect(countsAfterSemesterSix).toEqual(countsAfterSemesterFour)
   }, 300000)
 
   proofRcIt('re-seeds proof batch routes after the canonical batch disappears', async () => {

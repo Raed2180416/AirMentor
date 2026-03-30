@@ -3128,9 +3128,54 @@ async function publishOperationalProjection(db: AppDb, input: {
 
   const sem5OrEarlierRows = observedRows.filter(row => row.semesterNumber <= 5)
   const sem6Rows = observedRows.filter(row => row.semesterNumber === 6)
+  const proofStudentIds = Array.from(new Set(observedRows.map(row => row.studentId)))
+  const proofOfferingIds = Array.from(new Set(
+    sem6Rows
+      .map(row => {
+        const payload = parseObservedStateRow(row)
+        return typeof payload.offeringId === 'string' && payload.offeringId.length > 0
+          ? payload.offeringId
+          : null
+      })
+      .filter((value): value is string => value != null),
+  ))
   const termBySemester = new Map<number, (typeof PROOF_TERM_DEFS)[number]>(PROOF_TERM_DEFS.map(term => [term.semesterNumber, term]))
+  const proofTermIds = PROOF_TERM_DEFS.map(term => term.termId)
   const transcriptTermInsertRows: Array<typeof transcriptTermResults.$inferInsert> = []
   const transcriptSubjectInsertRows: Array<typeof transcriptSubjectResults.$inferInsert> = []
+
+  if (input.batchId === MSRUAS_PROOF_BATCH_ID && proofStudentIds.length > 0) {
+    const existingTranscriptRows = await db.select({
+      transcriptTermResultId: transcriptTermResults.transcriptTermResultId,
+    }).from(transcriptTermResults).where(and(
+      inArray(transcriptTermResults.studentId, proofStudentIds),
+      inArray(transcriptTermResults.termId, proofTermIds),
+    ))
+    const existingTranscriptTermResultIds = existingTranscriptRows.map(row => row.transcriptTermResultId)
+    if (existingTranscriptTermResultIds.length > 0) {
+      await db.delete(transcriptSubjectResults).where(
+        inArray(transcriptSubjectResults.transcriptTermResultId, existingTranscriptTermResultIds),
+      )
+      await db.delete(transcriptTermResults).where(
+        inArray(transcriptTermResults.transcriptTermResultId, existingTranscriptTermResultIds),
+      )
+    }
+  }
+
+  if (input.batchId === MSRUAS_PROOF_BATCH_ID && proofStudentIds.length > 0 && proofOfferingIds.length > 0) {
+    // Re-activating a long-lived proof run must replace, not append, the live
+    // runtime projection for those proof students.
+    await db.delete(studentAttendanceSnapshots).where(and(
+      inArray(studentAttendanceSnapshots.studentId, proofStudentIds),
+      inArray(studentAttendanceSnapshots.offeringId, proofOfferingIds),
+      like(studentAttendanceSnapshots.source, 'proof-run:%'),
+    ))
+    await db.delete(studentAssessmentScores).where(and(
+      inArray(studentAssessmentScores.studentId, proofStudentIds),
+      inArray(studentAssessmentScores.offeringId, proofOfferingIds),
+      eq(studentAssessmentScores.termId, 'term_mnc_sem6'),
+    ))
+  }
 
   for (const row of sem5OrEarlierRows) {
     const payload = parseObservedStateRow(row)
