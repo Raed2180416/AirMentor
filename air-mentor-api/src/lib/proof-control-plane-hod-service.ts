@@ -234,13 +234,35 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
   const activeBatch = activeRun ? (batchById.get(activeRun.batchId) ?? null) : null
   const activeBranch = activeBatch ? (branchById.get(activeBatch.branchId) ?? null) : null
   const activeDepartmentId = activeBranch?.departmentId ?? null
-  const scopeMatchesActiveBatch = !!(
-    activeBranch
-    && (
-      scopeBranchIds.has(activeBranch.branchId)
-      || (activeDepartmentId ? scopeDepartmentIds.has(activeDepartmentId) : false)
-    )
-  )
+  const departmentScopeKey = (departmentId: string | null | undefined) => {
+    if (!departmentId) return null
+    const department = departmentById.get(departmentId)
+    if (!department) return null
+    return `${normalizeFilterValue(department.code) ?? ''}::${normalizeFilterValue(department.name) ?? ''}`
+  }
+  const branchScopeKey = (branchId: string | null | undefined) => {
+    if (!branchId) return null
+    const branch = branchById.get(branchId)
+    if (!branch) return null
+    return `${normalizeFilterValue(branch.code) ?? ''}::${normalizeFilterValue(branch.name) ?? ''}`
+  }
+  const scopeDepartmentKeys = new Set(Array.from(scopeDepartmentIds).map(departmentScopeKey).filter((value): value is string => !!value))
+  const scopeBranchKeys = new Set(Array.from(scopeBranchIds).map(branchScopeKey).filter((value): value is string => !!value))
+  const matchesScopedDepartment = (departmentId: string | null | undefined) => {
+    if (!departmentId) return false
+    if (scopeDepartmentIds.has(departmentId)) return true
+    const key = departmentScopeKey(departmentId)
+    return !!key && scopeDepartmentKeys.has(key)
+  }
+  const matchesScopedBranch = (branchId: string | null | undefined) => {
+    if (!branchId) return false
+    if (scopeBranchIds.has(branchId)) return true
+    const key = branchScopeKey(branchId)
+    return !!key && scopeBranchKeys.has(key)
+  }
+  const matchesScopedAppointment = (departmentId: string | null | undefined, branchId: string | null | undefined) =>
+    matchesScopedDepartment(departmentId) || matchesScopedBranch(branchId)
+  const scopeMatchesActiveBatch = !!(activeBranch && matchesScopedAppointment(activeDepartmentId, activeBranch.branchId))
   const activeRunId = activeRun?.simulationRunId ?? null
   const currentSemester = input.filters?.semester ?? activeRun?.activeOperationalSemester ?? activeBatch?.currentSemester ?? 6
   const operationalCheckpointSummary = activeRunId
@@ -387,7 +409,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
     ]).filter(facultyId => {
       const facultyAppointments = allAppointmentRows.filter(row => row.facultyId === facultyId && row.status === 'active')
       if (facultyAppointments.length === 0) return false
-      return facultyAppointments.some(row => scopeDepartmentIds.has(row.departmentId) || (row.branchId ? scopeBranchIds.has(row.branchId) : false))
+      return facultyAppointments.some(row => matchesScopedAppointment(row.departmentId, row.branchId))
     })
 
     const countProvenance = buildProofCountProvenance({
@@ -879,7 +901,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
   ]).filter(facultyId => {
     const facultyAppointments = allAppointmentRows.filter(row => row.facultyId === facultyId && row.status === 'active')
     if (facultyAppointments.length === 0) return false
-    return facultyAppointments.some(row => scopeDepartmentIds.has(row.departmentId) || (row.branchId ? scopeBranchIds.has(row.branchId) : false))
+    return facultyAppointments.some(row => matchesScopedAppointment(row.departmentId, row.branchId))
   })
 
   const facultyRowsForHod = facultyIdsInScope
