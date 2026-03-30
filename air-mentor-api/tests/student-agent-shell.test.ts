@@ -323,6 +323,62 @@ describe('student agent shell', () => {
     })
   })
 
+  it('allows HOD student shell access when a second active HoD grant matches the proof department', async () => {
+    current = await createTestApp()
+    const hodLogin = await loginAs(current.app, 'kavitha.rao', '1234')
+    const hodRole = hodLogin.body.activeRoleGrant.roleCode === 'HOD'
+      ? hodLogin.body
+      : (await switchToRole(hodLogin.cookie, hodLogin.body.availableRoleGrants, 'HOD')).json()
+    const hodGrantId = hodLogin.body.availableRoleGrants.find((grant: { roleCode: string }) => grant.roleCode === 'HOD')?.grantId
+    const hodFacultyId = (hodRole.activeRoleGrant as { facultyId?: string | null }).facultyId
+    expect(hodGrantId).toBeTruthy()
+    expect(hodFacultyId).toBeTruthy()
+
+    const hodStudentsResponse = await current.app.inject({
+      method: 'GET',
+      url: '/api/academic/hod/proof-students',
+      headers: { cookie: hodLogin.cookie },
+    })
+    expect(hodStudentsResponse.statusCode).toBe(200)
+    const accessibleStudentId = (hodStudentsResponse.json().items as Array<{ studentId: string }>)[0]?.studentId
+    expect(accessibleStudentId).toBeTruthy()
+
+    await current.db.update(facultyAppointments).set({
+      departmentId: 'dept_ece',
+      branchId: 'branch_ece_btech',
+    }).where(eq(facultyAppointments.facultyId, hodFacultyId!))
+    await current.db.update(roleGrants).set({
+      scopeType: 'department',
+      scopeId: 'dept_ece',
+    }).where(eq(roleGrants.grantId, hodGrantId!))
+    await current.db.insert(roleGrants).values({
+      grantId: 'grant_hod_test_mnc_shell_scope',
+      facultyId: hodFacultyId!,
+      roleCode: 'HOD',
+      scopeType: 'department',
+      scopeId: 'dept_cse',
+      startDate: '2026-03-16',
+      endDate: null,
+      status: 'active',
+      version: 1,
+      createdAt: '2026-03-16T00:00:00.000Z',
+      updatedAt: '2026-03-16T00:00:00.000Z',
+    })
+
+    const response = await current.app.inject({
+      method: 'GET',
+      url: `/api/academic/student-shell/students/${accessibleStudentId}/card`,
+      headers: { cookie: hodLogin.cookie },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      student: {
+        studentId: accessibleStudentId,
+      },
+    })
+  })
+
   it('uses the activated proof semester for the default student shell while keeping checkpoint playback separate', async () => {
     current = await createTestApp()
     const login = await loginAs(current.app, 'devika.shetty', 'faculty1234')

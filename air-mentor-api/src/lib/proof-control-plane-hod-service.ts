@@ -208,6 +208,16 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
   const courseById = new Map(courseRows.map(row => [row.courseId, row]))
   const scopeDepartmentIds = new Set(activeAppointments.map(row => row.departmentId))
   const scopeBranchIds = new Set(activeAppointments.map(row => row.branchId).filter((value): value is string => !!value))
+  grantRows
+    .filter(row => row.facultyId === input.facultyId && row.roleCode === 'HOD' && row.status === 'active')
+    .forEach(row => {
+      if (row.scopeType === 'department' && row.scopeId) {
+        scopeDepartmentIds.add(row.scopeId)
+      }
+      if (row.scopeType === 'branch' && row.scopeId) {
+        scopeBranchIds.add(row.scopeId)
+      }
+    })
   if (input.roleScopeType === 'department' && input.roleScopeId) {
     scopeDepartmentIds.add(input.roleScopeId)
   }
