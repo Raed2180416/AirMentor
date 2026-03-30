@@ -768,10 +768,9 @@ describe('academic bootstrap', () => {
       payload: {},
     })
 
-    const [selectedCheckpoint] = await current.db.select().from(simulationStageCheckpoints).where(and(
+    const [selectedCheckpoint] = await current.db.select().from(simulationStageCheckpoints).where(
       eq(simulationStageCheckpoints.simulationRunId, activeRun.simulationRunId),
-      eq(simulationStageCheckpoints.semesterNumber, 6),
-    )).orderBy(asc(simulationStageCheckpoints.stageOrder))
+    ).orderBy(asc(simulationStageCheckpoints.semesterNumber), asc(simulationStageCheckpoints.stageOrder))
     expect(selectedCheckpoint).toBeTruthy()
 
     const facultyId = login.body.faculty.facultyId as string
@@ -862,5 +861,87 @@ describe('academic bootstrap', () => {
       expect(riskExplorerResponse.statusCode).toBe(200)
       expect(studentShellResponse.statusCode).toBe(200)
     }
+  })
+
+  it('keeps academic playback checkpoints available when another proof run is also active', async () => {
+    current = await createTestApp()
+    const login = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const [baselineActiveRun] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    expect(baselineActiveRun).toBeTruthy()
+    const recomputeResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${baselineActiveRun.simulationRunId}/recompute-risk`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+    expect(recomputeResponse.statusCode).toBe(200)
+
+    const [selectedCheckpoint] = await current.db.select().from(simulationStageCheckpoints).orderBy(
+      asc(simulationStageCheckpoints.semesterNumber),
+      asc(simulationStageCheckpoints.stageOrder),
+    )
+    expect(selectedCheckpoint).toBeTruthy()
+
+    const [checkpointRun] = await current.db.select().from(simulationRuns).where(
+      eq(simulationRuns.simulationRunId, selectedCheckpoint.simulationRunId),
+    )
+    expect(checkpointRun).toBeTruthy()
+
+    const syntheticRunId = 'sim_parallel_active_checkpoint_scope'
+    const syntheticCheckpointId = 'stage_checkpoint_parallel_active_checkpoint_scope'
+    const syntheticCheckpointSummary = {
+      ...(JSON.parse(selectedCheckpoint.summaryJson) as Record<string, unknown>),
+      simulationStageCheckpointId: syntheticCheckpointId,
+      simulationRunId: syntheticRunId,
+      previousCheckpointId: null,
+      nextCheckpointId: null,
+    }
+    await current.db.insert(simulationRuns).values({
+      ...checkpointRun,
+      simulationRunId: syntheticRunId,
+      runLabel: 'Parallel active proof run',
+      seed: checkpointRun.seed + 1,
+      createdAt: '2026-03-31T01:15:00.000Z',
+      updatedAt: '2026-03-31T01:15:00.000Z',
+    })
+    await current.db.insert(simulationStageCheckpoints).values({
+      ...selectedCheckpoint,
+      simulationStageCheckpointId: syntheticCheckpointId,
+      simulationRunId: syntheticRunId,
+      previousCheckpointId: null,
+      nextCheckpointId: null,
+      summaryJson: JSON.stringify(syntheticCheckpointSummary),
+      createdAt: '2026-03-31T01:15:00.000Z',
+      updatedAt: '2026-03-31T01:15:00.000Z',
+    })
+
+    const activeRuns = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    expect(activeRuns[0]?.simulationRunId).toBe(baselineActiveRun.simulationRunId)
+
+    const bootstrapResponse = await current.app.inject({
+      method: 'GET',
+      url: `/api/academic/bootstrap?simulationStageCheckpointId=${encodeURIComponent(syntheticCheckpointId)}`,
+      headers: { cookie: login.cookie },
+    })
+    expect(bootstrapResponse.statusCode).toBe(200)
+    expect(bootstrapResponse.json().proofPlayback).toMatchObject({
+      simulationRunId: syntheticRunId,
+      simulationStageCheckpointId: syntheticCheckpointId,
+    })
+
+    const facultyProfileResponse = await current.app.inject({
+      method: 'GET',
+      url: `/api/academic/faculty-profile/${login.body.faculty.facultyId}?simulationStageCheckpointId=${encodeURIComponent(syntheticCheckpointId)}`,
+      headers: { cookie: login.cookie },
+    })
+    expect(facultyProfileResponse.statusCode).toBe(200)
+    expect(facultyProfileResponse.json().proofOperations.selectedCheckpoint).toMatchObject({
+      simulationStageCheckpointId: syntheticCheckpointId,
+    })
+    expect(facultyProfileResponse.json().proofOperations.activeRunContexts[0]).toMatchObject({
+      simulationRunId: syntheticRunId,
+    })
   })
 })

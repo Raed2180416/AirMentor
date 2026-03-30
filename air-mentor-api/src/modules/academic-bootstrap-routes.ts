@@ -5,7 +5,7 @@ import { parseOrThrow, requireRole } from './support.js'
 import type { AcademicRouteDependencies } from './academic.js'
 import { notFound } from '../lib/http-errors.js'
 import { eq } from 'drizzle-orm'
-import { simulationRuns } from '../db/schema.js'
+import { simulationStageCheckpoints } from '../db/schema.js'
 
 export async function registerAcademicBootstrapRoutes(
   app: FastifyInstance,
@@ -36,9 +36,12 @@ export async function registerAcademicBootstrapRoutes(
     const auth = requireRole(request, [...academicRoleCodes])
     const query = parseOrThrow(academicBootstrapQuerySchema, request.query)
     if (query.simulationStageCheckpointId) {
-      const [activeRun] = await context.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
-      if (!activeRun) throw notFound('Active proof run not found')
-      await resolveAcademicStageCheckpoint(context, auth, activeRun.simulationRunId, query.simulationStageCheckpointId)
+      const [checkpoint] = await context.db
+        .select()
+        .from(simulationStageCheckpoints)
+        .where(eq(simulationStageCheckpoints.simulationStageCheckpointId, query.simulationStageCheckpointId))
+      if (!checkpoint) throw notFound('Simulation stage checkpoint not found')
+      await resolveAcademicStageCheckpoint(context, auth, checkpoint.simulationRunId, query.simulationStageCheckpointId)
     }
     const snapshot = await buildAcademicBootstrap(context, {
       facultyId: auth.facultyId ?? null,

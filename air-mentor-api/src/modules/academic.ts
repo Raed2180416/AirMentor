@@ -948,10 +948,10 @@ async function resolveAcademicStageCheckpoint(
     throw forbidden('Simulation stage checkpoint does not belong to the selected proof run')
   }
   if (auth.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
-    const [activeRun] = await context.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    const [activeRun] = await context.db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, checkpoint.simulationRunId))
     assertAcademicAccess(evaluateActiveProofRunAccess(
       auth,
-      !!activeRun && activeRun.simulationRunId === checkpoint.simulationRunId,
+      !!activeRun && activeRun.activeFlag === 1,
       'Academic roles may inspect only checkpoints from the active proof run',
     ))
   }
