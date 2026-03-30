@@ -146,7 +146,6 @@ import { SystemAdminHistoryWorkspace } from './system-admin-history-workspace'
 import { SystemAdminRequestWorkspace } from './system-admin-request-workspace'
 import { SystemAdminSessionBoundary } from './system-admin-session-shell'
 import {
-  ACCESSIBLE_PRIMARY_ACCENT,
   BrandMark,
   Btn,
   Card,
@@ -155,6 +154,7 @@ import {
   NotificationCountBadge,
   PageShell,
   UI_FONT_SIZES,
+  getPrimaryActionButtonStyle,
   getIconButtonStyle,
   getSegmentedButtonStyle,
   getSegmentedGroupStyle,
@@ -7125,23 +7125,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               type="button"
               onClick={() => void handleCreateReminder()}
               disabled={!remindersSupported}
-              style={{
-                width: '100%',
-                border: 'none',
-                borderRadius: 10,
-                cursor: remindersSupported ? 'pointer' : 'not-allowed',
-                background: remindersSupported ? ACCESSIBLE_PRIMARY_ACCENT : T.surface3,
-                color: remindersSupported ? '#fff' : T.dim,
-                padding: '10px 12px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                boxShadow: remindersSupported ? `0 14px 28px ${withAlpha(ACCESSIBLE_PRIMARY_ACCENT, '24')}` : 'none',
-                ...sora,
-                fontWeight: 700,
-                fontSize: 12,
-              }}
+              style={getPrimaryActionButtonStyle({ disabled: !remindersSupported, fullWidth: true })}
             >
               <Plus size={14} />
               {remindersSupported ? 'Quick Add Reminder' : 'Reminder API Unavailable'}
