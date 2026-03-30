@@ -925,11 +925,27 @@ async function resolveStudentShellRun(
   context: RouteContext,
   auth: ReturnType<typeof requireAuth>,
   requestedRunId?: string,
+  simulationStageCheckpointId?: string,
 ) {
   assertAcademicAccess(evaluateProofRunSelectionAccess(auth, requestedRunId))
   const [run] = requestedRunId
     ? await context.db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, requestedRunId))
-    : await context.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    : simulationStageCheckpointId
+      ? await context.db
+        .select({
+          simulationRunId: simulationRuns.simulationRunId,
+          batchId: simulationRuns.batchId,
+          runLabel: simulationRuns.runLabel,
+          status: simulationRuns.status,
+          activeFlag: simulationRuns.activeFlag,
+          seed: simulationRuns.seed,
+          createdAt: simulationRuns.createdAt,
+          updatedAt: simulationRuns.updatedAt,
+        })
+        .from(simulationStageCheckpoints)
+        .innerJoin(simulationRuns, eq(simulationRuns.simulationRunId, simulationStageCheckpoints.simulationRunId))
+        .where(eq(simulationStageCheckpoints.simulationStageCheckpointId, simulationStageCheckpointId))
+      : await context.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
   if (!run) throw notFound('Proof run not found')
   assertAcademicAccess(evaluateActiveProofRunAccess(auth, run.activeFlag === 1))
   return run
@@ -963,6 +979,7 @@ async function assertStudentShellScope(
   auth: ReturnType<typeof requireAuth>,
   simulationRunId: string,
   studentId: string,
+  simulationStageCheckpointId?: string,
 ) {
   if (auth.activeRoleGrant.roleCode === 'SYSTEM_ADMIN') return
   assertAcademicAccess(evaluateFacultyContextAccess(auth))
@@ -974,7 +991,10 @@ async function assertStudentShellScope(
       roleScopeType: auth.activeRoleGrant.scopeType,
       roleScopeId: auth.activeRoleGrant.scopeId,
       now: context.now(),
-      filters: { studentId },
+      filters: {
+        studentId,
+        simulationStageCheckpointId,
+      },
     })
     assertAcademicAccess(evaluateHodStudentScopeAccess(
       !!analytics.summary.activeRunContext && analytics.summary.activeRunContext.simulationRunId === simulationRunId,

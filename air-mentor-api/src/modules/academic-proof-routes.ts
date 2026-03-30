@@ -330,9 +330,9 @@ export async function registerAcademicProofRoutes(
     const auth = requireRole(request, ['SYSTEM_ADMIN', ...academicRoleCodes])
     const params = parseOrThrow(z.object({ studentId: z.string().min(1) }), request.params)
     const query = parseOrThrow(studentShellQuerySchema, request.query)
-    const run = await resolveStudentShellRun(context, auth, query.simulationRunId)
+    const run = await resolveStudentShellRun(context, auth, query.simulationRunId, query.simulationStageCheckpointId)
     await resolveAcademicStageCheckpoint(context, auth, run.simulationRunId, query.simulationStageCheckpointId)
-    await assertStudentShellScope(context, auth, run.simulationRunId, params.studentId)
+    await assertStudentShellScope(context, auth, run.simulationRunId, params.studentId, query.simulationStageCheckpointId)
     return buildStudentAgentCard(context.db, {
       simulationRunId: run.simulationRunId,
       studentId: params.studentId,
@@ -349,9 +349,9 @@ export async function registerAcademicProofRoutes(
     const auth = requireRole(request, ['SYSTEM_ADMIN', ...academicRoleCodes])
     const params = parseOrThrow(z.object({ studentId: z.string().min(1) }), request.params)
     const query = parseOrThrow(studentShellQuerySchema, request.query)
-    const run = await resolveStudentShellRun(context, auth, query.simulationRunId)
+    const run = await resolveStudentShellRun(context, auth, query.simulationRunId, query.simulationStageCheckpointId)
     await resolveAcademicStageCheckpoint(context, auth, run.simulationRunId, query.simulationStageCheckpointId)
-    await assertStudentShellScope(context, auth, run.simulationRunId, params.studentId)
+    await assertStudentShellScope(context, auth, run.simulationRunId, params.studentId, query.simulationStageCheckpointId)
     return buildStudentRiskExplorer(context.db, {
       simulationRunId: run.simulationRunId,
       studentId: params.studentId,
@@ -368,9 +368,9 @@ export async function registerAcademicProofRoutes(
     const auth = requireRole(request, ['SYSTEM_ADMIN', ...academicRoleCodes])
     const params = parseOrThrow(z.object({ studentId: z.string().min(1) }), request.params)
     const query = parseOrThrow(studentShellQuerySchema, request.query)
-    const run = await resolveStudentShellRun(context, auth, query.simulationRunId)
+    const run = await resolveStudentShellRun(context, auth, query.simulationRunId, query.simulationStageCheckpointId)
     await resolveAcademicStageCheckpoint(context, auth, run.simulationRunId, query.simulationStageCheckpointId)
-    await assertStudentShellScope(context, auth, run.simulationRunId, params.studentId)
+    await assertStudentShellScope(context, auth, run.simulationRunId, params.studentId, query.simulationStageCheckpointId)
     return {
       items: await listStudentAgentTimeline(context.db, {
         simulationRunId: run.simulationRunId,
@@ -389,9 +389,9 @@ export async function registerAcademicProofRoutes(
     const auth = requireRole(request, ['SYSTEM_ADMIN', ...academicRoleCodes])
     const params = parseOrThrow(z.object({ studentId: z.string().min(1) }), request.params)
     const body = parseOrThrow(studentShellSessionCreateSchema, request.body ?? {})
-    const run = await resolveStudentShellRun(context, auth, body.simulationRunId)
+    const run = await resolveStudentShellRun(context, auth, body.simulationRunId, body.simulationStageCheckpointId)
     await resolveAcademicStageCheckpoint(context, auth, run.simulationRunId, body.simulationStageCheckpointId)
-    await assertStudentShellScope(context, auth, run.simulationRunId, params.studentId)
+    await assertStudentShellScope(context, auth, run.simulationRunId, params.studentId, body.simulationStageCheckpointId)
     return startStudentAgentSession(context.db, {
       simulationRunId: run.simulationRunId,
       simulationStageCheckpointId: body.simulationStageCheckpointId,
@@ -412,14 +412,14 @@ export async function registerAcademicProofRoutes(
     const body = parseOrThrow(studentShellMessageSchema, request.body)
     const [session] = await context.db.select().from(studentAgentSessions).where(eq(studentAgentSessions.studentAgentSessionId, params.sessionId))
     if (!session) throw notFound('Student shell session not found')
-    const [activeRun] = auth.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN'
-      ? await context.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    const [sessionRun] = auth.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN'
+      ? await context.db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, session.simulationRunId))
       : [null]
     assertAcademicAccess(evaluateStudentShellSessionMessageAccess({
       auth,
       sessionViewerFacultyId: session.viewerFacultyId,
       sessionViewerRole: session.viewerRole,
-      activeRunMatches: !activeRun || activeRun.simulationRunId === session.simulationRunId,
+      activeRunMatches: !sessionRun || sessionRun.activeFlag === 1,
     }))
     return {
       items: await sendStudentAgentMessage(context.db, {
