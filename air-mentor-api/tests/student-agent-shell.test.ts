@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { and, asc, eq } from 'drizzle-orm'
 import {
+  facultyAppointments,
   facultyOfferingOwnerships,
   mentorAssignments,
+  roleGrants,
   simulationRuns,
   simulationStageCheckpoints,
   studentObservedSemesterStates,
@@ -245,6 +247,17 @@ describe('student agent shell', () => {
       ? outsideHodLogin.body
       : (await switchToRole(outsideHodLogin.cookie, outsideHodLogin.body.availableRoleGrants, 'HOD')).json()
     expect(outsideHodRole.activeRoleGrant.roleCode).toBe('HOD')
+    const outsideHodGrantId = outsideHodLogin.body.availableRoleGrants.find((grant: { roleCode: string }) => grant.roleCode === 'HOD')?.grantId
+    const outsideHodFacultyId = (outsideHodRole.activeRoleGrant as { facultyId?: string | null }).facultyId
+    expect(outsideHodGrantId).toBeTruthy()
+    expect(outsideHodFacultyId).toBeTruthy()
+    await current.db.update(facultyAppointments).set({
+      departmentId: 'dept_ece',
+      branchId: 'branch_ece_btech',
+    }).where(eq(facultyAppointments.facultyId, outsideHodFacultyId!))
+    await current.db.update(roleGrants).set({
+      scopeId: 'dept_ece',
+    }).where(eq(roleGrants.grantId, outsideHodGrantId!))
     const outsideHodResponse = await current.app.inject({
       method: 'GET',
       url: `/api/academic/student-shell/students/${assignedStudentId}/card`,

@@ -209,7 +209,14 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
   const activeRun = runRows.find(row => row.activeFlag === 1) ?? null
   const activeBatch = activeRun ? (batchById.get(activeRun.batchId) ?? null) : null
   const activeBranch = activeBatch ? (branchById.get(activeBatch.branchId) ?? null) : null
-  const scopeMatchesActiveBatch = !!(activeBranch && scopeBranchIds.has(activeBranch.branchId))
+  const activeDepartmentId = activeBranch?.departmentId ?? null
+  const scopeMatchesActiveBatch = !!(
+    activeBranch
+    && (
+      scopeBranchIds.has(activeBranch.branchId)
+      || (activeDepartmentId ? scopeDepartmentIds.has(activeDepartmentId) : false)
+    )
+  )
   const activeRunId = activeRun?.simulationRunId ?? null
   const currentSemester = input.filters?.semester ?? activeRun?.activeOperationalSemester ?? activeBatch?.currentSemester ?? 6
   const operationalCheckpointSummary = activeRunId

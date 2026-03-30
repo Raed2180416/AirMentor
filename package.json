@@ -18,6 +18,7 @@
     "verify:proof-closure": "npm --workspace air-mentor-api run build && npm run build && npm --workspace air-mentor-api test -- --reporter=dot && npm test -- --reporter=dot && bash scripts/playwright-admin-live-proof-risk-smoke.sh",
     "verify:proof-closure:proof-rc": "npm run verify:proof-closure && npm --workspace air-mentor-api run test:proof-rc",
     "verify:proof-closure:live": "AIRMENTOR_LIVE_STACK=1 bash scripts/playwright-admin-live-proof-risk-smoke.sh",
+    "verify:proof-closure:teaching-live": "AIRMENTOR_LIVE_STACK=1 AIRMENTOR_PROOF_COVERAGE_TARGET=teacher bash scripts/playwright-admin-live-proof-risk-smoke.sh",
     "verify:final-closeout": "bash scripts/verify-final-closeout.sh",
     "verify:final-closeout:live": "bash scripts/verify-final-closeout-live.sh",
     "test": "vitest run",
@@ -29,6 +30,7 @@
     "playwright:admin-live:accessibility-regression": "bash scripts/playwright-admin-live-accessibility-regression.sh",
     "playwright:admin-live:keyboard-regression": "bash scripts/playwright-admin-live-keyboard-regression.sh",
     "playwright:admin-live:proof-risk": "bash scripts/playwright-admin-live-proof-risk-smoke.sh",
+    "playwright:admin-live:teacher-proof": "AIRMENTOR_PROOF_COVERAGE_TARGET=teacher bash scripts/playwright-admin-live-proof-risk-smoke.sh",
     "playwright:admin-live:request-flow": "bash scripts/playwright-admin-live-request-flow.sh",
     "playwright:admin-live:session-security": "bash scripts/playwright-admin-live-session-security.sh",
     "playwright:admin-live:teaching-parity": "bash scripts/playwright-admin-live-teaching-parity.sh"

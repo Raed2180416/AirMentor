@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { and, asc, eq } from 'drizzle-orm'
-import { simulationRuns, simulationStageCheckpoints } from '../src/db/schema.js'
+import { facultyAppointments, roleGrants, simulationRuns, simulationStageCheckpoints } from '../src/db/schema.js'
 import { createTestApp, loginAs, TEST_ORIGIN } from './helpers/test-app.js'
 
 let current: Awaited<ReturnType<typeof createTestApp>> | null = null
@@ -140,13 +140,53 @@ describe('hod proof analytics', () => {
     expect(hodFacultyRow?.queueLoad).toBe(profile.proofOperations.monitoringQueue.length)
   })
 
-  it('returns an empty view for HODs outside the active proof branch scope', async () => {
+  it('keeps a department-scoped HoD in scope even when the active proof batch is on a sibling branch', async () => {
     current = await createTestApp()
     const hodLogin = await loginAs(current.app, 'kavitha.rao', '1234')
 
     if (hodLogin.body.activeRoleGrant.roleCode !== 'HOD') {
       await switchToRole(hodLogin.cookie, hodLogin.body.availableRoleGrants, 'HOD')
     }
+
+    const [summaryResponse, studentsResponse] = await Promise.all([
+      current.app.inject({
+        method: 'GET',
+        url: '/api/academic/hod/proof-summary',
+        headers: { cookie: hodLogin.cookie },
+      }),
+      current.app.inject({
+        method: 'GET',
+        url: '/api/academic/hod/proof-students',
+        headers: { cookie: hodLogin.cookie },
+      }),
+    ])
+
+    expect(summaryResponse.statusCode).toBe(200)
+    expect(studentsResponse.statusCode).toBe(200)
+    expect(summaryResponse.json().activeRunContext).not.toBeNull()
+    expect(summaryResponse.json().scope.departmentNames).toContain('Computer Science and Engineering')
+    expect(studentsResponse.json().items.length).toBeGreaterThan(0)
+  })
+
+  it('returns an empty view for HODs outside the active proof department scope', async () => {
+    current = await createTestApp()
+    const hodLogin = await loginAs(current.app, 'kavitha.rao', '1234')
+    const hodGrantId = hodLogin.body.availableRoleGrants.find((grant: { roleCode: string }) => grant.roleCode === 'HOD')?.grantId
+    const hodFacultyId = (hodLogin.body.activeRoleGrant as { facultyId?: string | null }).facultyId
+
+    if (hodLogin.body.activeRoleGrant.roleCode !== 'HOD') {
+      await switchToRole(hodLogin.cookie, hodLogin.body.availableRoleGrants, 'HOD')
+    }
+    expect(hodGrantId).toBeTruthy()
+    expect(hodFacultyId).toBeTruthy()
+
+    await current.db.update(facultyAppointments).set({
+      departmentId: 'dept_ece',
+      branchId: 'branch_ece_btech',
+    }).where(eq(facultyAppointments.facultyId, hodFacultyId!))
+    await current.db.update(roleGrants).set({
+      scopeId: 'dept_ece',
+    }).where(eq(roleGrants.grantId, hodGrantId!))
 
     const [summaryResponse, studentsResponse] = await Promise.all([
       current.app.inject({

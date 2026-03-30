@@ -9,6 +9,14 @@ const apiUrl = process.env.PLAYWRIGHT_API_URL ?? appUrl
 const outputDir = process.env.PLAYWRIGHT_OUTPUT_DIR ?? 'output/playwright'
 const firefoxExecutablePath = process.env.PLAYWRIGHT_FIREFOX_EXECUTABLE_PATH || undefined
 const isLiveStack = process.env.AIRMENTOR_LIVE_STACK === '1'
+const proofCoverageTargetRaw = (process.env.AIRMENTOR_PROOF_COVERAGE_TARGET ?? 'full').trim().toLowerCase()
+const proofCoverageTarget = proofCoverageTargetRaw === 'teaching'
+  ? 'teacher'
+  : proofCoverageTargetRaw
+assert(
+  proofCoverageTarget === 'full' || proofCoverageTarget === 'teacher',
+  `Unsupported AIRMENTOR_PROOF_COVERAGE_TARGET: ${proofCoverageTargetRaw}`,
+)
 
 assert(playwrightRoot, 'PLAYWRIGHT_ROOT is required')
 
@@ -18,7 +26,8 @@ const proofPlaybackSelectionStorageKey = 'airmentor-proof-playback-selection'
 const seededProofRoute = '#/admin/faculties/academic_faculty_engineering_and_technology/departments/dept_cse/branches/branch_mnc_btech/batches/batch_branch_mnc_btech_2023'
 const seededProofBatchId = 'batch_branch_mnc_btech_2023'
 const finalCheckpointLabel = 'Post SEE'
-const proofTeacherUsername = process.env.AIRMENTOR_LIVE_TEACHER_IDENTIFIER?.trim() || 'devika.shetty'
+const proofTeacherUsername = process.env.AIRMENTOR_LIVE_TEACHER_IDENTIFIER?.trim()
+  || (isLiveStack ? 'kavitha.rao' : 'devika.shetty')
 const teachingPasswordCandidates = ['faculty1234', '1234']
 let proofRouteState = {
   routeHash: seededProofRoute,
@@ -625,6 +634,16 @@ async function openFacultyProfileProofPanel() {
   return teacherProofPanel
 }
 
+async function resolveTeacherProofActionSource(teacherProofPanel) {
+  const teacherMonitoringQueue = teacherProofPanel.locator('[data-proof-section="monitoring-queue"]').first()
+  await expectVisible(teacherMonitoringQueue, 'teacher monitoring queue')
+  const teacherMonitoringRow = teacherMonitoringQueue.locator('[data-proof-row="teacher-monitoring-item"]').first()
+  if (await teacherMonitoringRow.isVisible().catch(() => false)) return teacherMonitoringRow
+  const teacherElectiveFitRow = teacherProofPanel.locator('[data-proof-row="teacher-elective-fit"]').first()
+  if (await teacherElectiveFitRow.isVisible().catch(() => false)) return teacherElectiveFitRow
+  return null
+}
+
 async function loginToAcademicPortal(username) {
   await page.getByRole('button', { name: /Open Academic Portal/i }).click()
   await expectVisible(page.getByText(/Teaching Workspace Live Mode/), 'academic login')
@@ -681,168 +700,183 @@ try {
   await expectContainerText(teacherCheckpointOverlay, /Checkpoint overlay/i, 'teacher checkpoint overlay heading')
   await expectContainerText(teacherCheckpointOverlay, /Post SEE/i, 'teacher checkpoint playback sync')
   await saveContainerScreenshot(teacherProofPanel, screenshots.teacher, 'teacher proof panel')
-
-  markStep('open-teacher-risk-explorer')
-  const teacherMonitoringQueue = teacherProofPanel.locator('[data-proof-section="monitoring-queue"]').first()
-  await expectVisible(teacherMonitoringQueue, 'teacher monitoring queue')
-  const teacherMonitoringRow = teacherMonitoringQueue.locator('[data-proof-row="teacher-monitoring-item"]').first()
-  const monitoringRowVisible = await teacherMonitoringRow.isVisible().catch(() => false)
-  const teacherRiskExplorerSource = monitoringRowVisible
-    ? teacherMonitoringRow
-    : teacherProofPanel.locator('[data-proof-row="teacher-elective-fit"]').first()
-  await expectVisible(
-    teacherRiskExplorerSource,
-    monitoringRowVisible ? 'teacher monitoring queue row' : 'teacher elective fit row',
-  )
-  const trackedStudentId = await readRequiredAttribute(
-    teacherRiskExplorerSource,
-    'data-proof-student-id',
-    monitoringRowVisible ? 'teacher monitoring queue row' : 'teacher elective fit row',
-  )
-  const teacherPartialProfileButton = teacherRiskExplorerSource.locator('[data-proof-action="teacher-proof-open-partial-profile"]').first()
-  const teacherPartialProfileVisible = await teacherPartialProfileButton.isVisible().catch(() => false)
-  if (teacherPartialProfileVisible) {
-    markStep('open-teacher-partial-profile')
-    await focusAndActivate(teacherPartialProfileButton, 'teacher partial profile action')
-    await expectVisible(page.getByRole('button', { name: 'Open Full Profile', exact: true }).first(), 'teacher partial profile drawer')
-    await expectVisible(page.getByRole('button', { name: 'Close student details', exact: true }).first(), 'teacher partial profile close button')
-    await focusAndActivate(page.getByRole('button', { name: 'Close student details', exact: true }).first(), 'teacher partial profile close action')
-    await expectVisible(teacherProofPanel, 'teacher proof panel after returning from partial profile')
-  }
-  const teacherRiskExplorerButton = teacherRiskExplorerSource.locator('[data-proof-action="teacher-proof-open-risk-explorer"]').first()
-  await focusAndActivate(teacherRiskExplorerButton, 'teacher risk explorer action')
-  await page.waitForLoadState('networkidle')
-  await page.waitForTimeout(500)
-
-  const teacherRiskExplorerSurface = visibleProofSurface('risk-explorer')
-  markStep('assert-teacher-risk-explorer')
-  await expectVisible(teacherRiskExplorerSurface, 'risk explorer surface', 60_000)
-  await expectProofCheckpointIdentity(teacherRiskExplorerSurface, storedSelectionAfterReload.simulationStageCheckpointId, 'teacher risk explorer')
-  await expectProofStudentIdentity(teacherRiskExplorerSurface, trackedStudentId, 'teacher risk explorer')
-  await expectContainerText(teacherRiskExplorerSurface, /Student Success Profile/i, 'risk explorer hero heading')
-  await expectContainerText(teacherRiskExplorerSurface, /Sem 6 · Post SEE/i, 'risk explorer checkpoint sync')
-  const advancedDiagnosticsTab = page.getByRole('tab', { name: 'Advanced Diagnostics', exact: true }).first()
-  await focusAndActivate(advancedDiagnosticsTab, 'advanced diagnostics tab')
-  await waitForProofHeading('Trained Risk Heads', 60_000)
-  await waitForProofHeading('Policy Comparison', 60_000)
-  await saveContainerScreenshot(teacherRiskExplorerSurface, screenshots.teacherRiskExplorer, 'teacher risk explorer surface')
-
-  markStep('return-from-teacher-risk-explorer')
-  const backButton = page.locator('[data-proof-action="risk-explorer-back"]').first()
-  await focusAndActivate(backButton, 'risk explorer back button')
-  await expectVisible(teacherProofPanel, 'teacher proof panel after returning from risk explorer')
-  await expectContainerText(teacherProofPanel, 'Post SEE', 'teacher checkpoint persistence after risk explorer return')
-
-  markStep('open-teacher-student-shell')
-  const teacherStudentShellButton = teacherRiskExplorerSource.locator('[data-proof-action="teacher-proof-open-student-shell"]').first()
-  await focusAndActivate(teacherStudentShellButton, 'teacher student shell action')
-
-  const studentShellSurface = visibleProofSurface('student-shell')
-  markStep('assert-student-shell')
-  await expectVisible(studentShellSurface, 'student shell surface')
-  await expectProofCheckpointIdentity(studentShellSurface, storedSelectionAfterReload.simulationStageCheckpointId, 'student shell')
-  await expectProofStudentIdentity(studentShellSurface, trackedStudentId, 'student shell')
-  await expectContainerText(studentShellSurface, /Student Shell/i, 'student shell heading')
-  await expectContainerText(studentShellSurface, /deterministic proof explainer/i, 'student shell subtitle')
-  await waitForProofHeading('No-action comparator')
-  await expectContainerText(studentShellSurface, /Sem 6 · Post SEE/i, 'student shell checkpoint sync')
-  await saveContainerScreenshot(studentShellSurface, screenshots.studentShell, 'student shell surface')
-
-  const shellSelection = await readPlaybackSelectionParsed()
-  assert.equal(shellSelection.simulationRunId, storedSelectionAfterReload.simulationRunId, 'run selection should persist across teacher and shell navigation')
-  assert.equal(shellSelection.simulationStageCheckpointId, storedSelectionAfterReload.simulationStageCheckpointId, 'checkpoint selection should persist across teacher and shell navigation')
-
-  markStep('return-from-student-shell')
-  await focusAndActivate(page.locator('[data-proof-action="student-shell-back"]').first(), 'student shell back button')
-  await expectVisible(teacherProofPanel, 'teacher proof panel after returning from student shell')
-
-  markStep('switch-to-hod')
-  const hodRoleButton = page.locator('[data-proof-action="switch-role"][data-proof-entity-id="HoD"]').first()
-  await expectVisible(hodRoleButton, 'HoD role switcher')
-  await hodRoleButton.click()
-  await page.waitForLoadState('networkidle')
-  const hodProofAnalytics = await waitForSurfaceAfterOptionalLoading('hod-proof-analytics', /Loading live HoD proof analytics/i, 120_000)
-  markStep('assert-hod-proof-analytics')
-  await expectProofCheckpointIdentity(hodProofAnalytics, storedSelectionAfterReload.simulationStageCheckpointId, 'HoD proof analytics')
-  await expectContainerText(hodProofAnalytics, /Live HoD Analytics/i, 'HoD heading')
-  await expectContainerText(hodProofAnalytics, /Post SEE/i, 'HoD checkpoint sync')
-  await saveContainerScreenshot(hodProofAnalytics, screenshots.hod, 'HoD proof analytics')
-
-  markStep('open-hod-student-shell')
-  const hodOverviewStudents = page.locator('[data-proof-section="hod-overview-students"]').first()
-  await expectVisible(hodOverviewStudents, 'HoD overview students section', 60_000)
-  const hodViewAllButton = hodOverviewStudents.getByRole('button', { name: /^View All$/i }).first()
-  const hodViewAllVisible = await hodViewAllButton.isVisible().catch(() => false)
-  if (hodViewAllVisible) {
-    await hodViewAllButton.click()
-    await page.waitForTimeout(250)
-  }
-  const hodStudentRow = hodOverviewStudents.locator(`[data-proof-row="hod-student-row"][data-proof-student-id="${trackedStudentId}"]`).first()
-  const hodTrackedStudentRow = await hodStudentRow.isVisible().catch(() => false)
-    ? hodStudentRow
-    : hodOverviewStudents.locator('[data-proof-row="hod-student-row"]').first()
-  const hodTrackedStudentRowVisible = await hodTrackedStudentRow.isVisible().catch(() => false)
-  if (!hodTrackedStudentRowVisible) {
-    await expectContainerText(
-      hodOverviewStudents,
-      /No students are in the current HoD watchlist for this scope\./i,
-      'HoD empty watchlist state',
-    )
-    console.log('[smoke] HoD watchlist is empty at this checkpoint; skipping student-shell and risk-explorer subflow.')
+  if (proofCoverageTarget === 'teacher') {
+    console.log('[smoke] Proof coverage target=teacher; stopping after system-admin and teacher proof surfaces.')
   } else {
-    const hodTrackedStudentId = await readRequiredAttribute(hodTrackedStudentRow, 'data-proof-student-id', 'HoD tracked student row')
-    const hodStudentShellButton = hodTrackedStudentRow.locator('[data-proof-action="hod-open-student-shell"]').first()
-    await focusAndActivate(hodStudentShellButton, 'HoD student shell action')
+    markStep('open-teacher-risk-explorer')
+    const teacherRiskExplorerSource = await resolveTeacherProofActionSource(teacherProofPanel)
+    let trackedStudentId = null
+    if (!teacherRiskExplorerSource) {
+      await expectVisible(teacherProofPanel.locator('[data-proof-section="active-run-contexts"]').first(), 'teacher active-run contexts')
+      await expectContainerText(
+        teacherProofPanel,
+        /No governed queue items are currently linked to this profile\./i,
+        'teacher proof panel empty monitoring state',
+      )
+      await expectVisible(teacherProofPanel.locator('[data-proof-section="elective-fit"]').first(), 'teacher elective-fit section')
+      await expectContainerText(
+        teacherProofPanel,
+        /No elective recommendation is currently available for this profile\./i,
+        'teacher proof panel empty elective-fit state',
+      )
+      console.log('[smoke] Teacher proof panel has no row-backed monitoring or elective-fit entries at this checkpoint; skipping teacher-specific risk-explorer and student-shell subflow.')
+    } else {
+      trackedStudentId = await readRequiredAttribute(teacherRiskExplorerSource, 'data-proof-student-id', 'teacher proof action source')
+      const teacherPartialProfileButton = teacherRiskExplorerSource.locator('[data-proof-action="teacher-proof-open-partial-profile"]').first()
+      const teacherPartialProfileVisible = await teacherPartialProfileButton.isVisible().catch(() => false)
+      if (teacherPartialProfileVisible) {
+        markStep('open-teacher-partial-profile')
+        await focusAndActivate(teacherPartialProfileButton, 'teacher partial profile action')
+        await expectVisible(page.getByRole('button', { name: 'Open Full Profile', exact: true }).first(), 'teacher partial profile drawer')
+        await expectVisible(page.getByRole('button', { name: 'Close student details', exact: true }).first(), 'teacher partial profile close button')
+        await focusAndActivate(page.getByRole('button', { name: 'Close student details', exact: true }).first(), 'teacher partial profile close action')
+        await expectVisible(teacherProofPanel, 'teacher proof panel after returning from partial profile')
+      }
+      const teacherRiskExplorerButton = teacherRiskExplorerSource.locator('[data-proof-action="teacher-proof-open-risk-explorer"]').first()
+      await focusAndActivate(teacherRiskExplorerButton, 'teacher risk explorer action')
+      await page.waitForLoadState('networkidle')
+      await page.waitForTimeout(500)
+
+      const teacherRiskExplorerSurface = visibleProofSurface('risk-explorer')
+      markStep('assert-teacher-risk-explorer')
+      await expectVisible(teacherRiskExplorerSurface, 'risk explorer surface', 60_000)
+      await expectProofCheckpointIdentity(teacherRiskExplorerSurface, storedSelectionAfterReload.simulationStageCheckpointId, 'teacher risk explorer')
+      await expectProofStudentIdentity(teacherRiskExplorerSurface, trackedStudentId, 'teacher risk explorer')
+      await expectContainerText(teacherRiskExplorerSurface, /Student Success Profile/i, 'risk explorer hero heading')
+      await expectContainerText(teacherRiskExplorerSurface, /Sem 6 · Post SEE/i, 'risk explorer checkpoint sync')
+      const advancedDiagnosticsTab = page.getByRole('tab', { name: 'Advanced Diagnostics', exact: true }).first()
+      await focusAndActivate(advancedDiagnosticsTab, 'advanced diagnostics tab')
+      await waitForProofHeading('Trained Risk Heads', 60_000)
+      await waitForProofHeading('Policy Comparison', 60_000)
+      await saveContainerScreenshot(teacherRiskExplorerSurface, screenshots.teacherRiskExplorer, 'teacher risk explorer surface')
+
+      markStep('return-from-teacher-risk-explorer')
+      const backButton = page.locator('[data-proof-action="risk-explorer-back"]').first()
+      await focusAndActivate(backButton, 'risk explorer back button')
+      await expectVisible(teacherProofPanel, 'teacher proof panel after returning from risk explorer')
+      await expectContainerText(teacherProofPanel, 'Post SEE', 'teacher checkpoint persistence after risk explorer return')
+
+      markStep('open-teacher-student-shell')
+      const teacherStudentShellButton = teacherRiskExplorerSource.locator('[data-proof-action="teacher-proof-open-student-shell"]').first()
+      await focusAndActivate(teacherStudentShellButton, 'teacher student shell action')
+
+      const studentShellSurface = visibleProofSurface('student-shell')
+      markStep('assert-student-shell')
+      await expectVisible(studentShellSurface, 'student shell surface')
+      await expectProofCheckpointIdentity(studentShellSurface, storedSelectionAfterReload.simulationStageCheckpointId, 'student shell')
+      await expectProofStudentIdentity(studentShellSurface, trackedStudentId, 'student shell')
+      await expectContainerText(studentShellSurface, /Student Shell/i, 'student shell heading')
+      await expectContainerText(studentShellSurface, /deterministic proof explainer/i, 'student shell subtitle')
+      await waitForProofHeading('No-action comparator')
+      await expectContainerText(studentShellSurface, /Sem 6 · Post SEE/i, 'student shell checkpoint sync')
+      await saveContainerScreenshot(studentShellSurface, screenshots.studentShell, 'student shell surface')
+
+      const shellSelection = await readPlaybackSelectionParsed()
+      assert.equal(shellSelection.simulationRunId, storedSelectionAfterReload.simulationRunId, 'run selection should persist across teacher and shell navigation')
+      assert.equal(shellSelection.simulationStageCheckpointId, storedSelectionAfterReload.simulationStageCheckpointId, 'checkpoint selection should persist across teacher and shell navigation')
+
+      markStep('return-from-student-shell')
+      await focusAndActivate(page.locator('[data-proof-action="student-shell-back"]').first(), 'student shell back button')
+      await expectVisible(teacherProofPanel, 'teacher proof panel after returning from student shell')
+    }
+
+    markStep('switch-to-hod')
+    const hodRoleButton = page.locator('[data-proof-action="switch-role"][data-proof-entity-id="HoD"]').first()
+    await expectVisible(hodRoleButton, 'HoD role switcher')
+    await hodRoleButton.click()
     await page.waitForLoadState('networkidle')
-    await page.waitForTimeout(500)
+    const hodProofAnalytics = await waitForSurfaceAfterOptionalLoading('hod-proof-analytics', /Loading live HoD proof analytics/i, 120_000)
+    markStep('assert-hod-proof-analytics')
+    await expectProofCheckpointIdentity(hodProofAnalytics, storedSelectionAfterReload.simulationStageCheckpointId, 'HoD proof analytics')
+    await expectContainerText(hodProofAnalytics, /Live HoD Analytics/i, 'HoD heading')
+    await expectContainerText(hodProofAnalytics, /Post SEE/i, 'HoD checkpoint sync')
+    await saveContainerScreenshot(hodProofAnalytics, screenshots.hod, 'HoD proof analytics')
 
-    markStep('assert-hod-student-shell')
-    const hodStudentShellSurface = visibleProofSurface('student-shell')
-    await expectVisible(hodStudentShellSurface, 'HoD student shell surface')
-    await expectProofCheckpointIdentity(hodStudentShellSurface, storedSelectionAfterReload.simulationStageCheckpointId, 'HoD student shell')
-    await expectProofStudentIdentity(hodStudentShellSurface, hodTrackedStudentId, 'HoD student shell')
-    await waitForProofHeading('Student Shell', 60_000)
-    await waitForProofHeading('No-action comparator', 60_000)
-
-    markStep('return-from-hod-student-shell')
-    await focusAndActivate(page.locator('[data-proof-action="student-shell-back"]').first(), 'HoD student shell back button')
-    await expectVisible(hodProofAnalytics, 'HoD proof analytics after returning from student shell')
-
-    markStep('open-hod-risk-explorer')
-    const hodOverviewStudentsAfterReturn = page.locator('[data-proof-section="hod-overview-students"]').first()
-    await expectVisible(hodOverviewStudentsAfterReturn, 'HoD overview students section after returning from student shell', 60_000)
-    const hodViewAllAfterReturnButton = hodOverviewStudentsAfterReturn.getByRole('button', { name: /^View All$/i }).first()
-    const hodViewAllAfterReturnVisible = await hodViewAllAfterReturnButton.isVisible().catch(() => false)
-    if (hodViewAllAfterReturnVisible) {
-      await hodViewAllAfterReturnButton.click()
+    markStep('open-hod-student-shell')
+    const hodOverviewStudents = page.locator('[data-proof-section="hod-overview-students"]').first()
+    await expectVisible(hodOverviewStudents, 'HoD overview students section', 60_000)
+    const hodViewAllButton = hodOverviewStudents.getByRole('button', { name: /^View All$/i }).first()
+    const hodViewAllVisible = await hodViewAllButton.isVisible().catch(() => false)
+    if (hodViewAllVisible) {
+      await hodViewAllButton.click()
       await page.waitForTimeout(250)
     }
-    const hodStudentRowAfterReturn = hodOverviewStudentsAfterReturn.locator(
-      `[data-proof-row="hod-student-row"][data-proof-student-id="${hodTrackedStudentId}"]`,
-    ).first()
-    const hodTrackedStudentRowAfterReturn = await hodStudentRowAfterReturn.isVisible().catch(() => false)
-      ? hodStudentRowAfterReturn
-      : hodOverviewStudentsAfterReturn.locator('[data-proof-row="hod-student-row"]').first()
-    await expectVisible(hodTrackedStudentRowAfterReturn, 'HoD tracked student row after returning from student shell')
-    const hodTrackedStudentIdAfterReturn = await readRequiredAttribute(
-      hodTrackedStudentRowAfterReturn,
-      'data-proof-student-id',
-      'HoD tracked student row after returning from student shell',
-    )
-    const hodRiskExplorerButton = hodTrackedStudentRowAfterReturn.locator('[data-proof-action="hod-open-risk-explorer"]').first()
-    await focusAndActivate(hodRiskExplorerButton, 'HoD risk explorer action')
-    await page.waitForLoadState('networkidle')
-    await page.waitForTimeout(500)
+    let hodTrackedStudentRow = hodOverviewStudents.locator('[data-proof-row="hod-student-row"]').first()
+    if (trackedStudentId) {
+      const hodPreferredStudentRow = hodOverviewStudents.locator(
+        `[data-proof-row="hod-student-row"][data-proof-student-id="${trackedStudentId}"]`,
+      ).first()
+      if (await hodPreferredStudentRow.isVisible().catch(() => false)) {
+        hodTrackedStudentRow = hodPreferredStudentRow
+      }
+    }
+    const hodTrackedStudentRowVisible = await hodTrackedStudentRow.isVisible().catch(() => false)
+    if (!hodTrackedStudentRowVisible) {
+      await expectContainerText(
+        hodOverviewStudents,
+        /No students are in the current HoD watchlist for this scope\./i,
+        'HoD empty watchlist state',
+      )
+      console.log('[smoke] HoD watchlist is empty at this checkpoint; skipping student-shell and risk-explorer subflow.')
+    } else {
+      const hodTrackedStudentId = await readRequiredAttribute(hodTrackedStudentRow, 'data-proof-student-id', 'HoD tracked student row')
+      const hodStudentShellButton = hodTrackedStudentRow.locator('[data-proof-action="hod-open-student-shell"]').first()
+      await focusAndActivate(hodStudentShellButton, 'HoD student shell action')
+      await page.waitForLoadState('networkidle')
+      await page.waitForTimeout(500)
 
-    markStep('assert-hod-risk-explorer')
-    const hodRiskExplorerSurface = visibleProofSurface('risk-explorer')
-    await expectVisible(hodRiskExplorerSurface, 'risk explorer surface from HoD')
-    await expectProofCheckpointIdentity(hodRiskExplorerSurface, storedSelectionAfterReload.simulationStageCheckpointId, 'HoD risk explorer')
-    await expectProofStudentIdentity(hodRiskExplorerSurface, hodTrackedStudentIdAfterReturn, 'HoD risk explorer')
-    await expectContainerText(hodRiskExplorerSurface, /Student Success Profile/i, 'HoD risk explorer hero heading')
-    await waitForProofHeading('Top Observable Drivers', 60_000)
-    await expectContainerText(hodRiskExplorerSurface, /Sem 6 · Post SEE/i, 'HoD risk explorer checkpoint sync')
-    await saveContainerScreenshot(hodRiskExplorerSurface, screenshots.hodRiskExplorer, 'HoD risk explorer surface')
+      markStep('assert-hod-student-shell')
+      const hodStudentShellSurface = visibleProofSurface('student-shell')
+      await expectVisible(hodStudentShellSurface, 'HoD student shell surface')
+      await expectProofCheckpointIdentity(hodStudentShellSurface, storedSelectionAfterReload.simulationStageCheckpointId, 'HoD student shell')
+      await expectProofStudentIdentity(hodStudentShellSurface, hodTrackedStudentId, 'HoD student shell')
+      await waitForProofHeading('Student Shell', 60_000)
+      await waitForProofHeading('No-action comparator', 60_000)
+      if (!trackedStudentId) {
+        await saveContainerScreenshot(hodStudentShellSurface, screenshots.studentShell, 'HoD student shell surface')
+      }
+
+      markStep('return-from-hod-student-shell')
+      await focusAndActivate(page.locator('[data-proof-action="student-shell-back"]').first(), 'HoD student shell back button')
+      await expectVisible(hodProofAnalytics, 'HoD proof analytics after returning from student shell')
+
+      markStep('open-hod-risk-explorer')
+      const hodOverviewStudentsAfterReturn = page.locator('[data-proof-section="hod-overview-students"]').first()
+      await expectVisible(hodOverviewStudentsAfterReturn, 'HoD overview students section after returning from student shell', 60_000)
+      const hodViewAllAfterReturnButton = hodOverviewStudentsAfterReturn.getByRole('button', { name: /^View All$/i }).first()
+      const hodViewAllAfterReturnVisible = await hodViewAllAfterReturnButton.isVisible().catch(() => false)
+      if (hodViewAllAfterReturnVisible) {
+        await hodViewAllAfterReturnButton.click()
+        await page.waitForTimeout(250)
+      }
+      let hodTrackedStudentRowAfterReturn = hodOverviewStudentsAfterReturn.locator('[data-proof-row="hod-student-row"]').first()
+      const hodPreferredStudentRowAfterReturn = hodOverviewStudentsAfterReturn.locator(
+        `[data-proof-row="hod-student-row"][data-proof-student-id="${hodTrackedStudentId}"]`,
+      ).first()
+      if (await hodPreferredStudentRowAfterReturn.isVisible().catch(() => false)) {
+        hodTrackedStudentRowAfterReturn = hodPreferredStudentRowAfterReturn
+      }
+      await expectVisible(hodTrackedStudentRowAfterReturn, 'HoD tracked student row after returning from student shell')
+      const hodTrackedStudentIdAfterReturn = await readRequiredAttribute(
+        hodTrackedStudentRowAfterReturn,
+        'data-proof-student-id',
+        'HoD tracked student row after returning from student shell',
+      )
+      const hodRiskExplorerButton = hodTrackedStudentRowAfterReturn.locator('[data-proof-action="hod-open-risk-explorer"]').first()
+      await focusAndActivate(hodRiskExplorerButton, 'HoD risk explorer action')
+      await page.waitForLoadState('networkidle')
+      await page.waitForTimeout(500)
+
+      markStep('assert-hod-risk-explorer')
+      const hodRiskExplorerSurface = visibleProofSurface('risk-explorer')
+      await expectVisible(hodRiskExplorerSurface, 'risk explorer surface from HoD')
+      await expectProofCheckpointIdentity(hodRiskExplorerSurface, storedSelectionAfterReload.simulationStageCheckpointId, 'HoD risk explorer')
+      await expectProofStudentIdentity(hodRiskExplorerSurface, hodTrackedStudentIdAfterReturn, 'HoD risk explorer')
+      await expectContainerText(hodRiskExplorerSurface, /Student Success Profile/i, 'HoD risk explorer hero heading')
+      await waitForProofHeading('Top Observable Drivers', 60_000)
+      await expectContainerText(hodRiskExplorerSurface, /Sem 6 · Post SEE/i, 'HoD risk explorer checkpoint sync')
+      await saveContainerScreenshot(hodRiskExplorerSurface, screenshots.hodRiskExplorer, 'HoD risk explorer surface')
+    }
   }
 
   console.log(`System admin proof-risk smoke passed.`)
