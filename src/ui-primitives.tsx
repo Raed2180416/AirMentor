@@ -39,6 +39,9 @@ export const UI_RADII = {
   pill: 999,
 } as const
 
+export const ACCESSIBLE_PRIMARY_ACCENT = (T.accent === '#3b82f6' || T.accent === '#5ea0ff') ? '#1d4ed8' : T.accent
+export const ACCESSIBLE_DANGER_ACCENT = T.danger === '#ef4444' ? '#dc2626' : T.danger
+
 type SurfaceRole = 'primary' | 'secondary' | 'field' | 'selected' | 'warning' | 'danger' | 'success' | 'modal'
 
 export function withAlpha(color: string, alpha: string) {
@@ -308,6 +311,35 @@ export function BrandMark({ label = 'AM', tone = T.accent, size = 38 }: { label?
     >
       {label}
     </div>
+  )
+}
+
+export function NotificationCountBadge({ count, cap = 99 }: { count: number; cap?: number }) {
+  return (
+    <span
+      data-queue-count-badge="true"
+      style={{
+        position: 'absolute',
+        top: -6,
+        right: -6,
+        minWidth: 18,
+        height: 18,
+        borderRadius: 9,
+        background: ACCESSIBLE_DANGER_ACCENT,
+        color: '#fff',
+        ...mono,
+        fontSize: UI_FONT_SIZES.eyebrow,
+        fontWeight: 700,
+        lineHeight: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '0 4px',
+        boxShadow: `0 10px 18px ${withAlpha(ACCESSIBLE_DANGER_ACCENT, '24')}`,
+      }}
+    >
+      {Math.min(count, cap)}
+    </span>
   )
 }
 
@@ -765,13 +797,11 @@ export const Btn = ({
   const shouldReduceMotion = useReducedMotion()
   const pad = size === 'sm' ? '8px 12px' : size === 'lg' ? '12px 18px' : '10px 14px'
   const fs = size === 'sm' ? 11 : size === 'lg' ? 14 : 12
-  const accessiblePrimaryAccent = (T.accent === '#3b82f6' || T.accent === '#5ea0ff') ? '#1d4ed8' : T.accent
-  const accessibleDangerAccent = T.danger === '#ef4444' ? '#dc2626' : T.danger
   const v = variant === 'ghost'
     ? { bg: 'transparent', border: T.border2, color: T.text }
     : variant === 'danger'
-      ? { bg: accessibleDangerAccent, border: accessibleDangerAccent, color: '#fff' }
-      : { bg: accessiblePrimaryAccent, border: accessiblePrimaryAccent, color: '#fff' }
+      ? { bg: ACCESSIBLE_DANGER_ACCENT, border: ACCESSIBLE_DANGER_ACCENT, color: '#fff' }
+      : { bg: ACCESSIBLE_PRIMARY_ACCENT, border: ACCESSIBLE_PRIMARY_ACCENT, color: '#fff' }
   const baseShadow = disabled
     ? 'none'
     : variant === 'ghost'

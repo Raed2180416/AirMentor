@@ -146,11 +146,13 @@ import { SystemAdminHistoryWorkspace } from './system-admin-history-workspace'
 import { SystemAdminRequestWorkspace } from './system-admin-request-workspace'
 import { SystemAdminSessionBoundary } from './system-admin-session-shell'
 import {
+  ACCESSIBLE_PRIMARY_ACCENT,
   BrandMark,
   Btn,
   Card,
   Chip,
   ModalWorkspace,
+  NotificationCountBadge,
   PageShell,
   UI_FONT_SIZES,
   getIconButtonStyle,
@@ -1431,11 +1433,7 @@ function TeachingShellAdminTopBar({
             style={{ ...getIconButtonStyle({ active: showActionQueue }), color: showActionQueue ? T.accent : T.muted, position: 'relative' }}
           >
             <Bell size={14} />
-            {actionCount > 0 ? (
-              <span style={{ position: 'absolute', top: -6, right: -6, minWidth: 16, height: 16, borderRadius: 8, background: T.danger, color: '#fff', ...mono, fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>
-                {Math.min(actionCount, 99)}
-              </span>
-            ) : null}
+            {actionCount > 0 ? <NotificationCountBadge count={actionCount} /> : null}
           </button>
           <button type="button" aria-label="Refresh admin data" onClick={onRefresh} style={{ ...getIconButtonStyle({ subtle: false }), color: T.muted }}>
             <RefreshCw size={14} />
@@ -7123,7 +7121,28 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           ) : null}
 
           <div style={{ position: 'sticky', bottom: 0, paddingTop: 12, marginTop: 16, background: `linear-gradient(180deg, ${fadeColor(T.surface, '00')} 0%, ${T.surface} 35%)` }}>
-            <button type="button" onClick={() => void handleCreateReminder()} disabled={!remindersSupported} style={{ width: '100%', border: 'none', borderRadius: 10, cursor: remindersSupported ? 'pointer' : 'not-allowed', background: remindersSupported ? T.accent : T.surface3, color: remindersSupported ? '#fff' : T.dim, padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, ...sora, fontWeight: 700, fontSize: 12 }}>
+            <button
+              type="button"
+              onClick={() => void handleCreateReminder()}
+              disabled={!remindersSupported}
+              style={{
+                width: '100%',
+                border: 'none',
+                borderRadius: 10,
+                cursor: remindersSupported ? 'pointer' : 'not-allowed',
+                background: remindersSupported ? ACCESSIBLE_PRIMARY_ACCENT : T.surface3,
+                color: remindersSupported ? '#fff' : T.dim,
+                padding: '10px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                boxShadow: remindersSupported ? `0 14px 28px ${withAlpha(ACCESSIBLE_PRIMARY_ACCENT, '24')}` : 'none',
+                ...sora,
+                fontWeight: 700,
+                fontSize: 12,
+              }}
+            >
               <Plus size={14} />
               {remindersSupported ? 'Quick Add Reminder' : 'Reminder API Unavailable'}
             </button>

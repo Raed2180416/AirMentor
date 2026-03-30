@@ -2,6 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { QueueBulkActions, RestoreBanner } from '../src/system-admin-ui'
+import { ACCESSIBLE_DANGER_ACCENT, NotificationCountBadge } from '../src/ui-primitives'
 
 describe('RestoreBanner', () => {
   it('renders explicit restore messaging and a reset action', () => {
@@ -32,5 +33,17 @@ describe('QueueBulkActions', () => {
     expect(markup).toContain('Hide all')
     expect(markup).toContain('Restore all hidden')
     expect(markup).toContain('3 hidden right now.')
+  })
+})
+
+describe('NotificationCountBadge', () => {
+  it('caps large queue counts and uses the accessible danger accent', () => {
+    const markup = renderToStaticMarkup(createElement('div', { style: { position: 'relative' } },
+      createElement(NotificationCountBadge, { count: 108 }),
+    ))
+
+    expect(markup).toContain('data-queue-count-badge="true"')
+    expect(markup).toContain('99')
+    expect(markup).toContain(ACCESSIBLE_DANGER_ACCENT)
   })
 })

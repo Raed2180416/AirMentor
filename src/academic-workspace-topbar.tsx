@@ -5,6 +5,7 @@ import { T, mono, sora } from './data'
 import type { Role, ThemeMode } from './domain'
 import { isLightTheme } from './theme'
 import {
+  NotificationCountBadge,
   BrandMark,
   UI_FONT_SIZES,
   getIconButtonStyle,
@@ -119,11 +120,7 @@ export function AcademicWorkspaceTopbar({
 
         <button className="top-control-btn" aria-label={showActionQueue ? 'Hide action queue' : 'Show action queue'} title={showActionQueue ? 'Hide action queue' : 'Show action queue'} onClick={onToggleActionQueue} style={{ ...getIconButtonStyle({ active: showActionQueue }), color: showActionQueue ? T.accent : T.muted, position: 'relative' }}>
           <Bell size={14} />
-          {pendingActionCount > 0 ? (
-            <div style={{ position: 'absolute', top: -6, right: -6, minWidth: 16, height: 16, borderRadius: 8, background: T.danger, color: '#fff', ...mono, fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>
-              {pendingActionCount}
-            </div>
-          ) : null}
+          {pendingActionCount > 0 ? <NotificationCountBadge count={pendingActionCount} /> : null}
         </button>
 
         {isCompactTopbar ? (
