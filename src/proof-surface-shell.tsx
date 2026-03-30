@@ -58,6 +58,10 @@ type ProofSurfaceTabPanelProps = {
   style?: CSSProperties
 }
 
+function getAccessibleProofEyebrowColor() {
+  return (T.accent === '#3b82f6' || T.accent === '#5ea0ff') ? '#1d4ed8' : T.accent
+}
+
 function focusProofTarget(targetId: string, smooth: boolean) {
   if (typeof document === 'undefined') return
   const target = document.getElementById(targetId)
@@ -89,6 +93,8 @@ export function ProofSurfaceHero({
   children,
   style = {},
 }: ProofSurfaceHeroProps) {
+  const eyebrowColor = getAccessibleProofEyebrowColor()
+
   return (
     <Card
       id={surfaceId ?? `${surface}-surface`}
@@ -108,7 +114,7 @@ export function ProofSurfaceHero({
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap' }}>
         {icon ? icon : null}
         <div style={{ flex: 1, minWidth: 260 }}>
-          <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.12em' }}>{eyebrow}</div>
+          <div style={{ ...mono, fontSize: 10, color: eyebrowColor, textTransform: 'uppercase', letterSpacing: '0.12em' }}>{eyebrow}</div>
           <div style={{ ...sora, fontWeight: 800, fontSize: 24, color: T.text, marginTop: 8 }}>{title}</div>
           <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 8, lineHeight: 1.8 }}>{description}</div>
         </div>
