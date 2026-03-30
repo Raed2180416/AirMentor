@@ -71,6 +71,8 @@ export async function registerAcademicProofRoutes(
     const query = parseOrThrow(hodProofSummaryQuerySchema, request.query)
     const result = await buildHodProofAnalytics(context.db, {
       facultyId,
+      roleScopeType: auth.activeRoleGrant.scopeType,
+      roleScopeId: auth.activeRoleGrant.scopeId,
       now: context.now(),
       filters: query,
     })
@@ -89,6 +91,8 @@ export async function registerAcademicProofRoutes(
     const query = parseOrThrow(hodProofReassessmentQuerySchema, request.query)
     const result = await buildHodProofAnalytics(context.db, {
       facultyId,
+      roleScopeType: auth.activeRoleGrant.scopeType,
+      roleScopeId: auth.activeRoleGrant.scopeId,
       now: context.now(),
       filters: query,
     })
@@ -113,6 +117,8 @@ export async function registerAcademicProofRoutes(
     const query = parseOrThrow(hodProofCourseQuerySchema, request.query)
     const result = await buildHodProofAnalytics(context.db, {
       facultyId,
+      roleScopeType: auth.activeRoleGrant.scopeType,
+      roleScopeId: auth.activeRoleGrant.scopeId,
       now: context.now(),
       filters: query,
     })
@@ -131,6 +137,8 @@ export async function registerAcademicProofRoutes(
     const query = parseOrThrow(hodProofFacultyQuerySchema, request.query)
     const result = await buildHodProofAnalytics(context.db, {
       facultyId,
+      roleScopeType: auth.activeRoleGrant.scopeType,
+      roleScopeId: auth.activeRoleGrant.scopeId,
       now: context.now(),
       filters: query,
     })
@@ -149,6 +157,8 @@ export async function registerAcademicProofRoutes(
     const query = parseOrThrow(hodProofStudentQuerySchema, request.query)
     const result = await buildHodProofAnalytics(context.db, {
       facultyId,
+      roleScopeType: auth.activeRoleGrant.scopeType,
+      roleScopeId: auth.activeRoleGrant.scopeId,
       now: context.now(),
       filters: query,
     })
@@ -167,6 +177,8 @@ export async function registerAcademicProofRoutes(
     const query = parseOrThrow(hodProofReassessmentQuerySchema, request.query)
     const result = await buildHodProofAnalytics(context.db, {
       facultyId,
+      roleScopeType: auth.activeRoleGrant.scopeType,
+      roleScopeId: auth.activeRoleGrant.scopeId,
       now: context.now(),
       filters: query,
     })

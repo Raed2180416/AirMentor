@@ -168,6 +168,47 @@ describe('hod proof analytics', () => {
     expect(studentsResponse.json().items.length).toBeGreaterThan(0)
   })
 
+  it('keeps an in-scope HoD role grant authoritative when faculty appointments drift out of scope', async () => {
+    current = await createTestApp()
+    const hodLogin = await loginAs(current.app, 'kavitha.rao', '1234')
+    const hodGrantId = hodLogin.body.availableRoleGrants.find((grant: { roleCode: string }) => grant.roleCode === 'HOD')?.grantId
+    const hodFacultyId = (hodLogin.body.activeRoleGrant as { facultyId?: string | null }).facultyId
+
+    if (hodLogin.body.activeRoleGrant.roleCode !== 'HOD') {
+      await switchToRole(hodLogin.cookie, hodLogin.body.availableRoleGrants, 'HOD')
+    }
+    expect(hodGrantId).toBeTruthy()
+    expect(hodFacultyId).toBeTruthy()
+
+    await current.db.update(facultyAppointments).set({
+      departmentId: 'dept_ece',
+      branchId: 'branch_ece_btech',
+    }).where(eq(facultyAppointments.facultyId, hodFacultyId!))
+    await current.db.update(roleGrants).set({
+      scopeType: 'department',
+      scopeId: 'dept_cse',
+    }).where(eq(roleGrants.grantId, hodGrantId!))
+
+    const [summaryResponse, studentsResponse] = await Promise.all([
+      current.app.inject({
+        method: 'GET',
+        url: '/api/academic/hod/proof-summary',
+        headers: { cookie: hodLogin.cookie },
+      }),
+      current.app.inject({
+        method: 'GET',
+        url: '/api/academic/hod/proof-students',
+        headers: { cookie: hodLogin.cookie },
+      }),
+    ])
+
+    expect(summaryResponse.statusCode).toBe(200)
+    expect(studentsResponse.statusCode).toBe(200)
+    expect(summaryResponse.json().activeRunContext).not.toBeNull()
+    expect(summaryResponse.json().scope.departmentNames).toContain('Computer Science and Engineering')
+    expect(studentsResponse.json().items.length).toBeGreaterThan(0)
+  })
+
   it('returns an empty view for HODs outside the active proof department scope', async () => {
     current = await createTestApp()
     const hodLogin = await loginAs(current.app, 'kavitha.rao', '1234')

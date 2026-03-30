@@ -108,6 +108,8 @@ export type ProofControlPlaneHodServiceDeps = {
 
 export async function buildHodProofAnalytics(db: AppDb, input: {
   facultyId: string
+  roleScopeType?: string | null
+  roleScopeId?: string | null
   now?: string
   filters?: {
     section?: string
@@ -197,8 +199,6 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
   ])
 
   const activeAppointments = allAppointmentRows.filter(row => row.facultyId === input.facultyId && row.status === 'active')
-  const scopeDepartmentIds = new Set(activeAppointments.map(row => row.departmentId))
-  const scopeBranchIds = new Set(activeAppointments.map(row => row.branchId).filter((value): value is string => !!value))
   const batchById = new Map(batchRows.map(row => [row.batchId, row]))
   const branchById = new Map(branchRows.map(row => [row.branchId, row]))
   const departmentById = new Map(departmentRows.map(row => [row.departmentId, row]))
@@ -206,6 +206,14 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
   const facultyById = new Map(facultyRows.map(row => [row.facultyId, row]))
   const studentById = new Map(studentProfileRows.map(row => [row.studentId, row]))
   const courseById = new Map(courseRows.map(row => [row.courseId, row]))
+  const scopeDepartmentIds = new Set(activeAppointments.map(row => row.departmentId))
+  const scopeBranchIds = new Set(activeAppointments.map(row => row.branchId).filter((value): value is string => !!value))
+  if (input.roleScopeType === 'department' && input.roleScopeId) {
+    scopeDepartmentIds.add(input.roleScopeId)
+  }
+  if (input.roleScopeType === 'branch' && input.roleScopeId) {
+    scopeBranchIds.add(input.roleScopeId)
+  }
   const activeRun = runRows.find(row => row.activeFlag === 1) ?? null
   const activeBatch = activeRun ? (batchById.get(activeRun.batchId) ?? null) : null
   const activeBranch = activeBatch ? (branchById.get(activeBatch.branchId) ?? null) : null
@@ -738,6 +746,8 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
   ) {
     const checkpointResult = await buildHodProofAnalytics(db, {
       facultyId: input.facultyId,
+      roleScopeType: input.roleScopeType,
+      roleScopeId: input.roleScopeId,
       now: input.now,
       filters: {
         ...input.filters,

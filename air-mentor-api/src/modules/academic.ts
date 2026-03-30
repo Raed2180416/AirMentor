@@ -971,6 +971,8 @@ async function assertStudentShellScope(
   if (auth.activeRoleGrant.roleCode === 'HOD') {
     const analytics = await buildHodProofAnalytics(context.db, {
       facultyId,
+      roleScopeType: auth.activeRoleGrant.scopeType,
+      roleScopeId: auth.activeRoleGrant.scopeId,
       now: context.now(),
       filters: { studentId },
     })

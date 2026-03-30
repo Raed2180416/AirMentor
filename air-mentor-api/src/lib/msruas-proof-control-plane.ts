@@ -4057,6 +4057,8 @@ export async function activateProofOperationalSemester(db: AppDb, input: {
 
 export async function buildHodProofAnalytics(db: AppDb, input: {
   facultyId: string
+  roleScopeType?: string | null
+  roleScopeId?: string | null
   now?: string
   filters?: {
     section?: string

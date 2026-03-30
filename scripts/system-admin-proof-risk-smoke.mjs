@@ -25,7 +25,6 @@ const { firefox } = await import(`file://${playwrightRoot}/lib/node_modules/play
 const proofPlaybackSelectionStorageKey = 'airmentor-proof-playback-selection'
 const seededProofRoute = '#/admin/faculties/academic_faculty_engineering_and_technology/departments/dept_cse/branches/branch_mnc_btech/batches/batch_branch_mnc_btech_2023'
 const seededProofBatchId = 'batch_branch_mnc_btech_2023'
-const finalCheckpointLabel = 'Post SEE'
 const proofTeacherUsername = process.env.AIRMENTOR_LIVE_TEACHER_IDENTIFIER?.trim()
   || (isLiveStack ? 'kavitha.rao' : 'devika.shetty')
 const teachingPasswordCandidates = ['faculty1234', '1234']
@@ -33,6 +32,7 @@ let proofRouteState = {
   routeHash: seededProofRoute,
   batchId: seededProofBatchId,
 }
+let targetCheckpointDescriptor = null
 const systemAdminCredentials = resolveSystemAdminLiveCredentials({
   scriptLabel: 'System admin proof-risk smoke',
 })
@@ -136,6 +136,10 @@ async function expectContainerText(container, pattern, description) {
     ? container.getByText(pattern).first()
     : container.getByText(pattern).first()
   await expectVisible(locator, description)
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 async function saveContainerScreenshot(container, filePath, description) {
@@ -556,11 +560,40 @@ function buildSeededProofRouteUrl(options = {}) {
   return `${baseUrl}${query}${proofRouteState.routeHash}`
 }
 
-function finalCheckpointButton(proofControlPlane) {
+function describeCheckpointDescriptor(checkpoint) {
+  assert(checkpoint?.simulationStageCheckpointId, 'Target checkpoint should include a simulationStageCheckpointId')
+  assert.equal(typeof checkpoint.semesterNumber, 'number', 'Target checkpoint should include a semester number')
+  assert.equal(typeof checkpoint.stageLabel, 'string', 'Target checkpoint should include a stage label')
+  return {
+    simulationStageCheckpointId: checkpoint.simulationStageCheckpointId,
+    semesterNumber: checkpoint.semesterNumber,
+    stageLabel: checkpoint.stageLabel,
+    buttonLabel: `S${checkpoint.semesterNumber} · ${checkpoint.stageLabel}`,
+    surfaceLabel: `Sem ${checkpoint.semesterNumber} · ${checkpoint.stageLabel}`,
+    bannerLabel: `semester ${checkpoint.semesterNumber} · ${checkpoint.stageLabel}`,
+  }
+}
+
+async function resolveTargetCheckpointDescriptor() {
+  const dashboard = await readProofDashboard()
+  const checkpoints = Array.isArray(dashboard.activeRunDetail?.checkpoints)
+    ? dashboard.activeRunDetail.checkpoints.slice()
+    : []
+  assert(checkpoints.length > 0, 'Proof dashboard should expose at least one checkpoint')
+  checkpoints.sort((left, right) =>
+    (left.semesterNumber - right.semesterNumber)
+    || ((left.stageOrder ?? 0) - (right.stageOrder ?? 0))
+    || left.simulationStageCheckpointId.localeCompare(right.simulationStageCheckpointId),
+  )
+  targetCheckpointDescriptor = describeCheckpointDescriptor(checkpoints.at(-1))
+  return targetCheckpointDescriptor
+}
+
+function targetCheckpointButton(proofControlPlane) {
+  assert(targetCheckpointDescriptor, 'Target checkpoint descriptor must be resolved before locating the checkpoint button')
   return proofControlPlane
-    .locator('[data-proof-action="proof-select-checkpoint"]')
-    .filter({ hasText: /Post SEE/i })
-    .last()
+    .locator(`[data-proof-action="proof-select-checkpoint"][data-proof-entity-id="${targetCheckpointDescriptor.simulationStageCheckpointId}"]`)
+    .first()
 }
 
 async function openSeededProofRoute() {
@@ -607,22 +640,29 @@ async function openSeededProofRoute() {
     await page.waitForTimeout(500)
   }
   await checkpointPlayback.waitFor({ state: 'visible', timeout: 180_000 })
-  await expectVisible(finalCheckpointButton(proofControlPlane), 'post-see checkpoint button')
+  await resolveTargetCheckpointDescriptor()
+  await expectVisible(targetCheckpointButton(proofControlPlane), 'target checkpoint button')
   return proofControlPlane
 }
 
-async function selectFinalCheckpoint(proofControlPlane) {
-  await focusAndActivate(finalCheckpointButton(proofControlPlane), 'post-see checkpoint button')
+async function selectTargetCheckpoint(proofControlPlane) {
+  assert(targetCheckpointDescriptor, 'Target checkpoint descriptor must be resolved before selecting the checkpoint')
+  await focusAndActivate(targetCheckpointButton(proofControlPlane), 'target checkpoint button')
 }
 
-async function verifyPlaybackSelectionPersisted(expectedLabel, proofControlPlane = page.locator('[data-proof-surface="system-admin-proof-control-plane"]')) {
+async function verifyPlaybackSelectionPersisted(expectedDescriptor, proofControlPlane = page.locator('[data-proof-surface="system-admin-proof-control-plane"]')) {
   const selection = await readPlaybackSelectionParsed()
   console.log(`[smoke] stored playback selection: ${JSON.stringify(selection)}`)
+  assert.equal(selection.simulationStageCheckpointId, expectedDescriptor.simulationStageCheckpointId, 'stored playback selection should keep the selected checkpoint id')
   const banner = proofControlPlane.locator('[data-proof-section="selected-checkpoint-banner"]')
   await expectVisible(banner, 'selected checkpoint banner')
   console.log(`[smoke] selected checkpoint banner: ${(await banner.textContent().catch(() => '') ?? '').replace(/\\s+/g, ' ').trim()}`)
   await expectContainerText(banner, /Selected checkpoint:/i, 'selected checkpoint summary banner')
-  await expectContainerText(banner, new RegExp(expectedLabel, 'i'), `${expectedLabel} selected checkpoint banner`)
+  await expectContainerText(
+    banner,
+    new RegExp(escapeRegExp(expectedDescriptor.bannerLabel), 'i'),
+    `${expectedDescriptor.bannerLabel} selected checkpoint banner`,
+  )
 }
 
 async function openFacultyProfileProofPanel() {
@@ -660,9 +700,9 @@ try {
 
   markStep('open-seeded-proof-route')
   const proofControlPlane = await openSeededProofRoute()
-  markStep('select-s6-semester-close')
-  await selectFinalCheckpoint(proofControlPlane)
-  await verifyPlaybackSelectionPersisted(finalCheckpointLabel, proofControlPlane)
+  markStep('select-target-checkpoint')
+  await selectTargetCheckpoint(proofControlPlane)
+  await verifyPlaybackSelectionPersisted(targetCheckpointDescriptor, proofControlPlane)
   markStep('reload-system-admin-proof-route')
   const refreshedSeededRouteUrl = buildSeededProofRouteUrl({ forceReload: true })
   console.log(`[smoke] refreshing seeded proof route: ${refreshedSeededRouteUrl}`)
@@ -672,7 +712,7 @@ try {
 
   markStep('reopen-seeded-proof-route-after-reload')
   const reloadedProofControlPlane = await openSeededProofRoute()
-  await verifyPlaybackSelectionPersisted(finalCheckpointLabel, reloadedProofControlPlane)
+  await verifyPlaybackSelectionPersisted(targetCheckpointDescriptor, reloadedProofControlPlane)
   await saveContainerScreenshot(reloadedProofControlPlane, screenshots.systemAdmin, 'system admin proof control plane')
 
   const storedSelectionAfterReload = await readPlaybackSelectionParsed()
@@ -698,7 +738,11 @@ try {
   const teacherCheckpointOverlay = teacherProofPanel.locator('[data-proof-section="checkpoint-overlay"]')
   await expectVisible(teacherCheckpointOverlay, 'teacher checkpoint overlay')
   await expectContainerText(teacherCheckpointOverlay, /Checkpoint overlay/i, 'teacher checkpoint overlay heading')
-  await expectContainerText(teacherCheckpointOverlay, /Post SEE/i, 'teacher checkpoint playback sync')
+  await expectContainerText(
+    teacherCheckpointOverlay,
+    new RegExp(escapeRegExp(targetCheckpointDescriptor.surfaceLabel), 'i'),
+    'teacher checkpoint playback sync',
+  )
   await saveContainerScreenshot(teacherProofPanel, screenshots.teacher, 'teacher proof panel')
   if (proofCoverageTarget === 'teacher') {
     console.log('[smoke] Proof coverage target=teacher; stopping after system-admin and teacher proof surfaces.')
@@ -743,7 +787,11 @@ try {
       await expectProofCheckpointIdentity(teacherRiskExplorerSurface, storedSelectionAfterReload.simulationStageCheckpointId, 'teacher risk explorer')
       await expectProofStudentIdentity(teacherRiskExplorerSurface, trackedStudentId, 'teacher risk explorer')
       await expectContainerText(teacherRiskExplorerSurface, /Student Success Profile/i, 'risk explorer hero heading')
-      await expectContainerText(teacherRiskExplorerSurface, /Sem 6 · Post SEE/i, 'risk explorer checkpoint sync')
+      await expectContainerText(
+        teacherRiskExplorerSurface,
+        new RegExp(escapeRegExp(targetCheckpointDescriptor.surfaceLabel), 'i'),
+        'risk explorer checkpoint sync',
+      )
       const advancedDiagnosticsTab = page.getByRole('tab', { name: 'Advanced Diagnostics', exact: true }).first()
       await focusAndActivate(advancedDiagnosticsTab, 'advanced diagnostics tab')
       await waitForProofHeading('Trained Risk Heads', 60_000)
@@ -754,7 +802,11 @@ try {
       const backButton = page.locator('[data-proof-action="risk-explorer-back"]').first()
       await focusAndActivate(backButton, 'risk explorer back button')
       await expectVisible(teacherProofPanel, 'teacher proof panel after returning from risk explorer')
-      await expectContainerText(teacherProofPanel, 'Post SEE', 'teacher checkpoint persistence after risk explorer return')
+      await expectContainerText(
+        teacherProofPanel,
+        new RegExp(escapeRegExp(targetCheckpointDescriptor.surfaceLabel), 'i'),
+        'teacher checkpoint persistence after risk explorer return',
+      )
 
       markStep('open-teacher-student-shell')
       const teacherStudentShellButton = teacherRiskExplorerSource.locator('[data-proof-action="teacher-proof-open-student-shell"]').first()
@@ -768,7 +820,11 @@ try {
       await expectContainerText(studentShellSurface, /Student Shell/i, 'student shell heading')
       await expectContainerText(studentShellSurface, /deterministic proof explainer/i, 'student shell subtitle')
       await waitForProofHeading('No-action comparator')
-      await expectContainerText(studentShellSurface, /Sem 6 · Post SEE/i, 'student shell checkpoint sync')
+      await expectContainerText(
+        studentShellSurface,
+        new RegExp(escapeRegExp(targetCheckpointDescriptor.surfaceLabel), 'i'),
+        'student shell checkpoint sync',
+      )
       await saveContainerScreenshot(studentShellSurface, screenshots.studentShell, 'student shell surface')
 
       const shellSelection = await readPlaybackSelectionParsed()
@@ -789,7 +845,11 @@ try {
     markStep('assert-hod-proof-analytics')
     await expectProofCheckpointIdentity(hodProofAnalytics, storedSelectionAfterReload.simulationStageCheckpointId, 'HoD proof analytics')
     await expectContainerText(hodProofAnalytics, /Live HoD Analytics/i, 'HoD heading')
-    await expectContainerText(hodProofAnalytics, /Post SEE/i, 'HoD checkpoint sync')
+    await expectContainerText(
+      hodProofAnalytics,
+      new RegExp(escapeRegExp(targetCheckpointDescriptor.surfaceLabel), 'i'),
+      'HoD checkpoint sync',
+    )
     await saveContainerScreenshot(hodProofAnalytics, screenshots.hod, 'HoD proof analytics')
 
     markStep('open-hod-student-shell')
@@ -874,7 +934,11 @@ try {
       await expectProofStudentIdentity(hodRiskExplorerSurface, hodTrackedStudentIdAfterReturn, 'HoD risk explorer')
       await expectContainerText(hodRiskExplorerSurface, /Student Success Profile/i, 'HoD risk explorer hero heading')
       await waitForProofHeading('Top Observable Drivers', 60_000)
-      await expectContainerText(hodRiskExplorerSurface, /Sem 6 · Post SEE/i, 'HoD risk explorer checkpoint sync')
+      await expectContainerText(
+        hodRiskExplorerSurface,
+        new RegExp(escapeRegExp(targetCheckpointDescriptor.surfaceLabel), 'i'),
+        'HoD risk explorer checkpoint sync',
+      )
       await saveContainerScreenshot(hodRiskExplorerSurface, screenshots.hodRiskExplorer, 'HoD risk explorer surface')
     }
   }
