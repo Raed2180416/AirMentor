@@ -5,6 +5,7 @@ import type {
 } from './api/types'
 import { T, mono, sora } from './data'
 import { describeProofAvailability, describeProofProvenance, type ProofProvenanceLike } from './proof-provenance'
+import { ProofSurfaceHero, ProofSurfaceLauncher } from './proof-surface-shell'
 import { InfoBanner, RestoreBanner } from './system-admin-ui'
 import { Btn, Card, Chip } from './ui-primitives'
 
@@ -192,36 +193,46 @@ export function SystemAdminProofDashboardWorkspace({
     : null
 
   return (
-    <Card data-proof-surface="system-admin-proof-control-plane" style={{ padding: 14, background: T.surface2, display: 'grid', gap: 14 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-        <div>
-          <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Proof Control Plane</div>
-          <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6 }}>
-            Curriculum import, crosswalk review, active run control, monitoring state, and snapshot restore all run from the backend proof shell now.
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+    <ProofSurfaceHero
+      surface="system-admin-proof-control-plane"
+      entityId={selectedProofCheckpoint?.simulationStageCheckpointId ?? activeRunDetail?.simulationRunId ?? undefined}
+      eyebrow="Proof Control Plane"
+      title="Proof Control Plane"
+      description="Curriculum import, crosswalk review, active run control, monitoring state, and snapshot restore all run from the backend proof shell now."
+      headerActions={(
+        <>
           <Btn size="sm" dataProofAction="proof-create-import" onClick={onCreateProofImport}>Create Import</Btn>
           <Btn size="sm" variant="ghost" dataProofAction="proof-validate-import" onClick={onValidateLatestProofImport} disabled={!proofDashboard?.imports.length}>Validate Import</Btn>
           <Btn size="sm" variant="ghost" dataProofAction="proof-review-crosswalks" onClick={onReviewPendingCrosswalks} disabled={!proofDashboard?.crosswalkReviewQueue.length}>Review Mappings</Btn>
           <Btn size="sm" variant="ghost" dataProofAction="proof-approve-import" onClick={onApproveLatestProofImport} disabled={!proofDashboard?.imports.length}>Approve Import</Btn>
           <Btn size="sm" dataProofAction="proof-run-rerun" onClick={onCreateProofRun} disabled={!proofDashboard?.imports.length}>Run / Rerun</Btn>
           <Btn size="sm" variant="ghost" dataProofAction="proof-recompute-risk" onClick={onRecomputeProofRunRisk} disabled={!activeRunDetail}>Recompute Risk</Btn>
-        </div>
-      </div>
-
-      {proofDashboardLoading ? <InfoBanner message="Loading proof control-plane data..." /> : null}
-      {dashboardProvenance ? <InfoBanner tone="neutral" message={describeProofProvenance(dashboardProvenance)} /> : null}
-      {dashboardProvenance ? <InfoBanner tone="neutral" message={describeProofAvailability(dashboardProvenance)} /> : null}
-      {playbackOverridesActiveSemester ? (
-        <InfoBanner
-          tone="neutral"
-          message={`Playback override active. The dashboard is pinned to Semester ${selectedProofCheckpoint?.semesterNumber} · ${selectedProofCheckpoint?.stageLabel}, while the operational semester remains Semester ${activeOperationalSemester}.`}
-        />
-      ) : null}
+        </>
+      )}
+      notices={(
+        <>
+          {proofDashboardLoading ? <InfoBanner message="Loading proof control-plane data..." /> : null}
+          {dashboardProvenance ? <InfoBanner tone="neutral" message={describeProofProvenance(dashboardProvenance)} /> : null}
+          {dashboardProvenance ? <InfoBanner tone="neutral" message={describeProofAvailability(dashboardProvenance)} /> : null}
+          {playbackOverridesActiveSemester ? (
+            <InfoBanner
+              tone="neutral"
+              message={`Playback override active. The dashboard is pinned to Semester ${selectedProofCheckpoint?.semesterNumber} · ${selectedProofCheckpoint?.stageLabel}, while the operational semester remains Semester ${activeOperationalSemester}.`}
+            />
+          ) : null}
+        </>
+      )}
+      style={{ padding: 14, background: T.surface2, gap: 14 }}
+    >
+      <ProofSurfaceLauncher
+        targetId="system-admin-proof-controls"
+        label="Jump to proof controls"
+        disabled={!activeRunDetail}
+        dataProofEntityId={selectedProofCheckpoint?.simulationStageCheckpointId ?? activeRunDetail?.simulationRunId}
+      />
 
       {activeRunDetail ? (
-        <div style={{ display: 'grid', gap: 14 }}>
+        <div id="system-admin-proof-controls" style={{ display: 'grid', gap: 14 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
             <Card style={{ padding: 12, background: T.surface }}>
               <div style={{ ...mono, fontSize: 10, color: T.dim }}>Active Run</div>
@@ -731,6 +742,6 @@ export function SystemAdminProofDashboardWorkspace({
       ) : (
         <InfoBanner message="No proof run exists for this batch yet. Create an import, approve it, then start the first run." />
       )}
-    </Card>
+    </ProofSurfaceHero>
   )
 }

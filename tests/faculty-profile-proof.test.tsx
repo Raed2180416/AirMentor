@@ -176,6 +176,9 @@ describe('FacultyProfilePage proof mode', () => {
 
     expect(markup).toContain('data-proof-section="proof-mode-authority"')
     expect(markup).toContain('Proof mode is active')
+    expect(markup).toContain('data-proof-shell="shared"')
+    expect(markup).toContain('data-proof-launcher="floating"')
+    expect(markup).toContain('data-proof-action="proof-shell-launcher"')
     expect(markup).toContain('data-proof-surface="teacher-proof-panel"')
     expect(markup).toContain('data-proof-section="proof-authority-note"')
     expect(markup).toContain('Authoritative proof panel for this faculty scope')
@@ -304,6 +307,7 @@ describe('FacultyProfilePage proof mode', () => {
       onOpenRiskExplorer: () => {},
     }))
 
+    expect(screen.getByRole('button', { name: 'Jump to teacher proof controls' })).toBeTruthy()
     fireEvent.click(screen.getAllByRole('button', { name: 'Open Student' })[0])
     expect(onOpenStudentProfile).toHaveBeenCalledWith('student_001', 'off_mc601_a')
   })

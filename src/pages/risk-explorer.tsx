@@ -4,6 +4,7 @@ import { T, mono, sora } from '../data'
 import type { Role } from '../domain'
 import type { ApiFeatureCompleteness, ApiFeatureProvenance, ApiRiskHeadDisplay, ApiStudentRiskExplorer } from '../api/types'
 import { describeProofAvailability, describeProofProvenance } from '../proof-provenance'
+import { ProofSurfaceHero, ProofSurfaceLauncher, ProofSurfaceTabPanel, ProofSurfaceTabs } from '../proof-surface-shell'
 import { Btn, Card, Chip, PageBackButton, PageShell } from '../ui-primitives'
 import { EmptyState, InfoBanner, MetricCard } from '../system-admin-ui'
 
@@ -94,36 +95,6 @@ function DriverList({
   )
 }
 
-function TabButton({
-  active,
-  onClick,
-  children,
-  proofTab,
-  ariaControls,
-}: {
-  active: boolean
-  onClick: () => void
-  children: string
-  proofTab: 'overview' | 'details' | 'advanced'
-  ariaControls: string
-}) {
-  return (
-    <Btn
-      size="sm"
-      variant={active ? 'primary' : 'ghost'}
-      onClick={onClick}
-      id={`risk-explorer-tab-${proofTab}`}
-      role="tab"
-      ariaControls={ariaControls}
-      ariaSelected={active}
-      dataProofAction="risk-explorer-tab"
-      dataProofEntityId={proofTab}
-    >
-      {children}
-    </Btn>
-  )
-}
-
 export function RiskExplorerPage({
   role,
   studentId,
@@ -196,7 +167,6 @@ export function RiskExplorerPage({
   const policyComparisonRationale = policyComparison
     ? ('policyRationale' in policyComparison ? policyComparison.policyRationale : policyComparison.rationale)
     : ''
-  const activePanelId = `risk-explorer-panel-${activeTab}`
   const trainedHeads = [
     {
       key: 'attendanceRisk',
@@ -245,20 +215,16 @@ export function RiskExplorerPage({
       <div style={{ display: 'grid', gap: 18, paddingBottom: 28 }}>
         <PageBackButton onClick={onBack} dataProofAction="risk-explorer-back" />
 
-        <Card
-          data-proof-surface="risk-explorer"
-          data-proof-entity-id={explorer.checkpointContext?.simulationStageCheckpointId ?? undefined}
-          data-proof-student-id={explorer.student.studentId}
-          style={{ padding: 20, display: 'grid', gap: 16, background: `linear-gradient(160deg, ${T.surface}, ${T.surface2})` }}
-        >
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap' }}>
-            <Activity size={22} color={T.accent} />
-            <div style={{ flex: 1, minWidth: 260 }}>
-              <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Student Success Profile</div>
-              <div style={{ ...sora, fontWeight: 800, fontSize: 24, color: T.text, marginTop: 8 }}>{explorer.student.studentName}</div>
-              <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 8, lineHeight: 1.8 }}>{explorer.disclaimer}</div>
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <ProofSurfaceHero
+          surface="risk-explorer"
+          entityId={explorer.checkpointContext?.simulationStageCheckpointId ?? undefined}
+          studentId={explorer.student.studentId}
+          eyebrow="Student Success Profile"
+          title={explorer.student.studentName}
+          description={explorer.disclaimer}
+          icon={<Activity size={22} color={T.accent} />}
+          badges={(
+            <>
               <Chip color={T.accent}>{role}</Chip>
               <Chip color={T.success}>{explorer.runContext.runLabel}</Chip>
               {explorer.modelProvenance.calibrationMethod ? <Chip color={T.orange}>{`Cal ${explorer.modelProvenance.calibrationMethod}`}</Chip> : null}
@@ -268,27 +234,32 @@ export function RiskExplorerPage({
               {explorer.checkpointContext ? <Chip color={T.orange}>{`Sem ${explorer.checkpointContext.semesterNumber} · ${explorer.checkpointContext.stageLabel}`}</Chip> : null}
               {explorer.checkpointContext?.stageAdvanceBlocked ? <Chip color={T.danger}>Stage blocked</Chip> : null}
               {explorer.trainedRiskHeads.currentRiskBand ? <Chip color={explorer.trainedRiskHeads.currentRiskBand === 'High' ? T.danger : explorer.trainedRiskHeads.currentRiskBand === 'Medium' ? T.warning : T.success}>{explorer.trainedRiskHeads.currentRiskBand}</Chip> : null}
-            </div>
-          </div>
-          <InfoBanner message={`Proof context ${explorer.runContext.runLabel} · ${explorer.runContext.status} · created ${new Date(explorer.runContext.createdAt).toLocaleString('en-IN')} · model ${explorer.modelProvenance.modelVersion ?? 'fallback'}${explorer.modelProvenance.calibrationVersion ? ` · calibration ${explorer.modelProvenance.calibrationVersion}` : ''}${explorer.checkpointContext ? ` · checkpoint ${explorer.checkpointContext.stageLabel}` : ''}.`} />
-          {explorer.modelProvenance.supportWarning ? <InfoBanner tone="neutral" message={explorer.modelProvenance.supportWarning} /> : null}
-          {featureCompleteness && !featureCompleteness.complete ? (
-            <InfoBanner
-              tone="neutral"
-              message={`Feature fallback is ${featureCompleteness.fallbackMode}. Missing: ${featureCompleteness.missing.join(' · ') || 'none'}.`}
-            />
-          ) : null}
-          {explorer.checkpointContext?.stageAdvanceBlocked ? (
-            <InfoBanner
-              tone="error"
-              message={`Playback progression is blocked at this checkpoint until ${explorer.checkpointContext.blockingQueueItemCount ?? 0} queue item(s) are resolved. This risk explorer remains read-only on the selected proof stage.`}
-            />
-          ) : null}
-          <div data-proof-section="authority-banner">
-            <InfoBanner message="Authoritative proof surface for checkpoint-bound analysis. Trained heads are proof-backed for this selected evidence window; derived scenario heads and policy comparisons remain advisory." />
-            <InfoBanner tone="neutral" message={describeProofProvenance(explorer)} />
-            <InfoBanner tone="neutral" message={describeProofAvailability(explorer)} />
-          </div>
+            </>
+          )}
+          notices={(
+            <>
+              <InfoBanner message={`Proof context ${explorer.runContext.runLabel} · ${explorer.runContext.status} · created ${new Date(explorer.runContext.createdAt).toLocaleString('en-IN')} · model ${explorer.modelProvenance.modelVersion ?? 'fallback'}${explorer.modelProvenance.calibrationVersion ? ` · calibration ${explorer.modelProvenance.calibrationVersion}` : ''}${explorer.checkpointContext ? ` · checkpoint ${explorer.checkpointContext.stageLabel}` : ''}.`} />
+              {explorer.modelProvenance.supportWarning ? <InfoBanner tone="neutral" message={explorer.modelProvenance.supportWarning} /> : null}
+              {featureCompleteness && !featureCompleteness.complete ? (
+                <InfoBanner
+                  tone="neutral"
+                  message={`Feature fallback is ${featureCompleteness.fallbackMode}. Missing: ${featureCompleteness.missing.join(' · ') || 'none'}.`}
+                />
+              ) : null}
+              {explorer.checkpointContext?.stageAdvanceBlocked ? (
+                <InfoBanner
+                  tone="error"
+                  message={`Playback progression is blocked at this checkpoint until ${explorer.checkpointContext.blockingQueueItemCount ?? 0} queue item(s) are resolved. This risk explorer remains read-only on the selected proof stage.`}
+                />
+              ) : null}
+              <div data-proof-section="authority-banner">
+                <InfoBanner message="Authoritative proof surface for checkpoint-bound analysis. Trained heads are proof-backed for this selected evidence window; derived scenario heads and policy comparisons remain advisory." />
+                <InfoBanner tone="neutral" message={describeProofProvenance(explorer)} />
+                <InfoBanner tone="neutral" message={describeProofAvailability(explorer)} />
+              </div>
+            </>
+          )}
+        >
           <Card style={{ padding: 14, display: 'grid', gap: 10, background: T.surface2 }}>
             <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Feature Completeness</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -310,17 +281,37 @@ export function RiskExplorerPage({
               {renderFeatureProvenanceValue(featureProvenance)}
             </div>
           </Card>
-        </Card>
+        </ProofSurfaceHero>
+
+        <ProofSurfaceLauncher
+          targetId="risk-explorer-proof-controls"
+          label="Jump to risk proof controls"
+          dataProofEntityId={explorer.student.studentId}
+        />
 
         {error ? <div data-proof-section="load-error"><InfoBanner tone="error" message={error} /></div> : null}
         
-        <div role="tablist" aria-label="Risk explorer sections" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', borderBottom: `1px solid ${T.surface2}`, paddingBottom: 12 }}>
-          <TabButton active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} proofTab="overview" ariaControls="risk-explorer-panel-overview">Overview</TabButton>
-          <TabButton active={activeTab === 'details'} onClick={() => setActiveTab('details')} proofTab="details" ariaControls="risk-explorer-panel-details">Assessment Details</TabButton>
-          <TabButton active={activeTab === 'advanced'} onClick={() => setActiveTab('advanced')} proofTab="advanced" ariaControls="risk-explorer-panel-advanced">Advanced Diagnostics</TabButton>
-        </div>
+        <ProofSurfaceTabs
+          controlId="risk-explorer-proof-controls"
+          idBase="risk-explorer"
+          tabs={[
+            { id: 'overview', label: 'Overview' },
+            { id: 'details', label: 'Assessment Details' },
+            { id: 'advanced', label: 'Advanced Diagnostics' },
+          ]}
+          activeTab={activeTab}
+          onChange={tabId => setActiveTab(tabId as 'overview' | 'details' | 'advanced')}
+          ariaLabel="Risk explorer sections"
+          actionName="risk-explorer-tab"
+        />
 
-        <div id={activePanelId} role="tabpanel" aria-labelledby={`risk-explorer-tab-${activeTab}`} data-proof-section={`risk-explorer-panel-${activeTab}`} style={{ display: 'grid', gap: 14 }}>
+        <ProofSurfaceTabPanel
+          idBase="risk-explorer"
+          tabId={activeTab}
+          activeTab={activeTab}
+          sectionId={`risk-explorer-panel-${activeTab}`}
+          minHeight={420}
+        >
           {activeTab === 'advanced' && (
             <>
               <Card data-proof-section="trained-risk-heads" style={{ padding: 16, display: 'grid', gap: 10 }}>
@@ -548,7 +539,7 @@ export function RiskExplorerPage({
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
           <Btn variant="ghost" dataProofAction="risk-explorer-back-bottom" onClick={onBack}>Back</Btn>
         </div>
-        </div>
+        </ProofSurfaceTabPanel>
       </div>
       </PageShell>
   )

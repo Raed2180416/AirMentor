@@ -11,6 +11,7 @@ import type {
   ApiAcademicHodProofSummary,
 } from '../api/types'
 import { describeProofAvailability, describeProofProvenance } from '../proof-provenance'
+import { ProofSurfaceHero, ProofSurfaceLauncher, ProofSurfaceTabPanel, ProofSurfaceTabs } from '../proof-surface-shell'
 import { Btn, Card, Chip, ModalWorkspace, PageShell, RiskBadge, TH, TD } from '../ui-primitives'
 import { EmptyState, InfoBanner, MetricCard, SectionHeading, formatDateTime, getStatusColor } from '../system-admin-ui'
 
@@ -87,33 +88,6 @@ function TableCard({
   )
 }
 
-function TabButton({
-  active,
-  onClick,
-  children,
-  ariaControls,
-}: {
-  active: boolean
-  onClick: () => void
-  children: string
-  ariaControls: string
-}) {
-  const tabId = children.toLowerCase().replace(/[^a-z0-9]+/g, '-')
-  return (
-    <Btn
-      size="sm"
-      variant={active ? 'primary' : 'ghost'}
-      onClick={onClick}
-      id={`hod-tab-${tabId}`}
-      role="tab"
-      ariaControls={ariaControls}
-      ariaSelected={active}
-    >
-      {children}
-    </Btn>
-  )
-}
-
 export function HodView({
   onOpenQueueHistory,
   onOpenStudentShell,
@@ -172,7 +146,6 @@ export function HodView({
     return reassessmentRows.filter(row => row.assignedToRole.toLowerCase() === 'hod' || selectedFaculty.permissions.includes(row.assignedToRole))
   }, [reassessmentRows, selectedFaculty])
   const checkpointContext = summary?.activeRunContext?.checkpointContext ?? null
-  const activePanelId = `hod-panel-${activeTab}`
 
   const filteredStudents = useMemo(() => {
     if (showActionNeededOnly) {
@@ -213,44 +186,40 @@ export function HodView({
   return (
     <PageShell size="wide">
       <div style={{ display: 'grid', gap: 18, paddingBottom: 24 }}>
-        <Card
-          data-proof-surface="hod-proof-analytics"
-          data-proof-entity-id={checkpointContext?.simulationStageCheckpointId ?? undefined}
-          style={{ padding: 20, display: 'grid', gap: 16, background: `linear-gradient(160deg, ${T.surface}, ${T.surface2})` }}
+        <ProofSurfaceHero
+          surface="hod-proof-analytics"
+          entityId={checkpointContext?.simulationStageCheckpointId ?? undefined}
+          eyebrow="Live HoD Analytics"
+          title="Department proof records for the active simulation run"
+          description="Read-only oversight view sourced from the same active proof run used by sysadmin and faculty profile. Formal academic status remains policy-derived; this surface does not expose latent-state internals."
+          icon={<Shield size={22} color={T.accent} />}
+          headerActions={<Btn size="sm" variant="ghost" onClick={onOpenQueueHistory}>Queue History</Btn>}
+          badges={(
+            <>
+              <Chip color={T.accent}>{summary.activeRunContext.batchLabel}</Chip>
+              <Chip color={T.success}>{summary.activeRunContext.branchName ?? 'Branch scope pending'}</Chip>
+              <Chip color={T.warning}>{summary.activeRunContext.status}</Chip>
+              {checkpointContext ? <Chip color={T.orange}>{`Sem ${checkpointContext.semesterNumber} · ${checkpointContext.stageLabel}`}</Chip> : null}
+              {summary.scope.departmentNames.map(name => <Chip key={name} color={T.muted}>{name}</Chip>)}
+              {summary.scope.branchNames.map(name => <Chip key={name} color={T.dim}>{name}</Chip>)}
+            </>
+          )}
+          notices={(
+            <>
+              <InfoBanner message={`Active run ${summary.activeRunContext.runLabel} · seed ${summary.activeRunContext.seed} · created ${formatDateTime(summary.activeRunContext.createdAt)} · sourced from live proof records${checkpointContext ? ` · checkpoint ${checkpointContext.stageLabel} (semester ${checkpointContext.semesterNumber})` : ''}.`} />
+              <InfoBanner tone="neutral" message={describeProofProvenance(summary)} />
+              <InfoBanner tone="neutral" message={describeProofAvailability(summary)} />
+            </>
+          )}
         >
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap' }}>
-            <Shield size={22} color={T.accent} />
-            <div style={{ flex: 1, minWidth: 260 }}>
-              <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Live HoD Analytics</div>
-              <div style={{ ...sora, fontWeight: 800, fontSize: 24, color: T.text, marginTop: 8 }}>Department proof records for the active simulation run</div>
-              <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 8, lineHeight: 1.8 }}>
-                Read-only oversight view sourced from the same active proof run used by sysadmin and faculty profile. Formal academic status remains policy-derived; this surface does not expose latent-state internals.
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginLeft: 'auto' }}>
-              <Btn size="sm" variant="ghost" onClick={onOpenQueueHistory}>Queue History</Btn>
-            </div>
-          </div>
-
-          <InfoBanner message={`Active run ${summary.activeRunContext.runLabel} · seed ${summary.activeRunContext.seed} · created ${formatDateTime(summary.activeRunContext.createdAt)} · sourced from live proof records${checkpointContext ? ` · checkpoint ${checkpointContext.stageLabel} (semester ${checkpointContext.semesterNumber})` : ''}.`} />
-          <InfoBanner tone="neutral" message={describeProofProvenance(summary)} />
-          <InfoBanner tone="neutral" message={describeProofAvailability(summary)} />
-
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <Chip color={T.accent}>{summary.activeRunContext.batchLabel}</Chip>
-            <Chip color={T.success}>{summary.activeRunContext.branchName ?? 'Branch scope pending'}</Chip>
-            <Chip color={T.warning}>{summary.activeRunContext.status}</Chip>
-            {checkpointContext ? <Chip color={T.orange}>{`Sem ${checkpointContext.semesterNumber} · ${checkpointContext.stageLabel}`}</Chip> : null}
-            {summary.scope.departmentNames.map(name => <Chip key={name} color={T.muted}>{name}</Chip>)}
-            {summary.scope.branchNames.map(name => <Chip key={name} color={T.dim}>{name}</Chip>)}
-          </div>
-
           {checkpointContext ? (
             <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
               Read-only checkpoint overlay active: {checkpointContext.stageDescription}. This HoD surface shows the same selected playback checkpoint as the teaching proof overlay{checkpointContext.stageAdvanceBlocked ? ' and respects the blocked progression state.' : ''}.
             </div>
           ) : null}
-        </Card>
+        </ProofSurfaceHero>
+
+        <ProofSurfaceLauncher targetId="hod-proof-controls" label="Jump to HoD proof controls" />
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
           <MetricCard label="Students Covered" value={String(summary.totals.studentsCovered)} helper="Students visible in the active HoD scope." />
@@ -263,14 +232,30 @@ export function HodView({
           <MetricCard label="Overload Flags" value={String(summary.facultyLoadSummary.overloadedFacultyCount)} helper="Faculty load profiles exceeding the current semester threshold." />
         </div>
 
-        <div role="tablist" aria-label="HoD proof sections" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <TabButton active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} ariaControls="hod-panel-overview">Overview</TabButton>
-          <TabButton active={activeTab === 'courses'} onClick={() => setActiveTab('courses')} ariaControls="hod-panel-courses">Course Hotspots</TabButton>
-          <TabButton active={activeTab === 'faculty'} onClick={() => setActiveTab('faculty')} ariaControls="hod-panel-faculty">Faculty Operations</TabButton>
-          <TabButton active={activeTab === 'reassessments'} onClick={() => setActiveTab('reassessments')} ariaControls="hod-panel-reassessments">Reassessment Audit</TabButton>
-        </div>
+        <ProofSurfaceTabs
+          controlId="hod-proof-controls"
+          idBase="hod"
+          tabs={[
+            { id: 'overview', label: 'Overview' },
+            { id: 'courses', label: 'Course Hotspots' },
+            { id: 'faculty', label: 'Faculty Operations' },
+            { id: 'reassessments', label: 'Reassessment Audit' },
+          ]}
+          activeTab={activeTab}
+          onChange={tabId => setActiveTab(tabId as HodTabId)}
+          ariaLabel="HoD proof sections"
+          actionName="hod-proof-tab"
+          style={{ borderBottom: 'none', paddingBottom: 0 }}
+        />
 
-        <div id={activePanelId} role="tabpanel" aria-labelledby={`hod-tab-${activeTab === 'overview' ? 'overview' : activeTab === 'courses' ? 'course-hotspots' : activeTab === 'faculty' ? 'faculty-operations' : 'reassessment-audit'}`} data-proof-section={`hod-panel-${activeTab}`} style={{ display: 'grid', gap: 16 }}>
+        <ProofSurfaceTabPanel
+          idBase="hod"
+          tabId={activeTab}
+          activeTab={activeTab}
+          sectionId={`hod-panel-${activeTab}`}
+          minHeight={420}
+          style={{ gap: 16 }}
+        >
         {activeTab === 'overview' ? (
           <div style={{ display: 'grid', gap: 16 }}>
             <SectionHeading
@@ -626,7 +611,7 @@ export function HodView({
             </table>
           </TableCard>
         ) : null}
-        </div>
+        </ProofSurfaceTabPanel>
       </div>
 
       {selectedStudent ? (

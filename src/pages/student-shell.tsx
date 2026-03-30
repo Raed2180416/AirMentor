@@ -10,6 +10,7 @@ import type {
   ApiStudentAgentTimelineItem,
 } from '../api/types'
 import { describeProofAvailability, describeProofProvenance } from '../proof-provenance'
+import { ProofSurfaceHero, ProofSurfaceLauncher, ProofSurfaceTabPanel, ProofSurfaceTabs } from '../proof-surface-shell'
 import { Btn, Card, Chip, FieldInput, PageBackButton, PageShell } from '../ui-primitives'
 import { EmptyState, InfoBanner, MetricCard } from '../system-admin-ui'
 
@@ -27,34 +28,6 @@ function PanelLabel({ label }: { label: ApiStudentAgentPanelLabel }) {
     <span style={{ ...mono, fontSize: 10, color, textTransform: 'uppercase', letterSpacing: '0.12em' }}>
       {label}
     </span>
-  )
-}
-
-function TabButton({
-  active,
-  onClick,
-  children,
-  proofTab,
-}: {
-  active: boolean
-  onClick: () => void
-  children: string
-  proofTab: StudentShellTabId
-}) {
-  return (
-    <Btn
-      size="sm"
-      variant={active ? 'primary' : 'ghost'}
-      onClick={onClick}
-      id={`student-shell-tab-${proofTab}`}
-      role="tab"
-      ariaControls={`student-shell-panel-${proofTab}`}
-      ariaSelected={active}
-      dataProofAction="student-shell-tab"
-      dataProofEntityId={proofTab}
-    >
-      {children}
-    </Btn>
   )
 }
 
@@ -240,36 +213,39 @@ export function StudentShellPage({
       <div style={{ display: 'grid', gap: 18, paddingBottom: 26 }}>
         <PageBackButton onClick={onBack} dataProofAction="student-shell-back" />
 
-        <Card
-          data-proof-surface="student-shell"
-          data-proof-entity-id={card.checkpointContext?.simulationStageCheckpointId ?? undefined}
-          data-proof-student-id={card.student.studentId}
-          style={{ padding: 20, display: 'grid', gap: 16, background: `linear-gradient(160deg, ${T.surface}, ${T.surface2})` }}
-        >
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap' }}>
-            <Shield size={22} color={T.accent} />
-            <div style={{ flex: 1, minWidth: 260 }}>
-              <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Student Shell</div>
-              <div style={{ ...sora, fontWeight: 800, fontSize: 24, color: T.text, marginTop: 8 }}>{card.student.studentName} · deterministic proof explainer</div>
-              <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 8, lineHeight: 1.8 }}>
-                {card.disclaimer}
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <ProofSurfaceHero
+          surface="student-shell"
+          entityId={card.checkpointContext?.simulationStageCheckpointId ?? undefined}
+          studentId={card.student.studentId}
+          eyebrow="Student Shell"
+          title={`${card.student.studentName} · deterministic proof explainer`}
+          description={card.disclaimer}
+          icon={<Shield size={22} color={T.accent} />}
+          badges={(
+            <>
               <Chip color={T.accent}>{role}</Chip>
               <Chip color={T.success}>{card.runContext.runLabel}</Chip>
               <Chip color={T.warning}>Seed {card.runContext.seed}</Chip>
               {card.checkpointContext ? <Chip color={T.orange}>{`Sem ${card.checkpointContext.semesterNumber} · ${card.checkpointContext.stageLabel}`}</Chip> : null}
-            </div>
-          </div>
+            </>
+          )}
+          notices={(
+            <>
+              <InfoBanner message={`Active proof context ${card.runContext.runLabel} · ${card.runContext.status} · created ${new Date(card.runContext.createdAt).toLocaleString('en-IN')} · deterministic shell mode${card.checkpointContext ? ` · checkpoint ${card.checkpointContext.stageLabel} (semester ${card.checkpointContext.semesterNumber})` : ''}.`} />
+              <div data-proof-section="authority-banner">
+                <InfoBanner message="Authoritative bounded proof explainer for the selected checkpoint. Summary, timeline, and chat all bind to this proof card only; the chat cannot override policy-derived records or disclose hidden state." />
+                <InfoBanner tone="neutral" message={describeProofProvenance(card)} />
+                <InfoBanner tone="neutral" message={describeProofAvailability(card)} />
+              </div>
+            </>
+          )}
+        />
 
-          <InfoBanner message={`Active proof context ${card.runContext.runLabel} · ${card.runContext.status} · created ${new Date(card.runContext.createdAt).toLocaleString('en-IN')} · deterministic shell mode${card.checkpointContext ? ` · checkpoint ${card.checkpointContext.stageLabel} (semester ${card.checkpointContext.semesterNumber})` : ''}.`} />
-          <div data-proof-section="authority-banner">
-            <InfoBanner message="Authoritative bounded proof explainer for the selected checkpoint. Summary, timeline, and chat all bind to this proof card only; the chat cannot override policy-derived records or disclose hidden state." />
-            <InfoBanner tone="neutral" message={describeProofProvenance(card)} />
-            <InfoBanner tone="neutral" message={describeProofAvailability(card)} />
-          </div>
-        </Card>
+        <ProofSurfaceLauncher
+          targetId="student-shell-proof-controls"
+          label="Jump to student proof controls"
+          dataProofEntityId={card.student.studentId}
+        />
 
         {error ? <div data-proof-section="load-error"><InfoBanner tone="error" message={error} /></div> : null}
 
@@ -336,23 +312,32 @@ export function StudentShellPage({
           </div>
 
           <div style={{ display: 'grid', gap: 14 }}>
-            <div role="tablist" aria-label="Student shell sections" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <TabButton active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} proofTab="overview">Overview</TabButton>
-              <TabButton active={activeTab === 'topic-co'} onClick={() => setActiveTab('topic-co')} proofTab="topic-co">Topic & CO</TabButton>
-              <TabButton active={activeTab === 'assessment'} onClick={() => setActiveTab('assessment')} proofTab="assessment">Assessment Evidence</TabButton>
-              <TabButton active={activeTab === 'interventions'} onClick={() => setActiveTab('interventions')} proofTab="interventions">Interventions</TabButton>
-              <TabButton active={activeTab === 'timeline'} onClick={() => setActiveTab('timeline')} proofTab="timeline">Timeline</TabButton>
-              <TabButton active={activeTab === 'chat'} onClick={() => setActiveTab('chat')} proofTab="chat">Shell Chat</TabButton>
-            </div>
+            <ProofSurfaceTabs
+              controlId="student-shell-proof-controls"
+              idBase="student-shell"
+              tabs={[
+                { id: 'overview', label: 'Overview' },
+                { id: 'topic-co', label: 'Topic & CO' },
+                { id: 'assessment', label: 'Assessment Evidence' },
+                { id: 'interventions', label: 'Interventions' },
+                { id: 'timeline', label: 'Timeline' },
+                { id: 'chat', label: 'Shell Chat' },
+              ]}
+              activeTab={activeTab}
+              onChange={tabId => setActiveTab(tabId as StudentShellTabId)}
+              ariaLabel="Student shell sections"
+              actionName="student-shell-tab"
+            />
 
+            <ProofSurfaceTabPanel
+              idBase="student-shell"
+              tabId={activeTab}
+              activeTab={activeTab}
+              sectionId={activeTab === 'topic-co' ? 'topic-co-panel' : `${activeTab}-panel`}
+              minHeight={420}
+            >
             {activeTab === 'overview' ? (
-              <div
-                id="student-shell-panel-overview"
-                role="tabpanel"
-                aria-labelledby="student-shell-tab-overview"
-                data-proof-section="overview-panel"
-                style={{ display: 'grid', gap: 14 }}
-              >
+              <div data-proof-section="overview-panel" style={{ display: 'grid', gap: 14 }}>
                 <Card data-proof-section="overview-observed-evidence" style={{ padding: 16, display: 'grid', gap: 10 }}>
                   <PanelLabel label={card.overview.observedLabel} />
                   <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Current observed evidence</div>
@@ -415,13 +400,7 @@ export function StudentShellPage({
             ) : null}
 
             {activeTab === 'topic-co' ? (
-              <div
-                id="student-shell-panel-topic-co"
-                role="tabpanel"
-                aria-labelledby="student-shell-tab-topic-co"
-                data-proof-section="topic-co-panel"
-                style={{ display: 'grid', gap: 14 }}
-              >
+              <div data-proof-section="topic-co-panel" style={{ display: 'grid', gap: 14 }}>
                 <Card data-proof-section="topic-buckets" style={{ padding: 16, display: 'grid', gap: 10 }}>
                   <PanelLabel label={card.topicAndCo.panelLabel} />
                   <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Topic buckets</div>
@@ -460,13 +439,7 @@ export function StudentShellPage({
             ) : null}
 
             {activeTab === 'assessment' ? (
-              <div
-                id="student-shell-panel-assessment"
-                role="tabpanel"
-                aria-labelledby="student-shell-tab-assessment"
-                data-proof-section="assessment-panel"
-                style={{ display: 'grid', gap: 14 }}
-              >
+              <div data-proof-section="assessment-panel" style={{ display: 'grid', gap: 14 }}>
                 <Card data-proof-section="assessment-evidence" style={{ padding: 16, display: 'grid', gap: 10 }}>
                   <PanelLabel label={card.assessmentEvidence.panelLabel} />
                   <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Observed course evidence</div>
@@ -499,13 +472,7 @@ export function StudentShellPage({
             ) : null}
 
             {activeTab === 'interventions' ? (
-              <div
-                id="student-shell-panel-interventions"
-                role="tabpanel"
-                aria-labelledby="student-shell-tab-interventions"
-                data-proof-section="interventions-panel"
-                style={{ display: 'grid', gap: 14 }}
-              >
+              <div data-proof-section="interventions-panel" style={{ display: 'grid', gap: 14 }}>
                 <Card data-proof-section="reassessments" style={{ padding: 16, display: 'grid', gap: 10 }}>
                   <PanelLabel label={card.interventions.panelLabel} />
                   <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Reassessments</div>
@@ -537,7 +504,7 @@ export function StudentShellPage({
             ) : null}
 
             {activeTab === 'timeline' ? (
-              <div id="student-shell-panel-timeline" role="tabpanel" aria-labelledby="student-shell-tab-timeline">
+              <div>
                 <Card data-proof-section="timeline-panel" style={{ padding: 16, display: 'grid', gap: 12 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                     <div>
@@ -570,12 +537,7 @@ export function StudentShellPage({
             ) : null}
 
             {activeTab === 'chat' ? (
-              <div
-                id="student-shell-panel-chat"
-                role="tabpanel"
-                aria-labelledby="student-shell-tab-chat"
-                style={{ display: 'grid', gap: 14 }}
-              >
+              <div style={{ display: 'grid', gap: 14 }}>
                 <Card data-proof-section="chat-panel" style={{ padding: 16, display: 'grid', gap: 12 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                     <div>
@@ -625,6 +587,7 @@ export function StudentShellPage({
                 </Card>
               </div>
             ) : null}
+            </ProofSurfaceTabPanel>
           </div>
         </div>
       </div>

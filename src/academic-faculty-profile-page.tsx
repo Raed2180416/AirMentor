@@ -10,6 +10,7 @@ import type {
   ApiAdminCalendarMarker,
 } from './api/types'
 import { describeProofAvailability, describeProofProvenance } from './proof-provenance'
+import { ProofSurfaceHero, ProofSurfaceLauncher } from './proof-surface-shell'
 import { InfoBanner, MetricCard } from './system-admin-ui'
 import {
   Btn,
@@ -268,194 +269,201 @@ export function FacultyProfilePage({
             )}
           </Card>
 
-          <Card
-            data-proof-surface="teacher-proof-panel"
-            data-proof-entity-id={selectedProofCheckpoint?.simulationStageCheckpointId ?? undefined}
-            style={{ padding: 16, display: 'grid', gap: 10 }}
-          >
-            <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Proof Control Plane</div>
-            <div data-proof-section="proof-authority-note" style={{ display: 'grid', gap: 8 }}>
-              <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
-                This panel only surfaces rerunnable proof data: active simulation runs, observed risk queue items, and elective-fit summaries. It does not expose latent-state internals.
+          <ProofSurfaceLauncher
+            targetId="teacher-proof-panel-surface"
+            label="Jump to teacher proof controls"
+            dataProofEntityId={currentTeacher.facultyId}
+          />
+          <ProofSurfaceHero
+            surface="teacher-proof-panel"
+            entityId={selectedProofCheckpoint?.simulationStageCheckpointId ?? undefined}
+            eyebrow="Proof Control Plane"
+            title="Proof Control Plane"
+            description="This panel only surfaces rerunnable proof data: active simulation runs, observed risk queue items, and elective-fit summaries. It does not expose latent-state internals."
+            notices={(
+              <div data-proof-section="proof-authority-note" style={{ display: 'grid', gap: 8 }}>
+                <InfoBanner message="Authoritative proof panel for this faculty scope. Use this card and the linked proof routes for checkpoint-bound evidence; surrounding faculty-profile cards remain operational context." />
+                {proofOps ? <InfoBanner tone="neutral" message={describeProofProvenance(proofOps)} /> : null}
               </div>
-              <InfoBanner message="Authoritative proof panel for this faculty scope. Use this card and the linked proof routes for checkpoint-bound evidence; surrounding faculty-profile cards remain operational context." />
-              {proofOps ? <InfoBanner tone="neutral" message={describeProofProvenance(proofOps)} /> : null}
-            </div>
+            )}
+          >
             {proofOps ? (
               <>
-                <Card data-proof-section="active-run-contexts" style={{ padding: 10, background: T.surface2, display: 'grid', gap: 6 }}>
-                  <div style={{ ...mono, fontSize: 10, color: T.text }}>Active run contexts</div>
-                  {proofOps.activeRunContexts.length > 0 ? proofOps.activeRunContexts.slice(0, 3).map(run => (
-                    <div key={run.simulationRunId} style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
-                      {run.batchLabel} · {run.runLabel} · {run.status} · Seed {run.seed} · Created {formatDateLabel(run.createdAt)}
-                    </div>
-                  )) : (
-                    <div style={{ ...mono, fontSize: 10, color: T.muted }}>No active run is linked to this faculty context.</div>
-                  )}
-                </Card>
-
-                {selectedProofCheckpoint ? (
-                  <Card
-                    data-proof-section="checkpoint-overlay"
-                    data-proof-entity-id={selectedProofCheckpoint.simulationStageCheckpointId}
-                    style={{ padding: 10, background: T.surface2, display: 'grid', gap: 6 }}
-                  >
-                    <div style={{ ...mono, fontSize: 10, color: T.text }}>Checkpoint overlay</div>
-                    <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
-                      Sem {selectedProofCheckpoint.semesterNumber} · {selectedProofCheckpoint.stageLabel} · {selectedProofCheckpoint.stageDescription}
-                    </div>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <Chip color={T.warning}>{`${selectedProofCheckpoint.highRiskCount ?? 0} high watch`}</Chip>
-                      <Chip color={T.accent}>{`${selectedProofCheckpoint.openQueueCount ?? 0} open queue`}</Chip>
-                      {selectedProofCheckpoint.stageAdvanceBlocked ? <Chip color={T.danger}>Stage blocked</Chip> : null}
-                      {selectedProofCheckpoint.blockedProgressionReason ? <Chip color={T.dim}>{selectedProofCheckpoint.blockedProgressionReason}</Chip> : null}
-                    </div>
+                <div style={{ display: 'grid', gap: 10, minHeight: 320, alignContent: 'start' }}>
+                  <Card data-proof-section="active-run-contexts" style={{ padding: 10, background: T.surface2, display: 'grid', gap: 6 }}>
+                    <div style={{ ...mono, fontSize: 10, color: T.text }}>Active run contexts</div>
+                    {proofOps.activeRunContexts.length > 0 ? proofOps.activeRunContexts.slice(0, 3).map(run => (
+                      <div key={run.simulationRunId} style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
+                        {run.batchLabel} · {run.runLabel} · {run.status} · Seed {run.seed} · Created {formatDateLabel(run.createdAt)}
+                      </div>
+                    )) : (
+                      <div style={{ ...mono, fontSize: 10, color: T.muted }}>No active run is linked to this faculty context.</div>
+                    )}
                   </Card>
-                ) : null}
 
-                <Card data-proof-section="monitoring-queue" style={{ padding: 10, background: T.surface2, display: 'grid', gap: 6 }}>
-                  <div style={{ ...mono, fontSize: 10, color: T.text }}>Monitoring queue</div>
-                  {proofOps.monitoringQueue.length > 0 ? proofOps.monitoringQueue.slice(0, 3).map(item => (
-                    <div key={item.riskAssessmentId} style={{ display: 'grid', gap: 8 }}>
-                      <div style={subtleDividerStyle} aria-hidden="true" />
-                      <div
-                        data-proof-row="teacher-monitoring-item"
-                        data-proof-student-id={item.studentId}
-                        style={{ display: 'grid', gap: 4 }}
-                      >
+                  {selectedProofCheckpoint ? (
+                    <Card
+                      data-proof-section="checkpoint-overlay"
+                      data-proof-entity-id={selectedProofCheckpoint.simulationStageCheckpointId}
+                      style={{ padding: 10, background: T.surface2, display: 'grid', gap: 6 }}
+                    >
+                      <div style={{ ...mono, fontSize: 10, color: T.text }}>Checkpoint overlay</div>
+                      <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
+                        Sem {selectedProofCheckpoint.semesterNumber} · {selectedProofCheckpoint.stageLabel} · {selectedProofCheckpoint.stageDescription}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <Chip color={T.warning}>{`${selectedProofCheckpoint.highRiskCount ?? 0} high watch`}</Chip>
+                        <Chip color={T.accent}>{`${selectedProofCheckpoint.openQueueCount ?? 0} open queue`}</Chip>
+                        {selectedProofCheckpoint.stageAdvanceBlocked ? <Chip color={T.danger}>Stage blocked</Chip> : null}
+                        {selectedProofCheckpoint.blockedProgressionReason ? <Chip color={T.dim}>{selectedProofCheckpoint.blockedProgressionReason}</Chip> : null}
+                      </div>
+                    </Card>
+                  ) : null}
+
+                  <Card data-proof-section="monitoring-queue" style={{ padding: 10, background: T.surface2, display: 'grid', gap: 6 }}>
+                    <div style={{ ...mono, fontSize: 10, color: T.text }}>Monitoring queue</div>
+                    {proofOps.monitoringQueue.length > 0 ? proofOps.monitoringQueue.slice(0, 3).map(item => (
+                      <div key={item.riskAssessmentId} style={{ display: 'grid', gap: 8 }}>
+                        <div style={subtleDividerStyle} aria-hidden="true" />
+                        <div
+                          data-proof-row="teacher-monitoring-item"
+                          data-proof-student-id={item.studentId}
+                          style={{ display: 'grid', gap: 4 }}
+                        >
+                          <div style={{ ...mono, fontSize: 10, color: T.text }}>
+                            {item.studentName} · {item.courseCode} · {item.riskBand} · {item.recommendedAction}
+                          </div>
+                          <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
+                            Evidence: attendance {item.observedEvidence.attendancePct}%, TT1 {item.observedEvidence.tt1Pct}%, TT2 {item.observedEvidence.tt2Pct}%, quiz {item.observedEvidence.quizPct}%, assignment {item.observedEvidence.assignmentPct}%, SEE {item.observedEvidence.seePct}%, weak COs {item.observedEvidence.weakCoCount}, weak questions {item.observedEvidence.weakQuestionCount}, CGPA {item.observedEvidence.cgpa}, backlogs {item.observedEvidence.backlogCount}.
+                          </div>
+                          {item.observedEvidence.interventionRecoveryStatus ? (
+                            <div style={{ ...mono, fontSize: 10, color: T.dim }}>
+                              Intervention recovery status: {item.observedEvidence.interventionRecoveryStatus}.
+                            </div>
+                          ) : null}
+                          {item.observedEvidence.coEvidenceMode ? (
+                            <div style={{ ...mono, fontSize: 10, color: T.dim }}>
+                              CO evidence mode: {item.observedEvidence.coEvidenceMode}.
+                            </div>
+                          ) : null}
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            {item.drivers.slice(0, 3).map(driver => (
+                              <Chip key={`${item.riskAssessmentId}-${driver.feature}`} color={driver.impact >= 0 ? T.danger : T.success}>{driver.label}</Chip>
+                            ))}
+                            {item.riskChangeFromPreviousCheckpointScaled != null ? <Chip color={item.riskChangeFromPreviousCheckpointScaled > 0 ? T.danger : item.riskChangeFromPreviousCheckpointScaled < 0 ? T.success : T.dim}>{`Δ ${item.riskChangeFromPreviousCheckpointScaled > 0 ? '+' : ''}${item.riskChangeFromPreviousCheckpointScaled}`}</Chip> : null}
+                            {item.counterfactualLiftScaled != null ? <Chip color={item.counterfactualLiftScaled > 0 ? T.success : item.counterfactualLiftScaled < 0 ? T.warning : T.dim}>{`Lift ${item.counterfactualLiftScaled > 0 ? '+' : ''}${item.counterfactualLiftScaled}`}</Chip> : null}
+                            <Btn
+                              size="sm"
+                              variant="ghost"
+                              dataProofAction="teacher-proof-open-partial-profile"
+                              dataProofEntityId={item.studentId}
+                              onClick={() => onOpenStudentProfile(item.studentId, item.offeringId)}
+                            >
+                              Open Student
+                            </Btn>
+                            <Btn
+                              size="sm"
+                              variant="ghost"
+                              dataProofAction="teacher-proof-open-risk-explorer"
+                              dataProofEntityId={item.studentId}
+                              onClick={() => onOpenRiskExplorer(item.studentId)}
+                            >
+                              Open Risk Explorer
+                            </Btn>
+                            <Btn
+                              size="sm"
+                              variant="ghost"
+                              dataProofAction="teacher-proof-open-student-shell"
+                              dataProofEntityId={item.studentId}
+                              onClick={() => onOpenStudentShell(item.studentId)}
+                            >
+                              Open Student Shell
+                            </Btn>
+                          </div>
+                        </div>
+                      </div>
+                    )) : (
+                      <div style={{ ...mono, fontSize: 10, color: T.muted }}>No governed queue items are currently linked to this profile.</div>
+                    )}
+                  </Card>
+
+                  <Card data-proof-section="elective-fit" style={{ padding: 10, background: T.surface2, display: 'grid', gap: 6 }}>
+                    <div style={{ ...mono, fontSize: 10, color: T.text }}>Semester-6 elective fit</div>
+                    {leadingElectiveFit ? (
+                      <>
                         <div style={{ ...mono, fontSize: 10, color: T.text }}>
-                          {item.studentName} · {item.courseCode} · {item.riskBand} · {item.recommendedAction}
+                          {leadingElectiveFit.studentName} · {leadingElectiveFit.recommendedCode} · {leadingElectiveFit.recommendedTitle}
                         </div>
                         <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
-                          Evidence: attendance {item.observedEvidence.attendancePct}%, TT1 {item.observedEvidence.tt1Pct}%, TT2 {item.observedEvidence.tt2Pct}%, quiz {item.observedEvidence.quizPct}%, assignment {item.observedEvidence.assignmentPct}%, SEE {item.observedEvidence.seePct}%, weak COs {item.observedEvidence.weakCoCount}, weak questions {item.observedEvidence.weakQuestionCount}, CGPA {item.observedEvidence.cgpa}, backlogs {item.observedEvidence.backlogCount}.
+                          Stream {leadingElectiveFit.stream}. Rationale: {leadingElectiveFit.rationale.slice(0, 3).join(' · ') || 'Observed performance and prerequisite fit.'}
                         </div>
-                        {item.observedEvidence.interventionRecoveryStatus ? (
-                          <div style={{ ...mono, fontSize: 10, color: T.dim }}>
-                            Intervention recovery status: {item.observedEvidence.interventionRecoveryStatus}.
+                        <div
+                          data-proof-row="teacher-elective-fit"
+                          data-proof-student-id={leadingElectiveFit.studentId}
+                          style={{ display: 'flex', justifyContent: 'flex-end' }}
+                        >
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <Btn
+                              size="sm"
+                              variant="ghost"
+                              dataProofAction="teacher-proof-open-partial-profile"
+                              dataProofEntityId={leadingElectiveFit.studentId}
+                              onClick={() => onOpenStudentProfile(leadingElectiveFit.studentId)}
+                            >
+                              Open Student
+                            </Btn>
+                            <Btn
+                              size="sm"
+                              variant="ghost"
+                              dataProofAction="teacher-proof-open-risk-explorer"
+                              dataProofEntityId={leadingElectiveFit.studentId}
+                              onClick={() => onOpenRiskExplorer(leadingElectiveFit.studentId)}
+                            >
+                              Open Risk Explorer
+                            </Btn>
+                            <Btn
+                              size="sm"
+                              variant="ghost"
+                              dataProofAction="teacher-proof-open-student-shell"
+                              dataProofEntityId={leadingElectiveFit.studentId}
+                              onClick={() => onOpenStudentShell(leadingElectiveFit.studentId)}
+                            >
+                              Open Student Shell
+                            </Btn>
+                          </div>
+                        </div>
+                        {leadingElectiveFit.alternatives.length > 0 ? (
+                          <div style={{ ...mono, fontSize: 10, color: T.muted }}>
+                            Alternatives: {leadingElectiveFit.alternatives.slice(0, 3).map(option => option.code).join(' · ')}
                           </div>
                         ) : null}
-                        {item.observedEvidence.coEvidenceMode ? (
-                          <div style={{ ...mono, fontSize: 10, color: T.dim }}>
-                            CO evidence mode: {item.observedEvidence.coEvidenceMode}.
-                          </div>
-                        ) : null}
-                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                          {item.drivers.slice(0, 3).map(driver => (
-                            <Chip key={`${item.riskAssessmentId}-${driver.feature}`} color={driver.impact >= 0 ? T.danger : T.success}>{driver.label}</Chip>
-                          ))}
-                          {item.riskChangeFromPreviousCheckpointScaled != null ? <Chip color={item.riskChangeFromPreviousCheckpointScaled > 0 ? T.danger : item.riskChangeFromPreviousCheckpointScaled < 0 ? T.success : T.dim}>{`Δ ${item.riskChangeFromPreviousCheckpointScaled > 0 ? '+' : ''}${item.riskChangeFromPreviousCheckpointScaled}`}</Chip> : null}
-                          {item.counterfactualLiftScaled != null ? <Chip color={item.counterfactualLiftScaled > 0 ? T.success : item.counterfactualLiftScaled < 0 ? T.warning : T.dim}>{`Lift ${item.counterfactualLiftScaled > 0 ? '+' : ''}${item.counterfactualLiftScaled}`}</Chip> : null}
-                          <Btn
-                            size="sm"
-                            variant="ghost"
-                            dataProofAction="teacher-proof-open-partial-profile"
-                            dataProofEntityId={item.studentId}
-                            onClick={() => onOpenStudentProfile(item.studentId, item.offeringId)}
-                          >
-                            Open Student
-                          </Btn>
-                          <Btn
-                            size="sm"
-                            variant="ghost"
-                            dataProofAction="teacher-proof-open-risk-explorer"
-                            dataProofEntityId={item.studentId}
-                            onClick={() => onOpenRiskExplorer(item.studentId)}
-                          >
-                            Open Risk Explorer
-                          </Btn>
-                          <Btn
-                            size="sm"
-                            variant="ghost"
-                            dataProofAction="teacher-proof-open-student-shell"
-                            dataProofEntityId={item.studentId}
-                            onClick={() => onOpenStudentShell(item.studentId)}
-                          >
-                            Open Student Shell
-                          </Btn>
-                        </div>
-                      </div>
+                      </>
+                    ) : (
+                      <div style={{ ...mono, fontSize: 10, color: T.muted }}>No elective recommendation is currently available for this profile.</div>
+                    )}
+                  </Card>
+
+                  {activeProofRun ? (
+                    <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                      Active proof context: {activeProofRun.batchLabel} · {activeProofRun.runLabel} · {activeProofRun.status} · {activeProofRun.branchName ?? 'Branch unavailable'}.
                     </div>
-                  )) : (
-                    <div style={{ ...mono, fontSize: 10, color: T.muted }}>No governed queue items are currently linked to this profile.</div>
-                  )}
-                </Card>
-
-                <Card data-proof-section="elective-fit" style={{ padding: 10, background: T.surface2, display: 'grid', gap: 6 }}>
-                  <div style={{ ...mono, fontSize: 10, color: T.text }}>Semester-6 elective fit</div>
-                  {leadingElectiveFit ? (
-                    <>
-                      <div style={{ ...mono, fontSize: 10, color: T.text }}>
-                        {leadingElectiveFit.studentName} · {leadingElectiveFit.recommendedCode} · {leadingElectiveFit.recommendedTitle}
-                      </div>
-                      <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
-                        Stream {leadingElectiveFit.stream}. Rationale: {leadingElectiveFit.rationale.slice(0, 3).join(' · ') || 'Observed performance and prerequisite fit.'}
-                      </div>
-                      <div
-                        data-proof-row="teacher-elective-fit"
-                        data-proof-student-id={leadingElectiveFit.studentId}
-                        style={{ display: 'flex', justifyContent: 'flex-end' }}
-                      >
-                        <div style={{ display: 'flex', gap: 8 }}>
-                          <Btn
-                            size="sm"
-                            variant="ghost"
-                            dataProofAction="teacher-proof-open-partial-profile"
-                            dataProofEntityId={leadingElectiveFit.studentId}
-                            onClick={() => onOpenStudentProfile(leadingElectiveFit.studentId)}
-                          >
-                            Open Student
-                          </Btn>
-                          <Btn
-                            size="sm"
-                            variant="ghost"
-                            dataProofAction="teacher-proof-open-risk-explorer"
-                            dataProofEntityId={leadingElectiveFit.studentId}
-                            onClick={() => onOpenRiskExplorer(leadingElectiveFit.studentId)}
-                          >
-                            Open Risk Explorer
-                          </Btn>
-                          <Btn
-                            size="sm"
-                            variant="ghost"
-                            dataProofAction="teacher-proof-open-student-shell"
-                            dataProofEntityId={leadingElectiveFit.studentId}
-                            onClick={() => onOpenStudentShell(leadingElectiveFit.studentId)}
-                          >
-                            Open Student Shell
-                          </Btn>
-                        </div>
-                      </div>
-                      {leadingElectiveFit.alternatives.length > 0 ? (
-                        <div style={{ ...mono, fontSize: 10, color: T.muted }}>
-                          Alternatives: {leadingElectiveFit.alternatives.slice(0, 3).map(option => option.code).join(' · ')}
-                        </div>
-                      ) : null}
-                    </>
-                  ) : (
-                    <div style={{ ...mono, fontSize: 10, color: T.muted }}>No elective recommendation is currently available for this profile.</div>
-                  )}
-                </Card>
-
-                {activeProofRun ? (
-                  <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
-                    Active proof context: {activeProofRun.batchLabel} · {activeProofRun.runLabel} · {activeProofRun.status} · {activeProofRun.branchName ?? 'Branch unavailable'}.
-                  </div>
-                ) : null}
-                {selectedProofCheckpoint ? (
-                  <div style={{ ...mono, fontSize: 10, color: T.dim, lineHeight: 1.8 }}>
-                    Stage overlay active: semester {selectedProofCheckpoint.semesterNumber}, {selectedProofCheckpoint.stageLabel}. This read-only view is aligned to the sysadmin playback checkpoint{selectedProofCheckpoint.stageAdvanceBlocked ? ' and is currently blocked for forward progression.' : ''}.
-                  </div>
-                ) : null}
-                {leadingProofQueueItem ? (
-                  <div style={{ ...mono, fontSize: 10, color: T.dim, lineHeight: 1.8 }}>
-                    Latest queue item: {leadingProofQueueItem.studentName} in {leadingProofQueueItem.courseCode} is marked {leadingProofQueueItem.riskBand} with a follow-up window of {leadingProofQueueItem.dueAt ? formatDateLabel(leadingProofQueueItem.dueAt) : 'unspecified'}.
-                  </div>
-                ) : null}
+                  ) : null}
+                  {selectedProofCheckpoint ? (
+                    <div style={{ ...mono, fontSize: 10, color: T.dim, lineHeight: 1.8 }}>
+                      Stage overlay active: semester {selectedProofCheckpoint.semesterNumber}, {selectedProofCheckpoint.stageLabel}. This read-only view is aligned to the sysadmin playback checkpoint{selectedProofCheckpoint.stageAdvanceBlocked ? ' and is currently blocked for forward progression.' : ''}.
+                    </div>
+                  ) : null}
+                  {leadingProofQueueItem ? (
+                    <div style={{ ...mono, fontSize: 10, color: T.dim, lineHeight: 1.8 }}>
+                      Latest queue item: {leadingProofQueueItem.studentName} in {leadingProofQueueItem.courseCode} is marked {leadingProofQueueItem.riskBand} with a follow-up window of {leadingProofQueueItem.dueAt ? formatDateLabel(leadingProofQueueItem.dueAt) : 'unspecified'}.
+                    </div>
+                  ) : null}
+                </div>
               </>
             ) : (
               <div style={{ ...mono, fontSize: 10, color: T.muted }}>No proof sandbox is attached to this faculty profile yet.</div>
             )}
-          </Card>
+          </ProofSurfaceHero>
         </div>
       </div>
     </PageShell>
