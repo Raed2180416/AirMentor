@@ -47,10 +47,18 @@ const screenshots = {
   hodRiskExplorer: path.join(outputDir, 'hod-risk-explorer-proof.png'),
   studentShell: path.join(outputDir, 'student-shell-proof.png'),
 }
+const activationArtifactStem = isLiveStack
+  ? 'system-admin-proof-semester-activation-live'
+  : 'system-admin-proof-semester-activation-local'
+const activationArtifacts = {
+  request: path.join(outputDir, `${activationArtifactStem}-request.json`),
+  response: path.join(outputDir, `${activationArtifactStem}-response.json`),
+}
 const failureScreenshot = path.join(outputDir, 'system-admin-proof-risk-smoke-failure.png')
 const failureTrace = path.join(outputDir, 'system-admin-proof-risk-smoke-failure.zip')
 const failureHtml = path.join(outputDir, 'system-admin-proof-risk-smoke-failure.html')
 let currentStep = 'launch-browser'
+let activatedProofSemesterContext = null
 
 const browser = await firefox.launch({
   headless: true,
@@ -136,6 +144,10 @@ async function expectContainerText(container, pattern, description) {
     ? container.getByText(pattern).first()
     : container.getByText(pattern).first()
   await expectVisible(locator, description)
+}
+
+async function writeJsonArtifact(filePath, payload) {
+  await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
 }
 
 function escapeRegExp(value) {
@@ -514,6 +526,109 @@ async function ensureProofRunReady() {
   return dashboard
 }
 
+async function activateProofSemesterForContract() {
+  const dashboardBefore = await ensureProofRunReady()
+  const activeRun = dashboardBefore.activeRunDetail
+  assert(activeRun?.simulationRunId, 'proof dashboard should expose an active run before semester activation')
+
+  const availableSemesters = Array.from(new Set(
+    (activeRun.checkpoints ?? [])
+      .map(item => item.semesterNumber)
+      .filter(value => Number.isFinite(value)),
+  )).sort((left, right) => left - right)
+  assert(availableSemesters.length > 0, 'proof dashboard should expose at least one operational semester before activation')
+
+  const previousOperationalSemester = activeRun.activeOperationalSemester ?? null
+  const targetOperationalSemester = availableSemesters.find(value => value === 4 && value !== previousOperationalSemester)
+    ?? availableSemesters.find(value => value !== previousOperationalSemester)
+    ?? availableSemesters[0]
+
+  assert.equal(typeof targetOperationalSemester, 'number', 'proof semester activation should resolve a target semester')
+
+  const requestPayload = {
+    simulationRunId: activeRun.simulationRunId,
+    batchId: proofRouteState.batchId,
+    availableSemesters,
+    previousOperationalSemester,
+    semesterNumber: targetOperationalSemester,
+  }
+  await writeJsonArtifact(activationArtifacts.request, requestPayload)
+
+  const responsePayload = await adminApiRequest(
+    `/api/admin/proof-runs/${encodeURIComponent(activeRun.simulationRunId)}/activate-semester`,
+    {
+      method: 'POST',
+      body: {
+        semesterNumber: targetOperationalSemester,
+      },
+    },
+  )
+  await writeJsonArtifact(activationArtifacts.response, responsePayload)
+
+  assert.equal(responsePayload.simulationRunId, activeRun.simulationRunId, 'semester activation response should target the active run')
+  assert.equal(responsePayload.batchId, proofRouteState.batchId, 'semester activation response should target the seeded proof batch')
+  assert.equal(
+    responsePayload.activeOperationalSemester,
+    targetOperationalSemester,
+    'semester activation response should surface the requested operational semester',
+  )
+
+  const dashboardAfter = await readProofDashboard()
+  assert.equal(
+    dashboardAfter.activeRunDetail?.activeOperationalSemester,
+    targetOperationalSemester,
+    'proof dashboard should expose the activated operational semester after activation',
+  )
+
+  activatedProofSemesterContext = {
+    simulationRunId: activeRun.simulationRunId,
+    batchId: proofRouteState.batchId,
+    availableSemesters,
+    previousOperationalSemester,
+    activeOperationalSemester: targetOperationalSemester,
+  }
+  console.log(`[smoke] activated proof operational semester ${targetOperationalSemester} for run ${activeRun.simulationRunId} (previous=${previousOperationalSemester ?? 'none'})`)
+  console.log(`[smoke] activation request artifact: ${activationArtifacts.request}`)
+  console.log(`[smoke] activation response artifact: ${activationArtifacts.response}`)
+  return activatedProofSemesterContext
+}
+
+async function restoreActivatedProofSemester() {
+  if (!activatedProofSemesterContext) return
+
+  const {
+    simulationRunId,
+    previousOperationalSemester,
+    activeOperationalSemester,
+    availableSemesters,
+  } = activatedProofSemesterContext
+
+  if (
+    previousOperationalSemester == null
+    || previousOperationalSemester === activeOperationalSemester
+    || !availableSemesters.includes(previousOperationalSemester)
+  ) {
+    return
+  }
+
+  await adminApiRequest(
+    `/api/admin/proof-runs/${encodeURIComponent(simulationRunId)}/activate-semester`,
+    {
+      method: 'POST',
+      body: {
+        semesterNumber: previousOperationalSemester,
+      },
+    },
+  )
+  const dashboardAfterRestore = await readProofDashboard()
+  assert.equal(
+    dashboardAfterRestore.activeRunDetail?.activeOperationalSemester,
+    previousOperationalSemester,
+    'proof dashboard should restore the prior operational semester after the contract proof',
+  )
+  console.log(`[smoke] restored proof operational semester ${previousOperationalSemester} for run ${simulationRunId}`)
+}
+
 function visibleProofSurface(name) {
   return page.locator(`[data-proof-surface="${name}"]:visible`).first()
 }
@@ -697,9 +812,27 @@ try {
   markStep('login-system-admin')
   await loginAsSystemAdmin()
   await discoverProofRouteState()
+  markStep('activate-proof-semester')
+  await activateProofSemesterForContract()
 
   markStep('open-seeded-proof-route')
   const proofControlPlane = await openSeededProofRoute()
+  if (activatedProofSemesterContext) {
+    await expectContainerText(
+      proofControlPlane,
+      new RegExp(`Semester ${activatedProofSemesterContext.activeOperationalSemester}\\b`, 'i'),
+      'activated operational semester',
+    )
+    const activeSemesterButton = proofControlPlane.locator(
+      `[data-proof-action="proof-activate-semester-${activatedProofSemesterContext.activeOperationalSemester}"]`,
+    ).first()
+    await expectVisible(activeSemesterButton, 'activated operational semester button')
+    assert.equal(
+      await activeSemesterButton.isDisabled(),
+      true,
+      'the activated operational semester button should be disabled after activation',
+    )
+  }
   markStep('select-target-checkpoint')
   await selectTargetCheckpoint(proofControlPlane)
   await verifyPlaybackSelectionPersisted(targetCheckpointDescriptor, proofControlPlane)
@@ -713,9 +846,22 @@ try {
   markStep('reopen-seeded-proof-route-after-reload')
   const reloadedProofControlPlane = await openSeededProofRoute()
   await verifyPlaybackSelectionPersisted(targetCheckpointDescriptor, reloadedProofControlPlane)
+  if (
+    activatedProofSemesterContext
+    && targetCheckpointDescriptor
+    && targetCheckpointDescriptor.semesterNumber !== activatedProofSemesterContext.activeOperationalSemester
+  ) {
+    await expectContainerText(
+      reloadedProofControlPlane,
+      new RegExp(`operational semester remains Semester ${activatedProofSemesterContext.activeOperationalSemester}`, 'i'),
+      'activated operational semester override banner',
+    )
+  }
   await saveContainerScreenshot(reloadedProofControlPlane, screenshots.systemAdmin, 'system admin proof control plane')
 
   const storedSelectionAfterReload = await readPlaybackSelectionParsed()
+  markStep('restore-proof-semester')
+  await restoreActivatedProofSemester()
 
   markStep('logout-system-admin')
   await page.getByRole('button', { name: 'Logout', exact: true }).click()
@@ -948,6 +1094,9 @@ try {
   for (const [label, screenshotPath] of Object.entries(screenshots)) {
     console.log(`- ${label}: ${screenshotPath}`)
   }
+  console.log('Semester activation artifacts:')
+  console.log(`- request: ${activationArtifacts.request}`)
+  console.log(`- response: ${activationArtifacts.response}`)
   await context.tracing.stop()
 } catch (error) {
   try {

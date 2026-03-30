@@ -98,6 +98,43 @@ const activateSemesterSchema = z.object({
   ]),
 })
 
+const activateSemesterBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['semesterNumber'],
+  properties: {
+    semesterNumber: {
+      type: 'integer',
+      enum: [1, 2, 3, 4, 5, 6],
+    },
+  },
+} as const
+
+const activateSemesterResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['ok', 'simulationRunId', 'batchId', 'activeOperationalSemester', 'previousOperationalSemester'],
+  properties: {
+    ok: {
+      type: 'boolean',
+      enum: [true],
+    },
+    simulationRunId: {
+      type: 'string',
+    },
+    batchId: {
+      type: 'string',
+    },
+    activeOperationalSemester: {
+      type: 'integer',
+    },
+    previousOperationalSemester: {
+      type: 'integer',
+      nullable: true,
+    },
+  },
+} as const
+
 const proofModelQuerySchema = z.object({
   batchId: z.string().min(1).optional().default(MSRUAS_PROOF_BATCH_ID),
   simulationRunId: z.string().min(1).optional(),
@@ -331,7 +368,14 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
   })
 
   app.post('/api/admin/proof-runs/:simulationRunId/activate-semester', {
-    schema: { tags: ['admin-proof'], summary: 'Activate the operational semester for a proof simulation run' },
+    schema: {
+      tags: ['admin-proof'],
+      summary: 'Activate the operational semester for a proof simulation run',
+      body: activateSemesterBodySchema,
+      response: {
+        200: activateSemesterResponseSchema,
+      },
+    },
   }, async request => {
     const auth = requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(runParamsSchema, request.params)
