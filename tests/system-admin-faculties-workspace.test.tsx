@@ -464,14 +464,83 @@ function renderWorkspace(universityTab: 'overview' | 'bands' | 'courses' | 'prov
     universityWorkspacePaneRef: createRef(),
     stickyShadow: 'none',
     activeBatchPolicyOverride: null,
-    activeGovernanceScope: { scopeType: 'section', label: 'Section A' },
-    resolvedBatchPolicy: null,
-    resolvedStagePolicy: null,
-    activeScopePolicyOverride: null,
-    activeScopeStageOverride: null,
-    governanceScopeSummary: 'Section scope',
-    policyOverrideTrail: 'Institution defaults only',
-    stageOverrideTrail: 'Institution defaults only',
+    activeScopeChain: [
+      { scopeType: 'institution', scopeId: 'inst_1', label: 'AirMentor University' },
+      { scopeType: 'academic-faculty', scopeId: 'af_1', label: 'Engineering' },
+      { scopeType: 'department', scopeId: 'dept_1', label: 'Computer Science' },
+      { scopeType: 'branch', scopeId: 'branch_1', label: 'Computer Science and Engineering' },
+      { scopeType: 'batch', scopeId: 'batch_2022', label: 'Batch 2022' },
+      { scopeType: 'section', scopeId: 'batch_2022::A', label: 'Section A' },
+    ],
+    activeGovernanceScope: { scopeType: 'section', scopeId: 'batch_2022::A', label: 'Section A' },
+    resolvedBatchPolicy: {
+      scopeDescriptor: {
+        scopeType: 'section',
+        scopeId: 'batch_2022::A',
+        label: 'Section A',
+        batchId: 'batch_2022',
+        sectionCode: 'A',
+        branchName: 'Computer Science and Engineering',
+        simulationRunId: null,
+        simulationStageCheckpointId: null,
+        studentId: null,
+      },
+      resolvedFrom: {
+        kind: 'policy-override',
+        scopeType: 'section',
+        scopeId: 'batch_2022::A',
+        label: 'Section A override',
+      },
+      scopeMode: 'section',
+      appliedOverrides: [
+        { scopeType: 'batch', scopeId: 'batch_2022' },
+        { scopeType: 'section', scopeId: 'batch_2022::A' },
+      ],
+    },
+    resolvedStagePolicy: {
+      scopeDescriptor: {
+        scopeType: 'section',
+        scopeId: 'batch_2022::A',
+        label: 'Section A',
+        batchId: 'batch_2022',
+        sectionCode: 'A',
+        branchName: 'Computer Science and Engineering',
+        simulationRunId: null,
+        simulationStageCheckpointId: null,
+        studentId: null,
+      },
+      resolvedFrom: {
+        kind: 'policy-override',
+        scopeType: 'section',
+        scopeId: 'batch_2022::A',
+        label: 'Section A stage override',
+      },
+      scopeMode: 'section',
+      appliedOverrides: [
+        { scopeType: 'batch', scopeId: 'batch_2022' },
+        { scopeType: 'section', scopeId: 'batch_2022::A' },
+      ],
+    },
+    activeScopePolicyOverride: {
+      policyOverrideId: 'policy_section',
+      scopeType: 'section',
+      scopeId: 'batch_2022::A',
+      policy: {},
+      status: 'active',
+      version: 1,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    },
+    activeScopeStageOverride: {
+      stagePolicyOverrideId: 'stage_policy_section',
+      scopeType: 'section',
+      scopeId: 'batch_2022::A',
+      policy: { stages: [] },
+      status: 'active',
+      version: 1,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    },
     policyForm: makePolicyForm(),
     setPolicyForm: () => {},
     stagePolicyForm: makeStagePolicyForm(),
@@ -569,6 +638,10 @@ describe('system-admin faculties workspace parity', () => {
 
     expect(markup).toContain('Academic Bands')
     expect(markup).toContain('Save Scope Governance')
+    expect(markup).toContain('Scope Section A')
+    expect(markup).toContain('Resolved from Section A override')
+    expect(markup).toContain('Effective policy resolves from Section A override')
+    expect(markup).toContain('fall back to Batch 2022 override')
     expect(markup).not.toContain('Governance controls remain in this workspace')
     expect(markup).not.toContain('The stage policy block is intentionally unchanged while the workspace is extracted.')
   })
@@ -580,6 +653,9 @@ describe('system-admin faculties workspace parity', () => {
     expect(markup).toContain('Pre TT1')
     expect(markup).toContain('Save Stage Policy')
     expect(markup).toContain('Reset To Inherited Stage Policy')
+    expect(markup).toContain('Resolved from Section A stage override')
+    expect(markup).toContain('Effective stage policy resolves from Section A stage override')
+    expect(markup).toContain('fall back to Batch 2022 override')
     expect(markup).not.toContain('The stage policy block is intentionally unchanged while the workspace is extracted.')
   })
 

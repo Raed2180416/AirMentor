@@ -42,6 +42,8 @@ import type {
   ApiDepartment,
   ApiFacultyRecord,
   ApiPolicyOverride,
+  ApiResolvedBatchPolicy,
+  ApiResolvedBatchStagePolicy,
   ApiScopeType,
   ApiStageEvidenceKind,
   ApiStagePolicyOverride,
@@ -141,9 +143,121 @@ type HierarchyWorkspaceTabOption = {
   icon: ReactNode
 }
 
-export function describeGovernanceResolutionMessage(activeGovernanceScope: WorkspaceMetaScope | null) {
-  const resolvedScopeType = activeGovernanceScope?.scopeType ?? 'institution'
-  return `Resolved from ${formatScopeTypeLabel(resolvedScopeType)} scope. Applied overrides inherit through the active hierarchy chain, ending at ${formatScopeTypeLabel(resolvedScopeType).toLowerCase()}.`
+type GovernanceResolvedLineage = {
+  scopeDescriptor: ApiResolvedBatchPolicy['scopeDescriptor']
+  resolvedFrom: ApiResolvedBatchPolicy['resolvedFrom']
+  scopeMode: ApiResolvedBatchPolicy['scopeMode']
+  appliedOverrides: Array<{ scopeType: ApiScopeType; scopeId: string }>
+}
+
+type GovernanceSubject = 'policy' | 'stage policy'
+
+function formatScopeModeLabel(scopeMode: ApiScopeType | 'proof') {
+  if (scopeMode === 'proof') return 'Proof'
+  return formatScopeTypeLabel(scopeMode)
+}
+
+function getInstitutionDefaultsLabel(activeScopeChain: WorkspaceMetaScope[]) {
+  const institutionScope = activeScopeChain.find(scope => scope.scopeType === 'institution')
+  return institutionScope ? `${institutionScope.label} defaults` : 'Institution defaults'
+}
+
+function getScopeLabelFromChain(
+  scopeType: ApiScopeType | 'proof' | 'student',
+  scopeId: string,
+  activeScopeChain: WorkspaceMetaScope[],
+) {
+  const match = activeScopeChain.find(scope => scope.scopeType === scopeType && scope.scopeId === scopeId)
+  if (match) return match.label
+  if (scopeType === 'proof') return 'Proof'
+  if (scopeType === 'student') return `Student ${scopeId}`
+  if (scopeType === 'section') {
+    const sectionCode = scopeId.split('::').at(-1) ?? scopeId
+    return `Section ${sectionCode}`
+  }
+  return `${formatScopeTypeLabel(scopeType)} ${scopeId}`
+}
+
+function describeResolvedFromLabel(
+  resolved: GovernanceResolvedLineage | null,
+  activeScopeChain: WorkspaceMetaScope[],
+) {
+  if (!resolved) return 'authoritative lineage is loading'
+  const explicitLabel = resolved.resolvedFrom.label.trim()
+  if (explicitLabel) return explicitLabel
+  if (resolved.resolvedFrom.scopeType && resolved.resolvedFrom.scopeId) {
+    return `${getScopeLabelFromChain(resolved.resolvedFrom.scopeType, resolved.resolvedFrom.scopeId, activeScopeChain)} override`
+  }
+  return getInstitutionDefaultsLabel(activeScopeChain)
+}
+
+function buildGovernanceLineageTrail(
+  resolved: GovernanceResolvedLineage | null,
+  activeScopeChain: WorkspaceMetaScope[],
+) {
+  const lineage = [getInstitutionDefaultsLabel(activeScopeChain)]
+  if (!resolved) return lineage.join(' -> ')
+  for (const applied of resolved.appliedOverrides) {
+    lineage.push(getScopeLabelFromChain(applied.scopeType, applied.scopeId, activeScopeChain))
+  }
+  return lineage.join(' -> ')
+}
+
+function describeRollbackTargetLabel(
+  resolved: GovernanceResolvedLineage | null,
+  activeGovernanceScope: WorkspaceMetaScope | null,
+  activeScopeChain: WorkspaceMetaScope[],
+) {
+  if (!resolved || !activeGovernanceScope) return getInstitutionDefaultsLabel(activeScopeChain)
+  const fallbackOverride = [...resolved.appliedOverrides].reverse().find(applied => (
+    applied.scopeType !== activeGovernanceScope.scopeType || applied.scopeId !== activeGovernanceScope.scopeId
+  ))
+  return fallbackOverride
+    ? `${getScopeLabelFromChain(fallbackOverride.scopeType, fallbackOverride.scopeId, activeScopeChain)} override`
+    : getInstitutionDefaultsLabel(activeScopeChain)
+}
+
+export function describeGovernanceResolutionMessage({
+  activeGovernanceScope,
+  activeScopeChain,
+  resolved,
+  subject,
+}: {
+  activeGovernanceScope: WorkspaceMetaScope | null
+  activeScopeChain: WorkspaceMetaScope[]
+  resolved: GovernanceResolvedLineage | null
+  subject: GovernanceSubject
+}) {
+  if (!resolved) {
+    const resolvedScopeType = activeGovernanceScope?.scopeType ?? 'institution'
+    return `Resolved lineage is loading for ${formatScopeTypeLabel(resolvedScopeType).toLowerCase()} ${activeGovernanceScope?.label ?? 'defaults'}.`
+  }
+  return `Scope ${resolved.scopeDescriptor.label} is running in ${formatScopeModeLabel(resolved.scopeMode)} mode. Effective ${subject} resolves from ${describeResolvedFromLabel(resolved, activeScopeChain)}. Lineage: ${buildGovernanceLineageTrail(resolved, activeScopeChain)}.`
+}
+
+export function describeGovernanceRollbackMessage({
+  activeGovernanceScope,
+  activeScopeChain,
+  hasLocalOverride,
+  resolved,
+  subject,
+}: {
+  activeGovernanceScope: WorkspaceMetaScope | null
+  activeScopeChain: WorkspaceMetaScope[]
+  hasLocalOverride: boolean
+  resolved: GovernanceResolvedLineage | null
+  subject: GovernanceSubject
+}) {
+  const scopeLabel = resolved?.scopeDescriptor.label ?? activeGovernanceScope?.label ?? 'the active scope'
+  if (!resolved) {
+    return hasLocalOverride
+      ? `Reset will archive the local ${subject} override at ${scopeLabel}. Authoritative fallback lineage is still loading.`
+      : `${scopeLabel} is already inheriting. Authoritative lineage is still loading.`
+  }
+  if (!hasLocalOverride) {
+    return `${scopeLabel} is already inheriting from ${describeResolvedFromLabel(resolved, activeScopeChain)}.`
+  }
+  return `Reset will archive the local ${subject} override at ${scopeLabel} and fall back to ${describeRollbackTargetLabel(resolved, activeGovernanceScope, activeScopeChain)}.`
 }
 
 const STAGE_EVIDENCE_OPTIONS: ApiStageEvidenceKind[] = ['attendance', 'tt1', 'tt2', 'quiz', 'assignment', 'finals', 'transcript']
@@ -269,12 +383,12 @@ type SystemAdminFacultiesWorkspaceProps = {
   universityWorkspacePaneRef: RefObject<HTMLDivElement | null>
   stickyShadow: string
   activeBatchPolicyOverride: ApiPolicyOverride | null
+  activeScopeChain: WorkspaceMetaScope[]
   activeGovernanceScope: WorkspaceMetaScope | null
+  resolvedBatchPolicy: ApiResolvedBatchPolicy | null
+  resolvedStagePolicy: ApiResolvedBatchStagePolicy | null
   activeScopePolicyOverride: ApiPolicyOverride | null
   activeScopeStageOverride: ApiStagePolicyOverride | null
-  governanceScopeSummary: string
-  policyOverrideTrail: string
-  stageOverrideTrail: string
   policyForm: PolicyFormState
   setPolicyForm: Dispatch<SetStateAction<PolicyFormState>>
   stagePolicyForm: StagePolicyFormState
@@ -390,12 +504,12 @@ export function SystemAdminFacultiesWorkspace({
   universityWorkspacePaneRef,
   stickyShadow,
   activeBatchPolicyOverride,
+  activeScopeChain,
   activeGovernanceScope,
+  resolvedBatchPolicy,
+  resolvedStagePolicy,
   activeScopePolicyOverride,
   activeScopeStageOverride,
-  governanceScopeSummary,
-  policyOverrideTrail,
-  stageOverrideTrail,
   policyForm,
   setPolicyForm,
   stagePolicyForm,
@@ -656,19 +770,63 @@ export function SystemAdminFacultiesWorkspace({
     : null
   const selectedCurriculumSemesterEntry = curriculumSemesterEntries.find(entry => String(entry.semesterNumber) === selectedCurriculumSemester) ?? null
   const selectedCurriculumSemesterCourses = selectedCurriculumSemesterEntry?.courses ?? []
+  const policyScopeChipLabel = resolvedBatchPolicy?.scopeDescriptor.label ?? activeGovernanceScope?.label ?? 'Institution defaults'
+  const stagePolicyScopeChipLabel = resolvedStagePolicy?.scopeDescriptor.label ?? activeGovernanceScope?.label ?? 'Institution defaults'
+  const policyResolvedFromChipLabel = describeResolvedFromLabel(resolvedBatchPolicy, activeScopeChain)
+  const stagePolicyResolvedFromChipLabel = describeResolvedFromLabel(resolvedStagePolicy, activeScopeChain)
   const policyStatusChips = (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
       <Chip color={activeScopePolicyOverride ? T.orange : T.dim}>{activeScopePolicyOverride ? 'Local override active' : 'Inherited policy'}</Chip>
-      <Chip color={T.accent}>{governanceScopeSummary}</Chip>
-      <Chip color={T.warning}>{policyOverrideTrail}</Chip>
+      <Chip color={T.accent}>{`Scope ${policyScopeChipLabel}`}</Chip>
+      <Chip color={T.warning}>{`Resolved from ${policyResolvedFromChipLabel}`}</Chip>
+      <Chip color={T.success}>{`${formatScopeModeLabel(resolvedBatchPolicy?.scopeMode ?? activeGovernanceScope?.scopeType ?? 'institution')} mode`}</Chip>
     </div>
   )
   const stagePolicyStatusChips = (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
       <Chip color={activeScopeStageOverride ? T.orange : T.dim}>{activeScopeStageOverride ? 'Local stage override active' : 'Inherited stage policy'}</Chip>
-      <Chip color={T.accent}>{governanceScopeSummary}</Chip>
-      <Chip color={T.warning}>{stageOverrideTrail}</Chip>
+      <Chip color={T.accent}>{`Scope ${stagePolicyScopeChipLabel}`}</Chip>
+      <Chip color={T.warning}>{`Resolved from ${stagePolicyResolvedFromChipLabel}`}</Chip>
+      <Chip color={T.success}>{`${formatScopeModeLabel(resolvedStagePolicy?.scopeMode ?? activeGovernanceScope?.scopeType ?? 'institution')} mode`}</Chip>
     </div>
+  )
+  const policyLineageNotices = (
+    <>
+      <InfoBanner message={describeGovernanceResolutionMessage({
+        activeGovernanceScope,
+        activeScopeChain,
+        resolved: resolvedBatchPolicy,
+        subject: 'policy',
+      })}
+      />
+      <InfoBanner message={describeGovernanceRollbackMessage({
+        activeGovernanceScope,
+        activeScopeChain,
+        hasLocalOverride: !!activeScopePolicyOverride,
+        resolved: resolvedBatchPolicy,
+        subject: 'policy',
+      })}
+      />
+    </>
+  )
+  const stagePolicyLineageNotices = (
+    <>
+      <InfoBanner message={describeGovernanceResolutionMessage({
+        activeGovernanceScope,
+        activeScopeChain,
+        resolved: resolvedStagePolicy,
+        subject: 'stage policy',
+      })}
+      />
+      <InfoBanner message={describeGovernanceRollbackMessage({
+        activeGovernanceScope,
+        activeScopeChain,
+        hasLocalOverride: !!activeScopeStageOverride,
+        resolved: resolvedStagePolicy,
+        subject: 'stage policy',
+      })}
+      />
+    </>
   )
   const policyActions = (
     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -686,7 +844,7 @@ export function SystemAdminFacultiesWorkspace({
     <Card style={{ padding: 18, display: 'grid', gap: 16 }}>
       <SectionHeading title="Academic Bands" eyebrow="Evaluation" caption={`Resolved grade bands for ${activeGovernanceScope?.label ?? 'the active scope'}. Save here to create or update the local override at this exact scope.`} />
       {policyStatusChips}
-      <InfoBanner message={describeGovernanceResolutionMessage(activeGovernanceScope)} />
+      {policyLineageNotices}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
         <LabeledField label="O minimum"><TextInput value={policyForm.oMin} onChange={event => setPolicyForm(prev => ({ ...prev, oMin: event.target.value }))} /></LabeledField>
         <LabeledField label="A+ minimum"><TextInput value={policyForm.aPlusMin} onChange={event => setPolicyForm(prev => ({ ...prev, aPlusMin: event.target.value }))} /></LabeledField>
@@ -706,6 +864,7 @@ export function SystemAdminFacultiesWorkspace({
     <Card style={{ padding: 18, display: 'grid', gap: 16 }}>
       <SectionHeading title="CE / SEE Split" eyebrow="Assessment" caption={`Configure the CE/SEE split, component caps, attendance, condonation, and working calendar at ${activeGovernanceScope?.label ?? 'the active scope'}.`} />
       {policyStatusChips}
+      {policyLineageNotices}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
         <LabeledField label="CE"><TextInput value={policyForm.ce} onChange={event => setPolicyForm(prev => ({ ...prev, ce: event.target.value }))} /></LabeledField>
         <LabeledField label="SEE"><TextInput value={policyForm.see} onChange={event => setPolicyForm(prev => ({ ...prev, see: event.target.value }))} /></LabeledField>
@@ -762,6 +921,7 @@ export function SystemAdminFacultiesWorkspace({
     <Card style={{ padding: 18, display: 'grid', gap: 16 }}>
       <SectionHeading title="CGPA And Progression" eyebrow="Rules" caption={`Configure pass thresholds, rounding, repeat handling, progression, and risk thresholds for ${activeGovernanceScope?.label ?? 'the active scope'}.`} />
       {policyStatusChips}
+      {policyLineageNotices}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
         <LabeledField label="Minimum CE mark"><TextInput value={policyForm.minimumCeMark} onChange={event => setPolicyForm(prev => ({ ...prev, minimumCeMark: event.target.value }))} /></LabeledField>
         <LabeledField label="Minimum SEE mark"><TextInput value={policyForm.minimumSeeMark} onChange={event => setPolicyForm(prev => ({ ...prev, minimumSeeMark: event.target.value }))} /></LabeledField>
@@ -803,7 +963,7 @@ export function SystemAdminFacultiesWorkspace({
     <Card style={{ padding: 18, display: 'grid', gap: 16 }}>
       <SectionHeading title="Stage Policy" eyebrow="Lifecycle" caption={`Configure inherited class-stage gates at ${activeGovernanceScope?.label ?? 'the active scope'}.`} />
       {stagePolicyStatusChips}
-      <InfoBanner message="Stage gates are now edited directly from the extracted faculties workspace. Save to apply the current scope, or reset to inherit from the next resolved layer." />
+      {stagePolicyLineageNotices}
       <div style={{ display: 'grid', gap: 12 }}>
         {stagePolicyForm.stages.map((stage, index) => (
           <Card key={stage.key} style={{ padding: 14, background: T.surface2, display: 'grid', gap: 12 }}>
@@ -1276,7 +1436,13 @@ export function SystemAdminFacultiesWorkspace({
             <Btn type="button" size="sm" onClick={() => setEditingEntity('batch' as never)}>Edit Batch</Btn>
           </div>
 
-          <InfoBanner message={describeGovernanceResolutionMessage(activeGovernanceScope)} />
+          <InfoBanner message={describeGovernanceResolutionMessage({
+            activeGovernanceScope,
+            activeScopeChain,
+            resolved: resolvedBatchPolicy,
+            subject: 'policy',
+          })}
+          />
 
           <SystemAdminProofDashboardWorkspace {...proofDashboardProps} />
 

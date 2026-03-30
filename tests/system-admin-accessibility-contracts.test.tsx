@@ -9,6 +9,7 @@ import {
   getAdminWorkspaceSnapshotKey,
 } from '../src/system-admin-live-app'
 import {
+  describeGovernanceRollbackMessage,
   describeGovernanceResolutionMessage,
   SystemAdminHierarchyWorkspaceTabs,
 } from '../src/system-admin-faculties-workspace'
@@ -141,8 +142,89 @@ describe('system-admin accessibility contracts', () => {
   })
 
   it('describes governance inheritance with section-aware wording', () => {
-    expect(describeGovernanceResolutionMessage({ scopeType: 'section', scopeId: 'batch_2022::A', label: 'Section A' })).toBe(
-      'Resolved from Section scope. Applied overrides inherit through the active hierarchy chain, ending at section.',
+    const scopeChain = buildAdminActiveScopeChain({
+      institution,
+      academicFaculty,
+      department,
+      branch,
+      batch,
+      sectionCode: 'A',
+    })
+
+    expect(describeGovernanceResolutionMessage({
+      activeGovernanceScope: scopeChain.at(-1) ?? null,
+      activeScopeChain: scopeChain,
+      resolved: {
+        scopeDescriptor: {
+          scopeType: 'section',
+          scopeId: 'batch_2022::A',
+          label: 'Section A',
+          batchId: batch.batchId,
+          sectionCode: 'A',
+          branchName: branch.name,
+          simulationRunId: null,
+          simulationStageCheckpointId: null,
+          studentId: null,
+        },
+        resolvedFrom: {
+          kind: 'policy-override',
+          scopeType: 'batch',
+          scopeId: batch.batchId,
+          label: 'Batch 2022 override',
+        },
+        scopeMode: 'section',
+        appliedOverrides: [
+          { scopeType: 'batch', scopeId: batch.batchId },
+          { scopeType: 'section', scopeId: buildAdminSectionScopeId(batch.batchId, 'A') },
+        ],
+      },
+      subject: 'policy',
+    })).toBe(
+      'Scope Section A is running in Section mode. Effective policy resolves from Batch 2022 override. Lineage: AirMentor University defaults -> Batch 2022 -> Section A.',
+    )
+  })
+
+  it('describes rollback targets with section-aware lineage', () => {
+    const scopeChain = buildAdminActiveScopeChain({
+      institution,
+      academicFaculty,
+      department,
+      branch,
+      batch,
+      sectionCode: 'A',
+    })
+
+    expect(describeGovernanceRollbackMessage({
+      activeGovernanceScope: scopeChain.at(-1) ?? null,
+      activeScopeChain: scopeChain,
+      hasLocalOverride: true,
+      resolved: {
+        scopeDescriptor: {
+          scopeType: 'section',
+          scopeId: 'batch_2022::A',
+          label: 'Section A',
+          batchId: batch.batchId,
+          sectionCode: 'A',
+          branchName: branch.name,
+          simulationRunId: null,
+          simulationStageCheckpointId: null,
+          studentId: null,
+        },
+        resolvedFrom: {
+          kind: 'policy-override',
+          scopeType: 'section',
+          scopeId: buildAdminSectionScopeId(batch.batchId, 'A'),
+          label: 'Section A override',
+        },
+        scopeMode: 'section',
+        appliedOverrides: [
+          { scopeType: 'batch', scopeId: batch.batchId },
+          { scopeType: 'section', scopeId: buildAdminSectionScopeId(batch.batchId, 'A') },
+        ],
+      },
+      subject: 'policy',
+    })).toBe(
+      'Reset will archive the local policy override at Section A and fall back to Batch 2022 override.',
     )
   })
 

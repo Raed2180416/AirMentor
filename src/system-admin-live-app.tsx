@@ -141,7 +141,10 @@ import { applyThemePreset, isLightTheme } from './theme'
 import { clearProofPlaybackSelection, readProofPlaybackSelection, writeProofPlaybackSelection } from './proof-playback'
 import { emitClientOperationalEvent, normalizeClientTelemetryError } from './telemetry'
 import { SystemAdminFacultyCalendarWorkspace } from './system-admin-faculty-calendar-workspace'
-import { SystemAdminFacultiesWorkspace } from './system-admin-faculties-workspace'
+import {
+  describeGovernanceRollbackMessage,
+  SystemAdminFacultiesWorkspace,
+} from './system-admin-faculties-workspace'
 import { SystemAdminHistoryWorkspace } from './system-admin-history-workspace'
 import { SystemAdminRequestWorkspace } from './system-admin-request-workspace'
 import { SystemAdminSessionBoundary } from './system-admin-session-shell'
@@ -1325,25 +1328,6 @@ export function getAdminWorkspaceSnapshotKey(snapshot: Omit<AdminWorkspaceSnapsh
 }
 
 // matchesStudentScope, matchesFacultyScope, and matchesOfferingScope are now imported from './system-admin-overview-helpers'
-
-function formatScopeTypeLabel(scopeType: ApiScopeType) {
-  switch (scopeType) {
-    case 'institution':
-      return 'Institution'
-    case 'academic-faculty':
-      return 'Faculty'
-    case 'department':
-      return 'Department'
-    case 'branch':
-      return 'Branch'
-    case 'batch':
-      return 'Batch'
-    case 'section':
-      return 'Section'
-    default:
-      return scopeType
-  }
-}
 
 function matchesBatchScope(batch: LiveAdminDataset['batches'][number], data: LiveAdminDataset, scopeType: ApiScopeType, scopeId: string) {
   if (scopeType === 'institution') return true
@@ -3791,13 +3775,29 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   }
 
   const handleResetScopePolicy = async () => {
-    if (!activeGovernanceScope || !activeScopePolicyOverride) {
-      setFlashMessage('No local override exists at the current scope. This layer is already inheriting.')
+    if (!activeGovernanceScope) {
+      setFlashMessage('Select a hierarchy scope before resetting governance.')
+      return
+    }
+    if (!activeScopePolicyOverride) {
+      setFlashMessage(describeGovernanceRollbackMessage({
+        activeGovernanceScope,
+        activeScopeChain,
+        hasLocalOverride: false,
+        resolved: resolvedBatchPolicy,
+        subject: 'policy',
+      }))
       return
     }
     const existing = activeScopePolicyOverride
     if (!existing) {
-      setFlashMessage('No local override exists at the current scope. This layer is already inheriting.')
+      setFlashMessage(describeGovernanceRollbackMessage({
+        activeGovernanceScope,
+        activeScopeChain,
+        hasLocalOverride: false,
+        resolved: resolvedBatchPolicy,
+        subject: 'policy',
+      }))
       return
     }
     await runAction(async () => {
@@ -3809,15 +3809,23 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         version: existing.version,
       })
       await loadAdminData()
+      let nextResolved: ApiResolvedBatchPolicy | null = null
       if (selectedBatch) {
-        const nextResolved = await apiClient.getResolvedBatchPolicy(selectedBatch.batchId, { sectionCode: selectedSectionCode })
+        nextResolved = await apiClient.getResolvedBatchPolicy(selectedBatch.batchId, { sectionCode: selectedSectionCode })
         setResolvedBatchPolicy(nextResolved)
         setPolicyForm(hydratePolicyForm(nextResolved.effectivePolicy))
       }
       const refreshed = selectedBatch ? await queueSelectedProofRefresh('policy reset') : []
+      const rollbackMessage = describeGovernanceRollbackMessage({
+        activeGovernanceScope,
+        activeScopeChain,
+        hasLocalOverride: false,
+        resolved: nextResolved ?? resolvedBatchPolicy,
+        subject: 'policy',
+      })
       setFlashMessage(refreshed.length > 0
-        ? `${activeGovernanceScope.label} policy override reset and proof batch refreshed.`
-        : `${activeGovernanceScope.label} policy override reset to inherited defaults.`)
+        ? `${activeGovernanceScope.label} policy override reset and proof batch refreshed. ${rollbackMessage}`
+        : `${activeGovernanceScope.label} policy override reset. ${rollbackMessage}`)
     })
   }
 
@@ -3842,8 +3850,18 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   }
 
   const handleResetScopeStagePolicy = async () => {
-    if (!activeGovernanceScope || !activeScopeStageOverride) {
-      setFlashMessage('No local stage policy exists at the current scope. This layer is already inheriting.')
+    if (!activeGovernanceScope) {
+      setFlashMessage('Select a hierarchy scope before resetting stage policy.')
+      return
+    }
+    if (!activeScopeStageOverride) {
+      setFlashMessage(describeGovernanceRollbackMessage({
+        activeGovernanceScope,
+        activeScopeChain,
+        hasLocalOverride: false,
+        resolved: resolvedStagePolicy,
+        subject: 'stage policy',
+      }))
       return
     }
     await runAction(async () => {
@@ -3855,11 +3873,19 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         version: activeScopeStageOverride.version,
       })
       await loadAdminData()
+      let nextResolved: ApiResolvedBatchStagePolicy | null = null
       if (selectedBatch) {
-        const nextResolved = await apiClient.getResolvedStagePolicy(selectedBatch.batchId, { sectionCode: selectedSectionCode })
+        nextResolved = await apiClient.getResolvedStagePolicy(selectedBatch.batchId, { sectionCode: selectedSectionCode })
         setResolvedStagePolicy(nextResolved)
+        setStagePolicyForm(hydrateStagePolicyForm(nextResolved.effectivePolicy))
       }
-      setFlashMessage(`${activeGovernanceScope.label} stage policy override reset to inherited defaults.`)
+      setFlashMessage(`${activeGovernanceScope.label} stage policy override reset. ${describeGovernanceRollbackMessage({
+        activeGovernanceScope,
+        activeScopeChain,
+        hasLocalOverride: false,
+        resolved: nextResolved ?? resolvedStagePolicy,
+        subject: 'stage policy',
+      })}`)
     })
   }
 
@@ -4713,15 +4739,6 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     : null
   const curriculumFeatureTargetScopeOptions = activeScopeChain.filter(scope => scope.scopeType !== 'section')
   const curriculumFeatureProfileOptions = curriculumFeatureConfig?.availableProfiles ?? []
-  const governanceScopeSummary = activeGovernanceScope
-    ? `${formatScopeTypeLabel(activeGovernanceScope.scopeType)} scope`
-    : 'Institution scope'
-  const policyOverrideTrail = scopePolicyOverrides.length
-    ? scopePolicyOverrides.map(item => `${formatScopeTypeLabel(item.scopeType)} · ${activeScopeChain.find(scope => scope.scopeType === item.scopeType && scope.scopeId === item.scopeId)?.label ?? item.scopeType}`).join(' -> ')
-    : 'Institution defaults only'
-  const stageOverrideTrail = scopeStageOverrides.length
-    ? scopeStageOverrides.map(item => `${formatScopeTypeLabel(item.scopeType)} · ${activeScopeChain.find(scope => scope.scopeType === item.scopeType && scope.scopeId === item.scopeId)?.label ?? item.scopeType}`).join(' -> ')
-    : 'Institution defaults only'
   const visibleAcademicFaculties = data.academicFaculties.filter(item => isAcademicFacultyVisible(data, item))
   const visibleDepartments = data.departments.filter(item => isDepartmentVisible(data, item))
   const visibleBranches = data.branches.filter(item => isBranchVisible(data, item))
@@ -5604,9 +5621,6 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     handleProvisionBatch,
     handleAssignCurriculumCourseLeader,
     selectedCurriculumCourse,
-    governanceScopeSummary,
-    policyOverrideTrail,
-    stageOverrideTrail,
     universityNextItems,
     universityNavigatorTitle,
     universityNavigatorHelper,
@@ -5866,12 +5880,12 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             universityWorkspacePaneRef={universityWorkspacePaneRef}
             stickyShadow={isLightTheme(themeMode) ? '0 18px 32px rgba(15, 23, 42, 0.08)' : '0 18px 32px rgba(2, 6, 23, 0.32)'}
             activeBatchPolicyOverride={activeBatchPolicyOverride}
+            activeScopeChain={activeScopeChain}
             activeGovernanceScope={activeGovernanceScope}
+            resolvedBatchPolicy={resolvedBatchPolicy}
+            resolvedStagePolicy={resolvedStagePolicy}
             activeScopePolicyOverride={activeScopePolicyOverride}
             activeScopeStageOverride={activeScopeStageOverride}
-            governanceScopeSummary={governanceScopeSummary}
-            policyOverrideTrail={policyOverrideTrail}
-            stageOverrideTrail={stageOverrideTrail}
             policyForm={policyForm}
             setPolicyForm={setPolicyForm}
             stagePolicyForm={stagePolicyForm}
