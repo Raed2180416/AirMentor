@@ -140,7 +140,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
   } = deps
   const [
     allAppointmentRows,
-    runRows,
+    allRunRows,
     batchRows,
     branchRows,
     departmentRows,
@@ -169,7 +169,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
     stageQueueRows,
   ] = await Promise.all([
     db.select().from(facultyAppointments),
-    db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1)),
+    db.select().from(simulationRuns),
     db.select().from(batches),
     db.select().from(branches),
     db.select().from(departments),
@@ -227,9 +227,11 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
   const requestedCheckpoint = input.filters?.simulationStageCheckpointId
     ? stageCheckpointRows.find(row => row.simulationStageCheckpointId === input.filters?.simulationStageCheckpointId) ?? null
     : null
-  const activeRunCandidates = runRows.filter(row => row.activeFlag === 1)
+  const activeRunCandidates = allRunRows.filter(row => row.activeFlag === 1)
   const activeRun = requestedCheckpoint
-    ? activeRunCandidates.find(row => row.simulationRunId === requestedCheckpoint.simulationRunId) ?? null
+    ? allRunRows.find(row => row.simulationRunId === requestedCheckpoint.simulationRunId)
+      ?? activeRunCandidates.find(row => row.simulationRunId === requestedCheckpoint.simulationRunId)
+      ?? null
     : activeRunCandidates[0] ?? null
   const activeBatch = activeRun ? (batchById.get(activeRun.batchId) ?? null) : null
   const activeBranch = activeBatch ? (branchById.get(activeBatch.branchId) ?? null) : null
@@ -341,7 +343,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
   if (input.filters?.simulationStageCheckpointId) {
     if (!activeRun || !activeBatch || !activeBranch || !activeRunId || !scopeMatchesActiveBatch) return emptyResponse
     const checkpoint = requestedCheckpoint
-    if (!checkpoint || checkpoint.simulationRunId !== activeRunId) return emptyResponse
+    if (!checkpoint) return emptyResponse
     const checkpointSummary = withProofPlaybackGate(
       stageCheckpointRows
         .filter(row => row.simulationRunId === activeRunId)

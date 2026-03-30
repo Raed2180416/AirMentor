@@ -433,6 +433,62 @@ describe('hod proof analytics', () => {
     expect(facultyResponse.json().items.length).toBeGreaterThan(0)
   }, 300000)
 
+  it('keeps explicit checkpoint playback available even if the run active flag drifts off', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+    const hodLogin = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+
+    if (hodLogin.body.activeRoleGrant.roleCode !== 'HOD') {
+      await switchToRole(hodLogin.cookie, hodLogin.body.availableRoleGrants, 'HOD')
+    }
+
+    const [activeRun] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    expect(activeRun).toBeTruthy()
+    const recomputeRiskResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRun.simulationRunId}/recompute-risk`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+    expect(recomputeRiskResponse.statusCode).toBe(200)
+    const [checkpoint] = await current.db.select().from(simulationStageCheckpoints).where(and(
+      eq(simulationStageCheckpoints.simulationRunId, activeRun.simulationRunId),
+      eq(simulationStageCheckpoints.semesterNumber, 6),
+    )).orderBy(asc(simulationStageCheckpoints.stageOrder))
+    expect(checkpoint).toBeTruthy()
+
+    await current.db.update(simulationRuns).set({
+      activeFlag: 0,
+      status: 'archived',
+      updatedAt: '2026-03-16T00:00:00.000Z',
+    }).where(eq(simulationRuns.simulationRunId, activeRun.simulationRunId))
+
+    const [summaryResponse, studentsResponse] = await Promise.all([
+      current.app.inject({
+        method: 'GET',
+        url: `/api/academic/hod/proof-summary?simulationStageCheckpointId=${encodeURIComponent(checkpoint!.simulationStageCheckpointId)}`,
+        headers: { cookie: hodLogin.cookie },
+      }),
+      current.app.inject({
+        method: 'GET',
+        url: `/api/academic/hod/proof-students?simulationStageCheckpointId=${encodeURIComponent(checkpoint!.simulationStageCheckpointId)}`,
+        headers: { cookie: hodLogin.cookie },
+      }),
+    ])
+
+    expect(summaryResponse.statusCode).toBe(200)
+    expect(studentsResponse.statusCode).toBe(200)
+    expect(summaryResponse.json().countSource).toBe('proof-checkpoint')
+    expect(summaryResponse.json().activeRunContext).toMatchObject({
+      simulationRunId: activeRun.simulationRunId,
+      status: 'archived',
+      checkpointContext: {
+        simulationStageCheckpointId: checkpoint!.simulationStageCheckpointId,
+      },
+    })
+    expect(studentsResponse.json().items.length).toBeGreaterThan(0)
+  }, 300000)
+
   it('does not expose inactive runs in the HoD summary', async () => {
     current = await createTestApp()
     const hodLogin = await loginAs(current.app, 'devika.shetty', 'faculty1234')
