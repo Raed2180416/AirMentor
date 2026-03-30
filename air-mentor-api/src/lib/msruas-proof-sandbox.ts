@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import type { AppDb } from '../db/client.js'
 import curriculumSeedJson from '../db/seeds/msruas-mnc-curriculum.json' with { type: 'json' }
@@ -28,6 +27,7 @@ import {
   facultyCalendarWorkspaces,
   facultyOfferingOwnerships,
   facultyProfiles,
+  institutions,
   mentorAssignments,
   reassessmentEvents,
   riskAssessments,
@@ -54,6 +54,13 @@ import {
 } from '../db/schema.js'
 import { inferObservableRisk } from './inference-engine.js'
 import { buildMonitoringDecision } from './monitoring-engine.js'
+import {
+  buildCompletenessCertificate,
+  buildCurriculumOutputChecksum,
+  compileMsruasCurriculumWorkbook,
+  EMBEDDED_CURRICULUM_SOURCE_PATH,
+  validateCompiledCurriculum,
+} from './msruas-curriculum-compiler.js'
 import {
   calculateCgpa,
   calculateSgpa,
@@ -168,6 +175,36 @@ export const MSRUAS_PROOF_BRANCH_ID = 'branch_mnc_btech'
 export const MSRUAS_PROOF_BATCH_ID = 'batch_branch_mnc_btech_2023'
 export const MSRUAS_PROOF_SIMULATION_RUN_ID = 'sim_mnc_2023_first6_v1'
 export const MSRUAS_PROOF_CURRICULUM_IMPORT_ID = 'curriculum_import_mnc_2023_first6_v1'
+
+export async function ensureMsruasProofSandboxSeeded(db: AppDb, options: {
+  institutionId?: string
+  now: string
+  policy: ResolvedPolicy
+}) {
+  const [existingBatch] = await db.select().from(batches).where(eq(batches.batchId, MSRUAS_PROOF_BATCH_ID))
+  if (existingBatch) {
+    return {
+      seeded: false,
+      batchId: existingBatch.batchId,
+    }
+  }
+
+  const resolvedInstitutionId = options.institutionId ?? (
+    await db.select().from(institutions).limit(1)
+  )[0]?.institutionId
+  if (!resolvedInstitutionId) throw new Error('Institution not configured')
+
+  await seedMsruasProofSandbox(db, {
+    institutionId: resolvedInstitutionId,
+    now: options.now,
+    policy: options.policy,
+  })
+
+  return {
+    seeded: true,
+    batchId: MSRUAS_PROOF_BATCH_ID,
+  }
+}
 
 export const PROOF_TERM_DEFS = [
   { termId: 'term_mnc_sem1', semesterNumber: 1, academicYearLabel: '2023-24', startDate: '2023-08-01', endDate: '2023-12-15' },
@@ -580,7 +617,10 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
 }) {
   const { institutionId, now, policy } = options
   const deterministicPolicy = deterministicPolicyFromResolved(policy)
-  const checksum = createHash('sha256').update(JSON.stringify(curriculumSeed)).digest('hex')
+  const compiled = compileMsruasCurriculumWorkbook(EMBEDDED_CURRICULUM_SOURCE_PATH)
+  const validation = validateCompiledCurriculum(compiled)
+  const completenessCertificate = buildCompletenessCertificate(compiled, validation)
+  const outputChecksum = buildCurriculumOutputChecksum(compiled)
   const sem6Courses = semesterCourses(6)
   const sem6CourseLeaderFaculty = PROOF_FACULTY.filter(faculty => faculty.permissions.includes('COURSE_LEADER'))
   const mentorFaculty = PROOF_FACULTY.filter(faculty => faculty.permissions.includes('MENTOR'))
@@ -719,31 +759,26 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
   const importVersionRow: typeof curriculumImportVersions.$inferInsert = {
     curriculumImportVersionId: MSRUAS_PROOF_CURRICULUM_IMPORT_ID,
     batchId: MSRUAS_PROOF_BATCH_ID,
-    sourceLabel: 'airmentor_curriculum_compiler_reconciled.xlsx',
-    sourceChecksum: checksum,
-    sourcePath: '/home/raed/Downloads/airmentor_curriculum_compiler_reconciled.xlsx',
-    sourceType: 'workbook',
-    compilerVersion: 'msruas-proof-compiler-v2',
-    outputChecksum: checksum,
-    firstSemester: 1,
-    lastSemester: 6,
-    courseCount: curriculumSeed.courses.length,
-    totalCredits: curriculumSeed.courses.reduce((sum, course) => sum + course.credits, 0),
-    explicitEdgeCount: curriculumSeed.explicitEdges.length,
-    addedEdgeCount: curriculumSeed.addedEdges.length,
-    bridgeModuleCount: curriculumSeed.courses.filter(course => course.bridgeModules.length > 0).length,
-    electiveOptionCount: curriculumSeed.electives.length,
-    unresolvedMappingCount: curriculumSeed.courses.filter(course => !course.matchStatus.startsWith('exact')).length,
-    validationStatus: 'review-required',
-    completenessCertificateJson: JSON.stringify({
-      sourceLabel: 'airmentor_curriculum_compiler_reconciled.xlsx',
-      sourceChecksum: checksum,
-      courseCount: curriculumSeed.courses.length,
-      totalCredits: curriculumSeed.courses.reduce((sum, course) => sum + course.credits, 0),
-    }),
+    sourceLabel: compiled.sourceLabel,
+    sourceChecksum: compiled.sourceChecksum,
+    sourcePath: compiled.sourcePath,
+    sourceType: compiled.sourceType,
+    compilerVersion: compiled.compilerVersion,
+    outputChecksum,
+    firstSemester: validation.semesterCoverage[0],
+    lastSemester: validation.semesterCoverage[1],
+    courseCount: validation.courseCount,
+    totalCredits: validation.totalCredits,
+    explicitEdgeCount: validation.explicitEdgeCount,
+    addedEdgeCount: validation.addedEdgeCount,
+    bridgeModuleCount: validation.bridgeModuleCount,
+    electiveOptionCount: validation.electiveOptionCount,
+    unresolvedMappingCount: validation.unresolvedMappingCount,
+    validationStatus: validation.status,
+    completenessCertificateJson: JSON.stringify(completenessCertificate),
     approvedByFacultyId: null,
     approvedAt: null,
-    status: 'active',
+    status: validation.errors.length > 0 ? 'needs-review' : 'validated',
     createdAt: now,
     updatedAt: now,
   }
@@ -1655,4 +1690,10 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
     }),
     createdAt: now,
   })))
+
+  return {
+    curriculumImportVersionId: MSRUAS_PROOF_CURRICULUM_IMPORT_ID,
+    validation,
+    completenessCertificate,
+  }
 }

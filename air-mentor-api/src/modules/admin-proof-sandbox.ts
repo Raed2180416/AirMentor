@@ -26,9 +26,16 @@ import {
   enqueueProofSimulationRun,
   retryQueuedProofSimulationRun,
 } from '../lib/proof-run-queue.js'
-import { MSRUAS_PROOF_BATCH_ID } from '../lib/msruas-proof-sandbox.js'
+import {
+  ensureMsruasProofSandboxSeeded,
+  MSRUAS_PROOF_BATCH_ID,
+} from '../lib/msruas-proof-sandbox.js'
 import { emitAuditEvent, parseOrThrow, requireRole } from './support.js'
-import { resolveBatchCurriculumFeatures, resolveBatchPolicy } from './admin-structure.js'
+import {
+  DEFAULT_POLICY,
+  resolveBatchCurriculumFeatures,
+  resolveBatchPolicy,
+} from './admin-structure.js'
 
 const batchParamsSchema = z.object({
   batchId: z.string().min(1),
@@ -62,6 +69,14 @@ async function requireProofRunBatchId(context: RouteContext, simulationRunId: st
   const [run] = await context.db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, simulationRunId))
   if (!run) throw new Error('Simulation run not found')
   return run.batchId
+}
+
+async function ensureProofSandboxBatch(context: RouteContext, batchId: string) {
+  if (batchId !== MSRUAS_PROOF_BATCH_ID) return
+  await ensureMsruasProofSandboxSeeded(context.db, {
+    now: context.now(),
+    policy: DEFAULT_POLICY,
+  })
 }
 
 const createImportSchema = z.object({
@@ -146,6 +161,7 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
   }, async request => {
     requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(batchParamsSchema, request.params)
+    await ensureProofSandboxBatch(context, params.batchId)
     return buildProofBatchDashboard(context.db, params.batchId)
   })
 
@@ -154,6 +170,7 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
   }, async request => {
     requireRole(request, ['SYSTEM_ADMIN'])
     const query = parseOrThrow(proofModelQuerySchema, request.query)
+    await ensureProofSandboxBatch(context, query.batchId)
     return getProofRiskModelActive(context.db, { batchId: query.batchId })
   })
 
@@ -162,6 +179,7 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
   }, async request => {
     requireRole(request, ['SYSTEM_ADMIN'])
     const query = parseOrThrow(proofModelQuerySchema, request.query)
+    await ensureProofSandboxBatch(context, query.batchId)
     return getProofRiskModelEvaluation(context.db, {
       batchId: query.batchId,
       simulationRunId: query.simulationRunId ?? null,
@@ -173,6 +191,7 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
   }, async request => {
     requireRole(request, ['SYSTEM_ADMIN'])
     const query = parseOrThrow(proofModelQuerySchema, request.query)
+    await ensureProofSandboxBatch(context, query.batchId)
     return getProofRiskModelCorrelations(context.db, { batchId: query.batchId })
   })
 
@@ -217,6 +236,7 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
     const auth = requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(batchParamsSchema, request.params)
     const body = parseOrThrow(createImportSchema, request.body)
+    await ensureProofSandboxBatch(context, params.batchId)
     const result = await createProofCurriculumImport(context.db, {
       batchId: params.batchId,
       sourcePath: body.sourcePath,
@@ -303,6 +323,7 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
     const auth = requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(batchParamsSchema, request.params)
     const body = parseOrThrow(startRunSchema, request.body)
+    await ensureProofSandboxBatch(context, params.batchId)
     const resolved = await resolveBatchPolicy(context, params.batchId)
     const resolvedFeatures = await resolveBatchCurriculumFeatures(context, params.batchId)
     const result = await enqueueProofSimulationRun(context.db, {

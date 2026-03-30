@@ -3,6 +3,7 @@ import type { AppDb } from '../db/client.js'
 import {
   alertAcknowledgements,
   alertDecisions,
+  batches,
   courses,
   curriculumImportVersions,
   curriculumValidationResults,
@@ -225,6 +226,8 @@ export async function getProofRunCheckpointStudentDetail(db: AppDb, input: {
 
 export async function buildProofBatchDashboard(db: AppDb, batchId: string, deps: ProofControlPlaneBatchServiceDeps) {
   const { getProofRiskModelDiagnostics, parseProofCheckpointSummary, withProofPlaybackGate } = deps
+  const [batch] = await db.select().from(batches).where(eq(batches.batchId, batchId))
+  if (!batch) throw notFound('Batch not found')
   const [
     importRows,
     validationRows,
