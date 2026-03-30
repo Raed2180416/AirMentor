@@ -7,14 +7,23 @@ import {
   batches,
   branches,
   departments,
+  facultyAppointments,
+  facultyProfiles,
   institutions,
   mentorAssignments,
+  roleGrants,
   studentAcademicProfiles,
   studentEnrollments,
   students,
 } from '../db/schema.js'
+import {
+  getFacultyMentorProvisioningEligibility,
+  getIsoDayBefore,
+} from '../lib/academic-provisioning.js'
+import { badRequest, conflict, notFound } from '../lib/http-errors.js'
 import { createId } from '../lib/ids.js'
-import { notFound } from '../lib/http-errors.js'
+import { parseJson } from '../lib/json.js'
+import { normalizeSectionCode } from '../lib/stage-policy.js'
 import { resolveBatchPolicy } from './admin-structure.js'
 import { emitAuditEvent, expectVersion, parseOrThrow, requireRole } from './support.js'
 
@@ -58,6 +67,40 @@ const mentorAssignmentCreateSchema = z.object({
 const mentorAssignmentPatchSchema = mentorAssignmentCreateSchema.extend({
   version: z.number().int().positive(),
 })
+
+const mentorAssignmentBulkApplySchema = z.object({
+  facultyId: z.string().min(1),
+  batchId: z.string().min(1),
+  sectionCode: z.string().trim().min(1).optional().nullable(),
+  effectiveFrom: z.string().min(1),
+  source: z.string().min(1),
+  selectionMode: z.enum(['missing-only', 'replace-all']).optional(),
+  applyMode: z.enum(['missing-only', 'replace-all']).optional(),
+  previewOnly: z.boolean().default(false),
+  expectedStudentIds: z.array(z.string().min(1)).optional(),
+}).transform(value => ({
+  ...value,
+  selectionMode: value.selectionMode ?? value.applyMode ?? 'replace-all',
+})).superRefine((value, ctx) => {
+  if (!value.previewOnly && (!value.expectedStudentIds || value.expectedStudentIds.length === 0)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['expectedStudentIds'],
+      message: 'Confirmation requires the previewed student ids.',
+    })
+  }
+})
+
+type MentorAssignmentBulkApplyPreviewStudent = {
+  studentId: string
+  studentName: string
+  usn: string
+  sectionCode: string | null
+  currentMentorFacultyId: string | null
+  currentMentorAssignmentId: string | null
+  action: 'assign' | 'reassign' | 'keep'
+  actionReason: string
+}
 
 function mapEnrollment(row: typeof studentEnrollments.$inferSelect) {
   return {
@@ -206,6 +249,19 @@ async function enrichStudentRecordWithProvenance(
     countSource: resolvedPolicy.countSource,
     activeOperationalSemester: resolvedPolicy.activeOperationalSemester,
   }
+}
+
+function normalizeStudentIdSet(studentIds: string[] | undefined) {
+  return Array.from(new Set((studentIds ?? []).map(item => item.trim()).filter(Boolean))).sort((left, right) => left.localeCompare(right))
+}
+
+function isVisibleStudentStatus(status: string | null | undefined) {
+  const normalizedStatus = (status ?? 'active').toLowerCase()
+  return normalizedStatus !== 'deleted' && normalizedStatus !== 'archived' && normalizedStatus !== 'hidden'
+}
+
+function buildBulkMentorScopeLabel(batchLabel: string, sectionCode: string | null) {
+  return sectionCode ? `Batch ${batchLabel} · Section ${sectionCode}` : `Batch ${batchLabel}`
 }
 
 export async function registerStudentRoutes(app: FastifyInstance, context: RouteContext) {
@@ -404,6 +460,297 @@ export async function registerStudentRoutes(app: FastifyInstance, context: Route
       after: mapEnrollment(next),
     })
     return mapEnrollment(next)
+  })
+
+  app.post('/api/admin/mentor-assignments/bulk-apply', {
+    schema: { tags: ['students'], summary: 'Preview or apply mentor assignment changes across a scoped student cohort' },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
+    const body = parseOrThrow(mentorAssignmentBulkApplySchema, request.body)
+    const effectiveFrom = body.effectiveFrom.trim().slice(0, 10)
+    const [batch] = await context.db.select().from(batches).where(eq(batches.batchId, body.batchId))
+    if (!batch) throw notFound('Batch not found')
+    const [branch] = await context.db.select().from(branches).where(eq(branches.branchId, batch.branchId))
+    if (!branch) throw notFound('Branch not found')
+    const [department] = await context.db.select().from(departments).where(eq(departments.departmentId, branch.departmentId))
+    if (!department) throw notFound('Department not found')
+    const [selectedFaculty] = await context.db.select().from(facultyProfiles).where(eq(facultyProfiles.facultyId, body.facultyId))
+    if (!selectedFaculty) throw notFound('Faculty not found')
+    if (!isVisibleStudentStatus(selectedFaculty.status)) {
+      throw badRequest('Selected faculty member is not active.')
+    }
+
+    const sectionCode = body.sectionCode ? normalizeSectionCode(body.sectionCode) : null
+    const knownSectionLabels = parseJson(batch.sectionLabelsJson, [] as string[])
+      .map(label => normalizeSectionCode(label))
+      .filter(Boolean)
+    if (sectionCode && !knownSectionLabels.includes(sectionCode)) {
+      throw notFound('Section scope not found')
+    }
+
+    const [studentRows, enrollmentRows, assignmentRows, profileRows, termRows, appointmentRows, grantRows] = await Promise.all([
+      context.db.select().from(students),
+      context.db.select().from(studentEnrollments),
+      context.db.select().from(mentorAssignments),
+      context.db.select().from(studentAcademicProfiles),
+      context.db.select().from(academicTerms),
+      context.db.select().from(facultyAppointments),
+      context.db.select().from(roleGrants),
+    ])
+
+    const facultyEligibility = getFacultyMentorProvisioningEligibility({
+      facultyId: selectedFaculty.facultyId,
+      effectiveFrom,
+      scope: {
+        academicFacultyId: department.academicFacultyId,
+        departmentId: department.departmentId,
+        branchId: branch.branchId,
+        batchId: batch.batchId,
+        sectionCode,
+      },
+      appointments: appointmentRows,
+      roleGrants: grantRows,
+    })
+    if (!facultyEligibility.eligible) {
+      throw badRequest(
+        `Faculty ${selectedFaculty.displayName} is not mentor-eligible for ${buildBulkMentorScopeLabel(batch.batchLabel, sectionCode)}. ${facultyEligibility.reasons.join(' ')}`.trim(),
+        { reasons: facultyEligibility.reasons },
+      )
+    }
+
+    const studentRecords = studentRows
+      .filter(student => isVisibleStudentStatus(student.status))
+      .map(student => mapStudentRecord({
+        student,
+        enrollmentRows,
+        assignmentRows,
+        profileRows,
+        termRows,
+        branchRows: [branch],
+        departmentRows: [department],
+        batchRows: [batch],
+      }))
+
+    const currentMentorAssignmentByStudentId = new Map<string, typeof mentorAssignments.$inferSelect>()
+    assignmentRows
+      .filter(assignment => assignment.effectiveFrom <= effectiveFrom && (!assignment.effectiveTo || assignment.effectiveTo >= effectiveFrom))
+      .sort((left, right) => right.effectiveFrom.localeCompare(left.effectiveFrom) || right.updatedAt.localeCompare(left.updatedAt))
+      .forEach(assignment => {
+        if (!currentMentorAssignmentByStudentId.has(assignment.studentId)) {
+          currentMentorAssignmentByStudentId.set(assignment.studentId, assignment)
+        }
+      })
+
+    const scopedStudents = studentRecords
+      .filter(student => student.activeAcademicContext?.batchId === batch.batchId)
+      .filter(student => !sectionCode || student.activeAcademicContext?.sectionCode === sectionCode)
+      .sort((left, right) => (
+        (left.activeAcademicContext?.sectionCode ?? '').localeCompare(right.activeAcademicContext?.sectionCode ?? '')
+        || (left.rollNumber ?? '').localeCompare(right.rollNumber ?? '')
+        || left.usn.localeCompare(right.usn)
+        || left.name.localeCompare(right.name)
+      ))
+
+    const previewStudents = scopedStudents.flatMap<MentorAssignmentBulkApplyPreviewStudent>(student => {
+      const currentAssignment = currentMentorAssignmentByStudentId.get(student.studentId) ?? null
+      if (body.selectionMode === 'missing-only' && currentAssignment) {
+        return []
+      }
+      if (!currentAssignment) {
+        return [{
+          studentId: student.studentId,
+          studentName: student.name,
+          usn: student.usn,
+          sectionCode: student.activeAcademicContext?.sectionCode ?? null,
+          currentMentorFacultyId: null,
+          currentMentorAssignmentId: null,
+          action: 'assign' as const,
+          actionReason: 'No active mentor assignment exists in the selected scope.',
+        }]
+      }
+      if (currentAssignment.facultyId === body.facultyId) {
+        return [{
+          studentId: student.studentId,
+          studentName: student.name,
+          usn: student.usn,
+          sectionCode: student.activeAcademicContext?.sectionCode ?? null,
+          currentMentorFacultyId: currentAssignment.facultyId,
+          currentMentorAssignmentId: currentAssignment.assignmentId,
+          action: 'keep' as const,
+          actionReason: 'The selected faculty is already the active mentor.',
+        }]
+      }
+      if (currentAssignment.effectiveFrom >= effectiveFrom) {
+        return [{
+          studentId: student.studentId,
+          studentName: student.name,
+          usn: student.usn,
+          sectionCode: student.activeAcademicContext?.sectionCode ?? null,
+          currentMentorFacultyId: currentAssignment.facultyId,
+          currentMentorAssignmentId: currentAssignment.assignmentId,
+          action: 'keep' as const,
+          actionReason: 'The current mentor assignment already starts on or after the requested effective date.',
+        }]
+      }
+      return [{
+        studentId: student.studentId,
+        studentName: student.name,
+        usn: student.usn,
+        sectionCode: student.activeAcademicContext?.sectionCode ?? null,
+        currentMentorFacultyId: currentAssignment.facultyId,
+        currentMentorAssignmentId: currentAssignment.assignmentId,
+        action: 'reassign' as const,
+        actionReason: 'The existing active mentor assignment will be end-dated and replaced.',
+      }]
+    })
+
+    const previewStudentIds = normalizeStudentIdSet(previewStudents.map(student => student.studentId))
+    const response = {
+      ok: true,
+      preview: body.previewOnly,
+      bulkApplyId: null,
+      facultyId: selectedFaculty.facultyId,
+      facultyDisplayName: selectedFaculty.displayName,
+      batchId: batch.batchId,
+      batchLabel: batch.batchLabel,
+      sectionCode,
+      scopeLabel: buildBulkMentorScopeLabel(batch.batchLabel, sectionCode),
+      effectiveFrom,
+      source: body.source,
+      selectionMode: body.selectionMode,
+      mentorEligibility: facultyEligibility,
+      studentIds: previewStudentIds,
+      students: previewStudents,
+      summary: {
+        targetedStudentCount: previewStudents.length,
+        unchangedCount: previewStudents.filter(student => student.action === 'keep').length,
+        endedAssignmentCount: previewStudents.filter(student => student.action === 'reassign').length,
+        createdAssignmentCount: previewStudents.filter(student => student.action !== 'keep').length,
+      },
+    }
+
+    if (body.previewOnly) {
+      return response
+    }
+
+    if (previewStudents.length === 0) {
+      throw badRequest(`No students matched ${buildBulkMentorScopeLabel(batch.batchLabel, sectionCode)} for bulk mentor apply.`)
+    }
+
+    const expectedStudentIds = normalizeStudentIdSet(body.expectedStudentIds)
+    if (expectedStudentIds.length !== previewStudentIds.length || expectedStudentIds.some((studentId, index) => studentId !== previewStudentIds[index])) {
+      throw conflict('Bulk mentor preview changed. Refresh the preview and confirm again.', { studentIds: previewStudentIds })
+    }
+
+    const now = context.now()
+    const bulkApplyId = createId('mentor_bulk_apply')
+    const assignmentRowById = new Map(assignmentRows.map(assignment => [assignment.assignmentId, assignment]))
+    let endedAssignmentCount = 0
+    let createdAssignmentCount = 0
+    for (const previewStudent of previewStudents) {
+      if (previewStudent.action === 'reassign' && previewStudent.currentMentorAssignmentId) {
+        const currentAssignment = assignmentRowById.get(previewStudent.currentMentorAssignmentId)
+        if (!currentAssignment) {
+          throw conflict('Bulk mentor apply encountered a missing mentor assignment. Refresh the preview and confirm again.')
+        }
+        const dayBeforeEffectiveFrom = getIsoDayBefore(effectiveFrom)
+        const nextEffectiveTo = dayBeforeEffectiveFrom < currentAssignment.effectiveFrom
+          ? currentAssignment.effectiveFrom
+          : dayBeforeEffectiveFrom
+        const endedAssignment = {
+          ...currentAssignment,
+          effectiveTo: nextEffectiveTo,
+          version: currentAssignment.version + 1,
+          updatedAt: now,
+        }
+        await context.db.update(mentorAssignments).set({
+          effectiveTo: endedAssignment.effectiveTo,
+          version: endedAssignment.version,
+          updatedAt: endedAssignment.updatedAt,
+        }).where(eq(mentorAssignments.assignmentId, currentAssignment.assignmentId))
+        await emitAuditEvent(context, {
+          entityType: 'MentorAssignment',
+          entityId: currentAssignment.assignmentId,
+          action: 'bulk_reassigned',
+          actorRole: auth.activeRoleGrant.roleCode,
+          actorId: auth.facultyId,
+          before: mapMentorAssignment(currentAssignment),
+          after: mapMentorAssignment(endedAssignment),
+          metadata: {
+            bulkApplyId,
+            batchId: batch.batchId,
+            sectionCode,
+            nextFacultyId: selectedFaculty.facultyId,
+            scopeLabel: buildBulkMentorScopeLabel(batch.batchLabel, sectionCode),
+          },
+        })
+        assignmentRowById.set(currentAssignment.assignmentId, endedAssignment)
+        endedAssignmentCount += 1
+      }
+      if (previewStudent.action === 'keep') continue
+      const createdAssignment = {
+        assignmentId: createId('mentor_assignment'),
+        studentId: previewStudent.studentId,
+        facultyId: selectedFaculty.facultyId,
+        effectiveFrom,
+        effectiveTo: null,
+        source: body.source,
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      }
+      await context.db.insert(mentorAssignments).values(createdAssignment)
+      await emitAuditEvent(context, {
+        entityType: 'MentorAssignment',
+        entityId: createdAssignment.assignmentId,
+        action: 'bulk_created',
+        actorRole: auth.activeRoleGrant.roleCode,
+        actorId: auth.facultyId,
+        after: mapMentorAssignment(createdAssignment),
+          metadata: {
+            bulkApplyId,
+            batchId: batch.batchId,
+            sectionCode,
+            previousFacultyId: previewStudent.currentMentorFacultyId,
+            scopeLabel: buildBulkMentorScopeLabel(batch.batchLabel, sectionCode),
+          },
+        })
+      createdAssignmentCount += 1
+    }
+
+    await emitAuditEvent(context, {
+      entityType: 'MentorAssignmentBulkApply',
+      entityId: bulkApplyId,
+      action: 'applied',
+      actorRole: auth.activeRoleGrant.roleCode,
+      actorId: auth.facultyId,
+      after: {
+        facultyId: selectedFaculty.facultyId,
+        batchId: batch.batchId,
+        sectionCode,
+        selectionMode: body.selectionMode,
+        effectiveFrom,
+        source: body.source,
+        studentIds: previewStudentIds,
+        summary: {
+          targetedStudentCount: previewStudents.length,
+          unchangedCount: previewStudents.filter(student => student.action === 'keep').length,
+          endedAssignmentCount,
+          createdAssignmentCount,
+        },
+      },
+    })
+
+    return {
+      ...response,
+      preview: false,
+      bulkApplyId,
+      summary: {
+        ...response.summary,
+        endedAssignmentCount,
+        createdAssignmentCount,
+      },
+    }
   })
 
   app.post('/api/admin/mentor-assignments', {

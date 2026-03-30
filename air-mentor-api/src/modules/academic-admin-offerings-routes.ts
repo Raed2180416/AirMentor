@@ -17,6 +17,7 @@ import {
   institutions,
   mentorAssignments,
   offeringStageAdvancementAudits,
+  roleGrants,
   sectionOfferings,
   studentAcademicProfiles,
   studentAssessmentScores,
@@ -29,6 +30,7 @@ import {
 } from '../db/schema.js'
 import {
   buildFacultyTimetableTemplates,
+  getFacultyMentorProvisioningEligibility,
   weeklyContactHoursForCourse,
 } from '../lib/academic-provisioning.js'
 import { createId } from '../lib/ids.js'
@@ -293,7 +295,7 @@ export async function registerAcademicAdminOfferingRoutes(
       .filter(Boolean)
     if (sections.length === 0) throw badRequest('At least one section label is required for provisioning')
 
-    const [resolvedBatchPolicy, resolvedStagePolicy, resolvedCurriculumFeatures, curriculumRows, courseRows, appointmentRows, facultyRows, existingOwnershipRows, existingOfferings, existingStudents, existingEnrollments, _existingMentorRows, existingAttendanceRows, existingAssessmentRows, existingTranscriptRows, existingTranscriptSubjectRows, existingProfileRows, existingCalendars, runtimeStudentPatches, runtimeDrafts, runtimeCellValues, runtimeLockByOffering, runtimeLockAuditByTarget] = await Promise.all([
+    const [resolvedBatchPolicy, resolvedStagePolicy, resolvedCurriculumFeatures, curriculumRows, courseRows, appointmentRows, facultyRows, grantRows, existingOwnershipRows, existingOfferings, existingStudents, existingEnrollments, _existingMentorRows, existingAttendanceRows, existingAssessmentRows, existingTranscriptRows, existingTranscriptSubjectRows, existingProfileRows, existingCalendars, runtimeStudentPatches, runtimeDrafts, runtimeCellValues, runtimeLockByOffering, runtimeLockAuditByTarget] = await Promise.all([
       resolveBatchPolicy(context, params.batchId),
       resolveBatchStagePolicy(context, params.batchId),
       resolveBatchCurriculumFeatures(context, params.batchId),
@@ -301,6 +303,7 @@ export async function registerAcademicAdminOfferingRoutes(
       context.db.select().from(courses),
       context.db.select().from(facultyAppointments),
       context.db.select().from(facultyProfiles),
+      context.db.select().from(roleGrants),
       context.db.select().from(facultyOfferingOwnerships),
       context.db.select().from(sectionOfferings),
       context.db.select().from(students),
@@ -338,6 +341,26 @@ export async function registerAcademicAdminOfferingRoutes(
       && row.status !== 'deleted'
     ))
     if (facultyPool.length === 0) throw badRequest('No active faculty pool is available for provisioning')
+    const mentorEligibilitySectionCode = sections.length === 1 ? sections[0] ?? null : null
+    const mentorEligibleFacultyPool = facultyPool.filter(faculty => getFacultyMentorProvisioningEligibility({
+      facultyId: faculty.facultyId,
+      effectiveFrom: term.startDate,
+      scope: {
+        academicFacultyId: department.academicFacultyId,
+        departmentId: department.departmentId,
+        branchId: branch.branchId,
+        batchId: batch.batchId,
+        sectionCode: mentorEligibilitySectionCode,
+      },
+      appointments: appointmentRows,
+      roleGrants: grantRows,
+    }).eligible)
+    if (body.createMentors && mentorEligibleFacultyPool.length === 0) {
+      throw badRequest(
+        'No active mentor-eligible faculty are available for provisioning in the selected scope.',
+        { reasons: ['Provisioning mentor creation requires an active appointment plus an active MENTOR grant that covers the selected batch or section.'] },
+      )
+    }
 
     const offeringByKey = new Map<string, typeof sectionOfferings.$inferSelect>(
       existingOfferings.map(row => [`${row.termId}::${row.courseId}::${row.sectionCode}`, row] as const),
@@ -563,8 +586,8 @@ export async function registerAcademicAdminOfferingRoutes(
             })
             profileStudentIds.add(studentId)
           }
-          if (body.createMentors && facultyPool.length > 0) {
-            const mentorFaculty = facultyPool[globalIndex % facultyPool.length]!
+          if (body.createMentors && mentorEligibleFacultyPool.length > 0) {
+            const mentorFaculty = mentorEligibleFacultyPool[globalIndex % mentorEligibleFacultyPool.length]!
             await context.db.insert(mentorAssignments).values({
               assignmentId: createId('mentor_assignment'),
               studentId,
@@ -770,6 +793,8 @@ export async function registerAcademicAdminOfferingRoutes(
         createdAttendanceCount,
         createdAssessmentCount,
         createdTranscriptCount,
+        facultyPoolCount: facultyPool.length,
+        mentorFacultyPoolCount: mentorEligibleFacultyPool.length,
       },
     })
 
@@ -795,6 +820,7 @@ export async function registerAcademicAdminOfferingRoutes(
         createdAssessmentCount,
         createdTranscriptCount,
         facultyPoolCount: facultyPool.length,
+        mentorFacultyPoolCount: mentorEligibleFacultyPool.length,
         curriculumCourseCount: scopedCurriculum.length,
       },
       policyFingerprint: resolvedBatchPolicy.effectivePolicy,

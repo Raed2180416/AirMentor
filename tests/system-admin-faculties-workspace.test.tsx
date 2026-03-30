@@ -8,6 +8,8 @@ import { SystemAdminScopedRegistryLaunches } from '../src/system-admin-scoped-re
 import type { PolicyFormState, StagePolicyFormState } from '../src/system-admin-governance-editors'
 import type { BatchProvisioningFormState, EntityEditorState } from '../src/system-admin-live-app'
 import type { LiveAdminDataset, LiveAdminRoute } from '../src/system-admin-live-data'
+import type { ApiMentorAssignmentBulkApplyResponse } from '../src/api/types'
+import type { BulkMentorAssignmentFormState } from '../src/system-admin-provisioning-helpers'
 
 const data: LiveAdminDataset = {
   institution: {
@@ -119,7 +121,20 @@ const data: LiveAdminDataset = {
           updatedAt: '2026-01-01T00:00:00.000Z',
         },
       ],
-      roleGrants: [],
+      roleGrants: [
+        {
+          grantId: 'grant_mentor_1',
+          facultyId: 'fac_1',
+          roleCode: 'MENTOR',
+          scopeType: 'branch',
+          scopeId: 'branch_1',
+          scopeLabel: 'Computer Science and Engineering',
+          startDate: '2024-01-01',
+          endDate: null,
+          status: 'active',
+          version: 1,
+        },
+      ],
     },
   ],
   students: [
@@ -331,11 +346,63 @@ function makeBatchProvisioningForm(): BatchProvisioningFormState {
     sectionLabels: 'A, B',
     mode: 'mock',
     studentsPerSection: '60',
+    facultyPoolIds: ['fac_1'],
     createStudents: true,
     createMentors: true,
     createAttendanceScaffolding: true,
     createAssessmentScaffolding: false,
     createTranscriptScaffolding: true,
+  }
+}
+
+function makeBulkMentorAssignmentForm(): BulkMentorAssignmentFormState {
+  return {
+    facultyId: 'fac_1',
+    effectiveFrom: '2024-08-01',
+    source: 'sysadmin-bulk-mentor-apply',
+    selectionMode: 'replace-all',
+  }
+}
+
+function makeBulkMentorAssignmentPreview(): ApiMentorAssignmentBulkApplyResponse {
+  return {
+    ok: true,
+    preview: true,
+    bulkApplyId: null,
+    batchId: 'batch_2022',
+    batchLabel: '2022',
+    sectionCode: 'A',
+    facultyId: 'fac_1',
+    facultyDisplayName: 'Prof. Kavitha Rao',
+    scopeLabel: 'Batch 2022 · Section A',
+    effectiveFrom: '2024-08-01',
+    source: 'sysadmin-bulk-mentor-apply',
+    selectionMode: 'replace-all',
+    mentorEligibility: {
+      eligible: true,
+      appointmentInScope: true,
+      mentorGrantInScope: true,
+      reasons: [],
+    },
+    studentIds: ['student_1'],
+    summary: {
+      targetedStudentCount: 1,
+      unchangedCount: 0,
+      endedAssignmentCount: 0,
+      createdAssignmentCount: 1,
+    },
+    students: [
+      {
+        studentId: 'student_1',
+        studentName: 'Aisha Khan',
+        usn: '1AM22CS001',
+        sectionCode: 'A',
+        currentMentorFacultyId: null,
+        currentMentorAssignmentId: null,
+        action: 'assign',
+        actionReason: 'No active mentor assignment exists in the selected scope.',
+      },
+    ],
   }
 }
 
@@ -578,10 +645,17 @@ function renderWorkspace(universityTab: 'overview' | 'bands' | 'courses' | 'prov
     setBatchProvisioningForm: () => {},
     handleProvisionBatch: async () => {},
     batchFacultyPool: data.facultyMembers,
+    batchMentorEligibleFaculty: data.facultyMembers,
     batchOfferingsWithoutOwner: [],
     batchStudentsWithoutEnrollment: [],
     batchStudentsWithoutMentor: data.students,
     batchOfferingsWithoutRoster: [],
+    bulkMentorAssignmentForm: makeBulkMentorAssignmentForm(),
+    setBulkMentorAssignmentForm: () => {},
+    bulkMentorAssignmentPreview: makeBulkMentorAssignmentPreview(),
+    handlePreviewBulkMentorAssignment: async () => {},
+    handleApplyBulkMentorAssignment: async () => {},
+    clearBulkMentorAssignmentPreview: () => {},
     activeUniversityRegistryScope: { label: 'Batch 2022' },
     activeUniversityStudentScopeChipLabel: 'Batch 2022',
     activeUniversityFacultyScopeChipLabel: 'Batch faculty',
@@ -674,8 +748,15 @@ describe('system-admin faculties workspace parity', () => {
     const markup = renderWorkspace('provision')
 
     expect(markup).toContain('Provisioning')
+    expect(markup).toContain('Mentor-Ready Faculty')
     expect(markup).toContain('Faculty In Scope')
     expect(markup).toContain('Students Without Mentor')
+    expect(markup).toContain('Live Empty')
+    expect(markup).toContain('Bulk Mentor Assignment')
+    expect(markup).toContain('Preview Bulk Apply')
+    expect(markup).toContain('Apply Previewed Mentor Changes')
+    expect(markup).toContain('Batch 2022 · Section A')
+    expect(markup).toContain('Prof. Kavitha Rao')
     expect(markup).toContain('Run Provisioning')
     expect(markup).toContain('Current semester term 2024-25')
   })

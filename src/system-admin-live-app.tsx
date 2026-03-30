@@ -38,6 +38,7 @@ import type {
   ApiDepartment,
   ApiFacultyRecord,
   ApiFacultyAppointment,
+  ApiMentorAssignmentBulkApplyResponse,
   ApiMentorAssignment,
   ApiAdminRequestDetail,
   ApiAdminSearchResult,
@@ -111,6 +112,14 @@ import {
   type HierarchyScopeInput,
 } from './system-admin-overview-helpers'
 import { describeProofAvailability, describeProofProvenance } from './proof-provenance'
+import {
+  buildBulkMentorAssignmentApplyPayload,
+  buildBulkMentorAssignmentPreviewPayload,
+  defaultBulkMentorAssignmentForm,
+  describeBulkMentorPreview,
+  getScopedMentorEligibleFaculty,
+  type BulkMentorAssignmentFormState,
+} from './system-admin-provisioning-helpers'
 import {
   collectAdminQueueDismissKeys,
   mergeAdminQueueDismissKeys,
@@ -327,6 +336,7 @@ export type BatchProvisioningFormState = {
   sectionLabels: string
   mode: ApiBatchProvisioningRequest['mode']
   studentsPerSection: string
+  facultyPoolIds: string[]
   createStudents: boolean
   createMentors: boolean
   createAttendanceScaffolding: boolean
@@ -708,6 +718,7 @@ function defaultBatchProvisioningForm(): BatchProvisioningFormState {
     sectionLabels: 'A, B',
     mode: 'mock',
     studentsPerSection: '60',
+    facultyPoolIds: [],
     createStudents: true,
     createMentors: true,
     createAttendanceScaffolding: true,
@@ -722,6 +733,7 @@ function buildBatchProvisioningPayload(form: BatchProvisioningFormState): ApiBat
     sectionLabels: parseCurriculumFeatureLines(form.sectionLabels.replace(/,/g, '\n')),
     mode: form.mode ?? 'mock',
     studentsPerSection: requirePositiveInteger('Students per section', form.studentsPerSection),
+    facultyPoolIds: form.facultyPoolIds.length > 0 ? [...form.facultyPoolIds] : undefined,
     createStudents: form.createStudents,
     createMentors: form.createMentors,
     createAttendanceScaffolding: form.createAttendanceScaffolding,
@@ -1846,6 +1858,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const [curriculumFeatureBindingMode, setCurriculumFeatureBindingMode] = useState<'inherit-scope-profile' | 'pin-profile' | 'local-only'>('inherit-scope-profile')
   const [curriculumFeaturePinnedProfileId, setCurriculumFeaturePinnedProfileId] = useState('')
   const [batchProvisioningForm, setBatchProvisioningForm] = useState<BatchProvisioningFormState>(() => defaultBatchProvisioningForm())
+  const [bulkMentorAssignmentForm, setBulkMentorAssignmentForm] = useState<BulkMentorAssignmentFormState>(() => defaultBulkMentorAssignmentForm())
+  const [bulkMentorAssignmentPreview, setBulkMentorAssignmentPreview] = useState<ApiMentorAssignmentBulkApplyResponse | null>(null)
   const [selectedStageOfferingId, setSelectedStageOfferingId] = useState('')
   const [selectedStageEligibility, setSelectedStageEligibility] = useState<ApiOfferingStageEligibility | null>(null)
   const [selectedProofCheckpointId, setSelectedProofCheckpointId] = useState<string | null>(() => readProofPlaybackSelection()?.simulationStageCheckpointId ?? null)
@@ -3918,6 +3932,42 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     })
   }
 
+  const handlePreviewBulkMentorAssignment = async () => {
+    if (!selectedBatch) return
+    const result = await runAction(async () => apiClient.bulkApplyMentorAssignments(
+      buildBulkMentorAssignmentPreviewPayload(selectedBatch.batchId, selectedSectionCode, bulkMentorAssignmentForm),
+    ))
+    if (!result) return
+    setBulkMentorAssignmentPreview(result)
+    setFlashMessage(describeBulkMentorPreview(result))
+  }
+
+  const handleApplyBulkMentorAssignment = async () => {
+    if (!selectedBatch || !bulkMentorAssignmentPreview) return
+    if (
+      bulkMentorAssignmentPreview.summary.createdAssignmentCount === 0
+      && bulkMentorAssignmentPreview.summary.endedAssignmentCount === 0
+    ) {
+      setFlashMessage('The current preview does not contain any mentor changes to apply.')
+      return
+    }
+    if (!window.confirm(`Apply mentor changes for ${bulkMentorAssignmentPreview.scopeLabel}?`)) return
+    const result = await runAction(async () => apiClient.bulkApplyMentorAssignments(
+      buildBulkMentorAssignmentApplyPayload(
+        selectedBatch.batchId,
+        selectedSectionCode,
+        bulkMentorAssignmentForm,
+        bulkMentorAssignmentPreview.studentIds,
+      ),
+    ))
+    if (!result) return
+    await loadAdminData()
+    setBulkMentorAssignmentPreview(null)
+    setFlashMessage(
+      `${result.summary.createdAssignmentCount} mentor links applied and ${result.summary.endedAssignmentCount} active links end-dated for ${result.scopeLabel}.`,
+    )
+  }
+
   const handleCreateProofImport = async () => {
     if (!selectedBatch) return
     await runAction(async () => {
@@ -5227,6 +5277,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const batchFacultyPool = batchScopeForProvisioning
     ? visibleFacultyMembers.filter(item => matchesFacultyScope(item, data, batchScopeForProvisioning))
     : []
+  const batchMentorEligibleFaculty = getScopedMentorEligibleFaculty(
+    batchFacultyPool,
+    selectedBatch?.batchId ?? null,
+    selectedSectionCode,
+  )
   const batchStudents = selectedBatch
     ? data.students
         .filter(item => isStudentVisible(data, item))
@@ -5240,6 +5295,43 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     student.activeAcademicContext?.termId === offering.termId
     && student.activeAcademicContext?.sectionCode === offering.section
   )))
+
+  useEffect(() => {
+    setBatchProvisioningForm(prev => {
+      const nextFacultyPoolIds = prev.facultyPoolIds.filter(facultyId => batchFacultyPool.some(member => member.facultyId === facultyId))
+      return nextFacultyPoolIds.length === prev.facultyPoolIds.length
+        ? prev
+        : { ...prev, facultyPoolIds: nextFacultyPoolIds }
+    })
+  }, [batchFacultyPool])
+
+  useEffect(() => {
+    setBulkMentorAssignmentForm(prev => {
+      const fallbackFacultyId = batchMentorEligibleFaculty[0]?.facultyId ?? ''
+      const nextFacultyId = batchMentorEligibleFaculty.some(member => member.facultyId === prev.facultyId)
+        ? prev.facultyId
+        : fallbackFacultyId
+      const nextEffectiveFrom = currentSemesterTerm?.startDate ?? prev.effectiveFrom
+      if (nextFacultyId === prev.facultyId && nextEffectiveFrom === prev.effectiveFrom) return prev
+      return {
+        ...prev,
+        facultyId: nextFacultyId,
+        effectiveFrom: nextEffectiveFrom,
+      }
+    })
+  }, [batchMentorEligibleFaculty, currentSemesterTerm?.startDate, selectedBatch?.batchId, selectedSectionCode])
+
+  useEffect(() => {
+    setBulkMentorAssignmentPreview(null)
+  }, [
+    selectedBatch?.batchId,
+    selectedSectionCode,
+    bulkMentorAssignmentForm.facultyId,
+    bulkMentorAssignmentForm.effectiveFrom,
+    bulkMentorAssignmentForm.source,
+    bulkMentorAssignmentForm.selectionMode,
+  ])
+
   const selectedStageOffering = batchOfferings.find(item => item.offId === selectedStageOfferingId) ?? batchOfferings[0] ?? null
   const selectedCurriculumFeatureTargetScope = curriculumFeatureTargetScopeKey
     ? curriculumFeatureTargetScopeOptions.find(scope => `${scope.scopeType}::${scope.scopeId}` === curriculumFeatureTargetScopeKey) ?? null
@@ -5918,10 +6010,17 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             setBatchProvisioningForm={setBatchProvisioningForm}
             handleProvisionBatch={handleProvisionBatch}
             batchFacultyPool={batchFacultyPool}
+            batchMentorEligibleFaculty={batchMentorEligibleFaculty}
             batchOfferingsWithoutOwner={batchOfferingsWithoutOwner}
             batchStudentsWithoutEnrollment={batchStudentsWithoutEnrollment}
             batchStudentsWithoutMentor={batchStudentsWithoutMentor}
             batchOfferingsWithoutRoster={batchOfferingsWithoutRoster}
+            bulkMentorAssignmentForm={bulkMentorAssignmentForm}
+            setBulkMentorAssignmentForm={setBulkMentorAssignmentForm}
+            bulkMentorAssignmentPreview={bulkMentorAssignmentPreview}
+            handlePreviewBulkMentorAssignment={handlePreviewBulkMentorAssignment}
+            handleApplyBulkMentorAssignment={handleApplyBulkMentorAssignment}
+            clearBulkMentorAssignmentPreview={() => setBulkMentorAssignmentPreview(null)}
             activeUniversityRegistryScope={activeUniversityRegistryScope}
             activeUniversityStudentScopeChipLabel={activeUniversityStudentScopeChipLabel}
             activeUniversityFacultyScopeChipLabel={activeUniversityFacultyScopeChipLabel}

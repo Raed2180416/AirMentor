@@ -20,6 +20,12 @@ import type {
   StagePolicyFormState,
 } from './system-admin-live-app'
 import {
+  describeBulkMentorPreview,
+  describeScopedFacultyRoles,
+  getScopedMentorEligibleFaculty,
+  type BulkMentorAssignmentFormState,
+} from './system-admin-provisioning-helpers'
+import {
   EmptyState,
   InfoBanner,
   TextAreaInput,
@@ -41,6 +47,7 @@ import type {
   ApiBranch,
   ApiDepartment,
   ApiFacultyRecord,
+  ApiMentorAssignmentBulkApplyResponse,
   ApiPolicyOverride,
   ApiResolvedBatchPolicy,
   ApiResolvedBatchStagePolicy,
@@ -426,10 +433,17 @@ type SystemAdminFacultiesWorkspaceProps = {
   setBatchProvisioningForm: Dispatch<SetStateAction<BatchProvisioningFormState>>
   handleProvisionBatch: () => Promise<void>
   batchFacultyPool: ApiFacultyRecord[]
+  batchMentorEligibleFaculty: ApiFacultyRecord[]
   batchOfferingsWithoutOwner: LiveAdminDataset['offerings']
   batchStudentsWithoutEnrollment: ApiStudentRecord[]
   batchStudentsWithoutMentor: ApiStudentRecord[]
   batchOfferingsWithoutRoster: LiveAdminDataset['offerings']
+  bulkMentorAssignmentForm: BulkMentorAssignmentFormState
+  setBulkMentorAssignmentForm: Dispatch<SetStateAction<BulkMentorAssignmentFormState>>
+  bulkMentorAssignmentPreview: ApiMentorAssignmentBulkApplyResponse | null
+  handlePreviewBulkMentorAssignment: () => Promise<void>
+  handleApplyBulkMentorAssignment: () => Promise<void>
+  clearBulkMentorAssignmentPreview: () => void
   activeUniversityRegistryScope: ScopedRegistryScope
   activeUniversityStudentScopeChipLabel: string
   activeUniversityFacultyScopeChipLabel: string
@@ -552,10 +566,17 @@ export function SystemAdminFacultiesWorkspace({
   setBatchProvisioningForm,
   handleProvisionBatch,
   batchFacultyPool,
+  batchMentorEligibleFaculty,
   batchOfferingsWithoutOwner,
   batchStudentsWithoutEnrollment,
   batchStudentsWithoutMentor,
   batchOfferingsWithoutRoster,
+  bulkMentorAssignmentForm,
+  setBulkMentorAssignmentForm,
+  bulkMentorAssignmentPreview,
+  handlePreviewBulkMentorAssignment,
+  handleApplyBulkMentorAssignment,
+  clearBulkMentorAssignmentPreview,
   curriculumFeatureProfileOptions,
   curriculumFeatureBindingMode,
   setCurriculumFeatureBindingMode,
@@ -1135,11 +1156,26 @@ export function SystemAdminFacultiesWorkspace({
       <EmptyState title="Select a year first" body="Terms and curriculum editing unlock once a batch is selected within the chosen branch." />
     )
   ) : null
+  const provisioningSectionLabels = batchProvisioningForm.sectionLabels
+    .split(/[\n,]/)
+    .map(label => label.trim().toUpperCase())
+    .filter(Boolean)
+  const provisioningMentorEligibilitySectionCode = provisioningSectionLabels.length === 1 ? provisioningSectionLabels[0] ?? null : null
+  const provisioningMentorEligibleFaculty = selectedBatch
+    ? getScopedMentorEligibleFaculty(batchFacultyPool, selectedBatch.batchId, provisioningMentorEligibilitySectionCode)
+    : []
+  const selectedProvisionFacultyPool = batchProvisioningForm.facultyPoolIds.length > 0
+    ? batchFacultyPool.filter(member => batchProvisioningForm.facultyPoolIds.includes(member.facultyId))
+    : batchFacultyPool
+  const selectedProvisionMentorFaculty = batchProvisioningForm.facultyPoolIds.length > 0
+    ? provisioningMentorEligibleFaculty.filter(member => batchProvisioningForm.facultyPoolIds.includes(member.facultyId))
+    : provisioningMentorEligibleFaculty
   const provisionPanel = selectedBatch && universityTab === 'provision' ? (
     <Card style={{ padding: 18, display: 'grid', gap: 16 }}>
       <SectionHeading title="Provisioning" eyebrow="Operations" caption={`Launch deterministic student, mentor, ownership, and scaffolding generation for Batch ${selectedBatch.batchLabel}${selectedSectionCode ? ` · Section ${selectedSectionCode}` : ''}.`} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(132px, 1fr))', gap: 10 }}>
         <AdminMiniStat label="Faculty In Scope" value={String(batchFacultyPool.length)} tone={T.accent} />
+        <AdminMiniStat label="Mentor-Ready Faculty" value={String(provisioningMentorEligibleFaculty.length)} tone={provisioningMentorEligibleFaculty.length ? T.success : T.warning} />
         <AdminMiniStat label="Offerings Without Owner" value={String(batchOfferingsWithoutOwner.length)} tone={batchOfferingsWithoutOwner.length ? T.warning : T.success} />
         <AdminMiniStat label="Students Without Enrollment" value={String(batchStudentsWithoutEnrollment.length)} tone={batchStudentsWithoutEnrollment.length ? T.warning : T.success} />
         <AdminMiniStat label="Students Without Mentor" value={String(batchStudentsWithoutMentor.length)} tone={batchStudentsWithoutMentor.length ? T.warning : T.success} />
@@ -1158,12 +1194,30 @@ export function SystemAdminFacultiesWorkspace({
           <LabeledField label="Mode">
             <select value={batchProvisioningForm.mode} onChange={event => setBatchProvisioningForm(prev => ({ ...prev, mode: event.target.value as BatchProvisioningFormState['mode'] }))} style={{ width: '100%' }}>
               <option value="mock">Mock</option>
-              <option value="live">Live</option>
+              <option value="live-empty">Live Empty</option>
+              <option value="manual">Manual</option>
             </select>
           </LabeledField>
           <LabeledField label="Sections"><TextInput value={batchProvisioningForm.sectionLabels} onChange={event => setBatchProvisioningForm(prev => ({ ...prev, sectionLabels: event.target.value }))} placeholder="A, B" /></LabeledField>
           <LabeledField label="Students per section"><TextInput value={batchProvisioningForm.studentsPerSection} onChange={event => setBatchProvisioningForm(prev => ({ ...prev, studentsPerSection: event.target.value }))} /></LabeledField>
         </div>
+        <LabeledField label="Faculty pool" hint="Leave the multi-select empty to use every faculty member in scope. Provisioning mentors only uses faculty with an active mentor grant in the same scope.">
+          <select
+            multiple
+            value={batchProvisioningForm.facultyPoolIds}
+            onChange={event => {
+              const nextFacultyPoolIds = Array.from(event.currentTarget.selectedOptions, option => option.value)
+              setBatchProvisioningForm(prev => ({ ...prev, facultyPoolIds: nextFacultyPoolIds }))
+            }}
+            style={{ width: '100%', minHeight: 132 }}
+          >
+            {batchFacultyPool.map(member => (
+              <option key={member.facultyId} value={member.facultyId}>
+                {`${member.displayName} · ${describeScopedFacultyRoles(member)}`}
+              </option>
+            ))}
+          </select>
+        </LabeledField>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <ToggleField label="Create students" checked={batchProvisioningForm.createStudents} onChange={checked => setBatchProvisioningForm(prev => ({ ...prev, createStudents: checked }))} />
           <ToggleField label="Create mentors" checked={batchProvisioningForm.createMentors} onChange={checked => setBatchProvisioningForm(prev => ({ ...prev, createMentors: checked }))} />
@@ -1172,10 +1226,96 @@ export function SystemAdminFacultiesWorkspace({
           <ToggleField label="Create transcript scaffolding" checked={batchProvisioningForm.createTranscriptScaffolding} onChange={checked => setBatchProvisioningForm(prev => ({ ...prev, createTranscriptScaffolding: checked }))} />
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <Chip color={selectedProvisionFacultyPool.length === batchFacultyPool.length ? T.dim : T.accent}>
+            {selectedProvisionFacultyPool.length === batchFacultyPool.length
+              ? 'Using every scoped faculty member'
+              : `${selectedProvisionFacultyPool.length} faculty selected`}
+          </Chip>
+          <Chip color={selectedProvisionMentorFaculty.length > 0 ? T.success : T.warning}>
+            {selectedProvisionMentorFaculty.length > 0
+              ? `${selectedProvisionMentorFaculty.length} mentor-ready faculty in the current pool`
+              : 'No mentor-ready faculty in the current pool'}
+          </Chip>
           <Btn type="submit">Run Provisioning</Btn>
           {currentSemesterTerm ? <Chip color={T.success}>{`Current semester term ${currentSemesterTerm.academicYearLabel}`}</Chip> : <Chip color={T.warning}>Add a term before running provisioning</Chip>}
         </div>
       </form>
+      <Card style={{ padding: 14, background: T.surface, display: 'grid', gap: 12 }}>
+        <SectionHeading title="Bulk Mentor Assignment" eyebrow="Permissions" caption={`Preview or apply mentor links for ${selectedSectionCode ? `Section ${selectedSectionCode}` : `Batch ${selectedBatch.batchLabel}`} using only mentor-ready faculty.`} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+          <LabeledField label="Eligible mentor">
+            <select value={bulkMentorAssignmentForm.facultyId} onChange={event => {
+              clearBulkMentorAssignmentPreview()
+              setBulkMentorAssignmentForm(prev => ({ ...prev, facultyId: event.target.value }))
+            }} style={{ width: '100%' }}>
+              <option value="">{batchMentorEligibleFaculty.length > 0 ? 'Select mentor-ready faculty' : 'No mentor-ready faculty available'}</option>
+              {batchMentorEligibleFaculty.map(member => (
+                <option key={member.facultyId} value={member.facultyId}>{`${member.displayName} · ${describeScopedFacultyRoles(member)}`}</option>
+              ))}
+            </select>
+          </LabeledField>
+          <LabeledField label="Selection mode">
+            <select value={bulkMentorAssignmentForm.selectionMode} onChange={event => {
+              clearBulkMentorAssignmentPreview()
+              setBulkMentorAssignmentForm(prev => ({ ...prev, selectionMode: event.target.value as BulkMentorAssignmentFormState['selectionMode'] }))
+            }} style={{ width: '100%' }}>
+              <option value="missing-only">Apply mentor gaps only</option>
+              <option value="replace-all">Replace all active mentor links in scope</option>
+            </select>
+          </LabeledField>
+          <LabeledField label="Effective from"><TextInput value={bulkMentorAssignmentForm.effectiveFrom} onChange={event => {
+            clearBulkMentorAssignmentPreview()
+            setBulkMentorAssignmentForm(prev => ({ ...prev, effectiveFrom: event.target.value }))
+          }} placeholder="YYYY-MM-DD" /></LabeledField>
+          <LabeledField label="Source"><TextInput value={bulkMentorAssignmentForm.source} onChange={event => {
+            clearBulkMentorAssignmentPreview()
+            setBulkMentorAssignmentForm(prev => ({ ...prev, source: event.target.value }))
+          }} placeholder="sysadmin-bulk-mentor-apply" /></LabeledField>
+        </div>
+        <InfoBanner message={describeBulkMentorPreview(bulkMentorAssignmentPreview)} tone={bulkMentorAssignmentPreview && bulkMentorAssignmentPreview.summary.targetedStudentCount > 0 ? 'success' : 'neutral'} />
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <Btn type="button" onClick={() => void handlePreviewBulkMentorAssignment()} disabled={batchMentorEligibleFaculty.length === 0 || !bulkMentorAssignmentForm.facultyId}>Preview Bulk Apply</Btn>
+          <Btn type="button" variant="ghost" onClick={clearBulkMentorAssignmentPreview}>Clear Preview</Btn>
+          <Btn
+            type="button"
+            variant="secondary"
+            onClick={() => void handleApplyBulkMentorAssignment()}
+            disabled={
+              !bulkMentorAssignmentPreview
+              || (
+                bulkMentorAssignmentPreview.summary.createdAssignmentCount === 0
+                && bulkMentorAssignmentPreview.summary.endedAssignmentCount === 0
+              )
+            }
+          >
+            Apply Previewed Mentor Changes
+          </Btn>
+          {bulkMentorAssignmentPreview?.bulkApplyId ? <Chip color={T.success}>{`Applied as ${bulkMentorAssignmentPreview.bulkApplyId}`}</Chip> : null}
+        </div>
+        {bulkMentorAssignmentPreview ? (
+          <div style={{ display: 'grid', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Chip color={bulkMentorAssignmentPreview.summary.targetedStudentCount > 0 ? T.accent : T.dim}>{`${bulkMentorAssignmentPreview.summary.targetedStudentCount} targeted`}</Chip>
+              <Chip color={bulkMentorAssignmentPreview.summary.createdAssignmentCount > 0 ? T.success : T.dim}>{`${bulkMentorAssignmentPreview.summary.createdAssignmentCount} creates`}</Chip>
+              <Chip color={bulkMentorAssignmentPreview.summary.endedAssignmentCount > 0 ? T.warning : T.dim}>{`${bulkMentorAssignmentPreview.summary.endedAssignmentCount} end-dates`}</Chip>
+              <Chip color={bulkMentorAssignmentPreview.summary.unchangedCount > 0 ? T.dim : T.success}>{`${bulkMentorAssignmentPreview.summary.unchangedCount} unchanged`}</Chip>
+            </div>
+            {bulkMentorAssignmentPreview.students.length === 0 ? <EmptyState title="No students matched the preview" body="Adjust the selection mode, scope, or mentor-ready faculty to target a different cohort." /> : (
+              <div style={{ display: 'grid', gap: 8 }}>
+                {bulkMentorAssignmentPreview.students.map(student => (
+                  <Card key={student.studentId} style={{ padding: 12, background: T.surface2, display: 'grid', gap: 4 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{`${student.studentName} · ${student.usn}`}</div>
+                      <Chip color={student.action === 'reassign' ? T.warning : student.action === 'keep' ? T.dim : T.success}>{student.action}</Chip>
+                    </div>
+                    <div style={{ ...mono, fontSize: 10, color: T.muted }}>{`${student.sectionCode ? `Section ${student.sectionCode}` : 'Scope-level student'} · ${student.actionReason}`}</div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : null}
+      </Card>
     </Card>
   ) : null
 

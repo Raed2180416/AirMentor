@@ -211,6 +211,59 @@ export type ApiMentorAssignment = {
   updatedAt: string
 }
 
+export type ApiMentorAssignmentBulkApplySelectionMode = 'missing-only' | 'replace-all'
+
+export type ApiMentorAssignmentBulkApplyRequest = {
+  batchId: string
+  sectionCode?: string | null
+  facultyId: string
+  effectiveFrom: string
+  source: string
+  selectionMode?: ApiMentorAssignmentBulkApplySelectionMode
+  previewOnly?: boolean
+  expectedStudentIds?: string[]
+}
+
+export type ApiMentorAssignmentBulkApplyStudent = {
+  studentId: string
+  studentName: string
+  usn: string
+  sectionCode: string | null
+  currentMentorFacultyId: string | null
+  currentMentorAssignmentId: string | null
+  action: 'assign' | 'reassign' | 'keep'
+  actionReason: string
+}
+
+export type ApiMentorAssignmentBulkApplyResponse = {
+  ok: true
+  preview: boolean
+  bulkApplyId: string | null
+  batchId: string
+  batchLabel: string
+  sectionCode: string | null
+  facultyId: string
+  facultyDisplayName: string
+  scopeLabel: string
+  effectiveFrom: string
+  source: string
+  selectionMode: ApiMentorAssignmentBulkApplySelectionMode
+  mentorEligibility: {
+    eligible: boolean
+    appointmentInScope: boolean
+    mentorGrantInScope: boolean
+    reasons: string[]
+  }
+  studentIds: string[]
+  summary: {
+    targetedStudentCount: number
+    unchangedCount: number
+    endedAssignmentCount: number
+    createdAssignmentCount: number
+  }
+  students: ApiMentorAssignmentBulkApplyStudent[]
+}
+
 export type ApiStudentRecord = {
   studentId: string
   institutionId: string
@@ -2232,6 +2285,7 @@ export type ApiBatchProvisioningResponse = {
     createdAssessmentCount: number
     createdTranscriptCount: number
     facultyPoolCount: number
+    mentorFacultyPoolCount: number
     curriculumCourseCount: number
   }
   policyFingerprint: ApiStagePolicyPayload

@@ -60,6 +60,8 @@ import type {
   ApiInstitution,
   ApiLoginRequest,
   ApiMentorAssignment,
+  ApiMentorAssignmentBulkApplyRequest,
+  ApiMentorAssignmentBulkApplyResponse,
   ApiOfferingOwnership,
   ApiPolicyOverride,
   ApiStagePolicyOverride,
@@ -197,6 +199,7 @@ export interface AirMentorApiClientLike {
   updateEnrollment(enrollmentId: string, payload: Pick<ApiStudentEnrollment, 'studentId' | 'branchId' | 'termId' | 'sectionCode' | 'academicStatus' | 'startDate' | 'endDate' | 'version'> & { rosterOrder?: number }): Promise<ApiStudentEnrollment>
   createMentorAssignment(payload: Pick<ApiMentorAssignment, 'studentId' | 'facultyId' | 'effectiveFrom' | 'effectiveTo' | 'source'>): Promise<ApiMentorAssignment>
   updateMentorAssignment(assignmentId: string, payload: Pick<ApiMentorAssignment, 'studentId' | 'facultyId' | 'effectiveFrom' | 'effectiveTo' | 'source' | 'version'>): Promise<ApiMentorAssignment>
+  bulkApplyMentorAssignments(payload: ApiMentorAssignmentBulkApplyRequest): Promise<ApiMentorAssignmentBulkApplyResponse>
   listCourses(): Promise<{ items: ApiCourse[] }>
   createCourse(payload: Pick<ApiCourse, 'courseCode' | 'title' | 'defaultCredits' | 'departmentId' | 'status'>): Promise<ApiCourse>
   updateCourse(courseId: string, payload: Pick<ApiCourse, 'courseCode' | 'title' | 'defaultCredits' | 'departmentId' | 'status' | 'version'>): Promise<ApiCourse>
@@ -837,6 +840,13 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
   async updateMentorAssignment(assignmentId: string, payload: Pick<ApiMentorAssignment, 'studentId' | 'facultyId' | 'effectiveFrom' | 'effectiveTo' | 'source' | 'version'>) {
     return this.request<ApiMentorAssignment>(`/api/admin/mentor-assignments/${assignmentId}`, {
       method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async bulkApplyMentorAssignments(payload: ApiMentorAssignmentBulkApplyRequest) {
+    return this.request<ApiMentorAssignmentBulkApplyResponse>('/api/admin/mentor-assignments/bulk-apply', {
+      method: 'POST',
       body: JSON.stringify(payload),
     })
   }

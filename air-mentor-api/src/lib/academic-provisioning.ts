@@ -1,3 +1,6 @@
+import type { facultyAppointments, roleGrants } from '../db/schema.js'
+import { encodeSectionScopeId, normalizeSectionCode } from './stage-policy.js'
+
 export type ProvisioningCourseShape = {
   title: string
   assessmentProfile: string
@@ -11,6 +14,100 @@ export type FacultyLoadTemplateEntry = {
   sectionCode: string
   semesterNumber: number
   weeklyHours: number
+}
+
+export type MentorProvisioningScope = {
+  academicFacultyId?: string | null
+  departmentId?: string | null
+  branchId: string
+  batchId: string
+  sectionCode?: string | null
+}
+
+export type MentorProvisioningEligibility = {
+  eligible: boolean
+  appointmentInScope: boolean
+  mentorGrantInScope: boolean
+  reasons: string[]
+}
+
+function normalizeDateOnly(value: string) {
+  return value.trim().slice(0, 10)
+}
+
+function isActiveOnDate(startDate: string | null | undefined, endDate: string | null | undefined, referenceDate: string) {
+  const normalizedReferenceDate = normalizeDateOnly(referenceDate)
+  const normalizedStartDate = startDate ? normalizeDateOnly(startDate) : ''
+  const normalizedEndDate = endDate ? normalizeDateOnly(endDate) : ''
+  if (normalizedStartDate && normalizedStartDate > normalizedReferenceDate) return false
+  if (normalizedEndDate && normalizedEndDate < normalizedReferenceDate) return false
+  return true
+}
+
+function mentorGrantMatchesScope(
+  grant: Pick<typeof roleGrants.$inferSelect, 'scopeType' | 'scopeId'>,
+  scope: MentorProvisioningScope,
+) {
+  if (grant.scopeType === 'institution') return true
+  if (grant.scopeType === 'academic-faculty') return !!scope.academicFacultyId && grant.scopeId === scope.academicFacultyId
+  if (grant.scopeType === 'department') return !!scope.departmentId && grant.scopeId === scope.departmentId
+  if (grant.scopeType === 'branch') return grant.scopeId === scope.branchId
+  if (grant.scopeType === 'batch') return grant.scopeId === scope.batchId
+  if (grant.scopeType === 'section') {
+    if (!scope.sectionCode) return false
+    return grant.scopeId === encodeSectionScopeId(scope.batchId, scope.sectionCode)
+  }
+  return false
+}
+
+export function getIsoDayBefore(dateIso: string) {
+  const normalizedDateIso = normalizeDateOnly(dateIso)
+  const parsed = new Date(`${normalizedDateIso}T00:00:00.000Z`)
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`Invalid ISO date ${dateIso}`)
+  }
+  parsed.setUTCDate(parsed.getUTCDate() - 1)
+  return parsed.toISOString().slice(0, 10)
+}
+
+export function getFacultyMentorProvisioningEligibility(input: {
+  facultyId: string
+  scope: MentorProvisioningScope
+  effectiveFrom: string
+  appointments: Array<Pick<typeof facultyAppointments.$inferSelect, 'facultyId' | 'departmentId' | 'branchId' | 'status' | 'startDate' | 'endDate'>>
+  roleGrants: Array<Pick<typeof roleGrants.$inferSelect, 'facultyId' | 'roleCode' | 'scopeType' | 'scopeId' | 'status' | 'startDate' | 'endDate'>>
+}) : MentorProvisioningEligibility {
+  const normalizedSectionCode = input.scope.sectionCode ? normalizeSectionCode(input.scope.sectionCode) : null
+  const normalizedScope = {
+    ...input.scope,
+    sectionCode: normalizedSectionCode,
+  }
+  const scopedAppointments = input.appointments.filter(appointment => (
+    appointment.facultyId === input.facultyId
+    && appointment.status === 'active'
+    && isActiveOnDate(appointment.startDate, appointment.endDate, input.effectiveFrom)
+    && (appointment.branchId === normalizedScope.branchId || appointment.departmentId === normalizedScope.departmentId)
+  ))
+  const scopedMentorGrants = input.roleGrants.filter(grant => (
+    grant.facultyId === input.facultyId
+    && grant.roleCode === 'MENTOR'
+    && grant.status === 'active'
+    && isActiveOnDate(grant.startDate, grant.endDate, input.effectiveFrom)
+    && mentorGrantMatchesScope(grant, normalizedScope)
+  ))
+  const reasons: string[] = []
+  if (scopedAppointments.length === 0) {
+    reasons.push('Faculty does not have an active appointment in the selected branch or department.')
+  }
+  if (scopedMentorGrants.length === 0) {
+    reasons.push('Faculty does not hold an active mentor grant that covers the selected scope.')
+  }
+  return {
+    eligible: scopedAppointments.length > 0 && scopedMentorGrants.length > 0,
+    appointmentInScope: scopedAppointments.length > 0,
+    mentorGrantInScope: scopedMentorGrants.length > 0,
+    reasons,
+  }
 }
 
 function isLabLikeCourse(course: Pick<ProvisioningCourseShape, 'title' | 'assessmentProfile'>) {

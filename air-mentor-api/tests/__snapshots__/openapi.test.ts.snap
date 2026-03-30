@@ -82,6 +82,7 @@ exports[`openapi > publishes the implemented route surface 1`] = `
   "/api/admin/faculty/{facultyId}/role-grants",
   "/api/admin/institution",
   "/api/admin/mentor-assignments",
+  "/api/admin/mentor-assignments/bulk-apply",
   "/api/admin/mentor-assignments/{assignmentId}",
   "/api/admin/offering-ownership",
   "/api/admin/offering-ownership/{ownershipId}",

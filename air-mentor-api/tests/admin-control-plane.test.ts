@@ -2,6 +2,9 @@ import { eq } from 'drizzle-orm'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   academicRuntimeState,
+  auditEvents,
+  batches,
+  branches,
   facultyAppointments,
   facultyCalendarAdminWorkspaces,
   facultyOfferingOwnerships,
@@ -356,6 +359,198 @@ describe('admin control plane routes', () => {
     ]))
     expect(profile.subjectRunCourseLeaderScope.length).toBeGreaterThan(0)
     expect(profile.mentorScope.activeStudentCount).toBe(1)
+  })
+
+  it('previews and bulk-applies mentor assignment changes with confirmation, audit detail, and mentor-surface parity', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+    expect(adminLogin.response.statusCode).toBe(200)
+
+    const [proofBatch] = await current.db.select().from(batches).where(eq(batches.batchId, MSRUAS_PROOF_BATCH_ID))
+    expect(proofBatch).toBeTruthy()
+    if (!proofBatch) throw new Error('Expected proof batch to exist')
+    const [proofBranch] = await current.db.select().from(branches).where(eq(branches.branchId, proofBatch.branchId))
+    expect(proofBranch).toBeTruthy()
+    if (!proofBranch) throw new Error('Expected proof branch to exist')
+
+    const createScopedMentorFaculty = async (username: string, displayName: string, employeeCode: string) => {
+      const facultyCreate = await current.app.inject({
+        method: 'POST',
+        url: '/api/admin/faculty',
+        headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+        payload: {
+          username,
+          email: `${username}@msruas.ac.in`,
+          phone: '+91-9000000911',
+          password: 'faculty1234',
+          employeeCode,
+          displayName,
+          designation: 'Professor',
+          joinedOn: '2024-01-01',
+          status: 'active',
+        },
+      })
+      expect(facultyCreate.statusCode).toBe(200)
+      const faculty = facultyCreate.json()
+
+      const appointmentCreate = await current.app.inject({
+        method: 'POST',
+        url: `/api/admin/faculty/${faculty.facultyId}/appointments`,
+        headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+        payload: {
+          departmentId: proofBranch.departmentId,
+          branchId: proofBranch.branchId,
+          isPrimary: true,
+          startDate: '2024-01-01',
+          status: 'active',
+        },
+      })
+      expect(appointmentCreate.statusCode).toBe(200)
+
+      const mentorGrantCreate = await current.app.inject({
+        method: 'POST',
+        url: `/api/admin/faculty/${faculty.facultyId}/role-grants`,
+        headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+        payload: {
+          roleCode: 'MENTOR',
+          scopeType: 'batch',
+          scopeId: MSRUAS_PROOF_BATCH_ID,
+          startDate: '2024-01-01',
+          status: 'active',
+        },
+      })
+      expect(mentorGrantCreate.statusCode).toBe(200)
+      return faculty
+    }
+
+    const previousMentor = await createScopedMentorFaculty('bulk.mentor.prev', 'Dr. Previous Mentor', 'EMP-T910')
+    const targetMentor = await createScopedMentorFaculty('bulk.mentor.target', 'Dr. Target Mentor', 'EMP-T911')
+
+    const studentsResponse = await current.app.inject({
+      method: 'GET',
+      url: '/api/admin/students',
+      headers: { cookie: adminLogin.cookie },
+    })
+    expect(studentsResponse.statusCode).toBe(200)
+    const scopedStudents = studentsResponse.json().items.filter((student: {
+      activeAcademicContext?: { batchId?: string | null; sectionCode?: string | null } | null
+    }) => (
+      student.activeAcademicContext?.batchId === MSRUAS_PROOF_BATCH_ID
+      && student.activeAcademicContext?.sectionCode === 'A'
+    ))
+    expect(scopedStudents.length).toBeGreaterThanOrEqual(2)
+    const [reassignedStudent] = scopedStudents
+    expect(reassignedStudent).toBeTruthy()
+    if (!reassignedStudent) throw new Error('Expected a scoped student for bulk mentor reassignment')
+
+    const existingAssignmentCreate = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/mentor-assignments',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        studentId: reassignedStudent.studentId,
+        facultyId: previousMentor.facultyId,
+        effectiveFrom: '2026-03-01',
+        source: 'sysadmin-bulk-seed',
+      },
+    })
+    expect(existingAssignmentCreate.statusCode).toBe(200)
+
+    const previewResponse = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/mentor-assignments/bulk-apply',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        batchId: MSRUAS_PROOF_BATCH_ID,
+        sectionCode: 'A',
+        facultyId: targetMentor.facultyId,
+        effectiveFrom: '2026-03-18',
+        source: 'sysadmin-bulk-mentor-test',
+        selectionMode: 'replace-all',
+        previewOnly: true,
+      },
+    })
+    expect(previewResponse.statusCode).toBe(200)
+    const preview = previewResponse.json()
+    expect(preview.preview).toBe(true)
+    expect(preview.scopeLabel).toContain('Section A')
+    expect(preview.studentIds.length).toBeGreaterThan(0)
+    expect(preview.students).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        studentId: reassignedStudent.studentId,
+        action: 'reassign',
+        currentMentorFacultyId: previousMentor.facultyId,
+      }),
+    ]))
+
+    const staleConfirmation = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/mentor-assignments/bulk-apply',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        batchId: MSRUAS_PROOF_BATCH_ID,
+        sectionCode: 'A',
+        facultyId: targetMentor.facultyId,
+        effectiveFrom: '2026-03-18',
+        source: 'sysadmin-bulk-mentor-test',
+        selectionMode: 'replace-all',
+        previewOnly: false,
+        expectedStudentIds: [reassignedStudent.studentId],
+      },
+    })
+    expect(staleConfirmation.statusCode).toBe(409)
+
+    const applyResponse = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/mentor-assignments/bulk-apply',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        batchId: MSRUAS_PROOF_BATCH_ID,
+        sectionCode: 'A',
+        facultyId: targetMentor.facultyId,
+        effectiveFrom: '2026-03-18',
+        source: 'sysadmin-bulk-mentor-test',
+        selectionMode: 'replace-all',
+        previewOnly: false,
+        expectedStudentIds: preview.studentIds,
+      },
+    })
+    expect(applyResponse.statusCode).toBe(200)
+    const applied = applyResponse.json()
+    expect(applied.preview).toBe(false)
+    expect(applied.bulkApplyId).toBeTruthy()
+    expect(applied.summary.createdAssignmentCount).toBeGreaterThan(0)
+    expect(applied.summary.endedAssignmentCount).toBeGreaterThan(0)
+
+    const reassignedStudentAssignments = await current.db.select().from(mentorAssignments).where(eq(mentorAssignments.studentId, reassignedStudent.studentId))
+    const activeTargetAssignment = reassignedStudentAssignments.find(row => row.facultyId === targetMentor.facultyId && row.effectiveTo === null) ?? null
+    const endedPreviousAssignment = reassignedStudentAssignments.find(row => row.facultyId === previousMentor.facultyId) ?? null
+    expect(activeTargetAssignment?.effectiveFrom).toBe('2026-03-18')
+    expect(endedPreviousAssignment?.effectiveTo).toBe('2026-03-17')
+
+    const targetMentorAssignments = await current.db.select().from(mentorAssignments).where(eq(mentorAssignments.facultyId, targetMentor.facultyId))
+    const activeTargetStudentIds = new Set(targetMentorAssignments.filter(row => row.effectiveTo === null).map(row => row.studentId))
+    expect(preview.studentIds.every((studentId: string) => activeTargetStudentIds.has(studentId))).toBe(true)
+
+    const bulkApplyAuditRows = await current.db.select().from(auditEvents).where(eq(auditEvents.entityType, 'MentorAssignmentBulkApply'))
+    const bulkApplyAudit = bulkApplyAuditRows.find(row => row.entityId === applied.bulkApplyId) ?? null
+    expect(bulkApplyAudit).toBeTruthy()
+    expect(bulkApplyAudit?.action).toBe('applied')
+
+    const targetMentorLogin = await loginAs(current.app, 'bulk.mentor.target', 'faculty1234')
+    const targetMentorGrantId = targetMentorLogin.body.availableRoleGrants.find((grant: { roleCode: string }) => grant.roleCode === 'MENTOR')?.grantId
+    expect(targetMentorGrantId).toBeTruthy()
+    if (!targetMentorGrantId) throw new Error('Expected the created target mentor to expose a mentor grant')
+    await switchRoleContext(targetMentorLogin.cookie, targetMentorGrantId)
+
+    const targetMentorProfileResponse = await current.app.inject({
+      method: 'GET',
+      url: `/api/academic/faculty-profile/${targetMentor.facultyId}`,
+      headers: { cookie: targetMentorLogin.cookie },
+    })
+    expect(targetMentorProfileResponse.statusCode).toBe(200)
+    const targetMentorProfile = targetMentorProfileResponse.json()
+    expect(targetMentorProfile.mentorScope.studentIds).toEqual(expect.arrayContaining(preview.studentIds))
   })
 
   proofRcIt('runs the proof control plane end to end and exposes proof operations on the faculty profile', async () => {
@@ -1109,6 +1304,134 @@ describe('admin control plane routes', () => {
     expect(deletedFacultyLogin.statusCode).not.toBe(200)
   })
 
+  it('previews and applies scoped mentor bulk assignment with confirmation and audit coverage', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+    expect(adminLogin.response.statusCode).toBe(200)
+
+    const [studentsResponse, facultyResponse] = await Promise.all([
+      current.app.inject({
+        method: 'GET',
+        url: '/api/admin/students',
+        headers: { cookie: adminLogin.cookie },
+      }),
+      current.app.inject({
+        method: 'GET',
+        url: '/api/admin/faculty',
+        headers: { cookie: adminLogin.cookie },
+      }),
+    ])
+    expect(studentsResponse.statusCode).toBe(200)
+    expect(facultyResponse.statusCode).toBe(200)
+
+    const scopedStudents = studentsResponse.json().items.filter((student: {
+      studentId: string
+      activeAcademicContext?: { batchId?: string | null; sectionCode?: string | null } | null
+    }) => (
+      student.activeAcademicContext?.batchId === MSRUAS_PROOF_BATCH_ID
+      && student.activeAcademicContext?.sectionCode === 'A'
+    ))
+    expect(scopedStudents.length).toBeGreaterThan(0)
+
+    const mentorFaculty = facultyResponse.json().items.find((faculty: {
+      facultyId: string
+      username: string
+      roleGrants: Array<{ roleCode: string; status: string }>
+    }) => (
+      faculty.username === 'devika.shetty'
+      && faculty.roleGrants.some(grant => grant.roleCode === 'MENTOR' && grant.status === 'active')
+    ))
+    expect(mentorFaculty).toBeTruthy()
+    if (!mentorFaculty) throw new Error('Expected seeded mentor faculty for bulk-apply test')
+
+    const preview = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/mentor-assignments/bulk-apply',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        batchId: MSRUAS_PROOF_BATCH_ID,
+        sectionCode: 'A',
+        facultyId: mentorFaculty.facultyId,
+        effectiveFrom: '2026-03-20',
+        source: 'sysadmin-bulk-test',
+        selectionMode: 'replace-all',
+        previewOnly: true,
+      },
+    })
+    expect(preview.statusCode).toBe(200)
+    const previewBody = preview.json()
+    expect(previewBody.preview).toBe(true)
+    expect(previewBody.scopeLabel).toBeTruthy()
+    expect(previewBody.studentIds.length).toBe(previewBody.summary.targetedStudentCount)
+    expect(previewBody.students.length).toBe(scopedStudents.length)
+
+    const staleApply = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/mentor-assignments/bulk-apply',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        batchId: MSRUAS_PROOF_BATCH_ID,
+        sectionCode: 'A',
+        facultyId: mentorFaculty.facultyId,
+        effectiveFrom: '2026-03-20',
+        source: 'sysadmin-bulk-test',
+        selectionMode: 'replace-all',
+        previewOnly: false,
+        expectedStudentIds: previewBody.studentIds.slice(0, Math.max(0, previewBody.studentIds.length - 1)),
+      },
+    })
+    expect(staleApply.statusCode).toBe(409)
+
+    const apply = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/mentor-assignments/bulk-apply',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        batchId: MSRUAS_PROOF_BATCH_ID,
+        sectionCode: 'A',
+        facultyId: mentorFaculty.facultyId,
+        effectiveFrom: '2026-03-20',
+        source: 'sysadmin-bulk-test',
+        selectionMode: 'replace-all',
+        previewOnly: false,
+        expectedStudentIds: previewBody.studentIds,
+      },
+    })
+    expect(apply.statusCode).toBe(200)
+    const applyBody = apply.json()
+    expect(applyBody.preview).toBe(false)
+    expect(applyBody.bulkApplyId).toBeTruthy()
+
+    const activeBulkAssignments = await current.db.select().from(mentorAssignments).where(eq(mentorAssignments.facultyId, mentorFaculty.facultyId))
+    const createdStudentIds = new Set(
+      activeBulkAssignments
+        .filter(row => row.effectiveFrom === '2026-03-20' && row.effectiveTo === null)
+        .map(row => row.studentId),
+    )
+    expect(previewBody.students.filter((student: { action: string }) => student.action !== 'keep').length).toBeGreaterThan(0)
+    expect(previewBody.students
+      .filter((student: { action: string }) => student.action !== 'keep')
+      .every((student: { studentId: string }) => createdStudentIds.has(student.studentId))).toBe(true)
+
+    const auditRows = await current.db.select().from(auditEvents).where(eq(auditEvents.entityId, applyBody.bulkApplyId))
+    expect(auditRows.some(row => row.entityType === 'MentorAssignmentBulkApply' && row.action === 'applied')).toBe(true)
+
+    const mentorLogin = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+    expect(mentorLogin.response.statusCode).toBe(200)
+    const mentorGrantId = mentorLogin.body.availableRoleGrants.find((grant: { roleCode: string; grantId: string }) => grant.roleCode === 'MENTOR')?.grantId
+    expect(mentorGrantId).toBeTruthy()
+    await switchRoleContext(mentorLogin.cookie, mentorGrantId!)
+    const profileResponse = await current.app.inject({
+      method: 'GET',
+      url: `/api/academic/faculty-profile/${mentorFaculty.facultyId}`,
+      headers: { cookie: mentorLogin.cookie },
+    })
+    expect(profileResponse.statusCode).toBe(200)
+    const monitoringQueue = profileResponse.json().proofOperations.monitoringQueue as Array<{ studentId: string }>
+    const targetedStudentIds = new Set(previewBody.studentIds as string[])
+    expect(monitoringQueue.some(item => targetedStudentIds.has(item.studentId))).toBe(true)
+  })
+
   it('enforces the faculty timetable direct-edit window while keeping markers editable and reflected in teaching profile status', async () => {
     current = await createTestApp()
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
@@ -1475,7 +1798,61 @@ describe('admin control plane routes', () => {
 
   proofRcIt('returns an empty HoD proof surface outside the supervised proof branch', async () => {
     current = await createTestApp()
-    const hodLogin = await loginAs(current.app, 'kavitha.rao', '1234')
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+    expect(adminLogin.response.statusCode).toBe(200)
+
+    const [outsideBranch] = await current.db.select().from(branches).where(eq(branches.branchId, 'branch_ece_btech'))
+    expect(outsideBranch).toBeTruthy()
+    if (!outsideBranch) throw new Error('Expected a non-proof branch for the outside HoD proof-scope test')
+
+    const outsideFacultyCreate = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/faculty',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        username: 'outside.hod.proof',
+        email: 'outside.hod.proof@msruas.ac.in',
+        phone: '+91-9000000912',
+        password: 'faculty1234',
+        employeeCode: 'EMP-T912',
+        displayName: 'Dr. Outside HoD',
+        designation: 'Professor',
+        joinedOn: '2024-01-01',
+        status: 'active',
+      },
+    })
+    expect(outsideFacultyCreate.statusCode).toBe(200)
+    const outsideFaculty = outsideFacultyCreate.json()
+
+    const outsideAppointmentCreate = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/faculty/${outsideFaculty.facultyId}/appointments`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        departmentId: outsideBranch.departmentId,
+        branchId: outsideBranch.branchId,
+        isPrimary: true,
+        startDate: '2024-01-01',
+        status: 'active',
+      },
+    })
+    expect(outsideAppointmentCreate.statusCode).toBe(200)
+
+    const outsideGrantCreate = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/faculty/${outsideFaculty.facultyId}/role-grants`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        roleCode: 'HOD',
+        scopeType: 'department',
+        scopeId: outsideBranch.departmentId,
+        startDate: '2024-01-01',
+        status: 'active',
+      },
+    })
+    expect(outsideGrantCreate.statusCode).toBe(200)
+
+    const hodLogin = await loginAs(current.app, 'outside.hod.proof', 'faculty1234')
     expect(hodLogin.response.statusCode).toBe(200)
     const hodGrantId = hodLogin.body.availableRoleGrants.find((grant: { roleCode: string }) => grant.roleCode === 'HOD')?.grantId
     expect(hodGrantId).toBeTruthy()

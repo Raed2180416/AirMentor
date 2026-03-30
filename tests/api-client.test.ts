@@ -352,4 +352,64 @@ describe('AirMentorApiClient', () => {
       }),
     }))
   })
+
+  it('threads mentor bulk-apply confirmation through the API client', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => new Response(JSON.stringify({
+      ok: true,
+      preview: false,
+      bulkApplyId: 'mentor_bulk_apply_001',
+      batchId: 'batch_2022',
+      batchLabel: '2022',
+      sectionCode: 'A',
+      facultyId: 'fac_mentor',
+      facultyDisplayName: 'Prof. Kavitha Rao',
+      scopeLabel: 'Batch 2022 · Section A',
+      effectiveFrom: '2024-08-01',
+      source: 'sysadmin-bulk-mentor-apply',
+      selectionMode: 'replace-all',
+      mentorEligibility: {
+        eligible: true,
+        appointmentInScope: true,
+        mentorGrantInScope: true,
+        reasons: [],
+      },
+      studentIds: ['student_001', 'student_002'],
+      summary: {
+        targetedStudentCount: 2,
+        unchangedCount: 0,
+        endedAssignmentCount: 1,
+        createdAssignmentCount: 2,
+      },
+      students: [],
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }))
+    const client = new AirMentorApiClient('http://127.0.0.1:4000', fetchMock as typeof fetch)
+
+    await client.bulkApplyMentorAssignments({
+      batchId: 'batch_2022',
+      sectionCode: 'A',
+      facultyId: 'fac_mentor',
+      effectiveFrom: '2024-08-01',
+      source: 'sysadmin-bulk-mentor-apply',
+      selectionMode: 'replace-all',
+      previewOnly: false,
+      expectedStudentIds: ['student_001', 'student_002'],
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:4000/api/admin/mentor-assignments/bulk-apply', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({
+        batchId: 'batch_2022',
+        sectionCode: 'A',
+        facultyId: 'fac_mentor',
+        effectiveFrom: '2024-08-01',
+        source: 'sysadmin-bulk-mentor-apply',
+        selectionMode: 'replace-all',
+        previewOnly: false,
+        expectedStudentIds: ['student_001', 'student_002'],
+      }),
+    }))
+  })
 })
