@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { and, asc, count, desc, eq, gt, inArray, isNotNull } from 'drizzle-orm'
 import type { AppDb } from '../db/client.js'
 import {
@@ -5,6 +6,7 @@ import {
   alertDecisions,
   alertOutcomes,
   batches,
+  branches,
   bridgeModules,
   courseTopicPartitions,
   courses,
@@ -17,6 +19,8 @@ import {
   electiveOptions,
   electiveRecommendations,
   facultyOfferingOwnerships,
+  facultyProfiles,
+  institutions,
   officialCodeCrosswalks,
   reassessmentEvents,
   reassessmentResolutions,
@@ -47,6 +51,7 @@ import {
   teacherAllocations,
   transcriptSubjectResults,
   transcriptTermResults,
+  userAccounts,
   worldContextSnapshots,
 } from '../db/schema.js'
 import {
@@ -190,8 +195,9 @@ import {
   MSRUAS_PROOF_DEPARTMENT_ID,
   PROOF_FACULTY,
   PROOF_TERM_DEFS,
+  seedMsruasProofSandbox,
 } from './msruas-proof-sandbox.js'
-import type { ResolvedPolicy } from '../modules/admin-structure.js'
+import { DEFAULT_POLICY, type ResolvedPolicy } from '../modules/admin-structure.js'
 
 const INFERENCE_MODEL_VERSION = 'observable-inference-v2'
 const MONITORING_POLICY_VERSION = 'monitoring-policy-v2'
@@ -208,6 +214,35 @@ const PLAYBACK_STAGE_DEFS = DEFAULT_STAGE_POLICY.stages.map(stage => ({
 export type PlaybackStageKey = StagePolicyStageKey
 
 export type StudentAgentPanelLabel = 'Observed' | 'Policy Derived' | 'Simulation Internal' | 'Human Action Log'
+
+function resolveCurriculumImportCompileSourcePath(sourcePath?: string | null) {
+  if (!sourcePath) return undefined
+  if (sourcePath.startsWith('embedded:')) return sourcePath
+  return existsSync(sourcePath) ? sourcePath : undefined
+}
+
+async function seedProofSandboxIfMissing(db: AppDb, now: string) {
+  const [existingBatch, institution, existingProofFacultyRows, existingProofUserRows] = await Promise.all([
+    db.select().from(batches).where(eq(batches.batchId, MSRUAS_PROOF_BATCH_ID)).then(rows => rows[0] ?? null),
+    db.select().from(institutions).then(rows => rows[0] ?? null),
+    db.select().from(facultyProfiles).where(inArray(facultyProfiles.facultyId, PROOF_FACULTY.map(faculty => faculty.facultyId))),
+    db.select().from(userAccounts).where(inArray(userAccounts.userId, PROOF_FACULTY.map(faculty => faculty.userId))),
+  ])
+  if (existingBatch) return null
+  if (existingProofFacultyRows.length > 0 || existingProofUserRows.length > 0) {
+    throw new Error(`Proof sandbox roots are partially present; refusing automatic bootstrap without the canonical batch. faculty=${existingProofFacultyRows.length} users=${existingProofUserRows.length}`)
+  }
+  if (!institution) throw new Error('Institution not found for proof sandbox bootstrap')
+  const [existingProofBranch] = await db.select().from(branches).where(eq(branches.branchId, MSRUAS_PROOF_BRANCH_ID))
+  if (existingProofBranch && existingProofBranch.departmentId !== MSRUAS_PROOF_DEPARTMENT_ID) {
+    throw new Error(`Proof sandbox branch ${MSRUAS_PROOF_BRANCH_ID} is bound to ${existingProofBranch.departmentId}; refusing automatic bootstrap.`)
+  }
+  return seedMsruasProofSandbox(db, {
+    institutionId: institution.institutionId,
+    now,
+    policy: DEFAULT_POLICY,
+  })
+}
 
 export type StudentAgentCitation = {
   citationId: string
@@ -3254,6 +3289,10 @@ export async function createProofCurriculumImport(db: AppDb, input: {
   actorFacultyId?: string | null
   now: string
 }) {
+  if (input.batchId === MSRUAS_PROOF_BATCH_ID) {
+    const seededImport = await seedProofSandboxIfMissing(db, input.now)
+    if (seededImport) return seededImport
+  }
   const compiled = compileMsruasCurriculumWorkbook(input.sourcePath)
   const validation = validateCompiledCurriculum(compiled)
   const completenessCertificate = buildCompletenessCertificate(compiled, validation)
@@ -3500,7 +3539,7 @@ export async function validateProofCurriculumImport(db: AppDb, input: {
 }) {
   const [importRow] = await db.select().from(curriculumImportVersions).where(eq(curriculumImportVersions.curriculumImportVersionId, input.curriculumImportVersionId))
   if (!importRow) throw new Error('Curriculum import not found')
-  const compiled = compileMsruasCurriculumWorkbook(importRow.sourcePath ?? undefined)
+  const compiled = compileMsruasCurriculumWorkbook(resolveCurriculumImportCompileSourcePath(importRow.sourcePath))
   const validation = validateCompiledCurriculum(compiled)
   const certificate = buildCompletenessCertificate(compiled, validation)
   await db.insert(curriculumValidationResults).values({

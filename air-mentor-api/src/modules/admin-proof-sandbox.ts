@@ -27,12 +27,11 @@ import {
   retryQueuedProofSimulationRun,
 } from '../lib/proof-run-queue.js'
 import {
-  ensureMsruasProofSandboxSeeded,
+  ensureMsruasProofBatchStructure,
   MSRUAS_PROOF_BATCH_ID,
 } from '../lib/msruas-proof-sandbox.js'
 import { emitAuditEvent, parseOrThrow, requireRole } from './support.js'
 import {
-  DEFAULT_POLICY,
   resolveBatchCurriculumFeatures,
   resolveBatchPolicy,
 } from './admin-structure.js'
@@ -73,10 +72,7 @@ async function requireProofRunBatchId(context: RouteContext, simulationRunId: st
 
 async function ensureProofSandboxBatch(context: RouteContext, batchId: string) {
   if (batchId !== MSRUAS_PROOF_BATCH_ID) return
-  await ensureMsruasProofSandboxSeeded(context.db, {
-    now: context.now(),
-    policy: DEFAULT_POLICY,
-  })
+  await ensureMsruasProofBatchStructure(context.db, context.now())
 }
 
 const createImportSchema = z.object({

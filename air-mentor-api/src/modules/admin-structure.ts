@@ -56,6 +56,10 @@ import {
   type ScopeTypeValue,
   type StagePolicyPayload,
 } from '../lib/stage-policy.js'
+import {
+  ensureMsruasProofBatchStructure,
+  MSRUAS_PROOF_BATCH_ID,
+} from '../lib/msruas-proof-sandbox.js'
 import { emitAuditEvent, expectVersion, parseOrThrow, requireRole } from './support.js'
 
 const weekdaySchema = z.enum(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])
@@ -1146,6 +1150,9 @@ function scopeReferencesDeletedBatch(scopeId: string, batchIds: Set<string>) {
 async function getBatchScopeContext(context: RouteContext, batchId: string, requestedSectionCode?: string | null): Promise<BatchScopeContext> {
   const [institution] = await context.db.select().from(institutions)
   if (!institution) throw notFound('Institution is not configured')
+  if (batchId === MSRUAS_PROOF_BATCH_ID) {
+    await ensureMsruasProofBatchStructure(context.db, context.now())
+  }
 
   const [batch] = await context.db.select().from(batches).where(eq(batches.batchId, batchId))
   if (!batch) throw notFound('Batch not found')

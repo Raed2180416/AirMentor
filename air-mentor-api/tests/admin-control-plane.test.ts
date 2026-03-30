@@ -1049,6 +1049,46 @@ describe('admin control plane routes', () => {
     ))).toBe(true)
   }, 300000)
 
+  proofRcIt('re-seeds proof batch routes after the canonical batch disappears', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+    expect(adminLogin.response.statusCode).toBe(200)
+
+    await current.pool.query('TRUNCATE TABLE batches CASCADE')
+
+    const featureConfigResponse = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/batches/${MSRUAS_PROOF_BATCH_ID}/curriculum-feature-config`,
+      headers: { cookie: adminLogin.cookie },
+    })
+    expect(featureConfigResponse.statusCode).toBe(200)
+
+    const dashboardResponse = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/batches/${MSRUAS_PROOF_BATCH_ID}/proof-dashboard`,
+      headers: { cookie: adminLogin.cookie },
+    })
+    expect(dashboardResponse.statusCode).toBe(200)
+    expect(dashboardResponse.json().imports).toEqual([])
+    expect(dashboardResponse.json().activeRunDetail).toBeNull()
+
+    const createImportResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/batches/${MSRUAS_PROOF_BATCH_ID}/proof-imports`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+    expect(createImportResponse.statusCode).toBe(200)
+    expect(createImportResponse.json().curriculumImportVersionId).toBeTruthy()
+
+    const [proofBatch] = await current.db.select().from(batches).where(eq(batches.batchId, MSRUAS_PROOF_BATCH_ID))
+    expect(proofBatch).toMatchObject({
+      batchId: MSRUAS_PROOF_BATCH_ID,
+      branchId: 'branch_mnc_btech',
+      currentSemester: 6,
+    })
+  }, 300000)
+
   proofRcIt('recomputes the seeded baseline active proof run when it starts without checkpoints', async () => {
     current = await createTestApp()
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')

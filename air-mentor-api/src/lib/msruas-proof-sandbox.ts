@@ -176,6 +176,108 @@ export const MSRUAS_PROOF_BATCH_ID = 'batch_branch_mnc_btech_2023'
 export const MSRUAS_PROOF_SIMULATION_RUN_ID = 'sim_mnc_2023_first6_v1'
 export const MSRUAS_PROOF_CURRICULUM_IMPORT_ID = 'curriculum_import_mnc_2023_first6_v1'
 
+export async function ensureMsruasProofBatchStructure(db: AppDb, now: string) {
+  const [institution] = await db.select().from(institutions).limit(1)
+  if (!institution) throw new Error('Institution not configured')
+
+  const [existingDepartment] = await db.select().from(departments).where(eq(departments.departmentId, MSRUAS_PROOF_DEPARTMENT_ID))
+  if (!existingDepartment) {
+    await db.insert(departments).values({
+      departmentId: MSRUAS_PROOF_DEPARTMENT_ID,
+      institutionId: institution.institutionId,
+      academicFacultyId: 'academic_faculty_engineering_and_technology',
+      code: 'CSE',
+      name: 'Computer Science and Engineering',
+      status: 'active',
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    })
+  }
+
+  const [existingBranch] = await db.select().from(branches).where(eq(branches.branchId, MSRUAS_PROOF_BRANCH_ID))
+  if (existingBranch) {
+    await db.update(branches).set({
+      departmentId: MSRUAS_PROOF_DEPARTMENT_ID,
+      code: 'BTECH-MNC',
+      name: 'B.Tech Mathematics and Computing',
+      programLevel: 'undergraduate',
+      semesterCount: 8,
+      status: 'active',
+      updatedAt: now,
+    }).where(eq(branches.branchId, MSRUAS_PROOF_BRANCH_ID))
+  } else {
+    await db.insert(branches).values({
+      branchId: MSRUAS_PROOF_BRANCH_ID,
+      departmentId: MSRUAS_PROOF_DEPARTMENT_ID,
+      code: 'BTECH-MNC',
+      name: 'B.Tech Mathematics and Computing',
+      programLevel: 'undergraduate',
+      semesterCount: 8,
+      status: 'active',
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    })
+  }
+
+  const [existingBatch] = await db.select().from(batches).where(eq(batches.batchId, MSRUAS_PROOF_BATCH_ID))
+  if (existingBatch) {
+    await db.update(batches).set({
+      branchId: MSRUAS_PROOF_BRANCH_ID,
+      admissionYear: 2023,
+      batchLabel: '2023 Proof',
+      currentSemester: 6,
+      sectionLabelsJson: JSON.stringify(['A', 'B']),
+      status: 'active',
+      updatedAt: now,
+    }).where(eq(batches.batchId, MSRUAS_PROOF_BATCH_ID))
+  } else {
+    await db.insert(batches).values({
+      batchId: MSRUAS_PROOF_BATCH_ID,
+      branchId: MSRUAS_PROOF_BRANCH_ID,
+      admissionYear: 2023,
+      batchLabel: '2023 Proof',
+      currentSemester: 6,
+      sectionLabelsJson: JSON.stringify(['A', 'B']),
+      status: 'active',
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    })
+  }
+
+  for (const term of PROOF_TERM_DEFS) {
+    const [existingTerm] = await db.select().from(academicTerms).where(eq(academicTerms.termId, term.termId))
+    if (existingTerm) {
+      await db.update(academicTerms).set({
+        branchId: MSRUAS_PROOF_BRANCH_ID,
+        batchId: MSRUAS_PROOF_BATCH_ID,
+        academicYearLabel: term.academicYearLabel,
+        semesterNumber: term.semesterNumber,
+        startDate: term.startDate,
+        endDate: term.endDate,
+        status: term.semesterNumber === 6 ? 'active' : 'archived',
+        updatedAt: now,
+      }).where(eq(academicTerms.termId, term.termId))
+      continue
+    }
+    await db.insert(academicTerms).values({
+      termId: term.termId,
+      branchId: MSRUAS_PROOF_BRANCH_ID,
+      batchId: MSRUAS_PROOF_BATCH_ID,
+      academicYearLabel: term.academicYearLabel,
+      semesterNumber: term.semesterNumber,
+      startDate: term.startDate,
+      endDate: term.endDate,
+      status: term.semesterNumber === 6 ? 'active' : 'archived',
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    })
+  }
+}
+
 export async function ensureMsruasProofSandboxSeeded(db: AppDb, options: {
   institutionId?: string
   now: string
