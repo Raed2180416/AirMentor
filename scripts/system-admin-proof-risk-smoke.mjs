@@ -284,77 +284,42 @@ async function readPlaybackSelectionParsed() {
 async function adminApiRequest(apiPath, init = {}) {
   const { body, ...restInit } = init
   const requestUrl = new URL(apiPath, apiUrl).toString()
-  let payload
-  if (isLiveStack) {
-    payload = await page.evaluate(async request => {
-      const csrfToken = document.cookie
-        .split('; ')
-        .find(item => item.startsWith('airmentor_csrf='))
-        ?.slice('airmentor_csrf='.length) ?? null
-      const browserResponse = await fetch(request.apiPath, {
-        method: request.method,
-        headers: {
-          accept: 'application/json',
-          ...(csrfToken ? { 'x-airmentor-csrf': decodeURIComponent(csrfToken) } : {}),
-          ...(request.body === undefined ? {} : { 'content-type': 'application/json' }),
-          ...(request.headers ?? {}),
-        },
-        body: request.body === undefined
-          ? undefined
-          : typeof request.body === 'string'
-            ? request.body
-            : JSON.stringify(request.body),
-        credentials: 'include',
-      })
-      const contentType = browserResponse.headers.get('content-type') ?? ''
-      const text = await browserResponse.text().catch(() => '')
-      return {
-        ok: browserResponse.ok,
-        status: browserResponse.status,
-        contentType,
-        text,
-      }
-    }, {
-      apiPath: requestUrl,
+  const timeoutMs = typeof restInit.timeout === 'number' ? restInit.timeout : 180_000
+  const requestCookies = await context.cookies(requestUrl, appUrl, apiUrl)
+  const csrfToken = requestCookies.find(cookie => cookie.name === 'airmentor_csrf')?.value ?? null
+  const cookieHeader = requestCookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ')
+  const controller = new AbortController()
+  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs)
+  let response
+  try {
+    // Always issue admin proof requests from Node with the browser session cookies.
+    // On the deployed Pages -> Railway path the API-domain CSRF cookie is not visible
+    // to `document.cookie`, so browser-origin POSTs can fail even though the session is valid.
+    response = await fetch(requestUrl, {
       method: restInit.method ?? 'GET',
-      body,
-      headers: restInit.headers ?? {},
+      headers: {
+        accept: 'application/json',
+        origin: new URL(appUrl).origin,
+        ...(csrfToken ? { 'x-airmentor-csrf': decodeURIComponent(csrfToken) } : {}),
+        ...(cookieHeader ? { cookie: cookieHeader } : {}),
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        ...(restInit.headers ?? {}),
+      },
+      body: body === undefined
+        ? undefined
+        : typeof body === 'string'
+          ? body
+          : JSON.stringify(body),
+      signal: controller.signal,
     })
-  } else {
-    const timeoutMs = typeof restInit.timeout === 'number' ? restInit.timeout : 180_000
-    const requestCookies = await context.cookies(requestUrl, appUrl, apiUrl)
-    const csrfToken = requestCookies.find(cookie => cookie.name === 'airmentor_csrf')?.value ?? null
-    const cookieHeader = requestCookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ')
-    const controller = new AbortController()
-    const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs)
-    let response
-    try {
-      response = await fetch(requestUrl, {
-        method: restInit.method ?? 'GET',
-        headers: {
-          accept: 'application/json',
-          origin: new URL(appUrl).origin,
-          ...(csrfToken ? { 'x-airmentor-csrf': decodeURIComponent(csrfToken) } : {}),
-          ...(cookieHeader ? { cookie: cookieHeader } : {}),
-          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-          ...(restInit.headers ?? {}),
-        },
-        body: body === undefined
-          ? undefined
-          : typeof body === 'string'
-            ? body
-            : JSON.stringify(body),
-        signal: controller.signal,
-      })
-    } finally {
-      clearTimeout(timeoutHandle)
-    }
-    payload = {
-      ok: response.ok,
-      status: response.status,
-      contentType: response.headers.get('content-type') ?? '',
-      text: await response.text().catch(() => ''),
-    }
+  } finally {
+    clearTimeout(timeoutHandle)
+  }
+  const payload = {
+    ok: response.ok,
+    status: response.status,
+    contentType: response.headers.get('content-type') ?? '',
+    text: await response.text().catch(() => ''),
   }
   if (!payload.ok) {
     throw new Error(`Admin API ${apiPath} failed with ${payload.status}: ${payload.text.slice(0, 800)}`)
@@ -371,6 +336,19 @@ async function readProofDashboard(batchId = proofRouteState.batchId) {
 
 async function discoverProofRouteState() {
   if (!isLiveStack) return proofRouteState
+
+  try {
+    const seededDashboard = await readProofDashboard(seededProofBatchId)
+    proofRouteState = {
+      routeHash: seededProofRoute,
+      batchId: seededProofBatchId,
+    }
+    console.log(`[smoke] live proof route pinned to seeded batch: batch=${seededProofBatchId} checkpoints=${seededDashboard.activeRunDetail?.checkpoints?.length ?? 0} proofRuns=${seededDashboard.proofRuns?.length ?? 0} imports=${seededDashboard.imports?.length ?? 0}`)
+    return proofRouteState
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.log(`[smoke] seeded proof batch probe failed, falling back to live discovery: ${message}`)
+  }
 
   const [facultiesPayload, departmentsPayload, branchesPayload, batchesPayload] = await Promise.all([
     adminApiRequest('/api/admin/academic-faculties'),

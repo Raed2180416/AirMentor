@@ -3,11 +3,14 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import XLSXModule from 'xlsx'
 import type { WorkBook } from 'xlsx'
+import curriculumSeedJson from '../db/seeds/msruas-mnc-curriculum.json' with { type: 'json' }
 
 const XLSX = (XLSXModule as typeof import('xlsx') & { default?: typeof import('xlsx') }).default ?? XLSXModule
 
 export const MSRUAS_PROOF_COMPILER_VERSION = 'msruas-proof-compiler-v2'
 export const MSRUAS_PROOF_VALIDATOR_VERSION = 'msruas-proof-validator-v2'
+export const EMBEDDED_CURRICULUM_SOURCE_PATH = 'embedded:msruas-mnc-curriculum.json'
+export const EMBEDDED_CURRICULUM_SOURCE_LABEL = 'msruas-mnc-curriculum.json'
 
 export type CompiledCurriculumCourse = {
   title: string
@@ -47,7 +50,7 @@ export type CompiledCurriculumWorkbook = {
   sourcePath: string
   sourceLabel: string
   sourceChecksum: string
-  sourceType: 'workbook'
+  sourceType: 'workbook' | 'bundled-json'
   compilerVersion: string
   courses: CompiledCurriculumCourse[]
   explicitEdges: CompiledCurriculumEdge[]
@@ -56,6 +59,15 @@ export type CompiledCurriculumWorkbook = {
   sourceNotes: Array<{ sourceType: string; reference: string; use: string }>
   mappingNotes: Array<{ field: string; value: string }>
 }
+
+type BundledCurriculumManifest = {
+  courses: CompiledCurriculumCourse[]
+  explicitEdges: CompiledCurriculumEdge[]
+  addedEdges: CompiledCurriculumEdge[]
+  electives: CompiledCurriculumElective[]
+}
+
+const bundledCurriculumManifest = curriculumSeedJson as BundledCurriculumManifest
 
 export type CurriculumValidationSummary = {
   status: 'pass' | 'review-required'
@@ -157,10 +169,42 @@ export function resolveDefaultCurriculumWorkbookPath() {
   for (const candidate of candidates) {
     if (existsSync(candidate)) return candidate
   }
-  throw new Error('No reconciled curriculum workbook is available on disk')
+  return EMBEDDED_CURRICULUM_SOURCE_PATH
+}
+
+function cloneBundledRows<T extends Record<string, unknown>>(items: T[]) {
+  return items.map(item => ({ ...item }))
+}
+
+function compileBundledCurriculumManifest(): CompiledCurriculumWorkbook {
+  const sourceChecksum = createHash('sha256').update(JSON.stringify(bundledCurriculumManifest)).digest('hex')
+  return {
+    sourcePath: EMBEDDED_CURRICULUM_SOURCE_PATH,
+    sourceLabel: EMBEDDED_CURRICULUM_SOURCE_LABEL,
+    sourceChecksum,
+    sourceType: 'bundled-json',
+    compilerVersion: MSRUAS_PROOF_COMPILER_VERSION,
+    courses: cloneBundledRows(bundledCurriculumManifest.courses),
+    explicitEdges: cloneBundledRows(bundledCurriculumManifest.explicitEdges),
+    addedEdges: cloneBundledRows(bundledCurriculumManifest.addedEdges),
+    electives: cloneBundledRows(bundledCurriculumManifest.electives),
+    sourceNotes: [{
+      sourceType: 'bundled-json',
+      reference: EMBEDDED_CURRICULUM_SOURCE_LABEL,
+      use: 'Fallback proof curriculum manifest embedded in the backend for deployed bootstrap flows.',
+    }],
+    mappingNotes: [{
+      field: 'fallback',
+      value: 'Workbook unavailable; compiled from the bundled MSRUAS MNC curriculum manifest.',
+    }],
+  }
 }
 
 export function compileMsruasCurriculumWorkbook(sourcePath = resolveDefaultCurriculumWorkbookPath()): CompiledCurriculumWorkbook {
+  if (sourcePath === EMBEDDED_CURRICULUM_SOURCE_PATH) {
+    return compileBundledCurriculumManifest()
+  }
+
   const workbook = XLSX.readFile(sourcePath)
   const sourceChecksum = createHash('sha256').update(readFileSync(sourcePath)).digest('hex')
 
