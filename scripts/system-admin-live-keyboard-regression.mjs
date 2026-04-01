@@ -234,6 +234,26 @@ async function readProofDashboardForBatch(batchId) {
 async function discoverProofRouteState() {
   if (!isLiveStack) return proofRouteState
 
+  const seededDashboard = await readProofDashboardForBatch(seededProofBatchId)
+  const seededCheckpointCount = seededDashboard.activeRunDetail?.checkpoints?.length ?? 0
+  const seededProofRunCount = seededDashboard.proofRuns?.length ?? 0
+  const seededImportCount = seededDashboard.imports?.length ?? 0
+  if (seededCheckpointCount > 0 || seededProofRunCount > 0 || seededImportCount > 0) {
+    proofRouteState = {
+      routeHash: seededProofRoute,
+      batchId: seededProofBatchId,
+    }
+    report.proofRoute = {
+      ...proofRouteState,
+      pinnedSeededBatch: true,
+      batchLabel: '2023',
+    }
+    console.log(
+      `[keyboard] live proof route pinned to seeded batch: batch=2023 checkpoints=${seededCheckpointCount} proofRuns=${seededProofRunCount} imports=${seededImportCount}`,
+    )
+    return proofRouteState
+  }
+
   const [facultiesPayload, departmentsPayload, branchesPayload, batchesPayload] = await Promise.all([
     adminApiRequest('/api/admin/academic-faculties'),
     adminApiRequest('/api/admin/departments'),
@@ -286,6 +306,7 @@ async function discoverProofRouteState() {
   }
   report.proofRoute = {
     ...proofRouteState,
+    pinnedSeededBatch: false,
     facultyName: selected.faculty.name,
     departmentName: selected.department.name,
     branchName: selected.branch.name,
