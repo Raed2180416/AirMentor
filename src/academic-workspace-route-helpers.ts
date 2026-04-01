@@ -1,8 +1,54 @@
 import type { Mentee, Offering, Student } from './data'
-import type { FacultyAccount } from './domain'
+import type { FacultyAccount, Role } from './domain'
 import type { ApiAcademicFacultyProfile } from './api/types'
 
 type StudentResolver = (offering: Offering) => Student[]
+
+export function getHomePage(role: Role) {
+  return role === 'Course Leader' ? 'dashboard' : role === 'Mentor' ? 'mentees' : 'department'
+}
+
+export function canAccessPage(role: Role, page: string) {
+  if (page === 'student-history' || page === 'student-shell' || page === 'risk-explorer' || page === 'queue-history' || page === 'faculty-profile') return true
+  if (page === 'scheme-setup') return role === 'Course Leader'
+  if (page === 'unlock-review') return role === 'HoD'
+  if (page === 'mentee-detail') return role === 'Mentor'
+  if (role === 'Course Leader') return ['dashboard', 'students', 'course', 'calendar', 'upload', 'entry-workspace'].includes(page)
+  if (role === 'Mentor') return ['mentees', 'calendar'].includes(page)
+  return ['department', 'course', 'calendar', 'unlock-review'].includes(page)
+}
+
+export function resolveRoleSyncState(input: {
+  allowedRoles: Role[]
+  initialRole: Role
+  role: Role
+  page: string
+}) {
+  const { allowedRoles, initialRole, role, page } = input
+  if (allowedRoles.length === 0) return null
+
+  const nextRole = allowedRoles.includes(initialRole)
+    ? initialRole
+    : allowedRoles.includes(role)
+      ? role
+      : allowedRoles[0]
+
+  if (nextRole !== role) {
+    return {
+      role: nextRole,
+      page: getHomePage(nextRole),
+    }
+  }
+
+  if (!canAccessPage(nextRole, page)) {
+    return {
+      role: nextRole,
+      page: getHomePage(nextRole),
+    }
+  }
+
+  return null
+}
 
 export function resolveAssignedMentees(
   allMentees: Mentee[],

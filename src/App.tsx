@@ -84,7 +84,7 @@ import {
 import { AcademicWorkspaceSidebar } from './academic-workspace-sidebar'
 import { AcademicWorkspaceTopbar } from './academic-workspace-topbar'
 import { AcademicWorkspaceRouteSurface } from './academic-workspace-route-surface'
-import { findStudentProfileLaunchTarget, resolveAssignedMentees } from './academic-workspace-route-helpers'
+import { canAccessPage, findStudentProfileLaunchTarget, getHomePage, resolveAssignedMentees, resolveRoleSyncState } from './academic-workspace-route-helpers'
 import { applyThemePreset, isLightTheme } from './theme'
 import {
   Bar,
@@ -188,20 +188,6 @@ type RouteSnapshot = {
 }
 
 const CLASS_SNAP_THRESHOLD_MINUTES = 14
-
-function getHomePage(role: Role): PageId {
-  return role === 'Course Leader' ? 'dashboard' : role === 'Mentor' ? 'mentees' : 'department'
-}
-
-function canAccessPage(role: Role, page: PageId) {
-  if (page === 'student-history' || page === 'student-shell' || page === 'risk-explorer' || page === 'queue-history' || page === 'faculty-profile') return true
-  if (page === 'scheme-setup') return role === 'Course Leader'
-  if (page === 'unlock-review') return role === 'HoD'
-  if (page === 'mentee-detail') return role === 'Mentor'
-  if (role === 'Course Leader') return ['dashboard', 'students', 'course', 'calendar', 'upload', 'entry-workspace'].includes(page)
-  if (role === 'Mentor') return ['mentees', 'calendar'].includes(page)
-  return ['department', 'course', 'calendar', 'unlock-review'].includes(page)
-}
 
 function getRouteSnapshotKey(snapshot: RouteSnapshot) {
   return [
@@ -1282,15 +1268,16 @@ function OperationalWorkspace({
     }
   }, [currentTeacher?.facultyId, loadHodProofAnalytics, role])
   useEffect(() => {
-    if (allowedRoles.length === 0) return
-    const nextRole = allowedRoles.includes(initialRole)
-      ? initialRole
-      : allowedRoles.includes(role)
-        ? role
-        : allowedRoles[0]
-    setRole(nextRole)
-    setPage(getHomePage(nextRole))
-  }, [allowedRoles, initialRole, role])
+    const nextState = resolveRoleSyncState({
+      allowedRoles,
+      initialRole,
+      role,
+      page,
+    })
+    if (!nextState) return
+    if (nextState.role !== role) setRole(nextState.role)
+    if (nextState.page !== page) setPage(nextState.page as PageId)
+  }, [allowedRoles, initialRole, page, role])
   useEffect(() => {
     if (role === 'Course Leader' && page === 'students') {
       setPage('dashboard')

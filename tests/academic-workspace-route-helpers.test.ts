@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { findStudentProfileLaunchTarget, resolveAssignedMentees } from '../src/academic-workspace-route-helpers'
+import {
+  canAccessPage,
+  findStudentProfileLaunchTarget,
+  getHomePage,
+  resolveAssignedMentees,
+  resolveRoleSyncState,
+} from '../src/academic-workspace-route-helpers'
 
 const allMentees = [
   { id: 'mentee-student_001', usn: '1MS23MC001', name: 'Aarav Sharma', phone: '+91-9000000001', year: 'III Year', section: 'A', dept: 'MNC', courseRisks: [], avs: 0.72, interventions: [], prevCgpa: 7.1 },
@@ -78,6 +84,30 @@ describe('academic workspace route helpers', () => {
     expect(target).toMatchObject({
       offering: expect.objectContaining({ offId: 'off_mc602_a' }),
       student: expect.objectContaining({ id: 'student_002' }),
+    })
+  })
+
+  it('preserves valid mentor queue-history navigation when role metadata refreshes', () => {
+    expect(canAccessPage('Mentor', 'queue-history')).toBe(true)
+    expect(getHomePage('Mentor')).toBe('mentees')
+
+    expect(resolveRoleSyncState({
+      allowedRoles: ['Course Leader', 'Mentor', 'HoD'],
+      initialRole: 'Mentor',
+      role: 'Mentor',
+      page: 'queue-history',
+    })).toBeNull()
+  })
+
+  it('falls back to the role home page when the current page is no longer allowed', () => {
+    expect(resolveRoleSyncState({
+      allowedRoles: ['Mentor'],
+      initialRole: 'Mentor',
+      role: 'Mentor',
+      page: 'scheme-setup',
+    })).toEqual({
+      role: 'Mentor',
+      page: 'mentees',
     })
   })
 })
