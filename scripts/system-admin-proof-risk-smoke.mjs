@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import {
+  buildSemesterProofSummaryPath,
+  buildSemesterScopedArtifactPath as buildSemesterScopedArtifactCopyPath,
+  parseProofTargetSemester,
+  resolveSemesterWalkCheckpoint,
+  sanitizeArtifactPrefix,
+} from './proof-risk-semester-walk.mjs'
 import { resolveSystemAdminLiveCredentials } from './system-admin-live-auth.mjs'
 
 const playwrightRoot = process.env.PLAYWRIGHT_ROOT
@@ -25,6 +32,8 @@ const { firefox } = await import(`file://${playwrightRoot}/lib/node_modules/play
 const proofPlaybackSelectionStorageKey = 'airmentor-proof-playback-selection'
 const seededProofRoute = '#/admin/faculties/academic_faculty_engineering_and_technology/departments/dept_cse/branches/branch_mnc_btech/batches/batch_branch_mnc_btech_2023'
 const seededProofBatchId = 'batch_branch_mnc_btech_2023'
+const proofTargetSemesterRaw = (process.env.AIRMENTOR_PROOF_TARGET_SEMESTER ?? '').trim()
+const proofArtifactPrefixRaw = (process.env.AIRMENTOR_PROOF_ARTIFACT_PREFIX ?? '').trim()
 const proofTeacherUsername = process.env.AIRMENTOR_LIVE_TEACHER_IDENTIFIER?.trim()
   || (isLiveStack ? 'kavitha.rao' : 'devika.shetty')
 const teachingPasswordCandidates = ['faculty1234', '1234']
@@ -36,6 +45,11 @@ let targetCheckpointDescriptor = null
 const systemAdminCredentials = resolveSystemAdminLiveCredentials({
   scriptLabel: 'System admin proof-risk smoke',
 })
+const targetedProofSemester = parseProofTargetSemester(proofTargetSemesterRaw)
+
+const proofArtifactPrefix = proofArtifactPrefixRaw.length > 0
+  ? sanitizeArtifactPrefix(proofArtifactPrefixRaw)
+  : null
 
 await mkdir(outputDir, { recursive: true })
 
@@ -59,6 +73,7 @@ const failureTrace = path.join(outputDir, 'system-admin-proof-risk-smoke-failure
 const failureHtml = path.join(outputDir, 'system-admin-proof-risk-smoke-failure.html')
 let currentStep = 'launch-browser'
 let activatedProofSemesterContext = null
+let proofWalkSummary = null
 
 const browser = await firefox.launch({
   headless: true,
@@ -148,6 +163,28 @@ async function expectContainerText(container, pattern, description) {
 
 async function writeJsonArtifact(filePath, payload) {
   await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+}
+
+function buildSemesterScopedArtifactPath(filePath) {
+  if (!proofArtifactPrefix || targetedProofSemester == null) return null
+  return buildSemesterScopedArtifactCopyPath(filePath, proofArtifactPrefix, targetedProofSemester)
+}
+
+function buildSemesterWalkSummaryPath() {
+  if (!proofArtifactPrefix || targetedProofSemester == null) return null
+  return buildSemesterProofSummaryPath(outputDir, proofArtifactPrefix, targetedProofSemester)
+}
+
+async function copySemesterScopedArtifact(filePath) {
+  const targetPath = buildSemesterScopedArtifactPath(filePath)
+  if (!targetPath) return null
+  try {
+    await copyFile(filePath, targetPath)
+  } catch (error) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return null
+    throw error
+  }
+  return targetPath
 }
 
 function escapeRegExp(value) {
@@ -515,9 +552,16 @@ async function activateProofSemesterForContract() {
       .filter(value => Number.isFinite(value)),
   )).sort((left, right) => left - right)
   assert(availableSemesters.length > 0, 'proof dashboard should expose at least one operational semester before activation')
+  if (targetedProofSemester != null) {
+    assert(
+      availableSemesters.includes(targetedProofSemester),
+      `proof dashboard does not expose targeted semester ${targetedProofSemester}; available semesters: ${availableSemesters.join(', ')}`,
+    )
+  }
 
   const previousOperationalSemester = activeRun.activeOperationalSemester ?? null
-  const targetOperationalSemester = availableSemesters.find(value => value === 4 && value !== previousOperationalSemester)
+  const targetOperationalSemester = targetedProofSemester
+    ?? availableSemesters.find(value => value === 4 && value !== previousOperationalSemester)
     ?? availableSemesters.find(value => value !== previousOperationalSemester)
     ?? availableSemesters[0]
 
@@ -660,7 +704,10 @@ function describeCheckpointDescriptor(checkpoint) {
   return {
     simulationStageCheckpointId: checkpoint.simulationStageCheckpointId,
     semesterNumber: checkpoint.semesterNumber,
+    stageKey: checkpoint.stageKey ?? null,
     stageLabel: checkpoint.stageLabel,
+    stageDescription: checkpoint.stageDescription ?? null,
+    stageOrder: typeof checkpoint.stageOrder === 'number' ? checkpoint.stageOrder : null,
     buttonLabel: `S${checkpoint.semesterNumber} · ${checkpoint.stageLabel}`,
     surfaceLabel: `Sem ${checkpoint.semesterNumber} · ${checkpoint.stageLabel}`,
     bannerLabel: `semester ${checkpoint.semesterNumber} · ${checkpoint.stageLabel}`,
@@ -672,13 +719,7 @@ async function resolveTargetCheckpointDescriptor() {
   const checkpoints = Array.isArray(dashboard.activeRunDetail?.checkpoints)
     ? dashboard.activeRunDetail.checkpoints.slice()
     : []
-  assert(checkpoints.length > 0, 'Proof dashboard should expose at least one checkpoint')
-  checkpoints.sort((left, right) =>
-    (left.semesterNumber - right.semesterNumber)
-    || ((left.stageOrder ?? 0) - (right.stageOrder ?? 0))
-    || left.simulationStageCheckpointId.localeCompare(right.simulationStageCheckpointId),
-  )
-  targetCheckpointDescriptor = describeCheckpointDescriptor(checkpoints.at(-1))
+  targetCheckpointDescriptor = describeCheckpointDescriptor(resolveSemesterWalkCheckpoint(checkpoints, targetedProofSemester))
   return targetCheckpointDescriptor
 }
 
@@ -1067,7 +1108,46 @@ try {
     }
   }
 
+  const semesterScopedScreenshots = Object.fromEntries((await Promise.all(
+    Object.entries(screenshots).map(async ([label, screenshotPath]) => [label, await copySemesterScopedArtifact(screenshotPath)]),
+  )).filter(([, copiedPath]) => !!copiedPath))
+  const semesterScopedActivationArtifacts = Object.fromEntries((await Promise.all(
+    Object.entries(activationArtifacts).map(async ([label, artifactPath]) => [label, await copySemesterScopedArtifact(artifactPath)]),
+  )).filter(([, copiedPath]) => !!copiedPath))
+  const summaryArtifactPath = buildSemesterWalkSummaryPath()
+  if (summaryArtifactPath) {
+    proofWalkSummary = {
+      stack: isLiveStack ? 'live' : 'local',
+      proofCoverageTarget,
+      simulationRunId: activatedProofSemesterContext?.simulationRunId
+        ?? storedSelectionAfterReload?.simulationRunId
+        ?? null,
+      batchId: proofRouteState.batchId,
+      routeHash: proofRouteState.routeHash,
+      appUrl,
+      apiUrl,
+      targetedSemester: targetedProofSemester,
+      activatedOperationalSemester: activatedProofSemesterContext?.activeOperationalSemester ?? null,
+      previousOperationalSemester: activatedProofSemesterContext?.previousOperationalSemester ?? null,
+      availableOperationalSemesters: activatedProofSemesterContext?.availableSemesters ?? null,
+      selectedCheckpoint: targetCheckpointDescriptor,
+      storedPlaybackSelection: storedSelectionAfterReload,
+      genericArtifacts: {
+        screenshots,
+        activationArtifacts,
+      },
+      semesterScopedArtifacts: {
+        screenshots: semesterScopedScreenshots,
+        activationArtifacts: semesterScopedActivationArtifacts,
+      },
+    }
+    await writeJsonArtifact(summaryArtifactPath, proofWalkSummary)
+  }
+
   console.log(`System admin proof-risk smoke passed.`)
+  if (targetedProofSemester != null) {
+    console.log(`Targeted semester: ${targetedProofSemester}`)
+  }
   console.log(`Screenshots:`)
   for (const [label, screenshotPath] of Object.entries(screenshots)) {
     console.log(`- ${label}: ${screenshotPath}`)
@@ -1075,6 +1155,18 @@ try {
   console.log('Semester activation artifacts:')
   console.log(`- request: ${activationArtifacts.request}`)
   console.log(`- response: ${activationArtifacts.response}`)
+  if (Object.keys(semesterScopedScreenshots).length > 0 || Object.keys(semesterScopedActivationArtifacts).length > 0) {
+    console.log('Semester-scoped artifact copies:')
+    for (const [label, copiedPath] of Object.entries(semesterScopedScreenshots)) {
+      console.log(`- ${label}: ${copiedPath}`)
+    }
+    for (const [label, copiedPath] of Object.entries(semesterScopedActivationArtifacts)) {
+      console.log(`- activation-${label}: ${copiedPath}`)
+    }
+  }
+  if (summaryArtifactPath) {
+    console.log(`Semester walk summary: ${summaryArtifactPath}`)
+  }
   await context.tracing.stop()
 } catch (error) {
   try {

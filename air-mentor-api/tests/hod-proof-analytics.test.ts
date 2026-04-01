@@ -575,4 +575,67 @@ describe('hod proof analytics', () => {
     expect(checkpointSummaryResponse.json().activeOperationalSemester).toBe(4)
     expect(checkpointSummaryResponse.json().activeRunContext?.checkpointContext?.simulationStageCheckpointId).toBe(playbackCheckpoint!.simulationStageCheckpointId)
   })
+
+  it('keeps the default HoD slice aligned with activated semesters 1 through 3', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+    const hodLogin = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+
+    if (hodLogin.body.activeRoleGrant.roleCode !== 'HOD') {
+      await switchToRole(hodLogin.cookie, hodLogin.body.availableRoleGrants, 'HOD')
+    }
+
+    const [activeRun] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    expect(activeRun).toBeTruthy()
+    await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRun.simulationRunId}/recompute-risk`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+
+    const checkpointRows = await current.db.select().from(simulationStageCheckpoints).where(
+      eq(simulationStageCheckpoints.simulationRunId, activeRun.simulationRunId),
+    ).orderBy(asc(simulationStageCheckpoints.semesterNumber), asc(simulationStageCheckpoints.stageOrder))
+
+    for (const semesterNumber of [1, 2, 3] as const) {
+      const checkpoint = checkpointRows.find(row => row.semesterNumber === semesterNumber)
+      expect(checkpoint).toBeTruthy()
+
+      const activateSemesterResponse = await current.app.inject({
+        method: 'POST',
+        url: `/api/admin/proof-runs/${activeRun.simulationRunId}/activate-semester`,
+        headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+        payload: { semesterNumber },
+      })
+      expect(activateSemesterResponse.statusCode).toBe(200)
+
+      const summaryResponse = await current.app.inject({
+        method: 'GET',
+        url: '/api/academic/hod/proof-summary',
+        headers: { cookie: hodLogin.cookie },
+      })
+      const checkpointSummaryResponse = await current.app.inject({
+        method: 'GET',
+        url: `/api/academic/hod/proof-summary?simulationStageCheckpointId=${encodeURIComponent(checkpoint!.simulationStageCheckpointId)}`,
+        headers: { cookie: hodLogin.cookie },
+      })
+      const studentsResponse = await current.app.inject({
+        method: 'GET',
+        url: '/api/academic/hod/proof-students',
+        headers: { cookie: hodLogin.cookie },
+      })
+
+      expect(summaryResponse.statusCode).toBe(200)
+      expect(checkpointSummaryResponse.statusCode).toBe(200)
+      expect(studentsResponse.statusCode).toBe(200)
+      expect(summaryResponse.json().countSource).toBe('proof-run')
+      expect(summaryResponse.json().activeOperationalSemester).toBe(semesterNumber)
+      expect(summaryResponse.json().activeRunContext?.checkpointContext).toBeUndefined()
+      expect(studentsResponse.json().items.every((item: { currentSemester: number }) => item.currentSemester === semesterNumber)).toBe(true)
+      expect(checkpointSummaryResponse.json().countSource).toBe('proof-checkpoint')
+      expect(checkpointSummaryResponse.json().activeOperationalSemester).toBe(semesterNumber)
+      expect(checkpointSummaryResponse.json().activeRunContext?.checkpointContext?.simulationStageCheckpointId).toBe(checkpoint!.simulationStageCheckpointId)
+    }
+  })
 })

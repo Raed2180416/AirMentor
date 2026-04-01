@@ -47,6 +47,8 @@ ui_host="${AIRMENTOR_UI_HOST:-127.0.0.1}"
 app_url="${PLAYWRIGHT_APP_URL:-http://${ui_host}:${ui_port}}"
 output_dir="${PLAYWRIGHT_OUTPUT_DIR:-output/playwright}"
 live_stack_mode="${AIRMENTOR_LIVE_STACK:-0}"
+semester_targets_raw="${AIRMENTOR_PROOF_SEMESTER_TARGETS:-}"
+artifact_prefix="${AIRMENTOR_PROOF_ARTIFACT_PREFIX:-}"
 preview_log="$output_dir/system-admin-proof-risk-preview.log"
 preview_pid=""
 lock_dir="$output_dir/system-admin-proof-risk-smoke.lock"
@@ -142,10 +144,82 @@ if [[ "$live_stack_mode" != "1" ]]; then
   echo "Preview log: $preview_log"
 fi
 
-PLAYWRIGHT_APP_URL="$app_url" \
-PLAYWRIGHT_API_URL="$api_base_url" \
-PLAYWRIGHT_ROOT="$playwright_root" \
-PLAYWRIGHT_BROWSERS_PATH="$playwright_browsers_path" \
-PLAYWRIGHT_FIREFOX_EXECUTABLE_PATH="$playwright_firefox_executable_path" \
-PLAYWRIGHT_OUTPUT_DIR="$output_dir" \
-node scripts/system-admin-proof-risk-smoke.mjs
+sanitize_artifact_prefix() {
+  printf '%s' "$1" | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//'
+}
+
+run_single_smoke() {
+  local semester_target="$1"
+  local target_artifact_prefix="$2"
+
+  PLAYWRIGHT_APP_URL="$app_url" \
+  PLAYWRIGHT_API_URL="$api_base_url" \
+  PLAYWRIGHT_ROOT="$playwright_root" \
+  PLAYWRIGHT_BROWSERS_PATH="$playwright_browsers_path" \
+  PLAYWRIGHT_FIREFOX_EXECUTABLE_PATH="$playwright_firefox_executable_path" \
+  PLAYWRIGHT_OUTPUT_DIR="$output_dir" \
+  AIRMENTOR_PROOF_TARGET_SEMESTER="$semester_target" \
+  AIRMENTOR_PROOF_ARTIFACT_PREFIX="$target_artifact_prefix" \
+  node scripts/system-admin-proof-risk-smoke.mjs
+}
+
+if [[ -n "$semester_targets_raw" ]]; then
+  IFS=',' read -r -a raw_targets <<< "$semester_targets_raw"
+  normalized_targets=()
+  for raw_target in "${raw_targets[@]}"; do
+    trimmed_target="$(printf '%s' "$raw_target" | xargs)"
+    [[ -z "$trimmed_target" ]] && continue
+    if ! [[ "$trimmed_target" =~ ^[0-9]+$ ]]; then
+      echo "AIRMENTOR_PROOF_SEMESTER_TARGETS must contain a comma-separated list of integers. Invalid value: $trimmed_target" >&2
+      exit 1
+    fi
+    normalized_targets+=("$trimmed_target")
+  done
+
+  if [[ "${#normalized_targets[@]}" -eq 0 ]]; then
+    echo "AIRMENTOR_PROOF_SEMESTER_TARGETS was provided but no valid semester numbers were found." >&2
+    exit 1
+  fi
+
+  target_artifact_prefix="$artifact_prefix"
+  if [[ -z "$target_artifact_prefix" ]]; then
+    if [[ "$live_stack_mode" == "1" ]]; then
+      target_artifact_prefix="proof-risk-live"
+    else
+      target_artifact_prefix="proof-risk-local"
+    fi
+  fi
+  target_artifact_prefix="$(sanitize_artifact_prefix "$target_artifact_prefix")"
+
+  summary_paths=()
+  for semester_target in "${normalized_targets[@]}"; do
+    echo "Running system admin proof-risk smoke for semester ${semester_target}..."
+    run_single_smoke "$semester_target" "$target_artifact_prefix"
+    summary_paths+=("$output_dir/${target_artifact_prefix}-semester-${semester_target}-proof-risk-walk-summary.json")
+  done
+
+  combined_summary_path="$output_dir/${target_artifact_prefix}-semester-walk-summary.json"
+  node - "$combined_summary_path" "$app_url" "$api_base_url" "$live_stack_mode" "${summary_paths[@]}" <<'NODE'
+const fs = require('node:fs')
+
+const [, , combinedSummaryPath, appUrl, apiUrl, liveStackMode, ...summaryPaths] = process.argv
+const summaries = summaryPaths.map(summaryPath => JSON.parse(fs.readFileSync(summaryPath, 'utf8')))
+const payload = {
+  stack: liveStackMode === '1' ? 'live' : 'local',
+  appUrl,
+  apiUrl,
+  summaryPaths,
+  summaries,
+}
+fs.writeFileSync(combinedSummaryPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+NODE
+  echo "Semester walk summary: $combined_summary_path"
+else
+  PLAYWRIGHT_APP_URL="$app_url" \
+  PLAYWRIGHT_API_URL="$api_base_url" \
+  PLAYWRIGHT_ROOT="$playwright_root" \
+  PLAYWRIGHT_BROWSERS_PATH="$playwright_browsers_path" \
+  PLAYWRIGHT_FIREFOX_EXECUTABLE_PATH="$playwright_firefox_executable_path" \
+  PLAYWRIGHT_OUTPUT_DIR="$output_dir" \
+  node scripts/system-admin-proof-risk-smoke.mjs
+fi
