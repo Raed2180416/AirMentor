@@ -15,6 +15,7 @@ describe('proof risk semester-walk helpers', () => {
     expect(parseProofTargetSemester('')).toBeNull()
     expect(() => parseProofTargetSemester('two')).toThrow(/Invalid AIRMENTOR_PROOF_TARGET_SEMESTER/)
     expect(normalizeSemesterTargetList('1, 2,3,2')).toEqual([1, 2, 3])
+    expect(normalizeSemesterTargetList('4, 5, 6, 5')).toEqual([4, 5, 6])
   })
 
   it('selects the last checkpoint within the targeted semester using stage order and checkpoint id', () => {

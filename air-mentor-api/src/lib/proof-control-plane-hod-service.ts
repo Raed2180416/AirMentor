@@ -33,6 +33,11 @@ import {
 import { parseJson } from './json.js'
 import { parseObservedStateRow } from './proof-observed-state.js'
 import {
+  filterElectiveRecommendationsForSemester,
+  latestElectiveRecommendationForSemester,
+  toElectiveFitPayload,
+} from './proof-control-plane-elective-service.js'
+import {
   buildProofCountProvenance,
   buildUnavailableCountProvenance,
 } from './proof-provenance.js'
@@ -536,9 +541,11 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
           .filter(row => row.simulationRunId === activeRunId && row.studentId === studentId)
           .sort((left, right) => left.semesterNumber - right.semesterNumber || left.createdAt.localeCompare(right.createdAt)))
         const electiveFit = checkpoint.stageKey === 'post-see'
-          ? electiveRows
-            .filter(row => row.simulationRunId === activeRunId && row.studentId === studentId)
-            .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0] ?? null
+          ? toElectiveFitPayload(latestElectiveRecommendationForSemester(electiveRows, {
+              simulationRunId: activeRunId,
+              studentId,
+              semesterNumber: checkpoint.semesterNumber,
+            }))
           : null
         return {
           studentId,
@@ -580,13 +587,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
               ? primaryEvidence.interventionRecoveryStatus
               : null,
           },
-          electiveFit: electiveFit ? {
-            recommendedCode: electiveFit.recommendedCode,
-            recommendedTitle: electiveFit.recommendedTitle,
-            stream: electiveFit.stream,
-            rationale: parseJson(electiveFit.rationaleJson, [] as string[]),
-            alternatives: parseJson(electiveFit.alternativesJson, [] as Array<{ code: string; title: string; stream: string }>),
-          } : null,
+          electiveFit,
           courseSnapshots: rowsForStudent.map(row => {
             const payload = parseJson(row.projectionJson, {} as Record<string, unknown>)
             const evidence = (payload.currentEvidence ?? {}) as Record<string, unknown>
@@ -758,10 +759,19 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
           studentCount: latestCheckpointBacklogRows.filter(row => bucketBacklogCount(row.backlogCount) === bucket).length,
         })),
         electiveDistribution: checkpoint.stageKey === 'post-see'
-          ? Array.from(new Map(electiveRows.filter(row => row.simulationRunId === activeRunId).map(row => [row.stream, {
-              stream: row.stream,
-              recommendationCount: electiveRows.filter(item => item.simulationRunId === activeRunId && item.stream === row.stream).length,
-            }])).values()).sort((left, right) => right.recommendationCount - left.recommendationCount || left.stream.localeCompare(right.stream))
+          ? Array.from(new Map(
+              filterElectiveRecommendationsForSemester(electiveRows, {
+                simulationRunId: activeRunId,
+                semesterNumber: checkpoint.semesterNumber,
+              })
+                .map(row => [row.stream, {
+                  stream: row.stream,
+                  recommendationCount: filterElectiveRecommendationsForSemester(electiveRows, {
+                    simulationRunId: activeRunId,
+                    semesterNumber: checkpoint.semesterNumber,
+                  }).filter(item => item.stream === row.stream).length,
+                }]),
+            ).values()).sort((left, right) => right.recommendationCount - left.recommendationCount || left.stream.localeCompare(right.stream))
           : [],
         facultyLoadSummary: {
           facultyCount: facultyRowsForHod.length,
@@ -1046,9 +1056,11 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
         .filter(row => row.simulationRunId === activeRunId && row.studentId === studentId)
         .sort((left, right) => left.semesterNumber - right.semesterNumber || left.createdAt.localeCompare(right.createdAt))
       const evidenceTimeline = buildEvidenceTimelineFromRows(studentObservedRows)
-      const electiveFit = electiveRows
-        .filter(row => row.simulationRunId === activeRunId && row.studentId === studentId)
-        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0] ?? null
+      const electiveFit = toElectiveFitPayload(latestElectiveRecommendationForSemester(electiveRows, {
+        simulationRunId: activeRunId,
+        studentId,
+        semesterNumber: currentSemester,
+      }))
       const relevantReassessments = activeReassessments.filter(row => row.studentId === studentId)
       const nextDueAt = relevantReassessments.filter(row => isOpenReassessmentStatus(row.status)).map(row => row.dueAt).sort()[0] ?? null
       const courseSnapshots = riskForStudent.map(row => {
@@ -1128,13 +1140,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
             ? String((primaryEvidence.interventionResponse as Record<string, unknown>).recoveryConfirmed ? 'confirmed' : 'watch')
             : null,
         },
-        electiveFit: electiveFit ? {
-          recommendedCode: electiveFit.recommendedCode,
-          recommendedTitle: electiveFit.recommendedTitle,
-          stream: electiveFit.stream,
-          rationale: parseJson(electiveFit.rationaleJson, [] as string[]),
-          alternatives: parseJson(electiveFit.alternativesJson, [] as Array<{ code: string; title: string; stream: string }>),
-        } : null,
+        electiveFit,
         courseSnapshots,
         evidenceTimeline,
       }
@@ -1259,13 +1265,15 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
     studentCount: latestBacklogRows.filter(row => bucketBacklogCount(row.backlogCount) === bucket).length,
   }))
 
+  const semesterScopedElectiveRows = filterElectiveRecommendationsForSemester(electiveRows, {
+    simulationRunId: activeRunId,
+    semesterNumber: currentSemester,
+  }).filter(row => scopedStudentIds.has(row.studentId))
   const electiveDistribution = Array.from(new Map(
-    electiveRows
-      .filter(row => row.simulationRunId === activeRunId)
-      .filter(row => scopedStudentIds.has(row.studentId))
+    semesterScopedElectiveRows
       .map(row => [row.stream, {
         stream: row.stream,
-        recommendationCount: electiveRows.filter(item => item.simulationRunId === activeRunId && item.stream === row.stream && scopedStudentIds.has(item.studentId)).length,
+        recommendationCount: semesterScopedElectiveRows.filter(item => item.stream === row.stream).length,
       }]),
   ).values()).sort((left, right) => right.recommendationCount - left.recommendationCount || left.stream.localeCompare(right.stream))
 

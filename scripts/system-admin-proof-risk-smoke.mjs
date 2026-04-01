@@ -154,6 +154,18 @@ function markStep(label) {
   console.log(`[smoke] step: ${label}`)
 }
 
+async function waitForSessionCookies(requestUrl, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const requestCookies = await context.cookies(requestUrl, appUrl, apiUrl)
+    if (requestCookies.some(cookie => cookie.name === 'airmentor_session')) {
+      return requestCookies
+    }
+    await page.waitForTimeout(250)
+  }
+  return context.cookies(requestUrl, appUrl, apiUrl)
+}
+
 async function expectContainerText(container, pattern, description) {
   const locator = typeof pattern === 'string'
     ? container.getByText(pattern).first()
@@ -321,8 +333,57 @@ async function readPlaybackSelectionParsed() {
 async function adminApiRequest(apiPath, init = {}) {
   const { body, ...restInit } = init
   const requestUrl = new URL(apiPath, apiUrl).toString()
+  const browserRequestUrl = new URL(apiPath, appUrl).toString()
   const timeoutMs = typeof restInit.timeout === 'number' ? restInit.timeout : 180_000
-  const requestCookies = await context.cookies(requestUrl, appUrl, apiUrl)
+  if (!isLiveStack) {
+    const payload = await page.evaluate(async request => {
+      const controller = new AbortController()
+      const timeoutHandle = setTimeout(() => controller.abort(), request.timeoutMs)
+      try {
+        const csrfToken = document.cookie
+          .split('; ')
+          .find(item => item.startsWith('airmentor_csrf='))
+          ?.slice('airmentor_csrf='.length) ?? null
+        const response = await fetch(request.requestUrl, {
+          method: request.method,
+          headers: {
+            accept: 'application/json',
+            ...(csrfToken ? { 'x-airmentor-csrf': decodeURIComponent(csrfToken) } : {}),
+            ...(request.body === undefined ? {} : { 'content-type': 'application/json' }),
+            ...(request.headers ?? {}),
+          },
+          body: request.body === undefined
+            ? undefined
+            : typeof request.body === 'string'
+              ? request.body
+              : JSON.stringify(request.body),
+          credentials: 'include',
+          signal: controller.signal,
+        })
+        return {
+          ok: response.ok,
+          status: response.status,
+          contentType: response.headers.get('content-type') ?? '',
+          text: await response.text().catch(() => ''),
+        }
+      } finally {
+        clearTimeout(timeoutHandle)
+      }
+    }, {
+      requestUrl: browserRequestUrl,
+      method: restInit.method ?? 'GET',
+      body,
+      headers: restInit.headers ?? null,
+      timeoutMs,
+    })
+    if (!payload.ok) {
+      throw new Error(`Admin API ${apiPath} failed with ${payload.status}: ${payload.text.slice(0, 800)}`)
+    }
+    return payload.contentType.includes('application/json')
+      ? JSON.parse(payload.text)
+      : payload.text
+  }
+  const requestCookies = await waitForSessionCookies(requestUrl)
   const csrfToken = requestCookies.find(cookie => cookie.name === 'airmentor_csrf')?.value ?? null
   const cookieHeader = requestCookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ')
   const controller = new AbortController()
@@ -676,7 +737,7 @@ async function loginAsSystemAdmin() {
   await page.getByPlaceholder('••••••••', { exact: true }).fill(systemAdminCredentials.password)
   await page.getByRole('button', { name: 'Sign In', exact: true }).click()
   await page.waitForTimeout(500)
-  console.log(`[smoke] cookies after login: ${JSON.stringify(await context.cookies())}`)
+  console.log(`[smoke] cookies after login: ${JSON.stringify(await waitForSessionCookies(apiUrl))}`)
   await waitForSystemAdminShellReady()
 }
 
@@ -708,6 +769,24 @@ function describeCheckpointDescriptor(checkpoint) {
     stageLabel: checkpoint.stageLabel,
     stageDescription: checkpoint.stageDescription ?? null,
     stageOrder: typeof checkpoint.stageOrder === 'number' ? checkpoint.stageOrder : null,
+    stageAdvanceBlocked: typeof checkpoint.stageAdvanceBlocked === 'boolean' ? checkpoint.stageAdvanceBlocked : null,
+    blockingQueueItemCount: Number.isFinite(Number(checkpoint.blockingQueueItemCount))
+      ? Number(checkpoint.blockingQueueItemCount)
+      : Number.isFinite(Number(checkpoint.openQueueCount))
+        ? Number(checkpoint.openQueueCount)
+        : null,
+    playbackAccessible: typeof checkpoint.playbackAccessible === 'boolean' ? checkpoint.playbackAccessible : null,
+    blockedByCheckpointId: typeof checkpoint.blockedByCheckpointId === 'string' ? checkpoint.blockedByCheckpointId : null,
+    blockedProgressionReason: typeof checkpoint.blockedProgressionReason === 'string' ? checkpoint.blockedProgressionReason : null,
+    noActionHighRiskCount: Number.isFinite(Number(checkpoint.noActionHighRiskCount))
+      ? Number(checkpoint.noActionHighRiskCount)
+      : null,
+    averageCounterfactualLiftScaled: Number.isFinite(Number(checkpoint.averageCounterfactualLiftScaled))
+      ? Number(checkpoint.averageCounterfactualLiftScaled)
+      : null,
+    electiveVisibleCount: Number.isFinite(Number(checkpoint.electiveVisibleCount))
+      ? Number(checkpoint.electiveVisibleCount)
+      : null,
     buttonLabel: `S${checkpoint.semesterNumber} · ${checkpoint.stageLabel}`,
     surfaceLabel: `Sem ${checkpoint.semesterNumber} · ${checkpoint.stageLabel}`,
     bannerLabel: `semester ${checkpoint.semesterNumber} · ${checkpoint.stageLabel}`,
@@ -1173,14 +1252,24 @@ try {
     console.error(`[smoke] current step: ${currentStep}`)
     console.error(`[smoke] failure url: ${page.url()}`)
     const html = await page.content().catch(() => '')
+    const scopedFailureArtifacts = {}
     if (html) {
       await writeFile(failureHtml, html, 'utf8')
       console.error(`Failure HTML: ${failureHtml}`)
+      scopedFailureArtifacts.html = await copySemesterScopedArtifact(failureHtml).catch(() => null)
     }
     await page.screenshot({ path: failureScreenshot, fullPage: true })
+    scopedFailureArtifacts.screenshot = await copySemesterScopedArtifact(failureScreenshot).catch(() => null)
     await context.tracing.stop({ path: failureTrace })
+    scopedFailureArtifacts.trace = await copySemesterScopedArtifact(failureTrace).catch(() => null)
     console.error(`System admin proof-risk smoke failed. Screenshot: ${failureScreenshot}`)
     console.error(`Trace: ${failureTrace}`)
+    if (Object.values(scopedFailureArtifacts).some(Boolean)) {
+      console.error('Semester-scoped failure artifact copies:')
+      for (const [label, copiedPath] of Object.entries(scopedFailureArtifacts)) {
+        if (copiedPath) console.error(`- ${label}: ${copiedPath}`)
+      }
+    }
   } catch {
     // Ignore screenshot/trace failures to preserve the root error.
   }

@@ -436,6 +436,171 @@ describe('RiskExplorerPage', () => {
     expect(markupDetails).toContain('Semester 3')
   })
 
+  it('renders blocked late-stage proof semantics before the final checkpoint', () => {
+    const props: ComponentProps<typeof RiskExplorerPage> = {
+      role: 'Course Leader',
+      studentId: 'mnc_student_005',
+      onBack: () => {},
+      initialExplorer: {
+        simulationRunId: 'run_005',
+        simulationStageCheckpointId: 'checkpoint_005',
+        disclaimer: 'Simulation-calibrated proof analysis only. Formal academic status remains policy-derived.',
+        scopeDescriptor: {
+          scopeType: 'student',
+          scopeId: 'mnc_student_005',
+          label: 'Aarav Sharma · Section A · 2023 Mathematics and Computing',
+          batchId: 'batch_mnc_2023',
+          sectionCode: 'A',
+          branchName: 'B.Tech Mathematics and Computing',
+          simulationRunId: 'run_005',
+          simulationStageCheckpointId: 'checkpoint_005',
+          studentId: 'mnc_student_005',
+        },
+        resolvedFrom: {
+          kind: 'proof-checkpoint',
+          scopeType: 'proof',
+          scopeId: 'checkpoint_005',
+          label: 'Post TT2 · Proof Run 5',
+        },
+        scopeMode: 'proof',
+        countSource: 'proof-checkpoint',
+        activeOperationalSemester: 5,
+        runContext: {
+          simulationRunId: 'run_005',
+          runLabel: 'Proof Run 5',
+          status: 'active',
+          seed: 505,
+          createdAt: '2026-03-16T00:00:00.000Z',
+          batchLabel: '2023 Mathematics and Computing',
+          branchName: 'B.Tech Mathematics and Computing',
+        },
+        checkpointContext: {
+          simulationStageCheckpointId: 'checkpoint_005',
+          semesterNumber: 5,
+          stageKey: 'post-tt2',
+          stageLabel: 'Post TT2',
+          stageDescription: 'Late-semester checkpoint before the final SEE evidence window.',
+          stageOrder: 4,
+          previousCheckpointId: 'checkpoint_004',
+          nextCheckpointId: 'checkpoint_006',
+          stageAdvanceBlocked: true,
+          blockingQueueItemCount: 3,
+        },
+        student: {
+          studentId: 'mnc_student_005',
+          studentName: 'Aarav Sharma',
+          usn: '1MS23MC005',
+          sectionCode: 'A',
+          currentSemester: 5,
+          programScopeVersion: 'mnc-first-6-sem-v1',
+          mentorTrack: 'mixed',
+        },
+        modelProvenance: {
+          modelVersion: 'risk-prod-v5',
+          calibrationVersion: 'identity',
+          featureSchemaVersion: 'risk-feature-v1',
+          evidenceWindow: 'post-tt2',
+          simulationCalibrated: true,
+        },
+        featureCompleteness: completeFeatureCompleteness,
+        featureProvenance: completeFeatureProvenance,
+        trainedRiskHeads: {
+          currentRiskBand: 'High',
+          currentRiskProbScaled: 76,
+          attendanceRiskProbScaled: 64,
+          ceRiskProbScaled: 72,
+          seeRiskProbScaled: 69,
+          overallCourseRiskProbScaled: 76,
+          downstreamCarryoverRiskProbScaled: 48,
+        },
+        derivedScenarioHeads: {
+          semesterSgpaDropRiskProbScaled: 63,
+          cumulativeCgpaDropRiskProbScaled: 57,
+          electiveMismatchRiskProbScaled: 36,
+          note: 'Derived from trained heads plus observed trend.',
+        },
+        currentEvidence: {
+          attendancePct: 69,
+          tt1Pct: 43,
+          tt2Pct: 39,
+          quizPct: 48,
+          assignmentPct: 58,
+          seePct: 0,
+          weakCoCount: 2,
+          weakQuestionCount: 3,
+          interventionRecoveryStatus: 'watch',
+        },
+        currentStatus: {
+          riskBand: 'High',
+          riskProbScaled: 76,
+          reassessmentStatus: 'Open',
+          nextDueAt: '2026-03-18T09:00:00.000Z',
+          recommendedAction: 'targeted-tutoring',
+          queueState: 'open',
+          simulatedActionTaken: 'targeted-tutoring',
+          attentionAreas: ['Queue items remain unresolved'],
+        },
+        topDrivers: [
+          { label: 'Queue backlog remains open', impact: 0.26, feature: 'openQueueCount' },
+        ],
+        crossCourseDrivers: ['Late-semester intervention pressure is elevated.'],
+        prerequisiteMap: {
+          prerequisiteCourseCodes: ['MCC301A'],
+          weakPrerequisiteCourseCodes: ['MCC301A'],
+          prerequisitePressureScaled: 44,
+          prerequisiteAveragePct: 49,
+          prerequisiteFailureCount: 1,
+        },
+        weakCourseOutcomes: [],
+        questionPatterns: {
+          weakQuestionCount: 3,
+          carelessErrorCount: 1,
+          transferGapCount: 1,
+          commonWeakTopics: ['Optimization Constraints'],
+          commonWeakCourseOutcomes: ['MC501-CO3'],
+        },
+        semesterSummaries: [
+          {
+            semesterNumber: 4,
+            riskBands: ['Medium'],
+            sgpa: 7.0,
+            cgpaAfterSemester: 7.1,
+            backlogCount: 0,
+            weakCoCount: 1,
+            questionResultCoverage: 16,
+            interventionCount: 1,
+          },
+          {
+            semesterNumber: 5,
+            riskBands: ['High'],
+            sgpa: 6.4,
+            cgpaAfterSemester: 6.9,
+            backlogCount: 1,
+            weakCoCount: 2,
+            questionResultCoverage: 16,
+            interventionCount: 2,
+          },
+        ],
+        assessmentComponents: [],
+        counterfactual: {
+          panelLabel: 'Policy Derived',
+          noActionRiskBand: 'High',
+          noActionRiskProbScaled: 84,
+          counterfactualLiftScaled: 8,
+          note: 'Advisory comparison only.',
+        },
+        electiveFit: null,
+      },
+    }
+
+    const markup = renderToStaticMarkup(createElement(RiskExplorerPage, props))
+
+    expect(markup).toContain('Sem 5 · Post TT2')
+    expect(markup).toContain('operational semester 5')
+    expect(markup).toContain('Stage blocked')
+    expect(markup).toContain('Playback progression is blocked at this checkpoint until 3 queue item(s) are resolved.')
+  })
+
   it('renders band-only trained heads with calibration and support warnings when probability display is suppressed', () => {
     const markup = renderToStaticMarkup(createElement(RiskExplorerPage, {
       role: 'Mentor',

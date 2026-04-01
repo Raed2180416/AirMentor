@@ -541,6 +541,203 @@ describe('StudentShellPage', () => {
     expect(markup).toContain('Semester 3')
   })
 
+  it('renders final-stage student shell coverage for semesters 4 through 6', () => {
+    const markup = renderToStaticMarkup(createElement(StudentShellPage, {
+      role: 'Course Leader',
+      studentId: 'mnc_student_006',
+      onBack: () => {},
+      initialActiveTab: 'overview',
+      initialCard: {
+        studentAgentCardId: 'agent_card_006',
+        simulationRunId: 'run_006',
+        simulationStageCheckpointId: 'checkpoint_006',
+        cardVersion: 1,
+        sourceSnapshotHash: 'hash_006',
+        disclaimer: 'Simulation UX only. Formal academic status remains policy-derived, and this shell cannot change institutional records.',
+        scopeDescriptor: {
+          scopeType: 'student',
+          scopeId: 'mnc_student_006',
+          label: 'Aarav Sharma · Section A · 2023 Mathematics and Computing',
+          batchId: 'batch_mnc_2023',
+          sectionCode: 'A',
+          branchName: 'B.Tech Mathematics and Computing',
+          simulationRunId: 'run_006',
+          simulationStageCheckpointId: 'checkpoint_006',
+          studentId: 'mnc_student_006',
+        },
+        resolvedFrom: {
+          kind: 'proof-checkpoint',
+          scopeType: 'proof',
+          scopeId: 'checkpoint_006',
+          label: 'Post SEE · Proof Run 6',
+        },
+        scopeMode: 'proof',
+        countSource: 'proof-checkpoint',
+        activeOperationalSemester: 6,
+        runContext: {
+          simulationRunId: 'run_006',
+          runLabel: 'Proof Run 6',
+          status: 'active',
+          seed: 606,
+          createdAt: '2026-03-16T00:00:00.000Z',
+          batchLabel: '2023 Mathematics and Computing',
+          branchName: 'B.Tech Mathematics and Computing',
+        },
+        checkpointContext: {
+          simulationStageCheckpointId: 'checkpoint_006',
+          semesterNumber: 6,
+          stageKey: 'post-see',
+          stageLabel: 'Post SEE',
+          stageDescription: 'Final evidence checkpoint after SEE lands.',
+          stageOrder: 5,
+          previousCheckpointId: 'checkpoint_005',
+          nextCheckpointId: null,
+          stageAdvanceBlocked: false,
+          blockingQueueItemCount: 0,
+        },
+        student: {
+          studentId: 'mnc_student_006',
+          studentName: 'Aarav Sharma',
+          usn: '1MS23MC006',
+          sectionCode: 'A',
+          currentSemester: 6,
+          programScopeVersion: 'mnc-first-6-sem-v1',
+          mentorTrack: 'mixed',
+        },
+        allowedIntents: ['Explain current semester performance'],
+        summaryRail: {
+          currentRiskBand: 'Medium',
+          currentRiskProbScaled: 54,
+          primaryCourseCode: 'MC601',
+          primaryCourseTitle: 'Graph Theory',
+          nextDueAt: null,
+          currentReassessmentStatus: 'Watch',
+          currentCgpa: 7.12,
+          backlogCount: 0,
+          electiveFit: {
+            recommendedCode: 'MC6E01',
+            recommendedTitle: 'Applied Optimization',
+            stream: 'Data Intelligence',
+            rationale: ['Observed final-stage math signal'],
+            alternatives: [],
+          },
+        },
+        overview: {
+          observedLabel: 'Observed',
+          policyLabel: 'Policy Derived',
+          currentEvidence: {
+            attendancePct: 81,
+            tt1Pct: 58,
+            tt2Pct: 55,
+            quizPct: 62,
+            assignmentPct: 66,
+            seePct: 61,
+            weakCoCount: 1,
+            weakQuestionCount: 2,
+            interventionRecoveryStatus: 'stable',
+            coEvidenceMode: 'synthetic-blueprint',
+          },
+          currentStatus: {
+            riskBand: 'Medium',
+            riskProbScaled: 54,
+            reassessmentStatus: 'Watch',
+            nextDueAt: null,
+            recommendedAction: 'structured-study-plan',
+            queueState: 'watch',
+            simulatedActionTaken: 'structured-study-plan',
+            attentionAreas: ['Final-stage review remains advisory'],
+            counterfactualLiftScaled: 6,
+          },
+          semesterSummaries: [
+            {
+              semesterNumber: 4,
+              riskBands: ['Medium'],
+              sgpa: 6.9,
+              cgpaAfterSemester: 7.0,
+              backlogCount: 0,
+              weakCoCount: 1,
+              questionResultCoverage: 18,
+              interventionCount: 1,
+            },
+            {
+              semesterNumber: 5,
+              riskBands: ['Medium'],
+              sgpa: 7.0,
+              cgpaAfterSemester: 7.0,
+              backlogCount: 0,
+              weakCoCount: 1,
+              questionResultCoverage: 18,
+              interventionCount: 1,
+            },
+            {
+              semesterNumber: 6,
+              riskBands: ['Medium'],
+              sgpa: 7.4,
+              cgpaAfterSemester: 7.1,
+              backlogCount: 0,
+              weakCoCount: 1,
+              questionResultCoverage: 18,
+              interventionCount: 1,
+            },
+          ],
+        },
+        topicAndCo: {
+          panelLabel: 'Simulation Internal',
+          topicBuckets: {
+            known: ['Optimization Foundations'],
+            partial: ['SEE revision'],
+            blocked: [],
+            highUncertainty: [],
+          },
+          weakCourseOutcomes: [],
+          questionPatterns: {
+            weakQuestionCount: 2,
+            carelessErrorCount: 0,
+            transferGapCount: 1,
+            commonWeakTopics: ['SEE revision'],
+            commonWeakCourseOutcomes: ['MC601-CO3'],
+          },
+          simulationTags: ['Archetype: steady-finish'],
+        },
+        assessmentEvidence: {
+          panelLabel: 'Observed',
+          components: [],
+        },
+        interventions: {
+          panelLabel: 'Human Action Log',
+          currentReassessments: [],
+          interventionHistory: [],
+          humanActionLog: [],
+        },
+        counterfactual: {
+          panelLabel: 'Policy Derived',
+          noActionRiskBand: 'Medium',
+          noActionRiskProbScaled: 60,
+          counterfactualLiftScaled: 6,
+          note: 'Advisory comparison only. This shows the local no-action comparator for the selected checkpoint and does not change the proof record.',
+        },
+        citations: [
+          {
+            citationId: 'guardrail-scope',
+            label: 'Shell guardrail boundary',
+            panelLabel: 'Policy Derived',
+            summary: 'This shell explains the current proof record only.',
+          },
+        ],
+      },
+      initialTimeline: [],
+      initialSession: null,
+    }))
+
+    expect(markup).toContain('Sem 6')
+    expect(markup).toContain('operational semester 6')
+    expect(markup).toContain('MC6E01')
+    expect(markup).toContain('No-action comparator')
+    expect(markup).toContain('Semester 4')
+    expect(markup).toContain('Semester 5')
+    expect(markup).toContain('Semester 6')
+  })
+
   it('renders an explicit proof load error before the unavailable empty state', () => {
     const markup = renderToStaticMarkup(createElement(StudentShellPage, {
       role: 'Mentor',

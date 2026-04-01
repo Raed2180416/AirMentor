@@ -366,6 +366,109 @@ describe('HodView', () => {
     expect(markup).toContain('operational semester 3')
   })
 
+  it('renders late-semester distribution coverage for semesters 4 through 6 with final-stage elective guidance', () => {
+    const markup = renderToStaticMarkup(createElement(HodView, {
+      onOpenQueueHistory: () => {},
+      onOpenStudentShell: () => {},
+      onOpenRiskExplorer: () => {},
+      onOpenCourse: () => {},
+      onOpenStudent: () => {},
+      tasks: [],
+      calendarAuditEvents: [],
+      loading: false,
+      error: '',
+      summary: {
+        activeRunContext: {
+          simulationRunId: 'run_001',
+          batchId: 'batch_001',
+          batchLabel: '2023 Mathematics and Computing',
+          branchName: 'B.Tech Mathematics and Computing',
+          runLabel: 'Proof Run 1',
+          status: 'active',
+          seed: 42,
+          createdAt: '2026-03-16T00:00:00.000Z',
+          sourceLabel: 'Live proof records',
+          checkpointContext: {
+            simulationStageCheckpointId: 'checkpoint_006',
+            simulationRunId: 'run_001',
+            semesterNumber: 6,
+            stageKey: 'post-see',
+            stageLabel: 'Post SEE',
+            stageDescription: 'Final evidence checkpoint.',
+            stageOrder: 5,
+            previousCheckpointId: 'checkpoint_005',
+            nextCheckpointId: null,
+          },
+        },
+        scopeDescriptor: {
+          scopeType: 'proof',
+          scopeId: 'checkpoint_006',
+          label: '2023 Mathematics and Computing',
+          batchId: 'batch_001',
+          sectionCode: null,
+          branchName: 'B.Tech Mathematics and Computing',
+          simulationRunId: 'run_001',
+          simulationStageCheckpointId: 'checkpoint_006',
+          studentId: null,
+        },
+        resolvedFrom: {
+          kind: 'proof-checkpoint',
+          scopeType: 'proof',
+          scopeId: 'checkpoint_006',
+          label: 'Post SEE · Proof Run 1',
+        },
+        scopeMode: 'proof',
+        countSource: 'proof-checkpoint',
+        activeOperationalSemester: 6,
+        scope: {
+          departmentNames: ['School of Computing'],
+          branchNames: ['Mathematics and Computing'],
+        },
+        monitoringSummary: {
+          riskAssessmentCount: 24,
+          activeReassessmentCount: 8,
+          alertDecisionCount: 8,
+          acknowledgementCount: 3,
+          resolutionCount: 2,
+        },
+        totals: {
+          studentsCovered: 120,
+          highRiskCount: 12,
+          mediumRiskCount: 18,
+          averageQueueAgeHours: 21.5,
+          manualOverrideCount: 1,
+          unresolvedAlertCount: 5,
+          resolvedAlertCount: 2,
+        },
+        sectionComparison: [],
+        semesterRiskDistribution: [
+          { semesterNumber: 4, highPressureCount: 8, reviewCount: 12, stableCount: 100, basis: 'transcript-backlog' },
+          { semesterNumber: 5, highPressureCount: 10, reviewCount: 16, stableCount: 94, basis: 'transcript-backlog' },
+          { semesterNumber: 6, highPressureCount: 12, reviewCount: 18, stableCount: 90, basis: 'transcript-backlog' },
+        ],
+        backlogDistribution: [],
+        electiveDistribution: [
+          { stream: 'Data Intelligence', recommendationCount: 42 },
+        ],
+        facultyLoadSummary: {
+          facultyCount: 10,
+          overloadedFacultyCount: 2,
+          averageWeeklyContactHours: 13.6,
+        },
+      },
+      courseRollups: [],
+      facultyRollups: [],
+      studentWatchRows: [],
+      reassessmentRows: [],
+    }))
+
+    expect(markup).toContain('Sem 4')
+    expect(markup).toContain('Sem 5')
+    expect(markup).toContain('Sem 6')
+    expect(markup).toContain('operational semester 6')
+    expect(markup).toContain('Semester-6 elective fit remains advisory')
+  })
+
   it('defaults Action Needed to governed open cases instead of raw watch bands', () => {
     const markup = renderToStaticMarkup(createElement(HodView, {
       onOpenQueueHistory: () => {},

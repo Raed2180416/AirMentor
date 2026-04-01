@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import {
+  resolveSemesterWalkCheckpoint,
+  sanitizeArtifactPrefix,
+} from './proof-risk-semester-walk.mjs'
 import { resolveSystemAdminLiveCredentials } from './system-admin-live-auth.mjs'
 
 const playwrightRoot = process.env.PLAYWRIGHT_ROOT
@@ -9,6 +13,7 @@ const apiUrl = process.env.PLAYWRIGHT_API_URL ?? appUrl
 const outputDir = process.env.PLAYWRIGHT_OUTPUT_DIR ?? 'output/playwright'
 const firefoxExecutablePath = process.env.PLAYWRIGHT_FIREFOX_EXECUTABLE_PATH || undefined
 const isLiveStack = process.env.AIRMENTOR_LIVE_STACK === '1'
+const keyboardArtifactPrefix = sanitizeArtifactPrefix((process.env.AIRMENTOR_KEYBOARD_ARTIFACT_PREFIX ?? '').trim())
 
 assert(playwrightRoot, 'PLAYWRIGHT_ROOT is required')
 
@@ -24,6 +29,7 @@ let proofRouteState = {
   routeHash: seededProofRoute,
   batchId: seededProofBatchId,
 }
+let lateCheckpointDescriptor = null
 let requestState = {
   id: 'request_001',
   summary: defaultRequestSummary,
@@ -44,11 +50,40 @@ const report = {
   appUrl,
   apiUrl,
   liveStack: isLiveStack,
+  proofRoute: null,
+  requestRoute: null,
+  lateCheckpointWalk: null,
+  artifacts: {
+    successScreenshot,
+    successReport,
+    failureScreenshot,
+    failureTrace,
+    failureHtml,
+    failureReport,
+    prefixedSuccessScreenshot: buildPrefixedArtifactPath(successScreenshot),
+    prefixedSuccessReport: buildPrefixedArtifactPath(successReport),
+    prefixedFailureScreenshot: buildPrefixedArtifactPath(failureScreenshot),
+    prefixedFailureTrace: buildPrefixedArtifactPath(failureTrace),
+    prefixedFailureHtml: buildPrefixedArtifactPath(failureHtml),
+    prefixedFailureReport: buildPrefixedArtifactPath(failureReport),
+  },
   checks: [],
 }
 const systemAdminCredentials = resolveSystemAdminLiveCredentials({
   scriptLabel: 'System admin live keyboard regression',
 })
+
+function buildPrefixedArtifactPath(rawPath) {
+  if (!keyboardArtifactPrefix) return null
+  return path.join(path.dirname(rawPath), `${keyboardArtifactPrefix}-${path.basename(rawPath)}`)
+}
+
+async function copyPrefixedArtifact(rawPath) {
+  const prefixedPath = buildPrefixedArtifactPath(rawPath)
+  if (!prefixedPath) return null
+  await copyFile(rawPath, prefixedPath)
+  return prefixedPath
+}
 
 const browser = await firefox.launch({
   headless: true,
@@ -113,6 +148,7 @@ async function expectFocused(locator, description) {
 
 async function adminApiRequest(apiPath, init = {}) {
   const { body, ...restInit } = init
+  const browserRequestUrl = new URL(apiPath, isLiveStack ? apiUrl : appUrl).toString()
   const response = await page.evaluate(async request => {
     const csrfToken = document.cookie
       .split('; ')
@@ -141,7 +177,7 @@ async function adminApiRequest(apiPath, init = {}) {
       text,
     }
   }, {
-    apiPath: new URL(apiPath, apiUrl).toString(),
+    apiPath: browserRequestUrl,
     method: restInit.method ?? 'GET',
     body,
   })
@@ -155,6 +191,40 @@ async function adminApiRequest(apiPath, init = {}) {
 
 async function readProofDashboard() {
   return adminApiRequest(`/api/admin/batches/${proofRouteState.batchId}/proof-dashboard`)
+}
+
+function describeCheckpointDescriptor(checkpoint) {
+  assert(checkpoint?.simulationStageCheckpointId, 'Late checkpoint must expose a simulationStageCheckpointId')
+  assert.equal(typeof checkpoint.semesterNumber, 'number', 'Late checkpoint must expose a semester number')
+  return {
+    simulationStageCheckpointId: checkpoint.simulationStageCheckpointId,
+    semesterNumber: checkpoint.semesterNumber,
+    stageKey: checkpoint.stageKey ?? null,
+    stageLabel: checkpoint.stageLabel ?? null,
+    stageDescription: checkpoint.stageDescription ?? null,
+    stageOrder: typeof checkpoint.stageOrder === 'number' ? checkpoint.stageOrder : null,
+    stageAdvanceBlocked: checkpoint.stageAdvanceBlocked ?? null,
+    playbackAccessible: checkpoint.playbackAccessible ?? null,
+    blockedByCheckpointId: checkpoint.blockedByCheckpointId ?? null,
+    blockedProgressionReason: checkpoint.blockedProgressionReason ?? null,
+    surfaceLabel: `Sem ${checkpoint.semesterNumber} · ${checkpoint.stageLabel ?? 'Unknown stage'}`,
+    bannerLabel: `semester ${checkpoint.semesterNumber} · ${checkpoint.stageLabel ?? 'Unknown stage'}`,
+  }
+}
+
+function resolveLateCheckpointWalk(checkpoints) {
+  const availableOperationalSemesters = Array.from(new Set(
+    checkpoints
+      .map(item => Number(item?.semesterNumber))
+      .filter(Number.isFinite),
+  )).sort((left, right) => left - right)
+  assert(availableOperationalSemesters.length > 0, 'Proof dashboard should expose at least one checkpoint semester')
+  const lateSemester = availableOperationalSemesters.at(-1)
+  const checkpoint = resolveSemesterWalkCheckpoint(checkpoints, lateSemester)
+  return {
+    availableOperationalSemesters,
+    checkpoint: describeCheckpointDescriptor(checkpoint),
+  }
 }
 
 async function readProofDashboardForBatch(batchId) {
@@ -213,6 +283,13 @@ async function discoverProofRouteState() {
   proofRouteState = {
     routeHash: `#/admin/faculties/${selected.faculty.academicFacultyId}/departments/${selected.department.departmentId}/branches/${selected.branch.branchId}/batches/${selected.batch.batchId}`,
     batchId: selected.batch.batchId,
+  }
+  report.proofRoute = {
+    ...proofRouteState,
+    facultyName: selected.faculty.name,
+    departmentName: selected.department.name,
+    branchName: selected.branch.name,
+    batchLabel: selected.batch.batchLabel,
   }
   console.log(`[keyboard] live proof route discovered: faculty=${selected.faculty.name} department=${selected.department.name} branch=${selected.branch.name} batch=${selected.batch.batchLabel} checkpoints=${selected.checkpointCount}`)
   return proofRouteState
@@ -334,7 +411,11 @@ async function waitForSystemAdminShellReady() {
     expectVisible(page.getByText('Operations Dashboard', { exact: true }).first(), 'system admin operations dashboard heading'),
   ]
   await Promise.any(readinessChecks)
-  await page.waitForTimeout(500)
+  const facultiesButton = page.getByRole('button', { name: 'Faculties', exact: true }).first()
+  if (await facultiesButton.isVisible().catch(() => false)) {
+    await expectVisible(facultiesButton, 'system admin faculties rail entry')
+  }
+  await page.waitForTimeout(750)
 }
 
 async function loginAsSystemAdmin() {
@@ -375,27 +456,62 @@ function visibleProofSurface(name) {
   return page.locator(`[data-proof-surface="${name}"]:visible`).first()
 }
 
+async function waitForAdminDataRefreshToSettle(timeout = 60_000) {
+  const deadline = Date.now() + timeout
+  while (Date.now() < deadline) {
+    const refreshVisible = await page.getByText('Refreshing live admin data…', { exact: true }).first().isVisible().catch(() => false)
+    if (!refreshVisible) {
+      await page.waitForTimeout(300)
+      return
+    }
+    await page.waitForTimeout(500)
+  }
+}
+
+async function resetWorkspaceIfVisible() {
+  const resetWorkspaceButton = page.getByRole('button', { name: 'Reset workspace', exact: true }).first()
+  if (!await resetWorkspaceButton.isVisible().catch(() => false)) return false
+  await focusAndActivate(resetWorkspaceButton, 'reset faculties workspace button')
+  await page.waitForFunction(() => !document.body.innerText.includes('Faculties workspace restored'), { timeout: 10_000 }).catch(() => {})
+  await page.waitForTimeout(300)
+  return true
+}
+
 async function openSeededProofRoute(forceReload = false, reloadAttempt = 0) {
+  await ensureProofRunReady()
   await primeSeededProofRouteState()
   const seededRouteUrl = buildSeededProofRouteUrl(forceReload)
-  await page.goto(seededRouteUrl, { waitUntil: 'domcontentloaded' })
+  await page.goto(seededRouteUrl, { waitUntil: forceReload ? 'networkidle' : 'domcontentloaded' })
   await page.waitForFunction(expectedHash => window.location.hash === expectedHash, proofRouteState.routeHash)
-  await page.waitForTimeout(500)
+  await waitForAdminDataRefreshToSettle()
   const batchNotFound = page.getByText('Batch not found', { exact: true }).first()
   if (await batchNotFound.isVisible().catch(() => false)) {
     throw new Error(`Proof batch route ${proofRouteState.routeHash} resolved to "Batch not found"`)
   }
   let proofControlPlane = visibleProofSurface('system-admin-proof-control-plane')
   if (!(await proofControlPlane.isVisible().catch(() => false))) {
-    const overviewTab = page.locator('button[data-tab="true"]').filter({ hasText: 'Overview' }).first()
-    await focusAndActivate(overviewTab, 'batch overview workspace tab')
-    await page.waitForTimeout(250)
+    await resetWorkspaceIfVisible()
+    await waitForAdminDataRefreshToSettle(15_000)
     proofControlPlane = visibleProofSurface('system-admin-proof-control-plane')
   }
-  await expectVisible(proofControlPlane, 'system admin proof control plane')
+  if (!(await proofControlPlane.isVisible().catch(() => false))) {
+    const overviewTab = page.locator('button[data-tab="true"]').filter({ hasText: 'Overview' }).first()
+    if (await overviewTab.isVisible().catch(() => false)) {
+      await focusAndActivate(overviewTab, 'batch overview workspace tab')
+      await page.waitForTimeout(500)
+      await waitForAdminDataRefreshToSettle(15_000)
+    }
+    proofControlPlane = visibleProofSurface('system-admin-proof-control-plane')
+  }
+  if (!(await proofControlPlane.isVisible().catch(() => false))) {
+    if (reloadAttempt >= 1) {
+      throw new Error(`System admin proof control plane did not materialize for ${proofRouteState.routeHash}`)
+    }
+    return openSeededProofRoute(true, reloadAttempt + 1)
+  }
+  await expectVisible(proofControlPlane, 'system admin proof control plane', 60_000)
   const checkpointPlayback = proofControlPlane.locator('[data-proof-section="checkpoint-playback"]').first()
   if (!(await checkpointPlayback.isVisible().catch(() => false))) {
-    await ensureProofRunReady()
     try {
       await checkpointPlayback.waitFor({ state: 'visible', timeout: 15_000 })
     } catch {
@@ -451,16 +567,21 @@ try {
   markStep('login-system-admin')
   await loginAsSystemAdmin()
   await discoverProofRouteState()
+  if (!report.proofRoute) {
+    report.proofRoute = { ...proofRouteState }
+  }
   await discoverRequestState()
+  report.requestRoute = { ...requestState }
 
   markStep('request-flow-keyboard')
   await focusAndActivate(page.getByRole('button', { name: 'Requests', exact: true }).first(), 'requests navigation')
   await expectVisible(page.getByText(/^Requests$/).last(), 'requests heading')
   const requestButton = page.getByRole('button', { name: new RegExp(escapeRegex(requestState.summary), 'i') }).first()
   await focusAndActivate(requestButton, 'request list item')
-  await expectVisible(page.getByText(requestState.summary).last(), 'selected request detail')
+  const requestDetailSurface = page.locator('[data-request-detail="true"]').first()
+  await expectVisible(requestDetailSurface, 'selected request detail surface')
+  await expectVisible(requestDetailSurface.getByText(requestState.summary).first(), 'selected request detail title')
   assert(/#\/admin\/requests\//.test(page.url()), `expected deep-linked request URL, got ${page.url()}`)
-  const requestDetailSurface = page.getByText(requestState.summary).last().locator('xpath=ancestor::*[@data-surface][1]')
   const requestAction = requestDetailSurface.getByRole('button', { name: /Take Review|Approve|Mark Implemented|Close/ }).first()
   const requestActionVisible = await requestAction.isVisible().catch(() => false)
   if (requestActionVisible) {
@@ -491,20 +612,29 @@ try {
   report.checks.push({ name: 'modal_focus_trap_and_restore', status: 'passed' })
 
   markStep('proof-dashboard-keyboard')
-  await ensureProofRunReady()
+  const proofDashboard = await ensureProofRunReady()
+  const checkpoints = Array.isArray(proofDashboard.activeRunDetail?.checkpoints)
+    ? proofDashboard.activeRunDetail.checkpoints.slice()
+    : []
+  const lateCheckpointWalk = resolveLateCheckpointWalk(checkpoints)
+  lateCheckpointDescriptor = lateCheckpointWalk.checkpoint
+  report.lateCheckpointWalk = lateCheckpointWalk
   let proofControlPlane = await openSeededProofRoute()
   const firstCheckpointButton = proofControlPlane.locator('[data-proof-action="proof-select-checkpoint"]').first()
   const firstCheckpointLabel = ((await firstCheckpointButton.textContent().catch(() => '')) ?? '').trim()
   const firstCheckpointStageLabel = firstCheckpointLabel.includes('·')
     ? firstCheckpointLabel.split('·').slice(1).join('·').trim()
     : firstCheckpointLabel
-  const finalCheckpointButton = proofControlPlane
-    .locator('[data-proof-action="proof-select-checkpoint"]')
-    .filter({ hasText: /Post SEE/i })
+  const lateCheckpointButton = proofControlPlane
+    .locator(`[data-proof-action="proof-select-checkpoint"][data-proof-entity-id="${lateCheckpointDescriptor.simulationStageCheckpointId}"]`)
     .first()
-  await focusAndActivate(finalCheckpointButton, 'final checkpoint selection')
+  await focusAndActivate(lateCheckpointButton, 'late checkpoint selection')
   const selectedCheckpointBanner = proofControlPlane.locator('[data-proof-section="selected-checkpoint-banner"]').first()
-  await expectText(selectedCheckpointBanner, /Post SEE/i, 'selected checkpoint banner after final checkpoint')
+  await expectText(
+    selectedCheckpointBanner,
+    new RegExp(escapeRegex(lateCheckpointDescriptor.bannerLabel), 'i'),
+    'selected checkpoint banner after late checkpoint selection',
+  )
   await focusAndActivate(proofControlPlane.getByRole('button', { name: 'Reset To Start', exact: true }), 'reset playback button')
   await expectText(selectedCheckpointBanner, new RegExp(escapeRegex(firstCheckpointStageLabel), 'i'), 'selected checkpoint banner after reset')
   const playToEndButton = proofControlPlane.getByRole('button', { name: 'Play To End', exact: true })
@@ -513,7 +643,11 @@ try {
     await expectText(selectedCheckpointBanner, new RegExp(escapeRegex(firstCheckpointStageLabel), 'i'), 'selected checkpoint banner when play to end is gated')
   } else {
     await focusAndActivate(playToEndButton, 'play to end button')
-    await expectText(selectedCheckpointBanner, /Post SEE/i, 'selected checkpoint banner after play to end')
+    await expectText(
+      selectedCheckpointBanner,
+      new RegExp(escapeRegex(lateCheckpointDescriptor.bannerLabel), 'i'),
+      'selected checkpoint banner after play to end',
+    )
   }
   await readPlaybackSelection()
   report.checks.push({ name: 'proof_dashboard_checkpoint_keyboard_controls', status: 'passed' })
@@ -580,7 +714,14 @@ try {
 
   await page.screenshot({ path: successScreenshot, fullPage: true })
   await writeReport(successReport, report)
+  const prefixedSuccessScreenshot = await copyPrefixedArtifact(successScreenshot)
+  const prefixedSuccessReport = await copyPrefixedArtifact(successReport)
   console.log(`System admin live keyboard regression passed. Screenshot: ${successScreenshot}`)
+  if (prefixedSuccessScreenshot || prefixedSuccessReport) {
+    console.log('Prefixed keyboard artifacts:')
+    if (prefixedSuccessScreenshot) console.log(`- screenshot: ${prefixedSuccessScreenshot}`)
+    if (prefixedSuccessReport) console.log(`- report: ${prefixedSuccessReport}`)
+  }
   await context.tracing.stop()
 } catch (error) {
   try {
@@ -597,8 +738,19 @@ try {
     await writeReport(failureReport, report)
     await page.screenshot({ path: failureScreenshot, fullPage: true })
     await context.tracing.stop({ path: failureTrace })
+    const prefixedFailureHtml = html ? await copyPrefixedArtifact(failureHtml).catch(() => null) : null
+    const prefixedFailureReport = await copyPrefixedArtifact(failureReport).catch(() => null)
+    const prefixedFailureScreenshot = await copyPrefixedArtifact(failureScreenshot).catch(() => null)
+    const prefixedFailureTrace = await copyPrefixedArtifact(failureTrace).catch(() => null)
     console.error(`System admin live keyboard regression failed. Screenshot: ${failureScreenshot}`)
     console.error(`Trace: ${failureTrace}`)
+    if (prefixedFailureScreenshot || prefixedFailureReport || prefixedFailureTrace || prefixedFailureHtml) {
+      console.error('Prefixed keyboard failure artifacts:')
+      if (prefixedFailureScreenshot) console.error(`- screenshot: ${prefixedFailureScreenshot}`)
+      if (prefixedFailureReport) console.error(`- report: ${prefixedFailureReport}`)
+      if (prefixedFailureTrace) console.error(`- trace: ${prefixedFailureTrace}`)
+      if (prefixedFailureHtml) console.error(`- html: ${prefixedFailureHtml}`)
+    }
   } catch {
     // Preserve the root failure.
   }

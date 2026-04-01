@@ -318,12 +318,25 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     })
     const checkpoints = [
       buildCheckpoint({
+        simulationStageCheckpointId: 'checkpoint_sem4',
+        semesterNumber: 4,
+        stageLabel: 'Semester 4',
+        stageKey: 'post-assignments',
+        stageOrder: 1,
+        previousCheckpointId: null,
+        nextCheckpointId: 'checkpoint_sem5',
+        playbackAccessible: true,
+        stageAdvanceBlocked: false,
+        blockedByCheckpointId: null,
+        blockedProgressionReason: null,
+      }),
+      buildCheckpoint({
         simulationStageCheckpointId: 'checkpoint_sem5',
         semesterNumber: 5,
         stageLabel: 'Semester 5',
         stageKey: 'post-tt2',
         stageOrder: 1,
-        previousCheckpointId: null,
+        previousCheckpointId: 'checkpoint_sem4',
         nextCheckpointId: 'checkpoint_sem6',
         playbackAccessible: true,
         stageAdvanceBlocked: false,
@@ -661,16 +674,209 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     expect(markup).toContain('operational semester remains Semester 3')
   })
 
+  it('renders explicit late-semester activation controls for semesters 4 through 6 and the final-stage checkpoint label', () => {
+    const selectedCheckpoint = buildCheckpoint({
+      simulationStageCheckpointId: 'checkpoint_sem6_post_see',
+      semesterNumber: 6,
+      stageKey: 'post-see',
+      stageLabel: 'Post SEE',
+      stageDescription: 'Final evidence checkpoint after SEE lands.',
+      stageOrder: 3,
+      previousCheckpointId: 'checkpoint_sem5_post_tt2',
+      nextCheckpointId: null,
+      playbackAccessible: true,
+      stageAdvanceBlocked: false,
+      blockedByCheckpointId: null,
+      blockedProgressionReason: null,
+      noActionHighRiskCount: 6,
+      averageCounterfactualLiftScaled: 9,
+    })
+    const checkpoints = [
+      buildCheckpoint({
+        simulationStageCheckpointId: 'checkpoint_sem4_post_tt1',
+        semesterNumber: 4,
+        stageKey: 'post-tt1',
+        stageLabel: 'Post TT1',
+        stageDescription: 'Late-semester checkpoint after TT1 evidence lands.',
+        stageOrder: 1,
+        previousCheckpointId: null,
+        nextCheckpointId: 'checkpoint_sem5_post_tt2',
+        playbackAccessible: false,
+        stageAdvanceBlocked: true,
+        blockedByCheckpointId: 'checkpoint_sem4_post_tt1',
+        blockedProgressionReason: 'Queue items from the semester-4 checkpoint remain unresolved.',
+      }),
+      buildCheckpoint({
+        simulationStageCheckpointId: 'checkpoint_sem5_post_tt2',
+        semesterNumber: 5,
+        stageKey: 'post-tt2',
+        stageLabel: 'Post TT2',
+        stageDescription: 'Late-semester checkpoint after TT2 evidence lands.',
+        stageOrder: 2,
+        previousCheckpointId: 'checkpoint_sem4_post_tt1',
+        nextCheckpointId: selectedCheckpoint.simulationStageCheckpointId,
+        playbackAccessible: true,
+        stageAdvanceBlocked: false,
+        blockedByCheckpointId: null,
+        blockedProgressionReason: null,
+      }),
+      selectedCheckpoint,
+    ]
+
+    const proofDashboard: ApiProofDashboard = {
+      imports: [],
+      latestValidation: null,
+      crosswalkReviewQueue: [],
+      proofRuns: [],
+      activeRunDetail: {
+        simulationRunId: 'run_001',
+        runLabel: 'Proof Run 1',
+        seed: 42,
+        activeOperationalSemester: 6,
+        createdAt: '2026-03-16T00:00:00.000Z',
+        startedAt: '2026-03-16T00:00:00.000Z',
+        completedAt: null,
+        status: 'active',
+        failureCode: null,
+        failureMessage: null,
+        progress: null,
+        monitoringSummary: {
+          riskAssessmentCount: 0,
+          activeReassessmentCount: 0,
+          alertDecisionCount: 0,
+          acknowledgementCount: 0,
+          resolutionCount: 0,
+        },
+        coverageDiagnostics: {
+          behaviorProfileCoverage: { count: 1, expected: 1 },
+          topicStateCoverage: { count: 1 },
+          coStateCoverage: { count: 1 },
+          questionTemplateCoverage: { count: 1 },
+          questionResultCoverage: { count: 1 },
+          interventionResponseCoverage: { count: 1 },
+          worldContextCoverage: { count: 1 },
+        },
+        modelDiagnostics: {
+          featureRowCount: 1,
+          activeRunFeatureRowCount: 1,
+          sourceRunCount: 1,
+          production: null,
+          challenger: null,
+          correlations: null,
+        },
+        queueDiagnostics: {
+          queuedRunCount: 0,
+          runningRunCount: 0,
+          failedRunCount: 0,
+          retryableRunCount: 0,
+          retryInFlightCount: 0,
+          oldestQueuedRunAgeSeconds: 0,
+          expiredLeaseRunCount: 0,
+        },
+        workerDiagnostics: null,
+        checkpointReadiness: {
+          totalCheckpointCount: checkpoints.length,
+          readyCheckpointCount: 2,
+          blockedCheckpointCount: 1,
+          playbackBlockedCheckpointCount: 1,
+          totalBlockingQueueItemCount: 5,
+          firstBlockedCheckpointId: 'checkpoint_sem4_post_tt1',
+          lastReadyCheckpointId: selectedCheckpoint.simulationStageCheckpointId,
+        },
+        teacherAllocationLoad: [],
+        queuePreview: [],
+        snapshots: [],
+        checkpoints,
+      },
+      lifecycleAudit: [],
+      recentOperationalEvents: [],
+    }
+
+    const markup = renderToStaticMarkup(createElement(SystemAdminProofDashboardWorkspace, {
+      proofDashboard,
+      proofDashboardLoading: false,
+      activeRunCheckpoints: checkpoints,
+      activeModelDiagnostics: null,
+      activeProductionDiagnostics: null,
+      activeDiagnosticsTrainingManifestVersion: null,
+      activeDiagnosticsCalibrationVersion: null,
+      activeDiagnosticsSplitSummary: null,
+      activeDiagnosticsWorldSplitSummary: null,
+      activeDiagnosticsScenarioFamilies: null,
+      activeDiagnosticsHeadSupportSummary: null,
+      activeDiagnosticsGovernedRunCount: null,
+      activeDiagnosticsSkippedRunCount: null,
+      activeDiagnosticsDisplayProbabilityAllowed: null,
+      activeDiagnosticsSupportWarning: null,
+      activeDiagnosticsPolicyDiagnostics: null,
+      activeDiagnosticsCoEvidence: null,
+      activeDiagnosticsPolicyAcceptance: null,
+      activeDiagnosticsOverallCourseRuntime: null,
+      activeDiagnosticsQueueBurden: null,
+      activeDiagnosticsUiParity: null,
+      selectedProofCheckpoint: selectedCheckpoint,
+      selectedProofCheckpointDetail: null,
+      selectedProofCheckpointBlocked: false,
+      selectedProofCheckpointHasBlockedProgression: false,
+      selectedProofCheckpointCanStepForward: false,
+      selectedProofCheckpointCanPlayToEnd: false,
+      proofPlaybackRestoreNotice: null,
+      onCreateProofImport: () => {},
+      onValidateLatestProofImport: () => {},
+      onReviewPendingCrosswalks: () => {},
+      onApproveLatestProofImport: () => {},
+      onCreateProofRun: () => {},
+      onRecomputeProofRunRisk: () => {},
+      onActivateProofRun: () => {},
+      onActivateProofSemester: () => {},
+      onRetryProofRun: () => {},
+      onArchiveProofRun: () => {},
+      onRestoreProofSnapshot: () => {},
+      onResetProofPlaybackSelection: () => {},
+      onSelectProofCheckpoint: () => {},
+      onStepProofPlayback: () => {},
+      formatSplitSummary: summary => JSON.stringify(summary),
+      formatKeyedCounts: summary => JSON.stringify(summary),
+      formatHeadSupportSummary: summary => JSON.stringify(summary),
+      formatDiagnosticSummary: summary => JSON.stringify(summary),
+    }))
+
+    expect(markup).toContain('data-proof-action="proof-activate-semester-4"')
+    expect(markup).toContain('data-proof-action="proof-activate-semester-5"')
+    expect(markup).toContain('data-proof-action="proof-activate-semester-6"')
+    expect(markup).toContain('Sem 4')
+    expect(markup).toContain('Sem 5')
+    expect(markup).toContain('Sem 6')
+    expect(markup).toContain('S4 · Post TT1 · blocked')
+    expect(markup).toContain('S5 · Post TT2')
+    expect(markup).toContain('S6 · Post SEE')
+    expect(markup).toContain('No-Action Comparator')
+    expect(markup).toContain('Average Counterfactual Lift')
+  })
+
   it('routes explicit semester activation through the proof dashboard owner', () => {
     const onActivateProofSemester = vi.fn()
     const checkpoints = [
+      buildCheckpoint({
+        simulationStageCheckpointId: 'checkpoint_sem4',
+        semesterNumber: 4,
+        stageLabel: 'Semester 4',
+        stageKey: 'post-tt1',
+        stageOrder: 1,
+        previousCheckpointId: null,
+        nextCheckpointId: 'checkpoint_sem5',
+        playbackAccessible: true,
+        stageAdvanceBlocked: false,
+        blockedByCheckpointId: null,
+        blockedProgressionReason: null,
+      }),
       buildCheckpoint({
         simulationStageCheckpointId: 'checkpoint_sem5',
         semesterNumber: 5,
         stageLabel: 'Semester 5',
         stageKey: 'post-tt2',
         stageOrder: 1,
-        previousCheckpointId: null,
+        previousCheckpointId: 'checkpoint_sem4',
         nextCheckpointId: 'checkpoint_sem6',
         playbackAccessible: true,
         stageAdvanceBlocked: false,
@@ -802,14 +1008,17 @@ describe('SystemAdminProofDashboardWorkspace', () => {
       formatDiagnosticSummary: summary => JSON.stringify(summary),
     }))
 
-    const activeSemesterButton = screen.getByRole('button', { name: 'Sem 6' })
-    const targetSemesterButton = screen.getByRole('button', { name: 'Sem 5' })
+    const inactiveSemesterButton = document.querySelector('[data-proof-action="proof-activate-semester-5"]') as HTMLButtonElement | null
+    const activeSemesterButton = document.querySelector('[data-proof-action="proof-activate-semester-6"]') as HTMLButtonElement | null
 
-    expect(activeSemesterButton.getAttribute('data-proof-action')).toBe('proof-activate-semester-6')
-    expect(activeSemesterButton.hasAttribute('disabled')).toBe(true)
-    expect(targetSemesterButton.getAttribute('data-proof-action')).toBe('proof-activate-semester-5')
+    expect(inactiveSemesterButton).toBeTruthy()
+    expect(activeSemesterButton).toBeTruthy()
 
-    fireEvent.click(targetSemesterButton)
+    expect(inactiveSemesterButton?.getAttribute('data-proof-action')).toBe('proof-activate-semester-5')
+    expect(activeSemesterButton?.getAttribute('data-proof-action')).toBe('proof-activate-semester-6')
+    expect(activeSemesterButton?.hasAttribute('disabled')).toBe(true)
+
+    fireEvent.click(inactiveSemesterButton!)
 
     expect(onActivateProofSemester).toHaveBeenCalledTimes(1)
     expect(onActivateProofSemester).toHaveBeenCalledWith('run_001', 5)

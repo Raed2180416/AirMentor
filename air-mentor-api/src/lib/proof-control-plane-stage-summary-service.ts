@@ -119,7 +119,7 @@ export function buildPlaybackStageSummaries(
     const checkpointQueueRows = input.queueProjectionRows.filter(row => row.simulationStageCheckpointId === checkpoint.simulationStageCheckpointId)
     const checkpointOfferingRows = offeringProjectionRows.filter(row => row.simulationStageCheckpointId === checkpoint.simulationStageCheckpointId)
     const electiveVisibleCount = checkpoint.stageKey === 'post-see'
-      ? input.electiveRows.length
+      ? input.electiveRows.filter(row => row.semesterNumber === checkpoint.semesterNumber).length
       : 0
     checkpoint.summaryJson = JSON.stringify(deps.stageSummaryPayload({
       checkpoint,

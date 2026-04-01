@@ -347,7 +347,7 @@ describe('student risk explorer', () => {
       })
       expect(activateSemesterResponse.statusCode).toBe(200)
 
-      const [defaultExplorerResponse, checkpointExplorerResponse] = await Promise.all([
+      const [defaultExplorerResponse, checkpointExplorerResponse, dashboardResponse] = await Promise.all([
         current.app.inject({
           method: 'GET',
           url: `/api/academic/students/${accessibleStudentId}/risk-explorer`,
@@ -367,6 +367,102 @@ describe('student risk explorer', () => {
       expect(checkpointExplorerResponse.json().countSource).toBe('proof-checkpoint')
       expect(checkpointExplorerResponse.json().activeOperationalSemester).toBe(semesterNumber)
       expect(checkpointExplorerResponse.json().simulationStageCheckpointId).toBe(checkpoint!.simulationStageCheckpointId)
+    }
+  })
+
+  it('keeps the default risk explorer aligned with activated semesters 4 through 6 using the late checkpoint walk', async () => {
+    current = await createTestApp()
+    const login = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+    const roleResponse = login.body.activeRoleGrant.roleCode === 'COURSE_LEADER'
+      ? login.body
+      : (await switchToRole(login.cookie, login.body.availableRoleGrants, 'COURSE_LEADER')).json()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const [activeRun] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    expect(activeRun).toBeTruthy()
+    await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRun.simulationRunId}/recompute-risk`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+    const checkpointRows = await current.db.select().from(simulationStageCheckpoints).where(
+      eq(simulationStageCheckpoints.simulationRunId, activeRun.simulationRunId),
+    ).orderBy(asc(simulationStageCheckpoints.semesterNumber), asc(simulationStageCheckpoints.stageOrder))
+    const ownershipRows = await current.db.select().from(facultyOfferingOwnerships).where(and(
+      eq(facultyOfferingOwnerships.facultyId, roleResponse.faculty.facultyId),
+      eq(facultyOfferingOwnerships.status, 'active'),
+    ))
+    const ownedOfferingIds = new Set(ownershipRows.map(row => row.offeringId))
+    const observedRows = await current.db.select().from(studentObservedSemesterStates).where(
+      eq(studentObservedSemesterStates.simulationRunId, activeRun.simulationRunId),
+    )
+    const accessibleStudentId = observedRows.find(row => {
+      const offeringId = getObservedOfferingId(row)
+      return !!offeringId && ownedOfferingIds.has(offeringId)
+    })?.studentId
+    expect(accessibleStudentId).toBeTruthy()
+
+    for (const semesterNumber of [4, 5, 6] as const) {
+      const checkpoint = checkpointRows.filter(row => row.semesterNumber === semesterNumber).at(-1)
+      expect(checkpoint).toBeTruthy()
+      expect(checkpoint?.stageKey).toBe('post-see')
+
+      const activateSemesterResponse = await current.app.inject({
+        method: 'POST',
+        url: `/api/admin/proof-runs/${activeRun.simulationRunId}/activate-semester`,
+        headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+        payload: { semesterNumber },
+      })
+      expect(activateSemesterResponse.statusCode).toBe(200)
+
+      const [defaultExplorerResponse, checkpointExplorerResponse, dashboardResponse] = await Promise.all([
+        current.app.inject({
+          method: 'GET',
+          url: `/api/academic/students/${accessibleStudentId}/risk-explorer`,
+          headers: { cookie: login.cookie },
+        }),
+        current.app.inject({
+          method: 'GET',
+          url: `/api/academic/students/${accessibleStudentId}/risk-explorer?simulationStageCheckpointId=${encodeURIComponent(checkpoint!.simulationStageCheckpointId)}`,
+          headers: { cookie: login.cookie },
+        }),
+        current.app.inject({
+          method: 'GET',
+          url: `/api/admin/batches/${activeRun.batchId}/proof-dashboard`,
+          headers: { cookie: adminLogin.cookie },
+        }),
+      ])
+
+      expect(defaultExplorerResponse.statusCode).toBe(200)
+      expect(checkpointExplorerResponse.statusCode).toBe(200)
+      expect(dashboardResponse.statusCode).toBe(200)
+      expect(defaultExplorerResponse.json().countSource).toBe('proof-run')
+      expect(defaultExplorerResponse.json().activeOperationalSemester).toBe(semesterNumber)
+      const checkpointPayload = checkpointExplorerResponse.json()
+      const dashboardCheckpoint = dashboardResponse.json().activeRunDetail?.checkpoints?.find(
+        (item: { simulationStageCheckpointId: string }) => item.simulationStageCheckpointId === checkpoint!.simulationStageCheckpointId,
+      )
+      expect(dashboardCheckpoint).toBeTruthy()
+      expect(checkpointPayload.countSource).toBe('proof-checkpoint')
+      expect(checkpointPayload.activeOperationalSemester).toBe(semesterNumber)
+      expect(checkpointPayload.simulationStageCheckpointId).toBe(checkpoint!.simulationStageCheckpointId)
+      expect(checkpointPayload.checkpointContext?.stageKey).toBe('post-see')
+      expect(checkpointPayload.checkpointContext?.stageAdvanceBlocked).toBe(dashboardCheckpoint?.stageAdvanceBlocked)
+      expect(checkpointPayload.checkpointContext?.playbackAccessible).toBe(dashboardCheckpoint?.playbackAccessible)
+      expect(checkpointPayload.checkpointContext?.blockedByCheckpointId ?? null).toBe(dashboardCheckpoint?.blockedByCheckpointId ?? null)
+      expect(checkpointPayload.checkpointContext?.blockedProgressionReason ?? null).toBe(dashboardCheckpoint?.blockedProgressionReason ?? null)
+      expect(checkpointPayload.modelProvenance?.evidenceWindow).toBe(`${semesterNumber}-post-see`)
+      expect(checkpointPayload.policyComparison?.counterfactualLiftScaled ?? checkpointPayload.counterfactual?.counterfactualLiftScaled).toEqual(expect.any(Number))
+      if (semesterNumber < 6) {
+        expect(checkpointPayload.electiveFit).toBeNull()
+      } else {
+        expect(checkpointPayload.electiveFit).toMatchObject({
+          recommendedCode: expect.any(String),
+          recommendedTitle: expect.any(String),
+          stream: expect.any(String),
+        })
+      }
     }
   })
 })

@@ -61,6 +61,24 @@ function describeCheckpoint(checkpoint) {
     stageLabel: checkpoint.stageLabel ?? null,
     stageDescription: checkpoint.stageDescription ?? null,
     stageOrder: typeof checkpoint.stageOrder === 'number' ? checkpoint.stageOrder : null,
+    stageAdvanceBlocked: typeof checkpoint.stageAdvanceBlocked === 'boolean' ? checkpoint.stageAdvanceBlocked : null,
+    blockingQueueItemCount: Number.isFinite(Number(checkpoint.blockingQueueItemCount))
+      ? Number(checkpoint.blockingQueueItemCount)
+      : Number.isFinite(Number(checkpoint.openQueueCount))
+        ? Number(checkpoint.openQueueCount)
+        : null,
+    playbackAccessible: typeof checkpoint.playbackAccessible === 'boolean' ? checkpoint.playbackAccessible : null,
+    blockedByCheckpointId: typeof checkpoint.blockedByCheckpointId === 'string' ? checkpoint.blockedByCheckpointId : null,
+    blockedProgressionReason: typeof checkpoint.blockedProgressionReason === 'string' ? checkpoint.blockedProgressionReason : null,
+    noActionHighRiskCount: Number.isFinite(Number(checkpoint.noActionHighRiskCount))
+      ? Number(checkpoint.noActionHighRiskCount)
+      : null,
+    averageCounterfactualLiftScaled: Number.isFinite(Number(checkpoint.averageCounterfactualLiftScaled))
+      ? Number(checkpoint.averageCounterfactualLiftScaled)
+      : null,
+    electiveVisibleCount: Number.isFinite(Number(checkpoint.electiveVisibleCount))
+      ? Number(checkpoint.electiveVisibleCount)
+      : null,
   }
 }
 

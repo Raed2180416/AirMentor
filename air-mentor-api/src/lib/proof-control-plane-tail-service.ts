@@ -68,6 +68,11 @@ import {
   buildProofCountProvenance,
   buildUnavailableCountProvenance,
 } from './proof-provenance.js'
+import {
+  filterElectiveRecommendationsForSemester,
+  latestElectiveRecommendationForSemester,
+  toElectiveFitPayload,
+} from './proof-control-plane-elective-service.js'
 
 const STUDENT_AGENT_CARD_VERSION = 1
 
@@ -296,8 +301,10 @@ export async function buildFacultyProofView(db: AppDb, input: {
 
     const electiveVisible = checkpoint.stageKey === 'post-see'
     const electiveFits = electiveVisible
-      ? electiveRows
-        .filter(row => row.simulationRunId === checkpoint.simulationRunId)
+      ? filterElectiveRecommendationsForSemester(electiveRows, {
+          simulationRunId: checkpoint.simulationRunId,
+          semesterNumber: checkpoint.semesterNumber,
+        })
         .filter(row => isFacultyProofStudentVisible({
           viewerRoleCode,
           visibleViaAssignedMentorScope: relevantStudentIds.has(row.studentId),
@@ -551,8 +558,11 @@ export async function buildFacultyProofView(db: AppDb, input: {
     .filter((item): item is NonNullable<typeof item> => !!item)
     .sort((left, right) => (right.riskProbScaled - left.riskProbScaled) || String(left.dueAt ?? '').localeCompare(String(right.dueAt ?? '')))
 
-  const electiveFits = electiveRows
-    .filter(row => selectedActiveRunId ? row.simulationRunId === selectedActiveRunId : activeRunIds.has(row.simulationRunId ?? ''))
+  const electiveFits = filterElectiveRecommendationsForSemester(electiveRows, {
+    simulationRunId: selectedActiveRunId,
+    semesterNumber: selectedActiveRun?.activeOperationalSemester ?? null,
+  })
+    .filter(row => selectedActiveRunId ? true : activeRunIds.has(row.simulationRunId ?? ''))
     .filter(row => isFacultyProofStudentVisible({
       viewerRoleCode,
       visibleViaAssignedMentorScope: relevantStudentIds.has(row.studentId),
@@ -1178,6 +1188,7 @@ export async function buildStudentAgentCard(db: AppDb, input: {
     branchRows,
     templateRows,
     stageCheckpoint,
+    orderedStageCheckpointRows,
     stageStudentRows,
     stageQueueRows,
   ] = await Promise.all([
@@ -1229,6 +1240,14 @@ export async function buildStudentAgentCard(db: AppDb, input: {
           eq(simulationStageCheckpoints.simulationStageCheckpointId, input.simulationStageCheckpointId),
         )).then(rows => rows[0] ?? null)
       : Promise.resolve(null),
+    input.simulationStageCheckpointId
+      ? db.select().from(simulationStageCheckpoints).where(
+          eq(simulationStageCheckpoints.simulationRunId, input.simulationRunId),
+        ).orderBy(
+          asc(simulationStageCheckpoints.semesterNumber),
+          asc(simulationStageCheckpoints.stageOrder),
+        )
+      : Promise.resolve([]),
     input.simulationStageCheckpointId
       ? db.select().from(simulationStageStudentProjections).where(and(
           eq(simulationStageStudentProjections.simulationRunId, input.simulationRunId),
@@ -1362,7 +1381,11 @@ export async function buildStudentAgentCard(db: AppDb, input: {
     .filter(row => row.tt2Pct < 50 || row.seePct < 45 || row.transferGap < -0.04)
     .slice(0, 6)
   const topicBuckets = summarizeTopicBuckets(currentTopicRows)
-  const latestElective = latestByUpdatedAt(electiveRows)
+  const latestElective = latestElectiveRecommendationForSemester(electiveRows, {
+    simulationRunId: input.simulationRunId,
+    studentId: input.studentId,
+    semesterNumber: currentSemester,
+  })
   const responseByInterventionId = new Map(
     responseRows
       .filter(row => typeof row.interventionId === 'string' && row.interventionId.length > 0)
@@ -1550,13 +1573,7 @@ export async function buildStudentAgentCard(db: AppDb, input: {
     attentionAreas,
   }
 
-  const electiveFit = latestElective ? {
-    recommendedCode: latestElective.recommendedCode,
-    recommendedTitle: latestElective.recommendedTitle,
-    stream: latestElective.stream,
-    rationale: parseJson(latestElective.rationaleJson, [] as string[]),
-    alternatives: parseJson(latestElective.alternativesJson, [] as Array<{ code: string; title: string; stream: string }>),
-  } : null
+  const electiveFit = toElectiveFitPayload(latestElective)
 
   let checkpointContext: StudentAgentCardPayload['checkpointContext'] = null
   let counterfactual: StudentAgentCardPayload['counterfactual'] = null
@@ -1594,7 +1611,10 @@ export async function buildStudentAgentCard(db: AppDb, input: {
   })
 
   if (stageCheckpoint) {
-    const stageCheckpointSummary = deps.parseProofCheckpointSummary(stageCheckpoint)
+    const stageCheckpointSummary = deps.withProofPlaybackGate(
+      orderedStageCheckpointRows.map(deps.parseProofCheckpointSummary),
+    ).find(item => item.simulationStageCheckpointId === stageCheckpoint.simulationStageCheckpointId)
+      ?? deps.parseProofCheckpointSummary(stageCheckpoint)
     checkpointContext = {
       simulationStageCheckpointId: stageCheckpoint.simulationStageCheckpointId,
       semesterNumber: stageCheckpoint.semesterNumber,
