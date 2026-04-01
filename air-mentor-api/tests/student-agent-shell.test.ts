@@ -493,7 +493,7 @@ describe('student agent shell', () => {
       })
       expect(activateSemesterResponse.statusCode).toBe(200)
 
-      const [defaultCardResponse, checkpointCardResponse, dashboardResponse] = await Promise.all([
+      const [defaultCardResponse, checkpointCardResponse] = await Promise.all([
         current.app.inject({
           method: 'GET',
           url: `/api/academic/student-shell/students/${accessibleStudentId}/card`,

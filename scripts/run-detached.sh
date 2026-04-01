@@ -35,8 +35,10 @@ cd "$repo_root"
   printf '[%s] command=' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf '%q ' "$@"
   printf '\n'
+  set +e
   "$@"
   status=$?
+  set -e
   printf '[%s] exit=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$status"
   exit "$status"
 } >>"$log_path" 2>&1

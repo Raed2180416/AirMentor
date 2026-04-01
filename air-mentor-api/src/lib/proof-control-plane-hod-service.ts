@@ -1,4 +1,3 @@
-import { eq } from 'drizzle-orm'
 import type { AppDb } from '../db/client.js'
 import {
   academicTerms,

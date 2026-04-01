@@ -178,12 +178,18 @@ async function writeJsonArtifact(filePath, payload) {
 }
 
 function buildSemesterScopedArtifactPath(filePath) {
-  if (!proofArtifactPrefix || targetedProofSemester == null) return null
+  if (!proofArtifactPrefix) return null
+  if (targetedProofSemester == null) {
+    return path.join(path.dirname(filePath), `${proofArtifactPrefix}-${path.basename(filePath)}`)
+  }
   return buildSemesterScopedArtifactCopyPath(filePath, proofArtifactPrefix, targetedProofSemester)
 }
 
 function buildSemesterWalkSummaryPath() {
-  if (!proofArtifactPrefix || targetedProofSemester == null) return null
+  if (!proofArtifactPrefix) return null
+  if (targetedProofSemester == null) {
+    return path.join(outputDir, `${proofArtifactPrefix}-proof-risk-smoke-summary.json`)
+  }
   return buildSemesterProofSummaryPath(outputDir, proofArtifactPrefix, targetedProofSemester)
 }
 
@@ -1195,7 +1201,12 @@ try {
   )).filter(([, copiedPath]) => !!copiedPath))
   const summaryArtifactPath = buildSemesterWalkSummaryPath()
   if (summaryArtifactPath) {
+    const prefixedArtifacts = {
+      screenshots: semesterScopedScreenshots,
+      activationArtifacts: semesterScopedActivationArtifacts,
+    }
     proofWalkSummary = {
+      summaryKind: targetedProofSemester == null ? 'proof-risk-smoke' : 'semester-walk',
       stack: isLiveStack ? 'live' : 'local',
       proofCoverageTarget,
       simulationRunId: activatedProofSemesterContext?.simulationRunId
@@ -1215,10 +1226,12 @@ try {
         screenshots,
         activationArtifacts,
       },
-      semesterScopedArtifacts: {
-        screenshots: semesterScopedScreenshots,
-        activationArtifacts: semesterScopedActivationArtifacts,
-      },
+      prefixedArtifacts,
+      ...(targetedProofSemester == null
+        ? {}
+        : {
+            semesterScopedArtifacts: prefixedArtifacts,
+          }),
     }
     await writeJsonArtifact(summaryArtifactPath, proofWalkSummary)
   }
@@ -1235,7 +1248,7 @@ try {
   console.log(`- request: ${activationArtifacts.request}`)
   console.log(`- response: ${activationArtifacts.response}`)
   if (Object.keys(semesterScopedScreenshots).length > 0 || Object.keys(semesterScopedActivationArtifacts).length > 0) {
-    console.log('Semester-scoped artifact copies:')
+    console.log(targetedProofSemester == null ? 'Prefixed proof artifacts:' : 'Semester-scoped artifact copies:')
     for (const [label, copiedPath] of Object.entries(semesterScopedScreenshots)) {
       console.log(`- ${label}: ${copiedPath}`)
     }

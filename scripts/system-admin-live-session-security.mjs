@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { resolveSystemAdminLiveCredentials } from './system-admin-live-auth.mjs'
 
 const appUrl = process.env.PLAYWRIGHT_APP_URL ?? 'http://127.0.0.1:4173'
 const apiUrl = process.env.PLAYWRIGHT_API_URL ?? appUrl
 const outputDir = process.env.PLAYWRIGHT_OUTPUT_DIR ?? 'output/playwright'
+const sessionSecurityArtifactPrefix = (process.env.AIRMENTOR_SESSION_SECURITY_ARTIFACT_PREFIX ?? '').trim()
 const { identifier, password } = resolveSystemAdminLiveCredentials({
   scriptLabel: 'System admin live session security smoke',
   identifierAliases: ['AIRMENTOR_LOGIN_IDENTIFIER'],
@@ -34,10 +35,19 @@ function rememberResponseCookies(response) {
       })()
 
   for (const item of setCookieValues) {
-    const [cookiePair] = item.split(';')
+    const [cookiePair, ...attributeParts] = item.split(';')
     const [cookieName, ...cookieValueParts] = cookiePair.split('=')
     if (!cookieName) continue
-    cookieJar.set(cookieName, cookieValueParts.join('='))
+    const cookieValue = cookieValueParts.join('=')
+    const normalizedAttributes = attributeParts.map(attribute => attribute.trim().toLowerCase())
+    const shouldClearCookie = cookieValue.length === 0
+      || normalizedAttributes.some(attribute => attribute === 'max-age=0')
+      || normalizedAttributes.some(attribute => attribute.startsWith('expires=thu, 01 jan 1970'))
+    if (shouldClearCookie) {
+      cookieJar.delete(cookieName)
+      continue
+    }
+    cookieJar.set(cookieName, cookieValue)
   }
   return setCookieValues
 }
@@ -70,6 +80,18 @@ async function apiRequest(routePath, init = {}, options = {}) {
 
 async function writeReport(targetPath, payload) {
   await writeFile(targetPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+}
+
+function buildPrefixedArtifactPath(rawPath) {
+  if (!sessionSecurityArtifactPrefix) return null
+  return path.join(path.dirname(rawPath), `${sessionSecurityArtifactPrefix}-${path.basename(rawPath)}`)
+}
+
+async function copyPrefixedArtifact(rawPath) {
+  const prefixedPath = buildPrefixedArtifactPath(rawPath)
+  if (!prefixedPath) return null
+  await copyFile(rawPath, prefixedPath)
+  return prefixedPath
 }
 
 const report = {
@@ -143,11 +165,46 @@ try {
   assert.equal(forbiddenOrigin.body?.error, 'FORBIDDEN_ORIGIN', 'expected forbidden origin rejection code')
   report.checks.push({ name: 'mismatched_origin_rejected', status: 'passed' })
 
+  const logout = await apiRequest('/api/session', {
+    method: 'DELETE',
+  })
+  assert.equal(logout.response.status, 200, `expected logout to succeed, got ${logout.response.status}`)
+  assert.equal(logout.body?.ok, true, 'expected logout response to acknowledge success')
+  assert.equal(cookieJar.has('airmentor_session'), false, 'expected logout to clear the session cookie')
+  assert.equal(cookieJar.has('airmentor_csrf'), false, 'expected logout to clear the csrf cookie')
+  report.checks.push({ name: 'session_logout_clears_server_session', status: 'passed' })
+
+  const invalidatedRestore = await apiRequest('/api/session', { method: 'GET' }, { includeCsrf: false })
+  assert.equal(invalidatedRestore.response.status, 401, `expected invalidated session restore to fail, got ${invalidatedRestore.response.status}`)
+  assert.equal(invalidatedRestore.body?.error, 'UNAUTHORIZED', 'expected invalidated session restore to require reauth')
+  report.checks.push({ name: 'expired_or_invalidated_session_requires_reauth', status: 'passed' })
+
+  const relogin = await apiRequest('/api/session/login', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ identifier, password }),
+  }, { includeCsrf: false })
+  assert.equal(relogin.response.status, 200, `expected re-login after invalidation to succeed, got ${relogin.response.status}`)
+  assert.equal(relogin.body?.user?.username, identifier, 'expected re-login username to match')
+  assert.ok(cookieJar.get('airmentor_session'), 'expected session cookie after re-login')
+  assert.ok(cookieJar.get('airmentor_csrf'), 'expected csrf cookie after re-login')
+  report.checks.push({ name: 'reauth_after_expired_or_invalidated_session_succeeds', status: 'passed' })
+
   await writeReport(successReport, report)
+  const prefixedSuccessReport = await copyPrefixedArtifact(successReport)
   console.log(`Session security smoke passed. Report: ${successReport}`)
+  if (prefixedSuccessReport) {
+    console.log(`Prefixed session-security report: ${prefixedSuccessReport}`)
+  }
 } catch (error) {
   report.error = error instanceof Error ? { message: error.message, stack: error.stack ?? null } : { message: String(error) }
   await writeReport(failureReport, report)
+  const prefixedFailureReport = await copyPrefixedArtifact(failureReport).catch(() => null)
   console.error(`Session security smoke failed. Report: ${failureReport}`)
+  if (prefixedFailureReport) {
+    console.error(`Prefixed session-security failure report: ${prefixedFailureReport}`)
+  }
   throw error
 }

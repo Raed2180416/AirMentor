@@ -179,6 +179,8 @@ type SystemAdminLiveAppProps = {
   onExitPortal?: () => void
 }
 
+const EMPTY_FACULTY_RECORDS: ApiFacultyRecord[] = []
+
 export type PolicyFormState = {
   oMin: string
   aPlusMin: string
@@ -410,6 +412,7 @@ function hasRecordProofProvenance(record: ProvenancedRecord | null | undefined):
     && !!record.countSource
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function formatRecordProofBanner(record: ProvenancedRecord | null | undefined) {
   if (!hasRecordProofProvenance(record)) return null
   return record.countSource === 'unavailable'
@@ -417,16 +420,19 @@ export function formatRecordProofBanner(record: ProvenancedRecord | null | undef
     : describeProofProvenance(record)
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function formatFacultyGrantScopeLabel(grant: Pick<ApiRoleGrant, 'scopeLabel' | 'scopeType' | 'scopeId'>) {
   return grant.scopeLabel ?? `${grant.scopeType}:${grant.scopeId}`
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function formatFacultyAppointmentLabel(appointment: Pick<ApiFacultyAppointment, 'departmentId' | 'departmentName' | 'departmentCode' | 'branchId' | 'branchName' | 'branchCode'>) {
   const departmentLabel = appointment.departmentName ?? appointment.departmentCode ?? appointment.departmentId
   const branchLabel = appointment.branchName ?? appointment.branchCode ?? appointment.branchId
   return branchLabel ? `${departmentLabel} · ${branchLabel}` : departmentLabel
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function parseAdminRoute(hash: string): LiveAdminRoute {
   const cleaned = hash.replace(/^#\/admin/, '').replace(/^\/+/, '')
   if (!cleaned) return { section: 'overview' }
@@ -820,6 +826,7 @@ function normalizeAdminSectionCode(sectionCode: string) {
   return sectionCode.trim().toUpperCase()
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function buildAdminSectionScopeId(batchId: string, sectionCode: string) {
   const normalizedBatchId = batchId.trim()
   const normalizedSectionCode = normalizeAdminSectionCode(sectionCode)
@@ -841,6 +848,7 @@ function parseAdminSectionScopeId(scopeId: string) {
   }
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function buildAdminActiveScopeChain(input: {
   institution: LiveAdminDataset['institution']
   academicFaculty: ApiAcademicFaculty | null
@@ -1335,6 +1343,7 @@ function createAdminWorkspaceSnapshot(input: Omit<AdminWorkspaceSnapshot, 'scrol
   }
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function getAdminWorkspaceSnapshotKey(snapshot: Omit<AdminWorkspaceSnapshot, 'scrollY'> | AdminWorkspaceSnapshot) {
   return `${routeToHash(snapshot.route)}::${snapshot.universityTab}::${snapshot.selectedSectionCode ?? ''}`
 }
@@ -1663,7 +1672,7 @@ function toOptionalScopeValue(value?: string | null) {
   return value ?? undefined
 }
 
-function ActionQueueCard({
+export function ActionQueueCard({
   title,
   subtitle,
   chips,
@@ -1678,17 +1687,41 @@ function ActionQueueCard({
   tone?: string
   onClick?: () => void
 }) {
-  return (
-    <Card data-action-queue-card="true" onClick={onClick} style={{ padding: 12, background: `linear-gradient(180deg, ${T.surface2}, ${T.surface})`, cursor: onClick ? 'pointer' : undefined }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
-        <div>
-          <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{title}</div>
-          <div style={{ ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: T.muted, marginTop: 4, lineHeight: 1.7 }}>{subtitle}</div>
-        </div>
-        {trailing}
-      </div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+  const primaryContent = (
+    <>
+      <span style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text, display: 'block' }}>{title}</span>
+      <span style={{ ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: T.muted, marginTop: 4, lineHeight: 1.7, display: 'block' }}>{subtitle}</span>
+      <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
         {chips.map(chip => <Chip key={chip} color={tone} size={9}>{chip}</Chip>)}
+      </span>
+    </>
+  )
+
+  return (
+    <Card data-action-queue-card="true" style={{ padding: 12, background: `linear-gradient(180deg, ${T.surface2}, ${T.surface})` }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+        {onClick
+          ? (
+            <button
+              type="button"
+              data-action-queue-primary="true"
+              onClick={onClick}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                textAlign: 'left',
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                color: 'inherit',
+                cursor: 'pointer',
+              }}
+            >
+              {primaryContent}
+            </button>
+          )
+          : <div style={{ flex: 1, minWidth: 0 }}>{primaryContent}</div>}
+        {trailing ? <div style={{ flexShrink: 0 }}>{trailing}</div> : null}
       </div>
     </Card>
   )
@@ -5276,7 +5309,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     : null
   const batchFacultyPool = batchScopeForProvisioning
     ? visibleFacultyMembers.filter(item => matchesFacultyScope(item, data, batchScopeForProvisioning))
-    : []
+    : EMPTY_FACULTY_RECORDS
   const batchMentorEligibleFaculty = getScopedMentorEligibleFaculty(
     batchFacultyPool,
     selectedBatch?.batchId ?? null,

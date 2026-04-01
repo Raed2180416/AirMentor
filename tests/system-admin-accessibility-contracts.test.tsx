@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import {
   AdminDetailTabPanel,
   AdminDetailTabs,
+  ActionQueueCard,
   buildAdminActiveScopeChain,
   buildAdminSectionScopeId,
   getAdminWorkspaceSnapshotKey,
@@ -251,5 +252,19 @@ describe('system-admin accessibility contracts', () => {
     expect(batchSnapshotKey).toBe('#/admin/faculties/af_1/departments/dept_1/branches/branch_1/batches/batch_2022::overview::')
     expect(sectionSnapshotKey).toBe('#/admin/faculties/af_1/departments/dept_1/branches/branch_1/batches/batch_2022::overview::A')
     expect(sectionSnapshotKey).not.toBe(batchSnapshotKey)
+  })
+
+  it('keeps the action queue shell non-interactive when trailing controls are present', () => {
+    const markup = renderToStaticMarkup(createElement(ActionQueueCard, {
+      title: 'Review mentoring request',
+      subtitle: 'Governance request due tomorrow',
+      chips: ['Open', 'High'],
+      onClick: () => {},
+      trailing: createElement('button', { type: 'button' }, 'Hide forever'),
+    }))
+
+    expect(markup).toContain('data-action-queue-card="true"')
+    expect(markup).toContain('data-action-queue-primary="true"')
+    expect(markup).not.toContain('role="button"')
   })
 })

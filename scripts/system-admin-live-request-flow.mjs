@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { sanitizeArtifactPrefix } from './proof-risk-semester-walk.mjs'
 import { resolveSystemAdminLiveCredentials } from './system-admin-live-auth.mjs'
 
 const playwrightRoot = process.env.PLAYWRIGHT_ROOT
 const appUrl = process.env.PLAYWRIGHT_APP_URL ?? 'http://127.0.0.1:4173'
 const outputDir = process.env.PLAYWRIGHT_OUTPUT_DIR ?? 'output/playwright'
+const requestFlowArtifactPrefix = sanitizeArtifactPrefix((process.env.AIRMENTOR_REQUEST_FLOW_ARTIFACT_PREFIX ?? '').trim())
 
 assert(playwrightRoot, 'PLAYWRIGHT_ROOT is required')
 
@@ -20,14 +22,47 @@ const failureReport = path.join(outputDir, 'system-admin-live-request-flow-failu
 const report = {
   generatedAt: new Date().toISOString(),
   appUrl,
+  artifacts: {
+    successScreenshot,
+    successReport,
+    failureScreenshot,
+    failureReport,
+    prefixedSuccessScreenshot: buildPrefixedArtifactPath(successScreenshot),
+    prefixedSuccessReport: buildPrefixedArtifactPath(successReport),
+    prefixedFailureScreenshot: buildPrefixedArtifactPath(failureScreenshot),
+    prefixedFailureReport: buildPrefixedArtifactPath(failureReport),
+  },
   checks: [],
 }
+const pageErrors = []
+const consoleMessages = []
 const systemAdminCredentials = resolveSystemAdminLiveCredentials({
   scriptLabel: 'System admin live request flow',
 })
 
 const browser = await firefox.launch({ headless: true })
-const page = await browser.newPage({ viewport: { width: 1440, height: 1200 } })
+const context = await browser.newContext({ viewport: { width: 1440, height: 1200 } })
+const page = await context.newPage()
+page.on('pageerror', error => {
+  pageErrors.push({ name: error.name, message: error.message })
+  if (pageErrors.length > 20) pageErrors.shift()
+})
+page.on('console', message => {
+  consoleMessages.push({ type: message.type(), text: message.text() })
+  if (consoleMessages.length > 20) consoleMessages.shift()
+})
+
+function buildPrefixedArtifactPath(rawPath) {
+  if (!requestFlowArtifactPrefix) return null
+  return path.join(path.dirname(rawPath), `${requestFlowArtifactPrefix}-${path.basename(rawPath)}`)
+}
+
+async function copyPrefixedArtifact(rawPath) {
+  const prefixedPath = buildPrefixedArtifactPath(rawPath)
+  if (!prefixedPath) return null
+  await copyFile(rawPath, prefixedPath)
+  return prefixedPath
+}
 
 async function expectVisible(locator, description) {
   await locator.waitFor({ state: 'visible', timeout: 20_000 })
@@ -74,6 +109,19 @@ async function advanceRequestToClosed() {
   await expectVisible(page.getByText(/^Closed$/).first(), 'closed request status')
 }
 
+async function verifyRequestDeepLink(detailUrl, requestSummary) {
+  const deepLinkPage = await context.newPage()
+  try {
+    await deepLinkPage.goto(detailUrl, { waitUntil: 'networkidle' })
+    await expectVisible(deepLinkPage.getByText(requestSummary).last(), 'request detail after direct deep link')
+    await expectVisible(deepLinkPage.getByText(/Linked Targets/i), 'linked targets section after direct deep link')
+    await expectVisible(deepLinkPage.getByText(/Status History/i), 'status history section after direct deep link')
+    assert(/#\/admin\/requests\//.test(deepLinkPage.url()), `expected request URL after direct deep link, got ${deepLinkPage.url()}`)
+  } finally {
+    await deepLinkPage.close().catch(() => {})
+  }
+}
+
 try {
   await page.goto(appUrl, { waitUntil: 'networkidle' })
 
@@ -98,10 +146,9 @@ try {
   await expectVisible(page.getByText(/Status History/i), 'status history section')
   report.checks.push({ name: 'request-detail-open', status: 'passed', summary: 'Grant additional mentor mapping coverage' })
 
-  await page.reload({ waitUntil: 'networkidle' })
-  await expectVisible(page.getByText(requestSummary).last(), 'request detail after reload')
-  assert(/#\/admin\/requests\//.test(page.url()), `expected request URL after reload, got ${page.url()}`)
-  report.checks.push({ name: 'request-deep-link-persists', status: 'passed' })
+  const requestDetailUrl = page.url()
+  await verifyRequestDeepLink(requestDetailUrl, requestSummary)
+  report.checks.push({ name: 'request-deep-link-persists', status: 'passed', url: requestDetailUrl })
 
   await advanceRequestToClosed()
   await expectVisible(page.getByText(/^Closed$/).first(), 'closed request status')
@@ -109,18 +156,41 @@ try {
 
   await writeFile(successReport, `${JSON.stringify(report, null, 2)}\n`, 'utf8')
   await page.screenshot({ path: successScreenshot, fullPage: true })
+  const prefixedSuccessReport = await copyPrefixedArtifact(successReport)
+  const prefixedSuccessScreenshot = await copyPrefixedArtifact(successScreenshot)
   console.log(`System admin live request flow passed. Screenshot: ${successScreenshot}`)
+  if (prefixedSuccessReport || prefixedSuccessScreenshot) {
+    console.log('Prefixed request-flow artifacts:')
+    if (prefixedSuccessReport) console.log(`- report: ${prefixedSuccessReport}`)
+    if (prefixedSuccessScreenshot) console.log(`- screenshot: ${prefixedSuccessScreenshot}`)
+  }
 } catch (error) {
+  const failurePayload = {
+    ...report,
+    failedAt: new Date().toISOString(),
+    error: error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) },
+    pageErrors,
+    consoleMessages,
+  }
+  let prefixedFailureReport = null
+  let prefixedFailureScreenshot = null
   try {
-    await writeFile(failureReport, `${JSON.stringify({
-      ...report,
-      failedAt: new Date().toISOString(),
-      error: error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) },
-    }, null, 2)}\n`, 'utf8')
+    await writeFile(failureReport, `${JSON.stringify(failurePayload, null, 2)}\n`, 'utf8')
+    prefixedFailureReport = await copyPrefixedArtifact(failureReport).catch(() => null)
+  } catch {
+    // Ignore report write failures so the original error is preserved.
+  }
+  try {
     await page.screenshot({ path: failureScreenshot, fullPage: true })
-    console.error(`System admin live request flow failed. Screenshot: ${failureScreenshot}`)
+    prefixedFailureScreenshot = await copyPrefixedArtifact(failureScreenshot).catch(() => null)
   } catch {
     // Ignore screenshot failures so the original error is preserved.
+  }
+  console.error(`System admin live request flow failed. Report: ${failureReport}`)
+  if (prefixedFailureReport || prefixedFailureScreenshot) {
+    console.error('Prefixed request-flow failure artifacts:')
+    if (prefixedFailureReport) console.error(`- report: ${prefixedFailureReport}`)
+    if (prefixedFailureScreenshot) console.error(`- screenshot: ${prefixedFailureScreenshot}`)
   }
   throw error
 } finally {

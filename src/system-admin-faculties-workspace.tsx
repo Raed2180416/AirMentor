@@ -224,6 +224,7 @@ function describeRollbackTargetLabel(
     : getInstitutionDefaultsLabel(activeScopeChain)
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function describeGovernanceResolutionMessage({
   activeGovernanceScope,
   activeScopeChain,
@@ -242,6 +243,7 @@ export function describeGovernanceResolutionMessage({
   return `Scope ${resolved.scopeDescriptor.label} is running in ${formatScopeModeLabel(resolved.scopeMode)} mode. Effective ${subject} resolves from ${describeResolvedFromLabel(resolved, activeScopeChain)}. Lineage: ${buildGovernanceLineageTrail(resolved, activeScopeChain)}.`
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function describeGovernanceRollbackMessage({
   activeGovernanceScope,
   activeScopeChain,

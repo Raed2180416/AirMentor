@@ -12,7 +12,37 @@ fi
 
 source "$(cd "$(dirname "$0")" && pwd)/live-admin-common.sh"
 
-ui_port="${AIRMENTOR_UI_PORT:-4173}"
+pick_ui_port() {
+  local preferred_port="$1"
+  node - "$preferred_port" <<'NODE'
+const net = require('node:net')
+
+const preferredPort = Number(process.argv[2] || '4173')
+
+function portAvailable(port) {
+  return new Promise(resolve => {
+    const server = net.createServer()
+    server.unref()
+    server.on('error', () => resolve(false))
+    server.listen(port, '127.0.0.1', () => {
+      server.close(() => resolve(true))
+    })
+  })
+}
+
+;(async () => {
+  for (let port = preferredPort; port < preferredPort + 20; port += 1) {
+    if (await portAvailable(port)) {
+      process.stdout.write(String(port))
+      return
+    }
+  }
+  process.exit(1)
+})().catch(() => process.exit(1))
+NODE
+}
+
+ui_port="${AIRMENTOR_UI_PORT:-$(pick_ui_port 4173)}"
 ui_host="${AIRMENTOR_UI_HOST:-127.0.0.1}"
 app_url="${PLAYWRIGHT_APP_URL:-http://${ui_host}:${ui_port}}"
 output_dir="${PLAYWRIGHT_OUTPUT_DIR:-output/playwright}"
@@ -61,7 +91,7 @@ else
   npm run build >/dev/null
   AIRMENTOR_UI_PROXY_API_TARGET="$api_base_url" \
   VITE_AIRMENTOR_API_BASE_URL="/" \
-  npm run preview -- --host "$ui_host" --port "$ui_port" >"$preview_log" 2>&1 &
+  npm run preview -- --host "$ui_host" --port "$ui_port" --strictPort >"$preview_log" 2>&1 &
   preview_pid=$!
 
   if ! wait_for_http_ok "$app_url" 45; then

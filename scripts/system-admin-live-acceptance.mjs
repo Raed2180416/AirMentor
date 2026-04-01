@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { sanitizeArtifactPrefix } from './proof-risk-semester-walk.mjs'
 import { resolveSystemAdminLiveCredentials } from './system-admin-live-auth.mjs'
 
 const playwrightRoot = process.env.PLAYWRIGHT_ROOT
 const appUrl = process.env.PLAYWRIGHT_APP_URL ?? 'http://127.0.0.1:4173'
 const outputDir = process.env.PLAYWRIGHT_OUTPUT_DIR ?? 'output/playwright'
+const acceptanceArtifactPrefix = sanitizeArtifactPrefix((process.env.AIRMENTOR_ACCEPTANCE_ARTIFACT_PREFIX ?? '').trim())
 
 assert(playwrightRoot, 'PLAYWRIGHT_ROOT is required')
 
@@ -20,6 +22,16 @@ const failureReport = path.join(outputDir, 'system-admin-live-acceptance-failure
 const report = {
   generatedAt: new Date().toISOString(),
   appUrl,
+  artifacts: {
+    successScreenshot,
+    successReport,
+    failureScreenshot,
+    failureReport,
+    prefixedSuccessScreenshot: buildPrefixedArtifactPath(successScreenshot),
+    prefixedSuccessReport: buildPrefixedArtifactPath(successReport),
+    prefixedFailureScreenshot: buildPrefixedArtifactPath(failureScreenshot),
+    prefixedFailureReport: buildPrefixedArtifactPath(failureReport),
+  },
   checks: [],
 }
 const pageErrors = []
@@ -44,6 +56,18 @@ page.on('console', message => {
   consoleMessages.push({ type: message.type(), text: message.text() })
   if (consoleMessages.length > 20) consoleMessages.shift()
 })
+
+function buildPrefixedArtifactPath(rawPath) {
+  if (!acceptanceArtifactPrefix) return null
+  return path.join(path.dirname(rawPath), `${acceptanceArtifactPrefix}-${path.basename(rawPath)}`)
+}
+
+async function copyPrefixedArtifact(rawPath) {
+  const prefixedPath = buildPrefixedArtifactPath(rawPath)
+  if (!prefixedPath) return null
+  await copyFile(rawPath, prefixedPath)
+  return prefixedPath
+}
 
 async function expectVisible(locator, description) {
   await locator.waitFor({ state: 'visible', timeout: 20_000 })
@@ -348,7 +372,14 @@ try {
 
   await writeFile(successReport, `${JSON.stringify(report, null, 2)}\n`, 'utf8')
   await page.screenshot({ path: successScreenshot, fullPage: true })
+  const prefixedSuccessReport = await copyPrefixedArtifact(successReport)
+  const prefixedSuccessScreenshot = await copyPrefixedArtifact(successScreenshot)
   console.log(`System admin live acceptance flow passed. Screenshot: ${successScreenshot}`)
+  if (prefixedSuccessReport || prefixedSuccessScreenshot) {
+    console.log('Prefixed acceptance artifacts:')
+    if (prefixedSuccessReport) console.log(`- report: ${prefixedSuccessReport}`)
+    if (prefixedSuccessScreenshot) console.log(`- screenshot: ${prefixedSuccessScreenshot}`)
+  }
 } catch (error) {
   try {
     await writeFile(failureReport, `${JSON.stringify({
@@ -361,7 +392,14 @@ try {
       error: error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) },
     }, null, 2)}\n`, 'utf8')
     await page.screenshot({ path: failureScreenshot, fullPage: true })
+    const prefixedFailureReport = await copyPrefixedArtifact(failureReport).catch(() => null)
+    const prefixedFailureScreenshot = await copyPrefixedArtifact(failureScreenshot).catch(() => null)
     console.error(`System admin live acceptance flow failed. Screenshot: ${failureScreenshot}`)
+    if (prefixedFailureReport || prefixedFailureScreenshot) {
+      console.error('Prefixed acceptance failure artifacts:')
+      if (prefixedFailureReport) console.error(`- report: ${prefixedFailureReport}`)
+      if (prefixedFailureScreenshot) console.error(`- screenshot: ${prefixedFailureScreenshot}`)
+    }
   } catch {
     // Ignore screenshot failures so the original error is preserved.
   }

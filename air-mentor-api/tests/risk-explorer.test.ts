@@ -347,7 +347,7 @@ describe('student risk explorer', () => {
       })
       expect(activateSemesterResponse.statusCode).toBe(200)
 
-      const [defaultExplorerResponse, checkpointExplorerResponse, dashboardResponse] = await Promise.all([
+      const [defaultExplorerResponse, checkpointExplorerResponse] = await Promise.all([
         current.app.inject({
           method: 'GET',
           url: `/api/academic/students/${accessibleStudentId}/risk-explorer`,

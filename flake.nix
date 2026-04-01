@@ -27,7 +27,7 @@
           ];
 
           shellHook = ''
-            export PLAYWRIGHT_OUTPUT_DIR="$PWD/output/playwright"
+            export PLAYWRIGHT_OUTPUT_DIR="''${PLAYWRIGHT_OUTPUT_DIR:-$PWD/output/playwright}"
             mkdir -p "$PLAYWRIGHT_OUTPUT_DIR"
 
             echo "AirMentor dev shell ready."

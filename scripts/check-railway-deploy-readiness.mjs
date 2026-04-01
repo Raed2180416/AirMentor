@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { execFileSync, spawn } from 'node:child_process'
 import net from 'node:net'
 import { tmpdir } from 'node:os'
@@ -9,6 +9,7 @@ import EmbeddedPostgres from 'embedded-postgres'
 
 const mode = process.argv[2] ?? 'preflight'
 const outputDir = process.env.RAILWAY_DIAGNOSTIC_OUTPUT_DIR ?? 'output'
+const diagnosticArtifactPrefix = (process.env.RAILWAY_DIAGNOSTIC_ARTIFACT_PREFIX ?? '').trim()
 const railwayService = process.env.RAILWAY_SERVICE ?? ''
 const railwayEnvironment = process.env.RAILWAY_ENVIRONMENT ?? ''
 const expectedFrontendOrigin = process.env.EXPECTED_FRONTEND_ORIGIN?.trim() ?? ''
@@ -239,7 +240,18 @@ function applyVariableUpdates(updates) {
 
 async function writeJsonReport(fileName, payload) {
   await mkdir(outputDir, { recursive: true })
-  await writeFile(path.join(outputDir, fileName), `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+  const reportPath = path.join(outputDir, fileName)
+  await writeFile(reportPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+  const prefixedPath = diagnosticArtifactPrefix
+    ? path.join(outputDir, `${diagnosticArtifactPrefix}-${fileName}`)
+    : null
+  if (prefixedPath) {
+    await copyFile(reportPath, prefixedPath)
+  }
+  return {
+    reportPath,
+    prefixedPath,
+  }
 }
 
 function findFreePort() {
@@ -738,18 +750,24 @@ async function runSessionContract() {
     attempts,
     issues,
   }
-  await writeJsonReport('railway-live-session-contract.json', report)
+  const reportPaths = await writeJsonReport('railway-live-session-contract.json', report)
 
   if (issues.length > 0) {
     console.error('Railway live session-contract verification failed:')
     for (const issue of issues) {
       console.error(`- ${issue}`)
     }
-    console.error(`Session-contract report: ${path.join(outputDir, 'railway-live-session-contract.json')}`)
+    console.error(`Session-contract report: ${reportPaths.reportPath}`)
+    if (reportPaths.prefixedPath) {
+      console.error(`Prefixed session-contract report: ${reportPaths.prefixedPath}`)
+    }
     process.exit(1)
   }
 
-  console.log(`Railway live session-contract verification passed after ${attempts.length} attempt(s). Report: ${path.join(outputDir, 'railway-live-session-contract.json')}`)
+  console.log(`Railway live session-contract verification passed after ${attempts.length} attempt(s). Report: ${reportPaths.reportPath}`)
+  if (reportPaths.prefixedPath) {
+    console.log(`Prefixed session-contract report: ${reportPaths.prefixedPath}`)
+  }
 }
 
 function sanitizeVariableSnapshot(variables) {

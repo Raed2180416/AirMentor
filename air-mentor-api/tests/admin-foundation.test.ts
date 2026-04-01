@@ -164,7 +164,8 @@ describe('admin foundation routes', () => {
       headers: { cookie: adminLogin.cookie },
     })
     expect(allRequests.statusCode).toBe(200)
-    expect(allRequests.json().items.some((r: any) => r.status === 'Closed')).toBe(true)
+    const allRequestItems = allRequests.json().items as Array<{ status: string }>
+    expect(allRequestItems.some(r => r.status === 'Closed')).toBe(true)
 
     const openRequests = await current.app.inject({
       method: 'GET',
@@ -172,6 +173,7 @@ describe('admin foundation routes', () => {
       headers: { cookie: adminLogin.cookie },
     })
     expect(openRequests.statusCode).toBe(200)
-    expect(openRequests.json().items.some((r: any) => r.status === 'Closed')).toBe(false)
+    const openRequestItems = openRequests.json().items as Array<{ status: string }>
+    expect(openRequestItems.some(r => r.status === 'Closed')).toBe(false)
   })
 })

@@ -28,8 +28,8 @@ const envContract = {
   PLAYWRIGHT_APP_URL: liveAppUrl,
   PLAYWRIGHT_API_URL: liveApiUrl,
   AIRMENTOR_LIVE_STACK: '1',
-  AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER: 'sysadmin',
-  AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD: 'admin1234',
+  AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER: '<identifier>',
+  AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD: '<password>',
 }
 
 function normalizeUrl(value) {
@@ -288,14 +288,14 @@ async function main() {
 
 | artifactId | path | assertionIds | source command | notes |
 | --- | --- | --- | --- | --- |
-| 02A--LIVE-TEACHING--system-admin-teaching-parity-smoke.png | ${files.teachingPng} | ATM-02A-001 | AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER=sysadmin AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD=admin1234 PLAYWRIGHT_APP_URL=${liveAppUrl} PLAYWRIGHT_API_URL=${liveApiUrl} AIRMENTOR_LIVE_STACK=1 npm run playwright:admin-live:teaching-parity | Refreshed teaching-parity screenshot confirms the extracted faculties workspace remains aligned with teaching-facing surfaces on the live stack. |
+| 02A--LIVE-TEACHING--system-admin-teaching-parity-smoke.png | ${files.teachingPng} | ATM-02A-001 | AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER=${envContract.AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER} AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD=${envContract.AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD} PLAYWRIGHT_APP_URL=${liveAppUrl} PLAYWRIGHT_API_URL=${liveApiUrl} AIRMENTOR_LIVE_STACK=1 npm run playwright:admin-live:teaching-parity | Refreshed teaching-parity screenshot confirms the extracted faculties workspace remains aligned with teaching-facing surfaces on the live stack. |
 
 ### Command \`LIVE-ACCEPTANCE\`
 
 | artifactId | path | assertionIds | source command | notes |
 | --- | --- | --- | --- | --- |
-| 02A--LIVE-ACCEPTANCE--system-admin-live-acceptance-report.json | ${files.acceptanceReport} | ATM-02A-001 | AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER=sysadmin AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD=admin1234 PLAYWRIGHT_APP_URL=${liveAppUrl} PLAYWRIGHT_API_URL=${liveApiUrl} AIRMENTOR_LIVE_STACK=1 npm run playwright:admin-live:acceptance | Refreshed acceptance report confirms Overview, Bands, CE / SEE, CGPA Formula, Stage Gates, Courses, and Provision all pass from the extracted faculties workspace on the deployed stack. |
-| 02A--LIVE-ACCEPTANCE--system-admin-live-acceptance.png | ${files.acceptancePng} | ATM-02A-001 | AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER=sysadmin AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD=admin1234 PLAYWRIGHT_APP_URL=${liveAppUrl} PLAYWRIGHT_API_URL=${liveApiUrl} AIRMENTOR_LIVE_STACK=1 npm run playwright:admin-live:acceptance | Refreshed acceptance screenshot supersedes the earlier Pages drift blocker and shows the extracted faculties workspace active on the live stack. |
+| 02A--LIVE-ACCEPTANCE--system-admin-live-acceptance-report.json | ${files.acceptanceReport} | ATM-02A-001 | AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER=${envContract.AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER} AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD=${envContract.AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD} PLAYWRIGHT_APP_URL=${liveAppUrl} PLAYWRIGHT_API_URL=${liveApiUrl} AIRMENTOR_LIVE_STACK=1 npm run playwright:admin-live:acceptance | Refreshed acceptance report confirms Overview, Bands, CE / SEE, CGPA Formula, Stage Gates, Courses, and Provision all pass from the extracted faculties workspace on the deployed stack. |
+| 02A--LIVE-ACCEPTANCE--system-admin-live-acceptance.png | ${files.acceptancePng} | ATM-02A-001 | AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER=${envContract.AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER} AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD=${envContract.AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD} PLAYWRIGHT_APP_URL=${liveAppUrl} PLAYWRIGHT_API_URL=${liveApiUrl} AIRMENTOR_LIVE_STACK=1 npm run playwright:admin-live:acceptance | Refreshed acceptance screenshot supersedes the earlier Pages drift blocker and shows the extracted faculties workspace active on the live stack. |
 
 Historical Stage 02A failure artifacts remain in the manifest for traceability, but the deployed-stack blocker is now closed and the stage is passed.
 `
@@ -358,20 +358,20 @@ Historical Stage 02A failure artifacts remain in the manifest for traceability, 
 
 | artifactId | path | assertionIds | source command | notes |
 | --- | --- | --- | --- | --- |
-| 02B--LIVE-PROOF--system-admin-proof-control-plane.png | ${files.proofPng} | ATM-02B-001, ATM-02B-002, ATM-07A-001 | AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER=sysadmin AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD=admin1234 PLAYWRIGHT_APP_URL=${liveAppUrl} PLAYWRIGHT_API_URL=${liveApiUrl} npm run verify:proof-closure:live | Refreshed deployed proof-control-plane screenshot confirms the semester-activation capable dashboard remains healthy after the predecessor blocker cleared. |
+| 02B--LIVE-PROOF--system-admin-proof-control-plane.png | ${files.proofPng} | ATM-02B-001, ATM-02B-002, ATM-07A-001 | AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER=${envContract.AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER} AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD=${envContract.AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD} PLAYWRIGHT_APP_URL=${liveAppUrl} PLAYWRIGHT_API_URL=${liveApiUrl} npm run verify:proof-closure:live | Refreshed deployed proof-control-plane screenshot confirms the semester-activation capable dashboard remains healthy after the predecessor blocker cleared. |
 
 ### Command \`LIVE-TEACHING\`
 
 | artifactId | path | assertionIds | source command | notes |
 | --- | --- | --- | --- | --- |
-| 02B--LIVE-TEACHING--system-admin-teaching-parity-smoke.png | ${files.teachingPng} | ATM-02B-001 | AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER=sysadmin AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD=admin1234 PLAYWRIGHT_APP_URL=${liveAppUrl} PLAYWRIGHT_API_URL=${liveApiUrl} AIRMENTOR_LIVE_STACK=1 npm run playwright:admin-live:teaching-parity | Refreshed deployed teaching-parity screenshot confirms the proof control-plane completion did not regress teaching-facing parity. |
+| 02B--LIVE-TEACHING--system-admin-teaching-parity-smoke.png | ${files.teachingPng} | ATM-02B-001 | AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER=${envContract.AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER} AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD=${envContract.AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD} PLAYWRIGHT_APP_URL=${liveAppUrl} PLAYWRIGHT_API_URL=${liveApiUrl} AIRMENTOR_LIVE_STACK=1 npm run playwright:admin-live:teaching-parity | Refreshed deployed teaching-parity screenshot confirms the proof control-plane completion did not regress teaching-facing parity. |
 
 ### Command \`LIVE-ACCEPTANCE\`
 
 | artifactId | path | assertionIds | source command | notes |
 | --- | --- | --- | --- | --- |
-| 02B--LIVE-ACCEPTANCE--system-admin-live-acceptance-report.json | ${files.acceptanceReport} | ATM-02B-001 | AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER=sysadmin AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD=admin1234 PLAYWRIGHT_APP_URL=${liveAppUrl} PLAYWRIGHT_API_URL=${liveApiUrl} AIRMENTOR_LIVE_STACK=1 npm run playwright:admin-live:acceptance | Refreshed acceptance report confirms the proof control plane remains reachable inside the extracted faculties workspace after 02A re-cleared on the live stack. |
-| 02B--LIVE-ACCEPTANCE--system-admin-live-acceptance.png | ${files.acceptancePng} | ATM-02B-001 | AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER=sysadmin AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD=admin1234 PLAYWRIGHT_APP_URL=${liveAppUrl} PLAYWRIGHT_API_URL=${liveApiUrl} AIRMENTOR_LIVE_STACK=1 npm run playwright:admin-live:acceptance | Refreshed acceptance screenshot confirms the completed proof control plane coexists with the extracted faculties workspace on the deployed stack. |
+| 02B--LIVE-ACCEPTANCE--system-admin-live-acceptance-report.json | ${files.acceptanceReport} | ATM-02B-001 | AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER=${envContract.AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER} AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD=${envContract.AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD} PLAYWRIGHT_APP_URL=${liveAppUrl} PLAYWRIGHT_API_URL=${liveApiUrl} AIRMENTOR_LIVE_STACK=1 npm run playwright:admin-live:acceptance | Refreshed acceptance report confirms the proof control plane remains reachable inside the extracted faculties workspace after 02A re-cleared on the live stack. |
+| 02B--LIVE-ACCEPTANCE--system-admin-live-acceptance.png | ${files.acceptancePng} | ATM-02B-001 | AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER=${envContract.AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER} AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD=${envContract.AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD} PLAYWRIGHT_APP_URL=${liveAppUrl} PLAYWRIGHT_API_URL=${liveApiUrl} AIRMENTOR_LIVE_STACK=1 npm run playwright:admin-live:acceptance | Refreshed acceptance screenshot confirms the completed proof control plane coexists with the extracted faculties workspace on the deployed stack. |
 `
 
   let nextIndex = indexText

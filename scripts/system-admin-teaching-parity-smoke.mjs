@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict'
-import { mkdir } from 'node:fs/promises'
+import { copyFile, mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { sanitizeArtifactPrefix } from './proof-risk-semester-walk.mjs'
 import { resolveSystemAdminLiveCredentials } from './system-admin-live-auth.mjs'
 
 const playwrightRoot = process.env.PLAYWRIGHT_ROOT
 const appUrl = process.env.PLAYWRIGHT_APP_URL ?? 'http://127.0.0.1:5173'
 const apiUrl = process.env.PLAYWRIGHT_API_URL ?? appUrl
 const outputDir = process.env.PLAYWRIGHT_OUTPUT_DIR ?? 'output/playwright'
+const teachingParityArtifactPrefix = sanitizeArtifactPrefix((process.env.AIRMENTOR_TEACHING_PARITY_ARTIFACT_PREFIX ?? '').trim())
 
 assert(playwrightRoot, 'PLAYWRIGHT_ROOT is required')
 
@@ -19,25 +21,125 @@ const courseLeaderDashboardScreenshot = path.join(outputDir, 'course-leader-dash
 const mentorViewScreenshot = path.join(outputDir, 'mentor-view-proof.png')
 const queueHistoryScreenshot = path.join(outputDir, 'queue-history-proof.png')
 const failureScreenshot = path.join(outputDir, 'system-admin-teaching-parity-smoke-failure.png')
+const failureReport = path.join(outputDir, 'system-admin-teaching-parity-smoke-failure.json')
 const systemAdminCredentials = resolveSystemAdminLiveCredentials({
   scriptLabel: 'System admin teaching parity smoke',
 })
 
 const browser = await firefox.launch({ headless: true })
 const page = await browser.newPage({ viewport: { width: 1440, height: 1400 } })
+const pageErrors = []
+const consoleMessages = []
+page.on('pageerror', error => {
+  pageErrors.push({ name: error.name, message: error.message })
+  if (pageErrors.length > 20) pageErrors.shift()
+})
+page.on('console', message => {
+  consoleMessages.push({ type: message.type(), text: message.text() })
+  if (consoleMessages.length > 20) consoleMessages.shift()
+})
 
 const updatedDisplayName = 'Dr. Kavitha Rao QA'
 const updatedPhone = '+91-9000001111'
 const updatedDesignation = 'Senior Associate Professor'
 const teachingPasswordCandidates = ['faculty1234', '1234']
 
-async function expectVisible(locator, description) {
-  await locator.waitFor({ state: 'visible', timeout: 20_000 })
+function buildPortalHomeUrl() {
+  return `${appUrl.replace(/\/$/, '')}/#/home`
+}
+
+function buildPrefixedArtifactPath(rawPath) {
+  if (!teachingParityArtifactPrefix) return null
+  return path.join(path.dirname(rawPath), `${teachingParityArtifactPrefix}-${path.basename(rawPath)}`)
+}
+
+async function copyPrefixedArtifact(rawPath) {
+  const prefixedPath = buildPrefixedArtifactPath(rawPath)
+  if (!prefixedPath) return null
+  await copyFile(rawPath, prefixedPath)
+  return prefixedPath
+}
+
+async function expectVisible(locator, description, timeout = 20_000) {
+  await locator.waitFor({ state: 'visible', timeout })
   assert(await locator.isVisible(), `${description} should be visible`)
 }
 
 async function expectFlash(message) {
   await expectVisible(page.getByText(message, { exact: true }), `flash "${message}"`)
+}
+
+async function readSelectedOptionLabel(locator) {
+  return locator.evaluate(node => {
+    if (!(node instanceof HTMLSelectElement)) return ''
+    return node.options[node.selectedIndex]?.textContent?.trim() ?? ''
+  })
+}
+
+async function waitForFacultyCanonicalState(timeout = 5_000) {
+  await page.waitForFunction(({ displayName, phone, designation }) => {
+    const text = document.body.innerText || ''
+    return text.includes(displayName) && text.includes(phone) && text.includes(designation)
+  }, {
+    displayName: updatedDisplayName,
+    phone: updatedPhone,
+    designation: updatedDesignation,
+  }, { timeout })
+}
+
+async function facultyCanonicalStateSatisfied(timeout = 5_000) {
+  try {
+    await waitForFacultyCanonicalState(timeout)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function appointmentCanonicalStateSatisfied(appointmentsCard) {
+  try {
+    const departmentLabel = await readSelectedOptionLabel(appointmentsCard.getByRole('combobox').nth(0))
+    const branchLabel = await readSelectedOptionLabel(appointmentsCard.getByRole('combobox').nth(1))
+    return departmentLabel === 'Electronics and Communication Engineering' && branchLabel === 'B.Tech ECE'
+  } catch {
+    return false
+  }
+}
+
+async function submitPatchWithStaleVersionGuard({
+  submitLocator,
+  responseUrlFragment,
+  successMessage,
+  description,
+  isCanonicalStateSatisfied,
+  maxAttempts = 2,
+}) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    await expectVisible(submitLocator, `${description} submit button`)
+    const responsePromise = page.waitForResponse(response => (
+      response.request().method() === 'PATCH'
+      && response.url().includes(responseUrlFragment)
+    ), { timeout: 20_000 })
+    await submitLocator.click()
+    const response = await responsePromise
+    if (response.ok()) {
+      await expectFlash(successMessage)
+      return
+    }
+
+    const responseText = await response.text().catch(() => '')
+    const staleVersion = response.status() === 409 && /stale version/i.test(responseText)
+    if (!staleVersion) {
+      throw new Error(`${description} failed with status ${response.status()}: ${responseText || response.statusText()}`)
+    }
+
+    await page.waitForLoadState('networkidle')
+    await page.waitForTimeout(400)
+    if (await isCanonicalStateSatisfied()) return
+    if (attempt >= maxAttempts) {
+      throw new Error(`${description} hit a stale version response after ${maxAttempts} attempts.`)
+    }
+  }
 }
 
 async function resolveTeachingPassword(username) {
@@ -64,9 +166,26 @@ async function clickAndSettle(locator, description) {
   await page.waitForTimeout(400)
 }
 
+async function focusAndActivate(locator, description, key = 'Enter') {
+  await expectVisible(locator, description)
+  await locator.focus()
+  const isFocused = await locator.evaluate(node => node === document.activeElement)
+  assert.equal(isFocused, true, `${description} should receive focus before keyboard activation`)
+  await page.keyboard.press(key)
+}
+
 async function openFacultyProfile() {
   await clickAndSettle(page.locator('[data-proof-action="open-faculty-profile"]').first(), 'faculty profile navigation')
   await expectVisible(page.getByText(/^Teaching Profile$/).first(), 'teaching profile heading')
+}
+
+async function openAcademicPortalFromHome() {
+  await page.goto(buildPortalHomeUrl(), { waitUntil: 'networkidle' })
+  await page.waitForFunction(() => document.readyState === 'complete')
+  await focusAndActivate(page.getByRole('button', { name: /Open Academic Portal/i }), 'open academic portal')
+  await page.waitForFunction(() => window.location.hash === '#/app', { timeout: 60_000 })
+  await expectVisible(page.locator('#teacher-username'), 'academic username input', 60_000)
+  await expectVisible(page.getByText(/Teaching Workspace Live Mode/), 'academic login', 60_000)
 }
 
 async function openNavItem(label) {
@@ -137,8 +256,14 @@ try {
   await page.getByLabel('Faculty Display Name', { exact: true }).fill(updatedDisplayName)
   await page.getByLabel('Faculty Phone', { exact: true }).fill(updatedPhone)
   await page.getByLabel('Faculty Designation', { exact: true }).fill(updatedDesignation)
-  await page.getByRole('button', { name: 'Save Faculty', exact: true }).click()
-  await expectFlash('Faculty profile updated.')
+  await submitPatchWithStaleVersionGuard({
+    submitLocator: page.getByRole('button', { name: 'Save Faculty', exact: true }),
+    responseUrlFragment: '/api/admin/faculty/t1',
+    successMessage: 'Faculty profile updated.',
+    description: 'faculty profile save',
+    isCanonicalStateSatisfied: () => facultyCanonicalStateSatisfied(),
+  })
+  await waitForFacultyCanonicalState()
 
   const appointmentsSwitch = page.locator('button, [role="tab"]').filter({ hasText: /^Appointments/ }).first()
   await expectVisible(appointmentsSwitch, 'appointments switcher')
@@ -147,14 +272,18 @@ try {
   await appointmentsCard.getByRole('button', { name: 'Edit', exact: true }).first().click()
   await appointmentsCard.getByRole('combobox').nth(0).selectOption({ label: 'Electronics and Communication Engineering' })
   await appointmentsCard.getByRole('combobox').nth(1).selectOption({ label: 'B.Tech ECE' })
-  await appointmentsCard.getByRole('button', { name: 'Save Appointment', exact: true }).click()
-  await expectFlash('Appointment updated.')
+  await submitPatchWithStaleVersionGuard({
+    submitLocator: appointmentsCard.getByRole('button', { name: 'Save Appointment', exact: true }),
+    responseUrlFragment: '/api/admin/appointments/',
+    successMessage: 'Appointment updated.',
+    description: 'faculty appointment save',
+    isCanonicalStateSatisfied: () => appointmentCanonicalStateSatisfied(appointmentsCard),
+  })
+  assert.equal(await appointmentCanonicalStateSatisfied(appointmentsCard), true, 'appointment should remain pinned to ECE / B.Tech ECE')
 
   await page.getByRole('button', { name: 'Logout', exact: true }).click()
-  await expectVisible(page.getByRole('button', { name: /Open Academic Portal/i }), 'portal selector')
-
-  await page.getByRole('button', { name: /Open Academic Portal/i }).click()
-  await expectVisible(page.getByText(/Teaching Workspace Live Mode/), 'academic login')
+  await expectVisible(page.getByRole('button', { name: /Open Academic Portal/i }), 'portal selector', 60_000)
+  await openAcademicPortalFromHome()
 
   await page.locator('#teacher-username').fill(teachingUsername)
   await expectVisible(page.getByText('Selected profile', { exact: true }), 'selected teaching profile preview')
@@ -204,16 +333,52 @@ try {
   assertAcademicProofSummaryParity(queueSummarySnapshot, dashboardSummarySnapshot, 'mentor queue history')
   await page.screenshot({ path: queueHistoryScreenshot, fullPage: true })
 
+  const prefixedSuccessScreenshot = await copyPrefixedArtifact(successScreenshot)
+  const prefixedCourseLeaderDashboardScreenshot = await copyPrefixedArtifact(courseLeaderDashboardScreenshot)
+  const prefixedMentorViewScreenshot = await copyPrefixedArtifact(mentorViewScreenshot)
+  const prefixedQueueHistoryScreenshot = await copyPrefixedArtifact(queueHistoryScreenshot)
+
   console.log(`System admin -> teaching parity smoke passed.`)
   console.log(`Screenshots:`)
   console.log(`- faculty profile: ${successScreenshot}`)
   console.log(`- course leader dashboard: ${courseLeaderDashboardScreenshot}`)
   console.log(`- mentor view: ${mentorViewScreenshot}`)
   console.log(`- queue history: ${queueHistoryScreenshot}`)
+  if (
+    prefixedSuccessScreenshot
+    || prefixedCourseLeaderDashboardScreenshot
+    || prefixedMentorViewScreenshot
+    || prefixedQueueHistoryScreenshot
+  ) {
+    console.log('Prefixed teaching-parity artifacts:')
+    if (prefixedSuccessScreenshot) console.log(`- faculty profile: ${prefixedSuccessScreenshot}`)
+    if (prefixedCourseLeaderDashboardScreenshot) console.log(`- course leader dashboard: ${prefixedCourseLeaderDashboardScreenshot}`)
+    if (prefixedMentorViewScreenshot) console.log(`- mentor view: ${prefixedMentorViewScreenshot}`)
+    if (prefixedQueueHistoryScreenshot) console.log(`- queue history: ${prefixedQueueHistoryScreenshot}`)
+  }
 } catch (error) {
+  const failurePayload = {
+    failedAt: new Date().toISOString(),
+    appUrl,
+    apiUrl,
+    pageUrl: page.url(),
+    error: error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) },
+    pageErrors,
+    consoleMessages,
+  }
+  let prefixedFailureReport = null
+  let prefixedFailureScreenshot = null
   try {
+    await writeFile(failureReport, `${JSON.stringify(failurePayload, null, 2)}\n`, 'utf8')
+    prefixedFailureReport = await copyPrefixedArtifact(failureReport).catch(() => null)
     await page.screenshot({ path: failureScreenshot, fullPage: true })
+    prefixedFailureScreenshot = await copyPrefixedArtifact(failureScreenshot).catch(() => null)
     console.error(`System admin -> teaching parity smoke failed. Screenshot: ${failureScreenshot}`)
+    if (prefixedFailureReport || prefixedFailureScreenshot) {
+      console.error('Prefixed teaching-parity failure artifacts:')
+      if (prefixedFailureReport) console.error(`- report: ${prefixedFailureReport}`)
+      if (prefixedFailureScreenshot) console.error(`- screenshot: ${prefixedFailureScreenshot}`)
+    }
   } catch {
     // Ignore screenshot failures so the original error is preserved.
   }

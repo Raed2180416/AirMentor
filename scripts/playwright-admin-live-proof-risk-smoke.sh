@@ -221,5 +221,6 @@ else
   PLAYWRIGHT_BROWSERS_PATH="$playwright_browsers_path" \
   PLAYWRIGHT_FIREFOX_EXECUTABLE_PATH="$playwright_firefox_executable_path" \
   PLAYWRIGHT_OUTPUT_DIR="$output_dir" \
+  AIRMENTOR_PROOF_ARTIFACT_PREFIX="$artifact_prefix" \
   node scripts/system-admin-proof-risk-smoke.mjs
 fi
