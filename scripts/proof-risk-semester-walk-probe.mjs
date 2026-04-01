@@ -93,26 +93,34 @@ async function login() {
 
 async function adminApiRequest(session, apiPath, init = {}) {
   const { body, ...restInit } = init
-  const response = await fetch(new URL(apiPath, apiUrl), {
-    method: restInit.method ?? 'GET',
-    headers: {
-      origin: new URL(appUrl).origin,
-      accept: 'application/json',
-      cookie: session.cookieHeader,
-      'x-airmentor-csrf': session.csrfToken,
-      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-    },
-    body: body === undefined
-      ? undefined
-      : typeof body === 'string'
-        ? body
-        : JSON.stringify(body),
-  })
-  const text = await response.text().catch(() => '')
-  if (!response.ok) {
-    throw new Error(`Admin API ${apiPath} failed with ${response.status}: ${text.slice(0, 800)}`)
+  const controller = new AbortController()
+  const timeoutMs = typeof restInit.timeout === 'number' ? restInit.timeout : 120_000
+  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(new URL(apiPath, apiUrl), {
+      method: restInit.method ?? 'GET',
+      headers: {
+        origin: new URL(appUrl).origin,
+        accept: 'application/json',
+        cookie: session.cookieHeader,
+        'x-airmentor-csrf': session.csrfToken,
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      },
+      body: body === undefined
+        ? undefined
+        : typeof body === 'string'
+          ? body
+          : JSON.stringify(body),
+      signal: controller.signal,
+    })
+    const text = await response.text().catch(() => '')
+    if (!response.ok) {
+      throw new Error(`Admin API ${apiPath} failed with ${response.status}: ${text.slice(0, 800)}`)
+    }
+    return text ? JSON.parse(text) : null
+  } finally {
+    clearTimeout(timeoutHandle)
   }
-  return text ? JSON.parse(text) : null
 }
 
 async function main() {
@@ -209,11 +217,17 @@ async function main() {
   }
 
   await writeFile(probeArtifactPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
-  console.log(`Semester-walk probe passed.`)
+  console.log('Semester-walk probe passed.')
   console.log(`Probe artifact: ${probeArtifactPath}`)
   for (const summary of summaries) {
     console.log(`- semester ${summary.semesterNumber}: ${summary.selectedCheckpoint.simulationStageCheckpointId}`)
   }
 }
 
-await main()
+try {
+  await main()
+  process.exit(0)
+} catch (error) {
+  console.error(error instanceof Error ? error.stack : String(error))
+  process.exit(1)
+}
