@@ -275,6 +275,14 @@ async function switchRole(role) {
 async function waitForAcademicProofSummary(surfaceDescription) {
   const summary = page.locator('[data-proof-surface="academic-proof-summary"]').first()
   await expectVisible(summary, `${surfaceDescription} proof summary`)
+  await expectVisible(summary.locator('[data-proof-summary-metric]').first(), `${surfaceDescription} proof summary metrics`)
+  return summary
+}
+
+async function waitForScopedAcademicProofSummary(surfaceScope, surfaceDescription) {
+  const summary = page.locator(`[data-proof-surface="academic-proof-summary"][data-proof-scope="${surfaceScope}"]`).first()
+  await expectVisible(summary, `${surfaceDescription} proof summary`)
+  await expectVisible(summary.locator('[data-proof-summary-metric]').first(), `${surfaceDescription} proof summary metrics`)
   return summary
 }
 
@@ -289,8 +297,28 @@ async function waitForMentorWorkspaceSettled() {
   await waitForNavItemActive('My Mentees')
 }
 
-async function readAcademicProofSummary(summary) {
+async function openMentorQueueHistory() {
+  let lastError = null
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await openNavItem('Queue History')
+      await waitForNavItemActive('Queue History', 15_000)
+      await waitForScopedAcademicProofSummary('queue-history', 'mentor queue history')
+      await page.waitForLoadState('networkidle')
+      await page.waitForTimeout(800)
+      await waitForNavItemActive('Queue History', 15_000)
+      return
+    } catch (error) {
+      lastError = error
+      await page.waitForTimeout(500)
+    }
+  }
+  throw lastError ?? new Error('Queue History did not settle in mentor mode.')
+}
+
+async function readAcademicProofSummary(summary, surfaceDescription = 'proof summary') {
   const metricLocators = summary.locator('[data-proof-summary-metric]')
+  await expectVisible(metricLocators.first(), `${surfaceDescription} first proof summary metric`)
   const metricCount = await metricLocators.count()
   assert(metricCount > 0, 'proof summary should expose at least one metric')
 
@@ -411,10 +439,9 @@ try {
   await page.screenshot({ path: mentorViewScreenshot, fullPage: true })
 
   await waitForMentorWorkspaceSettled()
-  await openNavItem('Queue History')
-  const queueSummary = page.locator('[data-proof-surface="academic-proof-summary"][data-proof-scope="queue-history"]').first()
-  await expectVisible(queueSummary, 'mentor queue history page')
-  const queueSummarySnapshot = await readAcademicProofSummary(queueSummary)
+  await openMentorQueueHistory()
+  const queueSummary = await waitForScopedAcademicProofSummary('queue-history', 'mentor queue history')
+  const queueSummarySnapshot = await readAcademicProofSummary(queueSummary, 'mentor queue history')
   assertAcademicProofSummaryParity(queueSummarySnapshot, dashboardSummarySnapshot, 'mentor queue history')
   await page.screenshot({ path: queueHistoryScreenshot, fullPage: true })
 
