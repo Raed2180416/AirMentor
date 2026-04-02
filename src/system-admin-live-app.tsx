@@ -332,6 +332,11 @@ function upsertLiveAdminItem<T>(items: T[], nextItem: T, matches: (item: T) => b
     : [nextItem, ...items]
 }
 
+export function readSubmittedField(form: HTMLFormElement, fieldName: string, fallback = '') {
+  const value = new FormData(form).get(fieldName)
+  return typeof value === 'string' ? value : fallback
+}
+
 export function upsertAcademicFacultyRecord(data: LiveAdminDataset, nextFaculty: ApiAcademicFaculty): LiveAdminDataset {
   return {
     ...data,
@@ -3351,10 +3356,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const handleUpdateAcademicFaculty = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!selectedAcademicFaculty) return
+    const form = event.currentTarget
     const nextAcademicFaculty = await runAction(async () => apiClient.updateAcademicFaculty(selectedAcademicFaculty.academicFacultyId, {
-        code: requireText('Faculty code', entityEditors.academicFaculty.code),
-        name: requireText('Faculty name', entityEditors.academicFaculty.name),
-        overview: entityEditors.academicFaculty.overview.trim() || null,
+        code: requireText('Faculty code', readSubmittedField(form, 'academicFacultyCode', entityEditors.academicFaculty.code)),
+        name: requireText('Faculty name', readSubmittedField(form, 'academicFacultyName', entityEditors.academicFaculty.name)),
+        overview: readSubmittedField(form, 'academicFacultyOverview', entityEditors.academicFaculty.overview).trim() || null,
         status: selectedAcademicFaculty.status,
         version: selectedAcademicFaculty.version,
       }))
@@ -3414,10 +3420,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const handleUpdateDepartment = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!selectedDepartment) return
+    const form = event.currentTarget
     const nextDepartment = await runAction(async () => apiClient.updateDepartment(selectedDepartment.departmentId, {
         academicFacultyId: selectedAcademicFaculty?.academicFacultyId ?? null,
-        code: requireText('Department code', entityEditors.department.code),
-        name: requireText('Department name', entityEditors.department.name),
+        code: requireText('Department code', readSubmittedField(form, 'departmentCode', entityEditors.department.code)),
+        name: requireText('Department name', readSubmittedField(form, 'departmentName', entityEditors.department.name)),
         status: selectedDepartment.status,
         version: selectedDepartment.version,
       }))
@@ -3453,12 +3460,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const handleUpdateBranch = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!selectedBranch) return
+    const form = event.currentTarget
     const nextBranch = await runAction(async () => apiClient.updateBranch(selectedBranch.branchId, {
         departmentId: selectedBranch.departmentId,
-        code: requireText('Branch code', entityEditors.branch.code),
-        name: requireText('Branch name', entityEditors.branch.name),
-        programLevel: requireText('Program level', entityEditors.branch.programLevel),
-        semesterCount: requirePositiveEvenInteger('Semester count', entityEditors.branch.semesterCount),
+        code: requireText('Branch code', readSubmittedField(form, 'branchCode', entityEditors.branch.code)),
+        name: requireText('Branch name', readSubmittedField(form, 'branchName', entityEditors.branch.name)),
+        programLevel: requireText('Program level', readSubmittedField(form, 'branchProgramLevel', entityEditors.branch.programLevel)),
+        semesterCount: requirePositiveEvenInteger('Semester count', readSubmittedField(form, 'branchSemesterCount', entityEditors.branch.semesterCount)),
         status: selectedBranch.status,
         version: selectedBranch.version,
       }))
@@ -3497,14 +3505,15 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const handleUpdateBatch = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!selectedBatch || !selectedBranch) return
+    const form = event.currentTarget
     const nextBatch = await runAction(async () => {
-      const sectionLabels = entityEditors.batch.sectionLabels.split(',').map(item => item.trim()).filter(Boolean)
+      const sectionLabels = readSubmittedField(form, 'batchSectionLabels', entityEditors.batch.sectionLabels).split(',').map(item => item.trim()).filter(Boolean)
       if (sectionLabels.length === 0) throw new Error('At least one batch section label is required.')
       return apiClient.updateBatch(selectedBatch.batchId, {
         branchId: selectedBranch.branchId,
-        admissionYear: requirePositiveInteger('Admission year', entityEditors.batch.admissionYear),
-        batchLabel: requireText('Batch label', entityEditors.batch.batchLabel),
-        currentSemester: requirePositiveInteger('Active semester', entityEditors.batch.currentSemester),
+        admissionYear: requirePositiveInteger('Admission year', readSubmittedField(form, 'batchAdmissionYear', entityEditors.batch.admissionYear)),
+        batchLabel: requireText('Batch label', readSubmittedField(form, 'batchLabel', entityEditors.batch.batchLabel)),
+        currentSemester: requirePositiveInteger('Active semester', readSubmittedField(form, 'batchCurrentSemester', entityEditors.batch.currentSemester)),
         sectionLabels,
         status: selectedBatch.status,
         version: selectedBatch.version,
@@ -3547,10 +3556,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
   const handleCreateAcademicFaculty = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    const form = event.currentTarget
     const nextAcademicFaculty = await runAction(async () => apiClient.createAcademicFaculty({
-        code: requireText('Faculty code', structureForms.academicFaculty.code),
-        name: requireText('Faculty name', structureForms.academicFaculty.name),
-        overview: structureForms.academicFaculty.overview.trim() || null,
+        code: requireText('Faculty code', readSubmittedField(form, 'academicFacultyCode', structureForms.academicFaculty.code)),
+        name: requireText('Faculty name', readSubmittedField(form, 'academicFacultyName', structureForms.academicFaculty.name)),
+        overview: readSubmittedField(form, 'academicFacultyOverview', structureForms.academicFaculty.overview).trim() || null,
         status: 'active',
       }))
     if (!nextAcademicFaculty) return
@@ -3562,10 +3572,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const handleCreateDepartment = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!selectedAcademicFaculty) return
+    const form = event.currentTarget
     const nextDepartment = await runAction(async () => apiClient.createDepartment({
         academicFacultyId: selectedAcademicFaculty.academicFacultyId,
-        code: requireText('Department code', structureForms.department.code),
-        name: requireText('Department name', structureForms.department.name),
+        code: requireText('Department code', readSubmittedField(form, 'departmentCode', structureForms.department.code)),
+        name: requireText('Department name', readSubmittedField(form, 'departmentName', structureForms.department.name)),
         status: 'active',
       }))
     if (!nextDepartment) return
@@ -3577,12 +3588,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const handleCreateBranch = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!selectedDepartment) return
+    const form = event.currentTarget
     const nextBranch = await runAction(async () => apiClient.createBranch({
         departmentId: selectedDepartment.departmentId,
-        code: requireText('Branch code', structureForms.branch.code),
-        name: requireText('Branch name', structureForms.branch.name),
-        programLevel: requireText('Program level', structureForms.branch.programLevel),
-        semesterCount: requirePositiveEvenInteger('Semester count', structureForms.branch.semesterCount),
+        code: requireText('Branch code', readSubmittedField(form, 'branchCode', structureForms.branch.code)),
+        name: requireText('Branch name', readSubmittedField(form, 'branchName', structureForms.branch.name)),
+        programLevel: requireText('Program level', readSubmittedField(form, 'branchProgramLevel', structureForms.branch.programLevel)),
+        semesterCount: requirePositiveEvenInteger('Semester count', readSubmittedField(form, 'branchSemesterCount', structureForms.branch.semesterCount)),
         status: 'active',
       }))
     if (!nextBranch) return
@@ -3594,14 +3606,15 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const handleCreateBatch = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!selectedBranch) return
+    const form = event.currentTarget
     const nextBatch = await runAction(async () => {
-      const sectionLabels = structureForms.batch.sectionLabels.split(',').map(item => item.trim()).filter(Boolean)
+      const sectionLabels = readSubmittedField(form, 'batchSectionLabels', structureForms.batch.sectionLabels).split(',').map(item => item.trim()).filter(Boolean)
       if (sectionLabels.length === 0) throw new Error('At least one batch section label is required.')
       return apiClient.createBatch({
         branchId: selectedBranch.branchId,
-        admissionYear: requirePositiveInteger('Admission year', structureForms.batch.admissionYear),
-        batchLabel: requireText('Batch label', structureForms.batch.batchLabel),
-        currentSemester: requirePositiveInteger('Active semester', structureForms.batch.currentSemester),
+        admissionYear: requirePositiveInteger('Admission year', readSubmittedField(form, 'batchAdmissionYear', structureForms.batch.admissionYear)),
+        batchLabel: requireText('Batch label', readSubmittedField(form, 'batchLabel', structureForms.batch.batchLabel)),
+        currentSemester: requirePositiveInteger('Active semester', readSubmittedField(form, 'batchCurrentSemester', structureForms.batch.currentSemester)),
         sectionLabels,
         status: 'active',
       })
@@ -7499,9 +7512,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <ModalFrame eyebrow="Hierarchy Edit" title={`Edit ${selectedAcademicFaculty.name}`} caption="Adjust faculty qualities here, then return to the same hierarchy layer with the rail preserved." onClose={() => setEditingEntity(null)}>
               <form onSubmit={handleUpdateAcademicFaculty} style={{ display: 'grid', gap: 10 }}>
-                <div><FieldLabel>Faculty Code</FieldLabel><TextInput aria-label="Faculty Code" value={entityEditors.academicFaculty.code} onChange={event => setEntityEditors(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, code: event.target.value } }))} /></div>
-                <div><FieldLabel>Faculty Name</FieldLabel><TextInput aria-label="Faculty Name" value={entityEditors.academicFaculty.name} onChange={event => setEntityEditors(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, name: event.target.value } }))} /></div>
-                <div><FieldLabel>Overview</FieldLabel><TextAreaInput aria-label="Faculty Overview" value={entityEditors.academicFaculty.overview} onChange={event => setEntityEditors(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, overview: event.target.value } }))} rows={4} /></div>
+                <div><FieldLabel>Faculty Code</FieldLabel><TextInput name="academicFacultyCode" aria-label="Faculty Code" value={entityEditors.academicFaculty.code} onChange={event => setEntityEditors(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, code: event.target.value } }))} /></div>
+                <div><FieldLabel>Faculty Name</FieldLabel><TextInput name="academicFacultyName" aria-label="Faculty Name" value={entityEditors.academicFaculty.name} onChange={event => setEntityEditors(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, name: event.target.value } }))} /></div>
+                <div><FieldLabel>Overview</FieldLabel><TextAreaInput name="academicFacultyOverview" aria-label="Faculty Overview" value={entityEditors.academicFaculty.overview} onChange={event => setEntityEditors(prev => ({ ...prev, academicFaculty: { ...prev.academicFaculty, overview: event.target.value } }))} rows={4} /></div>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                     {selectedAcademicFaculty.status === 'archived'
@@ -7521,8 +7534,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <ModalFrame eyebrow="Hierarchy Edit" title={`Edit ${selectedDepartment.name}`} caption="Department edits now live in a focused dialog so the rail and next-level branch workspace stay stable behind it." onClose={() => setEditingEntity(null)}>
               <form onSubmit={handleUpdateDepartment} style={{ display: 'grid', gap: 10 }}>
-                <div><FieldLabel>Department Code</FieldLabel><TextInput aria-label="Department Code" value={entityEditors.department.code} onChange={event => setEntityEditors(prev => ({ ...prev, department: { ...prev.department, code: event.target.value } }))} /></div>
-                <div><FieldLabel>Department Name</FieldLabel><TextInput aria-label="Department Name" value={entityEditors.department.name} onChange={event => setEntityEditors(prev => ({ ...prev, department: { ...prev.department, name: event.target.value } }))} /></div>
+                <div><FieldLabel>Department Code</FieldLabel><TextInput name="departmentCode" aria-label="Department Code" value={entityEditors.department.code} onChange={event => setEntityEditors(prev => ({ ...prev, department: { ...prev.department, code: event.target.value } }))} /></div>
+                <div><FieldLabel>Department Name</FieldLabel><TextInput name="departmentName" aria-label="Department Name" value={entityEditors.department.name} onChange={event => setEntityEditors(prev => ({ ...prev, department: { ...prev.department, name: event.target.value } }))} /></div>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'space-between' }}>
                   <Btn type="button" variant="danger" onClick={() => void handleArchiveDepartment()}>Archive Department</Btn>
                   <Btn type="button" variant="ghost" onClick={() => setEditingEntity(null)}>Cancel</Btn>
@@ -7537,10 +7550,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <ModalFrame eyebrow="Hierarchy Edit" title={`Edit ${selectedBranch.name}`} caption="Branch metadata opens in a modal so year-level work in the subpanel stays visible and easier to reason about." onClose={() => setEditingEntity(null)}>
               <form onSubmit={handleUpdateBranch} style={{ display: 'grid', gap: 10 }}>
-                <div><FieldLabel>Branch Code</FieldLabel><TextInput aria-label="Branch Code" value={entityEditors.branch.code} onChange={event => setEntityEditors(prev => ({ ...prev, branch: { ...prev.branch, code: event.target.value } }))} /></div>
-                <div><FieldLabel>Branch Name</FieldLabel><TextInput aria-label="Branch Name" value={entityEditors.branch.name} onChange={event => setEntityEditors(prev => ({ ...prev, branch: { ...prev.branch, name: event.target.value } }))} /></div>
-                <div><FieldLabel>Program Level</FieldLabel><SelectInput aria-label="Branch Program Level" value={entityEditors.branch.programLevel} onChange={event => setEntityEditors(prev => ({ ...prev, branch: { ...prev.branch, programLevel: event.target.value } }))}><option value="UG">UG</option><option value="PG">PG</option></SelectInput></div>
-                <div><FieldLabel>Semester Count</FieldLabel><TextInput aria-label="Branch Semester Count" value={entityEditors.branch.semesterCount} onChange={event => setEntityEditors(prev => ({ ...prev, branch: { ...prev.branch, semesterCount: event.target.value } }))} /></div>
+                <div><FieldLabel>Branch Code</FieldLabel><TextInput name="branchCode" aria-label="Branch Code" value={entityEditors.branch.code} onChange={event => setEntityEditors(prev => ({ ...prev, branch: { ...prev.branch, code: event.target.value } }))} /></div>
+                <div><FieldLabel>Branch Name</FieldLabel><TextInput name="branchName" aria-label="Branch Name" value={entityEditors.branch.name} onChange={event => setEntityEditors(prev => ({ ...prev, branch: { ...prev.branch, name: event.target.value } }))} /></div>
+                <div><FieldLabel>Program Level</FieldLabel><SelectInput name="branchProgramLevel" aria-label="Branch Program Level" value={entityEditors.branch.programLevel} onChange={event => setEntityEditors(prev => ({ ...prev, branch: { ...prev.branch, programLevel: event.target.value } }))}><option value="UG">UG</option><option value="PG">PG</option></SelectInput></div>
+                <div><FieldLabel>Semester Count</FieldLabel><TextInput name="branchSemesterCount" aria-label="Branch Semester Count" value={entityEditors.branch.semesterCount} onChange={event => setEntityEditors(prev => ({ ...prev, branch: { ...prev.branch, semesterCount: event.target.value } }))} /></div>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'space-between' }}>
                   <Btn type="button" variant="danger" onClick={() => void handleArchiveBranch()}>Archive Branch</Btn>
                   <Btn type="button" variant="ghost" onClick={() => setEditingEntity(null)}>Cancel</Btn>
@@ -7555,10 +7568,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <ModalFrame eyebrow="Hierarchy Edit" title={`Edit Batch ${selectedBatch.batchLabel}`} caption="Year-level edits now happen in a compact popup, while policy tabs and section-level actions stay in the main subpanel." onClose={() => setEditingEntity(null)}>
               <form onSubmit={handleUpdateBatch} style={{ display: 'grid', gap: 10 }}>
-                <div><FieldLabel>Admission Year</FieldLabel><TextInput aria-label="Batch Admission Year" value={entityEditors.batch.admissionYear} onChange={event => setEntityEditors(prev => ({ ...prev, batch: { ...prev.batch, admissionYear: event.target.value } }))} /></div>
-                <div><FieldLabel>Batch Label</FieldLabel><TextInput aria-label="Batch Label" value={entityEditors.batch.batchLabel} onChange={event => setEntityEditors(prev => ({ ...prev, batch: { ...prev.batch, batchLabel: event.target.value } }))} /></div>
-                <div><FieldLabel>Active Semester</FieldLabel><TextInput aria-label="Batch Active Semester" value={entityEditors.batch.currentSemester} onChange={event => setEntityEditors(prev => ({ ...prev, batch: { ...prev.batch, currentSemester: event.target.value } }))} /></div>
-                <div><FieldLabel>Section Labels</FieldLabel><TextInput aria-label="Batch Section Labels" value={entityEditors.batch.sectionLabels} onChange={event => setEntityEditors(prev => ({ ...prev, batch: { ...prev.batch, sectionLabels: event.target.value } }))} /></div>
+                <div><FieldLabel>Admission Year</FieldLabel><TextInput name="batchAdmissionYear" aria-label="Batch Admission Year" value={entityEditors.batch.admissionYear} onChange={event => setEntityEditors(prev => ({ ...prev, batch: { ...prev.batch, admissionYear: event.target.value } }))} /></div>
+                <div><FieldLabel>Batch Label</FieldLabel><TextInput name="batchLabel" aria-label="Batch Label" value={entityEditors.batch.batchLabel} onChange={event => setEntityEditors(prev => ({ ...prev, batch: { ...prev.batch, batchLabel: event.target.value } }))} /></div>
+                <div><FieldLabel>Active Semester</FieldLabel><TextInput name="batchCurrentSemester" aria-label="Batch Active Semester" value={entityEditors.batch.currentSemester} onChange={event => setEntityEditors(prev => ({ ...prev, batch: { ...prev.batch, currentSemester: event.target.value } }))} /></div>
+                <div><FieldLabel>Section Labels</FieldLabel><TextInput name="batchSectionLabels" aria-label="Batch Section Labels" value={entityEditors.batch.sectionLabels} onChange={event => setEntityEditors(prev => ({ ...prev, batch: { ...prev.batch, sectionLabels: event.target.value } }))} /></div>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'space-between' }}>
                   <Btn type="button" variant="danger" onClick={() => void handleArchiveBatch()}>Archive Batch</Btn>
                   <Btn type="button" variant="ghost" onClick={() => setEditingEntity(null)}>Cancel</Btn>

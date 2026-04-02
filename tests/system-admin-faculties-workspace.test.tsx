@@ -814,4 +814,50 @@ describe('system-admin faculties workspace parity', () => {
     expect(markup).toContain('3rd Year')
     expect(markup).toContain('Batch Configuration')
   })
+
+  it('renders named hierarchy create controls for deterministic form-data submission', () => {
+    const facultyMarkup = renderWorkspace('overview', {
+      route: { section: 'faculties' },
+      selectedAcademicFaculty: null,
+      selectedDepartment: null,
+      selectedBranch: null,
+      selectedBatch: null,
+      universityWorkspaceLabel: 'Academic Faculties',
+      universityLeftItems: [],
+    })
+    const departmentMarkup = renderWorkspace('overview', {
+      route: { section: 'faculties', academicFacultyId: 'af_1' },
+      selectedDepartment: null,
+      selectedBranch: null,
+      selectedBatch: null,
+      universityWorkspaceLabel: 'Engineering',
+      universityLeftItems: [],
+    })
+    const branchMarkup = renderWorkspace('overview', {
+      route: { section: 'faculties', academicFacultyId: 'af_1', departmentId: 'dept_1' },
+      selectedBranch: null,
+      selectedBatch: null,
+      universityWorkspaceLabel: 'Computer Science',
+      universityLeftItems: [],
+    })
+    const batchMarkup = renderWorkspace('overview', {
+      route: { section: 'faculties', academicFacultyId: 'af_1', departmentId: 'dept_1', branchId: 'branch_1' },
+      selectedBatch: null,
+      universityWorkspaceLabel: 'Computer Science and Engineering',
+      universityLeftItems: [],
+    })
+
+    expect(facultyMarkup).toContain('name="academicFacultyCode"')
+    expect(facultyMarkup).toContain('name="academicFacultyName"')
+    expect(facultyMarkup).toContain('name="academicFacultyOverview"')
+    expect(departmentMarkup).toContain('name="departmentCode"')
+    expect(departmentMarkup).toContain('name="departmentName"')
+    expect(branchMarkup).toContain('name="branchCode"')
+    expect(branchMarkup).toContain('name="branchName"')
+    expect(branchMarkup).toContain('name="branchProgramLevel"')
+    expect(branchMarkup).toContain('name="branchSemesterCount"')
+    expect(batchMarkup).toContain('name="batchAdmissionYear"')
+    expect(batchMarkup).toContain('name="batchCurrentSemester"')
+    expect(batchMarkup).toContain('name="batchSectionLabels"')
+  })
 })
