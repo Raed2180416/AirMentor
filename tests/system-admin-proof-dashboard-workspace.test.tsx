@@ -289,20 +289,21 @@ describe('SystemAdminProofDashboardWorkspace', () => {
       formatDiagnosticSummary: summary => JSON.stringify(summary),
     }))
 
-    expect(markup).toContain('Queue Health')
-    expect(markup).toContain('Worker Lease')
-    expect(markup).toContain('Checkpoint Readiness')
+    expect(markup).toContain('Current Proof State')
+    expect(markup).toContain('Selected Checkpoint')
+    expect(markup).toContain('Action Pressure')
     expect(markup).toContain('data-proof-shell="shared"')
     expect(markup).toContain('data-proof-launcher="floating"')
     expect(markup).toContain('data-proof-action="proof-shell-launcher"')
     expect(markup).toContain('Checkpoint-bound proof counts')
-    expect(markup).toContain('Operational Semester')
+    expect(markup).toContain('Proof workflow rail')
+    expect(markup).toContain('Operational semester')
     expect(markup).toContain('Semester 6')
-    expect(markup).toContain('operational semester 6')
+    expect(markup).toContain('Selected checkpoint: semester 6')
     expect(markup).toContain('Proof playback restored')
     expect(markup).toContain('Reset playback')
-    expect(markup).toContain('Recent Operational Events')
-    expect(markup).toContain('Operations Preview')
+    expect(markup).toContain('Scope details')
+    expect(markup).not.toContain('Operations Preview')
 
     const { container: checkpointContainer } = render(createElement(SystemAdminProofDashboardWorkspace, {
       proofDashboard,
@@ -621,7 +622,7 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     expect(screen.getByRole('tab', { name: 'Summary' })).toBeTruthy()
     expect(screen.getByRole('tab', { name: 'Checkpoint' })).toBeTruthy()
     expect(screen.getByRole('tab', { name: 'Operations' })).toBeTruthy()
-    expect(screen.getByText('Operations Preview')).toBeTruthy()
+    expect(screen.getByText('Action Pressure')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('tab', { name: 'Operations' }))
 
@@ -859,13 +860,315 @@ describe('SystemAdminProofDashboardWorkspace', () => {
 
     expect(markup).toContain('data-proof-action="proof-activate-semester-5"')
     expect(markup).toContain('data-proof-action="proof-activate-semester-6"')
-    expect(markup).toContain('Operational Semester')
+    expect(markup).toContain('Operational semester')
     expect(markup).toContain('Semester 6')
     expect(markup).toContain('Playback override active.')
     expect(markup).toContain('pinned to Semester 5')
     expect(markup).toContain('operational semester remains Semester 6')
     expect(markup).toContain('data-proof-shell="shared"')
     expect(markup).toContain('data-proof-launcher="floating"')
+  })
+
+  it('renders a persistent proof workflow rail with collapsed scope details', () => {
+    const selectedCheckpoint = buildCheckpoint({
+      simulationStageCheckpointId: 'checkpoint_sem6_post_see',
+      semesterNumber: 6,
+      stageLabel: 'Post SEE',
+      stageKey: 'post-see',
+      stageAdvanceBlocked: false,
+      blockedByCheckpointId: null,
+      blockedProgressionReason: null,
+      playbackAccessible: true,
+    })
+
+    const proofDashboard: ApiProofDashboard = {
+      imports: [],
+      latestValidation: null,
+      crosswalkReviewQueue: [],
+      proofRuns: [],
+      activeRunDetail: {
+        simulationRunId: 'run_rail',
+        runLabel: 'Proof Run Rail',
+        seed: 11,
+        activeOperationalSemester: 6,
+        createdAt: '2026-04-02T00:00:00.000Z',
+        startedAt: '2026-04-02T00:00:00.000Z',
+        completedAt: null,
+        status: 'active',
+        failureCode: null,
+        failureMessage: null,
+        progress: null,
+        monitoringSummary: {
+          riskAssessmentCount: 12,
+          activeReassessmentCount: 2,
+          alertDecisionCount: 3,
+          acknowledgementCount: 1,
+          resolutionCount: 0,
+        },
+        coverageDiagnostics: {
+          behaviorProfileCoverage: { count: 120, expected: 120 },
+          topicStateCoverage: { count: 12 },
+          coStateCoverage: { count: 12 },
+          questionTemplateCoverage: { count: 12 },
+          questionResultCoverage: { count: 120 },
+          interventionResponseCoverage: { count: 3 },
+          worldContextCoverage: { count: 6 },
+        },
+        modelDiagnostics: {
+          featureRowCount: 120,
+          activeRunFeatureRowCount: 24,
+          sourceRunCount: 3,
+          production: null,
+          challenger: null,
+          correlations: null,
+        },
+        queueDiagnostics: {
+          queuedRunCount: 1,
+          runningRunCount: 0,
+          failedRunCount: 0,
+          retryableRunCount: 0,
+          retryInFlightCount: 0,
+          oldestQueuedRunAgeSeconds: 120,
+          expiredLeaseRunCount: 0,
+        },
+        workerDiagnostics: null,
+        checkpointReadiness: {
+          totalCheckpointCount: 1,
+          readyCheckpointCount: 1,
+          blockedCheckpointCount: 0,
+          playbackBlockedCheckpointCount: 0,
+          totalBlockingQueueItemCount: 0,
+          firstBlockedCheckpointId: null,
+          lastReadyCheckpointId: selectedCheckpoint.simulationStageCheckpointId,
+        },
+        teacherAllocationLoad: [],
+        queuePreview: [],
+        snapshots: [],
+        checkpoints: [selectedCheckpoint],
+      },
+      lifecycleAudit: [],
+      recentOperationalEvents: [],
+    }
+
+    const markup = renderToStaticMarkup(createElement(SystemAdminProofDashboardWorkspace, {
+      proofDashboard,
+      proofDashboardLoading: false,
+      activeRunCheckpoints: [selectedCheckpoint],
+      activeModelDiagnostics: null,
+      activeProductionDiagnostics: null,
+      activeDiagnosticsTrainingManifestVersion: null,
+      activeDiagnosticsCalibrationVersion: null,
+      activeDiagnosticsSplitSummary: null,
+      activeDiagnosticsWorldSplitSummary: null,
+      activeDiagnosticsScenarioFamilies: null,
+      activeDiagnosticsHeadSupportSummary: null,
+      activeDiagnosticsGovernedRunCount: null,
+      activeDiagnosticsSkippedRunCount: null,
+      activeDiagnosticsDisplayProbabilityAllowed: null,
+      activeDiagnosticsSupportWarning: null,
+      activeDiagnosticsPolicyDiagnostics: null,
+      activeDiagnosticsCoEvidence: null,
+      activeDiagnosticsPolicyAcceptance: null,
+      activeDiagnosticsOverallCourseRuntime: null,
+      activeDiagnosticsQueueBurden: null,
+      activeDiagnosticsUiParity: null,
+      selectedProofCheckpoint: selectedCheckpoint,
+      selectedProofCheckpointDetail: null,
+      selectedProofCheckpointBlocked: false,
+      selectedProofCheckpointHasBlockedProgression: false,
+      selectedProofCheckpointCanStepForward: false,
+      selectedProofCheckpointCanPlayToEnd: false,
+      proofPlaybackRestoreNotice: null,
+      onCreateProofImport: () => {},
+      onValidateLatestProofImport: () => {},
+      onReviewPendingCrosswalks: () => {},
+      onApproveLatestProofImport: () => {},
+      onCreateProofRun: () => {},
+      onRecomputeProofRunRisk: () => {},
+      onActivateProofRun: () => {},
+      onActivateProofSemester: () => {},
+      onRetryProofRun: () => {},
+      onArchiveProofRun: () => {},
+      onRestoreProofSnapshot: () => {},
+      onResetProofPlaybackSelection: () => {},
+      onSelectProofCheckpoint: () => {},
+      onStepProofPlayback: () => {},
+      formatSplitSummary: summary => JSON.stringify(summary),
+      formatKeyedCounts: summary => JSON.stringify(summary),
+      formatHeadSupportSummary: summary => JSON.stringify(summary),
+      formatDiagnosticSummary: summary => JSON.stringify(summary),
+    }))
+
+    expect(markup).toContain('data-proof-section="proof-dashboard-rail"')
+    expect(markup).toContain('Semester + checkpoint controls stay visible here.')
+    expect(markup).toContain('data-proof-section="proof-dashboard-scope-details"')
+    expect(markup).toContain('<summary')
+    expect(markup).toContain('Scope details')
+  })
+
+  it('toggles checkpoint evidence between queue and offering detail without stacking both panes', () => {
+    const selectedCheckpoint = buildCheckpoint({
+      simulationStageCheckpointId: 'checkpoint_toggle',
+      semesterNumber: 6,
+      stageLabel: 'Post SEE',
+      stageKey: 'post-see',
+      stageAdvanceBlocked: false,
+      blockedByCheckpointId: null,
+      blockedProgressionReason: null,
+      playbackAccessible: true,
+    })
+    const checkpointDetail: ApiProofRunCheckpointDetail = {
+      checkpoint: selectedCheckpoint,
+      queuePreview: [{
+        simulationStageQueueProjectionId: 'queue_001',
+        simulationStageCheckpointId: selectedCheckpoint.simulationStageCheckpointId,
+        courseCode: 'CS6104',
+        assignedToRole: 'mentor',
+        taskType: 'targeted-tutoring',
+        status: 'watch',
+        riskBand: 'Medium',
+        riskProbScaled: 68,
+        noActionRiskProbScaled: 83,
+        simulatedActionTaken: 'call-guardian',
+        recommendedAction: 'call-guardian',
+        coEvidenceMode: 'fallback-simulated',
+        riskChangeFromPreviousCheckpointScaled: -4,
+        counterfactualLiftScaled: 9,
+      }],
+      offeringRollups: [{
+        simulationStageOfferingProjectionId: 'offering_001',
+        simulationStageCheckpointId: selectedCheckpoint.simulationStageCheckpointId,
+        courseCode: 'CS6104',
+        sectionCode: 'A',
+        pendingAction: 'targeted tutoring',
+        projection: {
+          averageRiskProbScaled: 64,
+          openQueueCount: 3,
+          coEvidenceMode: 'rubric-derived',
+          riskChangeFromPreviousCheckpointScaled: -2,
+          counterfactualLiftScaled: 6,
+        },
+      }],
+    }
+
+    const proofDashboard: ApiProofDashboard = {
+      imports: [],
+      latestValidation: null,
+      crosswalkReviewQueue: [],
+      proofRuns: [],
+      activeRunDetail: {
+        simulationRunId: 'run_toggle',
+        runLabel: 'Toggle Detail Run',
+        seed: 7,
+        activeOperationalSemester: 6,
+        createdAt: '2026-04-02T00:00:00.000Z',
+        startedAt: '2026-04-02T00:00:00.000Z',
+        completedAt: null,
+        status: 'active',
+        failureCode: null,
+        failureMessage: null,
+        progress: null,
+        monitoringSummary: {
+          riskAssessmentCount: 1,
+          activeReassessmentCount: 1,
+          alertDecisionCount: 1,
+          acknowledgementCount: 0,
+          resolutionCount: 0,
+        },
+        coverageDiagnostics: {
+          behaviorProfileCoverage: { count: 1, expected: 1 },
+          topicStateCoverage: { count: 1 },
+          coStateCoverage: { count: 1 },
+          questionTemplateCoverage: { count: 1 },
+          questionResultCoverage: { count: 1 },
+          interventionResponseCoverage: { count: 1 },
+          worldContextCoverage: { count: 1 },
+        },
+        modelDiagnostics: {
+          featureRowCount: 1,
+          activeRunFeatureRowCount: 1,
+          sourceRunCount: 1,
+          production: null,
+          challenger: null,
+          correlations: null,
+        },
+        queueDiagnostics: {
+          queuedRunCount: 0,
+          runningRunCount: 0,
+          failedRunCount: 0,
+          retryableRunCount: 0,
+          retryInFlightCount: 0,
+          oldestQueuedRunAgeSeconds: 0,
+          expiredLeaseRunCount: 0,
+        },
+        workerDiagnostics: null,
+        checkpointReadiness: null,
+        teacherAllocationLoad: [],
+        queuePreview: [],
+        snapshots: [],
+        checkpoints: [selectedCheckpoint],
+      },
+      lifecycleAudit: [],
+      recentOperationalEvents: [],
+    }
+
+    render(createElement(SystemAdminProofDashboardWorkspace, {
+      proofDashboard,
+      proofDashboardLoading: false,
+      initialActiveDashboardTab: 'checkpoint',
+      activeRunCheckpoints: [selectedCheckpoint],
+      activeModelDiagnostics: null,
+      activeProductionDiagnostics: null,
+      activeDiagnosticsTrainingManifestVersion: null,
+      activeDiagnosticsCalibrationVersion: null,
+      activeDiagnosticsSplitSummary: null,
+      activeDiagnosticsWorldSplitSummary: null,
+      activeDiagnosticsScenarioFamilies: null,
+      activeDiagnosticsHeadSupportSummary: null,
+      activeDiagnosticsGovernedRunCount: null,
+      activeDiagnosticsSkippedRunCount: null,
+      activeDiagnosticsDisplayProbabilityAllowed: null,
+      activeDiagnosticsSupportWarning: null,
+      activeDiagnosticsPolicyDiagnostics: null,
+      activeDiagnosticsCoEvidence: null,
+      activeDiagnosticsPolicyAcceptance: null,
+      activeDiagnosticsOverallCourseRuntime: null,
+      activeDiagnosticsQueueBurden: null,
+      activeDiagnosticsUiParity: null,
+      selectedProofCheckpoint: selectedCheckpoint,
+      selectedProofCheckpointDetail: checkpointDetail,
+      selectedProofCheckpointBlocked: false,
+      selectedProofCheckpointHasBlockedProgression: false,
+      selectedProofCheckpointCanStepForward: false,
+      selectedProofCheckpointCanPlayToEnd: false,
+      proofPlaybackRestoreNotice: null,
+      onCreateProofImport: () => {},
+      onValidateLatestProofImport: () => {},
+      onReviewPendingCrosswalks: () => {},
+      onApproveLatestProofImport: () => {},
+      onCreateProofRun: () => {},
+      onRecomputeProofRunRisk: () => {},
+      onActivateProofRun: () => {},
+      onActivateProofSemester: () => {},
+      onRetryProofRun: () => {},
+      onArchiveProofRun: () => {},
+      onRestoreProofSnapshot: () => {},
+      onResetProofPlaybackSelection: () => {},
+      onSelectProofCheckpoint: () => {},
+      onStepProofPlayback: () => {},
+      formatSplitSummary: summary => JSON.stringify(summary),
+      formatKeyedCounts: summary => JSON.stringify(summary),
+      formatHeadSupportSummary: summary => JSON.stringify(summary),
+      formatDiagnosticSummary: summary => JSON.stringify(summary),
+    }))
+
+    expect(screen.getByText('Stage queue preview')).toBeTruthy()
+    expect(screen.queryByText('Offering action summary')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Offering Detail' }))
+
+    expect(screen.getByText('Offering action summary')).toBeTruthy()
+    expect(screen.queryByText('Stage queue preview')).toBeNull()
   })
 
   it('renders explicit early-semester activation controls for semesters 1 through 3', () => {

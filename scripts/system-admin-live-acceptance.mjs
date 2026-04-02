@@ -91,6 +91,16 @@ async function expectBodyTextOneOf(values, description) {
   assert.ok(true, `${description} should be present`)
 }
 
+function deriveCurrentYearLabel(currentSemester) {
+  const semesterNumber = Number(currentSemester)
+  if (!Number.isFinite(semesterNumber) || semesterNumber <= 0) return `Semester ${currentSemester}`
+  const yearNumber = Math.ceil(semesterNumber / 2)
+  if (yearNumber === 1) return '1st Year'
+  if (yearNumber === 2) return '2nd Year'
+  if (yearNumber === 3) return '3rd Year'
+  return `${yearNumber}th Year`
+}
+
 async function resetWorkspaceIfVisible() {
   const resetButton = page.getByRole('button', { name: 'Reset workspace', exact: true })
   if (!await resetButton.isVisible().catch(() => false)) return false
@@ -331,7 +341,8 @@ try {
   await page.getByLabel('Batch Section Labels', { exact: true }).fill('A, B')
   await page.getByRole('button', { name: 'Save Batch', exact: true }).click()
   await expectFlash('Batch updated.')
-  await expectVisible(page.getByText(/^Sem 6$/).first(), 'updated batch semester chip')
+  await expectBodyText(`Batch ${batchLabel} · Even semester`, 'updated batch semester subtitle')
+  await expectVisible(page.getByText(deriveCurrentYearLabel(6), { exact: true }).first(), 'updated batch year label')
   report.checks.push({ name: 'batch-create-update', status: 'passed', batchLabel })
 
   await expectVisible(page.getByRole('tablist', { name: 'Hierarchy workspace sections' }), 'workspace tabs')

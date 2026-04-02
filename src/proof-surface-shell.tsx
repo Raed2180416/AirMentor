@@ -189,9 +189,11 @@ export function ProofSurfaceTabs({
       style={{
         display: 'flex',
         gap: 8,
-        flexWrap: 'wrap',
+        flexWrap: 'nowrap',
+        overflowX: 'auto',
+        scrollbarGutter: 'stable',
         borderBottom: `1px solid ${T.surface2}`,
-        paddingBottom: 12,
+        paddingBottom: 8,
         ...style,
       }}
     >

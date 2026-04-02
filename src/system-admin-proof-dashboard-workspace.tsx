@@ -100,7 +100,7 @@ type CompactStatCardProps = {
 
 function CompactStatCard({ label, value, detail, tone = T.accent }: CompactStatCardProps) {
   return (
-    <Card style={{ padding: 12, background: T.surface, minHeight: 102, display: 'grid', gap: 6 }}>
+    <Card style={{ padding: 12, background: T.surface, minHeight: 88, display: 'grid', gap: 6 }}>
       <div style={{ ...mono, fontSize: 10, color: tone }}>{label}</div>
       <div style={{ ...mono, fontSize: 11, color: T.text, lineHeight: 1.6 }}>{value}</div>
       {detail ? <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>{detail}</div> : null}
@@ -129,6 +129,8 @@ function ScrollCard({ title, eyebrow, maxHeight = 240, children }: ScrollCardPro
     </Card>
   )
 }
+
+type CheckpointEvidenceView = 'queue' | 'offerings'
 
 type SystemAdminProofDashboardWorkspaceProps = {
   proofDashboard: ApiProofDashboard | null
@@ -230,6 +232,7 @@ export function SystemAdminProofDashboardWorkspace({
   formatDiagnosticSummary,
 }: SystemAdminProofDashboardWorkspaceProps) {
   const [activeDashboardTab, setActiveDashboardTab] = useState<ProofDashboardTabId>(() => initialActiveDashboardTab ?? readStoredProofDashboardTab() ?? 'summary')
+  const [activeCheckpointEvidenceView, setActiveCheckpointEvidenceView] = useState<CheckpointEvidenceView>('queue')
   const previousSelectedCheckpointId = useRef<string | null>(null)
   useEffect(() => {
     if (proofDashboardLoading) return
@@ -276,8 +279,6 @@ export function SystemAdminProofDashboardWorkspace({
   const proofRunCount = proofDashboard?.proofRuns.length ?? 0
   const teacherLoadCount = activeRunDetail?.teacherAllocationLoad.length ?? 0
   const queuePreviewCount = activeRunDetail?.queuePreview.length ?? 0
-  const lifecycleAuditCount = lifecycleAudit.length
-  const recentOperationalEventCount = recentOperationalEvents.length
   const productionEvaluation = activeProductionDiagnostics?.evaluation
   const productionEvaluationKeys = productionEvaluation && typeof productionEvaluation === 'object'
     ? Object.keys(productionEvaluation as Record<string, unknown>).slice(0, 5).join(' · ') || 'none'
@@ -353,6 +354,30 @@ export function SystemAdminProofDashboardWorkspace({
         activeOperationalSemester,
       }
     : null
+  const hasQueuePreview = (selectedProofCheckpointDetail?.queuePreview.length ?? 0) > 0
+  const hasOfferingRollups = (selectedProofCheckpointDetail?.offeringRollups.length ?? 0) > 0
+  useEffect(() => {
+    if (activeCheckpointEvidenceView === 'queue' && hasQueuePreview) return
+    if (activeCheckpointEvidenceView === 'offerings' && hasOfferingRollups) return
+    if (hasQueuePreview) {
+      setActiveCheckpointEvidenceView('queue')
+      return
+    }
+    if (hasOfferingRollups) {
+      setActiveCheckpointEvidenceView('offerings')
+      return
+    }
+    setActiveCheckpointEvidenceView('queue')
+  }, [activeCheckpointEvidenceView, hasOfferingRollups, hasQueuePreview, selectedProofCheckpoint?.simulationStageCheckpointId])
+  const actionPressureDetail = [
+    `${activeQueueDiagnostics?.queuedRunCount ?? 0} queued · ${activeQueueDiagnostics?.runningRunCount ?? 0} running · ${activeQueueDiagnostics?.failedRunCount ?? 0} failed`,
+    activeCheckpointReadiness
+      ? `${activeCheckpointReadiness.readyCheckpointCount ?? 0}/${activeCheckpointReadiness.totalCheckpointCount ?? 0} checkpoints ready`
+      : null,
+    activeWorkerDiagnostics?.leaseState
+      ? `Worker ${formatLeaseState(activeWorkerDiagnostics.leaseState)} · ${activeWorkerDiagnostics.progressPhase ?? 'idle'}`
+      : null,
+  ].filter((value): value is string => Boolean(value)).join(' · ')
 
   return (
     <ProofSurfaceHero
@@ -364,9 +389,6 @@ export function SystemAdminProofDashboardWorkspace({
       headerActions={(
         <>
           <Btn size="sm" dataProofAction="proof-create-import" onClick={onCreateProofImport}>Create Import</Btn>
-          <Btn size="sm" variant="ghost" dataProofAction="proof-validate-import" onClick={onValidateLatestProofImport} disabled={!importsCount}>Validate Import</Btn>
-          <Btn size="sm" variant="ghost" dataProofAction="proof-review-crosswalks" onClick={onReviewPendingCrosswalks} disabled={!crosswalkReviewCount}>Review Mappings</Btn>
-          <Btn size="sm" variant="ghost" dataProofAction="proof-approve-import" onClick={onApproveLatestProofImport} disabled={!importsCount}>Approve Import</Btn>
           <Btn size="sm" dataProofAction="proof-run-rerun" onClick={onCreateProofRun} disabled={!importsCount}>Run / Rerun</Btn>
           <Btn size="sm" variant="ghost" dataProofAction="proof-recompute-risk" onClick={onRecomputeProofRunRisk} disabled={!activeRunDetail}>Recompute Risk</Btn>
         </>
@@ -383,11 +405,9 @@ export function SystemAdminProofDashboardWorkspace({
           <Chip color={T.dim}>{importsCount} imports</Chip>
         </>
       ) : null}
-      notices={(
+      notices={proofDashboardLoading || proofPlaybackRestoreNotice || playbackOverridesActiveSemester ? (
         <>
           {proofDashboardLoading ? <InfoBanner message="Loading proof control-plane data..." /> : null}
-          {dashboardProvenance ? <InfoBanner tone="neutral" message={describeProofProvenance(dashboardProvenance)} /> : null}
-          {dashboardProvenance ? <InfoBanner tone="neutral" message={describeProofAvailability(dashboardProvenance)} /> : null}
           {proofPlaybackRestoreNotice ? (
             <RestoreBanner
               tone={proofPlaybackRestoreNotice.tone}
@@ -404,7 +424,7 @@ export function SystemAdminProofDashboardWorkspace({
             />
           ) : null}
         </>
-      )}
+      ) : null}
       style={{ padding: 14, background: T.surface2, gap: 14 }}
     >
       <ProofSurfaceLauncher
@@ -416,162 +436,52 @@ export function SystemAdminProofDashboardWorkspace({
 
       {activeRunDetail ? (
         <motion.div layout id="system-admin-proof-controls" style={{ display: 'grid', gap: 14 }}>
-          <ProofSurfaceTabs
-            idBase="system-admin-proof-dashboard"
-            controlId="system-admin-proof-dashboard-tabs"
-            ariaLabel="Proof control-plane sections"
-            activeTab={activeDashboardTab}
-            onChange={tabId => setActiveDashboardTab(tabId as ProofDashboardTabId)}
-            tabs={[
-              { id: 'summary', label: 'Summary' },
-              { id: 'checkpoint', label: 'Checkpoint', disabled: !selectedProofCheckpoint },
-              { id: 'diagnostics', label: 'Diagnostics' },
-              { id: 'operations', label: 'Operations' },
-            ]}
-            style={{ position: 'sticky', top: 0, zIndex: 2, background: T.surface2, paddingTop: 2, paddingBottom: 8 }}
-          />
+          <Card data-proof-section="proof-dashboard-rail" style={{ padding: 12, background: T.surface, display: 'grid', gap: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <div style={{ display: 'grid', gap: 4, minWidth: 220, flex: 1 }}>
+                <div style={{ ...mono, fontSize: 10, color: T.accent }}>Proof workflow rail</div>
+                <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>Semester + checkpoint controls stay visible here.</div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
+                  Use this rail to activate the live proof semester, step playback, and inspect the selected checkpoint without bouncing between tabs.
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <Chip color={T.success}>Run {activeRunDetail.runLabel}</Chip>
+                <Chip color={activeOperationalSemester != null ? T.accent : T.dim}>
+                  {activeOperationalSemester != null ? `Semester ${activeOperationalSemester}` : 'Semester unavailable'}
+                </Chip>
+                <Chip color={selectedProofCheckpoint ? T.warning : T.dim}>
+                  {selectedProofCheckpoint ? `${selectedProofCheckpoint.stageLabel} · S${selectedProofCheckpoint.semesterNumber}` : 'No checkpoint selected'}
+                </Chip>
+                <Chip color={T.dim}>{`${activeQueueDiagnostics?.queuedRunCount ?? 0} queued`}</Chip>
+              </div>
+            </div>
 
-          <ProofSurfaceTabPanel
-            idBase="system-admin-proof-dashboard"
-            tabId="summary"
-            activeTab={activeDashboardTab}
-            sectionId="proof-dashboard-summary"
-            minHeight={260}
-            style={{ gap: 12 }}
-          >
-            <motion.div layout style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
-              <CompactStatCard
-                label="Active Run"
-                value={(
-                  <div style={{ display: 'grid', gap: 4 }}>
-                    <div>{activeRunDetail.runLabel}</div>
-                    <div>Seed {activeRunDetail.seed} · {activeRunDetail.status}</div>
-                    {activeRunDetail.progress ? <div>{String(activeRunDetail.progress.phase ?? 'running')} · {String(activeRunDetail.progress.percent ?? 0)}%</div> : null}
-                  </div>
-                )}
-                detail={activeRunDetail.failureMessage ? activeRunDetail.failureMessage : `${activeRunSnapshots.length} saved snapshots · ${activeRunDetail.monitoringSummary.riskAssessmentCount} watch scores`}
-              />
+            <div style={{ display: 'grid', gap: 8 }}>
+              <div style={{ ...mono, fontSize: 10, color: T.dim }}>Operational semester</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'nowrap', overflowX: 'auto', paddingBottom: 2, scrollbarGutter: 'stable' }}>
+                {availableOperationalSemesters.map(semesterNumber => (
+                  <Btn
+                    key={semesterNumber}
+                    size="sm"
+                    variant={semesterNumber === activeOperationalSemester ? 'solid' : 'ghost'}
+                    dataProofAction={`proof-activate-semester-${semesterNumber}`}
+                    disabled={semesterNumber === activeOperationalSemester}
+                    onClick={() => onActivateProofSemester(activeRunDetail.simulationRunId, semesterNumber)}
+                  >
+                    Sem {semesterNumber}
+                  </Btn>
+                ))}
+              </div>
+            </div>
 
-              <CompactStatCard
-                label="Operational Semester"
-                value={(
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    <div>{activeOperationalSemester != null ? `Semester ${activeOperationalSemester}` : 'Unavailable'}</div>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'nowrap', overflowX: 'auto', paddingBottom: 2 }}>
-                      {availableOperationalSemesters.map(semesterNumber => (
-                        <Btn
-                          key={semesterNumber}
-                          size="sm"
-                          variant={semesterNumber === activeOperationalSemester ? 'solid' : 'ghost'}
-                          dataProofAction={`proof-activate-semester-${semesterNumber}`}
-                          disabled={semesterNumber === activeOperationalSemester}
-                          onClick={() => onActivateProofSemester(activeRunDetail.simulationRunId, semesterNumber)}
-                        >
-                          Sem {semesterNumber}
-                        </Btn>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                detail={playbackOverridesActiveSemester ? `Playback override active for Semester ${selectedProofCheckpoint?.semesterNumber}. operational semester ${activeOperationalSemester ?? 'n/a'}` : `Active semester drives the proof playback overlay. operational semester ${activeOperationalSemester ?? 'n/a'}`}
-              />
-
-              <CompactStatCard
-                label="Queue Health"
-                value={`${activeQueueDiagnostics?.queuedRunCount ?? 0} queued · ${activeQueueDiagnostics?.runningRunCount ?? 0} running · ${activeQueueDiagnostics?.failedRunCount ?? 0} failed`}
-                detail={`Oldest queue age ${formatAgeSeconds(activeQueueDiagnostics?.oldestQueuedRunAgeSeconds)} · retryable failures ${activeQueueDiagnostics?.retryableRunCount ?? 0}${(activeQueueDiagnostics?.expiredLeaseRunCount ?? 0) > 0 ? ` · ${activeQueueDiagnostics?.expiredLeaseRunCount} expired leases` : ''}`}
-              />
-
-              <CompactStatCard
-                label="Worker Lease"
-                value={`${formatLeaseState(activeWorkerDiagnostics?.leaseState)} · phase ${activeWorkerDiagnostics?.progressPhase ?? 'n/a'}`}
-                detail={`Queue age ${formatAgeSeconds(activeWorkerDiagnostics?.queueAgeSeconds)} · progress ${activeWorkerDiagnostics?.progressPercent ?? 'n/a'}%${activeWorkerDiagnostics?.leaseExpiresAt ? ` · expires ${new Date(activeWorkerDiagnostics.leaseExpiresAt).toLocaleString('en-IN')}` : ''}`}
-              />
-
-              <CompactStatCard
-                label="Checkpoint Readiness"
-                value={`${activeCheckpointReadiness?.readyCheckpointCount ?? 0}/${activeCheckpointReadiness?.totalCheckpointCount ?? 0} ready`}
-                detail={`${activeCheckpointReadiness?.blockedCheckpointCount ?? 0} blocked · ${activeCheckpointReadiness?.playbackBlockedCheckpointCount ?? 0} playback gated · ${activeCheckpointReadiness?.totalBlockingQueueItemCount ?? 0} blocking queue items${activeCheckpointReadiness?.firstBlockedCheckpointId ? ` · first blocked ${activeCheckpointReadiness.firstBlockedCheckpointId}` : ''}`}
-              />
-
-              <CompactStatCard
-                label="Stage 2 Coverage"
-                value={`${activeRunDetail.coverageDiagnostics.behaviorProfileCoverage.count}/${activeRunDetail.coverageDiagnostics.behaviorProfileCoverage.expected} profiles · ${activeRunDetail.coverageDiagnostics.questionResultCoverage.count} question results`}
-                detail={`Topic ${activeRunDetail.coverageDiagnostics.topicStateCoverage.count} · CO ${activeRunDetail.coverageDiagnostics.coStateCoverage.count} · response ${activeRunDetail.coverageDiagnostics.interventionResponseCoverage.count}`}
-              />
-
-              <CompactStatCard
-                label="Risk Model"
-                value={(
-                  <div style={{ display: 'grid', gap: 4 }}>
-                    <div>{riskModelHeadline}</div>
-                    <div>{riskModelSupport}</div>
-                  </div>
-                )}
-                detail={riskModelDetail}
-              />
-
-              <CompactStatCard
-                label="Checkpoint Preview"
-                value={selectedProofCheckpoint ? (
-                  <div style={{ display: 'grid', gap: 6 }}>
-                    <div>{selectedProofCheckpoint.stageLabel} · Semester {selectedProofCheckpoint.semesterNumber}</div>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <Chip color={T.dim}>{`Risk Snapshot ${selectedProofCheckpoint.highRiskCount ?? 0}/${selectedProofCheckpoint.mediumRiskCount ?? 0}/${selectedProofCheckpoint.lowRiskCount ?? 0}`}</Chip>
-                      <Chip color={T.dim}>{`Queue State ${selectedProofCheckpoint.openQueueCount ?? 0}/${selectedProofCheckpoint.watchQueueCount ?? 0}/${selectedProofCheckpoint.resolvedQueueCount ?? 0}`}</Chip>
-                    </div>
-                  </div>
-                ) : 'No checkpoint selected'}
-                detail={selectedProofCheckpoint ? `No-Action Comparator ${selectedProofCheckpoint.noActionHighRiskCount ?? 0} · Average Risk Change ${selectedProofCheckpoint.averageRiskChangeFromPreviousCheckpointScaled ?? selectedProofCheckpoint.averageRiskDeltaScaled ?? 0} · Average Counterfactual Lift ${selectedProofCheckpoint.averageCounterfactualLiftScaled ?? 0}` : 'Select a checkpoint to inspect queue and rollup evidence.'}
-              />
-
-              <CompactStatCard
-                label="Checkpoint Index"
-                value={(
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'nowrap', overflowX: 'auto', paddingBottom: 2 }}>
-                    {activeRunCheckpoints.map(item => (
-                      <Chip key={item.simulationStageCheckpointId} color={item.simulationStageCheckpointId === selectedProofCheckpoint?.simulationStageCheckpointId ? T.success : item.stageAdvanceBlocked ? T.warning : T.dim}>
-                        {`S${item.semesterNumber} · ${item.stageLabel}${item.playbackAccessible === false || item.stageAdvanceBlocked ? ' · blocked' : ''}`}
-                      </Chip>
-                    ))}
-                  </div>
-                )}
-                detail="Use the Checkpoint tab to inspect the selected checkpoint in detail."
-              />
-
-              <CompactStatCard
-                label="Operations Preview"
-                value={(
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <Chip color={T.accent}>{`Imports ${importsCount}`}</Chip>
-                    <Chip color={T.accent}>{`Crosswalk Review ${crosswalkReviewCount}`}</Chip>
-                    <Chip color={T.accent}>{`Runs ${proofRunCount}`}</Chip>
-                    <Chip color={T.accent}>{`Teacher Load ${teacherLoadCount}`}</Chip>
-                    <Chip color={T.accent}>{`Queue Preview ${queuePreviewCount}`}</Chip>
-                    <Chip color={T.accent}>{`Lifecycle Audit ${lifecycleAuditCount}`}</Chip>
-                    <Chip color={T.accent}>{`Recent Operational Events ${recentOperationalEventCount}`}</Chip>
-                  </div>
-                )}
-                detail="Open the Operations tab for the full import, crosswalk, run, and telemetry lists."
-              />
-            </motion.div>
-          </ProofSurfaceTabPanel>
-
-          <ProofSurfaceTabPanel
-            idBase="system-admin-proof-dashboard"
-            tabId="checkpoint"
-            activeTab={activeDashboardTab}
-            sectionId="proof-dashboard-checkpoint"
-            minHeight={320}
-            style={{ gap: 12 }}
-          >
             {selectedProofCheckpoint ? (
-              <Card data-proof-section="checkpoint-playback" style={{ padding: 12, background: T.surface, display: 'grid', gap: 12 }}>
+              <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                  <div>
-                    <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>Checkpoint Playback</div>
-                    <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.8 }}>
-                      Read-only playback overlay for the active proof run. The run itself does not mutate while stepping through stage checkpoints.
+                  <div style={{ display: 'grid', gap: 4, minWidth: 220, flex: 1 }}>
+                    <div style={{ ...mono, fontSize: 10, color: T.dim }}>Selected checkpoint</div>
+                    <div style={{ ...mono, fontSize: 11, color: T.text, lineHeight: 1.7 }}>
+                      Semester {selectedProofCheckpoint.semesterNumber} · {selectedProofCheckpoint.stageLabel} · {selectedProofCheckpoint.stageDescription}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -616,11 +526,11 @@ export function SystemAdminProofDashboardWorkspace({
                 <div data-proof-section="selected-checkpoint-banner">
                   <InfoBanner
                     tone={selectedProofCheckpointBlocked || selectedProofCheckpointHasBlockedProgression ? 'error' : 'neutral'}
-                    message={`Selected checkpoint: semester ${selectedProofCheckpoint.semesterNumber} · ${selectedProofCheckpoint.stageLabel} · ${selectedProofCheckpoint.stageDescription}. ${selectedProofCheckpointBlocked || selectedProofCheckpointHasBlockedProgression ? 'Playback progression is blocked until all queue items at this checkpoint are resolved.' : 'This stage is synced into the academic playback overlay for teaching surfaces.'}`}
+                    message={`Selected checkpoint: semester ${selectedProofCheckpoint.semesterNumber} · ${selectedProofCheckpoint.stageLabel}. ${selectedProofCheckpointBlocked || selectedProofCheckpointHasBlockedProgression ? 'Playback progression is blocked until all queue items at this checkpoint are resolved.' : 'This stage is synced into the academic playback overlay for teaching surfaces.'}`}
                   />
                 </div>
 
-                <div data-proof-section="checkpoint-buttons" style={{ display: 'flex', gap: 8, flexWrap: 'nowrap', overflowX: 'auto', paddingBottom: 2 }}>
+                <div data-proof-section="checkpoint-buttons" style={{ display: 'flex', gap: 8, flexWrap: 'nowrap', overflowX: 'auto', paddingBottom: 2, scrollbarGutter: 'stable' }}>
                   {activeRunCheckpoints.map(item => (
                     <Btn
                       key={item.simulationStageCheckpointId}
@@ -634,8 +544,136 @@ export function SystemAdminProofDashboardWorkspace({
                     </Btn>
                   ))}
                 </div>
+              </>
+            ) : null}
 
-                <motion.div layout style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+            {dashboardProvenance ? (
+              <details data-proof-section="proof-dashboard-scope-details">
+                <summary style={{ ...mono, fontSize: 10, color: T.dim, cursor: 'pointer' }}>Scope details</summary>
+                <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>{describeProofProvenance(dashboardProvenance)}</div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>{describeProofAvailability(dashboardProvenance)}</div>
+                  {playbackOverridesActiveSemester ? (
+                    <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
+                      Playback override active. The dashboard is pinned to Semester {selectedProofCheckpoint?.semesterNumber} · {selectedProofCheckpoint?.stageLabel}, while the operational semester remains Semester {activeOperationalSemester}.
+                    </div>
+                  ) : null}
+                </div>
+              </details>
+            ) : null}
+          </Card>
+
+          <ProofSurfaceTabs
+            idBase="system-admin-proof-dashboard"
+            controlId="system-admin-proof-dashboard-tabs"
+            ariaLabel="Proof control-plane sections"
+            activeTab={activeDashboardTab}
+            onChange={tabId => setActiveDashboardTab(tabId as ProofDashboardTabId)}
+            tabs={[
+              { id: 'summary', label: 'Summary' },
+              { id: 'checkpoint', label: 'Checkpoint', disabled: !selectedProofCheckpoint },
+              { id: 'diagnostics', label: 'Diagnostics' },
+              { id: 'operations', label: 'Operations' },
+            ]}
+            style={{ position: 'sticky', top: 0, zIndex: 2, background: T.surface2, paddingTop: 2, paddingBottom: 8 }}
+          />
+
+          <ProofSurfaceTabPanel
+            idBase="system-admin-proof-dashboard"
+            tabId="summary"
+            activeTab={activeDashboardTab}
+            sectionId="proof-dashboard-summary"
+            minHeight={260}
+            style={{ gap: 12 }}
+          >
+            <motion.div layout style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
+              <CompactStatCard
+                label="Current Proof State"
+                value={(
+                  <div style={{ display: 'grid', gap: 4 }}>
+                    <div>{activeRunDetail.runLabel}</div>
+                    <div>Seed {activeRunDetail.seed} · {activeRunDetail.status}</div>
+                    {activeRunDetail.progress ? <div>{String(activeRunDetail.progress.phase ?? 'running')} · {String(activeRunDetail.progress.percent ?? 0)}%</div> : null}
+                  </div>
+                )}
+                detail={activeRunDetail.failureMessage ? activeRunDetail.failureMessage : `${activeRunSnapshots.length} saved snapshots · ${activeRunDetail.monitoringSummary.riskAssessmentCount} watch scores`}
+              />
+
+              <CompactStatCard
+                label="Selected Checkpoint"
+                value={(
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    <div>{selectedProofCheckpoint ? `Semester ${selectedProofCheckpoint.semesterNumber} · ${selectedProofCheckpoint.stageLabel}` : 'No checkpoint selected'}</div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {selectedProofCheckpoint ? (
+                        <>
+                          <Chip color={T.dim}>{`Risk ${selectedProofCheckpoint.highRiskCount ?? 0}/${selectedProofCheckpoint.mediumRiskCount ?? 0}/${selectedProofCheckpoint.lowRiskCount ?? 0}`}</Chip>
+                          <Chip color={T.dim}>{`Queue ${selectedProofCheckpoint.openQueueCount ?? 0}/${selectedProofCheckpoint.watchQueueCount ?? 0}/${selectedProofCheckpoint.resolvedQueueCount ?? 0}`}</Chip>
+                        </>
+                      ) : <Chip color={T.dim}>Pick a checkpoint from the rail above.</Chip>}
+                    </div>
+                  </div>
+                )}
+                detail={selectedProofCheckpoint ? `No-Action Comparator ${selectedProofCheckpoint.noActionHighRiskCount ?? 0} · Average Risk Change ${selectedProofCheckpoint.averageRiskChangeFromPreviousCheckpointScaled ?? selectedProofCheckpoint.averageRiskDeltaScaled ?? 0} · Average Counterfactual Lift ${selectedProofCheckpoint.averageCounterfactualLiftScaled ?? 0}` : 'Use the live proof rail to select the semester and checkpoint you want to inspect.'}
+              />
+
+              <CompactStatCard
+                label="Action Pressure"
+                value={`${activeRunDetail.monitoringSummary.activeReassessmentCount} active reassessments · ${activeRunDetail.monitoringSummary.alertDecisionCount} alert decisions`}
+                detail={actionPressureDetail}
+              />
+
+              <CompactStatCard
+                label="Risk Model"
+                value={(
+                  <div style={{ display: 'grid', gap: 4 }}>
+                    <div>{riskModelHeadline}</div>
+                    <div>{riskModelSupport}</div>
+                  </div>
+                )}
+                detail={riskModelDetail}
+              />
+            </motion.div>
+          </ProofSurfaceTabPanel>
+
+          <ProofSurfaceTabPanel
+            idBase="system-admin-proof-dashboard"
+            tabId="checkpoint"
+            activeTab={activeDashboardTab}
+            sectionId="proof-dashboard-checkpoint"
+            minHeight={320}
+            style={{ gap: 12 }}
+          >
+            {selectedProofCheckpoint ? (
+              <Card data-proof-section="checkpoint-playback" style={{ padding: 12, background: T.surface, display: 'grid', gap: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>Checkpoint Playback</div>
+                    <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.8 }}>
+                      Evidence for the selected checkpoint. Use the proof rail above to step playback or switch checkpoints.
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <Btn
+                      size="sm"
+                      variant={activeCheckpointEvidenceView === 'queue' ? 'primary' : 'ghost'}
+                      onClick={() => setActiveCheckpointEvidenceView('queue')}
+                      disabled={!hasQueuePreview}
+                    >
+                      Queue Detail
+                    </Btn>
+                    <Btn
+                      size="sm"
+                      variant={activeCheckpointEvidenceView === 'offerings' ? 'primary' : 'ghost'}
+                      onClick={() => setActiveCheckpointEvidenceView('offerings')}
+                      disabled={!hasOfferingRollups}
+                    >
+                      Offering Detail
+                    </Btn>
+                  </div>
+                </div>
+
+                <motion.div layout style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
                   <Card style={{ padding: 12, background: T.surface2 }}>
                     <div style={{ ...mono, fontSize: 10, color: T.dim }}>Risk Snapshot</div>
                     <div style={{ ...mono, fontSize: 11, color: T.text, marginTop: 4 }}>
@@ -657,48 +695,29 @@ export function SystemAdminProofDashboardWorkspace({
                     ) : null}
                   </Card>
                   <Card style={{ padding: 12, background: T.surface2 }}>
-                    <div style={{ ...mono, fontSize: 10, color: T.dim }}>No-Action Comparator</div>
-                    <div style={{ ...mono, fontSize: 11, color: T.text, marginTop: 4 }}>
-                      {selectedProofCheckpoint.noActionHighRiskCount ?? 0} high-risk rows without simulated support
-                    </div>
-                  </Card>
-                  <Card style={{ padding: 12, background: T.surface2 }}>
-                    <div style={{ ...mono, fontSize: 10, color: T.dim }}>Average Risk Change</div>
+                    <div style={{ ...mono, fontSize: 10, color: T.dim }}>Risk Movement</div>
                     <div style={{ ...mono, fontSize: 11, color: T.text, marginTop: 4 }}>
                       {selectedProofCheckpoint.averageRiskChangeFromPreviousCheckpointScaled ?? selectedProofCheckpoint.averageRiskDeltaScaled ?? 0} scaled points
                     </div>
+                    <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
+                      {selectedProofCheckpoint.noActionHighRiskCount ?? 0} no-action high-risk rows
+                    </div>
                   </Card>
                   <Card style={{ padding: 12, background: T.surface2 }}>
-                    <div style={{ ...mono, fontSize: 10, color: T.dim }}>Average Counterfactual Lift</div>
+                    <div style={{ ...mono, fontSize: 10, color: T.dim }}>Counterfactual Lift</div>
                     <div style={{ ...mono, fontSize: 11, color: T.text, marginTop: 4 }}>
                       {selectedProofCheckpoint.averageCounterfactualLiftScaled ?? 0} scaled points
                     </div>
                   </Card>
                 </motion.div>
 
-                <motion.div layout style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
-                  <ScrollCard title="Stage queue preview" eyebrow="Playback evidence" maxHeight={280}>
-                    {selectedProofCheckpointDetail?.queuePreview.length ? selectedProofCheckpointDetail.queuePreview.slice(0, 8).map(item => (
-                      <Card key={item.simulationStageQueueProjectionId} style={{ padding: 10, background: T.surface }}>
-                        <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.courseCode} · {item.assignedToRole} · {item.riskBand} · {item.status}</div>
-                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.8 }}>
-                          {item.taskType} · action {item.simulatedActionTaken ?? item.recommendedAction ?? 'none'} · risk {item.riskProbScaled}%{item.noActionRiskProbScaled != null ? ` vs no-action ${item.noActionRiskProbScaled}%` : ''}.
-                        </div>
-                        {item.coEvidenceMode ? (
-                          <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 4, lineHeight: 1.8 }}>
-                            CO evidence mode: {item.coEvidenceMode}.
-                          </div>
-                        ) : null}
-                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
-                          {item.riskChangeFromPreviousCheckpointScaled != null ? <Chip color={item.riskChangeFromPreviousCheckpointScaled > 0 ? T.danger : item.riskChangeFromPreviousCheckpointScaled < 0 ? T.success : T.dim}>{`Δ ${item.riskChangeFromPreviousCheckpointScaled > 0 ? '+' : ''}${item.riskChangeFromPreviousCheckpointScaled}`}</Chip> : null}
-                          {item.counterfactualLiftScaled != null ? <Chip color={item.counterfactualLiftScaled > 0 ? T.success : item.counterfactualLiftScaled < 0 ? T.warning : T.dim}>{`Lift ${item.counterfactualLiftScaled > 0 ? '+' : ''}${item.counterfactualLiftScaled}`}</Chip> : null}
-                        </div>
-                      </Card>
-                    )) : <div style={{ ...mono, fontSize: 10, color: T.muted }}>No stage queue items exist at this checkpoint.</div>}
-                  </ScrollCard>
-
-                  <ScrollCard title="Offering action summary" eyebrow="Playback evidence" maxHeight={280}>
-                    {selectedProofCheckpointDetail?.offeringRollups.length ? selectedProofCheckpointDetail.offeringRollups.slice(0, 8).map(item => {
+                <ScrollCard
+                  title={activeCheckpointEvidenceView === 'offerings' ? 'Offering action summary' : 'Stage queue preview'}
+                  eyebrow="Playback evidence"
+                  maxHeight={300}
+                >
+                  {activeCheckpointEvidenceView === 'offerings'
+                    ? selectedProofCheckpointDetail?.offeringRollups.length ? selectedProofCheckpointDetail.offeringRollups.slice(0, 8).map(item => {
                       const projection = item.projection
                       const averageRisk = typeof projection.averageRiskProbScaled === 'number' ? projection.averageRiskProbScaled : null
                       const openQueueCount = typeof projection.openQueueCount === 'number' ? projection.openQueueCount : null
@@ -719,9 +738,25 @@ export function SystemAdminProofDashboardWorkspace({
                           </div>
                         </Card>
                       )
-                    }) : <div style={{ ...mono, fontSize: 10, color: T.muted }}>No offering rollups are available for this checkpoint.</div>}
-                  </ScrollCard>
-                </motion.div>
+                    }) : <div style={{ ...mono, fontSize: 10, color: T.muted }}>No offering rollups are available for this checkpoint.</div>
+                    : selectedProofCheckpointDetail?.queuePreview.length ? selectedProofCheckpointDetail.queuePreview.slice(0, 8).map(item => (
+                      <Card key={item.simulationStageQueueProjectionId} style={{ padding: 10, background: T.surface }}>
+                        <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.courseCode} · {item.assignedToRole} · {item.riskBand} · {item.status}</div>
+                        <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.8 }}>
+                          {item.taskType} · action {item.simulatedActionTaken ?? item.recommendedAction ?? 'none'} · risk {item.riskProbScaled}%{item.noActionRiskProbScaled != null ? ` vs no-action ${item.noActionRiskProbScaled}%` : ''}.
+                        </div>
+                        {item.coEvidenceMode ? (
+                          <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 4, lineHeight: 1.8 }}>
+                            CO evidence mode: {item.coEvidenceMode}.
+                          </div>
+                        ) : null}
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                          {item.riskChangeFromPreviousCheckpointScaled != null ? <Chip color={item.riskChangeFromPreviousCheckpointScaled > 0 ? T.danger : item.riskChangeFromPreviousCheckpointScaled < 0 ? T.success : T.dim}>{`Δ ${item.riskChangeFromPreviousCheckpointScaled > 0 ? '+' : ''}${item.riskChangeFromPreviousCheckpointScaled}`}</Chip> : null}
+                          {item.counterfactualLiftScaled != null ? <Chip color={item.counterfactualLiftScaled > 0 ? T.success : item.counterfactualLiftScaled < 0 ? T.warning : T.dim}>{`Lift ${item.counterfactualLiftScaled > 0 ? '+' : ''}${item.counterfactualLiftScaled}`}</Chip> : null}
+                        </div>
+                      </Card>
+                    )) : <div style={{ ...mono, fontSize: 10, color: T.muted }}>No stage queue items exist at this checkpoint.</div>}
+                </ScrollCard>
               </Card>
             ) : (
               <InfoBanner message="Select a checkpoint to inspect playback, queue, and offering rollups." />
@@ -774,6 +809,17 @@ export function SystemAdminProofDashboardWorkspace({
             style={{ gap: 12 }}
           >
             <motion.div layout style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+              <ScrollCard title="Administrative Actions" eyebrow="Operations" maxHeight={220}>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <Btn size="sm" variant="ghost" dataProofAction="proof-validate-import" onClick={onValidateLatestProofImport} disabled={!importsCount}>Validate Import</Btn>
+                  <Btn size="sm" variant="ghost" dataProofAction="proof-review-crosswalks" onClick={onReviewPendingCrosswalks} disabled={!crosswalkReviewCount}>Review Mappings</Btn>
+                  <Btn size="sm" variant="ghost" dataProofAction="proof-approve-import" onClick={onApproveLatestProofImport} disabled={!importsCount}>Approve Import</Btn>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
+                    Imports {importsCount} · Crosswalk review {crosswalkReviewCount} · Runs {proofRunCount} · Teacher load {teacherLoadCount} · Queue preview {queuePreviewCount}
+                  </div>
+                </div>
+              </ScrollCard>
+
               <ScrollCard title="Imports" eyebrow="Operations" maxHeight={190}>
                 {proofDashboard?.imports.length ? proofDashboard.imports.slice(0, 3).map(item => (
                   <Card key={item.curriculumImportVersionId} style={{ padding: 10, background: T.surface }}>
