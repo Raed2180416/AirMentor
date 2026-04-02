@@ -79,14 +79,18 @@ async function expectFlash(message) {
 }
 
 async function expectBodyText(text, description) {
-  await page.waitForFunction((value) => document.body.innerText.includes(value), text, { timeout: 20_000 })
+  await page.waitForFunction((value) => {
+    const normalize = source => String(source ?? '').replace(/\s+/g, ' ').trim()
+    return normalize(document.body.innerText).includes(normalize(value))
+  }, text, { timeout: 20_000 })
   assert.ok(true, `${description} should be present`)
 }
 
 async function expectBodyTextOneOf(values, description) {
   await page.waitForFunction((candidates) => {
-    const bodyText = document.body.innerText
-    return candidates.some(value => bodyText.includes(value))
+    const normalize = source => String(source ?? '').replace(/\s+/g, ' ').trim()
+    const bodyText = normalize(document.body.innerText)
+    return candidates.some(value => bodyText.includes(normalize(value)))
   }, values, { timeout: 20_000 })
   assert.ok(true, `${description} should be present`)
 }
@@ -341,7 +345,8 @@ try {
   await page.getByLabel('Batch Section Labels', { exact: true }).fill('A, B')
   await page.getByRole('button', { name: 'Save Batch', exact: true }).click()
   await expectFlash('Batch updated.')
-  await expectBodyText(`Batch ${batchLabel} · Even semester`, 'updated batch semester subtitle')
+  await expectBodyText(`Batch ${batchLabel}`, 'updated batch label chip')
+  await expectBodyTextOneOf(['Batch semester · Sem 6', 'Proof operational semester · Sem 6'], 'updated batch semester chip')
   await expectVisible(page.getByText(deriveCurrentYearLabel(6), { exact: true }).first(), 'updated batch year label')
   report.checks.push({ name: 'batch-create-update', status: 'passed', batchLabel })
 

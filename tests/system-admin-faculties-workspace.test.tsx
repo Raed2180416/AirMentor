@@ -792,4 +792,26 @@ describe('system-admin faculties workspace parity', () => {
     expect(markup).toContain('Proof operational semester · Sem 4')
     expect(markup).toContain('Canonical batch 2023 Proof')
   })
+
+  it('renders stable batch chips for the selected year overview', () => {
+    const updatedBatch = {
+      ...data.batches[0],
+      batchLabel: '2028-A',
+      currentSemester: 6,
+    }
+
+    const markup = renderWorkspace('overview', {
+      selectedBatch: updatedBatch,
+      branchBatches: [updatedBatch],
+      universityWorkspaceLabel: 'Batch 2028-A',
+      universityLeftItems: [{ key: 'batch_2028_a', title: '3rd Year', subtitle: 'Batch 2028-A · Even semester', selected: true, onSelect: () => {} }],
+      authoritativeOperationalSemester: 6,
+      authoritativeOperationalSemesterSource: 'batch',
+    })
+
+    expect(markup).toContain('Batch 2028-A')
+    expect(markup).toContain('Batch semester · Sem 6')
+    expect(markup).toContain('3rd Year')
+    expect(markup).toContain('Batch Configuration')
+  })
 })
