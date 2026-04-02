@@ -7,6 +7,8 @@ import {
   formatRecordProofBanner,
   upsertAcademicFacultyRecord,
   upsertBatchRecord,
+  upsertBranchRecord,
+  upsertDepartmentRecord,
 } from '../src/system-admin-live-app'
 import type { LiveAdminDataset } from '../src/system-admin-live-data'
 
@@ -25,7 +27,18 @@ function makeDataset(): LiveAdminDataset {
       updatedAt: '2026-01-01T00:00:00.000Z',
     }],
     departments: [],
-    branches: [],
+    branches: [{
+      branchId: 'branch_1',
+      departmentId: 'dept_1',
+      code: 'CSE',
+      name: 'Computer Science',
+      programLevel: 'UG',
+      semesterCount: 8,
+      status: 'active',
+      version: 1,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }],
     batches: [{
       batchId: 'batch_1',
       branchId: 'branch_1',
@@ -156,6 +169,54 @@ describe('system-admin-live-detail formatting', () => {
     expect(next.academicFaculties).toHaveLength(1)
     expect(next.academicFaculties[0]?.name).toBe('Engineering Updated')
     expect(next.academicFaculties[0]?.version).toBe(2)
+  })
+
+  it('upserts updated department records into the local admin dataset immediately', () => {
+    const next = upsertDepartmentRecord({
+      ...makeDataset(),
+      departments: [{
+        departmentId: 'dept_1',
+        academicFacultyId: 'af_1',
+        code: 'CSE',
+        name: 'Computer Science',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      }],
+    }, {
+      departmentId: 'dept_1',
+      academicFacultyId: 'af_1',
+      code: 'CSE',
+      name: 'Computer Science Updated',
+      status: 'active',
+      version: 2,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+    })
+
+    expect(next.departments).toHaveLength(1)
+    expect(next.departments[0]?.name).toBe('Computer Science Updated')
+    expect(next.departments[0]?.version).toBe(2)
+  })
+
+  it('upserts updated branch records into the local admin dataset immediately', () => {
+    const next = upsertBranchRecord(makeDataset(), {
+      branchId: 'branch_1',
+      departmentId: 'dept_1',
+      code: 'CSE',
+      name: 'Computer Science Updated',
+      programLevel: 'UG',
+      semesterCount: 8,
+      status: 'active',
+      version: 2,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+    })
+
+    expect(next.branches).toHaveLength(1)
+    expect(next.branches[0]?.name).toBe('Computer Science Updated')
+    expect(next.branches[0]?.version).toBe(2)
   })
 
   it('upserts updated batch records into the local admin dataset immediately', () => {
