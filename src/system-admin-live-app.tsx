@@ -326,6 +326,56 @@ type OwnershipFormState = {
   facultyId: string
 }
 
+function upsertLiveAdminItem<T>(items: T[], nextItem: T, matches: (item: T) => boolean) {
+  return items.some(matches)
+    ? items.map(item => matches(item) ? nextItem : item)
+    : [nextItem, ...items]
+}
+
+export function upsertAcademicFacultyRecord(data: LiveAdminDataset, nextFaculty: ApiAcademicFaculty): LiveAdminDataset {
+  return {
+    ...data,
+    academicFaculties: upsertLiveAdminItem(
+      data.academicFaculties,
+      nextFaculty,
+      item => item.academicFacultyId === nextFaculty.academicFacultyId,
+    ),
+  }
+}
+
+export function upsertDepartmentRecord(data: LiveAdminDataset, nextDepartment: ApiDepartment): LiveAdminDataset {
+  return {
+    ...data,
+    departments: upsertLiveAdminItem(
+      data.departments,
+      nextDepartment,
+      item => item.departmentId === nextDepartment.departmentId,
+    ),
+  }
+}
+
+export function upsertBranchRecord(data: LiveAdminDataset, nextBranch: ApiBranch): LiveAdminDataset {
+  return {
+    ...data,
+    branches: upsertLiveAdminItem(
+      data.branches,
+      nextBranch,
+      item => item.branchId === nextBranch.branchId,
+    ),
+  }
+}
+
+export function upsertBatchRecord(data: LiveAdminDataset, nextBatch: ApiBatch): LiveAdminDataset {
+  return {
+    ...data,
+    batches: upsertLiveAdminItem(
+      data.batches,
+      nextBatch,
+      item => item.batchId === nextBatch.batchId,
+    ),
+  }
+}
+
 export type StagePolicyFormState = {
   stages: Array<{
     key: ApiStagePolicyPayload['stages'][number]['key']
@@ -3302,13 +3352,14 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     event.preventDefault()
     if (!selectedAcademicFaculty) return
     await runAction(async () => {
-      await apiClient.updateAcademicFaculty(selectedAcademicFaculty.academicFacultyId, {
+      const nextAcademicFaculty = await apiClient.updateAcademicFaculty(selectedAcademicFaculty.academicFacultyId, {
         code: requireText('Faculty code', entityEditors.academicFaculty.code),
         name: requireText('Faculty name', entityEditors.academicFaculty.name),
         overview: entityEditors.academicFaculty.overview.trim() || null,
         status: selectedAcademicFaculty.status,
         version: selectedAcademicFaculty.version,
       })
+      setData(prev => upsertAcademicFacultyRecord(prev, nextAcademicFaculty))
       setFlashMessage('Academic faculty updated.')
       setEditingEntity(null)
     })
@@ -3365,13 +3416,14 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     event.preventDefault()
     if (!selectedDepartment) return
     await runAction(async () => {
-      await apiClient.updateDepartment(selectedDepartment.departmentId, {
+      const nextDepartment = await apiClient.updateDepartment(selectedDepartment.departmentId, {
         academicFacultyId: selectedAcademicFaculty?.academicFacultyId ?? null,
         code: requireText('Department code', entityEditors.department.code),
         name: requireText('Department name', entityEditors.department.name),
         status: selectedDepartment.status,
         version: selectedDepartment.version,
       })
+      setData(prev => upsertDepartmentRecord(prev, nextDepartment))
       setFlashMessage('Department updated.')
       setEditingEntity(null)
     })
@@ -3404,7 +3456,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     event.preventDefault()
     if (!selectedBranch) return
     await runAction(async () => {
-      await apiClient.updateBranch(selectedBranch.branchId, {
+      const nextBranch = await apiClient.updateBranch(selectedBranch.branchId, {
         departmentId: selectedBranch.departmentId,
         code: requireText('Branch code', entityEditors.branch.code),
         name: requireText('Branch name', entityEditors.branch.name),
@@ -3413,6 +3465,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         status: selectedBranch.status,
         version: selectedBranch.version,
       })
+      setData(prev => upsertBranchRecord(prev, nextBranch))
       setFlashMessage('Branch updated.')
       setEditingEntity(null)
     })
@@ -3450,7 +3503,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     await runAction(async () => {
       const sectionLabels = entityEditors.batch.sectionLabels.split(',').map(item => item.trim()).filter(Boolean)
       if (sectionLabels.length === 0) throw new Error('At least one batch section label is required.')
-      await apiClient.updateBatch(selectedBatch.batchId, {
+      const nextBatch = await apiClient.updateBatch(selectedBatch.batchId, {
         branchId: selectedBranch.branchId,
         admissionYear: requirePositiveInteger('Admission year', entityEditors.batch.admissionYear),
         batchLabel: requireText('Batch label', entityEditors.batch.batchLabel),
@@ -3459,6 +3512,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         status: selectedBatch.status,
         version: selectedBatch.version,
       })
+      setData(prev => upsertBatchRecord(prev, nextBatch))
       setFlashMessage('Batch updated.')
       setEditingEntity(null)
     })
@@ -3496,12 +3550,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const handleCreateAcademicFaculty = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     await runAction(async () => {
-      await apiClient.createAcademicFaculty({
+      const nextAcademicFaculty = await apiClient.createAcademicFaculty({
         code: requireText('Faculty code', structureForms.academicFaculty.code),
         name: requireText('Faculty name', structureForms.academicFaculty.name),
         overview: structureForms.academicFaculty.overview.trim() || null,
         status: 'active',
       })
+      setData(prev => upsertAcademicFacultyRecord(prev, nextAcademicFaculty))
       setStructureForms(prev => ({ ...prev, academicFaculty: { code: '', name: '', overview: '' } }))
       setFlashMessage('Academic faculty created.')
     })
@@ -3511,12 +3566,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     event.preventDefault()
     if (!selectedAcademicFaculty) return
     await runAction(async () => {
-      await apiClient.createDepartment({
+      const nextDepartment = await apiClient.createDepartment({
         academicFacultyId: selectedAcademicFaculty.academicFacultyId,
         code: requireText('Department code', structureForms.department.code),
         name: requireText('Department name', structureForms.department.name),
         status: 'active',
       })
+      setData(prev => upsertDepartmentRecord(prev, nextDepartment))
       setStructureForms(prev => ({ ...prev, department: { code: '', name: '' } }))
       setFlashMessage('Department created.')
     })
@@ -3526,7 +3582,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     event.preventDefault()
     if (!selectedDepartment) return
     await runAction(async () => {
-      await apiClient.createBranch({
+      const nextBranch = await apiClient.createBranch({
         departmentId: selectedDepartment.departmentId,
         code: requireText('Branch code', structureForms.branch.code),
         name: requireText('Branch name', structureForms.branch.name),
@@ -3534,6 +3590,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         semesterCount: requirePositiveEvenInteger('Semester count', structureForms.branch.semesterCount),
         status: 'active',
       })
+      setData(prev => upsertBranchRecord(prev, nextBranch))
       setStructureForms(prev => ({ ...prev, branch: { code: '', name: '', programLevel: 'UG', semesterCount: '8' } }))
       setFlashMessage('Branch created.')
     })
@@ -3545,7 +3602,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     await runAction(async () => {
       const sectionLabels = structureForms.batch.sectionLabels.split(',').map(item => item.trim()).filter(Boolean)
       if (sectionLabels.length === 0) throw new Error('At least one batch section label is required.')
-      await apiClient.createBatch({
+      const nextBatch = await apiClient.createBatch({
         branchId: selectedBranch.branchId,
         admissionYear: requirePositiveInteger('Admission year', structureForms.batch.admissionYear),
         batchLabel: requireText('Batch label', structureForms.batch.batchLabel),
@@ -3553,6 +3610,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         sectionLabels,
         status: 'active',
       })
+      setData(prev => upsertBatchRecord(prev, nextBatch))
       setStructureForms(prev => ({ ...prev, batch: { admissionYear: '2022', batchLabel: '2022', currentSemester: '1', sectionLabels: 'A, B' } }))
       setFlashMessage('Batch created.')
     })

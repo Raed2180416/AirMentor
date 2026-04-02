@@ -5,7 +5,51 @@ import {
   formatFacultyAppointmentLabel,
   formatFacultyGrantScopeLabel,
   formatRecordProofBanner,
+  upsertAcademicFacultyRecord,
+  upsertBatchRecord,
 } from '../src/system-admin-live-app'
+import type { LiveAdminDataset } from '../src/system-admin-live-data'
+
+function makeDataset(): LiveAdminDataset {
+  return {
+    institution: null,
+    academicFaculties: [{
+      academicFacultyId: 'af_1',
+      institutionId: 'inst_1',
+      code: 'ENG',
+      name: 'Engineering',
+      overview: null,
+      status: 'active',
+      version: 1,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }],
+    departments: [],
+    branches: [],
+    batches: [{
+      batchId: 'batch_1',
+      branchId: 'branch_1',
+      admissionYear: 2023,
+      batchLabel: '2023',
+      currentSemester: 5,
+      sectionLabels: ['A'],
+      status: 'active',
+      version: 1,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }],
+    terms: [],
+    facultyMembers: [],
+    students: [],
+    courses: [],
+    curriculumCourses: [],
+    policyOverrides: [],
+    offerings: [],
+    ownerships: [],
+    requests: [],
+    reminders: [],
+  }
+}
 
 describe('system-admin-live-detail formatting', () => {
   it('renders the canonical provenance banner when record-level proof fields are present', () => {
@@ -94,5 +138,43 @@ describe('system-admin-live-detail formatting', () => {
     expect(markup).toContain('Computer Science and Engineering')
     expect(markup).not.toContain('branch_cse')
     expect(markup).not.toContain('dept_cse')
+  })
+
+  it('upserts updated academic faculty records into the local admin dataset immediately', () => {
+    const next = upsertAcademicFacultyRecord(makeDataset(), {
+      academicFacultyId: 'af_1',
+      institutionId: 'inst_1',
+      code: 'ENG',
+      name: 'Engineering Updated',
+      overview: 'Updated overview',
+      status: 'active',
+      version: 2,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+    })
+
+    expect(next.academicFaculties).toHaveLength(1)
+    expect(next.academicFaculties[0]?.name).toBe('Engineering Updated')
+    expect(next.academicFaculties[0]?.version).toBe(2)
+  })
+
+  it('upserts updated batch records into the local admin dataset immediately', () => {
+    const next = upsertBatchRecord(makeDataset(), {
+      batchId: 'batch_1',
+      branchId: 'branch_1',
+      admissionYear: 2023,
+      batchLabel: '2023 Proof',
+      currentSemester: 6,
+      sectionLabels: ['A', 'B'],
+      status: 'active',
+      version: 2,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+    })
+
+    expect(next.batches).toHaveLength(1)
+    expect(next.batches[0]?.batchLabel).toBe('2023 Proof')
+    expect(next.batches[0]?.currentSemester).toBe(6)
+    expect(next.batches[0]?.sectionLabels).toEqual(['A', 'B'])
   })
 })
