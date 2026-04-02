@@ -424,7 +424,7 @@ describe('student agent shell', () => {
     expect(accessibleStudentId).toBeTruthy()
 
     let previousCardId: string | null = null
-    for (const round of [1, 2, 3] as const) {
+    for (const _round of [1, 2, 3] as const) {
       const [cardResponseOne, cardResponseTwo, timelineResponseOne, timelineResponseTwo] = await Promise.all([
         current.app.inject({
           method: 'GET',

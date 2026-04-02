@@ -370,16 +370,29 @@ export function startProofRunWorker(input: {
   db: AppDb
   pool: Pick<Pool, 'query'>
   clock?: () => string
+  pollMs?: number
+  heartbeatMs?: number
+  startDelayMs?: number
 }) {
   const now = input.clock ?? (() => new Date().toISOString())
+  const pollMs = input.pollMs ?? WORKER_POLL_MS
+  const heartbeatMs = input.heartbeatMs ?? WORKER_HEARTBEAT_MS
+  const startDelayMs = input.startDelayMs ?? 2_000
   let disposed = false
   let timeout: NodeJS.Timeout | null = null
+  let heartbeat: NodeJS.Timeout | null = null
   let running = false
+  let activeTick: Promise<void> | null = null
 
   const schedule = (delayMs: number) => {
     if (disposed) return
     timeout = setTimeout(() => {
-      void tick()
+      timeout = null
+      activeTick = tick().catch(error => {
+        console.error('Proof worker tick failed', error)
+      }).finally(() => {
+        if (activeTick) activeTick = null
+      })
     }, delayMs)
   }
 
@@ -389,10 +402,7 @@ export function startProofRunWorker(input: {
     try {
       const leaseToken = createId('proof_worker_lease')
       const claimed = await claimNextQueuedProofRun(input.pool, now(), leaseToken)
-      if (!claimed) {
-        schedule(WORKER_POLL_MS)
-        return
-      }
+      if (!claimed) return
       emitOperationalEvent('proof.run.claimed', {
         simulationRunId: claimed.simulation_run_id,
         batchId: claimed.batch_id,
@@ -400,13 +410,15 @@ export function startProofRunWorker(input: {
         priorStatus: claimed.status,
       })
 
-      const heartbeat = setInterval(() => {
+      heartbeat = setInterval(() => {
         void heartbeatProofRunLease(input.pool, {
           simulationRunId: claimed.simulation_run_id,
           leaseToken,
           now: now(),
-        }).catch(error => console.error('Proof worker heartbeat failed', error))
-      }, WORKER_HEARTBEAT_MS)
+        }).catch(error => {
+          if (!disposed) console.error('Proof worker heartbeat failed', error)
+        })
+      }, heartbeatMs)
 
       try {
         await executeClaimedProofRun(input.db, claimed)
@@ -435,17 +447,28 @@ export function startProofRunWorker(input: {
         }, { level: 'error' })
         console.error('Proof worker execution failed', error)
       } finally {
-        clearInterval(heartbeat)
+        if (heartbeat) {
+          clearInterval(heartbeat)
+          heartbeat = null
+        }
       }
     } finally {
       running = false
-      schedule(WORKER_POLL_MS)
+      if (!disposed) schedule(pollMs)
     }
   }
 
-  schedule(2_000)
-  return () => {
+  schedule(startDelayMs)
+  return async () => {
     disposed = true
-    if (timeout) clearTimeout(timeout)
+    if (timeout) {
+      clearTimeout(timeout)
+      timeout = null
+    }
+    await activeTick?.catch(() => undefined)
+    if (heartbeat) {
+      clearInterval(heartbeat)
+      heartbeat = null
+    }
   }
 }

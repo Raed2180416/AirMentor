@@ -178,7 +178,7 @@ export async function buildApp(options: BuildAppOptions) {
   })
   app.addHook('onClose', async () => {
     disposeTelemetryPersistence()
-    stopProofRunWorker()
+    await stopProofRunWorker()
   })
 
   return app

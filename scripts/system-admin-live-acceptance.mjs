@@ -219,16 +219,33 @@ function getDialogLocator(dialogName) {
 async function openHierarchyDialog(buttonName, dialogName, description) {
   const trigger = page.getByRole('button', { name: buttonName, exact: true }).first()
   const dialog = getDialogLocator(dialogName)
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
+  return { trigger, dialog }
+}
+
+async function openHierarchyDialogField(buttonName, dialogName, description, fieldLabel) {
+  const { trigger, dialog } = await openHierarchyDialog(buttonName, dialogName, description)
+  const field = dialog.getByLabel(fieldLabel, { exact: true }).last()
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
     await expectVisible(trigger, `${description} trigger`)
     await trigger.scrollIntoViewIfNeeded().catch(() => {})
-    await trigger.click()
+    if (attempt === 1) {
+      await trigger.click()
+    } else {
+      await trigger.evaluate(node => {
+        if (node instanceof HTMLElement) node.click()
+      })
+    }
     const opened = await dialog.waitFor({ state: 'visible', timeout: 5_000 }).then(() => true).catch(() => false)
-    if (opened) return dialog
+    if (opened) {
+      const fieldVisible = await field.waitFor({ state: 'visible', timeout: 5_000 }).then(() => true).catch(() => false)
+      if (fieldVisible) return { dialog, field }
+      await dialog.getByRole('button', { name: 'Close dialog', exact: true }).click().catch(() => {})
+    }
     await page.waitForTimeout(250)
   }
   await dialog.waitFor({ state: 'visible', timeout: 20_000 })
-  return dialog
+  await expectVisible(field, `${description} field ${fieldLabel}`)
+  return { dialog, field }
 }
 
 function getHierarchySelect(scopeLabel) {
@@ -345,8 +362,8 @@ try {
   await addFacultyForm.getByRole('button', { name: 'Add Faculty', exact: true }).click()
   await expectFlash('Academic faculty created.')
   await getHierarchySelect('Faculty').selectOption({ label: facultyName })
-  const facultyDialog = await openHierarchyDialog('Edit Faculty', `Edit ${facultyName}`, 'faculty editor')
-  await facultyDialog.getByLabel('Faculty Name', { exact: true }).fill(updatedFacultyName)
+  const { dialog: facultyDialog, field: facultyNameField } = await openHierarchyDialogField('Edit Faculty', `Edit ${facultyName}`, 'faculty editor', 'Faculty Name')
+  await facultyNameField.fill(updatedFacultyName)
   await facultyDialog.getByRole('button', { name: 'Save Faculty', exact: true }).click()
   await expectFlash('Academic faculty updated.')
   await selectExactHierarchyLabel('Faculty', updatedFacultyName, 'updated academic faculty selector state')
@@ -359,8 +376,8 @@ try {
   await addDepartmentForm.getByRole('button', { name: 'Add Department', exact: true }).click()
   await expectFlash('Department created.')
   await getHierarchySelect('Department').selectOption({ label: departmentName })
-  const departmentDialog = await openHierarchyDialog('Edit Department', `Edit ${departmentName}`, 'department editor')
-  await departmentDialog.getByLabel('Department Name', { exact: true }).fill(updatedDepartmentName)
+  const { dialog: departmentDialog, field: departmentNameField } = await openHierarchyDialogField('Edit Department', `Edit ${departmentName}`, 'department editor', 'Department Name')
+  await departmentNameField.fill(updatedDepartmentName)
   await departmentDialog.getByRole('button', { name: 'Save Department', exact: true }).click()
   await expectFlash('Department updated.')
   await selectExactHierarchyLabel('Department', updatedDepartmentName, 'updated department selector state')
@@ -375,8 +392,8 @@ try {
   await addBranchForm.getByRole('button', { name: 'Add Branch', exact: true }).click()
   await expectFlash('Branch created.')
   await getHierarchySelect('Branch').selectOption({ label: branchName })
-  const branchDialog = await openHierarchyDialog('Edit Branch', `Edit ${branchName}`, 'branch editor')
-  await branchDialog.getByLabel('Branch Name', { exact: true }).fill(updatedBranchName)
+  const { dialog: branchDialog, field: branchNameField } = await openHierarchyDialogField('Edit Branch', `Edit ${branchName}`, 'branch editor', 'Branch Name')
+  await branchNameField.fill(updatedBranchName)
   await branchDialog.getByRole('button', { name: 'Save Branch', exact: true }).click()
   await expectFlash('Branch updated.')
   await selectExactHierarchyLabel('Branch', updatedBranchName, 'updated branch selector state')
@@ -390,8 +407,8 @@ try {
   await addBatchForm.getByRole('button', { name: 'Add Batch', exact: true }).click()
   await expectFlash('Batch created.')
   await selectBatchByLabelSuffix(batchYear)
-  const batchDialog = await openHierarchyDialog('Edit Batch', /^Edit Batch /, 'batch editor')
-  await batchDialog.getByLabel('Batch Label', { exact: true }).fill(batchLabel)
+  const { dialog: batchDialog, field: batchLabelField } = await openHierarchyDialogField('Edit Batch', /^Edit Batch /, 'batch editor', 'Batch Label')
+  await batchLabelField.fill(batchLabel)
   await batchDialog.getByLabel('Batch Active Semester', { exact: true }).fill('6')
   await batchDialog.getByLabel('Batch Section Labels', { exact: true }).fill('A, B')
   await batchDialog.getByRole('button', { name: 'Save Batch', exact: true }).click()
