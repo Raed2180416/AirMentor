@@ -232,6 +232,19 @@ async function selectBatchByLabelSuffix(batchLabel) {
   await batchSelect.selectOption(String(optionValue))
 }
 
+async function selectExactComboboxLabel(index, label, description) {
+  const select = page.getByRole('combobox').nth(index)
+  await page.waitForFunction(({ selectIndex, expectedLabel }) => {
+    const candidate = document.querySelectorAll('select')[selectIndex]
+    if (!(candidate instanceof HTMLSelectElement)) return false
+    return Array.from(candidate.options).some(option => option.textContent?.trim() === expectedLabel)
+  }, { selectIndex: index, expectedLabel: label }, { timeout: 40_000 })
+  await select.selectOption({ label })
+  await page.waitForLoadState('networkidle')
+  await page.waitForTimeout(400)
+  await expectBodyText(label, description)
+}
+
 async function findVisibleRequestAction() {
   for (const action of ['Take Review', 'Approve', 'Mark Implemented', 'Close']) {
     const button = page.getByRole('button', { name: action, exact: true })
@@ -301,6 +314,7 @@ try {
   await page.getByLabel('Faculty Name', { exact: true }).fill(updatedFacultyName)
   await page.getByRole('button', { name: 'Save Faculty', exact: true }).click()
   await expectFlash('Academic faculty updated.')
+  await selectExactComboboxLabel(0, updatedFacultyName, 'updated academic faculty selector state')
   await expectBodyText(updatedFacultyName, 'updated academic faculty name')
   report.checks.push({ name: 'faculty-create-update', status: 'passed', facultyCode })
 
@@ -314,6 +328,7 @@ try {
   await page.getByLabel('Department Name', { exact: true }).fill(updatedDepartmentName)
   await page.getByRole('button', { name: 'Save Department', exact: true }).click()
   await expectFlash('Department updated.')
+  await selectExactComboboxLabel(1, updatedDepartmentName, 'updated department selector state')
   await expectBodyText(updatedDepartmentName, 'updated department name')
   report.checks.push({ name: 'department-create-update', status: 'passed', departmentCode })
 
@@ -329,6 +344,7 @@ try {
   await page.getByLabel('Branch Name', { exact: true }).fill(updatedBranchName)
   await page.getByRole('button', { name: 'Save Branch', exact: true }).click()
   await expectFlash('Branch updated.')
+  await selectExactComboboxLabel(2, updatedBranchName, 'updated branch selector state')
   await expectBodyText(updatedBranchName, 'updated branch name')
   report.checks.push({ name: 'branch-create-update', status: 'passed', branchCode })
 
