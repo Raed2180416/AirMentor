@@ -9,7 +9,7 @@ import { T, mono, sora } from './data'
 import { describeProofAvailability, describeProofProvenance, type ProofProvenanceLike } from './proof-provenance'
 import { ProofSurfaceHero, ProofSurfaceLauncher, ProofSurfaceTabPanel, ProofSurfaceTabs } from './proof-surface-shell'
 import { InfoBanner, RestoreBanner } from './system-admin-ui'
-import { Btn, Card, Chip } from './ui-primitives'
+import { Btn, Card, Chip, getAccessiblePrimaryAccent } from './ui-primitives'
 
 type DiagnosticsRecord = Record<string, unknown> | null | undefined
 
@@ -257,6 +257,7 @@ export function SystemAdminProofDashboardWorkspace({
     previousSelectedCheckpointId.current = currentSelectedCheckpointId
   }, [activeDashboardTab, initialActiveDashboardTab, selectedProofCheckpoint])
   const activeRunDetail = proofDashboard?.activeRunDetail ?? null
+  const accessibleRailEyebrowColor = getAccessiblePrimaryAccent()
   const activeRunSnapshots = activeRunDetail?.snapshots ?? []
   const activeQueueDiagnostics = activeRunDetail?.queueDiagnostics
   const activeWorkerDiagnostics = activeRunDetail?.workerDiagnostics ?? null
@@ -439,7 +440,7 @@ export function SystemAdminProofDashboardWorkspace({
           <Card data-proof-section="proof-dashboard-rail" style={{ padding: 12, background: T.surface, display: 'grid', gap: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
               <div style={{ display: 'grid', gap: 4, minWidth: 220, flex: 1 }}>
-                <div style={{ ...mono, fontSize: 10, color: T.accent }}>Proof workflow rail</div>
+                <div style={{ ...mono, fontSize: 10, color: accessibleRailEyebrowColor }}>Proof workflow rail</div>
                 <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>Semester + checkpoint controls stay visible here.</div>
                 <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
                   Use this rail to activate the live proof semester, step playback, and inspect the selected checkpoint without bouncing between tabs.

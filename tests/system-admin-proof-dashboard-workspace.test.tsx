@@ -9,6 +9,7 @@ import type {
   ApiSimulationStageCheckpointSummary,
 } from '../src/api/types'
 import { SystemAdminProofDashboardWorkspace } from '../src/system-admin-proof-dashboard-workspace'
+import { getAccessiblePrimaryAccent } from '../src/ui-primitives'
 
 afterEach(() => {
   cleanup()
@@ -1001,6 +1002,7 @@ describe('SystemAdminProofDashboardWorkspace', () => {
 
     expect(markup).toContain('data-proof-section="proof-dashboard-rail"')
     expect(markup).toContain('Semester + checkpoint controls stay visible here.')
+    expect(markup).toContain(`color:${getAccessiblePrimaryAccent()}`)
     expect(markup).toContain('data-proof-section="proof-dashboard-scope-details"')
     expect(markup).toContain('<summary')
     expect(markup).toContain('Scope details')
