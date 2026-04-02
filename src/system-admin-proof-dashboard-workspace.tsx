@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { type ReactNode, useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import type {
   ApiProofDashboard,
   ApiProofRunCheckpointDetail,
@@ -174,7 +174,7 @@ type SystemAdminProofDashboardWorkspaceProps = {
 export function SystemAdminProofDashboardWorkspace({
   proofDashboard,
   proofDashboardLoading,
-  initialActiveDashboardTab = 'summary',
+  initialActiveDashboardTab,
   activeRunCheckpoints,
   activeModelDiagnostics,
   activeProductionDiagnostics,
@@ -220,12 +220,26 @@ export function SystemAdminProofDashboardWorkspace({
   formatHeadSupportSummary,
   formatDiagnosticSummary,
 }: SystemAdminProofDashboardWorkspaceProps) {
-  const [activeDashboardTab, setActiveDashboardTab] = useState<ProofDashboardTabId>(initialActiveDashboardTab)
+  const [activeDashboardTab, setActiveDashboardTab] = useState<ProofDashboardTabId>(initialActiveDashboardTab ?? 'summary')
+  const previousSelectedCheckpointId = useRef<string | null>(null)
   useEffect(() => {
+    if (proofDashboardLoading) return
     if (!selectedProofCheckpoint && activeDashboardTab === 'checkpoint') {
       setActiveDashboardTab('summary')
     }
-  }, [activeDashboardTab, selectedProofCheckpoint])
+  }, [activeDashboardTab, proofDashboardLoading, selectedProofCheckpoint])
+  useEffect(() => {
+    const currentSelectedCheckpointId = selectedProofCheckpoint?.simulationStageCheckpointId ?? null
+    if (
+      initialActiveDashboardTab == null
+      && currentSelectedCheckpointId
+      && previousSelectedCheckpointId.current !== currentSelectedCheckpointId
+      && activeDashboardTab === 'summary'
+    ) {
+      setActiveDashboardTab('checkpoint')
+    }
+    previousSelectedCheckpointId.current = currentSelectedCheckpointId
+  }, [activeDashboardTab, initialActiveDashboardTab, selectedProofCheckpoint])
   const activeRunDetail = proofDashboard?.activeRunDetail ?? null
   const activeRunSnapshots = activeRunDetail?.snapshots ?? []
   const activeQueueDiagnostics = activeRunDetail?.queueDiagnostics

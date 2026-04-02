@@ -884,6 +884,18 @@ async function ensureProofControlPlaneTab(proofControlPlane, label) {
   throw new Error(`${label} proof tab did not become selected`)
 }
 
+async function waitForCheckpointPlaybackVisible(proofControlPlane, timeout = 15_000) {
+  const checkpointPlayback = proofControlPlane.locator('[data-proof-section="checkpoint-playback"]').first()
+  const deadline = Date.now() + timeout
+  while (Date.now() < deadline) {
+    if (await checkpointPlayback.isVisible().catch(() => false)) return checkpointPlayback
+    await ensureProofControlPlaneTab(proofControlPlane, 'Checkpoint')
+    await page.waitForTimeout(750)
+  }
+  await checkpointPlayback.waitFor({ state: 'visible', timeout: 1 })
+  return checkpointPlayback
+}
+
 async function openSeededProofRoute() {
   await waitForSystemAdminShellReady()
   await primeSeededProofRouteState()
@@ -907,10 +919,8 @@ async function openSeededProofRoute() {
   }
   await expectVisible(proofControlPlane, 'system admin proof control plane')
   await expectContainerText(proofControlPlane, /Proof Control Plane/i, 'system admin proof control plane heading')
-  await ensureProofControlPlaneTab(proofControlPlane, 'Checkpoint')
-  let checkpointPlayback = proofControlPlane.locator('[data-proof-section="checkpoint-playback"]')
   try {
-    await checkpointPlayback.waitFor({ state: 'visible', timeout: 15_000 })
+    await waitForCheckpointPlaybackVisible(proofControlPlane, 15_000)
   } catch {
     console.log('[smoke] checkpoint playback missing, verifying proof controls and prewarming through admin endpoints')
     await expectVisible(proofControlPlane.getByRole('button', { name: 'Create Import', exact: true }), 'Create Import proof action')
@@ -926,12 +936,10 @@ async function openSeededProofRoute() {
 	    await page.waitForTimeout(500)
     proofControlPlane = visibleProofSurface('system-admin-proof-control-plane')
     await expectVisible(proofControlPlane, 'system admin proof control plane after prewarm', 180_000)
-    await ensureProofControlPlaneTab(proofControlPlane, 'Checkpoint')
-    checkpointPlayback = proofControlPlane.locator('[data-proof-section="checkpoint-playback"]')
-    await checkpointPlayback.waitFor({ state: 'visible', timeout: 180_000 })
+    await waitForCheckpointPlaybackVisible(proofControlPlane, 180_000)
     await page.waitForTimeout(500)
   }
-  await checkpointPlayback.waitFor({ state: 'visible', timeout: 180_000 })
+  const checkpointPlayback = await waitForCheckpointPlaybackVisible(proofControlPlane, 30_000)
   await resolveTargetCheckpointDescriptor()
   await expectVisible(targetCheckpointButton(proofControlPlane), 'target checkpoint button')
   return proofControlPlane

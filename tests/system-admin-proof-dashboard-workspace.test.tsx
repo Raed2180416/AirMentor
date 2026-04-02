@@ -559,6 +559,7 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     render(createElement(SystemAdminProofDashboardWorkspace, {
       proofDashboard,
       proofDashboardLoading: false,
+      initialActiveDashboardTab: 'summary',
       activeRunCheckpoints: [selectedCheckpoint],
       activeModelDiagnostics: { scenarioFamilySummary: { steady: 3, rescue: 2 } },
       activeProductionDiagnostics: null,
@@ -625,6 +626,69 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     expect(operationsRegion).toBeTruthy()
     expect(operationsRegion?.style.maxHeight).toBe('190px')
     expect(screen.getByRole('tabpanel').getAttribute('data-proof-section')).toBe('proof-dashboard-operations')
+
+    cleanup()
+
+    render(createElement(SystemAdminProofDashboardWorkspace, {
+      proofDashboard,
+      proofDashboardLoading: false,
+      activeRunCheckpoints: [selectedCheckpoint],
+      activeModelDiagnostics: { scenarioFamilySummary: { steady: 3, rescue: 2 } },
+      activeProductionDiagnostics: null,
+      activeDiagnosticsTrainingManifestVersion: 'manifest-v1',
+      activeDiagnosticsCalibrationVersion: 'isotonic-v1',
+      activeDiagnosticsSplitSummary: { train: 1800, validation: 300, test: 300 },
+      activeDiagnosticsWorldSplitSummary: { train: 4, validation: 1, test: 1 },
+      activeDiagnosticsScenarioFamilies: { steady: 3, rescue: 2 },
+      activeDiagnosticsHeadSupportSummary: { overallCourseRisk: { positives: 1200 } },
+      activeDiagnosticsGovernedRunCount: 5,
+      activeDiagnosticsSkippedRunCount: 0,
+      activeDiagnosticsDisplayProbabilityAllowed: false,
+      activeDiagnosticsSupportWarning: 'Held-out positive support is below the probability display threshold.',
+      activeDiagnosticsPolicyDiagnostics: { gates: 'ok' },
+      activeDiagnosticsCoEvidence: {
+        totalRows: 360,
+        fallbackCount: 40,
+        byMode: {
+          'offering-blueprint': 280,
+          'rubric-derived': 40,
+          'fallback-simulated': 40,
+        },
+      },
+      activeDiagnosticsPolicyAcceptance: { policy: 'accepted' },
+      activeDiagnosticsOverallCourseRuntime: { parity: 'aligned' },
+      activeDiagnosticsQueueBurden: { mentor: 2 },
+      activeDiagnosticsUiParity: { facultySurface: 'aligned' },
+      selectedProofCheckpoint: selectedCheckpoint,
+      selectedProofCheckpointDetail: null,
+      selectedProofCheckpointBlocked: false,
+      selectedProofCheckpointHasBlockedProgression: false,
+      selectedProofCheckpointCanStepForward: true,
+      selectedProofCheckpointCanPlayToEnd: true,
+      proofPlaybackRestoreNotice: null,
+      onCreateProofImport: () => {},
+      onValidateLatestProofImport: () => {},
+      onReviewPendingCrosswalks: () => {},
+      onApproveLatestProofImport: () => {},
+      onCreateProofRun: () => {},
+      onRecomputeProofRunRisk: () => {},
+      onActivateProofRun: () => {},
+      onActivateProofSemester: () => {},
+      onRetryProofRun: () => {},
+      onArchiveProofRun: () => {},
+      onRestoreProofSnapshot: () => {},
+      onResetProofPlaybackSelection: () => {},
+      onSelectProofCheckpoint: () => {},
+      onStepProofPlayback: () => {},
+      formatSplitSummary: summary => JSON.stringify(summary),
+      formatKeyedCounts: summary => JSON.stringify(summary),
+      formatHeadSupportSummary: summary => JSON.stringify(summary),
+      formatDiagnosticSummary: summary => JSON.stringify(summary),
+    }))
+
+    expect(screen.getByRole('tab', { name: 'Checkpoint' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByText('Checkpoint Playback')).toBeTruthy()
+    expect(document.querySelector('[data-proof-section="checkpoint-playback"]')).toBeTruthy()
   })
 
   it('renders a playback override banner when the pinned checkpoint semester differs from the activated operational semester', () => {
