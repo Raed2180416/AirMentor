@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import type {
   ApiProofDashboard,
   ApiProofRunCheckpointDetail,
@@ -116,12 +116,16 @@ type ScrollCardProps = {
 }
 
 function ScrollCard({ title, eyebrow, maxHeight = 240, children }: ScrollCardProps) {
+  const titleId = useId()
+
   return (
     <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 8 }}>
       {eyebrow ? <div style={{ ...mono, fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{eyebrow}</div> : null}
-      <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{title}</div>
+      <div id={titleId} style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{title}</div>
       <div
         data-proof-scroll-region={title.toLowerCase().replaceAll(' ', '-')}
+        aria-labelledby={titleId}
+        tabIndex={0}
         style={{ maxHeight, overflowY: 'auto', paddingRight: 4, display: 'grid', gap: 8, scrollbarGutter: 'stable' }}
       >
         {children}

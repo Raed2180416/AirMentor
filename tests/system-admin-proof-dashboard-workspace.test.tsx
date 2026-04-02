@@ -1008,6 +1008,151 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     expect(markup).toContain('Scope details')
   })
 
+  it('marks proof scroll regions focusable for keyboard scrolling', () => {
+    const selectedCheckpoint = buildCheckpoint({
+      simulationStageCheckpointId: 'checkpoint_focusable_scroll_region',
+      semesterNumber: 6,
+      stageLabel: 'Post SEE',
+      stageKey: 'post-see',
+      stageAdvanceBlocked: false,
+      blockedByCheckpointId: null,
+      blockedProgressionReason: null,
+      playbackAccessible: true,
+    })
+
+    const proofDashboard: ApiProofDashboard = {
+      imports: [],
+      latestValidation: null,
+      crosswalkReviewQueue: [],
+      proofRuns: [],
+      activeRunDetail: {
+        simulationRunId: 'run_focusable_scroll_region',
+        runLabel: 'Focusable Scroll Region Run',
+        seed: 13,
+        activeOperationalSemester: 6,
+        createdAt: '2026-04-02T00:00:00.000Z',
+        startedAt: '2026-04-02T00:00:00.000Z',
+        completedAt: null,
+        status: 'active',
+        failureCode: null,
+        failureMessage: null,
+        progress: null,
+        monitoringSummary: {
+          riskAssessmentCount: 0,
+          activeReassessmentCount: 0,
+          alertDecisionCount: 0,
+          acknowledgementCount: 0,
+          resolutionCount: 0,
+        },
+        coverageDiagnostics: {
+          behaviorProfileCoverage: { count: 120, expected: 120 },
+          topicStateCoverage: { count: 0 },
+          coStateCoverage: { count: 0 },
+          questionTemplateCoverage: { count: 0 },
+          questionResultCoverage: { count: 0 },
+          interventionResponseCoverage: { count: 0 },
+          worldContextCoverage: { count: 0 },
+        },
+        modelDiagnostics: {
+          featureRowCount: 120,
+          activeRunFeatureRowCount: 0,
+          sourceRunCount: 1,
+          production: null,
+          challenger: null,
+          correlations: null,
+        },
+        queueDiagnostics: {
+          queuedRunCount: 0,
+          runningRunCount: 0,
+          failedRunCount: 0,
+          retryableRunCount: 0,
+          retryInFlightCount: 0,
+          oldestQueuedRunAgeSeconds: null,
+          expiredLeaseRunCount: 0,
+        },
+        workerDiagnostics: null,
+        checkpointReadiness: {
+          totalCheckpointCount: 1,
+          readyCheckpointCount: 1,
+          blockedCheckpointCount: 0,
+          playbackBlockedCheckpointCount: 0,
+          totalBlockingQueueItemCount: 0,
+          firstBlockedCheckpointId: null,
+          lastReadyCheckpointId: selectedCheckpoint.simulationStageCheckpointId,
+        },
+        teacherAllocationLoad: [],
+        queuePreview: [],
+        snapshots: [],
+        checkpoints: [selectedCheckpoint],
+      },
+      lifecycleAudit: [],
+      recentOperationalEvents: [],
+    }
+
+    render(createElement(SystemAdminProofDashboardWorkspace, {
+      proofDashboard,
+      proofDashboardLoading: false,
+      initialActiveDashboardTab: 'operations',
+      activeRunCheckpoints: [selectedCheckpoint],
+      activeModelDiagnostics: null,
+      activeProductionDiagnostics: null,
+      activeDiagnosticsTrainingManifestVersion: null,
+      activeDiagnosticsCalibrationVersion: null,
+      activeDiagnosticsSplitSummary: null,
+      activeDiagnosticsWorldSplitSummary: null,
+      activeDiagnosticsScenarioFamilies: null,
+      activeDiagnosticsHeadSupportSummary: null,
+      activeDiagnosticsGovernedRunCount: null,
+      activeDiagnosticsSkippedRunCount: null,
+      activeDiagnosticsDisplayProbabilityAllowed: null,
+      activeDiagnosticsSupportWarning: null,
+      activeDiagnosticsPolicyDiagnostics: null,
+      activeDiagnosticsCoEvidence: null,
+      activeDiagnosticsPolicyAcceptance: null,
+      activeDiagnosticsOverallCourseRuntime: null,
+      activeDiagnosticsQueueBurden: null,
+      activeDiagnosticsUiParity: null,
+      selectedProofCheckpoint: selectedCheckpoint,
+      selectedProofCheckpointDetail: null,
+      selectedProofCheckpointBlocked: false,
+      selectedProofCheckpointHasBlockedProgression: false,
+      selectedProofCheckpointCanStepForward: false,
+      selectedProofCheckpointCanPlayToEnd: false,
+      proofPlaybackRestoreNotice: null,
+      onCreateProofImport: () => {},
+      onValidateLatestProofImport: () => {},
+      onReviewPendingCrosswalks: () => {},
+      onApproveLatestProofImport: () => {},
+      onCreateProofRun: () => {},
+      onRecomputeProofRunRisk: () => {},
+      onActivateProofRun: () => {},
+      onActivateProofSemester: () => {},
+      onRetryProofRun: () => {},
+      onArchiveProofRun: () => {},
+      onRestoreProofSnapshot: () => {},
+      onResetProofPlaybackSelection: () => {},
+      onSelectProofCheckpoint: () => {},
+      onStepProofPlayback: () => {},
+      formatSplitSummary: summary => JSON.stringify(summary),
+      formatKeyedCounts: summary => JSON.stringify(summary),
+      formatHeadSupportSummary: summary => JSON.stringify(summary),
+      formatDiagnosticSummary: summary => JSON.stringify(summary),
+    }))
+
+    const scrollRegions = Array.from(document.querySelectorAll<HTMLElement>('[data-proof-scroll-region]'))
+    expect(scrollRegions.length).toBeGreaterThan(0)
+    scrollRegions.forEach(region => {
+      expect(region.tabIndex).toBe(0)
+      const labelledBy = region.getAttribute('aria-labelledby')
+      expect(labelledBy).toBeTruthy()
+      expect(document.getElementById(labelledBy ?? '')).not.toBeNull()
+    })
+
+    const administrativeActionsRegion = document.querySelector<HTMLElement>('[data-proof-scroll-region="administrative-actions"]')
+    expect(administrativeActionsRegion).not.toBeNull()
+    expect(document.getElementById(administrativeActionsRegion?.getAttribute('aria-labelledby') ?? '')?.textContent).toBe('Administrative Actions')
+  })
+
   it('toggles checkpoint evidence between queue and offering detail without stacking both panes', () => {
     const selectedCheckpoint = buildCheckpoint({
       simulationStageCheckpointId: 'checkpoint_toggle',
