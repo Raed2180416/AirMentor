@@ -474,11 +474,14 @@ function visibleProofSurface(name) {
 async function ensureProofControlPlaneTab(proofControlPlane, label) {
   const tab = proofControlPlane.getByRole('tab', { name: label, exact: true }).first()
   if (!(await tab.isVisible().catch(() => false))) return
-  const isSelected = (await tab.getAttribute('aria-selected').catch(() => null)) === 'true'
-  if (!isSelected) {
+  const deadline = Date.now() + 15_000
+  while (Date.now() < deadline) {
+    const isSelected = (await tab.getAttribute('aria-selected').catch(() => null)) === 'true'
+    if (isSelected) return
     await focusAndActivate(tab, `${label} proof tab`)
     await page.waitForTimeout(250)
   }
+  throw new Error(`${label} proof tab did not become selected`)
 }
 
 async function waitForAdminDataRefreshToSettle(timeout = 60_000) {

@@ -854,11 +854,14 @@ function targetCheckpointButton(proofControlPlane) {
 async function ensureProofControlPlaneTab(proofControlPlane, label) {
   const tab = proofControlPlane.getByRole('tab', { name: label, exact: true }).first()
   if (!(await tab.isVisible().catch(() => false))) return
-  const isSelected = (await tab.getAttribute('aria-selected').catch(() => null)) === 'true'
-  if (!isSelected) {
-    await focusAndActivate(tab, `${label} proof tab`)
+  const deadline = Date.now() + 15_000
+  while (Date.now() < deadline) {
+    const isSelected = (await tab.getAttribute('aria-selected').catch(() => null)) === 'true'
+    if (isSelected) return
+    await tab.click()
     await page.waitForTimeout(250)
   }
+  throw new Error(`${label} proof tab did not become selected`)
 }
 
 async function openSeededProofRoute() {
@@ -900,8 +903,9 @@ async function openSeededProofRoute() {
 	    await page.waitForFunction(expectedHash => window.location.hash === expectedHash, proofRouteState.routeHash)
 	    await page.waitForTimeout(500)
     proofControlPlane = visibleProofSurface('system-admin-proof-control-plane')
-    checkpointPlayback = proofControlPlane.locator('[data-proof-section="checkpoint-playback"]')
     await expectVisible(proofControlPlane, 'system admin proof control plane after prewarm', 180_000)
+    await ensureProofControlPlaneTab(proofControlPlane, 'Checkpoint')
+    checkpointPlayback = proofControlPlane.locator('[data-proof-section="checkpoint-playback"]')
     await checkpointPlayback.waitFor({ state: 'visible', timeout: 180_000 })
     await page.waitForTimeout(500)
   }
