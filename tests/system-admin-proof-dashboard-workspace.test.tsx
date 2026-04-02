@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createElement } from 'react'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
@@ -12,6 +12,9 @@ import { SystemAdminProofDashboardWorkspace } from '../src/system-admin-proof-da
 
 afterEach(() => {
   cleanup()
+  if (typeof window !== 'undefined') {
+    window.sessionStorage.clear()
+  }
 })
 
 function buildCheckpoint(overrides?: Partial<ApiSimulationStageCheckpointSummary>): ApiSimulationStageCheckpointSummary {
@@ -632,6 +635,7 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     render(createElement(SystemAdminProofDashboardWorkspace, {
       proofDashboard,
       proofDashboardLoading: false,
+      initialActiveDashboardTab: 'checkpoint',
       activeRunCheckpoints: [selectedCheckpoint],
       activeModelDiagnostics: { scenarioFamilySummary: { steady: 3, rescue: 2 } },
       activeProductionDiagnostics: null,
@@ -1057,6 +1061,315 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     expect(markup).toContain('Playback override active.')
     expect(markup).toContain('pinned to Semester 1')
     expect(markup).toContain('operational semester remains Semester 3')
+  })
+
+  it('keeps the checkpoint tab selected while checkpoint playback is still reloading', async () => {
+    const selectedCheckpoint = buildCheckpoint({
+      simulationStageCheckpointId: 'checkpoint_sem1_pre_tt1',
+      semesterNumber: 1,
+      stageKey: 'pre-tt1',
+      stageLabel: 'Pre TT1',
+      stageDescription: 'Checkpoint restore should stay pinned while the playback state hydrates.',
+      stageOrder: 1,
+      previousCheckpointId: null,
+      nextCheckpointId: null,
+      playbackAccessible: true,
+      stageAdvanceBlocked: false,
+      blockedByCheckpointId: null,
+      blockedProgressionReason: null,
+      highRiskCount: 0,
+      mediumRiskCount: 0,
+      lowRiskCount: 24,
+      openQueueCount: 0,
+      watchQueueCount: 0,
+      resolvedQueueCount: 0,
+      watchStudentCount: 0,
+      blockingQueueItemCount: 0,
+    })
+
+    const proofDashboard: ApiProofDashboard = {
+      imports: [],
+      latestValidation: null,
+      crosswalkReviewQueue: [],
+      proofRuns: [],
+      activeRunDetail: {
+        simulationRunId: 'run_checkpoint_restore',
+        runLabel: 'Checkpoint Restore Run',
+        seed: 101,
+        activeOperationalSemester: 1,
+        createdAt: '2026-04-02T00:00:00.000Z',
+        startedAt: '2026-04-02T00:00:00.000Z',
+        completedAt: null,
+        status: 'active',
+        failureCode: null,
+        failureMessage: null,
+        progress: null,
+        monitoringSummary: {
+          riskAssessmentCount: 0,
+          activeReassessmentCount: 0,
+          alertDecisionCount: 0,
+          acknowledgementCount: 0,
+          resolutionCount: 0,
+        },
+        coverageDiagnostics: {
+          behaviorProfileCoverage: { count: 1, expected: 1 },
+          topicStateCoverage: { count: 1 },
+          coStateCoverage: { count: 1 },
+          questionTemplateCoverage: { count: 1 },
+          questionResultCoverage: { count: 1 },
+          interventionResponseCoverage: { count: 1 },
+          worldContextCoverage: { count: 1 },
+        },
+        modelDiagnostics: {
+          featureRowCount: 1,
+          activeRunFeatureRowCount: 1,
+          sourceRunCount: 1,
+          production: null,
+          challenger: null,
+          correlations: null,
+        },
+        queueDiagnostics: {
+          queuedRunCount: 0,
+          runningRunCount: 0,
+          failedRunCount: 0,
+          retryableRunCount: 0,
+          retryInFlightCount: 0,
+          oldestQueuedRunAgeSeconds: 0,
+          expiredLeaseRunCount: 0,
+        },
+        workerDiagnostics: null,
+        checkpointReadiness: null,
+        teacherAllocationLoad: [],
+        queuePreview: [],
+        snapshots: [],
+        checkpoints: [selectedCheckpoint],
+      },
+      lifecycleAudit: [],
+      recentOperationalEvents: [],
+    }
+
+    const baseProps = {
+      proofDashboard,
+      activeModelDiagnostics: null,
+      activeProductionDiagnostics: null,
+      activeDiagnosticsTrainingManifestVersion: null,
+      activeDiagnosticsCalibrationVersion: null,
+      activeDiagnosticsSplitSummary: null,
+      activeDiagnosticsWorldSplitSummary: null,
+      activeDiagnosticsScenarioFamilies: null,
+      activeDiagnosticsHeadSupportSummary: null,
+      activeDiagnosticsGovernedRunCount: null,
+      activeDiagnosticsSkippedRunCount: null,
+      activeDiagnosticsDisplayProbabilityAllowed: null,
+      activeDiagnosticsSupportWarning: null,
+      activeDiagnosticsPolicyDiagnostics: null,
+      activeDiagnosticsCoEvidence: null,
+      activeDiagnosticsPolicyAcceptance: null,
+      activeDiagnosticsOverallCourseRuntime: null,
+      activeDiagnosticsQueueBurden: null,
+      activeDiagnosticsUiParity: null,
+      selectedProofCheckpointDetail: null,
+      selectedProofCheckpointBlocked: false,
+      selectedProofCheckpointHasBlockedProgression: false,
+      selectedProofCheckpointCanStepForward: true,
+      selectedProofCheckpointCanPlayToEnd: true,
+      proofPlaybackRestoreNotice: null,
+      onCreateProofImport: () => {},
+      onValidateLatestProofImport: () => {},
+      onReviewPendingCrosswalks: () => {},
+      onApproveLatestProofImport: () => {},
+      onCreateProofRun: () => {},
+      onRecomputeProofRunRisk: () => {},
+      onActivateProofRun: () => {},
+      onActivateProofSemester: () => {},
+      onRetryProofRun: () => {},
+      onArchiveProofRun: () => {},
+      onRestoreProofSnapshot: () => {},
+      onResetProofPlaybackSelection: () => {},
+      onSelectProofCheckpoint: () => {},
+      onStepProofPlayback: () => {},
+      formatSplitSummary: (summary: unknown) => JSON.stringify(summary),
+      formatKeyedCounts: (summary: unknown) => JSON.stringify(summary),
+      formatHeadSupportSummary: (summary: unknown) => JSON.stringify(summary),
+      formatDiagnosticSummary: (summary: unknown) => JSON.stringify(summary),
+    }
+
+    const { rerender } = render(createElement(SystemAdminProofDashboardWorkspace, {
+      ...baseProps,
+      proofDashboardLoading: false,
+      initialActiveDashboardTab: 'checkpoint',
+      activeRunCheckpoints: [selectedCheckpoint],
+      selectedProofCheckpoint: selectedCheckpoint,
+    }))
+
+    expect(screen.getByRole('tab', { name: 'Checkpoint' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.queryByText('Checkpoint Playback')).not.toBeNull()
+
+    rerender(createElement(SystemAdminProofDashboardWorkspace, {
+      ...baseProps,
+      proofDashboardLoading: true,
+      initialActiveDashboardTab: 'checkpoint',
+      activeRunCheckpoints: [],
+      selectedProofCheckpoint: null,
+    }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'Checkpoint' }).getAttribute('aria-selected')).toBe('true')
+    })
+    expect(screen.getByRole('tab', { name: 'Summary' }).getAttribute('aria-selected')).toBe('false')
+
+    rerender(createElement(SystemAdminProofDashboardWorkspace, {
+      ...baseProps,
+      proofDashboardLoading: false,
+      initialActiveDashboardTab: 'checkpoint',
+      activeRunCheckpoints: [],
+      selectedProofCheckpoint: null,
+    }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'Summary' }).getAttribute('aria-selected')).toBe('true')
+    })
+  })
+
+  it('restores the previously selected proof dashboard tab after a remount', async () => {
+    const selectedCheckpoint = buildCheckpoint({
+      simulationStageCheckpointId: 'checkpoint_sem1_restore',
+      semesterNumber: 1,
+      stageKey: 'pre-tt1',
+      stageLabel: 'Pre TT1',
+      stageDescription: 'Persist the checkpoint tab between remounts.',
+      stageOrder: 1,
+      previousCheckpointId: null,
+      nextCheckpointId: null,
+      playbackAccessible: true,
+      stageAdvanceBlocked: false,
+      blockedByCheckpointId: null,
+      blockedProgressionReason: null,
+    })
+
+    const proofDashboard: ApiProofDashboard = {
+      imports: [],
+      latestValidation: null,
+      crosswalkReviewQueue: [],
+      proofRuns: [],
+      activeRunDetail: {
+        simulationRunId: 'run_tab_restore',
+        runLabel: 'Restore Tab Run',
+        seed: 202,
+        activeOperationalSemester: 1,
+        createdAt: '2026-04-02T00:00:00.000Z',
+        startedAt: '2026-04-02T00:00:00.000Z',
+        completedAt: null,
+        status: 'active',
+        failureCode: null,
+        failureMessage: null,
+        progress: null,
+        monitoringSummary: {
+          riskAssessmentCount: 0,
+          activeReassessmentCount: 0,
+          alertDecisionCount: 0,
+          acknowledgementCount: 0,
+          resolutionCount: 0,
+        },
+        coverageDiagnostics: {
+          behaviorProfileCoverage: { count: 1, expected: 1 },
+          topicStateCoverage: { count: 1 },
+          coStateCoverage: { count: 1 },
+          questionTemplateCoverage: { count: 1 },
+          questionResultCoverage: { count: 1 },
+          interventionResponseCoverage: { count: 1 },
+          worldContextCoverage: { count: 1 },
+        },
+        modelDiagnostics: {
+          featureRowCount: 1,
+          activeRunFeatureRowCount: 1,
+          sourceRunCount: 1,
+          production: null,
+          challenger: null,
+          correlations: null,
+        },
+        queueDiagnostics: {
+          queuedRunCount: 0,
+          runningRunCount: 0,
+          failedRunCount: 0,
+          retryableRunCount: 0,
+          retryInFlightCount: 0,
+          oldestQueuedRunAgeSeconds: 0,
+          expiredLeaseRunCount: 0,
+        },
+        workerDiagnostics: null,
+        checkpointReadiness: null,
+        teacherAllocationLoad: [],
+        queuePreview: [],
+        snapshots: [],
+        checkpoints: [selectedCheckpoint],
+      },
+      lifecycleAudit: [],
+      recentOperationalEvents: [],
+    }
+
+    const baseProps = {
+      proofDashboard,
+      proofDashboardLoading: false,
+      activeRunCheckpoints: [selectedCheckpoint],
+      activeModelDiagnostics: null,
+      activeProductionDiagnostics: null,
+      activeDiagnosticsTrainingManifestVersion: null,
+      activeDiagnosticsCalibrationVersion: null,
+      activeDiagnosticsSplitSummary: null,
+      activeDiagnosticsWorldSplitSummary: null,
+      activeDiagnosticsScenarioFamilies: null,
+      activeDiagnosticsHeadSupportSummary: null,
+      activeDiagnosticsGovernedRunCount: null,
+      activeDiagnosticsSkippedRunCount: null,
+      activeDiagnosticsDisplayProbabilityAllowed: null,
+      activeDiagnosticsSupportWarning: null,
+      activeDiagnosticsPolicyDiagnostics: null,
+      activeDiagnosticsCoEvidence: null,
+      activeDiagnosticsPolicyAcceptance: null,
+      activeDiagnosticsOverallCourseRuntime: null,
+      activeDiagnosticsQueueBurden: null,
+      activeDiagnosticsUiParity: null,
+      selectedProofCheckpoint: selectedCheckpoint,
+      selectedProofCheckpointDetail: null,
+      selectedProofCheckpointBlocked: false,
+      selectedProofCheckpointHasBlockedProgression: false,
+      selectedProofCheckpointCanStepForward: true,
+      selectedProofCheckpointCanPlayToEnd: true,
+      proofPlaybackRestoreNotice: null,
+      onCreateProofImport: () => {},
+      onValidateLatestProofImport: () => {},
+      onReviewPendingCrosswalks: () => {},
+      onApproveLatestProofImport: () => {},
+      onCreateProofRun: () => {},
+      onRecomputeProofRunRisk: () => {},
+      onActivateProofRun: () => {},
+      onActivateProofSemester: () => {},
+      onRetryProofRun: () => {},
+      onArchiveProofRun: () => {},
+      onRestoreProofSnapshot: () => {},
+      onResetProofPlaybackSelection: () => {},
+      onSelectProofCheckpoint: () => {},
+      onStepProofPlayback: () => {},
+      formatSplitSummary: (summary: unknown) => JSON.stringify(summary),
+      formatKeyedCounts: (summary: unknown) => JSON.stringify(summary),
+      formatHeadSupportSummary: (summary: unknown) => JSON.stringify(summary),
+      formatDiagnosticSummary: (summary: unknown) => JSON.stringify(summary),
+    }
+
+    const firstMount = render(createElement(SystemAdminProofDashboardWorkspace, {
+      ...baseProps,
+      initialActiveDashboardTab: 'checkpoint',
+    }))
+    expect(screen.getByRole('tab', { name: 'Checkpoint' }).getAttribute('aria-selected')).toBe('true')
+    firstMount.unmount()
+
+    render(createElement(SystemAdminProofDashboardWorkspace, baseProps))
+
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'Checkpoint' }).getAttribute('aria-selected')).toBe('true')
+    })
+    expect(screen.queryByText('Checkpoint Playback')).not.toBeNull()
   })
 
   it('renders explicit late-semester activation controls for semesters 4 through 6 and the final-stage checkpoint label', () => {

@@ -27,6 +27,15 @@ type ProofPlaybackNotice = { tone: 'neutral' | 'error'; message: string } | null
 
 type PlaybackDirection = 'previous' | 'next' | 'start' | 'end'
 type ProofDashboardTabId = 'summary' | 'checkpoint' | 'diagnostics' | 'operations'
+const proofDashboardTabStorageKey = 'airmentor-system-admin-proof-dashboard-tab'
+
+function readStoredProofDashboardTab(): ProofDashboardTabId | null {
+  if (typeof window === 'undefined') return null
+  const value = window.sessionStorage.getItem(proofDashboardTabStorageKey)
+  return value === 'summary' || value === 'checkpoint' || value === 'diagnostics' || value === 'operations'
+    ? value
+    : null
+}
 
 function formatAgeSeconds(seconds: number | null | undefined) {
   if (typeof seconds !== 'number' || !Number.isFinite(seconds)) return 'n/a'
@@ -220,7 +229,7 @@ export function SystemAdminProofDashboardWorkspace({
   formatHeadSupportSummary,
   formatDiagnosticSummary,
 }: SystemAdminProofDashboardWorkspaceProps) {
-  const [activeDashboardTab, setActiveDashboardTab] = useState<ProofDashboardTabId>(initialActiveDashboardTab ?? 'summary')
+  const [activeDashboardTab, setActiveDashboardTab] = useState<ProofDashboardTabId>(() => initialActiveDashboardTab ?? readStoredProofDashboardTab() ?? 'summary')
   const previousSelectedCheckpointId = useRef<string | null>(null)
   useEffect(() => {
     if (proofDashboardLoading) return
@@ -228,6 +237,10 @@ export function SystemAdminProofDashboardWorkspace({
       setActiveDashboardTab('summary')
     }
   }, [activeDashboardTab, proofDashboardLoading, selectedProofCheckpoint])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.sessionStorage.setItem(proofDashboardTabStorageKey, activeDashboardTab)
+  }, [activeDashboardTab])
   useEffect(() => {
     const currentSelectedCheckpointId = selectedProofCheckpoint?.simulationStageCheckpointId ?? null
     if (
