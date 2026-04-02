@@ -103,9 +103,16 @@ export function StudentShellPage({
   const [session, setSession] = useState<ApiStudentAgentSession | null>(initialSession)
   const [prompt, setPrompt] = useState('')
   const [loading, setLoading] = useState(!initialCard && !!loadCard)
-  const [timelineLoading, setTimelineLoading] = useState(!initialTimeline.length && !!loadTimeline)
+  const [timelineLoading, setTimelineLoading] = useState(initialActiveTab === 'timeline' && !initialTimeline.length && !!loadTimeline)
+  const [timelineLoadedStudentId, setTimelineLoadedStudentId] = useState<string | null>(initialTimeline.length > 0 ? studentId : null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(initialError)
+
+  useEffect(() => {
+    setTimeline(initialTimeline)
+    setTimelineLoadedStudentId(initialTimeline.length > 0 ? studentId : null)
+    setTimelineLoading(initialActiveTab === 'timeline' && !initialTimeline.length && !!loadTimeline)
+  }, [initialActiveTab, initialTimeline, loadTimeline, studentId])
 
   useEffect(() => {
     if (!loadCard) return
@@ -128,12 +135,16 @@ export function StudentShellPage({
   }, [loadCard, studentId])
 
   useEffect(() => {
-    if (!loadTimeline) return
+    if (!loadTimeline || activeTab !== 'timeline' || timelineLoadedStudentId === studentId) return
     let cancelled = false
     setTimelineLoading(true)
+    setError('')
     void loadTimeline(studentId)
       .then(result => {
-        if (!cancelled) setTimeline(result.items)
+        if (!cancelled) {
+          setTimeline(result.items)
+          setTimelineLoadedStudentId(studentId)
+        }
       })
       .catch(nextError => {
         if (!cancelled) setError(nextError instanceof Error ? nextError.message : 'Could not load the student shell timeline.')
@@ -144,7 +155,7 @@ export function StudentShellPage({
     return () => {
       cancelled = true
     }
-  }, [loadTimeline, studentId])
+  }, [activeTab, loadTimeline, studentId, timelineLoadedStudentId])
 
   const handleStartSession = async () => {
     if (!startSession) return

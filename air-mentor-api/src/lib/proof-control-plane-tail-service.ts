@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { and, asc, eq } from 'drizzle-orm'
+import { and, asc, eq, inArray } from 'drizzle-orm'
 import type { AppDb } from '../db/client.js'
 import {
   academicTerms,
@@ -76,6 +76,7 @@ import {
 } from './proof-control-plane-elective-service.js'
 
 const STUDENT_AGENT_CARD_VERSION = 1
+const studentAgentCardBuildInflight = new Map<string, Promise<StudentAgentCardPayload>>()
 
 type ProofCheckpointSummaryLike = {
   simulationStageCheckpointId: string
@@ -115,6 +116,19 @@ type FacultyProofViewResult = {
   selectedCheckpoint: ProofCheckpointSummaryLike | null
   monitoringQueue: Array<Record<string, unknown>>
   electiveFits: Array<Record<string, unknown>>
+}
+
+function buildStudentAgentCardInflightKey(input: {
+  simulationRunId: string
+  studentId: string
+  simulationStageCheckpointId?: string | null
+}) {
+  return [
+    input.simulationRunId,
+    input.studentId,
+    input.simulationStageCheckpointId ?? 'active',
+    STUDENT_AGENT_CARD_VERSION,
+  ].join('::')
 }
 
 function resolveOperationalCheckpointSummary(
@@ -1165,7 +1179,7 @@ function buildAssistantReply(input: {
   } satisfies Omit<StudentAgentMessage, 'studentAgentMessageId'>
 }
 
-export async function buildStudentAgentCard(db: AppDb, input: {
+async function buildStudentAgentCardFresh(db: AppDb, input: {
   simulationRunId: string
   studentId: string
   simulationStageCheckpointId?: string | null
@@ -1183,11 +1197,6 @@ export async function buildStudentAgentCard(db: AppDb, input: {
     electiveRows,
     interventionRows,
     reassessmentRows,
-    resolutionRows,
-    offeringRows,
-    courseRows,
-    batchRows,
-    branchRows,
     templateRows,
     stageCheckpoint,
     orderedStageCheckpointRows,
@@ -1230,11 +1239,6 @@ export async function buildStudentAgentCard(db: AppDb, input: {
     )),
     db.select().from(studentInterventions).where(eq(studentInterventions.studentId, input.studentId)),
     db.select().from(reassessmentEvents).where(eq(reassessmentEvents.studentId, input.studentId)),
-    db.select().from(reassessmentResolutions),
-    db.select().from(sectionOfferings),
-    db.select().from(courses),
-    db.select().from(batches),
-    db.select().from(branches),
     db.select().from(simulationQuestionTemplates).where(eq(simulationQuestionTemplates.simulationRunId, input.simulationRunId)),
     input.simulationStageCheckpointId
       ? db.select().from(simulationStageCheckpoints).where(and(
@@ -1272,8 +1276,45 @@ export async function buildStudentAgentCard(db: AppDb, input: {
     throw new Error(`Simulation stage checkpoint ${input.simulationStageCheckpointId} was not found`)
   }
 
-  const batch = batchRows.find(row => row.batchId === run.batchId) ?? null
-  const branch = batch ? (branchRows.find(row => row.branchId === batch.branchId) ?? null) : null
+  const riskIds = new Set(riskRows.map(row => row.riskAssessmentId))
+  const relevantReassessments = reassessmentRows
+    .filter(row => riskIds.has(row.riskAssessmentId))
+    .sort((left, right) => left.dueAt.localeCompare(right.dueAt))
+  const referencedOfferingIds = Array.from(new Set([
+    ...riskRows.map(row => row.offeringId),
+    ...stageStudentRows.map(row => row.offeringId),
+    ...interventionRows.map(row => row.offeringId),
+    ...observedRows.map(row => {
+      const payload = parseObservedStateRow(row)
+      return typeof payload.offeringId === 'string' ? payload.offeringId : null
+    }),
+  ].filter((value): value is string => typeof value === 'string' && value.length > 0)))
+  const referencedReassessmentEventIds = Array.from(new Set(
+    relevantReassessments.map(row => row.reassessmentEventId),
+  ))
+
+  const [batch, offeringRows, resolutionRows] = await Promise.all([
+    db.select().from(batches).where(eq(batches.batchId, run.batchId)).then(rows => rows[0] ?? null),
+    referencedOfferingIds.length > 0
+      ? db.select().from(sectionOfferings).where(inArray(sectionOfferings.offeringId, referencedOfferingIds))
+      : Promise.resolve([] as Array<typeof sectionOfferings.$inferSelect>),
+    referencedReassessmentEventIds.length > 0
+      ? db.select().from(reassessmentResolutions).where(inArray(reassessmentResolutions.reassessmentEventId, referencedReassessmentEventIds))
+      : Promise.resolve([] as Array<typeof reassessmentResolutions.$inferSelect>),
+  ])
+  const referencedCourseIds = Array.from(new Set(
+    offeringRows
+      .map(row => row.courseId)
+      .filter((value): value is string => typeof value === 'string' && value.length > 0),
+  ))
+  const [branch, courseRows] = await Promise.all([
+    batch?.branchId
+      ? db.select().from(branches).where(eq(branches.branchId, batch.branchId)).then(rows => rows[0] ?? null)
+      : Promise.resolve(null),
+    referencedCourseIds.length > 0
+      ? db.select().from(courses).where(inArray(courses.courseId, referencedCourseIds))
+      : Promise.resolve([] as Array<typeof courses.$inferSelect>),
+  ])
   if (
     !input.simulationStageCheckpointId
     && run.activeOperationalSemester != null
@@ -1316,10 +1357,6 @@ export async function buildStudentAgentCard(db: AppDb, input: {
     ?? Math.max(1, ...observedRows.map(row => row.semesterNumber))
   const evidenceTimeline = deps.buildEvidenceTimelineFromRows(observedRows)
   const currentSemesterRows = observedRows.filter(row => row.semesterNumber === currentSemester)
-  const riskIds = new Set(riskRows.map(row => row.riskAssessmentId))
-  const relevantReassessments = reassessmentRows
-    .filter(row => riskIds.has(row.riskAssessmentId))
-    .sort((left, right) => left.dueAt.localeCompare(right.dueAt))
   const riskSortRank = (row: typeof riskRows[number]) => {
     const reassessment = relevantReassessments.find(item => item.riskAssessmentId === row.riskAssessmentId) ?? null
     return reassessment && deps.isOpenReassessmentStatus(reassessment.status) ? 2 : reassessment ? 1 : 0
@@ -2007,6 +2044,23 @@ export async function buildStudentAgentCard(db: AppDb, input: {
     },
   })
   return persistedCard
+}
+
+export function buildStudentAgentCard(db: AppDb, input: {
+  simulationRunId: string
+  studentId: string
+  simulationStageCheckpointId?: string | null
+}, deps: ProofControlPlaneTailServiceDeps): Promise<StudentAgentCardPayload> {
+  const inflightKey = buildStudentAgentCardInflightKey(input)
+  const inflightBuild = studentAgentCardBuildInflight.get(inflightKey)
+  if (inflightBuild) return inflightBuild
+  const buildPromise = buildStudentAgentCardFresh(db, input, deps).finally(() => {
+    if (studentAgentCardBuildInflight.get(inflightKey) === buildPromise) {
+      studentAgentCardBuildInflight.delete(inflightKey)
+    }
+  })
+  studentAgentCardBuildInflight.set(inflightKey, buildPromise)
+  return buildPromise
 }
 
 function deriveScenarioRiskHeads(input: {

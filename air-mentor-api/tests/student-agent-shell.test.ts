@@ -380,6 +380,91 @@ describe('student agent shell', () => {
     })
   })
 
+  it('keeps HoD checkpoint student shell card and timeline stable during concurrent semester-3 loads', async () => {
+    current = await createTestApp()
+    const hodLogin = await loginAs(current.app, 'kavitha.rao', '1234')
+    const hodRole = hodLogin.body.activeRoleGrant.roleCode === 'HOD'
+      ? hodLogin.body
+      : (await switchToRole(hodLogin.cookie, hodLogin.body.availableRoleGrants, 'HOD')).json()
+    expect(hodRole.activeRoleGrant.roleCode).toBe('HOD')
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const [activeRun] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    expect(activeRun).toBeTruthy()
+    const recomputeRiskResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRun.simulationRunId}/recompute-risk`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+    expect(recomputeRiskResponse.statusCode).toBe(200)
+
+    const checkpointRows = await current.db.select().from(simulationStageCheckpoints).where(
+      eq(simulationStageCheckpoints.simulationRunId, activeRun.simulationRunId),
+    ).orderBy(asc(simulationStageCheckpoints.semesterNumber), asc(simulationStageCheckpoints.stageOrder))
+    const semesterThreeCheckpoint = checkpointRows.filter(row => row.semesterNumber === 3).at(-1)
+    expect(semesterThreeCheckpoint).toBeTruthy()
+    expect(semesterThreeCheckpoint?.stageKey).toBe('post-see')
+
+    const activateSemesterResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRun.simulationRunId}/activate-semester`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: { semesterNumber: 3 },
+    })
+    expect(activateSemesterResponse.statusCode).toBe(200)
+
+    const hodStudentsResponse = await current.app.inject({
+      method: 'GET',
+      url: `/api/academic/hod/proof-students?simulationStageCheckpointId=${encodeURIComponent(semesterThreeCheckpoint!.simulationStageCheckpointId)}`,
+      headers: { cookie: hodLogin.cookie },
+    })
+    expect(hodStudentsResponse.statusCode).toBe(200)
+    const accessibleStudentId = (hodStudentsResponse.json().items as Array<{ studentId: string }>)[0]?.studentId
+    expect(accessibleStudentId).toBeTruthy()
+
+    let previousCardId: string | null = null
+    for (const round of [1, 2, 3] as const) {
+      const [cardResponseOne, cardResponseTwo, timelineResponseOne, timelineResponseTwo] = await Promise.all([
+        current.app.inject({
+          method: 'GET',
+          url: `/api/academic/student-shell/students/${accessibleStudentId}/card?simulationStageCheckpointId=${encodeURIComponent(semesterThreeCheckpoint!.simulationStageCheckpointId)}`,
+          headers: { cookie: hodLogin.cookie },
+        }),
+        current.app.inject({
+          method: 'GET',
+          url: `/api/academic/student-shell/students/${accessibleStudentId}/card?simulationStageCheckpointId=${encodeURIComponent(semesterThreeCheckpoint!.simulationStageCheckpointId)}`,
+          headers: { cookie: hodLogin.cookie },
+        }),
+        current.app.inject({
+          method: 'GET',
+          url: `/api/academic/student-shell/students/${accessibleStudentId}/timeline?simulationStageCheckpointId=${encodeURIComponent(semesterThreeCheckpoint!.simulationStageCheckpointId)}`,
+          headers: { cookie: hodLogin.cookie },
+        }),
+        current.app.inject({
+          method: 'GET',
+          url: `/api/academic/student-shell/students/${accessibleStudentId}/timeline?simulationStageCheckpointId=${encodeURIComponent(semesterThreeCheckpoint!.simulationStageCheckpointId)}`,
+          headers: { cookie: hodLogin.cookie },
+        }),
+      ])
+
+      expect(cardResponseOne.statusCode).toBe(200)
+      expect(cardResponseTwo.statusCode).toBe(200)
+      expect(timelineResponseOne.statusCode).toBe(200)
+      expect(timelineResponseTwo.statusCode).toBe(200)
+      expect(cardResponseOne.json().simulationStageCheckpointId).toBe(semesterThreeCheckpoint!.simulationStageCheckpointId)
+      expect(cardResponseTwo.json().simulationStageCheckpointId).toBe(semesterThreeCheckpoint!.simulationStageCheckpointId)
+      expect(cardResponseOne.json().studentAgentCardId).toBe(cardResponseTwo.json().studentAgentCardId)
+      expect(cardResponseOne.json().checkpointContext?.stageKey).toBe('post-see')
+      expect(timelineResponseOne.json().items.length).toBeGreaterThan(0)
+      expect(timelineResponseOne.json().items).toEqual(timelineResponseTwo.json().items)
+      if (previousCardId) {
+        expect(cardResponseOne.json().studentAgentCardId).toBe(previousCardId)
+      }
+      previousCardId = cardResponseOne.json().studentAgentCardId
+    }
+  })
+
   it('uses the activated proof semester for the default student shell while keeping checkpoint playback separate', async () => {
     current = await createTestApp()
     const login = await loginAs(current.app, 'devika.shetty', 'faculty1234')
