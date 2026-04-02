@@ -62,6 +62,7 @@ import {
 import { createId } from './ids.js'
 import { parseJson } from './json.js'
 import { parseObservedStateRow } from './proof-observed-state.js'
+import { pickMostRecentActiveRun } from './proof-active-run.js'
 import {
   buildProofBatchDashboard as buildProofBatchDashboardService,
   getProofRunCheckpointDetail as getProofRunCheckpointDetailService,
@@ -2447,7 +2448,15 @@ export async function getProofRiskModelDiagnostics(db: AppDb, input: {
   const correlationRow = activeRows.find(row => row.artifactType === 'correlation') ?? null
   const sourceRunCount = sourceRunRows.length
   const targetRunId = input.simulationRunId
-    ?? runRows.find(row => row.activeFlag === 1)?.simulationRunId
+    ?? pickMostRecentActiveRun(
+      runRows
+        .filter(row => row.activeFlag === 1)
+        .map(row => ({
+          ...row,
+          runLabel: row.runLabel,
+          activeOperationalSemester: row.activeOperationalSemester,
+        })),
+    )?.simulationRunId
     ?? runRows.slice().sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0]?.simulationRunId
     ?? null
   const [targetStageEvidenceRows, stageStudentRows, checkpointRows] = targetRunId

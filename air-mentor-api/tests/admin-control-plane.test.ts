@@ -1109,6 +1109,123 @@ describe('admin control plane routes', () => {
     ))).toBe(true)
   }, 300000)
 
+  it('keeps proof-dashboard stable across repeated semester activation reads', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const dashboardBefore = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/batches/${MSRUAS_PROOF_BATCH_ID}/proof-dashboard`,
+      headers: { cookie: adminLogin.cookie },
+    })
+    expect(dashboardBefore.statusCode).toBe(200)
+    const activeRunId = dashboardBefore.json().activeRunDetail?.simulationRunId as string | undefined
+    expect(activeRunId).toBeTruthy()
+    const recomputeRiskResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRunId}/recompute-risk`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+    expect(recomputeRiskResponse.statusCode).toBe(200)
+
+    const semesterWalk = [1, 2, 3, 4, 5, 6, 2, 1, 6]
+    for (const semesterNumber of semesterWalk) {
+      const activateSemesterResponse = await current.app.inject({
+        method: 'POST',
+        url: `/api/admin/proof-runs/${activeRunId}/activate-semester`,
+        headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+        payload: { semesterNumber },
+      })
+      expect(activateSemesterResponse.statusCode).toBe(200)
+      expect(activateSemesterResponse.json()).toMatchObject({
+        ok: true,
+        simulationRunId: activeRunId,
+        batchId: MSRUAS_PROOF_BATCH_ID,
+        activeOperationalSemester: semesterNumber,
+      })
+
+      for (let readIndex = 0; readIndex < 3; readIndex += 1) {
+        const dashboardResponse = await current.app.inject({
+          method: 'GET',
+          url: `/api/admin/batches/${MSRUAS_PROOF_BATCH_ID}/proof-dashboard`,
+          headers: { cookie: adminLogin.cookie },
+        })
+        expect(dashboardResponse.statusCode).toBe(200)
+        expect(dashboardResponse.json().activeRunDetail).toMatchObject({
+          simulationRunId: activeRunId,
+          activeOperationalSemester: semesterNumber,
+        })
+        expect(dashboardResponse.json().activeRunDetail.checkpoints.length).toBeGreaterThan(0)
+        expect(dashboardResponse.json().activeRunDetail.queuePreview).toEqual(expect.any(Array))
+        expect(dashboardResponse.json().activeRunDetail.modelDiagnostics.uiParityDiagnostics?.activeRunId).toBe(activeRunId)
+      }
+    }
+  }, 300000)
+
+  it('prefers the most recently updated active proof run when duplicate active flags exist', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const dashboardBefore = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/batches/${MSRUAS_PROOF_BATCH_ID}/proof-dashboard`,
+      headers: { cookie: adminLogin.cookie },
+    })
+    expect(dashboardBefore.statusCode).toBe(200)
+    const activeRunId = dashboardBefore.json().activeRunDetail?.simulationRunId as string | undefined
+    const activeRunSeed = dashboardBefore.json().activeRunDetail?.seed as number | undefined
+    const importVersionId = dashboardBefore.json().imports[0]?.curriculumImportVersionId as string | undefined
+    expect(activeRunId).toBeTruthy()
+    expect(importVersionId).toBeTruthy()
+
+    const shadowRunResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/batches/${MSRUAS_PROOF_BATCH_ID}/proof-runs`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        curriculumImportVersionId: importVersionId,
+        seed: activeRunSeed ?? PROOF_CORPUS_MANIFEST[0]!.seed,
+        runLabel: 'shadow-active-run',
+        activate: false,
+      },
+    })
+    expect(shadowRunResponse.statusCode).toBe(200)
+    const shadowRunId = shadowRunResponse.json().simulationRunId as string
+
+    await current.db.update(simulationRuns).set({
+      activeFlag: 1,
+      status: 'completed',
+      updatedAt: '2026-04-01T00:00:00.000Z',
+    }).where(eq(simulationRuns.simulationRunId, activeRunId!))
+    await current.db.update(simulationRuns).set({
+      activeFlag: 1,
+      status: 'active',
+      activeOperationalSemester: 4,
+      updatedAt: '2026-03-01T00:00:00.000Z',
+    }).where(eq(simulationRuns.simulationRunId, shadowRunId))
+
+    const activateSemesterResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRunId}/activate-semester`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: { semesterNumber: 1 },
+    })
+    expect(activateSemesterResponse.statusCode).toBe(200)
+
+    const dashboardAfter = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/batches/${MSRUAS_PROOF_BATCH_ID}/proof-dashboard`,
+      headers: { cookie: adminLogin.cookie },
+    })
+    expect(dashboardAfter.statusCode).toBe(200)
+    expect(dashboardAfter.json().activeRunDetail).toMatchObject({
+      simulationRunId: activeRunId,
+      activeOperationalSemester: 1,
+    })
+    expect(dashboardAfter.json().activeRunDetail.modelDiagnostics.uiParityDiagnostics?.activeRunId).toBe(activeRunId)
+  }, 300000)
+
   it('re-activates proof semesters without duplicating the published operational projection', async () => {
     current = await createTestApp()
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')

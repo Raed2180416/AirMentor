@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray } from 'drizzle-orm'
 import type { AppDb } from '../db/client.js'
 import {
   alertAcknowledgements,
@@ -40,6 +40,7 @@ import {
   decorateProofRunsWithOperationalDiagnostics,
 } from './proof-control-plane-dashboard-service.js'
 import { MSRUAS_PROOF_BRANCH_ID, MSRUAS_PROOF_DEPARTMENT_ID } from './msruas-proof-sandbox.js'
+import { pickMostRecentActiveRun } from './proof-active-run.js'
 
 type ProofCheckpointSummaryLike = {
   simulationStageCheckpointId: string
@@ -233,26 +234,10 @@ export async function buildProofBatchDashboard(db: AppDb, batchId: string, deps:
     validationRows,
     crosswalkRows,
     runRows,
-    snapshotRows,
     lifecycleRows,
-    loadRows,
-    behaviorProfileRows,
-    topicStateRows,
-    coStateRows,
-    questionTemplateRows,
-    questionResultRows,
-    interventionResponseRows,
-    worldContextRows,
-    stageCheckpointRows,
-    stageQueueRows,
-    riskRows,
-    reassessmentRows,
-    alertRows,
     resolutionRows,
     acknowledgementRows,
     recentOperationalEventRows,
-    facultyRows,
-    studentRows,
     offeringRows,
     courseRows,
   ] = await Promise.all([
@@ -260,33 +245,15 @@ export async function buildProofBatchDashboard(db: AppDb, batchId: string, deps:
     db.select().from(curriculumValidationResults).where(eq(curriculumValidationResults.batchId, batchId)),
     db.select().from(officialCodeCrosswalks).where(eq(officialCodeCrosswalks.batchId, batchId)),
     db.select().from(simulationRuns).where(eq(simulationRuns.batchId, batchId)),
-    db.select().from(simulationResetSnapshots).where(eq(simulationResetSnapshots.batchId, batchId)),
     db.select().from(simulationLifecycleAudits).where(eq(simulationLifecycleAudits.batchId, batchId)),
-    db.select().from(teacherLoadProfiles),
-    db.select().from(studentBehaviorProfiles),
-    db.select().from(studentTopicStates),
-    db.select().from(studentCoStates),
-    db.select().from(simulationQuestionTemplates),
-    db.select().from(studentQuestionResults),
-    db.select().from(studentInterventionResponseStates),
-    db.select().from(worldContextSnapshots),
-    db.select().from(simulationStageCheckpoints),
-    db.select().from(simulationStageQueueProjections),
-    db.select().from(riskAssessments),
-    db.select().from(reassessmentEvents),
-    db.select().from(alertDecisions),
     db.select().from(reassessmentResolutions).where(eq(reassessmentResolutions.batchId, batchId)),
     db.select().from(alertAcknowledgements).where(eq(alertAcknowledgements.batchId, batchId)),
     db.select().from(operationalTelemetryEvents).orderBy(desc(operationalTelemetryEvents.eventTimestamp), desc(operationalTelemetryEvents.createdAt)).limit(12),
-    db.select().from(facultyProfiles),
-    db.select().from(students),
     db.select().from(sectionOfferings).where(eq(sectionOfferings.branchId, MSRUAS_PROOF_BRANCH_ID)),
     db.select().from(courses).where(eq(courses.departmentId, MSRUAS_PROOF_DEPARTMENT_ID)),
   ])
 
   const courseById = new Map(courseRows.map(row => [row.courseId, row]))
-  const facultyById = new Map(facultyRows.map(row => [row.facultyId, row]))
-  const studentById = new Map(studentRows.map(row => [row.studentId, row]))
   const proofRunStatusRank = (status: string) => {
     switch (status) {
       case 'active':
@@ -305,10 +272,17 @@ export async function buildProofBatchDashboard(db: AppDb, batchId: string, deps:
         return 6
     }
   }
-  const activeRun = runRows
+  const activeRun = pickMostRecentActiveRun(
+    runRows
+      .filter(row => row.activeFlag === 1)
+      .map(row => ({
+        ...row,
+        runLabel: row.runLabel,
+        activeOperationalSemester: row.activeOperationalSemester,
+      })),
+  ) ?? runRows
     .slice()
     .sort((left, right) => {
-      if (left.activeFlag !== right.activeFlag) return right.activeFlag - left.activeFlag
       const statusDelta = proofRunStatusRank(left.status) - proofRunStatusRank(right.status)
       if (statusDelta !== 0) return statusDelta
       if (left.updatedAt !== right.updatedAt) return right.updatedAt.localeCompare(left.updatedAt)
@@ -319,28 +293,73 @@ export async function buildProofBatchDashboard(db: AppDb, batchId: string, deps:
     batchId,
     simulationRunId: activeRunId,
   })
-  const activeRiskRows = activeRunId ? riskRows.filter(row => row.simulationRunId === activeRunId) : []
-  const riskIds = new Set(activeRiskRows.map(row => row.riskAssessmentId))
-  const activeReassessments = reassessmentRows.filter(row => riskIds.has(row.riskAssessmentId))
-  const activeAlerts = alertRows.filter(row => riskIds.has(row.riskAssessmentId))
-  const activeSnapshots = activeRunId ? snapshotRows.filter(row => row.simulationRunId === activeRunId) : []
-  const activeLoads = activeRunId ? loadRows.filter(row => row.simulationRunId === activeRunId) : []
-  const activeBehaviorProfiles = activeRunId ? behaviorProfileRows.filter(row => row.simulationRunId === activeRunId) : []
-  const activeTopicStates = activeRunId ? topicStateRows.filter(row => row.simulationRunId === activeRunId) : []
-  const activeCoStates = activeRunId ? coStateRows.filter(row => row.simulationRunId === activeRunId) : []
-  const activeQuestionTemplates = activeRunId ? questionTemplateRows.filter(row => row.simulationRunId === activeRunId) : []
-  const activeQuestionResults = activeRunId ? questionResultRows.filter(row => row.simulationRunId === activeRunId) : []
-  const activeInterventionResponses = activeRunId ? interventionResponseRows.filter(row => row.simulationRunId === activeRunId) : []
-  const activeWorldContexts = activeRunId ? worldContextRows.filter(row => row.simulationRunId === activeRunId) : []
-  const activeStageCheckpoints = activeRunId
-    ? stageCheckpointRows
-      .filter(row => row.simulationRunId === activeRunId)
-      .sort((left, right) => left.semesterNumber - right.semesterNumber || left.stageOrder - right.stageOrder)
-    : []
+  const [
+    activeSnapshots,
+    activeLoads,
+    activeBehaviorProfiles,
+    activeTopicStates,
+    activeCoStates,
+    activeQuestionTemplates,
+    activeQuestionResults,
+    activeInterventionResponses,
+    activeWorldContexts,
+    activeStageCheckpoints,
+    activeStageQueueRows,
+    activeRiskRows,
+  ] = activeRunId
+    ? await Promise.all([
+        db.select().from(simulationResetSnapshots).where(and(
+          eq(simulationResetSnapshots.batchId, batchId),
+          eq(simulationResetSnapshots.simulationRunId, activeRunId),
+        )),
+        db.select().from(teacherLoadProfiles).where(eq(teacherLoadProfiles.simulationRunId, activeRunId)),
+        db.select().from(studentBehaviorProfiles).where(eq(studentBehaviorProfiles.simulationRunId, activeRunId)),
+        db.select().from(studentTopicStates).where(eq(studentTopicStates.simulationRunId, activeRunId)),
+        db.select().from(studentCoStates).where(eq(studentCoStates.simulationRunId, activeRunId)),
+        db.select().from(simulationQuestionTemplates).where(eq(simulationQuestionTemplates.simulationRunId, activeRunId)),
+        db.select().from(studentQuestionResults).where(eq(studentQuestionResults.simulationRunId, activeRunId)),
+        db.select().from(studentInterventionResponseStates).where(eq(studentInterventionResponseStates.simulationRunId, activeRunId)),
+        db.select().from(worldContextSnapshots).where(eq(worldContextSnapshots.simulationRunId, activeRunId)),
+        db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, activeRunId)).orderBy(
+          asc(simulationStageCheckpoints.semesterNumber),
+          asc(simulationStageCheckpoints.stageOrder),
+        ),
+        db.select().from(simulationStageQueueProjections).where(eq(simulationStageQueueProjections.simulationRunId, activeRunId)),
+        db.select().from(riskAssessments).where(eq(riskAssessments.simulationRunId, activeRunId)),
+      ])
+    : [[], [], [], [], [], [], [], [], [], [], [], []]
   const activeCheckpointSummaries = withProofPlaybackGate(activeStageCheckpoints.map(parseProofCheckpointSummary))
-  const activeStageQueueRows = activeRunId
-    ? stageQueueRows.filter(row => row.simulationRunId === activeRunId)
-    : []
+  const riskIds = activeRiskRows.map(row => row.riskAssessmentId)
+  const [activeReassessments, activeAlerts] = riskIds.length > 0
+    ? await Promise.all([
+        db.select().from(reassessmentEvents).where(inArray(reassessmentEvents.riskAssessmentId, riskIds)),
+        db.select().from(alertDecisions).where(inArray(alertDecisions.riskAssessmentId, riskIds)),
+      ])
+    : [[], []]
+  const facultyIds = Array.from(new Set([
+    ...activeLoads.map(load => load.facultyId),
+    ...activeStageQueueRows.map(row => row.assignedFacultyId).filter((value): value is string => typeof value === 'string' && value.length > 0),
+    ...activeReassessments.map(row => row.assignedFacultyId).filter((value): value is string => typeof value === 'string' && value.length > 0),
+    ...lifecycleRows.map(row => row.createdByFacultyId).filter((value): value is string => typeof value === 'string' && value.length > 0),
+  ]))
+  const studentIds = Array.from(new Set([
+    ...activeRiskRows.map(row => row.studentId),
+    ...activeStageQueueRows.map(row => row.studentId),
+    ...activeReassessments.map(row => row.studentId),
+  ]))
+  const [facultyRows, studentRows] = await Promise.all([
+    facultyIds.length > 0
+      ? db.select().from(facultyProfiles).where(inArray(facultyProfiles.facultyId, facultyIds))
+      : Promise.resolve([]),
+    studentIds.length > 0
+      ? db.select().from(students).where(inArray(students.studentId, studentIds))
+      : Promise.resolve([]),
+  ])
+  const facultyById = new Map(facultyRows.map(row => [row.facultyId, row]))
+  const studentById = new Map(studentRows.map(row => [row.studentId, row]))
+  const latestValidationRow = validationRows
+    .slice()
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0] ?? null
   const checkpointMetaById = new Map(activeStageCheckpoints.map(row => {
     const summary = parseJson(row.summaryJson, {
       stageLabel: row.stageLabel,
@@ -468,13 +487,11 @@ export async function buildProofBatchDashboard(db: AppDb, batchId: string, deps:
         createdAt: row.createdAt,
         certificate: parseJson(row.completenessCertificateJson, {} as Record<string, unknown>),
       })),
-    latestValidation: validationRows
-      .slice()
-      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0]
+    latestValidation: latestValidationRow
       ? {
-          validatorVersion: validationRows.slice().sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0].validatorVersion,
-          status: validationRows.slice().sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0].status,
-          summary: parseJson(validationRows.slice().sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0].summaryJson, {} as Record<string, unknown>),
+          validatorVersion: latestValidationRow.validatorVersion,
+          status: latestValidationRow.status,
+          summary: parseJson(latestValidationRow.summaryJson, {} as Record<string, unknown>),
         }
       : null,
     crosswalkReviewQueue: crosswalkRows
