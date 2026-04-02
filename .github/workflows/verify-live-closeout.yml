@@ -1,0 +1,92 @@
+name: Verify Live Closeout
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-live-closeout
+  cancel-in-progress: true
+
+env:
+  PLAYWRIGHT_APP_URL: https://raed2180416.github.io/AirMentor/
+  PLAYWRIGHT_API_URL: ${{ vars.RAILWAY_PUBLIC_API_URL }}
+  AIRMENTOR_LIVE_STACK: '1'
+  AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER: ${{ vars.AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER }}
+  AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD: ${{ secrets.AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD }}
+
+jobs:
+  live-closeout:
+    name: Live closeout suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright CLI
+        run: npm install -g playwright
+
+      - name: Install Firefox browser
+        run: playwright install --with-deps firefox
+
+      - name: Run live closeout verification
+        run: npm run verify:final-closeout:live
+
+      - name: Upload live closeout artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-closeout-artifacts
+          path: |
+            output/playwright
+            air-mentor-api/output
+          if-no-files-found: warn
+
+  live-semester-walk:
+    name: Live semester walk
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright CLI
+        run: npm install -g playwright
+
+      - name: Install Firefox browser
+        run: playwright install --with-deps firefox
+
+      - name: Run live semester walk
+        env:
+          AIRMENTOR_PROOF_SEMESTER_TARGETS: 1,2,3,4,5,6
+          AIRMENTOR_PROOF_ARTIFACT_PREFIX: 20260402-live-semantic
+        run: npm run playwright:admin-live:proof-risk
+
+      - name: Upload live semester walk artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-semester-walk-artifacts
+          path: output/playwright
+          if-no-files-found: warn
