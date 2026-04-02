@@ -37,7 +37,11 @@ EXPECTED_FRONTEND_ORIGIN="$frontend_origin" \
 AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER="$AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER" \
 AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD="$AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD" \
 npm --workspace air-mentor-api run verify:live-session-contract
-AIRMENTOR_LIVE_STACK=1 npm run verify:proof-closure:live
+if [[ "${SKIP_PROOF_CLOSURE_LIVE:-}" != "1" ]]; then
+  AIRMENTOR_LIVE_STACK=1 npm run verify:proof-closure:live
+else
+  echo "Skipping duplicate proof-closure live smoke because semester-walk verification already covers it."
+fi
 AIRMENTOR_LIVE_STACK=1 npm run playwright:admin-live:acceptance
 AIRMENTOR_LIVE_STACK=1 npm run playwright:admin-live:request-flow
 AIRMENTOR_LIVE_STACK=1 npm run playwright:admin-live:teaching-parity
