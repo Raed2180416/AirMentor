@@ -210,16 +210,46 @@ async function expectWorkspaceTab(tabName, tabId, expectedTexts, reportName = `w
   }
 }
 
+function getDialogLocator(dialogName) {
+  return dialogName instanceof RegExp
+    ? page.getByRole('dialog', { name: dialogName })
+    : page.getByRole('dialog', { name: dialogName, exact: true })
+}
+
+async function openHierarchyDialog(buttonName, dialogName, description) {
+  const trigger = page.getByRole('button', { name: buttonName, exact: true }).first()
+  const dialog = getDialogLocator(dialogName)
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    await expectVisible(trigger, `${description} trigger`)
+    await trigger.scrollIntoViewIfNeeded().catch(() => {})
+    await trigger.click()
+    const opened = await dialog.waitFor({ state: 'visible', timeout: 5_000 }).then(() => true).catch(() => false)
+    if (opened) return dialog
+    await page.waitForTimeout(250)
+  }
+  await dialog.waitFor({ state: 'visible', timeout: 20_000 })
+  return dialog
+}
+
+function getHierarchySelect(scopeLabel) {
+  return page.locator(`xpath=//div[./div[normalize-space()="${scopeLabel}"] and ./select]/select`).first()
+}
+
 async function selectBatchByLabelSuffix(batchLabel) {
-  const batchSelect = page.getByRole('combobox').nth(3)
-  await page.waitForFunction((expectedLabel) => {
-    const select = document.querySelectorAll('select')[3]
-    if (!(select instanceof HTMLSelectElement)) return false
-    return Array.from(select.options).some(option => {
-      const text = option.textContent?.trim() ?? ''
-      return option.value && (text === expectedLabel || text.endsWith(`· ${expectedLabel}`))
-    })
-  }, batchLabel, { timeout: 40_000 })
+  const batchSelect = getHierarchySelect('Year')
+  const deadline = Date.now() + 40_000
+  let hasOption = false
+  while (!hasOption && Date.now() < deadline) {
+    hasOption = await batchSelect.evaluate((select, expectedLabel) => {
+      if (!(select instanceof HTMLSelectElement)) return false
+      return Array.from(select.options).some(option => {
+        const text = option.textContent?.trim() ?? ''
+        return option.value && (text === expectedLabel || text.endsWith(`· ${expectedLabel}`))
+      })
+    }, batchLabel)
+    if (!hasOption) await page.waitForTimeout(250)
+  }
+  assert(hasOption, `Expected batch option ending with ${batchLabel}`)
   const optionValue = await batchSelect.evaluate((select, expectedLabel) => {
     if (!(select instanceof HTMLSelectElement)) return null
     const option = Array.from(select.options).find(candidate => {
@@ -232,13 +262,18 @@ async function selectBatchByLabelSuffix(batchLabel) {
   await batchSelect.selectOption(String(optionValue))
 }
 
-async function selectExactComboboxLabel(index, label, description) {
-  const select = page.getByRole('combobox').nth(index)
-  await page.waitForFunction(({ selectIndex, expectedLabel }) => {
-    const candidate = document.querySelectorAll('select')[selectIndex]
-    if (!(candidate instanceof HTMLSelectElement)) return false
-    return Array.from(candidate.options).some(option => option.textContent?.trim() === expectedLabel)
-  }, { selectIndex: index, expectedLabel: label }, { timeout: 40_000 })
+async function selectExactHierarchyLabel(scopeLabel, label, description) {
+  const select = getHierarchySelect(scopeLabel)
+  const deadline = Date.now() + 40_000
+  let hasOption = false
+  while (!hasOption && Date.now() < deadline) {
+    hasOption = await select.evaluate((candidate, expectedLabel) => {
+      if (!(candidate instanceof HTMLSelectElement)) return false
+      return Array.from(candidate.options).some(option => option.textContent?.trim() === expectedLabel)
+    }, label)
+    if (!hasOption) await page.waitForTimeout(250)
+  }
+  assert(hasOption, `Expected ${scopeLabel} option ${label}`)
   await select.selectOption({ label })
   await page.waitForLoadState('networkidle')
   await page.waitForTimeout(400)
@@ -309,12 +344,12 @@ try {
   await addFacultyForm.locator('textarea').fill('Created by the live acceptance flow.')
   await addFacultyForm.getByRole('button', { name: 'Add Faculty', exact: true }).click()
   await expectFlash('Academic faculty created.')
-  await page.getByRole('combobox').nth(0).selectOption({ label: facultyName })
-  await page.getByRole('button', { name: 'Edit Faculty', exact: true }).click()
-  await page.getByLabel('Faculty Name', { exact: true }).fill(updatedFacultyName)
-  await page.getByRole('button', { name: 'Save Faculty', exact: true }).click()
+  await getHierarchySelect('Faculty').selectOption({ label: facultyName })
+  const facultyDialog = await openHierarchyDialog('Edit Faculty', `Edit ${facultyName}`, 'faculty editor')
+  await facultyDialog.getByLabel('Faculty Name', { exact: true }).fill(updatedFacultyName)
+  await facultyDialog.getByRole('button', { name: 'Save Faculty', exact: true }).click()
   await expectFlash('Academic faculty updated.')
-  await selectExactComboboxLabel(0, updatedFacultyName, 'updated academic faculty selector state')
+  await selectExactHierarchyLabel('Faculty', updatedFacultyName, 'updated academic faculty selector state')
   await expectBodyText(updatedFacultyName, 'updated academic faculty name')
   report.checks.push({ name: 'faculty-create-update', status: 'passed', facultyCode })
 
@@ -323,12 +358,12 @@ try {
   await addDepartmentForm.locator('input').nth(1).fill(departmentName)
   await addDepartmentForm.getByRole('button', { name: 'Add Department', exact: true }).click()
   await expectFlash('Department created.')
-  await page.getByRole('combobox').nth(1).selectOption({ label: departmentName })
-  await page.getByRole('button', { name: 'Edit Department', exact: true }).click()
-  await page.getByLabel('Department Name', { exact: true }).fill(updatedDepartmentName)
-  await page.getByRole('button', { name: 'Save Department', exact: true }).click()
+  await getHierarchySelect('Department').selectOption({ label: departmentName })
+  const departmentDialog = await openHierarchyDialog('Edit Department', `Edit ${departmentName}`, 'department editor')
+  await departmentDialog.getByLabel('Department Name', { exact: true }).fill(updatedDepartmentName)
+  await departmentDialog.getByRole('button', { name: 'Save Department', exact: true }).click()
   await expectFlash('Department updated.')
-  await selectExactComboboxLabel(1, updatedDepartmentName, 'updated department selector state')
+  await selectExactHierarchyLabel('Department', updatedDepartmentName, 'updated department selector state')
   await expectBodyText(updatedDepartmentName, 'updated department name')
   report.checks.push({ name: 'department-create-update', status: 'passed', departmentCode })
 
@@ -339,12 +374,12 @@ try {
   await addBranchForm.locator('input').nth(3).fill('8')
   await addBranchForm.getByRole('button', { name: 'Add Branch', exact: true }).click()
   await expectFlash('Branch created.')
-  await page.getByRole('combobox').nth(2).selectOption({ label: branchName })
-  await page.getByRole('button', { name: 'Edit Branch', exact: true }).click()
-  await page.getByLabel('Branch Name', { exact: true }).fill(updatedBranchName)
-  await page.getByRole('button', { name: 'Save Branch', exact: true }).click()
+  await getHierarchySelect('Branch').selectOption({ label: branchName })
+  const branchDialog = await openHierarchyDialog('Edit Branch', `Edit ${branchName}`, 'branch editor')
+  await branchDialog.getByLabel('Branch Name', { exact: true }).fill(updatedBranchName)
+  await branchDialog.getByRole('button', { name: 'Save Branch', exact: true }).click()
   await expectFlash('Branch updated.')
-  await selectExactComboboxLabel(2, updatedBranchName, 'updated branch selector state')
+  await selectExactHierarchyLabel('Branch', updatedBranchName, 'updated branch selector state')
   await expectBodyText(updatedBranchName, 'updated branch name')
   report.checks.push({ name: 'branch-create-update', status: 'passed', branchCode })
 
@@ -354,12 +389,12 @@ try {
   await addBatchForm.locator('input').nth(2).fill('A')
   await addBatchForm.getByRole('button', { name: 'Add Batch', exact: true }).click()
   await expectFlash('Batch created.')
-  await page.getByRole('combobox').nth(3).selectOption({ index: 1 })
-  await page.getByRole('button', { name: 'Edit Batch', exact: true }).click()
-  await page.getByLabel('Batch Label', { exact: true }).fill(batchLabel)
-  await page.getByLabel('Batch Active Semester', { exact: true }).fill('6')
-  await page.getByLabel('Batch Section Labels', { exact: true }).fill('A, B')
-  await page.getByRole('button', { name: 'Save Batch', exact: true }).click()
+  await selectBatchByLabelSuffix(batchYear)
+  const batchDialog = await openHierarchyDialog('Edit Batch', /^Edit Batch /, 'batch editor')
+  await batchDialog.getByLabel('Batch Label', { exact: true }).fill(batchLabel)
+  await batchDialog.getByLabel('Batch Active Semester', { exact: true }).fill('6')
+  await batchDialog.getByLabel('Batch Section Labels', { exact: true }).fill('A, B')
+  await batchDialog.getByRole('button', { name: 'Save Batch', exact: true }).click()
   await expectFlash('Batch updated.')
   await expectBodyText(`Batch ${batchLabel}`, 'updated batch label chip')
   await expectBodyTextOneOf(['Batch semester · Sem 6', 'Proof operational semester · Sem 6'], 'updated batch semester chip')
@@ -375,9 +410,9 @@ try {
   if (await resetWorkspaceIfVisible()) {
     report.checks.push({ name: 'workspace-reset-after-refresh', status: 'passed' })
   }
-  await page.getByRole('combobox').nth(0).selectOption({ label: updatedFacultyName })
-  await page.getByRole('combobox').nth(1).selectOption({ label: updatedDepartmentName })
-  await page.getByRole('combobox').nth(2).selectOption({ label: updatedBranchName })
+  await getHierarchySelect('Faculty').selectOption({ label: updatedFacultyName })
+  await getHierarchySelect('Department').selectOption({ label: updatedDepartmentName })
+  await getHierarchySelect('Branch').selectOption({ label: updatedBranchName })
   await selectBatchByLabelSuffix(batchLabel)
   await expectWorkspaceTab('Overview', 'overview', ['Batch Configuration', 'Curriculum Model Inputs'], 'workspace-overview-refresh')
   await expectWorkspaceTab('Bands', 'bands', ['Academic Bands', 'Save Scope Governance'])
