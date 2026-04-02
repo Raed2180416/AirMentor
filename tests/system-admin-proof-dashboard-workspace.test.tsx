@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createElement } from 'react'
-import { cleanup, fireEvent, render } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
@@ -298,12 +298,333 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     expect(markup).toContain('operational semester 6')
     expect(markup).toContain('Proof playback restored')
     expect(markup).toContain('Reset playback')
-    expect(markup).toContain('Stage progression blocked')
-    expect(markup).toContain('Queue items from the TT1 checkpoint are still unresolved.')
-    expect(markup).toContain('Probability display: band only')
-    expect(markup).toContain('Held-out positive support is below the probability display threshold.')
     expect(markup).toContain('Recent Operational Events')
-    expect(markup).toContain('startup.ready')
+    expect(markup).toContain('Operations Preview')
+
+    const { container: checkpointContainer } = render(createElement(SystemAdminProofDashboardWorkspace, {
+      proofDashboard,
+      proofDashboardLoading: false,
+      initialActiveDashboardTab: 'checkpoint',
+      activeRunCheckpoints: checkpoints,
+      activeModelDiagnostics: { scenarioFamilySummary: { steady: 3, rescue: 2 } },
+      activeProductionDiagnostics: {
+        artifactVersion: 'artifact-v1',
+        evaluation: { auc: 0.84, support: 'healthy' },
+        correlations: { attendancePct: 0.41 },
+      },
+      activeDiagnosticsTrainingManifestVersion: 'manifest-v1',
+      activeDiagnosticsCalibrationVersion: 'isotonic-v1',
+      activeDiagnosticsSplitSummary: { train: 1800, validation: 300, test: 300 },
+      activeDiagnosticsWorldSplitSummary: { train: 4, validation: 1, test: 1 },
+      activeDiagnosticsScenarioFamilies: { steady: 3, rescue: 2 },
+      activeDiagnosticsHeadSupportSummary: { overallCourseRisk: { positives: 1200 } },
+      activeDiagnosticsGovernedRunCount: 5,
+      activeDiagnosticsSkippedRunCount: 0,
+      activeDiagnosticsDisplayProbabilityAllowed: false,
+      activeDiagnosticsSupportWarning: 'Held-out positive support is below the probability display threshold.',
+      activeDiagnosticsPolicyDiagnostics: { gates: 'ok' },
+      activeDiagnosticsCoEvidence: { mode: 'graph-aware' },
+      activeDiagnosticsPolicyAcceptance: { policy: 'accepted' },
+      activeDiagnosticsOverallCourseRuntime: { parity: 'aligned' },
+      activeDiagnosticsQueueBurden: { mentor: 2 },
+      activeDiagnosticsUiParity: { facultySurface: 'aligned' },
+      selectedProofCheckpoint: selectedCheckpoint,
+      selectedProofCheckpointDetail: checkpointDetail,
+      selectedProofCheckpointBlocked: true,
+      selectedProofCheckpointHasBlockedProgression: true,
+      selectedProofCheckpointCanStepForward: false,
+      selectedProofCheckpointCanPlayToEnd: false,
+      proofPlaybackRestoreNotice: {
+        tone: 'neutral',
+        message: 'Proof playback restored to Semester 6 · Post TT1. Use Reset playback to clear the saved checkpoint.',
+      },
+      onCreateProofImport: () => {},
+      onValidateLatestProofImport: () => {},
+      onReviewPendingCrosswalks: () => {},
+      onApproveLatestProofImport: () => {},
+      onCreateProofRun: () => {},
+      onRecomputeProofRunRisk: () => {},
+      onActivateProofRun: () => {},
+      onActivateProofSemester: () => {},
+      onRetryProofRun: () => {},
+      onArchiveProofRun: () => {},
+      onRestoreProofSnapshot: () => {},
+      onResetProofPlaybackSelection: () => {},
+      onSelectProofCheckpoint: () => {},
+      onStepProofPlayback: () => {},
+      formatSplitSummary: summary => JSON.stringify(summary),
+      formatKeyedCounts: summary => JSON.stringify(summary),
+      formatHeadSupportSummary: summary => JSON.stringify(summary),
+      formatDiagnosticSummary: summary => JSON.stringify(summary),
+    }))
+
+    expect(checkpointContainer.innerHTML).toContain('Playback progression is blocked until all queue items at this checkpoint are resolved.')
+    expect(checkpointContainer.innerHTML).toContain('Queue items from the TT1 checkpoint are still unresolved.')
+    expect(checkpointContainer.innerHTML).toContain('Proof playback restored')
+    expect(checkpointContainer.innerHTML).toContain('Stage progression blocked')
+  })
+
+  it('renders a tabbed proof control plane with bounded operations scroll regions', () => {
+    const selectedCheckpoint = buildCheckpoint({
+      simulationStageCheckpointId: 'checkpoint_post_tt1',
+      stageLabel: 'Post TT1',
+      stageKey: 'post-tt1',
+      semesterNumber: 6,
+      playbackAccessible: true,
+      stageAdvanceBlocked: false,
+      blockedByCheckpointId: null,
+      blockedProgressionReason: null,
+    })
+
+    const proofDashboard: ApiProofDashboard = {
+      imports: [{
+        curriculumImportVersionId: 'import_001',
+        sourceLabel: 'MSRUAS workbook',
+        sourceChecksum: 'source-sha',
+        outputChecksum: 'output-sha',
+        compilerVersion: 'compiler-v1',
+        validationStatus: 'valid',
+        unresolvedMappingCount: 0,
+        status: 'approved',
+        approvedAt: '2026-03-16T00:00:00.000Z',
+        createdAt: '2026-03-16T00:00:00.000Z',
+        certificate: {},
+      }],
+      latestValidation: null,
+      crosswalkReviewQueue: [{
+        officialCodeCrosswalkId: 'crosswalk_001',
+        internalCompilerId: 'MC601',
+        officialWebCode: 'CS601',
+        confidence: 'high',
+      }],
+      proofRuns: [{
+        simulationRunId: 'run_001',
+        runLabel: 'Proof Run 1',
+        status: 'active',
+        activeFlag: true,
+        seed: 42,
+        createdAt: '2026-03-16T00:00:00.000Z',
+        startedAt: '2026-03-16T00:00:00.000Z',
+        completedAt: null,
+        failureCode: null,
+        failureMessage: null,
+        progress: { phase: 'running', percent: 68 },
+        metrics: {},
+        queueAgeSeconds: 180,
+        leaseState: 'leased',
+        leaseExpiresAt: '2026-03-16T00:15:00.000Z',
+        retryState: null,
+        retryOfSimulationRunId: null,
+        failureState: 'none',
+      }],
+      activeRunDetail: {
+        simulationRunId: 'run_001',
+        runLabel: 'Proof Run 1',
+        seed: 42,
+        activeOperationalSemester: 6,
+        createdAt: '2026-03-16T00:00:00.000Z',
+        startedAt: '2026-03-16T00:00:00.000Z',
+        completedAt: null,
+        status: 'active',
+        failureCode: null,
+        failureMessage: null,
+        progress: { phase: 'running', percent: 68 },
+        monitoringSummary: {
+          riskAssessmentCount: 24,
+          activeReassessmentCount: 5,
+          alertDecisionCount: 6,
+          acknowledgementCount: 2,
+          resolutionCount: 1,
+        },
+        coverageDiagnostics: {
+          behaviorProfileCoverage: { count: 120, expected: 120 },
+          topicStateCoverage: { count: 640 },
+          coStateCoverage: { count: 310 },
+          questionTemplateCoverage: { count: 84 },
+          questionResultCoverage: { count: 2400 },
+          interventionResponseCoverage: { count: 36 },
+          worldContextCoverage: { count: 12 },
+        },
+        modelDiagnostics: {
+          featureRowCount: 2400,
+          activeRunFeatureRowCount: 360,
+          sourceRunCount: 5,
+          runtimeSummary: {},
+          overallCourseRuntimeSummary: {},
+          queueBurdenSummary: {},
+          stageRollups: [],
+          acceptanceGateSummary: {},
+          splitSummary: { train: 1800, validation: 300, test: 300 },
+          worldSplitSummary: { train: 4, validation: 1, test: 1 },
+          scenarioFamilySummary: { steady: 3, rescue: 2 },
+          headSupportSummary: { overallCourseRisk: { positives: 1200 } },
+          calibrationVersion: 'isotonic-v1',
+          policyDiagnostics: { gates: 'ok' },
+          coEvidenceDiagnostics: {
+            totalRows: 360,
+            fallbackCount: 40,
+            byMode: {
+              'offering-blueprint': 280,
+              'rubric-derived': 40,
+              'fallback-simulated': 40,
+            },
+          },
+          uiParityDiagnostics: { facultySurface: 'aligned' },
+          production: null,
+          challenger: null,
+          correlations: null,
+        },
+        queueDiagnostics: {
+          queuedRunCount: 1,
+          runningRunCount: 1,
+          failedRunCount: 0,
+          retryableRunCount: 0,
+          retryInFlightCount: 0,
+          oldestQueuedRunAgeSeconds: 180,
+          expiredLeaseRunCount: 0,
+        },
+        workerDiagnostics: {
+          queueAgeSeconds: 180,
+          leaseState: 'leased',
+          leaseExpiresAt: '2026-03-16T00:15:00.000Z',
+          retryState: null,
+          retryOfSimulationRunId: null,
+          failureState: 'none',
+          progressPhase: 'checkpoint-playback',
+          progressPercent: 68,
+        },
+        checkpointReadiness: {
+          totalCheckpointCount: 1,
+          readyCheckpointCount: 1,
+          blockedCheckpointCount: 0,
+          playbackBlockedCheckpointCount: 0,
+          totalBlockingQueueItemCount: 0,
+          firstBlockedCheckpointId: null,
+          lastReadyCheckpointId: 'checkpoint_post_tt1',
+        },
+        teacherAllocationLoad: [{
+          teacherLoadProfileId: 'load_001',
+          facultyName: 'Prof. Kavitha Rao',
+          semesterNumber: 6,
+          weeklyContactHours: 12,
+          assignedCredits: 18,
+        }],
+        queuePreview: [{
+          reassessmentEventId: 'queue_001',
+          studentId: 'student_001',
+          studentUsn: '1MS23CS001',
+          studentName: 'Aarav Sharma',
+          courseCode: 'CS601',
+          assignedToRole: 'mentor',
+          status: 'open',
+          dueAt: '2026-03-17T00:00:00.000Z',
+          sourceKind: 'checkpoint-playback',
+          stageLabel: 'Post TT1',
+          coEvidenceMode: 'fallback-simulated',
+          riskChangeFromPreviousCheckpointScaled: 4,
+          counterfactualLiftScaled: 7,
+          title: 'Mentor follow-up',
+          riskBand: 'High',
+          riskProbScaled: 83,
+          noActionRiskProbScaled: 89,
+          taskType: 'follow-up',
+          simulatedActionTaken: 'follow-up',
+          recommendedAction: 'follow-up',
+        }],
+        snapshots: [{
+          simulationResetSnapshotId: 'snapshot_001',
+          snapshotLabel: 'Baseline snapshot',
+          createdAt: '2026-03-16T00:00:00.000Z',
+          payload: {},
+        }],
+        checkpoints: [selectedCheckpoint],
+      },
+      lifecycleAudit: [{
+        simulationLifecycleAuditId: 'audit_001',
+        actionType: 'proof-run-created',
+        createdAt: '2026-03-16T00:00:00.000Z',
+        createdByFacultyName: 'System',
+      }],
+      recentOperationalEvents: [{
+        operationalTelemetryEventId: 'ops_evt_001',
+        source: 'backend',
+        name: 'startup.ready',
+        level: 'info',
+        timestamp: '2026-03-16T00:00:00.000Z',
+        details: { host: '0.0.0.0' },
+        createdAt: '2026-03-16T00:00:00.000Z',
+      }],
+    }
+
+    render(createElement(SystemAdminProofDashboardWorkspace, {
+      proofDashboard,
+      proofDashboardLoading: false,
+      activeRunCheckpoints: [selectedCheckpoint],
+      activeModelDiagnostics: { scenarioFamilySummary: { steady: 3, rescue: 2 } },
+      activeProductionDiagnostics: null,
+      activeDiagnosticsTrainingManifestVersion: 'manifest-v1',
+      activeDiagnosticsCalibrationVersion: 'isotonic-v1',
+      activeDiagnosticsSplitSummary: { train: 1800, validation: 300, test: 300 },
+      activeDiagnosticsWorldSplitSummary: { train: 4, validation: 1, test: 1 },
+      activeDiagnosticsScenarioFamilies: { steady: 3, rescue: 2 },
+      activeDiagnosticsHeadSupportSummary: { overallCourseRisk: { positives: 1200 } },
+      activeDiagnosticsGovernedRunCount: 5,
+      activeDiagnosticsSkippedRunCount: 0,
+      activeDiagnosticsDisplayProbabilityAllowed: false,
+      activeDiagnosticsSupportWarning: 'Held-out positive support is below the probability display threshold.',
+      activeDiagnosticsPolicyDiagnostics: { gates: 'ok' },
+      activeDiagnosticsCoEvidence: {
+        totalRows: 360,
+        fallbackCount: 40,
+        byMode: {
+          'offering-blueprint': 280,
+          'rubric-derived': 40,
+          'fallback-simulated': 40,
+        },
+      },
+      activeDiagnosticsPolicyAcceptance: { policy: 'accepted' },
+      activeDiagnosticsOverallCourseRuntime: { parity: 'aligned' },
+      activeDiagnosticsQueueBurden: { mentor: 2 },
+      activeDiagnosticsUiParity: { facultySurface: 'aligned' },
+      selectedProofCheckpoint: selectedCheckpoint,
+      selectedProofCheckpointDetail: null,
+      selectedProofCheckpointBlocked: false,
+      selectedProofCheckpointHasBlockedProgression: false,
+      selectedProofCheckpointCanStepForward: true,
+      selectedProofCheckpointCanPlayToEnd: true,
+      proofPlaybackRestoreNotice: null,
+      onCreateProofImport: () => {},
+      onValidateLatestProofImport: () => {},
+      onReviewPendingCrosswalks: () => {},
+      onApproveLatestProofImport: () => {},
+      onCreateProofRun: () => {},
+      onRecomputeProofRunRisk: () => {},
+      onActivateProofRun: () => {},
+      onActivateProofSemester: () => {},
+      onRetryProofRun: () => {},
+      onArchiveProofRun: () => {},
+      onRestoreProofSnapshot: () => {},
+      onResetProofPlaybackSelection: () => {},
+      onSelectProofCheckpoint: () => {},
+      onStepProofPlayback: () => {},
+      formatSplitSummary: summary => JSON.stringify(summary),
+      formatKeyedCounts: summary => JSON.stringify(summary),
+      formatHeadSupportSummary: summary => JSON.stringify(summary),
+      formatDiagnosticSummary: summary => JSON.stringify(summary),
+    }))
+
+    expect(screen.getByRole('tablist', { name: 'Proof control-plane sections' })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'Summary' })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'Checkpoint' })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'Operations' })).toBeTruthy()
+    expect(screen.getByText('Operations Preview')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Operations' }))
+
+    const operationsRegion = document.querySelector('[data-proof-scroll-region="recent-operational-events"]') as HTMLElement | null
+    expect(operationsRegion).toBeTruthy()
+    expect(operationsRegion?.style.maxHeight).toBe('190px')
+    expect(screen.getByRole('tabpanel').getAttribute('data-proof-section')).toBe('proof-dashboard-operations')
   })
 
   it('renders a playback override banner when the pinned checkpoint semester differs from the activated operational semester', () => {
@@ -1003,10 +1324,69 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     expect(markup).toContain('320/360 non-fallback evidence rows')
     expect(markup).toContain('No stored production artifact is active; this dashboard is reporting checkpoint-governed runtime diagnostics.')
     expect(markup).toContain('Runtime diagnostics are available for this run even though no stored evaluation artifact is active.')
-    expect(markup).toContain('CO evidence mix: offering blueprint 280')
-    expect(markup).toContain('fallback simulated 40')
-    expect(markup).toContain('rubric derived 40')
     expect(markup).not.toContain('Heuristic fallback only')
+
+    const { container } = render(createElement(SystemAdminProofDashboardWorkspace, {
+      proofDashboard,
+      proofDashboardLoading: false,
+      initialActiveDashboardTab: 'diagnostics',
+      activeRunCheckpoints: [selectedCheckpoint],
+      activeModelDiagnostics: { scenarioFamilySummary: { steady: 3, rescue: 2 } },
+      activeProductionDiagnostics: null,
+      activeDiagnosticsTrainingManifestVersion: 'manifest-v1',
+      activeDiagnosticsCalibrationVersion: 'isotonic-v1',
+      activeDiagnosticsSplitSummary: { train: 1800, validation: 300, test: 300 },
+      activeDiagnosticsWorldSplitSummary: { train: 4, validation: 1, test: 1 },
+      activeDiagnosticsScenarioFamilies: { steady: 3, rescue: 2 },
+      activeDiagnosticsHeadSupportSummary: { overallCourseRisk: { positives: 1200 } },
+      activeDiagnosticsGovernedRunCount: 5,
+      activeDiagnosticsSkippedRunCount: 0,
+      activeDiagnosticsDisplayProbabilityAllowed: false,
+      activeDiagnosticsSupportWarning: 'Checkpoint support is runtime-governed until a production artifact is promoted.',
+      activeDiagnosticsPolicyDiagnostics: { gates: 'ok' },
+      activeDiagnosticsCoEvidence: {
+        totalRows: 360,
+        fallbackCount: 40,
+        byMode: {
+          'offering-blueprint': 280,
+          'rubric-derived': 40,
+          'fallback-simulated': 40,
+        },
+      },
+      activeDiagnosticsPolicyAcceptance: { policy: 'accepted' },
+      activeDiagnosticsOverallCourseRuntime: { parity: 'aligned' },
+      activeDiagnosticsQueueBurden: { mentor: 2 },
+      activeDiagnosticsUiParity: { facultySurface: 'aligned' },
+      selectedProofCheckpoint: selectedCheckpoint,
+      selectedProofCheckpointDetail: null,
+      selectedProofCheckpointBlocked: false,
+      selectedProofCheckpointHasBlockedProgression: false,
+      selectedProofCheckpointCanStepForward: false,
+      selectedProofCheckpointCanPlayToEnd: false,
+      proofPlaybackRestoreNotice: null,
+      onCreateProofImport: () => {},
+      onValidateLatestProofImport: () => {},
+      onReviewPendingCrosswalks: () => {},
+      onApproveLatestProofImport: () => {},
+      onCreateProofRun: () => {},
+      onRecomputeProofRunRisk: () => {},
+      onActivateProofRun: () => {},
+      onActivateProofSemester: () => {},
+      onRetryProofRun: () => {},
+      onArchiveProofRun: () => {},
+      onRestoreProofSnapshot: () => {},
+      onResetProofPlaybackSelection: () => {},
+      onSelectProofCheckpoint: () => {},
+      onStepProofPlayback: () => {},
+      formatSplitSummary: summary => JSON.stringify(summary),
+      formatKeyedCounts: summary => JSON.stringify(summary),
+      formatHeadSupportSummary: summary => JSON.stringify(summary),
+      formatDiagnosticSummary: summary => JSON.stringify(summary),
+    }))
+
+    expect(container.innerHTML).toContain('CO evidence mix: offering blueprint 280')
+    expect(container.innerHTML).toContain('fallback simulated 40')
+    expect(container.innerHTML).toContain('rubric derived 40')
   })
 
   it('routes explicit semester activation through the proof dashboard owner', () => {

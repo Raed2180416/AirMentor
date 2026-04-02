@@ -20,12 +20,43 @@ export const CANONICAL_PROOF_ROUTE: LiveAdminRoute = {
   batchId: CANONICAL_PROOF_BATCH_ID,
 }
 
+export type AuthoritativeOperationalSemesterSource = 'proof-run' | 'batch' | 'unavailable'
+
 export function isCanonicalProofBatchId(batchId?: string | null) {
   return batchId === CANONICAL_PROOF_BATCH_ID
 }
 
 export function resolveCanonicalProofBatch(data: Pick<LiveAdminDataset, 'batches'>): ApiBatch | null {
   return data.batches.find(item => item.batchId === CANONICAL_PROOF_BATCH_ID) ?? null
+}
+
+export function resolveAuthoritativeOperationalSemester(input: {
+  route: LiveAdminRoute
+  selectedBatch?: Pick<ApiBatch, 'batchId' | 'currentSemester'> | null
+  activeOperationalSemester?: number | null
+}) {
+  if (
+    input.route.section === 'faculties'
+    && isCanonicalProofBatchId(input.route.batchId)
+    && input.activeOperationalSemester != null
+  ) {
+    return {
+      semester: input.activeOperationalSemester,
+      source: 'proof-run' as const satisfies AuthoritativeOperationalSemesterSource,
+    }
+  }
+
+  if (input.selectedBatch?.currentSemester != null) {
+    return {
+      semester: input.selectedBatch.currentSemester,
+      source: 'batch' as const satisfies AuthoritativeOperationalSemesterSource,
+    }
+  }
+
+  return {
+    semester: null,
+    source: 'unavailable' as const satisfies AuthoritativeOperationalSemesterSource,
+  }
 }
 
 export function routeTargetsCanonicalProofHierarchy(route: LiveAdminRoute) {

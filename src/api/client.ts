@@ -1464,6 +1464,7 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
   private async request<T>(path: string, init?: RequestInit) {
     const hasBody = init?.body !== undefined
     const method = (init?.method ?? 'GET').toUpperCase()
+    const cacheMode = init?.cache ?? (isMutatingRequestMethod(method) ? undefined : 'no-store')
     const resolvedHeaders = {
       ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
       ...toHeaderRecord(init?.headers),
@@ -1472,6 +1473,7 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
       credentials: 'include',
       ...init,
+      cache: cacheMode,
       headers: resolvedHeaders,
       method,
     })

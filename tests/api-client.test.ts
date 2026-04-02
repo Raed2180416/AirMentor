@@ -81,6 +81,33 @@ describe('AirMentorApiClient', () => {
     }))
   })
 
+  it('disables browser caching for GET requests so proof-state refreshes stay deterministic', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
+      imports: [],
+      latestValidation: null,
+      crosswalkReviewQueue: [],
+      proofRuns: [],
+      activeRunDetail: null,
+      lifecycleAudit: [],
+      recentOperationalEvents: [],
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }))
+
+    const client = new AirMentorApiClient('http://127.0.0.1:4000', fetchMock as typeof fetch)
+    await client.getProofDashboard('batch_branch_mnc_btech_2023')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:4000/api/admin/batches/batch_branch_mnc_btech_2023/proof-dashboard',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+      }),
+    )
+  })
+
   it('stores the session CSRF token and sends it on later mutating requests', async () => {
     const fetchMock = vi
       .fn()

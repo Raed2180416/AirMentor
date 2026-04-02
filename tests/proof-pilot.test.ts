@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   CANONICAL_PROOF_BATCH_ID,
   resolveAdminDirectoryScopeFilter,
+  resolveAuthoritativeOperationalSemester,
   resolveCanonicalProofBatch,
   routeTargetsCanonicalProofHierarchy,
   shouldResolveCanonicalProofRoute,
@@ -82,6 +83,38 @@ describe('proof pilot helpers', () => {
       branchId: 'branch_mnc_btech',
       batchId: 'batch_2022',
     }, dataset)).toBe(false)
+  })
+
+  it('uses the proof-run semester only for the canonical proof batch', () => {
+    expect(resolveAuthoritativeOperationalSemester({
+      route: {
+        section: 'faculties',
+        academicFacultyId: 'academic_faculty_engineering_and_technology',
+        departmentId: 'dept_cse',
+        branchId: 'branch_mnc_btech',
+        batchId: CANONICAL_PROOF_BATCH_ID,
+      },
+      selectedBatch: dataset.batches[0],
+      activeOperationalSemester: 4,
+    })).toEqual({
+      semester: 4,
+      source: 'proof-run',
+    })
+
+    expect(resolveAuthoritativeOperationalSemester({
+      route: {
+        section: 'faculties',
+        academicFacultyId: 'academic_faculty_engineering_and_technology',
+        departmentId: 'dept_cse',
+        branchId: 'branch_mnc_btech',
+        batchId: 'batch_2022',
+      },
+      selectedBatch: dataset.batches[1],
+      activeOperationalSemester: 4,
+    })).toEqual({
+      semester: 1,
+      source: 'batch',
+    })
   })
 
   it('defaults directory scoping to the canonical proof hierarchy on proof-mode faculty routes', () => {

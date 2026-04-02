@@ -115,6 +115,7 @@ import { describeProofAvailability, describeProofProvenance } from './proof-prov
 import {
   CANONICAL_PROOF_ROUTE,
   resolveAdminDirectoryScopeFilter,
+  resolveAuthoritativeOperationalSemester,
   resolveCanonicalProofBatch,
   shouldResolveCanonicalProofRoute,
 } from './proof-pilot'
@@ -2513,12 +2514,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const selectedBatch = resolveBatch(data, route.batchId)
   const canonicalProofBatch = useMemo(() => resolveCanonicalProofBatch(data), [data.batches])
   const activeRunDetail = proofDashboard?.activeRunDetail ?? null
-  const authoritativeOperationalSemester = activeRunDetail?.activeOperationalSemester ?? selectedBatch?.currentSemester ?? null
-  const authoritativeOperationalSemesterSource = activeRunDetail?.activeOperationalSemester != null
-    ? 'proof-run'
-    : selectedBatch
-      ? 'batch'
-      : 'unavailable'
+  const { semester: authoritativeOperationalSemester, source: authoritativeOperationalSemesterSource } = resolveAuthoritativeOperationalSemester({
+    route,
+    selectedBatch,
+    activeOperationalSemester: activeRunDetail?.activeOperationalSemester ?? null,
+  })
   const activeSimulationRunId = activeRunDetail?.simulationRunId ?? null
   const activeRunCheckpoints = useMemo(
     () => activeRunDetail?.checkpoints ?? [],
@@ -4155,9 +4155,21 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const handleActivateProofSemester = async (simulationRunId: string, semesterNumber: number) => {
     if (!selectedBatch) return
     await runAction(async () => {
-      await apiClient.activateProofSemester(simulationRunId, {
+      const activation = await apiClient.activateProofSemester(simulationRunId, {
         semesterNumber: semesterNumber as 1 | 2 | 3 | 4 | 5 | 6,
       })
+      setData(prev => ({
+        ...prev,
+        batches: prev.batches.map(batch => (
+          batch.batchId === activation.batchId
+            ? {
+                ...batch,
+                currentSemester: activation.activeOperationalSemester,
+                updatedAt: new Date().toISOString(),
+              }
+            : batch
+        )),
+      }))
       await refreshProofDashboard(selectedBatch.batchId)
       setFlashMessage(`Proof operational semester switched to Semester ${semesterNumber}.`)
     })
@@ -5113,7 +5125,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const universityContextLabel = selectedSectionCode
     ? `Section ${selectedSectionCode}`
     : selectedBatch
-      ? deriveCurrentYearLabel(selectedBatch.currentSemester)
+      ? deriveCurrentYearLabel(authoritativeOperationalSemester ?? selectedBatch.currentSemester)
       : selectedBranch
         ? selectedBranch.name
         : selectedDepartment

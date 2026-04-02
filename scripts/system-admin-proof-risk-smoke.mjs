@@ -851,6 +851,16 @@ function targetCheckpointButton(proofControlPlane) {
     .first()
 }
 
+async function ensureProofControlPlaneTab(proofControlPlane, label) {
+  const tab = proofControlPlane.getByRole('tab', { name: label, exact: true }).first()
+  if (!(await tab.isVisible().catch(() => false))) return
+  const isSelected = (await tab.getAttribute('aria-selected').catch(() => null)) === 'true'
+  if (!isSelected) {
+    await focusAndActivate(tab, `${label} proof tab`)
+    await page.waitForTimeout(250)
+  }
+}
+
 async function openSeededProofRoute() {
   await waitForSystemAdminShellReady()
   await primeSeededProofRouteState()
@@ -874,6 +884,7 @@ async function openSeededProofRoute() {
   }
   await expectVisible(proofControlPlane, 'system admin proof control plane')
   await expectContainerText(proofControlPlane, /Proof Control Plane/i, 'system admin proof control plane heading')
+  await ensureProofControlPlaneTab(proofControlPlane, 'Checkpoint')
   let checkpointPlayback = proofControlPlane.locator('[data-proof-section="checkpoint-playback"]')
   if (!(await checkpointPlayback.isVisible().catch(() => false))) {
     console.log('[smoke] checkpoint playback missing, verifying proof controls and prewarming through admin endpoints')

@@ -510,6 +510,16 @@ function visibleProofSurface(name) {
   return page.locator(`[data-proof-surface="${name}"]:visible`).first()
 }
 
+async function ensureProofControlPlaneTab(proofControlPlane, label) {
+  const tab = proofControlPlane.getByRole('tab', { name: label, exact: true }).first()
+  if (!(await tab.isVisible().catch(() => false))) return
+  const isSelected = (await tab.getAttribute('aria-selected').catch(() => null)) === 'true'
+  if (!isSelected) {
+    await tab.click()
+    await page.waitForTimeout(250)
+  }
+}
+
 async function openSeededProofRoute(forceReload = false, reloadAttempt = 0) {
   await primeSeededProofRouteState()
   const seededRouteUrl = buildSeededProofRouteUrl(forceReload)
@@ -528,6 +538,7 @@ async function openSeededProofRoute(forceReload = false, reloadAttempt = 0) {
     proofControlPlane = visibleProofSurface('system-admin-proof-control-plane')
   }
   await expectVisible(proofControlPlane, 'system admin proof control plane')
+  await ensureProofControlPlaneTab(proofControlPlane, 'Checkpoint')
   const checkpointPlayback = proofControlPlane.locator('[data-proof-section="checkpoint-playback"]').first()
   if (!(await checkpointPlayback.isVisible().catch(() => false))) {
     await ensureProofRunReady()

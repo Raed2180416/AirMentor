@@ -471,6 +471,16 @@ function visibleProofSurface(name) {
   return page.locator(`[data-proof-surface="${name}"]:visible`).first()
 }
 
+async function ensureProofControlPlaneTab(proofControlPlane, label) {
+  const tab = proofControlPlane.getByRole('tab', { name: label, exact: true }).first()
+  if (!(await tab.isVisible().catch(() => false))) return
+  const isSelected = (await tab.getAttribute('aria-selected').catch(() => null)) === 'true'
+  if (!isSelected) {
+    await focusAndActivate(tab, `${label} proof tab`)
+    await page.waitForTimeout(250)
+  }
+}
+
 async function waitForAdminDataRefreshToSettle(timeout = 60_000) {
   const deadline = Date.now() + timeout
   while (Date.now() < deadline) {
@@ -525,6 +535,7 @@ async function openSeededProofRoute(forceReload = false, reloadAttempt = 0) {
     return openSeededProofRoute(true, reloadAttempt + 1)
   }
   await expectVisible(proofControlPlane, 'system admin proof control plane', 60_000)
+  await ensureProofControlPlaneTab(proofControlPlane, 'Checkpoint')
   const checkpointPlayback = proofControlPlane.locator('[data-proof-section="checkpoint-playback"]').first()
   if (!(await checkpointPlayback.isVisible().catch(() => false))) {
     try {
