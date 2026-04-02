@@ -337,6 +337,14 @@ async function readPlaybackSelectionParsed() {
   return parsed
 }
 
+function isTransientAdminApiFailure(error) {
+  const message = error instanceof Error ? error.message : String(error)
+  return /failed with (502|503|504)/i.test(message)
+    || /application failed to respond/i.test(message)
+    || /timed out/i.test(message)
+    || /abort/i.test(message)
+}
+
 async function adminApiRequest(apiPath, init = {}) {
   const { body, ...restInit } = init
   const requestUrl = new URL(apiPath, apiUrl).toString()
@@ -436,7 +444,19 @@ async function adminApiRequest(apiPath, init = {}) {
 }
 
 async function readProofDashboard(batchId = proofRouteState.batchId) {
-  return adminApiRequest(`/api/admin/batches/${batchId}/proof-dashboard`)
+  const apiPath = `/api/admin/batches/${batchId}/proof-dashboard`
+  const maxAttempts = isLiveStack ? 4 : 1
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await adminApiRequest(apiPath)
+    } catch (error) {
+      if (attempt >= maxAttempts || !isTransientAdminApiFailure(error)) throw error
+      const waitMs = 1_500 * attempt
+      console.log(`[smoke] transient proof dashboard read failure on attempt ${attempt}/${maxAttempts}: ${error instanceof Error ? error.message : String(error)}; retrying in ${waitMs}ms`)
+      await page.waitForTimeout(waitMs)
+    }
+  }
+  throw new Error(`Proof dashboard read exhausted retries for ${apiPath}`)
 }
 
 async function discoverProofRouteState() {
@@ -889,7 +909,9 @@ async function openSeededProofRoute() {
   await expectContainerText(proofControlPlane, /Proof Control Plane/i, 'system admin proof control plane heading')
   await ensureProofControlPlaneTab(proofControlPlane, 'Checkpoint')
   let checkpointPlayback = proofControlPlane.locator('[data-proof-section="checkpoint-playback"]')
-  if (!(await checkpointPlayback.isVisible().catch(() => false))) {
+  try {
+    await checkpointPlayback.waitFor({ state: 'visible', timeout: 15_000 })
+  } catch {
     console.log('[smoke] checkpoint playback missing, verifying proof controls and prewarming through admin endpoints')
     await expectVisible(proofControlPlane.getByRole('button', { name: 'Create Import', exact: true }), 'Create Import proof action')
     await expectVisible(proofControlPlane.getByRole('button', { name: 'Validate Import', exact: true }), 'Validate Import proof action')
