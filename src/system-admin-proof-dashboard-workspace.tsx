@@ -237,7 +237,10 @@ export function SystemAdminProofDashboardWorkspace({
   useEffect(() => {
     if (proofDashboardLoading) return
     if (!selectedProofCheckpoint && activeDashboardTab === 'checkpoint') {
-      setActiveDashboardTab('summary')
+      const resetToSummaryTimer = window.setTimeout(() => {
+        setActiveDashboardTab(currentTab => currentTab === 'checkpoint' ? 'summary' : currentTab)
+      }, 0)
+      return () => window.clearTimeout(resetToSummaryTimer)
     }
   }, [activeDashboardTab, proofDashboardLoading, selectedProofCheckpoint])
   useEffect(() => {
@@ -252,7 +255,11 @@ export function SystemAdminProofDashboardWorkspace({
       && previousSelectedCheckpointId.current !== currentSelectedCheckpointId
       && activeDashboardTab === 'summary'
     ) {
-      setActiveDashboardTab('checkpoint')
+      const openCheckpointTabTimer = window.setTimeout(() => {
+        setActiveDashboardTab(currentTab => currentTab === 'summary' ? 'checkpoint' : currentTab)
+      }, 0)
+      previousSelectedCheckpointId.current = currentSelectedCheckpointId
+      return () => window.clearTimeout(openCheckpointTabTimer)
     }
     previousSelectedCheckpointId.current = currentSelectedCheckpointId
   }, [activeDashboardTab, initialActiveDashboardTab, selectedProofCheckpoint])
@@ -360,15 +367,11 @@ export function SystemAdminProofDashboardWorkspace({
   useEffect(() => {
     if (activeCheckpointEvidenceView === 'queue' && hasQueuePreview) return
     if (activeCheckpointEvidenceView === 'offerings' && hasOfferingRollups) return
-    if (hasQueuePreview) {
-      setActiveCheckpointEvidenceView('queue')
-      return
-    }
-    if (hasOfferingRollups) {
-      setActiveCheckpointEvidenceView('offerings')
-      return
-    }
-    setActiveCheckpointEvidenceView('queue')
+    const nextEvidenceView: CheckpointEvidenceView = hasQueuePreview ? 'queue' : hasOfferingRollups ? 'offerings' : 'queue'
+    const syncCheckpointEvidenceViewTimer = window.setTimeout(() => {
+      setActiveCheckpointEvidenceView(currentView => currentView === nextEvidenceView ? currentView : nextEvidenceView)
+    }, 0)
+    return () => window.clearTimeout(syncCheckpointEvidenceViewTimer)
   }, [activeCheckpointEvidenceView, hasOfferingRollups, hasQueuePreview, selectedProofCheckpoint?.simulationStageCheckpointId])
   const actionPressureDetail = [
     `${activeQueueDiagnostics?.queuedRunCount ?? 0} queued · ${activeQueueDiagnostics?.runningRunCount ?? 0} running · ${activeQueueDiagnostics?.failedRunCount ?? 0} failed`,
