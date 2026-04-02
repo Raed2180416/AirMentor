@@ -113,6 +113,12 @@ import {
 } from './system-admin-overview-helpers'
 import { describeProofAvailability, describeProofProvenance } from './proof-provenance'
 import {
+  CANONICAL_PROOF_ROUTE,
+  resolveAdminDirectoryScopeFilter,
+  resolveCanonicalProofBatch,
+  shouldResolveCanonicalProofRoute,
+} from './proof-pilot'
+import {
   buildBulkMentorAssignmentApplyPayload,
   buildBulkMentorAssignmentPreviewPayload,
   defaultBulkMentorAssignmentForm,
@@ -1823,6 +1829,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const [authError, setAuthError] = useState('')
   const [session, setSession] = useState<ApiSessionResponse | null>(null)
   const [data, setData] = useState<LiveAdminDataset>(EMPTY_DATA)
+  const [scopedDirectoryStudents, setScopedDirectoryStudents] = useState<ApiStudentRecord[] | null>(null)
+  const [scopedDirectoryFacultyMembers, setScopedDirectoryFacultyMembers] = useState<ApiFacultyRecord[] | null>(null)
   const [dataLoading, setDataLoading] = useState(false)
   const [dataError, setDataError] = useState('')
   const [flashMessage, setFlashMessage] = useState('')
@@ -1924,6 +1932,14 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const [facultyDetailTab, setFacultyDetailTab] = useState<FacultyDetailTab>('profile')
   const [editingEntity, setEditingEntity] = useState<EditingEntity | null>(null)
   const universityWorkspacePaneRef = useRef<HTMLDivElement | null>(null)
+  const scopedAdminDirectoryFilter = useMemo(
+    () => resolveAdminDirectoryScopeFilter({
+      route,
+      registryScope,
+      selectedSectionCode,
+    }),
+    [registryScope, route, selectedSectionCode],
+  )
 
   const mergeStudentRecord = useCallback((nextStudent: ApiStudentRecord) => {
     setData(prev => {
@@ -2214,6 +2230,39 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   }, [loadAdminData, session])
 
   useEffect(() => {
+    if (!session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
+      setScopedDirectoryStudents(null)
+      setScopedDirectoryFacultyMembers(null)
+      return
+    }
+    if (!scopedAdminDirectoryFilter || !hasHierarchyScopeSelection(scopedAdminDirectoryFilter)) {
+      setScopedDirectoryStudents(null)
+      setScopedDirectoryFacultyMembers(null)
+      return
+    }
+    let cancelled = false
+    setScopedDirectoryStudents(null)
+    setScopedDirectoryFacultyMembers(null)
+    void (async () => {
+      try {
+        const [facultyResponse, studentsResponse] = await Promise.all([
+          apiClient.listFaculty(scopedAdminDirectoryFilter),
+          apiClient.listStudents(scopedAdminDirectoryFilter),
+        ])
+        if (cancelled) return
+        setScopedDirectoryFacultyMembers(applyFacultyVisibilityRules(facultyResponse.items))
+        setScopedDirectoryStudents(studentsResponse.items)
+      } catch (error) {
+        if (cancelled) return
+        setScopedDirectoryStudents(null)
+        setScopedDirectoryFacultyMembers(null)
+        setActionError(toErrorMessage(error))
+      }
+    })()
+    return () => { cancelled = true }
+  }, [apiClient, scopedAdminDirectoryFilter, session])
+
+  useEffect(() => {
     if (!route.batchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
       setResolvedBatchPolicy(null)
       setResolvedStagePolicy(null)
@@ -2462,7 +2511,14 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const selectedDepartment = resolveDepartment(data, route.departmentId)
   const selectedBranch = resolveBranch(data, route.branchId)
   const selectedBatch = resolveBatch(data, route.batchId)
+  const canonicalProofBatch = useMemo(() => resolveCanonicalProofBatch(data), [data.batches])
   const activeRunDetail = proofDashboard?.activeRunDetail ?? null
+  const authoritativeOperationalSemester = activeRunDetail?.activeOperationalSemester ?? selectedBatch?.currentSemester ?? null
+  const authoritativeOperationalSemesterSource = activeRunDetail?.activeOperationalSemester != null
+    ? 'proof-run'
+    : selectedBatch
+      ? 'batch'
+      : 'unavailable'
   const activeSimulationRunId = activeRunDetail?.simulationRunId ?? null
   const activeRunCheckpoints = useMemo(
     () => activeRunDetail?.checkpoints ?? [],
@@ -2520,6 +2576,15 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     ?? readRecordField(activeChallengerEvaluation, 'runtimeSummary')
     ?? activeModelDiagnostics?.overallCourseRuntimeSummary
     ?? activeModelDiagnostics?.runtimeSummary
+
+  useEffect(() => {
+    if (!session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') return
+    if (!shouldResolveCanonicalProofRoute(route, { batches: data.batches })) return
+    navigate({
+      ...CANONICAL_PROOF_ROUTE,
+      batchId: canonicalProofBatch?.batchId ?? CANONICAL_PROOF_ROUTE.batchId,
+    }, { recordHistory: false })
+  }, [canonicalProofBatch?.batchId, data.batches, navigate, route, session])
   const activeDiagnosticsQueueBurden = readRecordField(activeProductionEvaluation, 'queueBurdenSummary')
     ?? readRecordField(activeChallengerEvaluation, 'queueBurdenSummary')
     ?? activeModelDiagnostics?.queueBurdenSummary
@@ -2867,6 +2932,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   }, [selectedBranch])
 
   useEffect(() => {
+    const nextSemester = String(authoritativeOperationalSemester ?? selectedBatch?.currentSemester ?? 1)
     setEntityEditors(prev => ({
       ...prev,
       batch: selectedBatch
@@ -2877,10 +2943,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             sectionLabels: selectedBatch.sectionLabels.join(', '),
           }
         : defaultEntityEditorState().batch,
-      term: defaultEntityEditorState(selectedBatch ? String(selectedBatch.currentSemester) : '1').term,
-      curriculum: defaultEntityEditorState(selectedBatch ? String(selectedBatch.currentSemester) : '1').curriculum,
+      term: defaultEntityEditorState(nextSemester).term,
+      curriculum: defaultEntityEditorState(nextSemester).curriculum,
     }))
-  }, [selectedBatch])
+  }, [authoritativeOperationalSemester, selectedBatch])
 
   useEffect(() => {
     if (!selectedStudent) {
@@ -3204,7 +3270,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const resetTermEditor = () => {
     setEntityEditors(prev => ({
       ...prev,
-      term: defaultEntityEditorState(selectedBatch ? String(selectedBatch.currentSemester) : '1').term,
+      term: defaultEntityEditorState(String(authoritativeOperationalSemester ?? 1)).term,
     }))
   }
 
@@ -3228,7 +3294,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const resetCurriculumEditor = () => {
     setEntityEditors(prev => ({
       ...prev,
-      curriculum: defaultEntityEditorState(selectedCurriculumSemester || (selectedBatch ? String(selectedBatch.currentSemester) : '1')).curriculum,
+      curriculum: defaultEntityEditorState(selectedCurriculumSemester || String(authoritativeOperationalSemester ?? 1)).curriculum,
     }))
   }
 
@@ -4739,7 +4805,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     const preferredSemester = selectedCurriculumSemester
       && curriculumSemesterEntries.some(entry => String(entry.semesterNumber) === selectedCurriculumSemester)
       ? selectedCurriculumSemester
-      : curriculumSemesterEntries.find(entry => entry.semesterNumber === selectedBatch?.currentSemester)?.semesterNumber?.toString()
+      : curriculumSemesterEntries.find(entry => entry.semesterNumber === authoritativeOperationalSemester)?.semesterNumber?.toString()
         ?? String(curriculumSemesterEntries[0]!.semesterNumber)
     if (preferredSemester !== selectedCurriculumSemester) {
       setSelectedCurriculumSemester(preferredSemester)
@@ -4753,10 +4819,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     if (!semesterCourses.some(course => course.curriculumCourseId === selectedCurriculumCourseId)) {
       setSelectedCurriculumCourseId(semesterCourses[0]!.curriculumCourseId)
     }
-  }, [curriculumSemesterEntries, selectedBatch?.currentSemester, selectedCurriculumCourseId, selectedCurriculumSemester])
+  }, [authoritativeOperationalSemester, curriculumSemesterEntries, selectedCurriculumCourseId, selectedCurriculumSemester])
   useEffect(() => {
     if (entityEditors.curriculum.curriculumCourseId) return
-    const nextSemester = selectedCurriculumSemester || String(selectedBatch?.currentSemester ?? 1)
+    const nextSemester = selectedCurriculumSemester || String(authoritativeOperationalSemester ?? 1)
     if (entityEditors.curriculum.semesterNumber === nextSemester) return
     setEntityEditors(prev => ({
       ...prev,
@@ -4765,7 +4831,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         semesterNumber: nextSemester,
       },
     }))
-  }, [entityEditors.curriculum.curriculumCourseId, entityEditors.curriculum.semesterNumber, selectedBatch?.currentSemester, selectedCurriculumSemester])
+  }, [authoritativeOperationalSemester, entityEditors.curriculum.curriculumCourseId, entityEditors.curriculum.semesterNumber, selectedCurriculumSemester])
   const activeScopeChain = useMemo<ActiveAdminScope[]>(() => buildAdminActiveScopeChain({
     institution: data.institution,
     academicFaculty: selectedAcademicFaculty,
@@ -5032,10 +5098,15 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     }
     return []
   })()
-  const filteredUniversityStudents = data.students
+  const scopedAdminDirectoryData: LiveAdminDataset = {
+    ...data,
+    students: scopedDirectoryStudents ?? data.students,
+    facultyMembers: scopedDirectoryFacultyMembers ?? data.facultyMembers,
+  }
+  const filteredUniversityStudents = scopedAdminDirectoryData.students
     .filter(item => isStudentVisible(data, item))
     .filter(student => matchesStudentScope(student, data, activeUniversityScope))
-  const filteredUniversityFaculty = data.facultyMembers
+  const filteredUniversityFaculty = scopedAdminDirectoryData.facultyMembers
     .filter(item => isFacultyMemberVisible(data, item))
     .filter(member => matchesFacultyScope(member, data, activeUniversityScope))
   const scopedUniversityStudents = activeUniversityScope ? filteredUniversityStudents : []
@@ -5289,7 +5360,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     .sort((left, right) => `${left.code}-${left.year}-${left.section}`.localeCompare(`${right.code}-${right.year}-${right.section}`))
   const batchTermIds = new Set(batchTerms.map(item => item.termId))
   const currentSemesterTerm = selectedBatch
-    ? batchTerms.find(item => item.semesterNumber === selectedBatch.currentSemester && isVisibleAdminRecord(item.status)) ?? batchTerms[0] ?? null
+    ? batchTerms.find(item => item.semesterNumber === authoritativeOperationalSemester && isVisibleAdminRecord(item.status)) ?? batchTerms[0] ?? null
     : null
   const batchOfferings = selectedBatch
     ? visibleOfferings
@@ -5372,7 +5443,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const curriculumFeatureAffectedBatchPreview = selectedCurriculumFeatureTargetScope
     ? visibleBatches.filter(batch => matchesBatchScope(batch, data, selectedCurriculumFeatureTargetScope.scopeType, selectedCurriculumFeatureTargetScope.scopeId))
     : []
-  const overviewCounts = computeOverviewScopedCounts(data, overviewHierarchyScope)
+  const overviewCounts = computeOverviewScopedCounts(
+    overviewHierarchyScope ? scopedAdminDirectoryData : data,
+    overviewHierarchyScope,
+  )
   const overviewGlobalCounts = computeOverviewScopedCounts(data, null)
   const overviewVisibleStudentCount = overviewCounts.studentCount
   const overviewVisibleMentoredCount = overviewCounts.mentoredCount
@@ -5383,7 +5457,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const overviewVisibleOwnershipCount = overviewCounts.ownershipCount
   const normalizedStudentRegistrySearch = studentRegistrySearch.trim().toLowerCase()
   const normalizedFacultyRegistrySearch = facultyRegistrySearch.trim().toLowerCase()
-  const studentRegistryItems = data.students
+  const studentRegistryItems = (studentRegistryHasScope ? scopedAdminDirectoryData : data).students
     .filter(item => isStudentVisible(data, item))
     .filter(item => !studentRegistryHasScope || matchesStudentScope(item, data, studentRegistryScope))
     .filter(item => {
@@ -5406,7 +5480,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       const rightKey = `${right.activeAcademicContext?.departmentName ?? ''}-${right.activeAcademicContext?.branchName ?? ''}-${right.name}-${right.usn}`
       return leftKey.localeCompare(rightKey)
     })
-  const facultyRegistryItems = data.facultyMembers
+  const facultyRegistryItems = (hasHierarchyScopeSelection(facultyRegistryScope) ? scopedAdminDirectoryData : data).facultyMembers
     .filter(item => isFacultyMemberVisible(data, item))
     .filter(item => matchesFacultyScope(item, data, {
       academicFacultyId: effectiveFacultyRegistryFilter.academicFacultyId || null,
@@ -5436,7 +5510,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       return `${leftDepartment}-${left.displayName}-${left.employeeCode}`.localeCompare(`${rightDepartment}-${right.displayName}-${right.employeeCode}`)
     })
   const studentRegistryCaption = studentRegistryHasScope
-    ? `Canonical identity, enrollment correction, mentor linkage, promotion review, and audit history. Filtered to ${studentRegistryScopeLabel ?? 'the selected academic scope'}.`
+    ? `Canonical identity, enrollment correction, mentor linkage, promotion review, and audit history. Live scope-backed feed filtered to ${studentRegistryScopeLabel ?? 'the selected academic scope'}.`
     : selectedStudentRouteIsExplicit
       ? 'Canonical identity, enrollment correction, mentor linkage, promotion review, and audit history. The global registry remains open while the explicit student drilldown is focused on the right.'
       : 'Canonical identity, enrollment correction, mentor linkage, promotion review, and audit history. Global student registry is open; apply filters to narrow the scope.'
@@ -5979,6 +6053,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             selectedDepartment={selectedDepartment}
             selectedBranch={selectedBranch}
             selectedBatch={selectedBatch}
+            canonicalProofBatch={canonicalProofBatch}
+            authoritativeOperationalSemester={authoritativeOperationalSemester}
+            authoritativeOperationalSemesterSource={authoritativeOperationalSemesterSource}
             selectedSectionCode={selectedSectionCode}
             selectedAcademicFacultyImpact={selectedAcademicFacultyImpact}
             facultyDepartments={facultyDepartments}
@@ -6603,7 +6680,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               <SectionHeading
                 title="Faculty Members"
                 eyebrow="Registry"
-                caption={registryScope ? `Identity, appointments, permissions, teaching ownership, and teaching-profile parity live here. Filtered to ${registryScope.label}.` : 'Identity, appointments, permissions, teaching ownership, and teaching-profile parity live here.'}
+                caption={registryScope
+                  ? `Identity, appointments, permissions, teaching ownership, and teaching-profile parity live here. Live scope-backed feed filtered to ${registryScope.label}.`
+                  : 'Identity, appointments, permissions, teaching ownership, and teaching-profile parity live here.'}
                 toneColor={ADMIN_SECTION_TONES['faculty-members']}
               />
               <div style={{ display: 'grid', gap: 12 }}>

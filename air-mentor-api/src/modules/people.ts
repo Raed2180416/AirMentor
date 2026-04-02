@@ -77,6 +77,14 @@ const roleGrantPatchSchema = roleGrantCreateSchema.extend({
   version: z.number().int().positive(),
 })
 
+const facultyDirectoryScopeQuerySchema = z.object({
+  academicFacultyId: z.string().trim().min(1).optional(),
+  departmentId: z.string().trim().min(1).optional(),
+  branchId: z.string().trim().min(1).optional(),
+  batchId: z.string().trim().min(1).optional(),
+  sectionCode: z.string().trim().min(1).optional(),
+})
+
 type PeopleReferenceData = {
   institution: typeof institutions.$inferSelect | null
   academicFacultyById: Map<string, typeof academicFaculties.$inferSelect>
@@ -266,6 +274,72 @@ function isActiveRow(status: string, endDate?: string | null) {
   return status === 'active' && !endDate
 }
 
+function hasFacultyDirectoryScopeFilter(filter: z.infer<typeof facultyDirectoryScopeQuerySchema>) {
+  return Boolean(filter.academicFacultyId || filter.departmentId || filter.branchId || filter.batchId || filter.sectionCode)
+}
+
+function matchesFacultyDirectoryScope(
+  faculty: FacultyRecord,
+  references: PeopleReferenceData,
+  filter: z.infer<typeof facultyDirectoryScopeQuerySchema>,
+) {
+  if (!hasFacultyDirectoryScopeFilter(filter)) return true
+
+  const scopedBatch = filter.batchId ? references.batchById.get(filter.batchId) ?? null : null
+  const scopedBranchId = filter.branchId ?? scopedBatch?.branchId ?? null
+  const scopedDepartmentId = filter.departmentId
+    ?? (scopedBranchId ? references.branchById.get(scopedBranchId)?.departmentId ?? null : null)
+    ?? null
+  const batchTermIds = filter.batchId
+    ? new Set(
+        Array.from(references.termById.values())
+          .filter(item => item.batchId === filter.batchId)
+          .map(item => item.termId),
+      )
+    : null
+  const sectionScopeId = filter.batchId && filter.sectionCode
+    ? `${filter.batchId}::${filter.sectionCode.trim().toUpperCase()}`
+    : null
+
+  const appointmentMatch = faculty.appointments.some(appointment => {
+    if (!isActiveRow(appointment.status, appointment.endDate)) return false
+    const department = references.departmentById.get(appointment.departmentId) ?? null
+    if (filter.academicFacultyId && department?.academicFacultyId !== filter.academicFacultyId) return false
+    if (scopedDepartmentId && appointment.departmentId !== scopedDepartmentId) return false
+    if (scopedBranchId && appointment.branchId && appointment.branchId !== scopedBranchId) return false
+    return true
+  })
+
+  const ownershipMatch = references.ownerships.some(ownership => {
+    if (ownership.facultyId !== faculty.facultyId || ownership.status !== 'active') return false
+    const offering = references.offeringById.get(ownership.offeringId) ?? null
+    if (!offering) return false
+    const term = references.termById.get(offering.termId) ?? null
+    const department = offering.branchId ? references.branchById.get(offering.branchId)?.departmentId ?? null : null
+    if (filter.academicFacultyId) {
+      const academicFacultyId = department ? references.departmentById.get(department)?.academicFacultyId ?? null : null
+      if (academicFacultyId !== filter.academicFacultyId) return false
+    }
+    if (scopedDepartmentId && department !== scopedDepartmentId) return false
+    if (scopedBranchId && offering.branchId !== scopedBranchId) return false
+    if (batchTermIds && (!term || !batchTermIds.has(term.termId))) return false
+    if (filter.sectionCode && offering.sectionCode.trim().toUpperCase() !== filter.sectionCode.trim().toUpperCase()) return false
+    return true
+  })
+
+  const grantMatch = faculty.roleGrants.some(grant => {
+    if (!isActiveRow(grant.status, grant.endDate)) return false
+    if (sectionScopeId && grant.scopeType === 'section' && grant.scopeId === sectionScopeId) return true
+    if (filter.batchId && grant.scopeType === 'batch' && grant.scopeId === filter.batchId) return true
+    if (scopedBranchId && grant.scopeType === 'branch' && grant.scopeId === scopedBranchId) return true
+    if (scopedDepartmentId && grant.scopeType === 'department' && grant.scopeId === scopedDepartmentId) return true
+    if (filter.academicFacultyId && grant.scopeType === 'academic-faculty' && grant.scopeId === filter.academicFacultyId) return true
+    return false
+  })
+
+  return appointmentMatch || ownershipMatch || grantMatch
+}
+
 function pickFacultyScopeSource(
   faculty: FacultyRecord,
   references: PeopleReferenceData,
@@ -407,6 +481,7 @@ export async function registerPeopleRoutes(app: FastifyInstance, context: RouteC
     schema: { tags: ['people'], summary: 'List faculty master records' },
   }, async request => {
     requireRole(request, ['SYSTEM_ADMIN'])
+    const filter = parseOrThrow(facultyDirectoryScopeQuerySchema, request.query ?? {})
     const [profiles, users, appointments, grants, references] = await Promise.all([
       context.db.select().from(facultyProfiles),
       context.db.select().from(userAccounts),
@@ -415,14 +490,17 @@ export async function registerPeopleRoutes(app: FastifyInstance, context: RouteC
       loadPeopleReferenceData(context),
     ])
     const provenanceCache = new Map<string, ResolvedBatchPolicySnapshot>()
-    return {
-      items: await Promise.all(profiles.map(profile => enrichFacultyRecordWithProvenance(context, mapFacultyRecord({
+    const mappedFaculty = profiles
+      .map(profile => mapFacultyRecord({
         profile,
         user: users.find(item => item.userId === profile.userId),
         appointments: appointments.filter(item => item.facultyId === profile.facultyId),
         grants: grants.filter(item => item.facultyId === profile.facultyId),
         references,
-      }), references, provenanceCache))),
+      }))
+      .filter(faculty => matchesFacultyDirectoryScope(faculty, references, filter))
+    return {
+      items: await Promise.all(mappedFaculty.map(faculty => enrichFacultyRecordWithProvenance(context, faculty, references, provenanceCache))),
     }
   })
 

@@ -281,7 +281,7 @@ describe('StudentShellPage', () => {
     expect(markup).toContain('Simulation UX only. Formal academic status remains policy-derived')
     expect(markup).toContain('Authoritative bounded proof explainer for the selected checkpoint')
     expect(markup).toContain('Checkpoint-bound proof counts')
-    expect(markup).toContain('operational semester 6')
+    expect(markup).toContain('checkpoint semester 6')
     expect(markup).toContain('Post TT1')
     expect(markup).toContain('Deterministic shell chat')
     expect(markup).toContain('Student shell does not make future-certainty claims.')
@@ -535,7 +535,7 @@ describe('StudentShellPage', () => {
     }))
 
     expect(markup).toContain('Sem 3')
-    expect(markup).toContain('operational semester 3')
+    expect(markup).toContain('checkpoint semester 3')
     expect(markup).toContain('Semester 1')
     expect(markup).toContain('Semester 2')
     expect(markup).toContain('Semester 3')
@@ -730,7 +730,7 @@ describe('StudentShellPage', () => {
     }))
 
     expect(markup).toContain('Sem 6')
-    expect(markup).toContain('operational semester 6')
+    expect(markup).toContain('checkpoint semester 6')
     expect(markup).toContain('MC6E01')
     expect(markup).toContain('No-action comparator')
     expect(markup).toContain('Semester 4')

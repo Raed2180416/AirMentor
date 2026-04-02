@@ -30,6 +30,7 @@ import {
 import { createId } from '../lib/ids.js'
 import { forbidden, notFound } from '../lib/http-errors.js'
 import { parseJson, stringifyJson } from '../lib/json.js'
+import type { ScopeDescriptorValue } from '../lib/proof-provenance.js'
 import {
   emitAuditEvent,
   getAuditEventsForEntity,
@@ -727,6 +728,7 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
       requestRows,
       reassessmentRows,
       alertDecisionRows,
+      enrollmentRows,
       timetableRows,
       calendarWorkspaceRows,
       viewerAppointmentRows,
@@ -747,6 +749,7 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
       context.db.select().from(adminRequests),
       context.db.select().from(reassessmentEvents),
       context.db.select().from(alertDecisions),
+      context.db.select().from(studentEnrollments),
       context.db.select().from(facultyCalendarWorkspaces).where(eq(facultyCalendarWorkspaces.facultyId, params.facultyId)),
       context.db.select().from(facultyCalendarAdminWorkspaces).where(eq(facultyCalendarAdminWorkspaces.facultyId, params.facultyId)),
       auth.activeRoleGrant.roleCode === 'HOD' && auth.facultyId
@@ -825,7 +828,6 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
     }
     const activeStudentIds = new Set(activeMentorAssignments.map(row => row.studentId))
     if (activeStudentIds.size > 0) {
-      const enrollmentRows = await context.db.select().from(studentEnrollments)
       for (const enrollment of enrollmentRows.filter(row => activeStudentIds.has(row.studentId) && row.academicStatus === 'active')) {
         const batch = batchById[termById[enrollment.termId]?.batchId ?? '']
         const branch = branchById[enrollment.branchId]
@@ -873,8 +875,139 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
       .filter(row => row.requestedByFacultyId === params.facultyId || row.ownedByFacultyId === params.facultyId)
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
 
-    const relevantOfferingIds = new Set(currentOwnedClasses.map(item => item.offeringId))
-    const relevantStudentIds = new Set(activeMentorAssignments.map(item => item.studentId))
+    const proofView = await buildFacultyProofView(context.db, {
+      facultyId: params.facultyId,
+      viewerRoleCode: auth.activeRoleGrant.roleCode,
+      simulationStageCheckpointId: query.simulationStageCheckpointId,
+    })
+    const proofScopeDescriptor = (
+      proofView.scopeDescriptor && typeof proofView.scopeDescriptor === 'object'
+        ? proofView.scopeDescriptor
+        : null
+    ) as ScopeDescriptorValue | null
+    const readProofQueueString = (item: Record<string, unknown>, key: string) => {
+      const value = item[key]
+      return typeof value === 'string' && value.length > 0 ? value : null
+    }
+    const proofModeActive = proofView.scopeMode === 'proof'
+    const proofScopedProfileActive = proofModeActive && !!query.simulationStageCheckpointId
+    const proofBatchIds = Array.from(new Set([
+      proofScopeDescriptor?.batchId ?? null,
+      ...proofView.activeRunContexts.map(item => item.batchId),
+    ].filter((value): value is string => !!value)))
+    const proofSemesterNumber = proofView.activeOperationalSemester
+      ?? proofView.selectedCheckpoint?.semesterNumber
+      ?? null
+    const proofOfferingRows = offeringRows.filter(row => {
+      const term = termById[row.termId]
+      if (!term) return false
+      if (proofBatchIds.length > 0 && (!term.batchId || !proofBatchIds.includes(term.batchId))) return false
+      if (proofSemesterNumber != null && term.semesterNumber !== proofSemesterNumber) return false
+      return true
+    })
+    const proofOfferingRowById = Object.fromEntries(proofOfferingRows.map(row => [row.offeringId, row]))
+    const proofOwnedClasses = Array.from(new Map(
+      [
+        ...proofOfferingRows
+          .filter(row => activeOwnerships.some(ownership => ownership.offeringId === row.offeringId))
+          .map(row => {
+            const course = courseById[row.courseId]
+            const branch = branchById[row.branchId]
+            const department = branch ? departmentById[branch.departmentId] : null
+            const ownershipRole = activeOwnerships.find(ownership => ownership.offeringId === row.offeringId)?.ownershipRole ?? 'proof-scope'
+            return [row.offeringId, {
+              offeringId: row.offeringId,
+              courseCode: course?.courseCode ?? 'NA',
+              title: course?.title ?? 'Untitled course',
+              yearLabel: row.yearLabel,
+              sectionCode: row.sectionCode,
+              ownershipRole,
+              departmentName: department?.name ?? null,
+              branchName: branch?.name ?? null,
+            }] as const
+          }),
+        ...proofView.monitoringQueue.map(item => {
+          const queueOfferingId = readProofQueueString(item, 'offeringId')
+          const queueSectionCode = readProofQueueString(item, 'sectionCode')
+          const queueBranchName = readProofQueueString(item, 'branchName')
+          const queueCourseCode = readProofQueueString(item, 'courseCode') ?? 'NA'
+          const queueCourseTitle = readProofQueueString(item, 'courseTitle') ?? 'Untitled course'
+          const offering = queueOfferingId ? (proofOfferingRowById[queueOfferingId] ?? offeringRows.find(row => row.offeringId === queueOfferingId) ?? null) : null
+          const branch = offering ? branchById[offering.branchId] : null
+          const department = branch ? departmentById[branch.departmentId] : null
+          const ownershipRole = offering ? (activeOwnerships.find(ownership => ownership.offeringId === offering.offeringId)?.ownershipRole ?? 'proof-scope') : 'proof-scope'
+          return [queueOfferingId, {
+            offeringId: queueOfferingId,
+            courseCode: queueCourseCode,
+            title: queueCourseTitle,
+            yearLabel: offering?.yearLabel ?? (proofSemesterNumber != null ? `Semester ${proofSemesterNumber}` : 'Proof scope'),
+            sectionCode: queueSectionCode ?? offering?.sectionCode ?? 'NA',
+            ownershipRole,
+            departmentName: department?.name ?? null,
+            branchName: branch?.name ?? queueBranchName ?? null,
+          }] as const
+        }),
+      ].filter((entry): entry is [string, {
+        offeringId: string
+        courseCode: string
+        title: string
+        yearLabel: string
+        sectionCode: string
+        ownershipRole: string
+        departmentName: string | null
+        branchName: string | null
+      }] => !!entry[0]),
+    ).values()).sort((left, right) => left.courseCode.localeCompare(right.courseCode) || left.sectionCode.localeCompare(right.sectionCode))
+    const proofMentorStudentIds = Array.from(new Set(activeMentorAssignments
+      .filter(assignment => {
+        const enrollment = enrollmentRows.find(row => row.studentId === assignment.studentId && row.academicStatus === 'active')
+        if (!enrollment) return false
+        const term = termById[enrollment.termId]
+        if (!term) return false
+        if (proofBatchIds.length > 0 && (!term.batchId || !proofBatchIds.includes(term.batchId))) return false
+        if (proofSemesterNumber != null && term.semesterNumber !== proofSemesterNumber) return false
+        return true
+      })
+      .map(assignment => assignment.studentId))).sort((left, right) => left.localeCompare(right))
+    const proofCurrentBatchContexts = Array.from(new Map(proofBatchIds.map(batchId => {
+      const batch = batchById[batchId]
+      const branch = batch ? branchById[batch.branchId] : null
+      const runContext = proofView.activeRunContexts.find(item => item.batchId === batchId) ?? null
+      const sectionCodes = new Set<string>()
+      for (const item of proofOwnedClasses) sectionCodes.add(item.sectionCode)
+      for (const item of proofView.monitoringQueue) {
+        const queueSectionCode = readProofQueueString(item, 'sectionCode')
+        if (queueSectionCode) sectionCodes.add(queueSectionCode)
+      }
+      const roleCoverage = new Set<string>()
+      for (const item of proofOwnedClasses) roleCoverage.add(item.ownershipRole)
+      if (proofMentorStudentIds.length > 0) roleCoverage.add('MENTOR')
+      if (roleCoverage.size === 0) roleCoverage.add(auth.activeRoleGrant.roleCode)
+      return [batchId, {
+        batchId,
+        batchLabel: runContext?.batchLabel ?? batch?.batchLabel ?? batchId,
+        branchName: runContext?.branchName ?? branch?.name ?? null,
+        currentSemester: proofSemesterNumber ?? batch?.currentSemester ?? 0,
+        sectionCodes: Array.from(sectionCodes).sort(),
+        roleCoverage: Array.from(roleCoverage).sort(),
+      }] as const
+    })).values())
+    const effectiveOwnedClasses = proofScopedProfileActive ? proofOwnedClasses : currentOwnedClasses
+    const effectiveMentorStudentIds = proofScopedProfileActive
+      ? proofMentorStudentIds
+      : activeMentorAssignments.map(row => row.studentId)
+    const effectiveBatchContexts = proofScopedProfileActive
+      ? proofCurrentBatchContexts
+      : Array.from(currentBatchContextsMap.values()).map(entry => ({
+          batchId: entry.batchId,
+          batchLabel: entry.batchLabel,
+          branchName: entry.branchName,
+          currentSemester: entry.currentSemester,
+          sectionCodes: Array.from(entry.sectionCodes).sort(),
+          roleCoverage: Array.from(entry.roleCoverage).sort(),
+        }))
+    const relevantOfferingIds = new Set(effectiveOwnedClasses.map(item => item.offeringId))
+    const relevantStudentIds = new Set(effectiveMentorStudentIds)
     const relevantReassessments = reassessmentRows.filter(row => (
       relevantStudentIds.has(row.studentId)
       || (row.offeringId ? relevantOfferingIds.has(row.offeringId) : false)
@@ -888,11 +1021,6 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
       .filter(row => row.status !== 'completed' && row.status !== 'monitoring-only')
       .map(row => row.dueAt)
       .sort()[0] ?? null
-    const proofView = await buildFacultyProofView(context.db, {
-      facultyId: params.facultyId,
-      viewerRoleCode: auth.activeRoleGrant.roleCode,
-      simulationStageCheckpointId: query.simulationStageCheckpointId,
-    })
 
     const describeGrantScope = (scopeType: string, scopeId: string) => {
       if (scopeType === 'institution') return 'Institution'
@@ -946,23 +1074,34 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
         ...mapRoleGrant(row),
         scopeLabel: describeGrantScope(row.scopeType, row.scopeId),
       })),
-      subjectRunCourseLeaderScope: Array.from(subjectRunMap.values()).map(entry => ({
-        ...entry,
-        sectionCodes: Array.from(entry.sectionCodes).sort(),
-      })),
+      subjectRunCourseLeaderScope: (proofScopedProfileActive
+        ? Array.from(new Map(
+            effectiveOwnedClasses.map(item => {
+              const matchingOffering = offeringRows.find(row => row.offeringId === item.offeringId)
+              const subjectRunId = matchingOffering
+                ? `subject_run_${matchingOffering.termId}_${matchingOffering.courseId}_${matchingOffering.yearLabel}`
+                : `proof_subject_run_${item.courseCode}_${item.yearLabel}`
+              const existing = subjectRunMap.get(subjectRunId)
+              return [subjectRunId, {
+                subjectRunId,
+                courseCode: item.courseCode,
+                title: item.title,
+                termId: matchingOffering?.termId ?? existing?.termId ?? '',
+                yearLabel: item.yearLabel,
+                sectionCodes: Array.from(new Set([...(existing?.sectionCodes ?? new Set<string>()), item.sectionCode])),
+              }] as const
+            }),
+          ).values())
+        : Array.from(subjectRunMap.values()).map(entry => ({
+            ...entry,
+            sectionCodes: Array.from(entry.sectionCodes).sort(),
+          }))),
       mentorScope: {
-        activeStudentCount: activeMentorAssignments.length,
-        studentIds: activeMentorAssignments.map(row => row.studentId),
+        activeStudentCount: effectiveMentorStudentIds.length,
+        studentIds: effectiveMentorStudentIds,
       },
-      currentOwnedClasses,
-      currentBatchContexts: Array.from(currentBatchContextsMap.values()).map(entry => ({
-        batchId: entry.batchId,
-        batchLabel: entry.batchLabel,
-        branchName: entry.branchName,
-        currentSemester: entry.currentSemester,
-        sectionCodes: Array.from(entry.sectionCodes).sort(),
-        roleCoverage: Array.from(entry.roleCoverage).sort(),
-      })),
+      currentOwnedClasses: effectiveOwnedClasses,
+      currentBatchContexts: effectiveBatchContexts,
       timetableStatus: {
         hasTemplate: !!timetableTemplate,
         publishedAt: timetableTemplate ? (calendarWorkspace?.publishedAt ?? timetableRows[0]?.updatedAt ?? null) : null,
@@ -980,9 +1119,15 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
         })),
       },
       reassessmentSummary: {
-        openCount: relevantReassessments.filter(row => row.status !== 'completed' && row.status !== 'monitoring-only').length,
-        nextDueAt: nextReassessmentDueAt,
-        recentDecisionTypes: recentAlertDecisions.map(row => row.decisionType),
+        openCount: proofScopedProfileActive
+          ? proofView.monitoringQueue.filter(item => item.reassessmentStatus !== 'Resolved').length
+          : relevantReassessments.filter(row => row.status !== 'completed' && row.status !== 'monitoring-only').length,
+        nextDueAt: proofScopedProfileActive
+          ? (proofView.monitoringQueue.map(item => item.dueAt).filter((value): value is string => !!value).sort()[0] ?? null)
+          : nextReassessmentDueAt,
+        recentDecisionTypes: proofScopedProfileActive
+          ? Array.from(new Set(proofView.monitoringQueue.map(item => item.decisionType).filter((value): value is string => !!value))).slice(0, 5)
+          : recentAlertDecisions.map(row => row.decisionType),
       },
       proofOperations: proofView,
     }

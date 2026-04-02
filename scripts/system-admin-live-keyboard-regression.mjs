@@ -6,6 +6,7 @@ import {
   sanitizeArtifactPrefix,
 } from './proof-risk-semester-walk.mjs'
 import { resolveSystemAdminLiveCredentials } from './system-admin-live-auth.mjs'
+import { resolveTeachingPasswordViaSession } from './teaching-password-resolution.mjs'
 
 const playwrightRoot = process.env.PLAYWRIGHT_ROOT
 const appUrl = process.env.PLAYWRIGHT_APP_URL ?? 'http://127.0.0.1:4173'
@@ -317,20 +318,13 @@ async function discoverProofRouteState() {
 }
 
 async function resolveTeachingPassword(username) {
-  const sessionUrl = new URL('/api/session/login', apiUrl)
-  const origin = new URL(appUrl).origin
-  for (const password of teachingPasswordCandidates) {
-    const response = await fetch(sessionUrl, {
-      method: 'POST',
-      headers: {
-        origin,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({ identifier: username, password }),
-    })
-    if (response.ok) return password
-  }
-  throw new Error(`Could not resolve a working teaching password for ${username}`)
+  return resolveTeachingPasswordViaSession({
+    appUrl,
+    apiUrl,
+    username,
+    candidates: teachingPasswordCandidates,
+    logPrefix: 'live-keyboard',
+  })
 }
 
 async function discoverRequestState() {

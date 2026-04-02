@@ -3,6 +3,7 @@ import { copyFile, mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { sanitizeArtifactPrefix } from './proof-risk-semester-walk.mjs'
 import { resolveSystemAdminLiveCredentials } from './system-admin-live-auth.mjs'
+import { resolveTeachingPasswordViaSession } from './teaching-password-resolution.mjs'
 
 const playwrightRoot = process.env.PLAYWRIGHT_ROOT
 const appUrl = process.env.PLAYWRIGHT_APP_URL ?? 'http://127.0.0.1:5173'
@@ -143,20 +144,13 @@ async function submitPatchWithStaleVersionGuard({
 }
 
 async function resolveTeachingPassword(username) {
-  const sessionUrl = new URL('/api/session/login', apiUrl)
-  const origin = new URL(appUrl).origin
-  for (const password of teachingPasswordCandidates) {
-    const response = await fetch(sessionUrl, {
-      method: 'POST',
-      headers: {
-        origin,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({ identifier: username, password }),
-    })
-    if (response.ok) return password
-  }
-  throw new Error(`Could not resolve a working teaching password for ${username}`)
+  return resolveTeachingPasswordViaSession({
+    appUrl,
+    apiUrl,
+    username,
+    candidates: teachingPasswordCandidates,
+    logPrefix: 'teaching-parity',
+  })
 }
 
 async function clickAndSettle(locator, description) {
@@ -174,6 +168,67 @@ async function focusAndActivate(locator, description, key = 'Enter') {
   await page.keyboard.press(key)
 }
 
+async function readVisibleNavLabels() {
+  return page.evaluate(() => {
+    return Array.from(document.querySelectorAll('[data-nav-item="true"]'))
+      .filter(node => node instanceof HTMLElement && node.offsetParent !== null)
+      .map(node => node.textContent?.replace(/\s+/g, ' ').trim() ?? '')
+      .filter(Boolean)
+  })
+}
+
+async function readNavState() {
+  return page.evaluate(() => {
+    return Array.from(document.querySelectorAll('[data-nav-item="true"]')).map(node => ({
+      label: node.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+      active: node.getAttribute('data-active') === 'true',
+      visible: node instanceof HTMLElement ? node.offsetParent !== null : false,
+    }))
+  })
+}
+
+async function readProofSurfaceState() {
+  return page.evaluate(() => {
+    return Array.from(document.querySelectorAll('[data-proof-surface]')).map(node => ({
+      surface: node.getAttribute('data-proof-surface'),
+      scope: node.getAttribute('data-proof-scope'),
+      visible: node instanceof HTMLElement ? node.offsetParent !== null : false,
+      label: node.textContent?.replace(/\s+/g, ' ').trim().slice(0, 160) ?? '',
+    }))
+  })
+}
+
+async function resolveVisibleNavItem(label, timeout = 10_000) {
+  const deadline = Date.now() + timeout
+  while (Date.now() < deadline) {
+    const navItems = page.locator('[data-nav-item="true"]')
+    const count = await navItems.count()
+    for (let index = 0; index < count; index += 1) {
+      const candidate = navItems.nth(index)
+      const matchesLabel = await candidate.evaluate((node, expectedLabel) => {
+        const text = node.textContent?.replace(/\s+/g, ' ').trim() ?? ''
+        return text.includes(expectedLabel)
+      }, label).catch(() => false)
+      if (!matchesLabel) continue
+      if (await candidate.isVisible().catch(() => false)) return candidate
+    }
+    await page.waitForTimeout(150)
+  }
+
+  const visibleLabels = await readVisibleNavLabels().catch(() => [])
+  throw new Error(`Could not find visible navigation item "${label}". Visible nav items: ${visibleLabels.join(', ') || 'none'}`)
+}
+
+async function waitForNavItemActive(label, timeout = 10_000) {
+  await page.waitForFunction(expectedLabel => {
+    return Array.from(document.querySelectorAll('[data-nav-item="true"]')).some(node => {
+      const text = node.textContent?.replace(/\s+/g, ' ').trim() ?? ''
+      const isVisible = node instanceof HTMLElement ? node.offsetParent !== null : false
+      return isVisible && text.includes(expectedLabel) && node.getAttribute('data-active') === 'true'
+    })
+  }, label, { timeout })
+}
+
 async function openFacultyProfile() {
   await clickAndSettle(page.locator('[data-proof-action="open-faculty-profile"]').first(), 'faculty profile navigation')
   await expectVisible(page.getByText(/^Teaching Profile$/).first(), 'teaching profile heading')
@@ -189,8 +244,27 @@ async function openAcademicPortalFromHome() {
 }
 
 async function openNavItem(label) {
-  const navItem = page.locator('[data-nav-item="true"]').filter({ hasText: label }).first()
-  await clickAndSettle(navItem, `${label} navigation`)
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const navItem = await resolveVisibleNavItem(label)
+    await expectVisible(navItem, `${label} navigation`)
+    if ((await navItem.getAttribute('data-active')) === 'true') {
+      await page.waitForLoadState('networkidle')
+      await page.waitForTimeout(400)
+      return
+    }
+    await navItem.scrollIntoViewIfNeeded()
+    if (attempt === 1) await navItem.click()
+    else await focusAndActivate(navItem, `${label} navigation`)
+    await page.waitForLoadState('networkidle')
+    try {
+      await waitForNavItemActive(label)
+      await page.waitForTimeout(400)
+      return
+    } catch (error) {
+      if (attempt >= 3) throw error
+      await page.waitForTimeout(250)
+    }
+  }
 }
 
 async function switchRole(role) {
@@ -204,18 +278,28 @@ async function waitForAcademicProofSummary(surfaceDescription) {
   return summary
 }
 
+async function waitForMentorWorkspaceSettled() {
+  await waitForNavItemActive('My Mentees')
+  await expectVisible(
+    page.locator('[data-proof-surface="academic-proof-summary"][data-proof-scope="mentor-view"]').first(),
+    'mentor view proof summary',
+  )
+  await page.waitForLoadState('networkidle')
+  await page.waitForTimeout(1_000)
+  await waitForNavItemActive('My Mentees')
+}
+
 async function readAcademicProofSummary(summary) {
-  const metricIds = [
-    'operational-semester',
-    'high-watch',
-    'open-queue',
-    'mentor-scope',
-    'requests',
-    'owned-classes',
-  ]
+  const metricLocators = summary.locator('[data-proof-summary-metric]')
+  const metricCount = await metricLocators.count()
+  assert(metricCount > 0, 'proof summary should expose at least one metric')
+
   const values = {}
-  for (const metricId of metricIds) {
-    const valueLocator = summary.locator(`[data-proof-summary-value="${metricId}"]`).first()
+  for (let index = 0; index < metricCount; index += 1) {
+    const metric = metricLocators.nth(index)
+    const metricId = await metric.getAttribute('data-proof-summary-metric')
+    assert(metricId, `proof summary metric ${index + 1} should expose an id`)
+    const valueLocator = metric.locator('[data-proof-summary-value]').first()
     await expectVisible(valueLocator, `${metricId} proof summary value`)
     values[metricId] = (await valueLocator.textContent() ?? '').trim()
   }
@@ -326,9 +410,10 @@ try {
   assertAcademicProofSummaryParity(mentorSummarySnapshot, dashboardSummarySnapshot, 'mentor view')
   await page.screenshot({ path: mentorViewScreenshot, fullPage: true })
 
+  await waitForMentorWorkspaceSettled()
   await openNavItem('Queue History')
-  await expectVisible(page.getByText(/^Queue History$/).first(), 'mentor queue history page')
-  const queueSummary = await waitForAcademicProofSummary('mentor queue history')
+  const queueSummary = page.locator('[data-proof-surface="academic-proof-summary"][data-proof-scope="queue-history"]').first()
+  await expectVisible(queueSummary, 'mentor queue history page')
   const queueSummarySnapshot = await readAcademicProofSummary(queueSummary)
   assertAcademicProofSummaryParity(queueSummarySnapshot, dashboardSummarySnapshot, 'mentor queue history')
   await page.screenshot({ path: queueHistoryScreenshot, fullPage: true })
@@ -365,6 +450,8 @@ try {
     error: error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) },
     pageErrors,
     consoleMessages,
+    navState: await readNavState().catch(() => []),
+    proofSurfaces: await readProofSurfaceState().catch(() => []),
   }
   let prefixedFailureReport = null
   let prefixedFailureScreenshot = null

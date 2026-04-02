@@ -15,6 +15,7 @@ import {
   sectionOfferings,
 } from '../src/db/schema.js'
 import { DEFAULT_STAGE_POLICY } from '../src/lib/stage-policy.js'
+import { MSRUAS_PROOF_BATCH_ID } from '../src/lib/msruas-proof-sandbox.js'
 import { createTestApp, loginAs, TEST_ORIGIN } from './helpers/test-app.js'
 
 let current: Awaited<ReturnType<typeof createTestApp>> | null = null
@@ -575,6 +576,27 @@ describe('admin hierarchy routes', () => {
     expect(student.activeOperationalSemester).toBeTypeOf('number')
   })
 
+  it('scopes the student admin list to the requested proof batch and section', async () => {
+    current = await createTestApp()
+    const login = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const response = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/students?batchId=${MSRUAS_PROOF_BATCH_ID}&sectionCode=A`,
+      headers: { cookie: login.cookie },
+    })
+
+    expect(response.statusCode).toBe(200)
+    const items = response.json().items
+    expect(items.length).toBeGreaterThan(0)
+    expect(items.every((item: {
+      activeAcademicContext?: { batchId?: string | null; sectionCode?: string | null } | null
+    }) => (
+      item.activeAcademicContext?.batchId === MSRUAS_PROOF_BATCH_ID
+      && item.activeAcademicContext?.sectionCode === 'A'
+    ))).toBe(true)
+  })
+
   it('returns labeled appointments, grants, and provenance in the faculty admin list', async () => {
     current = await createTestApp()
     const login = await loginAs(current.app, 'sysadmin', 'admin1234')
@@ -756,6 +778,58 @@ describe('admin hierarchy routes', () => {
     expect(listedFaculty.scopeMode).toBe('section')
     expect(listedFaculty.countSource).toBe('operational-semester')
     expect(listedFaculty.activeOperationalSemester).toBe(batch.currentSemester)
+  })
+
+  it('scopes the faculty admin list away from outside branches when a proof batch is requested', async () => {
+    current = await createTestApp()
+    const login = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const [outsideBranch] = await current.db.select().from(branches).where(eq(branches.branchId, 'branch_ece_btech'))
+    expect(outsideBranch).toBeTruthy()
+    if (!outsideBranch) throw new Error('Expected a non-proof branch for faculty scope filtering')
+
+    const facultyCreate = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/faculty',
+      headers: { cookie: login.cookie, origin: TEST_ORIGIN },
+      payload: {
+        username: 'outside.scope.filter',
+        email: 'outside.scope.filter@airmentor.local',
+        phone: '+91 9000000999',
+        password: 'faculty1234',
+        employeeCode: 'FAC-OUT-01',
+        displayName: 'Outside Scope Faculty',
+        designation: 'Assistant Professor',
+        joinedOn: '2026-01-10',
+        status: 'active',
+      },
+    })
+    expect(facultyCreate.statusCode).toBe(200)
+    const faculty = facultyCreate.json()
+
+    const appointmentCreate = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/faculty/${faculty.facultyId}/appointments`,
+      headers: { cookie: login.cookie, origin: TEST_ORIGIN },
+      payload: {
+        departmentId: outsideBranch.departmentId,
+        branchId: outsideBranch.branchId,
+        isPrimary: true,
+        startDate: '2026-01-10',
+        status: 'active',
+      },
+    })
+    expect(appointmentCreate.statusCode).toBe(200)
+
+    const facultyResponse = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/faculty?batchId=${MSRUAS_PROOF_BATCH_ID}`,
+      headers: { cookie: login.cookie },
+    })
+    expect(facultyResponse.statusCode).toBe(200)
+    const facultyItems = facultyResponse.json().items
+    expect(facultyItems.length).toBeGreaterThan(0)
+    expect(facultyItems.some((item: { facultyId: string }) => item.facultyId === faculty.facultyId)).toBe(false)
   })
 
   it('allows archiving an academic faculty without moving its departments first', async () => {

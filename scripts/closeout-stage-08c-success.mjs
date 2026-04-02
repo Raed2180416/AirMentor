@@ -11,8 +11,9 @@ const assertionIds = ['ATM-00B-002', 'ATM-02B-002', 'ATM-08C-001']
 const liveAppUrl = 'https://raed2180416.github.io/AirMentor/'
 const liveApiUrl = 'https://api-production-ab72.up.railway.app/'
 const liveFrontendOrigin = 'https://raed2180416.github.io'
-const deployedCommit = 'ff68150b034a23327216be1b4ea48a1c34300892'
-const deployedPagesRunId = '23871539997'
+const deployedFrontendCommit = '2687c2bc5e8d5bf7b2c70a82bd824521ad0ffa50'
+const deployedApiCommit = 'ff68150b034a23327216be1b4ea48a1c34300892'
+const deployedPagesRunId = '23872504711'
 const deployedRailwayRunId = '23871540040'
 const placeholderIdentifier = '<identifier>'
 const placeholderPassword = '<password>'
@@ -70,6 +71,14 @@ function replaceLineByPrefix(text, prefix, replacement) {
   return `${lines.join('\n')}\n`
 }
 
+function replaceLineByPattern(text, pattern, replacement) {
+  const lines = text.split(/\r?\n/)
+  const index = lines.findIndex(line => pattern.test(line))
+  assert(index >= 0, `Could not find line matching pattern: ${pattern}`)
+  lines[index] = replacement
+  return `${lines.join('\n')}\n`
+}
+
 function replaceBlock(text, startMarker, endMarker, replacement) {
   const start = text.indexOf(startMarker)
   assert(start >= 0, `Could not find block starting with: ${startMarker}`)
@@ -110,10 +119,28 @@ function sanitizeCommandString(value) {
   return String(value)
     .replace(/AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER=[^\s|`]+/g, `AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER=${placeholderIdentifier}`)
     .replace(/AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD=[^\s|`]+/g, `AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD=${placeholderPassword}`)
+    .replaceAll('admin1234', placeholderPassword)
+}
+
+function sanitizeNestedStrings(value) {
+  if (typeof value === 'string') return sanitizeCommandString(value)
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      value[index] = sanitizeNestedStrings(value[index])
+    }
+    return value
+  }
+  if (value && typeof value === 'object') {
+    for (const key of Object.keys(value)) {
+      value[key] = sanitizeNestedStrings(value[key])
+    }
+  }
+  return value
 }
 
 function sanitizeLedgerRows(rows) {
   for (const row of rows) {
+    sanitizeNestedStrings(row)
     for (const command of [...(row.repoLocalCommands ?? []), ...(row.liveCommands ?? [])]) {
       if (typeof command.command === 'string') command.command = sanitizeCommandString(command.command)
     }
@@ -126,6 +153,7 @@ function sanitizeLedgerRows(rows) {
 }
 
 function sanitizeDefects(defects) {
+  sanitizeNestedStrings(defects)
   for (const item of defects.items ?? []) {
     if (item?.evidence && typeof item.evidence.command === 'string') {
       item.evidence.command = sanitizeCommandString(item.evidence.command)
@@ -154,8 +182,9 @@ function parseLogTimestamp(logPath) {
   return new Date(formatted)
 }
 
-async function resolveLatestDetachedLog(prefixes) {
+async function resolveLatestDetachedLog(prefixes, options = {}) {
   const normalizedPrefixes = Array.isArray(prefixes) ? prefixes : [prefixes]
+  const requireSuccess = options.requireSuccess === true
   const entries = await readdir(detachedDir, { withFileTypes: true })
   const matching = entries
     .filter(
@@ -171,11 +200,18 @@ async function resolveLatestDetachedLog(prefixes) {
     stats: await stat(logPath),
   })))
   ranked.sort((left, right) => right.stats.mtimeMs - left.stats.mtimeMs)
-  return ranked[0].logPath
+  if (!requireSuccess) return ranked[0].logPath
+
+  for (const candidate of ranked) {
+    const logText = await readFile(candidate.logPath, 'utf8')
+    if (/\bexit=0\s*$/m.test(logText.trimEnd())) return candidate.logPath
+  }
+
+  assert(false, `Could not find a successful detached log for prefixes: ${normalizedPrefixes.join(', ')}`)
 }
 
 async function validateDetachedLog(prefixes) {
-  const logPath = await resolveLatestDetachedLog(prefixes)
+  const logPath = await resolveLatestDetachedLog(prefixes, { requireSuccess: true })
   const logText = await readFile(logPath, 'utf8')
   assert(/\bexit=0\s*$/m.test(logText.trimEnd()), `Detached command did not finish successfully: ${logPath}`)
   return logPath
@@ -291,8 +327,9 @@ function buildLedgerRow({ localBundle, liveBundle, selfAudit, localLog, liveLog,
     defectsClosed: [],
     blocker: null,
     notes: [
-      `GitHub Pages deploy run ${deployedPagesRunId} served commit ${deployedCommit}.`,
-      `Railway deploy run ${deployedRailwayRunId} served commit ${deployedCommit}.`,
+      `GitHub Pages deploy run ${deployedPagesRunId} served frontend commit ${deployedFrontendCommit}.`,
+      `Railway deploy run ${deployedRailwayRunId} served backend commit ${deployedApiCommit}.`,
+      'Railway remained on the prior successful backend deploy because the final 08C blocker fix changed frontend-only paths.',
       `Local closeout detached log: ${path.relative(repoRoot, localLog)}`,
       `Live closeout detached log: ${path.relative(repoRoot, liveLog)}`,
       `Lint detached log: ${path.relative(repoRoot, lintLog)}`,
@@ -351,7 +388,8 @@ function buildCompletionBlock() {
     `- Final local closeout artifact bundle: \`${path.relative(repoRoot, files.localBundle)}\``,
     `- Final live closeout artifact bundle: \`${path.relative(repoRoot, files.liveBundle)}\``,
     `- Self-audit summary: \`${path.relative(repoRoot, files.selfAudit)}\``,
-    `- Verified deployed commit: \`${deployedCommit}\``,
+    `- Verified frontend commit: \`${deployedFrontendCommit}\``,
+    `- Verified backend deploy commit: \`${deployedApiCommit}\``,
     `- GitHub Pages run: \`${deployedPagesRunId}\``,
     `- Railway run: \`${deployedRailwayRunId}\``,
     '- Three-pass self-audit completed: authoritative-plan coverage, repo/test/script crosswalk, and full sysadmin-plus-teaching surface coverage all reconciled against the final proof backbone.',
@@ -411,7 +449,7 @@ function finalizeDeployContract(text) {
     [
       '## 08C Seal Requirements',
       '- Finalized for Stage `08C`.',
-      '- The final `08C` closeout records the exact deploy workflow run ids, the deployed commit SHA, the live session-contract artifact, and the final live closeout artifact bundle in the proof backbone.',
+      '- The final `08C` closeout records the exact deploy workflow run ids, the verified frontend/backend deploy SHAs, the live session-contract artifact, and the final live closeout artifact bundle in the proof backbone.',
       '',
     ].join('\n'),
   )
@@ -580,6 +618,9 @@ async function main() {
   const finalizedSecurityAnnex = finalizeSecurityAnnex(securityAnnexText)
   const finalizedDeployContract = finalizeDeployContract(deployContractText)
   const finalizedEventTaxonomy = finalizeEventTaxonomy(eventTaxonomyText)
+  const sanitizedFinalizedSecurityAnnex = sanitizeCommandString(finalizedSecurityAnnex)
+  const sanitizedFinalizedDeployContract = sanitizeCommandString(finalizedDeployContract)
+  const sanitizedFinalizedEventTaxonomy = sanitizeCommandString(finalizedEventTaxonomy)
 
   const deniedArtifactExists = existsSync(files.deniedArtifact)
   assert(deniedArtifactExists, `Required denied-path continuity artifact is missing: ${files.deniedArtifact}`)
@@ -647,15 +688,22 @@ async function main() {
     '| ATM-08C-001 | Deployed GitHub Pages + Railway verification is part of closeout | Coverage Confirmation, Security Contract, Manual Closeout | the final closeout helper now seals detached local/live closeout runs, deploy metadata, finalized support docs, redaction hygiene, and the three-pass self-audit into one consistent evidence pack built from stage-scoped snapshot bundles. | 08C | `LOCAL-LINT`, `LOCAL-COMPAT`, `LOCAL-CLOSEOUT` | `LIVE-CLOSEOUT` | local closeout artifact bundle, live closeout artifact bundle, self-audit summary, final ledger row, completed matrices | Final pass proves the deployed stack matches the intended closeout state and that the proof backbone is internally consistent. |',
   )
 
-  let updatedCoverage = replaceLineByPrefix(
+  let updatedCoverage = replaceLineByPattern(
     coverageMatrixText,
-    'Current status as of `2026-04-01`:',
+    /^Current status as of `\d{4}-\d{2}-\d{2}`:/,
     'Current status as of `2026-04-02`: `DEF-02A-LIVE-GITHUB-PAGES-BANDS-DRIFT`, `DEF-05A-LIVE-A11Y-PROOF-HERO-CONTRAST`, `DEF-05B-LIVE-A11Y-QUEUE-CONTRAST`, `DEF-06B-LOCAL-TEACHING-PARITY-NAV-CLOSE`, `DEF-06B-LIVE-PROOF-LOCK-COLLISION`, `DEF-07A-LIVE-PROOF-CSRF-CROSS-ORIGIN-ACTIVATION`, `DEF-07A-LIVE-PROOF-NONSEEDED-BATCH-SELECTION`, `DEF-08A-LOCAL-REQUEST-FLOW-PREVIEW-PORT-DRIFT`, and `DEF-08A-LOCAL-TEACHING-PARITY-PORTAL-HANDOFF` are closed. Stage `08A`, `08B`, and `08C` closeout artifacts are current, the final support docs are no longer stubs, and no Stage `08A`, `08B`, or `08C` defects remain open in the defect register.',
   )
-  updatedCoverage = updatedCoverage.replace(
-    '## Sysadmin Surfaces\n',
-    `## Sysadmin Surfaces\n| Final closeout sweep | \`SYSTEM_ADMIN\` | repo-local and live closeout wrappers | \`scripts/verify-final-closeout.sh\`, \`scripts/verify-final-closeout-live.sh\`, detached logs, stage-scoped closeout snapshots, and finalized support docs | \`LOCAL-LINT\`, \`LOCAL-COMPAT\`, \`LOCAL-CLOSEOUT\` | \`LIVE-CLOSEOUT\` | \`08c-local-closeout-artifact-bundle.json\`, \`08c-live-closeout-artifact-bundle.json\`, \`08c-self-audit-summary.json\` | 08C |\n`,
-  )
+  const finalCloseoutCoverageRow = '| Final closeout sweep | `SYSTEM_ADMIN` | repo-local and live closeout wrappers | `scripts/verify-final-closeout.sh`, `scripts/verify-final-closeout-live.sh`, detached logs, stage-scoped closeout snapshots, and finalized support docs | `LOCAL-LINT`, `LOCAL-COMPAT`, `LOCAL-CLOSEOUT` | `LIVE-CLOSEOUT` | `08c-local-closeout-artifact-bundle.json`, `08c-live-closeout-artifact-bundle.json`, `08c-self-audit-summary.json` | 08C |'
+  if (!updatedCoverage.includes(finalCloseoutCoverageRow)) {
+    updatedCoverage = updatedCoverage.replace(
+      '## Sysadmin Surfaces\n',
+      `## Sysadmin Surfaces\n${finalCloseoutCoverageRow}\n`,
+    )
+  }
+  updatedCoverage = `${updatedCoverage
+    .split('\n')
+    .filter((line, index, lines) => line !== finalCloseoutCoverageRow || lines.indexOf(line) === index)
+    .join('\n')}\n`
 
   let updatedIndex = sanitizeIndexText(
     indexText.includes('## Stage 08C')
@@ -683,9 +731,9 @@ async function main() {
     sanitizedLedgerText,
     updatedIndex,
     sanitizedDefectsText,
-    finalizedSecurityAnnex,
-    finalizedDeployContract,
-    finalizedEventTaxonomy,
+    sanitizedFinalizedSecurityAnnex,
+    sanitizedFinalizedDeployContract,
+    sanitizedFinalizedEventTaxonomy,
   ]) {
     assert(!text.includes('admin1234'), 'Plaintext live password still present after redaction sweep.')
   }
@@ -698,9 +746,9 @@ async function main() {
     writeFile(files.assertionMatrix, updatedAssertionMatrix, 'utf8'),
     writeFile(files.coverageMatrix, updatedCoverage, 'utf8'),
     writeFile(files.stage08c, updatedStage08c, 'utf8'),
-    writeFile(files.securityAnnex, finalizedSecurityAnnex, 'utf8'),
-    writeFile(files.deployContract, finalizedDeployContract, 'utf8'),
-    writeFile(files.eventTaxonomy, finalizedEventTaxonomy, 'utf8'),
+    writeFile(files.securityAnnex, sanitizedFinalizedSecurityAnnex, 'utf8'),
+    writeFile(files.deployContract, sanitizedFinalizedDeployContract, 'utf8'),
+    writeFile(files.eventTaxonomy, sanitizedFinalizedEventTaxonomy, 'utf8'),
   ])
 }
 

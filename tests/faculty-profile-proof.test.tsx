@@ -186,8 +186,15 @@ describe('FacultyProfilePage proof mode', () => {
     expect(markup).toContain('data-proof-section="checkpoint-overlay"')
     expect(markup).toContain('data-proof-section="monitoring-queue"')
     expect(markup).toContain('data-proof-section="elective-fit"')
+    expect(markup).toContain('Proof Queue Items')
+    expect(markup).toContain('Monitored Students')
+    expect(markup).toContain('Checkpoint proof scope: 1 monitored student')
+    expect(markup).toContain('Checkpoint-bound teaching scope across 1 monitored offering in semester 6.')
+    expect(markup).toContain('Semester 6 · Sections A · COURSE_LEADER, MENTOR')
+    expect(markup).toContain('Checkpoint-bound batch context derived from the active proof scope.')
+    expect(markup).toContain('Checkpoint-bound course-leader scope derived from monitored proof offerings.')
     expect(markup).toContain('Checkpoint-bound proof counts')
-    expect(markup).toContain('operational semester 6')
+    expect(markup).toContain('checkpoint semester 6')
     expect(markup).toContain('teacher-proof-open-partial-profile')
   })
 
@@ -310,5 +317,173 @@ describe('FacultyProfilePage proof mode', () => {
     expect(screen.getByRole('button', { name: 'Jump to teacher proof controls' })).toBeTruthy()
     fireEvent.click(screen.getAllByRole('button', { name: 'Open Student' })[0])
     expect(onOpenStudentProfile).toHaveBeenCalledWith('student_001', 'off_mc601_a')
+  })
+
+  it('uses checkpoint-derived scope counts instead of operational mentor totals in proof mode', () => {
+    render(createElement(FacultyProfilePage, {
+      currentTeacher: {
+        facultyId: 'mnc_t1',
+        name: 'Dr. Asha Rao',
+        initials: 'AR',
+        allowedRoles: ['Course Leader', 'Mentor', 'HoD'],
+        dept: 'Mathematics and Computing',
+        roleTitle: 'Professor',
+        email: 'asha.rao@example.edu',
+        courseCodes: ['MC601'],
+        offeringIds: ['off_mc601_a'],
+        menteeIds: ['student_001', 'student_002'],
+      },
+      activeRole: 'Mentor',
+      profile: {
+        displayName: 'Dr. Asha Rao',
+        designation: 'Professor',
+        employeeCode: 'F001',
+        joinedOn: '2020-06-01',
+        email: 'asha.rao@example.edu',
+        phone: '9999999999',
+        primaryDepartment: {
+          departmentId: 'dept_mnc',
+          name: 'Mathematics and Computing',
+          code: 'MNC',
+        },
+        permissions: [],
+        appointments: [],
+        currentOwnedClasses: [],
+        currentBatchContexts: [],
+        subjectRunCourseLeaderScope: [],
+        mentorScope: { activeStudentCount: 24, studentIds: Array.from({ length: 24 }, (_, index) => `student_${String(index + 1).padStart(3, '0')}`) },
+        timetableStatus: { hasTemplate: true, publishedAt: '2026-03-10T00:00:00.000Z', directEditWindowEndsAt: null },
+        requestSummary: { openCount: 7, recent: [] },
+        reassessmentSummary: { openCount: 4, nextDueAt: null, recentDecisionTypes: [] },
+        proofOperations: {
+          scopeDescriptor: {
+            scopeType: 'proof',
+            scopeId: 'checkpoint_001',
+            label: '2023 Mathematics and Computing',
+            batchId: 'batch_mnc_2023',
+            sectionCode: null,
+            branchName: 'B.Tech Mathematics and Computing',
+            simulationRunId: 'run_001',
+            simulationStageCheckpointId: 'checkpoint_001',
+            studentId: null,
+          },
+          resolvedFrom: {
+            kind: 'proof-checkpoint',
+            scopeType: 'proof',
+            scopeId: 'checkpoint_001',
+            label: 'Semester Close · Proof Run 1',
+          },
+          scopeMode: 'proof',
+          countSource: 'proof-checkpoint',
+          activeOperationalSemester: 6,
+          activeRunContexts: [],
+          selectedCheckpoint: {
+            simulationStageCheckpointId: 'checkpoint_001',
+            simulationRunId: 'run_001',
+            semesterNumber: 6,
+            stageKey: 'semester-close',
+            stageLabel: 'Semester Close',
+            stageDescription: 'Final checkpoint.',
+            stageOrder: 6,
+            previousCheckpointId: null,
+            nextCheckpointId: null,
+            highRiskCount: 2,
+            openQueueCount: 2,
+          },
+          monitoringQueue: [
+            {
+              riskAssessmentId: 'risk_001',
+              simulationRunId: 'run_001',
+              batchId: 'batch_mnc_2023',
+              batchLabel: '2023 Mathematics and Computing',
+              branchName: 'B.Tech Mathematics and Computing',
+              studentId: 'student_001',
+              studentName: 'Aarav Sharma',
+              usn: '1MS23MC001',
+              offeringId: 'off_mc601_a',
+              courseCode: 'MC601',
+              courseTitle: 'Graph Theory',
+              sectionCode: 'A',
+              riskBand: 'High',
+              riskProbScaled: 78,
+              recommendedAction: 'targeted-tutoring',
+              dueAt: null,
+              reassessmentStatus: 'Open',
+              decisionType: 'targeted-tutoring',
+              decisionNote: null,
+              observedEvidence: {
+                attendancePct: 68,
+                tt1Pct: 34,
+                tt2Pct: 41,
+                quizPct: 52,
+                assignmentPct: 61,
+                seePct: 46,
+                weakCoCount: 2,
+                weakQuestionCount: 4,
+                cgpa: 6.8,
+                backlogCount: 1,
+                interventionRecoveryStatus: 'watch',
+              },
+              drivers: [{ label: 'Attendance below threshold', feature: 'attendancePct', impact: 0.31 }],
+              override: null,
+              acknowledgement: null,
+              resolution: null,
+            },
+            {
+              riskAssessmentId: 'risk_002',
+              simulationRunId: 'run_001',
+              batchId: 'batch_mnc_2023',
+              batchLabel: '2023 Mathematics and Computing',
+              branchName: 'B.Tech Mathematics and Computing',
+              studentId: 'student_002',
+              studentName: 'Nisha Patel',
+              usn: '1MS23MC002',
+              offeringId: 'off_mc602_b',
+              courseCode: 'MC602',
+              courseTitle: 'Optimization',
+              sectionCode: 'B',
+              riskBand: 'High',
+              riskProbScaled: 74,
+              recommendedAction: 'mentor-checkin',
+              dueAt: null,
+              reassessmentStatus: 'Open',
+              decisionType: 'mentor-checkin',
+              decisionNote: null,
+              observedEvidence: {
+                attendancePct: 71,
+                tt1Pct: 42,
+                tt2Pct: 39,
+                quizPct: 48,
+                assignmentPct: 57,
+                seePct: 44,
+                weakCoCount: 1,
+                weakQuestionCount: 2,
+                cgpa: 7.1,
+                backlogCount: 0,
+                interventionRecoveryStatus: null,
+              },
+              drivers: [{ label: 'TT2 below safe range', feature: 'tt2Pct', impact: 0.23 }],
+              override: null,
+              acknowledgement: null,
+              resolution: null,
+            },
+          ],
+          electiveFits: [],
+        },
+      },
+      calendarMarkers: [],
+      loading: false,
+      error: '',
+      pendingTaskCount: 3,
+      assignedOfferings: [],
+      currentFacultyTimetable: null,
+      onBack: () => {},
+      onOpenStudentProfile: () => {},
+      onOpenStudentShell: () => {},
+      onOpenRiskExplorer: () => {},
+    }))
+
+    expect(screen.getByText('Checkpoint proof scope: 2 monitored students')).toBeTruthy()
+    expect(screen.queryByText('Mentor scope: 24 active students')).toBeNull()
   })
 })

@@ -9,6 +9,7 @@ import {
   sanitizeArtifactPrefix,
 } from './proof-risk-semester-walk.mjs'
 import { resolveSystemAdminLiveCredentials } from './system-admin-live-auth.mjs'
+import { resolveTeachingPasswordViaSession } from './teaching-password-resolution.mjs'
 
 const playwrightRoot = process.env.PLAYWRIGHT_ROOT
 const appUrl = process.env.PLAYWRIGHT_APP_URL ?? 'http://127.0.0.1:4173'
@@ -61,6 +62,7 @@ const screenshots = {
   hodRiskExplorer: path.join(outputDir, 'hod-risk-explorer-proof.png'),
   studentShell: path.join(outputDir, 'student-shell-proof.png'),
 }
+const capturedScreenshots = {}
 const activationArtifactStem = isLiveStack
   ? 'system-admin-proof-semester-activation-live'
   : 'system-admin-proof-semester-activation-local'
@@ -133,20 +135,13 @@ async function expectVisible(locator, description, timeout = 30_000) {
 }
 
 async function resolveTeachingPassword(username) {
-  const sessionUrl = new URL('/api/session/login', apiUrl)
-  const origin = new URL(appUrl).origin
-  for (const password of teachingPasswordCandidates) {
-    const response = await fetch(sessionUrl, {
-      method: 'POST',
-      headers: {
-        origin,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({ identifier: username, password }),
-    })
-    if (response.ok) return password
-  }
-  throw new Error(`Could not resolve a working teaching password for ${username}`)
+  return resolveTeachingPasswordViaSession({
+    appUrl,
+    apiUrl,
+    username,
+    candidates: teachingPasswordCandidates,
+    logPrefix: 'proof-risk',
+  })
 }
 
 function markStep(label) {
@@ -226,6 +221,12 @@ async function saveContainerScreenshot(container, filePath, description) {
       height: Math.max(1, box.height),
     },
   })
+}
+
+async function captureProofScreenshot(label, container, description) {
+  const filePath = screenshots[label]
+  await saveContainerScreenshot(container, filePath, description)
+  capturedScreenshots[label] = filePath
 }
 
 async function focusAndActivate(locator, description, key = 'Enter') {
@@ -735,10 +736,45 @@ async function waitForSystemAdminShellReady() {
   await page.waitForTimeout(750)
 }
 
-async function loginAsSystemAdmin() {
+async function resolveSystemAdminEntryState(attempt = 1) {
   await page.goto(appUrl, { waitUntil: 'networkidle' })
   await page.getByRole('button', { name: /Open System Admin/i }).click()
-  await expectVisible(page.getByText(/System Admin Live Mode/), 'system admin login')
+
+  const loginHeading = page.getByText(/System Admin Live Mode/)
+  const bootingBanner = page.getByText(/Restoring system admin session/i)
+  const dashboardHeading = page.getByText('Operations Dashboard', { exact: true }).first()
+
+  await Promise.any([
+    expectVisible(loginHeading, 'system admin login', 15_000),
+    expectVisible(dashboardHeading, 'system admin dashboard', 15_000),
+    expectVisible(bootingBanner, 'system admin booting banner', 15_000),
+  ])
+
+  if (await dashboardHeading.isVisible().catch(() => false)) return 'shell'
+  if (await loginHeading.isVisible().catch(() => false)) return 'login'
+
+  try {
+    await Promise.any([
+      expectVisible(loginHeading, 'system admin login after restore', 45_000),
+      waitForSystemAdminShellReady(),
+    ])
+  } catch (error) {
+    if (attempt >= 2) throw error
+    await page.goto(`${appUrl.replace(/\/$/, '')}/#/`, { waitUntil: 'networkidle' })
+    await page.waitForTimeout(1_000)
+    return resolveSystemAdminEntryState(attempt + 1)
+  }
+
+  if (await dashboardHeading.isVisible().catch(() => false)) return 'shell'
+  return 'login'
+}
+
+async function loginAsSystemAdmin() {
+  const entryState = await resolveSystemAdminEntryState()
+  if (entryState === 'shell') {
+    await waitForSystemAdminShellReady()
+    return
+  }
   await page.getByPlaceholder('sysadmin', { exact: true }).fill(systemAdminCredentials.identifier)
   await page.getByPlaceholder('••••••••', { exact: true }).fill(systemAdminCredentials.password)
   await page.getByRole('button', { name: 'Sign In', exact: true }).click()
@@ -961,7 +997,7 @@ try {
       'activated operational semester override banner',
     )
   }
-  await saveContainerScreenshot(reloadedProofControlPlane, screenshots.systemAdmin, 'system admin proof control plane')
+  await captureProofScreenshot('systemAdmin', reloadedProofControlPlane, 'system admin proof control plane')
 
   const storedSelectionAfterReload = await readPlaybackSelectionParsed()
   markStep('restore-proof-semester')
@@ -993,7 +1029,7 @@ try {
     new RegExp(escapeRegExp(targetCheckpointDescriptor.surfaceLabel), 'i'),
     'teacher checkpoint playback sync',
   )
-  await saveContainerScreenshot(teacherProofPanel, screenshots.teacher, 'teacher proof panel')
+  await captureProofScreenshot('teacher', teacherProofPanel, 'teacher proof panel')
   if (proofCoverageTarget === 'teacher') {
     console.log('[smoke] Proof coverage target=teacher; stopping after system-admin and teacher proof surfaces.')
   } else {
@@ -1046,7 +1082,7 @@ try {
       await focusAndActivate(advancedDiagnosticsTab, 'advanced diagnostics tab')
       await waitForProofHeading('Trained Risk Heads', 60_000)
       await waitForProofHeading('Policy Comparison', 60_000)
-      await saveContainerScreenshot(teacherRiskExplorerSurface, screenshots.teacherRiskExplorer, 'teacher risk explorer surface')
+      await captureProofScreenshot('teacherRiskExplorer', teacherRiskExplorerSurface, 'teacher risk explorer surface')
 
       markStep('return-from-teacher-risk-explorer')
       const backButton = page.locator('[data-proof-action="risk-explorer-back"]').first()
@@ -1075,7 +1111,7 @@ try {
         new RegExp(escapeRegExp(targetCheckpointDescriptor.surfaceLabel), 'i'),
         'student shell checkpoint sync',
       )
-      await saveContainerScreenshot(studentShellSurface, screenshots.studentShell, 'student shell surface')
+      await captureProofScreenshot('studentShell', studentShellSurface, 'student shell surface')
 
       const shellSelection = await readPlaybackSelectionParsed()
       assert.equal(shellSelection.simulationRunId, storedSelectionAfterReload.simulationRunId, 'run selection should persist across teacher and shell navigation')
@@ -1100,7 +1136,7 @@ try {
       new RegExp(escapeRegExp(targetCheckpointDescriptor.surfaceLabel), 'i'),
       'HoD checkpoint sync',
     )
-    await saveContainerScreenshot(hodProofAnalytics, screenshots.hod, 'HoD proof analytics')
+    await captureProofScreenshot('hod', hodProofAnalytics, 'HoD proof analytics')
 
     markStep('open-hod-student-shell')
     const hodOverviewStudents = page.locator('[data-proof-section="hod-overview-students"]').first()
@@ -1143,7 +1179,7 @@ try {
       await waitForProofHeading('Student Shell', 60_000)
       await waitForProofHeading('No-action comparator', 60_000)
       if (!trackedStudentId) {
-        await saveContainerScreenshot(hodStudentShellSurface, screenshots.studentShell, 'HoD student shell surface')
+        await captureProofScreenshot('studentShell', hodStudentShellSurface, 'HoD student shell surface')
       }
 
       markStep('return-from-hod-student-shell')
@@ -1189,12 +1225,12 @@ try {
         new RegExp(escapeRegExp(targetCheckpointDescriptor.surfaceLabel), 'i'),
         'HoD risk explorer checkpoint sync',
       )
-      await saveContainerScreenshot(hodRiskExplorerSurface, screenshots.hodRiskExplorer, 'HoD risk explorer surface')
+      await captureProofScreenshot('hodRiskExplorer', hodRiskExplorerSurface, 'HoD risk explorer surface')
     }
   }
 
   const semesterScopedScreenshots = Object.fromEntries((await Promise.all(
-    Object.entries(screenshots).map(async ([label, screenshotPath]) => [label, await copySemesterScopedArtifact(screenshotPath)]),
+    Object.entries(capturedScreenshots).map(async ([label, screenshotPath]) => [label, await copySemesterScopedArtifact(screenshotPath)]),
   )).filter(([, copiedPath]) => !!copiedPath))
   const semesterScopedActivationArtifacts = Object.fromEntries((await Promise.all(
     Object.entries(activationArtifacts).map(async ([label, artifactPath]) => [label, await copySemesterScopedArtifact(artifactPath)]),
@@ -1223,7 +1259,7 @@ try {
       selectedCheckpoint: targetCheckpointDescriptor,
       storedPlaybackSelection: storedSelectionAfterReload,
       genericArtifacts: {
-        screenshots,
+        screenshots: capturedScreenshots,
         activationArtifacts,
       },
       prefixedArtifacts,
@@ -1241,7 +1277,7 @@ try {
     console.log(`Targeted semester: ${targetedProofSemester}`)
   }
   console.log(`Screenshots:`)
-  for (const [label, screenshotPath] of Object.entries(screenshots)) {
+  for (const [label, screenshotPath] of Object.entries(capturedScreenshots)) {
     console.log(`- ${label}: ${screenshotPath}`)
   }
   console.log('Semester activation artifacts:')

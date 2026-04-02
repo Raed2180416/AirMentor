@@ -48,6 +48,37 @@ function formatOperationalEventDetails(details: Record<string, unknown>) {
   return summaryEntries.length > 0 ? summaryEntries.join(' · ') : 'No additional details.'
 }
 
+function readDiagnosticNumber(record: DiagnosticsRecord, key: string) {
+  if (!record || typeof record !== 'object') return null
+  const value = (record as Record<string, unknown>)[key]
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : null
+}
+
+function readDiagnosticRecord(record: DiagnosticsRecord, key: string) {
+  if (!record || typeof record !== 'object') return null
+  const value = (record as Record<string, unknown>)[key]
+  return value && typeof value === 'object' ? value as Record<string, unknown> : null
+}
+
+function formatDiagnosticModeLabel(value: string) {
+  return value.replaceAll('-', ' ')
+}
+
+function summarizeCoEvidenceMix(summary: DiagnosticsRecord) {
+  const byMode = readDiagnosticRecord(summary, 'byMode')
+  if (!byMode) return null
+  const entries = Object.entries(byMode)
+    .map(([mode, count]) => [mode, Number(count)] as const)
+    .filter((entry): entry is readonly [string, number] => Number.isFinite(entry[1]) && entry[1] > 0)
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+  if (entries.length === 0) return null
+  return entries
+    .slice(0, 3)
+    .map(([mode, count]) => `${formatDiagnosticModeLabel(mode)} ${count}`)
+    .join(' · ')
+}
+
 type SystemAdminProofDashboardWorkspaceProps = {
   proofDashboard: ApiProofDashboard | null
   proofDashboardLoading: boolean
@@ -167,6 +198,43 @@ export function SystemAdminProofDashboardWorkspace({
   const productionEvaluationKeys = productionEvaluation && typeof productionEvaluation === 'object'
     ? Object.keys(productionEvaluation as Record<string, unknown>).slice(0, 5).join(' · ') || 'none'
     : null
+  const coEvidenceDiagnostics = activeDiagnosticsCoEvidence
+  const coEvidenceTotalRows = readDiagnosticNumber(coEvidenceDiagnostics, 'totalRows')
+  const coEvidenceFallbackCount = readDiagnosticNumber(coEvidenceDiagnostics, 'fallbackCount') ?? 0
+  const coEvidenceNonFallbackCount = coEvidenceTotalRows != null
+    ? Math.max(0, coEvidenceTotalRows - coEvidenceFallbackCount)
+    : null
+  const coEvidenceMixSummary = summarizeCoEvidenceMix(coEvidenceDiagnostics)
+  const hasStoredProductionArtifact = !!activeProductionDiagnostics
+  const hasRuntimeGovernedDiagnostics = (
+    (activeRunDetail?.modelDiagnostics.activeRunFeatureRowCount ?? 0) > 0
+    || (activeRunDetail?.modelDiagnostics.sourceRunCount ?? 0) > 0
+    || (coEvidenceTotalRows ?? 0) > 0
+    || !!activeDiagnosticsPolicyDiagnostics
+  )
+  const riskModelHeadline = hasStoredProductionArtifact
+    ? `${activeProductionDiagnostics.artifactVersion} · ${activeRunDetail?.modelDiagnostics.activeRunFeatureRowCount ?? 0} active rows`
+    : hasRuntimeGovernedDiagnostics
+      ? coEvidenceTotalRows != null && coEvidenceTotalRows > 0
+        ? coEvidenceNonFallbackCount && coEvidenceNonFallbackCount > 0
+          ? `Playback-governed evidence · ${activeRunDetail?.modelDiagnostics.activeRunFeatureRowCount ?? 0} active rows`
+          : `Fallback-heavy playback · ${activeRunDetail?.modelDiagnostics.activeRunFeatureRowCount ?? 0} active rows`
+        : `Runtime diagnostics only · ${activeRunDetail?.modelDiagnostics.activeRunFeatureRowCount ?? 0} active rows`
+      : 'Heuristic fallback only'
+  const riskModelSupport = hasStoredProductionArtifact
+    ? `${activeRunDetail?.modelDiagnostics.sourceRunCount ?? 0} run corpus · ${activeRunDetail?.modelDiagnostics.featureRowCount ?? 0} checkpoint rows`
+    : hasRuntimeGovernedDiagnostics
+      ? coEvidenceTotalRows != null && coEvidenceTotalRows > 0
+        ? coEvidenceNonFallbackCount && coEvidenceNonFallbackCount > 0
+          ? `${activeRunDetail?.modelDiagnostics.sourceRunCount ?? 0} run corpus · ${activeRunDetail?.modelDiagnostics.featureRowCount ?? 0} checkpoint rows · ${coEvidenceNonFallbackCount}/${coEvidenceTotalRows} non-fallback evidence rows`
+          : `${activeRunDetail?.modelDiagnostics.sourceRunCount ?? 0} run corpus · ${activeRunDetail?.modelDiagnostics.featureRowCount ?? 0} checkpoint rows · ${coEvidenceFallbackCount}/${coEvidenceTotalRows} fallback-simulated rows`
+        : `${activeRunDetail?.modelDiagnostics.sourceRunCount ?? 0} run corpus · ${activeRunDetail?.modelDiagnostics.featureRowCount ?? 0} checkpoint rows`
+      : 'No active local artifact has been trained for this batch yet.'
+  const evaluationStatusLine = productionEvaluationKeys
+    ? `Evaluation keys: ${productionEvaluationKeys}`
+    : hasRuntimeGovernedDiagnostics
+      ? 'Runtime diagnostics are available for this run even though no stored evaluation artifact is active.'
+      : 'No evaluation payload is available.'
   const dashboardProvenance: ProofProvenanceLike | null = activeRunDetail
     ? {
         scopeDescriptor: {
@@ -340,15 +408,16 @@ export function SystemAdminProofDashboardWorkspace({
               <div>
                 <div style={{ ...mono, fontSize: 10, color: T.dim }}>Risk Model</div>
                 <div style={{ ...mono, fontSize: 11, color: T.text, marginTop: 4 }}>
-                  {activeProductionDiagnostics
-                    ? `${activeProductionDiagnostics.artifactVersion} · ${activeRunDetail.modelDiagnostics.activeRunFeatureRowCount} active rows`
-                    : 'Heuristic fallback only'}
+                  {riskModelHeadline}
                 </div>
                 <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6 }}>
-                  {activeProductionDiagnostics
-                    ? `${activeRunDetail.modelDiagnostics.sourceRunCount} run corpus · ${activeRunDetail.modelDiagnostics.featureRowCount} checkpoint rows`
-                    : 'No active local artifact has been trained for this batch yet.'}
+                  {riskModelSupport}
                 </div>
+                {!activeProductionDiagnostics && hasRuntimeGovernedDiagnostics ? (
+                  <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 6, lineHeight: 1.6 }}>
+                    No stored production artifact is active; this dashboard is reporting checkpoint-governed runtime diagnostics.
+                  </div>
+                ) : null}
               </div>
 
               <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 10, display: 'grid', gap: 6 }}>
@@ -393,8 +462,13 @@ export function SystemAdminProofDashboardWorkspace({
                   </div>
                 ) : null}
                 <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>
-                  {productionEvaluationKeys ? `Evaluation keys: ${productionEvaluationKeys}` : 'No evaluation payload is available.'}
+                  {evaluationStatusLine}
                 </div>
+                {coEvidenceMixSummary ? (
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>
+                    CO evidence mix: {coEvidenceMixSummary}
+                  </div>
+                ) : null}
                 {activeDiagnosticsPolicyDiagnostics ? (
                   <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>
                     Governed policy: {formatDiagnosticSummary(activeDiagnosticsPolicyDiagnostics)}

@@ -35,6 +35,7 @@ import {
   studentTopicStates,
 } from '../db/schema.js'
 import { parseJson } from './json.js'
+import { pickMostRecentActiveRun } from './proof-active-run.js'
 import { parseObservedStateRow } from './proof-observed-state.js'
 import {
   type FacultyProofViewerRole,
@@ -328,7 +329,10 @@ export async function buildFacultyProofView(db: AppDb, input: {
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
       : []
     const countProvenance = buildProofCountProvenance({
-      activeOperationalSemester: run.activeOperationalSemester ?? batch?.currentSemester ?? checkpoint.semesterNumber ?? null,
+      // Checkpoint-bound faculty views must align to the selected checkpoint semester,
+      // not the currently activated run semester, otherwise owned-class and queue
+      // filtering drift back to the operational run state.
+      activeOperationalSemester: checkpoint.semesterNumber ?? run.activeOperationalSemester ?? batch?.currentSemester ?? null,
       batchId: run.batchId,
       batchLabel: batch?.batchLabel ?? run.batchId,
       branchName: branch?.name ?? null,
@@ -395,9 +399,7 @@ export async function buildFacultyProofView(db: AppDb, input: {
   ])
 
   const activeRunIds = new Set(runRows.map(row => row.simulationRunId))
-  const selectedActiveRun = runRows
-    .slice()
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || left.runLabel.localeCompare(right.runLabel))[0] ?? null
+  const selectedActiveRun = pickMostRecentActiveRun(runRows)
   const selectedActiveRunId = selectedActiveRun?.simulationRunId ?? null
   const relevantOfferingIds = new Set(ownershipRows.filter(row => row.status === 'active').map(row => row.offeringId))
   const relevantStudentIds = new Set(mentorRows.filter(row => row.effectiveTo === null).map(row => row.studentId))
@@ -1827,7 +1829,10 @@ export async function buildStudentAgentCard(db: AppDb, input: {
     ...(topicBuckets.highUncertainty.length > 0 ? ['High uncertainty topics present'] : []),
   ] : []
   const countProvenance = buildProofCountProvenance({
-    activeOperationalSemester: run.activeOperationalSemester ?? batch?.currentSemester ?? null,
+    // Checkpoint-bound student surfaces must expose the selected checkpoint semester
+    // as their authoritative semester context. Falling back to the run semester here
+    // leaks a contradictory semester into risk-explorer and student-shell provenance.
+    activeOperationalSemester: stageCheckpoint?.semesterNumber ?? run.activeOperationalSemester ?? batch?.currentSemester ?? null,
     batchId: run.batchId,
     batchLabel: batch?.batchLabel ?? run.batchId,
     branchName: branch?.name ?? null,
@@ -1940,6 +1945,9 @@ export async function buildStudentAgentCard(db: AppDb, input: {
     simulationRunId: run.simulationRunId,
     simulationStageCheckpointId: stageCheckpoint?.simulationStageCheckpointId ?? null,
     studentId: student.studentId,
+    activeOperationalSemester: run.activeOperationalSemester ?? null,
+    batchCurrentSemester: batch?.currentSemester ?? null,
+    resolvedCurrentSemester: currentSemester,
     runUpdatedAt: run.updatedAt,
     behaviorUpdatedAt: behaviorProfile?.updatedAt ?? null,
     observedUpdatedAt: observedRows.map(row => row.updatedAt),

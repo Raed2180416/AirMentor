@@ -32,6 +32,7 @@ import {
   simulationStageCheckpoints,
   simulationStageQueueCases,
   simulationStageOfferingProjections,
+  simulationStageStudentProjections,
   simulationRuns,
   studentAssessmentScores,
   studentAcademicProfiles,
@@ -48,6 +49,7 @@ import {
 import { badRequest, forbidden, notFound } from '../lib/http-errors.js'
 import { parseJson, stringifyJson } from '../lib/json.js'
 import { parseObservedStateRow } from '../lib/proof-observed-state.js'
+import { pickMostRecentActiveRun } from '../lib/proof-active-run.js'
 import {
   getProofRiskModelActive,
   buildHodProofAnalytics,
@@ -928,7 +930,7 @@ async function resolveStudentShellRun(
   simulationStageCheckpointId?: string,
 ) {
   assertAcademicAccess(evaluateProofRunSelectionAccess(auth, requestedRunId))
-  const [run] = requestedRunId
+  const runRows = requestedRunId
     ? await context.db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, requestedRunId))
     : simulationStageCheckpointId
       ? await context.db
@@ -938,6 +940,7 @@ async function resolveStudentShellRun(
           runLabel: simulationRuns.runLabel,
           status: simulationRuns.status,
           activeFlag: simulationRuns.activeFlag,
+          activeOperationalSemester: simulationRuns.activeOperationalSemester,
           seed: simulationRuns.seed,
           createdAt: simulationRuns.createdAt,
           updatedAt: simulationRuns.updatedAt,
@@ -946,6 +949,9 @@ async function resolveStudentShellRun(
         .innerJoin(simulationRuns, eq(simulationRuns.simulationRunId, simulationStageCheckpoints.simulationRunId))
         .where(eq(simulationStageCheckpoints.simulationStageCheckpointId, simulationStageCheckpointId))
       : await context.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+  const [run] = requestedRunId || simulationStageCheckpointId
+    ? runRows
+    : [pickMostRecentActiveRun(runRows)]
   if (!run) throw notFound('Proof run not found')
   assertAcademicAccess(evaluateActiveProofRunAccess(auth, run.activeFlag === 1))
   return run
@@ -2033,10 +2039,11 @@ async function resolveProofReassessmentAccess(input: {
   if (!run) throw notFound('Proof reassessment run context not found')
 
   if (input.auth.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
-    const [activeRun] = await input.context.db
+    const activeRunRows = await input.context.db
       .select()
       .from(simulationRuns)
       .where(eq(simulationRuns.activeFlag, 1))
+    const activeRun = pickMostRecentActiveRun(activeRunRows)
     if (!activeRun || activeRun.simulationRunId !== run.simulationRunId) {
       throw forbidden('Academic roles may modify proof reassessments only for the active proof run')
     }
@@ -2510,6 +2517,49 @@ type AcademicOfferingProjection = Omit<ReturnType<typeof mapOfferingRow>, 'termI
   finalsLocked?: boolean
 } & Record<string, unknown>
 
+type PlaybackObservedStudentSummary = {
+  currentCgpa: number | null
+  backlogCount: number | null
+}
+
+type PlaybackStudentCheckpointOverlay = {
+  simulationStageCheckpointId: string
+  riskProbScaled: number
+  riskBand: 'Low' | 'Medium' | 'High'
+  queueState: string | null
+  reassessmentState: string | null
+  recommendedAction: string | null
+  riskChangeFromPreviousCheckpointScaled: number | null
+  counterfactualLiftScaled: number | null
+  attentionAreas: string[]
+  attendancePct: number | null
+  tt1Pct: number | null
+  tt2Pct: number | null
+  quizPct: number | null
+  assignmentPct: number | null
+  seePct: number | null
+}
+
+function normalizePlaybackRiskBand(value: string | null | undefined): 'Low' | 'Medium' | 'High' {
+  return value === 'High' || value === 'Medium' || value === 'Low' ? value : 'Low'
+}
+
+function toPlaybackReasonRows(attentionAreas: string[], recommendedAction: string | null) {
+  if (attentionAreas.length > 0) {
+    return attentionAreas.slice(0, 4).map((label, index) => ({
+      label,
+      impact: roundToTwo(Math.max(0.24 - (index * 0.05), 0.06)),
+      feature: 'proof-checkpoint',
+    }))
+  }
+  if (!recommendedAction) return []
+  return [{
+    label: `Recommended action: ${recommendedAction}`,
+    impact: 0.08,
+    feature: 'proof-checkpoint',
+  }]
+}
+
 function mapOfferingRow(input: {
   offering: typeof sectionOfferings.$inferSelect
   course: typeof courses.$inferSelect
@@ -2637,6 +2687,7 @@ async function buildAcademicBootstrap(
     academicMeetingRows,
     stageCheckpointRow,
     stageOfferingProjectionRows,
+    stageStudentProjectionRows,
   ] = await Promise.all([
     context.db.select().from(courses).orderBy(asc(courses.courseCode)),
     context.db.select().from(academicTerms),
@@ -2675,6 +2726,9 @@ async function buildAcademicBootstrap(
     viewer.simulationStageCheckpointId
       ? context.db.select().from(simulationStageOfferingProjections).where(eq(simulationStageOfferingProjections.simulationStageCheckpointId, viewer.simulationStageCheckpointId))
       : Promise.resolve([]),
+    viewer.simulationStageCheckpointId
+      ? context.db.select().from(simulationStageStudentProjections).where(eq(simulationStageStudentProjections.simulationStageCheckpointId, viewer.simulationStageCheckpointId))
+      : Promise.resolve([]),
   ])
 
   const courseById = Object.fromEntries(courseRows.map(row => [row.courseId, row]))
@@ -2685,6 +2739,59 @@ async function buildAcademicBootstrap(
   const userById = Object.fromEntries(userRows.map(row => [row.userId, row]))
   const studentById = Object.fromEntries(studentRows.map(row => [row.studentId, row]))
   const studentAcademicProfileById = Object.fromEntries(profileRows.map(row => [row.studentId, row]))
+  const playbackObservedStateRows = stageCheckpointRow
+    ? await context.db.select().from(studentObservedSemesterStates).where(eq(studentObservedSemesterStates.simulationRunId, stageCheckpointRow.simulationRunId))
+    : []
+  const playbackObservedSummaryByStudentId = new Map<string, PlaybackObservedStudentSummary>()
+  if (stageCheckpointRow) {
+    playbackObservedStateRows
+      .filter(row => row.semesterNumber <= stageCheckpointRow.semesterNumber)
+      .sort((left, right) => left.semesterNumber - right.semesterNumber || left.createdAt.localeCompare(right.createdAt))
+      .forEach(row => {
+        const payload = parseObservedStateRow(row)
+        const existing = playbackObservedSummaryByStudentId.get(row.studentId) ?? { currentCgpa: null, backlogCount: null }
+        const nextCgpa = Number(payload.cgpa ?? payload.cgpaAfterSemester)
+        const nextBacklogCount = Number(payload.backlogCount)
+        playbackObservedSummaryByStudentId.set(row.studentId, {
+          currentCgpa: Number.isFinite(nextCgpa) ? nextCgpa : existing.currentCgpa,
+          backlogCount: Number.isFinite(nextBacklogCount) ? nextBacklogCount : existing.backlogCount,
+        })
+      })
+  }
+  const playbackStudentOverlayByOfferingStudent = new Map<string, PlaybackStudentCheckpointOverlay>()
+  for (const row of stageStudentProjectionRows) {
+    if (!row.offeringId) continue
+    const payload = parseJson(row.projectionJson, {} as Record<string, unknown>)
+    const currentEvidence = (payload.currentEvidence ?? {}) as Record<string, unknown>
+    const currentStatus = (payload.currentStatus ?? {}) as Record<string, unknown>
+    playbackStudentOverlayByOfferingStudent.set(`${row.offeringId}::${row.studentId}`, {
+      simulationStageCheckpointId: row.simulationStageCheckpointId,
+      riskProbScaled: Number.isFinite(Number(currentStatus.riskProbScaled)) ? Number(currentStatus.riskProbScaled) : row.riskProbScaled,
+      riskBand: normalizePlaybackRiskBand(typeof currentStatus.riskBand === 'string' ? currentStatus.riskBand : row.riskBand),
+      queueState: typeof currentStatus.queueState === 'string' ? currentStatus.queueState : row.queueState,
+      reassessmentState: typeof currentStatus.reassessmentState === 'string' ? currentStatus.reassessmentState : row.reassessmentState,
+      recommendedAction: typeof currentStatus.recommendedAction === 'string' ? currentStatus.recommendedAction : row.recommendedAction,
+      riskChangeFromPreviousCheckpointScaled: Number.isFinite(Number(currentStatus.riskChangeFromPreviousCheckpointScaled))
+        ? Number(currentStatus.riskChangeFromPreviousCheckpointScaled)
+        : Number.isFinite(Number(payload.riskChangeFromPreviousCheckpointScaled))
+          ? Number(payload.riskChangeFromPreviousCheckpointScaled)
+          : null,
+      counterfactualLiftScaled: Number.isFinite(Number(currentStatus.counterfactualLiftScaled))
+        ? Number(currentStatus.counterfactualLiftScaled)
+        : Number.isFinite(Number(payload.counterfactualLiftScaled))
+          ? Number(payload.counterfactualLiftScaled)
+          : null,
+      attentionAreas: Array.isArray(currentStatus.attentionAreas)
+        ? currentStatus.attentionAreas.filter((value): value is string => typeof value === 'string').slice(0, 4)
+        : [],
+      attendancePct: Number.isFinite(Number(currentEvidence.attendancePct)) ? Number(currentEvidence.attendancePct) : null,
+      tt1Pct: Number.isFinite(Number(currentEvidence.tt1Pct)) ? Number(currentEvidence.tt1Pct) : null,
+      tt2Pct: Number.isFinite(Number(currentEvidence.tt2Pct)) ? Number(currentEvidence.tt2Pct) : null,
+      quizPct: Number.isFinite(Number(currentEvidence.quizPct)) ? Number(currentEvidence.quizPct) : null,
+      assignmentPct: Number.isFinite(Number(currentEvidence.assignmentPct)) ? Number(currentEvidence.assignmentPct) : null,
+      seePct: Number.isFinite(Number(currentEvidence.seePct)) ? Number(currentEvidence.seePct) : null,
+    })
+  }
   const activeEnrollmentByStudentId = new Map<string, typeof studentEnrollments.$inferSelect>()
   const primaryAppointmentByFacultyId = new Map<string, typeof facultyAppointments.$inferSelect>()
   for (const appointment of appointmentRows) {
@@ -3189,7 +3296,7 @@ async function buildAcademicBootstrap(
         ...(interventionsByStudentId.get(student.studentId) ?? []),
         ...(meetingEntriesByStudentId.get(student.studentId) ?? []),
       ].sort((left, right) => right.date.localeCompare(left.date))
-      return inferStudentFallback({
+      const baseProjection = inferStudentFallback({
         offering,
         student,
         prevCgpa,
@@ -3212,6 +3319,44 @@ async function buildAcademicBootstrap(
           declining: transcriptAnalytics.trend === 'Declining',
         },
       })
+      const playbackOverlay = playbackStudentOverlayByOfferingStudent.get(`${offering.offId}::${student.studentId}`)
+      if (!playbackOverlay) return baseProjection
+      const observedSummary = playbackObservedSummaryByStudentId.get(student.studentId)
+      return {
+        ...baseProjection,
+        currentCgpa: observedSummary?.currentCgpa ?? baseProjection.currentCgpa,
+        riskProb: playbackOverlay.riskProbScaled / 100,
+        riskBand: playbackOverlay.riskBand,
+        riskCompleteness: null,
+        featureCompleteness: null,
+        featureProvenance: null,
+        reasons: toPlaybackReasonRows(playbackOverlay.attentionAreas, playbackOverlay.recommendedAction),
+        whatIf: [],
+        flags: {
+          ...baseProjection.flags,
+          backlog: observedSummary?.backlogCount != null
+            ? observedSummary.backlogCount > 0
+            : baseProjection.flags.backlog,
+          lowAttendance: playbackOverlay.attendancePct != null
+            ? playbackOverlay.attendancePct < 75
+            : baseProjection.flags.lowAttendance,
+        },
+        proofSource: 'stage-checkpoint',
+        proofSimulationStageCheckpointId: playbackOverlay.simulationStageCheckpointId,
+        proofRecommendedAction: playbackOverlay.recommendedAction,
+        proofQueueState: playbackOverlay.queueState,
+        proofReassessmentState: playbackOverlay.reassessmentState,
+        proofRiskProbScaled: playbackOverlay.riskProbScaled,
+        proofRiskChangeFromPreviousCheckpointScaled: playbackOverlay.riskChangeFromPreviousCheckpointScaled,
+        proofCounterfactualLiftScaled: playbackOverlay.counterfactualLiftScaled,
+        proofAttentionAreas: playbackOverlay.attentionAreas,
+        proofObservedAttendancePct: playbackOverlay.attendancePct,
+        proofObservedTt1Pct: playbackOverlay.tt1Pct,
+        proofObservedTt2Pct: playbackOverlay.tt2Pct,
+        proofObservedQuizPct: playbackOverlay.quizPct,
+        proofObservedAssignmentPct: playbackOverlay.assignmentPct,
+        proofObservedSeePct: playbackOverlay.seePct,
+      } satisfies AcademicStudentProjection
     }).filter((student): student is AcademicStudentProjection => !!student)
     return [offering.offId, nextStudents]
   })) as Record<string, AcademicStudentProjection[]>

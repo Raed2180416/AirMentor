@@ -854,6 +854,161 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     expect(markup).toContain('Average Counterfactual Lift')
   })
 
+  it('renders playback-governed runtime diagnostics when no stored production artifact is active', () => {
+    const selectedCheckpoint = buildCheckpoint({
+      simulationStageCheckpointId: 'checkpoint_sem6_runtime_only',
+      stageLabel: 'Post Assignments',
+      stageKey: 'post-assignments',
+      stageAdvanceBlocked: false,
+      blockedByCheckpointId: null,
+      blockedProgressionReason: null,
+      playbackAccessible: true,
+    })
+
+    const proofDashboard: ApiProofDashboard = {
+      imports: [],
+      latestValidation: null,
+      crosswalkReviewQueue: [],
+      proofRuns: [],
+      activeRunDetail: {
+        simulationRunId: 'run_001',
+        runLabel: 'Proof Run 1',
+        seed: 42,
+        activeOperationalSemester: 6,
+        createdAt: '2026-03-16T00:00:00.000Z',
+        startedAt: '2026-03-16T00:00:00.000Z',
+        completedAt: null,
+        status: 'active',
+        failureCode: null,
+        failureMessage: null,
+        progress: null,
+        monitoringSummary: {
+          riskAssessmentCount: 120,
+          activeReassessmentCount: 8,
+          alertDecisionCount: 12,
+          acknowledgementCount: 4,
+          resolutionCount: 2,
+        },
+        coverageDiagnostics: {
+          behaviorProfileCoverage: { count: 120, expected: 120 },
+          topicStateCoverage: { count: 640 },
+          coStateCoverage: { count: 310 },
+          questionTemplateCoverage: { count: 84 },
+          questionResultCoverage: { count: 2400 },
+          interventionResponseCoverage: { count: 36 },
+          worldContextCoverage: { count: 12 },
+        },
+        modelDiagnostics: {
+          featureRowCount: 2400,
+          activeRunFeatureRowCount: 360,
+          sourceRunCount: 5,
+          splitSummary: { train: 1800, validation: 300, test: 300 },
+          worldSplitSummary: { train: 4, validation: 1, test: 1 },
+          scenarioFamilySummary: { steady: 3, rescue: 2 },
+          headSupportSummary: { overallCourseRisk: { positives: 1200 } },
+          calibrationVersion: 'isotonic-v1',
+          policyDiagnostics: { gates: 'ok' },
+          coEvidenceDiagnostics: {
+            totalRows: 360,
+            fallbackCount: 40,
+            byMode: {
+              'offering-blueprint': 280,
+              'rubric-derived': 40,
+              'fallback-simulated': 40,
+            },
+          },
+          uiParityDiagnostics: { facultySurface: 'aligned' },
+          production: null,
+          challenger: null,
+          correlations: null,
+        },
+        queueDiagnostics: {
+          queuedRunCount: 0,
+          runningRunCount: 0,
+          failedRunCount: 0,
+          retryableRunCount: 0,
+          retryInFlightCount: 0,
+          oldestQueuedRunAgeSeconds: 0,
+          expiredLeaseRunCount: 0,
+        },
+        workerDiagnostics: null,
+        checkpointReadiness: null,
+        teacherAllocationLoad: [],
+        queuePreview: [],
+        snapshots: [],
+        checkpoints: [selectedCheckpoint],
+      },
+      lifecycleAudit: [],
+      recentOperationalEvents: [],
+    }
+
+    const markup = renderToStaticMarkup(createElement(SystemAdminProofDashboardWorkspace, {
+      proofDashboard,
+      proofDashboardLoading: false,
+      activeRunCheckpoints: [selectedCheckpoint],
+      activeModelDiagnostics: { scenarioFamilySummary: { steady: 3, rescue: 2 } },
+      activeProductionDiagnostics: null,
+      activeDiagnosticsTrainingManifestVersion: 'manifest-v1',
+      activeDiagnosticsCalibrationVersion: 'isotonic-v1',
+      activeDiagnosticsSplitSummary: { train: 1800, validation: 300, test: 300 },
+      activeDiagnosticsWorldSplitSummary: { train: 4, validation: 1, test: 1 },
+      activeDiagnosticsScenarioFamilies: { steady: 3, rescue: 2 },
+      activeDiagnosticsHeadSupportSummary: { overallCourseRisk: { positives: 1200 } },
+      activeDiagnosticsGovernedRunCount: 5,
+      activeDiagnosticsSkippedRunCount: 0,
+      activeDiagnosticsDisplayProbabilityAllowed: false,
+      activeDiagnosticsSupportWarning: 'Checkpoint support is runtime-governed until a production artifact is promoted.',
+      activeDiagnosticsPolicyDiagnostics: { gates: 'ok' },
+      activeDiagnosticsCoEvidence: {
+        totalRows: 360,
+        fallbackCount: 40,
+        byMode: {
+          'offering-blueprint': 280,
+          'rubric-derived': 40,
+          'fallback-simulated': 40,
+        },
+      },
+      activeDiagnosticsPolicyAcceptance: { policy: 'accepted' },
+      activeDiagnosticsOverallCourseRuntime: { parity: 'aligned' },
+      activeDiagnosticsQueueBurden: { mentor: 2 },
+      activeDiagnosticsUiParity: { facultySurface: 'aligned' },
+      selectedProofCheckpoint: selectedCheckpoint,
+      selectedProofCheckpointDetail: null,
+      selectedProofCheckpointBlocked: false,
+      selectedProofCheckpointHasBlockedProgression: false,
+      selectedProofCheckpointCanStepForward: false,
+      selectedProofCheckpointCanPlayToEnd: false,
+      proofPlaybackRestoreNotice: null,
+      onCreateProofImport: () => {},
+      onValidateLatestProofImport: () => {},
+      onReviewPendingCrosswalks: () => {},
+      onApproveLatestProofImport: () => {},
+      onCreateProofRun: () => {},
+      onRecomputeProofRunRisk: () => {},
+      onActivateProofRun: () => {},
+      onActivateProofSemester: () => {},
+      onRetryProofRun: () => {},
+      onArchiveProofRun: () => {},
+      onRestoreProofSnapshot: () => {},
+      onResetProofPlaybackSelection: () => {},
+      onSelectProofCheckpoint: () => {},
+      onStepProofPlayback: () => {},
+      formatSplitSummary: summary => JSON.stringify(summary),
+      formatKeyedCounts: summary => JSON.stringify(summary),
+      formatHeadSupportSummary: summary => JSON.stringify(summary),
+      formatDiagnosticSummary: summary => JSON.stringify(summary),
+    }))
+
+    expect(markup).toContain('Playback-governed evidence')
+    expect(markup).toContain('320/360 non-fallback evidence rows')
+    expect(markup).toContain('No stored production artifact is active; this dashboard is reporting checkpoint-governed runtime diagnostics.')
+    expect(markup).toContain('Runtime diagnostics are available for this run even though no stored evaluation artifact is active.')
+    expect(markup).toContain('CO evidence mix: offering blueprint 280')
+    expect(markup).toContain('fallback simulated 40')
+    expect(markup).toContain('rubric derived 40')
+    expect(markup).not.toContain('Heuristic fallback only')
+  })
+
   it('routes explicit semester activation through the proof dashboard owner', () => {
     const onActivateProofSemester = vi.fn()
     const checkpoints = [

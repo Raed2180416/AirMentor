@@ -1,6 +1,7 @@
 import { asc, eq } from 'drizzle-orm'
 import type { AppDb } from '../db/client.js'
 import {
+  batches,
   simulationRuns,
   simulationStageCheckpoints,
 } from '../db/schema.js'
@@ -57,6 +58,10 @@ export async function activateProofOperationalSemester(
     activeOperationalSemester: input.semesterNumber,
     updatedAt: input.now,
   }).where(eq(simulationRuns.simulationRunId, run.simulationRunId))
+  await db.update(batches).set({
+    currentSemester: input.semesterNumber,
+    updatedAt: input.now,
+  }).where(eq(batches.batchId, run.batchId))
 
   if (run.activeFlag === 1) {
     await deps.publishOperationalProjection(db, {

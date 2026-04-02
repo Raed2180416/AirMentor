@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import { resolveSystemAdminLiveCredentials } from './system-admin-live-auth.mjs'
+import { resolveTeachingPasswordViaSession } from './teaching-password-resolution.mjs'
 
 const require = createRequire(import.meta.url)
 const axeScriptPath = require.resolve('axe-core/axe.min.js')
@@ -380,20 +381,13 @@ async function readProofDashboardForBatch(batchId) {
 }
 
 async function resolveTeachingPassword(username) {
-  const sessionUrl = new URL('/api/session/login', apiUrl)
-  const origin = new URL(appUrl).origin
-  for (const password of teachingPasswordCandidates) {
-    const response = await fetch(sessionUrl, {
-      method: 'POST',
-      headers: {
-        origin,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({ identifier: username, password }),
-    })
-    if (response.ok) return password
-  }
-  throw new Error(`Could not resolve a working teaching password for ${username}`)
+  return resolveTeachingPasswordViaSession({
+    appUrl,
+    apiUrl,
+    username,
+    candidates: teachingPasswordCandidates,
+    logPrefix: 'live-accessibility',
+  })
 }
 
 async function waitForProofCheckpoints(label, timeoutMs = 240_000) {

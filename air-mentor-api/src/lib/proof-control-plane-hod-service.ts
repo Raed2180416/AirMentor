@@ -30,6 +30,7 @@ import {
   transcriptTermResults,
 } from '../db/schema.js'
 import { parseJson } from './json.js'
+import { pickMostRecentActiveRun } from './proof-active-run.js'
 import { parseObservedStateRow } from './proof-observed-state.js'
 import {
   filterElectiveRecommendationsForSemester,
@@ -236,7 +237,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
     ? allRunRows.find(row => row.simulationRunId === requestedCheckpoint.simulationRunId)
       ?? activeRunCandidates.find(row => row.simulationRunId === requestedCheckpoint.simulationRunId)
       ?? null
-    : activeRunCandidates[0] ?? null
+    : pickMostRecentActiveRun(activeRunCandidates)
   const activeBatch = activeRun ? (batchById.get(activeRun.batchId) ?? null) : null
   const activeBranch = activeBatch ? (branchById.get(activeBatch.branchId) ?? null) : null
   const activeDepartmentId = activeBranch?.departmentId ?? null
@@ -716,18 +717,18 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
         },
         totals: {
           studentsCovered: scopedStudentIds.size,
-          highRiskCount: checkpointStudentRows.filter(row => row.riskBand === 'High').length,
-          mediumRiskCount: checkpointStudentRows.filter(row => row.riskBand === 'Medium').length,
+          highRiskCount: studentWatchRows.filter(row => row.currentRiskBand === 'High').length,
+          mediumRiskCount: studentWatchRows.filter(row => row.currentRiskBand === 'Medium').length,
           averageQueueAgeHours: 0,
           manualOverrideCount: 0,
           unresolvedAlertCount: checkpointOpenCaseRows.length,
           resolvedAlertCount: checkpointQueueRows.filter(row => row.status === 'Resolved' && checkpointQueueGovernance(row).primaryCase).length,
         },
-        sectionComparison: uniqueSorted(checkpointStudentRows.map(row => row.sectionCode)).map(sectionCode => ({
+        sectionComparison: uniqueSorted(studentWatchRows.map(row => row.sectionCode)).map(sectionCode => ({
           sectionCode,
-          studentCount: new Set(checkpointStudentRows.filter(row => row.sectionCode === sectionCode).map(row => row.studentId)).size,
-          highRiskCount: checkpointStudentRows.filter(row => row.sectionCode === sectionCode && row.riskBand === 'High').length,
-          mediumRiskCount: checkpointStudentRows.filter(row => row.sectionCode === sectionCode && row.riskBand === 'Medium').length,
+          studentCount: studentWatchRows.filter(row => row.sectionCode === sectionCode).length,
+          highRiskCount: studentWatchRows.filter(row => row.sectionCode === sectionCode && row.currentRiskBand === 'High').length,
+          mediumRiskCount: studentWatchRows.filter(row => row.sectionCode === sectionCode && row.currentRiskBand === 'Medium').length,
           averageAttendancePct: roundToOne(average(checkpointStudentRows.filter(row => row.sectionCode === sectionCode).map(row => {
             const payload = parseJson(row.projectionJson, {} as Record<string, unknown>)
             const evidence = (payload.currentEvidence ?? {}) as Record<string, unknown>
@@ -787,43 +788,6 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
 
   if (!activeRun || !activeBatch || !activeBranch || !activeRunId || !scopeMatchesActiveBatch) return emptyResponse
 
-  if (
-    !input.filters?.simulationStageCheckpointId
-    && activeRun.activeOperationalSemester != null
-    && activeRun.activeOperationalSemester !== activeBatch.currentSemester
-    && operationalCheckpointSummary
-  ) {
-    const checkpointResult = await buildHodProofAnalytics(db, {
-      facultyId: input.facultyId,
-      roleScopeType: input.roleScopeType,
-      roleScopeId: input.roleScopeId,
-      now: input.now,
-      filters: {
-        ...input.filters,
-        simulationStageCheckpointId: operationalCheckpointSummary.simulationStageCheckpointId,
-      },
-    }, deps)
-    const countProvenance = buildProofCountProvenance({
-      activeOperationalSemester: activeRun.activeOperationalSemester ?? activeBatch.currentSemester,
-      batchId: activeBatch.batchId,
-      batchLabel: activeBatch.batchLabel,
-      branchName: activeBranch.name,
-      sectionCode: input.filters?.section ?? null,
-      simulationRunId: activeRun.simulationRunId,
-      runLabel: activeRun.runLabel,
-    })
-    const checkpointActiveRunContext = checkpointResult.summary.activeRunContext
-    const { checkpointContext: _checkpointContext, ...activeRunContext } = checkpointActiveRunContext ?? {}
-    return {
-      ...checkpointResult,
-      summary: {
-        ...checkpointResult.summary,
-        ...countProvenance,
-        activeRunContext: checkpointActiveRunContext ? activeRunContext : null,
-      },
-    }
-  }
-
   const activeOfferings = sectionOfferingRows
     .filter(row => activeTermIds.has(row.termId))
     .filter(row => matchesTextFilter(row.sectionCode, input.filters?.section))
@@ -857,6 +821,45 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
     .filter(row => activeOfferingIds.has(row.offeringId))
     .filter(row => !input.filters?.studentId || row.studentId === input.filters.studentId)
     .filter(row => matchesTextFilter(row.riskBand, input.filters?.riskBand))
+
+  if (
+    !input.filters?.simulationStageCheckpointId
+    && operationalCheckpointSummary
+    && (
+      (activeRun.activeOperationalSemester != null && activeRun.activeOperationalSemester !== activeBatch.currentSemester)
+      || activeRiskRows.length === 0
+    )
+  ) {
+    const checkpointResult = await buildHodProofAnalytics(db, {
+      facultyId: input.facultyId,
+      roleScopeType: input.roleScopeType,
+      roleScopeId: input.roleScopeId,
+      now: input.now,
+      filters: {
+        ...input.filters,
+        simulationStageCheckpointId: operationalCheckpointSummary.simulationStageCheckpointId,
+      },
+    }, deps)
+    const countProvenance = buildProofCountProvenance({
+      activeOperationalSemester: activeRun.activeOperationalSemester ?? activeBatch.currentSemester,
+      batchId: activeBatch.batchId,
+      batchLabel: activeBatch.batchLabel,
+      branchName: activeBranch.name,
+      sectionCode: input.filters?.section ?? null,
+      simulationRunId: activeRun.simulationRunId,
+      runLabel: activeRun.runLabel,
+    })
+    const checkpointActiveRunContext = checkpointResult.summary.activeRunContext
+    const { checkpointContext: _checkpointContext, ...activeRunContext } = checkpointActiveRunContext ?? {}
+    return {
+      ...checkpointResult,
+      summary: {
+        ...checkpointResult.summary,
+        ...countProvenance,
+        activeRunContext: checkpointActiveRunContext ? activeRunContext : null,
+      },
+    }
+  }
 
   const activeRiskIds = new Set(activeRiskRows.map(row => row.riskAssessmentId))
   const activeAlerts = alertRows.filter(row => activeRiskIds.has(row.riskAssessmentId))
@@ -1220,6 +1223,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
 
   const sectionComparison = uniqueSorted(filteredObservedRows.map(row => row.sectionCode))
     .map(sectionCode => {
+      const sectionStudentRows = studentWatchRows.filter(row => row.sectionCode === sectionCode)
       const sectionRiskRows = activeRiskRows.filter(row => {
         const offering = sectionOfferingRows.find(item => item.offeringId === row.offeringId)
         return offering?.sectionCode === sectionCode
@@ -1228,9 +1232,9 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
       const sectionRiskIds = new Set(sectionRiskRows.map(row => row.riskAssessmentId))
       return {
         sectionCode,
-        studentCount: new Set(sectionObserved.map(row => row.studentId)).size,
-        highRiskCount: sectionRiskRows.filter(row => normalizeFilterValue(row.riskBand) === 'high').length,
-        mediumRiskCount: sectionRiskRows.filter(row => normalizeFilterValue(row.riskBand) === 'medium').length,
+        studentCount: sectionStudentRows.length,
+        highRiskCount: sectionStudentRows.filter(row => normalizeFilterValue(row.currentRiskBand) === 'high').length,
+        mediumRiskCount: sectionStudentRows.filter(row => normalizeFilterValue(row.currentRiskBand) === 'medium').length,
         averageAttendancePct: roundToOne(average(sectionObserved.map(row => Number(parseObservedStateRow(row).attendancePct ?? 0)).filter(Number.isFinite))),
         openReassessmentCount: activeReassessments.filter(row => sectionRiskIds.has(row.riskAssessmentId) && isOpenReassessmentStatus(row.status)).length,
       }
@@ -1304,8 +1308,8 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
       monitoringSummary,
       totals: {
         studentsCovered: scopedStudentIds.size,
-        highRiskCount: activeRiskRows.filter(row => normalizeFilterValue(row.riskBand) === 'high').length,
-        mediumRiskCount: activeRiskRows.filter(row => normalizeFilterValue(row.riskBand) === 'medium').length,
+        highRiskCount: studentWatchRows.filter(row => normalizeFilterValue(row.currentRiskBand) === 'high').length,
+        mediumRiskCount: studentWatchRows.filter(row => normalizeFilterValue(row.currentRiskBand) === 'medium').length,
         averageQueueAgeHours: roundToOne(average(activeReassessments.filter(row => isOpenReassessmentStatus(row.status)).map(row => hoursBetween(row.createdAt, input.now ?? new Date().toISOString())))),
         manualOverrideCount: activeOverrides.length,
         unresolvedAlertCount: activeAlerts.filter(row => !activeAcknowledgements.some(ack => ack.alertDecisionId === row.alertDecisionId)).length,

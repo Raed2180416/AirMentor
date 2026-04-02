@@ -256,7 +256,7 @@ export function governProofQueueStage(input: {
       .slice()
       .sort((left, right) => compareLexicographic(buildCandidateRankVector(left), buildCandidateRankVector(right))
         || left.sourceKey.localeCompare(right.sourceKey))
-    const rankedWatch = (group.watchCandidates.length > 0 ? group.watchCandidates : group.allCandidates)
+    const rankedWatch = group.watchCandidates
       .slice()
       .sort((left, right) => compareLexicographic(buildCandidateRankVector(left), buildCandidateRankVector(right))
         || left.sourceKey.localeCompare(right.sourceKey))

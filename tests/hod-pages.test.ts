@@ -257,7 +257,7 @@ describe('HodView', () => {
     expect(markup).toContain('data-proof-section="hod-panel-overview"')
     expect(markup).toContain('sourced from live proof records')
     expect(markup).toContain('Checkpoint-bound proof counts')
-    expect(markup).toContain('operational semester 6')
+    expect(markup).toContain('checkpoint semester 6')
     expect(markup).toContain('Post TT1')
     expect(markup).toContain('Course Hotspots')
     expect(markup).toContain('TT Window')
@@ -363,7 +363,7 @@ describe('HodView', () => {
     expect(markup).toContain('Sem 1')
     expect(markup).toContain('Sem 2')
     expect(markup).toContain('Sem 3')
-    expect(markup).toContain('operational semester 3')
+    expect(markup).toContain('checkpoint semester 3')
   })
 
   it('renders late-semester distribution coverage for semesters 4 through 6 with final-stage elective guidance', () => {
@@ -465,7 +465,7 @@ describe('HodView', () => {
     expect(markup).toContain('Sem 4')
     expect(markup).toContain('Sem 5')
     expect(markup).toContain('Sem 6')
-    expect(markup).toContain('operational semester 6')
+    expect(markup).toContain('checkpoint semester 6')
     expect(markup).toContain('Semester-6 elective fit remains advisory')
   })
 

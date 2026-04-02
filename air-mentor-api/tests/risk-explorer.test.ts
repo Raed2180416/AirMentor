@@ -165,7 +165,8 @@ describe('student risk explorer', () => {
     })
     expect(riskExplorer.scopeMode).toBe('proof')
     expect(riskExplorer.countSource).toBe('proof-checkpoint')
-    expect(riskExplorer.activeOperationalSemester).toBe(6)
+    expect(riskExplorer.activeOperationalSemester).toBe(selectedCheckpoint.semesterNumber)
+    expect(riskExplorer.checkpointContext.semesterNumber).toBe(selectedCheckpoint.semesterNumber)
     expect(riskExplorer.trainedRiskHeads.currentRiskBand).toBeTruthy()
     const overallCourseHeadDisplay = riskExplorer.trainedRiskHeadDisplays?.overallCourseRisk ?? null
     if (overallCourseHeadDisplay?.displayProbabilityAllowed === false) {
@@ -298,8 +299,9 @@ describe('student risk explorer', () => {
     expect(defaultExplorerResponse.json().countSource).toBe('proof-run')
     expect(defaultExplorerResponse.json().activeOperationalSemester).toBe(4)
     expect(checkpointExplorerResponse.json().countSource).toBe('proof-checkpoint')
-    expect(checkpointExplorerResponse.json().activeOperationalSemester).toBe(4)
+    expect(checkpointExplorerResponse.json().activeOperationalSemester).toBe(playbackCheckpoint!.semesterNumber)
     expect(checkpointExplorerResponse.json().simulationStageCheckpointId).toBe(playbackCheckpoint!.simulationStageCheckpointId)
+    expect(checkpointExplorerResponse.json().checkpointContext?.semesterNumber).toBe(playbackCheckpoint!.semesterNumber)
   })
 
   it('keeps the default risk explorer aligned with activated semesters 1 through 3', async () => {
@@ -365,8 +367,9 @@ describe('student risk explorer', () => {
       expect(defaultExplorerResponse.json().countSource).toBe('proof-run')
       expect(defaultExplorerResponse.json().activeOperationalSemester).toBe(semesterNumber)
       expect(checkpointExplorerResponse.json().countSource).toBe('proof-checkpoint')
-      expect(checkpointExplorerResponse.json().activeOperationalSemester).toBe(semesterNumber)
+      expect(checkpointExplorerResponse.json().activeOperationalSemester).toBe(checkpoint!.semesterNumber)
       expect(checkpointExplorerResponse.json().simulationStageCheckpointId).toBe(checkpoint!.simulationStageCheckpointId)
+      expect(checkpointExplorerResponse.json().checkpointContext?.semesterNumber).toBe(checkpoint!.semesterNumber)
     }
   })
 
@@ -445,8 +448,9 @@ describe('student risk explorer', () => {
       )
       expect(dashboardCheckpoint).toBeTruthy()
       expect(checkpointPayload.countSource).toBe('proof-checkpoint')
-      expect(checkpointPayload.activeOperationalSemester).toBe(semesterNumber)
+      expect(checkpointPayload.activeOperationalSemester).toBe(checkpoint!.semesterNumber)
       expect(checkpointPayload.simulationStageCheckpointId).toBe(checkpoint!.simulationStageCheckpointId)
+      expect(checkpointPayload.checkpointContext?.semesterNumber).toBe(checkpoint!.semesterNumber)
       expect(checkpointPayload.checkpointContext?.stageKey).toBe('post-see')
       expect(checkpointPayload.checkpointContext?.stageAdvanceBlocked).toBe(dashboardCheckpoint?.stageAdvanceBlocked)
       expect(checkpointPayload.checkpointContext?.playbackAccessible).toBe(dashboardCheckpoint?.playbackAccessible)

@@ -41,6 +41,10 @@ import {
 import { SystemAdminHierarchyWorkspaceShell } from './system-admin-hierarchy-workspace-shell'
 import { SystemAdminProofDashboardWorkspace } from './system-admin-proof-dashboard-workspace'
 import { SystemAdminScopedRegistryLaunches } from './system-admin-scoped-registry-launches'
+import {
+  CANONICAL_PROOF_ROUTE,
+  isCanonicalProofBatchId,
+} from './proof-pilot'
 import type {
   ApiAcademicFaculty,
   ApiBatch,
@@ -359,6 +363,9 @@ type SystemAdminFacultiesWorkspaceProps = {
   selectedDepartment: ApiDepartment | null
   selectedBranch: ApiBranch | null
   selectedBatch: ApiBatch | null
+  canonicalProofBatch: ApiBatch | null
+  authoritativeOperationalSemester: number | null
+  authoritativeOperationalSemesterSource: 'proof-run' | 'batch' | 'unavailable'
   selectedSectionCode: string | null
   selectedAcademicFacultyImpact: {
     departments: number
@@ -494,6 +501,9 @@ export function SystemAdminFacultiesWorkspace({
   selectedDepartment,
   selectedBranch,
   selectedBatch,
+  canonicalProofBatch,
+  authoritativeOperationalSemester,
+  authoritativeOperationalSemesterSource,
   selectedSectionCode,
   selectedAcademicFacultyImpact,
   facultyDepartments,
@@ -793,6 +803,15 @@ export function SystemAdminFacultiesWorkspace({
     : null
   const selectedCurriculumSemesterEntry = curriculumSemesterEntries.find(entry => String(entry.semesterNumber) === selectedCurriculumSemester) ?? null
   const selectedCurriculumSemesterCourses = selectedCurriculumSemesterEntry?.courses ?? []
+  const selectedBatchIsCanonicalProof = isCanonicalProofBatchId(selectedBatch?.batchId)
+  const authoritativeSemesterValue = authoritativeOperationalSemester ?? selectedBatch?.currentSemester ?? null
+  const authoritativeSemesterChipColor = authoritativeOperationalSemesterSource === 'proof-run' ? T.warning : T.accent
+  const authoritativeSemesterLabel = authoritativeSemesterValue != null ? `Sem ${authoritativeSemesterValue}` : 'Sem unavailable'
+  const authoritativeSemesterSourceLabel = authoritativeOperationalSemesterSource === 'proof-run'
+    ? 'Proof operational semester'
+    : authoritativeOperationalSemesterSource === 'batch'
+      ? 'Batch semester'
+      : 'Semester unavailable'
   const policyScopeChipLabel = resolvedBatchPolicy?.scopeDescriptor.label ?? activeGovernanceScope?.label ?? 'Institution defaults'
   const stagePolicyScopeChipLabel = resolvedStagePolicy?.scopeDescriptor.label ?? activeGovernanceScope?.label ?? 'Institution defaults'
   const policyResolvedFromChipLabel = describeResolvedFromLabel(resolvedBatchPolicy, activeScopeChain)
@@ -1360,6 +1379,42 @@ export function SystemAdminFacultiesWorkspace({
       overviewNavigator={overviewNavigator}
       yearEditors={yearEditors}
     >
+      {selectedBatch && canonicalProofBatch ? (
+        <Card data-proof-section="pilot-scope-provenance" style={{ padding: 16, display: 'grid', gap: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div>
+              <div style={{ ...mono, fontSize: 9, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Pilot Scope Provenance</div>
+              <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text, marginTop: 6 }}>
+                {selectedBatchIsCanonicalProof ? 'Canonical proof pilot active' : 'Outside canonical proof pilot'}
+              </div>
+            </div>
+            {!selectedBatchIsCanonicalProof ? (
+              <Btn
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => navigate({ ...CANONICAL_PROOF_ROUTE, batchId: canonicalProofBatch.batchId })}
+              >
+                Open Canonical Proof Batch
+              </Btn>
+            ) : null}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Chip color={selectedBatchIsCanonicalProof ? T.success : T.warning}>
+              {selectedBatchIsCanonicalProof ? `Pilot ${selectedBatch.batchLabel}` : `Current ${selectedBatch.batchLabel}`}
+            </Chip>
+            <Chip color={authoritativeSemesterChipColor}>{`${authoritativeSemesterSourceLabel} · ${authoritativeSemesterLabel}`}</Chip>
+            <Chip color={T.accent}>{`Canonical batch ${canonicalProofBatch.batchLabel}`}</Chip>
+          </div>
+          <InfoBanner
+            tone={selectedBatchIsCanonicalProof ? 'neutral' : 'error'}
+            message={selectedBatchIsCanonicalProof
+              ? `Proof-mode sysadmin is pinned to the canonical pilot cohort ${selectedBatch.batchLabel}. Semester, curriculum, and proof surfaces resolve from ${authoritativeSemesterSourceLabel.toLowerCase()} first so the semester walkthrough does not silently fall back to another batch.`
+              : `This year is outside the canonical proof pilot. Use Batch ${canonicalProofBatch.batchLabel} before collecting proof evidence, because professor-facing proof walkthroughs default to the canonical pilot cohort.`}
+          />
+        </Card>
+      ) : null}
+
       {!selectedAcademicFaculty ? (
         <SectionHeading title="Academic Faculties" eyebrow="Hierarchy" caption="Select an academic faculty in the tree to begin, or create one below." />
       ) : null}
@@ -1552,7 +1607,7 @@ export function SystemAdminFacultiesWorkspace({
         <Card style={{ padding: 18, display: 'grid', gap: 16 }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
             <Chip color={T.success}>Batch {selectedBatch.batchLabel}</Chip>
-            <Chip color={T.accent}>Sem {selectedBatch.currentSemester}</Chip>
+            <Chip color={authoritativeSemesterChipColor}>{`${authoritativeSemesterSourceLabel} · ${authoritativeSemesterLabel}`}</Chip>
             <Chip color={T.warning}>{deriveCurrentYearLabel(selectedBatch.currentSemester)}</Chip>
             <Chip color={activeBatchPolicyOverride ? T.orange : T.dim}>{activeBatchPolicyOverride ? 'Local Policy Override' : 'Inherited Policy'}</Chip>
           </div>
@@ -1564,8 +1619,9 @@ export function SystemAdminFacultiesWorkspace({
               <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedBatch.admissionYear}</div>
             </Card>
             <Card style={{ padding: 14, background: T.surface2 }}>
-              <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Active Semester</div>
-              <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedBatch.currentSemester}</div>
+              <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Authoritative Semester</div>
+              <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text, marginTop: 8 }}>{authoritativeSemesterValue ?? '—'}</div>
+              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6 }}>{authoritativeSemesterSourceLabel}</div>
             </Card>
             <Card style={{ padding: 14, background: T.surface2 }}>
               <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Sections</div>

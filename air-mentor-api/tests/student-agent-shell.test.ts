@@ -124,7 +124,8 @@ describe('student agent shell', () => {
     })
     expect(checkpointCardResponse.json().scopeMode).toBe('proof')
     expect(checkpointCardResponse.json().countSource).toBe('proof-checkpoint')
-    expect(checkpointCardResponse.json().activeOperationalSemester).toBe(6)
+    expect(checkpointCardResponse.json().activeOperationalSemester).toBe(selectedCheckpoint.semesterNumber)
+    expect(checkpointCardResponse.json().checkpointContext.semesterNumber).toBe(selectedCheckpoint.semesterNumber)
     expect(checkpointCardResponse.json().summaryRail.currentRiskDisplayProbabilityAllowed === false
       ? checkpointCardResponse.json().summaryRail.currentRiskSupportWarning
       : true).toBeTruthy()
@@ -444,8 +445,9 @@ describe('student agent shell', () => {
     expect(defaultCardResponse.json().student.currentSemester).toBe(4)
     expect(checkpointCardResponse.json().countSource).toBe('proof-checkpoint')
     expect(checkpointCardResponse.json().simulationStageCheckpointId).toBe(playbackCheckpoint!.simulationStageCheckpointId)
-    expect(checkpointCardResponse.json().activeOperationalSemester).toBe(4)
+    expect(checkpointCardResponse.json().activeOperationalSemester).toBe(playbackCheckpoint!.semesterNumber)
     expect(checkpointCardResponse.json().student.currentSemester).toBe(playbackCheckpoint!.semesterNumber)
+    expect(checkpointCardResponse.json().checkpointContext?.semesterNumber).toBe(playbackCheckpoint!.semesterNumber)
   })
 
   it('keeps the default student shell aligned with activated semesters 1 through 3', async () => {
@@ -513,8 +515,9 @@ describe('student agent shell', () => {
       expect(defaultCardResponse.json().student.currentSemester).toBe(semesterNumber)
       expect(checkpointCardResponse.json().countSource).toBe('proof-checkpoint')
       expect(checkpointCardResponse.json().simulationStageCheckpointId).toBe(checkpoint!.simulationStageCheckpointId)
-      expect(checkpointCardResponse.json().activeOperationalSemester).toBe(semesterNumber)
+      expect(checkpointCardResponse.json().activeOperationalSemester).toBe(checkpoint!.semesterNumber)
       expect(checkpointCardResponse.json().student.currentSemester).toBe(semesterNumber)
+      expect(checkpointCardResponse.json().checkpointContext?.semesterNumber).toBe(checkpoint!.semesterNumber)
     }
   })
 
@@ -595,8 +598,9 @@ describe('student agent shell', () => {
       expect(dashboardCheckpoint).toBeTruthy()
       expect(checkpointPayload.countSource).toBe('proof-checkpoint')
       expect(checkpointPayload.simulationStageCheckpointId).toBe(checkpoint!.simulationStageCheckpointId)
-      expect(checkpointPayload.activeOperationalSemester).toBe(semesterNumber)
+      expect(checkpointPayload.activeOperationalSemester).toBe(checkpoint!.semesterNumber)
       expect(checkpointPayload.student.currentSemester).toBe(semesterNumber)
+      expect(checkpointPayload.checkpointContext?.semesterNumber).toBe(checkpoint!.semesterNumber)
       expect(checkpointPayload.checkpointContext?.stageKey).toBe('post-see')
       expect(checkpointPayload.checkpointContext?.stageAdvanceBlocked).toBe(dashboardCheckpoint?.stageAdvanceBlocked)
       expect(checkpointPayload.checkpointContext?.playbackAccessible).toBe(dashboardCheckpoint?.playbackAccessible)

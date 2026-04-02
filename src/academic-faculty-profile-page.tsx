@@ -83,16 +83,81 @@ export function FacultyProfilePage({
   const effectivePhone = profile?.phone ?? 'Not set'
   const employeeCode = profile?.employeeCode ?? 'Not available'
   const proofOps = profile?.proofOperations ?? null
+  const proofModeActive = proofOps?.scopeMode === 'proof'
   const activeProofRun = proofOps?.activeRunContexts[0] ?? null
   const selectedProofCheckpoint = proofOps?.selectedCheckpoint ?? null
   const leadingProofQueueItem = proofOps?.monitoringQueue[0] ?? null
   const leadingElectiveFit = proofOps?.electiveFits[0] ?? null
+  const proofScopedStudentIds = Array.from(new Set([
+    ...(proofOps?.monitoringQueue.map(item => item.studentId) ?? []),
+    ...(proofOps?.electiveFits.map(item => item.studentId) ?? []),
+  ])).sort((left, right) => left.localeCompare(right))
+  const proofScopedOfferings = Array.from(new Map(
+    (proofOps?.monitoringQueue ?? []).map(item => [
+      item.offeringId || `${item.courseCode}:${item.sectionCode ?? 'NA'}`,
+      item,
+    ] as const),
+  ).values())
+  const proofRoleCoverage = Array.from(new Set([
+    ...(proofScopedOfferings.length > 0 ? ['COURSE_LEADER'] : []),
+    ...(proofScopedStudentIds.length > 0 ? ['MENTOR'] : []),
+    ...(activeRole === 'HoD' ? ['HOD'] : []),
+  ]))
+  const proofSemesterLabel = selectedProofCheckpoint?.semesterNumber ?? proofOps?.activeOperationalSemester ?? 'NA'
+  const proofBatchContexts = proofModeActive
+    ? [{
+        batchId: activeProofRun?.batchId ?? proofOps?.scopeDescriptor.batchId ?? 'proof-scope',
+        batchLabel: activeProofRun?.batchLabel ?? proofOps?.scopeDescriptor.label ?? 'Proof scope',
+        branchName: activeProofRun?.branchName ?? proofOps?.scopeDescriptor.branchName ?? null,
+        currentSemester: Number(selectedProofCheckpoint?.semesterNumber ?? proofOps?.activeOperationalSemester ?? 0),
+        sectionCodes: Array.from(new Set([
+          ...(proofScopedOfferings.map(item => item.sectionCode).filter((value): value is string => !!value)),
+          ...(proofOps?.scopeDescriptor.sectionCode ? [proofOps.scopeDescriptor.sectionCode] : []),
+        ])).sort((left, right) => left.localeCompare(right)),
+        roleCoverage: proofRoleCoverage.length > 0 ? proofRoleCoverage : [activeRole === 'Course Leader' ? 'COURSE_LEADER' : activeRole === 'Mentor' ? 'MENTOR' : 'HOD'],
+      }]
+    : []
+  const proofCourseLeaderScope = Array.from(new Map(
+    proofScopedOfferings.map(item => {
+      const subjectRunId = `${item.courseCode}:${item.courseTitle}`
+      return [subjectRunId, {
+        subjectRunId,
+        courseCode: item.courseCode,
+        title: item.courseTitle,
+        yearLabel: `Semester ${proofSemesterLabel}`,
+        sectionCodes: new Set([item.sectionCode ?? 'NA']),
+      }] as const
+    }),
+  ).values()).map(item => ({
+    ...item,
+    sectionCodes: Array.from(item.sectionCodes).sort((left, right) => left.localeCompare(right)),
+  }))
+  const proofNextDueAt = (proofOps?.monitoringQueue ?? [])
+    .map(item => item.dueAt)
+    .filter((value): value is string => !!value)
+    .sort()[0] ?? null
+  const proofQueueMetricLabel = proofModeActive ? 'Proof Queue Items' : 'Queue Items'
+  const proofQueueMetricValue = String(proofModeActive ? (proofOps?.monitoringQueue.length ?? 0) : pendingTaskCount)
+  const proofQueueMetricHelper = proofModeActive
+    ? 'Checkpoint-bound monitoring items for this faculty proof scope.'
+    : 'Current action queue count for this faculty context.'
+  const scopeMetricLabel = proofModeActive ? 'Monitored Students' : 'Batch Contexts'
+  const scopeMetricValue = String(proofModeActive ? proofScopedStudentIds.length : (profile?.currentBatchContexts.length ?? 0))
+  const scopeMetricHelper = proofModeActive
+    ? 'Distinct students represented in the selected proof queue or elective-fit scope.'
+    : 'Active year or section scopes connected to teaching and mentoring.'
   const timetableWindow = profile?.timetableStatus.directEditWindowEndsAt
     ? new Date(profile.timetableStatus.directEditWindowEndsAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
     : null
   const nextReassessmentWindow = profile?.reassessmentSummary?.nextDueAt
     ? new Date(profile.reassessmentSummary.nextDueAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
     : null
+  const displayNextReassessmentValue = proofModeActive
+    ? (proofNextDueAt ? new Date(proofNextDueAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'None')
+    : (nextReassessmentWindow ?? 'None')
+  const displayNextReassessmentHelper = proofModeActive
+    ? 'Earliest checkpoint-bound follow-up due in the active proof scope.'
+    : 'Earliest governed reassessment due in the active faculty scope.'
   const upcomingMarkers = [...calendarMarkers]
     .sort((left, right) => {
       if (left.dateISO !== right.dateISO) return left.dateISO.localeCompare(right.dateISO)
@@ -133,9 +198,9 @@ export function FacultyProfilePage({
             <MetricCard label="Employee Code" value={employeeCode} helper="Read-only faculty identity key from the admin master record." />
             <MetricCard label="Email" value={profile?.email ?? currentTeacher.email} helper="Read-only identity field from the faculty record." />
             <MetricCard label="Phone" value={effectivePhone} helper="Shown here so faculty can verify admin-owned contact data." />
-            <MetricCard label="Queue Items" value={String(pendingTaskCount)} helper="Current action queue count for this faculty context." />
-            <MetricCard label="Batch Contexts" value={String(profile?.currentBatchContexts.length ?? 0)} helper="Active year or section scopes connected to teaching and mentoring." />
-            <MetricCard label="Next Reassessment" value={nextReassessmentWindow ?? 'None'} helper="Earliest governed reassessment due in the active faculty scope." />
+            <MetricCard label={proofQueueMetricLabel} value={proofQueueMetricValue} helper={proofQueueMetricHelper} />
+            <MetricCard label={scopeMetricLabel} value={scopeMetricValue} helper={scopeMetricHelper} />
+            <MetricCard label="Next Reassessment" value={displayNextReassessmentValue} helper={displayNextReassessmentHelper} />
             <MetricCard label="Active Proof Runs" value={String(proofOps?.activeRunContexts.length ?? 0)} helper="Simulation runs currently linked to this faculty context." />
             <MetricCard label="Proof Queue" value={String(proofOps?.monitoringQueue.length ?? 0)} helper="Observed-only risk items available for review and follow-up." />
             <MetricCard label="Elective Fits" value={String(proofOps?.electiveFits.length ?? 0)} helper="Semester-6 elective recommendations derived from observed performance." />
@@ -144,7 +209,7 @@ export function FacultyProfilePage({
 
         {proofOps ? (
           <div data-proof-section="proof-mode-authority">
-            <InfoBanner message="Proof mode is active. Use the Proof Control Plane, Risk Explorer, and Student Shell for checkpoint-bound evidence. Other faculty-profile cards on this page remain operational context and may not reflect the selected proof checkpoint." />
+            <InfoBanner message="Proof mode is active. Use the Proof Control Plane, Risk Explorer, and Student Shell for checkpoint-bound evidence. Proof-aware summary and scope cards on this page now stay aligned to the selected checkpoint; permissions, appointments, and timetable-governance details remain operational context." />
             <InfoBanner tone="neutral" message={describeProofProvenance(proofOps)} />
             <InfoBanner tone="neutral" message={describeProofAvailability(proofOps)} />
           </div>
@@ -191,7 +256,11 @@ export function FacultyProfilePage({
 
           <Card style={{ padding: 16, display: 'grid', gap: 10 }}>
             <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Teaching Scope</div>
-            {(profile?.currentOwnedClasses?.length ? profile.currentOwnedClasses.map(item => ({
+            {(proofModeActive && proofScopedOfferings.length > 0 ? proofScopedOfferings.map(item => ({
+              key: item.offeringId || `${item.courseCode}:${item.sectionCode ?? 'NA'}`,
+              title: `${item.courseCode} · ${item.courseTitle}`,
+              meta: `Checkpoint-bound · Section ${item.sectionCode ?? 'NA'} · ${item.riskBand} · ${item.riskProbScaled}% · ${item.recommendedAction}`,
+            })) : profile?.currentOwnedClasses?.length ? profile.currentOwnedClasses.map(item => ({
               key: item.offeringId,
               title: `${item.courseCode} · ${item.title}`,
               meta: `${item.yearLabel} · Section ${item.sectionCode} · ${item.ownershipRole}${item.branchName ? ` · ${item.branchName}` : ''}`,
@@ -205,12 +274,18 @@ export function FacultyProfilePage({
                 <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{item.meta}</div>
               </Card>
             ))}
-            {assignedOfferings.length === 0 && !profile?.currentOwnedClasses?.length ? <div style={{ ...mono, fontSize: 10, color: T.muted }}>No current class ownership is mapped in this mode.</div> : null}
+            {proofModeActive ? (
+              <div style={{ ...mono, fontSize: 10, color: T.muted }}>
+                {proofScopedOfferings.length > 0
+                  ? `Checkpoint-bound teaching scope across ${proofScopedOfferings.length} monitored offering${proofScopedOfferings.length === 1 ? '' : 's'} in semester ${selectedProofCheckpoint?.semesterNumber ?? proofOps?.activeOperationalSemester ?? 'NA'}.`
+                  : 'No checkpoint-bound monitored offerings are currently linked to this profile.'}
+              </div>
+            ) : assignedOfferings.length === 0 && !profile?.currentOwnedClasses?.length ? <div style={{ ...mono, fontSize: 10, color: T.muted }}>No current class ownership is mapped in this mode.</div> : null}
           </Card>
 
           <Card style={{ padding: 16, display: 'grid', gap: 10 }}>
             <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Current Batch Context</div>
-            {profile?.currentBatchContexts?.length ? profile.currentBatchContexts.map(batchContext => (
+            {(proofModeActive && proofBatchContexts.length > 0 ? proofBatchContexts : profile?.currentBatchContexts ?? []).length ? (proofModeActive && proofBatchContexts.length > 0 ? proofBatchContexts : profile?.currentBatchContexts ?? []).map(batchContext => (
               <Card key={batchContext.batchId} style={{ padding: 10, background: T.surface2 }}>
                 <div style={{ ...mono, fontSize: 10, color: T.text }}>{batchContext.batchLabel}{batchContext.branchName ? ` · ${batchContext.branchName}` : ''}</div>
                 <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
@@ -220,11 +295,16 @@ export function FacultyProfilePage({
             )) : (
               <div style={{ ...mono, fontSize: 10, color: T.muted }}>No batch context is currently mapped for this faculty profile.</div>
             )}
+            {proofModeActive ? (
+              <div style={{ ...mono, fontSize: 10, color: T.muted }}>
+                Checkpoint-bound batch context derived from the active proof scope.
+              </div>
+            ) : null}
           </Card>
 
           <Card style={{ padding: 16, display: 'grid', gap: 10 }}>
             <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Course Leader Scope</div>
-            {profile?.subjectRunCourseLeaderScope?.length ? profile.subjectRunCourseLeaderScope.slice(0, 8).map(subjectRun => (
+            {(proofModeActive && proofCourseLeaderScope.length > 0 ? proofCourseLeaderScope : profile?.subjectRunCourseLeaderScope?.slice(0, 8) ?? []).length ? (proofModeActive && proofCourseLeaderScope.length > 0 ? proofCourseLeaderScope : profile?.subjectRunCourseLeaderScope?.slice(0, 8) ?? []).map(subjectRun => (
               <Card key={subjectRun.subjectRunId} style={{ padding: 10, background: T.surface2 }}>
                 <div style={{ ...mono, fontSize: 10, color: T.text }}>{subjectRun.courseCode} · {subjectRun.title}</div>
                 <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{subjectRun.yearLabel} · Sections {subjectRun.sectionCodes.join(', ')}</div>
@@ -232,11 +312,30 @@ export function FacultyProfilePage({
             )) : (
               <div style={{ ...mono, fontSize: 10, color: T.muted }}>No subject-run course-leader scope is currently assigned.</div>
             )}
+            {proofModeActive ? (
+              <div style={{ ...mono, fontSize: 10, color: T.muted }}>
+                Checkpoint-bound course-leader scope derived from monitored proof offerings.
+              </div>
+            ) : null}
           </Card>
 
           <Card style={{ padding: 16, display: 'grid', gap: 10 }}>
             <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Mentoring And Timetable</div>
-            <div style={{ ...mono, fontSize: 10, color: T.text }}>Mentor scope: {profile?.mentorScope.activeStudentCount ?? currentTeacher.menteeIds.length} active students</div>
+            <div style={{ ...mono, fontSize: 10, color: T.text }}>
+              {proofModeActive
+                ? `Checkpoint proof scope: ${proofScopedStudentIds.length} monitored student${proofScopedStudentIds.length === 1 ? '' : 's'}`
+                : `Mentor scope: ${profile?.mentorScope.activeStudentCount ?? currentTeacher.menteeIds.length} active students`}
+            </div>
+            {proofModeActive ? (
+              <>
+                <div style={{ ...mono, fontSize: 10, color: T.text }}>Proof queue items: {proofOps?.monitoringQueue.length ?? 0}</div>
+                <div style={{ ...mono, fontSize: 10, color: T.text }}>Elective-fit students: {proofOps?.electiveFits.length ?? 0}</div>
+                <div style={{ ...mono, fontSize: 10, color: T.text }}>Next proof follow-up due: {displayNextReassessmentValue}</div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                  Operational timetable publishing and governed-request details remain below; the counts above are derived from the active proof checkpoint or run.
+                </div>
+              </>
+            ) : null}
             <div style={{ ...mono, fontSize: 10, color: T.text }}>Timetable template: {(profile?.timetableStatus.hasTemplate ?? !!currentFacultyTimetable) ? 'Configured' : 'Not configured'}</div>
             <div style={{ ...mono, fontSize: 10, color: T.text }}>Direct edit window: {timetableWindow ?? 'Unavailable in current mode'}</div>
             <div style={{ ...mono, fontSize: 10, color: T.text }}>Open reassessments: {profile?.reassessmentSummary?.openCount ?? 0}</div>
@@ -282,7 +381,7 @@ export function FacultyProfilePage({
             description="This panel only surfaces rerunnable proof data: active simulation runs, observed risk queue items, and elective-fit summaries. It does not expose latent-state internals."
             notices={(
               <div data-proof-section="proof-authority-note" style={{ display: 'grid', gap: 8 }}>
-                <InfoBanner message="Authoritative proof panel for this faculty scope. Use this card and the linked proof routes for checkpoint-bound evidence; surrounding faculty-profile cards remain operational context." />
+                <InfoBanner message="Authoritative proof panel for this faculty scope. Use this card and the linked proof routes for checkpoint-bound evidence; nearby summary and scope cards stay checkpoint-bound where possible, while permissions, appointments, and timetable-governance details remain operational context." />
                 {proofOps ? <InfoBanner tone="neutral" message={describeProofProvenance(proofOps)} /> : null}
               </div>
             )}

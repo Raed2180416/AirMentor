@@ -32,7 +32,7 @@ function candidate(overrides: Partial<ProofQueueCandidate> = {}): ProofQueueCand
 }
 
 describe('proof queue governance', () => {
-  it('keeps pre-tt1 watch-only even for high-risk candidates', () => {
+  it('keeps pre-tt1 observation-only and emits no queue decision even for high-risk candidates', () => {
     const result = governProofQueueStage({
       stageKey: 'pre-tt1',
       candidates: [candidate({ stageKey: 'pre-tt1' })],
@@ -40,11 +40,7 @@ describe('proof queue governance', () => {
       facultyBudgetByKey: new Map([['Mentor::faculty-1::1', 10]]),
     })
 
-    expect(result.decisions.get('student-1::1')).toMatchObject({
-      status: 'watch',
-      countsTowardCapacity: false,
-      governanceReason: 'pre_tt1_watch_only',
-    })
+    expect(result.decisions.get('student-1::1')).toBeUndefined()
   })
 
   it('uses proxy utility at post-tt1 and prunes by caps deterministically', () => {

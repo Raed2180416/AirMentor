@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AppDb } from '../src/db/client.js'
-import { simulationRuns, simulationStageCheckpoints } from '../src/db/schema.js'
+import { batches, simulationRuns, simulationStageCheckpoints } from '../src/db/schema.js'
 import { activateProofOperationalSemester } from '../src/lib/proof-control-plane-activation-service.js'
 
 const TEST_NOW = '2026-03-16T00:00:00.000Z'
@@ -19,6 +19,12 @@ type MockCheckpoint = {
   simulationRunId: string
   semesterNumber: number
   stageOrder: number
+}
+
+type MockBatch = {
+  batchId: string
+  currentSemester: number
+  updatedAt: string
 }
 
 function createMockDb(options?: {
@@ -43,6 +49,11 @@ function createMockDb(options?: {
     { simulationRunId: run.simulationRunId, semesterNumber: 5, stageOrder: 1 },
     { simulationRunId: run.simulationRunId, semesterNumber: 6, stageOrder: 1 },
   ]
+  let batch: MockBatch = {
+    batchId: run.batchId,
+    currentSemester: run.activeOperationalSemester ?? run.semesterEnd,
+    updatedAt: '2026-03-15T00:00:00.000Z',
+  }
 
   const db = {
     select() {
@@ -67,30 +78,42 @@ function createMockDb(options?: {
       }
     },
     update(table: unknown) {
-      if (table !== simulationRuns) {
-        throw new Error('Unexpected table in update mock')
+      if (table === simulationRuns) {
+        return {
+          set(values: Partial<MockRun>) {
+            return {
+              where: async () => {
+                run = { ...run, ...values }
+              },
+            }
+          },
+        }
       }
-      return {
-        set(values: Partial<MockRun>) {
-          return {
-            where: async () => {
-              run = { ...run, ...values }
-            },
-          }
-        },
+      if (table === batches) {
+        return {
+          set(values: Partial<MockBatch>) {
+            return {
+              where: async () => {
+                batch = { ...batch, ...values }
+              },
+            }
+          },
+        }
       }
+      throw new Error('Unexpected table in update mock')
     },
   } as unknown as AppDb
 
   return {
     db,
     getRun: () => run,
+    getBatch: () => batch,
   }
 }
 
 describe('proof-control-plane-activation-service', () => {
   it('updates the active operational semester, publishes the active projection, and emits audit payload details', async () => {
-    const { db, getRun } = createMockDb()
+    const { db, getRun, getBatch } = createMockDb()
     const deps = {
       emitSimulationAudit: vi.fn(async () => {}),
       publishOperationalProjection: vi.fn(async () => {}),
@@ -115,6 +138,10 @@ describe('proof-control-plane-activation-service', () => {
       activeOperationalSemester: 4,
       updatedAt: TEST_NOW,
     })
+    expect(getBatch()).toMatchObject({
+      currentSemester: 4,
+      updatedAt: TEST_NOW,
+    })
     expect(deps.publishOperationalProjection).toHaveBeenCalledTimes(1)
     expect(deps.publishOperationalProjection).toHaveBeenCalledWith(db, {
       simulationRunId: 'run_001',
@@ -137,7 +164,7 @@ describe('proof-control-plane-activation-service', () => {
   })
 
   it('does not republish projections when the target proof run is inactive', async () => {
-    const { db } = createMockDb({
+    const { db, getBatch } = createMockDb({
       run: {
         activeFlag: 0,
       },
@@ -159,6 +186,10 @@ describe('proof-control-plane-activation-service', () => {
       simulationRunId: 'run_001',
       activeOperationalSemester: 5,
       previousOperationalSemester: 6,
+    })
+    expect(getBatch()).toMatchObject({
+      currentSemester: 5,
+      updatedAt: TEST_NOW,
     })
     expect(deps.publishOperationalProjection).not.toHaveBeenCalled()
     expect(deps.emitSimulationAudit).toHaveBeenCalledTimes(1)

@@ -85,6 +85,8 @@ describe('hod proof analytics', () => {
     const faculty = facultyResponse.json().items as Array<{ facultyId: string; queueLoad: number }>
     const students = studentsResponse.json().items as Array<{
       studentId: string
+      sectionCode: string
+      currentRiskBand: string
       evidenceTimeline: Array<{ semesterNumber: number }>
       observedEvidence: {
         tt2Pct: number
@@ -134,6 +136,18 @@ describe('hod proof analytics', () => {
     }))
     expect(students[0]?.observedEvidence).toHaveProperty('coEvidenceMode')
     expect(students[0]?.observedEvidence).not.toHaveProperty('forgetRate')
+    expect(summary.totals.highRiskCount).toBe(students.filter(row => row.currentRiskBand === 'High').length)
+    expect(summary.totals.mediumRiskCount).toBe(students.filter(row => row.currentRiskBand === 'Medium').length)
+    for (const sectionRow of summary.sectionComparison as Array<{
+      sectionCode: string
+      studentCount: number
+      highRiskCount: number
+      mediumRiskCount: number
+    }>) {
+      expect(sectionRow.studentCount).toBe(students.filter(row => row.sectionCode === sectionRow.sectionCode).length)
+      expect(sectionRow.highRiskCount).toBe(students.filter(row => row.sectionCode === sectionRow.sectionCode && row.currentRiskBand === 'High').length)
+      expect(sectionRow.mediumRiskCount).toBe(students.filter(row => row.sectionCode === sectionRow.sectionCode && row.currentRiskBand === 'Medium').length)
+    }
 
     const hodFacultyRow = faculty.find(row => row.facultyId === 'mnc_t1')
     expect(hodFacultyRow).toBeTruthy()
@@ -424,6 +438,12 @@ describe('hod proof analytics', () => {
       summaryResponse.json().backlogDistribution.reduce((sum: number, row: { studentCount: number }) => sum + row.studentCount, 0),
     ).toBe(summaryResponse.json().totals.studentsCovered)
     expect(studentsResponse.json().items.length).toBeGreaterThan(0)
+    expect(summaryResponse.json().totals.highRiskCount).toBe(
+      studentsResponse.json().items.filter((row: { currentRiskBand: string }) => row.currentRiskBand === 'High').length,
+    )
+    expect(summaryResponse.json().totals.mediumRiskCount).toBe(
+      studentsResponse.json().items.filter((row: { currentRiskBand: string }) => row.currentRiskBand === 'Medium').length,
+    )
     expect(studentsResponse.json().items[0]).toEqual(expect.objectContaining({
       riskChangeFromPreviousCheckpointScaled: expect.any(Number),
       counterfactualLiftScaled: expect.any(Number),
@@ -629,10 +649,19 @@ describe('hod proof analytics', () => {
       expect(summaryResponse.statusCode).toBe(200)
       expect(checkpointSummaryResponse.statusCode).toBe(200)
       expect(studentsResponse.statusCode).toBe(200)
-      expect(summaryResponse.json().countSource).toBe('proof-run')
-      expect(summaryResponse.json().activeOperationalSemester).toBe(semesterNumber)
-      expect(summaryResponse.json().activeRunContext?.checkpointContext).toBeUndefined()
-      expect(studentsResponse.json().items.every((item: { currentSemester: number }) => item.currentSemester === semesterNumber)).toBe(true)
+      const summaryPayload = summaryResponse.json()
+      const studentsPayload = studentsResponse.json()
+      expect(summaryPayload.countSource).toBe('proof-run')
+      expect(summaryPayload.activeOperationalSemester).toBe(semesterNumber)
+      expect(summaryPayload.activeRunContext?.checkpointContext).toBeUndefined()
+      expect(studentsPayload.items.every((item: { currentSemester: number }) => item.currentSemester === semesterNumber)).toBe(true)
+      expect(summaryPayload.totals.studentsCovered).toBe(studentsPayload.items.length)
+      expect(summaryPayload.totals.highRiskCount).toBe(
+        studentsPayload.items.filter((item: { currentRiskBand: string }) => item.currentRiskBand === 'High').length,
+      )
+      expect(summaryPayload.totals.mediumRiskCount).toBe(
+        studentsPayload.items.filter((item: { currentRiskBand: string }) => item.currentRiskBand === 'Medium').length,
+      )
       expect(checkpointSummaryResponse.json().countSource).toBe('proof-checkpoint')
       expect(checkpointSummaryResponse.json().activeOperationalSemester).toBe(semesterNumber)
       expect(checkpointSummaryResponse.json().activeRunContext?.checkpointContext?.simulationStageCheckpointId).toBe(checkpoint!.simulationStageCheckpointId)
@@ -702,15 +731,23 @@ describe('hod proof analytics', () => {
       expect(checkpointSummaryResponse.statusCode).toBe(200)
       expect(studentsResponse.statusCode).toBe(200)
       expect(dashboardResponse.statusCode).toBe(200)
-      expect(summaryResponse.json().countSource).toBe('proof-run')
-      expect(summaryResponse.json().activeOperationalSemester).toBe(semesterNumber)
-      expect(summaryResponse.json().activeRunContext?.checkpointContext).toBeUndefined()
       const studentsPayload = studentsResponse.json()
+      const summaryPayload = summaryResponse.json()
+      expect(summaryPayload.countSource).toBe('proof-run')
+      expect(summaryPayload.activeOperationalSemester).toBe(semesterNumber)
+      expect(summaryPayload.activeRunContext?.checkpointContext).toBeUndefined()
       const dashboardCheckpoint = dashboardResponse.json().activeRunDetail?.checkpoints?.find(
         (item: { simulationStageCheckpointId: string }) => item.simulationStageCheckpointId === checkpoint!.simulationStageCheckpointId,
       )
       expect(dashboardCheckpoint).toBeTruthy()
       expect(studentsPayload.items.every((item: { currentSemester: number }) => item.currentSemester === semesterNumber)).toBe(true)
+      expect(summaryPayload.totals.studentsCovered).toBe(studentsPayload.items.length)
+      expect(summaryPayload.totals.highRiskCount).toBe(
+        studentsPayload.items.filter((item: { currentRiskBand: string }) => item.currentRiskBand === 'High').length,
+      )
+      expect(summaryPayload.totals.mediumRiskCount).toBe(
+        studentsPayload.items.filter((item: { currentRiskBand: string }) => item.currentRiskBand === 'Medium').length,
+      )
       const electiveFits = studentsPayload.items.map((item: Record<string, unknown>) => item.electiveFit ?? null)
       if (semesterNumber < 6) {
         expect(electiveFits.every(item => item == null)).toBe(true)

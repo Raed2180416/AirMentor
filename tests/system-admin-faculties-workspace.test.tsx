@@ -468,7 +468,10 @@ const registryLaunchProps: ComponentProps<typeof SystemAdminScopedRegistryLaunch
   onOpenAllFaculty: () => {},
 }
 
-function renderWorkspace(universityTab: 'overview' | 'bands' | 'courses' | 'provision') {
+function renderWorkspace(
+  universityTab: 'overview' | 'bands' | 'courses' | 'provision',
+  overrides?: Partial<ComponentProps<typeof SystemAdminFacultiesWorkspace>>,
+) {
   const markup = renderToStaticMarkup(createElement(SystemAdminFacultiesWorkspace, {
     data,
     route,
@@ -479,6 +482,9 @@ function renderWorkspace(universityTab: 'overview' | 'bands' | 'courses' | 'prov
     selectedDepartment: data.departments[0],
     selectedBranch: data.branches[0],
     selectedBatch: data.batches[0],
+    canonicalProofBatch: null,
+    authoritativeOperationalSemester: 5,
+    authoritativeOperationalSemesterSource: 'batch',
     selectedSectionCode: 'A',
     selectedAcademicFacultyImpact: {
       departments: 1,
@@ -701,6 +707,7 @@ function renderWorkspace(universityTab: 'overview' | 'bands' | 'courses' | 'prov
     handleSaveCurriculumFeatureConfig: async () => {},
     proofDashboardProps,
     registryLaunchProps,
+    ...overrides,
   } as ComponentProps<typeof SystemAdminFacultiesWorkspace>))
 
   return markup
@@ -759,5 +766,30 @@ describe('system-admin faculties workspace parity', () => {
     expect(markup).toContain('Prof. Kavitha Rao')
     expect(markup).toContain('Run Provisioning')
     expect(markup).toContain('Current semester term 2024-25')
+  })
+
+  it('renders canonical proof scope provenance when the proof pilot batch is active', () => {
+    const canonicalProofBatch = {
+      ...data.batches[0],
+      batchId: 'batch_branch_mnc_btech_2023',
+      batchLabel: '2023 Proof',
+      currentSemester: 6,
+    }
+
+    const markup = renderWorkspace('overview', {
+      route: {
+        ...route,
+        batchId: canonicalProofBatch.batchId,
+      },
+      selectedBatch: canonicalProofBatch,
+      canonicalProofBatch,
+      authoritativeOperationalSemester: 4,
+      authoritativeOperationalSemesterSource: 'proof-run',
+    })
+
+    expect(markup).toContain('Pilot Scope Provenance')
+    expect(markup).toContain('Canonical proof pilot active')
+    expect(markup).toContain('Proof operational semester · Sem 4')
+    expect(markup).toContain('Canonical batch 2023 Proof')
   })
 })

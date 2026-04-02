@@ -227,7 +227,7 @@ describe('RiskExplorerPage', () => {
     expect(markup).toContain('Simulation-calibrated proof analysis only')
     expect(markup).toContain('Authoritative proof surface for checkpoint-bound analysis')
     expect(markup).toContain('Checkpoint-bound proof counts')
-    expect(markup).toContain('operational semester 6')
+    expect(markup).toContain('checkpoint semester 6')
     expect(markup).toContain('risk-prod-v1')
     expect(markupAdvanced).toContain('Trained Risk Heads')
     expect(markupAdvanced).toContain('Derived Scenario Heads')
@@ -429,7 +429,7 @@ describe('RiskExplorerPage', () => {
     const markupDetails = renderToStaticMarkup(createElement(RiskExplorerPage, { ...props, initialTab: 'details' }))
 
     expect(markup).toContain('Sem 3')
-    expect(markup).toContain('operational semester 3')
+    expect(markup).toContain('checkpoint semester 3')
     expect(markupDetails).toContain('data-proof-section="semester-trajectory"')
     expect(markupDetails).toContain('Semester 1')
     expect(markupDetails).toContain('Semester 2')
@@ -596,7 +596,7 @@ describe('RiskExplorerPage', () => {
     const markup = renderToStaticMarkup(createElement(RiskExplorerPage, props))
 
     expect(markup).toContain('Sem 5 · Post TT2')
-    expect(markup).toContain('operational semester 5')
+    expect(markup).toContain('checkpoint semester 5')
     expect(markup).toContain('Stage blocked')
     expect(markup).toContain('Playback progression is blocked at this checkpoint until 3 queue item(s) are resolved.')
   })

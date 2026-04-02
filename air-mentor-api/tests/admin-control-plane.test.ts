@@ -1032,8 +1032,17 @@ describe('admin control plane routes', () => {
     expect(facultyProfileCheckpointResponse.json().proofOperations.countSource).toBe('proof-checkpoint')
     expect(facultyProfileCheckpointResponse.json().proofOperations.selectedCheckpoint).toMatchObject({
       simulationStageCheckpointId: firstCheckpointId,
+      semesterNumber: checkpointDetailOne.json().checkpoint.semesterNumber,
       stageAdvanceBlocked: expect.any(Boolean),
     })
+    expect(facultyProfileCheckpointResponse.json().proofOperations.activeOperationalSemester).toBe(
+      checkpointDetailOne.json().checkpoint.semesterNumber,
+    )
+    expect(
+      facultyProfileCheckpointResponse.json().currentBatchContexts.every((item: { currentSemester: number }) => (
+        item.currentSemester === checkpointDetailOne.json().checkpoint.semesterNumber
+      )),
+    ).toBe(true)
     expect(Array.isArray(facultyProfileCheckpointResponse.json().proofOperations.monitoringQueue)).toBe(true)
     if (facultyProfileCheckpointResponse.json().proofOperations.monitoringQueue[0]) {
       expect(facultyProfileCheckpointResponse.json().proofOperations.monitoringQueue[0]).toMatchObject({

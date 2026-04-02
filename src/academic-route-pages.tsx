@@ -13,6 +13,23 @@ function formatDateTime(timestamp?: number) {
   return new Date(timestamp).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
+function normalizeStudentProjectionId(studentId: string) {
+  return studentId.includes('::') ? (studentId.split('::').at(-1) ?? studentId) : studentId
+}
+
+type DashboardAlertItem = {
+  studentId: string
+  student: Student | null
+  offering: Offering | null
+  studentName: string
+  phone: string
+  riskProbScaled: number
+  reasonLabel: string | null
+  courseCode: string | null
+  yearLabel: string | null
+  sectionCode: string | null
+}
+
 type CLDashboardProps = {
   offerings: Offering[]
   pendingTaskCount: number
@@ -43,10 +60,70 @@ export function CLDashboard({
   greetingSubline,
 }: CLDashboardProps) {
   const { getStudentsPatched } = useAppSelectors()
-  const total = offerings.reduce((count, offering) => count + getStudentsPatched(offering).length, 0)
-  const allAtRisk = useMemo(() => offerings.flatMap(offering => getStudentsPatched(offering)), [getStudentsPatched, offerings])
-  const highRiskStudents = useMemo(() => allAtRisk.filter(student => student.riskBand === 'High'), [allAtRisk])
-  const highRiskCount = allAtRisk.filter(student => student.riskBand === 'High').length
+  const proofCheckpoint = proofProfile?.proofOperations?.scopeMode === 'proof'
+    ? proofProfile.proofOperations.selectedCheckpoint
+    : null
+  const proofScopedStudentCount = proofCheckpoint?.studentCount ?? null
+  const total = proofScopedStudentCount ?? offerings.reduce((count, offering) => count + getStudentsPatched(offering).length, 0)
+  const proofAlertItems = useMemo<DashboardAlertItem[]>(() => {
+    if (proofProfile?.proofOperations?.scopeMode !== 'proof') return []
+    const queueItems = proofProfile.proofOperations.monitoringQueue.filter(item => item.riskBand === 'High')
+    if (queueItems.length === 0) return []
+    const itemsByStudentId = new Map<string, DashboardAlertItem>()
+    for (const item of queueItems) {
+      const offering = offerings.find(candidate => candidate.offId === item.offeringId)
+        ?? offerings.find(candidate => candidate.code === item.courseCode && (item.sectionCode == null || candidate.section === item.sectionCode))
+        ?? null
+      const student = offering
+        ? getStudentsPatched(offering).find(candidate => normalizeStudentProjectionId(candidate.id) === item.studentId || candidate.usn === item.usn) ?? null
+        : null
+      const nextItem: DashboardAlertItem = {
+        studentId: item.studentId,
+        student,
+        offering,
+        studentName: item.studentName,
+        phone: student?.phone ?? '',
+        riskProbScaled: item.riskProbScaled,
+        reasonLabel: item.drivers[0]?.label ?? item.recommendedAction ?? null,
+        courseCode: item.courseCode,
+        yearLabel: offering?.year ?? null,
+        sectionCode: item.sectionCode ?? offering?.section ?? null,
+      }
+      const current = itemsByStudentId.get(item.studentId)
+      if (!current || nextItem.riskProbScaled > current.riskProbScaled) {
+        itemsByStudentId.set(item.studentId, nextItem)
+      }
+    }
+    return Array.from(itemsByStudentId.values()).sort((left, right) => right.riskProbScaled - left.riskProbScaled || left.studentName.localeCompare(right.studentName))
+  }, [getStudentsPatched, offerings, proofProfile])
+  const fallbackAlertItems = useMemo<DashboardAlertItem[]>(() => {
+    const itemsByStudentId = new Map<string, DashboardAlertItem>()
+    for (const offering of offerings) {
+      for (const student of getStudentsPatched(offering)) {
+        if (student.riskBand !== 'High') continue
+        const studentId = normalizeStudentProjectionId(student.id)
+        const nextItem: DashboardAlertItem = {
+          studentId,
+          student,
+          offering,
+          studentName: student.name,
+          phone: student.phone,
+          riskProbScaled: Math.round((student.riskProb ?? 0) * 100),
+          reasonLabel: student.reasons[0]?.label ?? null,
+          courseCode: offering.code,
+          yearLabel: offering.year,
+          sectionCode: offering.section,
+        }
+        const current = itemsByStudentId.get(studentId)
+        if (!current || nextItem.riskProbScaled > current.riskProbScaled) {
+          itemsByStudentId.set(studentId, nextItem)
+        }
+      }
+    }
+    return Array.from(itemsByStudentId.values()).sort((left, right) => right.riskProbScaled - left.riskProbScaled || left.studentName.localeCompare(right.studentName))
+  }, [getStudentsPatched, offerings])
+  const highRiskAlertItems = proofAlertItems.length > 0 ? proofAlertItems : fallbackAlertItems
+  const highRiskCount = highRiskAlertItems.length
   const yearGroups = useMemo(() => {
     return Array.from(new Set(offerings.map(offering => offering.year))).map(year => {
       const sample = offerings.find(offering => offering.year === year) ?? offerings[0]
@@ -92,33 +169,34 @@ export function CLDashboard({
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
             <AlertTriangle size={16} color={T.danger} />
             <div style={{ ...sora, fontWeight: 700, fontSize: 15, color: T.danger }}>Priority Alerts</div>
-            <div style={{ ...mono, fontSize: 11, color: T.muted }}>— {highRiskCount} students are above the alert threshold on the current evidence window</div>
+            <div style={{ ...mono, fontSize: 11, color: T.muted }}>
+              — {highRiskCount} students are above the alert threshold on the {proofAlertItems.length > 0 ? 'selected proof checkpoint' : 'current evidence window'}
+            </div>
           </div>
           <div className="scroll-pane scroll-pane--dense" style={{ maxHeight: 300, overflowY: 'auto', paddingRight: 4 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
-              {highRiskStudents.map(student => {
-                const offering = offerings.find(item => getStudentsPatched(item).some(candidate => candidate.id === student.id))
+              {highRiskAlertItems.map(item => {
                 return (
                   <div
-                    key={student.id}
-                    onClick={() => offering && onOpenStudent(student as Student, offering)}
-                    style={{ background: T.surface2, border: `1px solid ${T.danger}25`, borderRadius: 8, padding: '10px 14px', cursor: 'pointer', transition: 'background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease' }}
+                    key={`${item.studentId}:${item.courseCode ?? 'course'}`}
+                    onClick={() => item.student && item.offering && onOpenStudent(item.student, item.offering)}
+                    style={{ background: T.surface2, border: `1px solid ${T.danger}25`, borderRadius: 8, padding: '10px 14px', cursor: item.student && item.offering ? 'pointer' : 'default', transition: 'background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease' }}
                     onMouseEnter={event => (event.currentTarget.style.borderColor = `${T.danger}60`)}
                     onMouseLeave={event => (event.currentTarget.style.borderColor = `${T.danger}25`)}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                      <div style={{ ...sora, fontWeight: 600, fontSize: 13, color: T.text }}>{student.name}</div>
-                      <div style={{ ...sora, fontWeight: 800, fontSize: 16, color: T.danger }}>{Math.round((student.riskProb ?? 0) * 100)}%</div>
+                      <div style={{ ...sora, fontWeight: 600, fontSize: 13, color: T.text }}>{item.studentName}</div>
+                      <div style={{ ...sora, fontWeight: 800, fontSize: 16, color: T.danger }}>{item.riskProbScaled}%</div>
                     </div>
-                    <div style={{ ...mono, fontSize: 10, color: T.muted }}>{offering?.code ?? 'Course'} · {offering?.year ?? ''} · Sec {offering?.section ?? ''}</div>
-                    {student.reasons[0] ? <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 4 }}>↳ {student.reasons[0].label}</div> : null}
+                    <div style={{ ...mono, fontSize: 10, color: T.muted }}>{item.courseCode ?? 'Course'} · {item.yearLabel ?? ''} · Sec {item.sectionCode ?? ''}</div>
+                    {item.reasonLabel ? <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 4 }}>↳ {item.reasonLabel}</div> : null}
                     <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' }}>
                       <button
                         aria-label="Copy student phone number"
                         title="Copy phone"
                         onClick={event => {
                           event.stopPropagation()
-                          void navigator.clipboard.writeText(student.phone)
+                          void navigator.clipboard.writeText(item.phone)
                         }}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent, padding: 0 }}
                       >

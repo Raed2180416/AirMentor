@@ -142,6 +142,7 @@ const proofProfile = {
       stageOrder: 6,
       previousCheckpointId: 'checkpoint_000',
       nextCheckpointId: null,
+      studentCount: 120,
       highRiskCount: 8,
       openQueueCount: 13,
     },
@@ -157,6 +158,21 @@ function renderWithSelectors(node: ReturnType<typeof createElement>) {
     ttBlueprintsByOffering: {},
     studentsByOffering: {},
     studentSourceMode: 'live',
+  })
+  return render(createElement(AppSelectorsContext.Provider, { value: selectors }, node))
+}
+
+function renderWithSelectorOverrides(
+  node: ReturnType<typeof createElement>,
+  overrides: Partial<Parameters<typeof createAppSelectors>[0]>,
+) {
+  const selectors = createAppSelectors({
+    studentPatches: {},
+    schemeByOffering: {},
+    ttBlueprintsByOffering: {},
+    studentsByOffering: {},
+    studentSourceMode: 'live',
+    ...overrides,
   })
   return render(createElement(AppSelectorsContext.Provider, { value: selectors }, node))
 }
@@ -287,5 +303,292 @@ describe('academic route pages', () => {
     }))
     expect(screen.getAllByText('Queue History').length).toBeGreaterThan(0)
     expect(screen.getByText('Authoritative queue history proof context. Use these checkpoint-bound counts and scope labels when comparing teacher, mentor, and queue surfaces.')).toBeTruthy()
+  })
+
+  it('prefers proof-scoped totals over summed offering totals on the course leader dashboard', () => {
+    const offerings = [
+      {
+        offId: 'off_mc601_a',
+        id: 'off_mc601_a',
+        code: 'MC601',
+        title: 'Graph Theory',
+        year: 'III Year',
+        dept: 'MNC',
+        sem: 6,
+        section: 'A',
+        count: 60,
+        attendance: 84,
+        stage: 2,
+        stageInfo: { stage: 2, label: 'In Progress', desc: 'Checkpoint active', color: '#3b82f6' },
+        tt1Done: true,
+        tt2Done: true,
+        pendingAction: null,
+        sections: ['A'],
+        enrolled: [2],
+        att: [84],
+        branchId: 'branch_mnc',
+        termId: 'term_6_a',
+      },
+      {
+        offId: 'off_mc602_b',
+        id: 'off_mc602_b',
+        code: 'MC602',
+        title: 'Optimization',
+        year: 'III Year',
+        dept: 'MNC',
+        sem: 6,
+        section: 'B',
+        count: 60,
+        attendance: 82,
+        stage: 2,
+        stageInfo: { stage: 2, label: 'In Progress', desc: 'Checkpoint active', color: '#3b82f6' },
+        tt1Done: true,
+        tt2Done: true,
+        pendingAction: null,
+        sections: ['B'],
+        enrolled: [2],
+        att: [82],
+        branchId: 'branch_mnc',
+        termId: 'term_6_b',
+      },
+    ]
+
+    renderWithSelectorOverrides(createElement(CLDashboard, {
+      offerings,
+      pendingTaskCount: 0,
+      proofProfile,
+      onOpenCourse: vi.fn(),
+      onOpenStudent: vi.fn(),
+      onOpenUpload: vi.fn(),
+      onOpenCalendar: vi.fn(),
+      onOpenPendingActions: vi.fn(),
+      teacherInitials: 'AR',
+      greetingHeadline: 'Welcome back',
+      greetingMeta: 'Proof-aligned teaching scope',
+      greetingSubline: 'Checkpoint-bound view',
+    }), {
+      studentsByOffering: {
+        off_mc601_a: [mentee],
+        off_mc602_b: [mentee],
+      },
+    })
+
+    const totalStudentsLabel = screen.getByText('Total Students')
+    expect(totalStudentsLabel.parentElement?.firstElementChild?.textContent).toBe('120')
+  })
+
+  it('prefers checkpoint queue alerts over per-offering duplicate high-risk rows on the course leader dashboard', () => {
+    const offerings = [
+      {
+        offId: 'off_mc601_a',
+        id: 'off_mc601_a',
+        code: 'MC601',
+        title: 'Graph Theory',
+        year: 'III Year',
+        dept: 'MNC',
+        sem: 6,
+        section: 'A',
+        count: 60,
+        attendance: 84,
+        stage: 2,
+        stageInfo: { stage: 2, label: 'In Progress', desc: 'Checkpoint active', color: '#3b82f6' },
+        tt1Done: true,
+        tt2Done: true,
+        pendingAction: null,
+        sections: ['A'],
+        enrolled: [2],
+        att: [84],
+        branchId: 'branch_mnc',
+        termId: 'term_6_a',
+      },
+      {
+        offId: 'off_mc602_b',
+        id: 'off_mc602_b',
+        code: 'MC602',
+        title: 'Optimization',
+        year: 'III Year',
+        dept: 'MNC',
+        sem: 6,
+        section: 'B',
+        count: 60,
+        attendance: 82,
+        stage: 2,
+        stageInfo: { stage: 2, label: 'In Progress', desc: 'Checkpoint active', color: '#3b82f6' },
+        tt1Done: true,
+        tt2Done: true,
+        pendingAction: null,
+        sections: ['B'],
+        enrolled: [2],
+        att: [82],
+        branchId: 'branch_mnc',
+        termId: 'term_6_b',
+      },
+    ]
+    const onOpenStudent = vi.fn()
+    const proofProfileWithQueue = {
+      ...proofProfile,
+      proofOperations: {
+        ...proofProfile.proofOperations,
+        monitoringQueue: [
+          {
+            riskAssessmentId: 'risk_001',
+            simulationRunId: 'run_001',
+            batchId: 'batch_mnc_2023',
+            batchLabel: '2023 Proof',
+            branchName: 'B.Tech Mathematics and Computing',
+            studentId: 'student_001',
+            studentName: 'Aarav Sharma',
+            usn: '1MS23MC001',
+            offeringId: 'off_mc601_a',
+            courseCode: 'MC601',
+            courseTitle: 'Graph Theory',
+            sectionCode: 'A',
+            riskBand: 'High',
+            riskProbScaled: 81,
+            recommendedAction: 'Open a mentor checkpoint and assign remedial work.',
+            riskChangeFromPreviousCheckpointScaled: 9,
+            counterfactualLiftScaled: 14,
+            drivers: [{ label: 'Checkpoint risk spike', impact: 0.24, feature: 'proof-checkpoint' }],
+            dueAt: null,
+            reassessmentStatus: 'Open',
+            decisionType: 'open',
+            decisionNote: null,
+            observedEvidence: {
+              attendancePct: 62,
+              tt1Pct: 38,
+              tt2Pct: 0,
+              quizPct: 0,
+              assignmentPct: 0,
+              seePct: 0,
+              cgpa: 6.8,
+              backlogCount: 1,
+              weakCoCount: 2,
+              weakQuestionCount: 4,
+              interventionRecoveryStatus: null,
+              coEvidenceMode: 'checkpoint-observed',
+            },
+            override: null,
+            acknowledgement: null,
+            resolution: null,
+          },
+          {
+            riskAssessmentId: 'risk_002',
+            simulationRunId: 'run_001',
+            batchId: 'batch_mnc_2023',
+            batchLabel: '2023 Proof',
+            branchName: 'B.Tech Mathematics and Computing',
+            studentId: 'student_001',
+            studentName: 'Aarav Sharma',
+            usn: '1MS23MC001',
+            offeringId: 'off_mc602_b',
+            courseCode: 'MC602',
+            courseTitle: 'Optimization',
+            sectionCode: 'B',
+            riskBand: 'High',
+            riskProbScaled: 76,
+            recommendedAction: 'Continue watchful course follow-up.',
+            riskChangeFromPreviousCheckpointScaled: 7,
+            counterfactualLiftScaled: 10,
+            drivers: [{ label: 'Optimization score drop', impact: 0.18, feature: 'proof-checkpoint' }],
+            dueAt: null,
+            reassessmentStatus: 'Watching',
+            decisionType: 'watch',
+            decisionNote: null,
+            observedEvidence: {
+              attendancePct: 65,
+              tt1Pct: 42,
+              tt2Pct: 0,
+              quizPct: 0,
+              assignmentPct: 0,
+              seePct: 0,
+              cgpa: 6.8,
+              backlogCount: 1,
+              weakCoCount: 1,
+              weakQuestionCount: 2,
+              interventionRecoveryStatus: null,
+              coEvidenceMode: 'checkpoint-observed',
+            },
+            override: null,
+            acknowledgement: null,
+            resolution: null,
+          },
+          {
+            riskAssessmentId: 'risk_003',
+            simulationRunId: 'run_001',
+            batchId: 'batch_mnc_2023',
+            batchLabel: '2023 Proof',
+            branchName: 'B.Tech Mathematics and Computing',
+            studentId: 'student_002',
+            studentName: 'Nisha Patel',
+            usn: '1MS23MC002',
+            offeringId: 'off_mc602_b',
+            courseCode: 'MC602',
+            courseTitle: 'Optimization',
+            sectionCode: 'B',
+            riskBand: 'High',
+            riskProbScaled: 72,
+            recommendedAction: 'Assign a structured recovery plan.',
+            riskChangeFromPreviousCheckpointScaled: 6,
+            counterfactualLiftScaled: 8,
+            drivers: [{ label: 'Weak checkpoint outcomes', impact: 0.16, feature: 'proof-checkpoint' }],
+            dueAt: null,
+            reassessmentStatus: 'Open',
+            decisionType: 'open',
+            decisionNote: null,
+            observedEvidence: {
+              attendancePct: 69,
+              tt1Pct: 45,
+              tt2Pct: 0,
+              quizPct: 0,
+              assignmentPct: 0,
+              seePct: 0,
+              cgpa: 7,
+              backlogCount: 0,
+              weakCoCount: 1,
+              weakQuestionCount: 1,
+              interventionRecoveryStatus: null,
+              coEvidenceMode: 'checkpoint-observed',
+            },
+            override: null,
+            acknowledgement: null,
+            resolution: null,
+          },
+        ],
+      },
+    }
+
+    renderWithSelectorOverrides(createElement(CLDashboard, {
+      offerings,
+      pendingTaskCount: 0,
+      proofProfile: proofProfileWithQueue,
+      onOpenCourse: vi.fn(),
+      onOpenStudent,
+      onOpenUpload: vi.fn(),
+      onOpenCalendar: vi.fn(),
+      onOpenPendingActions: vi.fn(),
+      teacherInitials: 'AR',
+      greetingHeadline: 'Welcome back',
+      greetingMeta: 'Proof-aligned teaching scope',
+      greetingSubline: 'Checkpoint-bound view',
+    }), {
+      studentsByOffering: {
+        off_mc601_a: [
+          { id: 'off_mc601_a::student_001', name: 'Aarav Sharma', usn: '1MS23MC001', phone: '+91-9000000001', riskProb: 0.81, riskBand: 'High', reasons: [{ label: 'Operational duplicate', impact: 0.2, feature: 'legacy' }] },
+        ],
+        off_mc602_b: [
+          { id: 'off_mc602_b::student_001', name: 'Aarav Sharma', usn: '1MS23MC001', phone: '+91-9000000001', riskProb: 0.76, riskBand: 'High', reasons: [{ label: 'Operational duplicate', impact: 0.2, feature: 'legacy' }] },
+          { id: 'off_mc602_b::student_002', name: 'Nisha Patel', usn: '1MS23MC002', phone: '+91-9000000002', riskProb: 0.72, riskBand: 'High', reasons: [{ label: 'Operational duplicate', impact: 0.2, feature: 'legacy' }] },
+        ],
+      },
+    })
+
+    const highWatchLabel = screen.getByText('High Watch Students')
+    expect(highWatchLabel.parentElement?.firstElementChild?.textContent).toBe('2')
+
+    fireEvent.click(screen.getByText('Aarav Sharma'))
+    expect(onOpenStudent).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'off_mc601_a::student_001' }),
+      expect.objectContaining({ offId: 'off_mc601_a' }),
+    )
   })
 })

@@ -165,7 +165,13 @@ export interface AirMentorApiClientLike {
   listTerms(): Promise<{ items: ApiAcademicTerm[] }>
   createTerm(payload: Pick<ApiAcademicTerm, 'branchId' | 'batchId' | 'academicYearLabel' | 'semesterNumber' | 'startDate' | 'endDate' | 'status'>): Promise<ApiAcademicTerm>
   updateTerm(termId: string, payload: Pick<ApiAcademicTerm, 'branchId' | 'batchId' | 'academicYearLabel' | 'semesterNumber' | 'startDate' | 'endDate' | 'status' | 'version'>): Promise<ApiAcademicTerm>
-  listFaculty(): Promise<{ items: ApiFacultyRecord[] }>
+  listFaculty(filter?: {
+    academicFacultyId?: string
+    departmentId?: string
+    branchId?: string
+    batchId?: string
+    sectionCode?: string
+  }): Promise<{ items: ApiFacultyRecord[] }>
   createFaculty(payload: {
     username: string
     email: string
@@ -192,7 +198,13 @@ export interface AirMentorApiClientLike {
   updateFacultyAppointment(appointmentId: string, payload: Pick<ApiFacultyAppointment, 'facultyId' | 'departmentId' | 'branchId' | 'isPrimary' | 'startDate' | 'endDate' | 'status' | 'version'>): Promise<ApiFacultyAppointment>
   createRoleGrant(facultyId: string, payload: Pick<ApiRoleGrant, 'roleCode' | 'scopeType' | 'scopeId' | 'startDate' | 'endDate' | 'status'>): Promise<ApiRoleGrant>
   updateRoleGrant(grantId: string, payload: Pick<ApiRoleGrant, 'facultyId' | 'roleCode' | 'scopeType' | 'scopeId' | 'startDate' | 'endDate' | 'status' | 'version'>): Promise<ApiRoleGrant>
-  listStudents(): Promise<{ items: ApiStudentRecord[] }>
+  listStudents(filter?: {
+    academicFacultyId?: string
+    departmentId?: string
+    branchId?: string
+    batchId?: string
+    sectionCode?: string
+  }): Promise<{ items: ApiStudentRecord[] }>
   createStudent(payload: Pick<ApiStudentRecord, 'usn' | 'rollNumber' | 'name' | 'email' | 'phone' | 'admissionDate' | 'status'>): Promise<ApiStudentRecord>
   updateStudent(studentId: string, payload: Pick<ApiStudentRecord, 'usn' | 'rollNumber' | 'name' | 'email' | 'phone' | 'admissionDate' | 'status' | 'version'>): Promise<ApiStudentRecord>
   createEnrollment(studentId: string, payload: Pick<ApiStudentEnrollment, 'branchId' | 'termId' | 'sectionCode' | 'academicStatus' | 'startDate' | 'endDate'> & { rosterOrder?: number }): Promise<ApiStudentEnrollment>
@@ -347,6 +359,25 @@ function toHeaderRecord(headers?: HeadersInit) {
   if (headers instanceof Headers) return Object.fromEntries(headers.entries())
   if (Array.isArray(headers)) return Object.fromEntries(headers)
   return { ...headers }
+}
+
+type ApiAdminDirectoryScopeFilter = {
+  academicFacultyId?: string
+  departmentId?: string
+  branchId?: string
+  batchId?: string
+  sectionCode?: string
+}
+
+function buildAdminDirectoryScopeQuery(filter?: ApiAdminDirectoryScopeFilter) {
+  const searchParams = new URLSearchParams()
+  if (filter?.academicFacultyId) searchParams.set('academicFacultyId', filter.academicFacultyId)
+  if (filter?.departmentId) searchParams.set('departmentId', filter.departmentId)
+  if (filter?.branchId) searchParams.set('branchId', filter.branchId)
+  if (filter?.batchId) searchParams.set('batchId', filter.batchId)
+  if (filter?.sectionCode) searchParams.set('sectionCode', filter.sectionCode)
+  const query = searchParams.toString()
+  return query ? `?${query}` : ''
 }
 
 export class AirMentorApiClient implements AirMentorApiClientLike {
@@ -732,8 +763,8 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     })
   }
 
-  async listFaculty() {
-    return this.request<{ items: ApiFacultyRecord[] }>('/api/admin/faculty')
+  async listFaculty(filter?: ApiAdminDirectoryScopeFilter) {
+    return this.request<{ items: ApiFacultyRecord[] }>(`/api/admin/faculty${buildAdminDirectoryScopeQuery(filter)}`)
   }
 
   async createFaculty(payload: {
@@ -798,8 +829,8 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     })
   }
 
-  async listStudents() {
-    return this.request<{ items: ApiStudentRecord[] }>('/api/admin/students')
+  async listStudents(filter?: ApiAdminDirectoryScopeFilter) {
+    return this.request<{ items: ApiStudentRecord[] }>(`/api/admin/students${buildAdminDirectoryScopeQuery(filter)}`)
   }
 
   async createStudent(payload: Pick<ApiStudentRecord, 'usn' | 'rollNumber' | 'name' | 'email' | 'phone' | 'admissionDate' | 'status'>) {

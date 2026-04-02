@@ -27,19 +27,38 @@ export function stageSummaryPayload(input: {
     row,
     detail: parseJson(row.detailJson, {} as Record<string, unknown>),
   }))
-  const highRiskCount = input.studentRows.filter(row => row.riskBand === 'High').length
-  const mediumRiskCount = input.studentRows.filter(row => row.riskBand === 'Medium').length
+  const studentRiskByStudentId = new Map<string, {
+    bandWeight: number
+    riskBand: 'High' | 'Medium' | 'Low'
+    noActionHighRisk: boolean
+  }>()
+  input.studentRows.forEach(row => {
+    const bandWeight = row.riskBand === 'High' ? 2 : row.riskBand === 'Medium' ? 1 : 0
+    const existing = studentRiskByStudentId.get(row.studentId) ?? {
+      bandWeight: -1,
+      riskBand: 'Low' as const,
+      noActionHighRisk: false,
+    }
+    if (bandWeight > existing.bandWeight) {
+      existing.bandWeight = bandWeight
+      existing.riskBand = row.riskBand === 'High' || row.riskBand === 'Medium' ? row.riskBand : 'Low'
+    }
+    if (row.noActionRiskBand === 'High') existing.noActionHighRisk = true
+    studentRiskByStudentId.set(row.studentId, existing)
+  })
+  const studentRiskRows = [...studentRiskByStudentId.values()]
+  const primaryQueueDetails = queueDetails.filter(item => Boolean(item.detail.primaryCase))
+  const highRiskCount = studentRiskRows.filter(row => row.riskBand === 'High').length
+  const mediumRiskCount = studentRiskRows.filter(row => row.riskBand === 'Medium').length
   const openQueueCount = queueDetails.filter(item =>
     item.row.status === 'Open'
     && Boolean(item.detail.primaryCase)
     && Boolean(item.detail.countsTowardCapacity)).length
-  const watchQueueCount = input.queueRows.filter(row => row.status === 'Watching').length
-  const resolvedQueueCount = input.queueRows.filter(row => row.status === 'Resolved').length
-  const watchStudentCount = new Set(
-    input.studentRows
-      .filter(row => row.queueState === 'watch')
-      .map(row => row.studentId),
-  ).size
+  const watchQueueCount = primaryQueueDetails.filter(item => item.row.status === 'Watching').length
+  const resolvedQueueCount = primaryQueueDetails.filter(item => item.row.status === 'Resolved').length
+  const watchStudentCount = new Set(primaryQueueDetails
+    .filter(item => item.row.status === 'Watching')
+    .map(item => item.row.studentId)).size
   const averageRiskDeltaScaled = roundToOne(average(
     input.studentRows.map(row => {
       const payload = parseJson(row.projectionJson, {} as Record<string, unknown>)
@@ -63,16 +82,16 @@ export function stageSummaryPayload(input: {
     previousCheckpointId: input.checkpoint.previousCheckpointId ?? null,
     nextCheckpointId: input.checkpoint.nextCheckpointId ?? null,
     totalStudentProjectionCount: input.studentRows.length,
-    studentCount: new Set(input.studentRows.map(row => row.studentId)).size,
+    studentCount: studentRiskByStudentId.size,
     offeringCount: input.offeringRows.length,
     highRiskCount,
     mediumRiskCount,
-    lowRiskCount: input.studentRows.length - highRiskCount - mediumRiskCount,
+    lowRiskCount: studentRiskByStudentId.size - highRiskCount - mediumRiskCount,
     openQueueCount,
     watchQueueCount,
     watchStudentCount,
     resolvedQueueCount,
-    noActionHighRiskCount: input.studentRows.filter(row => row.noActionRiskBand === 'High').length,
+    noActionHighRiskCount: studentRiskRows.filter(row => row.noActionHighRisk).length,
     electiveVisibleCount: input.electiveVisibleCount,
     averageRiskDeltaScaled,
     averageRiskChangeFromPreviousCheckpointScaled: averageRiskDeltaScaled,

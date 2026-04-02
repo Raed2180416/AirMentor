@@ -91,6 +91,14 @@ const mentorAssignmentBulkApplySchema = z.object({
   }
 })
 
+const studentDirectoryScopeQuerySchema = z.object({
+  academicFacultyId: z.string().trim().min(1).optional(),
+  departmentId: z.string().trim().min(1).optional(),
+  branchId: z.string().trim().min(1).optional(),
+  batchId: z.string().trim().min(1).optional(),
+  sectionCode: z.string().trim().min(1).optional(),
+})
+
 type MentorAssignmentBulkApplyPreviewStudent = {
   studentId: string
   studentName: string
@@ -260,6 +268,29 @@ function isVisibleStudentStatus(status: string | null | undefined) {
   return normalizedStatus !== 'deleted' && normalizedStatus !== 'archived' && normalizedStatus !== 'hidden'
 }
 
+function hasStudentDirectoryScopeFilter(filter: z.infer<typeof studentDirectoryScopeQuerySchema>) {
+  return Boolean(filter.academicFacultyId || filter.departmentId || filter.branchId || filter.batchId || filter.sectionCode)
+}
+
+function matchesStudentDirectoryScope(
+  student: StudentRecord,
+  academicFacultyByDepartmentId: Map<string, string | null>,
+  filter: z.infer<typeof studentDirectoryScopeQuerySchema>,
+) {
+  if (!hasStudentDirectoryScopeFilter(filter)) return true
+  const context = student.activeAcademicContext
+  if (!context) return false
+  if (filter.academicFacultyId) {
+    const academicFacultyId = context.departmentId ? academicFacultyByDepartmentId.get(context.departmentId) ?? null : null
+    if (academicFacultyId !== filter.academicFacultyId) return false
+  }
+  if (filter.departmentId && context.departmentId !== filter.departmentId) return false
+  if (filter.branchId && context.branchId !== filter.branchId) return false
+  if (filter.batchId && context.batchId !== filter.batchId) return false
+  if (filter.sectionCode && normalizeSectionCode(context.sectionCode) !== normalizeSectionCode(filter.sectionCode)) return false
+  return true
+}
+
 function buildBulkMentorScopeLabel(batchLabel: string, sectionCode: string | null) {
   return sectionCode ? `Batch ${batchLabel} · Section ${sectionCode}` : `Batch ${batchLabel}`
 }
@@ -269,6 +300,7 @@ export async function registerStudentRoutes(app: FastifyInstance, context: Route
     schema: { tags: ['students'], summary: 'List students with enrollment and mentor assignment context' },
   }, async request => {
     requireRole(request, ['SYSTEM_ADMIN'])
+    const filter = parseOrThrow(studentDirectoryScopeQuerySchema, request.query ?? {})
     const studentRows = await context.db.select().from(students)
     const enrollmentRows = await context.db.select().from(studentEnrollments)
     const assignmentRows = await context.db.select().from(mentorAssignments)
@@ -277,20 +309,26 @@ export async function registerStudentRoutes(app: FastifyInstance, context: Route
     const branchRows = await context.db.select().from(branches)
     const departmentRows = await context.db.select().from(departments)
     const batchRows = await context.db.select().from(batches)
+    const academicFacultyByDepartmentId = new Map(
+      departmentRows.map(row => [row.departmentId, row.academicFacultyId ?? null]),
+    )
     const provenanceCache = new Map<string, ResolvedBatchPolicySnapshot>()
+    const mappedStudents = studentRows
+      .map(student => mapStudentRecord({
+        student,
+        enrollmentRows,
+        assignmentRows,
+        profileRows,
+        termRows,
+        branchRows,
+        departmentRows,
+        batchRows,
+      }))
+      .filter(student => matchesStudentDirectoryScope(student, academicFacultyByDepartmentId, filter))
     return {
-      items: await Promise.all(studentRows.map(student => enrichStudentRecordWithProvenance(
+      items: await Promise.all(mappedStudents.map(student => enrichStudentRecordWithProvenance(
         context,
-        mapStudentRecord({
-          student,
-          enrollmentRows,
-          assignmentRows,
-          profileRows,
-          termRows,
-          branchRows,
-          departmentRows,
-          batchRows,
-        }),
+        student,
         provenanceCache,
       ))),
     }

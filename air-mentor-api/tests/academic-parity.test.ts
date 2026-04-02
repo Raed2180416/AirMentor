@@ -1,11 +1,14 @@
 import { and, asc, eq } from 'drizzle-orm'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  academicTerms,
   academicAssets,
   facultyOfferingOwnerships,
   mentorAssignments,
+  sectionOfferings,
   simulationRuns,
   simulationStageCheckpoints,
+  studentEnrollments,
 } from '../src/db/schema.js'
 import { createTestApp, loginAs, TEST_ORIGIN } from './helpers/test-app.js'
 
@@ -811,14 +814,52 @@ describe('academic bootstrap', () => {
     })
     expect(courseLeaderCheckpointProfile.proofOperations.scopeMode).toBe('proof')
     expect(courseLeaderCheckpointProfile.proofOperations.countSource).toBe('proof-checkpoint')
-    expect(courseLeaderCheckpointProfile.proofOperations.activeOperationalSemester).toBe(6)
+    expect(courseLeaderCheckpointProfile.proofOperations.activeOperationalSemester).toBe(selectedCheckpoint.semesterNumber)
+    expect(courseLeaderCheckpointProfile.proofOperations.selectedCheckpoint).toMatchObject({
+      simulationStageCheckpointId: selectedCheckpoint.simulationStageCheckpointId,
+      semesterNumber: selectedCheckpoint.semesterNumber,
+    })
     expect(Array.isArray(courseLeaderCheckpointProfile.proofOperations.monitoringQueue)).toBe(true)
+    expect(courseLeaderCheckpointProfile.currentBatchContexts.every((item: { currentSemester: number }) => {
+      return item.currentSemester === courseLeaderCheckpointProfile.proofOperations.activeOperationalSemester
+    })).toBe(true)
+    const courseLeaderCheckpointBootstrapResponse = await current.app.inject({
+      method: 'GET',
+      url: `/api/academic/bootstrap?simulationStageCheckpointId=${encodeURIComponent(selectedCheckpoint.simulationStageCheckpointId)}`,
+      headers: { cookie: login.cookie },
+    })
+    expect(courseLeaderCheckpointBootstrapResponse.statusCode).toBe(200)
+    const courseLeaderCheckpointBootstrap = courseLeaderCheckpointBootstrapResponse.json()
+    const [allOfferingRows, allTermRows, allEnrollmentRows] = await Promise.all([
+      current.db.select().from(sectionOfferings),
+      current.db.select().from(academicTerms),
+      current.db.select().from(studentEnrollments),
+    ])
+    const termById = new Map(allTermRows.map(row => [row.termId, row] as const))
+    const proofBatchId = String(courseLeaderCheckpointProfile.proofOperations.scopeDescriptor.batchId)
+    const proofSemesterNumber = Number(courseLeaderCheckpointProfile.proofOperations.activeOperationalSemester)
+    const checkpointOwnedOfferingIds = Array.from(new Set(ownedOfferingRows
+      .map(row => row.offeringId)
+      .filter(offeringId => {
+        const offering = allOfferingRows.find(row => row.offeringId === offeringId)
+        const term = offering ? termById.get(offering.termId) : null
+        return !!term && term.batchId === proofBatchId && term.semesterNumber === proofSemesterNumber
+      }))).sort((left, right) => left.localeCompare(right))
+    expect(courseLeaderCheckpointProfile.currentOwnedClasses.map((item: { offeringId: string }) => item.offeringId).sort()).toEqual(checkpointOwnedOfferingIds)
 
     const courseLeaderProfile = await loadProfileForRole('COURSE_LEADER')
     expect(courseLeaderProfile.currentOwnedClasses.every((item: { offeringId: string }) => ownedOfferingIds.has(item.offeringId))).toBe(true)
     expect(courseLeaderProfile.proofOperations.monitoringQueue.every((item: { offeringId: string }) => ownedOfferingIds.has(item.offeringId))).toBe(true)
-    if (courseLeaderProfile.proofOperations.monitoringQueue[0]) {
-      const studentId = courseLeaderProfile.proofOperations.monitoringQueue[0].studentId as string
+    if (courseLeaderCheckpointProfile.proofOperations.monitoringQueue[0]) {
+      const queueItem = courseLeaderCheckpointProfile.proofOperations.monitoringQueue[0] as {
+        studentId: string
+        offeringId: string
+      }
+      const studentId = queueItem.studentId
+      const bootstrapStudent = (courseLeaderCheckpointBootstrap.studentsByOffering[queueItem.offeringId] ?? []).find((student: { id: string }) => {
+        return String(student.id).split('::').at(-1) === studentId
+      })
+      expect(bootstrapStudent).toBeTruthy()
       const [riskExplorerResponse, studentShellResponse] = await Promise.all([
         current.app.inject({
           method: 'GET',
@@ -833,12 +874,38 @@ describe('academic bootstrap', () => {
       ])
       expect(riskExplorerResponse.statusCode).toBe(200)
       expect(studentShellResponse.statusCode).toBe(200)
+      const riskExplorer = riskExplorerResponse.json()
+      const studentShell = studentShellResponse.json()
+      expect(bootstrapStudent).toMatchObject({
+        riskBand: studentShell.overview.currentStatus.riskBand,
+        riskProb: (studentShell.overview.currentStatus.riskProbScaled ?? 0) / 100,
+        currentCgpa: studentShell.summaryRail.currentCgpa,
+      })
+      expect(bootstrapStudent.flags.backlog).toBe(studentShell.summaryRail.backlogCount > 0)
+      expect(bootstrapStudent.riskBand).toBe(riskExplorer.currentStatus.riskBand)
+      expect(Math.round((bootstrapStudent.riskProb ?? 0) * 100)).toBe(riskExplorer.currentStatus.riskProbScaled)
     }
 
     const mentorCheckpointProfile = await loadProfileForRole('MENTOR', selectedCheckpoint.simulationStageCheckpointId)
     expect(mentorCheckpointProfile.proofOperations.scopeMode).toBe('proof')
     expect(mentorCheckpointProfile.proofOperations.countSource).toBe('proof-checkpoint')
+    expect(mentorCheckpointProfile.proofOperations.activeOperationalSemester).toBe(selectedCheckpoint.semesterNumber)
+    expect(mentorCheckpointProfile.proofOperations.selectedCheckpoint).toMatchObject({
+      simulationStageCheckpointId: selectedCheckpoint.simulationStageCheckpointId,
+      semesterNumber: selectedCheckpoint.semesterNumber,
+    })
     expect(Array.isArray(mentorCheckpointProfile.proofOperations.monitoringQueue)).toBe(true)
+    const proofMentorStudentIds = Array.from(new Set(Array.from(mentorStudentIds)
+      .filter(studentId => {
+        const enrollment = allEnrollmentRows.find(row => row.studentId === studentId && row.academicStatus === 'active')
+        const term = enrollment ? termById.get(enrollment.termId) : null
+        return !!term && term.batchId === proofBatchId && term.semesterNumber === proofSemesterNumber
+      }))).sort((left, right) => left.localeCompare(right))
+    expect([...mentorCheckpointProfile.mentorScope.studentIds].sort()).toEqual(proofMentorStudentIds)
+    expect(mentorCheckpointProfile.mentorScope.activeStudentCount).toBe(proofMentorStudentIds.length)
+    expect(mentorCheckpointProfile.currentBatchContexts.every((item: { currentSemester: number }) => {
+      return item.currentSemester === mentorCheckpointProfile.proofOperations.activeOperationalSemester
+    })).toBe(true)
 
     const mentorProfile = await loadProfileForRole('MENTOR')
     expect(mentorProfile.mentorScope.activeStudentCount).toBe(mentorStudentIds.size)

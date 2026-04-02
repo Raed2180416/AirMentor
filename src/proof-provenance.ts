@@ -27,9 +27,17 @@ function formatCountSourceLabel(countSource: ApiCountSource) {
 }
 
 export function describeProofProvenance(provenance: ProofProvenanceLike) {
-  const semesterLabel = provenance.activeOperationalSemester != null
-    ? `operational semester ${provenance.activeOperationalSemester}`
-    : 'operational semester unavailable'
+  const semesterLabel = provenance.countSource === 'proof-checkpoint'
+    ? (
+        provenance.activeOperationalSemester != null
+          ? `checkpoint semester ${provenance.activeOperationalSemester}`
+          : 'checkpoint semester unavailable'
+      )
+    : (
+        provenance.activeOperationalSemester != null
+          ? `operational semester ${provenance.activeOperationalSemester}`
+          : 'operational semester unavailable'
+      )
   return `Scope ${provenance.scopeDescriptor.label} · resolved from ${provenance.resolvedFrom.label} · ${formatCountSourceLabel(provenance.countSource)} · ${semesterLabel} · ${formatScopeModeLabel(provenance.scopeMode)}.`
 }
 
