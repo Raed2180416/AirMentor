@@ -10,9 +10,11 @@ if ! command -v playwright >/dev/null 2>&1; then
   exec env AIRMENTOR_NIX_PLAYWRIGHT=1 nix develop -c bash "$0" "$@"
 fi
 
+source "$(cd "$(dirname "$0")" && pwd)/playwright-browser-common.sh"
+
 url="${1:-${PLAYWRIGHT_APP_URL:-http://127.0.0.1:4173}}"
 playwright_root=$(cd "$(dirname "$(command -v playwright)")/.." && pwd)
-playwright_browsers_path="${PLAYWRIGHT_BROWSERS_PATH:-$(ls -d /nix/store/*playwright-browsers 2>/dev/null | LC_ALL=C sort | head -n 1)}"
+playwright_browsers_path="$(resolve_playwright_browsers_path || true)"
 
 if [[ -z "$playwright_browsers_path" ]]; then
   echo "Unable to resolve a Playwright browsers bundle inside the current environment." >&2

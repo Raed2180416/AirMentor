@@ -11,6 +11,7 @@ if ! command -v playwright >/dev/null 2>&1; then
 fi
 
 source "$(cd "$(dirname "$0")" && pwd)/live-admin-common.sh"
+source "$(cd "$(dirname "$0")" && pwd)/playwright-browser-common.sh"
 
 pick_ui_port() {
   local preferred_port="$1"
@@ -50,7 +51,7 @@ live_stack_mode="${AIRMENTOR_LIVE_STACK:-0}"
 preview_log="$output_dir/system-admin-live-teaching-preview.log"
 preview_pid=""
 playwright_root=$(cd "$(dirname "$(command -v playwright)")/.." && pwd)
-playwright_browsers_path="${PLAYWRIGHT_BROWSERS_PATH:-$(ls -d /nix/store/*playwright-browsers 2>/dev/null | LC_ALL=C sort | head -n 1)}"
+playwright_browsers_path="$(resolve_playwright_browsers_path || true)"
 cors_allowed_origins="http://127.0.0.1:${ui_port},http://localhost:${ui_port}"
 
 if [[ -z "$playwright_browsers_path" ]]; then
