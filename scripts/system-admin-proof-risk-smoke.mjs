@@ -1008,6 +1008,7 @@ try {
       new RegExp(`Semester ${activatedProofSemesterContext.activeOperationalSemester}\\b`, 'i'),
       'activated operational semester',
     )
+    await ensureProofControlPlaneTab(proofControlPlane, 'Summary')
     const activeSemesterButton = proofControlPlane.locator(
       `[data-proof-action="proof-activate-semester-${activatedProofSemesterContext.activeOperationalSemester}"]`,
     ).first()
@@ -1017,6 +1018,7 @@ try {
       true,
       'the activated operational semester button should be disabled after activation',
     )
+    await ensureProofControlPlaneTab(proofControlPlane, 'Checkpoint')
   }
   markStep('select-target-checkpoint')
   await selectTargetCheckpoint(proofControlPlane)
