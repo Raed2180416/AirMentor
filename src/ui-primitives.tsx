@@ -395,7 +395,7 @@ export function FieldTextarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>
 function getFocusableElements(root: HTMLElement | null) {
   if (!root) return [] as HTMLElement[]
   return Array.from(root.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
-    .filter(node => !node.hasAttribute('disabled') && node.getAttribute('aria-hidden') !== 'true')
+    .filter(node => !node.hasAttribute('disabled') && node.getAttribute('aria-hidden') !== 'true' && node.dataset.focusGuard !== 'true')
 }
 
 export function ModalWorkspace({
@@ -424,7 +424,22 @@ export function ModalWorkspace({
   const shouldReduceMotion = useReducedMotion()
   const panelRef = useRef<HTMLDivElement | null>(null)
   const closeButtonRef = useRef<HTMLButtonElement | null>(null)
+  const onCloseRef = useRef(onClose)
   const [isCompact, setIsCompact] = useState(() => typeof window !== 'undefined' && window.innerWidth < 860)
+  const focusBoundary = useCallback((boundary: 'first' | 'last') => {
+    const focusables = getFocusableElements(panelRef.current)
+    if (focusables.length === 0) {
+      panelRef.current?.focus()
+      return
+    }
+    const first = closeButtonRef.current && focusables.includes(closeButtonRef.current) ? closeButtonRef.current : focusables[0]
+    const last = focusables[focusables.length - 1]
+    ;(boundary === 'first' ? first : last)?.focus()
+  }, [])
+
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
@@ -440,13 +455,12 @@ export function ModalWorkspace({
     const previousActive = document.activeElement instanceof HTMLElement ? document.activeElement : null
     document.body.style.overflow = 'hidden'
     const focusTimer = window.setTimeout(() => {
-      const focusables = getFocusableElements(panelRef.current)
-      ;(closeButtonRef.current ?? focusables[0] ?? panelRef.current)?.focus()
+      focusBoundary('first')
     }, 0)
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
-        onClose()
+        onCloseRef.current()
         return
       }
       if (event.key !== 'Tab') return
@@ -457,12 +471,18 @@ export function ModalWorkspace({
       }
       const first = focusables[0]
       const last = focusables[focusables.length - 1]
-      if (event.shiftKey && document.activeElement === first) {
+      const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      if (!activeElement || !panelRef.current?.contains(activeElement)) {
         event.preventDefault()
-        last.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
+        focusBoundary(event.shiftKey ? 'last' : 'first')
+        return
+      }
+      if (event.shiftKey && (activeElement === first || activeElement === panelRef.current)) {
         event.preventDefault()
-        first.focus()
+        focusBoundary('last')
+      } else if (!event.shiftKey && activeElement === last) {
+        event.preventDefault()
+        focusBoundary('first')
       }
     }
     document.addEventListener('keydown', onKeyDown)
@@ -472,7 +492,7 @@ export function ModalWorkspace({
       document.body.style.overflow = previousOverflow
       previousActive?.focus?.()
     }
-  }, [onClose])
+  }, [focusBoundary])
 
   const isFullSize = size === 'full'
   const sizeWidth = size === 'sm' ? 560 : size === 'lg' ? 880 : size === 'xl' ? 1040 : isFullSize ? 1480 : 720
@@ -519,6 +539,12 @@ export function ModalWorkspace({
           overflow: 'hidden',
         }}
       >
+        <span
+          data-focus-guard="true"
+          tabIndex={0}
+          onFocus={() => focusBoundary('last')}
+          style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0 }}
+        />
         <div style={{ padding: isCompact ? '18px 18px 16px' : '20px 22px 18px', borderBottom: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start' }}>
           <div style={{ display: 'grid', gap: 4 }}>
             {eyebrow ? <div style={{ ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.12em' }}>{eyebrow}</div> : null}
@@ -545,6 +571,12 @@ export function ModalWorkspace({
             {footer}
           </div>
         ) : null}
+        <span
+          data-focus-guard="true"
+          tabIndex={0}
+          onFocus={() => focusBoundary('first')}
+          style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0 }}
+        />
       </motion.div>
     </motion.div>
   )

@@ -22,6 +22,23 @@ function ModalHarness() {
     : null
 }
 
+function RerenderModalHarness() {
+  const [version, setVersion] = useState(1)
+  return createElement(
+    ModalWorkspace,
+    {
+      title: 'Edit Student',
+      caption: `Version ${version}`,
+      onClose: () => undefined,
+      children: [
+        createElement('button', { key: 'rerender', type: 'button', onClick: () => setVersion(current => current + 1) }, 'Rerender'),
+        createElement('input', { key: 'name', 'aria-label': 'Name' }),
+        createElement('button', { key: 'save', type: 'button' }, 'Save'),
+      ],
+    },
+  )
+}
+
 describe('ModalWorkspace', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -72,6 +89,49 @@ describe('ModalWorkspace', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(document.activeElement).toBe(opener)
+
+    unmount()
+    opener.remove()
+  })
+
+  it('wraps reverse tabbing back to the last actionable control even if the dialog itself has focus', () => {
+    render(createElement(ModalHarness))
+    vi.runAllTimers()
+
+    const dialog = screen.getByRole('dialog', { name: 'Edit Student' })
+    const saveButton = screen.getByRole('button', { name: 'Save' })
+
+    dialog.focus()
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(saveButton)
+  })
+
+  it('preserves the focus trap across rerenders while the dialog remains open', () => {
+    const opener = document.createElement('button')
+    opener.textContent = 'Open editor'
+    document.body.appendChild(opener)
+    opener.focus()
+
+    const { unmount } = render(createElement(RerenderModalHarness))
+    vi.runAllTimers()
+
+    const closeButton = screen.getAllByRole('button', { name: 'Close dialog' }).at(-1)
+    const rerenderButton = screen.getAllByRole('button', { name: 'Rerender' }).at(-1)
+    const saveButton = screen.getAllByRole('button', { name: 'Save' }).at(-1)
+
+    expect(closeButton).toBeTruthy()
+    expect(rerenderButton).toBeTruthy()
+    expect(saveButton).toBeTruthy()
+
+    expect(document.activeElement).toBe(closeButton!)
+
+    fireEvent.click(rerenderButton!)
+    vi.runAllTimers()
+
+    expect(document.activeElement).not.toBe(opener)
+    closeButton!.focus()
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(saveButton!)
 
     unmount()
     opener.remove()
