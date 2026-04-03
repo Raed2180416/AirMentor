@@ -377,15 +377,34 @@ export function SystemAdminProofDashboardWorkspace({
     }, 0)
     return () => window.clearTimeout(syncCheckpointEvidenceViewTimer)
   }, [activeCheckpointEvidenceView, hasOfferingRollups, hasQueuePreview, selectedProofCheckpoint?.simulationStageCheckpointId])
-  const actionPressureDetail = [
-    `${activeQueueDiagnostics?.queuedRunCount ?? 0} queued · ${activeQueueDiagnostics?.runningRunCount ?? 0} running · ${activeQueueDiagnostics?.failedRunCount ?? 0} failed`,
+  const actionPressureDetailRows = [
+    {
+      label: 'Queue Health',
+      value: `${activeQueueDiagnostics?.queuedRunCount ?? 0} queued · ${activeQueueDiagnostics?.runningRunCount ?? 0} running · ${activeQueueDiagnostics?.failedRunCount ?? 0} failed`,
+    },
     activeCheckpointReadiness
-      ? `${activeCheckpointReadiness.readyCheckpointCount ?? 0}/${activeCheckpointReadiness.totalCheckpointCount ?? 0} checkpoints ready`
+      ? {
+          label: 'Checkpoint Readiness',
+          value: `${activeCheckpointReadiness.readyCheckpointCount ?? 0}/${activeCheckpointReadiness.totalCheckpointCount ?? 0} checkpoints ready`,
+        }
       : null,
     activeWorkerDiagnostics?.leaseState
-      ? `Worker ${formatLeaseState(activeWorkerDiagnostics.leaseState)} · ${activeWorkerDiagnostics.progressPhase ?? 'idle'}`
+      ? {
+          label: 'Worker Lease',
+          value: `${formatLeaseState(activeWorkerDiagnostics.leaseState)} · ${activeWorkerDiagnostics.progressPhase ?? 'idle'}`,
+        }
       : null,
-  ].filter((value): value is string => Boolean(value)).join(' · ')
+  ].filter((value): value is { label: string; value: string } => Boolean(value))
+  const actionPressureDetail = actionPressureDetailRows.length > 0 ? (
+    <div style={{ display: 'grid', gap: 4 }}>
+      {actionPressureDetailRows.map(item => (
+        <div key={item.label}>
+          <span style={{ color: T.dim }}>{item.label}</span>
+          {`: ${item.value}`}
+        </div>
+      ))}
+    </div>
+  ) : null
 
   return (
     <ProofSurfaceHero

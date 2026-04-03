@@ -293,6 +293,9 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     expect(markup).toContain('Current Proof State')
     expect(markup).toContain('Selected Checkpoint')
     expect(markup).toContain('Action Pressure')
+    expect(markup).toContain('Queue Health')
+    expect(markup).toContain('Checkpoint Readiness')
+    expect(markup).toContain('Worker Lease')
     expect(markup).toContain('data-proof-shell="shared"')
     expect(markup).toContain('data-proof-launcher="floating"')
     expect(markup).toContain('data-proof-action="proof-shell-launcher"')
@@ -624,6 +627,9 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     expect(screen.getByRole('tab', { name: 'Checkpoint' })).toBeTruthy()
     expect(screen.getByRole('tab', { name: 'Operations' })).toBeTruthy()
     expect(screen.getByText('Action Pressure')).toBeTruthy()
+    expect(screen.getByText('Queue Health')).toBeTruthy()
+    expect(screen.getByText('Checkpoint Readiness')).toBeTruthy()
+    expect(screen.getByText('Worker Lease')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('tab', { name: 'Operations' }))
 
