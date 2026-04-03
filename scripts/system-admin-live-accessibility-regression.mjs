@@ -657,6 +657,8 @@ try {
     { role: 'tab', name: 'Overview' },
   ])
   await runScopedAxeScan(proofControlPlane, 'System admin proof dashboard')
+  await page.getByRole('tab', { name: 'Summary', exact: true }).click()
+  await expectVisible(page.getByText('Action Pressure', { exact: true }).first(), 'proof dashboard summary tab heading')
   await runAccessibilityTreeAssertion(proofControlPlane, 'System admin proof dashboard tree', [
     { name: 'Queue Health' },
     { name: 'Worker Lease' },
