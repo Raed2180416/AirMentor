@@ -36,6 +36,7 @@ import {
   Btn,
   Card,
   Chip,
+  getFieldChromeStyle,
   withAlpha,
 } from './ui-primitives'
 import { SystemAdminHierarchyWorkspaceShell } from './system-admin-hierarchy-workspace-shell'
@@ -92,9 +93,9 @@ type AdminMiniStatProps = {
 
 function AdminMiniStat({ label, value, tone = T.accent }: AdminMiniStatProps) {
   return (
-    <div style={{ borderRadius: 16, border: `1px solid ${withAlpha(tone, '28')}`, background: `linear-gradient(180deg, ${withAlpha(tone, '12')}, ${T.surface})`, padding: '12px 14px', minWidth: 0, boxShadow: `0 10px 24px ${withAlpha(tone, '12')}` }}>
+    <div style={{ borderRadius: 16, border: `1px solid ${withAlpha(tone, '28')}`, background: `linear-gradient(180deg, ${withAlpha(tone, '12')}, ${T.surface})`, padding: '12px 14px', minWidth: 0, maxWidth: 240, boxShadow: `0 10px 24px ${withAlpha(tone, '12')}` }}>
       <div style={{ ...mono, fontSize: 9, color: tone, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
-      <div style={{ ...sora, fontSize: 20, fontWeight: 800, color: T.text, marginTop: 6, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{value}</div>
+      <div style={{ ...sora, fontSize: 'clamp(16px, 1.8vw, 20px)', fontWeight: 800, color: T.text, marginTop: 6, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{value}</div>
     </div>
   )
 }
@@ -628,7 +629,7 @@ export function SystemAdminFacultiesWorkspace({
             updateSelectedSectionCode(null, { recordHistory: false })
             navigate({ section: 'faculties', academicFacultyId: event.target.value || undefined })
           }}
-          style={{ width: '100%' }}
+          style={{ ...getFieldChromeStyle({ dense: true }), cursor: 'pointer', WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none', backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: 28 }}
         >
           <option value="">All Academic Faculties</option>
           {selectedAcademicFaculty && selectedAcademicFaculty.status !== 'deleted' && selectedAcademicFaculty.status !== 'hidden' && selectedAcademicFaculty.status !== 'archived' ? null : null}
@@ -651,7 +652,7 @@ export function SystemAdminFacultiesWorkspace({
               departmentId: event.target.value || undefined,
             })
           }}
-          style={{ width: '100%' }}
+          style={{ ...getFieldChromeStyle({ dense: true }), cursor: !selectedAcademicFaculty ? 'not-allowed' : 'pointer', opacity: !selectedAcademicFaculty ? 0.55 : 1, WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none', backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: 28 }}
         >
           <option value="">{selectedAcademicFaculty ? 'Select Department' : 'Pick Faculty First'}</option>
           {facultyDepartments.map(department => <option key={department.departmentId} value={department.departmentId}>{department.name}</option>)}
@@ -671,7 +672,7 @@ export function SystemAdminFacultiesWorkspace({
               branchId: event.target.value || undefined,
             })
           }}
-          style={{ width: '100%' }}
+          style={{ ...getFieldChromeStyle({ dense: true }), cursor: !selectedDepartment ? 'not-allowed' : 'pointer', opacity: !selectedDepartment ? 0.55 : 1, WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none', backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: 28 }}
         >
           <option value="">{selectedDepartment ? 'Select Branch' : 'Pick Department First'}</option>
           {departmentBranches.map(branch => <option key={branch.branchId} value={branch.branchId}>{branch.name}</option>)}
@@ -692,7 +693,7 @@ export function SystemAdminFacultiesWorkspace({
               batchId: event.target.value || undefined,
             })
           }}
-          style={{ width: '100%' }}
+          style={{ ...getFieldChromeStyle({ dense: true }), cursor: !selectedBranch ? 'not-allowed' : 'pointer', opacity: !selectedBranch ? 0.55 : 1, WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none', backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: 28 }}
         >
           <option value="">{selectedBranch ? 'Select Year' : 'Pick Branch First'}</option>
           {branchBatches.map(batch => <option key={batch.batchId} value={batch.batchId}>{deriveCurrentYearLabel(batch.currentSemester)} · {batch.batchLabel}</option>)}
@@ -704,7 +705,7 @@ export function SystemAdminFacultiesWorkspace({
           value={selectedSectionCode ?? ''}
           disabled={!selectedBatch}
           onChange={event => updateSelectedSectionCode(event.target.value || null)}
-          style={{ width: '100%' }}
+          style={{ ...getFieldChromeStyle({ dense: true }), cursor: !selectedBatch ? 'not-allowed' : 'pointer', opacity: !selectedBatch ? 0.55 : 1, WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none', backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: 28 }}
         >
           <option value="">{selectedBatch ? 'All Sections' : 'Pick Year First'}</option>
           {selectedBatch ? data.students.filter(item => item.activeAcademicContext?.batchId === selectedBatch.batchId).map(item => item.activeAcademicContext?.sectionCode).filter((item): item is string => Boolean(item)).filter((item, index, list) => list.indexOf(item) === index).map(sectionCode => <option key={sectionCode} value={sectionCode}>{sectionCode}</option>) : null}
@@ -1193,7 +1194,7 @@ export function SystemAdminFacultiesWorkspace({
     : provisioningMentorEligibleFaculty
   const provisionPanel = selectedBatch && universityTab === 'provision' ? (
     <Card style={{ padding: 18, display: 'grid', gap: 16 }}>
-      <SectionHeading title="Provisioning" eyebrow="Operations" caption={`Launch deterministic student, mentor, ownership, and scaffolding generation for Batch ${selectedBatch.batchLabel}${selectedSectionCode ? ` · Section ${selectedSectionCode}` : ''}.`} />
+      <SectionHeading title="Batch Setup" eyebrow="Operations" caption={`Launch deterministic student, mentor, ownership, and scaffolding generation for Batch ${selectedBatch.batchLabel}${selectedSectionCode ? ` · Section ${selectedSectionCode}` : ''}.`} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(132px, 1fr))', gap: 10 }}>
         <AdminMiniStat label="Faculty In Scope" value={String(batchFacultyPool.length)} tone={T.accent} />
         <AdminMiniStat label="Mentor-Ready Faculty" value={String(provisioningMentorEligibleFaculty.length)} tone={provisioningMentorEligibleFaculty.length ? T.success : T.warning} />
@@ -1204,8 +1205,8 @@ export function SystemAdminFacultiesWorkspace({
       </div>
       <form style={{ display: 'grid', gap: 12 }} onSubmit={event => { event.preventDefault(); void handleProvisionBatch() }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-          <LabeledField label="Provisioning term">
-            <select value={batchProvisioningForm.termId} onChange={event => setBatchProvisioningForm(prev => ({ ...prev, termId: event.target.value }))} style={{ width: '100%' }}>
+          <LabeledField label="Setup term">
+            <select value={batchProvisioningForm.termId} onChange={event => setBatchProvisioningForm(prev => ({ ...prev, termId: event.target.value }))} style={{ ...getFieldChromeStyle({ dense: true }), cursor: 'pointer', WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none', backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: 28 }}>
               <option value="">{currentSemesterTerm ? 'Use current semester term' : 'Select term'}</option>
               {batchTerms.map(term => (
                 <option key={term.termId} value={term.termId}>{`${term.academicYearLabel} · Semester ${term.semesterNumber}`}</option>
@@ -1213,7 +1214,7 @@ export function SystemAdminFacultiesWorkspace({
             </select>
           </LabeledField>
           <LabeledField label="Mode">
-            <select value={batchProvisioningForm.mode} onChange={event => setBatchProvisioningForm(prev => ({ ...prev, mode: event.target.value as BatchProvisioningFormState['mode'] }))} style={{ width: '100%' }}>
+            <select value={batchProvisioningForm.mode} onChange={event => setBatchProvisioningForm(prev => ({ ...prev, mode: event.target.value as BatchProvisioningFormState['mode'] }))} style={{ ...getFieldChromeStyle({ dense: true }), cursor: 'pointer', WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none', backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: 28 }}>
               <option value="mock">Mock</option>
               <option value="live-empty">Live Empty</option>
               <option value="manual">Manual</option>
@@ -1230,7 +1231,7 @@ export function SystemAdminFacultiesWorkspace({
               const nextFacultyPoolIds = Array.from(event.currentTarget.selectedOptions, option => option.value)
               setBatchProvisioningForm(prev => ({ ...prev, facultyPoolIds: nextFacultyPoolIds }))
             }}
-            style={{ width: '100%', minHeight: 132 }}
+            style={{ ...getFieldChromeStyle({ dense: true }), minHeight: 132 }}
           >
             {batchFacultyPool.map(member => (
               <option key={member.facultyId} value={member.facultyId}>
@@ -1249,7 +1250,7 @@ export function SystemAdminFacultiesWorkspace({
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <Chip color={selectedProvisionFacultyPool.length === batchFacultyPool.length ? T.dim : T.accent}>
             {selectedProvisionFacultyPool.length === batchFacultyPool.length
-              ? 'Using every scoped faculty member'
+              ? 'All eligible department faculty'
               : `${selectedProvisionFacultyPool.length} faculty selected`}
           </Chip>
           <Chip color={selectedProvisionMentorFaculty.length > 0 ? T.success : T.warning}>
@@ -1257,8 +1258,8 @@ export function SystemAdminFacultiesWorkspace({
               ? `${selectedProvisionMentorFaculty.length} mentor-ready faculty in the current pool`
               : 'No mentor-ready faculty in the current pool'}
           </Chip>
-          <Btn type="submit">Run Provisioning</Btn>
-          {currentSemesterTerm ? <Chip color={T.success}>{`Current semester term ${currentSemesterTerm.academicYearLabel}`}</Chip> : <Chip color={T.warning}>Add a term before running provisioning</Chip>}
+          <Btn type="submit">Run Batch Setup</Btn>
+          {currentSemesterTerm ? <Chip color={T.success}>{`Current semester term ${currentSemesterTerm.academicYearLabel}`}</Chip> : <Chip color={T.warning}>Add a term before running batch setup</Chip>}
         </div>
       </form>
       <Card style={{ padding: 14, background: T.surface, display: 'grid', gap: 12 }}>
@@ -1268,8 +1269,8 @@ export function SystemAdminFacultiesWorkspace({
             <select value={bulkMentorAssignmentForm.facultyId} onChange={event => {
               clearBulkMentorAssignmentPreview()
               setBulkMentorAssignmentForm(prev => ({ ...prev, facultyId: event.target.value }))
-            }} style={{ width: '100%' }}>
-              <option value="">{batchMentorEligibleFaculty.length > 0 ? 'Select mentor-ready faculty' : 'No mentor-ready faculty available'}</option>
+            }} style={{ ...getFieldChromeStyle({ dense: true }), cursor: 'pointer', WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none', backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: 28 }}>
+              <option value="">{batchMentorEligibleFaculty.length > 0 ? 'Select mentor-eligible faculty' : 'No mentor-eligible faculty available'}</option>
               {batchMentorEligibleFaculty.map(member => (
                 <option key={member.facultyId} value={member.facultyId}>{`${member.displayName} · ${describeScopedFacultyRoles(member)}`}</option>
               ))}
@@ -1279,8 +1280,8 @@ export function SystemAdminFacultiesWorkspace({
             <select value={bulkMentorAssignmentForm.selectionMode} onChange={event => {
               clearBulkMentorAssignmentPreview()
               setBulkMentorAssignmentForm(prev => ({ ...prev, selectionMode: event.target.value as BulkMentorAssignmentFormState['selectionMode'] }))
-            }} style={{ width: '100%' }}>
-              <option value="missing-only">Apply mentor gaps only</option>
+            }} style={{ ...getFieldChromeStyle({ dense: true }), cursor: 'pointer', WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none', backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: 28 }}>
+              <option value="missing-only">Fill mentor gaps only</option>
               <option value="replace-all">Replace all active mentor links in scope</option>
             </select>
           </LabeledField>
@@ -1295,7 +1296,7 @@ export function SystemAdminFacultiesWorkspace({
         </div>
         <InfoBanner message={describeBulkMentorPreview(bulkMentorAssignmentPreview)} tone={bulkMentorAssignmentPreview && bulkMentorAssignmentPreview.summary.targetedStudentCount > 0 ? 'success' : 'neutral'} />
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <Btn type="button" onClick={() => void handlePreviewBulkMentorAssignment()} disabled={batchMentorEligibleFaculty.length === 0 || !bulkMentorAssignmentForm.facultyId}>Preview Bulk Apply</Btn>
+          <Btn type="button" onClick={() => void handlePreviewBulkMentorAssignment()} disabled={batchMentorEligibleFaculty.length === 0 || !bulkMentorAssignmentForm.facultyId}>Preview Mentor Assignments</Btn>
           <Btn type="button" variant="ghost" onClick={clearBulkMentorAssignmentPreview}>Clear Preview</Btn>
           <Btn
             type="button"
@@ -1385,7 +1386,7 @@ export function SystemAdminFacultiesWorkspace({
             <div>
               <div style={{ ...mono, fontSize: 9, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Pilot Scope Provenance</div>
               <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text, marginTop: 6 }}>
-                {selectedBatchIsCanonicalProof ? 'Canonical proof pilot active' : 'Outside canonical proof pilot'}
+                {selectedBatchIsCanonicalProof ? 'Active simulation batch' : 'Not the active simulation batch'}
               </div>
             </div>
             {!selectedBatchIsCanonicalProof ? (
@@ -1410,7 +1411,7 @@ export function SystemAdminFacultiesWorkspace({
             tone={selectedBatchIsCanonicalProof ? 'neutral' : 'error'}
             message={selectedBatchIsCanonicalProof
               ? `Proof-mode sysadmin is pinned to the canonical pilot cohort ${selectedBatch.batchLabel}. Semester, curriculum, and proof surfaces resolve from ${authoritativeSemesterSourceLabel.toLowerCase()} first so the semester walkthrough does not silently fall back to another batch.`
-              : `This year is outside the canonical proof pilot. Use Batch ${canonicalProofBatch.batchLabel} before collecting proof evidence, because professor-facing proof walkthroughs default to the canonical pilot cohort.`}
+              : `This batch is not the active simulation target. Switch to Batch ${canonicalProofBatch.batchLabel} to run simulations and collect proof evidence.`}
           />
         </Card>
       ) : null}

@@ -760,11 +760,11 @@ describe('system-admin faculties workspace parity', () => {
     expect(markup).toContain('Students Without Mentor')
     expect(markup).toContain('Live Empty')
     expect(markup).toContain('Bulk Mentor Assignment')
-    expect(markup).toContain('Preview Bulk Apply')
+    expect(markup).toContain('Preview Mentor Assignments')
     expect(markup).toContain('Apply Previewed Mentor Changes')
     expect(markup).toContain('Batch 2022 · Section A')
     expect(markup).toContain('Prof. Kavitha Rao')
-    expect(markup).toContain('Run Provisioning')
+    expect(markup).toContain('Run Batch Setup')
     expect(markup).toContain('Current semester term 2024-25')
   })
 
@@ -788,7 +788,7 @@ describe('system-admin faculties workspace parity', () => {
     })
 
     expect(markup).toContain('Pilot Scope Provenance')
-    expect(markup).toContain('Canonical proof pilot active')
+    expect(markup).toContain('Active simulation batch')
     expect(markup).toContain('Proof operational semester · Sem 4')
     expect(markup).toContain('Canonical batch 2023 Proof')
   })

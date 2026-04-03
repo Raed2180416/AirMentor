@@ -241,7 +241,7 @@ export const T = {
 }
 
 export const yearColor = (y: string): string =>
-  ({ '1st Year': '#f59e0b', '2nd Year': '#6366f1', '3rd Year': '#10b981', '4th Year': '#ec4899' } as Record<string, string>)[y] || T.muted
+  ({ '1st Year': '#f59e0b', '2nd Year': '#6366f1', '3rd Year': '#10b981', '4th Year': '#ec4899', 'Batch 2024': '#2D8AF0' } as Record<string, string>)[y] || T.muted
 
 export const stageColor = (s: Stage): string => (
   s === 1 ? '#f97316'
@@ -275,24 +275,18 @@ export const PROFESSOR: Professor = {
   initials: 'KR', email: 'kavitha.rao@msruas.ac.in',
 }
 
-// ───── Year Stages (per-year, not per-course) ─────
+// ───── Year Stages (per-batch, 6-month simulation) ─────
 export const YEAR_STAGES: Record<string, StageInfo> = {
-  '1st Year': { stage: 1, label: 'Stage 1', desc: 'Term Start → TT1', color: '#f97316' },
-  '2nd Year': { stage: 2, label: 'Stage 2', desc: 'TT1 → TT2', color: '#3b82f6' },
-  '3rd Year': { stage: 3, label: 'Stage 3', desc: 'TT2 → Finals', color: '#a855f7' },
-  '4th Year': { stage: 2, label: 'Stage 2', desc: 'TT1 → TT2', color: '#3b82f6' },
+  'Batch 2024': { stage: 2, label: 'Stage 2', desc: 'TT1 → TT2', color: '#3b82f6' },
 }
 
 // ───── Courses ─────
 export const COURSES: Course[] = [
-  { id: 'c1', code: 'MA101', title: 'Engineering Mathematics I', year: '1st Year', dept: 'CSE', sem: 1, sections: ['A', 'B', 'C'], enrolled: [62, 58, 60], att: [82, 79, 85], tt1Done: false, tt2Done: false, tt1Locked: false, tt2Locked: false },
-  { id: 'c2', code: 'CS101', title: 'Problem Solving with C', year: '1st Year', dept: 'CSE', sem: 1, sections: ['A'], enrolled: [62], att: [88], tt1Done: false, tt2Done: false, tt1Locked: false, tt2Locked: false },
-  { id: 'c3', code: 'CS401', title: 'Design & Analysis of Algorithms', year: '2nd Year', dept: 'CSE', sem: 4, sections: ['A', 'B'], enrolled: [58, 56], att: [76, 80], tt1Done: true, tt2Done: false, tt1Locked: true, tt2Locked: false },
-  { id: 'c4', code: 'CS403', title: 'Operating Systems', year: '2nd Year', dept: 'CSE', sem: 4, sections: ['C'], enrolled: [54], att: [71], tt1Done: true, tt2Done: false, tt1Locked: true, tt2Locked: false },
-  { id: 'c5', code: 'MA301', title: 'Engineering Mathematics III', year: '2nd Year', dept: 'ECE', sem: 3, sections: ['A'], enrolled: [60], att: [74], tt1Done: true, tt2Done: false, tt1Locked: true, tt2Locked: false },
-  { id: 'c6', code: 'CS601', title: 'Compiler Design', year: '3rd Year', dept: 'CSE', sem: 6, sections: ['A'], enrolled: [52], att: [78], tt1Done: true, tt2Done: true, tt1Locked: true, tt2Locked: true },
-  { id: 'c7', code: 'CS603', title: 'Information Security', year: '3rd Year', dept: 'CSE', sem: 6, sections: ['B'], enrolled: [50], att: [81], tt1Done: true, tt2Done: true, tt1Locked: true, tt2Locked: true },
-  { id: 'c8', code: 'CS702', title: 'Deep Learning & Neural Networks', year: '4th Year', dept: 'CSE', sem: 7, sections: ['A'], enrolled: [45], att: [85], tt1Done: true, tt2Done: false, tt1Locked: true, tt2Locked: false },
+  { id: 'c1', code: 'CS401', title: 'Design & Analysis of Algorithms', year: 'Batch 2024', dept: 'CSE', sem: 4, sections: ['A', 'B'], enrolled: [60, 60], att: [76, 80], tt1Done: true, tt2Done: false, tt1Locked: true, tt2Locked: false },
+  { id: 'c2', code: 'CS403', title: 'Operating Systems', year: 'Batch 2024', dept: 'CSE', sem: 4, sections: ['A', 'B'], enrolled: [60, 60], att: [78, 81], tt1Done: true, tt2Done: false, tt1Locked: true, tt2Locked: false },
+  { id: 'c3', code: 'MA301', title: 'Engineering Mathematics III', year: 'Batch 2024', dept: 'MCE', sem: 4, sections: ['A', 'B'], enrolled: [60, 60], att: [74, 85], tt1Done: true, tt2Done: false, tt1Locked: true, tt2Locked: false },
+  { id: 'c4', code: 'CS405', title: 'Software Engineering', year: 'Batch 2024', dept: 'CSE', sem: 4, sections: ['A', 'B'], enrolled: [60, 60], att: [82, 88], tt1Done: true, tt2Done: false, tt1Locked: true, tt2Locked: false },
+  { id: 'c5', code: 'CS407L', title: 'OS Lab', year: 'Batch 2024', dept: 'CSE', sem: 4, sections: ['A', 'B'], enrolled: [60, 60], att: [85, 90], tt1Done: true, tt2Done: false, tt1Locked: true, tt2Locked: false },
 ]
 
 // ───── Offerings (flattened) ─────
@@ -309,7 +303,7 @@ export const OFFERINGS: Offering[] = COURSES.flatMap(c =>
   c.sections.map((sec, i) => ({
     id: c.id, offId: `${c.id}-${sec}`, code: c.code, title: c.title,
     year: c.year, dept: c.dept, sem: c.sem,
-    section: sec, count: c.enrolled[i], attendance: c.att[i],
+    section: sec, count: c.enrolled[i] ?? 60, attendance: c.att[i] ?? 80,
     stage: YEAR_STAGES[c.year].stage, stageInfo: YEAR_STAGES[c.year],
     tt1Done: c.tt1Done, tt2Done: c.tt2Done,
     tt1Locked: c.tt1Locked ?? false, tt2Locked: c.tt2Locked ?? false,
@@ -319,7 +313,7 @@ export const OFFERINGS: Offering[] = COURSES.flatMap(c =>
   }))
 )
 
-export const YEAR_GROUPS: YearGroup[] = ['1st Year', '2nd Year', '3rd Year', '4th Year']
+export const YEAR_GROUPS: YearGroup[] = ['Batch 2024']
   .map(yr => ({
     year: yr, color: yearColor(yr), stageInfo: YEAR_STAGES[yr],
     offerings: OFFERINGS.filter(o => o.year === yr),
@@ -586,87 +580,81 @@ export function generateTasks(): Task[] {
 
 // ───── Mentee data for Mentor view ─────
 export const MENTEES: Mentee[] = [
-  { id: 'm1', usn: '1MS23CS001', name: 'Aarav Sharma', phone: '+91 9700000000', year: '2nd Year', section: 'A', dept: 'CSE',
+  { id: 'm1', usn: '1MS23CS001', name: 'Aarav Sharma', phone: '+91 9700000000', year: 'Batch 2024', section: 'A', dept: 'CSE',
     courseRisks: [
       { code: 'CS401', title: 'Design & Analysis of Algorithms', risk: 0.82, band: 'High', stage: 2 },
-      { code: 'CS201', title: 'Data Structures', risk: 0.45, band: 'Medium', stage: 2 },
-      { code: 'MA201', title: 'Discrete Mathematics', risk: 0.61, band: 'Medium', stage: 2 },
+      { code: 'MA301', title: 'Engineering Mathematics III', risk: 0.61, band: 'Medium', stage: 2 },
     ], avs: 0.63, prevCgpa: 6.1,
     interventions: [{ date: 'Feb 22', type: 'Call', note: 'Called — no response' }, { date: 'Mar 01', type: 'Email', note: 'Sent academic warning email' }],
   },
-  { id: 'm2', usn: '1MS23CS014', name: 'Meera Sundaram', phone: '+91 9700001918', year: '2nd Year', section: 'A', dept: 'CSE',
+  { id: 'm2', usn: '1MS23CS014', name: 'Meera Sundaram', phone: '+91 9700001918', year: 'Batch 2024', section: 'A', dept: 'CSE',
     courseRisks: [
       { code: 'CS401', title: 'Design & Analysis of Algorithms', risk: 0.54, band: 'Medium', stage: 2 },
-      { code: 'CS201', title: 'Data Structures', risk: 0.22, band: 'Low', stage: 2 },
+      { code: 'CS403', title: 'Operating Systems', risk: 0.22, band: 'Low', stage: 2 },
     ], avs: 0.38, prevCgpa: 7.2,
     interventions: [{ date: 'Mar 05', type: 'Meeting', note: 'Discussed weak COs; assigned practice problems' }],
   },
-  { id: 'm3', usn: '1MS24CS103', name: 'Rohan Mehta', phone: '+91 9700005480', year: '1st Year', section: 'B', dept: 'CSE',
+  { id: 'm3', usn: '1MS23CS103', name: 'Rohan Mehta', phone: '+91 9700005480', year: 'Batch 2024', section: 'B', dept: 'CSE',
     courseRisks: [
-      { code: 'MA101', title: 'Engineering Mathematics I', risk: -1, band: 'Low', stage: 1 },
-      { code: 'CS101', title: 'Problem Solving with C', risk: -1, band: 'Low', stage: 1 },
-    ], avs: -1, prevCgpa: 0,
+      { code: 'CS405', title: 'Software Engineering', risk: 0.18, band: 'Low', stage: 2 },
+    ], avs: 0.18, prevCgpa: 8.5,
     interventions: [],
   },
-  { id: 'm4', usn: '1MS22CS041', name: 'Sneha Pillai', phone: '+91 9700006302', year: '3rd Year', section: 'A', dept: 'CSE',
+  { id: 'm4', usn: '1MS23CS041', name: 'Sneha Pillai', phone: '+91 9700006302', year: 'Batch 2024', section: 'A', dept: 'CSE',
     courseRisks: [
-      { code: 'CS601', title: 'Compiler Design', risk: 0.45, band: 'Medium', stage: 3 },
-      { code: 'CS605', title: 'Computer Graphics', risk: 0.18, band: 'Low', stage: 3 },
+      { code: 'CS401', title: 'Design & Analysis of Algorithms', risk: 0.45, band: 'Medium', stage: 2 },
     ], avs: 0.32, prevCgpa: 7.8,
     interventions: [{ date: 'Mar 08', type: 'Meeting', note: 'TT2 scores improved. Monitoring.' }],
   },
-  { id: 'm5', usn: '1MS21CS008', name: 'Deepika Rao', phone: '+91 9700001370', year: '4th Year', section: 'A', dept: 'CSE',
+  { id: 'm5', usn: '1MS23CS008', name: 'Deepika Rao', phone: '+91 9700001370', year: 'Batch 2024', section: 'A', dept: 'CSE',
     courseRisks: [
-      { code: 'CS702', title: 'Deep Learning & Neural Networks', risk: 0.38, band: 'Medium', stage: 2 },
-      { code: 'CS704', title: 'Cloud Computing', risk: 0.12, band: 'Low', stage: 2 },
+      { code: 'MA301', title: 'Engineering Mathematics III', risk: 0.38, band: 'Medium', stage: 2 },
     ], avs: 0.25, prevCgpa: 7.8,
     interventions: [],
   },
-  { id: 'm6', usn: '1MS23CS019', name: 'Ishita Mishra', phone: '+91 9700002603', year: '2nd Year', section: 'A', dept: 'CSE',
+  { id: 'm6', usn: '1MS23CS019', name: 'Ishita Mishra', phone: '+91 9700002603', year: 'Batch 2024', section: 'A', dept: 'CSE',
     courseRisks: [
       { code: 'CS401', title: 'Design & Analysis of Algorithms', risk: 0.71, band: 'High', stage: 2 },
-      { code: 'CS201', title: 'Data Structures', risk: 0.55, band: 'Medium', stage: 2 },
-      { code: 'MA201', title: 'Discrete Mathematics', risk: 0.48, band: 'Medium', stage: 2 },
+      { code: 'CS403', title: 'Operating Systems', risk: 0.55, band: 'Medium', stage: 2 },
+      { code: 'CS405', title: 'Software Engineering', risk: 0.48, band: 'Medium', stage: 2 },
     ], avs: 0.58, prevCgpa: 6.8,
     interventions: [{ date: 'Mar 02', type: 'Call', note: 'Advised to attend remedial sessions' }],
   },
-  { id: 'm7', usn: '1MS23EC005', name: 'Farhan Khan', phone: '+91 9700002055', year: '2nd Year', section: 'A', dept: 'ECE',
+  { id: 'm7', usn: '1MS23EC005', name: 'Farhan Khan', phone: '+91 9700002055', year: 'Batch 2024', section: 'A', dept: 'MCE',
     courseRisks: [
       { code: 'MA301', title: 'Engineering Mathematics III', risk: 0.67, band: 'Medium', stage: 2 },
-      { code: 'EC301', title: 'Signals & Systems', risk: 0.52, band: 'Medium', stage: 2 },
     ], avs: 0.60, prevCgpa: 6.5,
     interventions: [],
   },
-  { id: 'm8', usn: '1MS24CS022', name: 'Arnav Gupta', phone: '+91 9700001096', year: '1st Year', section: 'A', dept: 'CSE',
+  { id: 'm8', usn: '1MS23CS022', name: 'Arnav Gupta', phone: '+91 9700001096', year: 'Batch 2024', section: 'A', dept: 'CSE',
     courseRisks: [
-      { code: 'MA101', title: 'Engineering Mathematics I', risk: -1, band: 'Low', stage: 1 },
-    ], avs: -1, prevCgpa: 0,
+      { code: 'CS401', title: 'Design & Analysis of Algorithms', risk: 0.22, band: 'Low', stage: 2 },
+    ], avs: 0.22, prevCgpa: 8.8,
     interventions: [],
   },
-  { id: 'm9', usn: '1MS22CS033', name: 'Chirag Joshi', phone: '+91 9700001233', year: '3rd Year', section: 'A', dept: 'CSE',
+  { id: 'm9', usn: '1MS23CS033', name: 'Chirag Joshi', phone: '+91 9700001233', year: 'Batch 2024', section: 'A', dept: 'CSE',
     courseRisks: [
-      { code: 'CS601', title: 'Compiler Design', risk: 0.31, band: 'Low', stage: 3 },
-      { code: 'CS603', title: 'Information Security', risk: 0.14, band: 'Low', stage: 3 },
+      { code: 'CS403', title: 'Operating Systems', risk: 0.31, band: 'Low', stage: 2 },
     ], avs: 0.23, prevCgpa: 8.2,
-    interventions: [{ date: 'Feb 15', type: 'Meeting', note: 'Was at 72% risk pre-TT1. After remedial: TT2 improved +6 marks.' }],
+    interventions: [{ date: 'Feb 15', type: 'Meeting', note: 'Was at 72% risk pre-TT1. After remedial: TT2 expected to improve.' }],
   },
-  { id: 'm10', usn: '1MS21CS012', name: 'Varun Krishnan', phone: '+91 9700007398', year: '4th Year', section: 'A', dept: 'CSE',
+  { id: 'm10', usn: '1MS23CS012', name: 'Varun Krishnan', phone: '+91 9700007398', year: 'Batch 2024', section: 'A', dept: 'CSE',
     courseRisks: [
-      { code: 'CS702', title: 'Deep Learning & Neural Networks', risk: 0.22, band: 'Low', stage: 2 },
+      { code: 'CS405', title: 'Software Engineering', risk: 0.22, band: 'Low', stage: 2 },
     ], avs: 0.22, prevCgpa: 8.5,
     interventions: [],
   },
-  { id: 'm11', usn: '1MS23CS028', name: 'Nandita Gowda', phone: '+91 9700003836', year: '2nd Year', section: 'B', dept: 'CSE',
+  { id: 'm11', usn: '1MS23CS028', name: 'Nandita Gowda', phone: '+91 9700003836', year: 'Batch 2024', section: 'B', dept: 'CSE',
     courseRisks: [
       { code: 'CS401', title: 'Design & Analysis of Algorithms', risk: 0.78, band: 'High', stage: 2 },
-      { code: 'MA201', title: 'Discrete Mathematics', risk: 0.44, band: 'Medium', stage: 2 },
+      { code: 'MA301', title: 'Engineering Mathematics III', risk: 0.44, band: 'Medium', stage: 2 },
     ], avs: 0.61, prevCgpa: 6.3,
     interventions: [{ date: 'Mar 04', type: 'Call', note: 'Discussed attendance and assignment gaps' }],
   },
-  { id: 'm12', usn: '1MS24CS044', name: 'Shivam Tripathi', phone: '+91 9700006028', year: '1st Year', section: 'C', dept: 'CSE',
+  { id: 'm12', usn: '1MS23CS044', name: 'Shivam Tripathi', phone: '+91 9700006028', year: 'Batch 2024', section: 'B', dept: 'CSE',
     courseRisks: [
-      { code: 'MA101', title: 'Engineering Mathematics I', risk: -1, band: 'Low', stage: 1 },
-    ], avs: -1, prevCgpa: 0,
+      { code: 'CS401', title: 'Design & Analysis of Algorithms', risk: 0.15, band: 'Low', stage: 2 },
+    ], avs: 0.15, prevCgpa: 9.1,
     interventions: [],
   },
 ]
@@ -687,12 +675,12 @@ export interface FacultyRecordDir {
 }
 
 export const FACULTY_DIRECTORY: FacultyRecordDir[] = [
-  { id: 't1', name: 'Dr. Kavitha Rao', initials: 'KR', email: 'kavitha.rao@msruas.ac.in', dept: 'CSE', roleTitle: 'Associate Professor', roles: ['Course Leader', 'Mentor', 'HoD'], subjectRuns: ['run-CS401', 'run-CS403'], sections: ['c3-A', 'c3-B', 'c4-C'], mentees: ['m1', 'm2'] },
-  { id: 't2', name: 'Dr. Arvind Kumar', initials: 'AK', email: 'arvind.k@msruas.ac.in', dept: 'CSE', roleTitle: 'Professor', roles: ['Course Leader'], subjectRuns: ['run-CS601'], sections: ['c6-A'], mentees: [] },
-  { id: 't3', name: 'Prof. Sneha Nair', initials: 'SN', email: 'sneha.n@msruas.ac.in', dept: 'CSE', roleTitle: 'Assistant Professor', roles: ['Mentor'], subjectRuns: [], sections: ['c1-A'], mentees: ['m3', 'm4'] },
-  { id: 't4', name: 'Dr. Rajesh Bhat', initials: 'RB', email: 'rajesh.b@msruas.ac.in', dept: 'CSE', roleTitle: 'Associate Professor', roles: ['Course Leader', 'Mentor'], subjectRuns: ['run-CS702'], sections: ['c8-A'], mentees: ['m5', 'm6'] },
-  { id: 't5', name: 'Prof. Ananya Iyer', initials: 'AI', email: 'ananya.i@msruas.ac.in', dept: 'CSE', roleTitle: 'Assistant Professor', roles: ['Course Leader'], subjectRuns: ['run-CS101'], sections: ['c2-A'], mentees: [] },
-  { id: 't6', name: 'Dr. Vikram Nair', initials: 'VN', email: 'vikram.n@msruas.ac.in', dept: 'CSE', roleTitle: 'Professor', roles: ['Mentor'], subjectRuns: [], sections: ['c5-A', 'c7-B'], mentees: ['m7', 'm8', 'm9', 'm10', 'm11', 'm12'] },
+  { id: 't1', name: 'Dr. Kavitha Rao', initials: 'KR', email: 'kavitha.rao@msruas.ac.in', dept: 'CSE', roleTitle: 'Associate Professor', roles: ['Course Leader', 'Mentor', 'HoD'], subjectRuns: ['run-CS401', 'run-CS403'], sections: ['c1-A', 'c1-B', 'c2-B'], mentees: ['m1', 'm2'] },
+  { id: 't2', name: 'Dr. Arvind Kumar', initials: 'AK', email: 'arvind.k@msruas.ac.in', dept: 'CSE', roleTitle: 'Professor', roles: ['Course Leader'], subjectRuns: ['run-CS405'], sections: ['c4-A', 'c4-B'], mentees: [] },
+  { id: 't3', name: 'Prof. Sneha Nair', initials: 'SN', email: 'sneha.n@msruas.ac.in', dept: 'CSE', roleTitle: 'Assistant Professor', roles: ['Mentor'], subjectRuns: [], sections: ['c5-A', 'c5-B'], mentees: ['m3', 'm4'] },
+  { id: 't4', name: 'Dr. Rajesh Bhat', initials: 'RB', email: 'rajesh.b@msruas.ac.in', dept: 'MCE', roleTitle: 'Associate Professor', roles: ['Course Leader', 'Mentor'], subjectRuns: ['run-MA301'], sections: ['c3-A', 'c3-B'], mentees: ['m5', 'm6', 'm7'] },
+  { id: 't5', name: 'Prof. Ananya Iyer', initials: 'AI', email: 'ananya.i@msruas.ac.in', dept: 'CSE', roleTitle: 'Assistant Professor', roles: ['Course Leader'], subjectRuns: ['run-CS403'], sections: ['c2-A'], mentees: [] },
+  { id: 't6', name: 'Dr. Vikram Nair', initials: 'VN', email: 'vikram.n@msruas.ac.in', dept: 'CSE', roleTitle: 'Professor', roles: ['Mentor'], subjectRuns: [], sections: [], mentees: ['m8', 'm9', 'm10', 'm11', 'm12'] },
 ];
 
 export const FACULTY: FacultyRecord[] = FACULTY_DIRECTORY.map(item => ({
@@ -861,24 +849,22 @@ export const TEACHERS: TeacherInfo[] = FACULTY.map(faculty => {
 export const PREREQ_DAG: Record<string, string[]> = {
   CS401: ['CS201', 'MA101'],         // DAA needs DS and Maths I
   CS403: ['CS201'],                   // OS needs DS
-  CS601: ['CS401', 'CS301'],         // Compilers needs DAA and Formal Languages
-  CS702: ['CS501', 'MA301'],         // DL needs ML basics and Maths III
+  CS405: ['CS201'],                   // SE needs DS
+  CS407L: ['CS403'],                  // OS Lab needs OS
   MA301: ['MA101', 'MA201'],         // Maths III needs Maths I and II
 }
 
 // ───── Calendar Events ─────
 export const CALENDAR_EVENTS = [
-  { date: '22 Jul', label: 'Quiz 1 — CS401 Sec A/B', type: 'quiz' as const, year: '2nd Year' },
-  { date: '01 Aug', label: 'Assignment 1 Due — CS401 all sections', type: 'asgn' as const, year: '2nd Year' },
-  { date: '05 Aug', label: 'TT1 — All 1st Year (MA101, CS101)', type: 'tt' as const, year: '1st Year' },
-  { date: '12 Aug', label: 'TT2 — All 3rd Year (CS601, CS603)', type: 'tt' as const, year: '3rd Year' },
-  { date: '18 Aug', label: 'Quiz 2 — CS403 Sec C', type: 'quiz' as const, year: '2nd Year' },
-  { date: '25 Aug', label: 'TT2 — 2nd Year (CS401, CS403, MA301)', type: 'tt' as const, year: '2nd Year' },
-  { date: '26 Aug', label: 'TT2 — 4th Year CS702', type: 'tt' as const, year: '4th Year' },
-  { date: '05 Sep', label: 'Assignment 2 Due — CS401', type: 'asgn' as const, year: '2nd Year' },
-  { date: '15 Sep', label: 'Remedial quiz review — CS401 all sections', type: 'quiz' as const, year: '2nd Year' },
-  { date: '20 Oct', label: 'Attendance Finalisation — All Years', type: 'att' as const, year: 'All' },
-  { date: '10 Nov', label: 'SEE (Finals) begin — All Years', type: 'see' as const, year: 'All' },
+  { date: '22 Jul', label: 'Quiz 1 — CS401 Sec A/B', type: 'quiz' as const, year: 'Batch 2024' },
+  { date: '01 Aug', label: 'Assignment 1 Due — CS401 all sections', type: 'asgn' as const, year: 'Batch 2024' },
+  { date: '05 Aug', label: 'TT1 — Batch 2024 (MA301, CS401)', type: 'tt' as const, year: 'Batch 2024' },
+  { date: '18 Aug', label: 'Quiz 1 — CS403 Sec B', type: 'quiz' as const, year: 'Batch 2024' },
+  { date: '25 Aug', label: 'TT2 — Batch 2024 (CS403, CS405)', type: 'tt' as const, year: 'Batch 2024' },
+  { date: '05 Sep', label: 'Assignment 2 Due — CS401', type: 'asgn' as const, year: 'Batch 2024' },
+  { date: '15 Sep', label: 'Remedial quiz review — CS401 all sections', type: 'quiz' as const, year: 'Batch 2024' },
+  { date: '20 Oct', label: 'Attendance Finalisation — Batch 2024', type: 'att' as const, year: 'All' },
+  { date: '10 Nov', label: 'SEE (Finals) begin — Batch 2024', type: 'see' as const, year: 'All' },
 ]
 
 function toGradePoint(score: number): 0 | 4 | 5 | 6 | 7 | 8 | 9 | 10 {

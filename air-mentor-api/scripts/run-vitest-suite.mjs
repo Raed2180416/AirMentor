@@ -51,6 +51,8 @@ function runVitestFile(file) {
       cwd: rootDir,
       env: {
         ...process.env,
+        NODE_ENV: 'test',
+        AIRMENTOR_TELEMETRY_ENABLED: process.env.AIRMENTOR_TELEMETRY_ENABLED ?? 'false',
         AIRMENTOR_PROOF_RC: suite === 'proof-rc' ? '1' : '0',
       },
       stdio: 'inherit',

@@ -96,8 +96,21 @@ export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
   return <FieldInput {...props} />
 }
 
+const DROPDOWN_ARROW_SVG = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`
+
 export function SelectInput(props: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <FieldSelect {...props} />
+  return <FieldSelect {...props} style={{
+    cursor: props.disabled ? 'not-allowed' : 'pointer',
+    opacity: props.disabled ? 0.55 : 1,
+    WebkitAppearance: 'none',
+    MozAppearance: 'none',
+    appearance: 'none',
+    backgroundImage: DROPDOWN_ARROW_SVG,
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: 'right 10px center',
+    paddingRight: 28,
+    ...(props.style ?? {}),
+  }} />
 }
 
 export function TextAreaInput(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
@@ -239,7 +252,7 @@ export function MetricCard({ label, value, helper, onClick }: { label: string; v
   return (
     <Card style={{ padding: 18, cursor: onClick ? 'pointer' : undefined }} onClick={onClick}>
       <div style={{ ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
-      <div style={{ ...sora, fontSize: 30, fontWeight: 800, color: T.text, marginTop: 10, lineHeight: 1, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{value}</div>
+      <div style={{ ...sora, fontSize: 'clamp(22px, 2.5vw, 30px)', fontWeight: 800, color: T.text, marginTop: 10, lineHeight: 1, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{value}</div>
       <div style={{ ...mono, fontSize: UI_FONT_SIZES.meta, color: T.muted, marginTop: 8, lineHeight: 1.8 }}>{helper}</div>
     </Card>
   )

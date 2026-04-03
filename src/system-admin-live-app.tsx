@@ -420,8 +420,13 @@ type EditingEntity =
   | 'department'
   | 'branch'
   | 'batch'
+  | 'batch'
   | 'student-profile'
+  | 'student-enrollment'
+  | 'student-mentor'
   | 'faculty-profile'
+  | 'faculty-appointment'
+  | 'faculty-permission'
 
 type AdminWorkspaceSnapshot = {
   route: LiveAdminRoute
@@ -801,7 +806,7 @@ function defaultBatchProvisioningForm(): BatchProvisioningFormState {
 
 function buildBatchProvisioningPayload(form: BatchProvisioningFormState): ApiBatchProvisioningRequest {
   return {
-    termId: requireText('Provisioning term', form.termId),
+    termId: requireText('Setup term', form.termId),
     sectionLabels: parseCurriculumFeatureLines(form.sectionLabels.replace(/,/g, '\n')),
     mode: form.mode ?? 'mock',
     studentsPerSection: requirePositiveInteger('Students per section', form.studentsPerSection),
@@ -1855,6 +1860,7 @@ export function AdminDetailTabPanel({
       id={`${idBase}-panel-${tabId}`}
       role="tabpanel"
       aria-labelledby={`${idBase}-tab-${tabId}`}
+      style={{ minHeight: 360 }}
     >
       {children}
     </div>
@@ -1871,9 +1877,9 @@ function AdminMiniStat({
   tone?: string
 }) {
   return (
-    <div style={{ borderRadius: 16, border: `1px solid ${withAlpha(tone, '28')}`, background: `linear-gradient(180deg, ${withAlpha(tone, '12')}, ${T.surface})`, padding: '12px 14px', minWidth: 0, boxShadow: `0 10px 24px ${withAlpha(tone, '12')}` }}>
+    <div style={{ borderRadius: 16, border: `1px solid ${withAlpha(tone, '28')}`, background: `linear-gradient(180deg, ${withAlpha(tone, '12')}, ${T.surface})`, padding: '12px 14px', minWidth: 0, maxWidth: 240, boxShadow: `0 10px 24px ${withAlpha(tone, '12')}` }}>
       <div style={{ ...mono, fontSize: UI_FONT_SIZES.micro, color: tone, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
-      <div style={{ ...sora, fontSize: 20, fontWeight: 800, color: T.text, marginTop: 6, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{value}</div>
+      <div style={{ ...sora, fontSize: 'clamp(16px, 1.8vw, 20px)', fontWeight: 800, color: T.text, marginTop: 6, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{value}</div>
     </div>
   )
 }
@@ -5256,7 +5262,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             ? 'Departments'
             : 'Departments'
   const universityNavigatorHelper = selectedSectionCode
-    ? 'You are already at the final layer. Use the scoped student and faculty views below or go back one level to keep drilling sideways.'
+    ? 'You are already at the final layer. Use the filtered student and faculty views below or go back one level to keep drilling sideways.'
     : selectedBatch
       ? 'The left rail stays on years while this subpanel shows section-specific actions, counts, and drill-down.'
       : selectedBranch
@@ -5283,13 +5289,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         ? 'Stay on the branch rail while the subpanel handles year-level work for the selected branch.'
         : currentUniversityLevel === 'batch'
           ? 'Stay on the year rail while the subpanel handles sections, policy tabs, and term or curriculum setup.'
-          : 'Sections are the last layer. Use the scoped registries or go back to the year rail for broader edits.'
+          : 'Sections are the last layer. Use the filtered registries or go back to the year rail for broader edits.'
   const universityTabOptions = [
     {
       id: 'overview' as const,
       label: 'Overview',
       icon: <LayoutDashboard size={13} />,
-      description: 'Hierarchy navigator, scoped views, and the main year workspace summary.',
+      description: 'Hierarchy navigator, filtered views, and the main year workspace summary.',
     },
     {
       id: 'bands' as const,
@@ -5319,7 +5325,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       id: 'courses' as const,
       label: 'Courses',
       icon: <BookOpen size={13} />,
-      description: 'Semester-wise curriculum rows, credits, and scoped course leader assignments.',
+      description: 'Semester-wise curriculum rows, credits, and course leader assignments.',
     }] : []),
     ...(selectedBatch ? [{
       id: 'provision' as const,
@@ -5397,8 +5403,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const mentorEligibleFaculty = data.facultyMembers
     .filter(item => isFacultyMemberVisible(data, item) && item.status === 'active' && item.roleGrants.some(grant => grant.roleCode === 'MENTOR' && isCurrentRoleGrant(grant)))
     .sort((left, right) => left.displayName.localeCompare(right.displayName))
-  const selectedStudentEnrollment = selectedStudent ? findLatestEnrollment(selectedStudent) : null
-  const selectedStudentMentorAssignment = selectedStudent ? findLatestMentorAssignment(selectedStudent) : null
+  // variables removed because edit-lock modals manage context reset internally
   const selectedStudentPromotionRules = selectedStudentPolicy?.effectivePolicy.progressionRules ?? DEFAULT_PROGRESSION_RULES
   const selectedStudentNextTerms = selectedStudent?.activeAcademicContext
     ? data.terms
@@ -6458,7 +6463,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                 {selectedStudent ? (
                   <>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      <Chip color={selectedStudentRouteIsExplicit ? T.accent : T.dim}>{selectedStudentRouteIsExplicit ? 'Direct drilldown' : 'Scoped registry'}</Chip>
+                      <Chip color={selectedStudentRouteIsExplicit ? T.accent : T.dim}>{selectedStudentRouteIsExplicit ? 'Direct drilldown' : 'Filtered registry'}</Chip>
                       <Chip color={selectedStudentScopeMismatch ? T.warning : T.success}>{selectedStudentScopeMismatch ? 'Outside current scope' : 'Scope aligned'}</Chip>
                       <Chip color={selectedStudentPolicyLoading ? T.dim : selectedStudentPolicy ? T.success : T.dim}>{selectedStudentPolicyLoading ? 'Loading policy…' : selectedStudentPolicy ? 'Policy loaded' : 'Policy unavailable'}</Chip>
                     </div>
@@ -6579,7 +6584,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                                 <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{term?.academicYearLabel ?? enrollment.termId} · {formatDate(enrollment.startDate)} to {enrollment.endDate ? formatDate(enrollment.endDate) : 'Active'} · {enrollment.academicStatus}</div>
                               </div>
                               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                <Btn type="button" size="sm" variant="ghost" onClick={() => startEditingEnrollment(enrollment)}>Edit</Btn>
+                                <Btn type="button" size="sm" variant="ghost" onClick={() => { startEditingEnrollment(enrollment); setEditingEntity('student-enrollment') }}>Edit</Btn>
                                 <Btn type="button" size="sm" variant="danger" onClick={() => void handleCloseEnrollment(enrollment)}>Close</Btn>
                               </div>
                             </div>
@@ -6587,55 +6592,17 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                         )
                       })}
                     </div>
-                    <form onSubmit={handleSaveEnrollment} style={{ display: 'grid', gap: 10 }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-                        <div>
-                          <FieldLabel>Branch</FieldLabel>
-                          <SelectInput value={enrollmentForm.branchId} onChange={event => setEnrollmentForm(prev => ({ ...prev, branchId: event.target.value, termId: '' }))}>
-                            <option value="">Select branch</option>
-                            {visibleBranches.map(branch => <option key={branch.branchId} value={branch.branchId}>{branch.name}</option>)}
-                          </SelectInput>
-                        </div>
-                        <div>
-                          <FieldLabel>Term</FieldLabel>
-                          <SelectInput value={enrollmentForm.termId} onChange={event => {
-                            const nextTerm = visibleTerms.find(item => item.termId === event.target.value)
-                            setEnrollmentForm(prev => ({
-                              ...prev,
-                              termId: event.target.value,
-                              branchId: nextTerm?.branchId ?? prev.branchId,
-                              startDate: nextTerm?.startDate ?? prev.startDate,
-                            }))
-                          }}>
-                            <option value="">Select term</option>
-                            {termsForEnrollment.map(term => <option key={term.termId} value={term.termId}>{term.academicYearLabel} · Semester {term.semesterNumber}</option>)}
-                          </SelectInput>
-                        </div>
-                        <div><FieldLabel>Section</FieldLabel><TextInput value={enrollmentForm.sectionCode} onChange={event => setEnrollmentForm(prev => ({ ...prev, sectionCode: event.target.value.toUpperCase() }))} placeholder="A" /></div>
-                        <div><FieldLabel>Academic Status</FieldLabel><TextInput value={enrollmentForm.academicStatus} onChange={event => setEnrollmentForm(prev => ({ ...prev, academicStatus: event.target.value }))} placeholder="regular / repeat / backlog" /></div>
-                        <div><FieldLabel>Roster Order</FieldLabel><TextInput value={enrollmentForm.rosterOrder} onChange={event => setEnrollmentForm(prev => ({ ...prev, rosterOrder: event.target.value }))} placeholder="0" /></div>
-                        <div><FieldLabel>Start Date</FieldLabel><TextInput value={enrollmentForm.startDate} onChange={event => setEnrollmentForm(prev => ({ ...prev, startDate: event.target.value }))} placeholder="YYYY-MM-DD" /></div>
-                        <div><FieldLabel>End Date</FieldLabel><TextInput value={enrollmentForm.endDate} onChange={event => setEnrollmentForm(prev => ({ ...prev, endDate: event.target.value }))} placeholder="Leave blank while active" /></div>
-                      </div>
-                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                        <Btn type="submit">{enrollmentForm.enrollmentId ? 'Save Enrollment' : 'Add Enrollment'}</Btn>
-                        <Btn type="button" variant="ghost" onClick={() => setEnrollmentForm(selectedStudentEnrollment ? {
-                          enrollmentId: selectedStudentEnrollment.enrollmentId,
-                          branchId: selectedStudentEnrollment.branchId,
-                          termId: selectedStudentEnrollment.termId,
-                          sectionCode: selectedStudentEnrollment.sectionCode,
-                          rosterOrder: String(selectedStudentEnrollment.rosterOrder ?? 0),
-                          academicStatus: selectedStudentEnrollment.academicStatus,
-                          startDate: selectedStudentEnrollment.startDate,
-                          endDate: selectedStudentEnrollment.endDate ?? '',
-                        } : {
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
+                      <Btn type="button" size="sm" onClick={() => {
+                        setEnrollmentForm({
                           ...defaultEnrollmentForm(),
                           branchId: selectedStudent.activeAcademicContext?.branchId ?? '',
                           termId: selectedStudent.activeAcademicContext?.termId ?? '',
                           sectionCode: selectedStudent.activeAcademicContext?.sectionCode ?? 'A',
-                        })}>Reset Enrollment Form</Btn>
-                      </div>
-                    </form>
+                        })
+                        setEditingEntity('student-enrollment')
+                      }}>Add New Enrollment</Btn>
+                    </div>
                   </>
                 )}
               </Card>
@@ -6659,7 +6626,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                                 <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{assignment.source} · {formatDate(assignment.effectiveFrom)} to {assignment.effectiveTo ? formatDate(assignment.effectiveTo) : 'Active'}</div>
                               </div>
                               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                <Btn type="button" size="sm" variant="ghost" onClick={() => startEditingMentorAssignment(assignment)}>Edit</Btn>
+                                <Btn type="button" size="sm" variant="ghost" onClick={() => { startEditingMentorAssignment(assignment); setEditingEntity('student-mentor') }}>Edit</Btn>
                                 <Btn type="button" size="sm" variant="danger" onClick={() => void handleEndMentorAssignment(assignment)}>End</Btn>
                               </div>
                             </div>
@@ -6667,30 +6634,12 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                         )
                       })}
                     </div>
-                    <form onSubmit={handleSaveMentorAssignment} style={{ display: 'grid', gap: 10 }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-                        <div>
-                          <FieldLabel>Eligible Mentor</FieldLabel>
-                          <SelectInput value={mentorForm.facultyId} onChange={event => setMentorForm(prev => ({ ...prev, facultyId: event.target.value }))}>
-                            <option value="">Select mentor</option>
-                            {mentorEligibleFaculty.map(member => <option key={member.facultyId} value={member.facultyId}>{member.displayName} · {member.employeeCode}</option>)}
-                          </SelectInput>
-                        </div>
-                        <div><FieldLabel>Effective From</FieldLabel><TextInput value={mentorForm.effectiveFrom} onChange={event => setMentorForm(prev => ({ ...prev, effectiveFrom: event.target.value }))} placeholder="YYYY-MM-DD" /></div>
-                        <div><FieldLabel>Effective To</FieldLabel><TextInput value={mentorForm.effectiveTo} onChange={event => setMentorForm(prev => ({ ...prev, effectiveTo: event.target.value }))} placeholder="Leave blank while active" /></div>
-                        <div><FieldLabel>Source</FieldLabel><TextInput value={mentorForm.source} onChange={event => setMentorForm(prev => ({ ...prev, source: event.target.value }))} placeholder="sysadmin-manual" /></div>
-                      </div>
-                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                        <Btn type="submit">{mentorForm.assignmentId ? 'Save Mentor Link' : 'Assign Mentor'}</Btn>
-                        <Btn type="button" variant="ghost" onClick={() => setMentorForm(selectedStudentMentorAssignment ? {
-                          assignmentId: selectedStudentMentorAssignment.assignmentId,
-                          facultyId: selectedStudentMentorAssignment.facultyId,
-                          effectiveFrom: selectedStudentMentorAssignment.effectiveFrom,
-                          effectiveTo: selectedStudentMentorAssignment.effectiveTo ?? '',
-                          source: selectedStudentMentorAssignment.source,
-                        } : defaultMentorAssignmentForm())}>Reset Mentor Form</Btn>
-                      </div>
-                    </form>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
+                      <Btn type="button" size="sm" onClick={() => {
+                        setMentorForm(defaultMentorAssignmentForm())
+                        setEditingEntity('student-mentor')
+                      }}>Add Mentor Link</Btn>
+                    </div>
                   </>
                 )}
               </Card>
@@ -6865,7 +6814,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                               <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{item.employeeCode} · {primaryDepartment?.name ?? 'No primary department'}</div>
                             </div>
                           </div>
-                          <Chip color={item.roleGrants.some(grant => grant.roleCode === 'MENTOR' && isCurrentRoleGrant(grant)) ? T.success : T.dim} size={9}>{item.roleGrants.some(grant => isCurrentRoleGrant(grant)) ? 'Scoped' : 'Unscoped'}</Chip>
+                          <Chip color={item.roleGrants.some(grant => grant.roleCode === 'MENTOR' && isCurrentRoleGrant(grant)) ? T.success : T.dim} size={9}>{item.roleGrants.some(grant => isCurrentRoleGrant(grant)) ? 'Has Permissions' : 'No Permissions'}</Chip>
                         </div>
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {item.roleGrants.filter(isCurrentRoleGrant).slice(0, 3).map(grant => <Chip key={grant.grantId} color={T.accent} size={9}>{grant.roleCode}</Chip>)}
@@ -6987,7 +6936,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                                 <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{appointment.isPrimary ? 'Primary appointment' : 'Supporting appointment'} · {formatDate(appointment.startDate)} to {appointment.endDate ? formatDate(appointment.endDate) : 'Active'}</div>
                               </div>
                               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                <Btn type="button" size="sm" variant="ghost" onClick={() => startEditingAppointment(appointment)}>Edit</Btn>
+                                <Btn type="button" size="sm" variant="ghost" onClick={() => { startEditingAppointment(appointment); setEditingEntity('faculty-appointment') }}>Edit</Btn>
                                 <Btn type="button" size="sm" variant="danger" onClick={() => void handleArchiveAppointment(appointment)}>Delete</Btn>
                               </div>
                             </div>
@@ -6995,44 +6944,12 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                         )
                       })}
                     </div>
-                    <form onSubmit={handleSaveAppointment} style={{ display: 'grid', gap: 10 }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-                        <div>
-                          <FieldLabel>Department</FieldLabel>
-                          <SelectInput value={appointmentForm.departmentId} onChange={event => setAppointmentForm(prev => ({ ...prev, departmentId: event.target.value, branchId: '' }))}>
-                            <option value="">Select department</option>
-                            {visibleDepartments.map(department => <option key={department.departmentId} value={department.departmentId}>{department.name}</option>)}
-                          </SelectInput>
-                        </div>
-                        <div>
-                          <FieldLabel>Branch</FieldLabel>
-                          <SelectInput value={appointmentForm.branchId} onChange={event => setAppointmentForm(prev => ({ ...prev, branchId: event.target.value }))}>
-                            <option value="">No branch / department-wide</option>
-                            {branchesForAppointment.map(branch => <option key={branch.branchId} value={branch.branchId}>{branch.name}</option>)}
-                          </SelectInput>
-                        </div>
-                        <div><FieldLabel>Start Date</FieldLabel><TextInput value={appointmentForm.startDate} onChange={event => setAppointmentForm(prev => ({ ...prev, startDate: event.target.value }))} placeholder="YYYY-MM-DD" /></div>
-                        <div><FieldLabel>End Date</FieldLabel><TextInput value={appointmentForm.endDate} onChange={event => setAppointmentForm(prev => ({ ...prev, endDate: event.target.value }))} placeholder="Leave blank while active" /></div>
-                        <div>
-                          <FieldLabel>Primary Appointment</FieldLabel>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${T.border2}`, background: T.surface2, ...mono, fontSize: 11, color: T.text }}>
-                            <input type="checkbox" checked={appointmentForm.isPrimary} onChange={event => setAppointmentForm(prev => ({ ...prev, isPrimary: event.target.checked }))} />
-                            Mark as primary
-                          </label>
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                        <Btn type="submit">{appointmentForm.appointmentId ? 'Save Appointment' : 'Add Appointment'}</Btn>
-                        <Btn type="button" variant="ghost" onClick={() => setAppointmentForm(selectedFacultyMember.appointments.find(item => item.isPrimary) ? {
-                          appointmentId: (selectedFacultyMember.appointments.find(item => item.isPrimary) ?? selectedFacultyMember.appointments[0])!.appointmentId,
-                          departmentId: (selectedFacultyMember.appointments.find(item => item.isPrimary) ?? selectedFacultyMember.appointments[0])!.departmentId,
-                          branchId: (selectedFacultyMember.appointments.find(item => item.isPrimary) ?? selectedFacultyMember.appointments[0])!.branchId ?? '',
-                          isPrimary: (selectedFacultyMember.appointments.find(item => item.isPrimary) ?? selectedFacultyMember.appointments[0])!.isPrimary,
-                          startDate: (selectedFacultyMember.appointments.find(item => item.isPrimary) ?? selectedFacultyMember.appointments[0])!.startDate,
-                          endDate: (selectedFacultyMember.appointments.find(item => item.isPrimary) ?? selectedFacultyMember.appointments[0])!.endDate ?? '',
-                        } : defaultAppointmentForm())}>Reset Appointment Form</Btn>
-                      </div>
-                    </form>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
+                      <Btn type="button" size="sm" onClick={() => {
+                        setAppointmentForm(defaultAppointmentForm())
+                        setEditingEntity('faculty-appointment')
+                      }}>Add New Appointment</Btn>
+                    </div>
                   </>
                 )}
               </Card>
@@ -7054,61 +6971,19 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                               <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{formatFacultyGrantScopeLabel(grant)} · {grant.startDate ?? 'No start'} to {grant.endDate ?? 'Active'} · {grant.status}</div>
                             </div>
                             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                              <Btn type="button" size="sm" variant="ghost" onClick={() => startEditingRoleGrant(grant)}>Edit</Btn>
+                              <Btn type="button" size="sm" variant="ghost" onClick={() => { startEditingRoleGrant(grant); setEditingEntity('faculty-permission') }}>Edit</Btn>
                               <Btn type="button" size="sm" variant="danger" onClick={() => void handleArchiveRoleGrant(grant)}>Delete</Btn>
                             </div>
                           </div>
                         </Card>
                       ))}
                     </div>
-                    <form onSubmit={handleSaveRoleGrant} style={{ display: 'grid', gap: 10 }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-                        <div>
-                          <FieldLabel>Role</FieldLabel>
-                          <SelectInput value={roleGrantForm.roleCode} onChange={event => setRoleGrantForm(prev => ({ ...prev, roleCode: event.target.value as ApiRoleCode }))}>
-                            <option value="MENTOR">MENTOR</option>
-                            <option value="HOD">HOD</option>
-                            <option value="COURSE_LEADER">COURSE_LEADER</option>
-                            <option value="SYSTEM_ADMIN">SYSTEM_ADMIN</option>
-                          </SelectInput>
-                        </div>
-                        <div>
-                          <FieldLabel>Scope Type</FieldLabel>
-                          <SelectInput value={roleGrantForm.scopeType} onChange={event => setRoleGrantForm(prev => ({ ...prev, scopeType: event.target.value, scopeId: '' }))}>
-                            <option value="institution">institution</option>
-                            <option value="academic-faculty">academic-faculty</option>
-                            <option value="department">department</option>
-                            <option value="branch">branch</option>
-                            <option value="batch">batch</option>
-                            <option value="offering">offering</option>
-                          </SelectInput>
-                        </div>
-                        <div>
-                          <FieldLabel>Scope</FieldLabel>
-                          {scopeOptions.length > 0 ? (
-                            <SelectInput value={roleGrantForm.scopeId} onChange={event => setRoleGrantForm(prev => ({ ...prev, scopeId: event.target.value }))}>
-                              <option value="">Select scope</option>
-                              {scopeOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                            </SelectInput>
-                          ) : (
-                            <TextInput value={roleGrantForm.scopeId} onChange={event => setRoleGrantForm(prev => ({ ...prev, scopeId: event.target.value }))} placeholder="Scope id" />
-                          )}
-                        </div>
-                        <div><FieldLabel>Start Date</FieldLabel><TextInput value={roleGrantForm.startDate} onChange={event => setRoleGrantForm(prev => ({ ...prev, startDate: event.target.value }))} placeholder="YYYY-MM-DD" /></div>
-                        <div><FieldLabel>End Date</FieldLabel><TextInput value={roleGrantForm.endDate} onChange={event => setRoleGrantForm(prev => ({ ...prev, endDate: event.target.value }))} placeholder="Leave blank while active" /></div>
-                      </div>
-                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                        <Btn type="submit">{roleGrantForm.grantId ? 'Save Permission' : 'Grant Permission'}</Btn>
-                        <Btn type="button" variant="ghost" onClick={() => setRoleGrantForm(selectedFacultyMember.roleGrants[0] ? {
-                          grantId: selectedFacultyMember.roleGrants[0].grantId,
-                          roleCode: selectedFacultyMember.roleGrants[0].roleCode,
-                          scopeType: selectedFacultyMember.roleGrants[0].scopeType,
-                          scopeId: selectedFacultyMember.roleGrants[0].scopeId,
-                          startDate: selectedFacultyMember.roleGrants[0].startDate ?? new Date().toISOString().slice(0, 10),
-                          endDate: selectedFacultyMember.roleGrants[0].endDate ?? '',
-                        } : defaultRoleGrantForm())}>Reset Permission Form</Btn>
-                      </div>
-                    </form>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
+                      <Btn type="button" size="sm" onClick={() => {
+                        setRoleGrantForm(defaultRoleGrantForm())
+                        setEditingEntity('faculty-permission')
+                      }}>Add New Permission</Btn>
+                    </div>
                   </>
                 )}
               </Card>
@@ -7483,6 +7358,83 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           </motion.div>
         ) : null}
 
+        {editingEntity === 'student-enrollment' && selectedStudent ? (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <ModalFrame
+              eyebrow="Student Enrollment"
+              title={enrollmentForm.enrollmentId ? `Edit Enrollment` : `Add Enrollment`}
+              caption={`Maintain academic context for ${selectedStudent.name}.`}
+              onClose={() => setEditingEntity(null)}
+            >
+              <form onSubmit={e => { void handleSaveEnrollment(e); setEditingEntity(null) }} style={{ display: 'grid', gap: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
+                        <div>
+                          <FieldLabel>Branch</FieldLabel>
+                          <SelectInput value={enrollmentForm.branchId} onChange={event => setEnrollmentForm(prev => ({ ...prev, branchId: event.target.value, termId: '' }))}>
+                            <option value="">Select branch</option>
+                            {visibleBranches.map(branch => <option key={branch.branchId} value={branch.branchId}>{branch.name}</option>)}
+                          </SelectInput>
+                        </div>
+                        <div>
+                          <FieldLabel>Term</FieldLabel>
+                          <SelectInput value={enrollmentForm.termId} onChange={event => {
+                            const nextTerm = visibleTerms.find(item => item.termId === event.target.value)
+                            setEnrollmentForm(prev => ({
+                              ...prev,
+                              termId: event.target.value,
+                              branchId: nextTerm?.branchId ?? prev.branchId,
+                              startDate: nextTerm?.startDate ?? prev.startDate,
+                            }))
+                          }}>
+                            <option value="">Select term</option>
+                            {termsForEnrollment.map(term => <option key={term.termId} value={term.termId}>{term.academicYearLabel} · Semester {term.semesterNumber}</option>)}
+                          </SelectInput>
+                        </div>
+                        <div><FieldLabel>Section</FieldLabel><TextInput value={enrollmentForm.sectionCode} onChange={event => setEnrollmentForm(prev => ({ ...prev, sectionCode: event.target.value.toUpperCase() }))} placeholder="A" /></div>
+                        <div><FieldLabel>Academic Status</FieldLabel><TextInput value={enrollmentForm.academicStatus} onChange={event => setEnrollmentForm(prev => ({ ...prev, academicStatus: event.target.value }))} placeholder="regular / repeat / backlog" /></div>
+                        <div><FieldLabel>Roster Order</FieldLabel><TextInput value={enrollmentForm.rosterOrder} onChange={event => setEnrollmentForm(prev => ({ ...prev, rosterOrder: event.target.value }))} placeholder="0" /></div>
+                        <div><FieldLabel>Start Date</FieldLabel><TextInput value={enrollmentForm.startDate} onChange={event => setEnrollmentForm(prev => ({ ...prev, startDate: event.target.value }))} placeholder="YYYY-MM-DD" /></div>
+                        <div><FieldLabel>End Date</FieldLabel><TextInput value={enrollmentForm.endDate} onChange={event => setEnrollmentForm(prev => ({ ...prev, endDate: event.target.value }))} placeholder="Leave blank while active" /></div>
+                </div>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <Btn type="button" variant="ghost" onClick={() => setEditingEntity(null)}>Cancel</Btn>
+                  <Btn type="submit">{enrollmentForm.enrollmentId ? 'Save Enrollment' : 'Add Enrollment'}</Btn>
+                </div>
+              </form>
+            </ModalFrame>
+          </motion.div>
+        ) : null}
+
+        {editingEntity === 'student-mentor' && selectedStudent ? (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <ModalFrame
+              eyebrow="Mentor Assignment"
+              title={mentorForm.assignmentId ? `Edit Mentor Assignment` : `Assign Mentor`}
+              caption={`Establish or update mentoring linkage for ${selectedStudent.name}.`}
+              onClose={() => setEditingEntity(null)}
+            >
+              <form onSubmit={e => { void handleSaveMentorAssignment(e); setEditingEntity(null) }} style={{ display: 'grid', gap: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
+                        <div>
+                          <FieldLabel>Eligible Mentor</FieldLabel>
+                          <SelectInput value={mentorForm.facultyId} onChange={event => setMentorForm(prev => ({ ...prev, facultyId: event.target.value }))}>
+                            <option value="">Select mentor</option>
+                            {mentorEligibleFaculty.map(member => <option key={member.facultyId} value={member.facultyId}>{member.displayName} · {member.employeeCode}</option>)}
+                          </SelectInput>
+                        </div>
+                        <div><FieldLabel>Effective From</FieldLabel><TextInput value={mentorForm.effectiveFrom} onChange={event => setMentorForm(prev => ({ ...prev, effectiveFrom: event.target.value }))} placeholder="YYYY-MM-DD" /></div>
+                        <div><FieldLabel>Effective To</FieldLabel><TextInput value={mentorForm.effectiveTo} onChange={event => setMentorForm(prev => ({ ...prev, effectiveTo: event.target.value }))} placeholder="Leave blank while active" /></div>
+                        <div><FieldLabel>Source</FieldLabel><TextInput value={mentorForm.source} onChange={event => setMentorForm(prev => ({ ...prev, source: event.target.value }))} placeholder="sysadmin-manual" /></div>
+                </div>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <Btn type="button" variant="ghost" onClick={() => setEditingEntity(null)}>Cancel</Btn>
+                  <Btn type="submit">{mentorForm.assignmentId ? 'Save Mentor Link' : 'Assign Mentor'}</Btn>
+                </div>
+              </form>
+            </ModalFrame>
+          </motion.div>
+        ) : null}
+
         {editingEntity === 'faculty-profile' && selectedFacultyMember ? (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <ModalFrame
@@ -7510,6 +7462,102 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   }}>Cancel</Btn>
                   <Btn type="button" variant="danger" onClick={() => void handleArchiveFaculty()}>Delete Faculty</Btn>
                   <Btn type="submit">Save Faculty</Btn>
+                </div>
+              </form>
+            </ModalFrame>
+          </motion.div>
+        ) : null}
+
+        {editingEntity === 'faculty-permission' && selectedFacultyMember ? (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <ModalFrame
+              eyebrow="Permission Detail"
+              title={roleGrantForm.grantId ? `Edit Permission` : `Grant Permission`}
+              caption={`Manage access and boundaries for this faculty member.`}
+              onClose={() => setEditingEntity(null)}
+            >
+              <form onSubmit={e => { void handleSaveRoleGrant(e); setEditingEntity(null) }} style={{ display: 'grid', gap: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
+                        <div>
+                          <FieldLabel>Role</FieldLabel>
+                          <SelectInput value={roleGrantForm.roleCode} onChange={event => setRoleGrantForm(prev => ({ ...prev, roleCode: event.target.value as ApiRoleCode }))}>
+                            <option value="MENTOR">MENTOR</option>
+                            <option value="HOD">HOD</option>
+                            <option value="COURSE_LEADER">COURSE_LEADER</option>
+                            <option value="SYSTEM_ADMIN">SYSTEM_ADMIN</option>
+                          </SelectInput>
+                        </div>
+                        <div>
+                          <FieldLabel>Scope Type</FieldLabel>
+                          <SelectInput value={roleGrantForm.scopeType} onChange={event => setRoleGrantForm(prev => ({ ...prev, scopeType: event.target.value, scopeId: '' }))}>
+                            <option value="institution">institution</option>
+                            <option value="academic-faculty">academic-faculty</option>
+                            <option value="department">department</option>
+                            <option value="branch">branch</option>
+                            <option value="batch">batch</option>
+                            <option value="offering">offering</option>
+                          </SelectInput>
+                        </div>
+                        <div>
+                          <FieldLabel>Scope</FieldLabel>
+                          {scopeOptions.length > 0 ? (
+                            <SelectInput value={roleGrantForm.scopeId} onChange={event => setRoleGrantForm(prev => ({ ...prev, scopeId: event.target.value }))}>
+                              <option value="">Select scope</option>
+                              {scopeOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            </SelectInput>
+                          ) : (
+                            <TextInput value={roleGrantForm.scopeId} onChange={event => setRoleGrantForm(prev => ({ ...prev, scopeId: event.target.value }))} placeholder="Scope id" />
+                          )}
+                        </div>
+                        <div><FieldLabel>Start Date</FieldLabel><TextInput value={roleGrantForm.startDate} onChange={event => setRoleGrantForm(prev => ({ ...prev, startDate: event.target.value }))} placeholder="YYYY-MM-DD" /></div>
+                        <div><FieldLabel>End Date</FieldLabel><TextInput value={roleGrantForm.endDate} onChange={event => setRoleGrantForm(prev => ({ ...prev, endDate: event.target.value }))} placeholder="Leave blank while active" /></div>
+                </div>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <Btn type="button" variant="ghost" onClick={() => setEditingEntity(null)}>Cancel</Btn>
+                  <Btn type="submit">{roleGrantForm.grantId ? 'Save Permission' : 'Grant Permission'}</Btn>
+                </div>
+              </form>
+            </ModalFrame>
+          </motion.div>
+        ) : null}
+
+        {editingEntity === 'faculty-appointment' && selectedFacultyMember ? (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <ModalFrame
+              eyebrow="Appointment Detail"
+              title={appointmentForm.appointmentId ? `Edit Appointment` : `Add Appointment`}
+              caption={`Maintain formal appointments and cross-department affiliations for this faculty member.`}
+              onClose={() => setEditingEntity(null)}
+            >
+              <form onSubmit={e => { void handleSaveAppointment(e); setEditingEntity(null) }} style={{ display: 'grid', gap: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
+                        <div>
+                          <FieldLabel>Department</FieldLabel>
+                          <SelectInput value={appointmentForm.departmentId} onChange={event => setAppointmentForm(prev => ({ ...prev, departmentId: event.target.value, branchId: '' }))}>
+                            <option value="">Select department</option>
+                            {visibleDepartments.map(department => <option key={department.departmentId} value={department.departmentId}>{department.name}</option>)}
+                          </SelectInput>
+                        </div>
+                        <div>
+                          <FieldLabel>Branch</FieldLabel>
+                          <SelectInput value={appointmentForm.branchId} onChange={event => setAppointmentForm(prev => ({ ...prev, branchId: event.target.value }))}>
+                            <option value="">No branch / department-wide</option>
+                            {branchesForAppointment.map(branch => <option key={branch.branchId} value={branch.branchId}>{branch.name}</option>)}
+                          </SelectInput>
+                        </div>
+                        <div><FieldLabel>Start Date</FieldLabel><TextInput value={appointmentForm.startDate} onChange={event => setAppointmentForm(prev => ({ ...prev, startDate: event.target.value }))} placeholder="YYYY-MM-DD" /></div>
+                        <div><FieldLabel>End Date</FieldLabel><TextInput value={appointmentForm.endDate} onChange={event => setAppointmentForm(prev => ({ ...prev, endDate: event.target.value }))} placeholder="Leave blank while active" /></div>
+                        <div>
+                          <FieldLabel>Primary Appointment</FieldLabel>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${T.border2}`, background: T.surface2, ...mono, fontSize: 11, color: T.text }}>
+                            <input type="checkbox" checked={appointmentForm.isPrimary} onChange={event => setAppointmentForm(prev => ({ ...prev, isPrimary: event.target.checked }))} />
+                            Mark as primary
+                          </label>
+                        </div>
+                </div>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <Btn type="button" variant="ghost" onClick={() => setEditingEntity(null)}>Cancel</Btn>
+                  <Btn type="submit">{appointmentForm.appointmentId ? 'Save Appointment' : 'Add Appointment'}</Btn>
                 </div>
               </form>
             </ModalFrame>

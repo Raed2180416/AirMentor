@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { motion } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import { Bell, ChevronLeft, ChevronRight } from 'lucide-react'
 import { T, mono, sora } from './data'
 import type { Role, ThemeMode } from './domain'
@@ -128,13 +128,22 @@ export function AcademicWorkspaceTopbar({
             <button className="top-control-btn" aria-label={showTopbarMenu ? 'Close more controls' : 'Open more controls'} title="More" onClick={() => setShowTopbarMenu(value => !value)} style={{ ...getIconButtonStyle({ active: showTopbarMenu, subtle: false }), width: 'auto', padding: '0 10px', color: showTopbarMenu ? T.accent : T.muted, ...mono, fontSize: UI_FONT_SIZES.eyebrow }}>
               More
             </button>
-            {showTopbarMenu ? (
-              <div className="top-bar-more-menu" style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 38, minWidth: 200, padding: 10, borderRadius: 14, border: `1px solid ${T.border}`, background: `linear-gradient(180deg, ${T.surface}, ${T.surface2})`, boxShadow: '0 18px 42px rgba(2,6,23,0.26)', display: 'grid', gap: 8, zIndex: 70 }}>
-                <button onClick={handleLogout} style={{ ...getIconButtonStyle({ subtle: true }), width: '100%', padding: '0 10px', color: T.muted, ...mono, fontSize: UI_FONT_SIZES.eyebrow, textAlign: 'left', justifyContent: 'flex-start' }}>
-                  Logout
-                </button>
-              </div>
-            ) : null}
+            <AnimatePresence>
+              {showTopbarMenu ? (
+                <motion.div
+                  className="top-bar-more-menu"
+                  initial={{ opacity: 0, y: -6, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -6, scale: 0.96 }}
+                  transition={{ duration: 0.15, ease: 'easeOut' }}
+                  style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 38, minWidth: 200, padding: 10, borderRadius: 14, border: `1px solid ${T.border}`, background: `linear-gradient(180deg, ${T.surface}, ${T.surface2})`, boxShadow: '0 18px 42px rgba(2,6,23,0.26)', display: 'grid', gap: 8, zIndex: 70 }}
+                >
+                  <button onClick={handleLogout} style={{ ...getIconButtonStyle({ subtle: true }), width: '100%', padding: '0 10px', color: T.muted, ...mono, fontSize: UI_FONT_SIZES.eyebrow, textAlign: 'left', justifyContent: 'flex-start' }}>
+                    Logout
+                  </button>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
           </>
         ) : (
           <button className="top-control-btn" aria-label="Logout" title="Logout" data-proof-action="logout" onClick={handleLogout} style={{ ...getIconButtonStyle({ subtle: true }), width: 'auto', padding: '0 12px', color: T.muted, ...mono, fontSize: UI_FONT_SIZES.eyebrow }}>
@@ -145,3 +154,4 @@ export function AcademicWorkspaceTopbar({
     </div>
   )
 }
+
