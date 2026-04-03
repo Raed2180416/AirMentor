@@ -337,6 +337,10 @@ export function readSubmittedField(form: HTMLFormElement, fieldName: string, fal
   return typeof value === 'string' ? value : fallback
 }
 
+export function shouldHydrateHierarchyEditor(editingEntity: EditingEntity | null, target: Extract<EditingEntity, 'academic-faculty' | 'department' | 'branch' | 'batch'>) {
+  return editingEntity !== target
+}
+
 export function upsertAcademicFacultyRecord(data: LiveAdminDataset, nextFaculty: ApiAcademicFaculty): LiveAdminDataset {
   return {
     ...data,
@@ -2948,6 +2952,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const requestDetail = selectedRequestDetail && selectedRequest?.adminRequestId === selectedRequestDetail.adminRequestId ? selectedRequestDetail : null
 
   useEffect(() => {
+    if (!shouldHydrateHierarchyEditor(editingEntity, 'academic-faculty')) return
     setEntityEditors(prev => ({
       ...prev,
       academicFaculty: selectedAcademicFaculty
@@ -2958,9 +2963,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           }
         : defaultEntityEditorState().academicFaculty,
     }))
-  }, [selectedAcademicFaculty])
+  }, [editingEntity, selectedAcademicFaculty])
 
   useEffect(() => {
+    if (!shouldHydrateHierarchyEditor(editingEntity, 'department')) return
     setEntityEditors(prev => ({
       ...prev,
       department: selectedDepartment
@@ -2970,9 +2976,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           }
         : defaultEntityEditorState().department,
     }))
-  }, [selectedDepartment])
+  }, [editingEntity, selectedDepartment])
 
   useEffect(() => {
+    if (!shouldHydrateHierarchyEditor(editingEntity, 'branch')) return
     setEntityEditors(prev => ({
       ...prev,
       branch: selectedBranch
@@ -2984,9 +2991,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           }
         : defaultEntityEditorState().branch,
     }))
-  }, [selectedBranch])
+  }, [editingEntity, selectedBranch])
 
   useEffect(() => {
+    if (!shouldHydrateHierarchyEditor(editingEntity, 'batch')) return
     const nextSemester = String(authoritativeOperationalSemester ?? selectedBatch?.currentSemester ?? 1)
     setEntityEditors(prev => ({
       ...prev,
@@ -3001,7 +3009,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       term: defaultEntityEditorState(nextSemester).term,
       curriculum: defaultEntityEditorState(nextSemester).curriculum,
     }))
-  }, [authoritativeOperationalSemester, selectedBatch])
+  }, [authoritativeOperationalSemester, editingEntity, selectedBatch])
 
   useEffect(() => {
     if (!selectedStudent) {

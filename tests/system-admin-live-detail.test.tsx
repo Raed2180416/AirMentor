@@ -5,6 +5,7 @@ import {
   formatFacultyAppointmentLabel,
   formatFacultyGrantScopeLabel,
   formatRecordProofBanner,
+  shouldHydrateHierarchyEditor,
   upsertAcademicFacultyRecord,
   upsertBatchRecord,
   upsertBranchRecord,
@@ -237,5 +238,14 @@ describe('system-admin-live-detail formatting', () => {
     expect(next.batches[0]?.batchLabel).toBe('2023 Proof')
     expect(next.batches[0]?.currentSemester).toBe(6)
     expect(next.batches[0]?.sectionLabels).toEqual(['A', 'B'])
+  })
+
+  it('keeps hierarchy editor hydration disabled while the matching dialog is open', () => {
+    expect(shouldHydrateHierarchyEditor('branch', 'branch')).toBe(false)
+    expect(shouldHydrateHierarchyEditor('department', 'department')).toBe(false)
+    expect(shouldHydrateHierarchyEditor('academic-faculty', 'academic-faculty')).toBe(false)
+    expect(shouldHydrateHierarchyEditor('batch', 'batch')).toBe(false)
+    expect(shouldHydrateHierarchyEditor('branch', 'department')).toBe(true)
+    expect(shouldHydrateHierarchyEditor(null, 'branch')).toBe(true)
   })
 })
