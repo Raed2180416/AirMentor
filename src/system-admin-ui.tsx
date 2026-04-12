@@ -36,7 +36,7 @@ import {
 } from './ui-primitives'
 import type { ThemeMode } from './domain'
 
-export type AdminSectionId = 'overview' | 'faculties' | 'students' | 'faculty-members' | 'requests'
+export type AdminSectionId = 'overview' | 'proof-dashboard' | 'faculties' | 'students' | 'faculty-members' | 'requests'
 
 export function getReadOnlyInputStyle(): CSSProperties {
   return {
@@ -51,6 +51,7 @@ export function getReadOnlyInputStyle(): CSSProperties {
 
 export const TOP_TABS: Array<{ id: AdminSectionId; label: string; icon: typeof Building2 }> = [
   { id: 'overview', label: 'Overview', icon: Layers3 },
+  { id: 'proof-dashboard', label: 'Proof', icon: Layers3 },
   { id: 'faculties', label: 'Faculties', icon: Building2 },
   { id: 'students', label: 'Students', icon: GraduationCap },
   { id: 'faculty-members', label: 'Faculty Members', icon: UserCog },

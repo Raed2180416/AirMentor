@@ -11,6 +11,7 @@ import type {
   ApiAcademicHodProofSummary,
 } from '../api/types'
 import { describeProofAvailability, describeProofProvenance } from '../proof-provenance'
+import { normalizeProofPanelLabel } from '../proof-provenance'
 import { ProofSurfaceHero, ProofSurfaceLauncher, ProofSurfaceTabPanel, ProofSurfaceTabs } from '../proof-surface-shell'
 import { Btn, Card, Chip, ModalWorkspace, PageShell, RiskBadge, TH, TD } from '../ui-primitives'
 import { EmptyState, InfoBanner, MetricCard, SectionHeading, formatDateTime, getStatusColor } from '../system-admin-ui'
@@ -60,9 +61,10 @@ function governedQueueColor(state: Exclude<GovernedQueueState, null>) {
 }
 
 function PanelLabel({ children, color = T.accent }: { children: string; color?: string }) {
+  const normalizedLabel = normalizeProofPanelLabel(children)
   return (
     <span style={{ ...mono, fontSize: 10, color, textTransform: 'uppercase', letterSpacing: '0.12em' }}>
-      {children}
+      {normalizedLabel}
     </span>
   )
 }
@@ -183,6 +185,8 @@ export function HodView({
     )
   }
 
+  const activeRunContext = summary.activeRunContext
+
   return (
     <PageShell size="wide">
       <div style={{ display: 'grid', gap: 18, paddingBottom: 24 }}>
@@ -196,9 +200,9 @@ export function HodView({
           headerActions={<Btn size="sm" variant="ghost" onClick={onOpenQueueHistory}>Queue History</Btn>}
           badges={(
             <>
-              <Chip color={T.accent}>{summary.activeRunContext.batchLabel}</Chip>
-              <Chip color={T.success}>{summary.activeRunContext.branchName ?? 'Branch scope pending'}</Chip>
-              <Chip color={T.warning}>{summary.activeRunContext.status}</Chip>
+              <Chip color={T.accent}>{activeRunContext.batchLabel}</Chip>
+              <Chip color={T.success}>{activeRunContext.branchName ?? 'Branch scope pending'}</Chip>
+              <Chip color={T.warning}>{activeRunContext.status}</Chip>
               {checkpointContext ? <Chip color={T.orange}>{`Sem ${checkpointContext.semesterNumber} · ${checkpointContext.stageLabel}`}</Chip> : null}
               {summary.scope.departmentNames.map(name => <Chip key={name} color={T.muted}>{name}</Chip>)}
               {summary.scope.branchNames.map(name => <Chip key={name} color={T.dim}>{name}</Chip>)}
@@ -206,7 +210,7 @@ export function HodView({
           )}
           notices={(
             <>
-              <InfoBanner message={`Active run ${summary.activeRunContext.runLabel} · seed ${summary.activeRunContext.seed} · created ${formatDateTime(summary.activeRunContext.createdAt)} · sourced from live proof records${checkpointContext ? ` · checkpoint ${checkpointContext.stageLabel} (semester ${checkpointContext.semesterNumber})` : ''}.`} />
+              <InfoBanner message={`Active run ${activeRunContext.runLabel} · seed ${activeRunContext.seed} · created ${formatDateTime(activeRunContext.createdAt)} · sourced from live proof records${checkpointContext ? ` · checkpoint ${checkpointContext.stageLabel} (semester ${checkpointContext.semesterNumber})` : ''}.`} />
               <InfoBanner tone="neutral" message={describeProofProvenance(summary)} />
               <InfoBanner tone="neutral" message={describeProofAvailability(summary)} />
             </>
@@ -219,7 +223,44 @@ export function HodView({
           ) : null}
         </ProofSurfaceHero>
 
-        <ProofSurfaceLauncher targetId="hod-proof-controls" label="Jump to HoD proof controls" />
+        <ProofSurfaceLauncher
+          targetId="hod-proof-controls"
+          label="Jump to HoD proof controls"
+          popupTitle="HoD proof control surface"
+          popupCaption={checkpointContext
+            ? `${activeRunContext.batchLabel} · Sem ${checkpointContext.semesterNumber} · ${checkpointContext.stageLabel}`
+            : activeRunContext.batchLabel}
+          popupContent={() => (
+            <div style={{ display: 'grid', gap: 12 }}>
+              <InfoBanner message="Model usefulness is checkpoint-bound. Compare the current policy-derived status, the no-action comparator, and the simulated intervention / realized path before acting on the watchlist." />
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Open reassessments</div>
+                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>{summary.monitoringSummary.activeReassessmentCount}</div>
+                </Card>
+                <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Acknowledgements</div>
+                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>{summary.monitoringSummary.acknowledgementCount}</div>
+                </Card>
+                <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Unresolved alerts</div>
+                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>{summary.totals.unresolvedAlertCount}</div>
+                </Card>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Chip color={T.accent}>{activeRunContext.runLabel}</Chip>
+                <Chip color={T.warning}>{`High ${summary.totals.highRiskCount}`}</Chip>
+                <Chip color={T.success}>{`Resolved ${summary.totals.resolvedAlertCount}`}</Chip>
+              </div>
+            </div>
+          )}
+          popupFooter={({ closePopup, jumpToTarget }) => (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <Btn size="sm" variant="ghost" onClick={jumpToTarget}>Open proof controls</Btn>
+              <Btn size="sm" variant="ghost" onClick={closePopup}>Close</Btn>
+            </div>
+          )}
+        />
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
           <MetricCard label="Students Covered" value={String(summary.totals.studentsCovered)} helper="Students visible in the active HoD scope." />
@@ -661,7 +702,7 @@ export function HodView({
                 <MetricCard label="Risk Change" value={`${selectedStudent.riskChangeFromPreviousCheckpointScaled > 0 ? '+' : ''}${selectedStudent.riskChangeFromPreviousCheckpointScaled}`} helper="Stage-to-stage risk delta from the selected playback checkpoint." />
               ) : null}
               {selectedStudent.counterfactualLiftScaled != null ? (
-                <MetricCard label="Counterfactual Lift" value={`${selectedStudent.counterfactualLiftScaled > 0 ? '+' : ''}${selectedStudent.counterfactualLiftScaled}`} helper="Checkpoint replay lift over no-action." />
+                <MetricCard label="Counterfactual Lift" value={`${selectedStudent.counterfactualLiftScaled > 0 ? '+' : ''}${selectedStudent.counterfactualLiftScaled}`} helper="Checkpoint replay lift over the no-action comparator." />
               ) : null}
               <MetricCard label="Attendance" value={formatPercent(selectedStudent.observedEvidence.attendancePct)} helper="Current observed attendance in the active semester slice." />
               <MetricCard label="Backlogs" value={String(selectedStudent.observedEvidence.backlogCount)} helper="Transcript-backed backlog count available in the active run context." />
@@ -718,7 +759,7 @@ export function HodView({
                           <div>{snapshot.recommendedAction}</div>
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                             {snapshot.riskChangeFromPreviousCheckpointScaled != null ? <Chip color={snapshot.riskChangeFromPreviousCheckpointScaled > 0 ? T.danger : snapshot.riskChangeFromPreviousCheckpointScaled < 0 ? T.success : T.dim}>{`Δ ${snapshot.riskChangeFromPreviousCheckpointScaled > 0 ? '+' : ''}${snapshot.riskChangeFromPreviousCheckpointScaled}`}</Chip> : null}
-                            {snapshot.counterfactualLiftScaled != null ? <Chip color={snapshot.counterfactualLiftScaled > 0 ? T.success : snapshot.counterfactualLiftScaled < 0 ? T.warning : T.dim}>{`Lift ${snapshot.counterfactualLiftScaled > 0 ? '+' : ''}${snapshot.counterfactualLiftScaled}`}</Chip> : null}
+                            {snapshot.counterfactualLiftScaled != null ? <Chip color={snapshot.counterfactualLiftScaled > 0 ? T.success : snapshot.counterfactualLiftScaled < 0 ? T.warning : T.dim}>{`Counterfactual lift ${snapshot.counterfactualLiftScaled > 0 ? '+' : ''}${snapshot.counterfactualLiftScaled}`}</Chip> : null}
                             {snapshot.observedEvidence.coEvidenceMode ? <Chip color={T.dim}>{snapshot.observedEvidence.coEvidenceMode}</Chip> : null}
                           </div>
                         </div>

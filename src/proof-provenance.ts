@@ -13,6 +13,13 @@ export type ProofProvenanceLike = {
   activeOperationalSemester: number | null
 }
 
+const proofPanelLabelMap: Record<string, string> = {
+  Observed: 'Observed',
+  'Policy Derived': 'Model Output',
+  'Simulation Internal': 'Simulated Intervention / Realized Path',
+  'Human Action Log': 'Simulated Intervention / Realized Path',
+}
+
 function formatScopeModeLabel(scopeMode: ApiScopeMode) {
   if (scopeMode === 'academic-faculty') return 'Academic faculty mode'
   if (scopeMode === 'proof') return 'Proof mode'
@@ -24,6 +31,10 @@ function formatCountSourceLabel(countSource: ApiCountSource) {
   if (countSource === 'proof-run') return 'Proof-run counts'
   if (countSource === 'proof-checkpoint') return 'Checkpoint-bound proof counts'
   return 'Unavailable counts'
+}
+
+export function normalizeProofPanelLabel(label: string) {
+  return proofPanelLabelMap[label] ?? label
 }
 
 export function describeProofProvenance(provenance: ProofProvenanceLike) {
@@ -38,12 +49,16 @@ export function describeProofProvenance(provenance: ProofProvenanceLike) {
           ? `operational semester ${provenance.activeOperationalSemester}`
           : 'operational semester unavailable'
       )
-  return `Scope ${provenance.scopeDescriptor.label} · resolved from ${provenance.resolvedFrom.label} · ${formatCountSourceLabel(provenance.countSource)} · ${semesterLabel} · ${formatScopeModeLabel(provenance.scopeMode)}.`
+  return `Provenance · scope ${provenance.scopeDescriptor.label} · resolved from ${provenance.resolvedFrom.label} · ${formatCountSourceLabel(provenance.countSource)} · ${semesterLabel} · ${formatScopeModeLabel(provenance.scopeMode)}.`
+}
+
+export function describeProofModelUsefulness(provenance: ProofProvenanceLike) {
+  if (provenance.countSource === 'unavailable') {
+    return `Model usefulness · no authoritative proof count source is available. ${provenance.resolvedFrom.label}`
+  }
+  return `Model usefulness · ${formatCountSourceLabel(provenance.countSource)} are authoritative for ${provenance.scopeDescriptor.label}.`
 }
 
 export function describeProofAvailability(provenance: ProofProvenanceLike) {
-  if (provenance.countSource === 'unavailable') {
-    return `No authoritative proof count source is available. ${provenance.resolvedFrom.label}`
-  }
-  return `${formatCountSourceLabel(provenance.countSource)} are authoritative for ${provenance.scopeDescriptor.label}.`
+  return describeProofModelUsefulness(provenance)
 }

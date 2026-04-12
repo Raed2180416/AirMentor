@@ -84,7 +84,7 @@ function createApiClientMock(overrides: Partial<AirMentorApiClientLike>): AirMen
 }
 
 describe('HTTP repository mode', () => {
-  it('uses the remote session adapter while keeping local operational repositories', async () => {
+  it('uses the remote session adapter without exposing local operational repositories before bootstrap', async () => {
     const storage = new MemoryStorage()
     storage.setItem(AIRMENTOR_STORAGE_KEYS.currentFacultyId, 'faculty-academic')
     const remoteSession = createSessionResponse()
@@ -208,8 +208,12 @@ describe('HTTP repository mode', () => {
     const switched = await repositories.sessionPreferences.switchRemoteRoleContext('grant-hod')
     expect(switched.activeRoleGrant.roleCode).toBe('HOD')
 
-    const faculty = await repositories.offeringsStudentsHistory.listFaculty()
-    expect(faculty.length).toBeGreaterThan(0)
+    await expect(repositories.offeringsStudentsHistory.listFaculty()).rejects.toThrow(
+      'HTTP academic repositories require a live academic bootstrap snapshot before operational data can be accessed.',
+    )
+    expect(() => repositories.entryData.getStudentPatchesSnapshot()).toThrow(
+      'HTTP academic repositories require a live academic bootstrap snapshot before operational data can be accessed.',
+    )
 
     const localRepositories = createLocalAirMentorRepositories(storage)
     expect(localRepositories.sessionPreferences.getCurrentFacultyIdSnapshot()).toBe('faculty-academic')

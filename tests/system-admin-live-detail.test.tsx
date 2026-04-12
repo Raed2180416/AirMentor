@@ -92,7 +92,7 @@ describe('system-admin-live-detail formatting', () => {
       }),
     ))
 
-    expect(markup).toContain('Scope Section A')
+    expect(markup).toContain('scope Section A')
     expect(markup).toContain('resolved from Batch 2022 override')
     expect(markup).toContain('operational semester 5')
   })
@@ -123,7 +123,7 @@ describe('system-admin-live-detail formatting', () => {
       }),
     ))
 
-    expect(markup).toContain('No authoritative proof count source is available.')
+    expect(markup).toContain('no authoritative proof count source is available.')
     expect(markup).toContain('No authoritative proof snapshot')
   })
 

@@ -3,7 +3,7 @@ import { Activity, Eye, TrendingDown } from 'lucide-react'
 import { T, mono, sora } from '../data'
 import type { Role } from '../domain'
 import type { ApiFeatureCompleteness, ApiFeatureProvenance, ApiRiskHeadDisplay, ApiStudentRiskExplorer } from '../api/types'
-import { describeProofAvailability, describeProofProvenance } from '../proof-provenance'
+import { describeProofModelUsefulness, describeProofProvenance } from '../proof-provenance'
 import { ProofSurfaceHero, ProofSurfaceLauncher, ProofSurfaceTabPanel, ProofSurfaceTabs } from '../proof-surface-shell'
 import { Btn, Card, Chip, PageBackButton, PageShell } from '../ui-primitives'
 import { EmptyState, InfoBanner, MetricCard } from '../system-admin-ui'
@@ -66,7 +66,7 @@ function renderFeatureProvenanceValue(featureProvenance: ApiFeatureProvenance | 
     ? featureProvenance.curriculumFeatureProfileFingerprint.slice(0, 8)
     : 'none'
   const importVersion = featureProvenance.curriculumImportVersionId ?? 'none'
-  return `Import ${importVersion} · Fingerprint ${fingerprint} · Nodes ${featureProvenance.graphNodeCount} · Edges ${featureProvenance.graphEdgeCount} · History ${featureProvenance.historyCourseCount}`
+  return `Provenance · import ${importVersion} · fingerprint ${fingerprint} · nodes ${featureProvenance.graphNodeCount} · edges ${featureProvenance.graphEdgeCount} · history ${featureProvenance.historyCourseCount}`
 }
 
 function DriverList({
@@ -246,6 +246,7 @@ export function RiskExplorerPage({
                   message={`Feature fallback is ${featureCompleteness.fallbackMode}. Missing: ${featureCompleteness.missing.join(' · ') || 'none'}.`}
                 />
               ) : null}
+              <InfoBanner tone="neutral" message={describeProofModelUsefulness(explorer)} />
               {explorer.checkpointContext?.stageAdvanceBlocked ? (
                 <InfoBanner
                   tone="error"
@@ -253,15 +254,15 @@ export function RiskExplorerPage({
                 />
               ) : null}
               <div data-proof-section="authority-banner">
-                <InfoBanner message="Authoritative proof surface for checkpoint-bound analysis. Trained heads are proof-backed for this selected evidence window; derived scenario heads and policy comparisons remain advisory." />
+                <InfoBanner message="Provenance surface for checkpoint-bound analysis. Trained heads are proof-backed for this selected evidence window; derived scenario heads and intervention comparisons remain advisory." />
                 <InfoBanner tone="neutral" message={describeProofProvenance(explorer)} />
-                <InfoBanner tone="neutral" message={describeProofAvailability(explorer)} />
+                <InfoBanner tone="neutral" message={describeProofModelUsefulness(explorer)} />
               </div>
             </>
           )}
         >
           <Card style={{ padding: 14, display: 'grid', gap: 10, background: T.surface2 }}>
-            <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Feature Completeness</div>
+          <div style={{ ...sora, fontSize: 15, fontWeight: 700, color: T.text }}>Feature Completeness</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {featureCompleteness ? (
                 <>
@@ -275,7 +276,7 @@ export function RiskExplorerPage({
               )}
             </div>
             <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
-              {featureCompleteness ? `Missing dimensions: ${featureCompleteness.missing.join(' · ') || 'none'}.` : 'No completeness metadata is attached to this proof payload.'}
+              {featureCompleteness ? `Missing dimensions: ${featureCompleteness.missing.join(' · ') || 'none'}.` : 'No feature-completeness metadata is attached to this proof payload.'}
             </div>
             <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
               {renderFeatureProvenanceValue(featureProvenance)}
@@ -351,7 +352,7 @@ export function RiskExplorerPage({
             <div style={{ display: 'grid', gap: 14, alignSelf: 'start' }}>
               {(activeTab === 'overview' || activeTab === 'advanced') && (
                 <Card data-proof-section="current-status" style={{ padding: 16, display: 'grid', gap: 10 }}>
-                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Current Status</div>
+                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Model Output</div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {explorer.currentStatus.riskBand ? <Chip color={explorer.currentStatus.riskBand === 'High' ? T.danger : explorer.currentStatus.riskBand === 'Medium' ? T.warning : T.success}>{explorer.currentStatus.riskBand}</Chip> : null}
                     {explorer.currentStatus.riskProbScaled != null ? <Chip color={T.dim}>{`${explorer.currentStatus.riskProbScaled}%`}</Chip> : null}
@@ -360,10 +361,10 @@ export function RiskExplorerPage({
                   </div>
                   <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
                     <div style={{ ...mono, fontSize: 10, color: T.text, lineHeight: 1.7 }}>
-                      Action Plan: {explorer.currentStatus.recommendedAction ?? 'None'}
+                      Model output: {explorer.currentStatus.recommendedAction ?? 'None'}
                     </div>
                     {explorer.currentStatus.recommendedAction ? (
-                      <Chip color={T.accent}>{`Suggested ${explorer.currentStatus.recommendedAction.replace(/-/g, ' ')}`}</Chip>
+                      <Chip color={T.accent}>{`Simulated intervention ${explorer.currentStatus.recommendedAction.replace(/-/g, ' ')}`}</Chip>
                     ) : null}
                   </div>
                   <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
@@ -372,11 +373,6 @@ export function RiskExplorerPage({
                   {explorer.currentStatus.previousRiskBand || explorer.currentStatus.riskChangeFromPreviousCheckpointScaled != null ? (
                     <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
                       Previous band {explorer.currentStatus.previousRiskBand ?? 'NA'}{explorer.currentStatus.previousRiskProbScaled != null ? ` · ${explorer.currentStatus.previousRiskProbScaled}%` : ''}{explorer.currentStatus.riskChangeFromPreviousCheckpointScaled != null ? ` · change ${explorer.currentStatus.riskChangeFromPreviousCheckpointScaled > 0 ? '+' : ''}${explorer.currentStatus.riskChangeFromPreviousCheckpointScaled}` : ''}.
-                    </div>
-                  ) : null}
-                  {explorer.currentStatus.counterfactualLiftScaled != null && activeTab === 'advanced' ? (
-                    <div style={{ ...mono, fontSize: 10, color: explorer.currentStatus.counterfactualLiftScaled > 0 ? T.success : explorer.currentStatus.counterfactualLiftScaled < 0 ? T.warning : T.dim, lineHeight: 1.7 }}>
-                      Counterfactual lift vs no-action: {explorer.currentStatus.counterfactualLiftScaled > 0 ? '+' : ''}{explorer.currentStatus.counterfactualLiftScaled} scaled points.
                     </div>
                   ) : null}
                 </Card>
@@ -395,16 +391,13 @@ export function RiskExplorerPage({
 
               {activeTab === 'advanced' && (
                 <Card data-proof-section="policy-comparison" style={{ padding: 16, display: 'grid', gap: 10 }}>
-                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Policy Comparison</div>
+                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Simulated Intervention / Realized Path</div>
                   {policyComparison ? (
                     <>
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                         {'policyPhenotype' in policyComparison && policyComparison.policyPhenotype ? <Chip color={T.orange}>{policyComparison.policyPhenotype}</Chip> : null}
                         {policyComparison.recommendedAction ? <Chip color={T.accent}>{policyComparison.recommendedAction}</Chip> : null}
                         {policyComparison.simulatedActionTaken ? <Chip color={T.warning}>{policyComparison.simulatedActionTaken}</Chip> : null}
-                        {policyComparison.noActionRiskBand ? <Chip color={T.warning}>{policyComparison.noActionRiskBand}</Chip> : null}
-                        {policyComparison.noActionRiskProbScaled != null ? <Chip color={T.dim}>{`${policyComparison.noActionRiskProbScaled}% no action`}</Chip> : null}
-                        {policyComparison.counterfactualLiftScaled != null ? <Chip color={policyComparison.counterfactualLiftScaled > 0 ? T.success : policyComparison.counterfactualLiftScaled < 0 ? T.warning : T.dim}>{`${policyComparison.counterfactualLiftScaled > 0 ? '+' : ''}${policyComparison.counterfactualLiftScaled} pts`}</Chip> : null}
                       </div>
                       {policyComparisonCandidates.length > 0 ? (
                         <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
@@ -522,6 +515,23 @@ export function RiskExplorerPage({
               )}
             </div>
           </div>
+          {activeTab === 'advanced' && (
+            <Card data-proof-section="no-action-comparator" style={{ padding: 16, display: 'grid', gap: 10, marginTop: 14 }}>
+              <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>No-Action Comparator</div>
+              {counterfactual ? (
+                <>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {counterfactual.noActionRiskBand ? <Chip color={T.warning}>{counterfactual.noActionRiskBand}</Chip> : null}
+                    {counterfactual.noActionRiskProbScaled != null ? <Chip color={T.dim}>{`${counterfactual.noActionRiskProbScaled}% no action`}</Chip> : null}
+                    {counterfactual.counterfactualLiftScaled != null ? <Chip color={counterfactual.counterfactualLiftScaled > 0 ? T.success : counterfactual.counterfactualLiftScaled < 0 ? T.warning : T.dim}>{`${counterfactual.counterfactualLiftScaled > 0 ? '+' : ''}${counterfactual.counterfactualLiftScaled} pts`}</Chip> : null}
+                  </div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>{counterfactual.note}</div>
+                </>
+              ) : (
+                <div style={{ ...mono, fontSize: 10, color: T.muted }}>No checkpoint-bound no-action comparator is available on the active-risk view.</div>
+              )}
+            </Card>
+          )}
         {activeTab === 'details' && (
           <Card data-proof-section="component-evidence-grid" style={{ padding: 16, display: 'grid', gap: 10, marginTop: 14 }}>
             <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Component Evidence Grid</div>

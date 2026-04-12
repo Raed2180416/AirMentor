@@ -19,6 +19,9 @@ describe('portal routing', () => {
       section: 'requests',
       requestId: 'request_001',
     })
+    expect(parseAdminRoute('#/admin/proof-dashboard')).toEqual({
+      section: 'proof-dashboard',
+    })
   })
 
   it('keeps the home route on the portal selector until the hash explicitly changes', () => {

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { createElement, useState } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ProofSurfaceHero,
   ProofSurfaceLauncher,
@@ -75,6 +75,48 @@ describe('ProofSurfaceShell', () => {
     expect(launcher).not.toBeNull()
     expect(button.getAttribute('data-proof-action')).toBe('proof-shell-launcher')
     expect(button.getAttribute('aria-controls')).toBe('proof-surface-controls')
+  })
+
+  it('opens the shared launcher popup and resolves the jump target action', () => {
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    })
+
+    render(createElement(
+      ProofSurfaceHero,
+      {
+        surface: 'proof-shell-popup-test',
+        eyebrow: 'Proof Shell',
+        title: 'Shared Proof Shell',
+        description: 'Shared proof shell contract.',
+      },
+      createElement(ProofSurfaceLauncher, {
+        targetId: 'proof-surface-controls',
+        popupTitle: 'Launcher summary',
+        popupCaption: 'Popup launcher contract.',
+        popupContent: ({ jumpToTarget }) => createElement('div', null,
+          createElement('p', null, 'Popup body content'),
+          createElement('button', { type: 'button', onClick: jumpToTarget }, 'Jump to dashboard'),
+        ),
+        popupFooter: ({ closePopup }) => createElement('button', { type: 'button', onClick: closePopup }, 'Close popup'),
+      }),
+      createElement('div', { id: 'proof-surface-controls' }, 'Proof controls'),
+    ))
+
+    const button = screen.getByRole('button', { name: 'Jump to proof controls · open dialog' })
+    fireEvent.click(button)
+
+    expect(document.querySelector('[data-proof-launcher-state="open"]')).not.toBeNull()
+    expect(screen.getByRole('dialog', { name: 'Launcher summary' })).toBeTruthy()
+    expect(screen.getByText('Popup body content')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Jump to dashboard' }))
+
+    expect(scrollIntoView).toHaveBeenCalled()
+    expect(document.querySelector('[data-proof-launcher-state="closed"]')).not.toBeNull()
+    expect(screen.queryByRole('dialog', { name: 'Launcher summary' })).toBeNull()
   })
 
   it('renders the shared tablist and active panel contract', () => {

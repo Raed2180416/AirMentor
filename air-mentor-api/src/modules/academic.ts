@@ -289,10 +289,10 @@ const adminOfferingParamsSchema = z.object({
 const batchProvisioningSchema = z.object({
   termId: z.string().min(1),
   sectionLabels: z.array(z.string().min(1)).default([]),
-  mode: z.enum(['live-empty', 'mock', 'manual']).default('mock'),
+  mode: z.enum(['live-empty', 'mock', 'manual']).default('live-empty'),
   studentsPerSection: z.number().int().min(1).max(200).default(60),
   facultyPoolIds: z.array(z.string().min(1)).optional(),
-  createStudents: z.boolean().default(true),
+  createStudents: z.boolean().default(false),
   createMentors: z.boolean().default(true),
   createAttendanceScaffolding: z.boolean().default(true),
   createAssessmentScaffolding: z.boolean().default(false),

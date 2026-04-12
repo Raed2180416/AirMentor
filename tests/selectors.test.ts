@@ -63,6 +63,20 @@ function collectBlueprintIds(blueprint: ReturnType<typeof buildBlueprintFixture>
 }
 
 describe('selectors', () => {
+  it('does not fall back to seeded students when live projections omit an offering', () => {
+    const selectors = createAppSelectors({
+      studentPatches: {},
+      schemeByOffering: {
+        [cs401a.offId]: defaultSchemeForOffering(cs401a),
+      },
+      ttBlueprintsByOffering: {},
+      studentSourceMode: 'live',
+      studentsByOffering: {},
+    })
+
+    expect(selectors.getStudentsPatched(cs401a)).toEqual([])
+  })
+
   it('applies patched attendance and finals data from React-owned state', () => {
     const originalStudents = getStudents(cs401a)
     const targetStudent = originalStudents[0]

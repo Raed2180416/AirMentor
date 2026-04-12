@@ -209,7 +209,7 @@ export function FacultyProfilePage({
 
         {proofOps ? (
           <div data-proof-section="proof-mode-authority">
-            <InfoBanner message="Proof mode is active. Use the Proof Control Plane, Risk Explorer, and Student Shell for checkpoint-bound evidence. Proof-aware summary and scope cards on this page now stay aligned to the selected checkpoint; permissions, appointments, and timetable-governance details remain operational context." />
+            <InfoBanner message="Proof mode is active. Use the Proof Control Plane, Risk Explorer, and Student Shell for checkpoint-bound evidence. Model usefulness and proof-semester counts on this page stay aligned to the selected checkpoint; permissions, appointments, and timetable-governance details remain operational context." />
             <InfoBanner tone="neutral" message={describeProofProvenance(proofOps)} />
             <InfoBanner tone="neutral" message={describeProofAvailability(proofOps)} />
           </div>
@@ -372,6 +372,43 @@ export function FacultyProfilePage({
             targetId="teacher-proof-panel-surface"
             label="Jump to teacher proof controls"
             dataProofEntityId={currentTeacher.facultyId}
+            popupTitle="Teacher proof control surface"
+            popupCaption={proofModeActive
+              ? `Checkpoint ${selectedProofCheckpoint?.stageLabel ?? 'unavailable'} · semester ${selectedProofCheckpoint?.semesterNumber ?? proofOps?.activeOperationalSemester ?? 'NA'}`
+              : 'Teaching-side proof summary for the current faculty scope.'}
+            popupContent={() => (
+              <div style={{ display: 'grid', gap: 12 }}>
+                <InfoBanner message="Model usefulness is checkpoint-bound here. Use the popup to verify queue counts, elective-fit context, and the selected proof semester before opening the full proof panel." />
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                  <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
+                    <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Proof semester</div>
+                    <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>{selectedProofCheckpoint ? `Semester ${selectedProofCheckpoint.semesterNumber}` : `Semester ${proofOps?.activeOperationalSemester ?? 'NA'}`}</div>
+                  </Card>
+                  <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
+                    <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Proof queue</div>
+                    <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>{proofOps?.monitoringQueue.length ?? 0}</div>
+                  </Card>
+                  <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
+                    <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Elective fits</div>
+                    <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>{proofOps?.electiveFits.length ?? 0}</div>
+                  </Card>
+                </div>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <div style={{ ...mono, fontSize: 10, color: T.text }}>Latest queue item</div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                    {leadingProofQueueItem
+                      ? `${leadingProofQueueItem.studentName} · ${leadingProofQueueItem.courseCode} · ${leadingProofQueueItem.riskBand} · due ${leadingProofQueueItem.dueAt ? formatDateLabel(leadingProofQueueItem.dueAt) : 'unspecified'}`
+                      : 'No governed queue items are currently linked to this faculty scope.'}
+                  </div>
+                </div>
+              </div>
+            )}
+            popupFooter={({ closePopup, jumpToTarget }) => (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <Btn size="sm" variant="ghost" onClick={jumpToTarget}>Open proof controls</Btn>
+                <Btn size="sm" variant="ghost" onClick={closePopup}>Close</Btn>
+              </div>
+            )}
           />
           <ProofSurfaceHero
             surface="teacher-proof-panel"
@@ -450,7 +487,7 @@ export function FacultyProfilePage({
                               <Chip key={`${item.riskAssessmentId}-${driver.feature}`} color={driver.impact >= 0 ? T.danger : T.success}>{driver.label}</Chip>
                             ))}
                             {item.riskChangeFromPreviousCheckpointScaled != null ? <Chip color={item.riskChangeFromPreviousCheckpointScaled > 0 ? T.danger : item.riskChangeFromPreviousCheckpointScaled < 0 ? T.success : T.dim}>{`Δ ${item.riskChangeFromPreviousCheckpointScaled > 0 ? '+' : ''}${item.riskChangeFromPreviousCheckpointScaled}`}</Chip> : null}
-                            {item.counterfactualLiftScaled != null ? <Chip color={item.counterfactualLiftScaled > 0 ? T.success : item.counterfactualLiftScaled < 0 ? T.warning : T.dim}>{`Lift ${item.counterfactualLiftScaled > 0 ? '+' : ''}${item.counterfactualLiftScaled}`}</Chip> : null}
+                            {item.counterfactualLiftScaled != null ? <Chip color={item.counterfactualLiftScaled > 0 ? T.success : item.counterfactualLiftScaled < 0 ? T.warning : T.dim}>{`Counterfactual lift ${item.counterfactualLiftScaled > 0 ? '+' : ''}${item.counterfactualLiftScaled}`}</Chip> : null}
                             <Btn
                               size="sm"
                               variant="ghost"
@@ -487,7 +524,7 @@ export function FacultyProfilePage({
                   </Card>
 
                   <Card data-proof-section="elective-fit" style={{ padding: 10, background: T.surface2, display: 'grid', gap: 6 }}>
-                    <div style={{ ...mono, fontSize: 10, color: T.text }}>Semester-6 elective fit</div>
+                    <div style={{ ...mono, fontSize: 10, color: T.text }}>{proofModeActive ? 'Proof-semester elective fit' : 'Semester-6 elective fit'}</div>
                     {leadingElectiveFit ? (
                       <>
                         <div style={{ ...mono, fontSize: 10, color: T.text }}>

@@ -18,6 +18,7 @@ import {
   ChevronRight,
   Compass,
   GraduationCap,
+  Layers3,
   LayoutDashboard,
   Plus,
   RefreshCw,
@@ -114,10 +115,12 @@ import {
 import { describeProofAvailability, describeProofProvenance } from './proof-provenance'
 import {
   CANONICAL_PROOF_ROUTE,
+  CANONICAL_PROOF_ACADEMIC_FACULTY_ID,
+  CANONICAL_PROOF_BRANCH_ID,
+  CANONICAL_PROOF_DEPARTMENT_ID,
   resolveAdminDirectoryScopeFilter,
   resolveAuthoritativeOperationalSemester,
   resolveCanonicalProofBatch,
-  shouldResolveCanonicalProofRoute,
 } from './proof-pilot'
 import {
   buildBulkMentorAssignmentApplyPayload,
@@ -162,8 +165,10 @@ import {
   SystemAdminFacultiesWorkspace,
 } from './system-admin-faculties-workspace'
 import { SystemAdminHistoryWorkspace } from './system-admin-history-workspace'
+import { SystemAdminProofDashboardWorkspace } from './system-admin-proof-dashboard-workspace'
 import { SystemAdminRequestWorkspace } from './system-admin-request-workspace'
 import { SystemAdminSessionBoundary } from './system-admin-session-shell'
+import { ProofSurfaceLauncher } from './proof-surface-shell'
 import {
   BrandMark,
   Btn,
@@ -509,6 +514,7 @@ export function parseAdminRoute(hash: string): LiveAdminRoute {
   if (!cleaned) return { section: 'overview' }
   const parts = cleaned.split('/').filter(Boolean)
   if (parts[0] === 'overview') return { section: 'overview' }
+  if (parts[0] === 'proof-dashboard') return { section: 'proof-dashboard' }
   if (parts[0] === 'students') return { section: 'students', studentId: parts[1] }
   if (parts[0] === 'faculty-members') return { section: 'faculty-members', facultyMemberId: parts[1] }
   if (parts[0] === 'requests') return { section: 'requests', requestId: parts[1] }
@@ -527,6 +533,7 @@ export function parseAdminRoute(hash: string): LiveAdminRoute {
 
 function routeToHash(route: LiveAdminRoute) {
   if (route.section === 'overview') return '#/admin/overview'
+  if (route.section === 'proof-dashboard') return '#/admin/proof-dashboard'
   if (route.section === 'students') return route.studentId ? `#/admin/students/${route.studentId}` : '#/admin/students'
   if (route.section === 'faculty-members') return route.facultyMemberId ? `#/admin/faculty-members/${route.facultyMemberId}` : '#/admin/faculty-members'
   if (route.section === 'requests') return route.requestId ? `#/admin/requests/${route.requestId}` : '#/admin/requests'
@@ -537,6 +544,31 @@ function routeToHash(route: LiveAdminRoute) {
   if (route.branchId) segments.push('branches', route.branchId)
   if (route.batchId) segments.push('batches', route.batchId)
   return segments.join('/')
+}
+
+function registryFilterMatchesCanonicalScope(
+  filter: RegistryFilterState,
+  scope: Pick<UniversityScopeState, 'academicFacultyId' | 'departmentId' | 'branchId' | 'batchId'> | null,
+) {
+  if (!scope) return true
+  return filter.academicFacultyId === (scope.academicFacultyId ?? '')
+    && filter.departmentId === (scope.departmentId ?? '')
+    && filter.branchId === (scope.branchId ?? '')
+    && filter.batchId === (scope.batchId ?? '')
+}
+
+function applyCanonicalScopeToRegistryFilter(
+  filter: RegistryFilterState,
+  scope: Pick<UniversityScopeState, 'academicFacultyId' | 'departmentId' | 'branchId' | 'batchId'> | null,
+): RegistryFilterState {
+  if (!scope) return filter
+  return {
+    ...filter,
+    academicFacultyId: scope.academicFacultyId ?? '',
+    departmentId: scope.departmentId ?? '',
+    branchId: scope.branchId ?? '',
+    batchId: scope.batchId ?? '',
+  }
 }
 
 function defaultPolicyForm(): PolicyFormState {
@@ -669,6 +701,29 @@ function buildCurriculumFeaturePayload(form: CurriculumFeatureFormState): ApiCur
   }
 }
 
+function validateCurriculumFeaturePrerequisites(
+  targetCourse: ApiCurriculumFeatureConfigBundle['items'][number],
+  prerequisites: ApiCurriculumFeatureConfigPayload['prerequisites'],
+  items: ApiCurriculumFeatureConfigBundle['items'],
+) {
+  const targetSemesterNumber = Number(targetCourse.semesterNumber ?? 0)
+  if (!Number.isFinite(targetSemesterNumber) || targetSemesterNumber <= 0) return
+
+  const courseByCode = new Map(
+    items.map(item => [item.courseCode.trim().toLowerCase(), item] as const),
+  )
+
+  for (const prerequisite of prerequisites) {
+    const sourceCourse = courseByCode.get(prerequisite.sourceCourseCode.trim().toLowerCase())
+    if (!sourceCourse) continue
+    const sourceSemesterNumber = Number(sourceCourse.semesterNumber ?? 0)
+    if (!Number.isFinite(sourceSemesterNumber) || sourceSemesterNumber <= 0) continue
+    if (sourceSemesterNumber >= targetSemesterNumber) {
+      throw new Error(`Prerequisite edges require an earlier semester. Found semester ${sourceSemesterNumber} -> ${targetSemesterNumber}.`)
+    }
+  }
+}
+
 const DEFAULT_STAGE_POLICY: ApiStagePolicyPayload = {
   stages: [
     {
@@ -793,10 +848,10 @@ function defaultBatchProvisioningForm(): BatchProvisioningFormState {
   return {
     termId: '',
     sectionLabels: 'A, B',
-    mode: 'mock',
+    mode: 'live-empty',
     studentsPerSection: '60',
     facultyPoolIds: [],
-    createStudents: true,
+    createStudents: false,
     createMentors: true,
     createAttendanceScaffolding: true,
     createAssessmentScaffolding: false,
@@ -808,7 +863,7 @@ function buildBatchProvisioningPayload(form: BatchProvisioningFormState): ApiBat
   return {
     termId: requireText('Setup term', form.termId),
     sectionLabels: parseCurriculumFeatureLines(form.sectionLabels.replace(/,/g, '\n')),
-    mode: form.mode ?? 'mock',
+    mode: form.mode ?? 'live-empty',
     studentsPerSection: requirePositiveInteger('Students per section', form.studentsPerSection),
     facultyPoolIds: form.facultyPoolIds.length > 0 ? [...form.facultyPoolIds] : undefined,
     createStudents: form.createStudents,
@@ -1432,6 +1487,24 @@ function matchesBatchScope(batch: LiveAdminDataset['batches'][number], data: Liv
   if (scopeType === 'academic-faculty') {
     const department = resolveDepartment(data, branch.departmentId)
     return department?.academicFacultyId === scopeId
+  }
+  return false
+}
+
+function matchesAdminRequestScope(
+  request: LiveAdminDataset['requests'][number],
+  scope: LiveAdminSearchScope | null,
+) {
+  if (!scope || !hasHierarchyScopeSelection(scope)) return true
+  if (request.scopeType === 'academic-faculty') return request.scopeId === scope.academicFacultyId
+  if (request.scopeType === 'department') return request.scopeId === scope.departmentId
+  if (request.scopeType === 'branch') return request.scopeId === scope.branchId
+  if (request.scopeType === 'batch') return request.scopeId === scope.batchId
+  if (request.scopeType === 'section') {
+    const parsedScope = parseAdminSectionScopeId(request.scopeId)
+    if (!parsedScope) return false
+    if (parsedScope.batchId !== scope.batchId) return false
+    return !scope.sectionCode || parsedScope.sectionCode === scope.sectionCode
   }
   return false
 }
@@ -2540,32 +2613,6 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     setCurriculumFeaturePinnedProfileId(binding?.curriculumFeatureProfileId ?? '')
   }, [curriculumFeatureBinding])
 
-  const selectedRequestSummary = route.requestId ? data.requests.find(item => item.adminRequestId === route.requestId) ?? null : null
-
-  useEffect(() => {
-    if (!route.requestId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
-      setSelectedRequestDetail(null)
-      setRequestDetailLoading(false)
-      return
-    }
-    let cancelled = false
-    setRequestDetailLoading(true)
-    void (async () => {
-      try {
-        const next = await apiClient.getAdminRequest(route.requestId!)
-        if (cancelled) return
-        setSelectedRequestDetail(next)
-      } catch (error) {
-        if (cancelled) return
-        setSelectedRequestDetail(null)
-        setActionError(toErrorMessage(error))
-      } finally {
-        if (!cancelled) setRequestDetailLoading(false)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [apiClient, route.requestId, selectedRequestSummary?.version, session])
-
   useEffect(() => {
     if (!flashMessage) return undefined
     const timer = window.setTimeout(() => setFlashMessage(''), 2500)
@@ -2578,6 +2625,64 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const selectedBranch = resolveBranch(data, route.branchId)
   const selectedBatch = resolveBatch(data, route.batchId)
   const canonicalProofBatch = useMemo(() => resolveCanonicalProofBatch(data), [data.batches])
+  const canonicalProofRegistryScope = useMemo<UniversityScopeState | null>(() => {
+    if (!canonicalProofBatch) return null
+    return {
+      academicFacultyId: CANONICAL_PROOF_ACADEMIC_FACULTY_ID,
+      departmentId: CANONICAL_PROOF_DEPARTMENT_ID,
+      branchId: CANONICAL_PROOF_BRANCH_ID,
+      batchId: canonicalProofBatch.batchId,
+      sectionCode: null,
+      label: `MNC proof branch · ${deriveCurrentYearLabel(canonicalProofBatch.currentSemester)} · Batch ${canonicalProofBatch.batchLabel}`,
+    }
+  }, [canonicalProofBatch])
+  const proofOperationalScope = useMemo<LiveAdminSearchScope | null>(() => (
+    canonicalProofRegistryScope
+      ? {
+          academicFacultyId: canonicalProofRegistryScope.academicFacultyId ?? undefined,
+          departmentId: canonicalProofRegistryScope.departmentId ?? undefined,
+          branchId: canonicalProofRegistryScope.branchId ?? undefined,
+          batchId: canonicalProofRegistryScope.batchId ?? undefined,
+        }
+      : null
+  ), [canonicalProofRegistryScope])
+  const operatorData = useMemo<LiveAdminDataset>(() => {
+    if (!proofOperationalScope?.batchId || !proofOperationalScope.branchId || !proofOperationalScope.departmentId || !proofOperationalScope.academicFacultyId) {
+      return data
+    }
+
+    const scopedTerms = data.terms.filter(item => (
+      item.branchId === proofOperationalScope.branchId
+      && item.batchId === proofOperationalScope.batchId
+    ))
+    const scopedTermIds = new Set(scopedTerms.map(item => item.termId))
+    const scopedCurriculumCourses = data.curriculumCourses.filter(item => item.batchId === proofOperationalScope.batchId)
+    const scopedCourseIds = new Set(scopedCurriculumCourses.map(item => item.courseId).filter((value): value is string => Boolean(value)))
+    const scopedOfferings = data.offerings.filter(item => (
+      item.branchId === proofOperationalScope.branchId
+      && (!item.termId || scopedTermIds.has(item.termId))
+    ))
+    const scopedOfferingIds = new Set(scopedOfferings.map(item => item.offId))
+    const scopedFacultyMembers = data.facultyMembers.filter(item => matchesFacultyScope(item, data, proofOperationalScope))
+    const scopedFacultyIds = new Set(scopedFacultyMembers.map(item => item.facultyId))
+    const scopedStudents = data.students.filter(item => matchesStudentScope(item, data, proofOperationalScope))
+
+    return {
+      ...data,
+      academicFaculties: data.academicFaculties.filter(item => item.academicFacultyId === proofOperationalScope.academicFacultyId),
+      departments: data.departments.filter(item => item.departmentId === proofOperationalScope.departmentId),
+      branches: data.branches.filter(item => item.branchId === proofOperationalScope.branchId),
+      batches: data.batches.filter(item => item.batchId === proofOperationalScope.batchId),
+      terms: scopedTerms,
+      facultyMembers: scopedFacultyMembers,
+      students: scopedStudents,
+      courses: data.courses.filter(item => item.departmentId === proofOperationalScope.departmentId || scopedCourseIds.has(item.courseId)),
+      curriculumCourses: scopedCurriculumCourses,
+      offerings: scopedOfferings,
+      ownerships: data.ownerships.filter(item => scopedOfferingIds.has(item.offeringId) && scopedFacultyIds.has(item.facultyId)),
+      requests: data.requests.filter(item => matchesAdminRequestScope(item, proofOperationalScope)),
+    }
+  }, [data, proofOperationalScope])
   const activeRunDetail = proofDashboard?.activeRunDetail ?? null
   const { semester: authoritativeOperationalSemester, source: authoritativeOperationalSemesterSource } = resolveAuthoritativeOperationalSemester({
     route,
@@ -2644,12 +2749,40 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
   useEffect(() => {
     if (!session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') return
-    if (!shouldResolveCanonicalProofRoute(route, { batches: data.batches })) return
+    if (canonicalProofRegistryScope) {
+      setRegistryScope(current => {
+        if (
+          current?.academicFacultyId === canonicalProofRegistryScope.academicFacultyId
+          && current.departmentId === canonicalProofRegistryScope.departmentId
+          && current.branchId === canonicalProofRegistryScope.branchId
+          && current.batchId === canonicalProofRegistryScope.batchId
+        ) return current
+        return canonicalProofRegistryScope
+      })
+      setStudentRegistryFilter(current => (
+        registryFilterMatchesCanonicalScope(current, canonicalProofRegistryScope)
+          ? current
+          : applyCanonicalScopeToRegistryFilter(current, canonicalProofRegistryScope)
+      ))
+      setFacultyRegistryFilter(current => (
+        registryFilterMatchesCanonicalScope(current, canonicalProofRegistryScope)
+          ? current
+          : applyCanonicalScopeToRegistryFilter(current, canonicalProofRegistryScope)
+      ))
+    }
+
+    if (route.section !== 'faculties') return
+    if (!canonicalProofBatch) return
+    const routeAlreadyCanonical = route.academicFacultyId === CANONICAL_PROOF_ACADEMIC_FACULTY_ID
+      && route.departmentId === CANONICAL_PROOF_DEPARTMENT_ID
+      && route.branchId === CANONICAL_PROOF_BRANCH_ID
+      && route.batchId === canonicalProofBatch.batchId
+    if (routeAlreadyCanonical) return
     navigate({
       ...CANONICAL_PROOF_ROUTE,
-      batchId: canonicalProofBatch?.batchId ?? CANONICAL_PROOF_ROUTE.batchId,
+      batchId: canonicalProofBatch.batchId,
     }, { recordHistory: false })
-  }, [canonicalProofBatch?.batchId, data.batches, navigate, route, session])
+  }, [canonicalProofBatch, canonicalProofRegistryScope, data.batches, navigate, route, session])
   const activeDiagnosticsQueueBurden = readRecordField(activeProductionEvaluation, 'queueBurdenSummary')
     ?? readRecordField(activeChallengerEvaluation, 'queueBurdenSummary')
     ?? activeModelDiagnostics?.queueBurdenSummary
@@ -2718,22 +2851,48 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     [facultyRegistryFilter],
   )
   const studentRegistryHasScope = hasHierarchyScopeSelection(studentRegistryScope)
-  const selectedStudentRecord = resolveStudent(data, route.studentId)
-  const selectedStudent = selectedStudentRecord && isStudentVisible(data, selectedStudentRecord)
+  const selectedStudentRecord = resolveStudent(operatorData, route.studentId)
+  const selectedStudent = selectedStudentRecord && isStudentVisible(operatorData, selectedStudentRecord)
     ? selectedStudentRecord
     : null
   const selectedStudentActiveAcademicContext = selectedStudent?.activeAcademicContext ?? null
   const selectedStudentPolicyBatchId = selectedStudentActiveAcademicContext?.batchId ?? null
   const selectedStudentPolicySectionCode = selectedStudentActiveAcademicContext?.sectionCode ?? null
-  const selectedFacultyRecord = resolveFacultyMember(data, route.facultyMemberId)
-  const selectedFacultyMember = selectedFacultyRecord && isFacultyMemberVisible(data, selectedFacultyRecord)
+  const selectedFacultyRecord = resolveFacultyMember(operatorData, route.facultyMemberId)
+  const selectedFacultyMember = selectedFacultyRecord && isFacultyMemberVisible(operatorData, selectedFacultyRecord)
     ? selectedFacultyRecord
     : null
+  const selectedRequestSummary = route.requestId ? operatorData.requests.find(item => item.adminRequestId === route.requestId) ?? null : null
   const selectedFacultyId = selectedFacultyMember?.facultyId ?? null
   const selectedStudentProofBanner = formatRecordProofBanner(selectedStudent as unknown as ProvenancedRecord | null)
   const selectedFacultyProofBanner = formatRecordProofBanner(selectedFacultyMember as unknown as ProvenancedRecord | null)
   const selectedStudentRouteIsExplicit = route.section === 'students' && !!route.studentId
-  const selectedStudentScopeMismatch = !!selectedStudent && studentRegistryHasScope && !matchesStudentScope(selectedStudent, data, studentRegistryScope)
+  const selectedStudentScopeMismatch = !!selectedStudent && studentRegistryHasScope && !matchesStudentScope(selectedStudent, operatorData, studentRegistryScope)
+
+  useEffect(() => {
+    const requestId = route.requestId
+    if (!requestId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN' || !selectedRequestSummary) {
+      setSelectedRequestDetail(null)
+      setRequestDetailLoading(false)
+      return
+    }
+    let cancelled = false
+    setRequestDetailLoading(true)
+    void (async () => {
+      try {
+        const next = await apiClient.getAdminRequest(requestId)
+        if (cancelled) return
+        setSelectedRequestDetail(next)
+      } catch (error) {
+        if (cancelled) return
+        setSelectedRequestDetail(null)
+        setActionError(toErrorMessage(error))
+      } finally {
+        if (!cancelled) setRequestDetailLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [apiClient, route.requestId, selectedRequestSummary, session])
 
   useEffect(() => {
     if (!activeSimulationRunId || activeRunCheckpoints.length === 0) {
@@ -2848,10 +3007,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         : route.section === 'faculty-members'
           ? (hasHierarchyScopeSelection(facultyRegistryScope) ? facultyRegistryScope : null)
           : {
-              academicFacultyId: toOptionalScopeValue(registryScope?.academicFacultyId),
-              departmentId: toOptionalScopeValue(registryScope?.departmentId),
-              branchId: toOptionalScopeValue(registryScope?.branchId),
-              batchId: toOptionalScopeValue(registryScope?.batchId),
+              academicFacultyId: toOptionalScopeValue(registryScope?.academicFacultyId ?? proofOperationalScope?.academicFacultyId),
+              departmentId: toOptionalScopeValue(registryScope?.departmentId ?? proofOperationalScope?.departmentId),
+              branchId: toOptionalScopeValue(registryScope?.branchId ?? proofOperationalScope?.branchId),
+              batchId: toOptionalScopeValue(registryScope?.batchId ?? proofOperationalScope?.batchId),
               sectionCode: toOptionalScopeValue(registryScope?.sectionCode),
             }
     if (!query) {
@@ -2868,7 +3027,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       }
     })()
     return () => { cancelled = true }
-  }, [apiClient, deferredSearch, facultyRegistryScope, registryScope?.academicFacultyId, registryScope?.batchId, registryScope?.branchId, registryScope?.departmentId, registryScope?.sectionCode, route.academicFacultyId, route.batchId, route.branchId, route.departmentId, route.section, selectedSectionCode, session, studentRegistryHasScope, studentRegistryScope])
+  }, [apiClient, deferredSearch, facultyRegistryScope, proofOperationalScope?.academicFacultyId, proofOperationalScope?.batchId, proofOperationalScope?.branchId, proofOperationalScope?.departmentId, registryScope?.academicFacultyId, registryScope?.batchId, registryScope?.branchId, registryScope?.departmentId, registryScope?.sectionCode, route.academicFacultyId, route.batchId, route.branchId, route.departmentId, route.section, selectedSectionCode, session, studentRegistryHasScope, studentRegistryScope])
 
   useEffect(() => {
     setStudentDetailTab('profile')
@@ -2895,6 +3054,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     navigate({ section: 'students' }, { recordHistory: false })
   }, [data.students.length, dataLoading, navigate, route.section, route.studentId, selectedStudent, session])
 
+  useEffect(() => {
+    if (route.section !== 'requests' || !route.requestId || !session || dataLoading) return
+    if (selectedRequestSummary) return
+    setActionError('That request is no longer available in the proof workspace.')
+    navigate({ section: 'requests' }, { recordHistory: false })
+  }, [dataLoading, navigate, route.requestId, route.section, selectedRequestSummary, session])
+
   const searchResults = useMemo(() => {
     const activeSearchScope = route.section === 'faculties'
       ? {
@@ -2909,25 +3075,25 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         : route.section === 'faculty-members'
           ? (hasHierarchyScopeSelection(facultyRegistryScope) ? facultyRegistryScope : null)
           : {
-              academicFacultyId: toOptionalScopeValue(registryScope?.academicFacultyId),
-              departmentId: toOptionalScopeValue(registryScope?.departmentId),
-              branchId: toOptionalScopeValue(registryScope?.branchId),
-              batchId: toOptionalScopeValue(registryScope?.batchId),
+              academicFacultyId: toOptionalScopeValue(registryScope?.academicFacultyId ?? proofOperationalScope?.academicFacultyId),
+              departmentId: toOptionalScopeValue(registryScope?.departmentId ?? proofOperationalScope?.departmentId),
+              branchId: toOptionalScopeValue(registryScope?.branchId ?? proofOperationalScope?.branchId),
+              batchId: toOptionalScopeValue(registryScope?.batchId ?? proofOperationalScope?.batchId),
               sectionCode: toOptionalScopeValue(registryScope?.sectionCode),
             }
     const matchesActiveSection = (candidateRoute: LiveAdminRoute) => {
-      if (route.section === 'overview') return true
+      if (route.section === 'overview' || route.section === 'proof-dashboard') return true
       if (route.section === 'history') return candidateRoute.section === 'requests'
       return candidateRoute.section === route.section
     }
     const isRouteVisible = (candidateRoute: LiveAdminRoute) => {
       if (candidateRoute.section === 'requests' || candidateRoute.section === 'overview') return true
-      if (candidateRoute.studentId) return isStudentVisible(data, candidateRoute.studentId)
-      if (candidateRoute.facultyMemberId) return isFacultyMemberVisible(data, candidateRoute.facultyMemberId)
-      if (candidateRoute.batchId) return isBatchVisible(data, candidateRoute.batchId)
-      if (candidateRoute.branchId) return isBranchVisible(data, candidateRoute.branchId)
-      if (candidateRoute.departmentId) return isDepartmentVisible(data, candidateRoute.departmentId)
-      if (candidateRoute.academicFacultyId) return isAcademicFacultyVisible(data, candidateRoute.academicFacultyId)
+      if (candidateRoute.studentId) return isStudentVisible(operatorData, candidateRoute.studentId)
+      if (candidateRoute.facultyMemberId) return isFacultyMemberVisible(operatorData, candidateRoute.facultyMemberId)
+      if (candidateRoute.batchId) return isBatchVisible(operatorData, candidateRoute.batchId)
+      if (candidateRoute.branchId) return isBranchVisible(operatorData, candidateRoute.branchId)
+      if (candidateRoute.departmentId) return isDepartmentVisible(operatorData, candidateRoute.departmentId)
+      if (candidateRoute.academicFacultyId) return isAcademicFacultyVisible(operatorData, candidateRoute.academicFacultyId)
       return true
     }
     if (serverSearchResults.length > 0) {
@@ -2947,11 +3113,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         } satisfies LiveAdminRoute,
       })).filter(result => matchesActiveSection(result.route) && isRouteVisible(result.route))
     }
-    return searchLiveAdminWorkspace(data, deferredSearch, {
+    return searchLiveAdminWorkspace(operatorData, deferredSearch, {
       section: route.section,
       scope: activeSearchScope,
     }).filter(result => matchesActiveSection(result.route) && isRouteVisible(result.route))
-  }, [data, deferredSearch, facultyRegistryScope, registryScope?.academicFacultyId, registryScope?.batchId, registryScope?.branchId, registryScope?.departmentId, registryScope?.sectionCode, route.academicFacultyId, route.batchId, route.branchId, route.departmentId, route.section, selectedSectionCode, serverSearchResults, studentRegistryScope])
+  }, [deferredSearch, facultyRegistryScope, operatorData, proofOperationalScope?.academicFacultyId, proofOperationalScope?.batchId, proofOperationalScope?.branchId, proofOperationalScope?.departmentId, registryScope?.academicFacultyId, registryScope?.batchId, registryScope?.branchId, registryScope?.departmentId, registryScope?.sectionCode, route.academicFacultyId, route.batchId, route.branchId, route.departmentId, route.section, selectedSectionCode, serverSearchResults, studentRegistryScope])
   const selectedRequest = selectedRequestDetail && selectedRequestSummary && selectedRequestDetail.version !== selectedRequestSummary.version
     ? selectedRequestSummary
     : (selectedRequestDetail ?? selectedRequestSummary)
@@ -3098,7 +3264,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       ...defaultOwnershipForm(),
       facultyId: selectedFacultyMember.facultyId,
     })
-  }, [data.ownerships, selectedFacultyMember])
+  }, [operatorData.ownerships, selectedFacultyMember])
 
   useEffect(() => {
     if (!selectedStudentPolicyBatchId) {
@@ -3155,7 +3321,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     let cancelled = false
     setFacultyAuditLoading(true)
     void (async () => {
-      const facultyOwnerships = data.ownerships.filter(item => item.facultyId === selectedFacultyMember.facultyId)
+      const facultyOwnerships = operatorData.ownerships.filter(item => item.facultyId === selectedFacultyMember.facultyId)
       const requests = [
         apiClient.listAuditEvents({ entityType: 'FacultyProfile', entityId: selectedFacultyMember.facultyId }),
         ...selectedFacultyMember.appointments.map(item => apiClient.listAuditEvents({ entityType: 'FacultyAppointment', entityId: item.appointmentId })),
@@ -3171,7 +3337,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       }
     })()
     return () => { cancelled = true }
-  }, [apiClient, data.ownerships, selectedFacultyMember])
+  }, [apiClient, operatorData.ownerships, selectedFacultyMember])
 
   useEffect(() => {
     if (!session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
@@ -3882,6 +4048,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     if (!selectedBatch || !selectedCurriculumFeatureItem) return
     await runAction(async () => {
       const payload = buildCurriculumFeaturePayload(curriculumFeatureForm)
+      validateCurriculumFeaturePrerequisites(selectedCurriculumFeatureItem, payload.prerequisites, curriculumFeatureItems)
       const [targetScopeType, targetScopeId] = curriculumFeatureTargetScopeKey.split('::')
       const saved = await apiClient.saveCurriculumFeatureConfig(selectedBatch.batchId, selectedCurriculumFeatureItem.curriculumCourseId, {
         ...payload,
@@ -4786,17 +4953,17 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
   const handleAssignCurriculumCourseLeader = async (curriculumCourseId: string, facultyId: string) => {
     if (!selectedBatch || !selectedBranch) return
-    const curriculumCourse = data.curriculumCourses.find(item => item.curriculumCourseId === curriculumCourseId)
+    const curriculumCourse = operatorData.curriculumCourses.find(item => item.curriculumCourseId === curriculumCourseId)
     if (!curriculumCourse) {
       setActionError('The selected curriculum course could not be found.')
       return
     }
     const matchingTermIds = new Set(
-      data.terms
-        .filter(item => item.batchId === selectedBatch.batchId && item.branchId === selectedBranch.branchId && item.semesterNumber === curriculumCourse.semesterNumber && isTermVisible(data, item))
+      operatorData.terms
+        .filter(item => item.batchId === selectedBatch.batchId && item.branchId === selectedBranch.branchId && item.semesterNumber === curriculumCourse.semesterNumber && isTermVisible(operatorData, item))
         .map(item => item.termId),
     )
-    const matchingOfferings = data.offerings.filter(item => {
+    const matchingOfferings = operatorData.offerings.filter(item => {
       if (item.branchId !== selectedBranch.branchId) return false
       if (!item.termId) return false
       if (!matchingTermIds.has(item.termId)) return false
@@ -4811,7 +4978,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
     await runAction(async () => {
       for (const offering of matchingOfferings) {
-        const activeLeaderLikeOwnerships = data.ownerships.filter(ownership => ownership.offeringId === offering.offId && ownership.status === 'active' && isLeaderLikeOwnership(ownership.ownershipRole))
+        const activeLeaderLikeOwnerships = operatorData.ownerships.filter(ownership => ownership.offeringId === offering.offId && ownership.status === 'active' && isLeaderLikeOwnership(ownership.ownershipRole))
         for (const ownership of activeLeaderLikeOwnerships) {
           if (!facultyId || ownership.facultyId !== facultyId) {
             await apiClient.updateOfferingOwnership(ownership.ownershipId, {
@@ -4884,7 +5051,6 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       : [],
     [curriculumLinkageCandidates, selectedCurriculumFeatureItem],
   )
-  const selectedFacultyAssignments = selectedFacultyMember ? listFacultyAssignments(data, selectedFacultyMember.facultyId) : []
   const activeBatchPolicyOverride = selectedBatch
     ? data.policyOverrides.find(item => item.scopeType === 'batch' && item.scopeId === selectedBatch.batchId && isVisibleAdminRecord(item.status)) ?? null
     : null
@@ -4981,15 +5147,15 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     : null
   const curriculumFeatureTargetScopeOptions = activeScopeChain.filter(scope => scope.scopeType !== 'section')
   const curriculumFeatureProfileOptions = curriculumFeatureConfig?.availableProfiles ?? []
-  const visibleAcademicFaculties = data.academicFaculties.filter(item => isAcademicFacultyVisible(data, item))
-  const visibleDepartments = data.departments.filter(item => isDepartmentVisible(data, item))
-  const visibleBranches = data.branches.filter(item => isBranchVisible(data, item))
-  const visibleBatches = data.batches.filter(item => isBatchVisible(data, item))
-  const visibleTerms = data.terms
-    .filter(item => isTermVisible(data, item))
+  const visibleAcademicFaculties = operatorData.academicFaculties.filter(item => isAcademicFacultyVisible(operatorData, item))
+  const visibleDepartments = operatorData.departments.filter(item => isDepartmentVisible(operatorData, item))
+  const visibleBranches = operatorData.branches.filter(item => isBranchVisible(operatorData, item))
+  const visibleBatches = operatorData.batches.filter(item => isBatchVisible(operatorData, item))
+  const visibleTerms = operatorData.terms
+    .filter(item => isTermVisible(operatorData, item))
     .sort((left, right) => left.startDate.localeCompare(right.startDate))
   const archivedItems = [
-    ...data.academicFaculties.filter(item => item.status === 'archived').map(item => ({
+    ...operatorData.academicFaculties.filter(item => item.status === 'archived').map(item => ({
       key: `archived:academic-faculty:${item.academicFacultyId}`,
       label: item.name,
       meta: 'Academic faculty',
@@ -5000,48 +5166,48 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     })),
   ].sort((left, right) => compareAdminTimestampsDesc(left.updatedAt, right.updatedAt))
   const deletedItems = [
-    ...data.academicFaculties.filter(item => item.status === 'deleted').map(item => ({ key: `academic-faculty:${item.academicFacultyId}`, label: item.name, meta: 'Academic faculty', updatedAt: item.updatedAt ?? item.createdAt ?? '', onRestore: async () => {
+    ...operatorData.academicFaculties.filter(item => item.status === 'deleted').map(item => ({ key: `academic-faculty:${item.academicFacultyId}`, label: item.name, meta: 'Academic faculty', updatedAt: item.updatedAt ?? item.createdAt ?? '', onRestore: async () => {
       await apiClient.updateAcademicFaculty(item.academicFacultyId, { code: item.code, name: item.name, overview: item.overview, status: 'active', version: item.version })
     } })),
-    ...data.departments.filter(item => item.status === 'deleted').map(item => ({ key: `department:${item.departmentId}`, label: item.name, meta: 'Department', updatedAt: item.updatedAt ?? item.createdAt ?? '', onRestore: async () => {
+    ...operatorData.departments.filter(item => item.status === 'deleted').map(item => ({ key: `department:${item.departmentId}`, label: item.name, meta: 'Department', updatedAt: item.updatedAt ?? item.createdAt ?? '', onRestore: async () => {
       await apiClient.updateDepartment(item.departmentId, { academicFacultyId: item.academicFacultyId, code: item.code, name: item.name, status: 'active', version: item.version })
     } })),
-    ...data.branches.filter(item => item.status === 'deleted').map(item => ({ key: `branch:${item.branchId}`, label: item.name, meta: 'Branch', updatedAt: item.updatedAt ?? item.createdAt ?? '', onRestore: async () => {
+    ...operatorData.branches.filter(item => item.status === 'deleted').map(item => ({ key: `branch:${item.branchId}`, label: item.name, meta: 'Branch', updatedAt: item.updatedAt ?? item.createdAt ?? '', onRestore: async () => {
       await apiClient.updateBranch(item.branchId, { departmentId: item.departmentId, code: item.code, name: item.name, programLevel: item.programLevel, semesterCount: item.semesterCount, status: 'active', version: item.version })
     } })),
-    ...data.batches.filter(item => item.status === 'deleted').map(item => ({ key: `batch:${item.batchId}`, label: item.batchLabel, meta: 'Year', updatedAt: item.updatedAt ?? item.createdAt ?? '', onRestore: async () => {
+    ...operatorData.batches.filter(item => item.status === 'deleted').map(item => ({ key: `batch:${item.batchId}`, label: item.batchLabel, meta: 'Year', updatedAt: item.updatedAt ?? item.createdAt ?? '', onRestore: async () => {
       await apiClient.updateBatch(item.batchId, { branchId: item.branchId, admissionYear: item.admissionYear, batchLabel: item.batchLabel, currentSemester: item.currentSemester, sectionLabels: item.sectionLabels, status: 'active', version: item.version })
     } })),
-    ...data.students.filter(item => item.status === 'deleted').map(item => ({ key: `student:${item.studentId}`, label: item.name, meta: 'Student', updatedAt: item.updatedAt ?? item.createdAt ?? '', onRestore: async () => {
+    ...operatorData.students.filter(item => item.status === 'deleted').map(item => ({ key: `student:${item.studentId}`, label: item.name, meta: 'Student', updatedAt: item.updatedAt ?? item.createdAt ?? '', onRestore: async () => {
       const restored = await apiClient.updateStudent(item.studentId, { usn: item.usn, rollNumber: item.rollNumber, name: item.name, email: item.email, phone: item.phone, admissionDate: item.admissionDate, status: 'active', version: item.version })
       mergeStudentRecord(restored)
     } })),
-    ...data.facultyMembers.filter(item => item.status === 'deleted').map(item => ({ key: `faculty:${item.facultyId}`, label: item.displayName, meta: 'Faculty member', updatedAt: item.updatedAt ?? item.createdAt ?? '', onRestore: async () => {
+    ...operatorData.facultyMembers.filter(item => item.status === 'deleted').map(item => ({ key: `faculty:${item.facultyId}`, label: item.displayName, meta: 'Faculty member', updatedAt: item.updatedAt ?? item.createdAt ?? '', onRestore: async () => {
       await apiClient.updateFaculty(item.facultyId, { username: item.username, email: item.email, phone: item.phone, employeeCode: item.employeeCode, displayName: item.displayName, designation: item.designation, joinedOn: item.joinedOn, status: 'active', version: item.version })
     } })),
-    ...data.courses.filter(item => item.status === 'deleted').map(item => ({ key: `course:${item.courseId}`, label: item.title, meta: 'Course', updatedAt: item.updatedAt ?? item.createdAt ?? '', onRestore: async () => {
+    ...operatorData.courses.filter(item => item.status === 'deleted').map(item => ({ key: `course:${item.courseId}`, label: item.title, meta: 'Course', updatedAt: item.updatedAt ?? item.createdAt ?? '', onRestore: async () => {
       await apiClient.updateCourse(item.courseId, { courseCode: item.courseCode, title: item.title, defaultCredits: item.defaultCredits, departmentId: item.departmentId, status: 'active', version: item.version })
     } })),
   ].sort((left, right) => compareAdminTimestampsDesc(left.updatedAt, right.updatedAt))
   const hiddenItemCount = archivedItems.length + deletedItems.length
   const selectedAcademicFacultyImpact = selectedAcademicFaculty
     ? {
-        departments: data.departments.filter(item => item.academicFacultyId === selectedAcademicFaculty.academicFacultyId && item.status !== 'deleted').length,
-        branches: data.branches.filter(item => {
-          const department = resolveDepartment(data, item.departmentId)
+        departments: operatorData.departments.filter(item => item.academicFacultyId === selectedAcademicFaculty.academicFacultyId && item.status !== 'deleted').length,
+        branches: operatorData.branches.filter(item => {
+          const department = resolveDepartment(operatorData, item.departmentId)
           return department?.academicFacultyId === selectedAcademicFaculty.academicFacultyId && item.status !== 'deleted'
         }).length,
-        batches: data.batches.filter(item => {
-          const branch = resolveBranch(data, item.branchId)
-          const department = branch ? resolveDepartment(data, branch.departmentId) : null
+        batches: operatorData.batches.filter(item => {
+          const branch = resolveBranch(operatorData, item.branchId)
+          const department = branch ? resolveDepartment(operatorData, branch.departmentId) : null
           return department?.academicFacultyId === selectedAcademicFaculty.academicFacultyId && item.status !== 'deleted'
         }).length,
-        students: data.students.filter(item => item.status !== 'deleted' && item.activeAcademicContext?.departmentId && resolveDepartment(data, item.activeAcademicContext.departmentId)?.academicFacultyId === selectedAcademicFaculty.academicFacultyId).length,
-        facultyMembers: data.facultyMembers.filter(item => isFacultyMemberVisible(data, item) && item.appointments.some(appointment => appointment.status !== 'deleted' && resolveDepartment(data, appointment.departmentId)?.academicFacultyId === selectedAcademicFaculty.academicFacultyId)).length,
-        courses: data.courses.filter(item => item.status !== 'deleted' && resolveDepartment(data, item.departmentId)?.academicFacultyId === selectedAcademicFaculty.academicFacultyId).length,
+        students: operatorData.students.filter(item => item.status !== 'deleted' && item.activeAcademicContext?.departmentId && resolveDepartment(operatorData, item.activeAcademicContext.departmentId)?.academicFacultyId === selectedAcademicFaculty.academicFacultyId).length,
+        facultyMembers: operatorData.facultyMembers.filter(item => isFacultyMemberVisible(operatorData, item) && item.appointments.some(appointment => appointment.status !== 'deleted' && resolveDepartment(operatorData, appointment.departmentId)?.academicFacultyId === selectedAcademicFaculty.academicFacultyId)).length,
+        courses: operatorData.courses.filter(item => item.status !== 'deleted' && resolveDepartment(operatorData, item.departmentId)?.academicFacultyId === selectedAcademicFaculty.academicFacultyId).length,
       }
     : null
-  const openRequests = data.requests
+  const openRequests = operatorData.requests
     .filter(item => item.status !== 'Closed')
     .filter(item => !dismissedQueueItemKeys.includes(`request:${item.adminRequestId}`))
   const pendingReminders = data.reminders
@@ -5121,7 +5287,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         .map(department => ({
           key: `department:${department.departmentId}`,
           title: department.name,
-          subtitle: `${department.code} · ${listBranchesForDepartment(data, department.departmentId).length} branches`,
+          subtitle: `${department.code} · ${listBranchesForDepartment(operatorData, department.departmentId).length} branches`,
           selected: route.departmentId === department.departmentId,
           onSelect: () => navigate({
             section: 'faculties',
@@ -5135,7 +5301,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       .map(faculty => ({
       key: `faculty:${faculty.academicFacultyId}`,
       title: faculty.name,
-      subtitle: `${faculty.code} · ${listDepartmentsForAcademicFaculty(data, faculty.academicFacultyId).length} departments`,
+      subtitle: `${faculty.code} · ${listDepartmentsForAcademicFaculty(operatorData, faculty.academicFacultyId).length} departments`,
       selected: route.academicFacultyId === faculty.academicFacultyId,
       onSelect: () => navigate({ section: 'faculties', academicFacultyId: faculty.academicFacultyId }),
     }))
@@ -5146,7 +5312,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       return selectorSections.map(sectionCode => ({
         key: `section:${sectionCode}`,
         title: `Section ${sectionCode}`,
-        description: `${data.students.filter(student => student.activeAcademicContext?.batchId === selectedBatch!.batchId && student.activeAcademicContext.sectionCode === sectionCode).length} students`,
+        description: `${operatorData.students.filter(student => student.activeAcademicContext?.batchId === selectedBatch!.batchId && student.activeAcademicContext.sectionCode === sectionCode).length} students`,
         onSelect: () => updateSelectedSectionCode(sectionCode),
       }))
     }
@@ -5168,7 +5334,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       return departmentBranches.map(branch => ({
         key: `branch:${branch.branchId}`,
         title: branch.name,
-        description: `${branch.code} · ${branch.programLevel} · ${listBatchesForBranch(data, branch.branchId).length} years`,
+        description: `${branch.code} · ${branch.programLevel} · ${listBatchesForBranch(operatorData, branch.branchId).length} years`,
         onSelect: () => navigate({
           section: 'faculties',
           academicFacultyId: selectedAcademicFaculty?.academicFacultyId,
@@ -5181,7 +5347,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       return facultyDepartments.map(department => ({
         key: `department:${department.departmentId}`,
         title: department.name,
-        description: `${department.code} · ${listBranchesForDepartment(data, department.departmentId).length} branches`,
+        description: `${department.code} · ${listBranchesForDepartment(operatorData, department.departmentId).length} branches`,
         onSelect: () => navigate({
           section: 'faculties',
           academicFacultyId: selectedAcademicFaculty!.academicFacultyId,
@@ -5192,16 +5358,16 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     return []
   })()
   const scopedAdminDirectoryData: LiveAdminDataset = {
-    ...data,
-    students: scopedDirectoryStudents ?? data.students,
-    facultyMembers: scopedDirectoryFacultyMembers ?? data.facultyMembers,
+    ...operatorData,
+    students: scopedDirectoryStudents ?? operatorData.students,
+    facultyMembers: scopedDirectoryFacultyMembers ?? operatorData.facultyMembers,
   }
   const filteredUniversityStudents = scopedAdminDirectoryData.students
-    .filter(item => isStudentVisible(data, item))
-    .filter(student => matchesStudentScope(student, data, activeUniversityScope))
+    .filter(item => isStudentVisible(operatorData, item))
+    .filter(student => matchesStudentScope(student, operatorData, activeUniversityScope))
   const filteredUniversityFaculty = scopedAdminDirectoryData.facultyMembers
-    .filter(item => isFacultyMemberVisible(data, item))
-    .filter(member => matchesFacultyScope(member, data, activeUniversityScope))
+    .filter(item => isFacultyMemberVisible(operatorData, item))
+    .filter(member => matchesFacultyScope(member, operatorData, activeUniversityScope))
   const scopedUniversityStudents = activeUniversityScope ? filteredUniversityStudents : []
   const universityContextLabel = selectedSectionCode
     ? `Section ${selectedSectionCode}`
@@ -5249,7 +5415,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     : hasHierarchyScopeSelection(normalizedRegistryScope)
       ? normalizedRegistryScope
       : null
-  const overviewScopeLabel = describeRegistryScope(data, overviewHierarchyScope)
+  const overviewScopeLabel = describeRegistryScope(operatorData, overviewHierarchyScope)
   const universityNavigatorTitle = selectedSectionCode
     ? 'Hierarchy Complete'
     : selectedBatch
@@ -5351,10 +5517,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       ? 'repeat(2, minmax(0, 1fr))'
       : 'repeat(auto-fit, minmax(140px, 1fr))'
   const getUniversityCourseLeaders = (courseCode: string) => {
-    const leaderNames = data.ownerships.flatMap(ownership => {
+    const leaderNames = operatorData.ownerships.flatMap(ownership => {
       if (ownership.status !== 'active' || !isLeaderLikeOwnership(ownership.ownershipRole)) return []
-      const offering = data.offerings.find(item => item.offId === ownership.offeringId)
-      const facultyMember = resolveFacultyMember(data, ownership.facultyId)
+      const offering = operatorData.offerings.find(item => item.offId === ownership.offeringId)
+      const facultyMember = resolveFacultyMember(operatorData, ownership.facultyId)
       if (!offering || !facultyMember) return []
       if (offering.code.toLowerCase() !== courseCode.toLowerCase()) return []
       if (selectedSectionCode && offering.section !== selectedSectionCode) return []
@@ -5370,14 +5536,14 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     .sort((left, right) => left.displayName.localeCompare(right.displayName))
   const getScopedCourseOfferings = (curriculumCourseId: string) => {
     if (!selectedBatch || !selectedBranch) return []
-    const curriculumCourse = data.curriculumCourses.find(item => item.curriculumCourseId === curriculumCourseId)
+    const curriculumCourse = operatorData.curriculumCourses.find(item => item.curriculumCourseId === curriculumCourseId)
     if (!curriculumCourse) return []
     const matchingTermIds = new Set(
-      data.terms
+      operatorData.terms
         .filter(item => item.batchId === selectedBatch.batchId && item.branchId === selectedBranch.branchId && item.semesterNumber === curriculumCourse.semesterNumber && isVisibleAdminRecord(item.status))
         .map(item => item.termId),
     )
-    return data.offerings.filter(item => {
+    return operatorData.offerings.filter(item => {
       if (item.branchId !== selectedBranch.branchId) return false
       if (!item.termId) return false
       if (!matchingTermIds.has(item.termId)) return false
@@ -5389,7 +5555,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const getScopedCourseLeaderState = (curriculumCourseId: string) => {
     const matchingOfferings = getScopedCourseOfferings(curriculumCourseId)
     const leaderIds = Array.from(new Set(
-      matchingOfferings.flatMap(offering => data.ownerships
+      matchingOfferings.flatMap(offering => operatorData.ownerships
         .filter(ownership => ownership.offeringId === offering.offId && ownership.status === 'active' && isLeaderLikeOwnership(ownership.ownershipRole))
         .map(ownership => ownership.facultyId)),
     ))
@@ -5400,14 +5566,14 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       hasMultipleLeaders: leaderIds.length > 1,
     }
   }
-  const mentorEligibleFaculty = data.facultyMembers
-    .filter(item => isFacultyMemberVisible(data, item) && item.status === 'active' && item.roleGrants.some(grant => grant.roleCode === 'MENTOR' && isCurrentRoleGrant(grant)))
+  const mentorEligibleFaculty = operatorData.facultyMembers
+    .filter(item => isFacultyMemberVisible(operatorData, item) && item.status === 'active' && item.roleGrants.some(grant => grant.roleCode === 'MENTOR' && isCurrentRoleGrant(grant)))
     .sort((left, right) => left.displayName.localeCompare(right.displayName))
   // variables removed because edit-lock modals manage context reset internally
   const selectedStudentPromotionRules = selectedStudentPolicy?.effectivePolicy.progressionRules ?? DEFAULT_PROGRESSION_RULES
   const selectedStudentNextTerms = selectedStudent?.activeAcademicContext
-    ? data.terms
-        .filter(item => item.branchId === selectedStudent.activeAcademicContext!.branchId && item.semesterNumber === (selectedStudent.activeAcademicContext!.semesterNumber ?? 0) + 1 && isTermVisible(data, item))
+    ? operatorData.terms
+        .filter(item => item.branchId === selectedStudent.activeAcademicContext!.branchId && item.semesterNumber === (selectedStudent.activeAcademicContext!.semesterNumber ?? 0) + 1 && isTermVisible(operatorData, item))
         .sort((left, right) => left.startDate.localeCompare(right.startDate))
     : []
   const selectedStudentPromotionRecommended = selectedStudent
@@ -5416,8 +5582,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     : false
   const effectiveStudentRegistryFilter = studentRegistryFilter
   const effectiveFacultyRegistryFilter = facultyRegistryFilter
-  const studentRegistryScopeLabel = describeRegistryScope(data, studentRegistryScope)
-  const facultyRegistryScopeLabel = describeRegistryScope(data, facultyRegistryScope)
+  const studentRegistryScopeLabel = describeRegistryScope(operatorData, studentRegistryScope)
+  const facultyRegistryScopeLabel = describeRegistryScope(operatorData, facultyRegistryScope)
   const studentFilterDepartments = visibleDepartments
     .filter(item => !effectiveStudentRegistryFilter.academicFacultyId || item.academicFacultyId === effectiveStudentRegistryFilter.academicFacultyId)
     .sort((left, right) => left.name.localeCompare(right.name))
@@ -5446,9 +5612,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       .filter(item => !effectiveFacultyRegistryFilter.batchId || item.batchId === effectiveFacultyRegistryFilter.batchId)
       .flatMap(item => item.sectionLabels),
   )).sort()
-  const visibleFacultyMembers = data.facultyMembers.filter(item => isFacultyMemberVisible(data, item))
-  const visibleOfferings = [...data.offerings]
-    .filter(item => isOfferingVisible(data, item))
+  const visibleFacultyMembers = operatorData.facultyMembers.filter(item => isFacultyMemberVisible(operatorData, item))
+  const visibleOfferings = [...operatorData.offerings]
+    .filter(item => isOfferingVisible(operatorData, item))
     .sort((left, right) => `${left.code}-${left.year}-${left.section}`.localeCompare(`${right.code}-${right.year}-${right.section}`))
   const batchTermIds = new Set(batchTerms.map(item => item.termId))
   const currentSemesterTerm = selectedBatch
@@ -5460,7 +5626,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         .filter(item => !selectedSectionCode || item.section === selectedSectionCode)
     : []
   const visibleOfferingById = new Map(visibleOfferings.map(item => [item.offId, item]))
-  const activeVisibleOwnerships = data.ownerships.filter(item => item.status === 'active' && isFacultyMemberVisible(data, item.facultyId) && visibleOfferingById.has(item.offeringId))
+  const activeVisibleOwnerships = operatorData.ownerships.filter(item => item.status === 'active' && isFacultyMemberVisible(operatorData, item.facultyId) && visibleOfferingById.has(item.offeringId))
+  const selectedFacultyAssignments = selectedFacultyMember ? listFacultyAssignments(operatorData, selectedFacultyMember.facultyId) : []
   const batchScopeForProvisioning = selectedBatch
     ? {
         academicFacultyId: selectedAcademicFaculty?.academicFacultyId ?? null,
@@ -5471,7 +5638,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       }
     : null
   const batchFacultyPool = batchScopeForProvisioning
-    ? visibleFacultyMembers.filter(item => matchesFacultyScope(item, data, batchScopeForProvisioning))
+    ? visibleFacultyMembers.filter(item => matchesFacultyScope(item, operatorData, batchScopeForProvisioning))
     : EMPTY_FACULTY_RECORDS
   const batchMentorEligibleFaculty = getScopedMentorEligibleFaculty(
     batchFacultyPool,
@@ -5479,8 +5646,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     selectedSectionCode,
   )
   const batchStudents = selectedBatch
-    ? data.students
-        .filter(item => isStudentVisible(data, item))
+    ? operatorData.students
+        .filter(item => isStudentVisible(operatorData, item))
         .filter(item => item.activeAcademicContext?.batchId === selectedBatch.batchId)
         .filter(item => !selectedSectionCode || item.activeAcademicContext?.sectionCode === selectedSectionCode)
     : []
@@ -5533,13 +5700,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     ? curriculumFeatureTargetScopeOptions.find(scope => `${scope.scopeType}::${scope.scopeId}` === curriculumFeatureTargetScopeKey) ?? null
     : null
   const curriculumFeatureAffectedBatchPreview = selectedCurriculumFeatureTargetScope
-    ? visibleBatches.filter(batch => matchesBatchScope(batch, data, selectedCurriculumFeatureTargetScope.scopeType, selectedCurriculumFeatureTargetScope.scopeId))
+    ? visibleBatches.filter(batch => matchesBatchScope(batch, operatorData, selectedCurriculumFeatureTargetScope.scopeType, selectedCurriculumFeatureTargetScope.scopeId))
     : []
   const overviewCounts = computeOverviewScopedCounts(
-    overviewHierarchyScope ? scopedAdminDirectoryData : data,
+    overviewHierarchyScope ? scopedAdminDirectoryData : operatorData,
     overviewHierarchyScope,
   )
-  const overviewGlobalCounts = computeOverviewScopedCounts(data, null)
+  const overviewGlobalCounts = computeOverviewScopedCounts(operatorData, null)
   const overviewVisibleStudentCount = overviewCounts.studentCount
   const overviewVisibleMentoredCount = overviewCounts.mentoredCount
   const overviewVisibleMentorGapCount = overviewCounts.mentorGapCount
@@ -5549,9 +5716,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const overviewVisibleOwnershipCount = overviewCounts.ownershipCount
   const normalizedStudentRegistrySearch = studentRegistrySearch.trim().toLowerCase()
   const normalizedFacultyRegistrySearch = facultyRegistrySearch.trim().toLowerCase()
-  const studentRegistryItems = (studentRegistryHasScope ? scopedAdminDirectoryData : data).students
-    .filter(item => isStudentVisible(data, item))
-    .filter(item => !studentRegistryHasScope || matchesStudentScope(item, data, studentRegistryScope))
+  const studentRegistryItems = (studentRegistryHasScope ? scopedAdminDirectoryData : operatorData).students
+    .filter(item => isStudentVisible(operatorData, item))
+    .filter(item => !studentRegistryHasScope || matchesStudentScope(item, operatorData, studentRegistryScope))
     .filter(item => {
       if (!normalizedStudentRegistrySearch) return true
       const searchableText = [
@@ -5572,9 +5739,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       const rightKey = `${right.activeAcademicContext?.departmentName ?? ''}-${right.activeAcademicContext?.branchName ?? ''}-${right.name}-${right.usn}`
       return leftKey.localeCompare(rightKey)
     })
-  const facultyRegistryItems = (hasHierarchyScopeSelection(facultyRegistryScope) ? scopedAdminDirectoryData : data).facultyMembers
-    .filter(item => isFacultyMemberVisible(data, item))
-    .filter(item => matchesFacultyScope(item, data, {
+  const facultyRegistryItems = (hasHierarchyScopeSelection(facultyRegistryScope) ? scopedAdminDirectoryData : operatorData).facultyMembers
+    .filter(item => isFacultyMemberVisible(operatorData, item))
+    .filter(item => matchesFacultyScope(item, operatorData, {
       academicFacultyId: effectiveFacultyRegistryFilter.academicFacultyId || null,
       departmentId: effectiveFacultyRegistryFilter.departmentId || null,
       branchId: effectiveFacultyRegistryFilter.branchId || null,
@@ -5583,7 +5750,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     }))
     .filter(item => {
       if (!normalizedFacultyRegistrySearch) return true
-      const primaryDepartment = resolveDepartment(data, getPrimaryAppointmentDepartmentId(item))?.name ?? ''
+      const primaryDepartment = resolveDepartment(operatorData, getPrimaryAppointmentDepartmentId(item))?.name ?? ''
       const searchableText = [
         item.displayName,
         item.employeeCode,
@@ -5597,8 +5764,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       return searchableText.includes(normalizedFacultyRegistrySearch)
     })
     .sort((left, right) => {
-      const leftDepartment = resolveDepartment(data, getPrimaryAppointmentDepartmentId(left))?.name ?? ''
-      const rightDepartment = resolveDepartment(data, getPrimaryAppointmentDepartmentId(right))?.name ?? ''
+      const leftDepartment = resolveDepartment(operatorData, getPrimaryAppointmentDepartmentId(left))?.name ?? ''
+      const rightDepartment = resolveDepartment(operatorData, getPrimaryAppointmentDepartmentId(right))?.name ?? ''
       return `${leftDepartment}-${left.displayName}-${left.employeeCode}`.localeCompare(`${rightDepartment}-${right.displayName}-${right.employeeCode}`)
     })
   const studentRegistryCaption = studentRegistryHasScope
@@ -5773,6 +5940,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   // --- Breadcrumbs ---
   const topBarBreadcrumbs: BreadcrumbSegment[] = (() => {
     if (route.section === 'overview') return [{ label: 'Dashboard' }]
+    if (route.section === 'proof-dashboard') return [{ label: 'Proof Dashboard' }]
     if (route.section === 'history') return [{ label: 'History & Restore' }]
     if (route.section === 'requests') {
       const segments: BreadcrumbSegment[] = [{ label: 'Requests', onClick: selectedRequestSummary ? () => navigate({ section: 'requests' }) : undefined }]
@@ -5815,18 +5983,22 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     return []
   })()
   const adminContextLabel = route.section === 'faculties'
-    ? `University · ${universityWorkspaceLabel}`
+    ? `MNC Proof Branch · ${universityWorkspaceLabel}`
+    : route.section === 'proof-dashboard'
+      ? 'Proof Dashboard'
     : route.section === 'students'
       ? 'Student Registry'
       : route.section === 'faculty-members'
         ? 'Faculty Registry'
         : route.section === 'requests'
-          ? 'Governed Requests'
-          : route.section === 'history'
-            ? 'History And Restore'
-            : 'Operations Dashboard'
+        ? 'Governed Requests'
+        : route.section === 'history'
+          ? 'History And Restore'
+            : 'MNC Proof Operations'
   const railScopeLabel = route.section === 'faculties'
     ? activeUniversityRegistryScope?.label ?? universityWorkspaceLabel
+    : route.section === 'proof-dashboard'
+      ? canonicalProofRegistryScope?.label ?? registryScope?.label
     : route.section === 'students'
       ? studentRegistryScopeLabel ?? undefined
       : route.section === 'faculty-members'
@@ -5834,6 +6006,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         : registryScope?.label
   const railSearchPlaceholder = route.section === 'overview'
     ? 'Search across the full control plane...'
+    : route.section === 'proof-dashboard'
+      ? 'Search the proof control plane...'
     : route.section === 'faculties'
       ? 'Search within the active university scope...'
       : route.section === 'students'
@@ -5892,6 +6066,16 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   }
   const canNavigateBack = routeHistory.length > 0
   const workspaceAdminName = session?.faculty?.displayName ?? session?.user.username ?? 'System Admin'
+  const proofLauncherOperationalSemester = activeRunDetail?.activeOperationalSemester ?? authoritativeOperationalSemester
+  const proofLauncherStageLabel = selectedProofCheckpoint
+    ? `${selectedProofCheckpoint.stageLabel} · Semester ${selectedProofCheckpoint.semesterNumber}`
+    : proofLauncherOperationalSemester != null
+      ? `Operational semester ${proofLauncherOperationalSemester}`
+      : 'No active checkpoint selected'
+  const proofLauncherPopupTitle = activeRunDetail ? `Proof run ${activeRunDetail.runLabel}` : 'Proof control plane'
+  const proofLauncherPopupCaption = canonicalProofRegistryScope
+    ? `Operator scope is locked to ${canonicalProofRegistryScope.label}. Queue, request, and reminder totals below are proof-branch-only.`
+    : 'Operator-facing proof surfaces are scoped to the MNC proof branch only.'
   void [
     DayToggle,
     WEEKDAYS,
@@ -5959,6 +6143,95 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         onToggleQueue={() => setShowActionQueue(current => !current)}
         onRefresh={() => { void loadAdminData() }}
         onLogout={handleLogout}
+        />
+
+        <ProofSurfaceLauncher
+          targetId="system-admin-proof-controls"
+          label="Proof Control"
+          disabled={!proofDashboard && !activeRunDetail}
+          dataProofEntityId={selectedProofCheckpoint?.simulationStageCheckpointId ?? activeRunDetail?.simulationRunId ?? canonicalProofRegistryScope?.batchId ?? 'proof-dashboard'}
+          popupTitle={proofLauncherPopupTitle}
+          popupCaption={proofLauncherPopupCaption}
+          popupContent={({ closePopup }) => (
+            <div style={{ display: 'grid', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(132px, 1fr))', gap: 10 }}>
+                <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
+                  <div style={{ ...mono, fontSize: 10, color: T.dim }}>Current stage</div>
+                  <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>{proofLauncherStageLabel}</div>
+                </Card>
+                <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
+                  <div style={{ ...mono, fontSize: 10, color: T.dim }}>Queue / requests</div>
+                  <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>{`${activeRunDetail?.monitoringSummary.activeReassessmentCount ?? 0} queue · ${openRequests.length} requests`}</div>
+                </Card>
+                <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
+                  <div style={{ ...mono, fontSize: 10, color: T.dim }}>Verification ledger</div>
+                  <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>{`${activeRunDetail?.monitoringSummary.acknowledgementCount ?? 0} acknowledgements · ${activeRunDetail?.monitoringSummary.resolutionCount ?? 0} resolutions`}</div>
+                </Card>
+                <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
+                  <div style={{ ...mono, fontSize: 10, color: T.dim }}>Private reminders</div>
+                  <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>{pendingReminders.length}</div>
+                </Card>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {proofDashboard?.imports.length ? (
+                  <Btn
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      closePopup()
+                      void handleValidateLatestProofImport()
+                    }}
+                  >
+                    Validate Import
+                  </Btn>
+                ) : null}
+                {proofDashboard?.crosswalkReviewQueue.length ? (
+                  <Btn
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      closePopup()
+                      void handleReviewPendingCrosswalks()
+                    }}
+                  >
+                    Review Mappings
+                  </Btn>
+                ) : null}
+                <Btn
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    closePopup()
+                    if (activeRunDetail) void handleRecomputeProofRunRisk()
+                    else void handleCreateProofRun()
+                  }}
+                >
+                  {activeRunDetail ? 'Recompute Risk' : 'Create Proof Run'}
+                </Btn>
+              </div>
+            </div>
+          )}
+          popupFooter={({ closePopup, jumpToTarget }) => (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Btn
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  closePopup()
+                  if (route.section === 'proof-dashboard') {
+                    jumpToTarget()
+                    return
+                  }
+                  navigate({ section: 'proof-dashboard' })
+                }}
+              >
+                {route.section === 'proof-dashboard' ? 'Jump To Live Controls' : 'Open Proof Dashboard'}
+              </Btn>
+              <Btn size="sm" variant="ghost" onClick={closePopup}>
+                Close
+              </Btn>
+            </div>
+          )}
         />
 
         <div style={{ display: 'flex', minHeight: 'calc(100vh - 84px)', alignItems: 'stretch' }}>
@@ -6038,9 +6311,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               <Card style={{ padding: 24, display: 'grid', gap: 16, textAlign: 'left', background: `radial-gradient(circle at top left, ${T.accent}14, transparent 34%), linear-gradient(180deg, ${T.surface}, ${T.surface2})` }}>
                 <div style={{ display: 'grid', gap: 10 }}>
                   <div style={{ ...mono, fontSize: 10, color: ADMIN_SECTION_TONES.overview, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Sysadmin Control Plane</div>
-                  <div style={{ ...sora, fontSize: 30, fontWeight: 800, color: T.text }}>Operations Dashboard</div>
+                  <div style={{ ...sora, fontSize: 30, fontWeight: 800, color: T.text }}>MNC Proof Operations</div>
                   <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.9, maxWidth: 760 }}>
-                    University setup, registry cleanup, faculty ownership, and governed requests begin from the rail on the left. This overview now works like an operations launch surface instead of a centered report card.
+                    Operator-facing sysadmin work is now locked to the MNC proof branch. University setup, registry cleanup, faculty ownership, proof verification, and governed requests all resolve from the same proof-scoped operator dataset.
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -6051,9 +6324,22 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                 </div>
                 <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
                   <SectionLaunchCard
+                    title="Proof"
+                    caption={activeRunDetail
+                      ? `${activeRunDetail.monitoringSummary.activeReassessmentCount} queue · ${activeRunDetail.monitoringSummary.acknowledgementCount} acknowledgements`
+                      : 'No active proof run'}
+                    helper={activeRunDetail
+                      ? `${proofLauncherStageLabel} · ${activeRunDetail.monitoringSummary.resolutionCount} resolutions · dedicated dashboard route.`
+                      : 'Open the dedicated proof dashboard to validate imports, stage runs, and monitor proof acknowledgements before advancing the branch.'}
+                    icon={<Layers3 size={18} />}
+                    tone={ADMIN_SECTION_TONES.overview}
+                    active={false}
+                    onClick={() => navigate({ section: 'proof-dashboard' })}
+                  />
+                  <SectionLaunchCard
                     title="University"
                     caption={`${visibleAcademicFaculties.length} faculties · ${visibleDepartments.length} departments · ${visibleBranches.length} branches`}
-                    helper="Selector-driven hierarchy control for faculty, department, branch, year, section, policy bands, and course tables."
+                    helper="Selector-driven hierarchy control for the proof branch faculty, department, branch, year, section, policy bands, and course tables."
                     icon={<LayoutDashboard size={18} />}
                     tone={ADMIN_SECTION_TONES.faculties}
                     active={false}
@@ -6066,7 +6352,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                       : `${overviewGlobalStudentCount} records · ${overviewGlobalMentoredCount} mentored`}
                     helper={overviewHierarchyScope
                       ? `Canonical student identity, mentor linkage, and semester progression filtered to ${overviewScopeLabel ?? 'the active academic scope'}.`
-                      : 'Open the full global student registry directly, or set a faculty, department, branch, year, or section in the university workspace to preserve scope.'}
+                      : 'Open the proof-branch student registry directly, or set a faculty, department, branch, year, or section in the university workspace to preserve scope.'}
                     icon={<GraduationCap size={18} />}
                     tone={ADMIN_SECTION_TONES.students}
                     active={false}
@@ -6079,7 +6365,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                       : '0 profiles · scope required'}
                     helper={overviewHierarchyScope
                       ? `Appointments, permissions, class ownership, and timetable review filtered to ${overviewScopeLabel ?? 'the active academic scope'}.`
-                      : 'Select an academic scope first so faculty ownership and load totals only reflect the active slice of the institution.'}
+                      : 'Select an academic scope first so faculty ownership and load totals only reflect the active proof branch slice.'}
                     icon={<UserCog size={18} />}
                     tone={ADMIN_SECTION_TONES['faculty-members']}
                     active={false}
@@ -6133,10 +6419,64 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           </div>
         )}
 
+        {/* ========== PROOF DASHBOARD ========== */}
+        {route.section === 'proof-dashboard' && (
+          <SystemAdminProofDashboardWorkspace
+            proofDashboard={proofDashboard}
+            proofDashboardLoading={proofDashboardLoading}
+            dashboardLayout="page"
+            showLauncher={false}
+            activeRunCheckpoints={activeRunCheckpoints}
+            activeModelDiagnostics={activeModelDiagnostics}
+            activeProductionDiagnostics={activeProductionDiagnostics}
+            activeDiagnosticsTrainingManifestVersion={activeDiagnosticsTrainingManifestVersion}
+            activeDiagnosticsCalibrationVersion={activeDiagnosticsCalibrationVersion}
+            activeDiagnosticsSplitSummary={activeDiagnosticsSplitSummary}
+            activeDiagnosticsWorldSplitSummary={activeDiagnosticsWorldSplitSummary}
+            activeDiagnosticsScenarioFamilies={activeDiagnosticsScenarioFamilies}
+            activeDiagnosticsHeadSupportSummary={activeDiagnosticsHeadSupportSummary}
+            activeDiagnosticsGovernedRunCount={activeDiagnosticsGovernedRunCount}
+            activeDiagnosticsSkippedRunCount={activeDiagnosticsSkippedRunCount}
+            activeDiagnosticsDisplayProbabilityAllowed={activeDiagnosticsDisplayProbabilityAllowed}
+            activeDiagnosticsSupportWarning={activeDiagnosticsSupportWarning}
+            activeDiagnosticsPolicyDiagnostics={activeDiagnosticsPolicyDiagnostics}
+            activeDiagnosticsCoEvidence={activeDiagnosticsCoEvidence}
+            activeDiagnosticsPolicyAcceptance={activeDiagnosticsPolicyAcceptance}
+            activeDiagnosticsOverallCourseRuntime={activeDiagnosticsOverallCourseRuntime}
+            activeDiagnosticsQueueBurden={activeDiagnosticsQueueBurden}
+            activeDiagnosticsUiParity={activeDiagnosticsUiParity}
+            selectedProofCheckpoint={selectedProofCheckpoint}
+            selectedProofCheckpointDetail={selectedProofCheckpointDetail}
+            selectedProofCheckpointBlocked={selectedProofCheckpointBlocked}
+            selectedProofCheckpointHasBlockedProgression={selectedProofCheckpointHasBlockedProgression}
+            selectedProofCheckpointCanStepForward={selectedProofCheckpointCanStepForward}
+            selectedProofCheckpointCanPlayToEnd={selectedProofCheckpointCanPlayToEnd}
+            proofPlaybackRestoreNotice={proofPlaybackRestoreNotice}
+            onCreateProofImport={handleCreateProofImport}
+            onValidateLatestProofImport={handleValidateLatestProofImport}
+            onReviewPendingCrosswalks={handleReviewPendingCrosswalks}
+            onApproveLatestProofImport={handleApproveLatestProofImport}
+            onCreateProofRun={handleCreateProofRun}
+            onRecomputeProofRunRisk={handleRecomputeProofRunRisk}
+            onActivateProofRun={handleActivateProofRun}
+            onActivateProofSemester={handleActivateProofSemester}
+            onRetryProofRun={handleRetryProofRun}
+            onArchiveProofRun={handleArchiveProofRun}
+            onRestoreProofSnapshot={handleRestoreProofSnapshot}
+            onResetProofPlaybackSelection={handleResetProofPlaybackSelection}
+            onSelectProofCheckpoint={handleSelectProofCheckpoint}
+            onStepProofPlayback={handleStepProofPlayback}
+            formatSplitSummary={formatSplitSummary}
+            formatKeyedCounts={formatKeyedCounts}
+            formatHeadSupportSummary={formatHeadSupportSummary}
+            formatDiagnosticSummary={formatDiagnosticSummary}
+          />
+        )}
+
         {/* ========== FACULTIES (selector workspace) ========== */}
         {route.section === 'faculties' && (
           <SystemAdminFacultiesWorkspace
-            data={data}
+            data={operatorData}
             route={route}
             toneColor={ADMIN_SECTION_TONES.faculties}
             restoreNotice={facultiesRestoreNotice}
@@ -6305,6 +6645,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               formatHeadSupportSummary,
               formatDiagnosticSummary,
             }}
+            onOpenProofDashboard={() => navigate({ section: 'proof-dashboard' })}
             registryLaunchProps={{
               registryScopeLabel: activeUniversityRegistryScope?.label ?? null,
               studentScopeChipLabel: activeUniversityStudentScopeChipLabel,
@@ -6447,6 +6788,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   padding: 18,
                   display: 'grid',
                   gap: 14,
+                  minHeight: 238,
+                  alignContent: 'start',
                   background: isLightTheme(themeMode) ? fadeColor(T.surface, 'f0') : fadeColor(T.surface, 'ea'),
                   backdropFilter: 'blur(12px)',
                 }}
@@ -6800,7 +7143,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               </div>
               <div className="scroll-pane" style={{ display: 'grid', gap: 8, minHeight: 0, overflowY: registryIsSingleColumn ? 'visible' : 'auto', paddingRight: 4 }}>
                 {facultyRegistryItems.map(item => {
-                  const primaryDepartment = resolveDepartment(data, getPrimaryAppointmentDepartmentId(item))
+                  const primaryDepartment = resolveDepartment(operatorData, getPrimaryAppointmentDepartmentId(item))
                   return (
                     <EntityButton key={item.facultyId} selected={route.facultyMemberId === item.facultyId} onClick={() => navigate({ section: 'faculty-members', facultyMemberId: item.facultyId })}>
                       <div style={{ display: 'grid', gap: 10 }}>
@@ -6837,6 +7180,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   padding: 18,
                   display: 'grid',
                   gap: 14,
+                  minHeight: 238,
+                  alignContent: 'start',
                   background: isLightTheme(themeMode) ? fadeColor(T.surface, 'f0') : fadeColor(T.surface, 'ea'),
                   backdropFilter: 'blur(12px)',
                 }}
@@ -6853,7 +7198,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                     <AdminMiniStat label="Appointments" value={String(selectedFacultyMember.appointments.length)} tone={T.warning} />
                     <AdminMiniStat label="Permissions" value={String(selectedFacultyMember.roleGrants.length)} tone={T.success} />
                     <AdminMiniStat label="Classes" value={String(selectedFacultyAssignments.length)} tone={T.accent} />
-                    <AdminMiniStat label="Mentor Load" value={String(data.students.filter(item => item.activeMentorAssignment?.facultyId === selectedFacultyMember.facultyId).length)} tone={ADMIN_SECTION_TONES.students} />
+                    <AdminMiniStat label="Mentor Load" value={String(operatorData.students.filter(item => item.activeMentorAssignment?.facultyId === selectedFacultyMember.facultyId).length)} tone={ADMIN_SECTION_TONES.students} />
                     <AdminMiniStat label="Audit Events" value={String(facultyAuditEvents.length)} tone={T.orange} />
                   </div>
                 ) : null}
@@ -6881,7 +7226,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   <>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <Chip color={T.accent}>{selectedFacultyMember.employeeCode}</Chip>
-                      <Chip color={T.warning}>{resolveDepartment(data, getPrimaryAppointmentDepartmentId(selectedFacultyMember))?.name ?? 'No primary department'}</Chip>
+                      <Chip color={T.warning}>{resolveDepartment(operatorData, getPrimaryAppointmentDepartmentId(selectedFacultyMember))?.name ?? 'No primary department'}</Chip>
                       {selectedFacultyMember.roleGrants.filter(isCurrentRoleGrant).map(grant => <Chip key={grant.grantId} color={T.success}>{formatFacultyGrantScopeLabel(grant)}</Chip>)}
                     </div>
                     {selectedFacultyProofBanner ? <InfoBanner tone="neutral" message={selectedFacultyProofBanner} /> : null}
@@ -6998,7 +7343,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   <>
                     <div style={{ display: 'grid', gap: 8 }}>
                       {selectedFacultyOwnerships.length === 0 ? <InfoBanner message="No teaching ownership records yet." /> : selectedFacultyOwnerships.map(ownership => {
-                        const offering = data.offerings.find(item => item.offId === ownership.offeringId)
+                        const offering = operatorData.offerings.find(item => item.offId === ownership.offeringId)
                         return (
                           <Card key={ownership.ownershipId} style={{ padding: 12, background: T.surface2 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
@@ -7199,7 +7544,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         {/* ========== REQUESTS ========== */}
         {route.section === 'requests' && (
           <SystemAdminRequestWorkspace
-            requests={data.requests}
+            requests={operatorData.requests}
             selectedRequestId={route.requestId}
             requestDetailLoading={requestDetailLoading}
             selectedRequest={selectedRequest}

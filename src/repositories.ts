@@ -235,6 +235,67 @@ function createUnsupportedRemoteSessionError() {
   return new Error('Remote session APIs are unavailable in local repository mode.')
 }
 
+function createHttpBootstrapRequiredError() {
+  return new Error('HTTP academic repositories require a live academic bootstrap snapshot before operational data can be accessed.')
+}
+
+function createUnavailableHttpAcademicRepositories(clearPersistedState: AirMentorRepositories['clearPersistedState']): Pick<AirMentorRepositories, 'offeringsStudentsHistory' | 'entryData' | 'locksAudit' | 'tasks' | 'calendar' | 'clearPersistedState'> {
+  const throwBootstrapRequired = (): never => {
+    throw createHttpBootstrapRequiredError()
+  }
+  const readBootstrapRequired = <T>(): T => throwBootstrapRequired()
+  const callBootstrapRequired = async <T>(): Promise<T> => throwBootstrapRequired()
+
+  return {
+    offeringsStudentsHistory: {
+      listFaculty: () => callBootstrapRequired<FacultyAccount[]>(),
+      listOfferings: () => callBootstrapRequired<Offering[]>(),
+      listStudents: () => callBootstrapRequired<Student[]>(),
+      listMentees: () => callBootstrapRequired<Mentee[]>(),
+      getStudentHistory: () => callBootstrapRequired<StudentHistoryRecord | null>(),
+    },
+    entryData: {
+      getStudentPatchesSnapshot: () => readBootstrapRequired<Record<string, StudentRuntimePatch>>(),
+      getSchemeStateSnapshot: () => readBootstrapRequired<Record<string, SchemeState>>(),
+      getBlueprintSnapshot: () => readBootstrapRequired<Record<string, Record<TTKind, TermTestBlueprint>>>(),
+      getDraftSnapshot: () => readBootstrapRequired<Record<string, number>>(),
+      getCellValueSnapshot: () => readBootstrapRequired<Record<string, number>>(),
+      commitAttendanceEntries: () => callBootstrapRequired<void>(),
+      commitAssessmentEntries: () => callBootstrapRequired<void>(),
+      saveStudentPatches: () => callBootstrapRequired<void>(),
+      saveSchemeState: () => callBootstrapRequired<void>(),
+      saveBlueprintState: () => callBootstrapRequired<void>(),
+      saveDrafts: () => callBootstrapRequired<void>(),
+      saveCellValues: () => callBootstrapRequired<void>(),
+    },
+    locksAudit: {
+      getLockSnapshot: () => readBootstrapRequired<Record<string, EntryLockMap>>(),
+      getLockAuditSnapshot: () => readBootstrapRequired<Record<string, QueueTransition[]>>(),
+      saveLocks: () => callBootstrapRequired<void>(),
+      saveLockAudit: () => callBootstrapRequired<void>(),
+    },
+    tasks: {
+      getTasksSnapshot: () => readBootstrapRequired<SharedTask[]>(),
+      getResolvedTasksSnapshot: () => readBootstrapRequired<Record<string, number>>(),
+      saveTasks: () => callBootstrapRequired<void>(),
+      saveResolvedTasks: () => callBootstrapRequired<void>(),
+      upsertTask: () => callBootstrapRequired<BackendTaskUpsertPayload>(),
+    },
+    calendar: {
+      getTimetableTemplatesSnapshot: () => readBootstrapRequired<Record<string, FacultyTimetableTemplate>>(),
+      getTaskPlacementsSnapshot: () => readBootstrapRequired<Record<string, TaskCalendarPlacement>>(),
+      getCalendarAuditSnapshot: () => readBootstrapRequired<CalendarAuditEvent[]>(),
+      getMeetingsSnapshot: () => readBootstrapRequired<AcademicMeeting[]>(),
+      saveTimetableTemplates: () => callBootstrapRequired<void>(),
+      saveTaskPlacements: () => callBootstrapRequired<void>(),
+      saveCalendarAudit: () => callBootstrapRequired<void>(),
+      createMeeting: () => callBootstrapRequired<AcademicMeeting>(),
+      updateMeeting: () => callBootstrapRequired<AcademicMeeting>(),
+    },
+    clearPersistedState,
+  }
+}
+
 export function createLocalAirMentorRepositories(storage?: JsonStorage): AirMentorRepositories {
   const resolvedStorage = resolveStorage(storage)
 
@@ -813,7 +874,7 @@ export function createAirMentorRepositories(options?: {
         bootstrap: options.academicBootstrap,
         storage: options?.storage,
       })
-    : localRepositories
+    : createUnavailableHttpAcademicRepositories(localRepositories.clearPersistedState)
   return {
     ...academicRepositories,
     sessionPreferences: createHttpSessionPreferencesRepository({

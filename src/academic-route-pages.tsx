@@ -652,7 +652,7 @@ export function MenteeDetailPage({
         <Card>
           <div style={{ ...sora, fontWeight: 700, fontSize: 18, color: T.text }}>Student History Unavailable</div>
           <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 8, lineHeight: 1.8 }}>
-            The backend did not return a transcript history for {mentee.name}. No seeded fallback is shown in the live teaching workspace.
+            The backend did not return a transcript history for {mentee.name}. No local fallback is shown in the live teaching workspace.
           </div>
           <div style={{ marginTop: 14 }}>
             <Btn size="sm" variant="ghost" onClick={onBack}>Back</Btn>

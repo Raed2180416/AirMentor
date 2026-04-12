@@ -302,7 +302,7 @@ describe('academic route pages', () => {
       onOpenStudentShell: vi.fn(),
     }))
     expect(screen.getAllByText('Queue History').length).toBeGreaterThan(0)
-    expect(screen.getByText('Authoritative queue history proof context. Use these checkpoint-bound counts and scope labels when comparing teacher, mentor, and queue surfaces.')).toBeTruthy()
+    expect(screen.getByText('Authoritative queue history proof context. Use these checkpoint-bound counts, model usefulness cues, and scope labels when comparing policy-derived status, no-action comparator, and simulated intervention / realized path surfaces.')).toBeTruthy()
   })
 
   it('prefers proof-scoped totals over summed offering totals on the course leader dashboard', () => {

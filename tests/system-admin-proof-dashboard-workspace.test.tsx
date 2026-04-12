@@ -298,6 +298,8 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     expect(markup).toContain('Worker Lease')
     expect(markup).toContain('data-proof-shell="shared"')
     expect(markup).toContain('data-proof-launcher="floating"')
+    expect(markup).toContain('data-proof-launcher-mode="popup-capable"')
+    expect(markup).toContain('data-proof-dashboard-layout="embedded"')
     expect(markup).toContain('data-proof-action="proof-shell-launcher"')
     expect(markup).toContain('Checkpoint-bound proof counts')
     expect(markup).toContain('Proof workflow rail')
@@ -631,6 +633,21 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     expect(screen.getByText('Checkpoint Readiness')).toBeTruthy()
     expect(screen.getByText('Worker Lease')).toBeTruthy()
 
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Jump to proof controls · open dialog' }))
+    expect(document.querySelector('[data-proof-launcher-state="open"]')).not.toBeNull()
+    expect(screen.getByRole('dialog', { name: 'Proof launcher' })).toBeTruthy()
+    expect(screen.getByText('Current stage')).toBeTruthy()
+    expect(screen.getByText('Progress actions')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Open full dashboard' }))
+    expect(scrollIntoView).toHaveBeenCalled()
+    expect(screen.queryByRole('dialog', { name: 'Proof launcher' })).toBeNull()
+
     fireEvent.click(screen.getByRole('tab', { name: 'Operations' }))
 
     const operationsRegion = document.querySelector('[data-proof-scroll-region="recent-operational-events"]') as HTMLElement | null
@@ -819,6 +836,8 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     const markup = renderToStaticMarkup(createElement(SystemAdminProofDashboardWorkspace, {
       proofDashboard,
       proofDashboardLoading: false,
+      dashboardLayout: 'page',
+      showLauncher: false,
       activeRunCheckpoints: checkpoints,
       activeModelDiagnostics: null,
       activeProductionDiagnostics: null,
@@ -873,7 +892,8 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     expect(markup).toContain('pinned to Semester 5')
     expect(markup).toContain('operational semester remains Semester 6')
     expect(markup).toContain('data-proof-shell="shared"')
-    expect(markup).toContain('data-proof-launcher="floating"')
+    expect(markup).not.toContain('data-proof-launcher="floating"')
+    expect(markup).toContain('data-proof-dashboard-layout="page"')
   })
 
   it('renders a persistent proof workflow rail with collapsed scope details', () => {
@@ -960,6 +980,8 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     const markup = renderToStaticMarkup(createElement(SystemAdminProofDashboardWorkspace, {
       proofDashboard,
       proofDashboardLoading: false,
+      dashboardLayout: 'page',
+      showLauncher: false,
       activeRunCheckpoints: [selectedCheckpoint],
       activeModelDiagnostics: null,
       activeProductionDiagnostics: null,

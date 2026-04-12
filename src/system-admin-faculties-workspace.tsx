@@ -7,6 +7,7 @@ import type {
   RefObject,
   SetStateAction,
 } from 'react'
+import { useEffect, useState } from 'react'
 import { T, mono, sora } from './data'
 import {
   deriveCurrentYearLabel,
@@ -116,6 +117,121 @@ function formatScopeTypeLabel(scopeType: ApiScopeType) {
       return 'Section'
     default:
       return scopeType
+  }
+}
+
+type ParsedPrerequisiteDraftLine = {
+  sourceCourseCode: string
+  edgeKind: 'explicit' | 'added'
+  rationale: string
+  lineNumber: number
+}
+
+type PrerequisiteValidationResult = {
+  errors: string[]
+  parsedLineCount: number
+}
+
+function parsePrerequisiteDraftLines(prerequisitesText: string) {
+  const lines = prerequisitesText
+    .split(/\r?\n/)
+    .map((line, index) => ({ line: line.trim(), lineNumber: index + 1 }))
+    .filter(item => item.line.length > 0)
+
+  const parsed: ParsedPrerequisiteDraftLine[] = []
+  const errors: string[] = []
+
+  for (const item of lines) {
+    const segments = item.line.split('|').map(segment => segment.trim()).filter(Boolean)
+    if (segments.length < 3) {
+      errors.push(`Line ${item.lineNumber} must use COURSE_CODE | explicit|added | rationale.`)
+      continue
+    }
+    const [sourceCourseCode, rawEdgeKind, ...rationaleSegments] = segments
+    const edgeKind = rawEdgeKind?.toLowerCase() === 'added'
+      ? 'added'
+      : rawEdgeKind?.toLowerCase() === 'explicit'
+        ? 'explicit'
+        : null
+    if (!sourceCourseCode) {
+      errors.push(`Line ${item.lineNumber} is missing a source course code.`)
+      continue
+    }
+    if (!edgeKind) {
+      errors.push(`Line ${item.lineNumber} must declare edge kind as explicit or added.`)
+      continue
+    }
+    const rationale = rationaleSegments.join(' | ').trim()
+    if (!rationale) {
+      errors.push(`Line ${item.lineNumber} must include a rationale.`)
+      continue
+    }
+    parsed.push({
+      sourceCourseCode,
+      edgeKind,
+      rationale,
+      lineNumber: item.lineNumber,
+    })
+  }
+
+  return { parsed, errors }
+}
+
+function validatePrerequisiteDraftAgainstCurriculum(
+  targetCourse: Pick<ApiCurriculumFeatureConfigBundle['items'][number], 'curriculumCourseId' | 'courseCode' | 'semesterNumber'> | null,
+  prerequisitesText: string,
+  curriculumSemesterEntries: CurriculumSemesterEntry[],
+): PrerequisiteValidationResult {
+  if (!targetCourse) {
+    return {
+      errors: ['Select a model-input course before validating prerequisites.'],
+      parsedLineCount: 0,
+    }
+  }
+
+  const { parsed, errors } = parsePrerequisiteDraftLines(prerequisitesText)
+  const allCourses = curriculumSemesterEntries.flatMap(entry => entry.courses)
+  const rowByCourseCode = new Map(allCourses.map(row => [row.courseCode.trim().toLowerCase(), row]))
+  const targetRow = allCourses.find(row => row.curriculumCourseId === targetCourse.curriculumCourseId)
+    ?? allCourses.find(row => row.courseCode.trim().toLowerCase() === targetCourse.courseCode.trim().toLowerCase())
+    ?? null
+
+  if (!targetRow) {
+    return {
+      errors: [...errors, `Selected course ${targetCourse.courseCode} is not present in the current curriculum rows.`],
+      parsedLineCount: parsed.length,
+    }
+  }
+
+  const seenEdges = new Set<string>()
+  for (const prerequisite of parsed) {
+    const normalizedSourceCourseCode = prerequisite.sourceCourseCode.trim().toLowerCase()
+    const sourceRow = rowByCourseCode.get(normalizedSourceCourseCode) ?? null
+    const edgeKey = `${normalizedSourceCourseCode}::${targetRow.curriculumCourseId}::${prerequisite.edgeKind}`
+    if (seenEdges.has(edgeKey)) {
+      errors.push(`Line ${prerequisite.lineNumber} duplicates a ${prerequisite.edgeKind} prerequisite edge for ${targetRow.courseCode}.`)
+      continue
+    }
+    seenEdges.add(edgeKey)
+    if (!sourceRow) {
+      errors.push(`Line ${prerequisite.lineNumber}: source course ${prerequisite.sourceCourseCode} is not present in the current curriculum rows.`)
+      continue
+    }
+    if (
+      sourceRow.curriculumCourseId === targetRow.curriculumCourseId
+      || sourceRow.courseCode.trim().toLowerCase() === targetRow.courseCode.trim().toLowerCase()
+    ) {
+      errors.push(`Line ${prerequisite.lineNumber}: self-referential prerequisite edges are not allowed.`)
+      continue
+    }
+    if ((prerequisite.edgeKind === 'explicit' || prerequisite.edgeKind === 'added') && sourceRow.semesterNumber >= targetRow.semesterNumber) {
+      errors.push(`Line ${prerequisite.lineNumber}: prerequisite edges require an earlier semester. Found semester ${sourceRow.semesterNumber} -> ${targetRow.semesterNumber}.`)
+    }
+  }
+
+  return {
+    errors,
+    parsedLineCount: parsed.length,
   }
 }
 
@@ -298,14 +414,16 @@ function ToggleField({
   label,
   checked,
   onChange,
+  disabled = false,
 }: {
   label: string
   checked: boolean
   onChange: (checked: boolean) => void
+  disabled?: boolean
 }) {
   return (
-    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: T.text }}>
-      <input type="checkbox" checked={checked} onChange={event => onChange(event.target.checked)} />
+    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: disabled ? 'not-allowed' : 'pointer', color: disabled ? T.muted : T.text, opacity: disabled ? 0.6 : 1 }}>
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={event => onChange(event.target.checked)} />
       <span style={{ ...mono, fontSize: 10 }}>{label}</span>
     </label>
   )
@@ -489,6 +607,7 @@ type SystemAdminFacultiesWorkspaceProps = {
   handleRejectCurriculumLinkageCandidate: (candidateId: string) => Promise<void>
   handleSaveCurriculumFeatureConfig: () => Promise<void>
   proofDashboardProps: ComponentProps<typeof SystemAdminProofDashboardWorkspace>
+  onOpenProofDashboard: () => void
   registryLaunchProps: ComponentProps<typeof SystemAdminScopedRegistryLaunches>
 }
 
@@ -615,9 +734,21 @@ export function SystemAdminFacultiesWorkspace({
   handleRejectCurriculumLinkageCandidate,
   handleSaveCurriculumFeatureConfig,
   proofDashboardProps,
+  onOpenProofDashboard,
   registryLaunchProps,
 }: SystemAdminFacultiesWorkspaceProps) {
   void [route, activeUniversityRegistryScope, activeUniversityStudentScopeChipLabel, activeUniversityFacultyScopeChipLabel, scopedUniversityStudents, filteredUniversityFaculty]
+  const [syntheticProvisioningEnabled, setSyntheticProvisioningEnabled] = useState(false)
+
+  useEffect(() => {
+    if (syntheticProvisioningEnabled) return
+    if (batchProvisioningForm.mode !== 'mock' && batchProvisioningForm.createStudents === false) return
+    setBatchProvisioningForm(prev => (
+      prev.mode === 'mock' || prev.createStudents
+        ? { ...prev, mode: 'live-empty', createStudents: false }
+        : prev
+    ))
+  }, [batchProvisioningForm.createStudents, batchProvisioningForm.mode, setBatchProvisioningForm, syntheticProvisioningEnabled])
 
   const selectorControls = (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
@@ -804,6 +935,13 @@ export function SystemAdminFacultiesWorkspace({
     : null
   const selectedCurriculumSemesterEntry = curriculumSemesterEntries.find(entry => String(entry.semesterNumber) === selectedCurriculumSemester) ?? null
   const selectedCurriculumSemesterCourses = selectedCurriculumSemesterEntry?.courses ?? []
+  const curriculumPrerequisiteValidation = validatePrerequisiteDraftAgainstCurriculum(
+    selectedCurriculumFeatureItem,
+    curriculumFeatureForm.prerequisitesText,
+    curriculumSemesterEntries,
+  )
+  const hasDraftPrerequisiteText = curriculumFeatureForm.prerequisitesText.trim().length > 0
+  const hasCurriculumPrerequisiteErrors = curriculumPrerequisiteValidation.errors.length > 0
   const selectedBatchIsCanonicalProof = isCanonicalProofBatchId(selectedBatch?.batchId)
   const authoritativeSemesterValue = authoritativeOperationalSemester ?? selectedBatch?.currentSemester ?? null
   const authoritativeSemesterChipColor = authoritativeOperationalSemesterSource === 'proof-run' ? T.warning : T.accent
@@ -1105,8 +1243,8 @@ export function SystemAdminFacultiesWorkspace({
         <Card style={{ padding: 14, background: T.surface2, display: 'grid', gap: 12 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <div>
-              <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>Curriculum Rows</div>
-              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.8 }}>Semester-wise curriculum editing and course-leader assignment now live in the extracted workspace.</div>
+              <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>Curriculum Import And Rows</div>
+              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.8 }}>Import the proof curriculum seed, then edit semester rows and course-leader ownership in one place.</div>
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <LabeledField label="Semester">
@@ -1118,10 +1256,11 @@ export function SystemAdminFacultiesWorkspace({
                   ))}
                 </select>
               </LabeledField>
-              <Btn type="button" variant="ghost" onClick={() => void handleBootstrapCurriculumManifest()}>Bootstrap From Manifest</Btn>
+              <Btn type="button" variant="ghost" onClick={() => void handleBootstrapCurriculumManifest()}>Import Curriculum From Manifest</Btn>
             </div>
           </div>
-          {selectedCurriculumSemesterCourses.length === 0 ? <EmptyState title="No curriculum rows for this semester" body="Create the first course row below or bootstrap the governed manifest into this batch." /> : (
+          <InfoBanner message="This imports the bundled proof curriculum seed (manifest key msruas-mnc-seed), regenerates linkage candidates, and queues any proof refresh required for the affected batches." />
+          {selectedCurriculumSemesterCourses.length === 0 ? <EmptyState title="No curriculum rows for this semester" body="Create the first course row below or import the governed proof curriculum seed into this batch." /> : (
             <div style={{ display: 'grid', gap: 10 }}>
               {selectedCurriculumSemesterCourses.map(course => {
                 const leaderState = getScopedCourseLeaderState(course.curriculumCourseId)
@@ -1138,9 +1277,14 @@ export function SystemAdminFacultiesWorkspace({
                       </div>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 320px)', gap: 10 }}>
-                      <LabeledField label="Course leader" hint={leaderState.hasMultipleLeaders ? 'Multiple leader-like ownerships exist across the matching live offerings.' : undefined}>
-                        <select value={leaderState.selectedFacultyId} onChange={event => void handleAssignCurriculumCourseLeader(course.curriculumCourseId, event.target.value)} style={{ width: '100%' }}>
-                          <option value="">Clear leader assignment</option>
+                      <LabeledField label="Course leader assignment" hint={leaderState.matchingOfferings.length === 0 ? 'Assignment is locked until a live offering exists for this curriculum row in the current scope.' : leaderState.hasMultipleLeaders ? 'Multiple leader-like ownerships exist across the matching live offerings.' : undefined}>
+                        <select
+                          value={leaderState.selectedFacultyId}
+                          onChange={event => void handleAssignCurriculumCourseLeader(course.curriculumCourseId, event.target.value)}
+                          style={{ width: '100%' }}
+                          disabled={leaderState.matchingOfferings.length === 0}
+                        >
+                          <option value="">{leaderState.matchingOfferings.length === 0 ? 'No matching live offering yet' : 'Clear leader assignment'}</option>
                           {scopedCourseLeaderFaculty.map(faculty => (
                             <option key={faculty.facultyId} value={faculty.facultyId}>{faculty.displayName}</option>
                           ))}
@@ -1152,6 +1296,7 @@ export function SystemAdminFacultiesWorkspace({
                         const faculty = scopedCourseLeaderFaculty.find(item => item.facultyId === facultyId)
                         return <Chip key={`${course.curriculumCourseId}:${facultyId}`} color={leaderState.hasMultipleLeaders ? T.warning : T.success}>{faculty?.displayName ?? facultyId}</Chip>
                       })}
+                      {leaderState.matchingOfferings.length === 0 ? <Chip color={T.dim}>Locked until a live offering exists</Chip> : null}
                     </div>
                   </Card>
                 )
@@ -1192,9 +1337,10 @@ export function SystemAdminFacultiesWorkspace({
   const selectedProvisionMentorFaculty = batchProvisioningForm.facultyPoolIds.length > 0
     ? provisioningMentorEligibleFaculty.filter(member => batchProvisioningForm.facultyPoolIds.includes(member.facultyId))
     : provisioningMentorEligibleFaculty
+  const provisioningModeIsSynthetic = batchProvisioningForm.mode === 'mock'
   const provisionPanel = selectedBatch && universityTab === 'provision' ? (
     <Card style={{ padding: 18, display: 'grid', gap: 16 }}>
-      <SectionHeading title="Batch Setup" eyebrow="Operations" caption={`Launch deterministic student, mentor, ownership, and scaffolding generation for Batch ${selectedBatch.batchLabel}${selectedSectionCode ? ` · Section ${selectedSectionCode}` : ''}.`} />
+      <SectionHeading title="Batch Provisioning" eyebrow="Operations" caption={`Materialize live-empty batches, mentor links, ownership, and scaffolding for Batch ${selectedBatch.batchLabel}${selectedSectionCode ? ` · Section ${selectedSectionCode}` : ''}. Synthetic student creation is advanced/test-only.`} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(132px, 1fr))', gap: 10 }}>
         <AdminMiniStat label="Faculty In Scope" value={String(batchFacultyPool.length)} tone={T.accent} />
         <AdminMiniStat label="Mentor-Ready Faculty" value={String(provisioningMentorEligibleFaculty.length)} tone={provisioningMentorEligibleFaculty.length ? T.success : T.warning} />
@@ -1213,11 +1359,11 @@ export function SystemAdminFacultiesWorkspace({
               ))}
             </select>
           </LabeledField>
-          <LabeledField label="Mode">
+          <LabeledField label="Provisioning mode" hint="Live-empty and manual modes keep synthetic student creation out of the default operator flow. Enable the advanced test switch below only when you intentionally want mock identities.">
             <select value={batchProvisioningForm.mode} onChange={event => setBatchProvisioningForm(prev => ({ ...prev, mode: event.target.value as BatchProvisioningFormState['mode'] }))} style={{ ...getFieldChromeStyle({ dense: true }), cursor: 'pointer', WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none', backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: 28 }}>
-              <option value="mock">Mock</option>
               <option value="live-empty">Live Empty</option>
               <option value="manual">Manual</option>
+              <option value="mock" disabled={!syntheticProvisioningEnabled}>Mock / Synthetic (advanced test only)</option>
             </select>
           </LabeledField>
           <LabeledField label="Sections"><TextInput value={batchProvisioningForm.sectionLabels} onChange={event => setBatchProvisioningForm(prev => ({ ...prev, sectionLabels: event.target.value }))} placeholder="A, B" /></LabeledField>
@@ -1240,13 +1386,39 @@ export function SystemAdminFacultiesWorkspace({
             ))}
           </select>
         </LabeledField>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Btn type="button" variant={syntheticProvisioningEnabled ? 'ghost' : 'primary'} onClick={() => {
+            setSyntheticProvisioningEnabled(prev => {
+              const next = !prev
+              if (!next) {
+                setBatchProvisioningForm(current => current.mode === 'mock' ? { ...current, mode: 'live-empty', createStudents: false } : current)
+              }
+              return next
+            })
+          }}>
+            {syntheticProvisioningEnabled ? 'Disable Synthetic Test Mode' : 'Enable Synthetic Test Mode'}
+          </Btn>
+          <Chip color={syntheticProvisioningEnabled ? T.warning : T.dim}>
+            {syntheticProvisioningEnabled ? 'Mock identities available' : 'Mock identities hidden from the default flow'}
+          </Chip>
+        </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <ToggleField label="Create students" checked={batchProvisioningForm.createStudents} onChange={checked => setBatchProvisioningForm(prev => ({ ...prev, createStudents: checked }))} />
+          <ToggleField
+            label={provisioningModeIsSynthetic ? 'Create synthetic students' : 'Create students'}
+            checked={provisioningModeIsSynthetic ? true : false}
+            onChange={checked => setBatchProvisioningForm(prev => ({ ...prev, createStudents: checked }))}
+            disabled={!syntheticProvisioningEnabled || !provisioningModeIsSynthetic}
+          />
           <ToggleField label="Create mentors" checked={batchProvisioningForm.createMentors} onChange={checked => setBatchProvisioningForm(prev => ({ ...prev, createMentors: checked }))} />
           <ToggleField label="Create attendance scaffolding" checked={batchProvisioningForm.createAttendanceScaffolding} onChange={checked => setBatchProvisioningForm(prev => ({ ...prev, createAttendanceScaffolding: checked }))} />
           <ToggleField label="Create assessment scaffolding" checked={batchProvisioningForm.createAssessmentScaffolding} onChange={checked => setBatchProvisioningForm(prev => ({ ...prev, createAssessmentScaffolding: checked }))} />
           <ToggleField label="Create transcript scaffolding" checked={batchProvisioningForm.createTranscriptScaffolding} onChange={checked => setBatchProvisioningForm(prev => ({ ...prev, createTranscriptScaffolding: checked }))} />
         </div>
+        {!syntheticProvisioningEnabled ? (
+          <InfoBanner message="Synthetic student creation is hidden in the default operator flow. Enable the advanced test mode switch only if you intentionally need mock identities for sandbox verification." />
+        ) : provisioningModeIsSynthetic ? (
+          <InfoBanner message="Mock mode creates persisted synthetic students using mock identities. Keep this for explicit test or sandbox runs only." tone="success" />
+        ) : null}
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <Chip color={selectedProvisionFacultyPool.length === batchFacultyPool.length ? T.dim : T.accent}>
             {selectedProvisionFacultyPool.length === batchFacultyPool.length
@@ -1258,8 +1430,8 @@ export function SystemAdminFacultiesWorkspace({
               ? `${selectedProvisionMentorFaculty.length} mentor-ready faculty in the current pool`
               : 'No mentor-ready faculty in the current pool'}
           </Chip>
-          <Btn type="submit">Run Batch Setup</Btn>
-          {currentSemesterTerm ? <Chip color={T.success}>{`Current semester term ${currentSemesterTerm.academicYearLabel}`}</Chip> : <Chip color={T.warning}>Add a term before running batch setup</Chip>}
+          <Btn type="submit">Run Batch Provisioning</Btn>
+          {currentSemesterTerm ? <Chip color={T.success}>{`Current semester term ${currentSemesterTerm.academicYearLabel}`}</Chip> : <Chip color={T.warning}>Add a term before running batch provisioning</Chip>}
         </div>
       </form>
       <Card style={{ padding: 14, background: T.surface, display: 'grid', gap: 12 }}>
@@ -1643,7 +1815,28 @@ export function SystemAdminFacultiesWorkspace({
           })}
           />
 
-          <SystemAdminProofDashboardWorkspace {...proofDashboardProps} />
+          <Card style={{ padding: 16, background: T.surface2, display: 'grid', gap: 12 }}>
+            <SectionHeading
+              title="Proof Control Plane"
+              eyebrow="Dedicated Page"
+              caption="Queue verification, requests, reminders, run progression, and model diagnostics now live on a dedicated proof dashboard instead of inside the curriculum workspace."
+            />
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Chip color={T.success}>{`${proofDashboardProps.proofDashboard?.activeRunDetail?.runLabel ?? 'No active run'} · ${proofDashboardProps.proofDashboard?.activeRunDetail?.status ?? 'idle'}`}</Chip>
+              <Chip color={T.accent}>{`Operational semester ${proofDashboardProps.proofDashboard?.activeRunDetail?.activeOperationalSemester ?? '—'}`}</Chip>
+              <Chip color={T.warning}>{`${proofDashboardProps.proofDashboard?.activeRunDetail?.monitoringSummary.activeReassessmentCount ?? 0} open queue`}</Chip>
+              <Chip color={T.orange}>{`${proofDashboardProps.proofDashboard?.activeRunDetail?.monitoringSummary.acknowledgementCount ?? 0} acknowledgements`}</Chip>
+            </div>
+            <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+              Curriculum import manages governed course rows and linkage candidates. Provisioning materializes live offerings, owners, timetables, and optional synthetic test data. Queue pressure, proof-stage progression, and backend acknowledgement state are reviewed from the proof dashboard so this workspace stays focused on structure and ownership semantics.
+            </div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <Btn type="button" size="sm" onClick={onOpenProofDashboard}>Open Proof Dashboard</Btn>
+              <Chip color={proofDashboardProps.proofDashboardLoading ? T.dim : T.success}>
+                {proofDashboardProps.proofDashboardLoading ? 'Dashboard loading…' : 'Dashboard ready'}
+              </Chip>
+            </div>
+          </Card>
 
           <Card style={{ padding: 16, background: T.surface2, display: 'grid', gap: 12 }}>
             <SectionHeading title="Curriculum Model Inputs" eyebrow="Curriculum" caption="Manage course outcomes, prerequisite edges, bridge modules, and topic partitions through batch-local overrides or shared scope profiles that feed retraining and world generation." />
@@ -1819,6 +2012,17 @@ export function SystemAdminFacultiesWorkspace({
                   )}
                 </Card>
                 <InfoBanner message="Outcome line format: CO1 | Apply | Description. Prerequisite line format: COURSE_CODE | explicit|added | rationale. Saving to a scope profile updates that shared feature category and only refreshes affected batches whose resolved fingerprints change." />
+                {hasDraftPrerequisiteText && curriculumPrerequisiteValidation.errors.length > 0 ? (
+                  <InfoBanner
+                    tone="error"
+                    message={`Prerequisite validation failed for ${curriculumPrerequisiteValidation.parsedLineCount} parsed line${curriculumPrerequisiteValidation.parsedLineCount === 1 ? '' : 's'}: ${curriculumPrerequisiteValidation.errors.slice(0, 3).join(' ')}`}
+                  />
+                ) : hasDraftPrerequisiteText && selectedCurriculumFeatureItem ? (
+                  <InfoBanner
+                    tone="success"
+                    message={`Prerequisite validation matches the backend rules for ${curriculumPrerequisiteValidation.parsedLineCount} parsed line${curriculumPrerequisiteValidation.parsedLineCount === 1 ? '' : 's'} on ${selectedCurriculumFeatureItem.courseCode}.`}
+                  />
+                ) : null}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
                   <div><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Assessment Profile</div><TextInput value={curriculumFeatureForm.assessmentProfile} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, assessmentProfile: event.target.value }))} placeholder="admin-authored" /></div>
                   <div><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Bridge Modules</div><TextAreaInput value={curriculumFeatureForm.bridgeModulesText} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, bridgeModulesText: event.target.value }))} rows={4} placeholder={'Bridge topic 1\nBridge topic 2'} /></div>
@@ -1830,7 +2034,7 @@ export function SystemAdminFacultiesWorkspace({
                   <div><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Workbook Topics</div><TextAreaInput value={curriculumFeatureForm.workbookTopicsText} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, workbookTopicsText: event.target.value }))} rows={4} placeholder={'Workbook topic 1\nWorkbook topic 2'} /></div>
                 </div>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                  <Btn type="button" onClick={() => void handleSaveCurriculumFeatureConfig()} disabled={!selectedCurriculumFeatureItem}>{curriculumFeatureTargetMode === 'scope-profile' ? 'Save Shared Model Inputs' : 'Save Model Inputs'}</Btn>
+                  <Btn type="button" onClick={() => void handleSaveCurriculumFeatureConfig()} disabled={!selectedCurriculumFeatureItem || hasCurriculumPrerequisiteErrors}>{curriculumFeatureTargetMode === 'scope-profile' ? 'Save Shared Model Inputs' : 'Save Model Inputs'}</Btn>
                   {selectedCurriculumFeatureItem ? <Chip color={T.warning}>{`${selectedCurriculumFeatureItem.prerequisites.length} prerequisites · ${selectedCurriculumFeatureItem.bridgeModules.length} bridge modules`}</Chip> : null}
                   {curriculumFeatureTargetMode === 'scope-profile' && selectedCurriculumFeatureTargetScopeChip ? <Chip color={T.accent}>{selectedCurriculumFeatureTargetScopeChip}</Chip> : null}
                 </div>

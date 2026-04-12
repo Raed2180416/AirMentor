@@ -181,7 +181,7 @@ describe('AcademicWorkspaceRouteSurface', () => {
     expect(markup).toContain('Queue History')
     expect(markup).toContain('data-proof-surface="academic-proof-summary"')
     expect(markup).toContain('data-proof-scope="queue-history"')
-    expect(markup).toContain('data-proof-summary-metric="operational-semester"')
+    expect(markup).toContain('data-proof-summary-metric="proof-semester"')
     expect(markup).toContain('Open Student')
     expect(markup).toContain('Risk Explorer')
     expect(markup).toContain('Student Shell')

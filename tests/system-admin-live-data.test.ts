@@ -496,6 +496,22 @@ describe('system-admin-live-data', () => {
     expect(searchLiveAdminWorkspace(scopedDataset, 'Aisha', { section: 'students', scope: { batchId: 'batch_2022', sectionCode: 'A' } })[0]?.route.studentId).toBe('student_1')
   })
 
+  it('treats proof-dashboard as a searchable admin section without leaking the scoping model', () => {
+    const proofDashboardResults = searchLiveAdminWorkspace(dataset, 'Aisha', { section: 'proof-dashboard' })
+    const proofDashboardScopedResults = searchLiveAdminWorkspace(dataset, 'Aisha', {
+      section: 'proof-dashboard',
+      scope: { batchId: 'batch_2022', sectionCode: 'A' },
+    })
+
+    expect(proofDashboardResults).toHaveLength(1)
+    expect(proofDashboardResults[0].route.section).toBe('students')
+    expect(proofDashboardScopedResults).toHaveLength(1)
+    expect(proofDashboardScopedResults[0].route).toMatchObject({
+      section: 'students',
+      studentId: 'student_1',
+    })
+  })
+
   it('scores scoped requests appropriately', () => {
     const requestDataset: LiveAdminDataset = {
       ...dataset,

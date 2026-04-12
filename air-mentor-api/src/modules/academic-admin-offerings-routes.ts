@@ -537,7 +537,11 @@ export async function registerAcademicAdminOfferingRoutes(
     const existingUsnSet = new Set(existingStudents.map(row => row.usn))
     const profileStudentIds = new Set(existingProfileRows.map(row => row.studentId))
 
-    if (body.createStudents || body.mode === 'mock') {
+    if (body.mode !== 'mock' && body.createStudents) {
+      throw badRequest('Synthetic student creation is only available in mock mode.')
+    }
+
+    if (body.mode === 'mock') {
       for (const sectionCode of sections) {
         const currentCount = sectionCounts.get(sectionCode) ?? 0
         for (let offset = currentCount; offset < body.studentsPerSection; offset += 1) {

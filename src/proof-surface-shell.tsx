@@ -1,7 +1,8 @@
 import type { CSSProperties, ReactNode } from 'react'
+import { useState } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { T, mono, sora } from './data'
-import { Btn, Card } from './ui-primitives'
+import { Btn, Card, ModalWorkspace } from './ui-primitives'
 
 type ProofSurfaceHeroProps = {
   surface: string
@@ -9,6 +10,7 @@ type ProofSurfaceHeroProps = {
   studentId?: string
   courseId?: string
   surfaceId?: string
+  dataProofDashboardLayout?: 'embedded' | 'page'
   eyebrow: string
   title: ReactNode
   description: ReactNode
@@ -25,6 +27,11 @@ type ProofSurfaceLauncherProps = {
   label?: string
   disabled?: boolean
   dataProofEntityId?: string
+  popupTitle?: ReactNode
+  popupCaption?: ReactNode
+  popupContent?: ReactNode | ((helpers: { closePopup: () => void; jumpToTarget: () => void }) => ReactNode)
+  popupFooter?: ReactNode | ((helpers: { closePopup: () => void; jumpToTarget: () => void }) => ReactNode)
+  popupSize?: 'sm' | 'md' | 'lg' | 'xl' | 'full'
   style?: CSSProperties
 }
 
@@ -83,6 +90,7 @@ export function ProofSurfaceHero({
   studentId,
   courseId,
   surfaceId,
+  dataProofDashboardLayout,
   eyebrow,
   title,
   description,
@@ -103,6 +111,7 @@ export function ProofSurfaceHero({
       data-proof-entity-id={entityId ?? undefined}
       data-proof-student-id={studentId ?? undefined}
       data-proof-course-id={courseId ?? undefined}
+      data-proof-dashboard-layout={dataProofDashboardLayout ?? undefined}
       style={{
         padding: 20,
         display: 'grid',
@@ -136,37 +145,119 @@ export function ProofSurfaceLauncher({
   label = 'Jump to proof controls',
   disabled = false,
   dataProofEntityId,
+  popupTitle,
+  popupCaption,
+  popupContent,
+  popupFooter,
+  popupSize = 'lg',
   style = {},
 }: ProofSurfaceLauncherProps) {
   const shouldReduceMotion = useReducedMotion()
+  const [isPopupOpen, setIsPopupOpen] = useState(false)
+  const popupAvailable = popupContent != null || popupFooter != null || popupTitle != null || popupCaption != null
+  const closePopup = () => setIsPopupOpen(false)
+  const jumpToTarget = () => {
+    focusProofTarget(targetId, !shouldReduceMotion)
+    closePopup()
+  }
+  const renderPopupNode = (node: ReactNode | ((helpers: { closePopup: () => void; jumpToTarget: () => void }) => ReactNode) | undefined) => {
+    if (typeof node === 'function') {
+      return node({ closePopup, jumpToTarget })
+    }
+    return node
+  }
 
   return (
-    <div
-      data-proof-launcher="floating"
-      style={{
-        position: 'sticky',
-        bottom: 16,
-        zIndex: 2,
-        justifySelf: 'end',
-        display: 'flex',
-        justifyContent: 'flex-end',
-        ...style,
-      }}
-    >
-      <Btn
-        size="sm"
-        variant="ghost"
-        disabled={disabled}
-        ariaLabel={label}
-        ariaControls={targetId}
-        title={label}
-        dataProofAction="proof-shell-launcher"
-        dataProofEntityId={dataProofEntityId ?? targetId}
-        onClick={() => focusProofTarget(targetId, !shouldReduceMotion)}
+    <>
+      <div
+        data-proof-launcher="floating"
+        data-proof-launcher-mode={popupAvailable ? 'popup-capable' : 'anchor'}
+        data-proof-launcher-state={isPopupOpen ? 'open' : 'closed'}
+        style={{
+          position: 'fixed',
+          right: 18,
+          bottom: 18,
+          zIndex: 40,
+          display: 'flex',
+          justifyContent: 'flex-end',
+          pointerEvents: 'none',
+          ...style,
+        }}
       >
-        {label}
-      </Btn>
-    </div>
+        <div style={{
+          pointerEvents: 'auto',
+          display: 'grid',
+          gap: 8,
+          padding: 8,
+          borderRadius: 18,
+          border: `1px solid ${T.border}`,
+          background: `linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(247, 250, 252, 0.92))`,
+          backdropFilter: 'blur(18px)',
+          boxShadow: '0 18px 42px rgba(15, 23, 42, 0.18)',
+        }}>
+          <Btn
+            size="sm"
+            variant="ghost"
+            disabled={disabled}
+            ariaLabel={popupAvailable ? `${label} · open dialog` : label}
+            ariaControls={targetId}
+            title={label}
+            dataProofAction="proof-shell-launcher"
+            dataProofEntityId={dataProofEntityId ?? targetId}
+            onClick={() => {
+              if (popupAvailable) {
+                setIsPopupOpen(current => !current)
+                return
+              }
+              focusProofTarget(targetId, !shouldReduceMotion)
+            }}
+          >
+            {label}
+          </Btn>
+          {popupAvailable ? (
+            <div style={{ ...mono, fontSize: 10, color: T.muted, paddingInline: 2 }}>
+              Opens the shared proof control surface.
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {popupAvailable && isPopupOpen ? (
+        <ModalWorkspace
+          title={typeof popupTitle === 'string' ? popupTitle : 'Proof control surface'}
+          eyebrow="Proof Launcher"
+          caption={typeof popupCaption === 'string' ? popupCaption : undefined}
+          onClose={closePopup}
+          size={popupSize}
+          footer={renderPopupNode(popupFooter)}
+          bodyStyle={{ display: 'grid', gap: 14 }}
+        >
+          <div style={{ display: 'grid', gap: 14 }}>
+            <div style={{ display: 'grid', gap: 8 }}>
+              <div style={{ ...sora, fontSize: 16, fontWeight: 800, color: T.text }}>
+                {popupTitle ?? 'Proof control surface'}
+              </div>
+              {popupCaption ? (
+                <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.7 }}>
+                  {popupCaption}
+                </div>
+              ) : null}
+            </div>
+            {popupContent ? renderPopupNode(popupContent) : null}
+            {!popupFooter && popupAvailable ? (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Btn size="sm" variant="ghost" onClick={jumpToTarget}>
+                  Open full dashboard
+                </Btn>
+                <Btn size="sm" variant="ghost" onClick={closePopup}>
+                  Close
+                </Btn>
+              </div>
+            ) : null}
+          </div>
+        </ModalWorkspace>
+      ) : null}
+    </>
   )
 }
 

@@ -71,7 +71,7 @@ function SystemAdminLoginScreen({
         <Card style={{ padding: 28, display: 'grid', alignContent: 'center', background: `linear-gradient(180deg, ${T.surface}, ${T.surface2})` }}>
           <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Secure Session</div>
           <div style={{ ...sora, fontSize: 28, fontWeight: 800, color: T.text, marginTop: 10 }}>Sign in to manage the live hierarchy.</div>
-          <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 10, lineHeight: 1.8 }}>Use the seeded sysadmin account or your assigned live admin credentials. Session state and theme preferences are restored automatically after sign-in.</div>
+          <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 10, lineHeight: 1.8 }}>Use your assigned system-admin credentials. Session state and theme preferences are restored automatically after sign-in.</div>
           <form onSubmit={onLogin} style={{ marginTop: 22, display: 'grid', gap: 14 }}>
             <div><FieldLabel>Username Or Email</FieldLabel><TextInput value={identifier} onChange={event => onIdentifierChange(event.target.value)} placeholder="sysadmin" /></div>
             <div><FieldLabel>Password</FieldLabel><TextInput type="password" value={password} onChange={event => onPasswordChange(event.target.value)} placeholder="••••••••" /></div>

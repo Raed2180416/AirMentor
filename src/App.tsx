@@ -187,6 +187,12 @@ type RouteSnapshot = {
   courseInitialTab?: string
 }
 
+type AcademicWorkspaceProjection = {
+  session: ApiSessionResponse
+  bootstrap: ApiAcademicBootstrap
+  revision: number
+}
+
 const CLASS_SNAP_THRESHOLD_MINUTES = 14
 
 function getRouteSnapshotKey(snapshot: RouteSnapshot) {
@@ -1986,9 +1992,6 @@ function OperationalWorkspace({
 
     setRoleChangeBusy(true)
     void Promise.resolve(onRoleChange(r))
-      .then(() => {
-        applyRoleLocally()
-      })
       .catch(error => {
         setRoleChangeError(error instanceof Error ? error.message : `Could not switch to ${r}.`)
       })
@@ -3479,7 +3482,7 @@ export function OperationalApp() {
   const [authBusy, setAuthBusy] = useState(false)
   const [authError, setAuthError] = useState('')
   const [remoteSession, setRemoteSession] = useState<ApiSessionResponse | null>(null)
-  const [remoteBootstrap, setRemoteBootstrap] = useState<ApiAcademicBootstrap | null>(null)
+  const [workspaceProjection, setWorkspaceProjection] = useState<AcademicWorkspaceProjection | null>(null)
   const [loginFaculty, setLoginFaculty] = useState<ApiAcademicLoginFaculty[]>([])
   const [playbackCheckpointId, setPlaybackCheckpointId] = useState<string | null>(() => readProofPlaybackSelection()?.simulationStageCheckpointId ?? null)
   const [proofPlaybackNotice, setProofPlaybackNotice] = useState<{ tone: 'neutral' | 'error'; message: string } | null>(null)
@@ -3506,11 +3509,19 @@ export function OperationalApp() {
     })
   }, [apiBaseUrl, startupDiagnostics, telemetrySinkUrl])
 
+  const commitAcademicProjection = useCallback((session: ApiSessionResponse, snapshot: ApiAcademicBootstrap) => {
+    setRemoteSession(session)
+    setWorkspaceProjection(current => ({
+      session,
+      bootstrap: snapshot,
+      revision: (current?.revision ?? 0) + 1,
+    }))
+  }, [])
+
   const fetchAcademicBootstrap = useCallback(async () => {
     if (!apiClient) return null
     const syncSnapshot = (snapshot: ApiAcademicBootstrap) => {
       hydrateAcademicData(snapshot)
-      setRemoteBootstrap(snapshot)
       setPlaybackCheckpointId(snapshot.proofPlayback?.simulationStageCheckpointId ?? null)
       setLoginFaculty(restrictVisibleFacultyOptions(snapshot.faculty.map(account => {
         const accountUsername = (account as { username?: string }).username ?? account.facultyId
@@ -3591,21 +3602,29 @@ export function OperationalApp() {
     }
   }, [apiClient])
 
+  const refreshAcademicProjection = useCallback(async (session: ApiSessionResponse | null = remoteSession) => {
+    if (!session) return null
+    const snapshot = await fetchAcademicBootstrap()
+    if (!snapshot) return null
+    commitAcademicProjection(session, snapshot)
+    return snapshot
+  }, [commitAcademicProjection, fetchAcademicBootstrap, remoteSession])
+
   const handleResetProofPlaybackSelection = useCallback(async () => {
     clearProofPlaybackSelection()
     setProofPlaybackNotice(null)
-    await fetchAcademicBootstrap().catch(() => undefined)
-  }, [fetchAcademicBootstrap])
+    await refreshAcademicProjection().catch(() => undefined)
+  }, [refreshAcademicProjection])
 
   useEffect(() => {
     if (typeof window === 'undefined' || !remoteSession?.faculty?.facultyId) return undefined
     const handleStorage = (event: StorageEvent) => {
       if (event.key !== PROOF_PLAYBACK_SELECTION_STORAGE_KEY) return
-      void fetchAcademicBootstrap().catch(() => undefined)
+      void refreshAcademicProjection().catch(() => undefined)
     }
     window.addEventListener('storage', handleStorage)
     return () => window.removeEventListener('storage', handleStorage)
-  }, [fetchAcademicBootstrap, remoteSession?.faculty?.facultyId])
+  }, [refreshAcademicProjection, remoteSession?.faculty?.facultyId])
 
   useEffect(() => {
     if (!apiClient || !remoteSessionRepositories) {
@@ -3625,19 +3644,24 @@ export function OperationalApp() {
         if (publicFaculty?.items?.length) {
           setLoginFaculty(restrictVisibleFacultyOptions(publicFaculty.items))
         }
-        const restoredRole = restoredSession ? mapApiRoleToRole(restoredSession.activeRoleGrant.roleCode) : null
-        if (restoredSession?.faculty?.facultyId && restoredRole) {
-          emitClientOperationalEvent('auth.session.restored', {
-            workspace: 'academic',
-            sessionId: restoredSession.sessionId,
-            facultyId: restoredSession.faculty.facultyId,
-            activeRole: restoredSession.activeRoleGrant.roleCode,
-          })
-          setRemoteSession(restoredSession)
-          await fetchAcademicBootstrap()
+      const restoredRole = restoredSession ? mapApiRoleToRole(restoredSession.activeRoleGrant.roleCode) : null
+      if (restoredSession?.faculty?.facultyId && restoredRole) {
+        emitClientOperationalEvent('auth.session.restored', {
+          workspace: 'academic',
+          sessionId: restoredSession.sessionId,
+          facultyId: restoredSession.faculty.facultyId,
+          activeRole: restoredSession.activeRoleGrant.roleCode,
+        })
+          const snapshot = await fetchAcademicBootstrap()
+          if (!snapshot) {
+            setRemoteSession(restoredSession)
+            setWorkspaceProjection(null)
+            return
+          }
+          commitAcademicProjection(restoredSession, snapshot)
         } else {
           setRemoteSession(null)
-          setRemoteBootstrap(null)
+          setWorkspaceProjection(null)
         }
       } catch (error) {
         if (cancelled) return
@@ -3647,7 +3671,7 @@ export function OperationalApp() {
         }, { level: 'warn' })
         setAuthError(error instanceof Error ? error.message : 'Could not restore the academic portal session.')
         setRemoteSession(null)
-        setRemoteBootstrap(null)
+        setWorkspaceProjection(null)
       } finally {
         if (!cancelled) setBooting(false)
       }
@@ -3657,18 +3681,18 @@ export function OperationalApp() {
     return () => {
       cancelled = true
     }
-  }, [apiClient, fetchAcademicBootstrap, remoteSessionRepositories])
+  }, [apiClient, commitAcademicProjection, fetchAcademicBootstrap, remoteSessionRepositories])
 
   const remoteRepositories = useMemo(() => (
-    apiClient && remoteBootstrap
+    apiClient && workspaceProjection?.bootstrap
       ? createAirMentorRepositories({
           repositoryMode: 'http',
           apiClient,
-          academicBootstrap: remoteBootstrap,
+          academicBootstrap: workspaceProjection.bootstrap,
           remoteFacultyStorageKey: AIRMENTOR_STORAGE_KEYS.currentFacultyId,
         })
       : null
-  ), [apiClient, remoteBootstrap])
+  ), [apiClient, workspaceProjection?.bootstrap])
 
   const handleRemoteLogin = useCallback(async (identifier: string, password: string) => {
     if (!remoteSessionRepositories) throw new Error('Academic backend is unavailable.')
@@ -3683,8 +3707,9 @@ export function OperationalApp() {
       if (!session.faculty?.facultyId || !role) {
         throw new Error('This account does not have an academic portal role.')
       }
-      setRemoteSession(session)
-      await fetchAcademicBootstrap()
+      const snapshot = await fetchAcademicBootstrap()
+      if (!snapshot) throw new Error('Academic bootstrap did not return a session projection.')
+      commitAcademicProjection(session, snapshot)
     } catch (error) {
       const message = error instanceof AirMentorApiError ? error.message : (error instanceof Error ? error.message : 'Academic login failed.')
       setAuthError(message)
@@ -3692,13 +3717,13 @@ export function OperationalApp() {
     } finally {
       setAuthBusy(false)
     }
-  }, [fetchAcademicBootstrap, remoteSessionRepositories])
+  }, [commitAcademicProjection, fetchAcademicBootstrap, remoteSessionRepositories])
 
   const handleRemoteLogout = useCallback(async () => {
     if (!remoteSessionRepositories) return
     await remoteSessionRepositories.sessionPreferences.logoutRemoteSession()
     setRemoteSession(null)
-    setRemoteBootstrap(null)
+    setWorkspaceProjection(null)
     handleReturnToPortal()
   }, [handleReturnToPortal, remoteSessionRepositories])
 
@@ -3707,11 +3732,10 @@ export function OperationalApp() {
     const match = remoteSession.availableRoleGrants.find(grant => mapApiRoleToRole(grant.roleCode) === role)
     if (!match) return
     const nextSession = await remoteSessionRepositories.sessionPreferences.switchRemoteRoleContext(match.grantId)
-    setRemoteSession(nextSession)
-    await fetchAcademicBootstrap()
-  }, [fetchAcademicBootstrap, remoteSession, remoteSessionRepositories])
-
-  const remoteInitialRole = remoteSession ? mapApiRoleToRole(remoteSession.activeRoleGrant.roleCode) : null
+    const snapshot = await fetchAcademicBootstrap()
+    if (!snapshot) throw new Error('Academic bootstrap did not return a session projection.')
+    commitAcademicProjection(nextSession, snapshot)
+  }, [commitAcademicProjection, fetchAcademicBootstrap, remoteSession, remoteSessionRepositories])
 
   const loadAcademicFacultyProfile = useCallback(async (facultyId: string) => {
     if (!apiClient) throw new Error('Academic backend is unavailable.')
@@ -3809,11 +3833,11 @@ export function OperationalApp() {
     }
   }, [apiClient, playbackCheckpointId])
 
-  const workspaceSession = remoteSession
-  const workspaceRole = remoteInitialRole
-  const workspaceBootstrap = remoteBootstrap
+  const workspaceSession = workspaceProjection?.session ?? null
+  const workspaceRole = workspaceSession ? mapApiRoleToRole(workspaceSession.activeRoleGrant.roleCode) : null
+  const workspaceBootstrap = workspaceProjection?.bootstrap ?? null
   const workspaceRepositories = remoteRepositories
-  const workspaceReady = Boolean(remoteSession?.faculty?.facultyId && remoteInitialRole && remoteBootstrap && remoteRepositories)
+  const workspaceReady = Boolean(workspaceSession?.faculty?.facultyId && workspaceRole && workspaceBootstrap && remoteRepositories)
 
   return (
     <AcademicSessionBoundary
@@ -3828,6 +3852,7 @@ export function OperationalApp() {
     >
       {workspaceReady ? (
         <OperationalWorkspace
+          key={`${workspaceProjection?.revision ?? 0}:${workspaceSession!.activeRoleGrant.grantId}:${workspaceBootstrap!.proofPlayback?.simulationStageCheckpointId ?? 'active'}`}
           repositories={workspaceRepositories!}
           initialTeacherId={workspaceSession!.faculty!.facultyId}
           initialRole={workspaceRole!}

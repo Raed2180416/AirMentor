@@ -344,10 +344,10 @@ function makeBatchProvisioningForm(): BatchProvisioningFormState {
   return {
     termId: 'term_5',
     sectionLabels: 'A, B',
-    mode: 'mock',
+    mode: 'live-empty',
     studentsPerSection: '60',
     facultyPoolIds: ['fac_1'],
-    createStudents: true,
+    createStudents: false,
     createMentors: true,
     createAttendanceScaffolding: true,
     createAssessmentScaffolding: false,
@@ -706,6 +706,7 @@ function renderWorkspace(
     handleRejectCurriculumLinkageCandidate: async () => {},
     handleSaveCurriculumFeatureConfig: async () => {},
     proofDashboardProps,
+    onOpenProofDashboard: () => {},
     registryLaunchProps,
     ...overrides,
   } as ComponentProps<typeof SystemAdminFacultiesWorkspace>))
@@ -745,27 +746,154 @@ describe('system-admin faculties workspace parity', () => {
 
     expect(markup).toContain('Terms, Curriculum, And Course Leaders')
     expect(markup).toContain('Academic Terms')
-    expect(markup).toContain('Curriculum Rows')
-    expect(markup).toContain('Course leader')
-    expect(markup).toContain('Bootstrap From Manifest')
+    expect(markup).toContain('Curriculum Import And Rows')
+    expect(markup).toContain('Course leader assignment')
+    expect(markup).toContain('Import Curriculum From Manifest')
+    expect(markup).toContain('This imports the bundled proof curriculum seed')
     expect(markup).toContain('Prof. Kavitha Rao')
   })
 
   it('renders deterministic provisioning controls from the extracted workspace', () => {
     const markup = renderWorkspace('provision')
 
-    expect(markup).toContain('Provisioning')
+    expect(markup).toContain('Batch Provisioning')
     expect(markup).toContain('Mentor-Ready Faculty')
     expect(markup).toContain('Faculty In Scope')
     expect(markup).toContain('Students Without Mentor')
+    expect(markup).toContain('Provisioning mode')
     expect(markup).toContain('Live Empty')
+    expect(markup).toContain('Manual')
+    expect(markup).toContain('Mock / Synthetic (advanced test only)')
+    expect(markup).toContain('Enable Synthetic Test Mode')
+    expect(markup).toContain('Synthetic student creation is hidden in the default operator flow')
     expect(markup).toContain('Bulk Mentor Assignment')
     expect(markup).toContain('Preview Mentor Assignments')
     expect(markup).toContain('Apply Previewed Mentor Changes')
     expect(markup).toContain('Batch 2022 · Section A')
     expect(markup).toContain('Prof. Kavitha Rao')
-    expect(markup).toContain('Run Batch Setup')
+    expect(markup).toContain('Run Batch Provisioning')
     expect(markup).toContain('Current semester term 2024-25')
+  })
+
+  it('locks course-leader assignment until a live offering exists for the curriculum row', () => {
+    const markup = renderWorkspace('courses', {
+      curriculumSemesterEntries: [{
+        semesterNumber: 5,
+        courses: [
+          {
+            ...data.curriculumCourses[0],
+            curriculumCourseId: 'curr_1',
+            semesterNumber: 5,
+          },
+        ],
+      }],
+      getScopedCourseLeaderState: () => ({
+        matchingOfferings: [],
+        leaderIds: [],
+        selectedFacultyId: '',
+        hasMultipleLeaders: false,
+      }),
+    })
+
+    expect(markup).toContain('Course leader assignment')
+    expect(markup).toContain('Assignment is locked until a live offering exists for this curriculum row in the current scope.')
+    expect(markup).toContain('No matching live offering yet')
+    expect(markup).toContain('Locked until a live offering exists')
+  })
+
+  it('surfaces backend-aligned prerequisite validation before saving draft curriculum inputs', () => {
+    const markup = renderWorkspace('overview', {
+      curriculumSemesterEntries: [
+        {
+          semesterNumber: 5,
+          courses: [
+            {
+              ...data.curriculumCourses[0],
+              curriculumCourseId: 'curr_1',
+              semesterNumber: 5,
+            },
+            {
+              curriculumCourseId: 'curr_2',
+              batchId: 'batch_2022',
+              semesterNumber: 5,
+              courseId: 'course_2',
+              courseCode: 'CS502',
+              title: 'Operating Systems',
+              credits: 4,
+              status: 'active',
+              version: 1,
+              createdAt: '2026-01-01T00:00:00.000Z',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+        },
+      ],
+      curriculumFeatureItems: [
+        {
+          curriculumCourseId: 'curr_1',
+          batchId: 'batch_2022',
+          semesterNumber: 5,
+          courseId: 'course_1',
+          courseCode: 'CS501',
+          title: 'Advanced Algorithms',
+          assessmentProfile: 'admin-authored',
+          prerequisites: [],
+          bridgeModules: [],
+          outcomes: [],
+          topicPartitions: { tt1: [], tt2: [], see: [], workbook: [] },
+          localOverride: null,
+          resolvedSource: null,
+        } as never,
+      ],
+      curriculumFeatureConfig: {
+        curriculumImportVersion: null,
+        curriculumFeatureProfileFingerprint: null,
+        binding: null,
+        items: [
+          {
+            curriculumCourseId: 'curr_1',
+            batchId: 'batch_2022',
+            semesterNumber: 5,
+            courseId: 'course_1',
+            courseCode: 'CS501',
+            title: 'Advanced Algorithms',
+            assessmentProfile: 'admin-authored',
+            prerequisites: [],
+            bridgeModules: [],
+            outcomes: [],
+            topicPartitions: { tt1: [], tt2: [], see: [], workbook: [] },
+            localOverride: null,
+            resolvedSource: null,
+          } as never,
+        ],
+      } as never,
+      selectedCurriculumFeatureCourseId: 'curr_1',
+      selectedCurriculumFeatureItem: {
+        curriculumCourseId: 'curr_1',
+        courseCode: 'CS501',
+        semesterNumber: 5,
+        prerequisites: [],
+        bridgeModules: [],
+        outcomes: [],
+        assessmentProfile: 'admin-authored',
+        resolvedSource: null,
+        localOverride: null,
+      } as never,
+      curriculumFeatureForm: {
+        assessmentProfile: 'admin-authored',
+        outcomesText: 'CO1 | Understand | Explain the concept',
+        prerequisitesText: 'CS502 | explicit | Same semester prerequisite',
+        bridgeModulesText: '',
+        tt1TopicsText: '',
+        tt2TopicsText: '',
+        seeTopicsText: '',
+        workbookTopicsText: '',
+      },
+    })
+
+    expect(markup).toContain('Prerequisite validation failed for 1 parsed line')
+    expect(markup).toContain('Found semester 5 -&gt; 5.')
+    expect(markup).toContain('Save Model Inputs')
   })
 
   it('renders canonical proof scope provenance when the proof pilot batch is active', () => {

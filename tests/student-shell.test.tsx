@@ -265,6 +265,7 @@ describe('StudentShellPage', () => {
     expect(markup).toContain('data-proof-surface="student-shell"')
     expect(markup).toContain('data-proof-shell="shared"')
     expect(markup).toContain('data-proof-launcher="floating"')
+    expect(markup).toContain('data-proof-launcher-mode="popup-capable"')
     expect(markup).toContain('data-proof-action="student-shell-back"')
     expect(markup).toContain('data-proof-section="authority-banner"')
     expect(markup).toContain('data-proof-section="summary-rail"')
@@ -288,7 +289,7 @@ describe('StudentShellPage', () => {
     expect(markup).toContain('Shell guardrail boundary')
     expect(markup).toContain('Session Intro')
     expect(markup).toContain('Deterministic Reply')
-    expect(markup).toContain('Policy Derived')
+    expect(markup).toContain('Model Output')
     expect(markup).not.toContain('AI says')
   })
 

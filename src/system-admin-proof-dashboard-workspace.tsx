@@ -139,6 +139,8 @@ type CheckpointEvidenceView = 'queue' | 'offerings'
 type SystemAdminProofDashboardWorkspaceProps = {
   proofDashboard: ApiProofDashboard | null
   proofDashboardLoading: boolean
+  dashboardLayout?: 'embedded' | 'page'
+  showLauncher?: boolean
   initialActiveDashboardTab?: ProofDashboardTabId
   activeRunCheckpoints: ApiSimulationStageCheckpointSummary[]
   activeModelDiagnostics: ModelDiagnosticsLike
@@ -189,6 +191,8 @@ type SystemAdminProofDashboardWorkspaceProps = {
 export function SystemAdminProofDashboardWorkspace({
   proofDashboard,
   proofDashboardLoading,
+  dashboardLayout = 'embedded',
+  showLauncher = true,
   initialActiveDashboardTab,
   activeRunCheckpoints,
   activeModelDiagnostics,
@@ -405,11 +409,68 @@ export function SystemAdminProofDashboardWorkspace({
       ))}
     </div>
   ) : null
+  const launcherPopupContent = activeRunDetail ? (
+    <div style={{ display: 'grid', gap: 12 }}>
+      <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 8 }}>
+        <div style={{ ...mono, fontSize: 10, color: T.dim }}>Current stage</div>
+        <div style={{ ...mono, fontSize: 11, color: T.text, lineHeight: 1.7 }}>
+          {selectedProofCheckpoint
+            ? `Semester ${selectedProofCheckpoint.semesterNumber} · ${selectedProofCheckpoint.stageLabel}`
+            : 'No checkpoint selected'}
+        </div>
+        <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
+          {selectedProofCheckpoint
+            ? selectedProofCheckpoint.stageDescription
+            : 'Select a checkpoint from the shared dashboard rail to inspect playback evidence.'}
+        </div>
+      </Card>
+
+      <motion.div layout style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
+        <Card style={{ padding: 10, background: T.surface }}>
+          <div style={{ ...mono, fontSize: 10, color: T.dim }}>Active semester</div>
+          <div style={{ ...mono, fontSize: 11, color: T.text, marginTop: 4 }}>
+            {activeOperationalSemester != null ? `Semester ${activeOperationalSemester}` : 'Unavailable'}
+          </div>
+        </Card>
+        <Card style={{ padding: 10, background: T.surface }}>
+          <div style={{ ...mono, fontSize: 10, color: T.dim }}>Queue</div>
+          <div style={{ ...mono, fontSize: 11, color: T.text, marginTop: 4 }}>
+            {activeQueueDiagnostics?.queuedRunCount ?? 0} queued · {activeQueueDiagnostics?.runningRunCount ?? 0} running
+          </div>
+        </Card>
+        <Card style={{ padding: 10, background: T.surface }}>
+          <div style={{ ...mono, fontSize: 10, color: T.dim }}>Verifications</div>
+          <div style={{ ...mono, fontSize: 11, color: T.text, marginTop: 4 }}>
+            {activeRunDetail.monitoringSummary.acknowledgementCount} acknowledgements · {activeRunDetail.monitoringSummary.resolutionCount} resolutions
+          </div>
+        </Card>
+      </motion.div>
+
+      <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 8 }}>
+        <div style={{ ...mono, fontSize: 10, color: T.dim }}>Progress actions</div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <Btn size="sm" variant="ghost" onClick={onCreateProofImport} disabled={!importsCount}>Create Import</Btn>
+          <Btn size="sm" variant="ghost" onClick={onValidateLatestProofImport} disabled={!importsCount}>Validate Import</Btn>
+          <Btn size="sm" variant="ghost" onClick={onCreateProofRun} disabled={!importsCount}>Run / Rerun</Btn>
+          <Btn size="sm" variant="ghost" onClick={onRecomputeProofRunRisk} disabled={!activeRunDetail}>Recompute Risk</Btn>
+        </div>
+      </Card>
+    </div>
+  ) : (
+    <InfoBanner message="Create or restore a proof run to unlock the shared launcher popup." />
+  )
+  const launcherPopupFooter = activeRunDetail ? ({ closePopup, jumpToTarget }: { closePopup: () => void; jumpToTarget: () => void }) => (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+      <Btn size="sm" variant="ghost" onClick={jumpToTarget}>Open full dashboard</Btn>
+      <Btn size="sm" variant="ghost" onClick={closePopup}>Close</Btn>
+    </div>
+  ) : null
 
   return (
     <ProofSurfaceHero
       surface="system-admin-proof-control-plane"
       entityId={selectedProofCheckpoint?.simulationStageCheckpointId ?? activeRunDetail?.simulationRunId ?? undefined}
+      dataProofDashboardLayout={dashboardLayout}
       eyebrow="Proof Control Plane"
       title="Proof Control Plane"
       description="A compact proof shell for run control, checkpoint playback, and runtime evidence."
@@ -454,12 +515,19 @@ export function SystemAdminProofDashboardWorkspace({
       ) : null}
       style={{ padding: 14, background: T.surface2, gap: 14 }}
     >
-      <ProofSurfaceLauncher
-        targetId="system-admin-proof-controls"
-        label="Jump to proof controls"
-        disabled={!activeRunDetail}
-        dataProofEntityId={selectedProofCheckpoint?.simulationStageCheckpointId ?? activeRunDetail?.simulationRunId}
-      />
+      {showLauncher ? (
+        <ProofSurfaceLauncher
+          targetId="system-admin-proof-controls"
+          label="Jump to proof controls"
+          disabled={!activeRunDetail}
+          dataProofEntityId={selectedProofCheckpoint?.simulationStageCheckpointId ?? activeRunDetail?.simulationRunId}
+          popupTitle="Proof launcher"
+          popupCaption="Quick access to the active proof run, semester, and verification state."
+          popupContent={launcherPopupContent}
+          popupFooter={launcherPopupFooter ?? undefined}
+          popupSize="lg"
+        />
+      ) : null}
 
       {activeRunDetail ? (
         <motion.div layout id="system-admin-proof-controls" style={{ display: 'grid', gap: 14 }}>

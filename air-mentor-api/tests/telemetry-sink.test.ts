@@ -3,16 +3,19 @@ import { emitOperationalEvent } from '../src/lib/telemetry.js'
 
 describe('operational telemetry sink', () => {
   const originalNodeEnv = process.env.NODE_ENV
+  const originalTelemetryEnabled = process.env.AIRMENTOR_TELEMETRY_ENABLED
 
   afterEach(() => {
     vi.restoreAllMocks()
     process.env.NODE_ENV = originalNodeEnv
+    process.env.AIRMENTOR_TELEMETRY_ENABLED = originalTelemetryEnabled
   })
 
   it('forwards structured backend events to the configured sink through the dispatch hook', async () => {
     const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {})
     const dispatch = vi.fn(async () => {})
     process.env.NODE_ENV = 'development'
+    process.env.AIRMENTOR_TELEMETRY_ENABLED = 'true'
 
     try {
       const payload = emitOperationalEvent('startup.ready', {

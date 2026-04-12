@@ -9,7 +9,7 @@ import type {
   ApiStudentAgentSession,
   ApiStudentAgentTimelineItem,
 } from '../api/types'
-import { describeProofAvailability, describeProofProvenance } from '../proof-provenance'
+import { describeProofAvailability, describeProofProvenance, normalizeProofPanelLabel } from '../proof-provenance'
 import { ProofSurfaceHero, ProofSurfaceLauncher, ProofSurfaceTabPanel, ProofSurfaceTabs } from '../proof-surface-shell'
 import { Btn, Card, Chip, FieldInput, PageBackButton, PageShell } from '../ui-primitives'
 import { EmptyState, InfoBanner, MetricCard } from '../system-admin-ui'
@@ -17,6 +17,7 @@ import { EmptyState, InfoBanner, MetricCard } from '../system-admin-ui'
 type StudentShellTabId = 'overview' | 'topic-co' | 'assessment' | 'interventions' | 'timeline' | 'chat'
 
 function PanelLabel({ label }: { label: ApiStudentAgentPanelLabel }) {
+  const normalizedLabel = normalizeProofPanelLabel(label)
   const color = label === 'Observed'
     ? T.accent
     : label === 'Policy Derived'
@@ -26,7 +27,7 @@ function PanelLabel({ label }: { label: ApiStudentAgentPanelLabel }) {
         : T.muted
   return (
     <span style={{ ...mono, fontSize: 10, color, textTransform: 'uppercase', letterSpacing: '0.12em' }}>
-      {label}
+      {normalizedLabel}
     </span>
   )
 }
@@ -256,6 +257,43 @@ export function StudentShellPage({
           targetId="student-shell-proof-controls"
           label="Jump to student proof controls"
           dataProofEntityId={card.student.studentId}
+          popupTitle="Student proof control surface"
+          popupCaption={card.checkpointContext
+            ? `Semester ${card.checkpointContext.semesterNumber} · ${card.checkpointContext.stageLabel}`
+            : `Run ${card.runContext.runLabel}`}
+          popupContent={() => (
+            <div style={{ display: 'grid', gap: 12 }}>
+              <InfoBanner message="Model usefulness is checkpoint-bound. Compare the policy-derived status with the no-action comparator before interpreting any simulated intervention / realized path." />
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Policy-derived status</div>
+                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>{card.overview.currentStatus.riskBand ?? 'Unavailable'}</div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted }}>{card.overview.currentStatus.recommendedAction ?? 'No action'}</div>
+                </Card>
+                <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>No-action comparator</div>
+                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>{card.counterfactual?.noActionRiskBand ?? 'Unavailable'}</div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted }}>{card.counterfactual?.counterfactualLiftScaled != null ? `Counterfactual lift ${card.counterfactual.counterfactualLiftScaled > 0 ? '+' : ''}${card.counterfactual.counterfactualLiftScaled} scaled points` : 'No lift reported'}</div>
+                </Card>
+                <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Intervention history</div>
+                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>{card.interventions.interventionHistory.length}</div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted }}>Simulated intervention / realized path records</div>
+                </Card>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Chip color={T.accent}>{card.runContext.runLabel}</Chip>
+                <Chip color={T.warning}>{card.summaryRail.currentRiskBand ?? 'No watch band'}</Chip>
+                {card.checkpointContext ? <Chip color={T.orange}>{`Sem ${card.checkpointContext.semesterNumber}`}</Chip> : null}
+              </div>
+            </div>
+          )}
+          popupFooter={({ closePopup, jumpToTarget }) => (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <Btn size="sm" variant="ghost" onClick={jumpToTarget}>Open proof controls</Btn>
+              <Btn size="sm" variant="ghost" onClick={closePopup}>Close</Btn>
+            </div>
+          )}
         />
 
         {error ? <div data-proof-section="load-error"><InfoBanner tone="error" message={error} /></div> : null}
@@ -278,7 +316,7 @@ export function StudentShellPage({
                 {card.overview.currentStatus.policyComparison?.policyPhenotype ? <Chip color={T.orange}>{card.overview.currentStatus.policyComparison.policyPhenotype}</Chip> : null}
                 {card.summaryRail.previousRiskBand ? <Chip color={T.dim}>{`Prev ${card.summaryRail.previousRiskBand}`}</Chip> : null}
                 {card.summaryRail.riskChangeFromPreviousCheckpointScaled != null ? <Chip color={card.summaryRail.riskChangeFromPreviousCheckpointScaled > 0 ? T.danger : card.summaryRail.riskChangeFromPreviousCheckpointScaled < 0 ? T.success : T.dim}>{`${card.summaryRail.riskChangeFromPreviousCheckpointScaled > 0 ? '+' : ''}${card.summaryRail.riskChangeFromPreviousCheckpointScaled}`}</Chip> : null}
-                {card.summaryRail.counterfactualLiftScaled != null ? <Chip color={card.summaryRail.counterfactualLiftScaled > 0 ? T.success : card.summaryRail.counterfactualLiftScaled < 0 ? T.warning : T.dim}>{`Lift ${card.summaryRail.counterfactualLiftScaled > 0 ? '+' : ''}${card.summaryRail.counterfactualLiftScaled}`}</Chip> : null}
+                {card.summaryRail.counterfactualLiftScaled != null ? <Chip color={card.summaryRail.counterfactualLiftScaled > 0 ? T.success : card.summaryRail.counterfactualLiftScaled < 0 ? T.warning : T.dim}>{`Counterfactual lift ${card.summaryRail.counterfactualLiftScaled > 0 ? '+' : ''}${card.summaryRail.counterfactualLiftScaled}`}</Chip> : null}
               </div>
               {card.summaryRail.currentRiskSupportWarning ? <InfoBanner tone="neutral" message={card.summaryRail.currentRiskSupportWarning} /> : null}
               {card.checkpointContext?.stageAdvanceBlocked ? (
@@ -363,7 +401,7 @@ export function StudentShellPage({
                 </Card>
                 <Card data-proof-section="overview-policy-status" style={{ padding: 16, display: 'grid', gap: 10 }}>
                   <PanelLabel label={card.overview.policyLabel} />
-                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Current policy-derived status</div>
+                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Policy-derived status</div>
                   <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.8 }}>
                     Watch {card.overview.currentStatus.riskBand ?? 'Unavailable'}{card.overview.currentStatus.riskProbScaled != null ? ` at ${card.overview.currentStatus.riskProbScaled}%` : card.summaryRail.currentRiskDisplayProbabilityAllowed === false ? ' in band-only mode' : ''} · recommended action {card.overview.currentStatus.recommendedAction ?? 'none'} · reassessment {card.overview.currentStatus.reassessmentStatus ?? 'none'}{card.overview.currentStatus.queueState ? ` · queue ${card.overview.currentStatus.queueState}` : ''}{card.overview.currentStatus.simulatedActionTaken ? ` · simulated action ${card.overview.currentStatus.simulatedActionTaken}` : ''}.
                   </div>

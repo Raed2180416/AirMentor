@@ -41,7 +41,7 @@ export type LiveAdminProofProvenance = Pick<
   'scopeDescriptor' | 'resolvedFrom' | 'scopeMode' | 'countSource' | 'activeOperationalSemester'
 >
 
-export type LiveAdminSectionId = 'overview' | 'faculties' | 'students' | 'faculty-members' | 'requests' | 'history'
+export type LiveAdminSectionId = 'overview' | 'proof-dashboard' | 'faculties' | 'students' | 'faculty-members' | 'requests' | 'history'
 
 export type LiveAdminDataset = {
   institution: ApiInstitution | null
@@ -353,7 +353,7 @@ export function listFacultyAssignments(data: LiveAdminDataset, facultyId: string
 }
 
 function matchesSearchSection(candidateSection: LiveAdminSectionId, activeSection?: LiveAdminSectionId) {
-  if (!activeSection || activeSection === 'overview') return true
+  if (!activeSection || activeSection === 'overview' || activeSection === 'proof-dashboard') return true
   if (activeSection === 'history') return candidateSection === 'requests'
   return candidateSection === activeSection
 }

@@ -182,6 +182,7 @@ describe('FacultyProfilePage proof mode', () => {
     expect(markup).toContain('data-proof-surface="teacher-proof-panel"')
     expect(markup).toContain('data-proof-section="proof-authority-note"')
     expect(markup).toContain('Authoritative proof panel for this faculty scope')
+    expect(markup).toContain('data-proof-launcher-mode="popup-capable"')
     expect(markup).toContain('data-proof-section="active-run-contexts"')
     expect(markup).toContain('data-proof-section="checkpoint-overlay"')
     expect(markup).toContain('data-proof-section="monitoring-queue"')
@@ -194,8 +195,104 @@ describe('FacultyProfilePage proof mode', () => {
     expect(markup).toContain('Checkpoint-bound batch context derived from the active proof scope.')
     expect(markup).toContain('Checkpoint-bound course-leader scope derived from monitored proof offerings.')
     expect(markup).toContain('Checkpoint-bound proof counts')
+    expect(markup).toContain('Model usefulness and proof-semester counts')
     expect(markup).toContain('checkpoint semester 6')
+    expect(markup).toContain('Proof-semester elective fit')
     expect(markup).toContain('teacher-proof-open-partial-profile')
+  })
+
+  it('opens the teacher proof popup surface with proof-semester guidance', () => {
+    render(createElement(FacultyProfilePage, {
+      currentTeacher: {
+        facultyId: 'mnc_t1',
+        name: 'Dr. Asha Rao',
+        initials: 'AR',
+        allowedRoles: ['Course Leader', 'Mentor', 'HoD'],
+        dept: 'Mathematics and Computing',
+        roleTitle: 'Professor',
+        email: 'asha.rao@example.edu',
+        courseCodes: ['MC601'],
+        offeringIds: ['off_mc601_a'],
+        menteeIds: ['student_001', 'student_002'],
+      },
+      activeRole: 'Course Leader',
+      profile: {
+        displayName: 'Dr. Asha Rao',
+        designation: 'Professor',
+        employeeCode: 'F001',
+        joinedOn: '2020-06-01',
+        email: 'asha.rao@example.edu',
+        phone: '9999999999',
+        primaryDepartment: {
+          departmentId: 'dept_mnc',
+          name: 'Mathematics and Computing',
+          code: 'MNC',
+        },
+        permissions: [],
+        appointments: [],
+        currentOwnedClasses: [],
+        currentBatchContexts: [],
+        subjectRunCourseLeaderScope: [],
+        mentorScope: { activeStudentCount: 24, studentIds: ['student_001', 'student_002'] },
+        timetableStatus: { hasTemplate: true, publishedAt: '2026-03-10T00:00:00.000Z', directEditWindowEndsAt: null },
+        requestSummary: { openCount: 0, recent: [] },
+        reassessmentSummary: { openCount: 2, nextDueAt: null, recentDecisionTypes: ['acknowledged', 'targeted-tutoring'] },
+        proofOperations: {
+          scopeDescriptor: {
+            scopeType: 'proof',
+            scopeId: 'checkpoint_001',
+            label: '2023 Mathematics and Computing',
+            batchId: 'batch_mnc_2023',
+            sectionCode: null,
+            branchName: 'B.Tech Mathematics and Computing',
+            simulationRunId: 'run_001',
+            simulationStageCheckpointId: 'checkpoint_001',
+            studentId: null,
+          },
+          resolvedFrom: {
+            kind: 'proof-checkpoint',
+            scopeType: 'proof',
+            scopeId: 'checkpoint_001',
+            label: 'Semester Close · Proof Run 1',
+          },
+          scopeMode: 'proof',
+          countSource: 'proof-checkpoint',
+          activeOperationalSemester: 6,
+          activeRunContexts: [],
+          selectedCheckpoint: {
+            simulationStageCheckpointId: 'checkpoint_001',
+            simulationRunId: 'run_001',
+            semesterNumber: 6,
+            stageKey: 'semester-close',
+            stageLabel: 'Semester Close',
+            stageDescription: 'Final checkpoint.',
+            stageOrder: 6,
+            previousCheckpointId: 'checkpoint_000',
+            nextCheckpointId: null,
+            highRiskCount: 8,
+            openQueueCount: 13,
+          },
+          monitoringQueue: [],
+          electiveFits: [],
+        },
+      },
+      calendarMarkers: [],
+      loading: false,
+      error: '',
+      pendingTaskCount: 3,
+      assignedOfferings: [],
+      currentFacultyTimetable: null,
+      onBack: () => {},
+      onOpenStudentProfile: () => {},
+      onOpenStudentShell: () => {},
+      onOpenRiskExplorer: () => {},
+    }))
+
+    fireEvent.click(screen.getByRole('button', { name: /Jump to teacher proof controls/ }))
+
+    expect(screen.getAllByText('Teacher proof control surface').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText(/Model usefulness is checkpoint-bound here\./)).toBeTruthy()
+    expect(screen.getByText('Open proof controls')).toBeTruthy()
   })
 
   it('opens the bounded partial profile from proof queue rows', () => {
@@ -314,7 +411,7 @@ describe('FacultyProfilePage proof mode', () => {
       onOpenRiskExplorer: () => {},
     }))
 
-    expect(screen.getByRole('button', { name: 'Jump to teacher proof controls' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Jump to teacher proof controls/ })).toBeTruthy()
     fireEvent.click(screen.getAllByRole('button', { name: 'Open Student' })[0])
     expect(onOpenStudentProfile).toHaveBeenCalledWith('student_001', 'off_mc601_a')
   })

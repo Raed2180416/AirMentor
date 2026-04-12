@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { MSRUAS_PROOF_BATCH_ID } from '../src/lib/msruas-proof-sandbox.js'
+import { MSRUAS_PROOF_BATCH_ID, PROOF_TERM_DEFS } from '../src/lib/msruas-proof-sandbox.js'
 import { createTestApp, loginAs, TEST_ORIGIN } from './helpers/test-app.js'
 
 let current: Awaited<ReturnType<typeof createTestApp>> | null = null
@@ -176,5 +176,100 @@ describe('admin curriculum feature config', () => {
         workbook: ['Lab remediation worksheet'],
       },
     })
+  })
+
+  it('rejects prerequisite edges that point to a course in the same semester', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const initialResponse = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/batches/${MSRUAS_PROOF_BATCH_ID}/curriculum-feature-config`,
+      headers: { cookie: adminLogin.cookie },
+    })
+
+    expect(initialResponse.statusCode).toBe(200)
+    const initialConfig = initialResponse.json() as {
+      items: Array<{
+        curriculumCourseId: string
+        semesterNumber: number
+        courseCode: string
+      }>
+    }
+
+    const targetCourse = initialConfig.items.find(item => item.semesterNumber >= 5) ?? null
+    const sameSemesterPrerequisite = initialConfig.items.find(item => item.curriculumCourseId !== targetCourse?.curriculumCourseId && item.semesterNumber === targetCourse?.semesterNumber) ?? null
+
+    expect(targetCourse).toBeTruthy()
+    expect(sameSemesterPrerequisite).toBeTruthy()
+    if (!targetCourse || !sameSemesterPrerequisite) throw new Error('Expected proof batch curriculum rows in the same semester for the prerequisite validation test')
+
+    const response = await current.app.inject({
+      method: 'PUT',
+      url: `/api/admin/batches/${MSRUAS_PROOF_BATCH_ID}/curriculum-feature-config/${targetCourse.curriculumCourseId}`,
+      headers: {
+        cookie: adminLogin.cookie,
+        origin: TEST_ORIGIN,
+      },
+      payload: {
+        assessmentProfile: 'ce-40-see-60',
+        outcomes: [
+          { id: 'CO1', bloom: 'Analyze', desc: 'Surface the semester conflict.' },
+        ],
+        prerequisites: [
+          {
+            sourceCourseCode: sameSemesterPrerequisite.courseCode,
+            edgeKind: 'explicit',
+            rationale: 'This should fail backend validation because the edge is not from an earlier semester.',
+          },
+        ],
+        bridgeModules: [],
+        topicPartitions: {
+          tt1: [],
+          tt2: [],
+          see: [],
+          workbook: [],
+        },
+      },
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(response.json()).toMatchObject({
+      error: 'BAD_REQUEST',
+    })
+    expect(JSON.stringify(response.json())).toContain('Prerequisite edges require an earlier semester')
+    expect(JSON.stringify(response.json())).toContain(`semester ${sameSemesterPrerequisite.semesterNumber} -> ${targetCourse.semesterNumber}`)
+  })
+
+  it('rejects non-mock provisioning requests that still ask for synthetic students', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const proofSemesterFiveTerm = PROOF_TERM_DEFS.find(item => item.semesterNumber === 5)
+    expect(proofSemesterFiveTerm).toBeTruthy()
+    if (!proofSemesterFiveTerm) throw new Error('Expected a governed proof term definition for semester 5')
+
+    const response = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/batches/${MSRUAS_PROOF_BATCH_ID}/provision`,
+      headers: {
+        cookie: adminLogin.cookie,
+        origin: TEST_ORIGIN,
+      },
+      payload: {
+        termId: proofSemesterFiveTerm.termId,
+        sectionLabels: ['A'],
+        mode: 'live-empty',
+        studentsPerSection: 1,
+        createStudents: true,
+        createMentors: false,
+        createAttendanceScaffolding: false,
+        createAssessmentScaffolding: false,
+        createTranscriptScaffolding: false,
+      },
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(JSON.stringify(response.json())).toContain('Synthetic student creation is only available in mock mode.')
   })
 })

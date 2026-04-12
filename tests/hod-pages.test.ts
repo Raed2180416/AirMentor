@@ -246,6 +246,7 @@ describe('HodView', () => {
     expect(markup).toContain('data-proof-surface="hod-proof-analytics"')
     expect(markup).toContain('data-proof-shell="shared"')
     expect(markup).toContain('data-proof-launcher="floating"')
+    expect(markup).toContain('data-proof-launcher-mode="popup-capable"')
     expect(markup).toContain('role="tablist"')
     expect(markup).toContain('data-proof-shell-tabs="shared"')
     expect(markup).toContain('aria-label="HoD proof sections"')
