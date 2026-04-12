@@ -11,6 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
   PLAYWRIGHT_APP_URL: https://raed2180416.github.io/AirMentor/
   PLAYWRIGHT_API_URL: ${{ vars.RAILWAY_PUBLIC_API_URL }}
   AIRMENTOR_LIVE_STACK: '1'
