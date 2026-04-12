@@ -12,9 +12,6 @@ on:
 permissions:
   contents: read
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
-
 concurrency:
   group: railway-api
   cancel-in-progress: true
@@ -27,10 +24,10 @@ jobs:
         working-directory: air-mentor-api
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
@@ -128,7 +125,7 @@ jobs:
 
       - name: Upload Railway diagnostics
         if: failure() && steps.railway-config.outputs.ready == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: railway-api-diagnostics
           path: air-mentor-api/output
