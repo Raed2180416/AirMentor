@@ -97,6 +97,7 @@ export function CLDashboard({
     return Array.from(itemsByStudentId.values()).sort((left, right) => right.riskProbScaled - left.riskProbScaled || left.studentName.localeCompare(right.studentName))
   }, [getStudentsPatched, offerings, proofProfile])
   const fallbackAlertItems = useMemo<DashboardAlertItem[]>(() => {
+    if (proofProfile?.proofOperations?.scopeMode === 'proof') return []
     const itemsByStudentId = new Map<string, DashboardAlertItem>()
     for (const offering of offerings) {
       for (const student of getStudentsPatched(offering)) {
@@ -121,8 +122,10 @@ export function CLDashboard({
       }
     }
     return Array.from(itemsByStudentId.values()).sort((left, right) => right.riskProbScaled - left.riskProbScaled || left.studentName.localeCompare(right.studentName))
-  }, [getStudentsPatched, offerings])
-  const highRiskAlertItems = proofAlertItems.length > 0 ? proofAlertItems : fallbackAlertItems
+  }, [getStudentsPatched, offerings, proofProfile])
+  const highRiskAlertItems = proofProfile?.proofOperations?.scopeMode === 'proof'
+    ? proofAlertItems
+    : fallbackAlertItems
   const highRiskCount = highRiskAlertItems.length
   const yearGroups = useMemo(() => {
     return Array.from(new Set(offerings.map(offering => offering.year))).map(year => {

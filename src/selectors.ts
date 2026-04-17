@@ -49,6 +49,15 @@ function distributeWeightage(totalWeight: number, count: number) {
   return Array.from({ length: count }, (_, index) => base + (index === count - 1 ? remainder : 0))
 }
 
+function buildUnavailableBlueprint(kind: TTKind): TermTestBlueprint {
+  return {
+    kind,
+    totalMarks: 0,
+    updatedAt: 0,
+    nodes: [],
+  }
+}
+
 function buildDefaultPolicyContext(): SchemePolicyContext {
   return {
     ce: 60,
@@ -464,9 +473,19 @@ export function getEntryLockMap(offering: Offering): EntryLockMap {
 
 export function createAppSelectors(state: SelectorState) {
   const getSchemeForOffering = (offering: Offering) => state.schemeByOffering[offering.offId] ?? defaultSchemeForOffering(offering)
-  const getBlueprintsForOffering = (offering: Offering) => state.ttBlueprintsByOffering[offering.offId] ?? {
-    tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default),
-    tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default),
+  const getBlueprintsForOffering = (offering: Offering) => {
+    const sourcedBlueprints = state.ttBlueprintsByOffering[offering.offId]
+    if (sourcedBlueprints) return sourcedBlueprints
+    if (state.studentSourceMode === 'live') {
+      return {
+        tt1: buildUnavailableBlueprint('tt1'),
+        tt2: buildUnavailableBlueprint('tt2'),
+      }
+    }
+    return {
+      tt1: seedBlueprintFromPaper('tt1', PAPER_MAP[offering.code] || PAPER_MAP.default),
+      tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default),
+    }
   }
   const getStudentPatch = (offeringId: string, studentId: string) => state.studentPatches[toStudentPatchKey(offeringId, studentId)] ?? {}
 
@@ -481,10 +500,12 @@ export function createAppSelectors(state: SelectorState) {
     return baseStudents.map(student => {
       const patch = getStudentPatch(offering.offId, student.id)
       if (!state.studentPatches[toStudentPatchKey(offering.offId, student.id)]) {
+        const hasTt1Blueprint = blueprints.tt1.totalMarks > 0 || blueprints.tt1.nodes.length > 0
+        const hasTt2Blueprint = blueprints.tt2.totalMarks > 0 || blueprints.tt2.nodes.length > 0
         return {
           ...student,
-          tt1Max: blueprints.tt1.totalMarks,
-          tt2Max: blueprints.tt2.totalMarks,
+          tt1Max: hasTt1Blueprint ? blueprints.tt1.totalMarks : student.tt1Max,
+          tt2Max: hasTt2Blueprint ? blueprints.tt2.totalMarks : student.tt2Max,
         }
       }
       const totalClasses = patch.totalClasses ?? student.totalClasses

@@ -286,6 +286,114 @@ type ActionPolicyCandidate = {
   rationale: string
 }
 
+type StageActionCatalog = {
+  stageActions: PolicyActionCode[]
+  phenotypePreferredActions: Record<PolicyPhenotype, PolicyActionCode[]>
+}
+
+export const POLICY_ACTION_CATALOG_VERSION = 'policy-action-catalog-v1'
+
+const PRE_TT1_STAGE_ACTIONS: PolicyActionCode[] = [
+  'no-action',
+  'alert-only',
+  'faculty-outreach',
+  'mentor-check-in',
+  'mentor-outreach',
+  'attendance-recovery-follow-up',
+  'structured-study-plan',
+]
+
+const POST_TT1_STAGE_ACTIONS: PolicyActionCode[] = [
+  ...PRE_TT1_STAGE_ACTIONS,
+  'prerequisite-bridge',
+  'targeted-tutoring',
+  'outreach-plus-tutoring',
+]
+
+const LATE_STAGE_ACTIONS: PolicyActionCode[] = [
+  ...POST_TT1_STAGE_ACTIONS,
+  'pre-see-rescue',
+]
+
+function preferredActionsByPhenotype(stageActions: PolicyActionCode[]): Record<PolicyPhenotype, PolicyActionCode[]> {
+  const stageActionSet = new Set(stageActions)
+  const restrictToStage = (actions: PolicyActionCode[]) => actions.filter(action => stageActionSet.has(action))
+  return {
+    'late-semester-acute': restrictToStage([
+      'pre-see-rescue',
+      'outreach-plus-tutoring',
+      'mentor-outreach',
+      'targeted-tutoring',
+      'attendance-recovery-follow-up',
+    ]),
+    'persistent-nonresponse': restrictToStage([
+      'outreach-plus-tutoring',
+      'mentor-outreach',
+      'mentor-check-in',
+      'faculty-outreach',
+    ]),
+    'prerequisite-dominant': restrictToStage([
+      'prerequisite-bridge',
+      'outreach-plus-tutoring',
+      'targeted-tutoring',
+      'mentor-outreach',
+    ]),
+    'academic-weakness': restrictToStage([
+      'targeted-tutoring',
+      'outreach-plus-tutoring',
+      'structured-study-plan',
+      'mentor-check-in',
+    ]),
+    'attendance-dominant': restrictToStage([
+      'attendance-recovery-follow-up',
+      'faculty-outreach',
+      'mentor-outreach',
+      'mentor-check-in',
+    ]),
+    'diffuse-amber': restrictToStage([
+      'structured-study-plan',
+      'mentor-check-in',
+      'alert-only',
+      'faculty-outreach',
+    ]),
+  }
+}
+
+const POLICY_ACTION_CATALOG_BY_STAGE: Record<PlaybackStageKey, StageActionCatalog> = {
+  'pre-tt1': {
+    stageActions: PRE_TT1_STAGE_ACTIONS,
+    phenotypePreferredActions: preferredActionsByPhenotype(PRE_TT1_STAGE_ACTIONS),
+  },
+  'post-tt1': {
+    stageActions: POST_TT1_STAGE_ACTIONS,
+    phenotypePreferredActions: preferredActionsByPhenotype(POST_TT1_STAGE_ACTIONS),
+  },
+  'post-tt2': {
+    stageActions: LATE_STAGE_ACTIONS,
+    phenotypePreferredActions: preferredActionsByPhenotype(LATE_STAGE_ACTIONS),
+  },
+  'post-assignments': {
+    stageActions: LATE_STAGE_ACTIONS,
+    phenotypePreferredActions: preferredActionsByPhenotype(LATE_STAGE_ACTIONS),
+  },
+  'post-see': {
+    stageActions: LATE_STAGE_ACTIONS,
+    phenotypePreferredActions: preferredActionsByPhenotype(LATE_STAGE_ACTIONS),
+  },
+}
+
+export function policyActionCatalogForStage(stageKey: PlaybackStageKey, policyPhenotype?: PolicyPhenotype) {
+  const catalog = POLICY_ACTION_CATALOG_BY_STAGE[stageKey]
+  const stageActions = [...catalog.stageActions]
+  const phenotypeActions = policyPhenotype ? [...catalog.phenotypePreferredActions[policyPhenotype]] : null
+  return {
+    version: POLICY_ACTION_CATALOG_VERSION,
+    stageKey,
+    stageActions,
+    phenotypeActions,
+  }
+}
+
 function capacityCostForAction(action: PolicyActionCode) {
   switch (action) {
     case 'outreach-plus-tutoring':
@@ -312,21 +420,7 @@ function capacityCostForAction(action: PolicyActionCode) {
 }
 
 function availablePolicyActionsForStage(stageKey: PlaybackStageKey) {
-  const base: PolicyActionCode[] = [
-    'no-action',
-    'alert-only',
-    'faculty-outreach',
-    'mentor-outreach',
-    'attendance-recovery-follow-up',
-    'prerequisite-bridge',
-    'targeted-tutoring',
-    'structured-study-plan',
-    'outreach-plus-tutoring',
-  ]
-  if (stageKey === 'post-tt2' || stageKey === 'post-assignments' || stageKey === 'post-see') {
-    base.push('pre-see-rescue')
-  }
-  return base
+  return policyActionCatalogForStage(stageKey).stageActions
 }
 
 function lowAcademicEvidence(evidence: {
@@ -462,6 +556,11 @@ export function buildActionPolicyComparison(input: {
   }
 }) {
   const phenotype = classifyPolicyPhenotype(input)
+  const stageActionCatalog = policyActionCatalogForStage(input.stageKey, phenotype.policyPhenotype)
+  const stageActionSet = new Set(stageActionCatalog.stageActions)
+  const phenotypeActionPriority = new Map(
+    (stageActionCatalog.phenotypeActions ?? []).map((action, index) => [action, index] as const),
+  )
   const attendanceDominant = phenotype.attendanceDominant
   const academicWeakness = phenotype.academicWeakness
   const prerequisitePressure = phenotype.prerequisiteDominant
@@ -628,8 +727,16 @@ export function buildActionPolicyComparison(input: {
     }
   }
 
-  const candidates = availablePolicyActionsForStage(input.stageKey).map(scoreAction)
-    .sort((left, right) => right.utility - left.utility || left.action.localeCompare(right.action))
+  const candidatePriority = (action: PolicyActionCode) => phenotypeActionPriority.get(action) ?? Number.MAX_SAFE_INTEGER
+  const rawCandidates = availablePolicyActionsForStage(input.stageKey).map(scoreAction)
+    .sort((left, right) => {
+      const utilityDelta = right.utility - left.utility
+      if (utilityDelta !== 0) return utilityDelta
+      const priorityDelta = candidatePriority(left.action) - candidatePriority(right.action)
+      if (priorityDelta !== 0) return priorityDelta
+      return left.action.localeCompare(right.action)
+    })
+  const candidates = rawCandidates.filter(candidate => stageActionSet.has(candidate.action))
   const bestCandidate = candidates[0] ?? null
   const noAction = candidates.find(candidate => candidate.action === 'no-action') ?? null
   const recommendedAction = input.riskBand === 'Low'
@@ -640,11 +747,23 @@ export function buildActionPolicyComparison(input: {
     ? null
     : bestCandidate.action
 
+  const allCandidatesStageValid = candidates.length === rawCandidates.length
+  const recommendedActionStageValid = recommendedAction == null || stageActionSet.has(recommendedAction)
+
   return {
     policyPhenotype: phenotype.policyPhenotype,
     recommendedAction,
     candidates,
     policyRationale: bestCandidate?.rationale ?? 'Routine monitoring only.',
+    actionCatalog: {
+      version: stageActionCatalog.version,
+      stageKey: stageActionCatalog.stageKey,
+      stageActions: stageActionCatalog.stageActions,
+      phenotype: phenotype.policyPhenotype,
+      phenotypeActions: stageActionCatalog.phenotypeActions ?? [],
+      allCandidatesStageValid,
+      recommendedActionStageValid,
+    },
   }
 }
 

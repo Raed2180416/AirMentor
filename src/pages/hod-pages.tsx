@@ -122,6 +122,8 @@ export function HodView({
   const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(null)
   const [selectedFacultyId, setSelectedFacultyId] = useState<string | null>(null)
   const [showActionNeededOnly, setShowActionNeededOnly] = useState(true)
+  const [overviewRiskFilter, setOverviewRiskFilter] = useState<'all' | 'high' | 'medium'>('all')
+  const [facultyFilter, setFacultyFilter] = useState<'all' | 'overloaded'>('all')
 
   const selectedStudent = useMemo(
     () => studentWatchRows.find(row => row.studentId === selectedStudentId) ?? null,
@@ -150,11 +152,23 @@ export function HodView({
   const checkpointContext = summary?.activeRunContext?.checkpointContext ?? null
 
   const filteredStudents = useMemo(() => {
+    let rows = studentWatchRows
     if (showActionNeededOnly) {
-      return studentWatchRows.filter(row => resolveGovernedQueueState(row.currentReassessmentStatus) === 'open')
+      rows = rows.filter(row => resolveGovernedQueueState(row.currentReassessmentStatus) === 'open')
     }
-    return studentWatchRows
-  }, [studentWatchRows, showActionNeededOnly])
+    if (overviewRiskFilter === 'high') {
+      rows = rows.filter(row => toRiskBand(row.currentRiskBand) === 'High')
+    } else if (overviewRiskFilter === 'medium') {
+      rows = rows.filter(row => toRiskBand(row.currentRiskBand) === 'Medium')
+    }
+    return rows
+  }, [overviewRiskFilter, showActionNeededOnly, studentWatchRows])
+
+  const visibleFacultyRollups = useMemo(() => (
+    facultyFilter === 'overloaded'
+      ? facultyRollups.filter(row => row.overloadFlag)
+      : facultyRollups
+  ), [facultyFilter, facultyRollups])
 
   const overviewStudents = filteredStudents.slice(0, 16)
 
@@ -186,6 +200,7 @@ export function HodView({
   }
 
   const activeRunContext = summary.activeRunContext
+  const proofProvenanceSummary: ApiAcademicHodProofSummary = summary
 
   return (
     <PageShell size="wide">
@@ -211,8 +226,8 @@ export function HodView({
           notices={(
             <>
               <InfoBanner message={`Active run ${activeRunContext.runLabel} · seed ${activeRunContext.seed} · created ${formatDateTime(activeRunContext.createdAt)} · sourced from live proof records${checkpointContext ? ` · checkpoint ${checkpointContext.stageLabel} (semester ${checkpointContext.semesterNumber})` : ''}.`} />
-              <InfoBanner tone="neutral" message={describeProofProvenance(summary)} />
-              <InfoBanner tone="neutral" message={describeProofAvailability(summary)} />
+              <InfoBanner tone="neutral" message={describeProofProvenance(proofProvenanceSummary)} />
+              <InfoBanner tone="neutral" message={describeProofAvailability(proofProvenanceSummary)} />
             </>
           )}
         >
@@ -263,14 +278,72 @@ export function HodView({
         />
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
-          <MetricCard label="Students Covered" value={String(summary.totals.studentsCovered)} helper="Students visible in the active HoD scope." />
-          <MetricCard label="High Watch" value={String(summary.totals.highRiskCount)} helper="Current high-priority watchlist count for the active semester." />
-          <MetricCard label="Medium Watch" value={String(summary.totals.mediumRiskCount)} helper="Students requiring review but not yet in the highest watch band." />
-          <MetricCard label="Open Reassessments" value={String(summary.monitoringSummary.activeReassessmentCount)} helper="Read-only count of currently open reassessment events." />
-          <MetricCard label="Unresolved Alerts" value={String(summary.totals.unresolvedAlertCount)} helper="Alert decisions without acknowledgement in the current active run." />
-          <MetricCard label="Average Queue Age" value={formatHours(summary.totals.averageQueueAgeHours)} helper="Mean age of open reassessments in the current view." />
-          <MetricCard label="Faculty In Scope" value={String(summary.facultyLoadSummary.facultyCount)} helper="Faculty rows visible in the supervised proof scope." />
-          <MetricCard label="Overload Flags" value={String(summary.facultyLoadSummary.overloadedFacultyCount)} helper="Faculty load profiles exceeding the current semester threshold." />
+          <MetricCard
+            label="Students Covered"
+            value={String(summary.totals.studentsCovered)}
+            helper="Students visible in the active HoD scope."
+            onClick={() => {
+              setActiveTab('overview')
+              setShowActionNeededOnly(false)
+              setOverviewRiskFilter('all')
+            }}
+          />
+          <MetricCard
+            label="High Watch"
+            value={String(summary.totals.highRiskCount)}
+            helper="Current high-priority watchlist count for the active semester."
+            onClick={() => {
+              setActiveTab('overview')
+              setShowActionNeededOnly(false)
+              setOverviewRiskFilter('high')
+            }}
+          />
+          <MetricCard
+            label="Medium Watch"
+            value={String(summary.totals.mediumRiskCount)}
+            helper="Students requiring review but not yet in the highest watch band."
+            onClick={() => {
+              setActiveTab('overview')
+              setShowActionNeededOnly(false)
+              setOverviewRiskFilter('medium')
+            }}
+          />
+          <MetricCard
+            label="Open Reassessments"
+            value={String(summary.monitoringSummary.activeReassessmentCount)}
+            helper="Read-only count of currently open reassessment events."
+            onClick={() => setActiveTab('reassessments')}
+          />
+          <MetricCard
+            label="Unresolved Alerts"
+            value={String(summary.totals.unresolvedAlertCount)}
+            helper="Alert decisions without acknowledgement in the current active run."
+            onClick={() => setActiveTab('reassessments')}
+          />
+          <MetricCard
+            label="Average Queue Age"
+            value={formatHours(summary.totals.averageQueueAgeHours)}
+            helper="Mean age of open reassessments in the current view."
+            onClick={() => setActiveTab('reassessments')}
+          />
+          <MetricCard
+            label="Faculty In Scope"
+            value={String(summary.facultyLoadSummary.facultyCount)}
+            helper="Faculty rows visible in the supervised proof scope."
+            onClick={() => {
+              setActiveTab('faculty')
+              setFacultyFilter('all')
+            }}
+          />
+          <MetricCard
+            label="Overload Flags"
+            value={String(summary.facultyLoadSummary.overloadedFacultyCount)}
+            helper="Faculty load profiles exceeding the current semester threshold."
+            onClick={() => {
+              setActiveTab('faculty')
+              setFacultyFilter('overloaded')
+            }}
+          />
         </div>
 
         <ProofSurfaceTabs
@@ -427,6 +500,33 @@ export function HodView({
                   >
                   View All
                 </Btn>
+                <Btn
+                  size="sm"
+                  variant={overviewRiskFilter === 'all' ? 'primary' : 'ghost'}
+                  onClick={() => setOverviewRiskFilter('all')}
+                >
+                  All Bands
+                </Btn>
+                <Btn
+                  size="sm"
+                  variant={overviewRiskFilter === 'high' ? 'primary' : 'ghost'}
+                  onClick={() => {
+                    setShowActionNeededOnly(false)
+                    setOverviewRiskFilter('high')
+                  }}
+                >
+                  High Only
+                </Btn>
+                <Btn
+                  size="sm"
+                  variant={overviewRiskFilter === 'medium' ? 'primary' : 'ghost'}
+                  onClick={() => {
+                    setShowActionNeededOnly(false)
+                    setOverviewRiskFilter('medium')
+                  }}
+                >
+                  Medium Only
+                </Btn>
               </div>
               {overviewStudents.length === 0 ? (
                 <EmptyState
@@ -549,6 +649,25 @@ export function HodView({
 
         {activeTab === 'faculty' ? (
           <TableCard title="Faculty Operations" caption="Proof-scope load and monitoring metrics for faculty inside the supervised department or branch.">
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+              <Btn
+                size="sm"
+                variant={facultyFilter === 'all' ? 'primary' : 'ghost'}
+                onClick={() => setFacultyFilter('all')}
+              >
+                All Faculty
+              </Btn>
+              <Btn
+                size="sm"
+                variant={facultyFilter === 'overloaded' ? 'primary' : 'ghost'}
+                onClick={() => setFacultyFilter('overloaded')}
+              >
+                Overload Only
+              </Btn>
+            </div>
+            {visibleFacultyRollups.length === 0 ? (
+              <EmptyState title="No faculty rows for this filter" body="Try switching to All Faculty or changing the current scope." />
+            ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
@@ -563,7 +682,7 @@ export function HodView({
                 </tr>
               </thead>
               <tbody>
-                {facultyRollups.map(row => (
+                {visibleFacultyRollups.map(row => (
                   <tr key={row.facultyId}>
                     <TD>
                       <div style={{ ...mono, fontSize: 11, color: T.text }}>{row.facultyName}</div>
@@ -587,6 +706,7 @@ export function HodView({
                 ))}
               </tbody>
             </table>
+            )}
           </TableCard>
         ) : null}
 

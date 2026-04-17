@@ -438,19 +438,7 @@ export async function buildFacultyProofView(db: AppDb, input: {
       ...input,
       simulationStageCheckpointId: operationalCheckpointSummary.simulationStageCheckpointId,
     }, deps)
-    const countProvenance = buildProofCountProvenance({
-      activeOperationalSemester: selectedActiveRun.activeOperationalSemester ?? selectedBatch.currentSemester ?? null,
-      batchId: selectedActiveRun.batchId,
-      batchLabel: selectedBatch.batchLabel,
-      branchName: branchRows.find(row => row.branchId === selectedBatch.branchId)?.name ?? null,
-      simulationRunId: selectedActiveRun.simulationRunId,
-      runLabel: selectedActiveRun.runLabel,
-    })
-    return {
-      ...checkpointView,
-      ...countProvenance,
-      selectedCheckpoint: null,
-    }
+    return checkpointView
   }
   const selectedActiveTermIds = new Set(
     termRows
@@ -1331,23 +1319,7 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
         ...input,
         simulationStageCheckpointId: operationalCheckpointSummary.simulationStageCheckpointId,
       }, deps)
-      const countProvenance = buildProofCountProvenance({
-        activeOperationalSemester: run.activeOperationalSemester ?? batch.currentSemester ?? null,
-        batchId: run.batchId,
-        batchLabel: batch.batchLabel,
-        branchName: branch?.name ?? null,
-        sectionCode: checkpointCard.student.sectionCode ?? null,
-        simulationRunId: run.simulationRunId,
-        runLabel: run.runLabel,
-        studentId: student.studentId,
-        studentLabel: student.name,
-      })
-      return {
-        ...checkpointCard,
-        ...countProvenance,
-        simulationStageCheckpointId: null,
-        checkpointContext: null,
-      }
+      return checkpointCard
     }
   }
   const currentSemester = stageCheckpoint?.semesterNumber
@@ -1769,6 +1741,22 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
           rationale: typeof counterfactualPolicy.policyRationale === 'string'
             ? counterfactualPolicy.policyRationale
             : '',
+          actionCatalog: (() => {
+            const catalog = (counterfactualPolicy.actionCatalog ?? null) as Record<string, unknown> | null
+            if (!catalog) return null
+            const stageKey = typeof catalog.stageKey === 'string' ? catalog.stageKey : null
+            const phenotype = typeof catalog.phenotype === 'string' ? catalog.phenotype : null
+            if (!stageKey || !phenotype) return null
+            return {
+              version: typeof catalog.version === 'string' ? catalog.version : 'unknown',
+              stageKey,
+              stageActions: parseJson(JSON.stringify(catalog.stageActions ?? []), [] as string[]),
+              phenotype,
+              phenotypeActions: parseJson(JSON.stringify(catalog.phenotypeActions ?? []), [] as string[]),
+              allCandidatesStageValid: catalog.allCandidatesStageValid !== false,
+              recommendedActionStageValid: catalog.recommendedActionStageValid !== false,
+            }
+          })(),
         } : (primaryStageStatus.policyComparison ?? null))),
         null as StudentAgentCardPayload['overview']['currentStatus']['policyComparison'],
       ),
@@ -1850,6 +1838,8 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
   const featureCompleteness = proofRiskInference.sourceRefs?.featureCompleteness
     ?? proofRiskInference.sourceRefs?.prerequisiteCompleteness
     ?? fallbackFeatureSummary.featureCompleteness
+  const featureConfidenceClass = proofRiskInference.sourceRefs?.featureConfidenceClass
+    ?? featureCompleteness.confidenceClass
   const featureProvenance = proofRiskInference.sourceRefs?.featureProvenance
     ?? fallbackFeatureSummary.featureProvenance
   currentStatus = {
@@ -1858,6 +1848,7 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
     riskCompleteness: featureCompleteness,
     featureCompleteness,
     featureProvenance,
+    featureConfidenceClass,
   }
 
   const simulationTags = behaviorProfile ? [
@@ -1927,6 +1918,7 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
       currentRiskDisplayProbabilityAllowed: overallHeadDisplay?.displayProbabilityAllowed ?? null,
       currentRiskSupportWarning: overallHeadDisplay?.supportWarning ?? null,
       currentRiskCalibrationMethod: overallHeadDisplay?.calibrationMethod ?? null,
+      currentRiskConfidenceClass: featureConfidenceClass,
       primaryCourseCode: primaryCourse?.courseCode ?? null,
       primaryCourseTitle: primaryCourse?.title ?? null,
       nextDueAt: currentStatus.nextDueAt,
@@ -2100,6 +2092,9 @@ function deriveScenarioRiskHeads(input: {
         0.95,
       ) * 100)
       : null,
+    scale: 'advisory-index-0-100' as const,
+    displayProbabilityAllowed: false as const,
+    supportWarning: 'Derived scenario heads are advisory indices, not calibrated probabilities.',
     note: 'These scenario heads are derived from the trained course-risk heads plus observed semester trend, backlog pressure, weak course outcomes, and elective-fit visibility. They are advisory and simulation-calibrated.',
   }
 }
@@ -2113,11 +2108,12 @@ export async function buildStudentRiskExplorer(db: AppDb, input: {
   if (!run) throw new Error('Simulation run not found')
 
   const card = await buildStudentAgentCard(db, input, deps)
+  const effectiveCheckpointId = card.simulationStageCheckpointId ?? input.simulationStageCheckpointId ?? null
   let checkpointPolicyComparison: StudentRiskExplorerPayload['policyComparison'] = null
 
-  if (input.simulationStageCheckpointId) {
+  if (effectiveCheckpointId) {
     const stageRows = await db.select().from(simulationStageStudentProjections).where(and(
-      eq(simulationStageStudentProjections.simulationStageCheckpointId, input.simulationStageCheckpointId),
+      eq(simulationStageStudentProjections.simulationStageCheckpointId, effectiveCheckpointId),
       eq(simulationStageStudentProjections.studentId, input.studentId),
     ))
     const primaryStageRow = stageRows
@@ -2140,13 +2136,16 @@ export async function buildStudentRiskExplorer(db: AppDb, input: {
       noActionRiskProbScaled: card.overview.currentStatus.policyComparison.noActionRiskProbScaled,
       counterfactualLiftScaled: card.overview.currentStatus.policyComparison.counterfactualLiftScaled,
       policyRationale: card.overview.currentStatus.policyComparison.rationale,
+      actionCatalog: card.overview.currentStatus.policyComparison.actionCatalog
+        ?? checkpointPolicyComparison?.actionCatalog
+        ?? null,
       candidates: checkpointPolicyComparison?.candidates ?? [],
     }
   }
   const proofRiskInference = await loadProofRiskInferenceContext(db, {
     batchId: run.batchId,
     simulationRunId: input.simulationRunId,
-    simulationStageCheckpointId: input.simulationStageCheckpointId ?? null,
+    simulationStageCheckpointId: effectiveCheckpointId,
     studentId: input.studentId,
     primaryCourseCode: card.summaryRail.primaryCourseCode,
   }, deps)
@@ -2161,6 +2160,8 @@ export async function buildStudentRiskExplorer(db: AppDb, input: {
   const featureCompleteness = proofRiskInference.sourceRefs?.featureCompleteness
     ?? proofRiskInference.sourceRefs?.prerequisiteCompleteness
     ?? fallbackFeatureSummary.featureCompleteness
+  const featureConfidenceClass = proofRiskInference.sourceRefs?.featureConfidenceClass
+    ?? featureCompleteness.confidenceClass
   const featureProvenance = proofRiskInference.sourceRefs?.featureProvenance
     ?? fallbackFeatureSummary.featureProvenance
   const currentStatus = {
@@ -2169,6 +2170,7 @@ export async function buildStudentRiskExplorer(db: AppDb, input: {
     riskCompleteness: featureCompleteness,
     featureCompleteness,
     featureProvenance,
+    featureConfidenceClass,
   }
 
   const currentSemesterNumber = card.checkpointContext?.semesterNumber ?? card.student.currentSemester
@@ -2199,6 +2201,7 @@ export async function buildStudentRiskExplorer(db: AppDb, input: {
     student: card.student,
     riskCompleteness: featureCompleteness,
     featureCompleteness,
+    featureConfidenceClass,
     featureProvenance,
     modelProvenance: {
       modelVersion: inferred?.modelVersion ?? null,
@@ -2210,6 +2213,7 @@ export async function buildStudentRiskExplorer(db: AppDb, input: {
       supportWarning: overallHeadDisplay?.supportWarning ?? null,
       headDisplay: inferred?.headDisplay ?? null,
       coEvidenceMode: proofRiskInference.sourceRefs?.coEvidenceMode ?? card.overview.currentEvidence.coEvidenceMode ?? null,
+      featureConfidenceClass,
       simulationCalibrated: true as const,
     },
     trainedRiskHeads: {

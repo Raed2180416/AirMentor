@@ -215,6 +215,7 @@ function buildStageCandidate(
     prerequisiteCompleteness: prerequisiteSummary.featureCompleteness,
     featureCompleteness: prerequisiteSummary.featureCompleteness,
     featureProvenance: prerequisiteSummary.featureProvenance,
+    featureConfidenceClass: prerequisiteSummary.featureCompleteness.confidenceClass,
     weakCourseOutcomeCodes: evidence.weakCourseOutcomes.map(item => item.coCode),
     dominantQuestionTopics: evidence.questionPatterns.commonWeakTopics,
   }
@@ -266,6 +267,9 @@ function buildStageCandidate(
     recommendedAction: inference.recommendedAction,
     prerequisiteSummary,
   })
+  if (!policyComparison.actionCatalog.allCandidatesStageValid || !policyComparison.actionCatalog.recommendedActionStageValid) {
+    throw new Error(`Policy action catalog validation failed for playback stage ${stage.key}`)
+  }
   const stageNowIso = playbackCheckpointNowIso(input.run.createdAt, source.semesterNumber, stage)
   const monitoring = buildMonitoringDecision({
     riskProb: inference.riskProb,
@@ -370,9 +374,17 @@ export function buildPlaybackGovernanceArtifacts(
   const queueCaseRows: Array<typeof simulationStageQueueCases.$inferInsert> = []
   const stageEvidenceRows: Array<typeof riskEvidenceSnapshots.$inferInsert> = []
 
-  const orderedSourcesForGovernance = input.sources
-    .slice()
-    .sort((left, right) => left.studentId.localeCompare(right.studentId) || left.semesterNumber - right.semesterNumber || left.courseCode.localeCompare(right.courseCode))
+  const orderedSourcesForGovernance = (() => {
+    const bySourceKey = new Map<string, StageCourseProjectionSource>()
+    input.sources
+      .slice()
+      .sort((left, right) => left.studentId.localeCompare(right.studentId) || left.semesterNumber - right.semesterNumber || left.courseCode.localeCompare(right.courseCode))
+      .forEach(source => {
+        // Keep only the latest row for each source key to avoid duplicate deterministic IDs downstream.
+        bySourceKey.set(sourceKeyForStageSource(source), source)
+      })
+    return Array.from(bySourceKey.values())
+  })()
   const sourceStateByKey = new Map(orderedSourcesForGovernance.map(source => [
     sourceKeyForStageSource(source),
     {
@@ -627,6 +639,7 @@ export function buildPlaybackGovernanceArtifacts(
               noActionRiskProbScaled: candidate.noActionRiskProbScaled,
               counterfactualLiftScaled: candidate.counterfactualLiftScaled,
               rationale: candidate.policyComparison.policyRationale,
+              actionCatalog: candidate.policyComparison.actionCatalog,
             },
           },
           governance: {
@@ -651,6 +664,7 @@ export function buildPlaybackGovernanceArtifacts(
             noActionRiskProbScaled: candidate.noActionRiskProbScaled,
             counterfactualLiftScaled: candidate.counterfactualLiftScaled,
             policyRationale: candidate.policyComparison.policyRationale,
+            actionCatalog: candidate.policyComparison.actionCatalog,
             candidates: candidate.policyComparison.candidates.slice(0, 5),
           },
           realizedPathDiagnostics: {
@@ -674,6 +688,7 @@ export function buildPlaybackGovernanceArtifacts(
               policyPhenotype: candidate.policyComparison.policyPhenotype,
               recommendedAction: candidate.policyComparison.recommendedAction,
               policyRationale: candidate.policyComparison.policyRationale,
+              actionCatalog: candidate.policyComparison.actionCatalog,
               candidates: candidate.policyComparison.candidates.slice(0, 5),
             },
           },

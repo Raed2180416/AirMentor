@@ -318,25 +318,23 @@ export function listCurriculumBySemester(data: LiveAdminDataset, batchId?: strin
 }
 
 export function getPrimaryAppointmentDepartmentId(facultyMember: ApiFacultyRecord) {
-  return facultyMember.appointments.find(item => item.isPrimary)?.departmentId ?? facultyMember.appointments[0]?.departmentId ?? null
+  return facultyMember.appointments.find(item => item.isPrimary)?.departmentId ?? null
 }
 
 export function findLatestEnrollment(student: {
   enrollments: ApiStudentEnrollment[]
   activeAcademicContext: { enrollmentId: string } | null
 }) {
-  return student.enrollments.find(item => item.enrollmentId === student.activeAcademicContext?.enrollmentId)
-    ?? [...student.enrollments].sort((left, right) => right.startDate.localeCompare(left.startDate))[0]
-    ?? null
+  const activeEnrollmentId = student.activeAcademicContext?.enrollmentId ?? null
+  if (!activeEnrollmentId) return null
+  return student.enrollments.find(item => item.enrollmentId === activeEnrollmentId) ?? null
 }
 
 export function findLatestMentorAssignment(student: {
   mentorAssignments: ApiMentorAssignment[]
   activeMentorAssignment: ApiMentorAssignment | null
 }) {
-  return student.activeMentorAssignment
-    ?? [...student.mentorAssignments].sort((left, right) => right.effectiveFrom.localeCompare(left.effectiveFrom))[0]
-    ?? null
+  return student.activeMentorAssignment ?? null
 }
 
 export function listFacultyAssignments(data: LiveAdminDataset, facultyId: string) {

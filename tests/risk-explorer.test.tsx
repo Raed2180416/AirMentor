@@ -9,6 +9,7 @@ const completeFeatureCompleteness = {
   complete: true,
   missing: [],
   fallbackMode: 'graph-aware' as const,
+  confidenceClass: 'high' as const,
 }
 
 const completeFeatureProvenance = {
@@ -99,6 +100,9 @@ describe('RiskExplorerPage', () => {
           semesterSgpaDropRiskProbScaled: 66,
           cumulativeCgpaDropRiskProbScaled: 58,
           electiveMismatchRiskProbScaled: 39,
+          scale: 'advisory-index-0-100',
+          displayProbabilityAllowed: false,
+          supportWarning: 'Derived scenario heads are advisory indices, not calibrated probabilities.',
           note: 'Derived from trained heads plus observed trend.',
         },
         currentEvidence: {
@@ -317,6 +321,9 @@ describe('RiskExplorerPage', () => {
           semesterSgpaDropRiskProbScaled: 44,
           cumulativeCgpaDropRiskProbScaled: 40,
           electiveMismatchRiskProbScaled: 29,
+          scale: 'advisory-index-0-100',
+          displayProbabilityAllowed: false,
+          supportWarning: 'Derived scenario heads are advisory indices, not calibrated probabilities.',
           note: 'Derived from trained heads plus observed trend.',
         },
         currentEvidence: {
@@ -517,6 +524,9 @@ describe('RiskExplorerPage', () => {
           semesterSgpaDropRiskProbScaled: 63,
           cumulativeCgpaDropRiskProbScaled: 57,
           electiveMismatchRiskProbScaled: 36,
+          scale: 'advisory-index-0-100',
+          displayProbabilityAllowed: false,
+          supportWarning: 'Derived scenario heads are advisory indices, not calibrated probabilities.',
           note: 'Derived from trained heads plus observed trend.',
         },
         currentEvidence: {
@@ -700,6 +710,9 @@ describe('RiskExplorerPage', () => {
           semesterSgpaDropRiskProbScaled: 46,
           cumulativeCgpaDropRiskProbScaled: 44,
           electiveMismatchRiskProbScaled: 38,
+          scale: 'advisory-index-0-100',
+          displayProbabilityAllowed: false,
+          supportWarning: 'Derived scenario heads are advisory indices, not calibrated probabilities.',
           note: 'Derived from trained heads plus observed trend.',
         },
         currentEvidence: {

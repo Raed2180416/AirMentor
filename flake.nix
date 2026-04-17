@@ -20,7 +20,10 @@
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
             git
+            jq
             nodejs_24
+            opencode
+            tmux
             python311
             uv
             playwright-test
@@ -33,6 +36,8 @@
             echo "AirMentor dev shell ready."
             echo "Playwright is available through the wrapped Nix runtime."
             echo "Python is available for the curriculum linkage helper."
+            echo "tmux is available for detached audit runs."
+            echo "OpenCode is available as an optional multi-provider workflow layer."
             echo "Try: playwright --version"
             echo "Smoke: bash scripts/playwright-smoke.sh http://127.0.0.1:5173"
           '';

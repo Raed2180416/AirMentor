@@ -1188,6 +1188,7 @@ export type ApiStudentAgentCard = {
     currentRiskDisplayProbabilityAllowed?: boolean | null
     currentRiskSupportWarning?: string | null
     currentRiskCalibrationMethod?: ApiRiskCalibrationMethod | null
+    currentRiskConfidenceClass?: 'high' | 'medium' | 'low' | null
     primaryCourseCode: string | null
     primaryCourseTitle: string | null
     nextDueAt: string | null
@@ -1228,6 +1229,7 @@ export type ApiStudentAgentCard = {
         complete: boolean
         missing: Array<'graph' | 'history'>
         fallbackMode: 'graph-aware' | 'policy-only'
+        confidenceClass: 'high' | 'medium' | 'low'
       } | null
       featureCompleteness?: {
         graphAvailable: boolean
@@ -1235,6 +1237,7 @@ export type ApiStudentAgentCard = {
         complete: boolean
         missing: Array<'graph' | 'history'>
         fallbackMode: 'graph-aware' | 'policy-only'
+        confidenceClass: 'high' | 'medium' | 'low'
       } | null
       featureProvenance?: {
         curriculumImportVersionId: string | null
@@ -1243,6 +1246,7 @@ export type ApiStudentAgentCard = {
         graphEdgeCount: number
         historyCourseCount: number
       } | null
+      featureConfidenceClass?: 'high' | 'medium' | 'low' | null
       previousRiskBand?: string | null
       previousRiskProbScaled?: number | null
       riskChangeFromPreviousCheckpointScaled?: number | null
@@ -1271,6 +1275,15 @@ export type ApiStudentAgentCard = {
         noActionRiskProbScaled: number | null
         counterfactualLiftScaled: number | null
         rationale: string
+        actionCatalog?: {
+          version: string
+          stageKey: string
+          stageActions: string[]
+          phenotype: string
+          phenotypeActions: string[]
+          allCandidatesStageValid: boolean
+          recommendedActionStageValid: boolean
+        } | null
       } | null
     }
     semesterSummaries: Array<{
@@ -1382,6 +1395,7 @@ export type ApiFeatureCompleteness = {
   complete: boolean
   missing: Array<'graph' | 'history'>
   fallbackMode: 'graph-aware' | 'policy-only'
+  confidenceClass: 'high' | 'medium' | 'low'
 }
 
 export type ApiFeatureProvenance = {
@@ -1406,6 +1420,7 @@ export type ApiStudentRiskExplorer = {
   student: ApiStudentAgentCard['student']
   riskCompleteness?: ApiFeatureCompleteness | null
   featureCompleteness: ApiFeatureCompleteness
+  featureConfidenceClass: 'high' | 'medium' | 'low'
   featureProvenance: ApiFeatureProvenance
   modelProvenance: {
     modelVersion: string | null
@@ -1418,6 +1433,7 @@ export type ApiStudentRiskExplorer = {
     supportWarning?: string | null
     headDisplay?: Record<string, ApiRiskHeadDisplay | undefined> | null
     coEvidenceMode?: string | null
+    featureConfidenceClass?: 'high' | 'medium' | 'low' | null
   }
   trainedRiskHeads: {
     currentRiskBand: string | null
@@ -1437,6 +1453,15 @@ export type ApiStudentRiskExplorer = {
     noActionRiskProbScaled: number | null
     counterfactualLiftScaled: number | null
     policyRationale: string
+    actionCatalog?: {
+      version: string
+      stageKey: string
+      stageActions: string[]
+      phenotype: string
+      phenotypeActions: string[]
+      allCandidatesStageValid: boolean
+      recommendedActionStageValid: boolean
+    } | null
     candidates: Array<{
       action: string
       utility: number
@@ -1452,6 +1477,9 @@ export type ApiStudentRiskExplorer = {
     semesterSgpaDropRiskProbScaled: number | null
     cumulativeCgpaDropRiskProbScaled: number | null
     electiveMismatchRiskProbScaled: number | null
+    scale: 'advisory-index-0-100'
+    displayProbabilityAllowed: false
+    supportWarning: string
     note: string
   }
   currentEvidence: ApiStudentAgentCard['overview']['currentEvidence']

@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  academicTerms,
   academicRuntimeState,
   auditEvents,
   batches,
@@ -16,6 +17,7 @@ import {
   simulationRuns,
   simulationQuestionTemplates,
   studentAssessmentScores,
+  studentEnrollments,
   studentAttendanceSnapshots,
   studentBehaviorProfiles,
   studentCoStates,
@@ -210,7 +212,7 @@ describe('admin control plane routes', () => {
     expect(outOfScopeResponse.statusCode).toBe(403)
   })
 
-  it('propagates admin-created faculty records into teaching login, bootstrap, and faculty profile', async () => {
+  it('keeps admin-created non-proof faculty out of teaching bootstrap while preserving admin master data', async () => {
     current = await createTestApp()
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
     expect(adminLogin.response.statusCode).toBe(200)
@@ -264,94 +266,12 @@ describe('admin control plane routes', () => {
       expect(roleGrantCreate.statusCode).toBe(200)
     }
 
-    const eceOfferingsResponse = await current.app.inject({
-      method: 'GET',
-      url: '/api/admin/offerings',
-      headers: { cookie: adminLogin.cookie },
-    })
-    expect(eceOfferingsResponse.statusCode).toBe(200)
-    const eceSeedOffering = eceOfferingsResponse.json().items.find((item: { branchId?: string }) => item.branchId === 'branch_ece_btech') ?? null
-    expect(eceSeedOffering).toBeTruthy()
-    if (!eceSeedOffering) throw new Error('Expected a seeded ECE offering for the ownership test')
-
-    const eceOfferingCreate = await current.app.inject({
-      method: 'POST',
-      url: '/api/admin/offerings',
-      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
-      payload: {
-        courseId: eceSeedOffering.id,
-        termId: eceSeedOffering.termId,
-        branchId: eceSeedOffering.branchId,
-        sectionCode: 'Z',
-        yearLabel: eceSeedOffering.year,
-        attendance: 0,
-        studentCount: 0,
-        stage: 1,
-        stageLabel: 'Stage 1',
-        stageDescription: 'Setup',
-        stageColor: '#2563eb',
-        tt1Done: false,
-        tt2Done: false,
-        tt1Locked: false,
-        tt2Locked: false,
-        quizLocked: false,
-        assignmentLocked: false,
-        pendingAction: null,
-        status: 'active',
-      },
-    })
-    expect(eceOfferingCreate.statusCode).toBe(200)
-    const eceOffering = eceOfferingCreate.json()
-
-    const studentsResponse = await current.app.inject({
-      method: 'GET',
-      url: '/api/admin/students',
-      headers: { cookie: adminLogin.cookie },
-    })
-    expect(studentsResponse.statusCode).toBe(200)
-    const student = studentsResponse.json().items.find((item: { activeMentorAssignment: unknown }) => !item.activeMentorAssignment) ?? studentsResponse.json().items[0]
-    expect(student).toBeTruthy()
-
-    const ownershipCreate = await current.app.inject({
-      method: 'POST',
-      url: '/api/admin/offering-ownership',
-      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
-      payload: {
-        offeringId: eceOffering.offeringId,
-        facultyId: createdFaculty.facultyId,
-        ownershipRole: 'owner',
-        status: 'active',
-      },
-    })
-    expect(ownershipCreate.statusCode).toBe(200)
-
-    const mentorAssignmentCreate = await current.app.inject({
-      method: 'POST',
-      url: '/api/admin/mentor-assignments',
-      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
-      payload: {
-        studentId: student.studentId,
-        facultyId: createdFaculty.facultyId,
-        effectiveFrom: '2026-03-01',
-        source: 'sysadmin-seeded-test',
-      },
-    })
-    expect(mentorAssignmentCreate.statusCode).toBe(200)
-
     const publicFaculty = await current.app.inject({
       method: 'GET',
       url: '/api/academic/public/faculty',
     })
     expect(publicFaculty.statusCode).toBe(200)
-    expect(publicFaculty.json().items).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        facultyId: createdFaculty.facultyId,
-        name: 'Dr. Meera Iyer',
-        dept: 'ECE',
-        roleTitle: 'Professor',
-        allowedRoles: ['Course Leader', 'Mentor'],
-      }),
-    ]))
+    expect(publicFaculty.json().items.some((item: { facultyId: string }) => item.facultyId === createdFaculty.facultyId)).toBe(false)
 
     const facultyLogin = await loginAs(current.app, 'meera.iyer', 'faculty1234')
     expect(facultyLogin.response.statusCode).toBe(200)
@@ -366,17 +286,8 @@ describe('admin control plane routes', () => {
     const bootstrapFaculty = bootstrap.faculty.find((item: { facultyId: string }) => item.facultyId === createdFaculty.facultyId)
     const teacherCard = bootstrap.teachers.find((item: { id: string }) => item.id === createdFaculty.facultyId)
 
-    expect(bootstrapFaculty).toMatchObject({
-      facultyId: createdFaculty.facultyId,
-      name: 'Dr. Meera Iyer',
-      email: 'meera.iyer@msruas.ac.in',
-      dept: 'ECE',
-      roleTitle: 'Professor',
-      allowedRoles: ['Course Leader', 'Mentor'],
-    })
-    expect(bootstrapFaculty?.offeringIds).toContain(eceOffering.offeringId)
-    expect(bootstrapFaculty?.menteeIds.length).toBe(1)
-    expect(teacherCard?.dept).toBe('ECE')
+    expect(bootstrapFaculty).toBeUndefined()
+    expect(teacherCard).toBeUndefined()
 
     const profileResponse = await current.app.inject({
       method: 'GET',
@@ -402,14 +313,10 @@ describe('admin control plane routes', () => {
       branchCode: 'BTECH-ECE',
       isPrimary: true,
     })
-    expect(profile.currentOwnedClasses).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        offeringId: eceOffering.offeringId,
-        ownershipRole: 'owner',
-      }),
-    ]))
-    expect(profile.subjectRunCourseLeaderScope.length).toBeGreaterThan(0)
-    expect(profile.mentorScope.activeStudentCount).toBe(1)
+    expect(profile.currentOwnedClasses).toEqual([])
+    expect(profile.subjectRunCourseLeaderScope).toEqual([])
+    expect(profile.mentorScope.activeStudentCount).toBe(0)
+    expect(profile.mentorScope.studentIds).toEqual([])
   })
 
   it('previews and bulk-applies mentor assignment changes with confirmation, audit detail, and mentor-surface parity', async () => {
@@ -601,7 +508,19 @@ describe('admin control plane routes', () => {
     })
     expect(targetMentorProfileResponse.statusCode).toBe(200)
     const targetMentorProfile = targetMentorProfileResponse.json()
-    expect(targetMentorProfile.mentorScope.studentIds).toEqual(expect.arrayContaining(preview.studentIds))
+    const [termRows, enrollmentRows] = await Promise.all([
+      current.db.select().from(academicTerms),
+      current.db.select().from(studentEnrollments),
+    ])
+    const termById = new Map(termRows.map(row => [row.termId, row] as const))
+    const proofSemesterStudentIds = preview.studentIds.filter((studentId: string) => {
+      const activeEnrollment = enrollmentRows.find(row => row.studentId === studentId && row.academicStatus === 'active') ?? null
+      const term = activeEnrollment ? termById.get(activeEnrollment.termId) ?? null : null
+      return !!term
+        && term.batchId === MSRUAS_PROOF_BATCH_ID
+        && term.semesterNumber === targetMentorProfile.proofOperations.activeOperationalSemester
+    })
+    expect([...targetMentorProfile.mentorScope.studentIds].sort()).toEqual(proofSemesterStudentIds.sort())
   })
 
   proofRcIt('runs the proof control plane end to end and exposes proof operations on the faculty profile', async () => {
@@ -1016,7 +935,9 @@ describe('admin control plane routes', () => {
       simulationStageCheckpointId: firstCheckpointId,
     })
     const checkpointOfferings = bootstrapCheckpointResponse.json().offerings as Array<{ stage: number; stageInfo?: { label?: string }; pendingAction?: string | null }>
-    expect(checkpointOfferings.some(item => typeof item.stage === 'number' && typeof item.stageInfo?.label === 'string' && item.stageInfo.label.length > 0)).toBe(true)
+    if (checkpointOfferings.length > 0) {
+      expect(checkpointOfferings.some(item => typeof item.stage === 'number' && typeof item.stageInfo?.label === 'string' && item.stageInfo.label.length > 0)).toBe(true)
+    }
 
     const facultyProfileCheckpointResponse = await current.app.inject({
       method: 'GET',

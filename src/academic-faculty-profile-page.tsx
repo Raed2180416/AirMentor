@@ -60,28 +60,27 @@ export type FacultyProfilePageProps = {
 }
 
 export function FacultyProfilePage({
-  currentTeacher,
   activeRole,
   profile,
   calendarMarkers,
   loading,
   error,
   pendingTaskCount,
-  assignedOfferings,
-  currentFacultyTimetable,
   onBack,
   onOpenStudentProfile,
   onOpenStudentShell,
   onOpenRiskExplorer,
 }: FacultyProfilePageProps) {
+  const liveProfilePresent = profile != null
   const livePermissions = profile?.permissions.filter(item => item.status === 'active') ?? []
-  const effectivePermissions = (livePermissions.length > 0
-    ? Array.from(new Set(livePermissions.map(item => item.roleCode)))
-    : currentTeacher.allowedRoles
-  ).filter(permission => permission !== 'SYSTEM_ADMIN')
-  const effectiveDepartment = profile?.primaryDepartment?.name ?? currentTeacher.dept
-  const effectivePhone = profile?.phone ?? 'Not set'
-  const employeeCode = profile?.employeeCode ?? 'Not available'
+  const effectivePermissions = Array.from(new Set(livePermissions.map(item => item.roleCode)))
+    .filter(permission => permission !== 'SYSTEM_ADMIN')
+  const effectiveDepartment = profile?.primaryDepartment?.name ?? 'Not provisioned in the admin faculty record'
+  const effectiveDesignation = profile?.designation?.trim() || 'Not provisioned in the admin faculty record'
+  const effectiveEmail = profile?.email?.trim() || 'Not provisioned in the admin faculty record'
+  const effectivePhone = profile?.phone?.trim() || 'Not set in the admin faculty record'
+  const employeeCode = profile?.employeeCode?.trim() || 'Not provisioned in the admin faculty record'
+  const displayName = profile?.displayName?.trim() || 'Not provisioned in the admin faculty record'
   const proofOps = profile?.proofOperations ?? null
   const proofModeActive = proofOps?.scopeMode === 'proof'
   const activeProofRun = proofOps?.activeRunContexts[0] ?? null
@@ -181,7 +180,7 @@ export function FacultyProfilePage({
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
             <div>
               <div style={{ ...mono, fontSize: 10, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Teaching Profile</div>
-              <div style={{ ...sora, fontSize: 28, fontWeight: 800, color: T.text, marginTop: 8 }}>{profile?.displayName ?? currentTeacher.name}</div>
+              <div style={{ ...sora, fontSize: 28, fontWeight: 800, color: T.text, marginTop: 8 }}>{displayName}</div>
               <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 8, lineHeight: 1.8 }}>
                 Inspect-first faculty profile powered by the system-admin master record when available. Operational edits still happen in their existing teaching or admin workflows.
               </div>
@@ -194,9 +193,9 @@ export function FacultyProfilePage({
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
             <MetricCard label="Primary Department" value={effectiveDepartment} helper="Current teaching-side home context." />
-            <MetricCard label="Designation" value={profile?.designation ?? currentTeacher.roleTitle} helper="Admin-managed teaching title and academic responsibility label." />
+            <MetricCard label="Designation" value={effectiveDesignation} helper="Admin-managed teaching title and academic responsibility label." />
             <MetricCard label="Employee Code" value={employeeCode} helper="Read-only faculty identity key from the admin master record." />
-            <MetricCard label="Email" value={profile?.email ?? currentTeacher.email} helper="Read-only identity field from the faculty record." />
+            <MetricCard label="Email" value={effectiveEmail} helper="Read-only identity field from the faculty record." />
             <MetricCard label="Phone" value={effectivePhone} helper="Shown here so faculty can verify admin-owned contact data." />
             <MetricCard label={proofQueueMetricLabel} value={proofQueueMetricValue} helper={proofQueueMetricHelper} />
             <MetricCard label={scopeMetricLabel} value={scopeMetricValue} helper={scopeMetricHelper} />
@@ -206,6 +205,13 @@ export function FacultyProfilePage({
             <MetricCard label="Elective Fits" value={String(proofOps?.electiveFits.length ?? 0)} helper="Semester-6 elective recommendations derived from observed performance." />
           </div>
         </Card>
+
+        {!liveProfilePresent ? (
+          <InfoBanner
+            tone="neutral"
+            message="The admin-managed faculty profile is not provisioned for this account yet. This page will not synthesize permissions, department ownership, mentor scope, or timetable authority from local teaching fallbacks."
+          />
+        ) : null}
 
         {proofOps ? (
           <div data-proof-section="proof-mode-authority">
@@ -233,7 +239,7 @@ export function FacultyProfilePage({
               </Card>
             )) : null}
             <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
-              HoD, mentor, and course-leader visibility now comes from the same admin-managed permission source instead of separate mock-only assumptions.
+              HoD, mentor, and course-leader visibility now comes from the same admin-managed permission source. Missing grants stay empty instead of inheriting from the session shell.
             </div>
           </Card>
 
@@ -264,11 +270,7 @@ export function FacultyProfilePage({
               key: item.offeringId,
               title: `${item.courseCode} · ${item.title}`,
               meta: `${item.yearLabel} · Section ${item.sectionCode} · ${item.ownershipRole}${item.branchName ? ` · ${item.branchName}` : ''}`,
-            })) : assignedOfferings.map(item => ({
-              key: item.offId,
-              title: `${item.code} · ${item.title}`,
-              meta: `${item.year} · Section ${item.section}`,
-            }))).slice(0, 8).map(item => (
+            })) : []).slice(0, 8).map(item => (
               <Card key={item.key} style={{ padding: 10, background: T.surface2 }}>
                 <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.title}</div>
                 <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{item.meta}</div>
@@ -280,7 +282,7 @@ export function FacultyProfilePage({
                   ? `Checkpoint-bound teaching scope across ${proofScopedOfferings.length} monitored offering${proofScopedOfferings.length === 1 ? '' : 's'} in semester ${selectedProofCheckpoint?.semesterNumber ?? proofOps?.activeOperationalSemester ?? 'NA'}.`
                   : 'No checkpoint-bound monitored offerings are currently linked to this profile.'}
               </div>
-            ) : assignedOfferings.length === 0 && !profile?.currentOwnedClasses?.length ? <div style={{ ...mono, fontSize: 10, color: T.muted }}>No current class ownership is mapped in this mode.</div> : null}
+            ) : !profile?.currentOwnedClasses?.length ? <div style={{ ...mono, fontSize: 10, color: T.muted }}>No admin-managed class ownership is mapped for this faculty profile yet.</div> : null}
           </Card>
 
           <Card style={{ padding: 16, display: 'grid', gap: 10 }}>
@@ -324,7 +326,7 @@ export function FacultyProfilePage({
             <div style={{ ...mono, fontSize: 10, color: T.text }}>
               {proofModeActive
                 ? `Checkpoint proof scope: ${proofScopedStudentIds.length} monitored student${proofScopedStudentIds.length === 1 ? '' : 's'}`
-                : `Mentor scope: ${profile?.mentorScope.activeStudentCount ?? currentTeacher.menteeIds.length} active students`}
+                : `Mentor scope: ${profile?.mentorScope.activeStudentCount ?? 0} active students`}
             </div>
             {proofModeActive ? (
               <>
@@ -336,7 +338,7 @@ export function FacultyProfilePage({
                 </div>
               </>
             ) : null}
-            <div style={{ ...mono, fontSize: 10, color: T.text }}>Timetable template: {(profile?.timetableStatus.hasTemplate ?? !!currentFacultyTimetable) ? 'Configured' : 'Not configured'}</div>
+            <div style={{ ...mono, fontSize: 10, color: T.text }}>Timetable template: {profile?.timetableStatus.hasTemplate ? 'Configured' : 'Not configured'}</div>
             <div style={{ ...mono, fontSize: 10, color: T.text }}>Direct edit window: {timetableWindow ?? 'Unavailable in current mode'}</div>
             <div style={{ ...mono, fontSize: 10, color: T.text }}>Open reassessments: {profile?.reassessmentSummary?.openCount ?? 0}</div>
             <div style={{ ...mono, fontSize: 10, color: T.text }}>Next reassessment due: {nextReassessmentWindow ?? 'None'}</div>
@@ -346,7 +348,7 @@ export function FacultyProfilePage({
               </div>
             ) : (
               <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
-                Timetable and request summaries fall back to local teaching context when the live academic profile endpoint is not in use.
+                Timetable governance, mentor scope, and request ledgers are unavailable until the admin-managed faculty profile is provisioned.
               </div>
             )}
           </Card>
@@ -371,7 +373,7 @@ export function FacultyProfilePage({
           <ProofSurfaceLauncher
             targetId="teacher-proof-panel-surface"
             label="Jump to teacher proof controls"
-            dataProofEntityId={currentTeacher.facultyId}
+            dataProofEntityId={profile?.facultyId}
             popupTitle="Teacher proof control surface"
             popupCaption={proofModeActive
               ? `Checkpoint ${selectedProofCheckpoint?.stageLabel ?? 'unavailable'} · semester ${selectedProofCheckpoint?.semesterNumber ?? proofOps?.activeOperationalSemester ?? 'NA'}`

@@ -2685,6 +2685,7 @@ async function buildAcademicBootstrap(
     facultyCalendarAdminWorkspaceRows,
     academicCalendarAuditRows,
     academicMeetingRows,
+    runRows,
     stageCheckpointRow,
     stageOfferingProjectionRows,
     stageStudentProjectionRows,
@@ -2720,6 +2721,7 @@ async function buildAcademicBootstrap(
     context.db.select().from(facultyCalendarAdminWorkspaces),
     context.db.select().from(academicCalendarAuditEvents).orderBy(asc(academicCalendarAuditEvents.createdAt)),
     context.db.select().from(academicMeetings).orderBy(asc(academicMeetings.dateIso), asc(academicMeetings.startMinutes)),
+    context.db.select().from(simulationRuns),
     viewer.simulationStageCheckpointId
       ? context.db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationStageCheckpointId, viewer.simulationStageCheckpointId)).then(rows => rows[0] ?? null)
       : Promise.resolve(null),
@@ -2737,7 +2739,44 @@ async function buildAcademicBootstrap(
   const departmentById = Object.fromEntries(departmentRows.map(row => [row.departmentId, row]))
   const offeringRowById = Object.fromEntries(offeringRows.map(row => [row.offeringId, row]))
   const userById = Object.fromEntries(userRows.map(row => [row.userId, row]))
-  const studentById = Object.fromEntries(studentRows.map(row => [row.studentId, row]))
+  const activeRunRows = runRows.filter(row => row.activeFlag === 1)
+  const selectedActiveRun = pickMostRecentActiveRun(activeRunRows)
+  const proofScopeRun = stageCheckpointRow
+    ? (runRows.find(row => row.simulationRunId === stageCheckpointRow.simulationRunId) ?? null)
+    : selectedActiveRun
+  const proofBatchIds = Array.from(new Set([proofScopeRun?.batchId ?? null].filter((value): value is string => !!value)))
+  const proofSemesterNumber = stageCheckpointRow?.semesterNumber ?? proofScopeRun?.activeOperationalSemester ?? null
+  const proofScopeActive = proofBatchIds.length > 0
+  const scopedTermIds = new Set(
+    termRows
+      .filter(row => !proofScopeActive || (!!row.batchId && proofBatchIds.includes(row.batchId)))
+      .filter(row => proofSemesterNumber == null || row.semesterNumber === proofSemesterNumber)
+      .map(row => row.termId),
+  )
+  const scopedOfferingRows = proofScopeActive
+    ? offeringRows.filter(row => scopedTermIds.has(row.termId))
+    : offeringRows
+  const scopedOfferingIds = new Set(scopedOfferingRows.map(row => row.offeringId))
+  const scopedEnrollmentRows = proofScopeActive
+    ? enrollmentRows.filter(row => scopedTermIds.has(row.termId))
+    : enrollmentRows
+  const scopedStudentIds = new Set(scopedEnrollmentRows.map(row => row.studentId))
+  const scopedStudentRows = proofScopeActive
+    ? studentRows.filter(row => scopedStudentIds.has(row.studentId))
+    : studentRows
+  const scopedOwnershipRows = proofScopeActive
+    ? ownershipRows.filter(row => scopedOfferingIds.has(row.offeringId))
+    : ownershipRows
+  const scopedMentorRows = proofScopeActive
+    ? mentorRows.filter(row => scopedStudentIds.has(row.studentId))
+    : mentorRows
+  const scopedBranchIds = new Set(scopedOfferingRows.map(row => row.branchId))
+  const scopedDepartmentIds = new Set(
+    Array.from(scopedBranchIds)
+      .map(branchId => branchById[branchId]?.departmentId ?? null)
+      .filter((value): value is string => !!value),
+  )
+  const studentById = Object.fromEntries(scopedStudentRows.map(row => [row.studentId, row]))
   const studentAcademicProfileById = Object.fromEntries(profileRows.map(row => [row.studentId, row]))
   const playbackObservedStateRows = stageCheckpointRow
     ? await context.db.select().from(studentObservedSemesterStates).where(eq(studentObservedSemesterStates.simulationRunId, stageCheckpointRow.simulationRunId))
@@ -2802,7 +2841,7 @@ async function buildAcademicBootstrap(
   }
 
   const enrollmentsByGroup = new Map<string, Array<typeof studentEnrollments.$inferSelect>>()
-  for (const enrollment of enrollmentRows) {
+  for (const enrollment of scopedEnrollmentRows) {
     const key = `${enrollment.termId}::${enrollment.sectionCode}`
     enrollmentsByGroup.set(key, [...(enrollmentsByGroup.get(key) ?? []), enrollment])
     const current = activeEnrollmentByStudentId.get(enrollment.studentId)
@@ -2812,7 +2851,7 @@ async function buildAcademicBootstrap(
   }
 
   const activeMentorAssignmentByStudentId = new Map<string, typeof mentorAssignments.$inferSelect>()
-  for (const assignment of mentorRows) {
+  for (const assignment of scopedMentorRows) {
     if (assignment.effectiveTo) continue
     const existing = activeMentorAssignmentByStudentId.get(assignment.studentId)
     if (!existing || assignment.effectiveFrom > existing.effectiveFrom) {
@@ -2821,32 +2860,56 @@ async function buildAcademicBootstrap(
   }
 
   const latestAttendanceByStudentOffering = new Map<string, typeof studentAttendanceSnapshots.$inferSelect>()
+  const attendanceSourcePriority = (source: string) => {
+    if (source === 'teacher-workspace') return 2
+    if (source.startsWith('proof-run:')) return 1
+    return 0
+  }
   for (const row of attendanceRows) {
     const key = `${row.studentId}::${row.offeringId}`
     const current = latestAttendanceByStudentOffering.get(key)
-    if (!current || row.capturedAt > current.capturedAt) {
+    if (
+      !current
+      || attendanceSourcePriority(row.source) > attendanceSourcePriority(current.source)
+      || (
+        attendanceSourcePriority(row.source) === attendanceSourcePriority(current.source)
+        && (
+          row.capturedAt > current.capturedAt
+          || (row.capturedAt === current.capturedAt && row.updatedAt > current.updatedAt)
+        )
+      )
+    ) {
       latestAttendanceByStudentOffering.set(key, row)
     }
   }
 
-  const latestAssessmentsByStudentOffering = new Map<string, Record<string, { score: number; maxScore: number; evaluatedAt: string }>>()
+  const latestAssessmentsByStudentOffering = new Map<string, Record<string, { score: number; maxScore: number; evaluatedAt: string; updatedAt: string }>>()
   const latestAssessmentCellsByStudentOffering = new Map<string, typeof studentAssessmentScores.$inferSelect[]>()
   const latestAssessmentCellByCompositeKey = new Map<string, typeof studentAssessmentScores.$inferSelect>()
   for (const row of assessmentRows) {
     const key = `${row.studentId}::${row.offeringId}`
     const current = latestAssessmentsByStudentOffering.get(key) ?? {}
     const existing = current[row.componentType]
-    if (!existing || row.evaluatedAt > existing.evaluatedAt) {
+    if (
+      !existing
+      || row.updatedAt > existing.updatedAt
+      || (row.updatedAt === existing.updatedAt && row.evaluatedAt > existing.evaluatedAt)
+    ) {
       current[row.componentType] = {
         score: row.score,
         maxScore: row.maxScore,
         evaluatedAt: row.evaluatedAt,
+        updatedAt: row.updatedAt,
       }
       latestAssessmentsByStudentOffering.set(key, current)
     }
     const compositeKey = `${row.studentId}::${row.offeringId}::${row.componentType}::${row.componentCode ?? ''}`
     const existingCell = latestAssessmentCellByCompositeKey.get(compositeKey)
-    if (!existingCell || row.evaluatedAt > existingCell.evaluatedAt) {
+    if (
+      !existingCell
+      || row.updatedAt > existingCell.updatedAt
+      || (row.updatedAt === existingCell.updatedAt && row.evaluatedAt > existingCell.evaluatedAt)
+    ) {
       latestAssessmentCellByCompositeKey.set(compositeKey, row)
     }
   }
@@ -2992,7 +3055,7 @@ async function buildAcademicBootstrap(
   }
 
   const studentTranscriptAnalyticsByStudentId = new Map<string, ReturnType<typeof computeTranscriptAnalytics>>()
-  for (const student of studentRows) {
+  for (const student of scopedStudentRows) {
     const enrollment = activeEnrollmentByStudentId.get(student.studentId)
     const term = enrollment ? termById[enrollment.termId] : undefined
     const profile = studentAcademicProfileById[student.studentId]
@@ -3060,7 +3123,7 @@ async function buildAcademicBootstrap(
     calendarAuditByFacultyId.set(row.facultyId, [...(calendarAuditByFacultyId.get(row.facultyId) ?? []), parsed])
   }
 
-  const academicOfferings: AcademicOfferingProjection[] = offeringRows.map(offeringRow => {
+  const academicOfferings: AcademicOfferingProjection[] = scopedOfferingRows.map(offeringRow => {
     const course = courseById[offeringRow.courseId]
     const term = termById[offeringRow.termId]
     const branch = branchById[offeringRow.branchId]
@@ -3083,7 +3146,7 @@ async function buildAcademicBootstrap(
   const resolvedSchemesByOfferingId = new Map<string, z.infer<typeof schemeStateSchema>>()
   const resolvedQuestionPapersByOfferingId = new Map<string, Record<'tt1' | 'tt2', z.infer<typeof termTestBlueprintSchema>>>()
 
-  for (const offeringRow of offeringRows) {
+  for (const offeringRow of scopedOfferingRows) {
     const term = termById[offeringRow.termId]
     const branch = branchById[offeringRow.branchId]
     const department = branch ? departmentById[branch.departmentId] : null
@@ -3393,7 +3456,7 @@ async function buildAcademicBootstrap(
     return [offering.offId, rows]
   })) as Record<string, Array<z.infer<typeof coAttainmentRowSchema>>>
 
-  const studentHistoryByUsn = Object.fromEntries(studentRows.map(student => {
+  const studentHistoryByUsn = Object.fromEntries(scopedStudentRows.map(student => {
     const enrollment = activeEnrollmentByStudentId.get(student.studentId)
     const term = enrollment ? termById[enrollment.termId] : undefined
     const branch = enrollment ? branchById[enrollment.branchId] : undefined
@@ -3467,7 +3530,7 @@ async function buildAcademicBootstrap(
     })]
   }))
 
-  const mentees = studentRows.flatMap(student => {
+  const mentees = scopedStudentRows.flatMap(student => {
     const mentorAssignment = activeMentorAssignmentByStudentId.get(student.studentId)
     if (!mentorAssignment) return []
     const enrollment = activeEnrollmentByStudentId.get(student.studentId)
@@ -3519,7 +3582,7 @@ async function buildAcademicBootstrap(
 
   const menteeByStudentId = new Map<string, string>()
   for (const mentee of mentees) {
-    const matchingStudents = studentRows.filter(student => student.usn === mentee.usn)
+    const matchingStudents = scopedStudentRows.filter(student => student.usn === mentee.usn)
     for (const student of matchingStudents) {
       menteeByStudentId.set(student.studentId, mentee.id)
     }
@@ -3527,7 +3590,7 @@ async function buildAcademicBootstrap(
 
   const offeringCodeById = Object.fromEntries(academicOfferings.map(offering => [offering.offId, offering.code]))
   const offeringIdsByFacultyId = new Map<string, string[]>()
-  for (const ownership of ownershipRows) {
+  for (const ownership of scopedOwnershipRows) {
     offeringIdsByFacultyId.set(ownership.facultyId, [...(offeringIdsByFacultyId.get(ownership.facultyId) ?? []), ownership.offeringId])
   }
   const menteeIdsByFacultyId = new Map<string, string[]>()
@@ -3536,13 +3599,22 @@ async function buildAcademicBootstrap(
     if (!menteeId) continue
     menteeIdsByFacultyId.set(assignment.facultyId, [...(menteeIdsByFacultyId.get(assignment.facultyId) ?? []), menteeId])
   }
+  const grantIntersectsProofScope = (grant: typeof roleGrants.$inferSelect) => {
+    if (!proofScopeActive) return true
+    if (grant.scopeType === 'institution') return true
+    if (grant.scopeType === 'academic-faculty') return grant.scopeId === grant.facultyId
+    if (grant.scopeType === 'department') return scopedDepartmentIds.has(grant.scopeId)
+    if (grant.scopeType === 'branch') return scopedBranchIds.has(grant.scopeId)
+    if (grant.scopeType === 'batch') return proofBatchIds.includes(grant.scopeId)
+    if (grant.scopeType === 'offering') return scopedOfferingIds.has(grant.scopeId)
+    return true
+  }
 
   const faculty = facultyRows
     .map(row => {
       const user = userById[row.userId]
       const grants = roleGrantRows.filter(grant => grant.facultyId === row.facultyId)
-      const allowedRoles = dedupeRoles(grants.map(grant => grant.roleCode))
-      if (allowedRoles.length === 0) return null
+      const proofScopedGrants = grants.filter(grantIntersectsProofScope)
       const primaryAppointment = primaryAppointmentByFacultyId.get(row.facultyId)
       const appointmentDepartment = primaryAppointment ? departmentById[primaryAppointment.departmentId] : undefined
       const offeringIds = Array.from(new Set(offeringIdsByFacultyId.get(row.facultyId) ?? []))
@@ -3551,6 +3623,13 @@ async function buildAcademicBootstrap(
       nextMenteeIds.sort((left, right) => {
         return left.localeCompare(right)
       })
+      const allowedRoles = dedupeRoles(proofScopedGrants.map(grant => grant.roleCode)).filter(roleLabel => {
+        if (roleLabel === 'Course Leader') return offeringIds.length > 0
+        if (roleLabel === 'Mentor') return nextMenteeIds.length > 0
+        if (roleLabel === 'HoD') return proofScopedGrants.some(grant => toUiRole(grant.roleCode) === 'HoD')
+        return true
+      })
+      if (allowedRoles.length === 0) return null
       return {
         facultyId: row.facultyId,
         username: String(user?.username ?? row.facultyId),
@@ -3644,7 +3723,7 @@ async function buildAcademicBootstrap(
   const viewerRole = viewer.roleCode ? toUiRole(viewer.roleCode) : null
   let visibleOfferingIds = new Set(academicOfferings.map(offering => offering.offId))
   let visibleFacultyIds = new Set(faculty.map(account => account.facultyId))
-  let visibleStudentIds = new Set(studentRows.map(student => student.studentId))
+  let visibleStudentIds = new Set(scopedStudentRows.map(student => student.studentId))
 
   if (viewerAccount && viewerRole === 'Course Leader') {
     visibleOfferingIds = new Set(viewerAccount.offeringIds)
@@ -3663,23 +3742,23 @@ async function buildAcademicBootstrap(
     visibleStudentIds = new Set(mentorAssignmentsForViewer.map(assignment => assignment.studentId))
   } else if (viewerAccount && viewerRole === 'HoD') {
     const hodAppointments = appointmentRows.filter(row => row.facultyId === viewerAccount.facultyId)
-    const scopedDepartmentIds = new Set(hodAppointments.map(row => row.departmentId))
+    const hodDepartmentIds = new Set(hodAppointments.map(row => row.departmentId))
     const explicitBranchIds = new Set(hodAppointments.map(row => row.branchId).filter((value): value is string => !!value))
-    const scopedBranchIds = new Set(
+    const hodBranchIds = new Set(
       branchRows
-        .filter(row => scopedDepartmentIds.has(row.departmentId) || explicitBranchIds.has(row.branchId))
+        .filter(row => hodDepartmentIds.has(row.departmentId) || explicitBranchIds.has(row.branchId))
         .map(row => row.branchId),
     )
-    const scopedTermIds = new Set(termRows.filter(row => scopedBranchIds.has(row.branchId)).map(row => row.termId))
-    visibleOfferingIds = new Set(offeringRows.filter(row => scopedBranchIds.has(row.branchId) || scopedTermIds.has(row.termId)).map(row => row.offeringId))
+    const hodTermIds = new Set(termRows.filter(row => hodBranchIds.has(row.branchId)).map(row => row.termId))
+    visibleOfferingIds = new Set(scopedOfferingRows.filter(row => hodBranchIds.has(row.branchId) || hodTermIds.has(row.termId)).map(row => row.offeringId))
     visibleStudentIds = new Set(
-      enrollmentRows
-        .filter(row => scopedBranchIds.has(row.branchId) || scopedTermIds.has(row.termId))
+      scopedEnrollmentRows
+        .filter(row => hodBranchIds.has(row.branchId) || hodTermIds.has(row.termId))
         .map(row => row.studentId),
     )
     visibleFacultyIds = new Set(
       appointmentRows
-        .filter(row => scopedDepartmentIds.has(row.departmentId) || (row.branchId ? scopedBranchIds.has(row.branchId) : false))
+        .filter(row => hodDepartmentIds.has(row.departmentId) || (row.branchId ? hodBranchIds.has(row.branchId) : false))
         .map(row => row.facultyId),
     )
     visibleFacultyIds.add(viewerAccount.facultyId)
@@ -3713,7 +3792,7 @@ async function buildAcademicBootstrap(
         items.filter(student => visibleStudentIds.has(student.id.split('::')[1] ?? student.id)),
       ]),
   )
-  const visibleUsns = new Set(studentRows.filter(student => visibleStudentIds.has(student.studentId)).map(student => student.usn))
+  const visibleUsns = new Set(scopedStudentRows.filter(student => visibleStudentIds.has(student.studentId)).map(student => student.usn))
   const filteredStudentHistoryByUsn = Object.fromEntries(
     Object.entries(studentHistoryByUsn).filter(([usn]) => visibleUsns.has(usn)),
   )

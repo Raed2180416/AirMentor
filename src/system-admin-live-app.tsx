@@ -337,15 +337,18 @@ function upsertLiveAdminItem<T>(items: T[], nextItem: T, matches: (item: T) => b
     : [nextItem, ...items]
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function readSubmittedField(form: HTMLFormElement, fieldName: string, fallback = '') {
   const value = new FormData(form).get(fieldName)
   return typeof value === 'string' ? value : fallback
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function shouldHydrateHierarchyEditor(editingEntity: EditingEntity | null, target: Extract<EditingEntity, 'academic-faculty' | 'department' | 'branch' | 'batch'>) {
   return editingEntity !== target
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function upsertAcademicFacultyRecord(data: LiveAdminDataset, nextFaculty: ApiAcademicFaculty): LiveAdminDataset {
   return {
     ...data,
@@ -357,6 +360,7 @@ export function upsertAcademicFacultyRecord(data: LiveAdminDataset, nextFaculty:
   }
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function upsertDepartmentRecord(data: LiveAdminDataset, nextDepartment: ApiDepartment): LiveAdminDataset {
   return {
     ...data,
@@ -368,6 +372,7 @@ export function upsertDepartmentRecord(data: LiveAdminDataset, nextDepartment: A
   }
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function upsertBranchRecord(data: LiveAdminDataset, nextBranch: ApiBranch): LiveAdminDataset {
   return {
     ...data,
@@ -379,6 +384,7 @@ export function upsertBranchRecord(data: LiveAdminDataset, nextBranch: ApiBranch
   }
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function upsertBatchRecord(data: LiveAdminDataset, nextBatch: ApiBatch): LiveAdminDataset {
   return {
     ...data,
@@ -1542,7 +1548,7 @@ function TeachingShellAdminTopBar({
   onLogout: () => void
 }) {
   return (
-    <div style={{ ...getShellBarStyle(themeMode), zIndex: 40, gap: 14 }}>
+    <div style={{ ...getShellBarStyle(themeMode), zIndex: 40, gap: 14, transition: 'background-color 220ms ease, border-color 220ms ease, color 220ms ease' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
           <button
@@ -1571,7 +1577,7 @@ function TeachingShellAdminTopBar({
             <Clock3 size={12} />
             {formatClockLabel(now)}
           </div>
-          <button type="button" aria-label={isLightTheme(themeMode) ? 'Switch to dark mode' : 'Switch to light mode'} title={isLightTheme(themeMode) ? 'Dark mode' : 'Light mode'} onClick={onToggleTheme} style={{ ...getIconButtonStyle({ subtle: false }), color: T.muted, ...mono, fontSize: 14, lineHeight: 1 }}>
+          <button type="button" aria-label={isLightTheme(themeMode) ? 'Switch to dark mode' : 'Switch to light mode'} title={isLightTheme(themeMode) ? 'Dark mode' : 'Light mode'} onClick={onToggleTheme} style={{ ...getIconButtonStyle({ subtle: false }), color: T.muted, ...mono, fontSize: 14, lineHeight: 1, transition: 'background-color 220ms ease, color 220ms ease, transform 180ms ease' }}>
             {isLightTheme(themeMode) ? '🌙' : '☀️'}
           </button>
           <button
@@ -1637,24 +1643,16 @@ function OperationsRail({
         overflow: 'hidden',
         flexShrink: 0,
         pointerEvents: collapsed ? 'none' : 'auto',
+        transition: 'background-color 220ms ease, border-color 220ms ease',
       }}
     >
-      <div className="scroll-pane scroll-pane--dense" style={{ height: '100%', overflowY: 'auto', padding: '16px 12px', display: 'grid', gridTemplateRows: 'auto auto 1fr auto', gap: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+      <div className="scroll-pane scroll-pane--dense" style={{ height: '100%', overflowY: 'auto', padding: '16px 12px', display: 'grid', gridTemplateRows: 'auto auto 1fr auto auto', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div>
             <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Operations Rail</div>
             <div style={{ ...sora, fontSize: 16, fontWeight: 800, color: T.text, marginTop: 6 }}>{contextLabel}</div>
             {scopeLabel ? <div style={{ ...mono, fontSize: 10, color: T.accent, marginTop: 6 }}>{scopeLabel}</div> : null}
           </div>
-          <button
-            type="button"
-            aria-label="Collapse operations rail"
-            title="Collapse operations rail"
-            onClick={onToggleCollapsed}
-            style={{ ...getIconButtonStyle({ subtle: false }), color: T.muted, marginLeft: 'auto' }}
-          >
-            <ChevronLeft size={14} />
-          </button>
         </div>
 
         <div style={{ display: 'grid', gap: 10 }}>
@@ -1729,6 +1727,19 @@ function OperationsRail({
           <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>Path</div>
           {breadcrumbs.length > 0 ? <AdminBreadcrumbs segments={breadcrumbs} /> : <div style={{ ...mono, fontSize: 10, color: T.muted }}>No deeper scope selected yet.</div>}
         </Card>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            type="button"
+            aria-label="Collapse operations rail"
+            title="Collapse operations rail"
+            onClick={onToggleCollapsed}
+            style={{ ...getIconButtonStyle({ subtle: false }), width: 'auto', padding: '0 10px', color: T.muted, ...mono, fontSize: UI_FONT_SIZES.eyebrow, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          >
+            <ChevronLeft size={14} />
+            Collapse
+          </button>
+        </div>
       </div>
     </motion.aside>
   )
@@ -1984,6 +1995,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const [searchQuery, setSearchQuery] = useState('')
   const [serverSearchResults, setServerSearchResults] = useState<ApiAdminSearchResult[]>([])
   const [showActionQueue, setShowActionQueue] = useState(true)
+  const [renderInlineActionQueue, setRenderInlineActionQueue] = useState(() => typeof window === 'undefined' ? true : window.innerWidth >= ADMIN_INLINE_ACTION_QUEUE_MIN_VIEWPORT)
   const [viewportWidth, setViewportWidth] = useState(() => typeof window === 'undefined' ? 1440 : window.innerWidth)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => typeof window === 'undefined' ? false : window.innerWidth < 1280)
   const [remindersSupported, setRemindersSupported] = useState(true)
@@ -2368,6 +2380,12 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     void loadAdminData()
   }, [loadAdminData, session])
 
+  const routeScopedBatchId = useMemo(() => {
+    if (route.batchId) return route.batchId
+    if (route.section !== 'proof-dashboard') return null
+    return resolveCanonicalProofBatch(data)?.batchId ?? null
+  }, [data, route.batchId, route.section])
+
   useEffect(() => {
     if (!session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
       setScopedDirectoryStudents(null)
@@ -2402,7 +2420,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   }, [apiClient, scopedAdminDirectoryFilter, session])
 
   useEffect(() => {
-    if (!route.batchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
+    if (!routeScopedBatchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
       setResolvedBatchPolicy(null)
       setResolvedStagePolicy(null)
       setProofDashboard(null)
@@ -2417,24 +2435,24 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     let cancelled = false
     void (async () => {
       try {
-        const next = await apiClient.getResolvedBatchPolicy(route.batchId!, { sectionCode: selectedSectionCode })
+        const next = await apiClient.getResolvedBatchPolicy(routeScopedBatchId, { sectionCode: selectedSectionCode })
         if (cancelled) return
         setResolvedBatchPolicy(next)
         setPolicyForm(hydratePolicyForm(next.effectivePolicy))
       } catch (error) { if (!cancelled) setActionError(toErrorMessage(error)) }
     })()
     return () => { cancelled = true }
-  }, [apiClient, route.batchId, selectedSectionCode, session])
+  }, [apiClient, routeScopedBatchId, selectedSectionCode, session])
 
   useEffect(() => {
-    if (!route.batchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
+    if (!routeScopedBatchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
       setResolvedStagePolicy(null)
       return
     }
     let cancelled = false
     void (async () => {
       try {
-        const next = await apiClient.getResolvedStagePolicy(route.batchId!, { sectionCode: selectedSectionCode })
+        const next = await apiClient.getResolvedStagePolicy(routeScopedBatchId, { sectionCode: selectedSectionCode })
         if (cancelled) return
         setResolvedStagePolicy(next)
       } catch (error) {
@@ -2442,7 +2460,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       }
     })()
     return () => { cancelled = true }
-  }, [apiClient, route.batchId, selectedSectionCode, session])
+  }, [apiClient, routeScopedBatchId, selectedSectionCode, session])
 
   const refreshCurriculumFeatureConfig = useCallback(async (batchId: string) => {
     const next = await apiClient.getCurriculumFeatureConfig(batchId)
@@ -2473,7 +2491,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   }, [apiClient])
 
   useEffect(() => {
-    if (!route.batchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
+    if (!routeScopedBatchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
       setProofDashboard(null)
       return
     }
@@ -2481,7 +2499,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     setProofDashboardLoading(true)
     void (async () => {
       try {
-        const next = await apiClient.getProofDashboard(route.batchId!)
+        const next = await apiClient.getProofDashboard(routeScopedBatchId)
         if (!cancelled) setProofDashboard(next)
       } catch (error) {
         if (!cancelled) setActionError(toErrorMessage(error))
@@ -2490,17 +2508,17 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       }
     })()
     return () => { cancelled = true }
-  }, [apiClient, route.batchId, session])
+  }, [apiClient, routeScopedBatchId, session])
 
   useEffect(() => {
-    if (!route.batchId) return
+    if (!routeScopedBatchId) return
     const runStatus = proofDashboard?.activeRunDetail?.status ?? null
     if (runStatus !== 'queued' && runStatus !== 'running') return
     const timer = window.setInterval(() => {
-      void refreshProofDashboard(route.batchId!)
+      void refreshProofDashboard(routeScopedBatchId)
     }, 5_000)
     return () => window.clearInterval(timer)
-  }, [proofDashboard?.activeRunDetail?.status, refreshProofDashboard, route.batchId])
+  }, [proofDashboard?.activeRunDetail?.status, refreshProofDashboard, routeScopedBatchId])
 
   const getQueuedProofRefreshCount = useCallback((value: unknown) => {
     if (!value || typeof value !== 'object') return 0
@@ -2512,10 +2530,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const queueProofRefreshBatches = useCallback(async (batchIds: string[], reason: string, overrideImportVersionId?: string | null) => {
     const refreshedBatchIds: string[] = []
     for (const batchId of Array.from(new Set(batchIds.filter(Boolean)))) {
-      const scopedConfig = batchId === route.batchId
+      const scopedConfig = batchId === routeScopedBatchId
         ? curriculumFeatureConfig
         : await apiClient.getCurriculumFeatureConfig(batchId)
-      const scopedDashboard = batchId === route.batchId
+      const scopedDashboard = batchId === routeScopedBatchId
         ? proofDashboard
         : await apiClient.getProofDashboard(batchId)
       const importVersionId = overrideImportVersionId
@@ -2531,20 +2549,20 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         activate: true,
       })
       refreshedBatchIds.push(batchId)
-      if (batchId === route.batchId) {
+      if (batchId === routeScopedBatchId) {
         await refreshProofDashboard(batchId)
       }
     }
     return refreshedBatchIds
-  }, [apiClient, curriculumFeatureConfig, proofDashboard, refreshProofDashboard, route.batchId])
+  }, [apiClient, curriculumFeatureConfig, proofDashboard, refreshProofDashboard, routeScopedBatchId])
 
   const queueSelectedProofRefresh = useCallback(async (reason: string, curriculumImportVersionId?: string | null) => {
-    if (!route.batchId) return []
-    return queueProofRefreshBatches([route.batchId], reason, curriculumImportVersionId)
-  }, [queueProofRefreshBatches, route.batchId])
+    if (!routeScopedBatchId) return []
+    return queueProofRefreshBatches([routeScopedBatchId], reason, curriculumImportVersionId)
+  }, [queueProofRefreshBatches, routeScopedBatchId])
 
   useEffect(() => {
-    if (!route.batchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
+    if (!routeScopedBatchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
       setCurriculumFeatureConfig(null)
       setCurriculumLinkageCandidates([])
       setCurriculumLinkageGenerationStatus(null)
@@ -2557,7 +2575,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     let cancelled = false
     void (async () => {
       try {
-        const next = await apiClient.getCurriculumFeatureConfig(route.batchId!)
+        const next = await apiClient.getCurriculumFeatureConfig(routeScopedBatchId)
         if (cancelled) return
         setCurriculumFeatureConfig(next)
       } catch (error) {
@@ -2565,10 +2583,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       }
     })()
     return () => { cancelled = true }
-  }, [apiClient, route.batchId, session])
+  }, [apiClient, routeScopedBatchId, session])
 
   useEffect(() => {
-    if (!route.batchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
+    if (!routeScopedBatchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
       setCurriculumLinkageCandidates([])
       setCurriculumLinkageGenerationStatus(null)
       setCurriculumLinkageCandidatesLoading(false)
@@ -2578,7 +2596,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     setCurriculumLinkageCandidatesLoading(true)
     void (async () => {
       try {
-        const next = await apiClient.listCurriculumLinkageCandidates(route.batchId!)
+        const next = await apiClient.listCurriculumLinkageCandidates(routeScopedBatchId)
         if (cancelled) return
         setCurriculumLinkageCandidates(next.items)
       } catch (error) {
@@ -2588,7 +2606,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       }
     })()
     return () => { cancelled = true }
-  }, [apiClient, route.batchId, session])
+  }, [apiClient, routeScopedBatchId, session])
 
   useEffect(() => {
     const items = curriculumFeatureConfig?.items ?? []
@@ -2623,8 +2641,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const selectedAcademicFaculty = resolveAcademicFaculty(data, route.academicFacultyId)
   const selectedDepartment = resolveDepartment(data, route.departmentId)
   const selectedBranch = resolveBranch(data, route.branchId)
-  const selectedBatch = resolveBatch(data, route.batchId)
-  const canonicalProofBatch = useMemo(() => resolveCanonicalProofBatch(data), [data.batches])
+  const selectedBatch = resolveBatch(data, routeScopedBatchId ?? undefined)
+  const canonicalProofBatch = useMemo(() => resolveCanonicalProofBatch(data), [data])
   const canonicalProofRegistryScope = useMemo<UniversityScopeState | null>(() => {
     if (!canonicalProofBatch) return null
     return {
@@ -2792,15 +2810,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     return activeRunCheckpoints.find(item => item.simulationStageCheckpointId === selectedProofCheckpointId) ?? activeRunCheckpoints[0] ?? null
   }, [activeRunCheckpoints, selectedProofCheckpointId])
   const defaultProofPlaybackCheckpointId = useMemo(() => (
-    activeRunCheckpoints.find(item => item.playbackAccessible !== false && item.stageAdvanceBlocked !== true && (item.blockingQueueItemCount ?? item.openQueueCount ?? 0) === 0)?.simulationStageCheckpointId
-    ?? activeRunCheckpoints[0]?.simulationStageCheckpointId
-    ?? null
+    activeRunCheckpoints[0]?.simulationStageCheckpointId ?? null
   ), [activeRunCheckpoints])
   const firstBlockedCheckpointIndex = useMemo(() => (
     activeRunCheckpoints.findIndex(item => item.playbackAccessible === false || item.stageAdvanceBlocked === true || (item.blockingQueueItemCount ?? item.openQueueCount ?? 0) > 0)
-  ), [activeRunCheckpoints])
-  const firstAccessibleCheckpointIndex = useMemo(() => (
-    activeRunCheckpoints.findIndex(item => item.playbackAccessible !== false && item.stageAdvanceBlocked !== true && (item.blockingQueueItemCount ?? item.openQueueCount ?? 0) === 0)
   ), [activeRunCheckpoints])
   const selectedProofCheckpointIndex = useMemo(() => (
     selectedProofCheckpoint
@@ -3397,6 +3410,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const handleLogout = async () => {
     await apiClient.logout()
     clearRegistryScope()
+    setDismissedQueueItemKeys([])
     setSession(null); setData(EMPTY_DATA)
     onExitPortal?.()
   }
@@ -4451,6 +4465,34 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     })
   }
 
+  const handleResetProofRunFromScratch = async (simulationRunId: string, simulationResetSnapshotId?: string) => {
+    if (!selectedBatch || !simulationResetSnapshotId) return
+    if (!window.confirm('Reset the active proof branch from the baseline snapshot and pin it back to Semester 1? This creates a fresh run and replaces the current active proof run.')) return
+    await runAction(async () => {
+      const restored = await apiClient.restoreProofRunSnapshot(simulationRunId, { simulationResetSnapshotId })
+      const activation = await apiClient.activateProofSemester(restored.simulationRunId, { semesterNumber: 1 })
+      clearProofPlaybackSelection()
+      setSelectedProofCheckpointSource('auto')
+      setProofPlaybackRestoreNotice(null)
+      setSelectedProofCheckpointDetail(null)
+      setSelectedProofCheckpointId(null)
+      setData(prev => ({
+        ...prev,
+        batches: prev.batches.map(batch => (
+          batch.batchId === activation.batchId
+            ? {
+                ...batch,
+                currentSemester: activation.activeOperationalSemester,
+                updatedAt: new Date().toISOString(),
+              }
+            : batch
+        )),
+      }))
+      await refreshProofDashboard(selectedBatch.batchId)
+      setFlashMessage('Proof branch reset from the baseline snapshot and pinned to Semester 1.')
+    })
+  }
+
   const handleResetProofPlaybackSelection = useCallback(() => {
     clearProofPlaybackSelection()
     setSelectedProofCheckpointSource('auto')
@@ -4469,8 +4511,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const handleStepProofPlayback = useCallback((direction: 'previous' | 'next' | 'start' | 'end') => {
     if (activeRunCheckpoints.length === 0) return
     if (direction === 'start') {
-      const startIndex = firstAccessibleCheckpointIndex >= 0 ? firstAccessibleCheckpointIndex : 0
-      const checkpointId = activeRunCheckpoints[startIndex]?.simulationStageCheckpointId ?? null
+      const checkpointId = activeRunCheckpoints[0]?.simulationStageCheckpointId ?? null
       setSelectedProofCheckpointSource('manual')
       setProofPlaybackRestoreNotice(null)
       setSelectedProofCheckpointDetail(null)
@@ -4496,23 +4537,75 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     setProofPlaybackRestoreNotice(null)
     setSelectedProofCheckpointDetail(null)
     setSelectedProofCheckpointId(checkpointId)
-  }, [activeRunCheckpoints, firstAccessibleCheckpointIndex, firstBlockedCheckpointIndex, selectedProofCheckpoint?.simulationStageCheckpointId])
+  }, [activeRunCheckpoints, firstBlockedCheckpointIndex, selectedProofCheckpoint?.simulationStageCheckpointId])
+
+  const refreshRequestWorkspaceState = useCallback(async (requestId: string) => {
+    await loadAdminData()
+    if (route.requestId === requestId) {
+      const nextDetail = await apiClient.getAdminRequest(requestId)
+      setSelectedRequestDetail(nextDetail)
+    }
+  }, [apiClient, loadAdminData, route.requestId])
 
   const handleAdvanceRequest = async (request: ApiAdminRequestSummary) => {
     setRequestBusy(request.adminRequestId)
     try {
-      if (request.status === 'New') await apiClient.assignAdminRequest(request.adminRequestId, { version: request.version, noteBody: 'Claimed for review.' })
-      else if (request.status === 'In Review' || request.status === 'Needs Info') await apiClient.approveAdminRequest(request.adminRequestId, { version: request.version, noteBody: 'Approved for implementation.' })
+      if (request.status === 'New' || request.status === 'Needs Info') await apiClient.assignAdminRequest(request.adminRequestId, { version: request.version, noteBody: 'Claimed for review.' })
+      else if (request.status === 'In Review') await apiClient.approveAdminRequest(request.adminRequestId, { version: request.version, noteBody: 'Approved for implementation.' })
       else if (request.status === 'Approved') await apiClient.markAdminRequestImplemented(request.adminRequestId, { version: request.version, noteBody: 'Implemented from the sysadmin workspace.' })
-      else if (request.status === 'Implemented') await apiClient.closeAdminRequest(request.adminRequestId, { version: request.version, noteBody: 'Closed after execution.' })
-      await loadAdminData()
-      if (route.requestId === request.adminRequestId) {
-        const nextDetail = await apiClient.getAdminRequest(request.adminRequestId)
-        setSelectedRequestDetail(nextDetail)
-      }
-      setFlashMessage('Request advanced.')
+      else if (request.status === 'Implemented' || request.status === 'Rejected') await apiClient.closeAdminRequest(request.adminRequestId, { version: request.version, noteBody: 'Closed after execution.' })
+      await refreshRequestWorkspaceState(request.adminRequestId)
+      setFlashMessage('Request updated.')
     } catch (error) { setActionError(toErrorMessage(error)) }
     finally { setRequestBusy('') }
+  }
+
+  const handleRequestInfoRequest = async (request: ApiAdminRequestSummary) => {
+    if (request.status !== 'In Review') return
+    const noteBody = window.prompt('What clarification is needed from HoD?', 'Please clarify implementation scope and acceptance criteria.')
+    if (noteBody == null) return
+    const trimmedNote = noteBody.trim()
+    if (!trimmedNote) {
+      setActionError('A clarification note is required to move this request to Needs Info.')
+      return
+    }
+    setRequestBusy(request.adminRequestId)
+    try {
+      await apiClient.requestAdminRequestInfo(request.adminRequestId, {
+        version: request.version,
+        noteBody: trimmedNote,
+      })
+      await refreshRequestWorkspaceState(request.adminRequestId)
+      setFlashMessage('Request moved to Needs Info.')
+    } catch (error) {
+      setActionError(toErrorMessage(error))
+    } finally {
+      setRequestBusy('')
+    }
+  }
+
+  const handleRejectRequest = async (request: ApiAdminRequestSummary) => {
+    if (!['New', 'In Review', 'Needs Info', 'Approved'].includes(request.status)) return
+    const noteBody = window.prompt('Enter a rejection rationale (required).', 'Rejected by system admin after governance review.')
+    if (noteBody == null) return
+    const trimmedNote = noteBody.trim()
+    if (!trimmedNote) {
+      setActionError('A rejection rationale is required to reject this request.')
+      return
+    }
+    setRequestBusy(request.adminRequestId)
+    try {
+      await apiClient.rejectAdminRequest(request.adminRequestId, {
+        version: request.version,
+        noteBody: trimmedNote,
+      })
+      await refreshRequestWorkspaceState(request.adminRequestId)
+      setFlashMessage('Request rejected.')
+    } catch (error) {
+      setActionError(toErrorMessage(error))
+    } finally {
+      setRequestBusy('')
+    }
   }
 
   const resetStudentEditors = () => {
@@ -5508,6 +5601,19 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     ? universityTabOptions.filter(item => item.id !== 'overview')
     : []
   const showInlineActionQueue = showActionQueue && viewportWidth >= ADMIN_INLINE_ACTION_QUEUE_MIN_VIEWPORT
+  useEffect(() => {
+    if (showInlineActionQueue) {
+      setRenderInlineActionQueue(true)
+      return
+    }
+    if (typeof window === 'undefined') {
+      setRenderInlineActionQueue(false)
+      return
+    }
+    const timer = window.setTimeout(() => setRenderInlineActionQueue(false), 190)
+    return () => window.clearTimeout(timer)
+  }, [showInlineActionQueue])
+
   const registryIsSingleColumn = viewportWidth < 1180
   const registryPageColumns = viewportWidth < 1180 ? 'minmax(0, 1fr)' : 'minmax(320px, 420px) minmax(0, 1fr)'
   const universityWorkspaceColumns = viewportWidth < 1220 ? 'minmax(0, 1fr)' : '260px minmax(0, 1fr)'
@@ -6127,7 +6233,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       onSwitchToSystemAdmin={() => { void handleSwitchToSystemAdmin() }}
       onLogout={() => { void handleLogout() }}
     >
-      <div className="app-shell" style={{ minHeight: '100vh', background: `linear-gradient(180deg, ${T.bg}, ${T.surface2})`, color: T.text }}>
+      <div className="app-shell" style={{ minHeight: '100vh', background: `linear-gradient(180deg, ${T.bg}, ${T.surface2})`, color: T.text, transition: 'background-color 220ms ease, color 220ms ease' }}>
         <TeachingShellAdminTopBar
         institutionName={data.institution?.name ?? 'AirMentor'}
         adminName={workspaceAdminName}
@@ -6135,7 +6241,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         now={now}
         themeMode={themeMode}
         actionCount={actionQueueCount}
-        showActionQueue={showInlineActionQueue}
+        showActionQueue={showActionQueue}
         canNavigateBack={canNavigateBack}
         onNavigateBack={handleNavigateBack}
         onToggleTheme={() => persistTheme(themeMode === 'frosted-focus-light' ? 'frosted-focus-dark' : 'frosted-focus-light')}
@@ -6146,9 +6252,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         />
 
         <ProofSurfaceLauncher
-          targetId="system-admin-proof-controls"
+          targetId={route.section === 'proof-dashboard' ? 'system-admin-proof-controls' : undefined}
           label="Proof Control"
-          disabled={!proofDashboard && !activeRunDetail}
           dataProofEntityId={selectedProofCheckpoint?.simulationStageCheckpointId ?? activeRunDetail?.simulationRunId ?? canonicalProofRegistryScope?.batchId ?? 'proof-dashboard'}
           popupTitle={proofLauncherPopupTitle}
           popupCaption={proofLauncherPopupCaption}
@@ -6208,6 +6313,21 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                 >
                   {activeRunDetail ? 'Recompute Risk' : 'Create Proof Run'}
                 </Btn>
+                {activeRunDetail?.snapshots.find(item => /baseline/i.test(item.snapshotLabel)) ? (
+                  <Btn
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      closePopup()
+                      void handleResetProofRunFromScratch(
+                        activeRunDetail.simulationRunId,
+                        activeRunDetail.snapshots.find(item => /baseline/i.test(item.snapshotLabel))?.simulationResetSnapshotId,
+                      )
+                    }}
+                  >
+                    Reset To Semester 1
+                  </Btn>
+                ) : null}
               </div>
             </div>
           )}
@@ -6280,7 +6400,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         onToggleCollapsed={() => setSidebarCollapsed(current => !current)}
       />
 
-      <div style={{ flex: 1, minWidth: 0, display: 'grid', gridTemplateColumns: showInlineActionQueue ? 'minmax(0,1fr) 320px' : 'minmax(0,1fr)', gap: 0, alignItems: 'start' }}>
+      <div style={{ flex: 1, minWidth: 0, display: 'grid', gridTemplateColumns: renderInlineActionQueue ? 'minmax(0,1fr) 320px' : 'minmax(0,1fr)', gap: 0, alignItems: 'start' }}>
       <motion.div
         key={`${routeToHash(route)}::${universityTab}::${selectedSectionCode ?? ''}`}
         initial={{ opacity: 0 }}
@@ -6463,6 +6583,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             onRetryProofRun={handleRetryProofRun}
             onArchiveProofRun={handleArchiveProofRun}
             onRestoreProofSnapshot={handleRestoreProofSnapshot}
+            onResetProofRunFromScratch={handleResetProofRunFromScratch}
             onResetProofPlaybackSelection={handleResetProofPlaybackSelection}
             onSelectProofCheckpoint={handleSelectProofCheckpoint}
             onStepProofPlayback={handleStepProofPlayback}
@@ -6637,6 +6758,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               onRetryProofRun: handleRetryProofRun,
               onArchiveProofRun: handleArchiveProofRun,
               onRestoreProofSnapshot: handleRestoreProofSnapshot,
+              onResetProofRunFromScratch: handleResetProofRunFromScratch,
               onResetProofPlaybackSelection: handleResetProofPlaybackSelection,
               onSelectProofCheckpoint: handleSelectProofCheckpoint,
               onStepProofPlayback: handleStepProofPlayback,
@@ -7553,6 +7675,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             toneColor={ADMIN_SECTION_TONES.requests}
             onSelectRequest={requestId => navigate({ section: 'requests', requestId })}
             onAdvanceRequest={request => { void handleAdvanceRequest(request) }}
+            onRequestInfoRequest={request => { void handleRequestInfoRequest(request) }}
+            onRejectRequest={request => { void handleRejectRequest(request) }}
           />
         )}
 
@@ -7560,14 +7684,15 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       </PageShell>
       </motion.div>
       <AnimatePresence initial={false}>
-      {showInlineActionQueue ? (
+      {renderInlineActionQueue ? (
         <motion.div
+          key="system-admin-inline-action-queue"
           initial={{ opacity: 0, x: 18 }}
-          animate={{ opacity: 1, x: 0 }}
+          animate={{ opacity: showInlineActionQueue ? 1 : 0, x: showInlineActionQueue ? 0 : 18 }}
           exit={{ opacity: 0, x: 18 }}
           transition={{ duration: 0.18, ease: 'easeOut' }}
           className="scroll-pane scroll-pane--dense"
-          style={{ position: 'sticky', top: 92, height: 'calc(100vh - 92px)', overflowY: 'auto', padding: '18px 16px', borderLeft: `1px solid ${T.border}`, background: T.surface }}
+          style={{ position: 'sticky', top: 92, height: 'calc(100vh - 92px)', overflowY: 'auto', padding: '18px 16px', borderLeft: `1px solid ${T.border}`, background: T.surface, transition: 'background-color 220ms ease, border-color 220ms ease, color 220ms ease' }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
             <Bell size={16} color={T.accent} />

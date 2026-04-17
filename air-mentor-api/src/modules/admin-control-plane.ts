@@ -890,7 +890,7 @@ export async function registerAdminControlPlaneRoutes(app: FastifyInstance, cont
       return typeof value === 'string' && value.length > 0 ? value : null
     }
     const proofModeActive = proofView.scopeMode === 'proof'
-    const proofScopedProfileActive = proofModeActive && !!query.simulationStageCheckpointId
+    const proofScopedProfileActive = proofModeActive
     const proofBatchIds = Array.from(new Set([
       proofScopeDescriptor?.batchId ?? null,
       ...proofView.activeRunContexts.map(item => item.batchId),

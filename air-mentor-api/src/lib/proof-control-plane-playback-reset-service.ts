@@ -1,4 +1,4 @@
-import { eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull } from 'drizzle-orm'
 import type { AppDb } from '../db/client.js'
 import {
   riskEvidenceSnapshots,
@@ -42,13 +42,16 @@ export async function resetPlaybackStageArtifacts(
     await db.delete(studentAgentCards).where(inArray(studentAgentCards.studentAgentCardId, stageCardIds))
   }
   if (stageEvidenceIds.length > 0) {
-    await db.delete(riskEvidenceSnapshots).where(inArray(riskEvidenceSnapshots.riskEvidenceSnapshotId, stageEvidenceIds))
+    await db.delete(riskEvidenceSnapshots).where(and(
+      eq(riskEvidenceSnapshots.simulationRunId, simulationRunId),
+      isNotNull(riskEvidenceSnapshots.simulationStageCheckpointId),
+    ))
   }
   if (checkpointIds.length > 0) {
-    await db.delete(simulationStageQueueProjections).where(inArray(simulationStageQueueProjections.simulationStageCheckpointId, checkpointIds))
-    await db.delete(simulationStageQueueCases).where(inArray(simulationStageQueueCases.simulationStageCheckpointId, checkpointIds))
-    await db.delete(simulationStageOfferingProjections).where(inArray(simulationStageOfferingProjections.simulationStageCheckpointId, checkpointIds))
-    await db.delete(simulationStageStudentProjections).where(inArray(simulationStageStudentProjections.simulationStageCheckpointId, checkpointIds))
-    await db.delete(simulationStageCheckpoints).where(inArray(simulationStageCheckpoints.simulationStageCheckpointId, checkpointIds))
+    await db.delete(simulationStageQueueProjections).where(eq(simulationStageQueueProjections.simulationRunId, simulationRunId))
+    await db.delete(simulationStageQueueCases).where(eq(simulationStageQueueCases.simulationRunId, simulationRunId))
+    await db.delete(simulationStageOfferingProjections).where(eq(simulationStageOfferingProjections.simulationRunId, simulationRunId))
+    await db.delete(simulationStageStudentProjections).where(eq(simulationStageStudentProjections.simulationRunId, simulationRunId))
+    await db.delete(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, simulationRunId))
   }
 }

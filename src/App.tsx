@@ -1120,6 +1120,7 @@ const HOD_NAV: Array<{ id: PageId; icon: typeof LayoutDashboard; label: string }
 
 type OperationalWorkspaceProps = {
   repositories: AirMentorRepositories
+  liveAcademicMode: boolean
   initialTeacherId: string
   initialRole: Role
   onLogout: () => Promise<void> | void
@@ -1138,6 +1139,7 @@ type OperationalWorkspaceProps = {
 
 function OperationalWorkspace({
   repositories,
+  liveAcademicMode,
   initialTeacherId,
   initialRole,
   onLogout,
@@ -1301,12 +1303,14 @@ function OperationalWorkspace({
     if (facultyProfile) {
       return profileOwnedOfferingIds.size > 0 ? allOfferings.filter(item => profileOwnedOfferingIds.has(item.offId)) : []
     }
+    if (liveAcademicMode) return []
     const ownedOfferingIds = new Set(currentTeacher.offeringIds ?? [])
     return ownedOfferingIds.size > 0 ? allOfferings.filter(item => ownedOfferingIds.has(item.offId)) : []
-  }, [allOfferings, currentTeacher, facultyProfile, facultyProfileLoading, profileOwnedOfferingIds, role])
+  }, [allOfferings, currentTeacher, facultyProfile, facultyProfileLoading, liveAcademicMode, profileOwnedOfferingIds, role])
   const assignedMentees = useMemo(() => {
+    if (liveAcademicMode && !facultyProfile) return []
     return resolveAssignedMentees(allMentees, currentTeacher, facultyProfile)
-  }, [allMentees, currentTeacher, facultyProfile])
+  }, [allMentees, currentTeacher, facultyProfile, liveAcademicMode])
 
   const [lockByOffering, setLockByOffering] = useState<Record<string, EntryLockMap>>(() => repositories.locksAudit.getLockSnapshot(allOfferings))
   const [draftBySection, setDraftBySection] = useState<Record<string, number>>(() => repositories.entryData.getDraftSnapshot())
@@ -1498,13 +1502,19 @@ function OperationalWorkspace({
         tt2: normalizeBlueprint('tt2', backendBlueprints.tt2),
       }
     }
+    if (liveAcademicMode) {
+      return {
+        tt1: { kind: 'tt1' as const, totalMarks: 0, updatedAt: 0, nodes: [] },
+        tt2: { kind: 'tt2' as const, totalMarks: 0, updatedAt: 0, nodes: [] },
+      }
+    }
     const sourceOffering = allOfferings.find(item => item.offId === offeringId) ?? defaultOffering
     const basePaper = PAPER_MAP[sourceOffering?.code ?? defaultOffering?.code ?? 'default'] || PAPER_MAP.default
     return {
       tt1: seedBlueprintFromPaper('tt1', basePaper),
       tt2: seedBlueprintFromPaper('tt2', basePaper),
     }
-  }, [academicBootstrap, allOfferings, defaultOffering])
+  }, [academicBootstrap, allOfferings, defaultOffering, liveAcademicMode])
 
   const roleTasks = useMemo(() => {
     const base = allTasksList.filter(t => t.assignedTo === role)
@@ -3463,6 +3473,7 @@ function getAcademicApiBaseUrl() {
 
 export function OperationalApp() {
   const apiBaseUrl = getAcademicApiBaseUrl()
+  const liveAcademicMode = apiBaseUrl.length > 0
   const telemetrySinkUrl = import.meta.env.VITE_AIRMENTOR_TELEMETRY_SINK_URL?.trim() || ''
   const apiClient = useMemo(() => (apiBaseUrl ? new AirMentorApiClient(apiBaseUrl) : null), [apiBaseUrl])
   const startupDiagnostics = useMemo(
@@ -3854,6 +3865,7 @@ export function OperationalApp() {
         <OperationalWorkspace
           key={`${workspaceProjection?.revision ?? 0}:${workspaceSession!.activeRoleGrant.grantId}:${workspaceBootstrap!.proofPlayback?.simulationStageCheckpointId ?? 'active'}`}
           repositories={workspaceRepositories!}
+          liveAcademicMode={liveAcademicMode}
           initialTeacherId={workspaceSession!.faculty!.facultyId}
           initialRole={workspaceRole!}
           onLogout={handleRemoteLogout}

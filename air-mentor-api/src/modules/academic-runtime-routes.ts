@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm'
+import { and, asc, eq, inArray } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import type { RouteContext } from '../app.js'
@@ -1167,9 +1167,18 @@ export async function registerAcademicRuntimeRoutes(
     } else {
       allowedComponents.set('see', { maxScore: scheme.finalsMax, storageType: 'sem_end' })
     }
+    const replacementComponentTypes = Array.from(new Set([
+      ...Array.from(allowedComponents.values()).map(component => component.storageType),
+      ...((params.kind === 'tt1' || params.kind === 'tt2') ? [params.kind] : []),
+    ]))
 
     for (const entry of body.entries) {
       const enrollment = await assertStudentEnrolledInOffering(context, offering, entry.studentId)
+      await context.db.delete(studentAssessmentScores).where(and(
+        eq(studentAssessmentScores.studentId, enrollment.studentId),
+        eq(studentAssessmentScores.offeringId, params.offeringId),
+        inArray(studentAssessmentScores.componentType, replacementComponentTypes),
+      ))
       let aggregateScore = 0
       let aggregateMax = 0
       for (const component of entry.components) {

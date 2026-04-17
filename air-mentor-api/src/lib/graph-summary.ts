@@ -1,11 +1,14 @@
 type GraphCompletenessFlag = 'graph' | 'history'
 
+export type FeatureConfidenceClass = 'high' | 'medium' | 'low'
+
 export type GraphAwareFeatureCompleteness = {
   graphAvailable: boolean
   historyAvailable: boolean
   complete: boolean
   missing: GraphCompletenessFlag[]
   fallbackMode: 'graph-aware' | 'policy-only'
+  confidenceClass: FeatureConfidenceClass
 }
 
 export type GraphAwareFeatureProvenance = {
@@ -75,15 +78,22 @@ function collectGraphDistances(startGraphKey: string, adjacency: Map<string, str
 function buildFeatureCompleteness(input?: Partial<Pick<GraphAwareFeatureCompleteness, 'graphAvailable' | 'historyAvailable'>>) {
   const graphAvailable = input?.graphAvailable ?? false
   const historyAvailable = input?.historyAvailable ?? false
+  const complete = graphAvailable && historyAvailable
+  const confidenceClass: FeatureConfidenceClass = complete
+    ? 'high'
+    : graphAvailable || historyAvailable
+      ? 'medium'
+      : 'low'
   return {
     graphAvailable,
     historyAvailable,
-    complete: graphAvailable && historyAvailable,
+    complete,
     missing: [
       ...(!graphAvailable ? ['graph' as const] : []),
       ...(!historyAvailable ? ['history' as const] : []),
     ],
-    fallbackMode: graphAvailable && historyAvailable ? 'graph-aware' as const : 'policy-only' as const,
+    fallbackMode: complete ? 'graph-aware' as const : 'policy-only' as const,
+    confidenceClass,
   }
 }
 

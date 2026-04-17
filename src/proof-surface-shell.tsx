@@ -2,7 +2,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { useState } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { T, mono, sora } from './data'
-import { Btn, Card, ModalWorkspace } from './ui-primitives'
+import { Btn, Card, ModalWorkspace, withAlpha } from './ui-primitives'
 
 type ProofSurfaceHeroProps = {
   surface: string
@@ -23,7 +23,7 @@ type ProofSurfaceHeroProps = {
 }
 
 type ProofSurfaceLauncherProps = {
-  targetId: string
+  targetId?: string
   label?: string
   disabled?: boolean
   dataProofEntityId?: string
@@ -67,6 +67,19 @@ type ProofSurfaceTabPanelProps = {
 
 function getAccessibleProofEyebrowColor() {
   return (T.accent === '#3b82f6' || T.accent === '#5ea0ff') ? '#1d4ed8' : T.accent
+}
+
+function getLauncherPalette() {
+  const isLightTheme = T.bg === '#f6f8fb'
+  return {
+    border: withAlpha(T.border2, isLightTheme ? 'c8' : 'de'),
+    background: isLightTheme
+      ? `linear-gradient(180deg, ${withAlpha(T.surface, 'f2')}, ${withAlpha(T.surface2, 'f7')})`
+      : `linear-gradient(180deg, ${withAlpha(T.surface, 'f7')}, ${withAlpha(T.surface2, 'fb')})`,
+    shadow: isLightTheme
+      ? '0 20px 44px rgba(15, 23, 42, 0.14)'
+      : '0 26px 56px rgba(2, 6, 23, 0.58)',
+  }
 }
 
 function focusProofTarget(targetId: string, smooth: boolean) {
@@ -154,10 +167,12 @@ export function ProofSurfaceLauncher({
 }: ProofSurfaceLauncherProps) {
   const shouldReduceMotion = useReducedMotion()
   const [isPopupOpen, setIsPopupOpen] = useState(false)
+  const resolvedTargetId = targetId?.trim() || undefined
   const popupAvailable = popupContent != null || popupFooter != null || popupTitle != null || popupCaption != null
+  const launcherPalette = getLauncherPalette()
   const closePopup = () => setIsPopupOpen(false)
   const jumpToTarget = () => {
-    focusProofTarget(targetId, !shouldReduceMotion)
+    if (resolvedTargetId) focusProofTarget(resolvedTargetId, !shouldReduceMotion)
     closePopup()
   }
   const renderPopupNode = (node: ReactNode | ((helpers: { closePopup: () => void; jumpToTarget: () => void }) => ReactNode) | undefined) => {
@@ -177,39 +192,42 @@ export function ProofSurfaceLauncher({
           position: 'fixed',
           right: 18,
           bottom: 18,
-          zIndex: 40,
+          zIndex: 1200,
           display: 'flex',
           justifyContent: 'flex-end',
-          pointerEvents: 'none',
+          pointerEvents: 'auto',
+          isolation: 'isolate',
+          touchAction: 'manipulation',
           ...style,
         }}
       >
         <div style={{
-          pointerEvents: 'auto',
           display: 'grid',
           gap: 8,
-          padding: 8,
-          borderRadius: 18,
-          border: `1px solid ${T.border}`,
-          background: `linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(247, 250, 252, 0.92))`,
-          backdropFilter: 'blur(18px)',
-          boxShadow: '0 18px 42px rgba(15, 23, 42, 0.18)',
+          minWidth: 220,
+          maxWidth: 280,
+          padding: 12,
+          borderRadius: 20,
+          border: `1px solid ${launcherPalette.border}`,
+          background: launcherPalette.background,
+          backdropFilter: 'blur(20px) saturate(120%)',
+          boxShadow: launcherPalette.shadow,
         }}>
           <Btn
             size="sm"
-            variant="ghost"
+            variant={popupAvailable ? 'primary' : 'ghost'}
             disabled={disabled}
             ariaLabel={popupAvailable ? `${label} · open dialog` : label}
-            ariaControls={targetId}
+            ariaControls={resolvedTargetId}
             title={label}
             dataProofAction="proof-shell-launcher"
-            dataProofEntityId={dataProofEntityId ?? targetId}
+            dataProofEntityId={dataProofEntityId ?? resolvedTargetId ?? 'proof-controls'}
             onClick={() => {
               if (popupAvailable) {
                 setIsPopupOpen(current => !current)
                 return
               }
-              focusProofTarget(targetId, !shouldReduceMotion)
+              if (resolvedTargetId) focusProofTarget(resolvedTargetId, !shouldReduceMotion)
             }}
           >
             {label}

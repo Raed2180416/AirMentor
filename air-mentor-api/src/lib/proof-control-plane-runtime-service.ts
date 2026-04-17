@@ -83,6 +83,15 @@ export type ProofControlPlaneRuntimeServiceDeps = {
       nextCheckpointBenefitScaled?: number
       capacityCost?: number
     }>
+    actionCatalog: {
+      version: string
+      stageKey: PlaybackStageKey
+      stageActions: string[]
+      phenotype: PolicyPhenotype
+      phenotypeActions: string[]
+      allCandidatesStageValid: boolean
+      recommendedActionStageValid: boolean
+    }
   }
   buildDeterministicId: (prefix: string, parts: Array<string | number>) => string
   buildNoActionSnapshot: (input: {
@@ -472,7 +481,7 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       graphAvailable: false,
       historyAvailable: false,
     })
-    const fallbackSourceRefs: ObservableSourceRefsWithFeatureMetadata = (stageEvidence?.sourceRefs as ObservableSourceRefsWithFeatureMetadata | null) ?? {
+    const defaultSourceRefs: ObservableSourceRefsWithFeatureMetadata = {
       simulationRunId: input.simulationRunId,
       simulationStageCheckpointId: null,
       studentId: row.studentId,
@@ -489,8 +498,38 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       prerequisiteCompleteness: missingPrerequisiteSummary.featureCompleteness,
       featureCompleteness: missingPrerequisiteSummary.featureCompleteness,
       featureProvenance: missingPrerequisiteSummary.featureProvenance,
+      featureConfidenceClass: missingPrerequisiteSummary.featureCompleteness.confidenceClass,
       weakCourseOutcomeCodes: [],
       dominantQuestionTopics: [],
+    }
+    const stageSourceRefs = stageEvidence?.sourceRefs as Partial<ObservableSourceRefsWithFeatureMetadata> | null
+    const resolvedFeatureCompleteness = stageSourceRefs?.featureCompleteness
+      ?? stageSourceRefs?.prerequisiteCompleteness
+      ?? missingPrerequisiteSummary.featureCompleteness
+    const resolvedFeatureProvenance = stageSourceRefs?.featureProvenance
+      ?? missingPrerequisiteSummary.featureProvenance
+    const fallbackSourceRefs: ObservableSourceRefsWithFeatureMetadata = {
+      ...defaultSourceRefs,
+      ...(stageSourceRefs ?? {}),
+      simulationRunId: defaultSourceRefs.simulationRunId,
+      simulationStageCheckpointId: stageSourceRefs?.simulationStageCheckpointId ?? defaultSourceRefs.simulationStageCheckpointId,
+      studentId: defaultSourceRefs.studentId,
+      offeringId: defaultSourceRefs.offeringId,
+      semesterNumber: defaultSourceRefs.semesterNumber,
+      sectionCode: defaultSourceRefs.sectionCode,
+      courseCode: defaultSourceRefs.courseCode,
+      courseTitle: defaultSourceRefs.courseTitle,
+      courseFamily: stageSourceRefs?.courseFamily ?? defaultSourceRefs.courseFamily,
+      coEvidenceMode: stageSourceRefs?.coEvidenceMode ?? defaultSourceRefs.coEvidenceMode,
+      stageKey: stageSourceRefs?.stageKey ?? defaultSourceRefs.stageKey,
+      prerequisiteCourseCodes: stageSourceRefs?.prerequisiteCourseCodes ?? defaultSourceRefs.prerequisiteCourseCodes,
+      prerequisiteWeakCourseCodes: stageSourceRefs?.prerequisiteWeakCourseCodes ?? defaultSourceRefs.prerequisiteWeakCourseCodes,
+      prerequisiteCompleteness: resolvedFeatureCompleteness,
+      featureCompleteness: resolvedFeatureCompleteness,
+      featureProvenance: resolvedFeatureProvenance,
+      featureConfidenceClass: stageSourceRefs?.featureConfidenceClass ?? resolvedFeatureCompleteness.confidenceClass,
+      weakCourseOutcomeCodes: stageSourceRefs?.weakCourseOutcomeCodes ?? defaultSourceRefs.weakCourseOutcomeCodes,
+      dominantQuestionTopics: stageSourceRefs?.dominantQuestionTopics ?? defaultSourceRefs.dominantQuestionTopics,
     }
     const featurePayload = stageEvidence?.featurePayload ?? buildObservableFeaturePayload({
       attendancePct: Number(payload.attendancePct ?? 0),
@@ -575,6 +614,9 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
         repeatedWeakPrerequisiteFamilyCount: 0,
       },
     })
+    if (!policyComparison.actionCatalog.allCandidatesStageValid || !policyComparison.actionCatalog.recommendedActionStageValid) {
+      throw new Error(`Policy action catalog validation failed for runtime stage ${liveStageKey}`)
+    }
     const noActionSnapshot = deps.buildNoActionSnapshot({
       evidence: liveEvidence,
       actionTaken: policyComparison.recommendedAction,

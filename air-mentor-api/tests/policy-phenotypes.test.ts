@@ -6,6 +6,10 @@ import {
   mergeCoEvidenceDiagnostics,
   mergePolicyDiagnostics,
 } from '../src/lib/msruas-proof-control-plane.js'
+import {
+  buildActionPolicyComparison,
+  policyActionCatalogForStage,
+} from '../src/lib/proof-control-plane-playback-service.js'
 
 function buildEvidence(overrides: Partial<Parameters<typeof classifyPolicyPhenotype>[0]['evidence']> = {}) {
   return {
@@ -246,5 +250,49 @@ describe('policy phenotype classification', () => {
       theoryCoursesDefaultToBlueprintEvidence: true,
       fallbackOnlyInExplicitCases: true,
     })
+  })
+
+  it('keeps policy candidates aligned with the canonical action catalog for each stage', () => {
+    const stageKeys = ['pre-tt1', 'post-tt1', 'post-tt2', 'post-assignments', 'post-see'] as const
+
+    for (const stageKey of stageKeys) {
+      const comparison = buildActionPolicyComparison({
+        stageKey,
+        evidence: buildEvidence({
+          attendancePct: 69,
+          attendanceHistoryRiskCount: 2,
+          weakCoCount: 3,
+          weakQuestionCount: 5,
+          backlogCount: 2,
+          interventionResponseScore: -0.08,
+        }),
+        riskBand: 'High',
+        recommendedAction: 'Immediate mentor follow-up and reassessment before the next evaluation checkpoint.',
+        prerequisiteSummary: buildPrerequisiteSummary({
+          prerequisiteAveragePct: 46,
+          prerequisiteFailureCount: 2,
+          prerequisiteWeakCourseCodes: ['AMC201', 'AMC202'],
+          downstreamDependencyLoad: 0.7,
+          weakPrerequisiteChainCount: 3,
+          repeatedWeakPrerequisiteFamilyCount: 1,
+        }),
+      })
+
+      const expectedCatalog = policyActionCatalogForStage(stageKey, comparison.policyPhenotype)
+      const candidateActions = comparison.candidates.map(candidate => candidate.action).sort()
+      const expectedActions = [...expectedCatalog.stageActions].sort()
+
+      expect(comparison.actionCatalog.version).toBe('policy-action-catalog-v1')
+      expect(comparison.actionCatalog.stageKey).toBe(stageKey)
+      expect(comparison.actionCatalog.phenotype).toBe(comparison.policyPhenotype)
+      expect(comparison.actionCatalog.stageActions).toEqual(expectedCatalog.stageActions)
+      expect(comparison.actionCatalog.phenotypeActions).toEqual(expectedCatalog.phenotypeActions)
+      expect(comparison.actionCatalog.allCandidatesStageValid).toBe(true)
+      expect(comparison.actionCatalog.recommendedActionStageValid).toBe(true)
+      expect(candidateActions).toEqual(expectedActions)
+      if (comparison.recommendedAction) {
+        expect(expectedCatalog.stageActions.includes(comparison.recommendedAction)).toBe(true)
+      }
+    }
   })
 })

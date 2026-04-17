@@ -19,7 +19,7 @@ describe('evaluate proof risk model helpers', () => {
       {
         simulationRunId: 'run-a',
         semesterNumber: 1,
-        stageKey: 'post-reassessment',
+        stageKey: 'post-tt2',
         stageOrder: 3,
         uniqueStudentCount: 120,
         openQueueStudentCount: 36,
@@ -30,7 +30,7 @@ describe('evaluate proof risk model helpers', () => {
       {
         simulationRunId: 'run-b',
         semesterNumber: 1,
-        stageKey: 'post-reassessment',
+        stageKey: 'post-tt2',
         stageOrder: 3,
         uniqueStudentCount: 120,
         openQueueStudentCount: 72,
@@ -65,8 +65,8 @@ describe('evaluate proof risk model helpers', () => {
     const summaries = buildQueueBurdenStageSummaries(observations)
     expect(summaries).toHaveLength(2)
 
-    const postReassessment = summaries.find(item => item.stageKey === 'post-reassessment')
-    expect(postReassessment).toMatchObject({
+    const postTt2 = summaries.find(item => item.stageKey === 'post-tt2')
+    expect(postTt2).toMatchObject({
       runCount: 2,
       threshold: 0.3,
       meanActionableOpenRate: 0.45,

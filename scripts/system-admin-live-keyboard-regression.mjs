@@ -423,7 +423,7 @@ async function ensureProofRunReady() {
 async function waitForSystemAdminShellReady() {
   const readinessChecks = [
     expectVisible(page.getByRole('button', { name: 'Logout', exact: true }), 'system admin logout action'),
-    expectVisible(page.getByText('Operations Dashboard', { exact: true }).first(), 'system admin operations dashboard heading'),
+    expectVisible(page.getByText(/Operations Dashboard|MNC Proof Operations|Sysadmin Control Plane/i).first(), 'system admin operations dashboard heading'),
   ]
   await Promise.any(readinessChecks)
   const facultiesButton = page.getByRole('button', { name: 'Faculties', exact: true }).first()
@@ -509,7 +509,7 @@ async function openSeededProofRoute(forceReload = false, reloadAttempt = 0) {
   await ensureProofRunReady()
   await primeSeededProofRouteState()
   const seededRouteUrl = buildSeededProofRouteUrl(forceReload)
-  await page.goto(seededRouteUrl, { waitUntil: forceReload ? 'networkidle' : 'domcontentloaded' })
+  await page.goto(seededRouteUrl, { waitUntil: 'domcontentloaded' })
   await page.waitForFunction(expectedHash => window.location.hash === expectedHash, proofRouteState.routeHash)
   await waitForAdminDataRefreshToSettle()
   const batchNotFound = page.getByText('Batch not found', { exact: true }).first()
@@ -528,6 +528,55 @@ async function openSeededProofRoute(forceReload = false, reloadAttempt = 0) {
       await focusAndActivate(overviewTab, 'batch overview workspace tab')
       await page.waitForTimeout(500)
       await waitForAdminDataRefreshToSettle(15_000)
+    }
+    proofControlPlane = visibleProofSurface('system-admin-proof-control-plane')
+  }
+  if (!(await proofControlPlane.isVisible().catch(() => false))) {
+    const openProofDashboardButton = page.getByRole('button', { name: 'Open Proof Dashboard', exact: true }).first()
+    if (await openProofDashboardButton.isVisible().catch(() => false)) {
+      await focusAndActivate(openProofDashboardButton, 'open proof dashboard button')
+      await waitForAdminDataRefreshToSettle(20_000)
+      await page.waitForLoadState('networkidle')
+      await page.waitForTimeout(500)
+    }
+    if (!(await proofControlPlane.isVisible().catch(() => false))) {
+      const proofLauncherDialog = page.getByRole('dialog', { name: /Proof control/i }).first()
+      if (!(await proofLauncherDialog.isVisible().catch(() => false))) {
+        const proofLauncherButton = page
+          .locator('[data-proof-action="proof-shell-launcher"][data-proof-entity-id="proof-dashboard"]')
+          .first()
+        if (await proofLauncherButton.isVisible().catch(() => false)) {
+          await focusAndActivate(proofLauncherButton, 'proof launcher button')
+          await page.waitForTimeout(300)
+        }
+      }
+      if (await proofLauncherDialog.isVisible().catch(() => false)) {
+        const openProofDashboardFromDialog = proofLauncherDialog
+          .getByRole('button', { name: /Open Proof Dashboard|Jump To Live Controls/i })
+          .first()
+        if (await openProofDashboardFromDialog.isVisible().catch(() => false)) {
+          await focusAndActivate(openProofDashboardFromDialog, 'proof launcher open dashboard action')
+          await page.waitForFunction(() => window.location.hash.startsWith('#/admin/proof-dashboard'), { timeout: 20_000 }).catch(() => {})
+          await waitForAdminDataRefreshToSettle(20_000)
+          await page.waitForTimeout(500)
+        }
+      }
+    }
+    proofControlPlane = visibleProofSurface('system-admin-proof-control-plane')
+  }
+  if (!(await proofControlPlane.isVisible().catch(() => false))) {
+    await page.goto(`${appUrl.replace(/\/$/, '')}/#/admin/proof-dashboard`, { waitUntil: 'domcontentloaded' })
+    await waitForAdminDataRefreshToSettle(20_000)
+    await page.waitForTimeout(500)
+    proofControlPlane = visibleProofSurface('system-admin-proof-control-plane')
+  }
+  if (!(await proofControlPlane.isVisible().catch(() => false))) {
+    const proofLauncherButton = page
+      .locator('[data-proof-action="proof-shell-launcher"][data-proof-entity-id="proof-dashboard"]')
+      .first()
+    if (await proofLauncherButton.isVisible().catch(() => false)) {
+      await focusAndActivate(proofLauncherButton, 'proof launcher button')
+      await page.waitForTimeout(500)
     }
     proofControlPlane = visibleProofSurface('system-admin-proof-control-plane')
   }
@@ -623,7 +672,17 @@ try {
 
   markStep('student-modal-focus-trap')
   await focusAndActivate(page.getByRole('button', { name: 'Students', exact: true }).first(), 'students navigation')
-  const studentRegistryButton = page.getByRole('button', { name: /Aarav Sharma.*1MS23CS001/i }).first()
+  await waitForAdminDataRefreshToSettle(20_000)
+  const studentRegistryButton = page.getByRole('button').filter({ hasText: /Mentored|Mentor missing/ }).first()
+  const studentRegistryEmptyState = page.getByText(/No students match the current/i).first()
+  await Promise.any([
+    expectVisible(studentRegistryButton, 'student registry entry'),
+    expectVisible(studentRegistryEmptyState, 'student registry empty state'),
+  ])
+  assert(
+    await studentRegistryButton.isVisible().catch(() => false),
+    'student registry should expose at least one entry for modal focus trap validation',
+  )
   await focusAndActivate(studentRegistryButton, 'student registry selection', ' ')
   await expectVisible(page.getByText('Student Detail', { exact: true }).first(), 'student detail heading')
   const editStudentButton = page.getByRole('button', { name: 'Edit Student', exact: true }).first()
@@ -664,7 +723,24 @@ try {
     new RegExp(escapeRegex(lateCheckpointDescriptor.bannerLabel), 'i'),
     'selected checkpoint banner after late checkpoint selection',
   )
-  await focusAndActivate(proofControlPlane.getByRole('button', { name: 'Reset To Start', exact: true }), 'reset playback button')
+  const resetPlaybackButtons = [
+    proofControlPlane.getByRole('button', { name: 'Reset To Start', exact: true }).first(),
+    proofControlPlane.getByRole('button', { name: /Reset Playback To Semester 1/i }).first(),
+    proofControlPlane.getByRole('button', { name: /Reset Playback/i }).first(),
+  ]
+  await Promise.any([
+    expectVisible(resetPlaybackButtons[0], 'reset playback button (legacy label)'),
+    expectVisible(resetPlaybackButtons[1], 'reset playback button (semester label)'),
+    expectVisible(resetPlaybackButtons[2], 'reset playback button (fallback label)'),
+  ])
+  let resetPlaybackButton = resetPlaybackButtons[0]
+  for (const candidate of resetPlaybackButtons) {
+    if (await candidate.isVisible().catch(() => false)) {
+      resetPlaybackButton = candidate
+      break
+    }
+  }
+  await focusAndActivate(resetPlaybackButton, 'reset playback button')
   await expectText(selectedCheckpointBanner, new RegExp(escapeRegex(firstCheckpointStageLabel), 'i'), 'selected checkpoint banner after reset')
   const playToEndButton = proofControlPlane.getByRole('button', { name: 'Play To End', exact: true })
   await expectVisible(playToEndButton, 'play to end button')

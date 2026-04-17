@@ -69,6 +69,23 @@ function renderFeatureProvenanceValue(featureProvenance: ApiFeatureProvenance | 
   return `Provenance · import ${importVersion} · fingerprint ${fingerprint} · nodes ${featureProvenance.graphNodeCount} · edges ${featureProvenance.graphEdgeCount} · history ${featureProvenance.historyCourseCount}`
 }
 
+function renderAuthorityBannerMessage(explorer: ApiStudentRiskExplorer) {
+  const advisoryNote = 'Derived scenario heads and intervention comparisons remain advisory.'
+  if (explorer.countSource === 'proof-checkpoint') {
+    const checkpointLabel = explorer.checkpointContext?.stageLabel
+      ? ` at ${explorer.checkpointContext.stageLabel}`
+      : ''
+    return `Provenance surface for checkpoint-bound analysis${checkpointLabel}. Trained heads are proof-backed for this selected evidence window; ${advisoryNote}`
+  }
+  if (explorer.countSource === 'proof-run') {
+    return `Provenance surface for active proof-run analysis. Trained heads are proof-backed for the activated operational semester; ${advisoryNote}`
+  }
+  if (explorer.countSource === 'operational-semester') {
+    return `Provenance surface for operational-semester analysis. Trained heads are anchored to operational evidence; ${advisoryNote}`
+  }
+  return `Provenance surface is limited for this payload. Interpret trained and derived outputs with caution.`
+}
+
 function DriverList({
   items,
   emptyMessage,
@@ -84,7 +101,7 @@ function DriverList({
       {items.map((item, index) => (
         <Card key={`${item.feature ?? 'driver'}-${index}`} style={{ padding: 10, background: T.surface2 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-            <div style={{ ...mono, fontSize: 10, color: T.text, lineHeight: 1.7 }}>{item.label}</div>
+            <div style={{ ...mono, fontSize: 10, color: T.text, lineHeight: 1.7, overflowWrap: 'anywhere', wordBreak: 'break-word', flex: 1, minWidth: 180 }}>{item.label}</div>
             <Chip color={item.impact >= 0 ? T.warning : T.success}>
               {`${item.impact >= 0 ? '+' : ''}${Math.round(item.impact * 100)} pts`}
             </Chip>
@@ -205,9 +222,9 @@ export function RiskExplorerPage({
     },
   ]
   const derivedHeads = [
-    { label: 'Semester SGPA Drop', value: explorer.derivedScenarioHeads.semesterSgpaDropRiskProbScaled, helper: 'Derived from trained course heads plus semester trend.' },
-    { label: 'Cumulative CGPA Drop', value: explorer.derivedScenarioHeads.cumulativeCgpaDropRiskProbScaled, helper: 'Derived scenario pressure on the running CGPA.' },
-    { label: 'Elective Mismatch', value: explorer.derivedScenarioHeads.electiveMismatchRiskProbScaled, helper: 'Derived scenario mismatch pressure for the current elective fit.' },
+    { label: 'Semester SGPA Drop', value: explorer.derivedScenarioHeads.semesterSgpaDropRiskProbScaled, helper: 'Derived advisory index from trained course heads plus semester trend.' },
+    { label: 'Cumulative CGPA Drop', value: explorer.derivedScenarioHeads.cumulativeCgpaDropRiskProbScaled, helper: 'Derived advisory index for running CGPA pressure.' },
+    { label: 'Elective Mismatch', value: explorer.derivedScenarioHeads.electiveMismatchRiskProbScaled, helper: 'Derived advisory index for elective-fit mismatch pressure.' },
   ]
 
   return (
@@ -246,7 +263,6 @@ export function RiskExplorerPage({
                   message={`Feature fallback is ${featureCompleteness.fallbackMode}. Missing: ${featureCompleteness.missing.join(' · ') || 'none'}.`}
                 />
               ) : null}
-              <InfoBanner tone="neutral" message={describeProofModelUsefulness(explorer)} />
               {explorer.checkpointContext?.stageAdvanceBlocked ? (
                 <InfoBanner
                   tone="error"
@@ -254,7 +270,7 @@ export function RiskExplorerPage({
                 />
               ) : null}
               <div data-proof-section="authority-banner">
-                <InfoBanner message="Provenance surface for checkpoint-bound analysis. Trained heads are proof-backed for this selected evidence window; derived scenario heads and intervention comparisons remain advisory." />
+                <InfoBanner message={renderAuthorityBannerMessage(explorer)} />
                 <InfoBanner tone="neutral" message={describeProofProvenance(explorer)} />
                 <InfoBanner tone="neutral" message={describeProofModelUsefulness(explorer)} />
               </div>
@@ -268,6 +284,7 @@ export function RiskExplorerPage({
                 <>
                   <Chip color={featureCompleteness.complete ? T.success : T.warning}>{featureCompleteness.complete ? 'Complete' : 'Incomplete'}</Chip>
                   <Chip color={featureCompleteness.fallbackMode === 'graph-aware' ? T.success : T.warning}>{renderFeatureCompletenessLabel(featureCompleteness)}</Chip>
+                  <Chip color={featureCompleteness.confidenceClass === 'high' ? T.success : featureCompleteness.confidenceClass === 'medium' ? T.warning : T.danger}>{`Confidence ${featureCompleteness.confidenceClass}`}</Chip>
                   <Chip color={featureCompleteness.graphAvailable ? T.success : T.danger}>Graph {featureCompleteness.graphAvailable ? 'available' : 'missing'}</Chip>
                   <Chip color={featureCompleteness.historyAvailable ? T.success : T.danger}>History {featureCompleteness.historyAvailable ? 'available' : 'missing'}</Chip>
                 </>
@@ -276,7 +293,7 @@ export function RiskExplorerPage({
               )}
             </div>
             <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
-              {featureCompleteness ? `Missing dimensions: ${featureCompleteness.missing.join(' · ') || 'none'}.` : 'No feature-completeness metadata is attached to this proof payload.'}
+              {featureCompleteness ? `Missing dimensions: ${featureCompleteness.missing.join(' · ') || 'none'} · confidence ${featureCompleteness.confidenceClass}.` : 'No feature-completeness metadata is attached to this proof payload.'}
             </div>
             <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
               {renderFeatureProvenanceValue(featureProvenance)}
@@ -288,6 +305,38 @@ export function RiskExplorerPage({
           targetId="risk-explorer-proof-controls"
           label="Jump to risk proof controls"
           dataProofEntityId={explorer.student.studentId}
+          popupTitle="Risk proof control surface"
+          popupCaption={explorer.checkpointContext
+            ? `Semester ${explorer.checkpointContext.semesterNumber} · ${explorer.checkpointContext.stageLabel}`
+            : explorer.runContext.runLabel}
+          popupContent={() => (
+            <div style={{ display: 'grid', gap: 12 }}>
+              <InfoBanner message="Read model output, policy-derived status, no-action comparator, and simulated intervention / realized path together. This popup stays bound to the selected checkpoint and proof run." />
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Model output</div>
+                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>{explorer.currentStatus.riskBand ?? 'Unavailable'}</div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted }}>{explorer.currentStatus.recommendedAction ?? 'No simulated intervention'}</div>
+                </Card>
+                <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>No-action comparator</div>
+                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>{explorer.counterfactual?.noActionRiskBand ?? 'Unavailable'}</div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted }}>{explorer.counterfactual?.counterfactualLiftScaled != null ? `${explorer.counterfactual.counterfactualLiftScaled > 0 ? '+' : ''}${explorer.counterfactual.counterfactualLiftScaled} scaled points` : 'No lift reported'}</div>
+                </Card>
+                <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Feature completeness</div>
+                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>{renderFeatureCompletenessLabel(featureCompleteness)}</div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted }}>{featureCompleteness?.missing.join(' · ') || 'No missing dimensions'}</div>
+                </Card>
+              </div>
+            </div>
+          )}
+          popupFooter={({ closePopup, jumpToTarget }) => (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <Btn size="sm" variant="ghost" onClick={jumpToTarget}>Open proof controls</Btn>
+              <Btn size="sm" variant="ghost" onClick={closePopup}>Close</Btn>
+            </div>
+          )}
         />
 
         {error ? <div data-proof-section="load-error"><InfoBanner tone="error" message={error} /></div> : null}
@@ -332,13 +381,18 @@ export function RiskExplorerPage({
 
               <Card data-proof-section="derived-risk-heads" style={{ padding: 16, display: 'grid', gap: 10 }}>
                 <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Derived Scenario Heads</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <Chip color={T.orange}>Advisory Index</Chip>
+                  <Chip color={T.dim}>{explorer.derivedScenarioHeads.scale}</Chip>
+                </div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>{explorer.derivedScenarioHeads.supportWarning}</div>
                 <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>{explorer.derivedScenarioHeads.note}</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
                   {derivedHeads.map(head => (
                     <HeadCard
                       key={head.label}
                       label={head.label}
-                      value={head.value == null ? 'NA' : `${head.value}%`}
+                      value={head.value == null ? 'NA' : `${head.value} pts`}
                       helper={head.helper}
                       tone={head.value != null && head.value >= 70 ? 'danger' : head.value != null && head.value >= 35 ? 'warning' : 'success'}
                     />
@@ -359,12 +413,14 @@ export function RiskExplorerPage({
                     {explorer.currentStatus.queueState ? <Chip color={T.orange}>{explorer.currentStatus.queueState}</Chip> : null}
                     {explorer.checkpointContext?.stageAdvanceBlocked ? <Chip color={T.danger}>Checkpoint blocked</Chip> : null}
                   </div>
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-                    <div style={{ ...mono, fontSize: 10, color: T.text, lineHeight: 1.7 }}>
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    <div style={{ ...mono, fontSize: 10, color: T.text, lineHeight: 1.7, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
                       Model output: {explorer.currentStatus.recommendedAction ?? 'None'}
                     </div>
                     {explorer.currentStatus.recommendedAction ? (
-                      <Chip color={T.accent}>{`Simulated intervention ${explorer.currentStatus.recommendedAction.replace(/-/g, ' ')}`}</Chip>
+                      <div style={{ ...mono, fontSize: 10, color: T.accent, lineHeight: 1.7, border: `1px solid ${T.border2}`, borderRadius: 10, background: T.surface2, padding: '6px 8px', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                        Simulated intervention: {explorer.currentStatus.recommendedAction.replace(/-/g, ' ')}
+                      </div>
                     ) : null}
                   </div>
                   <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
@@ -429,6 +485,7 @@ export function RiskExplorerPage({
                     <Eye size={16} color={T.accent} />
                     <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Top Observable Drivers</div>
                   </div>
+                  <InfoBanner tone="neutral" message="Driver points show each observable feature's contribution to risk at this checkpoint. Positive points increase risk pressure; negative points reduce it. They are directional contributions, not standalone marks." />
                   <DriverList items={explorer.topDrivers} emptyMessage="No observable driver list is available for this evidence window." />
                 </Card>
               )}

@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto'
 import { inferObservableDrivers, inferObservableRisk, type ObservableInferenceInput, type ObservableInferenceOutput } from './inference-engine.js'
 import { parseJson } from './json.js'
-import type { GraphAwarePrerequisiteSummaryCompleteness } from './graph-summary.js'
+import type {
+  FeatureConfidenceClass,
+  GraphAwareFeatureCompleteness,
+  GraphAwarePrerequisiteSummaryCompleteness,
+} from './graph-summary.js'
 
 export const RISK_FEATURE_SCHEMA_VERSION = 'observable-risk-features-v3'
 export const RISK_PRODUCTION_MODEL_VERSION = 'observable-risk-logit-v5'
@@ -139,6 +143,8 @@ export type ObservableSourceRefs = {
   weakCourseOutcomeCodes: string[]
   dominantQuestionTopics: string[]
   prerequisiteCompleteness?: GraphAwarePrerequisiteSummaryCompleteness | null
+  featureCompleteness?: GraphAwareFeatureCompleteness | null
+  featureConfidenceClass?: FeatureConfidenceClass | null
 }
 
 export type ObservableRiskEvidenceRow = {
@@ -285,6 +291,7 @@ export type ModelBackedRiskOutput = ObservableInferenceOutput & {
   calibrationVersion: string | null
   headProbabilities: Record<RiskHeadKey, number>
   queuePriorityScore: number
+  queuePrioritySource: 'overall-course-risk-head'
   crossCourseDrivers: string[]
   headDisplay: Record<RiskHeadKey, {
     displayProbabilityAllowed: boolean
@@ -313,6 +320,40 @@ const HEAD_SUPPORT_POSITIVE_MINIMUMS: Partial<Record<RiskHeadKey, number>> = {
   seeRisk: 100,
   overallCourseRisk: 100,
   downstreamCarryoverRisk: 100,
+}
+
+function mergeSupportWarnings(primary: string | null, secondary: string | null) {
+  if (!primary) return secondary
+  if (!secondary) return primary
+  if (primary.includes(secondary)) return primary
+  if (secondary.includes(primary)) return secondary
+  return `${primary} ${secondary}`
+}
+
+function displaySuppressionWarningForFallbackSourceRefs(sourceRefs: ObservableSourceRefs | null | undefined) {
+  if (!sourceRefs || sourceRefs.coEvidenceMode !== 'fallback-simulated') return null
+  const featureCompleteness = sourceRefs.featureCompleteness ?? sourceRefs.prerequisiteCompleteness ?? null
+  if (!featureCompleteness || featureCompleteness.complete) return null
+  const confidenceClass = sourceRefs.featureConfidenceClass ?? featureCompleteness.confidenceClass
+  const missingDimensions = featureCompleteness.missing.length > 0
+    ? featureCompleteness.missing.join(', ')
+    : 'none'
+  return `Fallback-simulated evidence is ${confidenceClass} confidence (${missingDimensions} missing); probability display is suppressed for this proof row.`
+}
+
+function applyFallbackDisplaySuppression(
+  headDisplay: ModelBackedRiskOutput['headDisplay'],
+  warning: string | null,
+): ModelBackedRiskOutput['headDisplay'] {
+  if (!warning) return headDisplay
+  return Object.fromEntries(
+    (Object.entries(headDisplay) as Array<[RiskHeadKey, ModelBackedRiskOutput['headDisplay'][RiskHeadKey]]>)
+      .map(([headKey, display]) => [headKey, {
+        displayProbabilityAllowed: false,
+        supportWarning: mergeSupportWarnings(display.supportWarning, warning),
+        calibrationMethod: display.calibrationMethod,
+      }]),
+  ) as ModelBackedRiskOutput['headDisplay']
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -1447,7 +1488,15 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
   correlations?: CorrelationArtifact | null
 }): ModelBackedRiskOutput {
   const fallback = inferObservableRisk(input)
+  const fallbackSuppressionWarning = displaySuppressionWarningForFallbackSourceRefs(input.sourceRefs)
   if (!input.productionModel || input.productionModel.featureSchemaVersion !== RISK_FEATURE_SCHEMA_VERSION) {
+    const fallbackDisplay = Object.fromEntries(
+      (Object.keys(HEAD_LABEL_KEYS) as RiskHeadKey[]).map(headKey => [headKey, {
+        displayProbabilityAllowed: false,
+        supportWarning: mergeSupportWarnings('No active trained artifact is available for this batch.', fallbackSuppressionWarning),
+        calibrationMethod: 'identity' as CalibrationMethod,
+      }]),
+    ) as ModelBackedRiskOutput['headDisplay']
     return {
       ...fallback,
       modelVersion: 'observable-inference-v2',
@@ -1460,14 +1509,9 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
         downstreamCarryoverRisk: fallback.riskProb,
       },
       queuePriorityScore: fallback.riskProb,
+      queuePrioritySource: 'overall-course-risk-head',
       crossCourseDrivers: [],
-      headDisplay: Object.fromEntries(
-        (Object.keys(HEAD_LABEL_KEYS) as RiskHeadKey[]).map(headKey => [headKey, {
-          displayProbabilityAllowed: false,
-          supportWarning: 'No active trained artifact is available for this batch.',
-          calibrationMethod: 'identity' as CalibrationMethod,
-        }]),
-      ) as ModelBackedRiskOutput['headDisplay'],
+      headDisplay: fallbackDisplay,
     }
   }
 
@@ -1479,13 +1523,6 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
     overallCourseRisk: scoreWithLogistic(input.productionModel.heads.overallCourseRisk, vector),
     downstreamCarryoverRisk: scoreWithLogistic(input.productionModel.heads.downstreamCarryoverRisk, vector),
   } satisfies Record<RiskHeadKey, number>
-  const combinedOverall = clamp(Math.max(
-    headProbabilities.overallCourseRisk,
-    headProbabilities.attendanceRisk * 0.75,
-    headProbabilities.ceRisk * 0.85,
-    headProbabilities.seeRisk * 0.9,
-    headProbabilities.downstreamCarryoverRisk * 0.65,
-  ), 0.05, 0.95)
   const officialOverall = headProbabilities.overallCourseRisk
   const riskBand: 'High' | 'Medium' | 'Low' = officialOverall >= input.productionModel.thresholds.high
     ? 'High'
@@ -1498,6 +1535,17 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
     : riskBand === 'Medium'
       ? 'Schedule a monitored reassessment and review the current intervention plan.'
       : 'Continue routine monitoring on the current evidence window.'
+  const trainedHeadDisplay = applyFallbackDisplaySuppression(
+    Object.fromEntries(
+      (Object.entries(input.productionModel.heads) as Array<[RiskHeadKey, LogisticHeadArtifact]>)
+        .map(([headKey, head]) => [headKey, {
+          displayProbabilityAllowed: head.calibration.displayProbabilityAllowed,
+          supportWarning: head.calibration.supportWarning,
+          calibrationMethod: head.calibration.method,
+        }]),
+    ) as ModelBackedRiskOutput['headDisplay'],
+    fallbackSuppressionWarning,
+  )
 
   return {
     riskProb: roundToFour(officialOverall),
@@ -1509,16 +1557,10 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
     headProbabilities: Object.fromEntries(
       Object.entries(headProbabilities).map(([key, value]) => [key, roundToFour(value)]),
     ) as Record<RiskHeadKey, number>,
-    queuePriorityScore: roundToFour(combinedOverall),
+    queuePriorityScore: roundToFour(officialOverall),
+    queuePrioritySource: 'overall-course-risk-head',
     crossCourseDrivers: input.sourceRefs ? crossCourseDriversFromCorrelations(input.correlations ?? null, input.sourceRefs) : [],
-    headDisplay: Object.fromEntries(
-      (Object.entries(input.productionModel.heads) as Array<[RiskHeadKey, LogisticHeadArtifact]>)
-        .map(([headKey, head]) => [headKey, {
-          displayProbabilityAllowed: head.calibration.displayProbabilityAllowed,
-          supportWarning: head.calibration.supportWarning,
-          calibrationMethod: head.calibration.method,
-        }]),
-    ) as ModelBackedRiskOutput['headDisplay'],
+    headDisplay: trainedHeadDisplay,
   }
 }
 

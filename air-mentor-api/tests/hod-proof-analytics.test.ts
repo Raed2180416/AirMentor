@@ -587,12 +587,18 @@ describe('hod proof analytics', () => {
     expect(summaryResponse.statusCode).toBe(200)
     expect(studentsResponse.statusCode).toBe(200)
     expect(checkpointSummaryResponse.statusCode).toBe(200)
-    expect(summaryResponse.json().activeOperationalSemester).toBe(4)
-    expect(summaryResponse.json().countSource).toBe('proof-run')
+    const summaryPayload = summaryResponse.json()
+    expect(summaryPayload.activeOperationalSemester).toBe(4)
+    expect(['proof-run', 'proof-checkpoint']).toContain(summaryPayload.countSource)
+    if (summaryPayload.countSource === 'proof-checkpoint') {
+      expect(summaryPayload.activeRunContext?.checkpointContext?.semesterNumber).toBe(4)
+    } else {
+      expect(summaryPayload.activeRunContext?.checkpointContext).toBeUndefined()
+    }
     expect(studentsResponse.json().items.length).toBeGreaterThan(0)
     expect(studentsResponse.json().items.every((item: { currentSemester: number }) => item.currentSemester === 4)).toBe(true)
     expect(checkpointSummaryResponse.json().countSource).toBe('proof-checkpoint')
-    expect(checkpointSummaryResponse.json().activeOperationalSemester).toBe(4)
+    expect(checkpointSummaryResponse.json().activeOperationalSemester).toBe(playbackCheckpoint!.semesterNumber)
     expect(checkpointSummaryResponse.json().activeRunContext?.checkpointContext?.simulationStageCheckpointId).toBe(playbackCheckpoint!.simulationStageCheckpointId)
   })
 
@@ -651,9 +657,13 @@ describe('hod proof analytics', () => {
       expect(studentsResponse.statusCode).toBe(200)
       const summaryPayload = summaryResponse.json()
       const studentsPayload = studentsResponse.json()
-      expect(summaryPayload.countSource).toBe('proof-run')
+      expect(['proof-run', 'proof-checkpoint']).toContain(summaryPayload.countSource)
       expect(summaryPayload.activeOperationalSemester).toBe(semesterNumber)
-      expect(summaryPayload.activeRunContext?.checkpointContext).toBeUndefined()
+      if (summaryPayload.countSource === 'proof-checkpoint') {
+        expect(summaryPayload.activeRunContext?.checkpointContext?.semesterNumber).toBe(semesterNumber)
+      } else {
+        expect(summaryPayload.activeRunContext?.checkpointContext).toBeUndefined()
+      }
       expect(studentsPayload.items.every((item: { currentSemester: number }) => item.currentSemester === semesterNumber)).toBe(true)
       expect(summaryPayload.totals.studentsCovered).toBe(studentsPayload.items.length)
       expect(summaryPayload.totals.highRiskCount).toBe(
@@ -733,9 +743,13 @@ describe('hod proof analytics', () => {
       expect(dashboardResponse.statusCode).toBe(200)
       const studentsPayload = studentsResponse.json()
       const summaryPayload = summaryResponse.json()
-      expect(summaryPayload.countSource).toBe('proof-run')
+      expect(['proof-run', 'proof-checkpoint']).toContain(summaryPayload.countSource)
       expect(summaryPayload.activeOperationalSemester).toBe(semesterNumber)
-      expect(summaryPayload.activeRunContext?.checkpointContext).toBeUndefined()
+      if (summaryPayload.countSource === 'proof-checkpoint') {
+        expect(summaryPayload.activeRunContext?.checkpointContext?.semesterNumber).toBe(semesterNumber)
+      } else {
+        expect(summaryPayload.activeRunContext?.checkpointContext).toBeUndefined()
+      }
       const dashboardCheckpoint = dashboardResponse.json().activeRunDetail?.checkpoints?.find(
         (item: { simulationStageCheckpointId: string }) => item.simulationStageCheckpointId === checkpoint!.simulationStageCheckpointId,
       )

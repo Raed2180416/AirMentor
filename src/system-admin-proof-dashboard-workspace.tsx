@@ -179,6 +179,7 @@ type SystemAdminProofDashboardWorkspaceProps = {
   onRetryProofRun: (simulationRunId: string) => void
   onArchiveProofRun: (simulationRunId: string) => void
   onRestoreProofSnapshot: (simulationRunId: string, simulationResetSnapshotId?: string) => void
+  onResetProofRunFromScratch?: (simulationRunId: string, simulationResetSnapshotId?: string) => void
   onResetProofPlaybackSelection: () => void
   onSelectProofCheckpoint: (checkpointId: string) => void
   onStepProofPlayback: (direction: PlaybackDirection) => void
@@ -231,6 +232,7 @@ export function SystemAdminProofDashboardWorkspace({
   onRetryProofRun,
   onArchiveProofRun,
   onRestoreProofSnapshot,
+  onResetProofRunFromScratch = () => {},
   onResetProofPlaybackSelection,
   onSelectProofCheckpoint,
   onStepProofPlayback,
@@ -274,6 +276,8 @@ export function SystemAdminProofDashboardWorkspace({
   const activeRunDetail = proofDashboard?.activeRunDetail ?? null
   const accessibleRailEyebrowColor = getAccessiblePrimaryAccent()
   const activeRunSnapshots = activeRunDetail?.snapshots ?? []
+  const activeRunBaselineSnapshot = activeRunSnapshots.find(item => /baseline/i.test(item.snapshotLabel))
+    ?? activeRunSnapshots[0]
   const activeQueueDiagnostics = activeRunDetail?.queueDiagnostics
   const activeWorkerDiagnostics = activeRunDetail?.workerDiagnostics ?? null
   const activeCheckpointReadiness = activeRunDetail?.checkpointReadiness
@@ -449,11 +453,23 @@ export function SystemAdminProofDashboardWorkspace({
       <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 8 }}>
         <div style={{ ...mono, fontSize: 10, color: T.dim }}>Progress actions</div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Btn size="sm" variant="ghost" onClick={onCreateProofImport} disabled={!importsCount}>Create Import</Btn>
+          <Btn size="sm" variant="ghost" onClick={onCreateProofImport}>Create Import</Btn>
           <Btn size="sm" variant="ghost" onClick={onValidateLatestProofImport} disabled={!importsCount}>Validate Import</Btn>
           <Btn size="sm" variant="ghost" onClick={onCreateProofRun} disabled={!importsCount}>Run / Rerun</Btn>
           <Btn size="sm" variant="ghost" onClick={onRecomputeProofRunRisk} disabled={!activeRunDetail}>Recompute Risk</Btn>
+          <Btn
+            size="sm"
+            variant="ghost"
+            onClick={() => onResetProofRunFromScratch(activeRunDetail.simulationRunId, activeRunBaselineSnapshot?.simulationResetSnapshotId)}
+            disabled={!activeRunBaselineSnapshot}
+          >
+            Reset To Semester 1
+          </Btn>
         </div>
+        <InfoBanner
+          tone="neutral"
+          message="Create Import snapshots the latest curriculum + scope mappings, Validate Import checks crosswalk readiness, and Run / Rerun materializes the proof run used by faculty and HoD surfaces."
+        />
       </Card>
     </div>
   ) : (
@@ -587,7 +603,16 @@ export function SystemAdminProofDashboardWorkspace({
                       onClick={() => onStepProofPlayback('start')}
                       disabled={activeRunCheckpoints.length === 0 || selectedProofCheckpoint.simulationStageCheckpointId === activeRunCheckpoints[0]?.simulationStageCheckpointId}
                     >
-                      Reset To Start
+                      Reset Playback To Semester 1
+                    </Btn>
+                    <Btn
+                      size="sm"
+                      variant="ghost"
+                      dataProofAction="proof-run-reset-from-scratch"
+                      onClick={() => onResetProofRunFromScratch(activeRunDetail.simulationRunId, activeRunBaselineSnapshot?.simulationResetSnapshotId)}
+                      disabled={!activeRunBaselineSnapshot}
+                    >
+                      Reset Branch From Scratch
                     </Btn>
                     <Btn
                       size="sm"
@@ -956,7 +981,14 @@ export function SystemAdminProofDashboardWorkspace({
                       {!item.activeFlag && item.status === 'completed' ? <Btn size="sm" variant="ghost" onClick={() => onActivateProofRun(item.simulationRunId)}>Set Active</Btn> : null}
                       {item.status === 'failed' ? <Btn size="sm" variant="ghost" onClick={() => onRetryProofRun(item.simulationRunId)}>Retry</Btn> : null}
                       <Btn size="sm" variant="ghost" onClick={() => onArchiveProofRun(item.simulationRunId)}>Archive</Btn>
-                      {activeRunSnapshots[0] ? <Btn size="sm" variant="ghost" onClick={() => onRestoreProofSnapshot(item.simulationRunId, activeRunSnapshots[0]?.simulationResetSnapshotId)}>Restore Snapshot</Btn> : null}
+                      {item.simulationRunId === activeRunDetail?.simulationRunId && activeRunBaselineSnapshot ? (
+                        <Btn size="sm" variant="ghost" onClick={() => onResetProofRunFromScratch(item.simulationRunId, activeRunBaselineSnapshot.simulationResetSnapshotId)}>
+                          Reset To Semester 1
+                        </Btn>
+                      ) : null}
+                      {item.simulationRunId === activeRunDetail?.simulationRunId && activeRunSnapshots[0] ? (
+                        <Btn size="sm" variant="ghost" onClick={() => onRestoreProofSnapshot(item.simulationRunId, activeRunSnapshots[0]?.simulationResetSnapshotId)}>Restore Snapshot</Btn>
+                      ) : null}
                     </div>
                   </Card>
                 )) : <div style={{ ...mono, fontSize: 10, color: T.muted }}>No proof simulation runs yet.</div>}

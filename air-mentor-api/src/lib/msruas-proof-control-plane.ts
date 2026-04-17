@@ -174,6 +174,7 @@ import {
   type ProductionRiskModelArtifact,
 } from './proof-risk-model.js'
 import {
+  type FeatureConfidenceClass,
   type GraphAwareFeatureCompleteness,
   type GraphAwareFeatureProvenance,
   type GraphAwarePrerequisiteSummaryCompleteness,
@@ -297,6 +298,7 @@ export type StudentAgentTimelineItem = {
 export type ObservableSourceRefsWithFeatureMetadata = ObservableSourceRefs & {
   featureCompleteness: GraphAwareFeatureCompleteness
   featureProvenance: GraphAwareFeatureProvenance
+  featureConfidenceClass: FeatureConfidenceClass
 }
 
 export type ProofScopeDescriptor = ScopeDescriptorValue
@@ -357,6 +359,7 @@ export type StudentAgentCardPayload = {
     currentRiskDisplayProbabilityAllowed?: boolean | null
     currentRiskSupportWarning?: string | null
     currentRiskCalibrationMethod?: string | null
+    currentRiskConfidenceClass?: FeatureConfidenceClass | null
     previousRiskBand?: string | null
     previousRiskProbScaled?: number | null
     riskChangeFromPreviousCheckpointScaled?: number | null
@@ -398,6 +401,7 @@ export type StudentAgentCardPayload = {
       riskCompleteness?: GraphAwarePrerequisiteSummaryCompleteness | null
       featureCompleteness?: GraphAwareFeatureCompleteness | null
       featureProvenance?: GraphAwareFeatureProvenance | null
+      featureConfidenceClass?: FeatureConfidenceClass | null
       previousRiskBand?: string | null
       previousRiskProbScaled?: number | null
       riskChangeFromPreviousCheckpointScaled?: number | null
@@ -425,6 +429,15 @@ export type StudentAgentCardPayload = {
         noActionRiskProbScaled: number | null
         counterfactualLiftScaled: number | null
         rationale: string
+        actionCatalog?: {
+          version: string
+          stageKey: PlaybackStageKey
+          stageActions: string[]
+          phenotype: PolicyPhenotype
+          phenotypeActions: string[]
+          allCandidatesStageValid: boolean
+          recommendedActionStageValid: boolean
+        } | null
       } | null
       attentionAreas: string[]
     }
@@ -545,6 +558,7 @@ export type StudentRiskExplorerPayload = {
   student: StudentAgentCardPayload['student']
   riskCompleteness?: GraphAwareFeatureCompleteness | null
   featureCompleteness: GraphAwareFeatureCompleteness
+  featureConfidenceClass: FeatureConfidenceClass
   featureProvenance: GraphAwareFeatureProvenance
   modelProvenance: {
     modelVersion: string | null
@@ -560,6 +574,7 @@ export type StudentRiskExplorerPayload = {
       calibrationMethod: string
     }> | null
     coEvidenceMode?: string | null
+    featureConfidenceClass?: FeatureConfidenceClass | null
     simulationCalibrated: true
   }
   trainedRiskHeads: {
@@ -580,6 +595,9 @@ export type StudentRiskExplorerPayload = {
     semesterSgpaDropRiskProbScaled: number | null
     cumulativeCgpaDropRiskProbScaled: number | null
     electiveMismatchRiskProbScaled: number | null
+    scale: 'advisory-index-0-100'
+    displayProbabilityAllowed: false
+    supportWarning: string
     note: string
   }
   currentEvidence: StudentAgentCardPayload['overview']['currentEvidence']
@@ -608,6 +626,15 @@ export type StudentRiskExplorerPayload = {
     noActionRiskProbScaled: number | null
     counterfactualLiftScaled: number | null
     policyRationale: string
+    actionCatalog?: {
+      version: string
+      stageKey: PlaybackStageKey
+      stageActions: string[]
+      phenotype: PolicyPhenotype
+      phenotypeActions: string[]
+      allCandidatesStageValid: boolean
+      recommendedActionStageValid: boolean
+    } | null
     candidates: Array<{
       action: string
       utility: number
@@ -3221,8 +3248,12 @@ async function publishOperationalProjection(db: AppDb, input: {
     })
   }
 
-  if (transcriptTermInsertRows.length > 0) await db.insert(transcriptTermResults).values(transcriptTermInsertRows)
-  if (transcriptSubjectInsertRows.length > 0) await db.insert(transcriptSubjectResults).values(transcriptSubjectInsertRows)
+  if (transcriptTermInsertRows.length > 0) {
+    await insertRowsInChunks(db, transcriptTermResults, transcriptTermInsertRows)
+  }
+  if (transcriptSubjectInsertRows.length > 0) {
+    await insertRowsInChunks(db, transcriptSubjectResults, transcriptSubjectInsertRows)
+  }
 
   const attendanceRows: Array<typeof studentAttendanceSnapshots.$inferInsert> = []
   const assessmentRows: Array<typeof studentAssessmentScores.$inferInsert> = []
@@ -3316,8 +3347,12 @@ async function publishOperationalProjection(db: AppDb, input: {
       },
     )
   }
-  if (attendanceRows.length > 0) await db.insert(studentAttendanceSnapshots).values(attendanceRows)
-  if (assessmentRows.length > 0) await db.insert(studentAssessmentScores).values(assessmentRows)
+  if (attendanceRows.length > 0) {
+    await insertRowsInChunks(db, studentAttendanceSnapshots, attendanceRows)
+  }
+  if (assessmentRows.length > 0) {
+    await insertRowsInChunks(db, studentAssessmentScores, assessmentRows)
+  }
 
   if (riskRows.length > 0) {
     const riskIds = riskRows.map(row => row.riskAssessmentId)

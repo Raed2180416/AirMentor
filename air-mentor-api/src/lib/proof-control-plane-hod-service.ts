@@ -420,7 +420,9 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
     })
 
     const countProvenance = buildProofCountProvenance({
-      activeOperationalSemester: activeRun.activeOperationalSemester ?? activeBatch.currentSemester,
+      // Checkpoint-bound HoD responses must report the selected checkpoint semester.
+      // Using the run's activated semester here causes provenance drift in playback mode.
+      activeOperationalSemester: checkpoint.semesterNumber ?? activeRun.activeOperationalSemester ?? activeBatch.currentSemester,
       batchId: activeBatch.batchId,
       batchLabel: activeBatch.batchLabel,
       branchName: activeBranch.name,
@@ -840,25 +842,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
         simulationStageCheckpointId: operationalCheckpointSummary.simulationStageCheckpointId,
       },
     }, deps)
-    const countProvenance = buildProofCountProvenance({
-      activeOperationalSemester: activeRun.activeOperationalSemester ?? activeBatch.currentSemester,
-      batchId: activeBatch.batchId,
-      batchLabel: activeBatch.batchLabel,
-      branchName: activeBranch.name,
-      sectionCode: input.filters?.section ?? null,
-      simulationRunId: activeRun.simulationRunId,
-      runLabel: activeRun.runLabel,
-    })
-    const checkpointActiveRunContext = checkpointResult.summary.activeRunContext
-    const { checkpointContext: _checkpointContext, ...activeRunContext } = checkpointActiveRunContext ?? {}
-    return {
-      ...checkpointResult,
-      summary: {
-        ...checkpointResult.summary,
-        ...countProvenance,
-        activeRunContext: checkpointActiveRunContext ? activeRunContext : null,
-      },
-    }
+    return checkpointResult
   }
 
   const activeRiskIds = new Set(activeRiskRows.map(row => row.riskAssessmentId))

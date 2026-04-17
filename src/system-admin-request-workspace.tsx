@@ -19,6 +19,8 @@ type SystemAdminRequestWorkspaceProps = {
   toneColor: string
   onSelectRequest: (requestId: string) => void
   onAdvanceRequest: (request: ApiAdminRequestSummary) => void
+  onRequestInfoRequest: (request: ApiAdminRequestSummary) => void
+  onRejectRequest: (request: ApiAdminRequestSummary) => void
 }
 
 export function SystemAdminRequestWorkspace({
@@ -31,6 +33,8 @@ export function SystemAdminRequestWorkspace({
   toneColor,
   onSelectRequest,
   onAdvanceRequest,
+  onRequestInfoRequest,
+  onRejectRequest,
 }: SystemAdminRequestWorkspaceProps) {
   return (
     <>
@@ -81,15 +85,27 @@ export function SystemAdminRequestWorkspace({
                   <Chip color={selectedRequest.status === 'Closed' ? T.dim : selectedRequest.status === 'Implemented' ? T.success : T.warning}>
                     {selectedRequest.status}
                   </Chip>
-                  {['New', 'In Review', 'Needs Info', 'Approved', 'Implemented'].includes(selectedRequest.status) ? (
+                  {['New', 'In Review', 'Needs Info', 'Approved', 'Implemented', 'Rejected'].includes(selectedRequest.status) ? (
                     <Btn onClick={() => onAdvanceRequest(selectedRequest)} disabled={requestBusyId === selectedRequest.adminRequestId}>
-                      {selectedRequest.status === 'New'
+                      {selectedRequest.status === 'New' || selectedRequest.status === 'Needs Info'
                         ? 'Take Review'
-                        : selectedRequest.status === 'Approved'
+                        : selectedRequest.status === 'In Review'
+                          ? 'Approve'
+                          : selectedRequest.status === 'Approved'
                           ? 'Mark Implemented'
-                          : selectedRequest.status === 'Implemented'
+                          : selectedRequest.status === 'Implemented' || selectedRequest.status === 'Rejected'
                             ? 'Close'
                             : 'Approve'}
+                    </Btn>
+                  ) : null}
+                  {selectedRequest.status === 'In Review' ? (
+                    <Btn variant="ghost" onClick={() => onRequestInfoRequest(selectedRequest)} disabled={requestBusyId === selectedRequest.adminRequestId}>
+                      Needs Info
+                    </Btn>
+                  ) : null}
+                  {['New', 'In Review', 'Needs Info', 'Approved'].includes(selectedRequest.status) ? (
+                    <Btn variant="ghost" onClick={() => onRejectRequest(selectedRequest)} disabled={requestBusyId === selectedRequest.adminRequestId}>
+                      Reject
                     </Btn>
                   ) : null}
                 </div>

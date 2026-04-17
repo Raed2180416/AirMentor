@@ -367,7 +367,7 @@ describe('system-admin-live-data', () => {
     expect(findLatestEnrollment({
       enrollments,
       activeAcademicContext: null,
-    })?.enrollmentId).toBe('enroll_new')
+    })).toBeNull()
 
     expect(findLatestMentorAssignment({
       mentorAssignments,
@@ -376,7 +376,7 @@ describe('system-admin-live-data', () => {
     expect(findLatestMentorAssignment({
       mentorAssignments,
       activeMentorAssignment: null,
-    })?.assignmentId).toBe('mentor_new')
+    })).toBeNull()
   })
 
   it('derives the current year label from the active semester', () => {

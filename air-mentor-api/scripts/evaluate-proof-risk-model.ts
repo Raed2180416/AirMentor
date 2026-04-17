@@ -237,6 +237,11 @@ export function buildQueueBurdenStageSummaries(observations: QueueBurdenRunObser
         .filter(observation => observation.openQueueStudentCount > 0)
         .map(observation => observation.actionableQueuePpvProxy)
       const minPpvProxy = ppvValues.length > 0 ? Math.min(...ppvValues) : PROOF_QUEUE_ACTIONABLE_PPV_PROXY_MINIMUM
+      const ppvProxyMinimum = sample.stageKey === 'post-tt1'
+        ? 0.40
+        : sample.stageKey === 'post-tt2' || sample.stageKey === 'post-assignments' || sample.stageKey === 'post-see'
+          ? 0.45
+          : PROOF_QUEUE_ACTIONABLE_PPV_PROXY_MINIMUM
       return {
         semesterNumber: sample.semesterNumber,
         stageKey: sample.stageKey,
@@ -261,14 +266,8 @@ export function buildQueueBurdenStageSummaries(observations: QueueBurdenRunObser
         minActionableQueuePpvProxy: roundToFour(minPpvProxy),
         passesActionableRate: percentile(actionableOpenRates, 0.95) <= threshold,
         passesSectionTolerance: percentile(sectionMaxRates, 0.95) <= (threshold + PROOF_QUEUE_SECTION_EXCESS_TOLERANCE),
-        passesWatchRate: sample.stageKey === 'semester-start' || percentile(watchRates, 0.95) <= PROOF_QUEUE_WATCH_RATE_LIMIT,
-        passesPpvProxy: sample.stageKey === 'post-tt1'
-          ? minPpvProxy >= 0.40
-          : sample.stageKey === 'post-reassessment'
-            ? minPpvProxy >= 0.45
-            : sample.stageKey === 'semester-close'
-              ? minPpvProxy >= 0.45
-              : minPpvProxy >= PROOF_QUEUE_ACTIONABLE_PPV_PROXY_MINIMUM,
+        passesWatchRate: sample.stageKey === 'pre-tt1' || percentile(watchRates, 0.95) <= PROOF_QUEUE_WATCH_RATE_LIMIT,
+        passesPpvProxy: minPpvProxy >= ppvProxyMinimum,
       }
     })
     .sort((left, right) => left.semesterNumber - right.semesterNumber || left.stageOrder - right.stageOrder)

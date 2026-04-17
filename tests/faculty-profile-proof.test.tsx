@@ -295,6 +295,41 @@ describe('FacultyProfilePage proof mode', () => {
     expect(screen.getByText('Open proof controls')).toBeTruthy()
   })
 
+  it('does not backfill admin-owned faculty fields from the session teacher when the live profile is missing', () => {
+    const markup = renderToStaticMarkup(createElement(FacultyProfilePage, {
+      currentTeacher: {
+        facultyId: 'mnc_t1',
+        name: 'Dr. Asha Rao',
+        initials: 'AR',
+        allowedRoles: ['Course Leader', 'Mentor', 'HoD'],
+        dept: 'Session Department',
+        roleTitle: 'Session Professor',
+        email: 'session-only@example.edu',
+        courseCodes: ['MC601'],
+        offeringIds: ['off_mc601_a'],
+        menteeIds: ['student_001', 'student_002'],
+      },
+      activeRole: 'Course Leader',
+      profile: null,
+      calendarMarkers: [],
+      loading: false,
+      error: '',
+      pendingTaskCount: 0,
+      assignedOfferings: [],
+      currentFacultyTimetable: null,
+      onBack: () => {},
+      onOpenStudentProfile: () => {},
+      onOpenStudentShell: () => {},
+      onOpenRiskExplorer: () => {},
+    }))
+
+    expect(markup).toContain('Not provisioned in the admin faculty record')
+    expect(markup).toContain('This page will not synthesize permissions')
+    expect(markup).not.toContain('Session Department')
+    expect(markup).not.toContain('Session Professor')
+    expect(markup).not.toContain('session-only@example.edu')
+  })
+
   it('opens the bounded partial profile from proof queue rows', () => {
     const onOpenStudentProfile = vi.fn()
 

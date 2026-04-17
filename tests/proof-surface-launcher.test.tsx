@@ -9,7 +9,7 @@ afterEach(() => {
 })
 
 describe('ProofSurfaceLauncher popup contract', () => {
-  it('opens a popup preview before jumping to the shared proof dashboard target', () => {
+  it('opens a popup preview, stays dark-mode legible, and closes again on repeat click', () => {
     render(createElement(
       'div',
       null,
@@ -24,7 +24,13 @@ describe('ProofSurfaceLauncher popup contract', () => {
     ))
 
     const launcher = screen.getByRole('button', { name: /Open proof dashboard.*open dialog/i })
+    const launcherShell = document.querySelector('[data-proof-launcher="floating"]') as HTMLElement | null
+    const launcherCard = launcherShell?.firstElementChild as HTMLElement | null
     expect(launcher.getAttribute('data-proof-action')).toBe('proof-shell-launcher')
+    expect(launcherShell?.style.zIndex).toBe('1200')
+    expect(launcherShell?.style.pointerEvents).toBe('auto')
+    expect(launcherCard?.style.background).toContain('rgba(13, 16, 23')
+    expect(launcher.style.background).not.toContain('linear-gradient')
 
     fireEvent.click(launcher)
 
@@ -32,5 +38,10 @@ describe('ProofSurfaceLauncher popup contract', () => {
     expect(screen.getAllByText('Queue and checkpoint snapshot for the active proof branch.')).toHaveLength(2)
     expect(screen.getAllByRole('button', { name: 'Open full dashboard' })).toHaveLength(2)
     expect(document.querySelector('[data-proof-launcher-state="open"]')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: /Open proof dashboard.*open dialog/i }))
+
+    expect(document.querySelector('[data-proof-launcher-state="closed"]')).toBeTruthy()
+    expect(screen.queryByRole('dialog', { name: 'Proof dashboard preview' })).toBeNull()
   })
 })

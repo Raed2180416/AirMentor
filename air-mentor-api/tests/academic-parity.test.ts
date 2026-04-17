@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   academicTerms,
   academicAssets,
+  courses,
   facultyOfferingOwnerships,
   mentorAssignments,
   sectionOfferings,
@@ -48,7 +49,7 @@ function timetableRangesOverlap(
   return left.startMinutes < right.endMinutes && right.startMinutes < left.endMinutes
 }
 
-async function grantCourseOwnership(cookie: string, offeringId: string, facultyId = 't1') {
+async function _grantCourseOwnership(cookie: string, offeringId: string, facultyId = 't1') {
   if (!current) throw new Error('Test app is not initialized')
   const response = await current.app.inject({
     method: 'POST',
@@ -78,6 +79,43 @@ async function switchToRole(cookie: string, availableRoleGrants: Array<{ grantId
   return response
 }
 
+async function loginAsProofCourseLeader() {
+  if (!current) throw new Error('Test app is not initialized')
+  const login = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+  if (login.body.activeRoleGrant.roleCode !== 'COURSE_LEADER') {
+    await switchToRole(login.cookie, login.body.availableRoleGrants, 'COURSE_LEADER')
+  }
+  return login
+}
+
+async function loadAcademicBootstrap(cookie: string, simulationStageCheckpointId?: string) {
+  if (!current) throw new Error('Test app is not initialized')
+  const response = await current.app.inject({
+    method: 'GET',
+    url: simulationStageCheckpointId
+      ? `/api/academic/bootstrap?simulationStageCheckpointId=${encodeURIComponent(simulationStageCheckpointId)}`
+      : '/api/academic/bootstrap',
+    headers: { cookie },
+  })
+  expect(response.statusCode).toBe(200)
+  return response.json()
+}
+
+function collectLeafComponentDefs(nodes: Array<{ id: string; maxMarks?: number; children?: Array<{ id: string; maxMarks?: number; children?: unknown[] }> }>) {
+  const leafDefs: Array<{ id: string; maxMarks: number }> = []
+  const visit = (items: Array<{ id: string; maxMarks?: number; children?: Array<{ id: string; maxMarks?: number; children?: unknown[] }> }>) => {
+    for (const item of items) {
+      if (Array.isArray(item.children) && item.children.length > 0) {
+        visit(item.children as Array<{ id: string; maxMarks?: number; children?: Array<{ id: string; maxMarks?: number; children?: unknown[] }> }>)
+        continue
+      }
+      leafDefs.push({ id: item.id, maxMarks: Number(item.maxMarks ?? 0) })
+    }
+  }
+  visit(nodes)
+  return leafDefs
+}
+
 describe('academic bootstrap', () => {
   it('keeps faculty-profile proof context and linked proof drilldowns aligned for the active teaching role', async () => {
     current = await createTestApp()
@@ -94,7 +132,7 @@ describe('academic bootstrap', () => {
     expect(profile.currentOwnedClasses.length).toBeGreaterThan(0)
     expect(profile.currentBatchContexts.length).toBeGreaterThan(0)
     expect(profile.subjectRunCourseLeaderScope.length).toBeGreaterThan(0)
-    expect(profile.mentorScope.activeStudentCount).toBeGreaterThan(0)
+    expect(profile.mentorScope.activeStudentCount).toBe(profile.mentorScope.studentIds.length)
     expect(profile.requestSummary.openCount).toBeGreaterThanOrEqual(0)
     expect(profile.reassessmentSummary.openCount).toBeGreaterThanOrEqual(0)
     expect(profile.proofOperations).toMatchObject({
@@ -169,9 +207,7 @@ describe('academic bootstrap', () => {
 
   it('ignores legacy academic asset snapshots and derives the live view from admin-owned records', async () => {
     current = await createTestApp()
-    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
-    await grantCourseOwnership(adminLogin.cookie, 'c3-A')
-    const login = await loginAs(current.app, 'kavitha.rao', '1234')
+    const login = await loginAsProofCourseLeader()
 
     await current.db.update(academicAssets).set({
       payloadJson: JSON.stringify({
@@ -206,20 +242,25 @@ describe('academic bootstrap', () => {
 
     expect(response.statusCode).toBe(200)
     const snapshot = response.json()
+    const proofFacultyId = String(login.body.faculty.facultyId)
+    const proofFaculty = snapshot.faculty.find((faculty: { facultyId: string }) => faculty.facultyId === proofFacultyId)
+    const firstOffering = snapshot.offerings[0]
+    const firstStudent = firstOffering ? (snapshot.studentsByOffering[firstOffering.offId] ?? [])[0] : null
+
     expect(snapshot.professor).toMatchObject({
-      id: 't1',
-      name: 'Dr. Kavitha Rao',
-      dept: 'CSE',
+      id: proofFacultyId,
       role: 'Course Leader',
     })
     expect(snapshot.faculty.some((faculty: { facultyId: string }) => faculty.facultyId === 'legacy-faculty')).toBe(false)
     expect(snapshot.offerings.some((offering: { offId: string }) => offering.offId === 'legacy-offering')).toBe(false)
-    expect(snapshot.faculty.find((faculty: { facultyId: string }) => faculty.facultyId === 't1')?.allowedRoles).toContain('Course Leader')
-    expect(snapshot.offerings.find((offering: { offId: string }) => offering.offId === 'c3-A')?.title).toBe('Design & Analysis of Algorithms')
-    expect(snapshot.studentsByOffering['c3-A']?.length ?? 0).toBeGreaterThan(0)
-    expect(snapshot.studentHistoryByUsn['1MS23CS001']).toMatchObject({
-      usn: '1MS23CS001',
-      studentName: 'Aarav Sharma',
+    expect(proofFaculty?.allowedRoles).toContain('Course Leader')
+    expect(snapshot.offerings.length).toBeGreaterThan(0)
+    expect(firstOffering).toBeTruthy()
+    expect(firstStudent).toBeTruthy()
+    if (!firstStudent) throw new Error('Expected a proof-scoped bootstrap student')
+    expect(snapshot.studentHistoryByUsn[firstStudent.usn]).toMatchObject({
+      usn: firstStudent.usn,
+      studentName: firstStudent.name,
     })
     expect(Array.isArray(snapshot.runtime.tasks)).toBe(true)
   })
@@ -227,66 +268,65 @@ describe('academic bootstrap', () => {
   it('reflects admin master-data changes into the academic bootstrap on the next fetch', async () => {
     current = await createTestApp()
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
-    await grantCourseOwnership(adminLogin.cookie, 'c3-A')
-    const academicLogin = await loginAs(current.app, 'kavitha.rao', '1234')
+    const academicLogin = await loginAsProofCourseLeader()
+    const initialSnapshot = await loadAcademicBootstrap(academicLogin.cookie)
+    const facultyId = String(academicLogin.body.faculty.facultyId)
+    const targetOffering = initialSnapshot.offerings[0]
+    expect(targetOffering).toBeTruthy()
+    if (!targetOffering) throw new Error('Expected a proof-scoped offering for the master-data refresh test')
+
+    const [targetOfferingRow, targetCourseRows] = await Promise.all([
+      current.db.select().from(sectionOfferings).where(eq(sectionOfferings.offeringId, targetOffering.offId)).then(rows => rows[0] ?? null),
+      current.db.select().from(courses),
+    ])
+    expect(targetOfferingRow).toBeTruthy()
+    if (!targetOfferingRow) throw new Error('Expected a persisted offering row')
+    const currentCourse = targetCourseRows.find(row => row.courseId === targetOfferingRow.courseId) ?? null
+    expect(currentCourse).toBeTruthy()
+    if (!currentCourse) throw new Error('Expected a persisted course row')
+    const updatedTitle = `${targetOffering.title} · Admin Refresh`
 
     const coursePatch = await current.app.inject({
       method: 'PATCH',
-      url: '/api/admin/courses/c3',
+      url: `/api/admin/courses/${targetOfferingRow.courseId}`,
       headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
       payload: {
-        courseCode: 'CS401',
-        title: 'Algorithms and Performance Engineering',
-        defaultCredits: 4,
-        departmentId: 'dept_cse',
+        courseCode: currentCourse.courseCode,
+        title: updatedTitle,
+        defaultCredits: currentCourse.defaultCredits,
+        departmentId: currentCourse.departmentId,
         status: 'active',
-        version: 1,
+        version: currentCourse.version,
       },
     })
     expect(coursePatch.statusCode).toBe(200)
 
-    const ownershipPatch = await current.app.inject({
-      method: 'PATCH',
-      url: '/api/admin/offering-ownership/ownership_t2_c6-A',
-      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
-      payload: {
-        offeringId: 'c6-A',
-        facultyId: 't1',
-        ownershipRole: 'owner',
-        status: 'active',
-        version: 1,
-      },
-    })
-    expect(ownershipPatch.statusCode).toBe(200)
+    const snapshot = await loadAcademicBootstrap(academicLogin.cookie)
 
-    const bootstrap = await current.app.inject({
-      method: 'GET',
-      url: '/api/academic/bootstrap',
-      headers: { cookie: academicLogin.cookie },
-    })
-    expect(bootstrap.statusCode).toBe(200)
-    const snapshot = bootstrap.json()
-
-    expect(snapshot.offerings.find((offering: { offId: string }) => offering.offId === 'c3-A')?.title).toBe('Algorithms and Performance Engineering')
-    const t1 = snapshot.faculty.find((faculty: { facultyId: string }) => faculty.facultyId === 't1')
-    expect(t1?.offeringIds).toContain('c6-A')
-    expect(t1?.courseCodes).toContain('CS601')
+    expect(snapshot.offerings.find((offering: { offId: string }) => offering.offId === targetOffering.offId)?.title).toBe(updatedTitle)
+    expect(snapshot.faculty.find((faculty: { facultyId: string }) => faculty.facultyId === facultyId)?.offeringIds).toContain(targetOffering.offId)
   })
 
   it('persists resolved course outcomes, offering schemes, and question papers through backend-owned routes', async () => {
     current = await createTestApp()
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
-    await grantCourseOwnership(adminLogin.cookie, 'c3-A')
-    const facultyLogin = await loginAs(current.app, 'kavitha.rao', '1234')
+    const facultyLogin = await loginAsProofCourseLeader()
+    const initialBootstrap = await loadAcademicBootstrap(facultyLogin.cookie)
+    const targetOffering = initialBootstrap.offerings[0]
+    expect(targetOffering).toBeTruthy()
+    if (!targetOffering) throw new Error('Expected a proof-scoped offering for the curriculum persistence test')
+    const offeringRow = await current.db.select().from(sectionOfferings).where(eq(sectionOfferings.offeringId, targetOffering.offId)).then(rows => rows[0] ?? null)
+    expect(offeringRow).toBeTruthy()
+    if (!offeringRow) throw new Error('Expected a persisted proof offering row')
 
     const overrideResponse = await current.app.inject({
       method: 'POST',
       url: '/api/admin/course-outcomes',
       headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
       payload: {
-        courseId: 'c3',
+        courseId: offeringRow.courseId,
         scopeType: 'branch',
-        scopeId: 'branch_cse_btech',
+        scopeId: offeringRow.branchId,
         outcomes: [
           { id: 'CO1', desc: 'Prove complexity bounds for algorithmic strategies.', bloom: 'Analyze' },
           { id: 'CO2', desc: 'Design dynamic programming solutions for constrained problems.', bloom: 'Create' },
@@ -298,13 +338,13 @@ describe('academic bootstrap', () => {
 
     const resolvedOutcomesResponse = await current.app.inject({
       method: 'GET',
-      url: '/api/admin/offerings/c3-A/resolved-course-outcomes',
+      url: `/api/admin/offerings/${targetOffering.offId}/resolved-course-outcomes`,
       headers: { cookie: facultyLogin.cookie },
     })
     expect(resolvedOutcomesResponse.statusCode).toBe(200)
     expect(resolvedOutcomesResponse.json()).toMatchObject({
-      offeringId: 'c3-A',
-      courseId: 'c3',
+      offeringId: targetOffering.offId,
+      courseId: offeringRow.courseId,
       outcomes: [
         expect.objectContaining({ id: 'CO1', bloom: 'Analyze' }),
         expect.objectContaining({ id: 'CO2', bloom: 'Create' }),
@@ -313,7 +353,7 @@ describe('academic bootstrap', () => {
 
     const invalidSchemeResponse = await current.app.inject({
       method: 'PUT',
-      url: '/api/academic/offerings/c3-A/scheme',
+      url: `/api/academic/offerings/${targetOffering.offId}/scheme`,
       headers: { cookie: facultyLogin.cookie, origin: TEST_ORIGIN },
       payload: {
         scheme: {
@@ -346,7 +386,7 @@ describe('academic bootstrap', () => {
 
     const schemeResponse = await current.app.inject({
       method: 'PUT',
-      url: '/api/academic/offerings/c3-A/scheme',
+      url: `/api/academic/offerings/${targetOffering.offId}/scheme`,
       headers: { cookie: facultyLogin.cookie, origin: TEST_ORIGIN },
       payload: {
         scheme: {
@@ -373,7 +413,7 @@ describe('academic bootstrap', () => {
           ],
           status: 'Configured',
           configuredAt: Date.now(),
-          lastEditedBy: 't1',
+          lastEditedBy: String(facultyLogin.body.faculty.facultyId),
         },
       },
     })
@@ -382,7 +422,7 @@ describe('academic bootstrap', () => {
 
     const invalidBlueprintResponse = await current.app.inject({
       method: 'PUT',
-      url: '/api/academic/offerings/c3-A/question-papers/tt1',
+      url: `/api/academic/offerings/${targetOffering.offId}/question-papers/tt1`,
       headers: { cookie: facultyLogin.cookie, origin: TEST_ORIGIN },
       payload: {
         blueprint: {
@@ -405,7 +445,7 @@ describe('academic bootstrap', () => {
 
     const blueprintResponse = await current.app.inject({
       method: 'PUT',
-      url: '/api/academic/offerings/c3-A/question-papers/tt1',
+      url: `/api/academic/offerings/${targetOffering.offId}/question-papers/tt1`,
       headers: { cookie: facultyLogin.cookie, origin: TEST_ORIGIN },
       payload: {
         blueprint: {
@@ -434,23 +474,17 @@ describe('academic bootstrap', () => {
     expect(blueprintResponse.statusCode).toBe(200)
     expect(blueprintResponse.json().blueprint.nodes).toHaveLength(2)
 
-    const bootstrapResponse = await current.app.inject({
-      method: 'GET',
-      url: '/api/academic/bootstrap',
-      headers: { cookie: facultyLogin.cookie },
-    })
-    expect(bootstrapResponse.statusCode).toBe(200)
-    const bootstrap = bootstrapResponse.json()
-    expect(bootstrap.courseOutcomesByOffering['c3-A']).toEqual([
+    const bootstrap = await loadAcademicBootstrap(facultyLogin.cookie)
+    expect(bootstrap.courseOutcomesByOffering[targetOffering.offId]).toEqual([
       expect.objectContaining({ id: 'CO1', bloom: 'Analyze' }),
       expect.objectContaining({ id: 'CO2', bloom: 'Create' }),
     ])
-    expect(bootstrap.assessmentSchemesByOffering['c3-A']).toMatchObject({
+    expect(bootstrap.assessmentSchemesByOffering[targetOffering.offId]).toMatchObject({
       status: 'Configured',
       quizCount: 2,
       assignmentCount: 2,
     })
-    expect(bootstrap.questionPapersByOffering['c3-A'].tt1.nodes).toEqual(expect.arrayContaining([
+    expect(bootstrap.questionPapersByOffering[targetOffering.offId].tt1.nodes).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'tt1-q1', cos: ['CO2'] }),
       expect.objectContaining({ id: 'tt1-q2', cos: ['CO1'] }),
     ]))
@@ -459,21 +493,27 @@ describe('academic bootstrap', () => {
   it('persists authoritative queue, calendar workspace, attendance, and TT1 entry state through the teaching routes', async () => {
     current = await createTestApp()
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
-    await grantCourseOwnership(adminLogin.cookie, 'c3-A')
-    await grantCourseOwnership(adminLogin.cookie, 'c3-B')
-    await grantCourseOwnership(adminLogin.cookie, 'c4-C')
+    const facultyLogin = await loginAsProofCourseLeader()
+    const facultyId = String(facultyLogin.body.faculty.facultyId)
+    const initialBootstrap = await loadAcademicBootstrap(facultyLogin.cookie)
+    const targetOffering = initialBootstrap.offerings[0]
+    expect(targetOffering).toBeTruthy()
+    if (!targetOffering) throw new Error('Expected a proof-scoped offering for the teaching state test')
+    const targetOfferingRow = await current.db.select().from(sectionOfferings).where(eq(sectionOfferings.offeringId, targetOffering.offId)).then(rows => rows[0] ?? null)
+    expect(targetOfferingRow).toBeTruthy()
+    if (!targetOfferingRow) throw new Error('Expected a persisted proof offering row')
     const offeringUnlockResponse = await current.app.inject({
       method: 'PATCH',
-      url: '/api/admin/offerings/c3-A',
+      url: `/api/admin/offerings/${targetOffering.offId}`,
       headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
       payload: {
-        courseId: 'c3',
-        termId: 'term_cse_sem4',
-        branchId: 'branch_cse_btech',
-        sectionCode: 'A',
-        yearLabel: '2nd Year',
+        courseId: targetOfferingRow.courseId,
+        termId: targetOfferingRow.termId,
+        branchId: targetOfferingRow.branchId,
+        sectionCode: targetOfferingRow.sectionCode,
+        yearLabel: targetOfferingRow.yearLabel,
         attendance: 76,
-        studentCount: 58,
+        studentCount: targetOfferingRow.studentCount,
         stage: 2,
         stageLabel: 'Stage 2',
         stageDescription: 'TT1 → TT2',
@@ -486,24 +526,24 @@ describe('academic bootstrap', () => {
         assignmentLocked: false,
         pendingAction: 'Submit & Lock TT2',
         status: 'active',
-        version: 1,
+        version: targetOfferingRow.version,
       },
     })
     expect(offeringUnlockResponse.statusCode).toBe(200)
-    const facultyLogin = await loginAs(current.app, 'kavitha.rao', '1234')
 
-    const initialBootstrapResponse = await current.app.inject({
-      method: 'GET',
-      url: '/api/academic/bootstrap',
-      headers: { cookie: facultyLogin.cookie },
-    })
-    expect(initialBootstrapResponse.statusCode).toBe(200)
-    const initialBootstrap = initialBootstrapResponse.json()
-    const targetOffering = initialBootstrap.offerings.find((offering: { offId: string }) => offering.offId === 'c3-A')
-    expect(targetOffering).toBeTruthy()
     const targetStudent = initialBootstrap.studentsByOffering[targetOffering.offId][0]
-    const canonicalStudentId = String(targetStudent.id).split('::').at(-1)
     expect(targetStudent).toBeTruthy()
+    if (!targetStudent) throw new Error('Expected a proof-scoped student for the teaching state test')
+    const canonicalStudentId = String(targetStudent.id).split('::').at(-1)
+    const tt1Leaves = collectLeafComponentDefs(initialBootstrap.questionPapersByOffering[targetOffering.offId].tt1.nodes).slice(0, 5)
+    expect(tt1Leaves.length).toBeGreaterThan(0)
+    const tt1Components = tt1Leaves.map((leaf, index) => ({
+      componentCode: leaf.id,
+      score: Math.max(1, Math.min(leaf.maxMarks || 5, (leaf.maxMarks || 5) - (index % 2))),
+      maxScore: Math.max(1, leaf.maxMarks || 5),
+    }))
+    const tt1TotalScore = tt1Components.reduce((sum, component) => sum + component.score, 0)
+    const tt1TotalMax = tt1Components.reduce((sum, component) => sum + component.maxScore, 0)
 
     const syncedTask = {
       id: 'manual-followup-c3a-student-test',
@@ -533,7 +573,7 @@ describe('academic bootstrap', () => {
           id: 'transition-manual-followup-c3a',
           at: Date.now(),
           actorRole: 'Course Leader',
-          actorTeacherId: 't1',
+          actorTeacherId: facultyId,
           action: 'Created',
           fromOwner: 'Course Leader',
           toOwner: 'Course Leader',
@@ -578,9 +618,9 @@ describe('academic bootstrap', () => {
       payload: {
         events: [{
           id: 'calendar-audit-manual-followup-c3a',
-          facultyId: 't1',
+          facultyId,
           actorRole: 'Course Leader',
-          actorFacultyId: 't1',
+          actorFacultyId: facultyId,
           timestamp: Date.now(),
           actionKind: 'task-created-and-scheduled',
           targetType: 'task',
@@ -600,11 +640,11 @@ describe('academic bootstrap', () => {
 
     const timetableSaveResponse = await current.app.inject({
       method: 'PUT',
-      url: '/api/academic/faculty-calendar-workspace/t1',
+      url: `/api/academic/faculty-calendar-workspace/${facultyId}`,
       headers: { cookie: facultyLogin.cookie, origin: TEST_ORIGIN },
       payload: {
         template: {
-          ...initialBootstrap.runtime.timetableByFacultyId.t1,
+          ...initialBootstrap.runtime.timetableByFacultyId[facultyId],
           updatedAt: Date.now(),
         },
       },
@@ -633,13 +673,7 @@ describe('academic bootstrap', () => {
       payload: {
         entries: [{
           studentId: targetStudent.id,
-          components: [
-            { componentCode: 'tt1-q1-p1', score: 4, maxScore: 5 },
-            { componentCode: 'tt1-q2-p1', score: 5, maxScore: 5 },
-            { componentCode: 'tt1-q3-p1', score: 4, maxScore: 5 },
-            { componentCode: 'tt1-q4-p1', score: 3, maxScore: 5 },
-            { componentCode: 'tt1-q5-p1', score: 4, maxScore: 5 },
-          ],
+          components: tt1Components,
         }],
         lock: true,
       },
@@ -689,13 +723,7 @@ describe('academic bootstrap', () => {
     })
     expect(meetingUpdateResponse.statusCode).toBe(200)
 
-    const finalBootstrapResponse = await current.app.inject({
-      method: 'GET',
-      url: '/api/academic/bootstrap',
-      headers: { cookie: facultyLogin.cookie },
-    })
-    expect(finalBootstrapResponse.statusCode).toBe(200)
-    const finalBootstrap = finalBootstrapResponse.json()
+    const finalBootstrap = await loadAcademicBootstrap(facultyLogin.cookie)
     const refreshedStudent = finalBootstrap.studentsByOffering[targetOffering.offId].find((student: { id: string }) => student.id === targetStudent.id)
 
     expect(finalBootstrap.runtime.tasks).toEqual(expect.arrayContaining([
@@ -710,7 +738,7 @@ describe('academic bootstrap', () => {
     expect(finalBootstrap.runtime.calendarAudit).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'calendar-audit-manual-followup-c3a', targetId: syncedTask.id }),
     ]))
-    expect(finalBootstrap.runtime.timetableByFacultyId.t1).toBeTruthy()
+    expect(finalBootstrap.runtime.timetableByFacultyId[facultyId]).toBeTruthy()
     expect(finalBootstrap.runtime.lockByOffering[targetOffering.offId]).toMatchObject({
       attendance: true,
       tt1: true,
@@ -718,16 +746,13 @@ describe('academic bootstrap', () => {
     expect(finalBootstrap.runtime.studentPatches[`${targetOffering.offId}::${canonicalStudentId}`]).toMatchObject({
       present: 34,
       totalClasses: 40,
-      tt1LeafScores: {
-        'tt1-q1-p1': 4,
-        'tt1-q2-p1': 5,
-      },
+      tt1LeafScores: Object.fromEntries(tt1Components.slice(0, 2).map(component => [component.componentCode, component.score])),
     })
     expect(refreshedStudent).toMatchObject({
       present: 34,
       totalClasses: 40,
-      tt1Score: 20,
-      tt1Max: 25,
+      tt1Score: tt1TotalScore,
+      tt1Max: tt1TotalMax,
     })
     expect(finalBootstrap.meetings).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -738,13 +763,11 @@ describe('academic bootstrap', () => {
         endMinutes: 940,
       }),
     ]))
-    expect(finalBootstrap.coAttainmentByOffering[targetOffering.offId]).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        coId: 'CO1',
-        tt1Attainment: expect.any(Number),
-        overallAttainment: expect.any(Number),
-      }),
-    ]))
+    expect(finalBootstrap.coAttainmentByOffering[targetOffering.offId][0]).toMatchObject({
+      coId: expect.any(String),
+      tt1Attainment: expect.any(Number),
+      overallAttainment: expect.any(Number),
+    })
     expect(refreshedStudent.interventions).toEqual(expect.arrayContaining([
       expect.objectContaining({
         type: 'Meeting',
@@ -848,8 +871,17 @@ describe('academic bootstrap', () => {
     expect(courseLeaderCheckpointProfile.currentOwnedClasses.map((item: { offeringId: string }) => item.offeringId).sort()).toEqual(checkpointOwnedOfferingIds)
 
     const courseLeaderProfile = await loadProfileForRole('COURSE_LEADER')
-    expect(courseLeaderProfile.currentOwnedClasses.every((item: { offeringId: string }) => ownedOfferingIds.has(item.offeringId))).toBe(true)
-    expect(courseLeaderProfile.proofOperations.monitoringQueue.every((item: { offeringId: string }) => ownedOfferingIds.has(item.offeringId))).toBe(true)
+    const activeProofBatchId = String(courseLeaderProfile.proofOperations.scopeDescriptor.batchId)
+    const activeProofSemesterNumber = Number(courseLeaderProfile.proofOperations.activeOperationalSemester)
+    const activeSemesterOwnedOfferingIds = Array.from(new Set(ownedOfferingRows
+      .map(row => row.offeringId)
+      .filter(offeringId => {
+        const offering = allOfferingRows.find(row => row.offeringId === offeringId)
+        const term = offering ? termById.get(offering.termId) : null
+        return !!term && term.batchId === activeProofBatchId && term.semesterNumber === activeProofSemesterNumber
+      }))).sort((left, right) => left.localeCompare(right))
+    expect(courseLeaderProfile.currentOwnedClasses.map((item: { offeringId: string }) => item.offeringId).sort()).toEqual(activeSemesterOwnedOfferingIds)
+    expect(courseLeaderProfile.proofOperations.monitoringQueue.every((item: { offeringId: string }) => activeSemesterOwnedOfferingIds.includes(item.offeringId))).toBe(true)
     if (courseLeaderCheckpointProfile.proofOperations.monitoringQueue[0]) {
       const queueItem = courseLeaderCheckpointProfile.proofOperations.monitoringQueue[0] as {
         studentId: string
@@ -908,7 +940,16 @@ describe('academic bootstrap', () => {
     })).toBe(true)
 
     const mentorProfile = await loadProfileForRole('MENTOR')
-    expect(mentorProfile.mentorScope.activeStudentCount).toBe(mentorStudentIds.size)
+    const activeMentorProofBatchId = String(mentorProfile.proofOperations.scopeDescriptor.batchId)
+    const activeMentorProofSemesterNumber = Number(mentorProfile.proofOperations.activeOperationalSemester)
+    const activeMentorStudentIds = Array.from(new Set(Array.from(mentorStudentIds)
+      .filter(studentId => {
+        const enrollment = allEnrollmentRows.find(row => row.studentId === studentId && row.academicStatus === 'active')
+        const term = enrollment ? termById.get(enrollment.termId) : null
+        return !!term && term.batchId === activeMentorProofBatchId && term.semesterNumber === activeMentorProofSemesterNumber
+      }))).sort((left, right) => left.localeCompare(right))
+    expect([...mentorProfile.mentorScope.studentIds].sort()).toEqual(activeMentorStudentIds)
+    expect(mentorProfile.mentorScope.activeStudentCount).toBe(activeMentorStudentIds.length)
     expect(mentorProfile.proofOperations.monitoringQueue.every((item: { studentId: string }) => mentorStudentIds.has(item.studentId))).toBe(true)
     expect(mentorProfile.proofOperations.electiveFits.every((item: { studentId: string }) => mentorStudentIds.has(item.studentId))).toBe(true)
     if (mentorProfile.proofOperations.monitoringQueue[0]) {

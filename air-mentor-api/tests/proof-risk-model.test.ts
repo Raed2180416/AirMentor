@@ -184,7 +184,81 @@ describe('proof risk model', () => {
     expect(scored.headDisplay.overallCourseRisk.displayProbabilityAllowed).toBe(false)
     expect(scored.headDisplay.overallCourseRisk.supportWarning).toContain('support')
     expect(scored.riskProb).toBe(scored.headProbabilities.overallCourseRisk)
-    expect(scored.queuePriorityScore).toBeLessThanOrEqual(0.95)
+    expect(scored.queuePriorityScore).toBe(scored.riskProb)
+    expect(scored.queuePrioritySource).toBe('overall-course-risk-head')
+    expect(scored.queuePriorityScore).toBeGreaterThanOrEqual(0)
+    expect(scored.queuePriorityScore).toBeLessThanOrEqual(1)
+  })
+
+  it('suppresses probability display for fallback-simulated rows with partial feature completeness', () => {
+    const manifestEntries = [
+      PROOF_CORPUS_MANIFEST[0]!,
+      PROOF_CORPUS_MANIFEST[40]!,
+      PROOF_CORPUS_MANIFEST[52]!,
+    ]
+    const runMetadataById = new Map<string, ProofRunModelMetadata>(manifestEntries.map(entry => [
+      `sim-${entry.seed}`,
+      {
+        simulationRunId: `sim-${entry.seed}`,
+        seed: entry.seed,
+        split: entry.split,
+        scenarioFamily: entry.scenarioFamily,
+      },
+    ]))
+    const rows = [
+      ...buildRowsForRun(manifestEntries[0]!.seed, 20),
+      ...buildRowsForRun(manifestEntries[1]!.seed, 20, 1),
+      ...buildRowsForRun(manifestEntries[2]!.seed, 20, 2),
+    ]
+    const bundle = trainProofRiskModel(rows, '2026-03-23T00:00:00.000Z', { runMetadataById })
+    expect(bundle).not.toBeNull()
+
+    const probePayload = rows[0]!.featurePayload
+    const scored = scoreObservableRiskWithModel({
+      attendancePct: probePayload.attendancePct,
+      currentCgpa: probePayload.currentCgpa,
+      backlogCount: probePayload.backlogCount,
+      tt1Pct: probePayload.tt1Pct,
+      tt2Pct: probePayload.tt2Pct,
+      quizPct: probePayload.quizPct,
+      assignmentPct: probePayload.assignmentPct,
+      seePct: probePayload.seePct,
+      weakCoCount: probePayload.weakCoCount,
+      attendanceHistoryRiskCount: probePayload.attendanceHistoryRiskCount,
+      questionWeaknessCount: probePayload.weakQuestionCount,
+      interventionResponseScore: probePayload.interventionResponseScore,
+      policy: DEFAULT_POLICY,
+      featurePayload: probePayload,
+      sourceRefs: {
+        ...buildSourceRefs({
+          runId: 'sim-fallback-partial',
+          studentId: 'student-fallback',
+          semesterNumber: 6,
+          stageKey: 'post-see',
+          sectionCode: 'A',
+          courseCode: 'AMC301',
+          coEvidenceMode: 'fallback-simulated',
+        }),
+        featureCompleteness: {
+          graphAvailable: false,
+          historyAvailable: false,
+          complete: false,
+          missing: ['graph', 'history'],
+          fallbackMode: 'policy-only',
+          confidenceClass: 'low',
+        },
+        featureConfidenceClass: 'low',
+      },
+      productionModel: bundle!.production,
+      correlations: bundle!.correlations,
+    })
+
+    expect(scored.queuePriorityScore).toBe(scored.riskProb)
+    expect(scored.queuePrioritySource).toBe('overall-course-risk-head')
+    for (const display of Object.values(scored.headDisplay)) {
+      expect(display.displayProbabilityAllowed).toBe(false)
+      expect(display.supportWarning).toContain('Fallback-simulated evidence is low confidence')
+    }
   })
 
   it('exposes deterministic carryover features and lifts downstream carryover risk for weaker prerequisite chains', () => {

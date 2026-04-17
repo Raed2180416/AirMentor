@@ -125,7 +125,7 @@ function normalizePersistedTask(task: Partial<SharedTask>): SharedTask {
     transitionHistory: Array.isArray(task.transitionHistory) && task.transitionHistory.length > 0
       ? task.transitionHistory
       : [createTransition({
-          action: 'Imported into local mock state',
+          action: 'Recovered from persisted local state',
           actorRole: 'System',
           toOwner: assignedTo,
           note: 'Recovered persisted queue item.',
@@ -666,10 +666,19 @@ function createHttpAcademicRepositories({
       getBlueprintSnapshot(offerings) {
         return Object.fromEntries(offerings.map(offering => {
           const source = questionPaperCache[offering.offId]
-          const basePaper = PAPER_MAP[offering.code] || PAPER_MAP.default
           return [offering.offId, {
-            tt1: normalizeBlueprint('tt1', source?.tt1 ?? seedBlueprintFromPaper('tt1', basePaper)),
-            tt2: normalizeBlueprint('tt2', source?.tt2 ?? seedBlueprintFromPaper('tt2', basePaper)),
+            tt1: source?.tt1 ? normalizeBlueprint('tt1', source.tt1) : {
+              kind: 'tt1',
+              totalMarks: 0,
+              updatedAt: 0,
+              nodes: [],
+            },
+            tt2: source?.tt2 ? normalizeBlueprint('tt2', source.tt2) : {
+              kind: 'tt2',
+              totalMarks: 0,
+              updatedAt: 0,
+              nodes: [],
+            },
           }]
         })) as Record<string, Record<TTKind, TermTestBlueprint>>
       },

@@ -750,6 +750,19 @@ export function SystemAdminFacultiesWorkspace({
     ))
   }, [batchProvisioningForm.createStudents, batchProvisioningForm.mode, setBatchProvisioningForm, syntheticProvisioningEnabled])
 
+  const selectedBatchSectionOptions = selectedBatch
+    ? Array.from(
+      new Set(
+        selectedBatch.sectionLabels
+          .map(sectionCode => sectionCode.trim().toUpperCase())
+          .filter(Boolean),
+      ),
+    )
+    : []
+  const sectionOptions = selectedSectionCode && !selectedBatchSectionOptions.includes(selectedSectionCode)
+    ? [selectedSectionCode, ...selectedBatchSectionOptions]
+    : selectedBatchSectionOptions
+
   const selectorControls = (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
       <div>
@@ -839,7 +852,7 @@ export function SystemAdminFacultiesWorkspace({
           style={{ ...getFieldChromeStyle({ dense: true }), cursor: !selectedBatch ? 'not-allowed' : 'pointer', opacity: !selectedBatch ? 0.55 : 1, WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none', backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: 28 }}
         >
           <option value="">{selectedBatch ? 'All Sections' : 'Pick Year First'}</option>
-          {selectedBatch ? data.students.filter(item => item.activeAcademicContext?.batchId === selectedBatch.batchId).map(item => item.activeAcademicContext?.sectionCode).filter((item): item is string => Boolean(item)).filter((item, index, list) => list.indexOf(item) === index).map(sectionCode => <option key={sectionCode} value={sectionCode}>{sectionCode}</option>) : null}
+          {selectedBatch ? sectionOptions.map(sectionCode => <option key={sectionCode} value={sectionCode}>{sectionCode}</option>) : null}
         </select>
       </div>
     </div>

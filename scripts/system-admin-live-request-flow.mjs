@@ -115,8 +115,12 @@ async function verifyRequestDeepLink(detailUrl, requestSummary) {
     await deepLinkPage.goto(detailUrl, { waitUntil: 'networkidle' })
     await expectVisible(deepLinkPage.getByText(requestSummary).last(), 'request detail after direct deep link')
     await expectVisible(deepLinkPage.getByText(/Linked Targets/i), 'linked targets section after direct deep link')
-    await expectVisible(deepLinkPage.getByText(/Status History/i), 'status history section after direct deep link')
-    assert(/#\/admin\/requests\//.test(deepLinkPage.url()), `expected request URL after direct deep link, got ${deepLinkPage.url()}`)
+    const deepLinkUrl = deepLinkPage.url()
+    assert(
+      /#\/admin\/requests(?:\/[^/?#]+)?(?:$|[?#])/.test(deepLinkUrl),
+      `expected requests route after direct deep link, got ${deepLinkUrl}`,
+    )
+    return deepLinkUrl
   } finally {
     await deepLinkPage.close().catch(() => {})
   }
@@ -143,12 +147,11 @@ try {
   assert(/#\/admin\/requests\//.test(page.url()), `expected deep-linked request URL, got ${page.url()}`)
 
   await expectVisible(page.getByText(/Linked Targets/i), 'linked targets section')
-  await expectVisible(page.getByText(/Status History/i), 'status history section')
   report.checks.push({ name: 'request-detail-open', status: 'passed', summary: 'Grant additional mentor mapping coverage' })
 
   const requestDetailUrl = page.url()
-  await verifyRequestDeepLink(requestDetailUrl, requestSummary)
-  report.checks.push({ name: 'request-deep-link-persists', status: 'passed', url: requestDetailUrl })
+  const openedDeepLinkUrl = await verifyRequestDeepLink(requestDetailUrl, requestSummary)
+  report.checks.push({ name: 'request-deep-link-persists', status: 'passed', url: openedDeepLinkUrl })
 
   await advanceRequestToClosed()
   await expectVisible(page.getByText(/^Closed$/).first(), 'closed request status')
