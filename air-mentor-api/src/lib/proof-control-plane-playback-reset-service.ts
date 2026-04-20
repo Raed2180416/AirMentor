@@ -48,10 +48,10 @@ export async function resetPlaybackStageArtifacts(
     ))
   }
   if (checkpointIds.length > 0) {
-    await db.delete(simulationStageQueueProjections).where(eq(simulationStageQueueProjections.simulationRunId, simulationRunId))
-    await db.delete(simulationStageQueueCases).where(eq(simulationStageQueueCases.simulationRunId, simulationRunId))
-    await db.delete(simulationStageOfferingProjections).where(eq(simulationStageOfferingProjections.simulationRunId, simulationRunId))
-    await db.delete(simulationStageStudentProjections).where(eq(simulationStageStudentProjections.simulationRunId, simulationRunId))
+    await db.delete(simulationStageQueueProjections).where(inArray(simulationStageQueueProjections.simulationStageCheckpointId, checkpointIds))
+    await db.delete(simulationStageQueueCases).where(inArray(simulationStageQueueCases.simulationStageCheckpointId, checkpointIds))
+    await db.delete(simulationStageOfferingProjections).where(inArray(simulationStageOfferingProjections.simulationStageCheckpointId, checkpointIds))
+    await db.delete(simulationStageStudentProjections).where(inArray(simulationStageStudentProjections.simulationStageCheckpointId, checkpointIds))
     await db.delete(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, simulationRunId))
   }
 }

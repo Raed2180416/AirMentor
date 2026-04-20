@@ -7,11 +7,11 @@ import type {
   GraphAwarePrerequisiteSummaryCompleteness,
 } from './graph-summary.js'
 
-export const RISK_FEATURE_SCHEMA_VERSION = 'observable-risk-features-v3'
-export const RISK_PRODUCTION_MODEL_VERSION = 'observable-risk-logit-v5'
-export const RISK_CHALLENGER_MODEL_VERSION = 'observable-risk-stump-v4'
+export const RISK_FEATURE_SCHEMA_VERSION = 'observable-risk-features-v4'
+export const RISK_PRODUCTION_MODEL_VERSION = 'observable-risk-logit-v6'
+export const RISK_CHALLENGER_MODEL_VERSION = 'observable-risk-depth2-tree-v6'
 export const RISK_CORRELATION_ARTIFACT_VERSION = 'observable-risk-correlations-v4'
-export const RISK_CALIBRATION_VERSION = 'post-hoc-calibration-v1'
+export const RISK_CALIBRATION_VERSION = 'post-hoc-calibration-v2'
 export const PROOF_CORPUS_MANIFEST_VERSION = 'proof-corpus-v1'
 export const PRODUCTION_RISK_THRESHOLDS = {
   medium: 0.4,
@@ -45,6 +45,11 @@ export const OBSERVABLE_FEATURE_KEYS = [
   'weakPrerequisiteChainCountScaled',
   'repeatedWeakPrerequisiteFamilyCountScaled',
   'semesterProgressScaled',
+  'stagePreTt1Scaled',
+  'stagePostTt1Scaled',
+  'stagePostTt2Scaled',
+  'stagePostAssignmentsScaled',
+  'stagePostSeeScaled',
   'sectionPressureScaled',
 ] as const
 
@@ -67,13 +72,45 @@ export type RiskHeadKey =
   | 'overallCourseRisk'
   | 'downstreamCarryoverRisk'
 export type SplitName = 'train' | 'validation' | 'test'
-export type CalibrationMethod = 'identity' | 'sigmoid' | 'isotonic'
+export type CalibrationMethod = 'identity' | 'sigmoid' | 'isotonic' | 'beta' | 'venn-abers'
 export type ScenarioFamily = (typeof PROOF_SCENARIO_FAMILIES)[number]
+export type ChallengerModelFamily = 'depth-2-tree'
+export type ProofRiskTrainingVariantId = 'production-v6' | 'baseline-v5-like'
 
 export type ProofCorpusManifestEntry = {
   seed: number
   split: SplitName
   scenarioFamily: ScenarioFamily
+}
+
+export type ProofRiskTrainingConfig = {
+  variantId: ProofRiskTrainingVariantId
+  productionModelVersion: string
+  challengerModelVersion: string
+  calibrationVersion: string
+  includeStageIndicators: boolean
+  calibrationMethods: CalibrationMethod[]
+  challengerModelFamily: ChallengerModelFamily
+}
+
+export const DEFAULT_PROOF_RISK_TRAINING_CONFIG: ProofRiskTrainingConfig = {
+  variantId: 'production-v6',
+  productionModelVersion: RISK_PRODUCTION_MODEL_VERSION,
+  challengerModelVersion: RISK_CHALLENGER_MODEL_VERSION,
+  calibrationVersion: RISK_CALIBRATION_VERSION,
+  includeStageIndicators: true,
+  calibrationMethods: ['identity', 'sigmoid', 'beta', 'isotonic', 'venn-abers'],
+  challengerModelFamily: 'depth-2-tree',
+}
+
+export const BASELINE_V5_LIKE_PROOF_RISK_TRAINING_CONFIG: ProofRiskTrainingConfig = {
+  variantId: 'baseline-v5-like',
+  productionModelVersion: 'observable-risk-logit-v5-like',
+  challengerModelVersion: 'observable-risk-depth2-tree-v5-like',
+  calibrationVersion: 'post-hoc-calibration-v1-like',
+  includeStageIndicators: false,
+  calibrationMethods: ['identity', 'sigmoid', 'isotonic'],
+  challengerModelFamily: 'depth-2-tree',
 }
 
 export const PROOF_CORPUS_MANIFEST: ProofCorpusManifestEntry[] = (() => {
@@ -169,8 +206,12 @@ export type RiskMetricSummary = {
   support: number
   positiveRate: number
   brierScore: number
+  logLoss: number
   rocAuc: number
+  averagePrecision: number
   expectedCalibrationError: number
+  calibrationSlope: number
+  calibrationIntercept: number
 }
 
 type HeadSupportSummary = {
@@ -186,6 +227,8 @@ type ProbabilityCalibrationArtifact = {
   method: CalibrationMethod
   intercept: number | null
   slope: number | null
+  logProbWeight: number | null
+  logInverseProbWeight: number | null
   thresholds: number[]
   values: number[]
   validationMetrics: RiskMetricSummary
@@ -205,13 +248,24 @@ type LogisticHeadArtifact = {
   calibration: ProbabilityCalibrationArtifact
 }
 
-type StumpHeadArtifact = {
-  headKey: RiskHeadKey
+type DepthTwoTreeNodeArtifact = {
   featureKey: ObservableFeatureKey
   threshold: number
-  leftProb: number
-  rightProb: number
+  leftValue: number
+  rightValue: number
+  leftChild: DepthTwoTreeNodeArtifact | null
+  rightChild: DepthTwoTreeNodeArtifact | null
+}
+
+type ChallengerHeadArtifact = {
+  headKey: RiskHeadKey
+  modelFamily: ChallengerModelFamily
+  baseIntercept: number
+  root: DepthTwoTreeNodeArtifact
+  threshold: number
   metrics: RiskMetricSummary
+  support: HeadSupportSummary
+  calibration: ProbabilityCalibrationArtifact
 }
 
 export type ProductionRiskModelArtifact = {
@@ -233,13 +287,16 @@ export type ProductionRiskModelArtifact = {
 
 export type ChallengerRiskModelArtifact = {
   modelVersion: string
+  modelFamily: ChallengerModelFamily
   featureSchemaVersion: string
   trainedAt: string
   trainingManifestVersion: string
   splitSummary: Record<SplitName, number>
   worldSplitSummary: Record<SplitName, number>
   scenarioFamilySummary: Record<ScenarioFamily, number>
-  heads: Record<RiskHeadKey, StumpHeadArtifact>
+  headSupportSummary: Record<RiskHeadKey, HeadSupportSummary>
+  calibrationVersion: string
+  heads: Record<RiskHeadKey, ChallengerHeadArtifact>
 }
 
 export type PrerequisiteCorrelationEdge = {
@@ -429,6 +486,34 @@ function brierScore(rows: Array<{ label: number; prob: number }>) {
   return rows.reduce((sum, row) => sum + ((row.label - row.prob) ** 2), 0) / rows.length
 }
 
+function logLoss(rows: Array<{ label: number; prob: number }>) {
+  if (!rows.length) return 0
+  return rows.reduce((sum, row) => {
+    const prob = clamp(row.prob, 0.0001, 0.9999)
+    return sum - ((row.label * Math.log(prob)) + ((1 - row.label) * Math.log(1 - prob)))
+  }, 0) / rows.length
+}
+
+function averagePrecision(rows: Array<{ label: number; prob: number }>) {
+  const positiveCount = rows.reduce((count, row) => count + row.label, 0)
+  if (positiveCount <= 0) return 0
+  const ordered = rows
+    .map((row, index) => ({ ...row, index }))
+    .sort((left, right) => right.prob - left.prob || left.index - right.index)
+  let truePositives = 0
+  let falsePositives = 0
+  let precisionSum = 0
+  ordered.forEach(row => {
+    if (row.label === 1) {
+      truePositives += 1
+      precisionSum += truePositives / Math.max(1, truePositives + falsePositives)
+      return
+    }
+    falsePositives += 1
+  })
+  return precisionSum / positiveCount
+}
+
 function expectedCalibrationError(rows: Array<{ label: number; prob: number }>, binCount = 10) {
   if (!rows.length) return 0
   let total = 0
@@ -445,12 +530,20 @@ function expectedCalibrationError(rows: Array<{ label: number; prob: number }>, 
 }
 
 function buildMetricSummary(rows: Array<{ label: number; prob: number }>): RiskMetricSummary {
+  const calibration = fitSigmoidCalibration(rows.map(row => ({
+    label: row.label,
+    rawProb: row.prob,
+  })))
   return {
     support: rows.length,
     positiveRate: roundToFour(average(rows.map(row => row.label))),
     brierScore: roundToFour(brierScore(rows)),
+    logLoss: roundToFour(logLoss(rows)),
     rocAuc: roundToFour(rocAuc(rows)),
+    averagePrecision: roundToFour(averagePrecision(rows)),
     expectedCalibrationError: roundToFour(expectedCalibrationError(rows)),
+    calibrationSlope: roundToFour(calibration.slope),
+    calibrationIntercept: roundToFour(calibration.intercept),
   }
 }
 
@@ -472,8 +565,12 @@ function buildReliabilityBins(rows: Array<{ label: number; prob: number }>, binC
   return bins
 }
 
-export function scenarioFamilyForSeed(seed: number): ScenarioFamily {
-  return PROOF_SCENARIO_FAMILIES[Math.abs(seed) % PROOF_SCENARIO_FAMILIES.length]!
+export function scenarioFamilyForSeed(
+  seed: number,
+  manifest: ProofCorpusManifestEntry[] = PROOF_CORPUS_MANIFEST,
+): ScenarioFamily {
+  return proofManifestEntryForSeed(seed, manifest)?.scenarioFamily
+    ?? PROOF_SCENARIO_FAMILIES[Math.abs(seed) % PROOF_SCENARIO_FAMILIES.length]!
 }
 
 function proofManifestEntryForSeed(seed: number, manifest: ProofCorpusManifestEntry[]) {
@@ -484,8 +581,25 @@ function inferWorldSplit(seed: number, manifest: ProofCorpusManifestEntry[]) {
   return proofManifestEntryForSeed(seed, manifest)?.split ?? null
 }
 
-function featureVectorFromPayload(payload: ObservableFeaturePayload): FeatureVector {
+function stageIndicatorValues(stageKey: string | null | undefined) {
+  return {
+    stagePreTt1Scaled: stageKey === 'pre-tt1' ? 1 : 0,
+    stagePostTt1Scaled: stageKey === 'post-tt1' ? 1 : 0,
+    stagePostTt2Scaled: stageKey === 'post-tt2' ? 1 : 0,
+    stagePostAssignmentsScaled: stageKey === 'post-assignments' ? 1 : 0,
+    stagePostSeeScaled: stageKey === 'post-see' ? 1 : 0,
+  } as const
+}
+
+function featureVectorFromPayload(
+  payload: ObservableFeaturePayload,
+  sourceRefs?: ObservableSourceRefs | null,
+  includeStageIndicators = true,
+): FeatureVector {
   const prerequisiteDepth = Math.max(0, safeNumber(payload.prerequisiteChainDepth))
+  const stageIndicators = includeStageIndicators
+    ? stageIndicatorValues(sourceRefs?.stageKey)
+    : stageIndicatorValues(null)
   return {
     attendancePctScaled: clamp(payload.attendancePct / 100, 0, 1),
     attendanceTrendScaled: clamp((payload.attendanceTrend + 25) / 50, 0, 1),
@@ -513,6 +627,11 @@ function featureVectorFromPayload(payload: ObservableFeaturePayload): FeatureVec
     weakPrerequisiteChainCountScaled: clamp(safeNumber(payload.weakPrerequisiteChainCount) / 6, 0, 1),
     repeatedWeakPrerequisiteFamilyCountScaled: clamp(safeNumber(payload.repeatedWeakPrerequisiteFamilyCount) / 3, 0, 1),
     semesterProgressScaled: clamp(payload.semesterProgress, 0, 1),
+    stagePreTt1Scaled: stageIndicators.stagePreTt1Scaled,
+    stagePostTt1Scaled: stageIndicators.stagePostTt1Scaled,
+    stagePostTt2Scaled: stageIndicators.stagePostTt2Scaled,
+    stagePostAssignmentsScaled: stageIndicators.stagePostAssignmentsScaled,
+    stagePostSeeScaled: stageIndicators.stagePostSeeScaled,
     sectionPressureScaled: clamp(payload.sectionRiskRate, 0, 1),
   }
 }
@@ -543,6 +662,15 @@ function applyCalibration(calibration: ProbabilityCalibrationArtifact, rawProb: 
   if (calibration.method === 'sigmoid') {
     const logit = Math.log(clamped / (1 - clamped))
     return clamp(sigmoid(((calibration.slope ?? 1) * logit) + (calibration.intercept ?? 0)), 0.0001, 0.9999)
+  }
+  if (calibration.method === 'beta') {
+    const logProb = Math.log(clamped)
+    const logInverseProb = -Math.log(1 - clamped)
+    return clamp(sigmoid(
+      ((calibration.logProbWeight ?? 1) * logProb)
+      + ((calibration.logInverseProbWeight ?? 1) * logInverseProb)
+      + (calibration.intercept ?? 0),
+    ), 0.0001, 0.9999)
   }
   if (calibration.thresholds.length === 0 || calibration.values.length === 0) return clamped
   const index = calibration.thresholds.findIndex(threshold => clamped <= threshold)
@@ -606,6 +734,48 @@ function fitSigmoidCalibration(rows: Array<{ label: number; rawProb: number }>) 
   }
 }
 
+function fitBetaCalibration(rows: Array<{ label: number; rawProb: number }>) {
+  if (!rows.length) {
+    return {
+      intercept: 0,
+      logProbWeight: 1,
+      logInverseProbWeight: 1,
+    }
+  }
+  let intercept = 0
+  let logProbWeight = 1
+  let logInverseProbWeight = 1
+  const l2 = 0.002
+  for (let iteration = 0; iteration < 180; iteration += 1) {
+    let interceptGradient = 0
+    let logProbGradient = 0
+    let logInverseProbGradient = 0
+    for (const row of rows) {
+      const clamped = clamp(row.rawProb, 0.0001, 0.9999)
+      const logProb = Math.log(clamped)
+      const logInverseProb = -Math.log(1 - clamped)
+      const prediction = sigmoid(
+        (logProbWeight * logProb)
+        + (logInverseProbWeight * logInverseProb)
+        + intercept,
+      )
+      const error = prediction - row.label
+      interceptGradient += error
+      logProbGradient += error * logProb
+      logInverseProbGradient += error * logInverseProb
+    }
+    const learningRate = 0.05 / (1 + (iteration / 70))
+    intercept -= learningRate * (interceptGradient / Math.max(1, rows.length))
+    logProbWeight -= learningRate * ((logProbGradient / Math.max(1, rows.length)) + (l2 * logProbWeight))
+    logInverseProbWeight -= learningRate * ((logInverseProbGradient / Math.max(1, rows.length)) + (l2 * logInverseProbWeight))
+  }
+  return {
+    intercept: roundToFour(intercept),
+    logProbWeight: roundToFour(logProbWeight),
+    logInverseProbWeight: roundToFour(logInverseProbWeight),
+  }
+}
+
 function fitIsotonicCalibration(rows: Array<{ label: number; rawProb: number }>) {
   const ordered = rows
     .map((row, index) => ({
@@ -643,17 +813,60 @@ function fitIsotonicCalibration(rows: Array<{ label: number; rawProb: number }>)
   }
 }
 
+function fitVennAbersCalibration(rows: Array<{ label: number; rawProb: number }>) {
+  const ordered = rows
+    .map((row, index) => ({
+      ...row,
+      rawProb: clamp(row.rawProb, 0.0001, 0.9999),
+      index,
+    }))
+    .sort((left, right) => left.rawProb - right.rawProb || left.index - right.index)
+  
+  const grid = Array.from({ length: 100 }, (_, i) => (i + 0.5) / 100)
+  const thresholds: number[] = []
+  const values: number[] = []
+  
+  const applyIso = (iso: { thresholds: number[], values: number[] }, x: number) => {
+    if (iso.thresholds.length === 0 || iso.values.length === 0) return x
+    const index = iso.thresholds.findIndex(threshold => x <= threshold)
+    if (index === -1) return iso.values[iso.values.length - 1] ?? x
+    return iso.values[index] ?? x
+  }
+  
+  for (const x of grid) {
+    const rows0 = [...ordered, { label: 0, rawProb: x, index: -1 }].sort((left, right) => left.rawProb - right.rawProb || left.index - right.index)
+    const iso0 = fitIsotonicCalibration(rows0)
+    const p0 = applyIso(iso0, x)
+    
+    const rows1 = [...ordered, { label: 1, rawProb: x, index: -1 }].sort((left, right) => left.rawProb - right.rawProb || left.index - right.index)
+    const iso1 = fitIsotonicCalibration(rows1)
+    const p1 = applyIso(iso1, x)
+    
+    const p = p0 / (1 - p1 + p0)
+    thresholds.push(roundToFour(x))
+    values.push(roundToFour(clamp(p, 0.0001, 0.9999)))
+  }
+  
+  return {
+    thresholds,
+    values,
+  }
+}
+
 function chooseCalibration(
   headKey: RiskHeadKey,
   validationRows: Array<{ label: number; rawProb: number }>,
   testRows: Array<{ label: number; rawProb: number }>,
   support: HeadSupportSummary,
+  allowedMethods: CalibrationMethod[] = DEFAULT_PROOF_RISK_TRAINING_CONFIG.calibrationMethods,
 ): CalibrationResult {
   const candidates: ProbabilityCalibrationArtifact[] = []
 
   const buildCandidate = (method: CalibrationMethod, input: {
     intercept?: number | null
     slope?: number | null
+    logProbWeight?: number | null
+    logInverseProbWeight?: number | null
     thresholds?: number[]
     values?: number[]
   }) => {
@@ -661,6 +874,8 @@ function chooseCalibration(
       method,
       intercept: input.intercept ?? null,
       slope: input.slope ?? null,
+      logProbWeight: input.logProbWeight ?? null,
+      logInverseProbWeight: input.logInverseProbWeight ?? null,
       thresholds: input.thresholds ?? [],
       values: input.values ?? [],
       validationMetrics: buildMetricSummary(validationRows.map(row => ({
@@ -669,6 +884,8 @@ function chooseCalibration(
           method,
           intercept: input.intercept ?? null,
           slope: input.slope ?? null,
+          logProbWeight: input.logProbWeight ?? null,
+          logInverseProbWeight: input.logInverseProbWeight ?? null,
           thresholds: input.thresholds ?? [],
           values: input.values ?? [],
           validationMetrics: buildMetricSummary([]),
@@ -684,6 +901,8 @@ function chooseCalibration(
           method,
           intercept: input.intercept ?? null,
           slope: input.slope ?? null,
+          logProbWeight: input.logProbWeight ?? null,
+          logInverseProbWeight: input.logInverseProbWeight ?? null,
           thresholds: input.thresholds ?? [],
           values: input.values ?? [],
           validationMetrics: buildMetricSummary([]),
@@ -709,17 +928,37 @@ function chooseCalibration(
     } satisfies ProbabilityCalibrationArtifact
   }
 
-  candidates.push(buildCandidate('identity', {}))
-  if (validationRows.length > 0) {
+  if (allowedMethods.includes('identity')) {
+    candidates.push(buildCandidate('identity', {}))
+  }
+  if (validationRows.length > 0 && allowedMethods.includes('sigmoid')) {
     const sigmoidCalibration = fitSigmoidCalibration(validationRows)
     candidates.push(buildCandidate('sigmoid', sigmoidCalibration))
-    if (support.validationSupport >= 1000 && support.validationPositives >= 250) {
-      const isotonicCalibration = fitIsotonicCalibration(validationRows)
-      candidates.push(buildCandidate('isotonic', isotonicCalibration))
-    }
+  }
+  if (validationRows.length > 0 && allowedMethods.includes('beta')) {
+    const betaCalibration = fitBetaCalibration(validationRows)
+    candidates.push(buildCandidate('beta', betaCalibration))
+  }
+  if (
+    validationRows.length > 0
+    && allowedMethods.includes('isotonic')
+    && support.validationSupport >= 1000
+    && support.validationPositives >= 250
+  ) {
+    const isotonicCalibration = fitIsotonicCalibration(validationRows)
+    candidates.push(buildCandidate('isotonic', isotonicCalibration))
+  }
+  if (
+    validationRows.length > 0
+    && allowedMethods.includes('venn-abers')
+    && support.validationSupport >= 1000
+    && support.validationPositives >= 250
+  ) {
+    const vennAbersCalibration = fitVennAbersCalibration(validationRows)
+    candidates.push(buildCandidate('venn-abers', vennAbersCalibration))
   }
 
-  const baseline = candidates[0]!
+  const baseline = candidates[0] ?? buildCandidate('identity', {})
   const best = candidates.slice(1).reduce((currentBest, candidate) => {
     if (candidate.validationMetrics.brierScore < currentBest.validationMetrics.brierScore) return candidate
     if (candidate.validationMetrics.brierScore === currentBest.validationMetrics.brierScore
@@ -883,8 +1122,17 @@ function internId(target: Map<string, number>, value: string) {
   return next
 }
 
-function writeFeatureVectorToBuffer(payload: ObservableFeaturePayload, buffer: Float32Array, offset: number) {
+function writeFeatureVectorToBuffer(
+  payload: ObservableFeaturePayload,
+  sourceRefs: ObservableSourceRefs,
+  buffer: Float32Array,
+  offset: number,
+  includeStageIndicators = true,
+) {
   const prerequisiteDepth = Math.max(0, safeNumber(payload.prerequisiteChainDepth))
+  const stageIndicators = includeStageIndicators
+    ? stageIndicatorValues(sourceRefs.stageKey)
+    : stageIndicatorValues(null)
   buffer[offset + 0] = clamp(payload.attendancePct / 100, 0, 1)
   buffer[offset + 1] = clamp((payload.attendanceTrend + 25) / 50, 0, 1)
   buffer[offset + 2] = clamp(payload.attendanceHistoryRiskCount / 4, 0, 1)
@@ -911,7 +1159,12 @@ function writeFeatureVectorToBuffer(payload: ObservableFeaturePayload, buffer: F
   buffer[offset + 23] = clamp(safeNumber(payload.weakPrerequisiteChainCount) / 6, 0, 1)
   buffer[offset + 24] = clamp(safeNumber(payload.repeatedWeakPrerequisiteFamilyCount) / 3, 0, 1)
   buffer[offset + 25] = clamp(payload.semesterProgress, 0, 1)
-  buffer[offset + 26] = clamp(payload.sectionRiskRate, 0, 1)
+  buffer[offset + 26] = stageIndicators.stagePreTt1Scaled
+  buffer[offset + 27] = stageIndicators.stagePostTt1Scaled
+  buffer[offset + 28] = stageIndicators.stagePostTt2Scaled
+  buffer[offset + 29] = stageIndicators.stagePostAssignmentsScaled
+  buffer[offset + 30] = stageIndicators.stagePostSeeScaled
+  buffer[offset + 31] = clamp(payload.sectionRiskRate, 0, 1)
 }
 
 function datasetBlockForIndex(dataset: CompactRiskDataset, rowIndex: number) {
@@ -967,6 +1220,7 @@ class ProofRiskDatasetBuilder {
   constructor(
     private readonly runMetadataById: Map<string, ProofRunModelMetadata>,
     private readonly manifest: ProofCorpusManifestEntry[],
+    private readonly trainingConfig: ProofRiskTrainingConfig,
   ) {}
 
   addEvidenceRows(rows: ObservableRiskEvidenceRow[]) {
@@ -1016,7 +1270,7 @@ class ProofRiskDatasetBuilder {
       headSupportSummary,
     }
 
-    return trainCompactProofRiskModel(dataset, now, this.correlations)
+    return trainCompactProofRiskModel(dataset, now, this.correlations, this.trainingConfig)
   }
 
   private appendRow(
@@ -1050,7 +1304,13 @@ class ProofRiskDatasetBuilder {
     block.stageIds[slot] = internId(this.stageIds, sourceRefs.stageKey ?? 'active')
     block.sectionIds[slot] = internId(this.sectionIds, sourceRefs.sectionCode ?? '')
     block.labelMasks[slot] = mask
-    writeFeatureVectorToBuffer(featurePayload, block.features, slot * FEATURE_COUNT)
+    writeFeatureVectorToBuffer(
+      featurePayload,
+      sourceRefs,
+      block.features,
+      slot * FEATURE_COUNT,
+      this.trainingConfig.includeStageIndicators,
+    )
     block.count += 1
 
     this.rowCount += 1
@@ -1116,10 +1376,12 @@ class ProofRiskDatasetBuilder {
 export function createProofRiskModelTrainingBuilder(options?: {
   runMetadataById?: Map<string, ProofRunModelMetadata> | Record<string, ProofRunModelMetadata>
   manifest?: ProofCorpusManifestEntry[]
+  trainingConfig?: ProofRiskTrainingConfig
 }) {
   return new ProofRiskDatasetBuilder(
     normalizeMetadataMap(options?.runMetadataById),
     options?.manifest ?? PROOF_CORPUS_MANIFEST,
+    options?.trainingConfig ?? DEFAULT_PROOF_RISK_TRAINING_CONFIG,
   )
 }
 
@@ -1231,7 +1493,11 @@ function trainLogisticBaseCompact(dataset: CompactRiskDataset, rowIndices: numbe
   }
 }
 
-function fitLogisticHeadCompact(dataset: CompactRiskDataset, headKey: RiskHeadKey) {
+function fitLogisticHeadCompact(
+  dataset: CompactRiskDataset,
+  headKey: RiskHeadKey,
+  trainingConfig: ProofRiskTrainingConfig,
+) {
   const sampledTrainRows = sampleTrainingIndices(dataset, headKey)
   const support = dataset.headSupportSummary[headKey]
   const base = trainLogisticBaseCompact(dataset, sampledTrainRows, headKey)
@@ -1244,7 +1510,13 @@ function fitLogisticHeadCompact(dataset: CompactRiskDataset, headKey: RiskHeadKe
     label: labelAt(dataset, rowIndex, headKey),
     rawProb: scoreRawAt(dataset, rowIndex, base.intercept, base.weights),
   }))
-  const calibrated = chooseCalibration(headKey, rawValidation, rawTest, support)
+  const calibrated = chooseCalibration(
+    headKey,
+    rawValidation,
+    rawTest,
+    support,
+    trainingConfig.calibrationMethods,
+  )
   const threshold = 0.75
   const metrics = calibrated.testPredictions.length > 0
     ? buildMetricSummary(calibrated.testPredictions)
@@ -1263,20 +1535,78 @@ function fitLogisticHeadCompact(dataset: CompactRiskDataset, headKey: RiskHeadKe
   } satisfies LogisticHeadArtifact
 }
 
-function fitStumpHeadCompact(dataset: CompactRiskDataset, headKey: RiskHeadKey) {
-  const sampledTrainRows = sampleTrainingIndices(dataset, headKey)
-  let bestFeatureIndex = 0
-  let bestThreshold = 0.5
-  let bestLeftProb = 0.5
-  let bestRightProb = 0.5
-  let bestScore = Number.POSITIVE_INFINITY
+function featureValueAt(dataset: CompactRiskDataset, rowIndex: number, featureIndex: number) {
+  const { block, featureOffset } = datasetBlockForIndex(dataset, rowIndex)
+  return block.features[featureOffset + featureIndex] ?? 0
+}
 
+function capModelSelectionRows(dataset: CompactRiskDataset, rowIndices: number[], limit = 12_000) {
+  if (rowIndices.length <= limit) return rowIndices
+  const ordered = rowIndices.slice().sort((left, right) => compareStableOrder(dataset, left, right))
+  const step = Math.max(1, Math.floor(ordered.length / limit))
+  const sampled: number[] = []
+  for (let index = 0; index < ordered.length && sampled.length < limit; index += step) {
+    sampled.push(ordered[index]!)
+  }
+  return sampled
+}
+
+function scoreDepthTwoTreeNode(node: DepthTwoTreeNodeArtifact, vector: FeatureVector): number {
+  if (vector[node.featureKey] <= node.threshold) {
+    return node.leftChild ? scoreDepthTwoTreeNode(node.leftChild, vector) : node.leftValue
+  }
+  return node.rightChild ? scoreDepthTwoTreeNode(node.rightChild, vector) : node.rightValue
+}
+
+function scoreDepthTwoTreeNodeAt(dataset: CompactRiskDataset, rowIndex: number, node: DepthTwoTreeNodeArtifact): number {
+  if (featureValueAt(dataset, rowIndex, OBSERVABLE_FEATURE_KEYS.indexOf(node.featureKey)) <= node.threshold) {
+    return node.leftChild ? scoreDepthTwoTreeNodeAt(dataset, rowIndex, node.leftChild) : node.leftValue
+  }
+  return node.rightChild ? scoreDepthTwoTreeNodeAt(dataset, rowIndex, node.rightChild) : node.rightValue
+}
+
+type DepthTwoSplitCandidate = {
+  featureIndex: number
+  threshold: number
+  leftProb: number
+  rightProb: number
+  score: number
+}
+
+function buildDepthTwoTreeNode(candidate: DepthTwoSplitCandidate): DepthTwoTreeNodeArtifact {
+  return {
+    featureKey: OBSERVABLE_FEATURE_KEYS[candidate.featureIndex]!,
+    threshold: roundToFour(candidate.threshold),
+    leftValue: roundToFour(candidate.leftProb),
+    rightValue: roundToFour(candidate.rightProb),
+    leftChild: null,
+    rightChild: null,
+  }
+}
+
+function scoreDepthTwoTreeRows(
+  dataset: CompactRiskDataset,
+  rowIndices: number[],
+  headKey: RiskHeadKey,
+  root: DepthTwoTreeNodeArtifact,
+) {
+  return rowIndices.map(rowIndex => ({
+    label: labelAt(dataset, rowIndex, headKey),
+    prob: scoreDepthTwoTreeNodeAt(dataset, rowIndex, root),
+  }))
+}
+
+function findBestDepthTwoSplit(
+  dataset: CompactRiskDataset,
+  headKey: RiskHeadKey,
+  trainRows: number[],
+  evaluationRows: number[],
+): DepthTwoSplitCandidate | null {
+  if (trainRows.length < 80) return null
+  let best: DepthTwoSplitCandidate | null = null
   for (let featureIndex = 0; featureIndex < FEATURE_COUNT; featureIndex += 1) {
-    const values = sampledTrainRows
-      .map(rowIndex => {
-        const { block, featureOffset } = datasetBlockForIndex(dataset, rowIndex)
-        return block.features[featureOffset + featureIndex] ?? 0
-      })
+    const values = trainRows
+      .map(rowIndex => featureValueAt(dataset, rowIndex, featureIndex))
       .filter(Number.isFinite)
     const thresholds = [...new Set([0.2, 0.35, 0.5, 0.65, 0.8].map(q => roundToFour(quantile(values, q))))]
     for (const threshold of thresholds) {
@@ -1284,53 +1614,118 @@ function fitStumpHeadCompact(dataset: CompactRiskDataset, headKey: RiskHeadKey) 
       let leftPositives = 0
       let rightTotal = 0
       let rightPositives = 0
-      sampledTrainRows.forEach(rowIndex => {
-        const { block, featureOffset } = datasetBlockForIndex(dataset, rowIndex)
-        const value = block.features[featureOffset + featureIndex] ?? 0
-        if (value <= threshold) {
+      for (const rowIndex of trainRows) {
+        if (featureValueAt(dataset, rowIndex, featureIndex) <= threshold) {
           leftTotal += 1
           leftPositives += labelAt(dataset, rowIndex, headKey)
         } else {
           rightTotal += 1
           rightPositives += labelAt(dataset, rowIndex, headKey)
         }
-      })
-      const leftProb = clamp(leftTotal > 0 ? leftPositives / leftTotal : 0.5, 0.01, 0.99)
-      const rightProb = clamp(rightTotal > 0 ? rightPositives / rightTotal : 0.5, 0.01, 0.99)
-      const scoreRows = (dataset.validationIndices.length > 0 ? dataset.validationIndices : sampledTrainRows).map(rowIndex => {
-        const { block, featureOffset } = datasetBlockForIndex(dataset, rowIndex)
-        return {
-          label: labelAt(dataset, rowIndex, headKey),
-          prob: (block.features[featureOffset + featureIndex] ?? 0) <= threshold ? leftProb : rightProb,
+      }
+      if (leftTotal < 20 || rightTotal < 20) continue
+      const leftProb = clamp(leftPositives / leftTotal, 0.01, 0.99)
+      const rightProb = clamp(rightPositives / rightTotal, 0.01, 0.99)
+      const score = brierScore(evaluationRows.map(rowIndex => ({
+        label: labelAt(dataset, rowIndex, headKey),
+        prob: featureValueAt(dataset, rowIndex, featureIndex) <= threshold ? leftProb : rightProb,
+      })))
+      if (!best || score < best.score) {
+        best = {
+          featureIndex,
+          threshold,
+          leftProb,
+          rightProb,
+          score,
         }
-      })
-      const score = brierScore(scoreRows)
-      if (score < bestScore) {
-        bestFeatureIndex = featureIndex
-        bestThreshold = threshold
-        bestLeftProb = leftProb
-        bestRightProb = rightProb
-        bestScore = score
       }
     }
   }
+  return best
+}
 
-  const metrics = buildMetricSummary((dataset.testIndices.length > 0 ? dataset.testIndices : dataset.validationIndices).map(rowIndex => {
-    const { block, featureOffset } = datasetBlockForIndex(dataset, rowIndex)
-    return {
-      label: labelAt(dataset, rowIndex, headKey),
-      prob: (block.features[featureOffset + bestFeatureIndex] ?? 0) <= bestThreshold ? bestLeftProb : bestRightProb,
+function fitDepthTwoTreeHeadCompact(
+  dataset: CompactRiskDataset,
+  headKey: RiskHeadKey,
+  trainingConfig: ProofRiskTrainingConfig,
+) {
+  const sampledTrainRows = sampleTrainingIndices(dataset, headKey)
+  const support = dataset.headSupportSummary[headKey]
+  const validationRows = dataset.validationIndices.length > 0 ? dataset.validationIndices : sampledTrainRows
+  const modelSelectionRows = capModelSelectionRows(dataset, validationRows)
+  const rootCandidate = findBestDepthTwoSplit(dataset, headKey, sampledTrainRows, modelSelectionRows)
+  const fallbackCandidate = rootCandidate ?? {
+    featureIndex: 0,
+    threshold: 0.5,
+    leftProb: clamp(average(sampledTrainRows.map(rowIndex => labelAt(dataset, rowIndex, headKey))), 0.01, 0.99),
+    rightProb: clamp(average(sampledTrainRows.map(rowIndex => labelAt(dataset, rowIndex, headKey))), 0.01, 0.99),
+    score: Number.POSITIVE_INFINITY,
+  }
+  const root = buildDepthTwoTreeNode(fallbackCandidate)
+  let bestScore = brierScore(scoreDepthTwoTreeRows(dataset, modelSelectionRows, headKey, root))
+
+  const attachChildIfImproves = (branch: 'left' | 'right') => {
+    const branchTrainRows = sampledTrainRows.filter(rowIndex => {
+      const branchValue = featureValueAt(dataset, rowIndex, fallbackCandidate.featureIndex)
+      return branch === 'left' ? branchValue <= fallbackCandidate.threshold : branchValue > fallbackCandidate.threshold
+    })
+    const branchEvaluationRows = modelSelectionRows.filter(rowIndex => {
+      const branchValue = featureValueAt(dataset, rowIndex, fallbackCandidate.featureIndex)
+      return branch === 'left' ? branchValue <= fallbackCandidate.threshold : branchValue > fallbackCandidate.threshold
+    })
+    const childCandidate = findBestDepthTwoSplit(
+      dataset,
+      headKey,
+      branchTrainRows,
+      capModelSelectionRows(dataset, branchEvaluationRows, 4_000),
+    )
+    if (!childCandidate) return
+    const candidateRoot: DepthTwoTreeNodeArtifact = {
+      ...root,
+      leftChild: branch === 'left' ? buildDepthTwoTreeNode(childCandidate) : root.leftChild,
+      rightChild: branch === 'right' ? buildDepthTwoTreeNode(childCandidate) : root.rightChild,
     }
+    const candidateScore = brierScore(scoreDepthTwoTreeRows(dataset, modelSelectionRows, headKey, candidateRoot))
+    if (candidateScore + 0.0005 < bestScore) {
+      bestScore = candidateScore
+      if (branch === 'left') root.leftChild = buildDepthTwoTreeNode(childCandidate)
+      else root.rightChild = buildDepthTwoTreeNode(childCandidate)
+    }
+  }
+
+  attachChildIfImproves('left')
+  attachChildIfImproves('right')
+
+  const rawValidation = validationRows.map(rowIndex => ({
+    label: labelAt(dataset, rowIndex, headKey),
+    rawProb: scoreDepthTwoTreeNodeAt(dataset, rowIndex, root),
   }))
+  const rawTest = dataset.testIndices.map(rowIndex => ({
+    label: labelAt(dataset, rowIndex, headKey),
+    rawProb: scoreDepthTwoTreeNodeAt(dataset, rowIndex, root),
+  }))
+  const calibrated = chooseCalibration(
+    headKey,
+    rawValidation,
+    rawTest,
+    support,
+    trainingConfig.calibrationMethods,
+  )
+  const threshold = 0.75
+  const metrics = calibrated.testPredictions.length > 0
+    ? buildMetricSummary(calibrated.testPredictions)
+    : buildMetricSummary(calibrated.validationPredictions)
 
   return {
     headKey,
-    featureKey: OBSERVABLE_FEATURE_KEYS[bestFeatureIndex]!,
-    threshold: roundToFour(bestThreshold),
-    leftProb: roundToFour(bestLeftProb),
-    rightProb: roundToFour(bestRightProb),
+    modelFamily: 'depth-2-tree',
+    baseIntercept: 0,
+    root,
+    threshold: roundToFour(clamp(threshold, 0.35, 0.8)),
     metrics,
-  } satisfies StumpHeadArtifact
+    support,
+    calibration: calibrated.calibration,
+  } satisfies ChallengerHeadArtifact
 }
 
 function buildCorrelationArtifactFromAccumulator(accumulator: CorrelationAccumulator, now: string): CorrelationArtifact {
@@ -1391,17 +1786,18 @@ function trainCompactProofRiskModel(
   dataset: CompactRiskDataset,
   now: string,
   correlationsAccumulator: CorrelationAccumulator,
+  trainingConfig: ProofRiskTrainingConfig,
 ) {
   const productionHeads = {
-    attendanceRisk: fitLogisticHeadCompact(dataset, 'attendanceRisk'),
-    ceRisk: fitLogisticHeadCompact(dataset, 'ceRisk'),
-    seeRisk: fitLogisticHeadCompact(dataset, 'seeRisk'),
-    overallCourseRisk: fitLogisticHeadCompact(dataset, 'overallCourseRisk'),
-    downstreamCarryoverRisk: fitLogisticHeadCompact(dataset, 'downstreamCarryoverRisk'),
+    attendanceRisk: fitLogisticHeadCompact(dataset, 'attendanceRisk', trainingConfig),
+    ceRisk: fitLogisticHeadCompact(dataset, 'ceRisk', trainingConfig),
+    seeRisk: fitLogisticHeadCompact(dataset, 'seeRisk', trainingConfig),
+    overallCourseRisk: fitLogisticHeadCompact(dataset, 'overallCourseRisk', trainingConfig),
+    downstreamCarryoverRisk: fitLogisticHeadCompact(dataset, 'downstreamCarryoverRisk', trainingConfig),
   } satisfies Record<RiskHeadKey, LogisticHeadArtifact>
 
   const production: ProductionRiskModelArtifact = {
-    modelVersion: RISK_PRODUCTION_MODEL_VERSION,
+    modelVersion: trainingConfig.productionModelVersion,
     featureSchemaVersion: RISK_FEATURE_SCHEMA_VERSION,
     trainedAt: now,
     trainingManifestVersion: PROOF_CORPUS_MANIFEST_VERSION,
@@ -1410,24 +1806,27 @@ function trainCompactProofRiskModel(
     scenarioFamilySummary: dataset.scenarioFamilySummary,
     headSupportSummary: dataset.headSupportSummary,
     thresholds: PRODUCTION_RISK_THRESHOLDS,
-    calibrationVersion: RISK_CALIBRATION_VERSION,
+    calibrationVersion: trainingConfig.calibrationVersion,
     heads: productionHeads,
   }
 
   const challenger: ChallengerRiskModelArtifact = {
-    modelVersion: RISK_CHALLENGER_MODEL_VERSION,
+    modelVersion: trainingConfig.challengerModelVersion,
+    modelFamily: trainingConfig.challengerModelFamily,
     featureSchemaVersion: RISK_FEATURE_SCHEMA_VERSION,
     trainedAt: now,
     trainingManifestVersion: PROOF_CORPUS_MANIFEST_VERSION,
     splitSummary: dataset.splitSummary,
     worldSplitSummary: dataset.worldSplitSummary,
     scenarioFamilySummary: dataset.scenarioFamilySummary,
+    headSupportSummary: dataset.headSupportSummary,
+    calibrationVersion: trainingConfig.calibrationVersion,
     heads: {
-      attendanceRisk: fitStumpHeadCompact(dataset, 'attendanceRisk'),
-      ceRisk: fitStumpHeadCompact(dataset, 'ceRisk'),
-      seeRisk: fitStumpHeadCompact(dataset, 'seeRisk'),
-      overallCourseRisk: fitStumpHeadCompact(dataset, 'overallCourseRisk'),
-      downstreamCarryoverRisk: fitStumpHeadCompact(dataset, 'downstreamCarryoverRisk'),
+      attendanceRisk: fitDepthTwoTreeHeadCompact(dataset, 'attendanceRisk', trainingConfig),
+      ceRisk: fitDepthTwoTreeHeadCompact(dataset, 'ceRisk', trainingConfig),
+      seeRisk: fitDepthTwoTreeHeadCompact(dataset, 'seeRisk', trainingConfig),
+      overallCourseRisk: fitDepthTwoTreeHeadCompact(dataset, 'overallCourseRisk', trainingConfig),
+      downstreamCarryoverRisk: fitDepthTwoTreeHeadCompact(dataset, 'downstreamCarryoverRisk', trainingConfig),
     },
   }
 
@@ -1444,11 +1843,16 @@ export function trainProofRiskModel(
   options?: {
     runMetadataById?: Map<string, ProofRunModelMetadata> | Record<string, ProofRunModelMetadata>
     manifest?: ProofCorpusManifestEntry[]
+    trainingConfig?: ProofRiskTrainingConfig
   },
 ): ProofRiskModelBundle | null {
   const runMetadataById = normalizeMetadataMap(options?.runMetadataById)
   const manifest = options?.manifest ?? PROOF_CORPUS_MANIFEST
-  const builder = new ProofRiskDatasetBuilder(runMetadataById, manifest)
+  const builder = new ProofRiskDatasetBuilder(
+    runMetadataById,
+    manifest,
+    options?.trainingConfig ?? DEFAULT_PROOF_RISK_TRAINING_CONFIG,
+  )
   builder.addEvidenceRows(rows)
   return builder.build(now)
 }
@@ -1463,11 +1867,16 @@ export function trainProofRiskModelFromSerializedRows(
   options?: {
     runMetadataById?: Map<string, ProofRunModelMetadata> | Record<string, ProofRunModelMetadata>
     manifest?: ProofCorpusManifestEntry[]
+    trainingConfig?: ProofRiskTrainingConfig
   },
 ): ProofRiskModelBundle | null {
   const runMetadataById = normalizeMetadataMap(options?.runMetadataById)
   const manifest = options?.manifest ?? PROOF_CORPUS_MANIFEST
-  const builder = new ProofRiskDatasetBuilder(runMetadataById, manifest)
+  const builder = new ProofRiskDatasetBuilder(
+    runMetadataById,
+    manifest,
+    options?.trainingConfig ?? DEFAULT_PROOF_RISK_TRAINING_CONFIG,
+  )
   builder.addSerializedRows(rows)
   return builder.build(now)
 }
@@ -1515,7 +1924,7 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
     }
   }
 
-  const vector = featureVectorFromPayload(input.featurePayload)
+  const vector = featureVectorFromPayload(input.featurePayload, input.sourceRefs)
   const headProbabilities = {
     attendanceRisk: scoreWithLogistic(input.productionModel.heads.attendanceRisk, vector),
     ceRisk: scoreWithLogistic(input.productionModel.heads.ceRisk, vector),
@@ -1564,6 +1973,27 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
   }
 }
 
+export function scoreObservableRiskWithChallengerModel(input: {
+  featurePayload: ObservableFeaturePayload
+  sourceRefs?: ObservableSourceRefs | null
+  challengerModel?: ChallengerRiskModelArtifact | null
+}): Record<RiskHeadKey, number> {
+  if (!input.challengerModel || input.challengerModel.featureSchemaVersion !== RISK_FEATURE_SCHEMA_VERSION) {
+    return {
+      attendanceRisk: 0.5,
+      ceRisk: 0.5,
+      seeRisk: 0.5,
+      overallCourseRisk: 0.5,
+      downstreamCarryoverRisk: 0.5,
+    }
+  }
+  const vector = featureVectorFromPayload(input.featurePayload, input.sourceRefs)
+  return Object.fromEntries(
+    (Object.entries(input.challengerModel.heads) as Array<[RiskHeadKey, ChallengerHeadArtifact]>)
+      .map(([headKey, head]) => [headKey, roundToFour(applyCalibration(head.calibration, scoreDepthTwoTreeNode(head.root, vector)))]),
+  ) as Record<RiskHeadKey, number>
+}
+
 export function summarizeProofRiskModelEvaluation(bundle: ProofRiskModelBundle) {
   return {
     trainingManifestVersion: PROOF_CORPUS_MANIFEST_VERSION,
@@ -1592,13 +2022,23 @@ export function summarizeProofRiskModelEvaluation(bundle: ProofRiskModelBundle) 
     },
     challenger: {
       modelVersion: bundle.challenger.modelVersion,
+      modelFamily: bundle.challenger.modelFamily,
       trainedAt: bundle.challenger.trainedAt,
+      calibrationVersion: bundle.challenger.calibrationVersion,
       splitSummary: bundle.challenger.splitSummary,
       worldSplitSummary: bundle.challenger.worldSplitSummary,
       scenarioFamilySummary: bundle.challenger.scenarioFamilySummary,
+      headSupportSummary: bundle.challenger.headSupportSummary,
       heads: Object.fromEntries(
-        (Object.entries(bundle.challenger.heads) as Array<[RiskHeadKey, StumpHeadArtifact]>)
-          .map(([headKey, head]) => [headKey, head.metrics]),
+        (Object.entries(bundle.challenger.heads) as Array<[RiskHeadKey, ChallengerHeadArtifact]>)
+          .map(([headKey, head]) => [headKey, {
+            metrics: head.metrics,
+            support: head.support,
+            calibrationMethod: head.calibration.method,
+            validationMetrics: head.calibration.validationMetrics,
+            testMetrics: head.calibration.testMetrics,
+            reliabilityBins: head.calibration.reliabilityBins,
+          }]),
       ),
     },
     correlations: bundle.correlations,

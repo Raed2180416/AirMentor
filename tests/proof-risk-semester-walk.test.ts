@@ -1,5 +1,8 @@
+import { createRequire } from 'node:module'
 import { describe, expect, it } from 'vitest'
-import {
+
+const require = createRequire(import.meta.url)
+const {
   buildCombinedSemesterProofSummaryPath,
   buildSemesterProofSummaryPath,
   buildSemesterScopedArtifactPath,
@@ -7,7 +10,19 @@ import {
   parseProofTargetSemester,
   resolveSemesterWalkCheckpoint,
   sanitizeArtifactPrefix,
-} from '../scripts/proof-risk-semester-walk.mjs'
+} = require('../scripts/proof-risk-semester-walk.mjs') as {
+  buildCombinedSemesterProofSummaryPath: (outputDir: string, prefix: unknown) => string | null
+  buildSemesterProofSummaryPath: (outputDir: string, prefix: unknown, semesterNumber: number) => string | null
+  buildSemesterScopedArtifactPath: (rawPath: string, prefix: unknown, semesterNumber: number) => string | null
+  normalizeSemesterTargetList: (rawValue: unknown) => number[]
+  parseProofTargetSemester: (rawValue: unknown) => number | null
+  resolveSemesterWalkCheckpoint: <T extends {
+    simulationStageCheckpointId?: string | null
+    semesterNumber?: number | null
+    stageOrder?: number | null
+  }>(checkpoints: T[], targetSemester?: number | null) => T | undefined
+  sanitizeArtifactPrefix: (rawPrefix: unknown) => string
+}
 
 describe('proof risk semester-walk helpers', () => {
   it('parses and normalizes targeted semesters deterministically', () => {

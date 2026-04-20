@@ -1,0 +1,179 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Audit: List tmux jobs",
+      "type": "shell",
+      "command": "bash audit-map/16-scripts/tmux-list-jobs.sh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Audit: Run inventory pass",
+      "type": "shell",
+      "command": "bash audit-map/16-scripts/run-audit-pass.sh inventory-pass",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Audit: Run live behavior pass",
+      "type": "shell",
+      "command": "bash audit-map/16-scripts/run-audit-pass.sh live-behavior-pass",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Audit: Overnight orchestrator",
+      "type": "shell",
+      "command": "bash audit-map/16-scripts/night-run-orchestrator.sh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Audit: Arctic slot login plan",
+      "type": "shell",
+      "command": "bash audit-map/16-scripts/arctic-slot-login-plan.sh all",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Audit: Arctic slot login first wave",
+      "type": "shell",
+      "command": "bash audit-map/16-scripts/arctic-slot-login-plan.sh first-wave",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Audit: Arctic slot models codex-06",
+      "type": "shell",
+      "command": "bash audit-map/16-scripts/arctic-slot-models.sh --slot codex-06 codex --refresh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Audit: Arctic slot status",
+      "type": "shell",
+      "command": "bash audit-map/16-scripts/arctic-slot-status.sh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Audit: Caveman check",
+      "type": "shell",
+      "command": "bash audit-map/16-scripts/caveman-check.sh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Audit: Caveman enable full",
+      "type": "shell",
+      "command": "bash audit-map/16-scripts/arctic-cli.sh enable-caveman full",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Audit: Caveman disable",
+      "type": "shell",
+      "command": "bash audit-map/16-scripts/arctic-cli.sh disable-caveman",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Audit: Auth doctor",
+      "type": "shell",
+      "command": "bash audit-map/16-scripts/arctic-cli.sh auth-doctor",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Audit: Reset auth strict full",
+      "type": "shell",
+      "command": "bash audit-map/16-scripts/arctic-cli.sh reset-auth --full --strict",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Audit: Caveman auto mode from usage",
+      "type": "shell",
+      "command": "bash audit-map/16-scripts/caveman-auto-mode-by-usage.sh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Audit: OpenCode help",
+      "type": "shell",
+      "command": "nix develop -c opencode --help",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Audit: Inventory status",
+      "type": "shell",
+      "command": "bash audit-map/16-scripts/tmux-job-status.sh inventory-pass bootstrap",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Audit: Tail inventory log",
+      "type": "shell",
+      "command": "bash audit-map/16-scripts/tmux-tail-job-log.sh inventory-pass bootstrap",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Diagnostics: Full codebase",
+      "type": "shell",
+      "command": "npm run -s diagnostics:all",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "runOptions": {
+        "runOn": "folderOpen"
+      },
+      "presentation": {
+        "reveal": "never",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": [
+        "$tsc",
+        "$eslint-stylish"
+      ],
+      "group": "build"
+    }
+  ]
+}

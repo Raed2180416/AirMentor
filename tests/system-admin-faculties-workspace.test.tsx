@@ -5,8 +5,7 @@ import { T } from '../src/data'
 import { SystemAdminFacultiesWorkspace } from '../src/system-admin-faculties-workspace'
 import { SystemAdminProofDashboardWorkspace } from '../src/system-admin-proof-dashboard-workspace'
 import { SystemAdminScopedRegistryLaunches } from '../src/system-admin-scoped-registry-launches'
-import type { PolicyFormState, StagePolicyFormState } from '../src/system-admin-governance-editors'
-import type { BatchProvisioningFormState, EntityEditorState } from '../src/system-admin-live-app'
+import type { BatchProvisioningFormState, EntityEditorState, PolicyFormState, StagePolicyFormState } from '../src/system-admin-live-app'
 import type { LiveAdminDataset, LiveAdminRoute } from '../src/system-admin-live-data'
 import type { ApiMentorAssignmentBulkApplyResponse } from '../src/api/types'
 import type { BulkMentorAssignmentFormState } from '../src/system-admin-provisioning-helpers'
@@ -106,6 +105,13 @@ const data: LiveAdminDataset = {
       version: 1,
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
+      credentialStatus: {
+        passwordConfigured: false,
+        activeSetupRequest: false,
+        latestPurpose: null,
+        latestRequestedAt: null,
+        latestExpiresAt: null,
+      },
       appointments: [
         {
           appointmentId: 'appt_1',
@@ -409,6 +415,7 @@ function makeBulkMentorAssignmentPreview(): ApiMentorAssignmentBulkApplyResponse
 const proofDashboardProps: ComponentProps<typeof SystemAdminProofDashboardWorkspace> = {
   proofDashboard: null,
   proofDashboardLoading: false,
+  batchSetupReadiness: null,
   activeRunCheckpoints: [],
   activeModelDiagnostics: null,
   activeProductionDiagnostics: null,
@@ -442,6 +449,7 @@ const proofDashboardProps: ComponentProps<typeof SystemAdminProofDashboardWorksp
   onCreateProofRun: () => {},
   onRecomputeProofRunRisk: () => {},
   onActivateProofRun: () => {},
+  onActivateProofSemester: () => {},
   onRetryProofRun: () => {},
   onArchiveProofRun: () => {},
   onRestoreProofSnapshot: () => {},
@@ -468,8 +476,16 @@ const registryLaunchProps: ComponentProps<typeof SystemAdminScopedRegistryLaunch
   onOpenAllFaculty: () => {},
 }
 
+const incompleteBatchSetupReadiness = {
+  ready: false,
+  blockers: [
+    'Add or provision students for 2022.',
+    '1 offering(s) still need a faculty owner.',
+  ],
+}
+
 function renderWorkspace(
-  universityTab: 'overview' | 'bands' | 'courses' | 'provision',
+  universityTab: 'overview' | 'bands' | 'ce-see' | 'cgpa' | 'stage' | 'courses' | 'provision',
   overrides?: Partial<ComponentProps<typeof SystemAdminFacultiesWorkspace>>,
 ) {
   const markup = renderToStaticMarkup(createElement(SystemAdminFacultiesWorkspace, {
@@ -656,6 +672,7 @@ function renderWorkspace(
     batchStudentsWithoutEnrollment: [],
     batchStudentsWithoutMentor: data.students,
     batchOfferingsWithoutRoster: [],
+    batchSetupReadiness: incompleteBatchSetupReadiness,
     bulkMentorAssignmentForm: makeBulkMentorAssignmentForm(),
     setBulkMentorAssignmentForm: () => {},
     bulkMentorAssignmentPreview: makeBulkMentorAssignmentPreview(),
@@ -773,6 +790,16 @@ describe('system-admin faculties workspace parity', () => {
     expect(markup).toContain('Prof. Kavitha Rao')
     expect(markup).toContain('Run Batch Provisioning')
     expect(markup).toContain('Current semester term 2024-25')
+    expect(markup).toContain('Finish setup before stage progression or proof preview')
+    expect(markup).toContain('Proof preview buttons stay locked until every blocker above is cleared.')
+  })
+
+  it('surfaces setup blockers on the overview proof card', () => {
+    const markup = renderWorkspace('overview')
+
+    expect(markup).toContain('Setup incomplete')
+    expect(markup).toContain('Complete setup first: Add or provision students for 2022. 1 offering(s) still need a faculty owner.')
+    expect(markup).toContain('Live semester')
   })
 
   it('locks course-leader assignment until a live offering exists for the curriculum row', () => {
@@ -941,6 +968,33 @@ describe('system-admin faculties workspace parity', () => {
     expect(markup).toContain('Batch semester · Sem 6')
     expect(markup).toContain('3rd Year')
     expect(markup).toContain('Batch Configuration')
+  })
+
+  it('keeps configured section options visible even when no student currently maps to the section', () => {
+    const markup = renderWorkspace('overview', {
+      selectedSectionCode: null,
+      selectedBatch: {
+        ...data.batches[0],
+        sectionLabels: ['A', 'B', 'C'],
+      },
+      data: {
+        ...data,
+        students: data.students.map(student => ({
+          ...student,
+          activeAcademicContext: student.activeAcademicContext
+            ? {
+                ...student.activeAcademicContext,
+                sectionCode: 'A',
+              }
+            : null,
+        })),
+      },
+    })
+
+    expect(markup).toContain('All Sections</option>')
+    expect(markup).toContain('<option value="A">A</option>')
+    expect(markup).toContain('<option value="B">B</option>')
+    expect(markup).toContain('<option value="C">C</option>')
   })
 
   it('renders named hierarchy create controls for deterministic form-data submission', () => {

@@ -642,7 +642,7 @@ export function normalizeTaskCalendarPlacement(placement: TaskCalendarPlacement)
   }
 }
 
-export function applyPlacementToTask(task: SharedTask, placement: TaskCalendarPlacement) {
+export function applyPlacementToTask(task: SharedTask, placement: TaskCalendarPlacement, anchorISO?: string) {
   const normalizedDate = normalizeDateISO(placement.dateISO) ?? task.dueDateISO
   const nextScheduleMeta = task.scheduleMeta?.mode === 'scheduled'
     ? {
@@ -656,7 +656,7 @@ export function applyPlacementToTask(task: SharedTask, placement: TaskCalendarPl
   return {
     ...task,
     dueDateISO: normalizedDate,
-    due: normalizedDate ? toDueLabel(normalizedDate) : task.due,
+    due: normalizedDate ? toDueLabel(normalizedDate, 'This week', anchorISO) : task.due,
     updatedAt: Date.now(),
     scheduleMeta: nextScheduleMeta,
   }

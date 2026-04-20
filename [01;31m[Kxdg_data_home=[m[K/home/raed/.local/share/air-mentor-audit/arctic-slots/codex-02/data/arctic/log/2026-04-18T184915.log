@@ -1,0 +1,2 @@
+INFO  2026-04-18T18:49:15 +136ms service=default version=0.0.0-main-202603151831 args=["auth","list"] arctic
+INFO  2026-04-18T18:49:15 +17ms service=models.dev file={} refreshing

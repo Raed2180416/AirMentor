@@ -93,6 +93,19 @@ export const userPasswordCredentials = pgTable('user_password_credentials', {
   updatedAt: text('updated_at').notNull(),
 })
 
+export const userPasswordSetupTokens = pgTable('user_password_setup_tokens', {
+  passwordSetupTokenId: text('password_setup_token_id').primaryKey(),
+  userId: text('user_id').notNull().references(() => userAccounts.userId),
+  purpose: text('purpose').notNull(),
+  tokenHash: text('token_hash').notNull(),
+  issuedToEmail: text('issued_to_email').notNull(),
+  requestedByUserId: text('requested_by_user_id').references(() => userAccounts.userId),
+  expiresAt: text('expires_at').notNull(),
+  consumedAt: text('consumed_at'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
 export const sessions = pgTable('sessions', {
   sessionId: text('session_id').primaryKey(),
   userId: text('user_id').notNull().references(() => userAccounts.userId),
@@ -1329,6 +1342,7 @@ export const allTables = {
   academicTerms,
   userAccounts,
   userPasswordCredentials,
+  userPasswordSetupTokens,
   sessions,
   loginRateLimitWindows,
   uiPreferences,

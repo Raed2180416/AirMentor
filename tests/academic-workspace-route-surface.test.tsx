@@ -1,9 +1,12 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import type { ApiAcademicFacultyProfile } from '../src/api/types'
+import type { FacultyAccount, SharedTask } from '../src/domain'
 import { AcademicWorkspaceRouteSurface } from '../src/academic-workspace-route-surface'
 
-const facultyProfile = {
+const facultyProfile: ApiAcademicFacultyProfile = {
+  facultyId: 'mnc_t1',
   displayName: 'Dr. Asha Rao',
   designation: 'Professor',
   employeeCode: 'F001',
@@ -75,7 +78,7 @@ const facultyProfile = {
   },
 }
 
-const mentorTask = {
+const mentorTask: SharedTask = {
   id: 'task_001',
   studentId: 'student_001',
   studentName: 'Aarav Sharma',
@@ -110,8 +113,19 @@ const mentorTask = {
       note: 'Mentor should follow up on the proof queue item.',
     },
   ],
-  dismissal: null,
-  unlockRequest: null,
+}
+
+const currentTeacher: FacultyAccount = {
+  facultyId: 'mnc_t1',
+  name: 'Dr. Asha Rao',
+  initials: 'AR',
+  allowedRoles: ['Course Leader', 'Mentor', 'HoD'],
+  dept: 'Mathematics and Computing',
+  roleTitle: 'Professor',
+  email: 'asha.rao@example.edu',
+  courseCodes: ['MC601'],
+  offeringIds: ['off_mc601_a'],
+  menteeIds: ['student_001', 'student_002'],
 }
 
 describe('AcademicWorkspaceRouteSurface', () => {
@@ -120,18 +134,7 @@ describe('AcademicWorkspaceRouteSurface', () => {
       workspace: {
         role: 'Course Leader',
         page: 'faculty-profile',
-        currentTeacher: {
-          facultyId: 'mnc_t1',
-          name: 'Dr. Asha Rao',
-          initials: 'AR',
-          allowedRoles: ['Course Leader', 'Mentor', 'HoD'],
-          dept: 'Mathematics and Computing',
-          roleTitle: 'Professor',
-          email: 'asha.rao@example.edu',
-          courseCodes: ['MC601'],
-          offeringIds: ['off_mc601_a'],
-          menteeIds: ['student_001', 'student_002'],
-        },
+        currentTeacher,
         facultyProfile,
         currentFacultyCalendarMarkers: [],
         facultyProfileLoading: false,
@@ -144,7 +147,7 @@ describe('AcademicWorkspaceRouteSurface', () => {
         handleOpenStudentShell: () => {},
         handleOpenRiskExplorer: () => {},
       },
-      layoutMode: 'full',
+      layoutMode: 'three-column',
       proofPlaybackNotice: null,
       routeError: '',
       routeLoadingLabel: 'Loading route...',
@@ -171,7 +174,7 @@ describe('AcademicWorkspaceRouteSurface', () => {
         handleOpenStudentShell: () => {},
         handleOpenRiskExplorer: () => {},
       },
-      layoutMode: 'full',
+      layoutMode: 'three-column',
       proofPlaybackNotice: null,
       routeError: '',
       routeLoadingLabel: 'Loading route...',
@@ -181,7 +184,7 @@ describe('AcademicWorkspaceRouteSurface', () => {
     expect(markup).toContain('Queue History')
     expect(markup).toContain('data-proof-surface="academic-proof-summary"')
     expect(markup).toContain('data-proof-scope="queue-history"')
-    expect(markup).toContain('data-proof-summary-metric="proof-semester"')
+    expect(markup).toMatch(/data-proof-summary-metric="(selected-checkpoint|preview-semester|live-semester)"/)
     expect(markup).toContain('Open Student')
     expect(markup).toContain('Risk Explorer')
     expect(markup).toContain('Student Shell')

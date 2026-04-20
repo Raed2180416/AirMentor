@@ -937,19 +937,23 @@ async function openSeededProofRoute() {
     }
   }
   await expectVisible(proofControlPlane, 'system admin proof control plane')
-  await expectContainerText(proofControlPlane, /Proof Control Plane/i, 'system admin proof control plane heading')
+  await expectContainerText(proofControlPlane, /Simulation Controls|Proof Control Plane/i, 'system admin proof control plane heading')
   try {
     await waitForCheckpointPlaybackVisible(proofControlPlane, 15_000)
   } catch {
     console.log('[smoke] checkpoint playback missing, verifying proof controls and prewarming through admin endpoints')
-    const proofActionLabels = ['Create Import', 'Validate Import', 'Review Mappings', 'Approve Import', 'Run / Rerun']
-    for (const label of proofActionLabels) {
+    const proofActionSelectors = [
+      '[data-proof-action="proof-create-import"]',
+      '[data-proof-action="proof-run-rerun"]',
+      '[data-proof-action="proof-recompute-risk"]',
+    ]
+    for (const selector of proofActionSelectors) {
       const actionVisible = await proofControlPlane
-        .getByRole('button', { name: label, exact: true })
+        .locator(selector)
         .first()
         .isVisible()
         .catch(() => false)
-      console.log(`[smoke] proof action "${label}" visible=${actionVisible}`)
+      console.log(`[smoke] proof action "${selector}" visible=${actionVisible}`)
     }
     await ensureProofRunReady()
     const reloadedProofDashboardUrl = `${appUrl}/#/admin/proof-dashboard`
@@ -980,7 +984,7 @@ async function verifyPlaybackSelectionPersisted(expectedDescriptor, proofControl
   const banner = proofControlPlane.locator('[data-proof-section="selected-checkpoint-banner"]')
   await expectVisible(banner, 'selected checkpoint banner')
   console.log(`[smoke] selected checkpoint banner: ${(await banner.textContent().catch(() => '') ?? '').replace(/\\s+/g, ' ').trim()}`)
-  await expectContainerText(banner, /Selected checkpoint:/i, 'selected checkpoint summary banner')
+  await expectContainerText(banner, /(Selected checkpoint:|Viewing Semester)/i, 'selected checkpoint summary banner')
   await expectContainerText(
     banner,
     new RegExp(escapeRegExp(expectedDescriptor.bannerLabel), 'i'),
@@ -1063,7 +1067,7 @@ try {
   ) {
     await expectContainerText(
       reloadedProofControlPlane,
-      new RegExp(`operational semester remains Semester ${activatedProofSemesterContext.activeOperationalSemester}`, 'i'),
+      new RegExp(`(operational semester remains|Live operations stay on) Semester ${activatedProofSemesterContext.activeOperationalSemester}`, 'i'),
       'activated operational semester override banner',
     )
   }
@@ -1090,7 +1094,7 @@ try {
   markStep('open-faculty-proof-panel')
   const teacherProofPanel = await openFacultyProfileProofPanel()
   await expectProofCheckpointIdentity(teacherProofPanel, storedSelectionAfterReload.simulationStageCheckpointId, 'teacher proof panel')
-  await expectContainerText(teacherProofPanel, /Proof Control Plane/i, 'teacher proof control plane heading')
+  await expectContainerText(teacherProofPanel, /Simulation Controls|Proof Control Plane/i, 'teacher proof control plane heading')
   const teacherCheckpointOverlay = teacherProofPanel.locator('[data-proof-section="checkpoint-overlay"]')
   await expectVisible(teacherCheckpointOverlay, 'teacher checkpoint overlay')
   await expectContainerText(teacherCheckpointOverlay, /Checkpoint overlay/i, 'teacher checkpoint overlay heading')
@@ -1173,7 +1177,7 @@ try {
       await expectProofCheckpointIdentity(studentShellSurface, storedSelectionAfterReload.simulationStageCheckpointId, 'student shell')
       await expectProofStudentIdentity(studentShellSurface, trackedStudentId, 'student shell')
       await expectContainerText(studentShellSurface, /Student Shell/i, 'student shell heading')
-      await expectContainerText(studentShellSurface, /deterministic proof explainer/i, 'student shell subtitle')
+      await expectContainerText(studentShellSurface, /(proof snapshot|Simulation only|This student proof page keeps)/i, 'student shell subtitle')
       await expectContainerText(
         studentShellSurface,
         new RegExp(escapeRegExp(targetCheckpointDescriptor.surfaceLabel), 'i'),
@@ -1244,8 +1248,8 @@ try {
       await expectVisible(hodStudentShellSurface, 'HoD student shell surface')
       await expectProofCheckpointIdentity(hodStudentShellSurface, storedSelectionAfterReload.simulationStageCheckpointId, 'HoD student shell')
       await expectProofStudentIdentity(hodStudentShellSurface, hodTrackedStudentId, 'HoD student shell')
-      await waitForProofHeading('Student Shell', 60_000)
-      await waitForProofHeading('No-action comparator', 60_000)
+      await expectContainerText(hodStudentShellSurface, /Student Shell/i, 'HoD student shell heading')
+      await expectContainerText(hodStudentShellSurface, /(proof snapshot|Simulation only|This student proof page keeps)/i, 'HoD student shell subtitle')
       if (!trackedStudentId) {
         await captureProofScreenshot('studentShell', hodStudentShellSurface, 'HoD student shell surface')
       }

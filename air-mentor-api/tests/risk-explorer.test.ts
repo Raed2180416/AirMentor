@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { and, asc, eq } from 'drizzle-orm'
 import {
+  batches,
   facultyOfferingOwnerships,
   mentorAssignments,
   riskEvidenceSnapshots,
@@ -814,5 +815,155 @@ describe('student risk explorer', () => {
         })
       }
     }
+  })
+
+  it('keeps default proof surfaces checkpoint-explicit when semester pointers diverge', async () => {
+    current = await createTestApp()
+    const facultyLogin = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+    const roleResponse = facultyLogin.body.activeRoleGrant.roleCode === 'COURSE_LEADER'
+      ? facultyLogin.body
+      : (await switchToRole(facultyLogin.cookie, facultyLogin.body.availableRoleGrants, 'COURSE_LEADER')).json()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const [activeRun] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    expect(activeRun).toBeTruthy()
+    const recomputeRiskResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRun.simulationRunId}/recompute-risk`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+    expect(recomputeRiskResponse.statusCode).toBe(200)
+
+    const checkpointRows = await current.db.select().from(simulationStageCheckpoints).where(
+      eq(simulationStageCheckpoints.simulationRunId, activeRun.simulationRunId),
+    ).orderBy(
+      asc(simulationStageCheckpoints.semesterNumber),
+      asc(simulationStageCheckpoints.stageOrder),
+    )
+    const forcedActiveSemester = checkpointRows.at(-1)?.semesterNumber
+    expect(forcedActiveSemester).not.toBeNull()
+    if (forcedActiveSemester == null) throw new Error('Expected proof checkpoint semester')
+    await current.db.update(simulationRuns).set({
+      activeOperationalSemester: forcedActiveSemester,
+    }).where(eq(simulationRuns.simulationRunId, activeRun.simulationRunId))
+
+    const [activeBatch] = await current.db.select().from(batches).where(eq(batches.batchId, activeRun.batchId))
+    expect(activeBatch).toBeTruthy()
+    const mismatchSemester = forcedActiveSemester === 1 ? 2 : forcedActiveSemester - 1
+    await current.db.update(batches).set({
+      currentSemester: mismatchSemester,
+    }).where(eq(batches.batchId, activeRun.batchId))
+
+    const ownershipRows = await current.db.select().from(facultyOfferingOwnerships).where(and(
+      eq(facultyOfferingOwnerships.facultyId, roleResponse.faculty.facultyId),
+      eq(facultyOfferingOwnerships.status, 'active'),
+    ))
+    const ownedOfferingIds = new Set(ownershipRows.map(row => row.offeringId))
+    const observedRows = sortObservedRows(await current.db.select().from(studentObservedSemesterStates).where(
+      eq(studentObservedSemesterStates.simulationRunId, activeRun.simulationRunId),
+    ))
+    const accessibleStudentId = observedRows.find(row => {
+      const offeringId = getObservedOfferingId(row)
+      return !!offeringId && ownedOfferingIds.has(offeringId)
+    })?.studentId
+    expect(accessibleStudentId).toBeTruthy()
+
+    const [facultyProfileResponse, riskExplorerResponse, studentShellResponse] = await Promise.all([
+      current.app.inject({
+        method: 'GET',
+        url: `/api/academic/faculty-profile/${roleResponse.faculty.facultyId}`,
+        headers: { cookie: facultyLogin.cookie },
+      }),
+      current.app.inject({
+        method: 'GET',
+        url: `/api/academic/students/${accessibleStudentId}/risk-explorer`,
+        headers: { cookie: facultyLogin.cookie },
+      }),
+      current.app.inject({
+        method: 'GET',
+        url: `/api/academic/student-shell/students/${accessibleStudentId}/card`,
+        headers: { cookie: facultyLogin.cookie },
+      }),
+    ])
+
+    expect(facultyProfileResponse.statusCode).toBe(200)
+    expect(riskExplorerResponse.statusCode).toBe(200)
+    expect(studentShellResponse.statusCode).toBe(200)
+
+    const roleSwitchResponse = await switchToRole(facultyLogin.cookie, roleResponse.availableRoleGrants, 'HOD')
+    expect(roleSwitchResponse.statusCode).toBe(200)
+
+    const hodSummaryResponse = await current.app.inject({
+      method: 'GET',
+      url: '/api/academic/hod/proof-summary',
+      headers: { cookie: facultyLogin.cookie },
+    })
+    expect(hodSummaryResponse.statusCode).toBe(200)
+
+    const facultyProfile = facultyProfileResponse.json() as {
+      proofOperations: {
+        countSource: string
+        activeOperationalSemester: number | null
+        scopeDescriptor: { simulationStageCheckpointId: string | null }
+        resolvedFrom: { kind: string; scopeId: string | null }
+      }
+    }
+    const riskExplorer = riskExplorerResponse.json() as {
+      countSource: string
+      activeOperationalSemester: number | null
+      simulationStageCheckpointId: string | null
+      resolvedFrom: { kind: string; scopeId: string | null }
+    }
+    const studentShell = studentShellResponse.json() as {
+      countSource: string
+      activeOperationalSemester: number | null
+      simulationStageCheckpointId: string | null
+      resolvedFrom: { kind: string; scopeId: string | null }
+    }
+    const hodSummary = hodSummaryResponse.json() as {
+      countSource: string
+      activeOperationalSemester: number | null
+      scopeDescriptor: { simulationStageCheckpointId: string | null }
+      resolvedFrom: { kind: string; scopeId: string | null }
+    }
+
+    const fallbackCheckpointId = riskExplorer.simulationStageCheckpointId
+      ?? studentShell.simulationStageCheckpointId
+      ?? facultyProfile.proofOperations.scopeDescriptor.simulationStageCheckpointId
+      ?? hodSummary.scopeDescriptor.simulationStageCheckpointId
+    expect(fallbackCheckpointId).toBeTruthy()
+
+    expect(facultyProfile.proofOperations.countSource).toBe('proof-checkpoint')
+    expect(facultyProfile.proofOperations.activeOperationalSemester).toBe(forcedActiveSemester)
+    expect(facultyProfile.proofOperations.scopeDescriptor.simulationStageCheckpointId).toBe(fallbackCheckpointId)
+    expect(facultyProfile.proofOperations.resolvedFrom).toMatchObject({
+      kind: 'proof-checkpoint',
+      scopeId: fallbackCheckpointId,
+    })
+
+    expect(riskExplorer.countSource).toBe('proof-checkpoint')
+    expect(riskExplorer.activeOperationalSemester).toBe(forcedActiveSemester)
+    expect(riskExplorer.simulationStageCheckpointId).toBe(fallbackCheckpointId)
+    expect(riskExplorer.resolvedFrom).toMatchObject({
+      kind: 'proof-checkpoint',
+      scopeId: fallbackCheckpointId,
+    })
+
+    expect(studentShell.countSource).toBe('proof-checkpoint')
+    expect(studentShell.activeOperationalSemester).toBe(forcedActiveSemester)
+    expect(studentShell.simulationStageCheckpointId).toBe(fallbackCheckpointId)
+    expect(studentShell.resolvedFrom).toMatchObject({
+      kind: 'proof-checkpoint',
+      scopeId: fallbackCheckpointId,
+    })
+
+    expect(hodSummary.countSource).toBe('proof-checkpoint')
+    expect(hodSummary.activeOperationalSemester).toBe(forcedActiveSemester)
+    expect(hodSummary.scopeDescriptor.simulationStageCheckpointId).toBe(fallbackCheckpointId)
+    expect(hodSummary.resolvedFrom).toMatchObject({
+      kind: 'proof-checkpoint',
+      scopeId: fallbackCheckpointId,
+    })
   })
 })

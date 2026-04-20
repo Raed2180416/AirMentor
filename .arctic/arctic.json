@@ -1,0 +1,10 @@
+{
+  "enabled_providers": [
+    "codex",
+    "google",
+    "github-copilot",
+    "antigravity",
+    "anthropic"
+  ],
+  "$schema": "https://usearctic.sh/config.json"
+}

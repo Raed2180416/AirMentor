@@ -764,9 +764,9 @@ describe('hod proof analytics', () => {
       )
       const electiveFits = studentsPayload.items.map((item: Record<string, unknown>) => item.electiveFit ?? null)
       if (semesterNumber < 6) {
-        expect(electiveFits.every(item => item == null)).toBe(true)
+        expect(electiveFits.every((item: unknown) => item == null)).toBe(true)
       } else {
-        expect(electiveFits.some(item => !!item)).toBe(true)
+        expect(electiveFits.some((item: unknown) => !!item)).toBe(true)
       }
       const checkpointSummaryPayload = checkpointSummaryResponse.json()
       expect(checkpointSummaryPayload.countSource).toBe('proof-checkpoint')

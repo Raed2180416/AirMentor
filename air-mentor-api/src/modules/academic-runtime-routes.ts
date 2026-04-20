@@ -1124,6 +1124,24 @@ export async function registerAcademicRuntimeRoutes(
       throw forbidden('This assessment dataset is locked')
     }
 
+    // GAP-2: Prevent locking evidence for a stage that hasn't been reached yet.
+    // Stage orders: pre-tt1=1, post-tt1=2, post-tt2=3, post-assignments=4, post-see=5.
+    // Locking future evidence bypasses the proof stage-gate and corrupts the sim timeline.
+    if (body.lock) {
+      const minimumStageToLock: Record<string, number> = {
+        attendance: 1,
+        tt1: 1,
+        tt2: 2,
+        quiz: 2,
+        assignment: 3,
+        finals: 4,
+      }
+      const requiredStage = minimumStageToLock[params.kind] ?? 1
+      if (offering.stage < requiredStage) {
+        throw forbidden(`Cannot lock ${params.kind} evidence before the class has reached the required stage (current: ${offering.stage}, required: ${requiredStage})`)
+      }
+    }
+
     const allowedComponents = new Map<string, { maxScore: number; storageType: string }>()
     if (params.kind === 'tt1' || params.kind === 'tt2') {
       const courseOutcomeRows = await context.db
@@ -1262,6 +1280,55 @@ export async function registerAcademicRuntimeRoutes(
       evaluatedAt,
       locked: !!body.lock,
     }
+  })
+
+  app.post('/api/academic/offerings/:offeringId/assessment-entries/:kind/clear-lock', {
+    schema: {
+      tags: ['academic'],
+      summary: 'Clear an assessment entry lock after HOD unlock approval (HOD only)',
+    },
+  }, async request => {
+    const auth = requireRole(request, ['HOD'])
+    if (!auth.facultyId) throw forbidden('Faculty context is required')
+    const params = parseOrThrow(assessmentCommitParamsSchema, request.params)
+    const { offering } = await getOfferingContext(context, params.offeringId)
+    const lockField = params.kind === 'tt1'
+      ? 'tt1Locked'
+      : params.kind === 'tt2'
+        ? 'tt2Locked'
+        : params.kind === 'quiz'
+          ? 'quizLocked'
+          : params.kind === 'assignment'
+            ? 'assignmentLocked'
+            : params.kind === 'finals'
+              ? 'finalsLocked'
+              : null
+    if (!lockField) throw badRequest(`Invalid kind: ${params.kind}`)
+    if (offering[lockField] !== 1) {
+      return { ok: true as const, offeringId: params.offeringId, kind: params.kind, cleared: false, reason: 'already-unlocked' }
+    }
+    await context.db.update(sectionOfferings).set({
+      [lockField]: 0,
+      version: offering.version + 1,
+      updatedAt: context.now(),
+    }).where(eq(sectionOfferings.offeringId, params.offeringId))
+    const currentLockPayload = await getAcademicRuntimeState(context, 'lockByOffering') as Record<string, Record<string, boolean>>
+    await saveAcademicRuntimeState(context, 'lockByOffering', {
+      ...currentLockPayload,
+      [params.offeringId]: {
+        ...(currentLockPayload[params.offeringId] ?? {}),
+        [params.kind]: false,
+      },
+    })
+    await emitAuditEvent(context, {
+      entityType: 'offering_assessment_lock',
+      entityId: `${params.offeringId}:${params.kind}`,
+      action: 'CLEAR_LOCK',
+      actorRole: auth.activeRoleGrant.roleCode,
+      actorId: auth.facultyId,
+      metadata: { kind: params.kind, offeringId: params.offeringId },
+    })
+    return { ok: true as const, offeringId: params.offeringId, kind: params.kind, cleared: true }
   })
 
   app.put('/api/academic/offerings/:offeringId/scheme', {

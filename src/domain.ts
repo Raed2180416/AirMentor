@@ -343,12 +343,12 @@ export function normalizeThemeMode(raw: string | null): ThemeMode {
   return 'frosted-focus-light'
 }
 
-export function toDueLabel(dueDateISO?: string, fallback = 'This week') {
+export function toDueLabel(dueDateISO?: string, fallback = 'This week', anchorISO?: string) {
   if (!dueDateISO) return fallback
   const dueDate = new Date(`${dueDateISO}T00:00:00`)
   if (Number.isNaN(dueDate.getTime())) return fallback
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const anchorBase = anchorISO ? new Date(`${anchorISO}T00:00:00`) : new Date()
+  const today = new Date(anchorBase.getFullYear(), anchorBase.getMonth(), anchorBase.getDate())
   const diffDays = Math.round((dueDate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000))
   if (diffDays <= 0) return 'Today'
   if (diffDays <= 7) return 'This week'

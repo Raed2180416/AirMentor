@@ -2,10 +2,12 @@
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { createElement } from 'react'
+import { Calendar, History, Users } from 'lucide-react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { FacultyAccount } from '../src/domain'
 import { AcademicWorkspaceSidebar } from '../src/academic-workspace-sidebar'
 
-const currentTeacher = {
+const currentTeacher: FacultyAccount = {
   facultyId: 't1',
   name: 'Dr. Kavitha Rao QA',
   initials: 'DK',
@@ -18,11 +20,11 @@ const currentTeacher = {
   menteeIds: ['student_001'],
 }
 
-const mentorNavItems = [
-  { id: 'mentees', icon: () => null, label: 'My Mentees' },
-  { id: 'queue-history', icon: () => null, label: 'Queue History' },
-  { id: 'calendar', icon: () => null, label: 'Calendar / Timetable' },
-] as const
+const mentorNavItems: Parameters<typeof AcademicWorkspaceSidebar>[0]['navItems'] = [
+  { id: 'mentees', icon: Users, label: 'My Mentees' },
+  { id: 'queue-history', icon: History, label: 'Queue History' },
+  { id: 'calendar', icon: Calendar, label: 'Calendar / Timetable' },
+]
 
 function renderSidebar(overrides: Partial<Parameters<typeof AcademicWorkspaceSidebar>[0]> = {}) {
   const onSelectNavItem = vi.fn()

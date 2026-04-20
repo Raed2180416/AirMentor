@@ -301,14 +301,14 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     expect(markup).toContain('data-proof-launcher-mode="popup-capable"')
     expect(markup).toContain('data-proof-dashboard-layout="embedded"')
     expect(markup).toContain('data-proof-action="proof-shell-launcher"')
-    expect(markup).toContain('Checkpoint-bound proof counts')
-    expect(markup).toContain('Proof workflow rail')
-    expect(markup).toContain('Operational semester')
+    expect(markup).toContain('Numbers are fixed to the selected preview checkpoint.')
+    expect(markup).toContain('Stage controls')
+    expect(markup).toContain('Live semester')
     expect(markup).toContain('Semester 6')
-    expect(markup).toContain('Selected checkpoint: semester 6')
+    expect(markup).toContain('Viewing Semester 6')
     expect(markup).toContain('Proof playback restored')
     expect(markup).toContain('Reset playback')
-    expect(markup).toContain('Scope details')
+    expect(markup).toContain('Why these numbers match')
     expect(markup).not.toContain('Operations Preview')
 
     const { container: checkpointContainer } = render(createElement(SystemAdminProofDashboardWorkspace, {
@@ -368,10 +368,183 @@ describe('SystemAdminProofDashboardWorkspace', () => {
       formatDiagnosticSummary: summary => JSON.stringify(summary),
     }))
 
-    expect(checkpointContainer.innerHTML).toContain('Playback progression is blocked until all queue items at this checkpoint are resolved.')
+    expect(checkpointContainer.innerHTML).toContain('5 open · 2 watch · 1 resolved')
     expect(checkpointContainer.innerHTML).toContain('Queue items from the TT1 checkpoint are still unresolved.')
     expect(checkpointContainer.innerHTML).toContain('Proof playback restored')
     expect(checkpointContainer.innerHTML).toContain('Stage progression blocked')
+  })
+
+  it('locks proof-changing actions until setup blockers are cleared', () => {
+    const selectedCheckpoint = buildCheckpoint({
+      simulationStageCheckpointId: 'checkpoint_ready',
+      stageAdvanceBlocked: false,
+      playbackAccessible: true,
+      blockedByCheckpointId: null,
+      blockedProgressionReason: null,
+    })
+
+    const checkpoints = [selectedCheckpoint]
+    const checkpointDetail: ApiProofRunCheckpointDetail = {
+      checkpoint: selectedCheckpoint,
+      queuePreview: [],
+      offeringRollups: [],
+    }
+
+    const proofDashboard: ApiProofDashboard = {
+      imports: [{
+        curriculumImportVersionId: 'import_001',
+        sourceLabel: 'MSRUAS workbook',
+        sourceChecksum: 'source-sha',
+        outputChecksum: 'output-sha',
+        compilerVersion: 'compiler-v1',
+        validationStatus: 'valid',
+        unresolvedMappingCount: 0,
+        status: 'approved',
+        approvedAt: '2026-03-16T00:00:00.000Z',
+        createdAt: '2026-03-16T00:00:00.000Z',
+        certificate: {},
+      }],
+      latestValidation: null,
+      crosswalkReviewQueue: [],
+      proofRuns: [],
+      activeRunDetail: {
+        simulationRunId: 'run_001',
+        runLabel: 'Proof Run 1',
+        seed: 42,
+        activeOperationalSemester: 6,
+        createdAt: '2026-03-16T00:00:00.000Z',
+        startedAt: '2026-03-16T00:00:00.000Z',
+        completedAt: null,
+        status: 'active',
+        failureCode: null,
+        failureMessage: null,
+        progress: { phase: 'running', percent: 68 },
+        monitoringSummary: {
+          riskAssessmentCount: 24,
+          activeReassessmentCount: 1,
+          alertDecisionCount: 1,
+          acknowledgementCount: 0,
+          resolutionCount: 0,
+        },
+        coverageDiagnostics: {
+          behaviorProfileCoverage: { count: 1, expected: 1 },
+          topicStateCoverage: { count: 1 },
+          coStateCoverage: { count: 1 },
+          questionTemplateCoverage: { count: 1 },
+          questionResultCoverage: { count: 1 },
+          interventionResponseCoverage: { count: 1 },
+          worldContextCoverage: { count: 1 },
+        },
+        modelDiagnostics: {
+          featureRowCount: 1,
+          activeRunFeatureRowCount: 1,
+          sourceRunCount: 1,
+          runtimeSummary: {},
+          overallCourseRuntimeSummary: {},
+          queueBurdenSummary: {},
+          stageRollups: [],
+          acceptanceGateSummary: {},
+          splitSummary: { train: 0, validation: 0, test: 0 },
+          worldSplitSummary: { train: 0, validation: 0, test: 0 },
+          scenarioFamilySummary: {},
+          headSupportSummary: {},
+          calibrationVersion: null,
+          policyDiagnostics: {},
+          coEvidenceDiagnostics: {},
+          uiParityDiagnostics: {},
+          production: null,
+          challenger: null,
+          correlations: null,
+        },
+        queueDiagnostics: {
+          queuedRunCount: 0,
+          runningRunCount: 0,
+          failedRunCount: 0,
+          retryableRunCount: 0,
+          retryInFlightCount: 0,
+          oldestQueuedRunAgeSeconds: 0,
+          expiredLeaseRunCount: 0,
+        },
+        workerDiagnostics: null,
+        checkpointReadiness: {
+          totalCheckpointCount: 1,
+          readyCheckpointCount: 1,
+          blockedCheckpointCount: 0,
+          playbackBlockedCheckpointCount: 0,
+          totalBlockingQueueItemCount: 0,
+          firstBlockedCheckpointId: null,
+          lastReadyCheckpointId: 'checkpoint_ready',
+        },
+        teacherAllocationLoad: [],
+        queuePreview: [],
+        snapshots: [],
+        checkpoints,
+      },
+      lifecycleAudit: [],
+      recentOperationalEvents: [],
+    }
+
+    render(createElement(SystemAdminProofDashboardWorkspace, {
+      proofDashboard,
+      proofDashboardLoading: false,
+      batchSetupReadiness: {
+        ready: false,
+        blockers: [
+          'Add or provision students for 2022.',
+          '1 offering(s) still need a faculty owner.',
+        ],
+      },
+      activeRunCheckpoints: checkpoints,
+      activeModelDiagnostics: null,
+      activeProductionDiagnostics: null,
+      activeDiagnosticsTrainingManifestVersion: null,
+      activeDiagnosticsCalibrationVersion: null,
+      activeDiagnosticsSplitSummary: null,
+      activeDiagnosticsWorldSplitSummary: null,
+      activeDiagnosticsScenarioFamilies: null,
+      activeDiagnosticsHeadSupportSummary: null,
+      activeDiagnosticsGovernedRunCount: null,
+      activeDiagnosticsSkippedRunCount: null,
+      activeDiagnosticsDisplayProbabilityAllowed: null,
+      activeDiagnosticsSupportWarning: null,
+      activeDiagnosticsPolicyDiagnostics: null,
+      activeDiagnosticsCoEvidence: null,
+      activeDiagnosticsPolicyAcceptance: null,
+      activeDiagnosticsOverallCourseRuntime: null,
+      activeDiagnosticsQueueBurden: null,
+      activeDiagnosticsUiParity: null,
+      selectedProofCheckpoint: selectedCheckpoint,
+      selectedProofCheckpointDetail: checkpointDetail,
+      selectedProofCheckpointBlocked: false,
+      selectedProofCheckpointHasBlockedProgression: false,
+      selectedProofCheckpointCanStepForward: false,
+      selectedProofCheckpointCanPlayToEnd: true,
+      proofPlaybackRestoreNotice: null,
+      onCreateProofImport: () => {},
+      onValidateLatestProofImport: () => {},
+      onReviewPendingCrosswalks: () => {},
+      onApproveLatestProofImport: () => {},
+      onCreateProofRun: () => {},
+      onRecomputeProofRunRisk: () => {},
+      onActivateProofRun: () => {},
+      onActivateProofSemester: () => {},
+      onRetryProofRun: () => {},
+      onArchiveProofRun: () => {},
+      onRestoreProofSnapshot: () => {},
+      onResetProofRunFromScratch: () => {},
+      onResetProofPlaybackSelection: () => {},
+      onSelectProofCheckpoint: () => {},
+      onStepProofPlayback: () => {},
+      formatSplitSummary: summary => JSON.stringify(summary),
+      formatKeyedCounts: summary => JSON.stringify(summary),
+      formatHeadSupportSummary: summary => JSON.stringify(summary),
+      formatDiagnosticSummary: summary => JSON.stringify(summary),
+    }))
+
+    expect((document.querySelector('[data-proof-action="proof-create-import"]') as HTMLButtonElement).disabled).toBe(true)
+    expect((document.querySelector('[data-proof-action="proof-run-rerun"]') as HTMLButtonElement).disabled).toBe(true)
+    expect((document.querySelector('[data-proof-action="proof-recompute-risk"]') as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByText(/Finish setup before changing proof data/i)).toBeTruthy()
   })
 
   it('renders a tabbed proof control plane with bounded operations scroll regions', () => {
@@ -406,6 +579,9 @@ describe('SystemAdminProofDashboardWorkspace', () => {
         internalCompilerId: 'MC601',
         officialWebCode: 'CS601',
         confidence: 'high',
+        officialWebTitle: 'Distributed Systems',
+        reviewStatus: 'pending',
+        evidenceSource: 'official-curriculum-site',
       }],
       proofRuns: [{
         simulationRunId: 'run_001',
@@ -514,32 +690,32 @@ describe('SystemAdminProofDashboardWorkspace', () => {
         },
         teacherAllocationLoad: [{
           teacherLoadProfileId: 'load_001',
+          facultyId: 'fac_001',
           facultyName: 'Prof. Kavitha Rao',
           semesterNumber: 6,
+          sectionLoadCount: 2,
           weeklyContactHours: 12,
           assignedCredits: 18,
+          permissions: ['proof-dashboard:view'],
         }],
         queuePreview: [{
           reassessmentEventId: 'queue_001',
           studentId: 'student_001',
-          studentUsn: '1MS23CS001',
           studentName: 'Aarav Sharma',
+          usn: '1MS23CS001',
           courseCode: 'CS601',
+          courseTitle: 'Distributed Systems',
+          sectionCode: 'A',
           assignedToRole: 'mentor',
-          status: 'open',
           dueAt: '2026-03-17T00:00:00.000Z',
+          status: 'open',
           sourceKind: 'checkpoint-playback',
           stageLabel: 'Post TT1',
           coEvidenceMode: 'fallback-simulated',
           riskChangeFromPreviousCheckpointScaled: 4,
           counterfactualLiftScaled: 7,
-          title: 'Mentor follow-up',
           riskBand: 'High',
           riskProbScaled: 83,
-          noActionRiskProbScaled: 89,
-          taskType: 'follow-up',
-          simulatedActionTaken: 'follow-up',
-          recommendedAction: 'follow-up',
         }],
         snapshots: [{
           simulationResetSnapshotId: 'snapshot_001',
@@ -551,7 +727,9 @@ describe('SystemAdminProofDashboardWorkspace', () => {
       },
       lifecycleAudit: [{
         simulationLifecycleAuditId: 'audit_001',
+        simulationRunId: 'run_001',
         actionType: 'proof-run-created',
+        payload: {},
         createdAt: '2026-03-16T00:00:00.000Z',
         createdByFacultyName: 'System',
       }],
@@ -823,7 +1001,7 @@ describe('SystemAdminProofDashboardWorkspace', () => {
           expiredLeaseRunCount: 0,
         },
         workerDiagnostics: null,
-        checkpointReadiness: null,
+        checkpointReadiness: undefined,
         teacherAllocationLoad: [],
         queuePreview: [],
         snapshots: [],
@@ -886,11 +1064,11 @@ describe('SystemAdminProofDashboardWorkspace', () => {
 
     expect(markup).toContain('data-proof-action="proof-activate-semester-5"')
     expect(markup).toContain('data-proof-action="proof-activate-semester-6"')
-    expect(markup).toContain('Operational semester')
+    expect(markup).toContain('Live semester')
     expect(markup).toContain('Semester 6')
-    expect(markup).toContain('Playback override active.')
-    expect(markup).toContain('pinned to Semester 5')
-    expect(markup).toContain('operational semester remains Semester 6')
+    expect(markup).toContain('You are viewing Semester')
+    expect(markup).toContain('Semester 5')
+    expect(markup).toContain('Live operations stay on Semester 6')
     expect(markup).toContain('data-proof-shell="shared"')
     expect(markup).not.toContain('data-proof-launcher="floating"')
     expect(markup).toContain('data-proof-dashboard-layout="page"')
@@ -1029,11 +1207,11 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     }))
 
     expect(markup).toContain('data-proof-section="proof-dashboard-rail"')
-    expect(markup).toContain('Semester + checkpoint controls stay visible here.')
+    expect(markup).toContain('Keep the live semester and selected stage in view.')
     expect(markup).toContain(`color:${getAccessiblePrimaryAccent()}`)
     expect(markup).toContain('data-proof-section="proof-dashboard-scope-details"')
     expect(markup).toContain('<summary')
-    expect(markup).toContain('Scope details')
+    expect(markup).toContain('Why these numbers match')
   })
 
   it('marks proof scroll regions focusable for keyboard scrolling', () => {
@@ -1196,8 +1374,12 @@ describe('SystemAdminProofDashboardWorkspace', () => {
       checkpoint: selectedCheckpoint,
       queuePreview: [{
         simulationStageQueueProjectionId: 'queue_001',
-        simulationStageCheckpointId: selectedCheckpoint.simulationStageCheckpointId,
+        studentId: 'student_001',
+        offeringId: 'offering_001',
+        semesterNumber: selectedCheckpoint.semesterNumber,
+        sectionCode: 'A',
         courseCode: 'CS6104',
+        courseTitle: 'Distributed Systems Lab',
         assignedToRole: 'mentor',
         taskType: 'targeted-tutoring',
         status: 'watch',
@@ -1209,12 +1391,19 @@ describe('SystemAdminProofDashboardWorkspace', () => {
         coEvidenceMode: 'fallback-simulated',
         riskChangeFromPreviousCheckpointScaled: -4,
         counterfactualLiftScaled: 9,
+        detail: {},
       }],
       offeringRollups: [{
         simulationStageOfferingProjectionId: 'offering_001',
-        simulationStageCheckpointId: selectedCheckpoint.simulationStageCheckpointId,
+        offeringId: 'offering_001',
+        curriculumNodeId: null,
+        semesterNumber: selectedCheckpoint.semesterNumber,
         courseCode: 'CS6104',
+        courseTitle: 'Distributed Systems Lab',
         sectionCode: 'A',
+        stage: selectedCheckpoint.stageOrder,
+        stageLabel: selectedCheckpoint.stageLabel,
+        stageDescription: selectedCheckpoint.stageDescription,
         pendingAction: 'targeted tutoring',
         projection: {
           averageRiskProbScaled: 64,
@@ -1277,7 +1466,7 @@ describe('SystemAdminProofDashboardWorkspace', () => {
           expiredLeaseRunCount: 0,
         },
         workerDiagnostics: null,
-        checkpointReadiness: null,
+        checkpointReadiness: undefined,
         teacherAllocationLoad: [],
         queuePreview: [],
         snapshots: [],
@@ -1468,7 +1657,7 @@ describe('SystemAdminProofDashboardWorkspace', () => {
           expiredLeaseRunCount: 0,
         },
         workerDiagnostics: null,
-        checkpointReadiness: null,
+        checkpointReadiness: undefined,
         teacherAllocationLoad: [],
         queuePreview: [],
         snapshots: [],
@@ -1536,9 +1725,9 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     expect(markup).toContain('Sem 1')
     expect(markup).toContain('Sem 2')
     expect(markup).toContain('Sem 3')
-    expect(markup).toContain('Playback override active.')
-    expect(markup).toContain('pinned to Semester 1')
-    expect(markup).toContain('operational semester remains Semester 3')
+    expect(markup).toContain('You are viewing Semester')
+    expect(markup).toContain('Semester 1')
+    expect(markup).toContain('Live operations stay on Semester 3')
   })
 
   it('keeps the checkpoint tab selected while checkpoint playback is still reloading', async () => {
@@ -1616,7 +1805,7 @@ describe('SystemAdminProofDashboardWorkspace', () => {
           expiredLeaseRunCount: 0,
         },
         workerDiagnostics: null,
-        checkpointReadiness: null,
+        checkpointReadiness: undefined,
         teacherAllocationLoad: [],
         queuePreview: [],
         snapshots: [],
@@ -1776,7 +1965,7 @@ describe('SystemAdminProofDashboardWorkspace', () => {
           expiredLeaseRunCount: 0,
         },
         workerDiagnostics: null,
-        checkpointReadiness: null,
+        checkpointReadiness: undefined,
         teacherAllocationLoad: [],
         queuePreview: [],
         snapshots: [],
@@ -2108,7 +2297,7 @@ describe('SystemAdminProofDashboardWorkspace', () => {
           expiredLeaseRunCount: 0,
         },
         workerDiagnostics: null,
-        checkpointReadiness: null,
+        checkpointReadiness: undefined,
         teacherAllocationLoad: [],
         queuePreview: [],
         snapshots: [],
@@ -2339,7 +2528,7 @@ describe('SystemAdminProofDashboardWorkspace', () => {
           expiredLeaseRunCount: 0,
         },
         workerDiagnostics: null,
-        checkpointReadiness: null,
+        checkpointReadiness: undefined,
         teacherAllocationLoad: [],
         queuePreview: [],
         snapshots: [],
@@ -2494,8 +2683,8 @@ describe('SystemAdminProofDashboardWorkspace', () => {
             queueBurdenSummary: {},
             stageRollups: [],
             acceptanceGateSummary: {},
-            splitSummary: {},
-            worldSplitSummary: {},
+            splitSummary: { train: 0, validation: 0, test: 0 },
+            worldSplitSummary: { train: 0, validation: 0, test: 0 },
             scenarioFamilySummary: {},
             headSupportSummary: {},
             uiParityDiagnostics: {},
@@ -2504,9 +2693,13 @@ describe('SystemAdminProofDashboardWorkspace', () => {
             queuedRunCount: 0,
             runningRunCount: 0,
             failedRunCount: 0,
+            retryableRunCount: 0,
+            retryInFlightCount: 0,
+            oldestQueuedRunAgeSeconds: 0,
+            expiredLeaseRunCount: 0,
           },
           workerDiagnostics: null,
-          checkpointReadiness: null,
+          checkpointReadiness: undefined,
           teacherAllocationLoad: [],
           queuePreview: [],
           snapshots: [
@@ -2570,7 +2763,7 @@ describe('SystemAdminProofDashboardWorkspace', () => {
       formatDiagnosticSummary: summary => JSON.stringify(summary),
     }))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reset Branch From Scratch' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Full Preview' }))
 
     expect(onResetProofRunFromScratch).toHaveBeenCalledWith('run_001', 'snapshot_baseline')
   })

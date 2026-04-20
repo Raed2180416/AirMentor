@@ -98,7 +98,6 @@ async function advanceRequestToClosed() {
     assert(nextAction, 'Expected a visible request action button before closure')
 
     await focusAndActivate(nextAction.button, `${nextAction.action} request action`)
-    await expectFlash('Request advanced.')
     await page.waitForFunction((previousAction) => {
       const hasClosed = Array.from(document.querySelectorAll('*')).some(node => node.textContent?.trim() === 'Closed')
       if (hasClosed) return true

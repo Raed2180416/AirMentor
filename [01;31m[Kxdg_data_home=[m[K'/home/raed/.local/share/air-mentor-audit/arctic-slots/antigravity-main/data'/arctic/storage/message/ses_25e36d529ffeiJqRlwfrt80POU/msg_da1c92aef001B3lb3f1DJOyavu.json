@@ -1,0 +1,13 @@
+{
+  "id": "msg_da1c92aef001B3lb3f1DJOyavu",
+  "sessionID": "ses_25e36d529ffeiJqRlwfrt80POU",
+  "role": "user",
+  "time": {
+    "created": 1776535808751
+  },
+  "agent": "build",
+  "model": {
+    "providerID": "antigravity",
+    "modelID": "gpt-5.3-codex"
+  }
+}

@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { BookOpen, Shield } from 'lucide-react'
-import type { ApiAcademicLoginFaculty } from './api/types'
+import type { ApiAcademicLoginFaculty, ApiPasswordSetupInspectResponse, ApiPasswordSetupRequestResponse } from './api/types'
 import { T, mono, sora } from './data'
 import { InfoBanner } from './system-admin-ui'
 import { Btn, Card, PageShell } from './ui-primitives'
@@ -69,7 +69,14 @@ type AcademicLoginPageProps = {
   heroBody?: string
   busy?: boolean
   externalError?: string
+  passwordSetupToken?: string | null
+  passwordSetupInspect?: ApiPasswordSetupInspectResponse | null
+  passwordSetupMessage?: string
+  passwordSetupRequestResult?: ApiPasswordSetupRequestResponse | null
   onBackToPortal?: () => void
+  onRequestPasswordSetup: (identifier: string) => Promise<void> | void
+  onRedeemPasswordSetup: (password: string) => Promise<void> | void
+  onClearPasswordSetupToken: () => void
   onLogin: (identifier: string, password: string) => Promise<void> | void
 }
 
@@ -80,11 +87,21 @@ function AcademicLoginPage({
   heroBody = 'Use the academic portal for course delivery, mentor follow-up, grading operations, and timetable-aware teaching workflows.',
   busy = false,
   externalError = '',
+  passwordSetupToken = null,
+  passwordSetupInspect = null,
+  passwordSetupMessage = '',
+  passwordSetupRequestResult = null,
   onBackToPortal,
+  onRequestPasswordSetup,
+  onRedeemPasswordSetup,
+  onClearPasswordSetupToken,
   onLogin,
 }: AcademicLoginPageProps) {
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
+  const [passwordHelpIdentifier, setPasswordHelpIdentifier] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const selectedOption = useMemo(() => {
     const key = identifier.trim().toLowerCase()
@@ -103,6 +120,40 @@ function AcademicLoginPage({
       await onLogin(identifier.trim(), password)
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Login failed')
+    }
+  }
+
+  const handlePasswordSetupRequest = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!passwordHelpIdentifier.trim()) {
+      setErrorMessage('Enter your username or email first.')
+      return
+    }
+    try {
+      setErrorMessage('')
+      await onRequestPasswordSetup(passwordHelpIdentifier.trim())
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Could not prepare the password setup link.')
+    }
+  }
+
+  const handlePasswordRedeem = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!newPassword.trim()) {
+      setErrorMessage('Enter a new password.')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setErrorMessage('Passwords do not match.')
+      return
+    }
+    try {
+      setErrorMessage('')
+      await onRedeemPasswordSetup(newPassword)
+      setNewPassword('')
+      setConfirmPassword('')
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Could not save the new password.')
     }
   }
 
@@ -155,60 +206,120 @@ function AcademicLoginPage({
             <div style={{ ...mono, fontSize: 10, color: T.success, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Secure Session</div>
             <div style={{ ...sora, fontSize: 28, fontWeight: 800, color: T.text, marginTop: 10 }}>Sign in to enter the teaching workspace.</div>
             <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 10, lineHeight: 1.8 }}>
-              Sign in using your username and password. {helperText}
+              {passwordSetupToken
+                ? 'Create a new password to finish the invite or reset flow, then return here to sign in.'
+                : `Sign in using your username or email and password. ${helperText}`}
             </div>
 
-            <form onSubmit={event => { void handleSubmit(event) }} style={{ marginTop: 22, display: 'grid', gap: 14 }}>
-              <div>
-                <AcademicFieldLabel>Username</AcademicFieldLabel>
-                <AcademicInput
-                  id="teacher-username"
-                  value={identifier}
-                  onChange={event => setIdentifier(event.target.value)}
-                  disabled={busy}
-                  placeholder="e.g. kavitha.rao"
-                  autoComplete="username"
-                />
-              </div>
-
-              {selectedOption ? (
+            {passwordSetupToken ? (
+              <form onSubmit={event => { void handlePasswordRedeem(event) }} style={{ marginTop: 22, display: 'grid', gap: 14 }}>
                 <div style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 12px' }}>
-                  <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 4 }}>Selected profile</div>
-                  <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text }}>{selectedOption.displayName || selectedOption.name}</div>
+                  <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 4 }}>Password setup</div>
+                  <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text }}>{passwordSetupInspect?.displayName ?? 'Preparing account...'}</div>
                   <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
-                    {`${selectedOption.departmentCode ?? selectedOption.dept ?? 'Faculty'}${selectedOption.designation ? ` · ${selectedOption.designation}` : selectedOption.roleTitle ? ` · ${selectedOption.roleTitle}` : ''}${selectedOption.allowedRoles?.length ? ` · ${selectedOption.allowedRoles.join(' / ')}` : ` · Faculty ID ${selectedOption.facultyId}`}`}
+                    {passwordSetupInspect
+                      ? `${passwordSetupInspect.username} · ${passwordSetupInspect.email} · expires ${new Date(passwordSetupInspect.expiresAt).toLocaleString('en-IN')}`
+                      : 'Checking the link...'}
                   </div>
                 </div>
-              ) : null}
-
-              <div>
-                <AcademicFieldLabel>Password</AcademicFieldLabel>
-                <AcademicInput id="teacher-password" type="password" value={password} onChange={event => setPassword(event.target.value)} disabled={busy} placeholder="••••••••" autoComplete="current-password" />
-              </div>
-
-              {errorMessage ? <AcademicNotice message={errorMessage} tone="error" /> : null}
-              {externalError ? <AcademicNotice message={externalError} tone="error" /> : null}
-
-              <div style={{ display: 'flex', gap: 12, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
-                {onBackToPortal ? (
-                  <Btn type="button" variant="ghost" onClick={onBackToPortal} disabled={busy}>
-                    Back To Portal
+                <div>
+                  <AcademicFieldLabel>New Password</AcademicFieldLabel>
+                  <AcademicInput id="teacher-new-password" type="password" value={newPassword} onChange={event => setNewPassword(event.target.value)} disabled={busy || !passwordSetupInspect} placeholder="Minimum 8 characters" autoComplete="new-password" />
+                </div>
+                <div>
+                  <AcademicFieldLabel>Confirm Password</AcademicFieldLabel>
+                  <AcademicInput id="teacher-confirm-password" type="password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} disabled={busy || !passwordSetupInspect} placeholder="Repeat password" autoComplete="new-password" />
+                </div>
+                {errorMessage ? <AcademicNotice message={errorMessage} tone="error" /> : null}
+                {externalError ? <AcademicNotice message={externalError} tone="error" /> : null}
+                {passwordSetupMessage ? <AcademicNotice message={passwordSetupMessage} tone="success" /> : null}
+                <div style={{ display: 'flex', gap: 12, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <Btn type="button" variant="ghost" onClick={onClearPasswordSetupToken} disabled={busy}>
+                    Back To Login
                   </Btn>
-                ) : <span />}
-                <Btn type="submit" disabled={busy}>
-                  <Shield size={14} />
-                  {busy ? 'Signing In...' : 'Sign In'}
-                </Btn>
-              </div>
-            </form>
+                  <Btn type="submit" disabled={busy || !passwordSetupInspect}>
+                    <Shield size={14} />
+                    {busy ? 'Saving Password...' : 'Save Password'}
+                  </Btn>
+                </div>
+              </form>
+            ) : (
+              <form onSubmit={event => { void handleSubmit(event) }} style={{ marginTop: 22, display: 'grid', gap: 14 }}>
+                <div>
+                  <AcademicFieldLabel>Username Or Email</AcademicFieldLabel>
+                  <AcademicInput
+                    id="teacher-username"
+                    value={identifier}
+                    onChange={event => setIdentifier(event.target.value)}
+                    disabled={busy}
+                    placeholder="e.g. kavitha.rao or kavitha.rao@msruas.ac.in"
+                    autoComplete="username"
+                  />
+                </div>
+
+                {selectedOption ? (
+                  <div style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 12px' }}>
+                    <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 4 }}>Selected profile</div>
+                    <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text }}>{selectedOption.displayName || selectedOption.name}</div>
+                    <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
+                      {`${selectedOption.departmentCode ?? selectedOption.dept ?? 'Faculty'}${selectedOption.designation ? ` · ${selectedOption.designation}` : selectedOption.roleTitle ? ` · ${selectedOption.roleTitle}` : ''}${selectedOption.allowedRoles?.length ? ` · ${selectedOption.allowedRoles.join(' / ')}` : ` · Faculty ID ${selectedOption.facultyId}`}`}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div>
+                  <AcademicFieldLabel>Password</AcademicFieldLabel>
+                  <AcademicInput id="teacher-password" type="password" value={password} onChange={event => setPassword(event.target.value)} disabled={busy} placeholder="••••••••" autoComplete="current-password" />
+                </div>
+
+                {errorMessage ? <AcademicNotice message={errorMessage} tone="error" /> : null}
+                {externalError ? <AcademicNotice message={externalError} tone="error" /> : null}
+                {passwordSetupMessage ? <AcademicNotice message={passwordSetupMessage} tone="success" /> : null}
+
+                <div style={{ display: 'flex', gap: 12, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+                  {onBackToPortal ? (
+                    <Btn type="button" variant="ghost" onClick={onBackToPortal} disabled={busy}>
+                      Back To Portal
+                    </Btn>
+                  ) : <span />}
+                  <Btn type="submit" disabled={busy}>
+                    <Shield size={14} />
+                    {busy ? 'Signing In...' : 'Sign In'}
+                  </Btn>
+                </div>
+              </form>
+            )}
           </div>
 
-          <div style={{ width: '100%', maxWidth: 680, margin: '24px auto 0', borderRadius: 16, border: `1px solid ${T.border}`, background: T.surface2, padding: '14px 16px' }}>
-            <div style={{ ...mono, fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>After Sign-In</div>
-            <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 8, lineHeight: 1.8 }}>
-              The workspace restores your role-aware context, current teaching assignments, and the linked mentoring views that belong to the selected faculty profile.
+          {!passwordSetupToken ? (
+            <div style={{ width: '100%', maxWidth: 680, margin: '24px auto 0', borderRadius: 16, border: `1px solid ${T.border}`, background: T.surface2, padding: '14px 16px', display: 'grid', gap: 12 }}>
+              <div>
+                <div style={{ ...mono, fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>After Sign-In</div>
+                <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 8, lineHeight: 1.8 }}>
+                  The workspace restores your role-aware context, current teaching assignments, and the linked mentoring views that belong to the selected faculty profile.
+                </div>
+              </div>
+              <form onSubmit={event => { void handlePasswordSetupRequest(event) }} style={{ display: 'grid', gap: 10 }}>
+                <div>
+                  <div style={{ ...mono, fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>First Sign-In Or Forgot Password</div>
+                  <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 6, lineHeight: 1.8 }}>
+                    Enter your username or email to request a single-use password setup link.
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 10 }}>
+                  <AcademicInput value={passwordHelpIdentifier} onChange={event => setPasswordHelpIdentifier(event.target.value)} disabled={busy} placeholder="Username or email" />
+                  <Btn type="submit" variant="ghost" disabled={busy}>Send Link</Btn>
+                </div>
+                {passwordSetupRequestResult ? <AcademicNotice message={passwordSetupRequestResult.message} tone="success" /> : null}
+                {passwordSetupRequestResult?.setupUrl ? (
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <Btn type="button" size="sm" variant="ghost" onClick={() => window.open(passwordSetupRequestResult.setupUrl ?? '', '_blank', 'noopener,noreferrer')}>Open Preview Link</Btn>
+                    <Btn type="button" size="sm" variant="ghost" onClick={() => void navigator.clipboard.writeText(passwordSetupRequestResult.setupUrl ?? '')}>Copy Preview Link</Btn>
+                  </div>
+                ) : null}
+              </form>
             </div>
-          </div>
+          ) : null}
         </Card>
       </div>
     </AcademicAuthPageShell>
@@ -259,11 +370,19 @@ export function AcademicFacultyContextUnavailableState({
 type AcademicSessionBoundaryProps = {
   backendReady: boolean
   booting: boolean
+  loadingLabel?: string
   sessionReady: boolean
   facultyOptions: ApiAcademicLoginFaculty[]
   authBusy: boolean
   authError: string
+  passwordSetupToken?: string | null
+  passwordSetupInspect?: ApiPasswordSetupInspectResponse | null
+  passwordSetupMessage?: string
+  passwordSetupRequestResult?: ApiPasswordSetupRequestResponse | null
   onBackToPortal: () => void
+  onRequestPasswordSetup: (identifier: string) => Promise<void> | void
+  onRedeemPasswordSetup: (password: string) => Promise<void> | void
+  onClearPasswordSetupToken: () => void
   onLogin: (identifier: string, password: string) => Promise<void> | void
   children: ReactNode
 }
@@ -271,11 +390,19 @@ type AcademicSessionBoundaryProps = {
 export function AcademicSessionBoundary({
   backendReady,
   booting,
+  loadingLabel,
   sessionReady,
   facultyOptions,
   authBusy,
   authError,
+  passwordSetupToken = null,
+  passwordSetupInspect = null,
+  passwordSetupMessage = '',
+  passwordSetupRequestResult = null,
   onBackToPortal,
+  onRequestPasswordSetup,
+  onRedeemPasswordSetup,
+  onClearPasswordSetupToken,
   onLogin,
   children,
 }: AcademicSessionBoundaryProps) {
@@ -287,6 +414,10 @@ export function AcademicSessionBoundary({
     return <AcademicRouteLoadingFallback label="Restoring academic session..." />
   }
 
+  if (loadingLabel) {
+    return <AcademicRouteLoadingFallback label={loadingLabel} />
+  }
+
   if (!sessionReady) {
     return (
       <AcademicLoginPage
@@ -295,7 +426,14 @@ export function AcademicSessionBoundary({
         heroBody="Sign in against the live backend so course leaders, mentors, and HoDs land in their actual system-admin managed teaching context."
         busy={authBusy}
         externalError={authError}
+        passwordSetupToken={passwordSetupToken}
+        passwordSetupInspect={passwordSetupInspect}
+        passwordSetupMessage={passwordSetupMessage}
+        passwordSetupRequestResult={passwordSetupRequestResult}
         onBackToPortal={onBackToPortal}
+        onRequestPasswordSetup={onRequestPasswordSetup}
+        onRedeemPasswordSetup={onRedeemPasswordSetup}
+        onClearPasswordSetupToken={onClearPasswordSetupToken}
         onLogin={onLogin}
       />
     )

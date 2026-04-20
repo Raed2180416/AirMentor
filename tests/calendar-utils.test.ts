@@ -94,6 +94,36 @@ describe('calendar utils', () => {
     expect(recurringUpdated.scheduleMeta?.time).toBeUndefined()
   })
 
+  it('uses supplied proof anchor when deriving due label from a placement', () => {
+    const task: SharedTask = {
+      id: 'task-anchor',
+      studentId: 'student-1',
+      studentName: 'Aarav Sharma',
+      studentUsn: '1MS23CS001',
+      offeringId: offerings[0]?.offId ?? 'c3-A',
+      courseCode: offerings[0]?.code ?? 'CS401',
+      courseName: offerings[0]?.title ?? 'Algorithms',
+      year: offerings[0]?.year ?? '2nd Year',
+      riskProb: 0.8,
+      riskBand: 'High',
+      title: 'Proof playback follow-up',
+      due: 'This week',
+      status: 'New',
+      actionHint: 'Follow-up needed',
+      priority: 80,
+      createdAt: 1,
+      updatedAt: 2,
+      assignedTo: 'Course Leader',
+      taskType: 'Academic',
+    }
+
+    const placement = buildUntimedPlacement({ taskId: task.id, dateISO: '2026-03-18' })
+    const updated = applyPlacementToTask(task, placement, '2026-03-18')
+
+    expect(updated.dueDateISO).toBe('2026-03-18')
+    expect(updated.due).toBe('Today')
+  })
+
   it('keeps week derivation Monday-based for the timetable workspace', () => {
     expect(startOfWeekISO('2026-03-19')).toBe('2026-03-16')
     expect(getWeekDates('2026-03-19')).toEqual([

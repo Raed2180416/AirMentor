@@ -26,6 +26,7 @@ describe('FacultyProfilePage proof mode', () => {
       },
       activeRole: 'Course Leader',
       profile: {
+        facultyId: 'mnc_t1',
         displayName: 'Dr. Asha Rao',
         designation: 'Professor',
         employeeCode: 'F001',
@@ -175,13 +176,13 @@ describe('FacultyProfilePage proof mode', () => {
     const markup = renderToStaticMarkup(createElement(FacultyProfilePage, props))
 
     expect(markup).toContain('data-proof-section="proof-mode-authority"')
-    expect(markup).toContain('Proof mode is active')
+    expect(markup).toContain('You are viewing')
     expect(markup).toContain('data-proof-shell="shared"')
     expect(markup).toContain('data-proof-launcher="floating"')
     expect(markup).toContain('data-proof-action="proof-shell-launcher"')
     expect(markup).toContain('data-proof-surface="teacher-proof-panel"')
     expect(markup).toContain('data-proof-section="proof-authority-note"')
-    expect(markup).toContain('Authoritative proof panel for this faculty scope')
+    expect(markup).toContain('This proof panel controls the faculty preview data only')
     expect(markup).toContain('data-proof-launcher-mode="popup-capable"')
     expect(markup).toContain('data-proof-section="active-run-contexts"')
     expect(markup).toContain('data-proof-section="checkpoint-overlay"')
@@ -194,9 +195,8 @@ describe('FacultyProfilePage proof mode', () => {
     expect(markup).toContain('Semester 6 · Sections A · COURSE_LEADER, MENTOR')
     expect(markup).toContain('Checkpoint-bound batch context derived from the active proof scope.')
     expect(markup).toContain('Checkpoint-bound course-leader scope derived from monitored proof offerings.')
-    expect(markup).toContain('Checkpoint-bound proof counts')
-    expect(markup).toContain('Model usefulness and proof-semester counts')
-    expect(markup).toContain('checkpoint semester 6')
+    expect(markup).toContain('You are viewing a saved preview checkpoint (Semester 6)')
+    expect(markup).toContain('Every number on this page is fixed to this point in time')
     expect(markup).toContain('Proof-semester elective fit')
     expect(markup).toContain('teacher-proof-open-partial-profile')
   })
@@ -217,6 +217,7 @@ describe('FacultyProfilePage proof mode', () => {
       },
       activeRole: 'Course Leader',
       profile: {
+        facultyId: 'mnc_t1',
         displayName: 'Dr. Asha Rao',
         designation: 'Professor',
         employeeCode: 'F001',
@@ -291,7 +292,7 @@ describe('FacultyProfilePage proof mode', () => {
     fireEvent.click(screen.getByRole('button', { name: /Jump to teacher proof controls/ }))
 
     expect(screen.getAllByText('Teacher proof control surface').length).toBeGreaterThanOrEqual(2)
-    expect(screen.getByText(/Model usefulness is checkpoint-bound here\./)).toBeTruthy()
+    expect(screen.getByText(/Use this popup to confirm the selected stage, queue size, and elective-fit count/)).toBeTruthy()
     expect(screen.getByText('Open proof controls')).toBeTruthy()
   })
 
@@ -348,6 +349,7 @@ describe('FacultyProfilePage proof mode', () => {
       },
       activeRole: 'Course Leader',
       profile: {
+        facultyId: 'mnc_t1',
         displayName: 'Dr. Asha Rao',
         designation: 'Professor',
         employeeCode: 'F001',
@@ -467,6 +469,7 @@ describe('FacultyProfilePage proof mode', () => {
       },
       activeRole: 'Mentor',
       profile: {
+        facultyId: 'mnc_t1',
         displayName: 'Dr. Asha Rao',
         designation: 'Professor',
         employeeCode: 'F001',

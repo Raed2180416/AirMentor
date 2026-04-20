@@ -1078,6 +1078,15 @@ export async function registerAcademicAdminOfferingRoutes(
     const [current] = await context.db.select().from(sectionOfferings).where(eq(sectionOfferings.offeringId, params.offeringId))
     if (!current) throw notFound('Section offering not found')
     expectVersion(current.version, body.version, 'section offering', current)
+    const stageMutationRequested = (
+      body.stage !== current.stage
+      || body.stageLabel !== current.stageLabel
+      || body.stageDescription !== current.stageDescription
+      || body.stageColor !== current.stageColor
+    )
+    if (stageMutationRequested) {
+      throw badRequest('Use the dedicated advance-stage flow to change class stage state.')
+    }
     await context.db.update(sectionOfferings).set({
       courseId: body.courseId,
       termId: body.termId,
@@ -1086,10 +1095,10 @@ export async function registerAcademicAdminOfferingRoutes(
       yearLabel: body.yearLabel,
       attendance: body.attendance,
       studentCount: body.studentCount,
-      stage: body.stage,
-      stageLabel: body.stageLabel,
-      stageDescription: body.stageDescription,
-      stageColor: body.stageColor,
+      stage: current.stage,
+      stageLabel: current.stageLabel,
+      stageDescription: current.stageDescription,
+      stageColor: current.stageColor,
       tt1Done: body.tt1Done ? 1 : 0,
       tt2Done: body.tt2Done ? 1 : 0,
       tt1Locked: body.tt1Locked ? 1 : 0,

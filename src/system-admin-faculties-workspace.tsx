@@ -63,6 +63,7 @@ import type {
   ApiStudentRecord,
 } from './api/types'
 import type { ApiCurriculumFeatureConfigBundle, ApiCurriculumLinkageCandidate, ApiCurriculumLinkageGenerationStatus } from './api/types'
+import type { BatchSetupReadiness } from './batch-setup-readiness'
 
 type RestoreNotice = { tone: 'neutral' | 'error'; message: string } | null
 
@@ -566,6 +567,7 @@ type SystemAdminFacultiesWorkspaceProps = {
   batchStudentsWithoutEnrollment: ApiStudentRecord[]
   batchStudentsWithoutMentor: ApiStudentRecord[]
   batchOfferingsWithoutRoster: LiveAdminDataset['offerings']
+  batchSetupReadiness: BatchSetupReadiness | null
   bulkMentorAssignmentForm: BulkMentorAssignmentFormState
   setBulkMentorAssignmentForm: Dispatch<SetStateAction<BulkMentorAssignmentFormState>>
   bulkMentorAssignmentPreview: ApiMentorAssignmentBulkApplyResponse | null
@@ -703,6 +705,7 @@ export function SystemAdminFacultiesWorkspace({
   batchStudentsWithoutEnrollment,
   batchStudentsWithoutMentor,
   batchOfferingsWithoutRoster,
+  batchSetupReadiness,
   bulkMentorAssignmentForm,
   setBulkMentorAssignmentForm,
   bulkMentorAssignmentPreview,
@@ -1601,6 +1604,24 @@ export function SystemAdminFacultiesWorkspace({
         </Card>
       ) : null}
 
+      {selectedBatch && batchSetupReadiness && !batchSetupReadiness.ready ? (
+        <Card style={{ padding: 16, display: 'grid', gap: 10, background: `linear-gradient(180deg, ${withAlpha(T.danger, '10')}, ${T.surface})` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div>
+              <div style={{ ...mono, fontSize: 9, color: T.danger, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Setup Checklist</div>
+              <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text, marginTop: 6 }}>Finish setup before stage progression or proof preview</div>
+            </div>
+            <Chip color={T.danger}>{`${batchSetupReadiness.blockers.length} blocker${batchSetupReadiness.blockers.length === 1 ? '' : 's'}`}</Chip>
+          </div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {batchSetupReadiness.blockers.map(blocker => (
+              <div key={blocker} style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>{`• ${blocker}`}</div>
+            ))}
+          </div>
+          <InfoBanner tone="error" message="Proof preview buttons stay locked until every blocker above is cleared." />
+        </Card>
+      ) : null}
+
       {!selectedAcademicFaculty ? (
         <SectionHeading title="Academic Faculties" eyebrow="Hierarchy" caption="Select an academic faculty in the tree to begin, or create one below." />
       ) : null}
@@ -1836,13 +1857,21 @@ export function SystemAdminFacultiesWorkspace({
             />
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <Chip color={T.success}>{`${proofDashboardProps.proofDashboard?.activeRunDetail?.runLabel ?? 'No active run'} · ${proofDashboardProps.proofDashboard?.activeRunDetail?.status ?? 'idle'}`}</Chip>
-              <Chip color={T.accent}>{`Operational semester ${proofDashboardProps.proofDashboard?.activeRunDetail?.activeOperationalSemester ?? '—'}`}</Chip>
+              <Chip color={T.accent}>{`Live semester ${proofDashboardProps.proofDashboard?.activeRunDetail?.activeOperationalSemester ?? '—'}`}</Chip>
               <Chip color={T.warning}>{`${proofDashboardProps.proofDashboard?.activeRunDetail?.monitoringSummary.activeReassessmentCount ?? 0} open queue`}</Chip>
               <Chip color={T.orange}>{`${proofDashboardProps.proofDashboard?.activeRunDetail?.monitoringSummary.acknowledgementCount ?? 0} acknowledgements`}</Chip>
+              {batchSetupReadiness ? (
+                <Chip color={batchSetupReadiness.ready ? T.success : T.danger}>
+                  {batchSetupReadiness.ready ? 'Setup complete' : 'Setup incomplete'}
+                </Chip>
+              ) : null}
             </div>
             <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
               Curriculum import manages governed course rows and linkage candidates. Provisioning materializes live offerings, owners, timetables, and optional synthetic test data. Queue pressure, proof-stage progression, and backend acknowledgement state are reviewed from the proof dashboard so this workspace stays focused on structure and ownership semantics.
             </div>
+            {batchSetupReadiness && !batchSetupReadiness.ready ? (
+              <InfoBanner tone="error" message={`Complete setup first: ${batchSetupReadiness.blockers.join(' ')}`} />
+            ) : null}
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <Btn type="button" size="sm" onClick={onOpenProofDashboard}>Open Proof Dashboard</Btn>
               <Chip color={proofDashboardProps.proofDashboardLoading ? T.dim : T.success}>

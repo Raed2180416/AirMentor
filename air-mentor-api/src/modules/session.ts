@@ -4,17 +4,31 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { sendCookie, type RouteContext } from '../app.js'
 import { buildCsrfToken } from '../lib/csrf.js'
-import { facultyProfiles, loginRateLimitWindows, roleGrants, sessions, uiPreferences, userAccounts, userPasswordCredentials } from '../db/schema.js'
+import { facultyProfiles, loginRateLimitWindows, roleGrants, sessions, uiPreferences, userAccounts, userPasswordCredentials, userPasswordSetupTokens } from '../db/schema.js'
 import { createId } from '../lib/ids.js'
 import { badRequest, conflict, notFound, tooManyRequests, unauthorized } from '../lib/http-errors.js'
-import { verifyPassword } from '../lib/passwords.js'
+import { buildPasswordSetupLink, deriveFacultyCredentialStatus, hashPasswordSetupToken, isPasswordSetupTokenExpired, issuePasswordSetupToken } from '../lib/password-setup.js'
+import { createNoopEmailTransport } from '../lib/email-transport.js'
+import { EmailRateLimiter } from '../lib/email-rate-limiter.js'
+import { hashPassword, verifyPassword } from '../lib/passwords.js'
 import { emitOperationalEvent } from '../lib/telemetry.js'
 import { addHours } from '../lib/time.js'
 import { ensurePreference, parseOrThrow, requireAuth, resolveRequestAuth, sortActiveRoleGrantRows } from './support.js'
 
+const selfServicePasswordSetupRateLimiter = new EmailRateLimiter(10 * 60 * 1000, 3)
+
 const loginSchema = z.object({
   identifier: z.string().min(1),
   password: z.string().min(1),
+})
+
+const passwordSetupRequestSchema = z.object({
+  identifier: z.string().min(1),
+})
+
+const passwordSetupRedeemSchema = z.object({
+  token: z.string().min(1),
+  password: z.string().min(8),
 })
 
 const themePatchSchema = z.object({
@@ -136,6 +150,29 @@ export async function registerSessionRoutes(app: FastifyInstance, context: Route
     await context.db.delete(loginRateLimitWindows).where(eq(loginRateLimitWindows.attemptKey, getAttemptKey(identifier)))
   }
 
+  async function findUserByIdentifier(identifier: string) {
+    const normalized = normalizeIdentifier(identifier)
+    const users = await context.db.select().from(userAccounts)
+    return users.find(user =>
+      normalizeIdentifier(user.username) === normalized
+      || normalizeIdentifier(user.email) === normalized,
+    ) ?? null
+  }
+
+  async function findPasswordSetupContextByToken(token: string) {
+    const tokenHash = hashPasswordSetupToken(token)
+    const [tokenRow] = await context.db.select().from(userPasswordSetupTokens).where(eq(userPasswordSetupTokens.tokenHash, tokenHash))
+    if (!tokenRow) throw notFound('Password setup link is invalid')
+    const now = context.now()
+    if (tokenRow.consumedAt) throw badRequest('This password setup link has already been used')
+    if (isPasswordSetupTokenExpired(tokenRow.expiresAt, now)) throw badRequest('This password setup link has expired')
+    const [user] = await context.db.select().from(userAccounts).where(eq(userAccounts.userId, tokenRow.userId))
+    if (!user || user.status !== 'active') throw notFound('Active user account not found for this password setup link')
+    const [faculty] = await context.db.select().from(facultyProfiles).where(and(eq(facultyProfiles.userId, user.userId), eq(facultyProfiles.status, 'active')))
+    if (!faculty) throw notFound('Active faculty profile not found for this password setup link')
+    return { tokenRow, user, faculty }
+  }
+
   app.addHook('preHandler', async request => {
     request.auth = await resolveRequestAuth(context, request.cookies[context.config.sessionCookieName])
   })
@@ -171,8 +208,7 @@ export async function registerSessionRoutes(app: FastifyInstance, context: Route
   }, async (request, reply) => {
     const body = parseOrThrow(loginSchema, request.body)
     await assertLoginAttemptAllowed(body.identifier)
-    const users = await context.db.select().from(userAccounts).where(eq(userAccounts.username, body.identifier))
-    const user = users[0]
+    const user = await findUserByIdentifier(body.identifier)
     if (!user) {
       await recordFailedLogin(body.identifier)
       emitOperationalEvent('auth.login.failed', {
@@ -199,7 +235,7 @@ export async function registerSessionRoutes(app: FastifyInstance, context: Route
         userId: user.userId,
         reason: 'credential_missing',
       }, { level: 'warn' })
-      throw unauthorized('Password is not configured for this account')
+      throw unauthorized('Finish password setup from the invite or reset link before signing in')
     }
 
     const isValid = await verifyPassword(credential.passwordHash, body.password)
@@ -248,6 +284,143 @@ export async function registerSessionRoutes(app: FastifyInstance, context: Route
       activeRole: grants[0].roleCode,
     })
     return (await buildSessionPayload(context, sessionId)).payload
+  })
+
+  app.post('/api/session/password-setup/request', {
+    schema: {
+      tags: ['session'],
+      summary: 'Request a password setup or reset link',
+    },
+  }, async request => {
+    const body = parseOrThrow(passwordSetupRequestSchema, request.body)
+    const user = await findUserByIdentifier(body.identifier)
+    if (!user || user.status !== 'active') {
+      return {
+        ok: true as const,
+        previewEnabled: context.config.passwordSetupPreviewEnabled,
+        setupUrl: null,
+        message: 'If this account exists, a password setup link has been prepared.',
+      }
+    }
+    const [faculty] = await context.db.select().from(facultyProfiles).where(and(eq(facultyProfiles.userId, user.userId), eq(facultyProfiles.status, 'active')))
+    if (!faculty) {
+      return {
+        ok: true as const,
+        previewEnabled: context.config.passwordSetupPreviewEnabled,
+        setupUrl: null,
+        message: 'If this account exists, a password setup link has been prepared.',
+      }
+    }
+    const credentialRows = await context.db.select().from(userPasswordCredentials).where(eq(userPasswordCredentials.userId, user.userId))
+    const now = context.now()
+    const issued = issuePasswordSetupToken(context.config, now)
+    const purpose = credentialRows.length > 0 ? 'reset' : 'invite'
+    await context.db.insert(userPasswordSetupTokens).values({
+      passwordSetupTokenId: issued.passwordSetupTokenId,
+      userId: user.userId,
+      purpose,
+      tokenHash: issued.tokenHash,
+      issuedToEmail: user.email,
+      requestedByUserId: null,
+      expiresAt: issued.expiresAt,
+      consumedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    })
+    emitOperationalEvent('auth.password_setup.requested', {
+      userId: user.userId,
+      facultyId: faculty.facultyId,
+      purpose,
+      previewEnabled: context.config.passwordSetupPreviewEnabled,
+    })
+    const setupLink = buildPasswordSetupLink(context.config, issued.rawToken)
+    const transport = context.emailTransport ?? createNoopEmailTransport()
+    const rateLimitResult = selfServicePasswordSetupRateLimiter.check(user.email, Date.now())
+    if (rateLimitResult.allowed) {
+      await transport.sendPasswordSetupEmail({
+        to: user.email,
+        recipientName: faculty.displayName ?? user.username,
+        setupLink,
+        purpose,
+        expiresAt: issued.expiresAt,
+        fromAddress: context.config.emailFromAddress,
+        fromName: context.config.emailFromName,
+      })
+    }
+    return {
+      ok: true as const,
+      previewEnabled: context.config.passwordSetupPreviewEnabled,
+      setupUrl: context.config.passwordSetupPreviewEnabled ? setupLink : null,
+      message: context.config.passwordSetupPreviewEnabled
+        ? 'Password setup preview link is ready on this local system.'
+        : 'If this account exists, a password setup link has been sent.',
+    }
+  })
+
+  app.get('/api/session/password-setup/:token', {
+    schema: {
+      tags: ['session'],
+      summary: 'Inspect a password setup or reset link',
+    },
+  }, async request => {
+    const params = parseOrThrow(z.object({ token: z.string().min(1) }), request.params)
+    const { tokenRow, user, faculty } = await findPasswordSetupContextByToken(params.token)
+    return {
+      purpose: tokenRow.purpose,
+      username: user.username,
+      email: user.email,
+      facultyId: faculty.facultyId,
+      displayName: faculty.displayName,
+      expiresAt: tokenRow.expiresAt,
+      credentialStatus: deriveFacultyCredentialStatus({
+        now: context.now(),
+        passwordConfigured: (await context.db.select().from(userPasswordCredentials).where(eq(userPasswordCredentials.userId, user.userId))).length > 0,
+        tokens: await context.db.select().from(userPasswordSetupTokens).where(eq(userPasswordSetupTokens.userId, user.userId)),
+      }),
+    }
+  })
+
+  app.post('/api/session/password-setup/redeem', {
+    schema: {
+      tags: ['session'],
+      summary: 'Redeem a password setup or reset link',
+    },
+  }, async request => {
+    const body = parseOrThrow(passwordSetupRedeemSchema, request.body)
+    const { tokenRow, user, faculty } = await findPasswordSetupContextByToken(body.token)
+    const now = context.now()
+    const nextPasswordHash = await hashPassword(body.password)
+    const [existingCredential] = await context.db.select().from(userPasswordCredentials).where(eq(userPasswordCredentials.userId, user.userId))
+    if (existingCredential) {
+      await context.db.update(userPasswordCredentials).set({
+        passwordHash: nextPasswordHash,
+        updatedAt: now,
+      }).where(eq(userPasswordCredentials.userId, user.userId))
+    } else {
+      await context.db.insert(userPasswordCredentials).values({
+        userId: user.userId,
+        passwordHash: nextPasswordHash,
+        updatedAt: now,
+      })
+    }
+    await context.db.update(userPasswordSetupTokens).set({
+      consumedAt: now,
+      updatedAt: now,
+    }).where(eq(userPasswordSetupTokens.passwordSetupTokenId, tokenRow.passwordSetupTokenId))
+    await context.db.delete(sessions).where(eq(sessions.userId, user.userId))
+    await clearFailedLogins(user.username)
+    await clearFailedLogins(user.email)
+    emitOperationalEvent('auth.password_setup.redeemed', {
+      userId: user.userId,
+      facultyId: faculty.facultyId,
+      purpose: tokenRow.purpose,
+    })
+    return {
+      ok: true as const,
+      username: user.username,
+      displayName: faculty.displayName,
+      purpose: tokenRow.purpose,
+    }
   })
 
   app.delete('/api/session', {

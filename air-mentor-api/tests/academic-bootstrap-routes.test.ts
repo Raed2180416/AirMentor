@@ -1,7 +1,7 @@
-import fastify from 'fastify'
+import fastify, { type FastifyRequest } from 'fastify'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-import { simulationStageCheckpoints } from '../src/db/schema.js'
+import { simulationRuns, simulationStageCheckpoints } from '../src/db/schema.js'
 import { registerAcademicBootstrapRoutes } from '../src/modules/academic-bootstrap-routes.js'
 
 describe('academic bootstrap routes', () => {
@@ -29,7 +29,13 @@ describe('academic bootstrap routes', () => {
     const db = {
       select: () => ({
         from: (table: unknown) => ({
-          where: async () => (table === simulationStageCheckpoints ? [checkpoint] : []),
+          where: async () => (
+            table === simulationStageCheckpoints
+              ? [checkpoint]
+              : table === simulationRuns
+                ? [{ simulationRunId: 'sim_mnc_2023_active' }]
+                : []
+          ),
         }),
       }),
     }
@@ -39,12 +45,24 @@ describe('academic bootstrap routes', () => {
     }
 
     app = fastify()
-    app.addHook('onRequest', async request => {
-      ;(request as typeof request & { auth: unknown }).auth = {
+    app.addHook('onRequest', async (request: FastifyRequest) => {
+      request.auth = {
+        sessionId: 'session_course_leader',
+        userId: 'mnc_t1',
+        username: 'mnc_t1',
+        email: 'mnc_t1@msruas.ac.in',
         facultyId: 'mnc_t1',
+        facultyName: 'Faculty MNC T1',
         activeRoleGrant: {
+          grantId: 'grant_course_leader',
+          facultyId: 'mnc_t1',
           roleCode: 'COURSE_LEADER',
+          scopeType: 'branch',
+          scopeId: 'branch_mnc_btech',
+          status: 'active',
+          version: 1,
         },
+        availableRoleGrants: [],
       }
     })
 

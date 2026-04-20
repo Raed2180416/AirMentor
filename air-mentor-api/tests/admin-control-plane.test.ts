@@ -99,7 +99,7 @@ async function readPublishedOperationalProjectionCounts(simulationRunId: string)
       })
       .filter((value): value is string => value != null),
   )
-  const proofTermIds = new Set(PROOF_TERM_DEFS.map(term => term.termId))
+  const proofTermIds = new Set<string>(PROOF_TERM_DEFS.map(term => term.termId))
 
   const transcriptRows = (await current.db.select().from(transcriptTermResults)).filter(row => (
     proofStudentIds.has(row.studentId)
@@ -330,9 +330,10 @@ describe('admin control plane routes', () => {
     const [proofBranch] = await current.db.select().from(branches).where(eq(branches.branchId, proofBatch.branchId))
     expect(proofBranch).toBeTruthy()
     if (!proofBranch) throw new Error('Expected proof branch to exist')
+    const app = current.app
 
     const createScopedMentorFaculty = async (username: string, displayName: string, employeeCode: string) => {
-      const facultyCreate = await current.app.inject({
+      const facultyCreate = await app.inject({
         method: 'POST',
         url: '/api/admin/faculty',
         headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
@@ -351,7 +352,7 @@ describe('admin control plane routes', () => {
       expect(facultyCreate.statusCode).toBe(200)
       const faculty = facultyCreate.json()
 
-      const appointmentCreate = await current.app.inject({
+      const appointmentCreate = await app.inject({
         method: 'POST',
         url: `/api/admin/faculty/${faculty.facultyId}/appointments`,
         headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
@@ -365,7 +366,7 @@ describe('admin control plane routes', () => {
       })
       expect(appointmentCreate.statusCode).toBe(200)
 
-      const mentorGrantCreate = await current.app.inject({
+      const mentorGrantCreate = await app.inject({
         method: 'POST',
         url: `/api/admin/faculty/${faculty.facultyId}/role-grants`,
         headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },

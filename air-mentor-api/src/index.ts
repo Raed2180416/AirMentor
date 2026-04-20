@@ -4,6 +4,7 @@ import { buildApp } from './app.js'
 import { emitOperationalEvent, configureOperationalTelemetryPersistence } from './lib/telemetry.js'
 import { persistOperationalTelemetryEvent } from './lib/operational-event-store.js'
 import { assertStartupDiagnostics } from './startup-diagnostics.js'
+import { createNoopEmailTransport, createSmtpEmailTransport } from './lib/email-transport.js'
 
 async function main() {
   const config = loadConfig()
@@ -18,8 +19,19 @@ async function main() {
       level: diagnostic.level === 'error' ? 'error' : diagnostic.level === 'warning' ? 'warn' : 'info',
     })
   })
+  const emailTransport = config.smtpHost
+    ? await createSmtpEmailTransport({
+        host: config.smtpHost,
+        port: config.smtpPort,
+        secure: config.smtpSecure,
+        user: config.smtpUser,
+        pass: config.smtpPass,
+        fromAddress: config.emailFromAddress,
+        fromName: config.emailFromName,
+      })
+    : createNoopEmailTransport()
   try {
-    const app = await buildApp({ config, db, pool })
+    const app = await buildApp({ config, db, pool, emailTransport })
     await app.listen({ port: config.port, host: config.host })
     emitOperationalEvent('startup.ready', {
       host: config.host,

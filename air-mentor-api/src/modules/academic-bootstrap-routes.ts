@@ -3,9 +3,9 @@ import type { RouteContext } from '../app.js'
 import { emitOperationalEvent } from '../lib/telemetry.js'
 import { parseOrThrow, requireRole } from './support.js'
 import type { AcademicRouteDependencies } from './academic.js'
-import { notFound } from '../lib/http-errors.js'
+import { AppError, notFound } from '../lib/http-errors.js'
 import { eq } from 'drizzle-orm'
-import { simulationStageCheckpoints } from '../db/schema.js'
+import { simulationRuns, simulationStageCheckpoints } from '../db/schema.js'
 
 export async function registerAcademicBootstrapRoutes(
   app: FastifyInstance,
@@ -34,6 +34,16 @@ export async function registerAcademicBootstrapRoutes(
     },
   }, async request => {
     const auth = requireRole(request, [...academicRoleCodes])
+    // GAP-5: Gate academic access on an active proof run.
+    // Without an active run: no offerings are seeded, no students exist — teacher
+    // would see a blank interface with no actionable state. Block early with a
+    // clear error code so the frontend can show an explicit "waiting for sim" screen.
+    const activeRuns = await context.db.select({ simulationRunId: simulationRuns.simulationRunId })
+      .from(simulationRuns)
+      .where(eq(simulationRuns.activeFlag, 1))
+    if (activeRuns.length === 0) {
+      throw new AppError(403, 'NO_ACTIVE_PROOF_RUN', 'No simulation is currently active. Ask your administrator to start a proof run.')
+    }
     const query = parseOrThrow(academicBootstrapQuerySchema, request.query)
     if (query.simulationStageCheckpointId) {
       const [checkpoint] = await context.db

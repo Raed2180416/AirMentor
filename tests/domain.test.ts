@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canDismissCurrentOccurrence, getNextScheduledDate, isTaskActiveForQueue, type SharedTask } from '../src/domain'
+import { canDismissCurrentOccurrence, getNextScheduledDate, isTaskActiveForQueue, toDueLabel, type SharedTask } from '../src/domain'
 
 function buildTask(overrides: Partial<SharedTask> = {}): SharedTask {
   return {
@@ -81,5 +81,11 @@ describe('domain task lifecycle helpers', () => {
     expect(canDismissCurrentOccurrence(recurring)).toBe(true)
     expect(canDismissCurrentOccurrence(paused)).toBe(false)
     expect(canDismissCurrentOccurrence(exhaustedCustom)).toBe(false)
+  })
+
+  it('anchors due labels to proof virtual date when one is supplied', () => {
+    expect(toDueLabel('2026-03-18', 'This week', '2026-03-18')).toBe('Today')
+    expect(toDueLabel('2026-03-24', 'This week', '2026-03-18')).toBe('This week')
+    expect(toDueLabel('2026-03-30', 'This week', '2026-03-18')).toBe('2026-03-30')
   })
 })

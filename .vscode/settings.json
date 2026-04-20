@@ -1,0 +1,34 @@
+{
+  "terminal.integrated.profiles.linux": {
+    "zsh (login)": {
+      "path": "zsh",
+      "args": [
+        "-l"
+      ]
+    }
+  },
+  "terminal.integrated.defaultProfile.linux": "zsh (login)",
+  "terminal.integrated.env.linux": {
+    "AUDIT_MAP_ROOT": "${workspaceFolder}/audit-map"
+  },
+  "nixEnvSelector.nixFile": "${workspaceFolder}/flake.nix",
+  "typescript.tsserver.experimental.enableProjectDiagnostics": true,
+  "javascript.tsserver.experimental.enableProjectDiagnostics": true,
+  "typescript.disableReferencedProjectLoad": false,
+  "typescript.disableSolutionSearching": false,
+  "typescript.tsserver.useSyntaxServer": "never",
+  "typescript.tsserver.maxTsServerMemory": 4096,
+  "task.allowAutomaticTasks": "on",
+  "eslint.lintTask.enable": true,
+  "eslint.validate": [
+    "javascript",
+    "javascriptreact",
+    "typescript",
+    "typescriptreact"
+  ],
+  "eslint.workingDirectories": [
+    {
+      "mode": "auto"
+    }
+  ]
+}

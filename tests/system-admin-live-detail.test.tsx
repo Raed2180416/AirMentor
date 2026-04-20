@@ -92,9 +92,8 @@ describe('system-admin-live-detail formatting', () => {
       }),
     ))
 
-    expect(markup).toContain('scope Section A')
-    expect(markup).toContain('resolved from Batch 2022 override')
-    expect(markup).toContain('operational semester 5')
+    expect(markup).toContain('You are viewing live data for Section A')
+    expect(markup).toContain('Semester 5')
   })
 
   it('renders the availability message when proof counts are unavailable', () => {
@@ -123,23 +122,18 @@ describe('system-admin-live-detail formatting', () => {
       }),
     ))
 
-    expect(markup).toContain('no authoritative proof count source is available.')
-    expect(markup).toContain('No authoritative proof snapshot')
+    expect(markup).toContain('Use this page as context only')
+    expect(markup).toContain('simulation counts are not available yet')
   })
 
   it('prefers enriched faculty labels over raw identifiers', () => {
     const markup = renderToStaticMarkup(createElement('div', null,
       createElement('span', null, formatFacultyGrantScopeLabel({
-        grantId: 'grant_1',
-        facultyId: 'fac_1',
-        roleCode: 'MENTOR',
         scopeType: 'branch',
         scopeId: 'branch_cse',
         scopeLabel: 'Computer Science and Engineering',
       })),
       createElement('span', null, formatFacultyAppointmentLabel({
-        appointmentId: 'appt_1',
-        facultyId: 'fac_1',
         departmentId: 'dept_cse',
         departmentName: 'Computer Science and Engineering',
         departmentCode: 'CSE',
@@ -177,6 +171,7 @@ describe('system-admin-live-detail formatting', () => {
       ...makeDataset(),
       departments: [{
         departmentId: 'dept_1',
+        institutionId: 'inst_1',
         academicFacultyId: 'af_1',
         code: 'CSE',
         name: 'Computer Science',
@@ -187,6 +182,7 @@ describe('system-admin-live-detail formatting', () => {
       }],
     }, {
       departmentId: 'dept_1',
+      institutionId: 'inst_1',
       academicFacultyId: 'af_1',
       code: 'CSE',
       name: 'Computer Science Updated',

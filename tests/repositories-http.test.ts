@@ -727,4 +727,28 @@ describe('HTTP repository mode', () => {
       }),
     }))
   })
+
+  it('does not call restoreSession during loginRemoteSession or switchRemoteRoleContext (no extra RTT on happy path)', async () => {
+    const storage = new MemoryStorage()
+    const session = createSessionResponse()
+    const switchedSession = createSessionResponse({
+      activeRoleGrant: { ...session.availableRoleGrants[1] },
+    })
+    const restoreSession = vi.fn(async () => session)
+    const login = vi.fn(async (_payload: ApiLoginRequest) => session)
+    const switchRoleContext = vi.fn(async (_grantId: string) => switchedSession)
+
+    const client = createApiClientMock({ restoreSession, login, switchRoleContext })
+    const repositories = createAirMentorRepositories({
+      storage,
+      repositoryMode: 'http',
+      apiClient: client,
+    })
+
+    await repositories.sessionPreferences.loginRemoteSession({ identifier: 'kavitha.rao', password: 'pass' })
+    expect(restoreSession).not.toHaveBeenCalled()
+
+    await repositories.sessionPreferences.switchRemoteRoleContext('grant-hod')
+    expect(restoreSession).not.toHaveBeenCalled()
+  })
 })

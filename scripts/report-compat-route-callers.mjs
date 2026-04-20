@@ -10,7 +10,7 @@ const trackedRoots = [
   '.github',
   'air-mentor-api/src',
   'air-mentor-api/tests',
-  'audit',
+  'audit-map',
   'scripts',
   'src',
   'tests',
@@ -59,7 +59,7 @@ function classifyPath(relativePath) {
   if (relativePath.startsWith('tests/') || relativePath.startsWith('air-mentor-api/tests/')) return 'tests'
   if (relativePath.startsWith('scripts/')) return 'scripts'
   if (relativePath.startsWith('.github/')) return 'ci'
-  if (relativePath.startsWith('audit/')) return 'audit-docs'
+  if (relativePath.startsWith('audit-map/') || relativePath.startsWith('audit/')) return 'audit-docs'
   return 'other'
 }
 

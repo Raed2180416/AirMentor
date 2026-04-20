@@ -18,18 +18,24 @@ import {
   uiPreferences,
   userAccounts,
   userPasswordCredentials,
+  userPasswordSetupTokens,
 } from '../db/schema.js'
 import { createId } from '../lib/ids.js'
 import { notFound } from '../lib/http-errors.js'
 import { hashPassword } from '../lib/passwords.js'
+import { buildPasswordSetupLink, deriveFacultyCredentialStatus, issuePasswordSetupToken } from '../lib/password-setup.js'
+import { createNoopEmailTransport } from '../lib/email-transport.js'
+import { EmailRateLimiter } from '../lib/email-rate-limiter.js'
 import { resolveBatchPolicy } from './admin-structure.js'
 import { emitAuditEvent, expectVersion, parseOrThrow, requireRole } from './support.js'
+
+const adminPasswordSetupRateLimiter = new EmailRateLimiter(10 * 60 * 1000, 5)
 
 const facultyCreateSchema = z.object({
   username: z.string().min(1),
   email: z.string().email(),
   phone: z.string().optional().nullable(),
-  password: z.string().min(8),
+  password: z.string().min(8).optional().nullable(),
   employeeCode: z.string().min(1),
   displayName: z.string().min(1),
   designation: z.string().min(1),
@@ -249,6 +255,7 @@ function mapFacultyRecord(params: {
   user: typeof userAccounts.$inferSelect | undefined
   appointments: Array<typeof facultyAppointments.$inferSelect>
   grants: Array<typeof roleGrants.$inferSelect>
+  credentialStatus: ReturnType<typeof deriveFacultyCredentialStatus>
   references?: PeopleReferenceData
 }) {
   return {
@@ -265,6 +272,7 @@ function mapFacultyRecord(params: {
     version: params.profile.version,
     createdAt: params.profile.createdAt,
     updatedAt: params.profile.updatedAt,
+    credentialStatus: params.credentialStatus,
     appointments: params.appointments.map(item => mapAppointment(item, params.references)),
     roleGrants: params.grants.map(item => mapRoleGrant(item, params.references)),
   }
@@ -482,9 +490,11 @@ export async function registerPeopleRoutes(app: FastifyInstance, context: RouteC
   }, async request => {
     requireRole(request, ['SYSTEM_ADMIN'])
     const filter = parseOrThrow(facultyDirectoryScopeQuerySchema, request.query ?? {})
-    const [profiles, users, appointments, grants, references] = await Promise.all([
+    const [profiles, users, credentials, setupTokens, appointments, grants, references] = await Promise.all([
       context.db.select().from(facultyProfiles),
       context.db.select().from(userAccounts),
+      context.db.select().from(userPasswordCredentials),
+      context.db.select().from(userPasswordSetupTokens),
       context.db.select().from(facultyAppointments),
       context.db.select().from(roleGrants),
       loadPeopleReferenceData(context),
@@ -494,6 +504,11 @@ export async function registerPeopleRoutes(app: FastifyInstance, context: RouteC
       .map(profile => mapFacultyRecord({
         profile,
         user: users.find(item => item.userId === profile.userId),
+        credentialStatus: deriveFacultyCredentialStatus({
+          now: context.now(),
+          passwordConfigured: credentials.some(item => item.userId === profile.userId),
+          tokens: setupTokens.filter(item => item.userId === profile.userId),
+        }),
         appointments: appointments.filter(item => item.facultyId === profile.facultyId),
         grants: grants.filter(item => item.facultyId === profile.facultyId),
         references,
@@ -525,11 +540,27 @@ export async function registerPeopleRoutes(app: FastifyInstance, context: RouteC
       createdAt: now,
       updatedAt: now,
     })
-    await context.db.insert(userPasswordCredentials).values({
-      userId,
-      passwordHash: await hashPassword(body.password),
-      updatedAt: now,
-    })
+    if (body.password) {
+      await context.db.insert(userPasswordCredentials).values({
+        userId,
+        passwordHash: await hashPassword(body.password),
+        updatedAt: now,
+      })
+    } else {
+      const issued = issuePasswordSetupToken(context.config, now)
+      await context.db.insert(userPasswordSetupTokens).values({
+        passwordSetupTokenId: issued.passwordSetupTokenId,
+        userId,
+        purpose: 'invite',
+        tokenHash: issued.tokenHash,
+        issuedToEmail: body.email,
+        requestedByUserId: auth.userId,
+        expiresAt: issued.expiresAt,
+        consumedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      })
+    }
     await context.db.insert(uiPreferences).values({
       userId,
       themeMode: context.config.defaultThemeMode,
@@ -560,14 +591,22 @@ export async function registerPeopleRoutes(app: FastifyInstance, context: RouteC
         username: body.username,
         email: body.email,
         phone: body.phone ?? null,
+        credentialProvisioning: body.password ? 'admin-password' : 'invite-link',
       },
     })
     const [createdProfile] = await context.db.select().from(facultyProfiles).where(eq(facultyProfiles.facultyId, facultyId))
     const [createdUser] = await context.db.select().from(userAccounts).where(eq(userAccounts.userId, userId))
+    const createdCredentialRows = await context.db.select().from(userPasswordCredentials).where(eq(userPasswordCredentials.userId, userId))
+    const createdTokenRows = await context.db.select().from(userPasswordSetupTokens).where(eq(userPasswordSetupTokens.userId, userId))
     const references = await loadPeopleReferenceData(context)
     return enrichFacultyRecordWithProvenance(context, mapFacultyRecord({
       profile: createdProfile,
       user: createdUser,
+      credentialStatus: deriveFacultyCredentialStatus({
+        now,
+        passwordConfigured: createdCredentialRows.length > 0,
+        tokens: createdTokenRows,
+      }),
       appointments: [],
       grants: [],
       references,
@@ -721,12 +760,19 @@ export async function registerPeopleRoutes(app: FastifyInstance, context: RouteC
 
     const [next] = await context.db.select().from(facultyProfiles).where(eq(facultyProfiles.facultyId, params.facultyId))
     const [nextUser] = await context.db.select().from(userAccounts).where(eq(userAccounts.userId, current.userId))
+    const nextCredentialRows = await context.db.select().from(userPasswordCredentials).where(eq(userPasswordCredentials.userId, current.userId))
+    const nextSetupTokenRows = await context.db.select().from(userPasswordSetupTokens).where(eq(userPasswordSetupTokens.userId, current.userId))
     const appointments = await context.db.select().from(facultyAppointments).where(eq(facultyAppointments.facultyId, params.facultyId))
     const grants = await context.db.select().from(roleGrants).where(eq(roleGrants.facultyId, params.facultyId))
     const references = await loadPeopleReferenceData(context)
     const payload = mapFacultyRecord({
       profile: next,
       user: nextUser,
+      credentialStatus: deriveFacultyCredentialStatus({
+        now,
+        passwordConfigured: nextCredentialRows.length > 0,
+        tokens: nextSetupTokenRows,
+      }),
       appointments,
       grants,
       references,
@@ -752,6 +798,72 @@ export async function registerPeopleRoutes(app: FastifyInstance, context: RouteC
         : undefined,
     })
     return enrichFacultyRecordWithProvenance(context, payload, references, new Map())
+  })
+
+  app.post('/api/admin/faculty/:facultyId/password-setup', {
+    schema: { tags: ['people'], summary: 'Issue a faculty password setup or reset link' },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
+    const params = parseOrThrow(z.object({ facultyId: z.string().min(1) }), request.params)
+    const [profile] = await context.db.select().from(facultyProfiles).where(eq(facultyProfiles.facultyId, params.facultyId))
+    if (!profile || profile.status !== 'active') throw notFound('Active faculty profile not found')
+    const [user] = await context.db.select().from(userAccounts).where(eq(userAccounts.userId, profile.userId))
+    if (!user || user.status !== 'active') throw notFound('Active user account not found for this faculty profile')
+    const credentialRows = await context.db.select().from(userPasswordCredentials).where(eq(userPasswordCredentials.userId, user.userId))
+    const now = context.now()
+    const issued = issuePasswordSetupToken(context.config, now)
+    const purpose = credentialRows.length > 0 ? 'reset' : 'invite'
+    await context.db.insert(userPasswordSetupTokens).values({
+      passwordSetupTokenId: issued.passwordSetupTokenId,
+      userId: user.userId,
+      purpose,
+      tokenHash: issued.tokenHash,
+      issuedToEmail: user.email,
+      requestedByUserId: auth.userId,
+      expiresAt: issued.expiresAt,
+      consumedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    })
+    await emitAuditEvent(context, {
+      entityType: 'FacultyProfile',
+      entityId: profile.facultyId,
+      action: purpose === 'invite' ? 'password_invite_issued' : 'password_reset_issued',
+      actorRole: auth.activeRoleGrant.roleCode,
+      actorId: auth.facultyId,
+      after: {
+        purpose,
+        issuedToEmail: user.email,
+        expiresAt: issued.expiresAt,
+        previewEnabled: context.config.passwordSetupPreviewEnabled,
+      },
+    })
+    const setupLink = buildPasswordSetupLink(context.config, issued.rawToken)
+    const transport = context.emailTransport ?? createNoopEmailTransport()
+    const rateLimitResult = adminPasswordSetupRateLimiter.check(user.email, Date.now())
+    let emailDelivered = false
+    if (rateLimitResult.allowed) {
+      const deliveryResult = await transport.sendPasswordSetupEmail({
+        to: user.email,
+        recipientName: profile.displayName ?? user.username,
+        setupLink,
+        purpose,
+        expiresAt: issued.expiresAt,
+        fromAddress: context.config.emailFromAddress,
+        fromName: context.config.emailFromName,
+      })
+      emailDelivered = deliveryResult.delivered
+    }
+    return {
+      facultyId: profile.facultyId,
+      purpose,
+      issuedToEmail: user.email,
+      expiresAt: issued.expiresAt,
+      previewEnabled: context.config.passwordSetupPreviewEnabled,
+      setupUrl: context.config.passwordSetupPreviewEnabled ? setupLink : null,
+      emailDelivered,
+      rateLimited: !rateLimitResult.allowed,
+    }
   })
 
   app.post('/api/admin/faculty/:facultyId/appointments', {

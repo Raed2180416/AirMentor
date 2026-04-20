@@ -7,6 +7,9 @@ export type AppConfig = {
   port: number
   host: string
   corsAllowedOrigins: string[]
+  passwordSetupBaseUrl: string
+  passwordSetupPreviewEnabled: boolean
+  passwordSetupTtlHours: number
   telemetrySinkUrl: string | null
   telemetrySinkBearerToken: string | null
   sessionCookieName: string
@@ -19,6 +22,15 @@ export type AppConfig = {
   loginRateLimitWindowMs: number
   loginRateLimitMaxAttempts: number
   defaultThemeMode: string
+  smtpHost: string | null
+  smtpPort: number
+  smtpSecure: boolean
+  smtpUser: string | null
+  smtpPass: string | null
+  emailFromAddress: string
+  emailFromName: string
+  passwordSetupEmailRateLimitWindowMs: number
+  passwordSetupEmailRateLimitMax: number
 }
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -79,11 +91,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     env.SESSION_COOKIE_SECURE,
     productionLikeTarget || sessionCookieSameSite === 'none',
   )
+  const passwordSetupBaseUrl = (env.PASSWORD_SETUP_BASE_URL ?? corsAllowedOrigins[0] ?? 'http://127.0.0.1:5173').trim()
+  const passwordSetupPreviewEnabled = parseBoolean(
+    env.PASSWORD_SETUP_PREVIEW_ENABLED,
+    corsAllowedOrigins.every(isLocalOrigin),
+  )
   return {
     databaseUrl,
     port: parseNumber(env.PORT, 4000),
     host: env.HOST ?? (productionLikeTarget ? '0.0.0.0' : '127.0.0.1'),
     corsAllowedOrigins,
+    passwordSetupBaseUrl,
+    passwordSetupPreviewEnabled,
+    passwordSetupTtlHours: parseNumber(env.PASSWORD_SETUP_TTL_HOURS, 24),
     telemetrySinkUrl: env.AIRMENTOR_TELEMETRY_SINK_URL?.trim() || null,
     telemetrySinkBearerToken: env.AIRMENTOR_TELEMETRY_SINK_BEARER_TOKEN?.trim() || null,
     sessionCookieName,
@@ -96,5 +116,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     loginRateLimitWindowMs: parseNumber(env.LOGIN_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
     loginRateLimitMaxAttempts: parseNumber(env.LOGIN_RATE_LIMIT_MAX_ATTEMPTS, 8),
     defaultThemeMode: env.DEFAULT_THEME_MODE ?? 'frosted-focus-light',
+    smtpHost: env.SMTP_HOST?.trim() || null,
+    smtpPort: parseNumber(env.SMTP_PORT, 587),
+    smtpSecure: parseBoolean(env.SMTP_SECURE, false),
+    smtpUser: env.SMTP_USER?.trim() || null,
+    smtpPass: env.SMTP_PASS?.trim() || null,
+    emailFromAddress: env.EMAIL_FROM_ADDRESS?.trim() || 'noreply@airmentor.example.com',
+    emailFromName: env.EMAIL_FROM_NAME?.trim() || 'AirMentor',
+    passwordSetupEmailRateLimitWindowMs: parseNumber(env.PASSWORD_SETUP_EMAIL_RATE_LIMIT_WINDOW_MS, 10 * 60 * 1000),
+    passwordSetupEmailRateLimitMax: parseNumber(env.PASSWORD_SETUP_EMAIL_RATE_LIMIT_MAX, 3),
   }
 }
