@@ -401,7 +401,21 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
     return 'pre-tt1'
   }
 
-  const currentSemesterRows = observedRows.filter(row => row.semesterNumber === currentSemesterNumber)
+  const rawCurrentSemesterRows = observedRows.filter(row => row.semesterNumber === currentSemesterNumber)
+  const currentSemesterRowsByStudentOffering = new Map<string, typeof studentObservedSemesterStates.$inferSelect>()
+  for (const row of rawCurrentSemesterRows) {
+    const payload = parseObservedStateRow(row)
+    const offeringId = String(payload.offeringId ?? '')
+    if (!offeringId) continue
+    const key = `${row.studentId}::${offeringId}`
+    const existing = currentSemesterRowsByStudentOffering.get(key)
+    if (!existing
+      || row.updatedAt > existing.updatedAt
+      || (row.updatedAt === existing.updatedAt && row.studentObservedSemesterStateId > existing.studentObservedSemesterStateId)) {
+      currentSemesterRowsByStudentOffering.set(key, row)
+    }
+  }
+  const currentSemesterRows = [...currentSemesterRowsByStudentOffering.values()]
   const currentSemesterSectionStudentCountByKey = new Map<string, number>()
   Array.from(new Set(currentSemesterRows.map(row => `${row.semesterNumber}::${row.sectionCode}::${row.studentId}`)))
     .forEach(key => {

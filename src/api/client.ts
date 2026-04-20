@@ -5,6 +5,7 @@ import type {
   ApiAcademicMeeting,
   ApiActivateProofSemesterRequest,
   ApiActivateProofSemesterResponse,
+  ApiAdminFacultyPasswordSetupResponse,
   ApiAcademicHodProofCourseRollup,
   ApiAcademicHodProofFacultyRollup,
   ApiAcademicCalendarAuditListResponse,
@@ -59,6 +60,9 @@ import type {
   ApiFacultyAppointment,
   ApiInstitution,
   ApiLoginRequest,
+  ApiPasswordSetupInspectResponse,
+  ApiPasswordSetupRedeemResponse,
+  ApiPasswordSetupRequestResponse,
   ApiMentorAssignment,
   ApiMentorAssignmentBulkApplyRequest,
   ApiMentorAssignmentBulkApplyResponse,
@@ -72,6 +76,7 @@ import type {
   ApiProofReassessmentResolveRequest,
   ApiProofReassessmentResolveResponse,
   ApiProofStudentEvidenceTimelineItem,
+  ApiBatchSetupReadiness,
   ApiResolvedBatchPolicy,
   ApiResolvedBatchStagePolicy,
   ApiResolvedCourseOutcomeSet,
@@ -113,6 +118,9 @@ export class AirMentorApiError extends Error {
 export interface AirMentorApiClientLike {
   restoreSession(): Promise<ApiSessionResponse>
   login(payload: ApiLoginRequest): Promise<ApiSessionResponse>
+  requestPasswordSetup(payload: { identifier: string }): Promise<ApiPasswordSetupRequestResponse>
+  inspectPasswordSetup(token: string): Promise<ApiPasswordSetupInspectResponse>
+  redeemPasswordSetup(payload: { token: string; password: string }): Promise<ApiPasswordSetupRedeemResponse>
   logout(): Promise<void>
   switchRoleContext(roleGrantId: string): Promise<ApiSessionResponse>
   listAcademicLoginFaculty(): Promise<{ items: ApiAcademicLoginFaculty[] }>
@@ -146,6 +154,7 @@ export interface AirMentorApiClientLike {
   updateAcademicMeeting(meetingId: string, payload: { studentId: string; offeringId?: string | null; title: string; notes?: string | null; dateISO: string; startMinutes: number; endMinutes: number; status: MeetingStatus; version: number }): Promise<ApiAcademicMeeting>
   commitOfferingAttendance(offeringId: string, payload: { entries: Array<{ studentId: string; presentClasses: number; totalClasses: number }>; capturedAt?: string; lock?: boolean }): Promise<{ ok: true; offeringId: string; capturedAt: string; averageAttendance: number; locked: boolean }>
   commitOfferingAssessmentEntries(offeringId: string, kind: Exclude<EntryKind, 'attendance'>, payload: { entries: Array<{ studentId: string; components: Array<{ componentCode: string; score: number; maxScore: number }> }>; evaluatedAt?: string; lock?: boolean }): Promise<{ ok: true; offeringId: string; kind: Exclude<EntryKind, 'attendance'>; evaluatedAt: string; locked: boolean }>
+  clearOfferingAssessmentLock(offeringId: string, kind: EntryKind): Promise<{ ok: true; offeringId: string; kind: EntryKind; cleared: boolean; reason?: string }>
   getUiPreferences(): Promise<ApiUiPreferences>
   saveUiPreferences(payload: Pick<ApiUiPreferences, 'themeMode' | 'version'>): Promise<ApiUiPreferences>
   getInstitution(): Promise<ApiInstitution>
@@ -176,13 +185,14 @@ export interface AirMentorApiClientLike {
     username: string
     email: string
     phone?: string | null
-    password: string
+    password?: string | null
     employeeCode: string
     displayName: string
     designation: string
     joinedOn?: string | null
     status: string
   }): Promise<ApiFacultyRecord>
+  issueFacultyPasswordSetup(facultyId: string): Promise<ApiAdminFacultyPasswordSetupResponse>
   updateFaculty(facultyId: string, payload: {
     username: string
     email: string
@@ -221,6 +231,7 @@ export interface AirMentorApiClientLike {
   listPolicyOverrides(filter?: { scopeType?: ApiPolicyOverride['scopeType']; scopeId?: string }): Promise<{ items: ApiPolicyOverride[] }>
   createPolicyOverride(payload: Pick<ApiPolicyOverride, 'scopeType' | 'scopeId' | 'policy' | 'status'>): Promise<ApiPolicyOverride>
   updatePolicyOverride(policyOverrideId: string, payload: Pick<ApiPolicyOverride, 'scopeType' | 'scopeId' | 'policy' | 'status' | 'version'>): Promise<ApiPolicyOverride>
+  getBatchSetupReadiness(batchId: string, options?: { sectionCode?: string | null }): Promise<ApiBatchSetupReadiness>
   getResolvedBatchPolicy(batchId: string, filter?: { sectionCode?: string | null }): Promise<ApiResolvedBatchPolicy>
   listStagePolicyOverrides(filter?: { scopeType?: ApiStagePolicyOverride['scopeType']; scopeId?: string }): Promise<{ items: ApiStagePolicyOverride[] }>
   createStagePolicyOverride(payload: Pick<ApiStagePolicyOverride, 'scopeType' | 'scopeId' | 'policy' | 'status'>): Promise<ApiStagePolicyOverride>
@@ -396,6 +407,24 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
 
   async login(payload: ApiLoginRequest) {
     return this.request<ApiSessionResponse>('/api/session/login', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async requestPasswordSetup(payload: { identifier: string }) {
+    return this.request<ApiPasswordSetupRequestResponse>('/api/session/password-setup/request', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async inspectPasswordSetup(token: string) {
+    return this.request<ApiPasswordSetupInspectResponse>(`/api/session/password-setup/${encodeURIComponent(token)}`)
+  }
+
+  async redeemPasswordSetup(payload: { token: string; password: string }) {
+    return this.request<ApiPasswordSetupRedeemResponse>('/api/session/password-setup/redeem', {
       method: 'POST',
       body: JSON.stringify(payload),
     })
@@ -651,6 +680,13 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     })
   }
 
+  async clearOfferingAssessmentLock(offeringId: string, kind: EntryKind) {
+    return this.request<{ ok: true; offeringId: string; kind: EntryKind; cleared: boolean; reason?: string }>(`/api/academic/offerings/${offeringId}/assessment-entries/${kind}/clear-lock`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+  }
+
   async getUiPreferences() {
     return this.request<ApiUiPreferences>('/api/preferences/ui')
   }
@@ -771,7 +807,7 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     username: string
     email: string
     phone?: string | null
-    password: string
+    password?: string | null
     employeeCode: string
     displayName: string
     designation: string
@@ -781,6 +817,12 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     return this.request<ApiFacultyRecord>('/api/admin/faculty', {
       method: 'POST',
       body: JSON.stringify(payload),
+    })
+  }
+
+  async issueFacultyPasswordSetup(facultyId: string) {
+    return this.request<ApiAdminFacultyPasswordSetupResponse>(`/api/admin/faculty/${facultyId}/password-setup`, {
+      method: 'POST',
     })
   }
 
@@ -941,6 +983,13 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })
+  }
+
+  async getBatchSetupReadiness(batchId: string, options?: { sectionCode?: string | null }) {
+    const searchParams = new URLSearchParams()
+    if (options?.sectionCode) searchParams.set('sectionCode', options.sectionCode)
+    const query = searchParams.toString()
+    return this.request<ApiBatchSetupReadiness>(`/api/admin/batches/${batchId}/setup-readiness${query ? `?${query}` : ''}`)
   }
 
   async getResolvedBatchPolicy(batchId: string, filter?: { sectionCode?: string | null }) {

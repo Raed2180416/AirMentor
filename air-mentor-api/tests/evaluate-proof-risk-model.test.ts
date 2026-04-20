@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  blendProbabilityRows,
+  buildHybridBlendPlan,
+  chooseHybridBlendAlpha,
   buildQueueBurdenStageSummaries,
+  evaluationPaths,
   queueRollupSectionKey,
   queueRollupStudentKey,
   type QueueBurdenRunObservation,
@@ -97,5 +101,105 @@ describe('evaluate proof risk model helpers', () => {
       passesWatchRate: true,
       passesPpvProxy: true,
     })
+  })
+
+  it('chooses challenger route when challenger clearly beats current', () => {
+    const currentRows = [
+      { label: 1, prob: 0.35 },
+      { label: 1, prob: 0.4 },
+      { label: 0, prob: 0.62 },
+      { label: 0, prob: 0.58 },
+    ]
+    const challengerRows = [
+      { label: 1, prob: 0.82 },
+      { label: 1, prob: 0.75 },
+      { label: 0, prob: 0.12 },
+      { label: 0, prob: 0.08 },
+    ]
+
+    const choice = chooseHybridBlendAlpha(currentRows, challengerRows)
+    expect(choice.alpha).toBe(0)
+    expect(choice.metrics.logLoss).toBeLessThan(0.3)
+  })
+
+  it('builds stage-specific hard-route plan with current fallback on empty slices', () => {
+    const currentRows = [
+      { label: 1, prob: 0.78 },
+      { label: 0, prob: 0.18 },
+      { label: 1, prob: 0.74 },
+      { label: 0, prob: 0.2 },
+    ]
+    const challengerRows = [
+      { label: 1, prob: 0.61 },
+      { label: 0, prob: 0.31 },
+      { label: 1, prob: 0.58 },
+      { label: 0, prob: 0.33 },
+    ]
+    const plan = buildHybridBlendPlan(
+      {
+        current: currentRows,
+        challenger: challengerRows,
+      },
+      {
+        'pre-tt1': {
+          current: [
+            { label: 1, prob: 0.3 },
+            { label: 0, prob: 0.7 },
+          ],
+          challenger: [
+            { label: 1, prob: 0.8 },
+            { label: 0, prob: 0.2 },
+          ],
+        },
+        'post-tt2': {
+          current: [
+            { label: 1, prob: 0.85 },
+            { label: 0, prob: 0.15 },
+          ],
+          challenger: [
+            { label: 1, prob: 0.55 },
+            { label: 0, prob: 0.45 },
+          ],
+        },
+      },
+    )
+
+    expect(plan.fallbackAlpha).toBe(1)
+    expect(plan.byStage['pre-tt1']?.alpha).toBe(0)
+    expect(plan.byStage['post-tt2']?.alpha).toBe(1)
+
+    expect(blendProbabilityRows(
+      [
+        { label: 1, prob: 0.22 },
+        { label: 0, prob: 0.68 },
+      ],
+      [
+        { label: 1, prob: 0.79 },
+        { label: 0, prob: 0.19 },
+      ],
+      plan.byStage['pre-tt1']!.alpha,
+    )).toEqual([
+      { label: 1, prob: 0.79 },
+      { label: 0, prob: 0.19 },
+    ])
+  })
+
+  it('supports custom evaluation output paths for concurrent runs', () => {
+    const previousDir = process.env.AIRMENTOR_EVAL_OUTPUT_DIR
+    const previousStem = process.env.AIRMENTOR_EVAL_OUTPUT_STEM
+    process.env.AIRMENTOR_EVAL_OUTPUT_DIR = 'tmp/proof-risk-runs'
+    process.env.AIRMENTOR_EVAL_OUTPUT_STEM = 'coverage-24-hybrid'
+    try {
+      expect(evaluationPaths('/repo-root')).toEqual({
+        outputDir: '/repo-root/tmp/proof-risk-runs',
+        jsonPath: '/repo-root/tmp/proof-risk-runs/coverage-24-hybrid.json',
+        markdownPath: '/repo-root/tmp/proof-risk-runs/coverage-24-hybrid.md',
+      })
+    } finally {
+      if (previousDir === undefined) delete process.env.AIRMENTOR_EVAL_OUTPUT_DIR
+      else process.env.AIRMENTOR_EVAL_OUTPUT_DIR = previousDir
+      if (previousStem === undefined) delete process.env.AIRMENTOR_EVAL_OUTPUT_STEM
+      else process.env.AIRMENTOR_EVAL_OUTPUT_STEM = previousStem
+    }
   })
 })

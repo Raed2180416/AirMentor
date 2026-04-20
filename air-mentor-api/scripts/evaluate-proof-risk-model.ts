@@ -33,15 +33,21 @@ import {
 } from '../src/lib/msruas-proof-control-plane.js'
 import { resolveBatchPolicy } from '../src/modules/admin-structure.js'
 import {
+  BASELINE_V5_LIKE_PROOF_RISK_TRAINING_CONFIG,
+  PRODUCTION_RISK_THRESHOLDS,
   PROOF_CORPUS_MANIFEST,
   PROOF_CORPUS_MANIFEST_VERSION,
+  createProofRiskModelTrainingBuilder,
   scoreObservableRiskWithModel,
+  scoreObservableRiskWithChallengerModel,
+  type ProofRunModelMetadata,
   type ObservableFeaturePayload,
   type ObservableLabelPayload,
   type ObservableSourceRefs,
   type RiskHeadKey,
 } from '../src/lib/proof-risk-model.js'
 import { DEFAULT_POLICY } from '../src/modules/admin-structure.js'
+import { DEFAULT_STAGE_POLICY } from '../src/lib/stage-policy.js'
 import {
   PROOF_QUEUE_ACTIONABLE_PPV_PROXY_MINIMUM,
   PROOF_QUEUE_GOVERNANCE_THRESHOLDS,
@@ -57,12 +63,39 @@ type ProbabilityRow = {
   prob: number
 }
 
+type HybridBlendChoice = {
+  alpha: number
+  metrics: HeadMetrics
+}
+
+type HybridBlendPlan = {
+  fallbackAlpha: number
+  fallbackMetrics: HeadMetrics
+  byStage: Record<string, {
+    alpha: number
+    metrics: HeadMetrics
+    support: number
+  }>
+}
+
 type HeadMetrics = {
   brier: number
+  logLoss: number
   rocAuc: number
+  averagePrecision: number
   expectedCalibrationError: number
+  calibrationSlope: number
+  calibrationIntercept: number
   positiveRate: number
   support: number
+  mediumThreshold: ThresholdMetrics
+  highThreshold: ThresholdMetrics
+}
+
+type ThresholdMetrics = {
+  flaggedRate: number
+  precision: number
+  recall: number
 }
 
 type ActionRollup = {
@@ -78,6 +111,29 @@ type RuntimeSummary = {
   heuristic: HeadMetrics
   brierLift: number
   aucLift: number
+}
+
+type VariantName = 'current' | 'baseline' | 'challenger' | 'hybrid' | 'heuristic'
+
+type VariantDelta = {
+  brierLift: number
+  aucLift: number
+  averagePrecisionLift: number
+  calibrationGain: number
+}
+
+type VariantComparisonSummary = {
+  current: HeadMetrics
+  baseline: HeadMetrics
+  challenger: HeadMetrics
+  hybrid: HeadMetrics
+  heuristic: HeadMetrics
+  currentVsBaseline: VariantDelta
+  currentVsChallenger: VariantDelta
+  currentVsHybrid: VariantDelta
+  currentVsHeuristic: VariantDelta
+  hybridVsChallenger: VariantDelta
+  challengerVsHeuristic: VariantDelta
 }
 
 type StageRollup = {
@@ -153,17 +209,50 @@ export type QueueBurdenStageSummary = {
 }
 
 const DEFAULT_SEEDS = PROOF_CORPUS_MANIFEST.map(entry => entry.seed)
+const COVERAGE_24_SEEDS = [
+  101, 202, 303, 404, 505, 606, 707, 808,
+  4141, 4242, 4343, 4444, 4545, 4646, 4747, 4848,
+  5757, 5858, 5959, 6060, 6161, 6262, 6363, 6464,
+]
+const COVERAGE_32_SEEDS = [
+  101, 202, 303, 404, 505, 606, 707, 808,
+  909, 1010, 1111, 1212, 1313, 1414, 1515, 1616,
+  4141, 4242, 4343, 4444, 4545, 4646, 4747, 4848,
+  5757, 5858, 5959, 6060, 6161, 6262, 6363, 6464,
+]
+const EVAL_SEED_PROFILES = {
+  'smoke-3': [101, 4141, 5353],
+  'coverage-24': COVERAGE_24_SEEDS,
+  'coverage-32': COVERAGE_32_SEEDS,
+  'manifest-64': DEFAULT_SEEDS,
+} as const
 const DEFAULT_PROGRESS_EVERY = 8
 const DEFAULT_CREATE_CONCURRENCY = Math.min(4, Math.max(1, availableParallelism() - 1))
 const EVAL_PAGE_SIZE = 5_000
 
-function parseSeeds() {
+function uniqueSortedSeeds(seeds: number[]) {
+  return [...new Set(seeds.filter(value => Number.isFinite(value)).map(value => Math.floor(value)))].sort((left, right) => left - right)
+}
+
+function parseSeedSelection() {
   const raw = process.env.AIRMENTOR_EVAL_SEEDS?.trim()
-  if (!raw) return DEFAULT_SEEDS
-  return raw
-    .split(',')
-    .map(value => Number(value.trim()))
-    .filter(value => Number.isFinite(value))
+  if (raw) {
+    return {
+      profile: 'custom',
+      seeds: uniqueSortedSeeds(raw.split(',').map(value => Number(value.trim()))),
+    } as const
+  }
+  const profile = process.env.AIRMENTOR_EVAL_SEED_PROFILE?.trim() as keyof typeof EVAL_SEED_PROFILES | undefined
+  if (profile && EVAL_SEED_PROFILES[profile]) {
+    return {
+      profile,
+      seeds: uniqueSortedSeeds([...EVAL_SEED_PROFILES[profile]]),
+    } as const
+  }
+  return {
+    profile: 'manifest-64',
+    seeds: uniqueSortedSeeds([...DEFAULT_SEEDS]),
+  } as const
 }
 
 function parseProgressEvery() {
@@ -190,6 +279,15 @@ function roundToOne(value: number) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
+}
+
+function sigmoid(value: number) {
+  if (value >= 0) {
+    const exponent = Math.exp(-value)
+    return 1 / (1 + exponent)
+  }
+  const exponent = Math.exp(value)
+  return exponent / (1 + exponent)
 }
 
 function average(values: number[]) {
@@ -293,6 +391,35 @@ function brierScore(rows: ProbabilityRow[]) {
     : 0
 }
 
+function logLoss(rows: ProbabilityRow[]) {
+  return rows.length > 0
+    ? rows.reduce((sum, row) => {
+      const prob = clamp(row.prob, 0.0001, 0.9999)
+      return sum - ((row.label * Math.log(prob)) + ((1 - row.label) * Math.log(1 - prob)))
+    }, 0) / rows.length
+    : 0
+}
+
+function averagePrecision(rows: ProbabilityRow[]) {
+  const positiveCount = rows.reduce((count, row) => count + row.label, 0)
+  if (positiveCount <= 0) return 0
+  const ordered = rows
+    .map((row, index) => ({ ...row, index }))
+    .sort((left, right) => right.prob - left.prob || left.index - right.index)
+  let truePositives = 0
+  let falsePositives = 0
+  let precisionSum = 0
+  ordered.forEach(row => {
+    if (row.label === 1) {
+      truePositives += 1
+      precisionSum += truePositives / Math.max(1, truePositives + falsePositives)
+      return
+    }
+    falsePositives += 1
+  })
+  return precisionSum / positiveCount
+}
+
 function expectedCalibrationError(rows: ProbabilityRow[], binCount = 10) {
   if (!rows.length) return 0
   let total = 0
@@ -306,22 +433,216 @@ function expectedCalibrationError(rows: ProbabilityRow[], binCount = 10) {
   return total
 }
 
-function summarizeMetrics(rows: ProbabilityRow[]): HeadMetrics {
+function fitSigmoidCalibration(rows: ProbabilityRow[]) {
+  if (!rows.length) {
+    return { slope: 1, intercept: 0 }
+  }
+  let slope = 1
+  let intercept = 0
+  for (let iteration = 0; iteration < 120; iteration += 1) {
+    let slopeGradient = 0
+    let interceptGradient = 0
+    for (const row of rows) {
+      const clamped = clamp(row.prob, 0.0001, 0.9999)
+      const rawLogit = Math.log(clamped / (1 - clamped))
+      const prediction = sigmoid((slope * rawLogit) + intercept)
+      const error = prediction - row.label
+      slopeGradient += error * rawLogit
+      interceptGradient += error
+    }
+    const learningRate = 0.08 / (1 + (iteration / 40))
+    slope -= learningRate * (slopeGradient / Math.max(1, rows.length))
+    intercept -= learningRate * (interceptGradient / Math.max(1, rows.length))
+  }
   return {
-    brier: roundToFour(brierScore(rows)),
-    rocAuc: roundToFour(rocAuc(rows)),
-    expectedCalibrationError: roundToFour(expectedCalibrationError(rows)),
-    positiveRate: roundToFour(average(rows.map(row => row.label))),
-    support: rows.length,
+    slope: roundToFour(slope),
+    intercept: roundToFour(intercept),
   }
 }
 
-function evaluationPaths(rootDir: string) {
-  const outputDir = path.join(rootDir, 'output', 'proof-risk-model')
+function summarizeThresholdMetrics(rows: ProbabilityRow[], threshold: number): ThresholdMetrics {
+  if (!rows.length) {
+    return {
+      flaggedRate: 0,
+      precision: 0,
+      recall: 0,
+    }
+  }
+  let flaggedCount = 0
+  let truePositives = 0
+  let positiveCount = 0
+  rows.forEach(row => {
+    if (row.label === 1) positiveCount += 1
+    if (row.prob < threshold) return
+    flaggedCount += 1
+    if (row.label === 1) truePositives += 1
+  })
+  return {
+    flaggedRate: roundToFour(flaggedCount / rows.length),
+    precision: roundToFour(flaggedCount > 0 ? truePositives / flaggedCount : 0),
+    recall: roundToFour(positiveCount > 0 ? truePositives / positiveCount : 0),
+  }
+}
+
+function summarizeMetrics(rows: ProbabilityRow[]): HeadMetrics {
+  const calibration = fitSigmoidCalibration(rows)
+  return {
+    brier: roundToFour(brierScore(rows)),
+    logLoss: roundToFour(logLoss(rows)),
+    rocAuc: roundToFour(rocAuc(rows)),
+    averagePrecision: roundToFour(averagePrecision(rows)),
+    expectedCalibrationError: roundToFour(expectedCalibrationError(rows)),
+    calibrationSlope: calibration.slope,
+    calibrationIntercept: calibration.intercept,
+    positiveRate: roundToFour(average(rows.map(row => row.label))),
+    support: rows.length,
+    mediumThreshold: summarizeThresholdMetrics(rows, PRODUCTION_RISK_THRESHOLDS.medium),
+    highThreshold: summarizeThresholdMetrics(rows, PRODUCTION_RISK_THRESHOLDS.high),
+  }
+}
+
+export function blendProbabilityRows(currentRows: ProbabilityRow[], challengerRows: ProbabilityRow[], alpha: number): ProbabilityRow[] {
+  if (currentRows.length !== challengerRows.length) {
+    throw new Error(`Hybrid blend requires aligned row counts (current=${currentRows.length}, challenger=${challengerRows.length})`)
+  }
+  const clampedAlpha = clamp(alpha, 0, 1)
+  return currentRows.map((row, index) => {
+    const challengerRow = challengerRows[index]
+    if (!challengerRow) {
+      throw new Error(`Hybrid blend missing challenger row at index ${index}`)
+    }
+    if (row.label !== challengerRow.label) {
+      throw new Error(`Hybrid blend label mismatch at index ${index}: current=${row.label}, challenger=${challengerRow.label}`)
+    }
+    return {
+      label: row.label,
+      prob: roundToFour((clampedAlpha * row.prob) + ((1 - clampedAlpha) * challengerRow.prob)),
+    }
+  })
+}
+
+function compareHybridBlendChoice(left: HybridBlendChoice, right: HybridBlendChoice) {
+  const lowerBetterChecks: Array<[number, number, number]> = [
+    [left.metrics.logLoss, right.metrics.logLoss, 0.0005],
+    [left.metrics.brier, right.metrics.brier, 0.0005],
+    [left.metrics.expectedCalibrationError, right.metrics.expectedCalibrationError, 0.0005],
+  ]
+  for (const [leftValue, rightValue, epsilon] of lowerBetterChecks) {
+    if (leftValue + epsilon < rightValue) return -1
+    if (rightValue + epsilon < leftValue) return 1
+  }
+  const higherBetterChecks: Array<[number, number, number]> = [
+    [left.metrics.averagePrecision, right.metrics.averagePrecision, 0.001],
+    [left.metrics.rocAuc, right.metrics.rocAuc, 0.001],
+    [left.metrics.highThreshold.precision, right.metrics.highThreshold.precision, 0.001],
+    [left.metrics.mediumThreshold.recall, right.metrics.mediumThreshold.recall, 0.001],
+  ]
+  for (const [leftValue, rightValue, epsilon] of higherBetterChecks) {
+    if (leftValue > rightValue + epsilon) return -1
+    if (rightValue > leftValue + epsilon) return 1
+  }
+  return Math.abs(left.alpha - 1) - Math.abs(right.alpha - 1)
+}
+
+export function chooseHybridBlendAlpha(
+  currentRows: ProbabilityRow[],
+  challengerRows: ProbabilityRow[],
+  alphaGrid = [1, 0],
+): HybridBlendChoice {
+  if (currentRows.length === 0 || challengerRows.length === 0) {
+    return {
+      alpha: 1,
+      metrics: summarizeMetrics(currentRows),
+    }
+  }
+  return alphaGrid
+    .map(alpha => ({
+      alpha,
+      metrics: summarizeMetrics(blendProbabilityRows(currentRows, challengerRows, alpha)),
+    }))
+    .sort(compareHybridBlendChoice)[0]!
+}
+
+export function buildHybridBlendPlan(
+  validationRows: {
+    current: ProbabilityRow[]
+    challenger: ProbabilityRow[]
+  },
+  validationRowsByStage: Record<string, {
+    current: ProbabilityRow[]
+    challenger: ProbabilityRow[]
+  }>,
+): HybridBlendPlan {
+  const fallback = chooseHybridBlendAlpha(validationRows.current, validationRows.challenger)
+  return {
+    fallbackAlpha: fallback.alpha,
+    fallbackMetrics: fallback.metrics,
+    byStage: Object.fromEntries(
+      Object.entries(validationRowsByStage).map(([stageKey, rows]) => {
+        const choice = chooseHybridBlendAlpha(rows.current, rows.challenger)
+        return [stageKey, {
+          alpha: choice.alpha,
+          metrics: choice.metrics,
+          support: rows.current.length,
+        }]
+      }),
+    ),
+  }
+}
+
+function summarizeVariantDelta(reference: HeadMetrics, candidate: HeadMetrics): VariantDelta {
+  return {
+    brierLift: roundToFour(candidate.brier - reference.brier),
+    aucLift: roundToFour(reference.rocAuc - candidate.rocAuc),
+    averagePrecisionLift: roundToFour(reference.averagePrecision - candidate.averagePrecision),
+    calibrationGain: roundToFour(candidate.expectedCalibrationError - reference.expectedCalibrationError),
+  }
+}
+
+function summarizeVariantComparison(input: Record<VariantName, ProbabilityRow[]>): VariantComparisonSummary {
+  const current = summarizeMetrics(input.current)
+  const baseline = summarizeMetrics(input.baseline)
+  const challenger = summarizeMetrics(input.challenger)
+  const hybrid = summarizeMetrics(input.hybrid)
+  const heuristic = summarizeMetrics(input.heuristic)
+  return {
+    current,
+    baseline,
+    challenger,
+    hybrid,
+    heuristic,
+    currentVsBaseline: summarizeVariantDelta(current, baseline),
+    currentVsChallenger: summarizeVariantDelta(current, challenger),
+    currentVsHybrid: summarizeVariantDelta(current, hybrid),
+    currentVsHeuristic: summarizeVariantDelta(current, heuristic),
+    hybridVsChallenger: summarizeVariantDelta(hybrid, challenger),
+    challengerVsHeuristic: summarizeVariantDelta(challenger, heuristic),
+  }
+}
+
+export function evaluationPaths(rootDir: string) {
+  const configuredOutputDir = process.env.AIRMENTOR_EVAL_OUTPUT_DIR?.trim()
+  const configuredOutputStem = process.env.AIRMENTOR_EVAL_OUTPUT_STEM?.trim()
+  const outputDir = configuredOutputDir
+    ? path.resolve(rootDir, configuredOutputDir)
+    : path.join(rootDir, 'output', 'proof-risk-model')
+  const outputStem = configuredOutputStem
+    ? path.basename(configuredOutputStem, path.extname(configuredOutputStem))
+    : 'evaluation-report'
   return {
     outputDir,
-    jsonPath: path.join(outputDir, 'evaluation-report.json'),
-    markdownPath: path.join(outputDir, 'evaluation-report.md'),
+    jsonPath: path.join(outputDir, `${outputStem}.json`),
+    markdownPath: path.join(outputDir, `${outputStem}.md`),
+  }
+}
+
+function createVariantProbabilityBuckets(): Record<VariantName, ProbabilityRow[]> {
+  return {
+    current: [],
+    baseline: [],
+    challenger: [],
+    hybrid: [],
+    heuristic: [],
   }
 }
 
@@ -384,6 +705,19 @@ function compareGovernedCorpusRuns(
   return left.simulationRunId.localeCompare(right.simulationRunId)
 }
 
+function runMatchesManifestScenarioFamily(
+  row: typeof simulationRuns.$inferSelect,
+  manifestEntry: (typeof PROOF_CORPUS_MANIFEST)[number] | undefined,
+) {
+  if (!manifestEntry) return true
+  try {
+    const metrics = JSON.parse(row.metricsJson ?? '{}') as Record<string, unknown>
+    return typeof metrics.scenarioFamily !== 'string' || metrics.scenarioFamily === manifestEntry.scenarioFamily
+  } catch {
+    return true
+  }
+}
+
 function selectGovernedCorpusRuns(
   runRows: Array<typeof simulationRuns.$inferSelect>,
   manifest = PROOF_CORPUS_MANIFEST,
@@ -392,8 +726,10 @@ function selectGovernedCorpusRuns(
   const manifestBySeed = new Map(manifest.map(entry => [entry.seed, entry]))
   const candidatesBySeed = new Map<number, Array<typeof simulationRuns.$inferSelect>>()
   runRows.forEach(row => {
-    if (!manifestBySeed.has(row.seed)) return
+    const manifestEntry = manifestBySeed.get(row.seed)
+    if (!manifestEntry) return
     if (completeRunIds && !completeRunIds.has(row.simulationRunId)) return
+    if (!runMatchesManifestScenarioFamily(row, manifestEntry)) return
     candidatesBySeed.set(row.seed, [...(candidatesBySeed.get(row.seed) ?? []), row])
   })
   const selectedRunRows = manifest
@@ -421,6 +757,10 @@ function selectGovernedCorpusRuns(
         .map(row => row.simulationRunId)
         .sort()
       : [],
+    skippedScenarioMismatchManifestRunIds: runRows
+      .filter(row => manifestBySeed.has(row.seed) && !runMatchesManifestScenarioFamily(row, manifestBySeed.get(row.seed)))
+      .map(row => row.simulationRunId)
+      .sort(),
   }
 }
 
@@ -429,11 +769,34 @@ function selectCompleteGovernedRunIdsFromCounts(input: {
   checkpointCountByRunId: Map<string, number>
   stageEvidenceCountByRunId: Map<string, number>
 }) {
-  return new Set(
-    input.runRows
-      .filter(row => (input.checkpointCountByRunId.get(row.simulationRunId) ?? 0) >= 36 && (input.stageEvidenceCountByRunId.get(row.simulationRunId) ?? 0) > 0)
+  const stageCountPerSemester = Math.max(1, DEFAULT_STAGE_POLICY.stages.length)
+  const runCompleteness = input.runRows.map(row => {
+    const checkpointCount = input.checkpointCountByRunId.get(row.simulationRunId) ?? 0
+    const stageEvidenceCount = input.stageEvidenceCountByRunId.get(row.simulationRunId) ?? 0
+    const semesterSpan = Math.max(1, row.semesterEnd - row.semesterStart + 1)
+    const expectedCheckpointCount = stageCountPerSemester * semesterSpan
+    const complete = checkpointCount >= expectedCheckpointCount && stageEvidenceCount > 0
+    return {
+      simulationRunId: row.simulationRunId,
+      seed: row.seed,
+      semesterStart: row.semesterStart,
+      semesterEnd: row.semesterEnd,
+      checkpointCount,
+      stageEvidenceCount,
+      expectedCheckpointCount,
+      complete,
+    }
+  })
+  const completeRunIds = new Set(
+    runCompleteness
+      .filter(row => row.complete)
       .map(row => row.simulationRunId),
   )
+  return {
+    stageCountPerSemester,
+    runCompleteness,
+    completeRunIds,
+  }
 }
 
 function incrementCount(target: Record<string, number>, key: string) {
@@ -495,7 +858,8 @@ async function main() {
     logProgress(`approved proof import ${createdImport.curriculumImportVersionId}`)
 
     const manifestBySeed = new Map(PROOF_CORPUS_MANIFEST.map(entry => [entry.seed, entry]))
-    const requestedSeeds = parseSeeds()
+    const seedSelection = parseSeedSelection()
+    const requestedSeeds = seedSelection.seeds
     const governedSeeds = requestedSeeds.filter(seed => manifestBySeed.has(seed))
     const skippedRequestedSeeds = requestedSeeds.filter(seed => !manifestBySeed.has(seed))
     if (governedSeeds.length === 0) {
@@ -519,7 +883,7 @@ async function main() {
         isNotNull(riskEvidenceSnapshots.simulationStageCheckpointId),
       )).groupBy(riskEvidenceSnapshots.simulationRunId),
     ])
-    const existingCompleteRunIds = selectCompleteGovernedRunIdsFromCounts({
+    const existingCompleteSelection = selectCompleteGovernedRunIdsFromCounts({
       runRows: existingBatchRuns,
       checkpointCountByRunId: new Map(existingCheckpointCountRows.map(row => [row.simulationRunId, Number(row.checkpointCount)])),
       stageEvidenceCountByRunId: new Map(
@@ -528,7 +892,7 @@ async function main() {
           .map(row => [row.simulationRunId!, Number(row.evidenceCount)]),
       ),
     })
-    const existingSelection = selectGovernedCorpusRuns(existingBatchRuns, PROOF_CORPUS_MANIFEST, existingCompleteRunIds)
+    const existingSelection = selectGovernedCorpusRuns(existingBatchRuns, PROOF_CORPUS_MANIFEST, existingCompleteSelection.completeRunIds)
     const existingSelectedSeedSet = new Set(existingSelection.selectedRunRows.map(row => row.seed))
     const seedsToCreate = governedSeeds.filter(seed => !existingSelectedSeedSet.has(seed))
     const reusedRunIds = existingSelection.selectedRunRows
@@ -574,7 +938,7 @@ async function main() {
         isNotNull(riskEvidenceSnapshots.simulationStageCheckpointId),
       )).groupBy(riskEvidenceSnapshots.simulationRunId),
     ])
-    const postCreateCompleteRunIds = selectCompleteGovernedRunIdsFromCounts({
+    const postCreateCompleteSelection = selectCompleteGovernedRunIdsFromCounts({
       runRows: postCreateRunRows,
       checkpointCountByRunId: new Map(postCreateCheckpointCountRows.map(row => [row.simulationRunId, Number(row.checkpointCount)])),
       stageEvidenceCountByRunId: new Map(
@@ -583,14 +947,27 @@ async function main() {
           .map(row => [row.simulationRunId!, Number(row.evidenceCount)]),
       ),
     })
-    const governedSelection = selectGovernedCorpusRuns(postCreateRunRows, PROOF_CORPUS_MANIFEST, postCreateCompleteRunIds)
+    const governedSelection = selectGovernedCorpusRuns(postCreateRunRows, PROOF_CORPUS_MANIFEST, postCreateCompleteSelection.completeRunIds)
     const selectedGovernedRuns = governedSelection.selectedRunRows.filter(row => governedSeeds.includes(row.seed))
     const selectedGovernedRunIds = new Set(selectedGovernedRuns.map(row => row.simulationRunId))
-    const activeRunId = selectedGovernedRuns.at(-1)?.simulationRunId ?? createdRunIds.at(-1) ?? reusedRunIds.at(-1)
-    if (!activeRunId) throw new Error('No governed proof runs were available for evaluation')
+    const requestedRunCompleteness = postCreateCompleteSelection.runCompleteness
+      .filter(row => governedSeeds.includes(row.seed))
+      .sort((left, right) => left.seed - right.seed || left.simulationRunId.localeCompare(right.simulationRunId))
+    if (selectedGovernedRuns.length === 0) {
+      const details = requestedRunCompleteness
+        .map(row => `${row.seed}:${row.simulationRunId} checkpoints=${row.checkpointCount}/${row.expectedCheckpointCount}, stageEvidence=${row.stageEvidenceCount}`)
+        .join('; ')
+      throw new Error(
+        `No complete governed runs were available for evaluation. ${details ? `Requested-run completeness: ${details}` : 'No requested-run completeness rows were found.'}`,
+      )
+    }
+    const createdCompleteRunIds = createdRunIds.filter(runId => postCreateCompleteSelection.completeRunIds.has(runId))
+    const activeRunId = createdCompleteRunIds.at(-1)
+      ?? selectedGovernedRuns.find(row => row.status === 'completed' || row.status === 'active')?.simulationRunId
+      ?? selectedGovernedRuns.at(-1)!.simulationRunId
     logProgress(
       `selected ${selectedGovernedRuns.length}/${governedSeeds.length} governed runs `
-      + `(duplicates skipped: ${governedSelection.skippedDuplicateManifestRunIds.length}, incomplete skipped: ${governedSelection.skippedIncompleteManifestRunIds.length}, non-manifest skipped: ${governedSelection.skippedNonManifestRunIds.length})`,
+      + `(duplicates skipped: ${governedSelection.skippedDuplicateManifestRunIds.length}, incomplete skipped: ${governedSelection.skippedIncompleteManifestRunIds.length}, scenario-mismatch skipped: ${governedSelection.skippedScenarioMismatchManifestRunIds.length}, non-manifest skipped: ${governedSelection.skippedNonManifestRunIds.length})`,
     )
 
     logProgress(`activating run ${activeRunId}`)
@@ -627,11 +1004,15 @@ async function main() {
     if (!activeProductionArtifactRow || !activeCorrelationArtifactRow) {
       throw new Error('Active production or correlation artifact is missing after evaluation run generation')
     }
-    const productionModel = JSON.parse(activeProductionArtifactRow.payloadJson)
-    const correlations = JSON.parse(activeCorrelationArtifactRow.payloadJson)
     const selectedRunRows = selectedGovernedRuns
     const splitByRunId = new Map(selectedRunRows.map(row => [row.simulationRunId, manifestBySeed.get(row.seed)?.split ?? 'train']))
     const scenarioFamilyByRunId = new Map(selectedRunRows.map(row => [row.simulationRunId, manifestBySeed.get(row.seed)?.scenarioFamily ?? 'balanced']))
+    const runMetadataById = new Map<string, ProofRunModelMetadata>(selectedRunRows.map(row => [row.simulationRunId, {
+      simulationRunId: row.simulationRunId,
+      seed: row.seed,
+      split: manifestBySeed.get(row.seed)?.split ?? 'train',
+      scenarioFamily: manifestBySeed.get(row.seed)?.scenarioFamily ?? 'balanced',
+    }]))
     const headLabels: Array<[RiskHeadKey, keyof ObservableLabelPayload]> = [
       ['attendanceRisk', 'attendanceRiskLabel'],
       ['ceRisk', 'ceShortfallLabel'],
@@ -639,17 +1020,17 @@ async function main() {
       ['overallCourseRisk', 'overallCourseFailLabel'],
       ['downstreamCarryoverRisk', 'downstreamCarryoverLabel'],
     ]
-
-    const modelVsHeuristic = Object.fromEntries(headLabels.map(([headKey]) => [headKey, {
-      model: [] as ProbabilityRow[],
-      heuristic: [] as ProbabilityRow[],
-    }])) as Record<RiskHeadKey, { model: ProbabilityRow[]; heuristic: ProbabilityRow[] }>
-    const overallCourseRuntimeVsHeuristic = {
-      model: [] as ProbabilityRow[],
-      heuristic: [] as ProbabilityRow[],
-    }
     const coEvidenceDiagnosticsPages: Array<ReturnType<typeof buildCoEvidenceDiagnosticsFromRows>> = []
     const perRunPolicyDiagnostics: Array<NonNullable<ReturnType<typeof buildPolicyDiagnostics>>> = []
+    const currentVariantBuilder = createProofRiskModelTrainingBuilder({
+      runMetadataById,
+      manifest: PROOF_CORPUS_MANIFEST,
+    })
+    const baselineVariantBuilder = createProofRiskModelTrainingBuilder({
+      runMetadataById,
+      manifest: PROOF_CORPUS_MANIFEST,
+      trainingConfig: BASELINE_V5_LIKE_PROOF_RISK_TRAINING_CONFIG,
+    })
 
     const actionRollupSeed = new Map<string, {
       cases: number
@@ -717,6 +1098,14 @@ async function main() {
         asc(riskEvidenceSnapshots.riskEvidenceSnapshotId),
       ).limit(EVAL_PAGE_SIZE)
       if (page.length === 0) break
+      const pageRowsForBuilders = page.filter(row => !!row.simulationRunId && !!splitByRunId.get(row.simulationRunId))
+        .map(row => ({
+          featureJson: row.featureJson,
+          labelJson: row.labelJson,
+          sourceRefsJson: row.sourceRefsJson,
+        }))
+      currentVariantBuilder.addSerializedRows(pageRowsForBuilders)
+      baselineVariantBuilder.addSerializedRows(pageRowsForBuilders)
       for (const row of page) {
         if (!row.simulationRunId) continue
         const split = splitByRunId.get(row.simulationRunId)
@@ -726,15 +1115,71 @@ async function main() {
         incrementCount(rowsBySemester, String(row.semesterNumber))
         const sourceRefs = JSON.parse(row.sourceRefsJson) as ObservableSourceRefs
         const labelPayload = JSON.parse(row.labelJson) as ObservableLabelPayload
-        incrementCount(rowsByStage, sourceRefs.stageKey ?? 'active')
+        const stageKey = sourceRefs.stageKey ?? 'active'
+        incrementCount(rowsByStage, stageKey)
         incrementCount(rowsByScenarioFamily, scenarioFamilyByRunId.get(row.simulationRunId) ?? 'balanced')
         headLabels.forEach(([headKey, labelKey]) => {
           positiveCountsByHeadBySplit[headKey][split] += labelPayload[labelKey]
         })
-        if (split !== 'test') continue
-        totalTestRows += 1
+      }
+      coEvidenceDiagnosticsPages.push(buildCoEvidenceDiagnosticsFromRows(page.map(row => {
+        const sourceRefs = JSON.parse(row.sourceRefsJson) as ObservableSourceRefs
+        return {
+          semesterNumber: row.semesterNumber,
+          courseFamily: sourceRefs.courseFamily ?? null,
+          coEvidenceMode: sourceRefs.coEvidenceMode ?? null,
+        }
+      })))
+      lastEvidenceSnapshotId = page[page.length - 1]?.riskEvidenceSnapshotId ?? null
+    }
+
+    const currentLocalBundle = currentVariantBuilder.build(TEST_NOW)
+    const baselineLocalBundle = baselineVariantBuilder.build(TEST_NOW)
+    if (!currentLocalBundle || !baselineLocalBundle) {
+      throw new Error('Local variant training failed after evaluator corpus extraction')
+    }
+    const validationVariantHeadRows = Object.fromEntries(headLabels.map(([headKey]) => [headKey, createVariantProbabilityBuckets()])) as Record<RiskHeadKey, Record<VariantName, ProbabilityRow[]>>
+    const validationVariantHeadRowsByStage = Object.fromEntries(headLabels.map(([headKey]) => [headKey, (
+      {} as Record<string, Record<VariantName, ProbabilityRow[]>>
+    )])) as Record<RiskHeadKey, Record<string, Record<VariantName, ProbabilityRow[]>>>
+    const variantHeadRows = Object.fromEntries(headLabels.map(([headKey]) => [headKey, createVariantProbabilityBuckets()])) as Record<RiskHeadKey, Record<VariantName, ProbabilityRow[]>>
+    const variantHeadRowsByStage = Object.fromEntries(headLabels.map(([headKey]) => [headKey, (
+      {} as Record<string, Record<VariantName, ProbabilityRow[]>>
+    )])) as Record<RiskHeadKey, Record<string, Record<VariantName, ProbabilityRow[]>>>
+    const validationOverallCourseVariantRows = createVariantProbabilityBuckets()
+    const validationOverallCourseVariantRowsByStage: Record<string, Record<VariantName, ProbabilityRow[]>> = {}
+    const overallCourseVariantRows = createVariantProbabilityBuckets()
+    const overallCourseVariantRowsByStage: Record<string, Record<VariantName, ProbabilityRow[]>> = {}
+    totalTestRows = 0
+    lastEvidenceSnapshotId = null
+    for (;;) {
+      const conditions = [
+        eq(riskEvidenceSnapshots.batchId, MSRUAS_PROOF_BATCH_ID),
+        isNotNull(riskEvidenceSnapshots.simulationStageCheckpointId),
+        inArray(riskEvidenceSnapshots.simulationRunId, selectedGovernedRunIdList),
+      ]
+      if (lastEvidenceSnapshotId) conditions.push(gt(riskEvidenceSnapshots.riskEvidenceSnapshotId, lastEvidenceSnapshotId))
+      const page = await current.db.select({
+        riskEvidenceSnapshotId: riskEvidenceSnapshots.riskEvidenceSnapshotId,
+        simulationRunId: riskEvidenceSnapshots.simulationRunId,
+        semesterNumber: riskEvidenceSnapshots.semesterNumber,
+        featureJson: riskEvidenceSnapshots.featureJson,
+        labelJson: riskEvidenceSnapshots.labelJson,
+        sourceRefsJson: riskEvidenceSnapshots.sourceRefsJson,
+      }).from(riskEvidenceSnapshots).where(and(...conditions)).orderBy(
+        asc(riskEvidenceSnapshots.riskEvidenceSnapshotId),
+      ).limit(EVAL_PAGE_SIZE)
+      if (page.length === 0) break
+      for (const row of page) {
+        if (!row.simulationRunId) continue
+        const split = splitByRunId.get(row.simulationRunId)
+        if (split !== 'validation' && split !== 'test') continue
+        if (split === 'test') totalTestRows += 1
+        const sourceRefs = JSON.parse(row.sourceRefsJson) as ObservableSourceRefs
+        const labelPayload = JSON.parse(row.labelJson) as ObservableLabelPayload
         const featurePayload = JSON.parse(row.featureJson) as ObservableFeaturePayload
-        const model = scoreObservableRiskWithModel({
+        const stageKey = sourceRefs.stageKey ?? 'active'
+        const currentModel = scoreObservableRiskWithModel({
           attendancePct: featurePayload.attendancePct,
           currentCgpa: featurePayload.currentCgpa,
           backlogCount: featurePayload.backlogCount,
@@ -750,8 +1195,32 @@ async function main() {
           policy: DEFAULT_POLICY,
           featurePayload,
           sourceRefs,
-          productionModel,
-          correlations,
+          productionModel: currentLocalBundle.production,
+          correlations: currentLocalBundle.correlations,
+        })
+        const baselineModel = scoreObservableRiskWithModel({
+          attendancePct: featurePayload.attendancePct,
+          currentCgpa: featurePayload.currentCgpa,
+          backlogCount: featurePayload.backlogCount,
+          tt1Pct: featurePayload.tt1Pct,
+          tt2Pct: featurePayload.tt2Pct,
+          quizPct: featurePayload.quizPct,
+          assignmentPct: featurePayload.assignmentPct,
+          seePct: featurePayload.seePct,
+          weakCoCount: featurePayload.weakCoCount,
+          attendanceHistoryRiskCount: featurePayload.attendanceHistoryRiskCount,
+          questionWeaknessCount: featurePayload.weakQuestionCount,
+          interventionResponseScore: featurePayload.interventionResponseScore,
+          policy: DEFAULT_POLICY,
+          featurePayload,
+          sourceRefs,
+          productionModel: baselineLocalBundle.production,
+          correlations: baselineLocalBundle.correlations,
+        })
+        const challengerModel = scoreObservableRiskWithChallengerModel({
+          featurePayload,
+          sourceRefs,
+          challengerModel: currentLocalBundle.challenger,
         })
         const heuristic = inferObservableRisk({
           attendancePct: featurePayload.attendancePct,
@@ -768,34 +1237,107 @@ async function main() {
           interventionResponseScore: featurePayload.interventionResponseScore,
           policy: DEFAULT_POLICY,
         })
-        overallCourseRuntimeVsHeuristic.model.push({
+        const targetHeadRows = split === 'validation' ? validationVariantHeadRows : variantHeadRows
+        const targetHeadRowsByStage = split === 'validation' ? validationVariantHeadRowsByStage : variantHeadRowsByStage
+        const targetOverallCourseRows = split === 'validation' ? validationOverallCourseVariantRows : overallCourseVariantRows
+        const targetOverallCourseRowsByStage = split === 'validation' ? validationOverallCourseVariantRowsByStage : overallCourseVariantRowsByStage
+        targetOverallCourseRows.current.push({
           label: labelPayload.overallCourseFailLabel,
-          prob: model.headProbabilities.overallCourseRisk,
+          prob: currentModel.headProbabilities.overallCourseRisk,
         })
-        overallCourseRuntimeVsHeuristic.heuristic.push({
+        targetOverallCourseRows.baseline.push({
+          label: labelPayload.overallCourseFailLabel,
+          prob: baselineModel.headProbabilities.overallCourseRisk,
+        })
+        targetOverallCourseRows.challenger.push({
+          label: labelPayload.overallCourseFailLabel,
+          prob: challengerModel.overallCourseRisk,
+        })
+        targetOverallCourseRows.heuristic.push({
           label: labelPayload.overallCourseFailLabel,
           prob: heuristic.riskProb,
         })
+        const overallStageBucket = targetOverallCourseRowsByStage[stageKey] ?? createVariantProbabilityBuckets()
+        overallStageBucket.current.push({
+          label: labelPayload.overallCourseFailLabel,
+          prob: currentModel.headProbabilities.overallCourseRisk,
+        })
+        overallStageBucket.baseline.push({
+          label: labelPayload.overallCourseFailLabel,
+          prob: baselineModel.headProbabilities.overallCourseRisk,
+        })
+        overallStageBucket.challenger.push({
+          label: labelPayload.overallCourseFailLabel,
+          prob: challengerModel.overallCourseRisk,
+        })
+        overallStageBucket.heuristic.push({
+          label: labelPayload.overallCourseFailLabel,
+          prob: heuristic.riskProb,
+        })
+        targetOverallCourseRowsByStage[stageKey] = overallStageBucket
         headLabels.forEach(([headKey, labelKey]) => {
-          modelVsHeuristic[headKey].model.push({
+          targetHeadRows[headKey].current.push({
             label: labelPayload[labelKey],
-            prob: model.headProbabilities[headKey],
+            prob: currentModel.headProbabilities[headKey],
           })
-          modelVsHeuristic[headKey].heuristic.push({
+          targetHeadRows[headKey].baseline.push({
+            label: labelPayload[labelKey],
+            prob: baselineModel.headProbabilities[headKey],
+          })
+          targetHeadRows[headKey].challenger.push({
+            label: labelPayload[labelKey],
+            prob: challengerModel[headKey],
+          })
+          targetHeadRows[headKey].heuristic.push({
             label: labelPayload[labelKey],
             prob: heuristic.riskProb,
           })
+          const stageBucket = targetHeadRowsByStage[headKey][stageKey] ?? createVariantProbabilityBuckets()
+          stageBucket.current.push({
+            label: labelPayload[labelKey],
+            prob: currentModel.headProbabilities[headKey],
+          })
+          stageBucket.baseline.push({
+            label: labelPayload[labelKey],
+            prob: baselineModel.headProbabilities[headKey],
+          })
+          stageBucket.challenger.push({
+            label: labelPayload[labelKey],
+            prob: challengerModel[headKey],
+          })
+          stageBucket.heuristic.push({
+            label: labelPayload[labelKey],
+            prob: heuristic.riskProb,
+          })
+          targetHeadRowsByStage[headKey][stageKey] = stageBucket
         })
       }
-      coEvidenceDiagnosticsPages.push(buildCoEvidenceDiagnosticsFromRows(page.map(row => {
-        const sourceRefs = JSON.parse(row.sourceRefsJson) as ObservableSourceRefs
-        return {
-          semesterNumber: row.semesterNumber,
-          courseFamily: sourceRefs.courseFamily ?? null,
-          coEvidenceMode: sourceRefs.coEvidenceMode ?? null,
-        }
-      })))
       lastEvidenceSnapshotId = page[page.length - 1]?.riskEvidenceSnapshotId ?? null
+    }
+
+    const hybridPlanByHead = Object.fromEntries(headLabels.map(([headKey]) => {
+      const validationRowsByStage = Object.fromEntries(
+        Object.entries(validationVariantHeadRowsByStage[headKey]).map(([stageKey, rows]) => [stageKey, {
+          current: rows.current,
+          challenger: rows.challenger,
+        }]),
+      )
+      const plan = buildHybridBlendPlan({
+        current: validationVariantHeadRows[headKey].current,
+        challenger: validationVariantHeadRows[headKey].challenger,
+      }, validationRowsByStage)
+      for (const [stageKey, stageBucket] of Object.entries(variantHeadRowsByStage[headKey])) {
+        const alpha = plan.byStage[stageKey]?.alpha ?? plan.fallbackAlpha
+        stageBucket.hybrid = blendProbabilityRows(stageBucket.current, stageBucket.challenger, alpha)
+        variantHeadRows[headKey].hybrid.push(...stageBucket.hybrid)
+      }
+      return [headKey, plan]
+    })) as Record<RiskHeadKey, HybridBlendPlan>
+    const overallCourseHybridPlan = hybridPlanByHead.overallCourseRisk
+    for (const [stageKey, stageBucket] of Object.entries(overallCourseVariantRowsByStage)) {
+      const alpha = overallCourseHybridPlan.byStage[stageKey]?.alpha ?? overallCourseHybridPlan.fallbackAlpha
+      stageBucket.hybrid = blendProbabilityRows(stageBucket.current, stageBucket.challenger, alpha)
+      overallCourseVariantRows.hybrid.push(...stageBucket.hybrid)
     }
 
     for (const runRow of selectedRunRows) {
@@ -986,6 +1528,13 @@ async function main() {
       })
     }
 
+    if (totalStageEvidenceRows === 0 && (modelEvaluationResponse.featureRowCount ?? 0) > 0) {
+      throw new Error(
+        `Evaluation corpus extraction produced zero stage evidence rows while active model diagnostics report featureRowCount=${modelEvaluationResponse.featureRowCount}. `
+        + 'This indicates stale or mismatched governed-run selection and must be reconciled before trusting performance metrics.',
+      )
+    }
+
     const actionRollups: ActionRollup[] = Array.from(actionRollupSeed.entries())
       .map(([action, data]) => ({
         action,
@@ -1023,9 +1572,19 @@ async function main() {
       })
       .sort((left, right) => left.semesterNumber - right.semesterNumber || left.stageOrder - right.stageOrder)
 
+    const variantComparisonSummary = Object.fromEntries(headLabels.map(([headKey]) => [
+      headKey,
+      summarizeVariantComparison(variantHeadRows[headKey]),
+    ])) as Record<RiskHeadKey, VariantComparisonSummary>
+    const variantComparisonByStage = Object.fromEntries(headLabels.map(([headKey]) => [headKey, Object.fromEntries(
+      Object.entries(variantHeadRowsByStage[headKey]).map(([stageKey, summaries]) => [
+        stageKey,
+        summarizeVariantComparison(summaries),
+      ]),
+    )])) as Record<RiskHeadKey, Record<string, VariantComparisonSummary>>
     const modelSummary = Object.fromEntries(headLabels.map(([headKey]) => {
-      const modelMetrics = summarizeMetrics(modelVsHeuristic[headKey].model)
-      const heuristicMetrics = summarizeMetrics(modelVsHeuristic[headKey].heuristic)
+      const modelMetrics = variantComparisonSummary[headKey].current
+      const heuristicMetrics = variantComparisonSummary[headKey].heuristic
       return [headKey, {
         model: modelMetrics,
         heuristic: heuristicMetrics,
@@ -1033,14 +1592,45 @@ async function main() {
         aucLift: roundToFour(modelMetrics.rocAuc - heuristicMetrics.rocAuc),
       }]
     })) as Record<RiskHeadKey, RuntimeSummary>
-    const runtimeModelMetrics = summarizeMetrics(overallCourseRuntimeVsHeuristic.model)
-    const runtimeHeuristicMetrics = summarizeMetrics(overallCourseRuntimeVsHeuristic.heuristic)
+    const modelSummaryByStage = Object.fromEntries(headLabels.map(([headKey]) => [headKey, Object.fromEntries(
+      Object.entries(variantComparisonByStage[headKey]).map(([stageKey, summaries]) => {
+        const modelMetrics = summaries.current
+        const heuristicMetrics = summaries.heuristic
+        return [stageKey, {
+          model: modelMetrics,
+          heuristic: heuristicMetrics,
+          brierLift: roundToFour(heuristicMetrics.brier - modelMetrics.brier),
+          aucLift: roundToFour(modelMetrics.rocAuc - heuristicMetrics.rocAuc),
+        } satisfies RuntimeSummary]
+      }),
+    )])) as Record<RiskHeadKey, Record<string, RuntimeSummary>>
+    const overallCourseVariantSummary = summarizeVariantComparison(overallCourseVariantRows)
+    const overallCourseVariantSummaryByStage = Object.fromEntries(
+      Object.entries(overallCourseVariantRowsByStage).map(([stageKey, summaries]) => [
+        stageKey,
+        summarizeVariantComparison(summaries),
+      ]),
+    ) as Record<string, VariantComparisonSummary>
+    const runtimeModelMetrics = overallCourseVariantSummary.current
+    const runtimeHeuristicMetrics = overallCourseVariantSummary.heuristic
     const overallCourseRuntimeSummary: RuntimeSummary = {
       model: runtimeModelMetrics,
       heuristic: runtimeHeuristicMetrics,
       brierLift: roundToFour(runtimeHeuristicMetrics.brier - runtimeModelMetrics.brier),
       aucLift: roundToFour(runtimeModelMetrics.rocAuc - runtimeHeuristicMetrics.rocAuc),
     }
+    const overallCourseRuntimeSummaryByStage = Object.fromEntries(
+      Object.entries(overallCourseVariantSummaryByStage).map(([stageKey, summaries]) => {
+        const modelMetrics = summaries.current
+        const heuristicMetrics = summaries.heuristic
+        return [stageKey, {
+          model: modelMetrics,
+          heuristic: heuristicMetrics,
+          brierLift: roundToFour(heuristicMetrics.brier - modelMetrics.brier),
+          aucLift: roundToFour(modelMetrics.rocAuc - heuristicMetrics.rocAuc),
+        } satisfies RuntimeSummary]
+      }),
+    ) as Record<string, RuntimeSummary>
     const adminProductionDiagnostics = modelEvaluationResponse.production ?? null
     const policyDiagnostics = mergePolicyDiagnostics(perRunPolicyDiagnostics)
     const coEvidenceDiagnostics = mergeCoEvidenceDiagnostics(coEvidenceDiagnosticsPages)
@@ -1127,6 +1717,7 @@ async function main() {
 
     const output = {
       generatedAt: new Date().toISOString(),
+      seedProfile: seedSelection.profile,
       requestedSeeds,
       governedSeeds,
       skippedRequestedSeeds,
@@ -1154,9 +1745,17 @@ async function main() {
         duplicateGovernedRunIds: governedSelection.skippedDuplicateManifestRunIds,
         incompleteGovernedRunCount: governedSelection.skippedIncompleteManifestRunIds.length,
         incompleteGovernedRunIds: governedSelection.skippedIncompleteManifestRunIds,
+        scenarioMismatchGovernedRunCount: governedSelection.skippedScenarioMismatchManifestRunIds.length,
+        scenarioMismatchGovernedRunIds: governedSelection.skippedScenarioMismatchManifestRunIds,
         skippedNonManifestRunCount: governedSelection.skippedNonManifestRunIds.length,
         skippedNonManifestRunIds: governedSelection.skippedNonManifestRunIds,
         missingManifestSeeds: governedSelection.skippedSeeds,
+        completenessGate: {
+          stageCountPerSemester: postCreateCompleteSelection.stageCountPerSemester,
+          requestedRunCompleteness,
+          completeRequestedRunCount: requestedRunCompleteness.filter(row => row.complete).length,
+          incompleteRequestedRunCount: requestedRunCompleteness.filter(row => !row.complete).length,
+        },
       },
       artifact: {
         activeProductionArtifactVersion: activeProductionArtifactRow.artifactVersion,
@@ -1166,9 +1765,37 @@ async function main() {
         activeModelFromEndpoint: modelActiveResponse,
         correlationsFromEndpoint: modelCorrelationResponse,
       },
+      localVariants: {
+        current: {
+          productionModelVersion: currentLocalBundle.production.modelVersion,
+          challengerModelVersion: currentLocalBundle.challenger.modelVersion,
+          challengerModelFamily: currentLocalBundle.challenger.modelFamily,
+          calibrationVersion: currentLocalBundle.production.calibrationVersion,
+        },
+        baseline: {
+          productionModelVersion: baselineLocalBundle.production.modelVersion,
+          challengerModelVersion: baselineLocalBundle.challenger.modelVersion,
+          challengerModelFamily: baselineLocalBundle.challenger.modelFamily,
+          calibrationVersion: baselineLocalBundle.production.calibrationVersion,
+        },
+      },
+      hybridPlan: {
+        note: 'Validation-tuned stage router between current-v6 and challenger. Alpha 1 = current-v6, alpha 0 = challenger.',
+        byHead: Object.fromEntries(headLabels.map(([headKey]) => [headKey, {
+          fallbackAlpha: hybridPlanByHead[headKey].fallbackAlpha,
+          fallbackMetrics: hybridPlanByHead[headKey].fallbackMetrics,
+          byStage: hybridPlanByHead[headKey].byStage,
+        }])),
+      },
       overallCourseRuntimeSummary,
+      overallCourseRuntimeSummaryByStage,
+      overallCourseVariantSummary,
+      overallCourseVariantSummaryByStage,
       runtimeSummary: overallCourseRuntimeSummary,
       modelSummary,
+      modelSummaryByStage,
+      variantComparisonSummary,
+      variantComparisonByStage,
       carryoverHeadSummary,
       policyDiagnostics,
       coEvidenceDiagnostics,
@@ -1192,6 +1819,7 @@ async function main() {
       '',
       '## Corpus',
       '',
+      `- Seed profile: ${output.seedProfile}`,
       `- Requested seeds: ${requestedSeeds.join(', ')}`,
       `- Governed seeds evaluated: ${governedSeeds.join(', ')}`,
       `- Reused existing governed runs: ${reusedRunIds.length}`,
@@ -1202,15 +1830,31 @@ async function main() {
       `- Held-out test rows: ${output.corpus.totalTestRows}`,
       `- Active run used for UI parity: ${output.corpus.activeRunId}`,
       `- Duplicate governed runs skipped: ${output.corpus.duplicateGovernedRunCount}`,
+      `- Scenario-mismatch governed runs skipped: ${output.corpus.scenarioMismatchGovernedRunCount}`,
       `- Non-manifest runs skipped: ${output.corpus.skippedNonManifestRunCount}`,
+      `- Stage definitions per semester: ${output.corpus.completenessGate.stageCountPerSemester}`,
+      `- Complete requested runs: ${output.corpus.completenessGate.completeRequestedRunCount}`,
+      `- Incomplete requested runs: ${output.corpus.completenessGate.incompleteRequestedRunCount}`,
+      '',
+      markdownTable(
+        ['Seed', 'Run ID', 'Semester Span', 'Checkpoints (actual/expected)', 'Stage Evidence Rows', 'Complete'],
+        output.corpus.completenessGate.requestedRunCompleteness.map(item => [
+          item.seed,
+          item.simulationRunId,
+          `${item.semesterStart}-${item.semesterEnd}`,
+          `${item.checkpointCount}/${item.expectedCheckpointCount}`,
+          item.stageEvidenceCount,
+          String(item.complete),
+        ]),
+      ),
       '',
       '## Overall Course Runtime Risk',
       '',
       markdownTable(
-        ['Scorer', 'Brier', 'ROC-AUC', 'ECE', 'Positive Rate', 'Support'],
+        ['Scorer', 'Brier', 'Log Loss', 'ROC-AUC', 'PR-AUC', 'ECE', 'Slope', 'Intercept', 'Positive Rate', 'Support'],
         [
-          ['model', output.overallCourseRuntimeSummary.model.brier, output.overallCourseRuntimeSummary.model.rocAuc, output.overallCourseRuntimeSummary.model.expectedCalibrationError, output.overallCourseRuntimeSummary.model.positiveRate, output.overallCourseRuntimeSummary.model.support],
-          ['heuristic', output.overallCourseRuntimeSummary.heuristic.brier, output.overallCourseRuntimeSummary.heuristic.rocAuc, output.overallCourseRuntimeSummary.heuristic.expectedCalibrationError, output.overallCourseRuntimeSummary.heuristic.positiveRate, output.overallCourseRuntimeSummary.heuristic.support],
+          ['model', output.overallCourseRuntimeSummary.model.brier, output.overallCourseRuntimeSummary.model.logLoss, output.overallCourseRuntimeSummary.model.rocAuc, output.overallCourseRuntimeSummary.model.averagePrecision, output.overallCourseRuntimeSummary.model.expectedCalibrationError, output.overallCourseRuntimeSummary.model.calibrationSlope, output.overallCourseRuntimeSummary.model.calibrationIntercept, output.overallCourseRuntimeSummary.model.positiveRate, output.overallCourseRuntimeSummary.model.support],
+          ['heuristic', output.overallCourseRuntimeSummary.heuristic.brier, output.overallCourseRuntimeSummary.heuristic.logLoss, output.overallCourseRuntimeSummary.heuristic.rocAuc, output.overallCourseRuntimeSummary.heuristic.averagePrecision, output.overallCourseRuntimeSummary.heuristic.expectedCalibrationError, output.overallCourseRuntimeSummary.heuristic.calibrationSlope, output.overallCourseRuntimeSummary.heuristic.calibrationIntercept, output.overallCourseRuntimeSummary.heuristic.positiveRate, output.overallCourseRuntimeSummary.heuristic.support],
         ],
       ),
       '',
@@ -1220,7 +1864,7 @@ async function main() {
       '## Head Metrics',
       '',
       markdownTable(
-        ['Head', 'Model Brier', 'Heuristic Brier', 'Brier Lift', 'Model ROC-AUC', 'Heuristic ROC-AUC', 'AUC Lift', 'Model ECE', 'Heuristic ECE'],
+        ['Head', 'Model Brier', 'Heuristic Brier', 'Brier Lift', 'Model Log Loss', 'Heuristic Log Loss', 'Model ROC-AUC', 'Heuristic ROC-AUC', 'AUC Lift', 'Model PR-AUC', 'Heuristic PR-AUC', 'Model ECE', 'Heuristic ECE'],
         headLabels.map(([headKey]) => {
           const summary = output.modelSummary[headKey]
           return [
@@ -1228,11 +1872,57 @@ async function main() {
             summary.model.brier,
             summary.heuristic.brier,
             summary.brierLift,
+            summary.model.logLoss,
+            summary.heuristic.logLoss,
             summary.model.rocAuc,
             summary.heuristic.rocAuc,
             summary.aucLift,
+            summary.model.averagePrecision,
+            summary.heuristic.averagePrecision,
             summary.model.expectedCalibrationError,
             summary.heuristic.expectedCalibrationError,
+          ]
+        }),
+      ),
+      '',
+      '## Variant Comparison',
+      '',
+      markdownTable(
+        ['Variant', 'Brier', 'Log Loss', 'ROC-AUC', 'PR-AUC', 'ECE'],
+        [
+          ['current-v6', output.overallCourseVariantSummary.current.brier, output.overallCourseVariantSummary.current.logLoss, output.overallCourseVariantSummary.current.rocAuc, output.overallCourseVariantSummary.current.averagePrecision, output.overallCourseVariantSummary.current.expectedCalibrationError],
+          ['baseline-v5-like', output.overallCourseVariantSummary.baseline.brier, output.overallCourseVariantSummary.baseline.logLoss, output.overallCourseVariantSummary.baseline.rocAuc, output.overallCourseVariantSummary.baseline.averagePrecision, output.overallCourseVariantSummary.baseline.expectedCalibrationError],
+          ['hybrid-router', output.overallCourseVariantSummary.hybrid.brier, output.overallCourseVariantSummary.hybrid.logLoss, output.overallCourseVariantSummary.hybrid.rocAuc, output.overallCourseVariantSummary.hybrid.averagePrecision, output.overallCourseVariantSummary.hybrid.expectedCalibrationError],
+          ['challenger', output.overallCourseVariantSummary.challenger.brier, output.overallCourseVariantSummary.challenger.logLoss, output.overallCourseVariantSummary.challenger.rocAuc, output.overallCourseVariantSummary.challenger.averagePrecision, output.overallCourseVariantSummary.challenger.expectedCalibrationError],
+          ['heuristic', output.overallCourseVariantSummary.heuristic.brier, output.overallCourseVariantSummary.heuristic.logLoss, output.overallCourseVariantSummary.heuristic.rocAuc, output.overallCourseVariantSummary.heuristic.averagePrecision, output.overallCourseVariantSummary.heuristic.expectedCalibrationError],
+        ],
+      ),
+      '',
+      markdownTable(
+        ['Head', 'Fallback Alpha', 'Stage Routes'],
+        headLabels.map(([headKey]) => {
+          const plan = output.hybridPlan.byHead[headKey]
+          return [
+            headKey,
+            plan.fallbackAlpha,
+            Object.entries(plan.byStage).map(([stageKey, stagePlan]) => `${stageKey}:${stagePlan.alpha}`).join(', ') || 'fallback-only',
+          ]
+        }),
+      ),
+      '',
+      markdownTable(
+        ['Head', 'Baseline ROC-AUC', 'Current ROC-AUC', 'Hybrid ROC-AUC', 'Challenger ROC-AUC', 'Current-Baseline Brier Lift', 'Current-Hybrid Brier Lift', 'Hybrid-Challenger Brier Lift'],
+        headLabels.map(([headKey]) => {
+          const summary = output.variantComparisonSummary[headKey]
+          return [
+            headKey,
+            summary.baseline.rocAuc,
+            summary.current.rocAuc,
+            summary.hybrid.rocAuc,
+            summary.challenger.rocAuc,
+            summary.currentVsBaseline.brierLift,
+            summary.currentVsHybrid.brierLift,
+            summary.hybridVsChallenger.brierLift,
           ]
         }),
       ),

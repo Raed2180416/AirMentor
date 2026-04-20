@@ -1622,6 +1622,9 @@ function offeringStageSnapshot(offering: typeof sectionOfferings.$inferSelect, p
 
 async function buildOfferingStageEligibility(context: RouteContext, offeringId: string) {
   const { offering, course, term } = await getOfferingContext(context, offeringId)
+  const resolvedPolicy = term.batchId
+    ? await resolveBatchPolicy(context, term.batchId, { sectionCode: offering.sectionCode })
+    : null
   const resolvedStagePolicy = term.batchId
     ? await resolveBatchStagePolicy(context, term.batchId, { sectionCode: offering.sectionCode })
     : null
@@ -1636,7 +1639,7 @@ async function buildOfferingStageEligibility(context: RouteContext, offeringId: 
     eq(studentEnrollments.academicStatus, 'active'),
   ))
   const activeStudentIds = activeEnrollments.map(row => row.studentId)
-  const [attendanceRows, assessmentRows, termResults, subjectResults, taskRows, batchRunRows, queueCaseRows] = await Promise.all([
+  const [attendanceRows, assessmentRows, termResults, subjectResults, taskRows, batchRunRows, queueCaseRows, ownershipRows, schemeRows] = await Promise.all([
     context.db.select().from(studentAttendanceSnapshots).where(eq(studentAttendanceSnapshots.offeringId, offeringId)),
     context.db.select().from(studentAssessmentScores).where(eq(studentAssessmentScores.offeringId, offeringId)),
     context.db.select().from(transcriptTermResults).where(eq(transcriptTermResults.termId, offering.termId)),
@@ -1644,6 +1647,8 @@ async function buildOfferingStageEligibility(context: RouteContext, offeringId: 
     context.db.select().from(academicTasks).where(eq(academicTasks.offeringId, offeringId)),
     term.batchId ? context.db.select().from(simulationRuns).where(eq(simulationRuns.batchId, term.batchId)) : Promise.resolve([]),
     context.db.select().from(simulationStageQueueCases).where(eq(simulationStageQueueCases.primaryOfferingId, offeringId)),
+    context.db.select().from(facultyOfferingOwnerships).where(eq(facultyOfferingOwnerships.offeringId, offeringId)),
+    context.db.select().from(offeringAssessmentSchemes).where(eq(offeringAssessmentSchemes.offeringId, offeringId)),
   ])
   const transcriptByStudentId = new Map(termResults.map(row => [row.studentId, row]))
   const subjectResultSet = new Set(subjectResults
@@ -1672,6 +1677,13 @@ async function buildOfferingStageEligibility(context: RouteContext, offeringId: 
       && row.status !== 'resolved'
       && row.status !== 'idle')
     : []
+  const activeOwnerships = ownershipRows.filter(row => row.status === 'active')
+  const explicitScheme = schemeRows[0]
+    ? canonicalizeSchemeState(
+        schemeStateSchema.parse(parseJson(schemeRows[0].schemeJson, {})),
+        resolvedPolicy?.effectivePolicy ?? DEFAULT_POLICY,
+      )
+    : null
 
   const evidenceStatus = {
     attendance: {
@@ -1719,6 +1731,15 @@ async function buildOfferingStageEligibility(context: RouteContext, offeringId: 
   }
   const blockingTaskRows = taskRows.filter(row => row.status !== 'Resolved' && row.status !== 'Completed' && row.status !== 'Closed')
   const blockingReasons: string[] = []
+  if (activeOwnerships.length === 0) {
+    blockingReasons.push('No active faculty owner is assigned for this class')
+  }
+  if (expectedCount === 0) {
+    blockingReasons.push('No active roster is enrolled for this class')
+  }
+  if (!explicitScheme || explicitScheme.status === 'Needs Setup') {
+    blockingReasons.push('Assessment scheme is not configured for this class')
+  }
   Object.entries(evidenceStatus).forEach(([kind, evidence]) => {
     if (!evidence.required) return
     if (evidence.presentCount < evidence.expectedCount) {
@@ -3988,6 +4009,7 @@ async function buildAcademicBootstrap(
       stageOrder: stageCheckpointRow.stageOrder,
       previousCheckpointId: stageCheckpointRow.previousCheckpointId,
       nextCheckpointId: stageCheckpointRow.nextCheckpointId,
+      currentDateISO: stageCheckpointRow.createdAt.slice(0, 10),
     } : null,
   }
 }

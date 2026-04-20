@@ -178,6 +178,7 @@ export interface LocksAuditRepository {
   getLockAuditSnapshot(): Record<string, QueueTransition[]>
   saveLocks(next: Record<string, EntryLockMap>): Promise<void>
   saveLockAudit(next: Record<string, QueueTransition[]>): Promise<void>
+  clearRemoteLock(offeringId: string, kind: EntryKind): Promise<void>
 }
 
 export interface TaskRepository {
@@ -273,6 +274,7 @@ function createUnavailableHttpAcademicRepositories(clearPersistedState: AirMento
       getLockAuditSnapshot: () => readBootstrapRequired<Record<string, QueueTransition[]>>(),
       saveLocks: () => callBootstrapRequired<void>(),
       saveLockAudit: () => callBootstrapRequired<void>(),
+      clearRemoteLock: () => callBootstrapRequired<void>(),
     },
     tasks: {
       getTasksSnapshot: () => readBootstrapRequired<SharedTask[]>(),
@@ -412,6 +414,9 @@ export function createLocalAirMentorRepositories(storage?: JsonStorage): AirMent
       async saveLockAudit(next) {
         writeJson(resolvedStorage, AIRMENTOR_STORAGE_KEYS.lockAudit, next)
       },
+      async clearRemoteLock(_offeringId, _kind) {
+        // local mode: no remote lock to clear
+      },
     },
     tasks: {
       getTasksSnapshot(seedFactory) {
@@ -526,26 +531,6 @@ function createHttpSessionPreferencesRepository({
     return session
   }
 
-  async function settleCookieBackedSession(stage: 'login' | 'role-switch') {
-    const retryDelaysMs = [0, 75, 200, 400]
-    for (const delayMs of retryDelaysMs) {
-      if (delayMs > 0) {
-        await new Promise(resolve => window.setTimeout(resolve, delayMs))
-      }
-      try {
-        return cacheSession(await client.restoreSession())
-      } catch (error) {
-        if (error instanceof AirMentorApiError && error.status === 401) continue
-        throw error
-      }
-    }
-    throw new Error(
-      stage === 'login'
-        ? 'Signed in, but the browser session cookie did not become readable by the backend. Please try signing in again.'
-        : 'Role changed locally, but the backend session context did not settle. Please retry the role switch.',
-    )
-  }
-
   return {
     getThemeSnapshot() {
       if (!resolvedStorage) return null
@@ -577,7 +562,7 @@ function createHttpSessionPreferencesRepository({
     async loginRemoteSession(payload) {
       const session = await client.login(payload)
       cacheSession(session)
-      return settleCookieBackedSession('login') as Promise<ApiSessionResponse>
+      return session
     },
     async logoutRemoteSession() {
       await client.logout()
@@ -586,7 +571,7 @@ function createHttpSessionPreferencesRepository({
     async switchRemoteRoleContext(roleGrantId) {
       const session = await client.switchRoleContext(roleGrantId)
       cacheSession(session)
-      return settleCookieBackedSession('role-switch') as Promise<ApiSessionResponse>
+      return session
     },
   }
 }
@@ -619,20 +604,26 @@ function createHttpAcademicRepositories({
   }
 
   async function persistRuntimeSlice<T>(stateKey: FirstPartyRuntimeSliceKey, payload: T) {
+    const previous = deepClone((runtimeCache as Record<string, unknown>)[stateKey])
     ;(runtimeCache as Record<string, unknown>)[stateKey] = deepClone(payload)
-    switch (stateKey) {
-      case 'drafts':
-        await client.saveAcademicDrafts(payload as Record<string, number>)
-        return
-      case 'cellValues':
-        await client.saveAcademicCellValues(payload as Record<string, number>)
-        return
-      case 'lockByOffering':
-        await client.saveAcademicLockByOffering(payload as Record<string, Record<string, boolean>>)
-        return
-      case 'lockAuditByTarget':
-        await client.saveAcademicLockAuditByTarget(payload as Record<string, Array<{ action: string; actorRole: string; at?: number }>>)
-        return
+    try {
+      switch (stateKey) {
+        case 'drafts':
+          await client.saveAcademicDrafts(payload as Record<string, number>)
+          return
+        case 'cellValues':
+          await client.saveAcademicCellValues(payload as Record<string, number>)
+          return
+        case 'lockByOffering':
+          await client.saveAcademicLockByOffering(payload as Record<string, Record<string, boolean>>)
+          return
+        case 'lockAuditByTarget':
+          await client.saveAcademicLockAuditByTarget(payload as Record<string, Array<{ action: string; actorRole: string; at?: number }>>)
+          return
+      }
+    } catch (error) {
+      ;(runtimeCache as Record<string, unknown>)[stateKey] = previous
+      throw error
     }
   }
 
@@ -741,6 +732,9 @@ function createHttpAcademicRepositories({
       async saveLockAudit(next) {
         await persistRuntimeSlice('lockAuditByTarget', next)
       },
+      async clearRemoteLock(offeringId, kind) {
+        await client.clearOfferingAssessmentLock(offeringId, kind)
+      },
     },
     tasks: {
       getTasksSnapshot(_seedFactory) {
@@ -754,13 +748,18 @@ function createHttpAcademicRepositories({
         const previousTasksById = new Map(previousTasks.map(task => [task.id, task]))
         runtimeCache.tasks = deepClone(next)
         const writes = next.filter(task => !jsonEqual(previousTasksById.get(task.id) ?? null, task))
-        await Promise.all(writes.map(async task => {
-          const response = await client.saveAcademicTask(task.id, {
-            task,
-            expectedVersion: taskVersionCache.get(task.id),
-          })
-          taskVersionCache.set(task.id, response.task.version)
-        }))
+        try {
+          await Promise.all(writes.map(async task => {
+            const response = await client.saveAcademicTask(task.id, {
+              task,
+              expectedVersion: taskVersionCache.get(task.id),
+            })
+            taskVersionCache.set(task.id, response.task.version)
+          }))
+        } catch (error) {
+          runtimeCache.tasks = previousTasks
+          throw error
+        }
       },
       async saveResolvedTasks(next) {
         runtimeCache.resolvedTasks = deepClone(next)
@@ -797,9 +796,14 @@ function createHttpAcademicRepositories({
           return !jsonEqual(previousTemplates[facultyId] ?? null, template)
         })
         runtimeCache.timetableByFacultyId = deepClone(next)
-        await Promise.all(writes.map(async ([facultyId, template]) => {
-          await client.saveFacultyCalendarWorkspace(facultyId, { template })
-        }))
+        try {
+          await Promise.all(writes.map(async ([facultyId, template]) => {
+            await client.saveFacultyCalendarWorkspace(facultyId, { template })
+          }))
+        } catch (error) {
+          runtimeCache.timetableByFacultyId = previousTemplates
+          throw error
+        }
       },
       async saveTaskPlacements(next) {
         const previousPlacements = deepClone(runtimeCache.taskPlacements ?? {})
@@ -808,25 +812,36 @@ function createHttpAcademicRepositories({
           return !jsonEqual(previousPlacements[taskId] ?? null, placement)
         })
         const deletes = Object.keys(previousPlacements).filter(taskId => !(taskId in next))
-        await Promise.all([
-          ...upserts.map(async ([taskId, placement]) => {
-            await client.saveAcademicTaskPlacement(taskId, {
-              placement,
-              expectedUpdatedAt: previousPlacements[taskId]?.updatedAt,
-            })
-          }),
-          ...deletes.map(async taskId => {
-            await client.deleteAcademicTaskPlacement(taskId, previousPlacements[taskId]?.updatedAt)
-          }),
-        ])
+        try {
+          await Promise.all([
+            ...upserts.map(async ([taskId, placement]) => {
+              await client.saveAcademicTaskPlacement(taskId, {
+                placement,
+                expectedUpdatedAt: previousPlacements[taskId]?.updatedAt,
+              })
+            }),
+            ...deletes.map(async taskId => {
+              await client.deleteAcademicTaskPlacement(taskId, previousPlacements[taskId]?.updatedAt)
+            }),
+          ])
+        } catch (error) {
+          runtimeCache.taskPlacements = previousPlacements
+          throw error
+        }
       },
       async saveCalendarAudit(next) {
-        const previousEventsById = new Map((runtimeCache.calendarAudit ?? []).map(event => [event.id, event]))
+        const previousEvents = deepClone(runtimeCache.calendarAudit ?? [])
+        const previousEventsById = new Map(previousEvents.map(event => [event.id, event]))
         runtimeCache.calendarAudit = deepClone(next)
         const writes = next.filter(event => !jsonEqual(previousEventsById.get(event.id) ?? null, event))
-        await Promise.all(writes.map(async event => {
-          await client.appendAcademicCalendarAuditEvent({ event })
-        }))
+        try {
+          await Promise.all(writes.map(async event => {
+            await client.appendAcademicCalendarAuditEvent({ event })
+          }))
+        } catch (error) {
+          runtimeCache.calendarAudit = previousEvents
+          throw error
+        }
       },
       async createMeeting(payload) {
         const created = await client.createAcademicMeeting(payload)

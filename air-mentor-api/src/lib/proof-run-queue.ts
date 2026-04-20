@@ -264,7 +264,10 @@ async function claimNextQueuedProofRun(pool: Pick<Pool, 'query'>, now: string, l
     WITH candidate AS (
       SELECT simulation_run_id
       FROM simulation_runs
-      WHERE status IN ('queued', 'running')
+      WHERE (
+        status = 'queued'
+        OR (status = 'running' AND worker_lease_token IS NOT NULL)
+      )
         AND (worker_lease_expires_at IS NULL OR worker_lease_expires_at < $1)
       ORDER BY
         CASE status WHEN 'queued' THEN 0 ELSE 1 END,

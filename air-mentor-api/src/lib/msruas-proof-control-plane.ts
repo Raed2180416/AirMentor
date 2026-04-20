@@ -54,6 +54,9 @@ import {
   transcriptTermResults,
   userAccounts,
   worldContextSnapshots,
+  offeringAssessmentSchemes,
+  sessions,
+  roleGrants,
 } from '../db/schema.js'
 import {
   buildFacultyTimetableTemplates as sharedBuildFacultyTimetableTemplates,
@@ -2413,7 +2416,7 @@ async function rebuildProofRiskArtifacts(db: AppDb, input: {
       curriculumFeatureProfileId: targetRun?.curriculumFeatureProfileId ?? null,
       curriculumFeatureProfileFingerprint: targetRun?.curriculumFeatureProfileFingerprint ?? null,
       artifactType: 'challenger',
-      modelFamily: 'decision-stump',
+      modelFamily: bundle.challenger.modelFamily,
       artifactVersion: bundle.challenger.modelVersion,
       featureSchemaVersion: bundle.challenger.featureSchemaVersion,
       sourceRunIdsJson: JSON.stringify(governedRunRows.map(row => row.simulationRunId)),
@@ -3354,6 +3357,53 @@ async function publishOperationalProjection(db: AppDb, input: {
     await insertRowsInChunks(db, studentAssessmentScores, assessmentRows)
   }
 
+  // GAP-1: Auto-seed assessment schemes so stage gates pass without manual teacher setup.
+  // Cannot import buildDefaultSchemeFromPolicy (circular: academic.ts already imports this file).
+  // Hardcoded MSRUAS DEFAULT_POLICY defaults: ce=60, see=40, 2 TTs, 2 quizzes, 2 assignments.
+  if (proofOfferingIds.length > 0) {
+    const MSRUAS_PROOF_DEFAULT_SCHEME_JSON = JSON.stringify({
+      finalsMax: 50,
+      termTestWeights: { tt1: 15, tt2: 15 },
+      quizWeight: 15,
+      assignmentWeight: 15,
+      quizCount: 2,
+      assignmentCount: 2,
+      quizComponents: [
+        { id: 'quiz-1', label: 'Quiz 1', rawMax: 10, weightage: 7 },
+        { id: 'quiz-2', label: 'Quiz 2', rawMax: 10, weightage: 8 },
+      ],
+      assignmentComponents: [
+        { id: 'assignment-1', label: 'Assignment 1', rawMax: 10, weightage: 7 },
+        { id: 'assignment-2', label: 'Assignment 2', rawMax: 10, weightage: 8 },
+      ],
+      policyContext: { ce: 60, see: 40, maxTermTests: 2, maxQuizzes: 2, maxAssignments: 2 },
+      status: 'Configured',
+    })
+    const MSRUAS_PROOF_POLICY_SNAPSHOT_JSON = JSON.stringify({
+      ceSeeSplit: { ce: 60, see: 40 },
+      ceComponentCaps: { maxTermTests: 2, maxQuizzes: 2, maxAssignments: 2 },
+    })
+    const existingSchemeRows = await db.select({ offeringId: offeringAssessmentSchemes.offeringId })
+      .from(offeringAssessmentSchemes)
+      .where(inArray(offeringAssessmentSchemes.offeringId, proofOfferingIds))
+    const offeringsWithScheme = new Set(existingSchemeRows.map(row => row.offeringId))
+    const schemeInsertRows: Array<typeof offeringAssessmentSchemes.$inferInsert> = proofOfferingIds
+      .filter(offeringId => !offeringsWithScheme.has(offeringId))
+      .map(offeringId => ({
+        offeringId,
+        configuredByFacultyId: null,
+        schemeJson: MSRUAS_PROOF_DEFAULT_SCHEME_JSON,
+        policySnapshotJson: MSRUAS_PROOF_POLICY_SNAPSHOT_JSON,
+        status: 'active',
+        version: 1,
+        createdAt: input.now,
+        updatedAt: input.now,
+      }))
+    if (schemeInsertRows.length > 0) {
+      await insertRowsInChunks(db, offeringAssessmentSchemes, schemeInsertRows)
+    }
+  }
+
   if (riskRows.length > 0) {
     const riskIds = riskRows.map(row => row.riskAssessmentId)
     const relevantAlerts = alertRows.filter(row => riskIds.includes(row.riskAssessmentId))
@@ -3919,6 +3969,18 @@ export async function startProofSimulationRun(db: AppDb, input: {
   }, proofControlPlaneSeededRunServiceDeps)
 }
 
+async function invalidateProofBatchSessions(db: AppDb, batchId: string) {
+  const [batch] = await db.select({ branchId: batches.branchId }).from(batches).where(eq(batches.batchId, batchId))
+  if (!batch) return
+  const grantRows = await db.select({ facultyId: roleGrants.facultyId }).from(roleGrants).where(eq(roleGrants.scopeId, batch.branchId))
+  const facultyIds = [...new Set(grantRows.map(r => r.facultyId))]
+  if (facultyIds.length === 0) return
+  const profileRows = await db.select({ userId: facultyProfiles.userId }).from(facultyProfiles).where(inArray(facultyProfiles.facultyId, facultyIds))
+  const userIds = profileRows.map(r => r.userId)
+  if (userIds.length === 0) return
+  await db.delete(sessions).where(inArray(sessions.userId, userIds))
+}
+
 export async function archiveProofSimulationRun(db: AppDb, input: {
   simulationRunId: string
   actorFacultyId?: string | null
@@ -3939,6 +4001,7 @@ export async function archiveProofSimulationRun(db: AppDb, input: {
     createdByFacultyId: input.actorFacultyId ?? null,
     now: input.now,
   })
+  await invalidateProofBatchSessions(db, run.batchId)
 }
 
 export async function activateProofSimulationRun(db: AppDb, input: {
@@ -3977,6 +4040,7 @@ export async function activateProofSimulationRun(db: AppDb, input: {
     status: 'completed',
     updatedAt: input.now,
   }).where(eq(simulationRuns.batchId, run.batchId))
+  await invalidateProofBatchSessions(db, run.batchId)
   await db.update(simulationRuns).set({
     activeFlag: 1,
     status: 'active',

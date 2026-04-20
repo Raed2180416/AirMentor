@@ -79,6 +79,7 @@ import { clearPortalWorkspaceHints, getPortalHash, hashBelongsToPortalRoute, nav
 import { SystemAdminApp } from './system-admin-app'
 import {
   AcademicFacultyContextUnavailableState,
+  AcademicRouteLoadingFallback,
   AcademicSessionBoundary,
 } from './academic-session-shell'
 import { AcademicWorkspaceSidebar } from './academic-workspace-sidebar'
@@ -106,11 +107,14 @@ import {
   withAlpha,
 } from './ui-primitives'
 import { AirMentorApiClient, AirMentorApiError } from './api/client'
+import { useApiConnectionTarget } from './api-connection'
 import type {
   ApiAcademicBootstrap,
   ApiAcademicFacultyProfile,
   ApiAcademicHodProofBundle,
   ApiAcademicLoginFaculty,
+  ApiPasswordSetupInspectResponse,
+  ApiPasswordSetupRequestResponse,
   ApiSessionResponse,
   ApiStudentAgentCard,
   ApiStudentAgentMessage,
@@ -118,6 +122,7 @@ import type {
   ApiStudentAgentTimelineItem,
   ApiStudentRiskExplorer,
 } from './api/types'
+import { ApiFallbackIndicator, BackendOfflineIndicator, useBackendHealthMonitor } from './backend-health-indicator'
 import { clearProofPlaybackSelection, PROOF_PLAYBACK_SELECTION_STORAGE_KEY, readProofPlaybackSelection } from './proof-playback'
 import { collectFrontendStartupDiagnostics } from './startup-diagnostics'
 import { emitClientOperationalEvent, normalizeClientTelemetryError } from './telemetry'
@@ -1162,6 +1167,9 @@ function OperationalWorkspace({
   const studentsByOffering = academicBootstrap.studentsByOffering
   const studentHistoryByUsn = academicBootstrap.studentHistoryByUsn
   const defaultOffering = allOfferings[0] ?? null
+  // GAP-7: In proof playback mode, use the checkpoint's capture date as the due-label anchor.
+  // Simulation tasks have academic-calendar dates that appear "past" relative to wall clock.
+  const proofVirtualDateISO: string | undefined = (academicBootstrap as { proofPlayback?: { currentDateISO?: string } }).proofPlayback?.currentDateISO
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => repositories.sessionPreferences.getThemeSnapshot() ?? normalizeThemeMode(null))
   const [isCompactTopbar, setIsCompactTopbar] = useState(() => window.innerWidth < 980)
   const [now, setNow] = useState(() => new Date())
@@ -1376,6 +1384,7 @@ function OperationalWorkspace({
     hydratedLockSnapshotRef.current = serialized
     void repositories.locksAudit.saveLocks(lockByOffering).catch(error => {
       hydratedLockSnapshotRef.current = previousSnapshot
+      setLockByOffering(JSON.parse(previousSnapshot))
       console.error('Could not persist lock state.', error)
     })
   }, [lockByOffering, repositories])
@@ -1386,6 +1395,7 @@ function OperationalWorkspace({
     hydratedDraftSnapshotRef.current = serialized
     void repositories.entryData.saveDrafts(draftBySection).catch(error => {
       hydratedDraftSnapshotRef.current = previousSnapshot
+      setDraftBySection(JSON.parse(previousSnapshot))
       console.error('Could not persist draft state.', error)
     })
   }, [draftBySection, repositories])
@@ -1396,6 +1406,7 @@ function OperationalWorkspace({
     hydratedCellValueSnapshotRef.current = serialized
     void repositories.entryData.saveCellValues(cellValues).catch(error => {
       hydratedCellValueSnapshotRef.current = previousSnapshot
+      setCellValues(JSON.parse(previousSnapshot))
       console.error('Could not persist cell values.', error)
     })
   }, [cellValues, repositories])
@@ -1413,6 +1424,7 @@ function OperationalWorkspace({
     hydratedTimetableSnapshotRef.current = serialized
     void repositories.calendar.saveTimetableTemplates(timetableByFacultyId).catch(error => {
       hydratedTimetableSnapshotRef.current = previousSnapshot
+      setTimetableByFacultyId(JSON.parse(previousSnapshot))
       console.error('Could not persist timetable templates.', error)
     })
   }, [page, repositories, timetableByFacultyId])
@@ -1421,7 +1433,9 @@ function OperationalWorkspace({
   useEffect(() => { void repositories.entryData.saveStudentPatches(studentPatches) }, [repositories, studentPatches])
   useEffect(() => {
     if (role !== 'Course Leader' || (page !== 'course' && page !== 'scheme-setup' && page !== 'entry-workspace')) return
-    void repositories.entryData.saveSchemeState(schemeByOffering)
+    void repositories.entryData.saveSchemeState(schemeByOffering).catch(error => {
+      console.error('Could not persist scheme state.', error)
+    })
   }, [page, repositories, role, schemeByOffering])
   useEffect(() => {
     if (role !== 'Course Leader' || (page !== 'course' && page !== 'scheme-setup' && page !== 'entry-workspace')) return
@@ -1435,6 +1449,7 @@ function OperationalWorkspace({
     hydratedBlueprintSnapshotRef.current = serialized
     void repositories.entryData.saveBlueprintState(ttBlueprintsByOffering).catch(error => {
       hydratedBlueprintSnapshotRef.current = previousSnapshot
+      setTtBlueprintsByOffering(JSON.parse(previousSnapshot))
       console.error('Could not persist question-paper blueprints.', error)
     })
   }, [page, repositories, role, ttBlueprintsByOffering])
@@ -1445,6 +1460,7 @@ function OperationalWorkspace({
     hydratedLockAuditSnapshotRef.current = serialized
     void repositories.locksAudit.saveLockAudit(lockAuditByTarget).catch(error => {
       hydratedLockAuditSnapshotRef.current = previousSnapshot
+      setLockAuditByTarget(JSON.parse(previousSnapshot))
       console.error('Could not persist lock audit.', error)
     })
   }, [lockAuditByTarget, repositories])
@@ -2142,19 +2158,45 @@ function OperationalWorkspace({
   }, [])
 
   const handleSubmitLock = useCallback((offId: string, kind: EntryKind) => {
-    setLockByOffering(prev => ({
-      ...prev,
-      [offId]: { ...(prev[offId] ?? getEntryLockMap(allOfferings.find(o => o.offId === offId) ?? defaultOffering ?? allOfferings[0])), [kind]: true },
-    }))
-    setSchemeByOffering(prev => prev[offId] ? ({
-      ...prev,
-      [offId]: {
-        ...prev[offId],
-        status: 'Locked',
-        lockedAt: Date.now(),
-      },
-    }) : prev)
-    void persistEntryWorkspace(offId, kind, true)
+    let previousLock: boolean | undefined
+    let previousSchemeStatus: SchemeState['status'] | undefined
+    let previousSchemeLockedAt: number | undefined
+
+    setLockByOffering(prev => {
+      previousLock = prev[offId]?.[kind]
+      return {
+        ...prev,
+        [offId]: { ...(prev[offId] ?? getEntryLockMap(allOfferings.find(o => o.offId === offId) ?? defaultOffering ?? allOfferings[0])), [kind]: true },
+      }
+    })
+    setSchemeByOffering(prev => {
+      previousSchemeStatus = prev[offId]?.status
+      previousSchemeLockedAt = prev[offId]?.lockedAt
+      return prev[offId] ? ({
+        ...prev,
+        [offId]: {
+          ...prev[offId],
+          status: 'Locked',
+          lockedAt: Date.now(),
+        },
+      }) : prev
+    })
+    
+    persistEntryWorkspace(offId, kind, true).catch(error => {
+      setLockByOffering(prev => ({
+        ...prev,
+        [offId]: { ...prev[offId], [kind]: previousLock ?? false },
+      }))
+      setSchemeByOffering(prev => prev[offId] ? ({
+        ...prev,
+        [offId]: {
+          ...prev[offId],
+          status: previousSchemeStatus ?? prev[offId].status,
+          lockedAt: previousSchemeLockedAt,
+        },
+      }) : prev)
+      console.error('Failed to lock entry workspace', error)
+    })
   }, [allOfferings, defaultOffering, persistEntryWorkspace])
 
   const commitStudentPatch = useCallback((offeringId: string, studentId: string, updater: (existing: StudentRuntimePatch) => StudentRuntimePatch) => {
@@ -2248,7 +2290,7 @@ function OperationalWorkspace({
           id: `${target.id}-next-${Date.now()}`,
           status: 'New',
           dueDateISO: nextDueDateISO,
-          due: toDueLabel(nextDueDateISO),
+          due: toDueLabel(nextDueDateISO, 'This week', proofVirtualDateISO),
           createdAt: Date.now(),
           updatedAt: Date.now(),
           scheduleMeta: {
@@ -2301,7 +2343,7 @@ function OperationalWorkspace({
       return {
         ...task,
         dueDateISO: normalized,
-        due: toDueLabel(normalized),
+        due: toDueLabel(normalized, 'This week', proofVirtualDateISO),
         updatedAt: Date.now(),
         scheduleMeta: { ...task.scheduleMeta, nextDueDateISO: normalized },
         transitionHistory: [...(task.transitionHistory ?? []), createTransition({ action: 'Recurrence edited', actorRole: role, actorTeacherId: currentTeacherId ?? undefined, fromOwner: task.assignedTo, toOwner: task.assignedTo, note: `${role} updated future schedule starting ${normalized}.` })],
@@ -2412,7 +2454,7 @@ function OperationalWorkspace({
           dayEndMinutes: currentFacultyTimetable.dayEndMinutes,
         })
       : buildUntimedPlacement({ taskId, dateISO: input.dateISO })
-    const updatedTask = applyPlacementToTask(task, nextPlacement)
+    const updatedTask = applyPlacementToTask(task, nextPlacement, proofVirtualDateISO)
     void repositories.tasks.upsertTask(updatedTask)
     setTaskPlacements(prev => ({ ...prev, [taskId]: nextPlacement }))
     setAllTasksList(prev => prev.map(item => item.id === taskId ? updatedTask : item))
@@ -2733,7 +2775,7 @@ function OperationalWorkspace({
       riskProb,
       riskBand: (s.riskBand ?? 'Medium') as RiskBand,
       title,
-      due: input.due || toDueLabel(input.dueDateISO),
+      due: input.dueDateISO ? toDueLabel(input.dueDateISO, 'This week', proofVirtualDateISO) : (input.due || 'This week'),
       dueDateISO: input.dueDateISO,
       status: 'New',
       actionHint: input.note || `${input.taskType} task created from quick panel`,
@@ -2770,7 +2812,7 @@ function OperationalWorkspace({
           : buildUntimedPlacement({ taskId: id, dateISO: input.placement.dateISO }))
       : undefined
     const nextTask = placement
-      ? applyPlacementToTask(next, placement)
+      ? applyPlacementToTask(next, placement, proofVirtualDateISO)
       : next
     void repositories.tasks.upsertTask(nextTask)
     setAllTasksList(prev => [nextTask, ...prev])
@@ -3102,10 +3144,19 @@ function OperationalWorkspace({
     setResolvedTasks(prev => ({ ...prev, [taskId]: Date.now() }))
   }, [currentTeacherId])
 
-  const handleResetComplete = useCallback((taskId: string) => {
+  const handleResetComplete = useCallback(async (taskId: string) => {
     const task = allTasksList.find(item => item.id === taskId)
     if (!task?.unlockRequest) return
     const unlockKind = task.unlockRequest.kind
+    // GAP-3: Must clear the DB lock column BEFORE updating local state.
+    // Without this, the teacher's next submission still hits `sectionOfferings.tt1Locked = 1`
+    // and gets forbidden — the runtime blob alone is not checked by the commit route.
+    try {
+      await repositories.locksAudit.clearRemoteLock(task.offeringId, unlockKind)
+    } catch (clearError) {
+      console.error('[handleResetComplete] Failed to clear remote lock — unlock aborted', clearError)
+      return
+    }
     appendLockAudit(task.offeringId, unlockKind, createTransition({
       action: 'Reset completed and unlocked',
       actorRole: 'HoD',
@@ -3142,7 +3193,7 @@ function OperationalWorkspace({
       transitionHistory: [...(item.transitionHistory ?? []), createTransition({ action: 'Reset completed and unlocked', actorRole: 'HoD', actorTeacherId: currentTeacherId ?? undefined, fromOwner: 'HoD', toOwner: item.sourceRole === 'Mentor' ? 'Mentor' : 'Course Leader', note: 'Entry dataset is unlocked for correction.' })],
     }) : item))
     setResolvedTasks(prev => ({ ...prev, [taskId]: Date.now() }))
-  }, [allOfferings, allTasksList, appendLockAudit, currentTeacherId, defaultOffering])
+  }, [allOfferings, allTasksList, appendLockAudit, currentTeacherId, defaultOffering, repositories])
 
   const handleOpenTaskStudent = useCallback((task: SharedTask) => {
     const mentorMatch = assignedMentees.find(mentee => mentee.usn === task.studentUsn || mentee.id === task.studentId) ?? allMentees.find(mentee => mentee.usn === task.studentUsn || mentee.id === task.studentId)
@@ -3471,14 +3522,31 @@ function getAcademicApiBaseUrl() {
   return import.meta.env.VITE_AIRMENTOR_API_BASE_URL?.trim() || ''
 }
 
+function readPasswordSetupTokenFromUrl() {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  const token = params.get('password-setup-token')
+  return token?.trim() || null
+}
+
+function clearPasswordSetupTokenFromUrl() {
+  if (typeof window === 'undefined') return
+  const url = new URL(window.location.href)
+  url.searchParams.delete('password-setup-token')
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+}
+
 export function OperationalApp() {
-  const apiBaseUrl = getAcademicApiBaseUrl()
-  const liveAcademicMode = apiBaseUrl.length > 0
+  const configuredApiBaseUrl = getAcademicApiBaseUrl()
+  const apiConnection = useApiConnectionTarget(configuredApiBaseUrl)
+  const apiBaseUrl = apiConnection.activeBaseUrl
+  const liveAcademicMode = apiConnection.candidateBaseUrls.length > 0
   const telemetrySinkUrl = import.meta.env.VITE_AIRMENTOR_TELEMETRY_SINK_URL?.trim() || ''
   const apiClient = useMemo(() => (apiBaseUrl ? new AirMentorApiClient(apiBaseUrl) : null), [apiBaseUrl])
+  const backendHealthMonitor = useBackendHealthMonitor(apiBaseUrl, { enabled: liveAcademicMode })
   const startupDiagnostics = useMemo(
-    () => collectFrontendStartupDiagnostics({ apiBaseUrl, telemetrySinkUrl }),
-    [apiBaseUrl, telemetrySinkUrl],
+    () => collectFrontendStartupDiagnostics({ apiBaseUrl: configuredApiBaseUrl || apiBaseUrl, telemetrySinkUrl }),
+    [apiBaseUrl, configuredApiBaseUrl, telemetrySinkUrl],
   )
   const remoteSessionRepositories = useMemo(() => (
     apiClient
@@ -3492,6 +3560,13 @@ export function OperationalApp() {
   const [booting, setBooting] = useState(true)
   const [authBusy, setAuthBusy] = useState(false)
   const [authError, setAuthError] = useState('')
+  const [workspaceLoadingLabel, setWorkspaceLoadingLabel] = useState('')
+  const [passwordSetupToken, setPasswordSetupToken] = useState<string | null>(() => readPasswordSetupTokenFromUrl())
+  const [passwordSetupInspect, setPasswordSetupInspect] = useState<ApiPasswordSetupInspectResponse | null>(null)
+  const [passwordSetupRequestResult, setPasswordSetupRequestResult] = useState<ApiPasswordSetupRequestResponse | null>(null)
+  const [passwordSetupBusy, setPasswordSetupBusy] = useState(false)
+  const [passwordSetupError, setPasswordSetupError] = useState('')
+  const [passwordSetupMessage, setPasswordSetupMessage] = useState('')
   const [remoteSession, setRemoteSession] = useState<ApiSessionResponse | null>(null)
   const [workspaceProjection, setWorkspaceProjection] = useState<AcademicWorkspaceProjection | null>(null)
   const [loginFaculty, setLoginFaculty] = useState<ApiAcademicLoginFaculty[]>([])
@@ -3500,6 +3575,13 @@ export function OperationalApp() {
   const handleReturnToPortal = useCallback(() => {
     if (typeof window !== 'undefined') clearPortalWorkspaceHints(window.localStorage)
     navigateToPortal('home')
+  }, [])
+
+  const handleClearPasswordSetupToken = useCallback(() => {
+    clearPasswordSetupTokenFromUrl()
+    setPasswordSetupToken(null)
+    setPasswordSetupInspect(null)
+    setPasswordSetupError('')
   }, [])
 
   useEffect(() => {
@@ -3514,11 +3596,14 @@ export function OperationalApp() {
     emitClientOperationalEvent('startup.ready', {
       workspace: 'academic',
       apiBaseUrl: apiBaseUrl || null,
+      configuredPrimaryApiBaseUrl: configuredApiBaseUrl || null,
+      activeApiSource: apiConnection.activeSource,
+      usingApiFallback: apiConnection.usingFallback,
       telemetrySinkConfigured: Boolean(telemetrySinkUrl),
       diagnosticCount: startupDiagnostics.length,
       errorCount: startupDiagnostics.filter(item => item.level === 'error').length,
     })
-  }, [apiBaseUrl, startupDiagnostics, telemetrySinkUrl])
+  }, [apiBaseUrl, apiConnection.activeSource, apiConnection.usingFallback, configuredApiBaseUrl, startupDiagnostics, telemetrySinkUrl])
 
   const commitAcademicProjection = useCallback((session: ApiSessionResponse, snapshot: ApiAcademicBootstrap) => {
     setRemoteSession(session)
@@ -3587,6 +3672,19 @@ export function OperationalApp() {
       }
       return syncSnapshot(snapshot)
     } catch (error) {
+      // GAP-5: No active proof run — teacher must wait for sysadmin to start a simulation.
+      // Surface this as a clear gate rather than a generic error or blank workspace.
+      const isNoActiveRun = error instanceof AirMentorApiError
+        && error.status === 403
+        && typeof error.details === 'object'
+        && error.details !== null
+        && (error.details as Record<string, unknown>).error === 'NO_ACTIVE_PROOF_RUN'
+      if (isNoActiveRun) {
+        emitClientOperationalEvent('academic.bootstrap.no_active_proof_run', {
+          workspace: 'academic',
+        }, { level: 'warn' })
+        throw error
+      }
       const invalidSelection = selection?.simulationStageCheckpointId
         && error instanceof AirMentorApiError
         && (error.status === 403 || error.status === 404)
@@ -3638,8 +3736,38 @@ export function OperationalApp() {
   }, [refreshAcademicProjection, remoteSession?.faculty?.facultyId])
 
   useEffect(() => {
+    if (!apiConnection.initialCheckComplete || !apiClient || !passwordSetupToken) {
+      if (!passwordSetupToken) setPasswordSetupInspect(null)
+      return
+    }
+    let cancelled = false
+    setPasswordSetupBusy(true)
+    setPasswordSetupError('')
+    void (async () => {
+      try {
+        const inspected = await apiClient.inspectPasswordSetup(passwordSetupToken)
+        if (!cancelled) setPasswordSetupInspect(inspected)
+      } catch (error) {
+        if (!cancelled) {
+          setPasswordSetupInspect(null)
+          setPasswordSetupError(error instanceof Error ? error.message : 'Could not validate the password setup link.')
+        }
+      } finally {
+        if (!cancelled) setPasswordSetupBusy(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [apiClient, apiConnection.initialCheckComplete, passwordSetupToken])
+
+  useEffect(() => {
+    if (!apiConnection.initialCheckComplete) {
+      setBooting(true)
+      return
+    }
     if (!apiClient || !remoteSessionRepositories) {
-      setAuthError('VITE_AIRMENTOR_API_BASE_URL is required. Teaching workspace runs in backend-only mode.')
+      setAuthError('No API connection target is configured. Set VITE_AIRMENTOR_API_BASE_URL (and optionally VITE_AIRMENTOR_API_FALLBACK_BASE_URLS).')
       setBooting(false)
       return
     }
@@ -3647,32 +3775,39 @@ export function OperationalApp() {
     let cancelled = false
     const load = async () => {
       try {
-        const [publicFaculty, restoredSession] = await Promise.all([
-          apiClient.listAcademicLoginFaculty().catch(() => null),
-          remoteSessionRepositories.sessionPreferences.restoreRemoteSession(),
-        ])
+        void apiClient.listAcademicLoginFaculty()
+          .then(publicFaculty => {
+            if (!cancelled && publicFaculty?.items?.length) {
+              setLoginFaculty(restrictVisibleFacultyOptions(publicFaculty.items))
+            }
+          })
+          .catch(() => undefined)
+        const restoredSession = await remoteSessionRepositories.sessionPreferences.restoreRemoteSession()
         if (cancelled) return
-        if (publicFaculty?.items?.length) {
-          setLoginFaculty(restrictVisibleFacultyOptions(publicFaculty.items))
-        }
-      const restoredRole = restoredSession ? mapApiRoleToRole(restoredSession.activeRoleGrant.roleCode) : null
-      if (restoredSession?.faculty?.facultyId && restoredRole) {
-        emitClientOperationalEvent('auth.session.restored', {
-          workspace: 'academic',
-          sessionId: restoredSession.sessionId,
-          facultyId: restoredSession.faculty.facultyId,
-          activeRole: restoredSession.activeRoleGrant.roleCode,
-        })
+        const restoredRole = restoredSession ? mapApiRoleToRole(restoredSession.activeRoleGrant.roleCode) : null
+        if (restoredSession?.faculty?.facultyId && restoredRole) {
+          emitClientOperationalEvent('auth.session.restored', {
+            workspace: 'academic',
+            sessionId: restoredSession.sessionId,
+            facultyId: restoredSession.faculty.facultyId,
+            activeRole: restoredSession.activeRoleGrant.roleCode,
+          })
+          setRemoteSession(restoredSession)
+          setWorkspaceProjection(null)
+          setWorkspaceLoadingLabel('Restoring teaching workspace...')
+          setBooting(false)
           const snapshot = await fetchAcademicBootstrap()
+          if (cancelled) return
           if (!snapshot) {
-            setRemoteSession(restoredSession)
-            setWorkspaceProjection(null)
+            setWorkspaceLoadingLabel('')
             return
           }
           commitAcademicProjection(restoredSession, snapshot)
+          setWorkspaceLoadingLabel('')
         } else {
           setRemoteSession(null)
           setWorkspaceProjection(null)
+          setWorkspaceLoadingLabel('')
         }
       } catch (error) {
         if (cancelled) return
@@ -3683,6 +3818,7 @@ export function OperationalApp() {
         setAuthError(error instanceof Error ? error.message : 'Could not restore the academic portal session.')
         setRemoteSession(null)
         setWorkspaceProjection(null)
+        setWorkspaceLoadingLabel('')
       } finally {
         if (!cancelled) setBooting(false)
       }
@@ -3692,7 +3828,7 @@ export function OperationalApp() {
     return () => {
       cancelled = true
     }
-  }, [apiClient, commitAcademicProjection, fetchAcademicBootstrap, remoteSessionRepositories])
+  }, [apiClient, apiConnection.initialCheckComplete, commitAcademicProjection, fetchAcademicBootstrap, remoteSessionRepositories])
 
   const remoteRepositories = useMemo(() => (
     apiClient && workspaceProjection?.bootstrap
@@ -3718,34 +3854,98 @@ export function OperationalApp() {
       if (!session.faculty?.facultyId || !role) {
         throw new Error('This account does not have an academic portal role.')
       }
+      setRemoteSession(session)
+      setWorkspaceProjection(null)
+      setWorkspaceLoadingLabel('Opening teaching workspace...')
       const snapshot = await fetchAcademicBootstrap()
       if (!snapshot) throw new Error('Academic bootstrap did not return a session projection.')
       commitAcademicProjection(session, snapshot)
+      setWorkspaceLoadingLabel('')
     } catch (error) {
-      const message = error instanceof AirMentorApiError ? error.message : (error instanceof Error ? error.message : 'Academic login failed.')
+      const isNoActiveRun = error instanceof AirMentorApiError
+        && error.status === 403
+        && typeof error.details === 'object'
+        && error.details !== null
+        && (error.details as Record<string, unknown>).error === 'NO_ACTIVE_PROOF_RUN'
+      const message = isNoActiveRun
+        ? 'No simulation is currently active. Ask your administrator to start a proof run before logging in.'
+        : error instanceof AirMentorApiError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : 'Academic login failed.'
+      setRemoteSession(null)
+      setWorkspaceProjection(null)
       setAuthError(message)
+      setWorkspaceLoadingLabel('')
       throw new Error(message)
     } finally {
       setAuthBusy(false)
     }
   }, [commitAcademicProjection, fetchAcademicBootstrap, remoteSessionRepositories])
 
+  const handleRequestPasswordSetup = useCallback(async (identifier: string) => {
+    if (!apiClient) throw new Error('Academic backend is unavailable.')
+    setPasswordSetupBusy(true)
+    setPasswordSetupError('')
+    setPasswordSetupMessage('')
+    try {
+      const result = await apiClient.requestPasswordSetup({ identifier })
+      setPasswordSetupRequestResult(result)
+      setPasswordSetupMessage(result.message)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not prepare the password setup link.'
+      setPasswordSetupError(message)
+      throw new Error(message)
+    } finally {
+      setPasswordSetupBusy(false)
+    }
+  }, [apiClient])
+
+  const handleRedeemPasswordSetup = useCallback(async (password: string) => {
+    if (!apiClient || !passwordSetupToken) throw new Error('Password setup link is unavailable.')
+    setPasswordSetupBusy(true)
+    setPasswordSetupError('')
+    try {
+      const result = await apiClient.redeemPasswordSetup({ token: passwordSetupToken, password })
+      clearPasswordSetupTokenFromUrl()
+      setPasswordSetupToken(null)
+      setPasswordSetupInspect(null)
+      setPasswordSetupRequestResult(null)
+      setPasswordSetupMessage(`Password saved for ${result.displayName}. Sign in with your username or email now.`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not save the new password.'
+      setPasswordSetupError(message)
+      throw new Error(message)
+    } finally {
+      setPasswordSetupBusy(false)
+    }
+  }, [apiClient, passwordSetupToken])
+
   const handleRemoteLogout = useCallback(async () => {
     if (!remoteSessionRepositories) return
-    await remoteSessionRepositories.sessionPreferences.logoutRemoteSession()
     setRemoteSession(null)
     setWorkspaceProjection(null)
+    setWorkspaceLoadingLabel('')
     handleReturnToPortal()
+    void remoteSessionRepositories.sessionPreferences.logoutRemoteSession().catch(() => undefined)
   }, [handleReturnToPortal, remoteSessionRepositories])
 
   const handleRemoteRoleChange = useCallback(async (role: Role) => {
     if (!remoteSession || !remoteSessionRepositories) return
     const match = remoteSession.availableRoleGrants.find(grant => mapApiRoleToRole(grant.roleCode) === role)
     if (!match) return
-    const nextSession = await remoteSessionRepositories.sessionPreferences.switchRemoteRoleContext(match.grantId)
-    const snapshot = await fetchAcademicBootstrap()
-    if (!snapshot) throw new Error('Academic bootstrap did not return a session projection.')
-    commitAcademicProjection(nextSession, snapshot)
+    setWorkspaceLoadingLabel(`Switching to ${role}...`)
+    try {
+      const nextSession = await remoteSessionRepositories.sessionPreferences.switchRemoteRoleContext(match.grantId)
+      setRemoteSession(nextSession)
+      setWorkspaceProjection(null)
+      const snapshot = await fetchAcademicBootstrap()
+      if (!snapshot) throw new Error('Academic bootstrap did not return a session projection.')
+      commitAcademicProjection(nextSession, snapshot)
+    } finally {
+      setWorkspaceLoadingLabel('')
+    }
   }, [commitAcademicProjection, fetchAcademicBootstrap, remoteSession, remoteSessionRepositories])
 
   const loadAcademicFacultyProfile = useCallback(async (facultyId: string) => {
@@ -3849,40 +4049,61 @@ export function OperationalApp() {
   const workspaceBootstrap = workspaceProjection?.bootstrap ?? null
   const workspaceRepositories = remoteRepositories
   const workspaceReady = Boolean(workspaceSession?.faculty?.facultyId && workspaceRole && workspaceBootstrap && remoteRepositories)
+  const connectionPending = !apiConnection.initialCheckComplete && apiConnection.candidateBaseUrls.length > 0 && !apiBaseUrl
+
+  if (connectionPending) {
+    return <AcademicRouteLoadingFallback label="Checking backend connection..." />
+  }
 
   return (
-    <AcademicSessionBoundary
-      backendReady={Boolean(apiClient && remoteSessionRepositories)}
-      booting={booting}
-      sessionReady={workspaceReady}
-      facultyOptions={loginFaculty}
-      authBusy={authBusy}
-      authError={authError}
-      onBackToPortal={handleReturnToPortal}
-      onLogin={handleRemoteLogin}
-    >
-      {workspaceReady ? (
-        <OperationalWorkspace
-          key={`${workspaceProjection?.revision ?? 0}:${workspaceSession!.activeRoleGrant.grantId}:${workspaceBootstrap!.proofPlayback?.simulationStageCheckpointId ?? 'active'}`}
-          repositories={workspaceRepositories!}
-          liveAcademicMode={liveAcademicMode}
-          initialTeacherId={workspaceSession!.faculty!.facultyId}
-          initialRole={workspaceRole!}
-          onLogout={handleRemoteLogout}
-          onRoleChange={handleRemoteRoleChange}
-          loadFacultyProfile={loadAcademicFacultyProfile}
-          loadHodProofAnalytics={loadAcademicHodProofAnalytics}
-          loadStudentAgentCard={loadAcademicStudentAgentCard}
-          loadStudentAgentTimeline={loadAcademicStudentAgentTimeline}
-          startStudentAgentSession={startAcademicStudentAgentSession}
-          sendStudentAgentMessage={sendAcademicStudentAgentMessage}
-          loadStudentRiskExplorer={loadAcademicStudentRiskExplorer}
-          academicBootstrap={workspaceBootstrap!}
-          proofPlaybackNotice={proofPlaybackNotice}
-          onResetProofPlaybackSelection={handleResetProofPlaybackSelection}
-        />
-      ) : null}
-    </AcademicSessionBoundary>
+    <>
+      <ApiFallbackIndicator
+        usingFallback={apiConnection.usingFallback}
+        activeBaseUrl={apiBaseUrl}
+        workspaceLabel="teaching workspace"
+      />
+      <BackendOfflineIndicator monitor={backendHealthMonitor} workspaceLabel="teaching workspace" />
+      <AcademicSessionBoundary
+        backendReady={Boolean(apiClient && remoteSessionRepositories)}
+        booting={booting}
+        loadingLabel={workspaceLoadingLabel || undefined}
+        sessionReady={workspaceReady}
+        facultyOptions={loginFaculty}
+        authBusy={authBusy || passwordSetupBusy}
+        authError={passwordSetupToken ? passwordSetupError : authError}
+        passwordSetupToken={passwordSetupToken}
+        passwordSetupInspect={passwordSetupInspect}
+        passwordSetupMessage={passwordSetupMessage}
+        passwordSetupRequestResult={passwordSetupRequestResult}
+        onBackToPortal={handleReturnToPortal}
+        onRequestPasswordSetup={handleRequestPasswordSetup}
+        onRedeemPasswordSetup={handleRedeemPasswordSetup}
+        onClearPasswordSetupToken={handleClearPasswordSetupToken}
+        onLogin={handleRemoteLogin}
+      >
+        {workspaceReady ? (
+          <OperationalWorkspace
+            key={`${workspaceProjection?.revision ?? 0}:${workspaceSession!.activeRoleGrant.grantId}:${workspaceBootstrap!.proofPlayback?.simulationStageCheckpointId ?? 'active'}`}
+            repositories={workspaceRepositories!}
+            liveAcademicMode={liveAcademicMode}
+            initialTeacherId={workspaceSession!.faculty!.facultyId}
+            initialRole={workspaceRole!}
+            onLogout={handleRemoteLogout}
+            onRoleChange={handleRemoteRoleChange}
+            loadFacultyProfile={loadAcademicFacultyProfile}
+            loadHodProofAnalytics={loadAcademicHodProofAnalytics}
+            loadStudentAgentCard={loadAcademicStudentAgentCard}
+            loadStudentAgentTimeline={loadAcademicStudentAgentTimeline}
+            startStudentAgentSession={startAcademicStudentAgentSession}
+            sendStudentAgentMessage={sendAcademicStudentAgentMessage}
+            loadStudentRiskExplorer={loadAcademicStudentRiskExplorer}
+            academicBootstrap={workspaceBootstrap!}
+            proofPlaybackNotice={proofPlaybackNotice}
+            onResetProofPlaybackSelection={handleResetProofPlaybackSelection}
+          />
+        ) : null}
+      </AcademicSessionBoundary>
+    </>
   )
 }
 
