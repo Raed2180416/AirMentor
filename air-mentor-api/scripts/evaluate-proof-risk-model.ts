@@ -628,6 +628,7 @@ export function chooseHybridBlendAlpha(
     if (choice.metrics.support < 50) return false
     if (currentChoice.metrics.rocAuc - choice.metrics.rocAuc > 0.01) return false
     if (choice.metrics.expectedCalibrationError - currentChoice.metrics.expectedCalibrationError > 0.02) return false
+    if (choice.metrics.budgetMetrics.precisionAtBudget < currentChoice.metrics.budgetMetrics.precisionAtBudget - 0.05) return false
     return true
   })
 
@@ -645,13 +646,22 @@ export function buildHybridBlendPlan(
     challenger: ProbabilityRow[]
   }>,
 ): HybridBlendPlan {
+  const allowedStages: string[] = ({
+    attendanceRisk: ['pre-tt1', 'post-tt1', 'post-tt2', 'post-assignments', 'post-see'],
+    ceRisk: ['post-tt1', 'post-tt2', 'post-assignments'],
+    seeRisk: ['post-tt2', 'post-assignments', 'post-see'],
+    overallCourseRisk: [],
+    downstreamCarryoverRisk: [],
+  } as Record<RiskHeadKey, string[]>)[headKey] ?? []
+
   const fallback = chooseHybridBlendAlpha(validationRows.current, validationRows.challenger, headKey)
   return {
-    fallbackAlpha: fallback.alpha,
+    fallbackAlpha: allowedStages.length > 0 ? fallback.alpha : 1,
     fallbackMetrics: fallback.metrics,
     byStage: Object.fromEntries(
       Object.entries(validationRowsByStage).map(([stageKey, rows]) => {
-        const choice = chooseHybridBlendAlpha(rows.current, rows.challenger, headKey)
+        const isAllowed = allowedStages.includes(stageKey)
+        const choice = isAllowed ? chooseHybridBlendAlpha(rows.current, rows.challenger, headKey) : { alpha: 1, metrics: summarizeMetrics(rows.current) }
         return [stageKey, {
           alpha: choice.alpha,
           metrics: choice.metrics,
@@ -1883,6 +1893,10 @@ async function main() {
     await mkdir(paths.outputDir, { recursive: true })
     await writeFile(paths.jsonPath, `${JSON.stringify(output, null, 2)}\n`, 'utf8')
     logProgress(`wrote JSON report to ${paths.jsonPath}`)
+
+    const datasetDump = currentVariantBuilder.dumpDataset()
+    await writeFile(path.join(paths.outputDir, 'dataset_dump.json'), JSON.stringify(datasetDump))
+    logProgress(`wrote dataset dump to dataset_dump.json`)
 
     const markdown = [
       '# Proof Risk Model Evaluation',
