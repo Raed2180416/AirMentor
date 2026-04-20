@@ -182,3 +182,7 @@ Do not use that path for six Codex accounts and two Copilot accounts.
 ## Arctic login required (2026-04-19T17:48:41Z)
 
 - Run 'bash audit-map/16-scripts/arctic-slot-login.sh anthropic:anthropic-main', then verify with 'bash audit-map/16-scripts/arctic-slot-status.sh' and resume.
+
+## Execution recovery failed (2026-04-20T03:13:51Z)
+
+- Pass 'ml-optimal-model-deep-tune-pass' exhausted automatic recovery after provider='github-copilot' slot='copilot-accneww432' model='gemini-3.1-pro-preview'. Inspect the latest attempt log under /home/raed/projects/air-mentor-ui/audit-map/22-logs and resume with 'bash audit-map/16-scripts/recover-from-failure.sh ml-optimal-model-deep-tune-pass bootstrap resume'.

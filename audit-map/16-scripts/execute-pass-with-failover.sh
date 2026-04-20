@@ -376,8 +376,17 @@ while [ "${max_attempts:-0}" -le 0 ] || [ "$attempt" -lt "$max_attempts" ]; do
       fi
       break
     fi
-    [ -n "$status_file" ] && upsert_env "$status_file" last_execution_failure_class ""
-    [ -n "$checkpoint_file" ] && upsert_env "$checkpoint_file" last_event "completed"
+    if [ -n "$status_file" ]; then
+      upsert_env "$status_file" last_execution_failure_class ""
+      upsert_env "$status_file" state "completed"
+      upsert_env "$status_file" execution_supervisor_pid ""
+      upsert_env "$status_file" updated_at "$(timestamp_utc)"
+    fi
+    if [ -n "$checkpoint_file" ]; then
+      upsert_env "$checkpoint_file" last_event "completed"
+      upsert_env "$checkpoint_file" execution_supervisor_pid ""
+      upsert_env "$checkpoint_file" last_checkpoint_at "$(timestamp_utc)"
+    fi
     exit 0
   fi
 
@@ -415,4 +424,15 @@ done
 record_manual_action \
   "Execution recovery failed" \
   "Pass '$pass_name' exhausted automatic recovery after provider='${current_provider}' slot='${current_slot:-native}' model='${current_model}'. Inspect the latest attempt log under $AUDIT_LOG_ROOT and resume with 'bash audit-map/16-scripts/recover-from-failure.sh $pass_name $context resume'."
+if [ -n "$status_file" ]; then
+  upsert_env "$status_file" state "stopped"
+  upsert_env "$status_file" execution_supervisor_state "completed"
+  upsert_env "$status_file" execution_supervisor_detail "Recovery exhausted; no runnable route succeeded in this cycle."
+  upsert_env "$status_file" execution_supervisor_pid ""
+  upsert_env "$status_file" updated_at "$(timestamp_utc)"
+fi
+if [ -n "$checkpoint_file" ]; then
+  upsert_env "$checkpoint_file" execution_supervisor_pid ""
+  upsert_env "$checkpoint_file" last_checkpoint_at "$(timestamp_utc)"
+fi
 exit 75

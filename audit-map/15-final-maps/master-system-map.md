@@ -3,7 +3,7 @@
 ## Integrated Snapshot (Current)
 
 - Frontend role surfaces, route map, feature atoms, dependency graph, and state-flow families are locally mapped and test-backed across academic + sysadmin workflows.
-- Gap-closure Track A is now locally preserved in code plus focused tests: proof activation persists configured assessment schemes, stage-order gating blocks future evidence locks, HoD clear-lock clears DB state, bootstrap hard-gates when no active proof run exists, archive/activate invalidates branch-scoped faculty sessions, and proof due labels can anchor to playback virtual date.
+- GAP closure Track A is now locally preserved in code plus focused tests: proof activation persists configured assessment schemes, stage-order gating blocks future evidence locks, HoD clear-lock clears DB state, bootstrap hard-gates when no active proof run exists, archive/activate invalidates branch-scoped faculty sessions, and proof due labels can anchor to playback virtual date.
 - ML stack is mapped as layered deterministic + trained-artifact system with explicit fallback semantics and artifact/evidence provenance boundaries.
 - Backend provenance map is now explicit for migration lineage, destructive seed layering, proof async queue execution, run finalization, checkpoint/projection rebuilds, batch-wide artifact lineage, restore/replay flows, and semester activation/publication coupling.
 - Proof refresh completion ownership is now explicitly mapped: Fastify bootstrap starts the in-process worker (`startProofRunWorker(...)`), queue lease-claim/heartbeat logic controls execution, seeded/live run services terminalize `completed`/`failed`, and activation-path fallback can synchronously execute queued non-materialized runs.

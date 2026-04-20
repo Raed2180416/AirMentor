@@ -1273,6 +1273,34 @@ class ProofRiskDatasetBuilder {
     return trainCompactProofRiskModel(dataset, now, this.correlations, this.trainingConfig)
   }
 
+  dumpDataset() {
+    const dumpRows = []
+    const splitMap = new Uint8Array(this.rowCount)
+    this.trainIndices.forEach(i => splitMap[i] = 0)
+    this.validationIndices.forEach(i => splitMap[i] = 1)
+    this.testIndices.forEach(i => splitMap[i] = 2)
+    
+    for (let i = 0; i < this.rowCount; i++) {
+      const blockIndex = Math.floor(i / DATASET_BLOCK_SIZE)
+      const slot = i % DATASET_BLOCK_SIZE
+      const block = this.blocks[blockIndex]
+      if (!block) continue
+      const featureOffset = slot * FEATURE_COUNT
+      const features = Array.from(block.features.slice(featureOffset, featureOffset + FEATURE_COUNT))
+      dumpRows.push({
+        features,
+        labelMask: block.labelMasks[slot],
+        split: splitMap[i] === 0 ? 'train' : splitMap[i] === 1 ? 'validation' : 'test',
+        stageId: block.stageIds[slot],
+      })
+    }
+    return {
+      featureKeys: OBSERVABLE_FEATURE_KEYS,
+      headMasks: HEAD_LABEL_MASKS,
+      rows: dumpRows,
+    }
+  }
+
   private appendRow(
     featurePayload: ObservableFeaturePayload,
     labelPayload: ObservableLabelPayload,

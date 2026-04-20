@@ -17,7 +17,7 @@ Aggregate confirmed ML, heuristic, and inference surfaces from `08-ml-audit/`.
 
 - The repo contains one clear trained-model family: governed proof-risk artifacts stored in `riskModelArtifacts`. Most other "intelligent" behavior is deterministic or heuristic and should not be described as standalone ML.
 - The trained proof-risk path is surrounded by deterministic safety rails: calibration selection, head-display suppression, policy replay support warnings, correlation gating, and role-facing disclaimers.
-- Gap-6 remains intentionally deferred: section environment parameters, seeded simulation behavior knobs, and runtime band thresholds are still code-owned defaults rather than per-run slider-configurable settings.
+- GAP-6 remains intentionally deferred: section environment parameters, seeded simulation behavior knobs, and runtime band thresholds are still code-owned defaults rather than per-run slider-configurable settings.
 - Runtime can serve trained-risk shapes with downgraded provenance via `fallback-simulated` source refs when checkpoint evidence or graph-aware history is missing.
 - Cross-surface semantic truth is not fully proven yet. Academic routes can reuse the active model without the same correlation and provenance context carried by proof-specific tail services.
 - The curriculum-linkage stack is the main non-proof ML-adjacent system. It mixes deterministic rules with optional `sentence-transformers` embeddings and optional local Ollama assist, but no benchmark artifact was found in repo.

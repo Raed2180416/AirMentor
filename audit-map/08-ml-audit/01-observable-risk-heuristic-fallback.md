@@ -42,3 +42,6 @@
   - Silent degradation from trained scoring to fallback scoring can preserve a polished UI while reducing semantic truth
   - Users may over-trust the numeric output because it shares the trained-risk response envelope
 - Confidence: High on implementation classification, medium on operational frequency because fresh live verification was not run in this pass
+
+## Known GAP-6 / Hardcoded Thresholds
+Section environment parameters and runtime band thresholds (e.g., medium 0.40, high 0.85) remain hardcoded defaults rather than per-run slider-configurable settings. This is intentional and deferred (GAP-6).

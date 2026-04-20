@@ -49,3 +49,6 @@
 - `script-behavior-pass` now adds durable helper-script coverage for live auth helpers, live wrappers, Railway readiness/recovery, parity seed generation, proof-risk harnesses, seeded runtime harnesses, detached execution, and evidence promotion.
 - Remaining uncovered delta: telemetry/startup-diagnostics, `src/data.old.ts` formal archival decision, exhaustive every-component tail coverage for the rest of `src/`, live authenticated same-target confirmation, proof-risk regeneration freshness, safe read-only live proof observation, deployment dependency posture, and seed-data-to-live parity.
 - Recommended next pass: credentialed `live-behavior-pass` or a dedicated read-only parity observer pass to close live same-target proof capture blockers.
+
+### Backend Tests
+- `air-mentor-api/tests/gap-closure-intent.test.ts`: Covers GAP-1 through GAP-7 intent behaviors including session invalidation boundary tests.

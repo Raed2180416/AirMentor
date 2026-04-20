@@ -1,0 +1,1146 @@
+
+[1m[46m RUN [49m[22m [36mv4.1.0 [39m[90m/home/raed/projects/air-mentor-ui/air-mentor-api[39m
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] evaluating 23 migration file(s) from /home/raed/projects/air-mentor-ui/air-mentor-api/src/db/migrations
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applying migration: 0000_admin_foundation.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applied migration: 0000_admin_foundation.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applying migration: 0001_academic_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applied migration: 0001_academic_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applying migration: 0002_admin_hierarchy.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applied migration: 0002_admin_hierarchy.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applying migration: 0002_cleanup_seeded_kavitha_scope.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applied migration: 0002_cleanup_seeded_kavitha_scope.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applying migration: 0003_admin_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applied migration: 0003_admin_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applying migration: 0004_academic_assessment_and_history.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applied migration: 0004_academic_assessment_and_history.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applying migration: 0005_teaching_authority_phase2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applied migration: 0005_teaching_authority_phase2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applying migration: 0006_msruas_proof_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applied migration: 0006_msruas_proof_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applying migration: 0007_msruas_proof_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applied migration: 0007_msruas_proof_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applying migration: 0008_msruas_world_engine_stage2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applied migration: 0008_msruas_world_engine_stage2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applying migration: 0009_student_agent_shell.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applied migration: 0009_student_agent_shell.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applying migration: 0010_simulation_stage_playback.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applied migration: 0010_simulation_stage_playback.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applying migration: 0011_risk_model_artifacts.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applied migration: 0011_risk_model_artifacts.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applying migration: 0012_faculty_calendar_admin_workspaces.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applied migration: 0012_faculty_calendar_admin_workspaces.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applying migration: 0012_proof_queue_case_governance.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applied migration: 0012_proof_queue_case_governance.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applying migration: 0012_proof_queue_governance_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applied migration: 0012_proof_queue_governance_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applying migration: 0013_scope_governance_profiles_and_provisioning.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applied migration: 0013_scope_governance_profiles_and_provisioning.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applying migration: 0014_async_proof_run_queue.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applied migration: 0014_async_proof_run_queue.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applying migration: 0015_curriculum_linkage_candidates.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applied migration: 0015_curriculum_linkage_candidates.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applying migration: 0016_login_rate_limit_windows.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applied migration: 0016_login_rate_limit_windows.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applying migration: 0017_operational_telemetry_events.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applied migration: 0017_operational_telemetry_events.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applying migration: 0018_proof_active_operational_semester.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applied migration: 0018_proof_active_operational_semester.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applying migration: 0019_password_setup_tokens.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility reports blocking reason when no scheme row exists for a proof offering
+[22m[39m[db:migrate] applied migration: 0019_password_setup_tokens.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] evaluating 23 migration file(s) from /home/raed/projects/air-mentor-ui/air-mentor-api/src/db/migrations
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applying migration: 0000_admin_foundation.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applied migration: 0000_admin_foundation.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applying migration: 0001_academic_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applied migration: 0001_academic_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applying migration: 0002_admin_hierarchy.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applied migration: 0002_admin_hierarchy.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applying migration: 0002_cleanup_seeded_kavitha_scope.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applied migration: 0002_cleanup_seeded_kavitha_scope.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applying migration: 0003_admin_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applied migration: 0003_admin_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applying migration: 0004_academic_assessment_and_history.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applied migration: 0004_academic_assessment_and_history.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applying migration: 0005_teaching_authority_phase2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applied migration: 0005_teaching_authority_phase2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applying migration: 0006_msruas_proof_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applied migration: 0006_msruas_proof_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applying migration: 0007_msruas_proof_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applied migration: 0007_msruas_proof_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applying migration: 0008_msruas_world_engine_stage2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applied migration: 0008_msruas_world_engine_stage2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applying migration: 0009_student_agent_shell.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applied migration: 0009_student_agent_shell.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applying migration: 0010_simulation_stage_playback.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applied migration: 0010_simulation_stage_playback.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applying migration: 0011_risk_model_artifacts.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applied migration: 0011_risk_model_artifacts.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applying migration: 0012_faculty_calendar_admin_workspaces.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applied migration: 0012_faculty_calendar_admin_workspaces.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applying migration: 0012_proof_queue_case_governance.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applied migration: 0012_proof_queue_case_governance.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applying migration: 0012_proof_queue_governance_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applied migration: 0012_proof_queue_governance_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applying migration: 0013_scope_governance_profiles_and_provisioning.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applied migration: 0013_scope_governance_profiles_and_provisioning.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applying migration: 0014_async_proof_run_queue.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applied migration: 0014_async_proof_run_queue.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applying migration: 0015_curriculum_linkage_candidates.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applied migration: 0015_curriculum_linkage_candidates.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applying migration: 0016_login_rate_limit_windows.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applied migration: 0016_login_rate_limit_windows.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applying migration: 0017_operational_telemetry_events.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applied migration: 0017_operational_telemetry_events.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applying migration: 0018_proof_active_operational_semester.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applied migration: 0018_proof_active_operational_semester.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applying migration: 0019_password_setup_tokens.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-1: offering assessment scheme gates stage advancement[2m > [22m[2mstage-eligibility does not report scheme blocking reason when scheme is Configured
+[22m[39m[db:migrate] applied migration: 0019_password_setup_tokens.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] evaluating 23 migration file(s) from /home/raed/projects/air-mentor-ui/air-mentor-api/src/db/migrations
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applying migration: 0000_admin_foundation.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applied migration: 0000_admin_foundation.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applying migration: 0001_academic_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applied migration: 0001_academic_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applying migration: 0002_admin_hierarchy.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applied migration: 0002_admin_hierarchy.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applying migration: 0002_cleanup_seeded_kavitha_scope.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applied migration: 0002_cleanup_seeded_kavitha_scope.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applying migration: 0003_admin_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applied migration: 0003_admin_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applying migration: 0004_academic_assessment_and_history.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applied migration: 0004_academic_assessment_and_history.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applying migration: 0005_teaching_authority_phase2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applied migration: 0005_teaching_authority_phase2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applying migration: 0006_msruas_proof_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applied migration: 0006_msruas_proof_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applying migration: 0007_msruas_proof_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applied migration: 0007_msruas_proof_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applying migration: 0008_msruas_world_engine_stage2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applied migration: 0008_msruas_world_engine_stage2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applying migration: 0009_student_agent_shell.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applied migration: 0009_student_agent_shell.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applying migration: 0010_simulation_stage_playback.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applied migration: 0010_simulation_stage_playback.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applying migration: 0011_risk_model_artifacts.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applied migration: 0011_risk_model_artifacts.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applying migration: 0012_faculty_calendar_admin_workspaces.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applied migration: 0012_faculty_calendar_admin_workspaces.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applying migration: 0012_proof_queue_case_governance.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applied migration: 0012_proof_queue_case_governance.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applying migration: 0012_proof_queue_governance_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applied migration: 0012_proof_queue_governance_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applying migration: 0013_scope_governance_profiles_and_provisioning.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applied migration: 0013_scope_governance_profiles_and_provisioning.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applying migration: 0014_async_proof_run_queue.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applied migration: 0014_async_proof_run_queue.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applying migration: 0015_curriculum_linkage_candidates.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applied migration: 0015_curriculum_linkage_candidates.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applying migration: 0016_login_rate_limit_windows.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applied migration: 0016_login_rate_limit_windows.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applying migration: 0017_operational_telemetry_events.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applied migration: 0017_operational_telemetry_events.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applying migration: 0018_proof_active_operational_semester.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applied migration: 0018_proof_active_operational_semester.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applying migration: 0019_password_setup_tokens.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mrejects locking tt2 when offering is at pre-tt1 stage (stage=1)
+[22m[39m[db:migrate] applied migration: 0019_password_setup_tokens.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] evaluating 23 migration file(s) from /home/raed/projects/air-mentor-ui/air-mentor-api/src/db/migrations
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applying migration: 0000_admin_foundation.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applied migration: 0000_admin_foundation.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applying migration: 0001_academic_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applied migration: 0001_academic_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applying migration: 0002_admin_hierarchy.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applied migration: 0002_admin_hierarchy.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applying migration: 0002_cleanup_seeded_kavitha_scope.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applied migration: 0002_cleanup_seeded_kavitha_scope.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applying migration: 0003_admin_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applied migration: 0003_admin_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applying migration: 0004_academic_assessment_and_history.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applied migration: 0004_academic_assessment_and_history.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applying migration: 0005_teaching_authority_phase2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applied migration: 0005_teaching_authority_phase2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applying migration: 0006_msruas_proof_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applied migration: 0006_msruas_proof_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applying migration: 0007_msruas_proof_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applied migration: 0007_msruas_proof_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applying migration: 0008_msruas_world_engine_stage2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applied migration: 0008_msruas_world_engine_stage2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applying migration: 0009_student_agent_shell.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applied migration: 0009_student_agent_shell.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applying migration: 0010_simulation_stage_playback.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applied migration: 0010_simulation_stage_playback.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applying migration: 0011_risk_model_artifacts.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applied migration: 0011_risk_model_artifacts.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applying migration: 0012_faculty_calendar_admin_workspaces.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applied migration: 0012_faculty_calendar_admin_workspaces.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applying migration: 0012_proof_queue_case_governance.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applied migration: 0012_proof_queue_case_governance.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applying migration: 0012_proof_queue_governance_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applied migration: 0012_proof_queue_governance_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applying migration: 0013_scope_governance_profiles_and_provisioning.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applied migration: 0013_scope_governance_profiles_and_provisioning.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applying migration: 0014_async_proof_run_queue.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applied migration: 0014_async_proof_run_queue.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applying migration: 0015_curriculum_linkage_candidates.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applied migration: 0015_curriculum_linkage_candidates.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applying migration: 0016_login_rate_limit_windows.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applied migration: 0016_login_rate_limit_windows.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applying migration: 0017_operational_telemetry_events.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applied migration: 0017_operational_telemetry_events.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applying migration: 0018_proof_active_operational_semester.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applied migration: 0018_proof_active_operational_semester.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applying migration: 0019_password_setup_tokens.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-2: stage gate prevents locking future-stage evidence[2m > [22m[2mallows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1
+[22m[39m[db:migrate] applied migration: 0019_password_setup_tokens.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] evaluating 23 migration file(s) from /home/raed/projects/air-mentor-ui/air-mentor-api/src/db/migrations
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applying migration: 0000_admin_foundation.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applied migration: 0000_admin_foundation.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applying migration: 0001_academic_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applied migration: 0001_academic_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applying migration: 0002_admin_hierarchy.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applied migration: 0002_admin_hierarchy.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applying migration: 0002_cleanup_seeded_kavitha_scope.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applied migration: 0002_cleanup_seeded_kavitha_scope.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applying migration: 0003_admin_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applied migration: 0003_admin_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applying migration: 0004_academic_assessment_and_history.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applied migration: 0004_academic_assessment_and_history.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applying migration: 0005_teaching_authority_phase2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applied migration: 0005_teaching_authority_phase2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applying migration: 0006_msruas_proof_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applied migration: 0006_msruas_proof_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applying migration: 0007_msruas_proof_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applied migration: 0007_msruas_proof_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applying migration: 0008_msruas_world_engine_stage2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applied migration: 0008_msruas_world_engine_stage2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applying migration: 0009_student_agent_shell.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applied migration: 0009_student_agent_shell.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applying migration: 0010_simulation_stage_playback.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applied migration: 0010_simulation_stage_playback.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applying migration: 0011_risk_model_artifacts.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applied migration: 0011_risk_model_artifacts.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applying migration: 0012_faculty_calendar_admin_workspaces.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applied migration: 0012_faculty_calendar_admin_workspaces.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applying migration: 0012_proof_queue_case_governance.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applied migration: 0012_proof_queue_case_governance.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applying migration: 0012_proof_queue_governance_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applied migration: 0012_proof_queue_governance_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applying migration: 0013_scope_governance_profiles_and_provisioning.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applied migration: 0013_scope_governance_profiles_and_provisioning.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applying migration: 0014_async_proof_run_queue.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applied migration: 0014_async_proof_run_queue.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applying migration: 0015_curriculum_linkage_candidates.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applied migration: 0015_curriculum_linkage_candidates.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applying migration: 0016_login_rate_limit_windows.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applied migration: 0016_login_rate_limit_windows.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applying migration: 0017_operational_telemetry_events.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applied migration: 0017_operational_telemetry_events.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applying migration: 0018_proof_active_operational_semester.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applied migration: 0018_proof_active_operational_semester.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applying migration: 0019_password_setup_tokens.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mclears tt1Locked DB column and returns cleared:true
+[22m[39m[db:migrate] applied migration: 0019_password_setup_tokens.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] evaluating 23 migration file(s) from /home/raed/projects/air-mentor-ui/air-mentor-api/src/db/migrations
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applying migration: 0000_admin_foundation.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applied migration: 0000_admin_foundation.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applying migration: 0001_academic_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applied migration: 0001_academic_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applying migration: 0002_admin_hierarchy.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applied migration: 0002_admin_hierarchy.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applying migration: 0002_cleanup_seeded_kavitha_scope.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applied migration: 0002_cleanup_seeded_kavitha_scope.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applying migration: 0003_admin_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applied migration: 0003_admin_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applying migration: 0004_academic_assessment_and_history.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applied migration: 0004_academic_assessment_and_history.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applying migration: 0005_teaching_authority_phase2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applied migration: 0005_teaching_authority_phase2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applying migration: 0006_msruas_proof_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applied migration: 0006_msruas_proof_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applying migration: 0007_msruas_proof_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applied migration: 0007_msruas_proof_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applying migration: 0008_msruas_world_engine_stage2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applied migration: 0008_msruas_world_engine_stage2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applying migration: 0009_student_agent_shell.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applied migration: 0009_student_agent_shell.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applying migration: 0010_simulation_stage_playback.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applied migration: 0010_simulation_stage_playback.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applying migration: 0011_risk_model_artifacts.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applied migration: 0011_risk_model_artifacts.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applying migration: 0012_faculty_calendar_admin_workspaces.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applied migration: 0012_faculty_calendar_admin_workspaces.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applying migration: 0012_proof_queue_case_governance.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applied migration: 0012_proof_queue_case_governance.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applying migration: 0012_proof_queue_governance_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applied migration: 0012_proof_queue_governance_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applying migration: 0013_scope_governance_profiles_and_provisioning.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applied migration: 0013_scope_governance_profiles_and_provisioning.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applying migration: 0014_async_proof_run_queue.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applied migration: 0014_async_proof_run_queue.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applying migration: 0015_curriculum_linkage_candidates.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applied migration: 0015_curriculum_linkage_candidates.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applying migration: 0016_login_rate_limit_windows.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applied migration: 0016_login_rate_limit_windows.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applying migration: 0017_operational_telemetry_events.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applied migration: 0017_operational_telemetry_events.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applying migration: 0018_proof_active_operational_semester.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applied migration: 0018_proof_active_operational_semester.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applying migration: 0019_password_setup_tokens.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mreturns cleared:false when lock was already cleared (idempotent)
+[22m[39m[db:migrate] applied migration: 0019_password_setup_tokens.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] evaluating 23 migration file(s) from /home/raed/projects/air-mentor-ui/air-mentor-api/src/db/migrations
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applying migration: 0000_admin_foundation.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applied migration: 0000_admin_foundation.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applying migration: 0001_academic_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applied migration: 0001_academic_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applying migration: 0002_admin_hierarchy.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applied migration: 0002_admin_hierarchy.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applying migration: 0002_cleanup_seeded_kavitha_scope.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applied migration: 0002_cleanup_seeded_kavitha_scope.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applying migration: 0003_admin_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applied migration: 0003_admin_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applying migration: 0004_academic_assessment_and_history.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applied migration: 0004_academic_assessment_and_history.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applying migration: 0005_teaching_authority_phase2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applied migration: 0005_teaching_authority_phase2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applying migration: 0006_msruas_proof_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applied migration: 0006_msruas_proof_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applying migration: 0007_msruas_proof_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applied migration: 0007_msruas_proof_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applying migration: 0008_msruas_world_engine_stage2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applied migration: 0008_msruas_world_engine_stage2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applying migration: 0009_student_agent_shell.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applied migration: 0009_student_agent_shell.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applying migration: 0010_simulation_stage_playback.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applied migration: 0010_simulation_stage_playback.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applying migration: 0011_risk_model_artifacts.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applied migration: 0011_risk_model_artifacts.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applying migration: 0012_faculty_calendar_admin_workspaces.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applied migration: 0012_faculty_calendar_admin_workspaces.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applying migration: 0012_proof_queue_case_governance.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applied migration: 0012_proof_queue_case_governance.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applying migration: 0012_proof_queue_governance_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applied migration: 0012_proof_queue_governance_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applying migration: 0013_scope_governance_profiles_and_provisioning.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applied migration: 0013_scope_governance_profiles_and_provisioning.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applying migration: 0014_async_proof_run_queue.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applied migration: 0014_async_proof_run_queue.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applying migration: 0015_curriculum_linkage_candidates.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applied migration: 0015_curriculum_linkage_candidates.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applying migration: 0016_login_rate_limit_windows.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applied migration: 0016_login_rate_limit_windows.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applying migration: 0017_operational_telemetry_events.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applied migration: 0017_operational_telemetry_events.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applying migration: 0018_proof_active_operational_semester.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applied migration: 0018_proof_active_operational_semester.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applying migration: 0019_password_setup_tokens.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-3: HOD clear-lock clears the DB lock column[2m > [22m[2mrejects clear-lock when called by Course Leader active role (not HOD)
+[22m[39m[db:migrate] applied migration: 0019_password_setup_tokens.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] evaluating 23 migration file(s) from /home/raed/projects/air-mentor-ui/air-mentor-api/src/db/migrations
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applying migration: 0000_admin_foundation.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applied migration: 0000_admin_foundation.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applying migration: 0001_academic_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applied migration: 0001_academic_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applying migration: 0002_admin_hierarchy.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applied migration: 0002_admin_hierarchy.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applying migration: 0002_cleanup_seeded_kavitha_scope.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applied migration: 0002_cleanup_seeded_kavitha_scope.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applying migration: 0003_admin_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applied migration: 0003_admin_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applying migration: 0004_academic_assessment_and_history.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applied migration: 0004_academic_assessment_and_history.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applying migration: 0005_teaching_authority_phase2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applied migration: 0005_teaching_authority_phase2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applying migration: 0006_msruas_proof_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applied migration: 0006_msruas_proof_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applying migration: 0007_msruas_proof_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applied migration: 0007_msruas_proof_control_plane.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applying migration: 0008_msruas_world_engine_stage2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applied migration: 0008_msruas_world_engine_stage2.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applying migration: 0009_student_agent_shell.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applied migration: 0009_student_agent_shell.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applying migration: 0010_simulation_stage_playback.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applied migration: 0010_simulation_stage_playback.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applying migration: 0011_risk_model_artifacts.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applied migration: 0011_risk_model_artifacts.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applying migration: 0012_faculty_calendar_admin_workspaces.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applied migration: 0012_faculty_calendar_admin_workspaces.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applying migration: 0012_proof_queue_case_governance.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applied migration: 0012_proof_queue_case_governance.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applying migration: 0012_proof_queue_governance_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applied migration: 0012_proof_queue_governance_runtime.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applying migration: 0013_scope_governance_profiles_and_provisioning.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applied migration: 0013_scope_governance_profiles_and_provisioning.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applying migration: 0014_async_proof_run_queue.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applied migration: 0014_async_proof_run_queue.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applying migration: 0015_curriculum_linkage_candidates.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applied migration: 0015_curriculum_linkage_candidates.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applying migration: 0016_login_rate_limit_windows.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applied migration: 0016_login_rate_limit_windows.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applying migration: 0017_operational_telemetry_events.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applied migration: 0017_operational_telemetry_events.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applying migration: 0018_proof_active_operational_semester.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applied migration: 0018_proof_active_operational_semester.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applying migration: 0019_password_setup_tokens.sql
+
+[90mstdout[2m | tests/gap-closure-intent.test.ts[2m > [22m[2mGAP-4: archiving a proof run invalidates sandbox faculty sessions[2m > [22m[2msandbox faculty session is rejected after archive
+[22m[39m[db:migrate] applied migration: 0019_password_setup_tokens.sql
+
+ [32m✓[39m tests/gap-closure-intent.test.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 31585[2mms[22m[39m
+     [33m[2m✓[22m[39m stage-eligibility reports blocking reason when no scheme row exists for a proof offering [33m 4358[2mms[22m[39m
+     [33m[2m✓[22m[39m stage-eligibility does not report scheme blocking reason when scheme is Configured [33m 3877[2mms[22m[39m
+     [33m[2m✓[22m[39m rejects locking tt2 when offering is at pre-tt1 stage (stage=1) [33m 3905[2mms[22m[39m
+     [33m[2m✓[22m[39m allows locking tt1 at pre-tt1 stage (stage=1) — tt1 is valid at stage 1 [33m 3848[2mms[22m[39m
+     [33m[2m✓[22m[39m clears tt1Locked DB column and returns cleared:true [33m 3741[2mms[22m[39m
+     [33m[2m✓[22m[39m returns cleared:false when lock was already cleared (idempotent) [33m 3739[2mms[22m[39m
+     [33m[2m✓[22m[39m rejects clear-lock when called by Course Leader active role (not HOD) [33m 3748[2mms[22m[39m
+     [33m[2m✓[22m[39m sandbox faculty session is rejected after archive [33m 4303[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m10 passed[39m[22m[90m (10)[39m
+[2m   Start at [22m 10:57:25
+[2m   Duration [22m 32.93s[2m (transform 845ms, setup 0ms, import 1.25s, tests 31.58s, environment 0ms)[22m
+

@@ -18,7 +18,10 @@ Pass context:
 - execution account label: youaretalkingtoraed@gmail.com
 - execution slot: google-main
 
-Caveman policy is active for this pass in mode `full`. Use only low-risk terseness; technical accuracy, evidence capture, and file updates remain mandatory.
+Caveman policy is active for this pass in mode `wenyan-ultra`. Use only low-risk terseness; technical accuracy, evidence capture, and file updates remain mandatory.
+
+Extra instruction:
+Resume from checkpoint file /home/raed/projects/air-mentor-ui/audit-map/30-checkpoints/audit-air-mentor-ui-bootstrap-ml-optimal-model-deep-tune-pass.checkpoint. Read it first, continue the same pass, and update the checkpoint plus coverage and memory ledgers.
 
 Always persist important results into audit-map files before ending.
 
