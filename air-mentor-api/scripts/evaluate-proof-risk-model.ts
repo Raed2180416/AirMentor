@@ -584,6 +584,8 @@ function compareHybridBlendChoice(left: HybridBlendChoice, right: HybridBlendCho
   const higherBetterChecks: Array<[number, number, number]> = [
     [left.metrics.averagePrecision, right.metrics.averagePrecision, 0.001],
     [left.metrics.rocAuc, right.metrics.rocAuc, 0.001],
+    [left.metrics.budgetMetrics.precisionAtBudget, right.metrics.budgetMetrics.precisionAtBudget, 0.001],
+    [left.metrics.budgetMetrics.recallAtBudget, right.metrics.budgetMetrics.recallAtBudget, 0.001],
     [left.metrics.highThreshold.precision, right.metrics.highThreshold.precision, 0.001],
     [left.metrics.mediumThreshold.recall, right.metrics.mediumThreshold.recall, 0.001],
   ]
@@ -597,6 +599,7 @@ function compareHybridBlendChoice(left: HybridBlendChoice, right: HybridBlendCho
 export function chooseHybridBlendAlpha(
   currentRows: ProbabilityRow[],
   challengerRows: ProbabilityRow[],
+  headKey: RiskHeadKey,
   alphaGrid = [1, 0],
 ): HybridBlendChoice {
   if (currentRows.length === 0 || challengerRows.length === 0) {
@@ -605,15 +608,34 @@ export function chooseHybridBlendAlpha(
       metrics: summarizeMetrics(currentRows),
     }
   }
-  return alphaGrid
-    .map(alpha => ({
-      alpha,
-      metrics: summarizeMetrics(blendProbabilityRows(currentRows, challengerRows, alpha)),
-    }))
-    .sort(compareHybridBlendChoice)[0]!
+  
+  if (headKey === 'downstreamCarryoverRisk' || headKey === 'overallCourseRisk') {
+    return {
+      alpha: 1,
+      metrics: summarizeMetrics(currentRows),
+    }
+  }
+
+  const choices = alphaGrid.map(alpha => ({
+    alpha,
+    metrics: summarizeMetrics(blendProbabilityRows(currentRows, challengerRows, alpha)),
+  }))
+  
+  const currentChoice = choices.find(c => c.alpha === 1)!
+  
+  const validChoices = choices.filter(choice => {
+    if (choice.alpha === 1) return true
+    if (choice.metrics.support < 50) return false
+    if (currentChoice.metrics.rocAuc - choice.metrics.rocAuc > 0.01) return false
+    if (choice.metrics.expectedCalibrationError - currentChoice.metrics.expectedCalibrationError > 0.02) return false
+    return true
+  })
+
+  return validChoices.sort(compareHybridBlendChoice)[0]!
 }
 
 export function buildHybridBlendPlan(
+  headKey: RiskHeadKey,
   validationRows: {
     current: ProbabilityRow[]
     challenger: ProbabilityRow[]
@@ -623,13 +645,13 @@ export function buildHybridBlendPlan(
     challenger: ProbabilityRow[]
   }>,
 ): HybridBlendPlan {
-  const fallback = chooseHybridBlendAlpha(validationRows.current, validationRows.challenger)
+  const fallback = chooseHybridBlendAlpha(validationRows.current, validationRows.challenger, headKey)
   return {
     fallbackAlpha: fallback.alpha,
     fallbackMetrics: fallback.metrics,
     byStage: Object.fromEntries(
       Object.entries(validationRowsByStage).map(([stageKey, rows]) => {
-        const choice = chooseHybridBlendAlpha(rows.current, rows.challenger)
+        const choice = chooseHybridBlendAlpha(rows.current, rows.challenger, headKey)
         return [stageKey, {
           alpha: choice.alpha,
           metrics: choice.metrics,
@@ -1372,7 +1394,7 @@ async function main() {
           challenger: rows.challenger,
         }]),
       )
-      const plan = buildHybridBlendPlan({
+      const plan = buildHybridBlendPlan(headKey, {
         current: validationVariantHeadRows[headKey].current,
         challenger: validationVariantHeadRows[headKey].challenger,
       }, validationRowsByStage)
