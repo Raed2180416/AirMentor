@@ -72,7 +72,7 @@ export type RiskHeadKey =
   | 'overallCourseRisk'
   | 'downstreamCarryoverRisk'
 export type SplitName = 'train' | 'validation' | 'test'
-export type CalibrationMethod = 'identity' | 'sigmoid' | 'isotonic' | 'beta'
+export type CalibrationMethod = 'identity' | 'sigmoid' | 'isotonic' | 'beta' | 'venn-abers'
 export type ScenarioFamily = (typeof PROOF_SCENARIO_FAMILIES)[number]
 export type ChallengerModelFamily = 'depth-2-tree'
 export type ProofRiskTrainingVariantId = 'production-v6' | 'baseline-v5-like'
@@ -99,7 +99,7 @@ export const DEFAULT_PROOF_RISK_TRAINING_CONFIG: ProofRiskTrainingConfig = {
   challengerModelVersion: RISK_CHALLENGER_MODEL_VERSION,
   calibrationVersion: RISK_CALIBRATION_VERSION,
   includeStageIndicators: true,
-  calibrationMethods: ['identity', 'sigmoid', 'beta', 'isotonic'],
+  calibrationMethods: ['identity', 'sigmoid', 'beta', 'isotonic', 'venn-abers'],
   challengerModelFamily: 'depth-2-tree',
 }
 
@@ -813,6 +813,46 @@ function fitIsotonicCalibration(rows: Array<{ label: number; rawProb: number }>)
   }
 }
 
+function fitVennAbersCalibration(rows: Array<{ label: number; rawProb: number }>) {
+  const ordered = rows
+    .map((row, index) => ({
+      ...row,
+      rawProb: clamp(row.rawProb, 0.0001, 0.9999),
+      index,
+    }))
+    .sort((left, right) => left.rawProb - right.rawProb || left.index - right.index)
+  
+  const grid = Array.from({ length: 100 }, (_, i) => (i + 0.5) / 100)
+  const thresholds: number[] = []
+  const values: number[] = []
+  
+  const applyIso = (iso: { thresholds: number[], values: number[] }, x: number) => {
+    if (iso.thresholds.length === 0 || iso.values.length === 0) return x
+    const index = iso.thresholds.findIndex(threshold => x <= threshold)
+    if (index === -1) return iso.values[iso.values.length - 1] ?? x
+    return iso.values[index] ?? x
+  }
+  
+  for (const x of grid) {
+    const rows0 = [...ordered, { label: 0, rawProb: x, index: -1 }].sort((left, right) => left.rawProb - right.rawProb || left.index - right.index)
+    const iso0 = fitIsotonicCalibration(rows0)
+    const p0 = applyIso(iso0, x)
+    
+    const rows1 = [...ordered, { label: 1, rawProb: x, index: -1 }].sort((left, right) => left.rawProb - right.rawProb || left.index - right.index)
+    const iso1 = fitIsotonicCalibration(rows1)
+    const p1 = applyIso(iso1, x)
+    
+    const p = p0 / (1 - p1 + p0)
+    thresholds.push(roundToFour(x))
+    values.push(roundToFour(clamp(p, 0.0001, 0.9999)))
+  }
+  
+  return {
+    thresholds,
+    values,
+  }
+}
+
 function chooseCalibration(
   headKey: RiskHeadKey,
   validationRows: Array<{ label: number; rawProb: number }>,
@@ -907,6 +947,15 @@ function chooseCalibration(
   ) {
     const isotonicCalibration = fitIsotonicCalibration(validationRows)
     candidates.push(buildCandidate('isotonic', isotonicCalibration))
+  }
+  if (
+    validationRows.length > 0
+    && allowedMethods.includes('venn-abers')
+    && support.validationSupport >= 1000
+    && support.validationPositives >= 250
+  ) {
+    const vennAbersCalibration = fitVennAbersCalibration(validationRows)
+    candidates.push(buildCandidate('venn-abers', vennAbersCalibration))
   }
 
   const baseline = candidates[0] ?? buildCandidate('identity', {})

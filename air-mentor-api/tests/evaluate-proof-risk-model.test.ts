@@ -117,7 +117,7 @@ describe('evaluate proof risk model helpers', () => {
       { label: 0, prob: 0.08 },
     ]
 
-    const choice = chooseHybridBlendAlpha(currentRows, challengerRows)
+    const choice = chooseHybridBlendAlpha(currentRows, challengerRows, 'attendanceRisk')
     expect(choice.alpha).toBe(0)
     expect(choice.metrics.logLoss).toBeLessThan(0.3)
   })
@@ -136,6 +136,7 @@ describe('evaluate proof risk model helpers', () => {
       { label: 0, prob: 0.33 },
     ]
     const plan = buildHybridBlendPlan(
+      'attendanceRisk',
       {
         current: currentRows,
         challenger: challengerRows,
