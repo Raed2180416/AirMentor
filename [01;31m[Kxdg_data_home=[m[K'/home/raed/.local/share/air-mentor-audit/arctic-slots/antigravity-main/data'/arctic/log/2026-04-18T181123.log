@@ -1,0 +1,78 @@
+INFO  2026-04-18T18:11:23 +239ms service=default version=0.0.0-main-202603151831 args=["run","--format","default","--model","antigravity/claude-opus-4-5-thinking","Reply with exactly: probe-ok model=antigravity/claude-opus-4-5-thinking"] arctic
+INFO  2026-04-18T18:11:23 +21ms service=default directory=/home/raed/projects/air-mentor-ui creating instance
+INFO  2026-04-18T18:11:23 +1ms service=project directory=/home/raed/projects/air-mentor-ui fromDirectory
+INFO  2026-04-18T18:11:23 +11ms service=default directory=/home/raed/projects/air-mentor-ui bootstrapping
+INFO  2026-04-18T18:11:23 +20ms service=config path=[01;31m[Kxdg_config_home=[m[K'/home/raed/.config/air-mentor-audit/arctic-slots/antigravity-main/config'/arctic/config.json loading
+INFO  2026-04-18T18:11:23 +0ms service=config path=[01;31m[Kxdg_config_home=[m[K'/home/raed/.config/air-mentor-audit/arctic-slots/antigravity-main/config'/arctic/arctic.json loading
+INFO  2026-04-18T18:11:23 +0ms service=config path=[01;31m[Kxdg_config_home=[m[K'/home/raed/.config/air-mentor-audit/arctic-slots/antigravity-main/config'/arctic/arctic.jsonc loading
+INFO  2026-04-18T18:11:23 +1ms service=bun cmd=["/home/raed/.npm-global/lib/node_modules/@arctic-cli/arctic/node_modules/@arctic-cli/arctic-linux-x64/bin/arctic","add","@arctic-cli/plugin@0.0.0-main-202603151831","--exact"] cwd=[01;31m[Kxdg_config_home=[m[K'/home/raed/.config/air-mentor-audit/arctic-slots/antigravity-main/config'/arctic running
+INFO  2026-04-18T18:11:23 +2ms service=config path=/home/raed/projects/air-mentor-ui/.arctic/arctic.jsonc loading
+INFO  2026-04-18T18:11:23 +0ms service=config path=/home/raed/projects/air-mentor-ui/.arctic/arctic.json loading
+INFO  2026-04-18T18:11:23 +10ms service=bun cmd=["/home/raed/.npm-global/lib/node_modules/@arctic-cli/arctic/node_modules/@arctic-cli/arctic-linux-x64/bin/arctic","add","@arctic-cli/plugin@0.0.0-main-202603151831","--exact"] cwd=/home/raed/projects/air-mentor-ui/.arctic running
+INFO  2026-04-18T18:11:23 +38ms service=bun code=1 stdout=bun add v1.3.10 (30e609e0)
+ stderr=Resolving dependencies
+Resolved, downloaded and extracted [1]
+error: GET https://registry.npmjs.org/@arctic-cli%2fplugin - 404
+ done
+INFO  2026-04-18T18:11:23 +11ms service=bun code=1 stdout=bun add v1.3.10 (30e609e0)
+ stderr=Resolving dependencies
+Resolved, downloaded and extracted [1]
+error: GET https://registry.npmjs.org/@arctic-cli%2fplugin - 404
+ done
+INFO  2026-04-18T18:11:23 +8ms service=bus type=* subscribing
+INFO  2026-04-18T18:11:23 +0ms service=format init
+INFO  2026-04-18T18:11:23 +0ms service=bus type=file.edited subscribing
+INFO  2026-04-18T18:11:23 +0ms service=lsp serverIds=deno, typescript, vue, eslint, biome, gopls, ruby-lsp, pyright, elixir-ls, zls, csharp, sourcekit-lsp, rust, clangd, svelte, astro, jdtls, yaml-ls, lua-ls, php intelephense, dart, ocaml-lsp, bash, terraform, texlab, dockerfile enabled LSP servers
+INFO  2026-04-18T18:11:23 +1ms service=file.watcher init
+WARN  2026-04-18T18:11:23 +0ms service=file.watcher error={"name":"ResolveMessage","position":null,"message":"Cannot find module '@parcel/watcher-linux-x64-glibc' from '/$bunfs/root/src/index.js'","level":"error","specifier":"@parcel/watcher-linux-x64-glibc","importKind":"require-call","referrer":"/$bunfs/root/src/index.js"} failed to load native watcher binding, file watching disabled
+WARN  2026-04-18T18:11:23 +0ms service=file.watcher watcher not available, skipping initialization
+INFO  2026-04-18T18:11:23 +1ms service=bus type=command.executed subscribing
+INFO  2026-04-18T18:11:23 +33ms service=vcs branch=promote-proof-dashboard-origin initialized
+INFO  2026-04-18T18:11:23 +0ms service=bus type=file.watcher.updated subscribing
+INFO  2026-04-18T18:11:23 +10ms service=server method=POST path=/session request
+INFO  2026-04-18T18:11:23 +0ms service=server status=started method=POST path=/session request
+INFO  2026-04-18T18:11:23 +5ms service=session id=ses_25e35afabffeZXEylzxscP37ft version=0.0.0-main-202603151831 projectID=37e517ca37cbf930aecb48c0ca2c208723a17325 directory=/home/raed/projects/air-mentor-ui title=New session - 2026-04-18T18:11:23.860Z time={"created":1776535883861,"updated":1776535883861} created
+INFO  2026-04-18T18:11:23 +0ms service=bus type=session.created publishing
+INFO  2026-04-18T18:11:23 +1ms service=bus type=session.updated publishing
+INFO  2026-04-18T18:11:23 +0ms service=server status=completed duration=6 method=POST path=/session request
+INFO  2026-04-18T18:11:23 +8ms service=server method=GET path=/event request
+INFO  2026-04-18T18:11:23 +0ms service=server status=started method=GET path=/event request
+INFO  2026-04-18T18:11:23 +0ms service=server event connected
+INFO  2026-04-18T18:11:23 +6ms service=server status=completed duration=6 method=GET path=/event request
+INFO  2026-04-18T18:11:23 +2ms service=server method=POST path=/session/ses_25e35afabffeZXEylzxscP37ft/message request
+INFO  2026-04-18T18:11:23 +0ms service=server status=started method=POST path=/session/ses_25e35afabffeZXEylzxscP37ft/message request
+INFO  2026-04-18T18:11:23 +5ms service=server sessionID=ses_25e35afabffeZXEylzxscP37ft body={"model":{"providerID":"antigravity","modelID":"claude-opus-4-5-thinking"},"agent":"build","parts":[{"type":"text","text":"Reply with exactly: probe-ok model=antigravity/claude-opus-4-5-thinking\nantigravity/claude-sonnet-4-5\nantigravity/claude-sonnet-4-5-thinking\nantigravity/gemini-3-flash\nantigravity/gemini-3-pro-high\nantigravity/gemini-3-pro-low\n"}]} prompt start
+INFO  2026-04-18T18:11:23 +8ms service=bus type=message.updated publishing
+INFO  2026-04-18T18:11:23 +4ms service=bus type=message.part.updated publishing
+INFO  2026-04-18T18:11:23 +2ms service=bus type=session.updated publishing
+INFO  2026-04-18T18:11:23 +2ms service=session.prompt step=0 sessionID=ses_25e35afabffeZXEylzxscP37ft loop
+INFO  2026-04-18T18:11:23 +3ms service=bus type=session.status publishing
+INFO  2026-04-18T18:11:23 +3ms service=provider status=started state
+INFO  2026-04-18T18:11:23 +15ms service=models.dev file={} refreshing
+INFO  2026-04-18T18:11:23 +35ms service=provider init
+INFO  2026-04-18T18:11:23 +7ms service=provider status=completed duration=56 state
+INFO  2026-04-18T18:11:23 +2ms service=session.prompt sessionID=ses_25e35afabffeZXEylzxscP37ft cancel
+INFO  2026-04-18T18:11:23 +1ms service=bus type=session.status publishing
+INFO  2026-04-18T18:11:23 +0ms service=bus type=session.idle publishing
+ERROR 2026-04-18T18:11:23 +0ms service=server error=ProviderModelNotFoundError sessionID=ses_25e35afabffeZXEylzxscP37ft prompt failed
+ERROR 2026-04-18T18:11:23 +1ms service=server error=ProviderModelNotFoundError failed
+INFO  2026-04-18T18:11:23 +0ms service=server status=completed duration=88 method=POST path=/session/ses_25e35afabffeZXEylzxscP37ft/message request
+ERROR 2026-04-18T18:11:23 +1ms service=default e=ProviderModelNotFoundError rejection
+INFO  2026-04-18T18:11:23 +7ms service=default directory=/home/raed/projects/air-mentor-ui disposing instance
+INFO  2026-04-18T18:11:23 +0ms service=state key=/home/raed/projects/air-mentor-ui waiting for state disposal to complete
+INFO  2026-04-18T18:11:23 +0ms service=bus type=file.watcher.updated unsubscribing
+INFO  2026-04-18T18:11:23 +1ms service=state key=/home/raed/projects/air-mentor-ui state disposal completed
+INFO  2026-04-18T18:11:24 +71ms service=bun cmd=["/home/raed/.npm-global/lib/node_modules/@arctic-cli/arctic/node_modules/@arctic-cli/arctic-linux-x64/bin/arctic","add","@arctic-cli/plugin@0.0.0-main-202603151831","--exact"] cwd=[01;31m[Kxdg_config_home=[m[K'/home/raed/.config/air-mentor-audit/arctic-slots/antigravity-main/config'/arctic running
+INFO  2026-04-18T18:11:24 +1ms service=config path=/home/raed/projects/air-mentor-ui/.arctic/arctic.jsonc loading
+INFO  2026-04-18T18:11:24 +1ms service=config path=/home/raed/projects/air-mentor-ui/.arctic/arctic.json loading
+INFO  2026-04-18T18:11:24 +0ms service=bun cmd=["/home/raed/.npm-global/lib/node_modules/@arctic-cli/arctic/node_modules/@arctic-cli/arctic-linux-x64/bin/arctic","add","@arctic-cli/plugin@0.0.0-main-202603151831","--exact"] cwd=/home/raed/projects/air-mentor-ui/.arctic running
+INFO  2026-04-18T18:11:24 +42ms service=bun code=1 stdout=bun add v1.3.10 (30e609e0)
+ stderr=Resolving dependencies
+Resolved, downloaded and extracted [1]
+error: GET https://registry.npmjs.org/@arctic-cli%2fplugin - 404
+ done
+INFO  2026-04-18T18:11:24 +9ms service=bun code=1 stdout=bun add v1.3.10 (30e609e0)
+ stderr=Resolving dependencies
+Resolved, downloaded and extracted [1]
+error: GET https://registry.npmjs.org/@arctic-cli%2fplugin - 404
+ done

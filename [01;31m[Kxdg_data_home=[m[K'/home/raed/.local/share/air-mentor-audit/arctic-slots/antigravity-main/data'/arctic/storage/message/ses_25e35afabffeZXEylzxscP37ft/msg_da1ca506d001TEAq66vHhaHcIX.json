@@ -1,0 +1,13 @@
+{
+  "id": "msg_da1ca506d001TEAq66vHhaHcIX",
+  "sessionID": "ses_25e35afabffeZXEylzxscP37ft",
+  "role": "user",
+  "time": {
+    "created": 1776535883885
+  },
+  "agent": "build",
+  "model": {
+    "providerID": "antigravity",
+    "modelID": "claude-opus-4-5-thinking"
+  }
+}

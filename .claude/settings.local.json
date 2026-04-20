@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx vitest *)",
+      "Read(//tmp/**)",
+      "Bash(npx tsc *)",
+      "Bash(npm install *)",
+      "Bash(npm audit *)",
+      "Bash(ngrok version *)",
+      "Bash(gh variable *)",
+      "Bash(nix-env -iA nixpkgs.ngrok nixpkgs.mailpit)",
+      "Bash(nix-env -iA nixos.ngrok nixos.mailpit)",
+      "Bash(nix profile *)",
+      "Bash(NIXPKGS_ALLOW_UNFREE=1 nix profile install nixpkgs#ngrok --impure)",
+      "Bash(openssl rand *)",
+      "Bash(node -e \"console.log\\(require\\('node:crypto'\\).randomBytes\\(32\\).toString\\('hex'\\)\\)\")",
+      "Bash(chmod +x /home/raed/projects/air-mentor-ui/scripts/start-tunnel-stack.sh)",
+      "Bash(ngrok config *)",
+      "Bash(gh workflow *)",
+      "Bash(gh run *)",
+      "Bash(echo \"deploy running in background, PID $!\")",
+      "Bash(xargs kill *)",
+      "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")"
+    ]
+  }
+}

@@ -1,0 +1,83 @@
+INFO  2026-04-18T18:09:41 +229ms service=default version=0.0.0-main-202603151831 args=["run","--format","default","--model","codex/gpt-5.3-codex","Reply with exactly: ping-codex"] arctic
+INFO  2026-04-18T18:09:41 +19ms service=default directory=/home/raed/projects/air-mentor-ui creating instance
+INFO  2026-04-18T18:09:41 +0ms service=project directory=/home/raed/projects/air-mentor-ui fromDirectory
+INFO  2026-04-18T18:09:41 +10ms service=storage index=0 running migration
+ERROR 2026-04-18T18:09:41 +2ms service=storage index=0 failed to run migration
+INFO  2026-04-18T18:09:41 +1ms service=storage index=1 running migration
+ERROR 2026-04-18T18:09:41 +1ms service=storage target=[01;31m[Kxdg_data_home=[m[K/home/raed/.local/share/air-mentor-audit/arctic-slots/codex-01/data/arctic/storage/project/37e517ca37cbf930aecb48c0ca2c208723a17325.json error=ENOENT: no such file or directory, open '[01;31m[Kxdg_data_home=[m[K/home/raed/.local/share/air-mentor-audit/arctic-slots/codex-01/data/arctic/storage/project/37e517ca37cbf930aecb48c0ca2c208723a17325.json' failed to parse JSON
+ERROR 2026-04-18T18:09:41 +1ms service=storage target=[01;31m[Kxdg_data_home=[m[K/home/raed/.local/share/air-mentor-audit/arctic-slots/codex-01/data/arctic/storage/project/global.json error=ENOENT: no such file or directory, open '[01;31m[Kxdg_data_home=[m[K/home/raed/.local/share/air-mentor-audit/arctic-slots/codex-01/data/arctic/storage/project/global.json' failed to parse JSON
+INFO  2026-04-18T18:09:41 +1ms service=default directory=/home/raed/projects/air-mentor-ui bootstrapping
+INFO  2026-04-18T18:09:41 +20ms service=config path=[01;31m[Kxdg_config_home=[m[K/home/raed/.config/air-mentor-audit/arctic-slots/codex-01/config/arctic/config.json loading
+INFO  2026-04-18T18:09:41 +0ms service=config path=[01;31m[Kxdg_config_home=[m[K/home/raed/.config/air-mentor-audit/arctic-slots/codex-01/config/arctic/arctic.json loading
+INFO  2026-04-18T18:09:41 +0ms service=config path=[01;31m[Kxdg_config_home=[m[K/home/raed/.config/air-mentor-audit/arctic-slots/codex-01/config/arctic/arctic.jsonc loading
+INFO  2026-04-18T18:09:41 +1ms service=bun cmd=["/home/raed/.npm-global/lib/node_modules/@arctic-cli/arctic/node_modules/@arctic-cli/arctic-linux-x64/bin/arctic","add","@arctic-cli/plugin@0.0.0-main-202603151831","--exact"] cwd=[01;31m[Kxdg_config_home=[m[K/home/raed/.config/air-mentor-audit/arctic-slots/codex-01/config/arctic running
+INFO  2026-04-18T18:09:41 +2ms service=config path=/home/raed/projects/air-mentor-ui/.arctic/arctic.jsonc loading
+INFO  2026-04-18T18:09:41 +0ms service=config path=/home/raed/projects/air-mentor-ui/.arctic/arctic.json loading
+INFO  2026-04-18T18:09:41 +9ms service=bun cmd=["/home/raed/.npm-global/lib/node_modules/@arctic-cli/arctic/node_modules/@arctic-cli/arctic-linux-x64/bin/arctic","add","@arctic-cli/plugin@0.0.0-main-202603151831","--exact"] cwd=/home/raed/projects/air-mentor-ui/.arctic running
+INFO  2026-04-18T18:09:41 +48ms service=bun code=1 stdout=bun add v1.3.10 (30e609e0)
+ stderr=Resolving dependencies
+Resolved, downloaded and extracted [1]
+error: GET https://registry.npmjs.org/@arctic-cli%2fplugin - 404
+ done
+INFO  2026-04-18T18:09:41 +6ms service=bun code=1 stdout=bun add v1.3.10 (30e609e0)
+ stderr=Resolving dependencies
+Resolved, downloaded and extracted [1]
+error: GET https://registry.npmjs.org/@arctic-cli%2fplugin - 404
+ done
+INFO  2026-04-18T18:09:41 +4ms service=bus type=* subscribing
+INFO  2026-04-18T18:09:41 +0ms service=format init
+INFO  2026-04-18T18:09:41 +0ms service=bus type=file.edited subscribing
+INFO  2026-04-18T18:09:41 +1ms service=lsp serverIds=deno, typescript, vue, eslint, biome, gopls, ruby-lsp, pyright, elixir-ls, zls, csharp, sourcekit-lsp, rust, clangd, svelte, astro, jdtls, yaml-ls, lua-ls, php intelephense, dart, ocaml-lsp, bash, terraform, texlab, dockerfile enabled LSP servers
+INFO  2026-04-18T18:09:41 +0ms service=file.watcher init
+WARN  2026-04-18T18:09:41 +0ms service=file.watcher error={"name":"ResolveMessage","position":null,"message":"Cannot find module '@parcel/watcher-linux-x64-glibc' from '/$bunfs/root/src/index.js'","level":"error","specifier":"@parcel/watcher-linux-x64-glibc","importKind":"require-call","referrer":"/$bunfs/root/src/index.js"} failed to load native watcher binding, file watching disabled
+WARN  2026-04-18T18:09:41 +0ms service=file.watcher watcher not available, skipping initialization
+INFO  2026-04-18T18:09:41 +1ms service=bus type=command.executed subscribing
+INFO  2026-04-18T18:09:42 +22ms service=vcs branch=promote-proof-dashboard-origin initialized
+INFO  2026-04-18T18:09:42 +0ms service=bus type=file.watcher.updated subscribing
+INFO  2026-04-18T18:09:42 +14ms service=server method=POST path=/session request
+INFO  2026-04-18T18:09:42 +0ms service=server status=started method=POST path=/session request
+INFO  2026-04-18T18:09:42 +2ms service=session id=ses_25e373d6fffe1t8Im5hQpUQKgu version=0.0.0-main-202603151831 projectID=37e517ca37cbf930aecb48c0ca2c208723a17325 directory=/home/raed/projects/air-mentor-ui title=New session - 2026-04-18T18:09:42.033Z time={"created":1776535782033,"updated":1776535782033} created
+INFO  2026-04-18T18:09:42 +4ms service=bus type=session.created publishing
+INFO  2026-04-18T18:09:42 +0ms service=bus type=session.updated publishing
+INFO  2026-04-18T18:09:42 +1ms service=server status=completed duration=7 method=POST path=/session request
+INFO  2026-04-18T18:09:42 +5ms service=server method=GET path=/event request
+INFO  2026-04-18T18:09:42 +0ms service=server status=started method=GET path=/event request
+INFO  2026-04-18T18:09:42 +1ms service=server event connected
+INFO  2026-04-18T18:09:42 +3ms service=server status=completed duration=4 method=GET path=/event request
+INFO  2026-04-18T18:09:42 +3ms service=server method=POST path=/session/ses_25e373d6fffe1t8Im5hQpUQKgu/message request
+INFO  2026-04-18T18:09:42 +0ms service=server status=started method=POST path=/session/ses_25e373d6fffe1t8Im5hQpUQKgu/message request
+INFO  2026-04-18T18:09:42 +2ms service=server sessionID=ses_25e373d6fffe1t8Im5hQpUQKgu body={"model":{"providerID":"codex","modelID":"gpt-5.3-codex"},"agent":"build","parts":[{"type":"text","text":"Reply with exactly: ping-codex"}]} prompt start
+INFO  2026-04-18T18:09:42 +8ms service=bus type=message.updated publishing
+INFO  2026-04-18T18:09:42 +3ms service=bus type=message.part.updated publishing
+INFO  2026-04-18T18:09:42 +3ms service=bus type=session.updated publishing
+INFO  2026-04-18T18:09:42 +1ms service=session.prompt step=0 sessionID=ses_25e373d6fffe1t8Im5hQpUQKgu loop
+INFO  2026-04-18T18:09:42 +8ms service=bus type=session.status publishing
+INFO  2026-04-18T18:09:42 +5ms service=provider status=started state
+INFO  2026-04-18T18:09:42 +8ms service=models.dev file={} refreshing
+INFO  2026-04-18T18:09:42 +34ms service=provider init
+INFO  2026-04-18T18:09:42 +9ms service=provider status=completed duration=51 state
+INFO  2026-04-18T18:09:42 +3ms service=session.prompt sessionID=ses_25e373d6fffe1t8Im5hQpUQKgu cancel
+INFO  2026-04-18T18:09:42 +0ms service=bus type=session.status publishing
+INFO  2026-04-18T18:09:42 +0ms service=bus type=session.idle publishing
+ERROR 2026-04-18T18:09:42 +1ms service=server error=ProviderModelNotFoundError sessionID=ses_25e373d6fffe1t8Im5hQpUQKgu prompt failed
+ERROR 2026-04-18T18:09:42 +0ms service=server error=ProviderModelNotFoundError failed
+INFO  2026-04-18T18:09:42 +1ms service=server status=completed duration=86 method=POST path=/session/ses_25e373d6fffe1t8Im5hQpUQKgu/message request
+ERROR 2026-04-18T18:09:42 +0ms service=default e=ProviderModelNotFoundError rejection
+INFO  2026-04-18T18:09:42 +56ms service=default directory=/home/raed/projects/air-mentor-ui disposing instance
+INFO  2026-04-18T18:09:42 +0ms service=state key=/home/raed/projects/air-mentor-ui waiting for state disposal to complete
+INFO  2026-04-18T18:09:42 +0ms service=bus type=file.watcher.updated unsubscribing
+INFO  2026-04-18T18:09:42 +0ms service=state key=/home/raed/projects/air-mentor-ui state disposal completed
+INFO  2026-04-18T18:09:42 +3ms service=bun cmd=["/home/raed/.npm-global/lib/node_modules/@arctic-cli/arctic/node_modules/@arctic-cli/arctic-linux-x64/bin/arctic","add","@arctic-cli/plugin@0.0.0-main-202603151831","--exact"] cwd=[01;31m[Kxdg_config_home=[m[K/home/raed/.config/air-mentor-audit/arctic-slots/codex-01/config/arctic running
+INFO  2026-04-18T18:09:42 +0ms service=config path=/home/raed/projects/air-mentor-ui/.arctic/arctic.jsonc loading
+INFO  2026-04-18T18:09:42 +0ms service=config path=/home/raed/projects/air-mentor-ui/.arctic/arctic.json loading
+INFO  2026-04-18T18:09:42 +1ms service=bun cmd=["/home/raed/.npm-global/lib/node_modules/@arctic-cli/arctic/node_modules/@arctic-cli/arctic-linux-x64/bin/arctic","add","@arctic-cli/plugin@0.0.0-main-202603151831","--exact"] cwd=/home/raed/projects/air-mentor-ui/.arctic running
+INFO  2026-04-18T18:09:42 +50ms service=bun code=1 stdout=bun add v1.3.10 (30e609e0)
+ stderr=Resolving dependencies
+Resolved, downloaded and extracted [1]
+error: GET https://registry.npmjs.org/@arctic-cli%2fplugin - 404
+ done
+INFO  2026-04-18T18:09:42 +12ms service=bun code=1 stdout=bun add v1.3.10 (30e609e0)
+ stderr=Resolving dependencies
+Resolved, downloaded and extracted [1]
+error: GET https://registry.npmjs.org/@arctic-cli%2fplugin - 404
+ done
