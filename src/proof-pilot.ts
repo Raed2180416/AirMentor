@@ -61,8 +61,7 @@ export function resolveAuthoritativeOperationalSemester(input: {
 
 export function routeTargetsCanonicalProofHierarchy(route: LiveAdminRoute) {
   if (route.section !== 'faculties') return false
-  return !route.academicFacultyId
-    || route.academicFacultyId === CANONICAL_PROOF_ACADEMIC_FACULTY_ID
+  return route.academicFacultyId === CANONICAL_PROOF_ACADEMIC_FACULTY_ID
     || route.departmentId === CANONICAL_PROOF_DEPARTMENT_ID
     || route.branchId === CANONICAL_PROOF_BRANCH_ID
     || isCanonicalProofBatchId(route.batchId)
@@ -74,8 +73,9 @@ export function shouldResolveCanonicalProofRoute(
 ) {
   const canonicalProofBatch = resolveCanonicalProofBatch(data)
   if (!canonicalProofBatch) return false
+  if (!routeTargetsCanonicalProofHierarchy(route)) return false
   const routeBatchMissingOrInvalid = !route.batchId || !data.batches.some(item => item.batchId === route.batchId)
-  return routeBatchMissingOrInvalid && routeTargetsCanonicalProofHierarchy(route)
+  return routeBatchMissingOrInvalid
 }
 
 function normalizeScopeValue(value?: string | null) {
@@ -102,16 +102,6 @@ export function resolveAdminDirectoryScopeFilter(input: {
   registryScope?: Pick<UniversityScopeState, 'academicFacultyId' | 'departmentId' | 'branchId' | 'batchId' | 'sectionCode'> | null
   selectedSectionCode?: string | null
 }): LiveAdminSearchScope | null {
-  if (input.route.section === 'faculties' && routeTargetsCanonicalProofHierarchy(input.route)) {
-    return {
-      academicFacultyId: normalizeScopeValue(input.route.academicFacultyId) ?? CANONICAL_PROOF_ACADEMIC_FACULTY_ID,
-      departmentId: normalizeScopeValue(input.route.departmentId) ?? CANONICAL_PROOF_DEPARTMENT_ID,
-      branchId: normalizeScopeValue(input.route.branchId) ?? CANONICAL_PROOF_BRANCH_ID,
-      batchId: normalizeScopeValue(input.route.batchId) ?? CANONICAL_PROOF_BATCH_ID,
-      sectionCode: normalizeScopeValue(input.selectedSectionCode),
-    }
-  }
-
   if (input.route.section === 'faculties') {
     return normalizeHierarchyScope({
       academicFacultyId: input.route.academicFacultyId ?? null,

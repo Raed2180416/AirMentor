@@ -105,6 +105,13 @@ const dataset: LiveAdminDataset = {
       version: 1,
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
+      credentialStatus: {
+        passwordConfigured: false,
+        activeSetupRequest: false,
+        latestPurpose: null,
+        latestRequestedAt: null,
+        latestExpiresAt: null,
+      },
       appointments: [
         {
           appointmentId: 'appt_1',

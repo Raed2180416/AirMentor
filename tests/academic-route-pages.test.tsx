@@ -2,6 +2,9 @@
 import { createElement } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { ApiAcademicFacultyProfile } from '../src/api/types'
+import type { Mentee, Offering, Student, StudentHistoryRecord } from '../src/data'
+import type { SharedTask } from '../src/domain'
 import { CLDashboard, MenteeDetailPage, MentorView, QueueHistoryPage } from '../src/academic-route-pages'
 import { AppSelectorsContext, createAppSelectors } from '../src/selectors'
 
@@ -13,7 +16,7 @@ afterEach(() => {
   cleanup()
 })
 
-const mentee = {
+const mentee: Mentee = {
   id: 'mentee-student_001',
   name: 'Aarav Sharma',
   usn: '1MS23MC001',
@@ -22,7 +25,7 @@ const mentee = {
   dept: 'MNC',
   avs: 0.72,
   courseRisks: [
-    { code: 'MC601', title: 'Graph Theory', risk: 0.72, band: 'High' },
+    { code: 'MC601', title: 'Graph Theory', risk: 0.72, band: 'High', stage: 2 },
   ],
   interventions: [
     { date: '2026-03-14', type: 'Follow-up', note: 'Tracked after TT2 slump.' },
@@ -31,25 +34,36 @@ const mentee = {
   phone: '+91-9000000001',
 }
 
-const history = {
+const history: StudentHistoryRecord = {
   studentName: 'Aarav Sharma',
   usn: '1MS23MC001',
+  program: 'B.Tech Mathematics and Computing',
+  dept: 'MNC',
+  trend: 'Stable',
   currentCgpa: 7.1,
+  completedCreditsForCgpa: 20,
+  progressionStatus: 'Eligible',
+  advisoryNotes: [],
+  repeatSubjects: [],
   terms: [
     {
       termId: 'term_1',
       label: 'Sem 1',
       semesterNumber: 1,
+      academicYear: '2023-24',
       sgpa: 7.1,
+      registeredCredits: 20,
+      earnedCredits: 20,
+      backlogCount: 0,
       subjects: [
-        { code: 'MC101', title: 'Calculus', score: 78 },
-        { code: 'MC102', title: 'Programming', score: 64 },
+        { code: 'MC101', title: 'Calculus', credits: 4, score: 78, gradeLabel: 'A', gradePoint: 8, result: 'Passed' },
+        { code: 'MC102', title: 'Programming', credits: 4, score: 64, gradeLabel: 'B+', gradePoint: 7, result: 'Passed' },
       ],
     },
   ],
 }
 
-const task = {
+const task: SharedTask = {
   id: 'task_001',
   studentId: 'student_001',
   studentName: 'Aarav Sharma',
@@ -84,11 +98,9 @@ const task = {
       note: 'Mentor should follow up on the proof queue item.',
     },
   ],
-  dismissal: null,
-  unlockRequest: null,
 }
 
-const proofProfile = {
+const proofProfile: ApiAcademicFacultyProfile = {
   facultyId: 'mnc_t1',
   displayName: 'Dr. Asha Rao',
   designation: 'Professor',
@@ -149,6 +161,59 @@ const proofProfile = {
     monitoringQueue: [],
     electiveFits: [],
   },
+}
+
+function makeOffering(overrides: Partial<Offering> = {}): Offering {
+  return {
+    offId: 'off_mc601_a',
+    id: 'off_mc601_a',
+    code: 'MC601',
+    title: 'Graph Theory',
+    year: 'III Year',
+    dept: 'MNC',
+    sem: 6,
+    section: 'A',
+    count: 60,
+    attendance: 84,
+    stage: 2,
+    stageInfo: { stage: 2, label: 'In Progress', desc: 'Checkpoint active', color: '#3b82f6' },
+    tt1Done: true,
+    tt2Done: true,
+    pendingAction: null,
+    sections: ['A'],
+    enrolled: [2],
+    att: [84],
+    ...overrides,
+  }
+}
+
+function makeStudent(overrides: Partial<Student> = {}): Student {
+  return {
+    id: 'student_001',
+    usn: '1MS23MC001',
+    name: 'Aarav Sharma',
+    phone: '+91-9000000001',
+    present: 42,
+    totalClasses: 60,
+    tt1Score: 38,
+    tt1Max: 50,
+    tt2Score: null,
+    tt2Max: 50,
+    quiz1: null,
+    quiz2: null,
+    asgn1: null,
+    asgn2: null,
+    prevCgpa: 7.1,
+    currentCgpa: 6.8,
+    riskProb: 0.72,
+    riskBand: 'High',
+    reasons: [{ label: 'Operational duplicate', impact: 0.2, feature: 'legacy' }],
+    coScores: [],
+    whatIf: [],
+    interventions: [],
+    flags: { backlog: false, lowAttendance: false, declining: false },
+    ...overrides,
+  }
 }
 
 function renderWithSelectors(node: ReturnType<typeof createElement>) {
@@ -271,7 +336,7 @@ describe('academic route pages', () => {
       greetingSubline: 'Checkpoint-bound view',
     }))
     expect(screen.getByText('Course Leader Dashboard')).toBeTruthy()
-    expect(screen.getByText('Semester 6')).toBeTruthy()
+    expect(screen.getByText('Semester 6 · Semester Close')).toBeTruthy()
     expect(document.querySelector('[data-proof-summary-scope-label="2023 Mathematics and Computing"]')).toBeTruthy()
     expect(document.querySelector('[data-proof-summary-mode="proof"]')).toBeTruthy()
     expect(document.querySelector('[data-proof-summary-value="open-queue"]')?.textContent).toBe('13')
@@ -302,55 +367,22 @@ describe('academic route pages', () => {
       onOpenStudentShell: vi.fn(),
     }))
     expect(screen.getAllByText('Queue History').length).toBeGreaterThan(0)
-    expect(screen.getByText('Authoritative queue history proof context. Use these checkpoint-bound counts, model usefulness cues, and scope labels when comparing policy-derived status, no-action comparator, and simulated intervention / realized path surfaces.')).toBeTruthy()
+    expect(screen.getByText(/You are viewing (a saved preview checkpoint|the active simulation snapshot|live data)/)).toBeTruthy()
   })
 
   it('prefers proof-scoped totals over summed offering totals on the course leader dashboard', () => {
     const offerings = [
-      {
-        offId: 'off_mc601_a',
-        id: 'off_mc601_a',
-        code: 'MC601',
-        title: 'Graph Theory',
-        year: 'III Year',
-        dept: 'MNC',
-        sem: 6,
-        section: 'A',
-        count: 60,
-        attendance: 84,
-        stage: 2,
-        stageInfo: { stage: 2, label: 'In Progress', desc: 'Checkpoint active', color: '#3b82f6' },
-        tt1Done: true,
-        tt2Done: true,
-        pendingAction: null,
-        sections: ['A'],
-        enrolled: [2],
-        att: [84],
-        branchId: 'branch_mnc',
-        termId: 'term_6_a',
-      },
-      {
+      makeOffering(),
+      makeOffering({
         offId: 'off_mc602_b',
         id: 'off_mc602_b',
         code: 'MC602',
         title: 'Optimization',
-        year: 'III Year',
-        dept: 'MNC',
-        sem: 6,
         section: 'B',
-        count: 60,
         attendance: 82,
-        stage: 2,
-        stageInfo: { stage: 2, label: 'In Progress', desc: 'Checkpoint active', color: '#3b82f6' },
-        tt1Done: true,
-        tt2Done: true,
-        pendingAction: null,
         sections: ['B'],
-        enrolled: [2],
         att: [82],
-        branchId: 'branch_mnc',
-        termId: 'term_6_b',
-      },
+      }),
     ]
 
     renderWithSelectorOverrides(createElement(CLDashboard, {
@@ -368,8 +400,8 @@ describe('academic route pages', () => {
       greetingSubline: 'Checkpoint-bound view',
     }), {
       studentsByOffering: {
-        off_mc601_a: [mentee],
-        off_mc602_b: [mentee],
+        off_mc601_a: [makeStudent()],
+        off_mc602_b: [makeStudent({ id: 'student_002', usn: '1MS23MC002', name: 'Nisha Patel', phone: '+91-9000000002' })],
       },
     })
 
@@ -379,50 +411,17 @@ describe('academic route pages', () => {
 
   it('prefers checkpoint queue alerts over per-offering duplicate high-risk rows on the course leader dashboard', () => {
     const offerings = [
-      {
-        offId: 'off_mc601_a',
-        id: 'off_mc601_a',
-        code: 'MC601',
-        title: 'Graph Theory',
-        year: 'III Year',
-        dept: 'MNC',
-        sem: 6,
-        section: 'A',
-        count: 60,
-        attendance: 84,
-        stage: 2,
-        stageInfo: { stage: 2, label: 'In Progress', desc: 'Checkpoint active', color: '#3b82f6' },
-        tt1Done: true,
-        tt2Done: true,
-        pendingAction: null,
-        sections: ['A'],
-        enrolled: [2],
-        att: [84],
-        branchId: 'branch_mnc',
-        termId: 'term_6_a',
-      },
-      {
+      makeOffering(),
+      makeOffering({
         offId: 'off_mc602_b',
         id: 'off_mc602_b',
         code: 'MC602',
         title: 'Optimization',
-        year: 'III Year',
-        dept: 'MNC',
-        sem: 6,
         section: 'B',
-        count: 60,
         attendance: 82,
-        stage: 2,
-        stageInfo: { stage: 2, label: 'In Progress', desc: 'Checkpoint active', color: '#3b82f6' },
-        tt1Done: true,
-        tt2Done: true,
-        pendingAction: null,
         sections: ['B'],
-        enrolled: [2],
         att: [82],
-        branchId: 'branch_mnc',
-        termId: 'term_6_b',
-      },
+      }),
     ]
     const onOpenStudent = vi.fn()
     const proofProfileWithQueue = {
@@ -573,11 +572,11 @@ describe('academic route pages', () => {
     }), {
       studentsByOffering: {
         off_mc601_a: [
-          { id: 'off_mc601_a::student_001', name: 'Aarav Sharma', usn: '1MS23MC001', phone: '+91-9000000001', riskProb: 0.81, riskBand: 'High', reasons: [{ label: 'Operational duplicate', impact: 0.2, feature: 'legacy' }] },
+          makeStudent({ id: 'off_mc601_a::student_001', riskProb: 0.81, currentCgpa: 6.8 }),
         ],
         off_mc602_b: [
-          { id: 'off_mc602_b::student_001', name: 'Aarav Sharma', usn: '1MS23MC001', phone: '+91-9000000001', riskProb: 0.76, riskBand: 'High', reasons: [{ label: 'Operational duplicate', impact: 0.2, feature: 'legacy' }] },
-          { id: 'off_mc602_b::student_002', name: 'Nisha Patel', usn: '1MS23MC002', phone: '+91-9000000002', riskProb: 0.72, riskBand: 'High', reasons: [{ label: 'Operational duplicate', impact: 0.2, feature: 'legacy' }] },
+          makeStudent({ id: 'off_mc602_b::student_001', riskProb: 0.76, currentCgpa: 6.8 }),
+          makeStudent({ id: 'off_mc602_b::student_002', usn: '1MS23MC002', name: 'Nisha Patel', phone: '+91-9000000002', riskProb: 0.72, currentCgpa: 7 }),
         ],
       },
     })

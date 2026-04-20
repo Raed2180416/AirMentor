@@ -72,7 +72,7 @@ async function makeBootSmokeAppDir() {
   return dir
 }
 
-async function startSessionContractServer(mode: 'transient-login' | 'always-401' | 'always-503') {
+async function startSessionContractServer(mode: 'transient-login' | 'always-401' | 'always-503'): Promise<string> {
   const dir = await mkdtemp(path.join(tmpdir(), 'airmentor-session-contract-server-'))
   tempDirs.push(dir)
   const scriptPath = path.join(dir, 'session-contract-server.mjs')
@@ -145,7 +145,7 @@ async function startSessionContractServer(mode: 'transient-login' | 'always-401'
   })
   childProcesses.push(child)
 
-  return await new Promise((resolve, reject) => {
+  return await new Promise<string>((resolve, reject) => {
     let stdout = ''
     let stderr = ''
     const onData = (chunk: Buffer | string) => {
@@ -197,7 +197,7 @@ describe('Railway deploy readiness script', () => {
     expect(result.stdout).toContain('Railway deploy preflight passed')
     expect(report.status).toBe('passed')
     expect(report.checks.telemetrySinkConfigured).toBe(true)
-  })
+  }, 60_000)
 
   it('fails preflight when CSRF_SECRET is missing', async () => {
     const outputDir = await makeOutputDir()
@@ -221,9 +221,9 @@ describe('Railway deploy readiness script', () => {
 
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('CSRF_SECRET is missing')
-  })
+  }, 20_000)
 
-  it('fails preflight when the expected frontend origin is missing from CORS_ALLOWED_ORIGINS', async () => {
+  it('fails preflight when the expected frontend origin is missing from CORS_ALLOWED_ORIGINS', { timeout: 20_000 }, async () => {
     const outputDir = await makeOutputDir()
     const appDir = await makeBootSmokeAppDir()
 

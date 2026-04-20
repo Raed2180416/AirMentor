@@ -68,6 +68,47 @@ export type ApiLoginRequest = {
   password: string
 }
 
+export type ApiFacultyCredentialStatus = {
+  passwordConfigured: boolean
+  activeSetupRequest: boolean
+  latestPurpose: 'invite' | 'reset' | null
+  latestRequestedAt: string | null
+  latestExpiresAt: string | null
+}
+
+export type ApiPasswordSetupRequestResponse = {
+  ok: true
+  previewEnabled: boolean
+  setupUrl: string | null
+  message: string
+}
+
+export type ApiPasswordSetupInspectResponse = {
+  purpose: 'invite' | 'reset'
+  username: string
+  email: string
+  facultyId: string
+  displayName: string
+  expiresAt: string
+  credentialStatus?: ApiFacultyCredentialStatus | null
+}
+
+export type ApiPasswordSetupRedeemResponse = {
+  ok: true
+  username: string
+  displayName: string
+  purpose: 'invite' | 'reset'
+}
+
+export type ApiAdminFacultyPasswordSetupResponse = {
+  facultyId: string
+  purpose: 'invite' | 'reset'
+  issuedToEmail: string
+  expiresAt: string
+  previewEnabled: boolean
+  setupUrl: string | null
+}
+
 export type ApiInstitution = {
   institutionId: string
   name: string
@@ -175,6 +216,7 @@ export type ApiFacultyRecord = {
   version: number
   createdAt: string
   updatedAt: string
+  credentialStatus: ApiFacultyCredentialStatus
   scopeDescriptor?: ApiScopeDescriptor | null
   resolvedFrom?: ApiResolvedFrom | null
   scopeMode?: ApiScopeMode | null
@@ -441,6 +483,12 @@ export type ApiResolvedFrom = {
 
 export type ApiScopeMode = ApiScopeType | 'proof'
 export type ApiCountSource = 'operational-semester' | 'proof-run' | 'proof-checkpoint' | 'unavailable'
+
+export type ApiBatchSetupReadiness = {
+  ready: boolean
+  blockers: string[]
+  batchLabel: string | null
+}
 
 export type ApiResolvedBatchPolicy = {
   batch: ApiBatch

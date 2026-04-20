@@ -27,6 +27,7 @@ import {
 import { AirMentorApiClient, AirMentorApiError } from './api/client'
 import type {
   ApiAcademicFaculty,
+  ApiAdminFacultyPasswordSetupResponse,
   ApiAuditEvent,
   ApiAdminFacultyCalendar,
   ApiBatchProvisioningRequest,
@@ -113,8 +114,9 @@ import {
   type HierarchyScopeInput,
 } from './system-admin-overview-helpers'
 import { describeProofAvailability, describeProofProvenance } from './proof-provenance'
+import { resolveSelectedAdminRequest } from './admin-request-selection'
+import { areSessionResponsesEquivalent } from './session-response-helpers'
 import {
-  CANONICAL_PROOF_ROUTE,
   CANONICAL_PROOF_ACADEMIC_FACULTY_ID,
   CANONICAL_PROOF_BRANCH_ID,
   CANONICAL_PROOF_DEPARTMENT_ID,
@@ -514,6 +516,16 @@ export function formatFacultyAppointmentLabel(appointment: Pick<ApiFacultyAppoin
   return branchLabel ? `${departmentLabel} · ${branchLabel}` : departmentLabel
 }
 
+function resolveFacultyCredentialStatus(faculty: ApiFacultyRecord | null | undefined) {
+  return faculty?.credentialStatus ?? {
+    passwordConfigured: false,
+    activeSetupRequest: false,
+    latestPurpose: null,
+    latestRequestedAt: null,
+    latestExpiresAt: null,
+  }
+}
+
 // eslint-disable-next-line react-refresh/only-export-components
 export function parseAdminRoute(hash: string): LiveAdminRoute {
   const cleaned = hash.replace(/^#\/admin/, '').replace(/^\/+/, '')
@@ -550,31 +562,6 @@ function routeToHash(route: LiveAdminRoute) {
   if (route.branchId) segments.push('branches', route.branchId)
   if (route.batchId) segments.push('batches', route.batchId)
   return segments.join('/')
-}
-
-function registryFilterMatchesCanonicalScope(
-  filter: RegistryFilterState,
-  scope: Pick<UniversityScopeState, 'academicFacultyId' | 'departmentId' | 'branchId' | 'batchId'> | null,
-) {
-  if (!scope) return true
-  return filter.academicFacultyId === (scope.academicFacultyId ?? '')
-    && filter.departmentId === (scope.departmentId ?? '')
-    && filter.branchId === (scope.branchId ?? '')
-    && filter.batchId === (scope.batchId ?? '')
-}
-
-function applyCanonicalScopeToRegistryFilter(
-  filter: RegistryFilterState,
-  scope: Pick<UniversityScopeState, 'academicFacultyId' | 'departmentId' | 'branchId' | 'batchId'> | null,
-): RegistryFilterState {
-  if (!scope) return filter
-  return {
-    ...filter,
-    academicFacultyId: scope.academicFacultyId ?? '',
-    departmentId: scope.departmentId ?? '',
-    branchId: scope.branchId ?? '',
-    batchId: scope.batchId ?? '',
-  }
 }
 
 function defaultPolicyForm(): PolicyFormState {
@@ -1497,24 +1484,6 @@ function matchesBatchScope(batch: LiveAdminDataset['batches'][number], data: Liv
   return false
 }
 
-function matchesAdminRequestScope(
-  request: LiveAdminDataset['requests'][number],
-  scope: LiveAdminSearchScope | null,
-) {
-  if (!scope || !hasHierarchyScopeSelection(scope)) return true
-  if (request.scopeType === 'academic-faculty') return request.scopeId === scope.academicFacultyId
-  if (request.scopeType === 'department') return request.scopeId === scope.departmentId
-  if (request.scopeType === 'branch') return request.scopeId === scope.branchId
-  if (request.scopeType === 'batch') return request.scopeId === scope.batchId
-  if (request.scopeType === 'section') {
-    const parsedScope = parseAdminSectionScopeId(request.scopeId)
-    if (!parsedScope) return false
-    if (parsedScope.batchId !== scope.batchId) return false
-    return !scope.sectionCode || parsedScope.sectionCode === scope.sectionCode
-  }
-  return false
-}
-
 function TeachingShellAdminTopBar({
   institutionName,
   adminName,
@@ -1895,8 +1864,33 @@ export function AdminDetailTabs({
   ariaLabel?: string
   idBase?: string
 }) {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const tabElements = Array.from(e.currentTarget.querySelectorAll('[role="tab"]:not([disabled])')) as HTMLElement[]
+    const currentIndex = tabElements.indexOf(document.activeElement as HTMLElement)
+    if (currentIndex === -1) return
+
+    let nextIndex = currentIndex
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault()
+      nextIndex = (currentIndex + 1) % tabElements.length
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      nextIndex = (currentIndex - 1 + tabElements.length) % tabElements.length
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      nextIndex = 0
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      nextIndex = tabElements.length - 1
+    }
+
+    if (nextIndex !== currentIndex) {
+      tabElements[nextIndex].focus()
+    }
+  }
+
   return (
-    <div role="tablist" aria-label={ariaLabel} style={{ ...getSegmentedGroupStyle(), flexWrap: 'wrap', width: 'fit-content', maxWidth: '100%', alignItems: 'center', justifyContent: 'flex-start', rowGap: 6 }}>
+    <div role="tablist" aria-label={ariaLabel} onKeyDown={handleKeyDown} style={{ ...getSegmentedGroupStyle(), flexWrap: 'wrap', width: 'fit-content', maxWidth: '100%', alignItems: 'center', justifyContent: 'flex-start', rowGap: 6 }}>
       {tabs.map(tab => (
         <button
           key={tab.id}
@@ -1905,6 +1899,7 @@ export function AdminDetailTabs({
           role="tab"
           aria-controls={`${idBase}-panel-${tab.id}`}
           aria-selected={activeTab === tab.id}
+          tabIndex={activeTab === tab.id ? 0 : -1}
           data-tab="true"
           disabled={tab.disabled}
           onClick={() => onChange(tab.id)}
@@ -2030,6 +2025,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   })
   const [entityEditors, setEntityEditors] = useState<EntityEditorState>(() => defaultEntityEditorState())
   const [policyForm, setPolicyForm] = useState<PolicyFormState>(() => defaultPolicyForm())
+  const [batchSetupReadiness, setBatchSetupReadiness] = useState<{ ready: boolean; blockers: string[] } | null>(null)
   const [resolvedBatchPolicy, setResolvedBatchPolicy] = useState<ApiResolvedBatchPolicy | null>(null)
   const [stagePolicyOverrides, setStagePolicyOverrides] = useState<ApiStagePolicyOverride[]>([])
   const [resolvedStagePolicy, setResolvedStagePolicy] = useState<ApiResolvedBatchStagePolicy | null>(null)
@@ -2065,6 +2061,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const [enrollmentForm, setEnrollmentForm] = useState<EnrollmentFormState>(() => defaultEnrollmentForm())
   const [mentorForm, setMentorForm] = useState<MentorAssignmentFormState>(() => defaultMentorAssignmentForm())
   const [facultyForm, setFacultyForm] = useState<FacultyFormState>(() => defaultFacultyForm())
+  const [facultyPasswordSetupResult, setFacultyPasswordSetupResult] = useState<ApiAdminFacultyPasswordSetupResponse | null>(null)
   const [appointmentForm, setAppointmentForm] = useState<AppointmentFormState>(() => defaultAppointmentForm())
   const [roleGrantForm, setRoleGrantForm] = useState<RoleGrantFormState>(() => defaultRoleGrantForm())
   const [ownershipForm, setOwnershipForm] = useState<OwnershipFormState>(() => defaultOwnershipForm())
@@ -2203,8 +2200,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     }
   }, [handleGoHome, routeHistory])
 
-  const settleCookieBackedSession = useCallback(async (stage: 'login' | 'role-switch') => {
-    const retryDelaysMs = [0, 75, 200, 400, 750, 1200, 2000, 3000]
+  const settleCookieBackedSession = useCallback(async (
+    stage: 'login' | 'role-switch',
+    optimisticSession: ApiSessionResponse | null = null,
+  ) => {
+    const retryDelaysMs = [0, 40, 100, 200, 350, 500]
     for (const delayMs of retryDelaysMs) {
       if (delayMs > 0) {
         await new Promise(resolve => window.setTimeout(resolve, delayMs))
@@ -2215,6 +2215,15 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         if (error instanceof AirMentorApiError && error.status === 401) continue
         throw error
       }
+    }
+    if (optimisticSession) {
+      emitClientOperationalEvent('auth.session.cookie_settle_delayed', {
+        workspace: 'system-admin',
+        stage,
+        sessionId: optimisticSession.sessionId,
+        activeRole: optimisticSession.activeRoleGrant.roleCode,
+      }, { level: 'warn' })
+      return optimisticSession
     }
     throw new Error(
       stage === 'login'
@@ -2446,6 +2455,22 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
   useEffect(() => {
     if (!routeScopedBatchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
+      setBatchSetupReadiness(null)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const next = await apiClient.getBatchSetupReadiness(routeScopedBatchId, { sectionCode: selectedSectionCode })
+        if (cancelled) return
+        setBatchSetupReadiness(next)
+      } catch { if (!cancelled) setBatchSetupReadiness({ ready: false, blockers: [] }) }
+    })()
+    return () => { cancelled = true }
+  }, [apiClient, routeScopedBatchId, selectedSectionCode, session])
+
+  useEffect(() => {
+    if (!routeScopedBatchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
       setResolvedStagePolicy(null)
       return
     }
@@ -2654,53 +2679,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       label: `MNC proof branch · ${deriveCurrentYearLabel(canonicalProofBatch.currentSemester)} · Batch ${canonicalProofBatch.batchLabel}`,
     }
   }, [canonicalProofBatch])
-  const proofOperationalScope = useMemo<LiveAdminSearchScope | null>(() => (
-    canonicalProofRegistryScope
-      ? {
-          academicFacultyId: canonicalProofRegistryScope.academicFacultyId ?? undefined,
-          departmentId: canonicalProofRegistryScope.departmentId ?? undefined,
-          branchId: canonicalProofRegistryScope.branchId ?? undefined,
-          batchId: canonicalProofRegistryScope.batchId ?? undefined,
-        }
-      : null
-  ), [canonicalProofRegistryScope])
-  const operatorData = useMemo<LiveAdminDataset>(() => {
-    if (!proofOperationalScope?.batchId || !proofOperationalScope.branchId || !proofOperationalScope.departmentId || !proofOperationalScope.academicFacultyId) {
-      return data
-    }
-
-    const scopedTerms = data.terms.filter(item => (
-      item.branchId === proofOperationalScope.branchId
-      && item.batchId === proofOperationalScope.batchId
-    ))
-    const scopedTermIds = new Set(scopedTerms.map(item => item.termId))
-    const scopedCurriculumCourses = data.curriculumCourses.filter(item => item.batchId === proofOperationalScope.batchId)
-    const scopedCourseIds = new Set(scopedCurriculumCourses.map(item => item.courseId).filter((value): value is string => Boolean(value)))
-    const scopedOfferings = data.offerings.filter(item => (
-      item.branchId === proofOperationalScope.branchId
-      && (!item.termId || scopedTermIds.has(item.termId))
-    ))
-    const scopedOfferingIds = new Set(scopedOfferings.map(item => item.offId))
-    const scopedFacultyMembers = data.facultyMembers.filter(item => matchesFacultyScope(item, data, proofOperationalScope))
-    const scopedFacultyIds = new Set(scopedFacultyMembers.map(item => item.facultyId))
-    const scopedStudents = data.students.filter(item => matchesStudentScope(item, data, proofOperationalScope))
-
-    return {
-      ...data,
-      academicFaculties: data.academicFaculties.filter(item => item.academicFacultyId === proofOperationalScope.academicFacultyId),
-      departments: data.departments.filter(item => item.departmentId === proofOperationalScope.departmentId),
-      branches: data.branches.filter(item => item.branchId === proofOperationalScope.branchId),
-      batches: data.batches.filter(item => item.batchId === proofOperationalScope.batchId),
-      terms: scopedTerms,
-      facultyMembers: scopedFacultyMembers,
-      students: scopedStudents,
-      courses: data.courses.filter(item => item.departmentId === proofOperationalScope.departmentId || scopedCourseIds.has(item.courseId)),
-      curriculumCourses: scopedCurriculumCourses,
-      offerings: scopedOfferings,
-      ownerships: data.ownerships.filter(item => scopedOfferingIds.has(item.offeringId) && scopedFacultyIds.has(item.facultyId)),
-      requests: data.requests.filter(item => matchesAdminRequestScope(item, proofOperationalScope)),
-    }
-  }, [data, proofOperationalScope])
+  const operatorData = data
   const activeRunDetail = proofDashboard?.activeRunDetail ?? null
   const { semester: authoritativeOperationalSemester, source: authoritativeOperationalSemesterSource } = resolveAuthoritativeOperationalSemester({
     route,
@@ -2765,42 +2744,6 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     ?? activeModelDiagnostics?.overallCourseRuntimeSummary
     ?? activeModelDiagnostics?.runtimeSummary
 
-  useEffect(() => {
-    if (!session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') return
-    if (canonicalProofRegistryScope) {
-      setRegistryScope(current => {
-        if (
-          current?.academicFacultyId === canonicalProofRegistryScope.academicFacultyId
-          && current.departmentId === canonicalProofRegistryScope.departmentId
-          && current.branchId === canonicalProofRegistryScope.branchId
-          && current.batchId === canonicalProofRegistryScope.batchId
-        ) return current
-        return canonicalProofRegistryScope
-      })
-      setStudentRegistryFilter(current => (
-        registryFilterMatchesCanonicalScope(current, canonicalProofRegistryScope)
-          ? current
-          : applyCanonicalScopeToRegistryFilter(current, canonicalProofRegistryScope)
-      ))
-      setFacultyRegistryFilter(current => (
-        registryFilterMatchesCanonicalScope(current, canonicalProofRegistryScope)
-          ? current
-          : applyCanonicalScopeToRegistryFilter(current, canonicalProofRegistryScope)
-      ))
-    }
-
-    if (route.section !== 'faculties') return
-    if (!canonicalProofBatch) return
-    const routeAlreadyCanonical = route.academicFacultyId === CANONICAL_PROOF_ACADEMIC_FACULTY_ID
-      && route.departmentId === CANONICAL_PROOF_DEPARTMENT_ID
-      && route.branchId === CANONICAL_PROOF_BRANCH_ID
-      && route.batchId === canonicalProofBatch.batchId
-    if (routeAlreadyCanonical) return
-    navigate({
-      ...CANONICAL_PROOF_ROUTE,
-      batchId: canonicalProofBatch.batchId,
-    }, { recordHistory: false })
-  }, [canonicalProofBatch, canonicalProofRegistryScope, data.batches, navigate, route, session])
   const activeDiagnosticsQueueBurden = readRecordField(activeProductionEvaluation, 'queueBurdenSummary')
     ?? readRecordField(activeChallengerEvaluation, 'queueBurdenSummary')
     ?? activeModelDiagnostics?.queueBurdenSummary
@@ -2877,10 +2820,15 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     : null
   const selectedRequestSummary = route.requestId ? operatorData.requests.find(item => item.adminRequestId === route.requestId) ?? null : null
   const selectedFacultyId = selectedFacultyMember?.facultyId ?? null
+  const selectedFacultyCredentialStatus = resolveFacultyCredentialStatus(selectedFacultyMember)
   const selectedStudentProofBanner = formatRecordProofBanner(selectedStudent as unknown as ProvenancedRecord | null)
   const selectedFacultyProofBanner = formatRecordProofBanner(selectedFacultyMember as unknown as ProvenancedRecord | null)
   const selectedStudentRouteIsExplicit = route.section === 'students' && !!route.studentId
   const selectedStudentScopeMismatch = !!selectedStudent && studentRegistryHasScope && !matchesStudentScope(selectedStudent, operatorData, studentRegistryScope)
+
+  useEffect(() => {
+    setFacultyPasswordSetupResult(null)
+  }, [selectedFacultyId])
 
   useEffect(() => {
     const requestId = route.requestId
@@ -3020,10 +2968,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         : route.section === 'faculty-members'
           ? (hasHierarchyScopeSelection(facultyRegistryScope) ? facultyRegistryScope : null)
           : {
-              academicFacultyId: toOptionalScopeValue(registryScope?.academicFacultyId ?? proofOperationalScope?.academicFacultyId),
-              departmentId: toOptionalScopeValue(registryScope?.departmentId ?? proofOperationalScope?.departmentId),
-              branchId: toOptionalScopeValue(registryScope?.branchId ?? proofOperationalScope?.branchId),
-              batchId: toOptionalScopeValue(registryScope?.batchId ?? proofOperationalScope?.batchId),
+              academicFacultyId: toOptionalScopeValue(registryScope?.academicFacultyId),
+              departmentId: toOptionalScopeValue(registryScope?.departmentId),
+              branchId: toOptionalScopeValue(registryScope?.branchId),
+              batchId: toOptionalScopeValue(registryScope?.batchId),
               sectionCode: toOptionalScopeValue(registryScope?.sectionCode),
             }
     if (!query) {
@@ -3040,7 +2988,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       }
     })()
     return () => { cancelled = true }
-  }, [apiClient, deferredSearch, facultyRegistryScope, proofOperationalScope?.academicFacultyId, proofOperationalScope?.batchId, proofOperationalScope?.branchId, proofOperationalScope?.departmentId, registryScope?.academicFacultyId, registryScope?.batchId, registryScope?.branchId, registryScope?.departmentId, registryScope?.sectionCode, route.academicFacultyId, route.batchId, route.branchId, route.departmentId, route.section, selectedSectionCode, session, studentRegistryHasScope, studentRegistryScope])
+  }, [apiClient, deferredSearch, facultyRegistryScope, registryScope?.academicFacultyId, registryScope?.batchId, registryScope?.branchId, registryScope?.departmentId, registryScope?.sectionCode, route.academicFacultyId, route.batchId, route.branchId, route.departmentId, route.section, selectedSectionCode, session, studentRegistryHasScope, studentRegistryScope])
 
   useEffect(() => {
     setStudentDetailTab('profile')
@@ -3070,7 +3018,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   useEffect(() => {
     if (route.section !== 'requests' || !route.requestId || !session || dataLoading) return
     if (selectedRequestSummary) return
-    setActionError('That request is no longer available in the proof workspace.')
+    setActionError('That request is no longer available in the current admin workspace.')
     navigate({ section: 'requests' }, { recordHistory: false })
   }, [dataLoading, navigate, route.requestId, route.section, selectedRequestSummary, session])
 
@@ -3088,10 +3036,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         : route.section === 'faculty-members'
           ? (hasHierarchyScopeSelection(facultyRegistryScope) ? facultyRegistryScope : null)
           : {
-              academicFacultyId: toOptionalScopeValue(registryScope?.academicFacultyId ?? proofOperationalScope?.academicFacultyId),
-              departmentId: toOptionalScopeValue(registryScope?.departmentId ?? proofOperationalScope?.departmentId),
-              branchId: toOptionalScopeValue(registryScope?.branchId ?? proofOperationalScope?.branchId),
-              batchId: toOptionalScopeValue(registryScope?.batchId ?? proofOperationalScope?.batchId),
+              academicFacultyId: toOptionalScopeValue(registryScope?.academicFacultyId),
+              departmentId: toOptionalScopeValue(registryScope?.departmentId),
+              branchId: toOptionalScopeValue(registryScope?.branchId),
+              batchId: toOptionalScopeValue(registryScope?.batchId),
               sectionCode: toOptionalScopeValue(registryScope?.sectionCode),
             }
     const matchesActiveSection = (candidateRoute: LiveAdminRoute) => {
@@ -3130,10 +3078,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       section: route.section,
       scope: activeSearchScope,
     }).filter(result => matchesActiveSection(result.route) && isRouteVisible(result.route))
-  }, [deferredSearch, facultyRegistryScope, operatorData, proofOperationalScope?.academicFacultyId, proofOperationalScope?.batchId, proofOperationalScope?.branchId, proofOperationalScope?.departmentId, registryScope?.academicFacultyId, registryScope?.batchId, registryScope?.branchId, registryScope?.departmentId, registryScope?.sectionCode, route.academicFacultyId, route.batchId, route.branchId, route.departmentId, route.section, selectedSectionCode, serverSearchResults, studentRegistryScope])
-  const selectedRequest = selectedRequestDetail && selectedRequestSummary && selectedRequestDetail.version !== selectedRequestSummary.version
-    ? selectedRequestSummary
-    : (selectedRequestDetail ?? selectedRequestSummary)
+  }, [deferredSearch, facultyRegistryScope, operatorData, registryScope?.academicFacultyId, registryScope?.batchId, registryScope?.branchId, registryScope?.departmentId, registryScope?.sectionCode, route.academicFacultyId, route.batchId, route.branchId, route.departmentId, route.section, selectedSectionCode, serverSearchResults, studentRegistryScope])
+  const selectedRequest = resolveSelectedAdminRequest(selectedRequestSummary, selectedRequestDetail)
   const requestDetail = selectedRequestDetail && selectedRequest?.adminRequestId === selectedRequestDetail.adminRequestId ? selectedRequestDetail : null
 
   useEffect(() => {
@@ -3371,7 +3317,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       }
     })()
     return () => { cancelled = true }
-  }, [apiClient, dataLoading, session])
+  }, [apiClient, session])
 
   useEffect(() => {
     if (!selectedFacultyId) {
@@ -3398,9 +3344,21 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     event.preventDefault()
     setAuthBusy(true); setAuthError('')
     try {
-      await apiClient.login({ identifier, password })
-      const nextSession = await settleCookieBackedSession('login')
-      setSession(nextSession); setIdentifier(''); setPassword('')
+      const loginSession = await apiClient.login({ identifier, password })
+      setSession(loginSession); setIdentifier(''); setPassword('')
+      void settleCookieBackedSession('login', loginSession)
+        .then(settledSession => {
+          setSession(current => {
+            if (!current) return current
+            if (current.sessionId !== loginSession.sessionId) return current
+            if (current.activeRoleGrant.grantId !== loginSession.activeRoleGrant.grantId) return current
+            if (areSessionResponsesEquivalent(current, settledSession)) return current
+            return settledSession
+          })
+        })
+        .catch(error => {
+          setAuthError(toErrorMessage(error))
+        })
     } catch (error) {
       setAuthError(toErrorMessage(error))
     }
@@ -3408,20 +3366,42 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   }
 
   const handleLogout = async () => {
-    await apiClient.logout()
+    const activeSessionId = session?.sessionId ?? null
     clearRegistryScope()
     setDismissedQueueItemKeys([])
-    setSession(null); setData(EMPTY_DATA)
+    setSession(null)
+    setData(EMPTY_DATA)
+    setStagePolicyOverrides([])
+    setDataError('')
     onExitPortal?.()
+    void apiClient.logout().catch(error => {
+      emitClientOperationalEvent('auth.session.logout_failed', {
+        workspace: 'system-admin',
+        sessionId: activeSessionId,
+        error: normalizeClientTelemetryError(error),
+      }, { level: 'warn' })
+    })
   }
 
   const handleSwitchToSystemAdmin = async () => {
     if (!systemAdminGrant) return
-    setAuthBusy(true)
+    setAuthBusy(true); setAuthError('')
     try {
-      await apiClient.switchRoleContext(systemAdminGrant.grantId)
-      const next = await settleCookieBackedSession('role-switch')
-      setSession(next)
+      const switchedSession = await apiClient.switchRoleContext(systemAdminGrant.grantId)
+      setSession(switchedSession)
+      void settleCookieBackedSession('role-switch', switchedSession)
+        .then(settledSession => {
+          setSession(current => {
+            if (!current) return current
+            if (current.sessionId !== switchedSession.sessionId) return current
+            if (current.activeRoleGrant.grantId !== switchedSession.activeRoleGrant.grantId) return current
+            if (areSessionResponsesEquivalent(current, settledSession)) return current
+            return settledSession
+          })
+        })
+        .catch(error => {
+          setAuthError(toErrorMessage(error))
+        })
     }
     catch (error) {
       setAuthError(toErrorMessage(error))
@@ -4831,6 +4811,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
   const resetFacultyEditors = () => {
     setFacultyForm(defaultFacultyForm())
+    setFacultyPasswordSetupResult(null)
     setAppointmentForm(defaultAppointmentForm())
     setRoleGrantForm(defaultRoleGrantForm())
     setOwnershipForm(defaultOwnershipForm())
@@ -4883,12 +4864,26 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     }
     const created = await runAction(async () => apiClient.createFaculty({
       ...payload,
-      password: requireText('Password', facultyForm.password),
+      password: facultyForm.password.trim() || null,
     }))
     if (created) {
       navigate({ section: 'faculty-members', facultyMemberId: created.facultyId })
-      setFlashMessage('Faculty profile created.')
+      setFlashMessage(created.credentialStatus?.passwordConfigured
+        ? 'Faculty profile created with an admin-set password.'
+        : 'Faculty profile created. Open Sign-In Setup to issue or copy the invite link.')
     }
+  }
+
+  const handleIssueFacultyPasswordSetup = async () => {
+    if (!selectedFacultyMember) return
+    const issued = await runAction(async () => apiClient.issueFacultyPasswordSetup(selectedFacultyMember.facultyId))
+    if (!issued) return
+    setFacultyPasswordSetupResult(issued)
+    setFlashMessage(
+      issued.setupUrl
+        ? `${issued.purpose === 'invite' ? 'Invite' : 'Reset'} link is ready for ${selectedFacultyMember.displayName}.`
+        : `${issued.purpose === 'invite' ? 'Invite' : 'Reset'} link generated for ${selectedFacultyMember.displayName}.`,
+    )
   }
 
   const handleArchiveFaculty = async () => {
@@ -5764,6 +5759,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     student.activeAcademicContext?.termId === offering.termId
     && student.activeAcademicContext?.sectionCode === offering.section
   )))
+  const effectiveBatchSetupReadiness = batchSetupReadiness ?? { ready: false, blockers: ['Loading setup status…'] }
 
   useEffect(() => {
     setBatchProvisioningForm(prev => {
@@ -6089,7 +6085,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     return []
   })()
   const adminContextLabel = route.section === 'faculties'
-    ? `MNC Proof Branch · ${universityWorkspaceLabel}`
+    ? universityWorkspaceLabel
     : route.section === 'proof-dashboard'
       ? 'Proof Dashboard'
     : route.section === 'students'
@@ -6100,7 +6096,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         ? 'Governed Requests'
         : route.section === 'history'
           ? 'History And Restore'
-            : 'MNC Proof Operations'
+            : 'System Admin'
   const railScopeLabel = route.section === 'faculties'
     ? activeUniversityRegistryScope?.label ?? universityWorkspaceLabel
     : route.section === 'proof-dashboard'
@@ -6176,12 +6172,12 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const proofLauncherStageLabel = selectedProofCheckpoint
     ? `${selectedProofCheckpoint.stageLabel} · Semester ${selectedProofCheckpoint.semesterNumber}`
     : proofLauncherOperationalSemester != null
-      ? `Operational semester ${proofLauncherOperationalSemester}`
+      ? `Live semester ${proofLauncherOperationalSemester}`
       : 'No active checkpoint selected'
   const proofLauncherPopupTitle = activeRunDetail ? `Proof run ${activeRunDetail.runLabel}` : 'Proof control plane'
   const proofLauncherPopupCaption = canonicalProofRegistryScope
-    ? `Operator scope is locked to ${canonicalProofRegistryScope.label}. Queue, request, and reminder totals below are proof-branch-only.`
-    : 'Operator-facing proof surfaces are scoped to the MNC proof branch only.'
+    ? `Quick proof actions for ${canonicalProofRegistryScope.label}. Snapshot and preview actions change proof pages only.`
+    : 'Quick proof actions for the canonical proof batch.'
   void [
     DayToggle,
     WEEKDAYS,
@@ -6278,6 +6274,17 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                 </Card>
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Btn
+                  size="sm"
+                  variant="ghost"
+                  disabled={!effectiveBatchSetupReadiness.ready}
+                  onClick={() => {
+                    closePopup()
+                    void handleCreateProofImport()
+                  }}
+                >
+                  Capture Snapshot
+                </Btn>
                 {proofDashboard?.imports.length ? (
                   <Btn
                     size="sm"
@@ -6287,7 +6294,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                       void handleValidateLatestProofImport()
                     }}
                   >
-                    Validate Import
+                    Check Mapping
                   </Btn>
                 ) : null}
                 {proofDashboard?.crosswalkReviewQueue.length ? (
@@ -6302,16 +6309,17 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                     Review Mappings
                   </Btn>
                 ) : null}
-                <Btn
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    closePopup()
-                    if (activeRunDetail) void handleRecomputeProofRunRisk()
-                    else void handleCreateProofRun()
-                  }}
+                  <Btn
+                    size="sm"
+                    variant="ghost"
+                    disabled={!effectiveBatchSetupReadiness.ready}
+                    onClick={() => {
+                      closePopup()
+                      if (activeRunDetail) void handleRecomputeProofRunRisk()
+                      else void handleCreateProofRun()
+                    }}
                 >
-                  {activeRunDetail ? 'Recompute Risk' : 'Create Proof Run'}
+                  {activeRunDetail ? 'Refresh Risk' : 'Generate Preview'}
                 </Btn>
                 {activeRunDetail?.snapshots.find(item => /baseline/i.test(item.snapshotLabel)) ? (
                   <Btn
@@ -6325,10 +6333,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                       )
                     }}
                   >
-                    Reset To Semester 1
+                    Reset Preview To Start
                   </Btn>
                 ) : null}
               </div>
+              {!effectiveBatchSetupReadiness.ready ? (
+                <InfoBanner tone="error" message={`Complete setup before using proof preview controls: ${effectiveBatchSetupReadiness.blockers.join(' ')}`} />
+              ) : null}
             </div>
           )}
           popupFooter={({ closePopup, jumpToTarget }) => (
@@ -6431,9 +6442,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               <Card style={{ padding: 24, display: 'grid', gap: 16, textAlign: 'left', background: `radial-gradient(circle at top left, ${T.accent}14, transparent 34%), linear-gradient(180deg, ${T.surface}, ${T.surface2})` }}>
                 <div style={{ display: 'grid', gap: 10 }}>
                   <div style={{ ...mono, fontSize: 10, color: ADMIN_SECTION_TONES.overview, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Sysadmin Control Plane</div>
-                  <div style={{ ...sora, fontSize: 30, fontWeight: 800, color: T.text }}>MNC Proof Operations</div>
+                  <div style={{ ...sora, fontSize: 30, fontWeight: 800, color: T.text }}>System Admin Control Plane</div>
                   <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.9, maxWidth: 760 }}>
-                    Operator-facing sysadmin work is now locked to the MNC proof branch. University setup, registry cleanup, faculty ownership, proof verification, and governed requests all resolve from the same proof-scoped operator dataset.
+                    Use this workspace for full university setup, registry cleanup, faculty ownership, proof verification, and governed requests. The canonical MNC proof batch stays available as a dedicated preview path, but the rest of admin is no longer forced into that batch.
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -6544,6 +6555,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           <SystemAdminProofDashboardWorkspace
             proofDashboard={proofDashboard}
             proofDashboardLoading={proofDashboardLoading}
+            batchSetupReadiness={effectiveBatchSetupReadiness}
             dashboardLayout="page"
             showLauncher={false}
             activeRunCheckpoints={activeRunCheckpoints}
@@ -6678,6 +6690,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             batchStudentsWithoutEnrollment={batchStudentsWithoutEnrollment}
             batchStudentsWithoutMentor={batchStudentsWithoutMentor}
             batchOfferingsWithoutRoster={batchOfferingsWithoutRoster}
+            batchSetupReadiness={effectiveBatchSetupReadiness}
             bulkMentorAssignmentForm={bulkMentorAssignmentForm}
             setBulkMentorAssignmentForm={setBulkMentorAssignmentForm}
             bulkMentorAssignmentPreview={bulkMentorAssignmentPreview}
@@ -6721,6 +6734,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             proofDashboardProps={{
               proofDashboard,
               proofDashboardLoading,
+              batchSetupReadiness: effectiveBatchSetupReadiness,
               activeRunCheckpoints,
               activeModelDiagnostics,
               activeProductionDiagnostics,
@@ -7360,6 +7374,56 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                       <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Phone</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedFacultyMember.phone ?? 'Not set'}</div></Card>
                       <Card style={{ padding: 14, background: T.surface2 }}><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Joined On</div><div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>{selectedFacultyMember.joinedOn ? formatDate(selectedFacultyMember.joinedOn) : 'Not set'}</div></Card>
                     </div>
+                    <Card style={{ padding: 14, background: T.surface2, display: 'grid', gap: 10 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                        <div>
+                          <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Sign-In Setup</div>
+                          <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text, marginTop: 8 }}>
+                            {selectedFacultyCredentialStatus.passwordConfigured ? 'Password is active' : 'Waiting for first password setup'}
+                          </div>
+                          <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 6, lineHeight: 1.8 }}>
+                            {selectedFacultyCredentialStatus.activeSetupRequest
+                              ? `${selectedFacultyCredentialStatus.latestPurpose === 'reset' ? 'Reset' : 'Invite'} link is still active${selectedFacultyCredentialStatus.latestExpiresAt ? ` until ${formatDateTime(selectedFacultyCredentialStatus.latestExpiresAt)}` : ''}.`
+                              : selectedFacultyCredentialStatus.passwordConfigured
+                                ? 'Create a reset link when this faculty member needs to change their password.'
+                                : 'Issue the first invite link so this faculty member can create a password from their email.'}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <Chip color={selectedFacultyCredentialStatus.passwordConfigured ? T.success : T.warning}>
+                            {selectedFacultyCredentialStatus.passwordConfigured ? 'Password ready' : 'Password missing'}
+                          </Chip>
+                          {selectedFacultyCredentialStatus.latestPurpose ? (
+                            <Chip color={selectedFacultyCredentialStatus.latestPurpose === 'reset' ? T.accent : T.orange}>
+                              {selectedFacultyCredentialStatus.latestPurpose === 'reset' ? 'Latest action: reset' : 'Latest action: invite'}
+                            </Chip>
+                          ) : null}
+                        </div>
+                      </div>
+                      {facultyPasswordSetupResult ? (
+                        <InfoBanner
+                          tone="success"
+                          message={facultyPasswordSetupResult.setupUrl
+                            ? `${facultyPasswordSetupResult.purpose === 'invite' ? 'Invite' : 'Reset'} link ready for ${facultyPasswordSetupResult.issuedToEmail}. It expires ${formatDateTime(facultyPasswordSetupResult.expiresAt)}.`
+                            : `${facultyPasswordSetupResult.purpose === 'invite' ? 'Invite' : 'Reset'} link created for ${facultyPasswordSetupResult.issuedToEmail}.`}
+                        />
+                      ) : null}
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <Btn type="button" size="sm" onClick={() => void handleIssueFacultyPasswordSetup()}>
+                          {selectedFacultyCredentialStatus.passwordConfigured ? 'Create Reset Link' : 'Create Invite Link'}
+                        </Btn>
+                        {facultyPasswordSetupResult?.setupUrl ? (
+                          <Btn type="button" size="sm" variant="ghost" onClick={() => window.open(facultyPasswordSetupResult.setupUrl ?? '', '_blank', 'noopener,noreferrer')}>
+                            Open Link
+                          </Btn>
+                        ) : null}
+                        {facultyPasswordSetupResult?.setupUrl ? (
+                          <Btn type="button" size="sm" variant="ghost" onClick={() => void navigator.clipboard.writeText(facultyPasswordSetupResult.setupUrl ?? '')}>
+                            Copy Link
+                          </Btn>
+                        ) : null}
+                      </div>
+                    </Card>
                     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                       <Btn type="button" size="sm" onClick={() => setEditingEntity('faculty-profile')}>Edit Faculty</Btn>
                       <Btn type="button" size="sm" variant="danger" onClick={() => void handleArchiveFaculty()}>Delete Faculty</Btn>
@@ -7375,8 +7439,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                       <div><FieldLabel>Email</FieldLabel><TextInput value={facultyForm.email} onChange={event => setFacultyForm(prev => ({ ...prev, email: event.target.value }))} placeholder="faculty@campus.edu" /></div>
                       <div><FieldLabel>Phone</FieldLabel><TextInput value={facultyForm.phone} onChange={event => setFacultyForm(prev => ({ ...prev, phone: event.target.value }))} placeholder="+91…" /></div>
                       <div><FieldLabel>Designation</FieldLabel><TextInput value={facultyForm.designation} onChange={event => setFacultyForm(prev => ({ ...prev, designation: event.target.value }))} placeholder="Assistant Professor" /></div>
-                      <div><FieldLabel>Initial Password</FieldLabel><TextInput type="password" value={facultyForm.password} onChange={event => setFacultyForm(prev => ({ ...prev, password: event.target.value }))} placeholder="Minimum 8 characters" /></div>
                     </div>
+                    <InfoBanner message="New faculty now finish sign-in through an invite link. Create the profile first, then use Sign-In Setup on the detail page to issue or copy the link." />
                     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                       <Btn type="submit">Create Faculty</Btn>
                       <Btn type="button" variant="ghost" onClick={() => { navigate({ section: 'faculty-members' }); resetFacultyEditors() }}>Clear Form</Btn>

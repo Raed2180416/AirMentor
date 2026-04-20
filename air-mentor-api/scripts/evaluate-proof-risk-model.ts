@@ -90,6 +90,16 @@ type HeadMetrics = {
   support: number
   mediumThreshold: ThresholdMetrics
   highThreshold: ThresholdMetrics
+  budgetMetrics: BudgetMetrics
+}
+
+type BudgetMetrics = {
+  budgetRate: number
+  thresholdAtBudget: number
+  flaggedRateAtBudget: number
+  precisionAtBudget: number
+  recallAtBudget: number
+  overloadRatio: number
 }
 
 type ThresholdMetrics = {
@@ -460,6 +470,45 @@ function fitSigmoidCalibration(rows: ProbabilityRow[]) {
   }
 }
 
+function summarizeBudgetMetrics(rows: ProbabilityRow[], budgetRate: number): BudgetMetrics {
+  if (!rows.length) {
+    return {
+      budgetRate,
+      thresholdAtBudget: 0,
+      flaggedRateAtBudget: 0,
+      precisionAtBudget: 0,
+      recallAtBudget: 0,
+      overloadRatio: 0,
+    }
+  }
+  const ordered = [...rows].sort((left, right) => right.prob - left.prob)
+  const budgetCount = Math.max(1, Math.floor(rows.length * budgetRate))
+  const thresholdAtBudget = ordered[budgetCount - 1]?.prob ?? 0
+  
+  let flaggedCount = 0
+  let truePositives = 0
+  let positiveCount = 0
+  rows.forEach(row => {
+    if (row.label === 1) positiveCount += 1
+    if (row.prob >= thresholdAtBudget) {
+      flaggedCount += 1
+      if (row.label === 1) truePositives += 1
+    }
+  })
+  
+  const flaggedRateAtBudget = flaggedCount / rows.length
+  const overloadRatio = budgetRate > 0 ? flaggedRateAtBudget / budgetRate : 0
+  
+  return {
+    budgetRate,
+    thresholdAtBudget: roundToFour(thresholdAtBudget),
+    flaggedRateAtBudget: roundToFour(flaggedRateAtBudget),
+    precisionAtBudget: roundToFour(flaggedCount > 0 ? truePositives / flaggedCount : 0),
+    recallAtBudget: roundToFour(positiveCount > 0 ? truePositives / positiveCount : 0),
+    overloadRatio: roundToFour(overloadRatio),
+  }
+}
+
 function summarizeThresholdMetrics(rows: ProbabilityRow[], threshold: number): ThresholdMetrics {
   if (!rows.length) {
     return {
@@ -484,7 +533,7 @@ function summarizeThresholdMetrics(rows: ProbabilityRow[], threshold: number): T
   }
 }
 
-function summarizeMetrics(rows: ProbabilityRow[]): HeadMetrics {
+function summarizeMetrics(rows: ProbabilityRow[], budgetRate = 0.20): HeadMetrics {
   const calibration = fitSigmoidCalibration(rows)
   return {
     brier: roundToFour(brierScore(rows)),
@@ -498,6 +547,7 @@ function summarizeMetrics(rows: ProbabilityRow[]): HeadMetrics {
     support: rows.length,
     mediumThreshold: summarizeThresholdMetrics(rows, PRODUCTION_RISK_THRESHOLDS.medium),
     highThreshold: summarizeThresholdMetrics(rows, PRODUCTION_RISK_THRESHOLDS.high),
+    budgetMetrics: summarizeBudgetMetrics(rows, budgetRate),
   }
 }
 
@@ -1888,13 +1938,13 @@ async function main() {
       '## Variant Comparison',
       '',
       markdownTable(
-        ['Variant', 'Brier', 'Log Loss', 'ROC-AUC', 'PR-AUC', 'ECE'],
+        ['Variant', 'Brier', 'Log Loss', 'ROC-AUC', 'PR-AUC', 'ECE', 'Budget Rate', 'Flagged@Budget', 'Precision@Budget', 'Recall@Budget', 'Overload Ratio'],
         [
-          ['current-v6', output.overallCourseVariantSummary.current.brier, output.overallCourseVariantSummary.current.logLoss, output.overallCourseVariantSummary.current.rocAuc, output.overallCourseVariantSummary.current.averagePrecision, output.overallCourseVariantSummary.current.expectedCalibrationError],
-          ['baseline-v5-like', output.overallCourseVariantSummary.baseline.brier, output.overallCourseVariantSummary.baseline.logLoss, output.overallCourseVariantSummary.baseline.rocAuc, output.overallCourseVariantSummary.baseline.averagePrecision, output.overallCourseVariantSummary.baseline.expectedCalibrationError],
-          ['hybrid-router', output.overallCourseVariantSummary.hybrid.brier, output.overallCourseVariantSummary.hybrid.logLoss, output.overallCourseVariantSummary.hybrid.rocAuc, output.overallCourseVariantSummary.hybrid.averagePrecision, output.overallCourseVariantSummary.hybrid.expectedCalibrationError],
-          ['challenger', output.overallCourseVariantSummary.challenger.brier, output.overallCourseVariantSummary.challenger.logLoss, output.overallCourseVariantSummary.challenger.rocAuc, output.overallCourseVariantSummary.challenger.averagePrecision, output.overallCourseVariantSummary.challenger.expectedCalibrationError],
-          ['heuristic', output.overallCourseVariantSummary.heuristic.brier, output.overallCourseVariantSummary.heuristic.logLoss, output.overallCourseVariantSummary.heuristic.rocAuc, output.overallCourseVariantSummary.heuristic.averagePrecision, output.overallCourseVariantSummary.heuristic.expectedCalibrationError],
+          ['current-v6', output.overallCourseVariantSummary.current.brier, output.overallCourseVariantSummary.current.logLoss, output.overallCourseVariantSummary.current.rocAuc, output.overallCourseVariantSummary.current.averagePrecision, output.overallCourseVariantSummary.current.expectedCalibrationError, output.overallCourseVariantSummary.current.budgetMetrics.budgetRate, output.overallCourseVariantSummary.current.budgetMetrics.flaggedRateAtBudget, output.overallCourseVariantSummary.current.budgetMetrics.precisionAtBudget, output.overallCourseVariantSummary.current.budgetMetrics.recallAtBudget, output.overallCourseVariantSummary.current.budgetMetrics.overloadRatio],
+          ['baseline-v5-like', output.overallCourseVariantSummary.baseline.brier, output.overallCourseVariantSummary.baseline.logLoss, output.overallCourseVariantSummary.baseline.rocAuc, output.overallCourseVariantSummary.baseline.averagePrecision, output.overallCourseVariantSummary.baseline.expectedCalibrationError, output.overallCourseVariantSummary.baseline.budgetMetrics.budgetRate, output.overallCourseVariantSummary.baseline.budgetMetrics.flaggedRateAtBudget, output.overallCourseVariantSummary.baseline.budgetMetrics.precisionAtBudget, output.overallCourseVariantSummary.baseline.budgetMetrics.recallAtBudget, output.overallCourseVariantSummary.baseline.budgetMetrics.overloadRatio],
+          ['hybrid-router', output.overallCourseVariantSummary.hybrid.brier, output.overallCourseVariantSummary.hybrid.logLoss, output.overallCourseVariantSummary.hybrid.rocAuc, output.overallCourseVariantSummary.hybrid.averagePrecision, output.overallCourseVariantSummary.hybrid.expectedCalibrationError, output.overallCourseVariantSummary.hybrid.budgetMetrics.budgetRate, output.overallCourseVariantSummary.hybrid.budgetMetrics.flaggedRateAtBudget, output.overallCourseVariantSummary.hybrid.budgetMetrics.precisionAtBudget, output.overallCourseVariantSummary.hybrid.budgetMetrics.recallAtBudget, output.overallCourseVariantSummary.hybrid.budgetMetrics.overloadRatio],
+          ['challenger', output.overallCourseVariantSummary.challenger.brier, output.overallCourseVariantSummary.challenger.logLoss, output.overallCourseVariantSummary.challenger.rocAuc, output.overallCourseVariantSummary.challenger.averagePrecision, output.overallCourseVariantSummary.challenger.expectedCalibrationError, output.overallCourseVariantSummary.challenger.budgetMetrics.budgetRate, output.overallCourseVariantSummary.challenger.budgetMetrics.flaggedRateAtBudget, output.overallCourseVariantSummary.challenger.budgetMetrics.precisionAtBudget, output.overallCourseVariantSummary.challenger.budgetMetrics.recallAtBudget, output.overallCourseVariantSummary.challenger.budgetMetrics.overloadRatio],
+          ['heuristic', output.overallCourseVariantSummary.heuristic.brier, output.overallCourseVariantSummary.heuristic.logLoss, output.overallCourseVariantSummary.heuristic.rocAuc, output.overallCourseVariantSummary.heuristic.averagePrecision, output.overallCourseVariantSummary.heuristic.expectedCalibrationError, output.overallCourseVariantSummary.heuristic.budgetMetrics.budgetRate, output.overallCourseVariantSummary.heuristic.budgetMetrics.flaggedRateAtBudget, output.overallCourseVariantSummary.heuristic.budgetMetrics.precisionAtBudget, output.overallCourseVariantSummary.heuristic.budgetMetrics.recallAtBudget, output.overallCourseVariantSummary.heuristic.budgetMetrics.overloadRatio],
         ],
       ),
       '',

@@ -1,5 +1,6 @@
 import { buildApp } from '../src/app.js'
-import { loginRateLimitWindows } from '../src/db/schema.js'
+import { eq } from 'drizzle-orm'
+import { loginRateLimitWindows, userAccounts, userPasswordCredentials } from '../src/db/schema.js'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createTestApp, loginAs, TEST_NOW, TEST_ORIGIN } from './helpers/test-app.js'
 
@@ -9,6 +10,11 @@ afterEach(async () => {
   if (current) await current.close()
   current = null
 })
+
+function extractPasswordSetupToken(setupUrl: string) {
+  const url = new URL(setupUrl)
+  return url.searchParams.get('password-setup-token')
+}
 
 describe('session routes', () => {
   it('allows the Vite dev origin to call session routes with credentials', async () => {
@@ -119,6 +125,133 @@ describe('session routes', () => {
       'MENTOR',
       'HOD',
     ])
+  })
+
+  it('accepts email identifiers for academic login', async () => {
+    current = await createTestApp()
+
+    const login = await loginAs(current.app, 'kavitha.rao@msruas.ac.in', '1234')
+    expect(login.response.statusCode).toBe(200)
+    expect(login.body.user.email).toBe('kavitha.rao@msruas.ac.in')
+    expect(login.body.activeRoleGrant.roleCode).toBe('COURSE_LEADER')
+  })
+
+  it('requests, inspects, and redeems a password reset link while clearing old sessions', async () => {
+    current = await createTestApp()
+
+    const existingSession = await loginAs(current.app, 'kavitha.rao', '1234')
+    expect(existingSession.response.statusCode).toBe(200)
+
+    const request = await current.app.inject({
+      method: 'POST',
+      url: '/api/session/password-setup/request',
+      headers: { origin: TEST_ORIGIN },
+      payload: { identifier: 'kavitha.rao' },
+    })
+    expect(request.statusCode).toBe(200)
+    expect(request.json()).toMatchObject({
+      ok: true,
+      previewEnabled: true,
+      message: 'Password setup preview link is ready on this local system.',
+    })
+    const token = extractPasswordSetupToken(request.json().setupUrl)
+    expect(token).toBeTruthy()
+
+    const inspect = await current.app.inject({
+      method: 'GET',
+      url: `/api/session/password-setup/${token}`,
+    })
+    expect(inspect.statusCode).toBe(200)
+    expect(inspect.json()).toMatchObject({
+      purpose: 'reset',
+      username: 'kavitha.rao',
+      email: 'kavitha.rao@msruas.ac.in',
+      displayName: 'Dr. Kavitha Rao',
+    })
+
+    const redeem = await current.app.inject({
+      method: 'POST',
+      url: '/api/session/password-setup/redeem',
+      headers: { origin: TEST_ORIGIN },
+      payload: {
+        token,
+        password: 'resetpass123',
+      },
+    })
+    expect(redeem.statusCode).toBe(200)
+    expect(redeem.json()).toMatchObject({
+      ok: true,
+      purpose: 'reset',
+      username: 'kavitha.rao',
+    })
+
+    const restoredOldSession = await current.app.inject({
+      method: 'GET',
+      url: '/api/session',
+      headers: { cookie: existingSession.cookie },
+    })
+    expect(restoredOldSession.statusCode).toBe(401)
+
+    const consumedInspect = await current.app.inject({
+      method: 'GET',
+      url: `/api/session/password-setup/${token}`,
+    })
+    expect(consumedInspect.statusCode).toBe(400)
+
+    const oldPasswordLogin = await current.app.inject({
+      method: 'POST',
+      url: '/api/session/login',
+      headers: { origin: TEST_ORIGIN },
+      payload: {
+        identifier: 'kavitha.rao',
+        password: '1234',
+      },
+    })
+    expect(oldPasswordLogin.statusCode).toBe(401)
+
+    const newPasswordLogin = await current.app.inject({
+      method: 'POST',
+      url: '/api/session/login',
+      headers: { origin: TEST_ORIGIN },
+      payload: {
+        identifier: 'kavitha.rao@msruas.ac.in',
+        password: 'resetpass123',
+      },
+    })
+    expect(newPasswordLogin.statusCode).toBe(200)
+  })
+
+  it('issues invite links when a faculty account has no configured password yet', async () => {
+    current = await createTestApp()
+
+    const [user] = await current.db.select().from(userAccounts).where(eq(userAccounts.username, 'devika.shetty'))
+    expect(user).toBeTruthy()
+    await current.db.delete(userPasswordCredentials).where(eq(userPasswordCredentials.userId, user!.userId))
+
+    const request = await current.app.inject({
+      method: 'POST',
+      url: '/api/session/password-setup/request',
+      headers: { origin: TEST_ORIGIN },
+      payload: { identifier: 'devika.shetty' },
+    })
+    expect(request.statusCode).toBe(200)
+    const token = extractPasswordSetupToken(request.json().setupUrl)
+    expect(token).toBeTruthy()
+
+    const inspect = await current.app.inject({
+      method: 'GET',
+      url: `/api/session/password-setup/${token}`,
+    })
+    expect(inspect.statusCode).toBe(200)
+    expect(inspect.json()).toMatchObject({
+      purpose: 'invite',
+      username: 'devika.shetty',
+    })
+    expect(inspect.json().credentialStatus).toMatchObject({
+      passwordConfigured: false,
+      activeSetupRequest: true,
+      latestPurpose: 'invite',
+    })
   })
 
   it('guards system-admin routes from non-admin role contexts', async () => {

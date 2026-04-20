@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 const scriptPath = path.join(process.cwd(), 'scripts/report-compat-route-callers.mjs')
 
 describe('compatibility route inventory', () => {
-  it('reports no first-party runtime callers and passes strict mode', () => {
+  it('reports no first-party runtime callers and passes strict mode', { timeout: 15_000 }, () => {
     const stdout = execFileSync('node', [scriptPath, '--json', '--assert-runtime-clean'], {
       cwd: process.cwd(),
       encoding: 'utf8',

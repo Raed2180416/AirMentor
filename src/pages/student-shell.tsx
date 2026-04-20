@@ -230,7 +230,7 @@ export function StudentShellPage({
           entityId={card.checkpointContext?.simulationStageCheckpointId ?? undefined}
           studentId={card.student.studentId}
           eyebrow="Student Shell"
-          title={`${card.student.studentName} · deterministic proof explainer`}
+          title={`${card.student.studentName} · proof snapshot`}
           description={card.disclaimer}
           icon={<Shield size={22} color={T.accent} />}
           badges={(
@@ -243,9 +243,9 @@ export function StudentShellPage({
           )}
           notices={(
             <>
-              <InfoBanner message={`Active proof context ${card.runContext.runLabel} · ${card.runContext.status} · created ${new Date(card.runContext.createdAt).toLocaleString('en-IN')} · deterministic shell mode${card.checkpointContext ? ` · checkpoint ${card.checkpointContext.stageLabel} (semester ${card.checkpointContext.semesterNumber})` : ''}.`} />
+              <InfoBanner message={`Viewing ${card.runContext.runLabel} · ${card.runContext.status} · created ${new Date(card.runContext.createdAt).toLocaleString('en-IN')}${card.checkpointContext ? ` · Semester ${card.checkpointContext.semesterNumber} · ${card.checkpointContext.stageLabel}` : ''}.`} />
               <div data-proof-section="authority-banner">
-                <InfoBanner message="Authoritative bounded proof explainer for the selected checkpoint. Summary, timeline, and chat all bind to this proof card only; the chat cannot override policy-derived records or disclose hidden state." />
+                <InfoBanner message="This student proof page keeps the summary, timeline, and chat on the same saved snapshot. It cannot edit live records or reveal hidden model state." />
                 <InfoBanner tone="neutral" message={describeProofProvenance(card)} />
                 <InfoBanner tone="neutral" message={describeProofAvailability(card)} />
               </div>
@@ -261,24 +261,24 @@ export function StudentShellPage({
           popupCaption={card.checkpointContext
             ? `Semester ${card.checkpointContext.semesterNumber} · ${card.checkpointContext.stageLabel}`
             : `Run ${card.runContext.runLabel}`}
-          popupContent={() => (
-            <div style={{ display: 'grid', gap: 12 }}>
-              <InfoBanner message="Model usefulness is checkpoint-bound. Compare the policy-derived status with the no-action comparator before interpreting any simulated intervention / realized path." />
+        popupContent={() => (
+          <div style={{ display: 'grid', gap: 12 }}>
+              <InfoBanner message="Compare the current status, the no-action view, and the recorded intervention history together. All three come from the same selected proof snapshot." />
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
                 <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
-                  <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Policy-derived status</div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Current status</div>
                   <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>{card.overview.currentStatus.riskBand ?? 'Unavailable'}</div>
                   <div style={{ ...mono, fontSize: 10, color: T.muted }}>{card.overview.currentStatus.recommendedAction ?? 'No action'}</div>
                 </Card>
                 <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
-                  <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>No-action comparator</div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>No-action view</div>
                   <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>{card.counterfactual?.noActionRiskBand ?? 'Unavailable'}</div>
                   <div style={{ ...mono, fontSize: 10, color: T.muted }}>{card.counterfactual?.counterfactualLiftScaled != null ? `Counterfactual lift ${card.counterfactual.counterfactualLiftScaled > 0 ? '+' : ''}${card.counterfactual.counterfactualLiftScaled} scaled points` : 'No lift reported'}</div>
                 </Card>
                 <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
                   <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Intervention history</div>
                   <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>{card.interventions.interventionHistory.length}</div>
-                  <div style={{ ...mono, fontSize: 10, color: T.muted }}>Simulated intervention / realized path records</div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted }}>Recorded steps on this proof path</div>
                 </Card>
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -298,8 +298,8 @@ export function StudentShellPage({
 
         {error ? <div data-proof-section="load-error"><InfoBanner tone="error" message={error} /></div> : null}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 320px) minmax(0, 1fr)', gap: 16 }}>
-          <div style={{ display: 'grid', gap: 14, alignSelf: 'start' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
+          <div style={{ flex: '1 1 320px', maxWidth: 360, display: 'grid', gap: 14 }}>
             <Card data-proof-section="summary-rail" style={{ padding: 16, display: 'grid', gap: 10 }}>
               <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Summary Rail</div>
               <div style={{ ...mono, fontSize: 10, color: T.text }}>{card.student.studentName}</div>
@@ -401,7 +401,7 @@ export function StudentShellPage({
                 </Card>
                 <Card data-proof-section="overview-policy-status" style={{ padding: 16, display: 'grid', gap: 10 }}>
                   <PanelLabel label={card.overview.policyLabel} />
-                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Policy-derived status</div>
+                  <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Current status</div>
                   <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.8 }}>
                     Watch {card.overview.currentStatus.riskBand ?? 'Unavailable'}{card.overview.currentStatus.riskProbScaled != null ? ` at ${card.overview.currentStatus.riskProbScaled}%` : card.summaryRail.currentRiskDisplayProbabilityAllowed === false ? ' in band-only mode' : ''} · recommended action {card.overview.currentStatus.recommendedAction ?? 'none'} · reassessment {card.overview.currentStatus.reassessmentStatus ?? 'none'}{card.overview.currentStatus.queueState ? ` · queue ${card.overview.currentStatus.queueState}` : ''}{card.overview.currentStatus.simulatedActionTaken ? ` · simulated action ${card.overview.currentStatus.simulatedActionTaken}` : ''}.
                   </div>
@@ -422,7 +422,7 @@ export function StudentShellPage({
               {card.counterfactual ? (
                 <Card data-proof-section="no-action-comparator" style={{ padding: 16, display: 'grid', gap: 10 }}>
                     <PanelLabel label={card.counterfactual.panelLabel} />
-                    <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>No-action comparator</div>
+                    <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>No-action view</div>
                     <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.8 }}>
                       {card.counterfactual.noActionRiskBand ?? 'Unavailable'}{card.counterfactual.noActionRiskProbScaled != null ? ` at ${card.counterfactual.noActionRiskProbScaled}%` : ''} · lift {card.counterfactual.counterfactualLiftScaled ?? 0} scaled points.
                     </div>
@@ -586,7 +586,7 @@ export function StudentShellPage({
             ) : null}
 
             {activeTab === 'chat' ? (
-              <div style={{ display: 'grid', gap: 14 }}>
+          <div style={{ flex: '999 1 400px', display: 'grid', gap: 14 }}>
                 <Card data-proof-section="chat-panel" style={{ padding: 16, display: 'grid', gap: 12 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                     <div>

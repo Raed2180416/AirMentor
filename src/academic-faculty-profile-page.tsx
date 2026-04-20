@@ -9,7 +9,7 @@ import type {
   ApiAcademicFacultyProfile,
   ApiAdminCalendarMarker,
 } from './api/types'
-import { describeProofAvailability, describeProofProvenance } from './proof-provenance'
+import { describeProofProvenance } from './proof-provenance'
 import { ProofSurfaceHero, ProofSurfaceLauncher } from './proof-surface-shell'
 import { InfoBanner, MetricCard } from './system-admin-ui'
 import {
@@ -215,9 +215,7 @@ export function FacultyProfilePage({
 
         {proofOps ? (
           <div data-proof-section="proof-mode-authority">
-            <InfoBanner message="Proof mode is active. Use the Proof Control Plane, Risk Explorer, and Student Shell for checkpoint-bound evidence. Model usefulness and proof-semester counts on this page stay aligned to the selected checkpoint; permissions, appointments, and timetable-governance details remain operational context." />
             <InfoBanner tone="neutral" message={describeProofProvenance(proofOps)} />
-            <InfoBanner tone="neutral" message={describeProofAvailability(proofOps)} />
           </div>
         ) : null}
 
@@ -380,7 +378,7 @@ export function FacultyProfilePage({
               : 'Teaching-side proof summary for the current faculty scope.'}
             popupContent={() => (
               <div style={{ display: 'grid', gap: 12 }}>
-                <InfoBanner message="Model usefulness is checkpoint-bound here. Use the popup to verify queue counts, elective-fit context, and the selected proof semester before opening the full proof panel." />
+                <InfoBanner message="Use this popup to confirm the selected stage, queue size, and elective-fit count before opening the full proof panel." />
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
                   <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
                     <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Proof semester</div>
@@ -420,7 +418,7 @@ export function FacultyProfilePage({
             description="This panel only surfaces rerunnable proof data: active simulation runs, observed risk queue items, and elective-fit summaries. It does not expose latent-state internals."
             notices={(
               <div data-proof-section="proof-authority-note" style={{ display: 'grid', gap: 8 }}>
-                <InfoBanner message="Authoritative proof panel for this faculty scope. Use this card and the linked proof routes for checkpoint-bound evidence; nearby summary and scope cards stay checkpoint-bound where possible, while permissions, appointments, and timetable-governance details remain operational context." />
+                <InfoBanner message="This proof panel controls the faculty preview data only. Nearby teaching summaries follow the selected preview stage where possible, while permissions and timetable governance stay on live data." />
                 {proofOps ? <InfoBanner tone="neutral" message={describeProofProvenance(proofOps)} /> : null}
               </div>
             )}

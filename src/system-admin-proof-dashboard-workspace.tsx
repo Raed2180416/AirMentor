@@ -5,6 +5,7 @@ import type {
   ApiProofRunCheckpointDetail,
   ApiSimulationStageCheckpointSummary,
 } from './api/types'
+import type { BatchSetupReadiness } from './batch-setup-readiness'
 import { T, mono, sora } from './data'
 import { describeProofAvailability, describeProofProvenance, type ProofProvenanceLike } from './proof-provenance'
 import { ProofSurfaceHero, ProofSurfaceLauncher, ProofSurfaceTabPanel, ProofSurfaceTabs } from './proof-surface-shell'
@@ -139,6 +140,7 @@ type CheckpointEvidenceView = 'queue' | 'offerings'
 type SystemAdminProofDashboardWorkspaceProps = {
   proofDashboard: ApiProofDashboard | null
   proofDashboardLoading: boolean
+  batchSetupReadiness?: BatchSetupReadiness | null
   dashboardLayout?: 'embedded' | 'page'
   showLauncher?: boolean
   initialActiveDashboardTab?: ProofDashboardTabId
@@ -192,6 +194,7 @@ type SystemAdminProofDashboardWorkspaceProps = {
 export function SystemAdminProofDashboardWorkspace({
   proofDashboard,
   proofDashboardLoading,
+  batchSetupReadiness = null,
   dashboardLayout = 'embedded',
   showLauncher = true,
   initialActiveDashboardTab,
@@ -278,6 +281,10 @@ export function SystemAdminProofDashboardWorkspace({
   const activeRunSnapshots = activeRunDetail?.snapshots ?? []
   const activeRunBaselineSnapshot = activeRunSnapshots.find(item => /baseline/i.test(item.snapshotLabel))
     ?? activeRunSnapshots[0]
+  const proofSetupBlocked = !!batchSetupReadiness && !batchSetupReadiness.ready
+  const proofSetupMessage = proofSetupBlocked
+    ? `Finish setup before changing proof data: ${batchSetupReadiness.blockers.join(' ')}`
+    : null
   const activeQueueDiagnostics = activeRunDetail?.queueDiagnostics
   const activeWorkerDiagnostics = activeRunDetail?.workerDiagnostics ?? null
   const activeCheckpointReadiness = activeRunDetail?.checkpointReadiness
@@ -431,7 +438,7 @@ export function SystemAdminProofDashboardWorkspace({
 
       <motion.div layout style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
         <Card style={{ padding: 10, background: T.surface }}>
-          <div style={{ ...mono, fontSize: 10, color: T.dim }}>Active semester</div>
+          <div style={{ ...mono, fontSize: 10, color: T.dim }}>Live semester</div>
           <div style={{ ...mono, fontSize: 11, color: T.text, marginTop: 4 }}>
             {activeOperationalSemester != null ? `Semester ${activeOperationalSemester}` : 'Unavailable'}
           </div>
@@ -453,22 +460,23 @@ export function SystemAdminProofDashboardWorkspace({
       <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 8 }}>
         <div style={{ ...mono, fontSize: 10, color: T.dim }}>Progress actions</div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Btn size="sm" variant="ghost" onClick={onCreateProofImport}>Create Import</Btn>
-          <Btn size="sm" variant="ghost" onClick={onValidateLatestProofImport} disabled={!importsCount}>Validate Import</Btn>
-          <Btn size="sm" variant="ghost" onClick={onCreateProofRun} disabled={!importsCount}>Run / Rerun</Btn>
-          <Btn size="sm" variant="ghost" onClick={onRecomputeProofRunRisk} disabled={!activeRunDetail}>Recompute Risk</Btn>
+          <Btn size="sm" variant="ghost" onClick={onCreateProofImport} disabled={proofSetupBlocked}>Capture Snapshot</Btn>
+          <Btn size="sm" variant="ghost" onClick={onValidateLatestProofImport} disabled={!importsCount}>Check Mapping</Btn>
+          <Btn size="sm" variant="ghost" onClick={onCreateProofRun} disabled={proofSetupBlocked || !importsCount}>Generate Preview</Btn>
+          <Btn size="sm" variant="ghost" onClick={onRecomputeProofRunRisk} disabled={proofSetupBlocked || !activeRunDetail}>Refresh Risk</Btn>
           <Btn
             size="sm"
             variant="ghost"
             onClick={() => onResetProofRunFromScratch(activeRunDetail.simulationRunId, activeRunBaselineSnapshot?.simulationResetSnapshotId)}
             disabled={!activeRunBaselineSnapshot}
           >
-            Reset To Semester 1
+            Reset Preview To Start
           </Btn>
         </div>
+        {proofSetupMessage ? <InfoBanner tone="error" message={proofSetupMessage} /> : null}
         <InfoBanner
           tone="neutral"
-          message="Create Import snapshots the latest curriculum + scope mappings, Validate Import checks crosswalk readiness, and Run / Rerun materializes the proof run used by faculty and HoD surfaces."
+          message="Capture Snapshot copies current setup into proof mode. Check Mapping verifies import links. Generate Preview builds the stage-by-stage faculty and HoD preview."
         />
       </Card>
     </div>
@@ -487,14 +495,14 @@ export function SystemAdminProofDashboardWorkspace({
       surface="system-admin-proof-control-plane"
       entityId={selectedProofCheckpoint?.simulationStageCheckpointId ?? activeRunDetail?.simulationRunId ?? undefined}
       dataProofDashboardLayout={dashboardLayout}
-      eyebrow="Proof Control Plane"
-      title="Proof Control Plane"
-      description="A compact proof shell for run control, checkpoint playback, and runtime evidence."
+      eyebrow="Simulation Controls"
+      title="Simulation Controls"
+      description="Import live data, run the simulation, and review results stage by stage using the checkpoint controls below."
       headerActions={(
         <>
-          <Btn size="sm" dataProofAction="proof-create-import" onClick={onCreateProofImport}>Create Import</Btn>
-          <Btn size="sm" dataProofAction="proof-run-rerun" onClick={onCreateProofRun} disabled={!importsCount}>Run / Rerun</Btn>
-          <Btn size="sm" variant="ghost" dataProofAction="proof-recompute-risk" onClick={onRecomputeProofRunRisk} disabled={!activeRunDetail}>Recompute Risk</Btn>
+          <Btn size="sm" dataProofAction="proof-create-import" onClick={onCreateProofImport} disabled={proofSetupBlocked}>Import Data</Btn>
+          <Btn size="sm" dataProofAction="proof-run-rerun" onClick={onCreateProofRun} disabled={proofSetupBlocked || !importsCount}>Run Simulation</Btn>
+          <Btn size="sm" variant="ghost" dataProofAction="proof-recompute-risk" onClick={onRecomputeProofRunRisk} disabled={proofSetupBlocked || !activeRunDetail}>Recalculate Risk</Btn>
         </>
       )}
       badges={activeRunDetail ? (
@@ -509,9 +517,10 @@ export function SystemAdminProofDashboardWorkspace({
           <Chip color={T.dim}>{importsCount} imports</Chip>
         </>
       ) : null}
-      notices={proofDashboardLoading || proofPlaybackRestoreNotice || playbackOverridesActiveSemester ? (
+      notices={proofDashboardLoading || proofSetupMessage || proofPlaybackRestoreNotice || playbackOverridesActiveSemester ? (
         <>
           {proofDashboardLoading ? <InfoBanner message="Loading proof control-plane data..." /> : null}
+          {proofSetupMessage ? <InfoBanner tone="error" message={proofSetupMessage} /> : null}
           {proofPlaybackRestoreNotice ? (
             <RestoreBanner
               tone={proofPlaybackRestoreNotice.tone}
@@ -524,7 +533,7 @@ export function SystemAdminProofDashboardWorkspace({
           {playbackOverridesActiveSemester ? (
             <InfoBanner
               tone="neutral"
-              message={`Playback override active. The dashboard is pinned to Semester ${selectedProofCheckpoint?.semesterNumber} · ${selectedProofCheckpoint?.stageLabel}, while the operational semester remains Semester ${activeOperationalSemester}.`}
+              message={`You are viewing Semester ${selectedProofCheckpoint?.semesterNumber} · ${selectedProofCheckpoint?.stageLabel}. Live operations stay on Semester ${activeOperationalSemester} until you switch the live semester.`}
             />
           ) : null}
         </>
@@ -550,10 +559,10 @@ export function SystemAdminProofDashboardWorkspace({
           <Card data-proof-section="proof-dashboard-rail" style={{ padding: 12, background: T.surface, display: 'grid', gap: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
               <div style={{ display: 'grid', gap: 4, minWidth: 220, flex: 1 }}>
-                <div style={{ ...mono, fontSize: 10, color: accessibleRailEyebrowColor }}>Proof workflow rail</div>
-                <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>Semester + checkpoint controls stay visible here.</div>
+                <div style={{ ...mono, fontSize: 10, color: accessibleRailEyebrowColor }}>Stage controls</div>
+                <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>Keep the live semester and selected stage in view.</div>
                 <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
-                  Use this rail to activate the live proof semester, step playback, and inspect the selected checkpoint without bouncing between tabs.
+                  Use these controls to choose the live semester, step through the preview, and inspect the selected stage without switching tabs.
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -569,7 +578,7 @@ export function SystemAdminProofDashboardWorkspace({
             </div>
 
             <div style={{ display: 'grid', gap: 8 }}>
-              <div style={{ ...mono, fontSize: 10, color: T.dim }}>Operational semester</div>
+              <div style={{ ...mono, fontSize: 10, color: T.dim }}>Live semester</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'nowrap', overflowX: 'auto', paddingBottom: 2, scrollbarGutter: 'stable' }}>
                 {availableOperationalSemesters.map(semesterNumber => (
                   <Btn
@@ -603,7 +612,7 @@ export function SystemAdminProofDashboardWorkspace({
                       onClick={() => onStepProofPlayback('start')}
                       disabled={activeRunCheckpoints.length === 0 || selectedProofCheckpoint.simulationStageCheckpointId === activeRunCheckpoints[0]?.simulationStageCheckpointId}
                     >
-                      Reset Playback To Semester 1
+                      Reset Preview To Start
                     </Btn>
                     <Btn
                       size="sm"
@@ -612,7 +621,7 @@ export function SystemAdminProofDashboardWorkspace({
                       onClick={() => onResetProofRunFromScratch(activeRunDetail.simulationRunId, activeRunBaselineSnapshot?.simulationResetSnapshotId)}
                       disabled={!activeRunBaselineSnapshot}
                     >
-                      Reset Branch From Scratch
+                      Reset Full Preview
                     </Btn>
                     <Btn
                       size="sm"
@@ -621,7 +630,7 @@ export function SystemAdminProofDashboardWorkspace({
                       onClick={() => onStepProofPlayback('previous')}
                       disabled={!selectedProofCheckpoint.previousCheckpointId}
                     >
-                      Previous
+                      Previous Stage
                     </Btn>
                     <Btn
                       size="sm"
@@ -630,7 +639,7 @@ export function SystemAdminProofDashboardWorkspace({
                       onClick={() => onStepProofPlayback('next')}
                       disabled={!selectedProofCheckpointCanStepForward || !selectedProofCheckpoint.nextCheckpointId}
                     >
-                      Next
+                      Next Stage
                     </Btn>
                     <Btn
                       size="sm"
@@ -638,7 +647,7 @@ export function SystemAdminProofDashboardWorkspace({
                       onClick={() => onStepProofPlayback('end')}
                       disabled={!selectedProofCheckpointCanPlayToEnd}
                     >
-                      Play To End
+                      Jump To Latest Stage
                     </Btn>
                   </div>
                 </div>
@@ -646,7 +655,7 @@ export function SystemAdminProofDashboardWorkspace({
                 <div data-proof-section="selected-checkpoint-banner">
                   <InfoBanner
                     tone={selectedProofCheckpointBlocked || selectedProofCheckpointHasBlockedProgression ? 'error' : 'neutral'}
-                    message={`Selected checkpoint: semester ${selectedProofCheckpoint.semesterNumber} · ${selectedProofCheckpoint.stageLabel}. ${selectedProofCheckpointBlocked || selectedProofCheckpointHasBlockedProgression ? 'Playback progression is blocked until all queue items at this checkpoint are resolved.' : 'This stage is synced into the academic playback overlay for teaching surfaces.'}`}
+                    message={`Viewing Semester ${selectedProofCheckpoint.semesterNumber} · ${selectedProofCheckpoint.stageLabel}. ${selectedProofCheckpointBlocked || selectedProofCheckpointHasBlockedProgression ? 'Resolve every task at this stage before moving forward.' : 'This preview is synced to the faculty and HoD proof pages.'}`}
                   />
                 </div>
 
@@ -669,13 +678,13 @@ export function SystemAdminProofDashboardWorkspace({
 
             {dashboardProvenance ? (
               <details data-proof-section="proof-dashboard-scope-details">
-                <summary style={{ ...mono, fontSize: 10, color: T.dim, cursor: 'pointer' }}>Scope details</summary>
+                <summary style={{ ...mono, fontSize: 10, color: T.dim, cursor: 'pointer' }}>Why these numbers match</summary>
                 <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
                   <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>{describeProofProvenance(dashboardProvenance)}</div>
                   <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>{describeProofAvailability(dashboardProvenance)}</div>
                   {playbackOverridesActiveSemester ? (
                     <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
-                      Playback override active. The dashboard is pinned to Semester {selectedProofCheckpoint?.semesterNumber} · {selectedProofCheckpoint?.stageLabel}, while the operational semester remains Semester {activeOperationalSemester}.
+                      You are viewing Semester {selectedProofCheckpoint?.semesterNumber} · {selectedProofCheckpoint?.stageLabel}. Live operations stay on Semester {activeOperationalSemester}.
                     </div>
                   ) : null}
                 </div>
@@ -931,7 +940,7 @@ export function SystemAdminProofDashboardWorkspace({
             <motion.div layout style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
               <ScrollCard title="Administrative Actions" eyebrow="Operations" maxHeight={220}>
                 <div style={{ display: 'grid', gap: 8 }}>
-                  <Btn size="sm" variant="ghost" dataProofAction="proof-validate-import" onClick={onValidateLatestProofImport} disabled={!importsCount}>Validate Import</Btn>
+                  <Btn size="sm" variant="ghost" dataProofAction="proof-validate-import" onClick={onValidateLatestProofImport} disabled={!importsCount}>Check Mapping</Btn>
                   <Btn size="sm" variant="ghost" dataProofAction="proof-review-crosswalks" onClick={onReviewPendingCrosswalks} disabled={!crosswalkReviewCount}>Review Mappings</Btn>
                   <Btn size="sm" variant="ghost" dataProofAction="proof-approve-import" onClick={onApproveLatestProofImport} disabled={!importsCount}>Approve Import</Btn>
                   <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
@@ -983,7 +992,7 @@ export function SystemAdminProofDashboardWorkspace({
                       <Btn size="sm" variant="ghost" onClick={() => onArchiveProofRun(item.simulationRunId)}>Archive</Btn>
                       {item.simulationRunId === activeRunDetail?.simulationRunId && activeRunBaselineSnapshot ? (
                         <Btn size="sm" variant="ghost" onClick={() => onResetProofRunFromScratch(item.simulationRunId, activeRunBaselineSnapshot.simulationResetSnapshotId)}>
-                          Reset To Semester 1
+                          Reset Preview To Start
                         </Btn>
                       ) : null}
                       {item.simulationRunId === activeRunDetail?.simulationRunId && activeRunSnapshots[0] ? (

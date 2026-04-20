@@ -86,6 +86,7 @@ describe('RiskExplorerPage', () => {
           simulationCalibrated: true,
         },
         featureCompleteness: completeFeatureCompleteness,
+        featureConfidenceClass: completeFeatureCompleteness.confidenceClass,
         featureProvenance: completeFeatureProvenance,
         trainedRiskHeads: {
           currentRiskBand: 'High',
@@ -229,9 +230,9 @@ describe('RiskExplorerPage', () => {
     expect(markupAdvanced).toContain('data-proof-section="elective-fit"')
     expect(markupDetails).toContain('data-proof-section="component-evidence-grid"')
     expect(markup).toContain('Simulation-calibrated proof analysis only')
-    expect(markup).toContain('Provenance surface for checkpoint-bound analysis.')
-    expect(markup).toContain('Checkpoint-bound proof counts')
-    expect(markup).toContain('checkpoint semester 6')
+    expect(markup).toContain('Viewing the saved checkpoint')
+    expect(markup).toContain('Numbers are fixed to the selected preview checkpoint.')
+    expect(markup).toContain('You are viewing a saved preview checkpoint (Semester 6)')
     expect(markup).toContain('risk-prod-v1')
     expect(markupAdvanced).toContain('Trained Risk Heads')
     expect(markupAdvanced).toContain('Derived Scenario Heads')
@@ -307,6 +308,7 @@ describe('RiskExplorerPage', () => {
           simulationCalibrated: true,
         },
         featureCompleteness: completeFeatureCompleteness,
+        featureConfidenceClass: completeFeatureCompleteness.confidenceClass,
         featureProvenance: completeFeatureProvenance,
         trainedRiskHeads: {
           currentRiskBand: 'Medium',
@@ -436,7 +438,7 @@ describe('RiskExplorerPage', () => {
     const markupDetails = renderToStaticMarkup(createElement(RiskExplorerPage, { ...props, initialTab: 'details' }))
 
     expect(markup).toContain('Sem 3')
-    expect(markup).toContain('checkpoint semester 3')
+    expect(markup).toContain('You are viewing a saved preview checkpoint (Semester 3)')
     expect(markupDetails).toContain('data-proof-section="semester-trajectory"')
     expect(markupDetails).toContain('Semester 1')
     expect(markupDetails).toContain('Semester 2')
@@ -510,6 +512,7 @@ describe('RiskExplorerPage', () => {
           simulationCalibrated: true,
         },
         featureCompleteness: completeFeatureCompleteness,
+        featureConfidenceClass: completeFeatureCompleteness.confidenceClass,
         featureProvenance: completeFeatureProvenance,
         trainedRiskHeads: {
           currentRiskBand: 'High',
@@ -606,7 +609,7 @@ describe('RiskExplorerPage', () => {
     const markup = renderToStaticMarkup(createElement(RiskExplorerPage, props))
 
     expect(markup).toContain('Sem 5 · Post TT2')
-    expect(markup).toContain('checkpoint semester 5')
+    expect(markup).toContain('You are viewing a saved preview checkpoint (Semester 5)')
     expect(markup).toContain('Stage blocked')
     expect(markup).toContain('Playback progression is blocked at this checkpoint until 3 queue item(s) are resolved.')
   })
@@ -688,6 +691,7 @@ describe('RiskExplorerPage', () => {
           },
         },
         featureCompleteness: completeFeatureCompleteness,
+        featureConfidenceClass: completeFeatureCompleteness.confidenceClass,
         featureProvenance: completeFeatureProvenance,
         trainedRiskHeads: {
           currentRiskBand: 'Medium',

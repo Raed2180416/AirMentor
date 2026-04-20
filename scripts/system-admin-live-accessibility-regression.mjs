@@ -616,7 +616,7 @@ async function resolveTeacherProofActionSource(teacherProofPanel) {
 
 async function assertTeacherProofPanelBaseline(teacherProofPanel) {
   await runAccessibilityTreeAssertion(teacherProofPanel, 'Teacher proof panel tree', [
-    { name: 'Proof Control Plane' },
+    { name: 'Simulation Controls' },
     { name: 'Monitoring queue' },
     { name: 'elective fit' },
   ])

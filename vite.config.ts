@@ -16,6 +16,11 @@ const liveApiProxy = apiProxyTarget && apiBaseUrl === '/'
         changeOrigin: true,
         secure: false,
       },
+      '/health': {
+        target: apiProxyTarget,
+        changeOrigin: true,
+        secure: false,
+      },
     }
   : undefined
 

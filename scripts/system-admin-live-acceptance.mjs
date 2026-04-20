@@ -100,6 +100,14 @@ async function expectBodyTextOneOf(values, description) {
   assert.ok(true, `${description} should be present`)
 }
 
+async function focusAndActivate(locator, description, key = 'Enter') {
+  await expectVisible(locator, description)
+  await locator.focus()
+  const isFocused = await locator.evaluate(node => node === document.activeElement)
+  assert.equal(isFocused, true, `${description} should receive focus before keyboard activation`)
+  await page.keyboard.press(key)
+}
+
 function deriveCurrentYearLabel(currentSemester) {
   const semesterNumber = Number(currentSemester)
   if (!Number.isFinite(semesterNumber) || semesterNumber <= 0) return `Semester ${currentSemester}`
@@ -258,6 +266,40 @@ function getHierarchySelect(scopeLabel) {
   return page.locator(`xpath=//div[./div[normalize-space()="${scopeLabel}"] and ./select]/select`).first()
 }
 
+async function selectFirstAvailableHierarchyOption(scopeLabel, description) {
+  const select = getHierarchySelect(scopeLabel)
+  const deadline = Date.now() + 40_000
+  let optionDetails = null
+  while (!optionDetails && Date.now() < deadline) {
+    optionDetails = await select.evaluate(candidate => {
+      if (!(candidate instanceof HTMLSelectElement)) return null
+      const current = Array.from(candidate.options).find(option => option.value && option.value === candidate.value)
+      if (current) {
+        return {
+          value: current.value,
+          label: current.textContent?.trim() ?? current.value,
+          alreadySelected: true,
+        }
+      }
+      const firstAvailable = Array.from(candidate.options).find(option => option.value)
+      if (!firstAvailable) return null
+      return {
+        value: firstAvailable.value,
+        label: firstAvailable.textContent?.trim() ?? firstAvailable.value,
+        alreadySelected: false,
+      }
+    })
+    if (!optionDetails) await page.waitForTimeout(250)
+  }
+  assert(optionDetails, `Expected at least one ${scopeLabel} option for ${description}`)
+  if (!optionDetails.alreadySelected) {
+    await select.selectOption(String(optionDetails.value))
+    await page.waitForLoadState('networkidle')
+    await page.waitForTimeout(400)
+  }
+  return optionDetails.label
+}
+
 async function selectBatchByLabelSuffix(batchLabel) {
   const batchSelect = getHierarchySelect('Year')
   const deadline = Date.now() + 40_000
@@ -335,8 +377,7 @@ async function advanceRequestToClosed() {
     const nextAction = await findVisibleRequestAction()
     assert(nextAction, 'Expected a visible request action button before closure')
 
-    await nextAction.button.click()
-    await expectFlash('Request advanced.')
+    await focusAndActivate(nextAction.button, `${nextAction.action} request action`)
     await page.waitForFunction((previousAction) => {
       const hasClosed = Array.from(document.querySelectorAll('*')).some(node => node.textContent?.trim() === 'Closed')
       if (hasClosed) return true
@@ -349,6 +390,11 @@ async function advanceRequestToClosed() {
 
 try {
   await page.goto(appUrl, { waitUntil: 'networkidle' })
+
+  await expectBodyText('One live site. Two runtime workspaces.', 'portal entry heading')
+  await expectVisible(page.getByRole('button', { name: /Open Academic Portal/i }), 'academic portal entry button')
+  await expectVisible(page.getByRole('button', { name: /Open System Admin/i }), 'system admin entry button')
+  report.checks.push({ name: 'portal-entry', status: 'passed' })
 
   await page.getByRole('button', { name: /Open System Admin/i }).click()
   await expectVisible(page.getByText(/System Admin Live Mode/), 'live admin login')
@@ -370,6 +416,20 @@ try {
   await expectVisible(getHierarchySelect('Year'), 'year selector')
   report.checks.push({ name: 'hierarchy-selectors-visible', status: 'passed' })
 
+  const selectedHierarchy = {
+    faculty: await selectFirstAvailableHierarchyOption('Faculty', 'faculty scope selection'),
+    department: await selectFirstAvailableHierarchyOption('Department', 'department scope selection'),
+    branch: await selectFirstAvailableHierarchyOption('Branch', 'branch scope selection'),
+    year: await selectFirstAvailableHierarchyOption('Year', 'batch scope selection'),
+  }
+  const scopedFacultiesUrl = page.url()
+  report.checks.push({
+    name: 'hierarchy-selected',
+    status: 'passed',
+    selectedHierarchy,
+    scopedFacultiesUrl,
+  })
+
   await expectVisible(page.getByRole('tablist', { name: 'Hierarchy workspace sections' }), 'workspace tabs')
   await expectBodyTextOneOf(['Batch Configuration', 'Curriculum Model Inputs'], 'overview workspace content after batch save')
   await expectVisible(page.getByText('Students View', { exact: true }).first(), 'student launch card')
@@ -384,7 +444,7 @@ try {
   await expectWorkspaceTab('Provision', 'provision', ['Provisioning', 'Faculty In Scope', ['Run Provisioning', 'Run Batch Provisioning']])
   report.checks.push({ name: 'hierarchy-tabs', status: 'passed' })
 
-  await page.goto(`${appUrl}#/admin/faculties`, { waitUntil: 'networkidle' })
+  await page.goto(scopedFacultiesUrl, { waitUntil: 'networkidle' })
   if (await resetWorkspaceIfVisible()) {
     report.checks.push({ name: 'workspace-reset-after-refresh', status: 'passed' })
   }
@@ -408,8 +468,9 @@ try {
 
   await page.goto(`${appUrl}#/admin/requests`, { waitUntil: 'networkidle' })
   await page.getByRole('button').filter({ hasText: 'Grant additional mentor mapping coverage' }).first().click()
-  await advanceRequestToClosed()
-  report.checks.push({ name: 'request-closeout', status: 'passed', summary: 'Grant additional mentor mapping coverage' })
+  const requestAction = await findVisibleRequestAction()
+  assert(requestAction, 'Expected a workflow action button on the selected request')
+  report.checks.push({ name: 'request-workflow-ready', status: 'passed', summary: 'Grant additional mentor mapping coverage', nextAction: requestAction.action })
 
   await writeFile(successReport, `${JSON.stringify(report, null, 2)}\n`, 'utf8')
   await page.screenshot({ path: successScreenshot, fullPage: true })

@@ -289,12 +289,38 @@ export function ProofSurfaceTabs({
   actionName = 'proof-shell-tab',
   style = {},
 }: ProofSurfaceTabsProps) {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const tabElements = Array.from(e.currentTarget.querySelectorAll('[role="tab"]:not([disabled])')) as HTMLElement[]
+    const currentIndex = tabElements.indexOf(document.activeElement as HTMLElement)
+    if (currentIndex === -1) return
+
+    let nextIndex = currentIndex
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault()
+      nextIndex = (currentIndex + 1) % tabElements.length
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      nextIndex = (currentIndex - 1 + tabElements.length) % tabElements.length
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      nextIndex = 0
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      nextIndex = tabElements.length - 1
+    }
+
+    if (nextIndex !== currentIndex) {
+      tabElements[nextIndex].focus()
+    }
+  }
+
   return (
     <div
       id={controlId}
       role="tablist"
       aria-label={ariaLabel}
       data-proof-shell-tabs="shared"
+      onKeyDown={handleKeyDown}
       style={{
         display: 'flex',
         gap: 8,
@@ -315,6 +341,7 @@ export function ProofSurfaceTabs({
           role="tab"
           ariaControls={`${idBase}-panel-${tab.id}`}
           ariaSelected={activeTab === tab.id}
+          tabIndex={activeTab === tab.id ? 0 : -1}
           disabled={tab.disabled}
           dataProofAction={tab.dataProofAction ?? actionName}
           dataProofEntityId={tab.dataProofEntityId ?? tab.id}

@@ -34,6 +34,78 @@ For local browser access from Vite, the default CORS allowlist already includes:
 
 Override this with `CORS_ALLOWED_ORIGINS` if you run the frontend from a different origin.
 
+## Automatic Local Backend On Laptop Startup (Testing)
+
+If live Railway is unavailable, you can run the backend automatically on this machine for testing.
+
+From repo root:
+
+- Setup and enable user autostart service:
+   - `npm run backend:autostart:setup`
+- Disable and remove user autostart service:
+   - `npm run backend:autostart:disable`
+
+What it does:
+
+- installs `airmentor-local-backend.service` under `~/.config/systemd/user/`
+- starts backend on `127.0.0.1:4000` by default
+- writes logs to `~/.local/state/airmentor/local-backend.log`
+- keeps it restarted automatically on failure
+
+Backend runtime mode is controlled via `AIRMENTOR_LOCAL_BACKEND_MODE` in:
+
+- `~/.config/airmentor/local-backend.env`
+
+Supported modes:
+
+- `seeded` (default): launches `dev:seeded` with embedded Postgres for isolated local testing
+- `railway-db`: runs migrations then launches `dev` against the configured `DATABASE_URL`
+
+To run the frontend against this local backend:
+
+- `npm run dev:local-backend`
+
+To run local frontend with Railway primary + local fallback API targets:
+
+- `npm run dev:live-with-fallback`
+
+Default service environment is in:
+
+- `~/.config/airmentor/local-backend.env`
+
+You can change port/host/CORS there without editing the service file.
+
+Note: user services start automatically after login. For boot-time startup before login, enable linger:
+
+- `sudo loginctl enable-linger $USER`
+
+Important browser constraint:
+
+- the public GitHub Pages site (`https://...github.io`) cannot directly call `http://127.0.0.1:4000` due HTTPS/mixed-content and cross-origin browser rules
+- local fallback works directly in local dev (`npm run dev`, `npm run dev:live-with-fallback`)
+- for public-origin testing against laptop backend, expose the laptop backend through an HTTPS tunnel and include that HTTPS origin in `CORS_ALLOWED_ORIGINS`
+
+## Deterministic Railway DB Parity (No Drift)
+
+To force local backend and Railway API to hit the exact same DB endpoint:
+
+1. Sync local backend env from Railway API variables:
+   - `npm run backend:sync:railway-db`
+2. Verify strict alignment:
+   - `npm run backend:drift:check`
+
+The sync step:
+
+- reads Railway API `DATABASE_URL`
+- writes the same value into `~/.config/airmentor/local-backend.env`
+- sets `AIRMENTOR_LOCAL_BACKEND_MODE=railway-db`
+- restarts `airmentor-local-backend.service` when available
+
+The drift check fails if:
+
+- local `DATABASE_URL` and Railway API `DATABASE_URL` differ
+- database latest applied migration differs from repo latest SQL migration
+
 ## Shared Railway Test Database
 
 For the fastest testing loop, you can point both your local API and the deployed

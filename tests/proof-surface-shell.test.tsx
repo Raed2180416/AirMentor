@@ -37,8 +37,8 @@ function ProofTabsHarness() {
         tabId: 'overview',
         activeTab,
         sectionId: 'proof-panel-overview',
+        children: createElement('div', null, 'Overview panel'),
       },
-      createElement('div', null, 'Overview panel'),
     ),
     createElement(
       ProofSurfaceTabPanel,
@@ -47,8 +47,8 @@ function ProofTabsHarness() {
         tabId: 'details',
         activeTab,
         sectionId: 'proof-panel-details',
+        children: createElement('div', null, 'Details panel'),
       },
-      createElement('div', null, 'Details panel'),
     ),
   )
 }

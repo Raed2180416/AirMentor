@@ -6,6 +6,7 @@ import {
   InfoBanner,
   SectionHeading,
   formatDateTime,
+  getStatusColor,
 } from './system-admin-ui'
 import { Btn, Card, Chip } from './ui-primitives'
 
@@ -44,7 +45,7 @@ export function SystemAdminRequestWorkspace({
         caption="HoD-issued permanent changes move through admin review, approval, implementation, and closure."
         toneColor={toneColor}
       />
-      <div style={{ display: 'grid', gridTemplateColumns: '0.96fr 1.04fr', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
         <Card style={{ padding: 18, display: 'grid', gap: 10, alignContent: 'start' }}>
           {requests.map(request => (
             <EntityButton
@@ -59,7 +60,7 @@ export function SystemAdminRequestWorkspace({
                     {request.requestType} · {request.scopeType}:{request.scopeId} · due {formatDateTime(request.dueAt)}
                   </div>
                 </div>
-                <Chip color={request.status === 'Closed' ? T.dim : request.status === 'Implemented' ? T.success : T.warning}>
+                <Chip color={getStatusColor(request.status)}>
                   {request.status}
                 </Chip>
               </div>
@@ -82,7 +83,7 @@ export function SystemAdminRequestWorkspace({
                   <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 6, maxWidth: 720 }}>{selectedRequest.details}</div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <Chip color={selectedRequest.status === 'Closed' ? T.dim : selectedRequest.status === 'Implemented' ? T.success : T.warning}>
+                  <Chip color={getStatusColor(selectedRequest.status)}>
                     {selectedRequest.status}
                   </Chip>
                   {['New', 'In Review', 'Needs Info', 'Approved', 'Implemented', 'Rejected'].includes(selectedRequest.status) ? (

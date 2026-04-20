@@ -1,10 +1,10 @@
 import { drizzle } from 'drizzle-orm/node-postgres'
-import { Pool } from 'pg'
+import { Pool, type PoolConfig } from 'pg'
 import { emitOperationalEvent, normalizeTelemetryError } from '../lib/telemetry.js'
 import { allTables } from './schema.js'
 
-export function createPool(connectionString: string) {
-  const pool = new Pool({ connectionString })
+export function createPool(connectionString: string, options: Partial<PoolConfig> = {}) {
+  const pool = new Pool({ connectionString, ...options })
   pool.on('error', error => {
     emitOperationalEvent('database.pool.error', {
       error: normalizeTelemetryError(error),

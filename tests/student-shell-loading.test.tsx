@@ -80,7 +80,7 @@ function buildCard(): ApiStudentAgentCard {
       counterfactualLiftScaled: 6,
       currentRiskDisplayProbabilityAllowed: true,
       currentRiskSupportWarning: null,
-      currentRiskCalibrationMethod: 'isotonic-v1',
+      currentRiskCalibrationMethod: 'isotonic',
       primaryCourseCode: 'MC301',
       primaryCourseTitle: 'Discrete Structures',
       nextDueAt: null,
@@ -218,7 +218,7 @@ describe('StudentShellPage timeline loading', () => {
     }))
 
     await waitFor(() => {
-      expect(screen.getByText(/deterministic proof explainer/i)).toBeTruthy()
+      expect(screen.getByText(/proof snapshot/i)).toBeTruthy()
     })
     expect(loadCard).toHaveBeenCalledTimes(1)
     expect(loadTimeline).not.toHaveBeenCalled()

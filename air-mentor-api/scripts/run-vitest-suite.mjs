@@ -10,6 +10,8 @@ const rootDir = path.resolve(__dirname, '..')
 const workspaceRootDir = path.resolve(rootDir, '..')
 const testsDir = path.join(rootDir, 'tests')
 const passThroughArgs = process.argv.slice(2)
+const explicitFileArgs = passThroughArgs.filter(arg => /\.test\.tsx?$/.test(arg))
+const passThroughArgsWithoutFiles = passThroughArgs.filter(arg => !/\.test\.tsx?$/.test(arg))
 const suite = process.env.AIRMENTOR_BACKEND_SUITE === 'proof-rc' ? 'proof-rc' : 'fast'
 const proofRcFiles = new Set([
   path.join(testsDir, 'hod-proof-analytics.test.ts'),
@@ -47,7 +49,7 @@ async function collectTestFiles(dir) {
 function runVitestFile(file) {
   return new Promise((resolve) => {
     const start = Date.now()
-    const child = spawn(vitestEntrypoint, ['run', file, ...passThroughArgs], {
+    const child = spawn(vitestEntrypoint, ['run', file, ...passThroughArgsWithoutFiles], {
       cwd: rootDir,
       env: {
         ...process.env,
@@ -84,9 +86,11 @@ function formatDuration(durationMs) {
 }
 
 const allFiles = await collectTestFiles(testsDir)
-const selectedFiles = suite === 'proof-rc'
-  ? allFiles
-  : allFiles.filter(file => !proofRcFiles.has(file))
+const selectedFiles = explicitFileArgs.length > 0
+  ? explicitFileArgs.map(file => (path.isAbsolute(file) ? file : path.resolve(rootDir, file)))
+  : (suite === 'proof-rc'
+    ? allFiles
+    : allFiles.filter(file => !proofRcFiles.has(file)))
 
 if (selectedFiles.length === 0) {
   console.error(`[air-mentor-api] No test files selected for suite ${suite}.`)

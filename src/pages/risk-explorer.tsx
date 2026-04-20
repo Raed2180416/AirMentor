@@ -70,20 +70,20 @@ function renderFeatureProvenanceValue(featureProvenance: ApiFeatureProvenance | 
 }
 
 function renderAuthorityBannerMessage(explorer: ApiStudentRiskExplorer) {
-  const advisoryNote = 'Derived scenario heads and intervention comparisons remain advisory.'
+  const advisoryNote = 'Predicted scenarios stay advisory.'
   if (explorer.countSource === 'proof-checkpoint') {
     const checkpointLabel = explorer.checkpointContext?.stageLabel
       ? ` at ${explorer.checkpointContext.stageLabel}`
       : ''
-    return `Provenance surface for checkpoint-bound analysis${checkpointLabel}. Trained heads are proof-backed for this selected evidence window; ${advisoryNote}`
+    return `Viewing the saved checkpoint${checkpointLabel}. Risk heads on this page come from the selected proof window; ${advisoryNote}`
   }
   if (explorer.countSource === 'proof-run') {
-    return `Provenance surface for active proof-run analysis. Trained heads are proof-backed for the activated operational semester; ${advisoryNote}`
+    return `Viewing the active proof run. Risk heads on this page follow the current proof semester; ${advisoryNote}`
   }
   if (explorer.countSource === 'operational-semester') {
-    return `Provenance surface for operational-semester analysis. Trained heads are anchored to operational evidence; ${advisoryNote}`
+    return `Viewing live semester data. Risk heads on this page are anchored to operational evidence; ${advisoryNote}`
   }
-  return `Provenance surface is limited for this payload. Interpret trained and derived outputs with caution.`
+  return 'Risk provenance is limited for this payload. Treat the derived outputs as advisory only.'
 }
 
 function DriverList({
@@ -311,7 +311,7 @@ export function RiskExplorerPage({
             : explorer.runContext.runLabel}
           popupContent={() => (
             <div style={{ display: 'grid', gap: 12 }}>
-              <InfoBanner message="Read model output, policy-derived status, no-action comparator, and simulated intervention / realized path together. This popup stays bound to the selected checkpoint and proof run." />
+              <InfoBanner message="Read the current risk view, no-action view, and intervention path together. This popup stays locked to the selected proof run and stage." />
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
                 <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
                   <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Model output</div>
@@ -402,8 +402,8 @@ export function RiskExplorerPage({
             </>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 360px) minmax(0, 1fr)', gap: 16 }}>
-            <div style={{ display: 'grid', gap: 14, alignSelf: 'start' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
+            <div style={{ flex: '1 1 320px', maxWidth: 360, display: 'grid', gap: 14 }}>
               {(activeTab === 'overview' || activeTab === 'advanced') && (
                 <Card data-proof-section="current-status" style={{ padding: 16, display: 'grid', gap: 10 }}>
                   <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Model Output</div>
@@ -478,7 +478,7 @@ export function RiskExplorerPage({
               )}
             </div>
 
-            <div style={{ display: 'grid', gap: 14 }}>
+            <div style={{ flex: '999 1 400px', display: 'grid', gap: 14 }}>
               {activeTab === 'overview' && (
                 <Card data-proof-section="top-observable-drivers" style={{ padding: 16, display: 'grid', gap: 10 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

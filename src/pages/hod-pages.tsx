@@ -10,7 +10,7 @@ import type {
   ApiAcademicHodProofStudentWatch,
   ApiAcademicHodProofSummary,
 } from '../api/types'
-import { describeProofAvailability, describeProofProvenance } from '../proof-provenance'
+import { describeProofProvenance } from '../proof-provenance'
 import { normalizeProofPanelLabel } from '../proof-provenance'
 import { ProofSurfaceHero, ProofSurfaceLauncher, ProofSurfaceTabPanel, ProofSurfaceTabs } from '../proof-surface-shell'
 import { Btn, Card, Chip, ModalWorkspace, PageShell, RiskBadge, TH, TD } from '../ui-primitives'
@@ -210,7 +210,7 @@ export function HodView({
           entityId={checkpointContext?.simulationStageCheckpointId ?? undefined}
           eyebrow="Live HoD Analytics"
           title="Department proof records for the active simulation run"
-          description="Read-only oversight view sourced from the same active proof run used by sysadmin and faculty profile. Formal academic status remains policy-derived; this surface does not expose latent-state internals."
+          description="Read-only oversight view using the same proof snapshot as sysadmin and faculty pages. This page explains the current watchlist without exposing hidden model internals."
           icon={<Shield size={22} color={T.accent} />}
           headerActions={<Btn size="sm" variant="ghost" onClick={onOpenQueueHistory}>Queue History</Btn>}
           badges={(
@@ -225,9 +225,8 @@ export function HodView({
           )}
           notices={(
             <>
-              <InfoBanner message={`Active run ${activeRunContext.runLabel} · seed ${activeRunContext.seed} · created ${formatDateTime(activeRunContext.createdAt)} · sourced from live proof records${checkpointContext ? ` · checkpoint ${checkpointContext.stageLabel} (semester ${checkpointContext.semesterNumber})` : ''}.`} />
+              <InfoBanner message={`Simulation run started ${formatDateTime(activeRunContext.createdAt)}${checkpointContext ? ` — pinned to Semester ${checkpointContext.semesterNumber} · ${checkpointContext.stageLabel}` : ''}.`} />
               <InfoBanner tone="neutral" message={describeProofProvenance(proofProvenanceSummary)} />
-              <InfoBanner tone="neutral" message={describeProofAvailability(proofProvenanceSummary)} />
             </>
           )}
         >
@@ -247,7 +246,7 @@ export function HodView({
             : activeRunContext.batchLabel}
           popupContent={() => (
             <div style={{ display: 'grid', gap: 12 }}>
-              <InfoBanner message="Model usefulness is checkpoint-bound. Compare the current policy-derived status, the no-action comparator, and the simulated intervention / realized path before acting on the watchlist." />
+              <InfoBanner message="Review open reassessments, acknowledgements, and unresolved alerts from the same selected proof snapshot before acting on the watchlist." />
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
                 <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
                   <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Open reassessments</div>

@@ -5,6 +5,7 @@ import fastifySwagger from '@fastify/swagger'
 import type { Pool } from 'pg'
 import type { AppConfig } from './config.js'
 import type { AppDb } from './db/client.js'
+import type { EmailTransport } from './lib/email-transport.js'
 import { AppError } from './lib/http-errors.js'
 import { buildCsrfToken, readSingleHeaderValue, secureTokenEquals } from './lib/csrf.js'
 import { emitOperationalEvent, normalizeTelemetryError, configureOperationalTelemetryPersistence } from './lib/telemetry.js'
@@ -15,6 +16,7 @@ export type BuildAppOptions = {
   db: AppDb
   pool: Pick<Pool, 'query'>
   clock?: () => string
+  emailTransport?: EmailTransport
 }
 
 export type RouteContext = BuildAppOptions & {

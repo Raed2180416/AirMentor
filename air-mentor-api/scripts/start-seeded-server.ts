@@ -9,6 +9,7 @@ import { loadConfig } from '../src/config.js'
 import { createDb, createPool, type AppDb } from '../src/db/client.js'
 import { runSqlMigrations } from '../src/db/migrate.js'
 import { seedIntoDatabase } from '../src/db/seed.js'
+import { createNoopEmailTransport, createSmtpEmailTransport } from '../src/lib/email-transport.js'
 
 const baseNow = process.env.AIRMENTOR_SEED_NOW ?? '2026-03-16T00:00:00.000Z'
 
@@ -98,10 +99,23 @@ async function main() {
       DEFAULT_THEME_MODE: 'frosted-focus-light',
     })
 
+    const emailTransport = config.smtpHost
+      ? await createSmtpEmailTransport({
+          host: config.smtpHost,
+          port: config.smtpPort,
+          secure: config.smtpSecure,
+          user: config.smtpUser,
+          pass: config.smtpPass,
+          fromAddress: config.emailFromAddress,
+          fromName: config.emailFromName,
+        })
+      : createNoopEmailTransport()
+
     app = await buildApp({
       config,
       db,
       pool,
+      emailTransport,
       // Keep seeded academic data deterministic, but use wall-clock time for
       // runtime session expiry so live-browser logins do not receive already-
       // expired cookies as the fixed seed date ages.

@@ -1,4 +1,4 @@
-import fastify from 'fastify'
+import fastify, { type FastifyRequest } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { simulationRuns, studentAgentSessions } from '../src/db/schema.js'
@@ -78,15 +78,24 @@ describe('academic proof routes', () => {
     }
 
     app = fastify()
-    app.addHook('onRequest', async request => {
-      ;(request as typeof request & { auth: unknown }).auth = {
+    app.addHook('onRequest', async (request: FastifyRequest) => {
+      request.auth = {
+        sessionId: 'session_hod',
         facultyId: 'faculty_hod',
         userId: 'faculty_hod',
+        username: 'faculty_hod',
+        email: 'faculty_hod@msruas.ac.in',
+        facultyName: 'Faculty HoD',
         activeRoleGrant: {
+          grantId: 'grant_hod',
+          facultyId: 'faculty_hod',
           roleCode: 'HOD',
           scopeType: 'department',
           scopeId: 'dept_cse',
+          status: 'active',
+          version: 1,
         },
+        availableRoleGrants: [],
       }
     })
 
@@ -216,15 +225,24 @@ describe('academic proof routes', () => {
     }
 
     app = fastify()
-    app.addHook('onRequest', async request => {
-      ;(request as typeof request & { auth: unknown }).auth = {
+    app.addHook('onRequest', async (request: FastifyRequest) => {
+      request.auth = {
+        sessionId: 'session_hod',
         facultyId: 'faculty_hod',
         userId: 'faculty_hod',
+        username: 'faculty_hod',
+        email: 'faculty_hod@msruas.ac.in',
+        facultyName: 'Faculty HoD',
         activeRoleGrant: {
+          grantId: 'grant_hod',
+          facultyId: 'faculty_hod',
           roleCode: 'HOD',
           scopeType: 'department',
           scopeId: 'dept_cse',
+          status: 'active',
+          version: 1,
         },
+        availableRoleGrants: [],
       }
     })
 

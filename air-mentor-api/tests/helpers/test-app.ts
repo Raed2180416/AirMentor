@@ -11,6 +11,7 @@ import { createDb, createPool, type AppDb } from '../../src/db/client.js'
 import { runSqlMigrations } from '../../src/db/migrate.js'
 import { seedIntoDatabase } from '../../src/db/seed.js'
 import { buildCsrfToken } from '../../src/lib/csrf.js'
+import type { EmailTransport } from '../../src/lib/email-transport.js'
 
 export const TEST_NOW = '2026-03-16T00:00:00.000Z'
 export const TEST_ORIGIN = 'http://127.0.0.1:5173'
@@ -62,6 +63,7 @@ function findFreePort() {
 
 export async function createTestApp(options?: {
   env?: NodeJS.ProcessEnv
+  emailTransport?: EmailTransport
 }) {
   const port = await findFreePort()
   const databaseDir = await mkdtemp(path.join(tmpdir(), 'airmentor-postgres-test-'))
@@ -101,6 +103,7 @@ export async function createTestApp(options?: {
       db,
       pool,
       clock: () => TEST_NOW,
+      emailTransport: options?.emailTransport,
     })
     await app.ready()
     const rawInject = app.inject.bind(app)

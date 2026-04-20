@@ -43,8 +43,8 @@ describe('proof pilot helpers', () => {
     expect(resolveCanonicalProofBatch(dataset)?.batchLabel).toBe('2023 Proof')
   })
 
-  it('marks bare or proof-hierarchy faculty routes as canonical-proof targets', () => {
-    expect(routeTargetsCanonicalProofHierarchy({ section: 'faculties' })).toBe(true)
+  it('marks only explicit proof-hierarchy faculty routes as canonical-proof targets', () => {
+    expect(routeTargetsCanonicalProofHierarchy({ section: 'faculties' })).toBe(false)
     expect(routeTargetsCanonicalProofHierarchy({
       section: 'faculties',
       academicFacultyId: 'academic_faculty_engineering_and_technology',
@@ -64,8 +64,8 @@ describe('proof pilot helpers', () => {
     expect(shouldResolveCanonicalProofRoute(unrelatedRoute, dataset)).toBe(false)
   })
 
-  it('forces the canonical proof route when the selected proof batch is missing or invalid', () => {
-    expect(shouldResolveCanonicalProofRoute({ section: 'faculties' }, dataset)).toBe(true)
+  it('forces the canonical proof route only when an explicit proof route is incomplete', () => {
+    expect(shouldResolveCanonicalProofRoute({ section: 'faculties' }, dataset)).toBe(false)
     expect(shouldResolveCanonicalProofRoute({
       section: 'faculties',
       academicFacultyId: 'academic_faculty_engineering_and_technology',
@@ -117,16 +117,10 @@ describe('proof pilot helpers', () => {
     })
   })
 
-  it('defaults directory scoping to the canonical proof hierarchy on proof-mode faculty routes', () => {
+  it('does not invent a hidden directory scope for the bare faculties route', () => {
     expect(resolveAdminDirectoryScopeFilter({
       route: { section: 'faculties' },
-    })).toEqual({
-      academicFacultyId: 'academic_faculty_engineering_and_technology',
-      departmentId: 'dept_cse',
-      branchId: 'branch_mnc_btech',
-      batchId: 'batch_branch_mnc_btech_2023',
-      sectionCode: undefined,
-    })
+    })).toBeNull()
   })
 
   it('preserves explicit route and carried registry scopes for directory filtering', () => {

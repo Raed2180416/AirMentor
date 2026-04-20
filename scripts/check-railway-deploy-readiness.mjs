@@ -5,7 +5,6 @@ import { execFileSync, spawn } from 'node:child_process'
 import net from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import EmbeddedPostgres from 'embedded-postgres'
 
 const mode = process.argv[2] ?? 'preflight'
 const outputDir = process.env.RAILWAY_DIAGNOSTIC_OUTPUT_DIR ?? 'output'
@@ -23,27 +22,44 @@ const sessionContractMaxAttempts = Math.max(1, Number.parseInt(process.env.RAILW
 const sessionContractRetryDelayMs = Math.max(0, Number.parseInt(process.env.RAILWAY_LIVE_SESSION_CONTRACT_RETRY_DELAY_MS ?? '5000', 10) || 5000)
 
 function runRailway(args, options = {}) {
-  const command = process.env.RAILWAY_CLI_BIN ?? 'railway'
+  const explicitCommand = process.env.RAILWAY_CLI_BIN?.trim() || null
+  const commandCandidates = explicitCommand
+    ? [{ command: explicitCommand, prefixArgs: [] }]
+    : [
+      { command: 'railway', prefixArgs: [] },
+      { command: 'npx', prefixArgs: ['-y', '@railway/cli@latest'] },
+    ]
   const {
     input,
     ...restOptions
   } = options
-  try {
-    return execFileSync(command, args, {
-      encoding: 'utf8',
-      env: process.env,
-      stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
-      ...(input === undefined ? {} : { input }),
-      ...restOptions,
-    })
-  } catch (error) {
-    const stderr = typeof error?.stderr === 'string' ? error.stderr : ''
-    const stdout = typeof error?.stdout === 'string' ? error.stdout : ''
-    const message = [error?.message ?? 'Railway CLI command failed', stdout.trim(), stderr.trim()].filter(Boolean).join('\n')
-    const wrapped = new Error(message)
-    wrapped.cause = error
-    throw wrapped
+  let lastError = null
+  for (const candidate of commandCandidates) {
+    try {
+      return execFileSync(candidate.command, [...candidate.prefixArgs, ...args], {
+        encoding: 'utf8',
+        env: process.env,
+        stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+        ...(input === undefined ? {} : { input }),
+        ...restOptions,
+      })
+    } catch (error) {
+      lastError = error
+      const commandMissing = error?.code === 'ENOENT'
+      if (commandMissing) continue
+
+      const stderr = typeof error?.stderr === 'string' ? error.stderr : ''
+      const stdout = typeof error?.stdout === 'string' ? error.stdout : ''
+      const message = [error?.message ?? 'Railway CLI command failed', stdout.trim(), stderr.trim()].filter(Boolean).join('\n')
+      const wrapped = new Error(message)
+      wrapped.cause = error
+      throw wrapped
+    }
   }
+
+  const wrapped = new Error('Railway CLI command failed: neither `railway` nor `npx @railway/cli@latest` is available in this environment.')
+  wrapped.cause = lastError
+  throw wrapped
 }
 
 function safeRunRailway(args, options = {}) {
@@ -133,6 +149,89 @@ function loadVariableSnapshot() {
   }
   const raw = runRailway(['variable', 'list', '--kv', ...buildRailwayBaseArgs()])
   return parseKeyValueOutput(raw)
+}
+
+function parseJsonSafely(raw) {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+function collectRailwayServiceFindings() {
+  const statusResult = safeRunRailway(['status', '--json'])
+  if (!statusResult.ok || !statusResult.output) {
+    return {
+      issues: [],
+      warnings: [
+        `Could not inspect Railway service status: ${statusResult.error ?? 'status command failed.'}`,
+      ],
+      snapshot: null,
+    }
+  }
+
+  const parsed = parseJsonSafely(statusResult.output)
+  if (!parsed) {
+    return {
+      issues: [],
+      warnings: ['Could not parse Railway status JSON output.'],
+      snapshot: null,
+    }
+  }
+
+  const environmentEdges = parsed?.environments?.edges
+  if (!Array.isArray(environmentEdges) || environmentEdges.length === 0) {
+    return {
+      issues: [],
+      warnings: ['Railway status returned no environments for service inspection.'],
+      snapshot: null,
+    }
+  }
+
+  const selectedEnvironment = railwayEnvironment
+    ? environmentEdges.find(edge => edge?.node?.name === railwayEnvironment)
+    : environmentEdges[0]
+  if (!selectedEnvironment?.node) {
+    return {
+      issues: [],
+      warnings: [
+        railwayEnvironment
+          ? `Railway status did not include environment '${railwayEnvironment}' for service inspection.`
+          : 'Railway status did not include a valid environment node for service inspection.',
+      ],
+      snapshot: null,
+    }
+  }
+
+  const serviceEdges = selectedEnvironment.node?.serviceInstances?.edges
+  const serviceNodes = Array.isArray(serviceEdges)
+    ? serviceEdges.map(edge => edge?.node).filter(Boolean)
+    : []
+
+  const postgresNodes = serviceNodes.filter(node => /postgres/i.test(String(node.serviceName ?? '')))
+  const postgresSnapshot = postgresNodes.map(node => {
+    const deployment = node.latestDeployment ?? {}
+    return {
+      serviceName: node.serviceName ?? null,
+      status: deployment.status ?? null,
+      sleepApplication: deployment.meta?.serviceManifest?.deploy?.sleepApplication ?? null,
+      configErrors: Array.isArray(deployment.meta?.configErrors) ? deployment.meta.configErrors : [],
+    }
+  })
+
+  const issues = postgresSnapshot.flatMap(entry =>
+    entry.configErrors.map(error => `Railway database service '${entry.serviceName}' reports config error: ${error}`),
+  )
+
+  return {
+    issues,
+    warnings: [],
+    snapshot: {
+      environment: selectedEnvironment.node.name ?? null,
+      postgresServices: postgresSnapshot,
+    },
+  }
 }
 
 function requiredPreflightChecks(variables) {
@@ -420,6 +519,7 @@ async function runDeployPathSmoke(variables) {
 
   const postgresPort = await findFreePort()
   const databaseDir = await mkdtemp(path.join(tmpdir(), 'airmentor-railway-deploy-smoke-'))
+  const { default: EmbeddedPostgres } = await import('embedded-postgres')
   const embeddedPostgres = new EmbeddedPostgres({
     databaseDir,
     user: 'postgres',
@@ -509,6 +609,8 @@ async function runPreflight() {
   }
 
   const issues = requiredPreflightChecks(variables)
+  const railwayServiceFindings = collectRailwayServiceFindings()
+  issues.push(...railwayServiceFindings.issues)
   const bootSmoke = issues.length === 0 ? await runBootSmoke(variables) : null
   const deployPathSmoke = issues.length === 0 ? await runDeployPathSmoke(variables) : null
   if (bootSmoke && bootSmoke.status !== 'passed') {
@@ -532,14 +634,18 @@ async function runPreflight() {
       telemetrySinkConfigured: Boolean(variables.AIRMENTOR_TELEMETRY_SINK_URL),
       databaseUrlConfigured: Boolean(variables.DATABASE_URL),
       host: variables.HOST ?? null,
+      railwayServiceInspection: railwayServiceFindings.snapshot,
     },
     syncedUpdates,
     bootSmoke,
     deployPathSmoke,
     issues,
-    warnings: variables.AIRMENTOR_TELEMETRY_SINK_URL
-      ? []
-      : ['AIRMENTOR_TELEMETRY_SINK_URL is not configured; external telemetry forwarding will remain disabled.'],
+    warnings: [
+      ...(variables.AIRMENTOR_TELEMETRY_SINK_URL
+        ? []
+        : ['AIRMENTOR_TELEMETRY_SINK_URL is not configured; external telemetry forwarding will remain disabled.']),
+      ...railwayServiceFindings.warnings,
+    ],
   }
   await writeJsonReport('railway-deploy-preflight.json', report)
 

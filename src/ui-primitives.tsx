@@ -844,6 +844,7 @@ export const Btn = ({
   ariaLabel,
   ariaControls,
   ariaSelected,
+  tabIndex,
   id,
   role,
   title,
@@ -859,6 +860,7 @@ export const Btn = ({
   ariaLabel?: string
   ariaControls?: string
   ariaSelected?: boolean
+  tabIndex?: number
   id?: string
   role?: string
   title?: string
@@ -896,6 +898,7 @@ export const Btn = ({
       aria-label={ariaLabel}
       aria-controls={ariaControls}
       aria-selected={ariaSelected}
+      tabIndex={tabIndex}
       title={title}
       onClick={onClick}
       initial={false}

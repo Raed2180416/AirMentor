@@ -1,7 +1,13 @@
 {
+  "compilerOptions": {
+    "noEmit": true,
+    "allowImportingTsExtensions": true
+  },
   "files": [],
   "references": [
     { "path": "./tsconfig.app.json" },
-    { "path": "./tsconfig.node.json" }
+    { "path": "./tsconfig.node.json" },
+    { "path": "./tests" },
+    { "path": "./air-mentor-api/tsconfig.json" }
   ]
 }
