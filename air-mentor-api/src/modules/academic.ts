@@ -31,6 +31,7 @@ import {
   sectionOfferings,
   simulationStageCheckpoints,
   simulationStageQueueCases,
+  simulationStageQueueProjections,
   simulationStageOfferingProjections,
   simulationStageStudentProjections,
   simulationRuns,
@@ -927,6 +928,105 @@ function isoToMillis(value: string | undefined, fallback = Date.now()) {
 
 function normalizeAcademicStudentId(studentId: string) {
   return studentId.includes('::') ? (studentId.split('::').at(-1) ?? studentId) : studentId
+}
+
+export const PROOF_WORKFLOW_TASK_ID_PREFIX = 'proof-workflow-task::'
+
+export function proofWorkflowTaskIdFromQueueCaseId(queueCaseId: string) {
+  return `${PROOF_WORKFLOW_TASK_ID_PREFIX}${queueCaseId}`
+}
+
+export function taskDateISOFromTimestamp(value: string | null | undefined) {
+  if (typeof value !== 'string' || value.length < 10) return null
+  const dateISO = value.slice(0, 10)
+  return /^\d{4}-\d{2}-\d{2}$/.test(dateISO) ? dateISO : null
+}
+
+export function taskDueLabelFromDate(dueDateISO: string | null, anchorDateISO: string | null) {
+  if (!dueDateISO) return 'This week'
+  if (!anchorDateISO) return dueDateISO
+  const dueAt = Date.parse(`${dueDateISO}T00:00:00.000Z`)
+  const anchorAt = Date.parse(`${anchorDateISO}T00:00:00.000Z`)
+  if (!Number.isFinite(dueAt) || !Number.isFinite(anchorAt)) return dueDateISO
+  const dayDelta = Math.round((dueAt - anchorAt) / 86_400_000)
+  if (dayDelta === 0) return 'Today'
+  if (dayDelta === 1) return 'Tomorrow'
+  if (dayDelta > 1 && dayDelta < 7) return 'This week'
+  if (dayDelta < 0) return 'Overdue'
+  return dueDateISO
+}
+
+export function proofPlaybackCurrentDateISO(input: {
+  checkpoint?: typeof simulationStageCheckpoints.$inferSelect | null
+  run?: typeof simulationRuns.$inferSelect | null
+}) {
+  return taskDateISOFromTimestamp(input.run?.simulatedDateIso)
+    ?? taskDateISOFromTimestamp(input.checkpoint?.createdAt)
+    ?? null
+}
+
+export function buildProofWorkflowTaskFromQueueProjection(input: {
+  queueProjection: typeof simulationStageQueueProjections.$inferSelect
+  studentById: Record<string, typeof students.$inferSelect>
+  offeringById: Record<string, typeof sectionOfferings.$inferSelect>
+  anchorDateISO: string | null
+}) {
+  const detail = parseJson(input.queueProjection.detailJson, {} as Record<string, unknown>)
+  if (detail.primaryCase !== true) return null
+  if (detail.countsTowardCapacity !== true) return null
+  if (input.queueProjection.status !== 'Open') return null
+  if (!input.queueProjection.offeringId || !input.queueProjection.simulationStageQueueCaseId) return null
+
+  const taskId = proofWorkflowTaskIdFromQueueCaseId(input.queueProjection.simulationStageQueueCaseId)
+  const student = input.studentById[input.queueProjection.studentId]
+  const offering = input.offeringById[input.queueProjection.offeringId]
+  const dueDateISO = taskDateISOFromTimestamp(typeof detail.dueAt === 'string' ? detail.dueAt : null)
+  const assignedTo = uiRoleSchema.safeParse(input.queueProjection.assignedToRole).success
+    ? input.queueProjection.assignedToRole
+    : 'Course Leader'
+  const taskType = taskTypeSchema.safeParse(input.queueProjection.taskType).success
+    ? input.queueProjection.taskType
+    : 'Follow-up'
+  const queueNote = typeof detail.note === 'string'
+    ? detail.note
+    : input.queueProjection.recommendedAction ?? 'Review the proof queue case and confirm the next intervention step.'
+  const priorityRank = Number.isFinite(Number(detail.priorityRank)) ? Number(detail.priorityRank) : null
+  return sharedTaskSchema.parse({
+    id: taskId,
+    studentId: input.queueProjection.studentId,
+    studentName: student?.name ?? input.queueProjection.studentId,
+    studentUsn: student?.usn ?? input.queueProjection.studentId,
+    offeringId: input.queueProjection.offeringId,
+    courseCode: input.queueProjection.courseCode,
+    courseName: input.queueProjection.courseTitle,
+    year: offering?.yearLabel ?? offering?.sectionCode ?? `Semester ${input.queueProjection.semesterNumber}`,
+    riskProb: input.queueProjection.riskProbScaled / 100,
+    riskBand: riskBandSchema.parse(input.queueProjection.riskBand),
+    title: input.queueProjection.recommendedAction
+      ? `Follow-up: ${input.queueProjection.recommendedAction}`
+      : `Follow-up: ${input.queueProjection.courseCode} proof queue case`,
+    due: taskDueLabelFromDate(dueDateISO, input.anchorDateISO),
+    dueDateISO: dueDateISO ?? undefined,
+    status: 'New',
+    actionHint: queueNote,
+    priority: priorityRank != null ? Math.max(1, 100 - priorityRank) : Math.max(1, input.queueProjection.riskProbScaled),
+    createdAt: isoToMillis(input.queueProjection.createdAt),
+    updatedAt: isoToMillis(input.queueProjection.updatedAt),
+    assignedTo,
+    taskType,
+    sourceRole: 'System',
+    manual: false,
+    transitionHistory: [
+      {
+        id: `transition-${taskId}`,
+        at: isoToMillis(input.queueProjection.createdAt),
+        actorRole: 'System',
+        action: 'Queued from proof workflow',
+        toOwner: assignedTo,
+        note: queueNote,
+      },
+    ],
+  })
 }
 
 async function resolveStudentShellRun(
@@ -2770,6 +2870,7 @@ async function buildAcademicBootstrap(
     runRows,
     stageCheckpointRow,
     stageOfferingProjectionRows,
+    stageQueueProjectionRows,
     stageStudentProjectionRows,
   ] = await Promise.all([
     context.db.select().from(courses).orderBy(asc(courses.courseCode)),
@@ -2811,6 +2912,9 @@ async function buildAcademicBootstrap(
       ? context.db.select().from(simulationStageOfferingProjections).where(eq(simulationStageOfferingProjections.simulationStageCheckpointId, viewer.simulationStageCheckpointId))
       : Promise.resolve([]),
     viewer.simulationStageCheckpointId
+      ? context.db.select().from(simulationStageQueueProjections).where(eq(simulationStageQueueProjections.simulationStageCheckpointId, viewer.simulationStageCheckpointId))
+      : Promise.resolve([]),
+    viewer.simulationStageCheckpointId
       ? context.db.select().from(simulationStageStudentProjections).where(eq(simulationStageStudentProjections.simulationStageCheckpointId, viewer.simulationStageCheckpointId))
       : Promise.resolve([]),
   ])
@@ -2826,6 +2930,10 @@ async function buildAcademicBootstrap(
   const proofScopeRun = stageCheckpointRow
     ? (runRows.find(row => row.simulationRunId === stageCheckpointRow.simulationRunId) ?? null)
     : selectedActiveRun
+  const proofCurrentDateISO = proofPlaybackCurrentDateISO({
+    checkpoint: stageCheckpointRow,
+    run: proofScopeRun,
+  })
   const proofBatchIds = Array.from(new Set([proofScopeRun?.batchId ?? null].filter((value): value is string => !!value)))
   const proofSemesterNumber = stageCheckpointRow?.semesterNumber ?? proofScopeRun?.activeOperationalSemester ?? null
   const proofScopeActive = proofBatchIds.length > 0
@@ -3164,7 +3272,26 @@ async function buildAcademicBootstrap(
     taskTransitionsByTaskId.set(row.taskId, [...(taskTransitionsByTaskId.get(row.taskId) ?? []), mapTaskTransitionRow(row)])
   }
 
-  const authoritativeTasks = academicTaskRows.map(row => mapAcademicTaskRow(row, taskTransitionsByTaskId.get(row.taskId) ?? []))
+  const proofWorkflowTasks = stageQueueProjectionRows
+    .map(row => buildProofWorkflowTaskFromQueueProjection({
+      queueProjection: row,
+      studentById,
+      offeringById: offeringRowById,
+      anchorDateISO: proofCurrentDateISO,
+    }))
+    .filter((task): task is z.infer<typeof sharedTaskSchema> => !!task)
+  const authoritativeTasksById = new Map(
+    academicTaskRows.map(row => {
+      const task = mapAcademicTaskRow(row, taskTransitionsByTaskId.get(row.taskId) ?? [])
+      return [task.id, task] as const
+    }),
+  )
+  proofWorkflowTasks.forEach(task => {
+    if (!authoritativeTasksById.has(task.id)) {
+      authoritativeTasksById.set(task.id, task)
+    }
+  })
+  const authoritativeTasks = Array.from(authoritativeTasksById.values())
 
   const authoritativePlacementsByTaskId = new Map<string, z.infer<typeof taskPlacementSchema>>()
   for (const row of academicTaskPlacementRows) {
@@ -4076,7 +4203,7 @@ async function buildAcademicBootstrap(
       stageOrder: stageCheckpointRow.stageOrder,
       previousCheckpointId: stageCheckpointRow.previousCheckpointId,
       nextCheckpointId: stageCheckpointRow.nextCheckpointId,
-      currentDateISO: stageCheckpointRow.createdAt.slice(0, 10),
+      currentDateISO: proofCurrentDateISO ?? stageCheckpointRow.createdAt.slice(0, 10),
     } : null,
   }
 }
