@@ -1,0 +1,11 @@
+artifacts:
+  - path: audit-map/32-reports/inventory-merged.md
+    min_lines: 60
+    min_bytes: 3000
+    required_sections:
+      - "# Merged Inventory"
+      - "## Frontend"
+      - "## Backend"
+      - "## Scripts"
+      - "## Reconciliation Notes"
+    write_mode: replace

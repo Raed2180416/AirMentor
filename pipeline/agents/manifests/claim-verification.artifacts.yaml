@@ -1,0 +1,10 @@
+artifacts:
+  - path: audit-map/32-reports/claim-verification-matrix.md
+    min_lines: 30
+    min_bytes: 1500
+    required_sections:
+      - "# Claim Verification"
+      - "## Verified"
+      - "## Undetermined"
+      - "## Contradicted"
+    write_mode: replace

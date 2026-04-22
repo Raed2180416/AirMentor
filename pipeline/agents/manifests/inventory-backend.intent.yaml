@@ -1,0 +1,13 @@
+purpose: |
+  Inventory the Node/Fastify backend under air-mentor-api/. Produce a
+  deterministic map of route modules, database tables, middleware stack, and
+  seed chain without touching runtime config or migrations.
+nonneg:
+  - Do not modify air-mentor-api/src/** or air-mentor-api/tests/**
+  - Do not add or edit migrations
+  - Writes limited to audit-map/17-artifacts/** and audit-map/32-reports/**
+owner_files:
+  - air-mentor-api/src/index.ts
+  - air-mentor-api/src/app.ts
+  - air-mentor-api/src/config.ts
+  - air-mentor-api/src/db/schema.ts

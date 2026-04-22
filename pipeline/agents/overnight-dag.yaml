@@ -1,0 +1,399 @@
+# AirMentor Overnight Principal-Architect DAG
+# Authoritative prompt: audit-map/20-prompts/fresh-sem1-principal-architect-overnight-pass.md
+# Generated — do not edit by hand, edit build_overnight/*.py + regenerate.
+
+defaults:
+  context: pipeline
+  idle_timeout_s: 1800
+  hard_timeout_s: 14400
+  max_attempts: 4
+
+nodes:
+  - id: overnight-reconcile-proof-lifecycle
+    pass: overnight-reconcile-proof-lifecycle
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/overnight/overnight-reconcile-proof-lifecycle.md
+    intent_file: pipeline/agents/manifests/overnight-reconcile-proof-lifecycle.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-reconcile-proof-lifecycle.artifacts.yaml
+    write_scope_glob: 'audit-map/14-reconciliation/**;audit-map/32-reports/**;audit-map/24-agent-memory/**'
+    parallel_group: overnight-docs
+    priority: 95
+
+  - id: overnight-reconcile-ml-docs
+    pass: overnight-reconcile-ml-docs
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/overnight/overnight-reconcile-ml-docs.md
+    intent_file: pipeline/agents/manifests/overnight-reconcile-ml-docs.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-reconcile-ml-docs.artifacts.yaml
+    write_scope_glob: 'audit-map/14-reconciliation/**;audit-map/08-ml-audit/**;audit-map/32-reports/**;audit-map/24-agent-memory/**'
+    parallel_group: overnight-docs
+    priority: 95
+
+  - id: overnight-reconcile-queue-calendar-docs
+    pass: overnight-reconcile-queue-calendar-docs
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/overnight/overnight-reconcile-queue-calendar-docs.md
+    intent_file: pipeline/agents/manifests/overnight-reconcile-queue-calendar-docs.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-reconcile-queue-calendar-docs.artifacts.yaml
+    write_scope_glob: 'audit-map/14-reconciliation/**;audit-map/32-reports/**;audit-map/24-agent-memory/**'
+    parallel_group: overnight-docs
+    priority: 95
+
+  - id: overnight-merge-final-decisions
+    pass: overnight-merge-final-decisions
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/overnight/overnight-merge-final-decisions.md
+    intent_file: pipeline/agents/manifests/overnight-merge-final-decisions.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-merge-final-decisions.artifacts.yaml
+    write_scope_glob: 'audit-map/14-reconciliation/**;audit-map/24-agent-memory/**;audit-map/32-reports/**'
+    parallel_group: ~
+    depends_on: [overnight-reconcile-proof-lifecycle, overnight-reconcile-ml-docs, overnight-reconcile-queue-calendar-docs]
+    priority: 90
+
+  - id: overnight-audit-run-authority
+    pass: overnight-audit-run-authority
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/overnight/overnight-audit-run-authority.md
+    intent_file: pipeline/agents/manifests/overnight-audit-run-authority.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-audit-run-authority.artifacts.yaml
+    write_scope_glob: 'audit-map/17-artifacts/**;audit-map/32-reports/**;audit-map/24-agent-memory/**'
+    parallel_group: overnight-audit
+    depends_on: [overnight-merge-final-decisions]
+    priority: 85
+
+  - id: overnight-audit-feature-evidence
+    pass: overnight-audit-feature-evidence
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/overnight/overnight-audit-feature-evidence.md
+    intent_file: pipeline/agents/manifests/overnight-audit-feature-evidence.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-audit-feature-evidence.artifacts.yaml
+    write_scope_glob: 'audit-map/17-artifacts/**;audit-map/32-reports/**;audit-map/24-agent-memory/**'
+    parallel_group: overnight-audit
+    depends_on: [overnight-merge-final-decisions]
+    priority: 85
+
+  - id: overnight-audit-case-queue-workflow
+    pass: overnight-audit-case-queue-workflow
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/overnight/overnight-audit-case-queue-workflow.md
+    intent_file: pipeline/agents/manifests/overnight-audit-case-queue-workflow.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-audit-case-queue-workflow.artifacts.yaml
+    write_scope_glob: 'audit-map/17-artifacts/**;audit-map/32-reports/**;audit-map/24-agent-memory/**'
+    parallel_group: overnight-audit
+    depends_on: [overnight-merge-final-decisions]
+    priority: 85
+
+  - id: overnight-audit-frontend-flows
+    pass: overnight-audit-frontend-flows
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/overnight/overnight-audit-frontend-flows.md
+    intent_file: pipeline/agents/manifests/overnight-audit-frontend-flows.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-audit-frontend-flows.artifacts.yaml
+    write_scope_glob: 'audit-map/17-artifacts/**;audit-map/32-reports/**;audit-map/24-agent-memory/**'
+    parallel_group: overnight-audit
+    depends_on: [overnight-merge-final-decisions]
+    priority: 85
+
+  - id: overnight-audit-ml-boundaries
+    pass: overnight-audit-ml-boundaries
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/overnight/overnight-audit-ml-boundaries.md
+    intent_file: pipeline/agents/manifests/overnight-audit-ml-boundaries.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-audit-ml-boundaries.artifacts.yaml
+    write_scope_glob: 'audit-map/17-artifacts/**;audit-map/32-reports/**;audit-map/24-agent-memory/**'
+    parallel_group: overnight-audit
+    depends_on: [overnight-merge-final-decisions]
+    priority: 85
+
+  - id: overnight-merge-implementation-plan
+    pass: overnight-merge-implementation-plan
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/overnight/overnight-merge-implementation-plan.md
+    intent_file: pipeline/agents/manifests/overnight-merge-implementation-plan.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-merge-implementation-plan.artifacts.yaml
+    write_scope_glob: 'audit-map/14-reconciliation/**;audit-map/24-agent-memory/**;audit-map/32-reports/**'
+    parallel_group: ~
+    depends_on: [overnight-audit-run-authority, overnight-audit-feature-evidence, overnight-audit-case-queue-workflow, overnight-audit-frontend-flows, overnight-audit-ml-boundaries]
+    priority: 80
+
+  - id: overnight-ml-rca-histograms-current
+    pass: overnight-ml-rca-histograms-current
+    task_class: structured
+    risk_class: medium
+    reasoning_effort: high
+    prompt_file: audit-map/20-prompts/overnight/overnight-ml-rca-histograms-current.md
+    intent_file: pipeline/agents/manifests/overnight-ml-rca-histograms-current.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-ml-rca-histograms-current.artifacts.yaml
+    write_scope_glob: 'audit-map/08-ml-audit/**;audit-map/22-evals/**;audit-map/32-reports/**'
+    parallel_group: overnight-ml-rca
+    depends_on: [overnight-merge-implementation-plan]
+    priority: 75
+
+  - id: overnight-ml-rca-local-reliability-current
+    pass: overnight-ml-rca-local-reliability-current
+    task_class: structured
+    risk_class: medium
+    reasoning_effort: high
+    prompt_file: audit-map/20-prompts/overnight/overnight-ml-rca-local-reliability-current.md
+    intent_file: pipeline/agents/manifests/overnight-ml-rca-local-reliability-current.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-ml-rca-local-reliability-current.artifacts.yaml
+    write_scope_glob: 'audit-map/08-ml-audit/**;audit-map/22-evals/**;audit-map/32-reports/**'
+    parallel_group: overnight-ml-rca
+    depends_on: [overnight-merge-implementation-plan]
+    priority: 75
+
+  - id: overnight-ml-rca-overload-breakdowns-current
+    pass: overnight-ml-rca-overload-breakdowns-current
+    task_class: structured
+    risk_class: medium
+    reasoning_effort: high
+    prompt_file: audit-map/20-prompts/overnight/overnight-ml-rca-overload-breakdowns-current.md
+    intent_file: pipeline/agents/manifests/overnight-ml-rca-overload-breakdowns-current.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-ml-rca-overload-breakdowns-current.artifacts.yaml
+    write_scope_glob: 'audit-map/08-ml-audit/**;audit-map/22-evals/**;audit-map/32-reports/**'
+    parallel_group: overnight-ml-rca
+    depends_on: [overnight-merge-implementation-plan]
+    priority: 75
+
+  - id: overnight-ml-rca-interaction-ablations-current
+    pass: overnight-ml-rca-interaction-ablations-current
+    task_class: structured
+    risk_class: medium
+    reasoning_effort: high
+    prompt_file: audit-map/20-prompts/overnight/overnight-ml-rca-interaction-ablations-current.md
+    intent_file: pipeline/agents/manifests/overnight-ml-rca-interaction-ablations-current.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-ml-rca-interaction-ablations-current.artifacts.yaml
+    write_scope_glob: 'audit-map/08-ml-audit/**;audit-map/22-evals/**;audit-map/32-reports/**'
+    parallel_group: overnight-ml-rca
+    depends_on: [overnight-merge-implementation-plan]
+    priority: 75
+
+  - id: overnight-impl-phase1-run-authority
+    pass: overnight-impl-phase1-run-authority
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/overnight/overnight-impl-phase1-run-authority.md
+    intent_file: pipeline/agents/manifests/overnight-impl-phase1-run-authority.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-impl-phase1-run-authority.artifacts.yaml
+    write_scope_glob: 'air-mentor-api/src/lib/proof-control-plane-activation-service.ts;air-mentor-api/src/lib/proof-control-plane-runtime-service.ts;air-mentor-api/src/lib/proof-control-plane-seeded-run-service.ts;air-mentor-api/src/lib/proof-control-plane-seeded-semester-service.ts;air-mentor-api/src/lib/proof-control-plane-live-run-service.ts;air-mentor-api/src/lib/proof-control-plane-tail-service.ts;air-mentor-api/src/lib/proof-control-plane-rebuild-context-service.ts;air-mentor-api/src/lib/proof-control-plane-playback-reset-service.ts;air-mentor-api/src/db/**;air-mentor-api/tests/**;audit-map/32-reports/**'
+    parallel_group: ~
+    depends_on: [overnight-merge-implementation-plan]
+    priority: 72
+    hard_timeout_s: 21600
+
+  - id: overnight-impl-phase2-feature-correctness
+    pass: overnight-impl-phase2-feature-correctness
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/overnight/overnight-impl-phase2-feature-correctness.md
+    intent_file: pipeline/agents/manifests/overnight-impl-phase2-feature-correctness.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-impl-phase2-feature-correctness.artifacts.yaml
+    write_scope_glob: 'air-mentor-api/src/lib/proof-risk-model.ts;air-mentor-api/src/lib/inference-engine.ts;air-mentor-api/src/lib/proof-observed-state.ts;air-mentor-api/src/lib/proof-provenance.ts;air-mentor-api/src/modules/academic-runtime-routes.ts;air-mentor-api/src/modules/academic.ts;air-mentor-api/tests/**;audit-map/32-reports/**'
+    parallel_group: ~
+    depends_on: [overnight-impl-phase1-run-authority]
+    priority: 71
+    hard_timeout_s: 21600
+
+  - id: overnight-impl-phase3-case-queue
+    pass: overnight-impl-phase3-case-queue
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/overnight/overnight-impl-phase3-case-queue.md
+    intent_file: pipeline/agents/manifests/overnight-impl-phase3-case-queue.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-impl-phase3-case-queue.artifacts.yaml
+    write_scope_glob: 'air-mentor-api/src/lib/proof-queue-governance.ts;air-mentor-api/src/lib/monitoring-engine.ts;air-mentor-api/src/lib/proof-active-run.ts;air-mentor-api/src/lib/proof-run-queue.ts;air-mentor-api/src/modules/academic.ts;air-mentor-api/src/modules/academic-runtime-routes.ts;air-mentor-api/tests/**;audit-map/32-reports/**'
+    parallel_group: ~
+    depends_on: [overnight-impl-phase2-feature-correctness]
+    priority: 70
+    hard_timeout_s: 21600
+
+  - id: overnight-impl-phase4-calendar-bridge
+    pass: overnight-impl-phase4-calendar-bridge
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/overnight/overnight-impl-phase4-calendar-bridge.md
+    intent_file: pipeline/agents/manifests/overnight-impl-phase4-calendar-bridge.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-impl-phase4-calendar-bridge.artifacts.yaml
+    write_scope_glob: 'air-mentor-api/src/lib/proof-control-plane-section-risk-service.ts;air-mentor-api/src/lib/proof-queue-governance.ts;air-mentor-api/src/modules/academic-runtime-routes.ts;air-mentor-api/src/modules/academic.ts;src/pages/calendar-pages.tsx;air-mentor-api/tests/**;tests/**;audit-map/32-reports/**'
+    parallel_group: ~
+    depends_on: [overnight-impl-phase3-case-queue]
+    priority: 69
+    hard_timeout_s: 21600
+
+  - id: overnight-impl-phase5-advance-reset-stop
+    pass: overnight-impl-phase5-advance-reset-stop
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/overnight/overnight-impl-phase5-advance-reset-stop.md
+    intent_file: pipeline/agents/manifests/overnight-impl-phase5-advance-reset-stop.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-impl-phase5-advance-reset-stop.artifacts.yaml
+    write_scope_glob: 'air-mentor-api/src/lib/proof-control-plane-advance-service.ts;air-mentor-api/src/lib/proof-control-plane-activation-service.ts;air-mentor-api/src/lib/proof-control-plane-tail-service.ts;air-mentor-api/src/lib/proof-control-plane-playback-reset-service.ts;air-mentor-api/src/lib/proof-control-plane-policy-service.ts;air-mentor-api/src/modules/academic-runtime-routes.ts;air-mentor-api/tests/**;audit-map/32-reports/**'
+    parallel_group: ~
+    depends_on: [overnight-impl-phase4-calendar-bridge]
+    priority: 68
+    hard_timeout_s: 21600
+
+  - id: overnight-impl-phase6-hod-correction
+    pass: overnight-impl-phase6-hod-correction
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/overnight/overnight-impl-phase6-hod-correction.md
+    intent_file: pipeline/agents/manifests/overnight-impl-phase6-hod-correction.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-impl-phase6-hod-correction.artifacts.yaml
+    write_scope_glob: 'air-mentor-api/src/lib/proof-control-plane-hod-service.ts;air-mentor-api/src/lib/proof-control-plane-checkpoint-service.ts;air-mentor-api/src/modules/academic.ts;src/pages/hod-pages.tsx;air-mentor-api/tests/**;audit-map/32-reports/**'
+    parallel_group: ~
+    depends_on: [overnight-impl-phase5-advance-reset-stop]
+    priority: 67
+    hard_timeout_s: 21600
+
+  - id: overnight-impl-phase11-final-analytics
+    pass: overnight-impl-phase11-final-analytics
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/overnight/overnight-impl-phase11-final-analytics.md
+    intent_file: pipeline/agents/manifests/overnight-impl-phase11-final-analytics.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-impl-phase11-final-analytics.artifacts.yaml
+    write_scope_glob: 'air-mentor-api/src/lib/proof-control-plane-dashboard-service.ts;air-mentor-api/src/lib/proof-control-plane-stage-summary-service.ts;air-mentor-api/src/lib/proof-control-plane-batch-service.ts;air-mentor-api/tests/**;audit-map/32-reports/**'
+    parallel_group: ~
+    depends_on: [overnight-impl-phase6-hod-correction]
+    priority: 64
+    hard_timeout_s: 21600
+
+  - id: overnight-ml-v8-corrected-logistic
+    pass: overnight-ml-v8-corrected-logistic
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/overnight/overnight-ml-v8-corrected-logistic.md
+    intent_file: pipeline/agents/manifests/overnight-ml-v8-corrected-logistic.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-ml-v8-corrected-logistic.artifacts.yaml
+    write_scope_glob: 'air-mentor-api/air-mentor-api/output/**;air-mentor-api/scripts/**;audit-map/08-ml-audit/**;audit-map/22-evals/**;audit-map/32-reports/**'
+    parallel_group: ~
+    depends_on: [overnight-impl-phase1-run-authority, overnight-impl-phase2-feature-correctness, overnight-impl-phase3-case-queue, overnight-ml-rca-histograms-current, overnight-ml-rca-local-reliability-current, overnight-ml-rca-overload-breakdowns-current, overnight-ml-rca-interaction-ablations-current]
+    priority: 63
+    hard_timeout_s: 36000
+
+  - id: overnight-ml-beta-calibration
+    pass: overnight-ml-beta-calibration
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/overnight/overnight-ml-beta-calibration.md
+    intent_file: pipeline/agents/manifests/overnight-ml-beta-calibration.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-ml-beta-calibration.artifacts.yaml
+    write_scope_glob: 'air-mentor-api/air-mentor-api/output/**;air-mentor-api/scripts/**;air-mentor-api/src/lib/proof-risk-model.ts;audit-map/08-ml-audit/**;audit-map/22-evals/**;audit-map/32-reports/**'
+    parallel_group: ~
+    depends_on: [overnight-ml-v8-corrected-logistic]
+    priority: 62
+    hard_timeout_s: 14400
+
+  - id: overnight-ml-catboost-challenger
+    pass: overnight-ml-catboost-challenger
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/overnight/overnight-ml-catboost-challenger.md
+    intent_file: pipeline/agents/manifests/overnight-ml-catboost-challenger.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-ml-catboost-challenger.artifacts.yaml
+    write_scope_glob: 'air-mentor-api/air-mentor-api/output/**;air-mentor-api/catboost_info/**;air-mentor-api/scripts/**;audit-map/08-ml-audit/**;audit-map/22-evals/**;audit-map/32-reports/**'
+    parallel_group: ~
+    depends_on: [overnight-ml-beta-calibration]
+    priority: 61
+    hard_timeout_s: 21600
+
+  - id: overnight-validate-unit-tests
+    pass: overnight-validate-unit-tests
+    task_class: structured
+    risk_class: medium
+    reasoning_effort: high
+    prompt_file: audit-map/20-prompts/overnight/overnight-validate-unit-tests.md
+    intent_file: pipeline/agents/manifests/overnight-validate-unit-tests.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-validate-unit-tests.artifacts.yaml
+    write_scope_glob: 'audit-map/22-evals/**;audit-map/32-reports/**'
+    parallel_group: overnight-validation
+    depends_on: [overnight-impl-phase11-final-analytics, overnight-ml-catboost-challenger]
+    priority: 55
+    hard_timeout_s: 14400
+
+  - id: overnight-validate-api-integration
+    pass: overnight-validate-api-integration
+    task_class: structured
+    risk_class: medium
+    reasoning_effort: high
+    prompt_file: audit-map/20-prompts/overnight/overnight-validate-api-integration.md
+    intent_file: pipeline/agents/manifests/overnight-validate-api-integration.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-validate-api-integration.artifacts.yaml
+    write_scope_glob: 'audit-map/22-evals/**;audit-map/32-reports/**'
+    parallel_group: overnight-validation
+    depends_on: [overnight-impl-phase11-final-analytics, overnight-ml-catboost-challenger]
+    priority: 55
+    hard_timeout_s: 14400
+
+  - id: overnight-validate-determinism-replay
+    pass: overnight-validate-determinism-replay
+    task_class: structured
+    risk_class: medium
+    reasoning_effort: high
+    prompt_file: audit-map/20-prompts/overnight/overnight-validate-determinism-replay.md
+    intent_file: pipeline/agents/manifests/overnight-validate-determinism-replay.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-validate-determinism-replay.artifacts.yaml
+    write_scope_glob: 'audit-map/22-evals/**;audit-map/32-reports/**'
+    parallel_group: overnight-validation
+    depends_on: [overnight-impl-phase11-final-analytics, overnight-ml-catboost-challenger]
+    priority: 55
+    hard_timeout_s: 14400
+
+  - id: overnight-validate-ml-metrics
+    pass: overnight-validate-ml-metrics
+    task_class: structured
+    risk_class: medium
+    reasoning_effort: high
+    prompt_file: audit-map/20-prompts/overnight/overnight-validate-ml-metrics.md
+    intent_file: pipeline/agents/manifests/overnight-validate-ml-metrics.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-validate-ml-metrics.artifacts.yaml
+    write_scope_glob: 'audit-map/22-evals/**;audit-map/32-reports/**'
+    parallel_group: overnight-validation
+    depends_on: [overnight-impl-phase11-final-analytics, overnight-ml-catboost-challenger]
+    priority: 55
+    hard_timeout_s: 14400
+
+  - id: overnight-closure-verification
+    pass: overnight-closure-verification
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/overnight/overnight-closure-verification.md
+    intent_file: pipeline/agents/manifests/overnight-closure-verification.intent.yaml
+    manifest_file: pipeline/agents/manifests/overnight-closure-verification.artifacts.yaml
+    write_scope_glob: 'audit-map/32-reports/**;audit-map/24-agent-memory/**'
+    parallel_group: ~
+    depends_on: [overnight-validate-unit-tests, overnight-validate-api-integration, overnight-validate-determinism-replay, overnight-validate-ml-metrics]
+    priority: 50
+    hard_timeout_s: 14400

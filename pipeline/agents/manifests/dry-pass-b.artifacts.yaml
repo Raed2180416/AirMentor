@@ -1,0 +1,8 @@
+artifacts:
+  - path: pipeline/tmp/dry-b.md
+    min_lines: 20
+    min_bytes: 500
+    required_sections:
+      - "# Dry B"
+      - "## Proof"
+    write_mode: replace

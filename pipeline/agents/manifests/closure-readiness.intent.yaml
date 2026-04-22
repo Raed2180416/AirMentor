@@ -1,0 +1,8 @@
+purpose: |
+  Decide whether the audit OS is closure-ready. Must check every required
+  artifact + every integrity gate. Output a single verdict JSON.
+nonneg:
+  - Verdict must be one of "ready", "not-ready"
+  - If not-ready, must list every unmet gate with pointer to blocker
+owner_files:
+  - audit-map/index.md

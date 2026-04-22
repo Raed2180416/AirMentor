@@ -1,0 +1,10 @@
+purpose: |
+  Verify every resolved-claim in the audit ledgers by re-reading source
+  citations and probing live behaviour where applicable.
+nonneg:
+  - Every ledger row with state "verified" must have a live-or-source citation
+  - Silence (no evidence) is never "verified"; mark "undetermined" instead
+owner_files:
+  - audit-map/14-reconciliation/contradiction-matrix.md
+  - audit-map/23-coverage/coverage-ledger.md
+  - audit-map/24-agent-memory/working-knowledge.md

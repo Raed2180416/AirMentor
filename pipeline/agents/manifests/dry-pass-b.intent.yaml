@@ -1,0 +1,4 @@
+purpose: dry-run B — pipeline machinery proof
+nonneg: []
+owner_files:
+  - pipeline/README.md

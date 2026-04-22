@@ -1,0 +1,18 @@
+artifacts:
+  - path: audit-map/14-reconciliation/overnight-implementation-plan.md
+    min_lines: 100
+    min_bytes: 3500
+    write_mode: replace
+    required_sections:
+      - '# Overnight Implementation Plan'
+      - '## Phase 1 — Run Authority'
+      - '## Phase 2 — Feature / Evidence / Runtime'
+      - '## Phase 3 — Primary Case / Queue / Workflow'
+      - '## Phase 4 — Queue / Calendar Bridge'
+      - '## Phase 5 — Next Day / Next Stage / Reset / Stop'
+      - '## Phase 6 — HOD Correction Cycle'
+      - '## Phase 7 — Corrected v8 Baseline Training'
+      - '## Phase 8 — Overload Root Cause Analysis'
+      - '## Phase 9 — Calibration'
+      - '## Phase 10 — CatBoost Challenger'
+      - '## Phase 11 — Final Analytics Counterfactual'

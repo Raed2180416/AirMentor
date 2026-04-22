@@ -1,0 +1,12 @@
+artifacts:
+  - path: audit-map/22-evals/overnight-ml-rca-local-reliability-current.md
+    min_lines: 30
+    min_bytes: 1000
+    write_mode: replace
+    required_sections:
+      - '# Overnight ML RCA: local reliability at 0.4 and 0.85'
+      - '## Inputs'
+      - '## Findings'
+      - '## Evidence'
+      - '## Next-Steps Hypotheses'
+      - '## Recommendations'

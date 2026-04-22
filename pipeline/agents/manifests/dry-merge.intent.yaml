@@ -1,0 +1,4 @@
+purpose: dry-run merge — depends on dry-a and dry-b
+nonneg: []
+owner_files:
+  - pipeline/README.md

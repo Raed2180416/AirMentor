@@ -1,0 +1,13 @@
+artifacts:
+  - path: audit-map/32-reports/overnight-audit-ml-boundaries.md
+    min_lines: 40
+    min_bytes: 1500
+    write_mode: replace
+    required_sections:
+      - '# Overnight Audit: Model / Policy / Monitoring / Simulator Layer Separation'
+      - '## Findings'
+      - '## Evidence'
+      - '## Recommendations'
+      - '## Findings Table'
+      - '## Severity Distribution'
+      - '## Target-Phase Mapping'
