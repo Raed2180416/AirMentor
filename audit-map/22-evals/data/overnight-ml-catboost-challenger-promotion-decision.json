@@ -1,0 +1,12 @@
+{
+  "blockedHeads": [
+    "attendanceRisk",
+    "ceRisk",
+    "seeRisk",
+    "overallCourseRisk",
+    "downstreamCarryoverRisk"
+  ],
+  "decision": "keep-as-shadow",
+  "promotableHeads": [],
+  "reason": "5/5 heads fail at least one of 5 gates (ranking / proper / localCal / overload / replayable); Phase 10 requires ALL five to promote; challenger stays shadow."
+}

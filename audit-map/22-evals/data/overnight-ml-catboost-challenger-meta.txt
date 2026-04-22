@@ -1,0 +1,13 @@
+[catboost-challenger-local] generated at 2026-04-22T22:59:24+00:00
+seed=4242
+gitSha=b8ef15aa9932229c35344b51587b78a2c66c4507
+scriptSha256=0c558d3e6eaff82cc75d27118b5abe9834fc2b03d2a999c3814b2d87b0913027
+featuresCsvSha256=f73243cca08271c9b49beda27ebc13fefa906498b9fcb05f2b2395b9f3a9845b
+challenger=catboost (iterations=300 depth=6 lr=0.05)
+baseline=logistic-v8-local (isotonic)
+headsEvaluated=5/5
+promotableHeads=0
+blockedHeads=5
+promotionDecision=keep-as-shadow
+corpusAdmissibility=interim
+metricSidecarDir=/home/raed/projects/air-mentor-ui/air-mentor-api/output/proof-risk-model/catboost-challenger-local-20260422T225904Z/metric-sidecars

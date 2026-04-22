@@ -1,0 +1,993 @@
+{
+  "baseline": "logistic-v8-local (isotonic-calibrated)",
+  "catboostParams": {
+    "allow_writing_files": false,
+    "depth": 6,
+    "eval_metric": "AUC",
+    "iterations": 300,
+    "l2_leaf_reg": 3.0,
+    "learning_rate": 0.05,
+    "logging_level": "Silent",
+    "loss_function": "Logloss",
+    "random_seed": 4242,
+    "thread_count": -1
+  },
+  "challenger": "catboost",
+  "corpusAdmissibility": "interim",
+  "generatedAt": "2026-04-22T22:59:24+00:00",
+  "heads": {
+    "attendanceRisk": {
+      "baseline": {
+        "brier": 0.014876736190035747,
+        "globalEce": 0.00833523404901079,
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.05992713588566434,
+            "halfWidth": 0.08,
+            "meanLabel": 0.3575418994413408,
+            "meanProb": 0.41746903532700513,
+            "support": 179
+          },
+          {
+            "center": 0.85,
+            "ece": 0.07862319227730852,
+            "halfWidth": 0.08,
+            "meanLabel": 0.7871287128712872,
+            "meanProb": 0.8657519051485957,
+            "support": 606
+          }
+        ],
+        "overloadRatio": 1.2029640327044036,
+        "prAuc": 0.8061858788559116,
+        "precisionRecallAtBudget": {
+          "falsePositives": 3439,
+          "k": 4320,
+          "precision": 0.2039351851851852,
+          "recall": 0.9954802259887006,
+          "topPct": 0.2,
+          "totalPositives": 885,
+          "truePositives": 881
+        },
+        "rocAuc": 0.9886952193544075,
+        "stageStability": {
+          "perStage": [
+            {
+              "ece": 0.006903791406409356,
+              "overloadRatio": 1.1256463017703286,
+              "rocAuc": 0.99231703874618,
+              "stageKey": 0,
+              "stageLabel": "pre-tt1",
+              "support": 4320
+            },
+            {
+              "ece": 0.009730910836941135,
+              "overloadRatio": 1.2322111160625087,
+              "rocAuc": 0.986357766350157,
+              "stageKey": 1,
+              "stageLabel": "post-tt1",
+              "support": 4320
+            },
+            {
+              "ece": 0.013505281064386223,
+              "overloadRatio": 1.2175062099488712,
+              "rocAuc": 0.9902660671938646,
+              "stageKey": 2,
+              "stageLabel": "post-tt2",
+              "support": 4320
+            },
+            {
+              "ece": 0.008597410491878314,
+              "overloadRatio": 1.2098351035305892,
+              "rocAuc": 0.9868343717740494,
+              "stageKey": 3,
+              "stageLabel": "post-assignments",
+              "support": 4320
+            },
+            {
+              "ece": 0.010207248928888236,
+              "overloadRatio": 1.2296214322097199,
+              "rocAuc": 0.9896455937521733,
+              "stageKey": 4,
+              "stageLabel": "post-see",
+              "support": 4320
+            }
+          ],
+          "rocMax": 0.99231703874618,
+          "rocMin": 0.986357766350157,
+          "rocSpread": 0.005959272396023008
+        }
+      },
+      "challenger": {
+        "brier": 0.01401899081717591,
+        "globalEce": 0.0066804013226962975,
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.022376932226698232,
+            "halfWidth": 0.08,
+            "meanLabel": 0.41,
+            "meanProb": 0.4323769322266982,
+            "support": 100
+          },
+          {
+            "center": 0.85,
+            "ece": 0.20096282820655387,
+            "halfWidth": 0.08,
+            "meanLabel": 0.6357388316151202,
+            "meanProb": 0.8367016598216741,
+            "support": 291
+          }
+        ],
+        "overloadRatio": 1.1199436900954833,
+        "prAuc": 0.8341853152926771,
+        "precisionRecallAtBudget": {
+          "falsePositives": 3448,
+          "k": 4320,
+          "precision": 0.20185185185185187,
+          "recall": 0.9853107344632769,
+          "topPct": 0.2,
+          "totalPositives": 885,
+          "truePositives": 872
+        },
+        "rocAuc": 0.9854157649346594,
+        "stageStability": {
+          "perStage": [
+            {
+              "ece": 0.006156955502180088,
+              "overloadRatio": 1.0215409415401648,
+              "rocAuc": 0.9833160828079764,
+              "stageKey": 0,
+              "stageLabel": "pre-tt1",
+              "support": 4320
+            },
+            {
+              "ece": 0.007786413021794592,
+              "overloadRatio": 1.092352340094674,
+              "rocAuc": 0.9775252246318411,
+              "stageKey": 1,
+              "stageLabel": "post-tt1",
+              "support": 4320
+            },
+            {
+              "ece": 0.01230778486708617,
+              "overloadRatio": 1.2688553358860217,
+              "rocAuc": 0.9909840436049643,
+              "stageKey": 2,
+              "stageLabel": "post-tt2",
+              "support": 4320
+            },
+            {
+              "ece": 0.009306921969703983,
+              "overloadRatio": 1.0749321877333902,
+              "rocAuc": 0.9829137978292974,
+              "stageKey": 3,
+              "stageLabel": "post-assignments",
+              "support": 4320
+            },
+            {
+              "ece": 0.00644909783607063,
+              "overloadRatio": 1.1420376452231655,
+              "rocAuc": 0.9926600037364774,
+              "stageKey": 4,
+              "stageLabel": "post-see",
+              "support": 4320
+            }
+          ],
+          "rocMax": 0.9926600037364774,
+          "rocMin": 0.9775252246318411,
+          "rocSpread": 0.015134779104636342
+        }
+      },
+      "challengerInfo": {
+        "allow_writing_files": false,
+        "bestIteration": 299,
+        "depth": 6,
+        "eval_metric": "AUC",
+        "iterations": 300,
+        "l2_leaf_reg": 3.0,
+        "learning_rate": 0.05,
+        "logging_level": "Silent",
+        "loss_function": "Logloss",
+        "modelArtifact": "air-mentor-api/output/proof-risk-model/catboost-challenger-local-20260422T225904Z/catboost-attendanceRisk.cbm",
+        "random_seed": 4242,
+        "scalePosWeight": 9.69969040247678,
+        "scale_pos_weight": 9.69969040247678,
+        "thread_count": -1,
+        "treeCount": 300
+      },
+      "gates": {
+        "localCal": false,
+        "overload": true,
+        "passCount": 3,
+        "proper": true,
+        "ranking": false,
+        "replayable": true
+      },
+      "head": "attendanceRisk",
+      "headPromotable": false,
+      "skipped": false
+    },
+    "ceRisk": {
+      "baseline": {
+        "brier": 0.020625637474579673,
+        "globalEce": 0.0071722766751911434,
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.37055984431626077,
+            "halfWidth": 0.08,
+            "meanLabel": 0.0,
+            "meanProb": 0.37055984431626077,
+            "support": 4
+          },
+          {
+            "center": 0.85,
+            "ece": 0.19278646095247687,
+            "halfWidth": 0.08,
+            "meanLabel": 0.6625,
+            "meanProb": 0.8552864609524768,
+            "support": 80
+          }
+        ],
+        "overloadRatio": 0.9176305442581864,
+        "prAuc": 0.44178063537115225,
+        "precisionRecallAtBudget": {
+          "falsePositives": 3715,
+          "k": 4320,
+          "precision": 0.1400462962962963,
+          "recall": 0.9453125,
+          "topPct": 0.2,
+          "totalPositives": 640,
+          "truePositives": 605
+        },
+        "rocAuc": 0.9539935442509542,
+        "stageStability": {
+          "perStage": [
+            {
+              "ece": 0.007875536148645893,
+              "overloadRatio": 1.0403271286962514,
+              "rocAuc": 0.981201171875,
+              "stageKey": 0,
+              "stageLabel": "pre-tt1",
+              "support": 4320
+            },
+            {
+              "ece": 0.0077781686463779375,
+              "overloadRatio": 0.9626380061517634,
+              "rocAuc": 0.9813288331941794,
+              "stageKey": 1,
+              "stageLabel": "post-tt1",
+              "support": 4320
+            },
+            {
+              "ece": 0.009804755806206437,
+              "overloadRatio": 0.7490451244995078,
+              "rocAuc": 0.7703186501073473,
+              "stageKey": 2,
+              "stageLabel": "post-tt2",
+              "support": 4320
+            },
+            {
+              "ece": 0.006473799555194803,
+              "overloadRatio": 1.0014569310124424,
+              "rocAuc": 0.9822988728530534,
+              "stageKey": 3,
+              "stageLabel": "post-assignments",
+              "support": 4320
+            },
+            {
+              "ece": 0.0072020112532293614,
+              "overloadRatio": 0.8346855309309669,
+              "rocAuc": 0.9494041850548665,
+              "stageKey": 4,
+              "stageLabel": "post-see",
+              "support": 4320
+            }
+          ],
+          "rocMax": 0.9822988728530534,
+          "rocMin": 0.7703186501073473,
+          "rocSpread": 0.21198022274570605
+        }
+      },
+      "challenger": {
+        "brier": 0.024600973007425146,
+        "globalEce": 0.019181242344713023,
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.15353294463810424,
+            "halfWidth": 0.08,
+            "meanLabel": 0.3090909090909091,
+            "meanProb": 0.4626238537290133,
+            "support": 110
+          },
+          {
+            "center": 0.85,
+            "ece": 0.29388191778333017,
+            "halfWidth": 0.08,
+            "meanLabel": 0.5193798449612403,
+            "meanProb": 0.8132617627445705,
+            "support": 129
+          }
+        ],
+        "overloadRatio": 0.750600942644361,
+        "prAuc": 0.34840516396412063,
+        "precisionRecallAtBudget": {
+          "falsePositives": 3723,
+          "k": 4320,
+          "precision": 0.13819444444444445,
+          "recall": 0.9328125,
+          "topPct": 0.2,
+          "totalPositives": 640,
+          "truePositives": 597
+        },
+        "rocAuc": 0.9308967229246182,
+        "stageStability": {
+          "perStage": [
+            {
+              "ece": 0.01874234711261258,
+              "overloadRatio": 0.6427789917533144,
+              "rocAuc": 0.9600531891102101,
+              "stageKey": 0,
+              "stageLabel": "pre-tt1",
+              "support": 4320
+            },
+            {
+              "ece": 0.01890768553734691,
+              "overloadRatio": 0.6730527705910778,
+              "rocAuc": 0.9607315645873091,
+              "stageKey": 1,
+              "stageLabel": "post-tt1",
+              "support": 4320
+            },
+            {
+              "ece": 0.025405209042249077,
+              "overloadRatio": 0.7862759065931504,
+              "rocAuc": 0.7483264253339694,
+              "stageKey": 2,
+              "stageLabel": "post-tt2",
+              "support": 4320
+            },
+            {
+              "ece": 0.017177995605692664,
+              "overloadRatio": 0.7620246007617076,
+              "rocAuc": 0.97085501401479,
+              "stageKey": 3,
+              "stageLabel": "post-assignments",
+              "support": 4320
+            },
+            {
+              "ece": 0.02130383692850258,
+              "overloadRatio": 0.8888724435225547,
+              "rocAuc": 0.9413112028864504,
+              "stageKey": 4,
+              "stageLabel": "post-see",
+              "support": 4320
+            }
+          ],
+          "rocMax": 0.97085501401479,
+          "rocMin": 0.7483264253339694,
+          "rocSpread": 0.2225285886808206
+        }
+      },
+      "challengerInfo": {
+        "allow_writing_files": false,
+        "bestIteration": 259,
+        "depth": 6,
+        "eval_metric": "AUC",
+        "iterations": 300,
+        "l2_leaf_reg": 3.0,
+        "learning_rate": 0.05,
+        "logging_level": "Silent",
+        "loss_function": "Logloss",
+        "modelArtifact": "air-mentor-api/output/proof-risk-model/catboost-challenger-local-20260422T225904Z/catboost-ceRisk.cbm",
+        "random_seed": 4242,
+        "scalePosWeight": 51.84403669724771,
+        "scale_pos_weight": 51.84403669724771,
+        "thread_count": -1,
+        "treeCount": 260
+      },
+      "gates": {
+        "localCal": false,
+        "overload": false,
+        "passCount": 1,
+        "proper": false,
+        "ranking": false,
+        "replayable": true
+      },
+      "head": "ceRisk",
+      "headPromotable": false,
+      "skipped": false
+    },
+    "downstreamCarryoverRisk": {
+      "baseline": {
+        "brier": 0.10027686554443772,
+        "globalEce": 0.0315127786503739,
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.07293176668563989,
+            "halfWidth": 0.08,
+            "meanLabel": 0.45869483213881557,
+            "meanProb": 0.3857630654531757,
+            "support": 2651
+          },
+          {
+            "center": 0.85,
+            "ece": 0.006093221462936227,
+            "halfWidth": 0.08,
+            "meanLabel": 0.8583617747440273,
+            "meanProb": 0.8522685532810911,
+            "support": 586
+          }
+        ],
+        "overloadRatio": 0.895120929650202,
+        "prAuc": 0.8043626070823218,
+        "precisionRecallAtBudget": {
+          "falsePositives": 926,
+          "k": 4320,
+          "precision": 0.7856481481481481,
+          "recall": 0.5568498769483183,
+          "topPct": 0.2,
+          "totalPositives": 6095,
+          "truePositives": 3394
+        },
+        "rocAuc": 0.9271773719292964,
+        "stageStability": {
+          "perStage": [
+            {
+              "ece": 0.026102376011864586,
+              "overloadRatio": 0.9101598233982735,
+              "rocAuc": 0.9288491976046258,
+              "stageKey": 0,
+              "stageLabel": "pre-tt1",
+              "support": 4320
+            },
+            {
+              "ece": 0.02933664459882463,
+              "overloadRatio": 0.8976631390686063,
+              "rocAuc": 0.9291356965217232,
+              "stageKey": 1,
+              "stageLabel": "post-tt1",
+              "support": 4320
+            },
+            {
+              "ece": 0.04589735459717282,
+              "overloadRatio": 0.8761659176054993,
+              "rocAuc": 0.9223561480471911,
+              "stageKey": 2,
+              "stageLabel": "post-tt2",
+              "support": 4320
+            },
+            {
+              "ece": 0.030375646552144253,
+              "overloadRatio": 0.9030419417186779,
+              "rocAuc": 0.9320058442604584,
+              "stageKey": 3,
+              "stageLabel": "post-assignments",
+              "support": 4320
+            },
+            {
+              "ece": 0.037616721434687986,
+              "overloadRatio": 0.8885738264599524,
+              "rocAuc": 0.9237731669294009,
+              "stageKey": 4,
+              "stageLabel": "post-see",
+              "support": 4320
+            }
+          ],
+          "rocMax": 0.9320058442604584,
+          "rocMin": 0.9223561480471911,
+          "rocSpread": 0.009649696213267278
+        }
+      },
+      "challenger": {
+        "brier": 0.08940363484101434,
+        "globalEce": 0.0436136949352558,
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.08438167980227185,
+            "halfWidth": 0.08,
+            "meanLabel": 0.4642857142857143,
+            "meanProb": 0.37990403448344245,
+            "support": 812
+          },
+          {
+            "center": 0.85,
+            "ece": 0.09271711047819708,
+            "halfWidth": 0.08,
+            "meanLabel": 0.7909356725146199,
+            "meanProb": 0.883652782992817,
+            "support": 1368
+          }
+        ],
+        "overloadRatio": 0.971134079167027,
+        "prAuc": 0.8454132239834438,
+        "precisionRecallAtBudget": {
+          "falsePositives": 716,
+          "k": 4320,
+          "precision": 0.8342592592592593,
+          "recall": 0.591304347826087,
+          "topPct": 0.2,
+          "totalPositives": 6095,
+          "truePositives": 3604
+        },
+        "rocAuc": 0.9423207576269423,
+        "stageStability": {
+          "perStage": [
+            {
+              "ece": 0.04188036003429927,
+              "overloadRatio": 0.9700328628295627,
+              "rocAuc": 0.942570591031658,
+              "stageKey": 0,
+              "stageLabel": "pre-tt1",
+              "support": 4320
+            },
+            {
+              "ece": 0.04315072920674366,
+              "overloadRatio": 0.9639288438482384,
+              "rocAuc": 0.9421794657787228,
+              "stageKey": 1,
+              "stageLabel": "post-tt1",
+              "support": 4320
+            },
+            {
+              "ece": 0.04159837568950729,
+              "overloadRatio": 0.9661989195121915,
+              "rocAuc": 0.9404352085212133,
+              "stageKey": 2,
+              "stageLabel": "post-tt2",
+              "support": 4320
+            },
+            {
+              "ece": 0.04613868238236066,
+              "overloadRatio": 0.981163344667788,
+              "rocAuc": 0.9443057215923625,
+              "stageKey": 3,
+              "stageLabel": "post-assignments",
+              "support": 4320
+            },
+            {
+              "ece": 0.04598254786965147,
+              "overloadRatio": 0.9743464249773535,
+              "rocAuc": 0.9419515629005331,
+              "stageKey": 4,
+              "stageLabel": "post-see",
+              "support": 4320
+            }
+          ],
+          "rocMax": 0.9443057215923625,
+          "rocMin": 0.9404352085212133,
+          "rocSpread": 0.003870513071149162
+        }
+      },
+      "challengerInfo": {
+        "allow_writing_files": false,
+        "bestIteration": 299,
+        "depth": 6,
+        "eval_metric": "AUC",
+        "iterations": 300,
+        "l2_leaf_reg": 3.0,
+        "learning_rate": 0.05,
+        "logging_level": "Silent",
+        "loss_function": "Logloss",
+        "modelArtifact": "air-mentor-api/output/proof-risk-model/catboost-challenger-local-20260422T225904Z/catboost-downstreamCarryoverRisk.cbm",
+        "random_seed": 4242,
+        "scalePosWeight": 2.979732842008291,
+        "scale_pos_weight": 2.979732842008291,
+        "thread_count": -1,
+        "treeCount": 300
+      },
+      "gates": {
+        "localCal": false,
+        "overload": true,
+        "passCount": 4,
+        "proper": true,
+        "ranking": true,
+        "replayable": true
+      },
+      "head": "downstreamCarryoverRisk",
+      "headPromotable": false,
+      "skipped": false
+    },
+    "overallCourseRisk": {
+      "baseline": {
+        "brier": 0.10844252819184162,
+        "globalEce": 0.024835195338783693,
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.04843093979193308,
+            "halfWidth": 0.08,
+            "meanLabel": 0.4343189529810955,
+            "meanProb": 0.38588801318916244,
+            "support": 2063
+          },
+          {
+            "center": 0.85,
+            "ece": 0.002970732354688699,
+            "halfWidth": 0.08,
+            "meanLabel": 0.8140495867768595,
+            "meanProb": 0.8110788544221708,
+            "support": 242
+          }
+        ],
+        "overloadRatio": 0.871161497669856,
+        "prAuc": 0.5655605036278172,
+        "precisionRecallAtBudget": {
+          "falsePositives": 1968,
+          "k": 4320,
+          "precision": 0.5444444444444444,
+          "recall": 0.5909547738693467,
+          "topPct": 0.2,
+          "totalPositives": 3980,
+          "truePositives": 2352
+        },
+        "rocAuc": 0.8501828737900626,
+        "stageStability": {
+          "perStage": [
+            {
+              "ece": 0.024140583943243234,
+              "overloadRatio": 0.8936309290519069,
+              "rocAuc": 0.8413201435668696,
+              "stageKey": 0,
+              "stageLabel": "pre-tt1",
+              "support": 4320
+            },
+            {
+              "ece": 0.03279273399403551,
+              "overloadRatio": 0.8720007075059153,
+              "rocAuc": 0.840531759250281,
+              "stageKey": 1,
+              "stageLabel": "post-tt1",
+              "support": 4320
+            },
+            {
+              "ece": 0.024236711824870066,
+              "overloadRatio": 0.8684640765283432,
+              "rocAuc": 0.7786112386563919,
+              "stageKey": 2,
+              "stageLabel": "post-tt2",
+              "support": 4320
+            },
+            {
+              "ece": 0.03709778402162956,
+              "overloadRatio": 0.885414631361759,
+              "rocAuc": 0.9521641621843611,
+              "stageKey": 3,
+              "stageLabel": "post-assignments",
+              "support": 4320
+            },
+            {
+              "ece": 0.030552392912604313,
+              "overloadRatio": 0.8362971439013553,
+              "rocAuc": 0.7963982797072764,
+              "stageKey": 4,
+              "stageLabel": "post-see",
+              "support": 4320
+            }
+          ],
+          "rocMax": 0.9521641621843611,
+          "rocMin": 0.7786112386563919,
+          "rocSpread": 0.17355292352796914
+        }
+      },
+      "challenger": {
+        "brier": 0.08497912559975514,
+        "globalEce": 0.030414217938854068,
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.007481907977691993,
+            "halfWidth": 0.08,
+            "meanLabel": 0.4187223276407337,
+            "meanProb": 0.4262042356184257,
+            "support": 1581
+          },
+          {
+            "center": 0.85,
+            "ece": 0.10230589714119731,
+            "halfWidth": 0.08,
+            "meanLabel": 0.7248908296943232,
+            "meanProb": 0.8271967268355205,
+            "support": 229
+          }
+        ],
+        "overloadRatio": 0.9004439961411742,
+        "prAuc": 0.7346024890238069,
+        "precisionRecallAtBudget": {
+          "falsePositives": 1619,
+          "k": 4320,
+          "precision": 0.6252314814814814,
+          "recall": 0.678643216080402,
+          "topPct": 0.2,
+          "totalPositives": 3980,
+          "truePositives": 2701
+        },
+        "rocAuc": 0.903879856147936,
+        "stageStability": {
+          "perStage": [
+            {
+              "ece": 0.03258186493943524,
+              "overloadRatio": 0.9146994897571941,
+              "rocAuc": 0.9129194496888529,
+              "stageKey": 0,
+              "stageLabel": "pre-tt1",
+              "support": 4320
+            },
+            {
+              "ece": 0.03370901755460658,
+              "overloadRatio": 0.9154250213163484,
+              "rocAuc": 0.9139014097160033,
+              "stageKey": 1,
+              "stageLabel": "post-tt1",
+              "support": 4320
+            },
+            {
+              "ece": 0.050564439570820865,
+              "overloadRatio": 0.846915183655687,
+              "rocAuc": 0.7816007891329518,
+              "stageKey": 2,
+              "stageLabel": "post-tt2",
+              "support": 4320
+            },
+            {
+              "ece": 0.006806719746248531,
+              "overloadRatio": 0.9703841331511033,
+              "rocAuc": 0.9949410075348364,
+              "stageKey": 3,
+              "stageLabel": "post-assignments",
+              "support": 4320
+            },
+            {
+              "ece": 0.04441803209431259,
+              "overloadRatio": 0.8547961528255384,
+              "rocAuc": 0.7991796382594014,
+              "stageKey": 4,
+              "stageLabel": "post-see",
+              "support": 4320
+            }
+          ],
+          "rocMax": 0.9949410075348364,
+          "rocMin": 0.7816007891329518,
+          "rocSpread": 0.21334021840188455
+        }
+      },
+      "challengerInfo": {
+        "allow_writing_files": false,
+        "bestIteration": 299,
+        "depth": 6,
+        "eval_metric": "AUC",
+        "iterations": 300,
+        "l2_leaf_reg": 3.0,
+        "learning_rate": 0.05,
+        "logging_level": "Silent",
+        "loss_function": "Logloss",
+        "modelArtifact": "air-mentor-api/output/proof-risk-model/catboost-challenger-local-20260422T225904Z/catboost-overallCourseRisk.cbm",
+        "random_seed": 4242,
+        "scalePosWeight": 5.757919436840047,
+        "scale_pos_weight": 5.757919436840047,
+        "thread_count": -1,
+        "treeCount": 300
+      },
+      "gates": {
+        "localCal": false,
+        "overload": true,
+        "passCount": 4,
+        "proper": true,
+        "ranking": true,
+        "replayable": true
+      },
+      "head": "overallCourseRisk",
+      "headPromotable": false,
+      "skipped": false
+    },
+    "seeRisk": {
+      "baseline": {
+        "brier": 0.11953971596858744,
+        "globalEce": 0.02820106384643877,
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.0675914555769152,
+            "halfWidth": 0.08,
+            "meanLabel": 0.3942172073342736,
+            "meanProb": 0.3266257517573584,
+            "support": 1418
+          },
+          {
+            "center": 0.85,
+            "ece": 0.014853832348123097,
+            "halfWidth": 0.08,
+            "meanLabel": 0.8571428571428571,
+            "meanProb": 0.842289024794734,
+            "support": 21
+          }
+        ],
+        "overloadRatio": 0.9173837326292715,
+        "prAuc": 0.532580224773556,
+        "precisionRecallAtBudget": {
+          "falsePositives": 2116,
+          "k": 4320,
+          "precision": 0.5101851851851852,
+          "recall": 0.529171668667467,
+          "topPct": 0.2,
+          "totalPositives": 4165,
+          "truePositives": 2204
+        },
+        "rocAuc": 0.8246974338918245,
+        "stageStability": {
+          "perStage": [
+            {
+              "ece": 0.03529733080779848,
+              "overloadRatio": 0.964734976756192,
+              "rocAuc": 0.7885455874348593,
+              "stageKey": 0,
+              "stageLabel": "pre-tt1",
+              "support": 4320
+            },
+            {
+              "ece": 0.03931129206151396,
+              "overloadRatio": 0.9612478217426789,
+              "rocAuc": 0.7887977674580012,
+              "stageKey": 1,
+              "stageLabel": "post-tt1",
+              "support": 4320
+            },
+            {
+              "ece": 0.034485336348456894,
+              "overloadRatio": 0.821156478961184,
+              "rocAuc": 0.7379460530986127,
+              "stageKey": 2,
+              "stageLabel": "post-tt2",
+              "support": 4320
+            },
+            {
+              "ece": 0.020765134298778028,
+              "overloadRatio": 0.9676385923595,
+              "rocAuc": 0.9752469384656645,
+              "stageKey": 3,
+              "stageLabel": "post-assignments",
+              "support": 4320
+            },
+            {
+              "ece": 0.04536597042316057,
+              "overloadRatio": 0.8721407933268026,
+              "rocAuc": 0.7450193154405438,
+              "stageKey": 4,
+              "stageLabel": "post-see",
+              "support": 4320
+            }
+          ],
+          "rocMax": 0.9752469384656645,
+          "rocMin": 0.7379460530986127,
+          "rocSpread": 0.23730088536705174
+        }
+      },
+      "challenger": {
+        "brier": 0.10723915753813104,
+        "globalEce": 0.046666105354098666,
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.0025343443594103565,
+            "halfWidth": 0.08,
+            "meanLabel": 0.4114380899500278,
+            "meanProb": 0.40890374559061743,
+            "support": 1801
+          },
+          {
+            "center": 0.85,
+            "ece": 0.21571729685503704,
+            "halfWidth": 0.08,
+            "meanLabel": 0.6709844559585493,
+            "meanProb": 0.8867017528135863,
+            "support": 386
+          }
+        ],
+        "overloadRatio": 0.8789719346340117,
+        "prAuc": 0.64472720645108,
+        "precisionRecallAtBudget": {
+          "falsePositives": 1879,
+          "k": 4320,
+          "precision": 0.5650462962962963,
+          "recall": 0.5860744297719087,
+          "topPct": 0.2,
+          "totalPositives": 4165,
+          "truePositives": 2441
+        },
+        "rocAuc": 0.8598740235985418,
+        "stageStability": {
+          "perStage": [
+            {
+              "ece": 0.05682373951010965,
+              "overloadRatio": 0.8784707961544863,
+              "rocAuc": 0.8289563602900294,
+              "stageKey": 0,
+              "stageLabel": "pre-tt1",
+              "support": 4320
+            },
+            {
+              "ece": 0.057971768207371696,
+              "overloadRatio": 0.8650033214624928,
+              "rocAuc": 0.8278603669744353,
+              "stageKey": 1,
+              "stageLabel": "post-tt1",
+              "support": 4320
+            },
+            {
+              "ece": 0.068477748220076,
+              "overloadRatio": 0.8063487914019881,
+              "rocAuc": 0.7298823171367772,
+              "stageKey": 2,
+              "stageLabel": "post-tt2",
+              "support": 4320
+            },
+            {
+              "ece": 0.002545869391654549,
+              "overloadRatio": 0.9980318388647621,
+              "rocAuc": 0.9999390636667629,
+              "stageKey": 3,
+              "stageLabel": "post-assignments",
+              "support": 4320
+            },
+            {
+              "ece": 0.06429704079194733,
+              "overloadRatio": 0.8470049252863284,
+              "rocAuc": 0.7324869150413248,
+              "stageKey": 4,
+              "stageLabel": "post-see",
+              "support": 4320
+            }
+          ],
+          "rocMax": 0.9999390636667629,
+          "rocMin": 0.7298823171367772,
+          "rocSpread": 0.2700567465299857
+        }
+      },
+      "challengerInfo": {
+        "allow_writing_files": false,
+        "bestIteration": 299,
+        "depth": 6,
+        "eval_metric": "AUC",
+        "iterations": 300,
+        "l2_leaf_reg": 3.0,
+        "learning_rate": 0.05,
+        "logging_level": "Silent",
+        "loss_function": "Logloss",
+        "modelArtifact": "air-mentor-api/output/proof-risk-model/catboost-challenger-local-20260422T225904Z/catboost-seeRisk.cbm",
+        "random_seed": 4242,
+        "scalePosWeight": 5.914765906362545,
+        "scale_pos_weight": 5.914765906362545,
+        "thread_count": -1,
+        "treeCount": 300
+      },
+      "gates": {
+        "localCal": false,
+        "overload": false,
+        "passCount": 3,
+        "proper": true,
+        "ranking": true,
+        "replayable": true
+      },
+      "head": "seeRisk",
+      "headPromotable": false,
+      "skipped": false
+    }
+  },
+  "promotion": {
+    "blockedHeads": [
+      "attendanceRisk",
+      "ceRisk",
+      "seeRisk",
+      "overallCourseRisk",
+      "downstreamCarryoverRisk"
+    ],
+    "decision": "keep-as-shadow",
+    "promotableHeads": [],
+    "reason": "5/5 heads fail at least one of 5 gates (ranking / proper / localCal / overload / replayable); Phase 10 requires ALL five to promote; challenger stays shadow."
+  },
+  "seed": 4242
+}

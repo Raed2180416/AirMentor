@@ -1,0 +1,42 @@
+{
+  "attendanceRisk": {
+    "localCal": false,
+    "overload": true,
+    "passCount": 3,
+    "proper": true,
+    "ranking": false,
+    "replayable": true
+  },
+  "ceRisk": {
+    "localCal": false,
+    "overload": false,
+    "passCount": 1,
+    "proper": false,
+    "ranking": false,
+    "replayable": true
+  },
+  "downstreamCarryoverRisk": {
+    "localCal": false,
+    "overload": true,
+    "passCount": 4,
+    "proper": true,
+    "ranking": true,
+    "replayable": true
+  },
+  "overallCourseRisk": {
+    "localCal": false,
+    "overload": true,
+    "passCount": 4,
+    "proper": true,
+    "ranking": true,
+    "replayable": true
+  },
+  "seeRisk": {
+    "localCal": false,
+    "overload": false,
+    "passCount": 3,
+    "proper": true,
+    "ranking": true,
+    "replayable": true
+  }
+}
