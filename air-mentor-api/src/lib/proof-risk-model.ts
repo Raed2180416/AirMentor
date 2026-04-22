@@ -7,9 +7,9 @@ import type {
   GraphAwarePrerequisiteSummaryCompleteness,
 } from './graph-summary.js'
 
-export const RISK_FEATURE_SCHEMA_VERSION = 'observable-risk-features-v4'
-export const RISK_PRODUCTION_MODEL_VERSION = 'observable-risk-logit-v6'
-export const RISK_CHALLENGER_MODEL_VERSION = 'observable-risk-depth2-tree-v6'
+export const RISK_FEATURE_SCHEMA_VERSION = 'observable-risk-features-v5'
+export const RISK_PRODUCTION_MODEL_VERSION = 'observable-risk-logit-v8'
+export const RISK_CHALLENGER_MODEL_VERSION = 'observable-risk-catboost-challenger-v8'
 export const RISK_CORRELATION_ARTIFACT_VERSION = 'observable-risk-correlations-v4'
 export const RISK_CALIBRATION_VERSION = 'post-hoc-calibration-v2'
 export const PROOF_CORPUS_MANIFEST_VERSION = 'proof-corpus-v1'
@@ -51,6 +51,16 @@ export const OBSERVABLE_FEATURE_KEYS = [
   'stagePostAssignmentsScaled',
   'stagePostSeeScaled',
   'sectionPressureScaled',
+  // v5 interaction features: stage × evidence products capture conditional effects
+  // that additive stage indicators cannot express (e.g. TT1 weakness matters more at post-TT1)
+  'tt1tt2ExamCompoundRiskScaled',
+  'courseworkCompoundRiskScaled',
+  'stagePostTt2TtCompoundInteractionScaled',
+  'attendanceTrendCompoundRiskScaled',
+  'stagePostAssignmentsCourseworkInteractionScaled',
+  // v8 missingness indicators: sentinel 0.5 imputation in current pipeline → binary flag restores info
+  'cgpaMissingScaled',
+  'backlogMissingScaled',
 ] as const
 
 export const PROOF_SCENARIO_FAMILIES = [
@@ -75,7 +85,7 @@ export type SplitName = 'train' | 'validation' | 'test'
 export type CalibrationMethod = 'identity' | 'sigmoid' | 'isotonic' | 'beta' | 'venn-abers'
 export type ScenarioFamily = (typeof PROOF_SCENARIO_FAMILIES)[number]
 export type ChallengerModelFamily = 'depth-2-tree'
-export type ProofRiskTrainingVariantId = 'production-v6' | 'baseline-v5-like'
+export type ProofRiskTrainingVariantId = 'production-v7' | 'production-v8' | 'baseline-v5-like'
 
 export type ProofCorpusManifestEntry = {
   seed: number
@@ -89,16 +99,31 @@ export type ProofRiskTrainingConfig = {
   challengerModelVersion: string
   calibrationVersion: string
   includeStageIndicators: boolean
+  includeInteractionFeatures: boolean
   calibrationMethods: CalibrationMethod[]
   challengerModelFamily: ChallengerModelFamily
 }
 
 export const DEFAULT_PROOF_RISK_TRAINING_CONFIG: ProofRiskTrainingConfig = {
-  variantId: 'production-v6',
+  variantId: 'production-v8',
   productionModelVersion: RISK_PRODUCTION_MODEL_VERSION,
   challengerModelVersion: RISK_CHALLENGER_MODEL_VERSION,
   calibrationVersion: RISK_CALIBRATION_VERSION,
   includeStageIndicators: true,
+  includeInteractionFeatures: true,
+  calibrationMethods: ['identity', 'sigmoid', 'beta', 'isotonic', 'venn-abers'],
+  challengerModelFamily: 'depth-2-tree',
+}
+
+// v8: adds cgpaMissingScaled + backlogMissingScaled to feature vector (43 features total)
+// Fixes v7 overload=1.1127 by restoring missingness signal suppressed by 0.5 imputation
+export const CORRECTED_V8_PROOF_RISK_TRAINING_CONFIG: ProofRiskTrainingConfig = {
+  variantId: 'production-v8',
+  productionModelVersion: 'observable-risk-logit-v8',
+  challengerModelVersion: 'observable-risk-catboost-challenger-v8',
+  calibrationVersion: 'post-hoc-calibration-v2',
+  includeStageIndicators: true,
+  includeInteractionFeatures: true,
   calibrationMethods: ['identity', 'sigmoid', 'beta', 'isotonic', 'venn-abers'],
   challengerModelFamily: 'depth-2-tree',
 }
@@ -109,6 +134,7 @@ export const BASELINE_V5_LIKE_PROOF_RISK_TRAINING_CONFIG: ProofRiskTrainingConfi
   challengerModelVersion: 'observable-risk-depth2-tree-v5-like',
   calibrationVersion: 'post-hoc-calibration-v1-like',
   includeStageIndicators: false,
+  includeInteractionFeatures: false,
   calibrationMethods: ['identity', 'sigmoid', 'isotonic'],
   challengerModelFamily: 'depth-2-tree',
 }
@@ -131,6 +157,10 @@ export type ObservableFeaturePayload = {
   attendanceHistoryRiskCount: number
   currentCgpa: number
   backlogCount: number
+  // Explicit missingness: true when prior CGPA/backlog unknown (e.g. Semester 1 with no history).
+  // Used to prevent zero from being misread as "worst-case CGPA/zero backlog" in the feature vector.
+  cgpaMissing: boolean
+  backlogMissing: boolean
   tt1Pct: number | null
   tt2Pct: number | null
   seePct: number | null
@@ -349,6 +379,8 @@ export type ModelBackedRiskOutput = ObservableInferenceOutput & {
   headProbabilities: Record<RiskHeadKey, number>
   queuePriorityScore: number
   queuePrioritySource: 'overall-course-risk-head'
+  rankingAllowed: boolean
+  rankingSuppressedReason: string | null
   crossCourseDrivers: string[]
   headDisplay: Record<RiskHeadKey, {
     displayProbabilityAllowed: boolean
@@ -396,6 +428,17 @@ function displaySuppressionWarningForFallbackSourceRefs(sourceRefs: ObservableSo
     ? featureCompleteness.missing.join(', ')
     : 'none'
   return `Fallback-simulated evidence is ${confidenceClass} confidence (${missingDimensions} missing); probability display is suppressed for this proof row.`
+}
+
+function rankingSuppressionReasonForFallbackSourceRefs(sourceRefs: ObservableSourceRefs | null | undefined) {
+  if (!sourceRefs || sourceRefs.coEvidenceMode !== 'fallback-simulated') return null
+  const featureCompleteness = sourceRefs.featureCompleteness ?? sourceRefs.prerequisiteCompleteness ?? null
+  const confidenceClass = sourceRefs.featureConfidenceClass ?? featureCompleteness?.confidenceClass ?? null
+  if (confidenceClass !== 'low') return null
+  const missingDimensions = featureCompleteness && featureCompleteness.missing.length > 0
+    ? featureCompleteness.missing.join(', ')
+    : 'none'
+  return `Fallback-simulated evidence is low confidence (${missingDimensions} missing); operational ranking is suppressed for this proof row.`
 }
 
 function applyFallbackDisplaySuppression(
@@ -595,6 +638,7 @@ function featureVectorFromPayload(
   payload: ObservableFeaturePayload,
   sourceRefs?: ObservableSourceRefs | null,
   includeStageIndicators = true,
+  includeInteractionFeatures = true,
 ): FeatureVector {
   const prerequisiteDepth = Math.max(0, safeNumber(payload.prerequisiteChainDepth))
   const stageIndicators = includeStageIndicators
@@ -633,6 +677,14 @@ function featureVectorFromPayload(
     stagePostAssignmentsScaled: stageIndicators.stagePostAssignmentsScaled,
     stagePostSeeScaled: stageIndicators.stagePostSeeScaled,
     sectionPressureScaled: clamp(payload.sectionRiskRate, 0, 1),
+    // v5 interaction features — zeroed for baseline configs that set includeInteractionFeatures=false
+    tt1tt2ExamCompoundRiskScaled: includeInteractionFeatures ? safePctToRisk(payload.tt1Pct) * safePctToRisk(payload.tt2Pct) : 0,
+    courseworkCompoundRiskScaled: includeInteractionFeatures ? safePctToRisk(payload.quizPct) * safePctToRisk(payload.assignmentPct) : 0,
+    stagePostTt2TtCompoundInteractionScaled: includeInteractionFeatures ? stageIndicators.stagePostTt2Scaled * safePctToRisk(payload.tt1Pct) * safePctToRisk(payload.tt2Pct) : 0,
+    attendanceTrendCompoundRiskScaled: includeInteractionFeatures ? clamp((1 - clamp(payload.attendancePct / 100, 0, 1)) * clamp(1 - (payload.attendanceTrend + 25) / 50, 0, 1), 0, 1) : 0,
+    stagePostAssignmentsCourseworkInteractionScaled: includeInteractionFeatures ? stageIndicators.stagePostAssignmentsScaled * (safePctToRisk(payload.quizPct) + safePctToRisk(payload.assignmentPct)) / 2 : 0,
+    cgpaMissingScaled: payload.cgpaMissing ? 1 : 0,
+    backlogMissingScaled: payload.backlogMissing ? 1 : 0,
   }
 }
 
@@ -813,40 +865,51 @@ function fitIsotonicCalibration(rows: Array<{ label: number; rawProb: number }>)
   }
 }
 
+const VENN_ABERS_MAX_ROWS = 3000
 function fitVennAbersCalibration(rows: Array<{ label: number; rawProb: number }>) {
-  const ordered = rows
+  // Perf guard: Venn-Abers runs isotonic 2×100 times; each O(n log n) sort dominates at n>>3k.
+  // Deterministically downsample to bound total work regardless of val-set size.
+  const working = rows.length > VENN_ABERS_MAX_ROWS
+    ? (() => {
+        const step = rows.length / VENN_ABERS_MAX_ROWS
+        const out: Array<{ label: number; rawProb: number }> = []
+        for (let i = 0; i < VENN_ABERS_MAX_ROWS; i += 1) out.push(rows[Math.floor(i * step)]!)
+        return out
+      })()
+    : rows
+  const ordered = working
     .map((row, index) => ({
       ...row,
       rawProb: clamp(row.rawProb, 0.0001, 0.9999),
       index,
     }))
     .sort((left, right) => left.rawProb - right.rawProb || left.index - right.index)
-  
+
   const grid = Array.from({ length: 100 }, (_, i) => (i + 0.5) / 100)
   const thresholds: number[] = []
   const values: number[] = []
-  
+
   const applyIso = (iso: { thresholds: number[], values: number[] }, x: number) => {
     if (iso.thresholds.length === 0 || iso.values.length === 0) return x
     const index = iso.thresholds.findIndex(threshold => x <= threshold)
     if (index === -1) return iso.values[iso.values.length - 1] ?? x
     return iso.values[index] ?? x
   }
-  
+
   for (const x of grid) {
     const rows0 = [...ordered, { label: 0, rawProb: x, index: -1 }].sort((left, right) => left.rawProb - right.rawProb || left.index - right.index)
     const iso0 = fitIsotonicCalibration(rows0)
     const p0 = applyIso(iso0, x)
-    
+
     const rows1 = [...ordered, { label: 1, rawProb: x, index: -1 }].sort((left, right) => left.rawProb - right.rawProb || left.index - right.index)
     const iso1 = fitIsotonicCalibration(rows1)
     const p1 = applyIso(iso1, x)
-    
+
     const p = p0 / (1 - p1 + p0)
     thresholds.push(roundToFour(x))
     values.push(roundToFour(clamp(p, 0.0001, 0.9999)))
   }
-  
+
   return {
     thresholds,
     values,
@@ -928,16 +991,23 @@ function chooseCalibration(
     } satisfies ProbabilityCalibrationArtifact
   }
 
+  const __calT = (label: string, s: number) => console.error(`[cal] ${headKey}:${label} ${((Date.now() - s) / 1000).toFixed(2)}s`)
   if (allowedMethods.includes('identity')) {
+    const s = Date.now()
     candidates.push(buildCandidate('identity', {}))
+    __calT('identity', s)
   }
   if (validationRows.length > 0 && allowedMethods.includes('sigmoid')) {
+    const s = Date.now()
     const sigmoidCalibration = fitSigmoidCalibration(validationRows)
     candidates.push(buildCandidate('sigmoid', sigmoidCalibration))
+    __calT('sigmoid', s)
   }
   if (validationRows.length > 0 && allowedMethods.includes('beta')) {
+    const s = Date.now()
     const betaCalibration = fitBetaCalibration(validationRows)
     candidates.push(buildCandidate('beta', betaCalibration))
+    __calT('beta', s)
   }
   if (
     validationRows.length > 0
@@ -945,8 +1015,10 @@ function chooseCalibration(
     && support.validationSupport >= 1000
     && support.validationPositives >= 250
   ) {
+    const s = Date.now()
     const isotonicCalibration = fitIsotonicCalibration(validationRows)
     candidates.push(buildCandidate('isotonic', isotonicCalibration))
+    __calT('isotonic', s)
   }
   if (
     validationRows.length > 0
@@ -954,8 +1026,10 @@ function chooseCalibration(
     && support.validationSupport >= 1000
     && support.validationPositives >= 250
   ) {
+    const s = Date.now()
     const vennAbersCalibration = fitVennAbersCalibration(validationRows)
     candidates.push(buildCandidate('venn-abers', vennAbersCalibration))
+    __calT('venn-abers', s)
   }
 
   const baseline = candidates[0] ?? buildCandidate('identity', {})
@@ -1128,6 +1202,7 @@ function writeFeatureVectorToBuffer(
   buffer: Float32Array,
   offset: number,
   includeStageIndicators = true,
+  includeInteractionFeatures = true,
 ) {
   const prerequisiteDepth = Math.max(0, safeNumber(payload.prerequisiteChainDepth))
   const stageIndicators = includeStageIndicators
@@ -1165,6 +1240,20 @@ function writeFeatureVectorToBuffer(
   buffer[offset + 29] = stageIndicators.stagePostAssignmentsScaled
   buffer[offset + 30] = stageIndicators.stagePostSeeScaled
   buffer[offset + 31] = clamp(payload.sectionRiskRate, 0, 1)
+  // v5 interaction features — zero out for baseline configs that set includeInteractionFeatures=false
+  if (includeInteractionFeatures) {
+    buffer[offset + 32] = safePctToRisk(payload.tt1Pct) * safePctToRisk(payload.tt2Pct)
+    buffer[offset + 33] = safePctToRisk(payload.quizPct) * safePctToRisk(payload.assignmentPct)
+    buffer[offset + 34] = stageIndicators.stagePostTt2Scaled * safePctToRisk(payload.tt1Pct) * safePctToRisk(payload.tt2Pct)
+    buffer[offset + 35] = clamp((1 - clamp(payload.attendancePct / 100, 0, 1)) * clamp(1 - (payload.attendanceTrend + 25) / 50, 0, 1), 0, 1)
+    buffer[offset + 36] = stageIndicators.stagePostAssignmentsScaled * (safePctToRisk(payload.quizPct) + safePctToRisk(payload.assignmentPct)) / 2
+  } else {
+    buffer[offset + 32] = 0
+    buffer[offset + 33] = 0
+    buffer[offset + 34] = 0
+    buffer[offset + 35] = 0
+    buffer[offset + 36] = 0
+  }
 }
 
 function datasetBlockForIndex(dataset: CompactRiskDataset, rowIndex: number) {
@@ -1338,6 +1427,7 @@ class ProofRiskDatasetBuilder {
       block.features,
       slot * FEATURE_COUNT,
       this.trainingConfig.includeStageIndicators,
+      this.trainingConfig.includeInteractionFeatures,
     )
     block.count += 1
 
@@ -1816,12 +1906,21 @@ function trainCompactProofRiskModel(
   correlationsAccumulator: CorrelationAccumulator,
   trainingConfig: ProofRiskTrainingConfig,
 ) {
+  const __t0 = Date.now()
+  const __tlog = (label: string) => { console.error(`[train] ${label} @ ${((Date.now() - __t0) / 1000).toFixed(2)}s rows=${dataset.rowCount}`) }
+  __tlog(`start rows=${dataset.rowCount} train=${dataset.splitSummary.train} val=${dataset.splitSummary.validation} test=${dataset.splitSummary.test}`)
+  const __fitLog = <K extends string>(phase: K, fn: () => LogisticHeadArtifact | ChallengerHeadArtifact) => {
+    const s = Date.now()
+    const r = fn()
+    console.error(`[train] ${phase} in ${((Date.now() - s) / 1000).toFixed(2)}s`)
+    return r
+  }
   const productionHeads = {
-    attendanceRisk: fitLogisticHeadCompact(dataset, 'attendanceRisk', trainingConfig),
-    ceRisk: fitLogisticHeadCompact(dataset, 'ceRisk', trainingConfig),
-    seeRisk: fitLogisticHeadCompact(dataset, 'seeRisk', trainingConfig),
-    overallCourseRisk: fitLogisticHeadCompact(dataset, 'overallCourseRisk', trainingConfig),
-    downstreamCarryoverRisk: fitLogisticHeadCompact(dataset, 'downstreamCarryoverRisk', trainingConfig),
+    attendanceRisk: __fitLog('logistic:attendanceRisk', () => fitLogisticHeadCompact(dataset, 'attendanceRisk', trainingConfig)) as LogisticHeadArtifact,
+    ceRisk: __fitLog('logistic:ceRisk', () => fitLogisticHeadCompact(dataset, 'ceRisk', trainingConfig)) as LogisticHeadArtifact,
+    seeRisk: __fitLog('logistic:seeRisk', () => fitLogisticHeadCompact(dataset, 'seeRisk', trainingConfig)) as LogisticHeadArtifact,
+    overallCourseRisk: __fitLog('logistic:overallCourseRisk', () => fitLogisticHeadCompact(dataset, 'overallCourseRisk', trainingConfig)) as LogisticHeadArtifact,
+    downstreamCarryoverRisk: __fitLog('logistic:downstreamCarryoverRisk', () => fitLogisticHeadCompact(dataset, 'downstreamCarryoverRisk', trainingConfig)) as LogisticHeadArtifact,
   } satisfies Record<RiskHeadKey, LogisticHeadArtifact>
 
   const production: ProductionRiskModelArtifact = {
@@ -1850,18 +1949,22 @@ function trainCompactProofRiskModel(
     headSupportSummary: dataset.headSupportSummary,
     calibrationVersion: trainingConfig.calibrationVersion,
     heads: {
-      attendanceRisk: fitDepthTwoTreeHeadCompact(dataset, 'attendanceRisk', trainingConfig),
-      ceRisk: fitDepthTwoTreeHeadCompact(dataset, 'ceRisk', trainingConfig),
-      seeRisk: fitDepthTwoTreeHeadCompact(dataset, 'seeRisk', trainingConfig),
-      overallCourseRisk: fitDepthTwoTreeHeadCompact(dataset, 'overallCourseRisk', trainingConfig),
-      downstreamCarryoverRisk: fitDepthTwoTreeHeadCompact(dataset, 'downstreamCarryoverRisk', trainingConfig),
+      attendanceRisk: __fitLog('tree:attendanceRisk', () => fitDepthTwoTreeHeadCompact(dataset, 'attendanceRisk', trainingConfig)) as ChallengerHeadArtifact,
+      ceRisk: __fitLog('tree:ceRisk', () => fitDepthTwoTreeHeadCompact(dataset, 'ceRisk', trainingConfig)) as ChallengerHeadArtifact,
+      seeRisk: __fitLog('tree:seeRisk', () => fitDepthTwoTreeHeadCompact(dataset, 'seeRisk', trainingConfig)) as ChallengerHeadArtifact,
+      overallCourseRisk: __fitLog('tree:overallCourseRisk', () => fitDepthTwoTreeHeadCompact(dataset, 'overallCourseRisk', trainingConfig)) as ChallengerHeadArtifact,
+      downstreamCarryoverRisk: __fitLog('tree:downstreamCarryoverRisk', () => fitDepthTwoTreeHeadCompact(dataset, 'downstreamCarryoverRisk', trainingConfig)) as ChallengerHeadArtifact,
     },
   }
+  __tlog('all heads done')
 
+  const __corrT0 = Date.now()
+  const correlations = buildCorrelationArtifactFromAccumulator(correlationsAccumulator, now)
+  console.error(`[train] correlations in ${((Date.now() - __corrT0) / 1000).toFixed(2)}s`)
   return {
     production,
     challenger,
-    correlations: buildCorrelationArtifactFromAccumulator(correlationsAccumulator, now),
+    correlations,
   } satisfies ProofRiskModelBundle
 }
 
@@ -1926,6 +2029,8 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
 }): ModelBackedRiskOutput {
   const fallback = inferObservableRisk(input)
   const fallbackSuppressionWarning = displaySuppressionWarningForFallbackSourceRefs(input.sourceRefs)
+  const rankingSuppressedReason = rankingSuppressionReasonForFallbackSourceRefs(input.sourceRefs)
+  const rankingAllowed = rankingSuppressedReason == null
   if (!input.productionModel || input.productionModel.featureSchemaVersion !== RISK_FEATURE_SCHEMA_VERSION) {
     const fallbackDisplay = Object.fromEntries(
       (Object.keys(HEAD_LABEL_KEYS) as RiskHeadKey[]).map(headKey => [headKey, {
@@ -1945,8 +2050,10 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
         overallCourseRisk: fallback.riskProb,
         downstreamCarryoverRisk: fallback.riskProb,
       },
-      queuePriorityScore: fallback.riskProb,
+      queuePriorityScore: rankingAllowed ? fallback.riskProb : 0,
       queuePrioritySource: 'overall-course-risk-head',
+      rankingAllowed,
+      rankingSuppressedReason,
       crossCourseDrivers: [],
       headDisplay: fallbackDisplay,
     }
@@ -1994,8 +2101,10 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
     headProbabilities: Object.fromEntries(
       Object.entries(headProbabilities).map(([key, value]) => [key, roundToFour(value)]),
     ) as Record<RiskHeadKey, number>,
-    queuePriorityScore: roundToFour(officialOverall),
+    queuePriorityScore: rankingAllowed ? roundToFour(officialOverall) : 0,
     queuePrioritySource: 'overall-course-risk-head',
+    rankingAllowed,
+    rankingSuppressedReason,
     crossCourseDrivers: input.sourceRefs ? crossCourseDriversFromCorrelations(input.correlations ?? null, input.sourceRefs) : [],
     headDisplay: trainedHeadDisplay,
   }
@@ -2082,11 +2191,22 @@ export function featureHash(payload: ObservableFeaturePayload, labels: Observabl
   })).digest('hex')
 }
 
+export function featureVectorArrayFromPayload(
+  payload: ObservableFeaturePayload,
+  sourceRefs?: ObservableSourceRefs | null,
+  includeInteractionFeatures = true,
+): number[] {
+  const vec = featureVectorFromPayload(payload, sourceRefs, true, includeInteractionFeatures)
+  return OBSERVABLE_FEATURE_KEYS.map(key => vec[key])
+}
+
 export function buildObservableFeaturePayload(input: {
   attendancePct: number
   attendanceHistory?: Array<{ attendancePct: number }>
   currentCgpa: number
+  cgpaMissing?: boolean
   backlogCount: number
+  backlogMissing?: boolean
   tt1Pct: number | null
   tt2Pct: number | null
   quizPct: number | null
@@ -2131,6 +2251,8 @@ export function buildObservableFeaturePayload(input: {
     attendanceTrend: roundToTwo(attendanceTrend),
     attendanceHistoryRiskCount: attendanceHistory.filter(item => item.attendancePct < 75).length,
     currentCgpa: roundToTwo(input.currentCgpa),
+    cgpaMissing: input.cgpaMissing ?? false,
+    backlogMissing: input.backlogMissing ?? false,
     backlogCount: input.backlogCount,
     tt1Pct: input.tt1Pct == null ? null : roundToTwo(input.tt1Pct),
     tt2Pct: input.tt2Pct == null ? null : roundToTwo(input.tt2Pct),

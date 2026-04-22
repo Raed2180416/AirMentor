@@ -1,0 +1,259 @@
+OUTDIR=/tmp/cov12-20260422T162939Z LOG=/tmp/cov12-20260422T162939Z/eval.log
+[db:migrate] evaluating 26 migration file(s) from /home/raed/projects/air-mentor-ui/air-mentor-api/src/db/migrations
+[db:migrate] applying migration: 0000_admin_foundation.sql
+[db:migrate] applied migration: 0000_admin_foundation.sql
+[db:migrate] applying migration: 0001_academic_runtime.sql
+[db:migrate] applied migration: 0001_academic_runtime.sql
+[db:migrate] applying migration: 0002_admin_hierarchy.sql
+[db:migrate] applied migration: 0002_admin_hierarchy.sql
+[db:migrate] applying migration: 0002_cleanup_seeded_kavitha_scope.sql
+[db:migrate] applied migration: 0002_cleanup_seeded_kavitha_scope.sql
+[db:migrate] applying migration: 0003_admin_control_plane.sql
+[db:migrate] applied migration: 0003_admin_control_plane.sql
+[db:migrate] applying migration: 0004_academic_assessment_and_history.sql
+[db:migrate] applied migration: 0004_academic_assessment_and_history.sql
+[db:migrate] applying migration: 0005_teaching_authority_phase2.sql
+[db:migrate] applied migration: 0005_teaching_authority_phase2.sql
+[db:migrate] applying migration: 0006_msruas_proof_runtime.sql
+[db:migrate] applied migration: 0006_msruas_proof_runtime.sql
+[db:migrate] applying migration: 0007_msruas_proof_control_plane.sql
+[db:migrate] applied migration: 0007_msruas_proof_control_plane.sql
+[db:migrate] applying migration: 0008_msruas_world_engine_stage2.sql
+[db:migrate] applied migration: 0008_msruas_world_engine_stage2.sql
+[db:migrate] applying migration: 0009_student_agent_shell.sql
+[db:migrate] applied migration: 0009_student_agent_shell.sql
+[db:migrate] applying migration: 0010_simulation_stage_playback.sql
+[db:migrate] applied migration: 0010_simulation_stage_playback.sql
+[db:migrate] applying migration: 0011_risk_model_artifacts.sql
+[db:migrate] applied migration: 0011_risk_model_artifacts.sql
+[db:migrate] applying migration: 0012_faculty_calendar_admin_workspaces.sql
+[db:migrate] applied migration: 0012_faculty_calendar_admin_workspaces.sql
+[db:migrate] applying migration: 0012_proof_queue_case_governance.sql
+[db:migrate] applied migration: 0012_proof_queue_case_governance.sql
+[db:migrate] applying migration: 0012_proof_queue_governance_runtime.sql
+[db:migrate] applied migration: 0012_proof_queue_governance_runtime.sql
+[db:migrate] applying migration: 0013_scope_governance_profiles_and_provisioning.sql
+[db:migrate] applied migration: 0013_scope_governance_profiles_and_provisioning.sql
+[db:migrate] applying migration: 0014_async_proof_run_queue.sql
+[db:migrate] applied migration: 0014_async_proof_run_queue.sql
+[db:migrate] applying migration: 0015_curriculum_linkage_candidates.sql
+[db:migrate] applied migration: 0015_curriculum_linkage_candidates.sql
+[db:migrate] applying migration: 0016_login_rate_limit_windows.sql
+[db:migrate] applied migration: 0016_login_rate_limit_windows.sql
+[db:migrate] applying migration: 0017_operational_telemetry_events.sql
+[db:migrate] applied migration: 0017_operational_telemetry_events.sql
+[db:migrate] applying migration: 0018_proof_active_operational_semester.sql
+[db:migrate] applied migration: 0018_proof_active_operational_semester.sql
+[db:migrate] applying migration: 0019_password_setup_tokens.sql
+[db:migrate] applied migration: 0019_password_setup_tokens.sql
+[db:migrate] applying migration: 0020_proof_eval_recompute_perf_indexes.sql
+[db:migrate] applied migration: 0020_proof_eval_recompute_perf_indexes.sql
+[db:migrate] applying migration: 0021_proof_run_authority.sql
+[db:migrate] applied migration: 0021_proof_run_authority.sql
+[db:migrate] applying migration: 0022_proof_eval_lookup_perf_indexes.sql
+[db:migrate] applied migration: 0022_proof_eval_lookup_perf_indexes.sql
+[proof-eval] initialized evaluation app and database
+[proof-eval] resolved effective batch policy
+[proof-eval] created proof import curriculum_import_7b9f1a5c-b980-469b-a03d-ef6687f89179
+[proof-eval] approved proof import curriculum_import_7b9f1a5c-b980-469b-a03d-ef6687f89179
+[proof-eval] governed corpus request: 12 seeds (0 reused, 12 to create, concurrency 2)
+[proof-eval] created 8/12 governed proof runs (latest seed 707, worker index 6) in 494.47s
+[proof-eval] created 12/12 governed proof runs (latest seed 4444, worker index 11) in 751.62s
+[proof-eval] selected 12/12 governed runs (duplicates skipped: 1, incomplete skipped: 1, scenario-mismatch skipped: 0, non-manifest skipped: 0)
+[proof-eval] activating run simulation_run_a6e55977-3024-4300-ba5c-99026a0fe2cb
+[proof-eval] recomputing governed risk artifacts for run simulation_run_a6e55977-3024-4300-ba5c-99026a0fe2cb
+[proof-eval] recompute finished after 870.22s
+[proof-eval] loaded artifacts, checkpoints, and model diagnostics (artifact-load phase: 2.89s)
+[proof-eval] fast recompute skipped artifact training, but active artifacts are missing; rebuilding governed artifacts without replay rebuild
+[rebuild] start @ 0.00s
+[rebuild] counts loaded runs=13 ckpt=12 evid=12 @ 0.09s
+[rebuild] governed runs selected: 12 @ 0.09s
+[rebuild] evidence loaded pages=48 rows=475200 @ 18.06s
+[train] start rows=475200 train=316800 val=158400 test=0 @ 0.00s rows=475200
+[cal] attendanceRisk:identity 0.98s
+[cal] attendanceRisk:sigmoid 1.78s
+[cal] attendanceRisk:beta 2.17s
+[cal] attendanceRisk:isotonic 41.79s
+[cal] attendanceRisk:venn-abers 0.89s
+[train] logistic:attendanceRisk in 60.26s
+[cal] ceRisk:identity 0.91s
+[cal] ceRisk:sigmoid 2.00s
+[cal] ceRisk:beta 1.64s
+[cal] ceRisk:isotonic 61.05s
+[cal] ceRisk:venn-abers 0.90s
+[train] logistic:ceRisk in 99.78s
+[cal] seeRisk:identity 0.92s
+[cal] seeRisk:sigmoid 1.43s
+[cal] seeRisk:beta 1.83s
+[cal] seeRisk:isotonic 7.11s
+[cal] seeRisk:venn-abers 0.95s
+[train] logistic:seeRisk in 27.42s
+[cal] overallCourseRisk:identity 0.94s
+[cal] overallCourseRisk:sigmoid 1.42s
+[cal] overallCourseRisk:beta 2.04s
+[cal] overallCourseRisk:isotonic 4.37s
+[cal] overallCourseRisk:venn-abers 1.02s
+[train] logistic:overallCourseRisk in 24.91s
+[cal] downstreamCarryoverRisk:identity 1.32s
+[cal] downstreamCarryoverRisk:sigmoid 1.57s
+[cal] downstreamCarryoverRisk:beta 2.01s
+[cal] downstreamCarryoverRisk:isotonic 32.82s
+[cal] downstreamCarryoverRisk:venn-abers 1.19s
+[train] logistic:downstreamCarryoverRisk in 67.85s
+[cal] attendanceRisk:identity 0.68s
+[cal] attendanceRisk:sigmoid 1.12s
+[cal] attendanceRisk:beta 1.63s
+[cal] attendanceRisk:isotonic 1.79s
+[cal] attendanceRisk:venn-abers 0.82s
+[train] tree:attendanceRisk in 23.30s
+[cal] ceRisk:identity 1.19s
+[cal] ceRisk:sigmoid 1.15s
+[cal] ceRisk:beta 1.74s
+[cal] ceRisk:isotonic 1.70s
+[cal] ceRisk:venn-abers 0.81s
+[train] tree:ceRisk in 13.29s
+[cal] seeRisk:identity 0.81s
+[cal] seeRisk:sigmoid 1.23s
+[cal] seeRisk:beta 1.65s
+[cal] seeRisk:isotonic 1.73s
+[cal] seeRisk:venn-abers 0.79s
+[train] tree:seeRisk in 36.91s
+[cal] overallCourseRisk:identity 0.80s
+[cal] overallCourseRisk:sigmoid 1.24s
+[cal] overallCourseRisk:beta 1.72s
+[cal] overallCourseRisk:isotonic 3.38s
+[cal] overallCourseRisk:venn-abers 0.84s
+[train] tree:overallCourseRisk in 39.25s
+[cal] downstreamCarryoverRisk:identity 0.83s
+[cal] downstreamCarryoverRisk:sigmoid 1.39s
+[cal] downstreamCarryoverRisk:beta 2.17s
+[cal] downstreamCarryoverRisk:isotonic 25.50s
+[cal] downstreamCarryoverRisk:venn-abers 1.03s
+[train] tree:downstreamCarryoverRisk in 60.73s
+[train] all heads done @ 453.71s rows=475200
+[train] correlations in 0.00s
+[rebuild] trainer.build finished in 453.71s @ 471.77s
+[rebuild] target-run evidence collected coEvidenceRows=39600 @ 474.73s
+[rebuild] per-run diagnostics chunk 1/3 done (4/12 runs) @ 479.59s
+[rebuild] per-run diagnostics chunk 2/3 done (8/12 runs) @ 486.11s
+[rebuild] per-run diagnostics chunk 3/3 done (12/12 runs) @ 492.78s
+[proof-eval] rebuildProofRiskArtifacts finished in 492.86s
+[proof-eval] feature CSV export written to /tmp/cov12-20260422T162939Z/features.csv
+[proof-eval] corpus ingestion pass-1 (training data) finished: 158400 rows in 16.45s
+[train] start rows=158400 train=0 val=158400 test=0 @ 0.00s rows=158400
+[cal] attendanceRisk:identity 0.68s
+[cal] attendanceRisk:sigmoid 1.06s
+[cal] attendanceRisk:beta 1.41s
+[cal] attendanceRisk:isotonic 1.68s
+[cal] attendanceRisk:venn-abers 0.72s
+[train] logistic:attendanceRisk in 6.04s
+[cal] ceRisk:identity 0.58s
+[cal] ceRisk:sigmoid 0.98s
+[cal] ceRisk:beta 1.43s
+[cal] ceRisk:isotonic 1.62s
+[cal] ceRisk:venn-abers 0.78s
+[train] logistic:ceRisk in 5.89s
+[cal] seeRisk:identity 0.69s
+[cal] seeRisk:sigmoid 1.20s
+[cal] seeRisk:beta 1.55s
+[cal] seeRisk:isotonic 1.77s
+[cal] seeRisk:venn-abers 0.64s
+[train] logistic:seeRisk in 6.34s
+[cal] overallCourseRisk:identity 0.54s
+[cal] overallCourseRisk:sigmoid 1.18s
+[cal] overallCourseRisk:beta 1.73s
+[cal] overallCourseRisk:isotonic 1.58s
+[cal] overallCourseRisk:venn-abers 0.63s
+[train] logistic:overallCourseRisk in 6.12s
+[cal] downstreamCarryoverRisk:identity 0.49s
+[cal] downstreamCarryoverRisk:sigmoid 0.89s
+[cal] downstreamCarryoverRisk:beta 1.33s
+[cal] downstreamCarryoverRisk:isotonic 8.10s
+[cal] downstreamCarryoverRisk:venn-abers 0.66s
+[train] logistic:downstreamCarryoverRisk in 11.92s
+[cal] attendanceRisk:identity 0.52s
+[cal] attendanceRisk:sigmoid 1.06s
+[cal] attendanceRisk:beta 1.65s
+[cal] attendanceRisk:isotonic 7.08s
+[cal] attendanceRisk:venn-abers 0.68s
+[train] tree:attendanceRisk in 11.52s
+[cal] ceRisk:identity 0.52s
+[cal] ceRisk:sigmoid 0.94s
+[cal] ceRisk:beta 1.45s
+[cal] ceRisk:isotonic 1.66s
+[cal] ceRisk:venn-abers 0.68s
+[train] tree:ceRisk in 5.84s
+[cal] seeRisk:identity 0.60s
+[cal] seeRisk:sigmoid 1.05s
+[cal] seeRisk:beta 1.45s
+[cal] seeRisk:isotonic 10.42s
+[cal] seeRisk:venn-abers 0.68s
+[train] tree:seeRisk in 14.74s
+[cal] overallCourseRisk:identity 0.54s
+[cal] overallCourseRisk:sigmoid 1.00s
+[cal] overallCourseRisk:beta 1.32s
+[cal] overallCourseRisk:isotonic 1.57s
+[cal] overallCourseRisk:venn-abers 0.66s
+[train] tree:overallCourseRisk in 5.62s
+[cal] downstreamCarryoverRisk:identity 0.51s
+[cal] downstreamCarryoverRisk:sigmoid 1.03s
+[cal] downstreamCarryoverRisk:beta 1.44s
+[cal] downstreamCarryoverRisk:isotonic 1.53s
+[cal] downstreamCarryoverRisk:venn-abers 0.72s
+[train] tree:downstreamCarryoverRisk in 5.75s
+[train] all heads done @ 79.80s rows=158400
+[train] correlations in 0.00s
+[train] start rows=158400 train=0 val=158400 test=0 @ 0.00s rows=158400
+[cal] attendanceRisk:identity 0.53s
+[cal] attendanceRisk:sigmoid 1.00s
+[cal] attendanceRisk:isotonic 1.97s
+[train] logistic:attendanceRisk in 3.98s
+[cal] ceRisk:identity 0.53s
+[cal] ceRisk:sigmoid 0.92s
+[cal] ceRisk:isotonic 1.56s
+[train] logistic:ceRisk in 3.51s
+[cal] seeRisk:identity 0.56s
+[cal] seeRisk:sigmoid 0.95s
+[cal] seeRisk:isotonic 1.55s
+[train] logistic:seeRisk in 3.56s
+[cal] overallCourseRisk:identity 0.52s
+[cal] overallCourseRisk:sigmoid 0.94s
+[cal] overallCourseRisk:isotonic 48.74s
+[train] logistic:overallCourseRisk in 50.69s
+[cal] downstreamCarryoverRisk:identity 0.49s
+[cal] downstreamCarryoverRisk:sigmoid 0.88s
+[cal] downstreamCarryoverRisk:isotonic 4.32s
+[train] logistic:downstreamCarryoverRisk in 6.14s
+[cal] attendanceRisk:identity 0.52s
+[cal] attendanceRisk:sigmoid 1.02s
+[cal] attendanceRisk:isotonic 46.87s
+[train] tree:attendanceRisk in 48.93s
+[cal] ceRisk:identity 0.50s
+[cal] ceRisk:sigmoid 0.93s
+[cal] ceRisk:isotonic 1.55s
+[train] tree:ceRisk in 3.51s
+[cal] seeRisk:identity 0.51s
+[cal] seeRisk:sigmoid 0.94s
+[cal] seeRisk:isotonic 47.04s
+[train] tree:seeRisk in 49.03s
+[cal] overallCourseRisk:identity 0.53s
+[cal] overallCourseRisk:sigmoid 1.02s
+[cal] overallCourseRisk:isotonic 1.73s
+[train] tree:overallCourseRisk in 3.82s
+[cal] downstreamCarryoverRisk:identity 0.55s
+[cal] downstreamCarryoverRisk:sigmoid 0.89s
+[cal] downstreamCarryoverRisk:isotonic 1.56s
+[train] tree:downstreamCarryoverRisk in 3.53s
+[train] all heads done @ 176.70s rows=158400
+[train] correlations in 0.00s
+[proof-eval] model training finished in 256.5s
+[proof-eval] corpus scoring pass-2 finished: 0 test rows scored in 8.54s
+[proof-eval] wrote JSON report to /tmp/cov12-20260422T162939Z/cov12.json
+[proof-eval] wrote dataset dump to dataset_dump.json
+[proof-eval] wrote Markdown report to /tmp/cov12-20260422T162939Z/cov12.md
+[proof-eval] phase breakdown — recompute: 870.22s | artifact-load: 2.89s | pass-1 (corpus ingestion): 16.45s | train: 256.5s | pass-2 (scoring): 8.54s | report: 552.26s
+[proof-eval] evaluation completed in 1706.87s
+
+JSON report: /tmp/cov12-20260422T162939Z/cov12.json
+Markdown report: /tmp/cov12-20260422T162939Z/cov12.md
+EXIT=0

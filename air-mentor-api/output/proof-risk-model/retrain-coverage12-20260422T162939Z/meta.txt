@@ -1,0 +1,7 @@
+RUN_DIR=/home/raed/projects/air-mentor-ui/air-mentor-api/output/proof-risk-model/retrain-coverage12-20260422T162939Z
+ts=20260422T162939Z
+profile=custom (12 seeds spanning train+val partitions)
+seeds=101,202,303,404,505,606,707,808,4141,4242,4343,4444
+concurrency=2
+pg_tmpdir=/tmp (ext4 fallback, AIRMENTOR_TEST_DB_SHM_MIN_FREE_BYTES=10737418240)
+catboost_split=fallback (by run_id: 2 train / 1 val / 1 test)

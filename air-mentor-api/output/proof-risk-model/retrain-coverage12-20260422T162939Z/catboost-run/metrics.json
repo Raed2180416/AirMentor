@@ -1,0 +1,77 @@
+{
+  "attendanceRisk": {
+    "validation": {
+      "rocAuc": 0.9879941737013627,
+      "brier": 0.048227814123258085,
+      "logLoss": 0.14023011475816816,
+      "averagePrecision": 0.9052762841663986
+    },
+    "test": {
+      "rocAuc": 0.9888112820075838,
+      "brier": 0.04044739631545399,
+      "logLoss": 0.11898365523316606,
+      "averagePrecision": 0.9103673460746128
+    },
+    "bestIteration": 78
+  },
+  "ceRisk": {
+    "validation": {
+      "rocAuc": 0.9490268252971306,
+      "brier": 0.11413540460480937,
+      "logLoss": 0.3374394869531774,
+      "averagePrecision": 0.5596440555485046
+    },
+    "test": {
+      "rocAuc": 0.9631481865304411,
+      "brier": 0.06152261399386221,
+      "logLoss": 0.18312540827292578,
+      "averagePrecision": 0.42753201223269593
+    },
+    "bestIteration": 111
+  },
+  "seeRisk": {
+    "validation": {
+      "rocAuc": 0.8584887634764808,
+      "brier": 0.16778295192649953,
+      "logLoss": 0.4832266007130126,
+      "averagePrecision": 0.7454035939857336
+    },
+    "test": {
+      "rocAuc": 0.8850832452657429,
+      "brier": 0.11557040379658219,
+      "logLoss": 0.3502389528246995,
+      "averagePrecision": 0.6573052622671248
+    },
+    "bestIteration": 226
+  },
+  "overallCourseRisk": {
+    "validation": {
+      "rocAuc": 0.9003773472690848,
+      "brier": 0.1305766756935808,
+      "logLoss": 0.39432607804909764,
+      "averagePrecision": 0.8214915594895486
+    },
+    "test": {
+      "rocAuc": 0.9232903797104819,
+      "brier": 0.09235980125195502,
+      "logLoss": 0.28951920603259657,
+      "averagePrecision": 0.7576478193409941
+    },
+    "bestIteration": 288
+  },
+  "downstreamCarryoverRisk": {
+    "validation": {
+      "rocAuc": 0.960488329503987,
+      "brier": 0.07807111267154665,
+      "logLoss": 0.23647313784617294,
+      "averagePrecision": 0.926768698371125
+    },
+    "test": {
+      "rocAuc": 0.9428672419617752,
+      "brier": 0.09678628866647293,
+      "logLoss": 0.28288648962370405,
+      "averagePrecision": 0.8545026498120072
+    },
+    "bestIteration": 138
+  }
+}

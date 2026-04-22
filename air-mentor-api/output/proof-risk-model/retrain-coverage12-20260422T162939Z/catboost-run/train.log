@@ -1,0 +1,105 @@
+Error 35 (CUDA driver version is insufficient for CUDA runtime version) ignored while obtaining device count
+Warning: Overfitting detector is active, thus evaluation metric is calculated on every iteration. 'metric_period' is ignored for evaluation metric.
+Error 35 (CUDA driver version is insufficient for CUDA runtime version) ignored while obtaining device count
+Warning: Overfitting detector is active, thus evaluation metric is calculated on every iteration. 'metric_period' is ignored for evaluation metric.
+Error 35 (CUDA driver version is insufficient for CUDA runtime version) ignored while obtaining device count
+Warning: Overfitting detector is active, thus evaluation metric is calculated on every iteration. 'metric_period' is ignored for evaluation metric.
+Error 35 (CUDA driver version is insufficient for CUDA runtime version) ignored while obtaining device count
+Warning: Overfitting detector is active, thus evaluation metric is calculated on every iteration. 'metric_period' is ignored for evaluation metric.
+Error 35 (CUDA driver version is insufficient for CUDA runtime version) ignored while obtaining device count
+Warning: Overfitting detector is active, thus evaluation metric is calculated on every iteration. 'metric_period' is ignored for evaluation metric.
+[catboost] reading /tmp/cov12-20260422T162939Z/features.csv
+[catboost] loaded 158400 rows | splits: {'validation': np.int64(158400)}
+[catboost] detected 39 feature columns
+[catboost] fallback split: 4 run_ids → train=2 runs (79200 rows), val=1 runs (39600 rows), test=1 runs (39600 rows)
+
+============================================================
+[catboost] training head: attendanceRisk
+[catboost] attendanceRisk: train=79200 pos=10550 (13.3%) scale_pos_weight=6.51
+[catboost] attendanceRisk: device=CPU
+0:	test: 0.9658394	best: 0.9658394 (0)	total: 78.9ms	remaining: 23.6s
+100:	test: 0.9879122	best: 0.9879942 (78)	total: 2.98s	remaining: 5.87s
+Stopped by overfitting detector  (30 iterations wait)
+
+bestTest = 0.9879941737
+bestIteration = 78
+
+Shrink model to first 79 iterations.
+[catboost] attendanceRisk: val  AUC=0.9880 brier=0.0482
+[catboost] attendanceRisk: test AUC=0.9888 brier=0.0404
+[catboost] attendanceRisk: saved model to /tmp/cov12-20260422T162939Z/challenger/catboost_attendanceRisk_v1.json
+
+============================================================
+[catboost] training head: ceRisk
+[catboost] ceRisk: train=79200 pos=2340 (3.0%) scale_pos_weight=32.85
+[catboost] ceRisk: device=CPU
+0:	test: 0.9088282	best: 0.9088282 (0)	total: 28ms	remaining: 8.37s
+100:	test: 0.9489521	best: 0.9489521 (100)	total: 2.67s	remaining: 5.27s
+Stopped by overfitting detector  (30 iterations wait)
+
+bestTest = 0.9490268253
+bestIteration = 111
+
+Shrink model to first 112 iterations.
+[catboost] ceRisk: val  AUC=0.9490 brier=0.1141
+[catboost] ceRisk: test AUC=0.9631 brier=0.0615
+[catboost] ceRisk: saved model to /tmp/cov12-20260422T162939Z/challenger/catboost_ceRisk_v1.json
+
+============================================================
+[catboost] training head: seeRisk
+[catboost] seeRisk: train=79200 pos=13465 (17.0%) scale_pos_weight=4.88
+[catboost] seeRisk: device=CPU
+0:	test: 0.8162369	best: 0.8162369 (0)	total: 25.9ms	remaining: 7.74s
+100:	test: 0.8558167	best: 0.8558781 (99)	total: 2.63s	remaining: 5.19s
+200:	test: 0.8580768	best: 0.8583230 (184)	total: 5.3s	remaining: 2.61s
+Stopped by overfitting detector  (30 iterations wait)
+
+bestTest = 0.8584887635
+bestIteration = 226
+
+Shrink model to first 227 iterations.
+[catboost] seeRisk: val  AUC=0.8585 brier=0.1678
+[catboost] seeRisk: test AUC=0.8851 brier=0.1156
+[catboost] seeRisk: saved model to /tmp/cov12-20260422T162939Z/challenger/catboost_seeRisk_v1.json
+
+============================================================
+[catboost] training head: overallCourseRisk
+[catboost] overallCourseRisk: train=79200 pos=15085 (19.0%) scale_pos_weight=4.25
+[catboost] overallCourseRisk: device=CPU
+0:	test: 0.8183473	best: 0.8183473 (0)	total: 27.1ms	remaining: 8.11s
+100:	test: 0.8952282	best: 0.8952577 (99)	total: 2.58s	remaining: 5.08s
+200:	test: 0.8993085	best: 0.8993109 (198)	total: 5.15s	remaining: 2.54s
+299:	test: 0.9003656	best: 0.9003773 (288)	total: 7.66s	remaining: 0us
+
+bestTest = 0.9003773473
+bestIteration = 288
+
+Shrink model to first 289 iterations.
+[catboost] overallCourseRisk: val  AUC=0.9004 brier=0.1306
+[catboost] overallCourseRisk: test AUC=0.9233 brier=0.0924
+[catboost] overallCourseRisk: saved model to /tmp/cov12-20260422T162939Z/challenger/catboost_overallCourseRisk_v1.json
+
+============================================================
+[catboost] training head: downstreamCarryoverRisk
+[catboost] downstreamCarryoverRisk: train=79200 pos=24800 (31.3%) scale_pos_weight=2.19
+[catboost] downstreamCarryoverRisk: device=CPU
+0:	test: 0.9438247	best: 0.9438247 (0)	total: 27.5ms	remaining: 8.23s
+100:	test: 0.9598277	best: 0.9598277 (100)	total: 2.59s	remaining: 5.09s
+Stopped by overfitting detector  (30 iterations wait)
+
+bestTest = 0.9604883295
+bestIteration = 138
+
+Shrink model to first 139 iterations.
+[catboost] downstreamCarryoverRisk: val  AUC=0.9605 brier=0.0781
+[catboost] downstreamCarryoverRisk: test AUC=0.9429 brier=0.0968
+[catboost] downstreamCarryoverRisk: saved model to /tmp/cov12-20260422T162939Z/challenger/catboost_downstreamCarryoverRisk_v1.json
+
+[catboost] all metrics saved to /tmp/cov12-20260422T162939Z/challenger/metrics.json
+
+[catboost] SUMMARY
+  attendanceRisk                 test AUC=0.9888 brier=0.0404 AP=0.9104
+  ceRisk                         test AUC=0.9631 brier=0.0615 AP=0.4275
+  seeRisk                        test AUC=0.8851 brier=0.1156 AP=0.6573
+  overallCourseRisk              test AUC=0.9233 brier=0.0924 AP=0.7576
+  downstreamCarryoverRisk        test AUC=0.9429 brier=0.0968 AP=0.8545
