@@ -1,0 +1,92 @@
+{
+  "attendanceRisk": [
+    {
+      "center": 0.4,
+      "ece": 0.05992713588566434,
+      "halfWidth": 0.08,
+      "meanLabel": 0.3575418994413408,
+      "meanProb": 0.41746903532700513,
+      "support": 179
+    },
+    {
+      "center": 0.85,
+      "ece": 0.07862319227730852,
+      "halfWidth": 0.08,
+      "meanLabel": 0.7871287128712872,
+      "meanProb": 0.8657519051485957,
+      "support": 606
+    }
+  ],
+  "ceRisk": [
+    {
+      "center": 0.4,
+      "ece": 0.37055984431626077,
+      "halfWidth": 0.08,
+      "meanLabel": 0.0,
+      "meanProb": 0.37055984431626077,
+      "support": 4
+    },
+    {
+      "center": 0.85,
+      "ece": 0.19278646095247687,
+      "halfWidth": 0.08,
+      "meanLabel": 0.6625,
+      "meanProb": 0.8552864609524768,
+      "support": 80
+    }
+  ],
+  "downstreamCarryoverRisk": [
+    {
+      "center": 0.4,
+      "ece": 0.07293176668563989,
+      "halfWidth": 0.08,
+      "meanLabel": 0.45869483213881557,
+      "meanProb": 0.3857630654531757,
+      "support": 2651
+    },
+    {
+      "center": 0.85,
+      "ece": 0.006093221462936227,
+      "halfWidth": 0.08,
+      "meanLabel": 0.8583617747440273,
+      "meanProb": 0.8522685532810911,
+      "support": 586
+    }
+  ],
+  "overallCourseRisk": [
+    {
+      "center": 0.4,
+      "ece": 0.04843093979193308,
+      "halfWidth": 0.08,
+      "meanLabel": 0.4343189529810955,
+      "meanProb": 0.38588801318916244,
+      "support": 2063
+    },
+    {
+      "center": 0.85,
+      "ece": 0.002970732354688699,
+      "halfWidth": 0.08,
+      "meanLabel": 0.8140495867768595,
+      "meanProb": 0.8110788544221708,
+      "support": 242
+    }
+  ],
+  "seeRisk": [
+    {
+      "center": 0.4,
+      "ece": 0.0675914555769152,
+      "halfWidth": 0.08,
+      "meanLabel": 0.3942172073342736,
+      "meanProb": 0.3266257517573584,
+      "support": 1418
+    },
+    {
+      "center": 0.85,
+      "ece": 0.014853832348123097,
+      "halfWidth": 0.08,
+      "meanLabel": 0.8571428571428571,
+      "meanProb": 0.842289024794734,
+      "support": 21
+    }
+  ]
+}

@@ -1,0 +1,312 @@
+{
+  "attendanceRisk": {
+    "perStage": [
+      {
+        "brier": 0.013551852442224026,
+        "ece": 0.006903791406409356,
+        "meanLabel": 0.04097222222222222,
+        "meanProb": 0.04612023041975652,
+        "overloadRatio": 1.1256463017703286,
+        "rocAuc": 0.99231703874618,
+        "stageKey": 0,
+        "stageLabel": "pre-tt1",
+        "support": 4320
+      },
+      {
+        "brier": 0.015360432072848892,
+        "ece": 0.009730910836941135,
+        "meanLabel": 0.04097222222222222,
+        "meanProb": 0.05048642767200556,
+        "overloadRatio": 1.2322111160625087,
+        "rocAuc": 0.986357766350157,
+        "stageKey": 1,
+        "stageLabel": "post-tt1",
+        "support": 4320
+      },
+      {
+        "brier": 0.015604465591376704,
+        "ece": 0.013505281064386223,
+        "meanLabel": 0.04097222222222222,
+        "meanProb": 0.04988393499096069,
+        "overloadRatio": 1.2175062099488712,
+        "rocAuc": 0.9902660671938646,
+        "stageKey": 2,
+        "stageLabel": "post-tt2",
+        "support": 4320
+      },
+      {
+        "brier": 0.014611472214313897,
+        "ece": 0.008597410491878314,
+        "meanLabel": 0.04097222222222222,
+        "meanProb": 0.04956963271410053,
+        "overloadRatio": 1.2098351035305892,
+        "rocAuc": 0.9868343717740494,
+        "stageKey": 3,
+        "stageLabel": "post-assignments",
+        "support": 4320
+      },
+      {
+        "brier": 0.015255458629415219,
+        "ece": 0.010207248928888236,
+        "meanLabel": 0.04097222222222222,
+        "meanProb": 0.0503803225697038,
+        "overloadRatio": 1.2296214322097199,
+        "rocAuc": 0.9896455937521733,
+        "stageKey": 4,
+        "stageLabel": "post-see",
+        "support": 4320
+      }
+    ],
+    "rocMax": 0.99231703874618,
+    "rocMin": 0.986357766350157,
+    "rocSpread": 0.005959272396023008
+  },
+  "ceRisk": {
+    "perStage": [
+      {
+        "brier": 0.018090312718587912,
+        "ece": 0.007875536148645893,
+        "meanLabel": 0.02962962962962963,
+        "meanProb": 0.03082450751692597,
+        "overloadRatio": 1.0403271286962514,
+        "rocAuc": 0.981201171875,
+        "stageKey": 0,
+        "stageLabel": "pre-tt1",
+        "support": 4320
+      },
+      {
+        "brier": 0.01783377579157939,
+        "ece": 0.0077781686463779375,
+        "meanLabel": 0.02962962962962963,
+        "meanProb": 0.02852260758968188,
+        "overloadRatio": 0.9626380061517634,
+        "rocAuc": 0.9813288331941794,
+        "stageKey": 1,
+        "stageLabel": "post-tt1",
+        "support": 4320
+      },
+      {
+        "brier": 0.027706389462054892,
+        "ece": 0.009804755806206437,
+        "meanLabel": 0.02962962962962963,
+        "meanProb": 0.022193929614800233,
+        "overloadRatio": 0.7490451244995078,
+        "rocAuc": 0.7703186501073473,
+        "stageKey": 2,
+        "stageLabel": "post-tt2",
+        "support": 4320
+      },
+      {
+        "brier": 0.0175511834076238,
+        "ece": 0.006473799555194803,
+        "meanLabel": 0.02962962962962963,
+        "meanProb": 0.02967279795592422,
+        "overloadRatio": 1.0014569310124424,
+        "rocAuc": 0.9822988728530534,
+        "stageKey": 3,
+        "stageLabel": "post-assignments",
+        "support": 4320
+      },
+      {
+        "brier": 0.021946525993052364,
+        "ece": 0.0072020112532293614,
+        "meanLabel": 0.02962962962962963,
+        "meanProb": 0.024731423138695315,
+        "overloadRatio": 0.8346855309309669,
+        "rocAuc": 0.9494041850548665,
+        "stageKey": 4,
+        "stageLabel": "post-see",
+        "support": 4320
+      }
+    ],
+    "rocMax": 0.9822988728530534,
+    "rocMin": 0.7703186501073473,
+    "rocSpread": 0.21198022274570605
+  },
+  "downstreamCarryoverRisk": {
+    "perStage": [
+      {
+        "brier": 0.0983078680129631,
+        "ece": 0.026102376011864586,
+        "meanLabel": 0.28217592592592594,
+        "meanProb": 0.25682519090798506,
+        "overloadRatio": 0.9101598233982735,
+        "rocAuc": 0.9288491976046258,
+        "stageKey": 0,
+        "stageLabel": "pre-tt1",
+        "support": 4320
+      },
+      {
+        "brier": 0.09828592787154336,
+        "ece": 0.02933664459882463,
+        "meanLabel": 0.28217592592592594,
+        "meanProb": 0.2532989274362572,
+        "overloadRatio": 0.8976631390686063,
+        "rocAuc": 0.9291356965217232,
+        "stageKey": 1,
+        "stageLabel": "post-tt1",
+        "support": 4320
+      },
+      {
+        "brier": 0.10452012553714396,
+        "ece": 0.04589735459717282,
+        "meanLabel": 0.28217592592592594,
+        "meanProb": 0.2472329290650703,
+        "overloadRatio": 0.8761659176054993,
+        "rocAuc": 0.9223561480471911,
+        "stageKey": 2,
+        "stageLabel": "post-tt2",
+        "support": 4320
+      },
+      {
+        "brier": 0.09659834283451268,
+        "ece": 0.030375646552144253,
+        "meanLabel": 0.28217592592592594,
+        "meanProb": 0.254816696054414,
+        "overloadRatio": 0.9030419417186779,
+        "rocAuc": 0.9320058442604584,
+        "stageKey": 3,
+        "stageLabel": "post-assignments",
+        "support": 4320
+      },
+      {
+        "brier": 0.1036720634660256,
+        "ece": 0.037616721434687986,
+        "meanLabel": 0.28217592592592594,
+        "meanProb": 0.2507341422348801,
+        "overloadRatio": 0.8885738264599524,
+        "rocAuc": 0.9237731669294009,
+        "stageKey": 4,
+        "stageLabel": "post-see",
+        "support": 4320
+      }
+    ],
+    "rocMax": 0.9320058442604584,
+    "rocMin": 0.9223561480471911,
+    "rocSpread": 0.009649696213267278
+  },
+  "overallCourseRisk": {
+    "perStage": [
+      {
+        "brier": 0.11103933306187862,
+        "ece": 0.024140583943243234,
+        "meanLabel": 0.18425925925925926,
+        "meanProb": 0.16465977303826804,
+        "overloadRatio": 0.8936309290519069,
+        "rocAuc": 0.8413201435668696,
+        "stageKey": 0,
+        "stageLabel": "pre-tt1",
+        "support": 4320
+      },
+      {
+        "brier": 0.11188621731834571,
+        "ece": 0.03279273399403551,
+        "meanLabel": 0.18425925925925926,
+        "meanProb": 0.16067420443858996,
+        "overloadRatio": 0.8720007075059153,
+        "rocAuc": 0.840531759250281,
+        "stageKey": 1,
+        "stageLabel": "post-tt1",
+        "support": 4320
+      },
+      {
+        "brier": 0.12654891751343164,
+        "ece": 0.024236711824870066,
+        "meanLabel": 0.18425925925925926,
+        "meanProb": 0.16002254743438918,
+        "overloadRatio": 0.8684640765283432,
+        "rocAuc": 0.7786112386563919,
+        "stageKey": 2,
+        "stageLabel": "post-tt2",
+        "support": 4320
+      },
+      {
+        "brier": 0.07013385073832544,
+        "ece": 0.03709778402162956,
+        "meanLabel": 0.18425925925925926,
+        "meanProb": 0.16314584411202782,
+        "overloadRatio": 0.885414631361759,
+        "rocAuc": 0.9521641621843611,
+        "stageKey": 3,
+        "stageLabel": "post-assignments",
+        "support": 4320
+      },
+      {
+        "brier": 0.12260432232722675,
+        "ece": 0.030552392912604313,
+        "meanLabel": 0.18425925925925926,
+        "meanProb": 0.1540954922558979,
+        "overloadRatio": 0.8362971439013553,
+        "rocAuc": 0.7963982797072764,
+        "stageKey": 4,
+        "stageLabel": "post-see",
+        "support": 4320
+      }
+    ],
+    "rocMax": 0.9521641621843611,
+    "rocMin": 0.7786112386563919,
+    "rocSpread": 0.17355292352796914
+  },
+  "seeRisk": {
+    "perStage": [
+      {
+        "brier": 0.13312745839104487,
+        "ece": 0.03529733080779848,
+        "meanLabel": 0.19282407407407406,
+        "meanProb": 0.1860241286198861,
+        "overloadRatio": 0.964734976756192,
+        "rocAuc": 0.7885455874348593,
+        "stageKey": 0,
+        "stageLabel": "pre-tt1",
+        "support": 4320
+      },
+      {
+        "brier": 0.13384198225532176,
+        "ece": 0.03931129206151396,
+        "meanLabel": 0.19282407407407406,
+        "meanProb": 0.18535172118325266,
+        "overloadRatio": 0.9612478217426789,
+        "rocAuc": 0.7887977674580012,
+        "stageKey": 1,
+        "stageLabel": "post-tt1",
+        "support": 4320
+      },
+      {
+        "brier": 0.1395563894559599,
+        "ece": 0.034485336348456894,
+        "meanLabel": 0.19282407407407406,
+        "meanProb": 0.15833873772561718,
+        "overloadRatio": 0.821156478961184,
+        "rocAuc": 0.7379460530986127,
+        "stageKey": 2,
+        "stageLabel": "post-tt2",
+        "support": 4320
+      },
+      {
+        "brier": 0.050097871276618716,
+        "ece": 0.020765134298778028,
+        "meanLabel": 0.19282407407407406,
+        "meanProb": 0.186584015610061,
+        "overloadRatio": 0.9676385923595,
+        "rocAuc": 0.9752469384656645,
+        "stageKey": 3,
+        "stageLabel": "post-assignments",
+        "support": 4320
+      },
+      {
+        "brier": 0.14107487846399194,
+        "ece": 0.04536597042316057,
+        "meanLabel": 0.19282407407407406,
+        "meanProb": 0.1681697409354691,
+        "overloadRatio": 0.8721407933268026,
+        "rocAuc": 0.7450193154405438,
+        "stageKey": 4,
+        "stageLabel": "post-see",
+        "support": 4320
+      }
+    ],
+    "rocMax": 0.9752469384656645,
+    "rocMin": 0.7379460530986127,
+    "rocSpread": 0.23730088536705174
+  }
+}

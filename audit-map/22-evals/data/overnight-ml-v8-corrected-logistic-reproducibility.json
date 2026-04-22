@@ -1,0 +1,16 @@
+{
+  "corpusAdmissibility": "interim",
+  "corpusAdmissibilityReason": "features.csv on disk is a pre-Phase-2 export (mtime 2026-04-22T17:04Z, before Phase 2 completed at 2026-04-22T20:59:42Z). Emitted metrics are an interim baseline pending a post-Phase-2 rebuild via AIRMENTOR_EVAL_DATABASE_URL or an in-repo embedded-postgres bootstrap.",
+  "corpusHash": "f73243cca08271c9b49beda27ebc13fefa906498b9fcb05f2b2395b9f3a9845b",
+  "featureCount": 39,
+  "featureKeyHash": "72483882b7e9eb24ea4185920340c68b0ce43dc5e53c55119217895320900b67",
+  "featuresCsv": "air-mentor-api/output/proof-risk-model/features.csv",
+  "featuresCsvSha256": "f73243cca08271c9b49beda27ebc13fefa906498b9fcb05f2b2395b9f3a9845b",
+  "missingnessIndicatorCount": 39,
+  "replayCommand": "LD_LIBRARY_PATH=/nix/store/ab3753m6i7isgvzphlar0a8xb84gl96i-gcc-15.2.0-lib/lib:/nix/store/ri9paa3mri4kqakljak8ldvbcp7lpmif-zlib-1.3.1/lib pipeline/.venv/bin/python air-mentor-api/scripts/train_v8_local_corrected_logistic.py",
+  "scriptPath": "air-mentor-api/scripts/train_v8_local_corrected_logistic.py",
+  "scriptSha256": "175bd9a35def813e3cd4fe4d783bb17e7c0af7d94a6f67c68ee9bdfcb7666045",
+  "seed": 4242,
+  "splitHash": "750842d9ccb9ed9b30ca03add20e2ae7cd33c508fbbf29e9f7cdeacaf03fa543",
+  "trainedAtUtc": "20260422T222216Z"
+}

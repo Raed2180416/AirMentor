@@ -1,0 +1,13 @@
+[local-v8-corrected-logistic] generated at 2026-04-22T22:22:32+00:00
+seed=4242
+gitSha=f77fc528ee657fc868b73dc8ca2d7889d4a2630a
+scriptSha256=175bd9a35def813e3cd4fe4d783bb17e7c0af7d94a6f67c68ee9bdfcb7666045
+featuresCsvSha256=f73243cca08271c9b49beda27ebc13fefa906498b9fcb05f2b2395b9f3a9845b
+featureKeyHash=72483882b7e9eb24ea4185920340c68b0ce43dc5e53c55119217895320900b67
+corpusHash=f73243cca08271c9b49beda27ebc13fefa906498b9fcb05f2b2395b9f3a9845b
+corpusAdmissibility=interim
+headsAdmissibleMetrics=5/5
+macroAvgRocAuc=0.908949288643309
+headlineOverloadRatio=0.871161497669856
+promotionDecision=do-not-promote (interim)
+metricSidecarDir=/home/raed/projects/air-mentor-ui/air-mentor-api/output/proof-risk-model/local-v8-corrected-logistic-20260422T222216Z/metric-sidecars

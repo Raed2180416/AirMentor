@@ -1,0 +1,52 @@
+{
+  "attendanceRisk": {
+    "falsePositives": 3439,
+    "k": 4320,
+    "precision": 0.2039351851851852,
+    "recall": 0.9954802259887006,
+    "threshold": 0.0,
+    "topPct": 0.2,
+    "totalPositives": 885,
+    "truePositives": 881
+  },
+  "ceRisk": {
+    "falsePositives": 3715,
+    "k": 4320,
+    "precision": 0.1400462962962963,
+    "recall": 0.9453125,
+    "threshold": 0.007211538461538462,
+    "topPct": 0.2,
+    "totalPositives": 640,
+    "truePositives": 605
+  },
+  "downstreamCarryoverRisk": {
+    "falsePositives": 926,
+    "k": 4320,
+    "precision": 0.7856481481481481,
+    "recall": 0.5568498769483183,
+    "threshold": 0.49767441860465117,
+    "topPct": 0.2,
+    "totalPositives": 6095,
+    "truePositives": 3394
+  },
+  "overallCourseRisk": {
+    "falsePositives": 1968,
+    "k": 4320,
+    "precision": 0.5444444444444444,
+    "recall": 0.5909547738693467,
+    "threshold": 0.2735849056603774,
+    "topPct": 0.2,
+    "totalPositives": 3980,
+    "truePositives": 2352
+  },
+  "seeRisk": {
+    "falsePositives": 2116,
+    "k": 4320,
+    "precision": 0.5101851851851852,
+    "recall": 0.529171668667467,
+    "threshold": 0.25679012345679003,
+    "topPct": 0.2,
+    "totalPositives": 4165,
+    "truePositives": 2204
+  }
+}

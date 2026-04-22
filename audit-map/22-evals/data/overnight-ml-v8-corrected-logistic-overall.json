@@ -1,0 +1,9 @@
+{
+  "headCount": 5,
+  "headlineOverloadRatioOverallCourseRisk": 0.871161497669856,
+  "headsWithAdmissibleMetrics": 5,
+  "macroAvgBrier": 0.07275229667389645,
+  "macroAvgGlobalEce": 0.02001130971195966,
+  "macroAvgOverloadRatio": 0.9608521473823839,
+  "macroAvgRocAuc": 0.908949288643309
+}
