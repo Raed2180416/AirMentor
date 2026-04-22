@@ -1,47 +1,64 @@
 # Overnight Reconcile: Queue / Calendar / HOD
 
 ## Findings
-Queue vs Calendar vs HOD flows analyzed.
-Auth prompt B(14-20), C(2-8), C(15), D(4-6), D(9), L checked against codebase.
-Code matches spec largely. Few discrepancies noted.
+
+此报唯据仓内现码核对 queue / case / calendar / HOD 诸断语；凡可证者皆附 file:line。
+
+- `concernContextKey`：queue governance contract 仅出 `caseKey/primarySourceKey`，playback/runtime/HOD payload 则仅出 `queueCaseId/primaryCase/countsTowardCapacity/governanceReason`；现码未落 `concernContextKey`。 `air-mentor-api/src/lib/proof-queue-governance.ts:49-64`, `air-mentor-api/src/lib/proof-control-plane-playback-governance-service.ts:522-534`, `air-mentor-api/src/lib/proof-control-plane-playback-governance-service.ts:749-766`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:867-878`, `air-mentor-api/src/lib/proof-control-plane-hod-service.ts:372-380`
+- Workflow task 与 primary concern case 已分层：`SharedTask` 自具 `scheduleMeta/dismissal/transitionHistory`，queue cap 仅记 admitted case，HOD open case 仅收 `primaryCase && countsTowardCapacity`。 `src/domain.ts:286-318`, `src/domain.ts:429-437`, `air-mentor-api/src/lib/proof-queue-governance.ts:322-349`, `air-mentor-api/src/lib/proof-control-plane-hod-service.ts:382-385`
+- Ownership routing 与 scope 合乎现码：`High -> Mentor`，`Medium -> Course Leader`；HOD 可见域取 owned-offering / assigned-student 并集，并由 appointment + HOD grant 扩 scope。 `air-mentor-api/src/lib/monitoring-engine.ts:39-65`, `air-mentor-api/src/lib/proof-control-plane-access.ts:8-10`, `air-mentor-api/src/lib/proof-control-plane-hod-service.ts:216-225`
+- `dismissal=handled` 非现码语义；现码仅有 `dismissal` object，`kind` 为 `'task' | 'series'`，restore window 为 60 日。 `src/domain.ts:205-212`, `src/domain.ts:416-437`, `src/App.tsx:2364-2410`, `air-mentor-api/src/modules/academic-runtime-routes.ts:268-272`
+- Reopen 仅追加 `Reopened` transition；其后无“reopen 后再恶化”专门 escalation gate，仍仅按新 evidence window 重算 monitoring decision。 `src/App.tsx:2414-2425`, `air-mentor-api/src/lib/monitoring-engine.ts:25-75`
+- Queue ↔ calendar bridge 已通：drag/detail-reschedule 皆入 `onScheduleTask`，`applyPlacementToTask` 写回 task `dueDateISO`，calendar audit 记录 reschedule/schedule/unschedule。 `src/pages/calendar-pages.tsx:872-885`, `src/pages/calendar-pages.tsx:1411-1416`, `src/calendar-utils.ts:645-662`, `src/App.tsx:2442-2488`, `src/domain.ts:214-235`
+- 所谓 demo auto-resolution 未见独立实现；现码仅有 post-see prior-open -> `resolved`，或 prior-open 且无新 actionable -> `no_longer_actionable` 二路。 `air-mentor-api/src/lib/proof-queue-governance.ts:337-370`
+- HOD 更正链条已可追：seed pending unlock request -> HoD approve/reject -> clear-lock/reset complete -> assessment commit(relock 可用 `lock:true`) -> enqueue proof rerun。 `air-mentor-api/src/db/seeds/platform.seed.json:94166-94199`, `src/App.tsx:3114-3195`, `air-mentor-api/src/modules/academic-runtime-routes.ts:1249-1331`, `air-mentor-api/src/lib/proof-run-queue.ts:131-210`
+- HOD 页 `Action Needed` 仅滤 governed `open`；`Watching` 仍展示但不算 blocking open case；summary 另显 acknowledgements / resolutions。 `src/pages/hod-pages.tsx:43-55`, `src/pages/hod-pages.tsx:154-165`, `src/pages/hod-pages.tsx:249-257`, `src/pages/hod-pages.tsx:382-485`, `src/pages/hod-pages.tsx:551-565`, `src/pages/hod-pages.tsx:787-791`
+- Checkpoint HoD summary 明守 provenance：semester 取 selected checkpoint，非 run active semester；reassessment decision type 由 status 映射，checkpoint overlay 下 `acknowledgementCount=0`，`resolutionCount` 仅数 primary resolved rows。 `air-mentor-api/src/lib/proof-control-plane-access.ts:23-27`, `air-mentor-api/src/lib/proof-control-plane-hod-service.ts:423-434`, `air-mentor-api/src/lib/proof-control-plane-hod-service.ts:651-718`, `src/pages/hod-pages.tsx:228-257`
 
 ## Ledger
-| ID | Claim | File | Validation |
-|---|---|---|---|
-| 1 | concernContextKey spec match | `air-mentor-api/src/lib/proof-queue-governance.ts` | Verify key exists or doc update |
-| 2 | Workflow tasks != primary | `src/domain.ts` | Verify taxonomy separation |
-| 3 | Ownership routing | `air-mentor-api/src/lib/monitoring-engine.ts` | Verify Mentor/CL split |
-| 4 | dismissal=handled | `src/domain.ts` | Verify semantics |
-| 5 | reopen-later-deterioration | `src/App.tsx` | Verify escalation |
-| 6 | queue <-> calendar bridge | `src/calendar-utils.ts` | Verify bridge logic |
-| 7 | drag -> due-date | `src/pages/calendar-pages.tsx` | Verify drag update |
-| 8 | demo auto-resolution | `air-mentor-api/src/lib/proof-queue-governance.ts` | Verify demo mode |
-| 9 | HOD clear-lock | `air-mentor-api/src/modules/academic-runtime-routes.ts` | Verify clear-lock route |
-| 10 | HOD correction cycle | `air-mentor-api/src/lib/proof-run-queue.ts` | Verify end-to-end |
+
+| ID | Topic | Verdict | files_to_change | validation_hook | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| L-01 | `concernContextKey` literal | Open drift | `audit-map/14-reconciliation/contradiction-matrix-queue-calendar.md`<br>`audit-map/32-reports/overnight-reconcile-queue-calendar.md`<br>`air-mentor-api/src/lib/proof-control-plane-playback-governance-service.ts`<br>`air-mentor-api/src/lib/proof-control-plane-runtime-service.ts`<br>`air-mentor-api/src/lib/proof-control-plane-hod-service.ts` | `rg -n "concernContextKey|queueCaseId|primaryCase|countsTowardCapacity" air-mentor-api/src/lib` | `air-mentor-api/src/lib/proof-queue-governance.ts:49-64`, `air-mentor-api/src/lib/proof-control-plane-playback-governance-service.ts:522-534`, `air-mentor-api/src/lib/proof-control-plane-playback-governance-service.ts:749-766`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:867-878`, `air-mentor-api/src/lib/proof-control-plane-hod-service.ts:372-380` |
+| L-02 | Workflow task != primary case | Resolved in code; doc drift risk | `audit-map/14-reconciliation/contradiction-matrix-queue-calendar.md`<br>`audit-map/32-reports/overnight-reconcile-queue-calendar.md` | `rg -n "SharedTask|isTaskActiveForQueue|countsTowardCapacity" src/domain.ts src/App.tsx air-mentor-api/src/lib/proof-queue-governance.ts air-mentor-api/src/lib/proof-control-plane-hod-service.ts` | `src/domain.ts:286-318`, `src/domain.ts:429-437`, `air-mentor-api/src/lib/proof-queue-governance.ts:322-349`, `air-mentor-api/src/lib/proof-control-plane-hod-service.ts:382-385` |
+| L-03 | Ownership routing | Resolved in code | `audit-map/14-reconciliation/contradiction-matrix-queue-calendar.md`<br>`audit-map/32-reports/overnight-reconcile-queue-calendar.md` | `rg -n "queueOwnerRole|roleCode === 'HOD'|matchesOwnedOffering|matchesAssignedStudent" air-mentor-api/src/lib` | `air-mentor-api/src/lib/monitoring-engine.ts:39-65`, `air-mentor-api/src/lib/proof-control-plane-access.ts:8-10`, `air-mentor-api/src/lib/proof-control-plane-hod-service.ts:216-225` |
+| L-04 | Dismissal semantics | Open drift | `audit-map/14-reconciliation/contradiction-matrix-queue-calendar.md`<br>`audit-map/32-reports/overnight-reconcile-queue-calendar.md` | `rg -n "dismissal|restore window|60 \\* 24 \\* 60 \\* 60 \\* 1000" src/domain.ts src/App.tsx air-mentor-api/src/modules/academic-runtime-routes.ts` | `src/domain.ts:205-212`, `src/domain.ts:416-437`, `src/App.tsx:2364-2410`, `air-mentor-api/src/modules/academic-runtime-routes.ts:268-272` |
+| L-05 | Reopen-later-deterioration | Open drift | `audit-map/14-reconciliation/contradiction-matrix-queue-calendar.md`<br>`audit-map/32-reports/overnight-reconcile-queue-calendar.md`<br>`air-mentor-api/src/lib/monitoring-engine.ts`<br>`src/App.tsx` | `rg -n "Reopened|previousRiskBand|decisionType" src/App.tsx air-mentor-api/src/lib/monitoring-engine.ts` | `src/App.tsx:2414-2425`, `air-mentor-api/src/lib/monitoring-engine.ts:25-75` |
+| L-06 | Queue capacity admission gate | Resolved in code | `audit-map/14-reconciliation/contradiction-matrix-queue-calendar.md`<br>`audit-map/32-reports/overnight-reconcile-queue-calendar.md` | `rg -n "proofQueueActionableRateLimitForStage|open_candidate_pruned_by_caps|countsTowardCapacity" air-mentor-api/src/lib/proof-queue-governance.ts` | `air-mentor-api/src/lib/proof-queue-governance.ts:82-86`, `air-mentor-api/src/lib/proof-queue-governance.ts:309-349` |
+| L-07 | Queue ↔ calendar bridge | Resolved in code | `audit-map/14-reconciliation/contradiction-matrix-queue-calendar.md`<br>`audit-map/32-reports/overnight-reconcile-queue-calendar.md` | `rg -n "onScheduleTask|applyPlacementToTask|task-rescheduled|task-unscheduled|task-scheduled" src/pages/calendar-pages.tsx src/calendar-utils.ts src/App.tsx src/domain.ts` | `src/pages/calendar-pages.tsx:872-885`, `src/pages/calendar-pages.tsx:1411-1416`, `src/calendar-utils.ts:645-662`, `src/App.tsx:2442-2488`, `src/domain.ts:214-235` |
+| L-08 | Drag -> due-date write | Resolved in code | `audit-map/14-reconciliation/contradiction-matrix-queue-calendar.md`<br>`audit-map/32-reports/overnight-reconcile-queue-calendar.md` | `rg -n "handlePointerUp|onScheduleTask\\(|dueDateISO" src/pages/calendar-pages.tsx src/calendar-utils.ts` | `src/pages/calendar-pages.tsx:866-906`, `src/pages/calendar-pages.tsx:1411-1416`, `src/calendar-utils.ts:645-662` |
+| L-09 | Demo auto-resolution | Open drift | `audit-map/14-reconciliation/contradiction-matrix-queue-calendar.md`<br>`audit-map/32-reports/overnight-reconcile-queue-calendar.md`<br>`air-mentor-api/src/lib/proof-queue-governance.ts` | `rg -n "resolved|no_longer_actionable|post-see" air-mentor-api/src/lib/proof-queue-governance.ts` | `air-mentor-api/src/lib/proof-queue-governance.ts:337-370` |
+| L-10 | HOD clear-lock | Resolved in code | `audit-map/14-reconciliation/contradiction-matrix-queue-calendar.md`<br>`audit-map/32-reports/overnight-reconcile-queue-calendar.md` | `rg -n "clear-lock|CLEAR_LOCK|lockByOffering" air-mentor-api/src/modules/academic-runtime-routes.ts src/App.tsx` | `air-mentor-api/src/modules/academic-runtime-routes.ts:1285-1331`, `src/App.tsx:3147-3195` |
+| L-11 | HOD correction full cycle | Resolved in code; doc gap remains | `audit-map/14-reconciliation/contradiction-matrix-queue-calendar.md`<br>`audit-map/32-reports/overnight-reconcile-queue-calendar.md` | `rg -n "Unlock requested|Unlock approved|Reset completed and unlocked|lock: true|enqueueProofSimulationRun" src/App.tsx air-mentor-api/src/modules/academic-runtime-routes.ts air-mentor-api/src/lib/proof-run-queue.ts air-mentor-api/src/db/seeds/platform.seed.json` | `air-mentor-api/src/db/seeds/platform.seed.json:94166-94199`, `src/App.tsx:3114-3195`, `air-mentor-api/src/modules/academic-runtime-routes.ts:1249-1331`, `air-mentor-api/src/lib/proof-run-queue.ts:131-210` |
+| L-12 | HOD watchlist semantics | Resolved in code | `audit-map/14-reconciliation/contradiction-matrix-queue-calendar.md`<br>`audit-map/32-reports/overnight-reconcile-queue-calendar.md` | `rg -n "Action Needed|View All|Watching remains visible|resolveGovernedQueueState" src/pages/hod-pages.tsx` | `src/pages/hod-pages.tsx:43-55`, `src/pages/hod-pages.tsx:154-165`, `src/pages/hod-pages.tsx:484-565`, `src/pages/hod-pages.tsx:787-791` |
+| L-13 | HOD status mapping + checkpoint provenance | Resolved in code | `audit-map/14-reconciliation/contradiction-matrix-queue-calendar.md`<br>`audit-map/32-reports/overnight-reconcile-queue-calendar.md` | `rg -n "queueDecisionTypeFromStatus|activeOperationalSemester: checkpoint.semesterNumber|acknowledgementCount|resolutionCount" air-mentor-api/src/lib/proof-control-plane-access.ts air-mentor-api/src/lib/proof-control-plane-hod-service.ts src/pages/hod-pages.tsx` | `air-mentor-api/src/lib/proof-control-plane-access.ts:23-27`, `air-mentor-api/src/lib/proof-control-plane-hod-service.ts:423-434`, `air-mentor-api/src/lib/proof-control-plane-hod-service.ts:651-718`, `src/pages/hod-pages.tsx:228-257`, `src/pages/hod-pages.tsx:382-485` |
 
 ## Evidence
-- `air-mentor-api/src/lib/proof-queue-governance.ts:49-64`
-- `air-mentor-api/src/lib/monitoring-engine.ts:40-65`
-- `src/domain.ts:205-211`
-- `src/calendar-utils.ts:646-658`
-- `src/pages/calendar-pages.tsx:47-48`
-- `air-mentor-api/src/modules/academic-runtime-routes.ts:1285-1331`
+
+- Queue governance contract 仅定义 `status/primarySourceKey/supportingSourceKeys/countsTowardCapacity/governanceReason/assignedRole` 等，不含 `concernContextKey`。 `air-mentor-api/src/lib/proof-queue-governance.ts:49-64`
+- Playback queue projection 写 `detailJson` 时，仅落 `queueCaseId/stageKey/dueAt/recommendedAction/primarySourceKey/supportingSourceKeys/governanceReason/countsTowardCapacity/priorityRank/assignedFacultyId`；secondary projection 亦仅落 `queueCaseId/primaryCase/countsTowardCapacity/...`。 `air-mentor-api/src/lib/proof-control-plane-playback-governance-service.ts:522-534`, `air-mentor-api/src/lib/proof-control-plane-playback-governance-service.ts:749-766`
+- Live runtime payload 同样仅写 `queueCaseId/primaryCase/countsTowardCapacity/priorityRank/governanceReason/supportingCourseCount`。 `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:867-878`
+- HOD checkpoint parser 取 `detail.primaryCase/detail.countsTowardCapacity/detail.queueCaseId` 决定 open primary rows；student/course snapshot 亦按此治理字段排序。 `air-mentor-api/src/lib/proof-control-plane-hod-service.ts:372-385`, `air-mentor-api/src/lib/proof-control-plane-hod-service.ts:552-618`
+- `SharedTask` 乃 workflow object；queue active filter 会排除 resolved、dismissed、future scheduled 项。 `src/domain.ts:286-318`, `src/domain.ts:429-437`, `src/App.tsx:880-880`
+- Dismiss / restore 纯凭 `dismissal` presence 与 `kind`；后端仅在移除 `dismissal` 时检查 60 日恢复窗。 `src/App.tsx:2364-2410`, `air-mentor-api/src/modules/academic-runtime-routes.ts:268-272`
+- Calendar drag 放手即调 `onScheduleTask`；`applyPlacementToTask` 将 date 规范化并写回 `dueDateISO`，再由 App 追加 calendar audit。 `src/pages/calendar-pages.tsx:866-906`, `src/calendar-utils.ts:645-662`, `src/App.tsx:2442-2488`
+- Reopen 无专门 deterioration state input；monitoring 只看 `riskBand/previousRiskBand/cooldown/evidenceWindowCount/interventionResidual`。 `src/App.tsx:2414-2425`, `air-mentor-api/src/lib/monitoring-engine.ts:1-75`
+- HOD 更正链条：seed pending request，HoD approve/reset，API clear-lock，assessment commit/relock，后台可 enqueue rerun。 `air-mentor-api/src/db/seeds/platform.seed.json:94166-94199`, `src/App.tsx:3114-3195`, `air-mentor-api/src/modules/academic-runtime-routes.ts:1249-1331`, `air-mentor-api/src/lib/proof-run-queue.ts:131-210`
+- HOD 页文案已自证 read-only checkpoint overlay、Action Needed filter、acknowledgements/resolutions summary。 `src/pages/hod-pages.tsx:228-257`, `src/pages/hod-pages.tsx:382-485`, `src/pages/hod-pages.tsx:787-791`
 
 ## Mitigation Plan
-1. Enforce `concernContextKey` spec match.
-2. Ensure workflow tasks never count as primary cases.
-3. Align `dismissal=handled` terminology.
-4. Define reopen-later-deterioration behavior.
+
+1. 对 `concernContextKey`：文档今先改为“appendix literal required, code absent”；若后续补码，须直补 producer/consumer，同步 playback/runtime/HOD 三端，不可以 `queueCaseId` 等代称。 `air-mentor-api/src/lib/proof-control-plane-playback-governance-service.ts:522-534`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:867-878`, `air-mentor-api/src/lib/proof-control-plane-hod-service.ts:372-380`
+2. 对 case taxonomy：所有 queue/calendar/HOD 文案均应分清 governance primary case 与 `SharedTask` workflow task；HOD watchlist 已示范 “Watching visible, not blocking”。 `src/domain.ts:286-318`, `air-mentor-api/src/lib/proof-queue-governance.ts:322-349`, `src/pages/hod-pages.tsx:484-565`, `src/pages/hod-pages.tsx:787-791`
+3. 对 dismissal/reopen：删 `dismissal=handled` 旧语；若产品仍要 “reopen 后恶化必升级”，则须扩 `monitoring-engine` 输入或另设 state machine，今码无此支。 `src/domain.ts:205-212`, `src/App.tsx:2414-2425`, `air-mentor-api/src/lib/monitoring-engine.ts:25-75`
+4. 对 queue↔calendar：保留“drag/detail reschedule 直接写 due-date + 留 audit”叙述，勿降格为纯 UI preview。 `src/pages/calendar-pages.tsx:866-906`, `src/calendar-utils.ts:645-662`, `src/App.tsx:2442-2488`
+5. 对 HOD correction：将 `request -> approve -> reset-unlock -> edit -> recompute -> relock` 写成单条 authoritative narrative，并以 seed pending unlock 为例。 `air-mentor-api/src/db/seeds/platform.seed.json:94166-94199`, `src/App.tsx:3114-3195`, `air-mentor-api/src/modules/academic-runtime-routes.ts:1249-1331`, `air-mentor-api/src/lib/proof-run-queue.ts:131-210`
 
 ## Recommendations
-- Update docs to reflect codebase reality where code is correct.
-- Implement missing spec features if required by auth prompt.
-- Add `concernContextKey` field to code to match frozen appendix exactly.
-- Separate workflow tasks from primary student concern cases strictly.
-- Route ownership correctly.
-- Mark handled correctly.
-- Handle reopen deterioration.
-- Bridge queue and calendar properly.
-- Update due date on drag correctly.
-- Handle demo auto resolution if needed.
-- HOD request -> approve -> reset -> edit -> recompute -> relock cycle.
+
+- 冻结文案：`concernContextKey` 只可作独立 spec literal；现码未供此键，文档不得伪称已实现。 `air-mentor-api/src/lib/proof-queue-governance.ts:49-64`, `air-mentor-api/src/lib/proof-control-plane-playback-governance-service.ts:522-534`
+- 冻结 taxonomy：workflow tasks 永不计 primary student concern cases。 `src/domain.ts:286-318`, `air-mentor-api/src/lib/proof-control-plane-hod-service.ts:382-385`
+- 改写 dismissal 术语：用 “dismissed / restored / restore window” 替代 `handled`。 `src/domain.ts:205-212`, `air-mentor-api/src/modules/academic-runtime-routes.ts:268-272`
+- 撤回或实现 demo auto-resolution；现行自动解案仅 governance post-see / no-longer-actionable。 `air-mentor-api/src/lib/proof-queue-governance.ts:337-370`
+- 保留 queue↔calendar bridge 与 HOD read-only checkpoint overlay 两项正确信息；二者皆已有现码支撑。 `src/pages/calendar-pages.tsx:872-885`, `src/pages/hod-pages.tsx:228-257`
+- HOD 文档须显式写 `Action Needed = governed open only`，并保留 acknowledgements / resolutions 为 summary 指标，勿混成 queue blockers。 `src/pages/hod-pages.tsx:154-165`, `src/pages/hod-pages.tsx:249-257`, `src/pages/hod-pages.tsx:382-485`, `air-mentor-api/src/lib/proof-control-plane-hod-service.ts:651-718`
