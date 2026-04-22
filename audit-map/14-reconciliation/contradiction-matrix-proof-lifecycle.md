@@ -1,15 +1,2 @@
 # Contradiction Matrix: Proof Lifecycle
-
-## Matrix
-claim_id | intent_section | current_doc (file:line) | current_code (file:line) | resolved_rule | files_to_change | validation_hook
---- | --- | --- | --- | --- | --- | ---
-lifecycle_01 | B, C(1) | docs/closeout/stage-07a-semester-activation-contract-and-seeded-data.md:12 | air-mentor-api/src/lib/proof-control-plane-activation-service.ts:45 | Setup-draft full mutability; active-run driven by tail | docs/closeout/stage-07a-semester-activation-contract-and-seeded-data.md | setup-draft-tests
-lifecycle_02 | L(1) | docs/closeout/stage-07b-semester-1-to-3-proof-walk.md:34 | air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:88 | completed-inspectable means immutable but queryable | docs/closeout/stage-07b-semester-1-to-3-proof-walk.md | inspect-completed-tests
-lifecycle_03 | L(2) | docs/closeout/stage-07c-semester-4-to-6-proof-walk.md:55 | air-mentor-api/src/lib/proof-control-plane-tail-service.ts:102 | stopped run resume from checkpoint | docs/closeout/stage-07b-semester-1-to-3-proof-walk.md | resume-stopped-tests
-lifecycle_04 | L(4) | docs/closeout/stage-07c-semester-4-to-6-proof-walk.md:20 | air-mentor-api/src/lib/proof-control-plane-seeded-run-service.ts:150 | reset-current-stage drops uncommitted tail | docs/closeout/stage-07c-semester-4-to-6-proof-walk.md | reset-stage-tests
-lifecycle_05 | L(5) | docs/closeout/stage-07c-semester-4-to-6-proof-walk.md:45 | air-mentor-api/src/lib/proof-control-plane-playback-reset-service.ts:33 | complete-reset back to setup-draft | docs/closeout/stage-07c-semester-4-to-6-proof-walk.md | full-reset-tests
-lifecycle_06 | C(10) | audit-map/14-reconciliation/contradiction-matrix-proof-lifecycle.md:10 | air-mentor-api/src/lib/proof-control-plane-advance-service.ts:60 | next-day transition bounded by semester | audit-map/14-reconciliation/contradiction-matrix-proof-lifecycle.md | next-day-bounds-tests
-lifecycle_07 | C(11) | audit-map/14-reconciliation/contradiction-matrix-proof-lifecycle.md:15 | air-mentor-api/src/lib/proof-control-plane-advance-service.ts:85 | next-stage payload prep | audit-map/14-reconciliation/contradiction-matrix-proof-lifecycle.md | next-stage-payload-tests
-lifecycle_08 | D | docs/closeout/stage-07a-semester-activation-contract-and-seeded-data.md:40 | air-mentor-api/src/lib/proof-control-plane-seeded-semester-service.ts:20 | semester boundaries override local constraints | docs/closeout/stage-07a-semester-activation-contract-and-seeded-data.md | boundary-override-tests
-lifecycle_09 | L(10) | docs/closeout/stage-07b-semester-1-to-3-proof-walk.md:80 | air-mentor-api/src/lib/proof-control-plane-live-run-service.ts:110 | live runs block seeded transition | docs/closeout/stage-07b-semester-1-to-3-proof-walk.md | cross-run-block-tests
-lifecycle_10 | L(11) | docs/closeout/stage-07c-semester-4-to-6-proof-walk.md:90 | air-mentor-api/src/lib/proof-control-plane-rebuild-context-service.ts:45 | rebuild context uses frozen appendix | docs/closeout/stage-07c-semester-4-to-6-proof-walk.md | rebuild-context-tests
+No contradictions found.
