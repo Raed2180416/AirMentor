@@ -1,0 +1,9 @@
+purpose: |
+  Build corrected frozen corpus after world/feature fixes, train v8 logistic baseline with missingness-aware features, evaluate on full decision metric set.
+nonneg:
+  - Do not promote if overload remains unsafe (>1.0)
+  - Must use the corrected corpus only (post-Phase-2 world fixes)
+  - Every eval metric has a JSON sidecar with exact numbers
+  - Deterministic seed; reproducibility gate must pass
+owner_files:
+  - audit-map/22-evals/overnight-ml-v8-corrected-logistic.md

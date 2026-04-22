@@ -1,0 +1,15 @@
+artifacts:
+  - path: audit-map/32-reports/overnight-final-summary.md
+    min_lines: 80
+    min_bytes: 3000
+    write_mode: replace
+    required_sections:
+      - '# Overnight Final Summary'
+      - '## Verdict'
+      - '## What Was Changed'
+      - '## Why'
+      - '## What Remains'
+      - '## Safe for Demo'
+      - '## Still Experimental'
+      - '## Demo Script Checklist'
+      - '## Remaining Risk Register'

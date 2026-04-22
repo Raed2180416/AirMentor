@@ -1,0 +1,11 @@
+artifacts:
+  - path: audit-map/32-reports/overnight-validate-api-integration.md
+    min_lines: 25
+    min_bytes: 800
+    write_mode: replace
+    required_sections:
+      - '# Overnight Validate: API / Integration Tests'
+      - '## Commands Run'
+      - '## Results Summary'
+      - '## Failing Tests'
+      - '## Conclusion'
