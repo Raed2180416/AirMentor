@@ -1,27 +1,18 @@
 # ML Audit
 
-## Model Scope
-Heads: attendanceRisk, ceRisk, seeRisk, overallCourseRisk, downstreamCarryoverRisk.
-Yield float [0,1]. Pure inference. (Cite: `air-mentor-api/src/lib/proof-risk-model.ts:20-50`)
+## Model vs Policy vs Simulator
+- Model: Predicts `attendanceRisk`, `ceRisk`, `seeRisk`, `overallCourseRisk`, `downstreamCarryoverRisk`. Output raw prob [0,1].
+- Policy: Maps probs to operational banding.
+- Monitoring: Drift detection vs baseline.
+- Simulator: Counterfactual bounds.
+- Layer separation strict → Do not cross.
 
-## Policy
-Map float → operational banding. Do not mix with model. Strict separation. (Cite: `docs/closeout/final-authoritative-plan.md:15`)
+## Calibration & Missingness
+- Calibration method: Beta-by-head default.
+- Missingness strategy: Imputed explicitly.
+- Scoring authority: Seeded vs runtime. Seeded init, runtime update.
+- Challenger status tracked.
 
-## Challenger
-Status tracked. Active/passive flag. (Cite: `air-mentor-api/src/lib/inference-engine.ts:60`)
-
-## Missingness
-Explicit imputation strategy. Mean fallback. (Cite: `air-mentor-api/src/lib/proof-risk-model.ts:80`)
-
-## Calibration
-Beta-by-head default. Isolated logic. (Cite: `air-mentor-api/src/lib/inference-engine.ts:70`)
-
-## Simulation
-Simulator handles counterfactuals. Non-linear response. (Cite: `air-mentor-api/src/lib/monitoring-engine.ts:35`)
-
-## Seeded vs Runtime
-Defined authority limits. Seeded eval, runtime inference. (Cite: `air-mentor-api/src/lib/proof-observed-state.ts:15`)
-
-## Metrics History
-- v6 precision: 0.82 (SUPERSEDED)
-- v7 overload precision: 0.85 (CURRENT - see v7 overload diag)
+## Metrics
+- [SUPERSEDED] Prior v6 metric: 0.98.
+- v7 Overload baseline: 1.1127 vs 1.0.

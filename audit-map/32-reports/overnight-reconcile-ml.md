@@ -9,22 +9,22 @@ Monitoring engine claims metric aggregation logic.
 Separation required. Model predict risk. Policy act risk. Simulator test policy.
 
 ## Ledger
-claim_id | intent_section | current_doc | current_code | resolved | files_to_change | eval_artifact
---- | --- | --- | --- | --- | --- | ---
-ML-001 | F | Docs mix model/policy | src/lib/proof-risk-model.ts | Y | audit-map/08-ml-audit/README.md | catboost_info
-ML-002 | G | Calibration Beta-by-head missing | src/lib/inference-engine.ts | Y | audit-map/14-reconciliation/contradiction-matrix-ml.md | catboost_info
-ML-003 | H | Missingness strategy ambiguous | src/lib/proof-risk-model.ts | Y | audit-map/08-ml-audit/README.md | catboost_info
-ML-004 | J | Simulator scope overlap | src/lib/monitoring-engine.ts | Y | audit-map/14-reconciliation/contradiction-matrix-ml.md | output
-ML-005 | N | Intervention response formula | src/lib/proof-risk-model.ts | Y | audit-map/08-ml-audit/README.md | output
-ML-006 | F | Challenger status vague | src/lib/inference-engine.ts | Y | audit-map/08-ml-audit/README.md | catboost_info
-ML-007 | G | Seeded vs runtime score | src/lib/proof-observed-state.ts | Y | audit-map/14-reconciliation/contradiction-matrix-ml.md | catboost_info
-ML-008 | H | v7 overload unaddressed | src/lib/inference-engine.ts | Y | audit-map/32-reports/overnight-reconcile-ml.md | catboost_info
+| claim_id | intent_section | current_doc | current_code | resolved | files_to_change | eval_artifact |
+| --- | --- | --- | --- | --- | --- | --- |
+| ML-001 | F | Docs mix model/policy | src/lib/proof-risk-model.ts:1-100 | Y | audit-map/08-ml-audit/README.md | catboost_info |
+| ML-002 | G | Calibration Beta-by-head missing | src/lib/inference-engine.ts:50-80 | Y | audit-map/14-reconciliation/contradiction-matrix-ml.md | catboost_info |
+| ML-003 | H | Missingness strategy ambiguous | src/lib/proof-risk-model.ts:1-100 | Y | audit-map/08-ml-audit/README.md | catboost_info |
+| ML-004 | J | Simulator scope overlap | src/lib/monitoring-engine.ts:20-40 | Y | audit-map/14-reconciliation/contradiction-matrix-ml.md | output |
+| ML-005 | N | Intervention response formula | src/lib/proof-risk-model.ts:1-100 | Y | audit-map/08-ml-audit/README.md | output |
+| ML-006 | F | Challenger status vague | src/lib/inference-engine.ts:50-80 | Y | audit-map/08-ml-audit/README.md | catboost_info |
+| ML-007 | G | Seeded vs runtime score | src/lib/proof-observed-state.ts | Y | audit-map/14-reconciliation/contradiction-matrix-ml.md | catboost_info |
+| ML-008 | H | v7 overload unaddressed | src/lib/inference-engine.ts:50-80 | Y | audit-map/32-reports/overnight-reconcile-ml.md | catboost_info |
 
 ## Evidence
-`air-mentor-api/src/lib/proof-risk-model.ts` (L1-100) → Heads defined.
-`air-mentor-api/src/lib/inference-engine.ts` (L50-80) → Inference logic.
-`air-mentor-api/src/lib/monitoring-engine.ts` (L20-40) → Monitor logic.
-`docs/closeout/final-authoritative-plan.md` (L1-50) → Strategy.
+`air-mentor-api/src/lib/proof-risk-model.ts`:1-100 → Heads defined.
+`air-mentor-api/src/lib/inference-engine.ts`:50-80 → Inference logic.
+`air-mentor-api/src/lib/monitoring-engine.ts`:20-40 → Monitor logic.
+`docs/closeout/final-authoritative-plan.md`:1-50 → Strategy.
 
 ## v7 Overload Diagnosis
 v7 overload observed (1.1127 vs 1.0 baseline). Causes ranked:
