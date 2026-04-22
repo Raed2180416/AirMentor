@@ -19,7 +19,7 @@ type RuntimeChangeSet = {
 
 type AcademicBootstrapRuntimeView = {
   runtime: {
-    tasks: Array<{ id: string }>
+    tasks: Array<{ id: string; dueDateISO?: string }>
     taskPlacements: Record<string, Record<string, unknown> | undefined>
     calendarAudit: Array<{ id: string }>
   }
@@ -338,6 +338,84 @@ describe('academic runtime narrow routes', () => {
     expect(runtime.auditEvent).toMatchObject({
       id: changeSet.auditEvent.id,
       targetId: changeSet.auditEvent.targetId,
+    })
+  })
+
+  it('mutates the authoritative task due date when a placement is moved to a new calendar day', async () => {
+    current = await createTestApp()
+    const cookie = await loginCourseLeader(current.app)
+    const scope = await pickRuntimeScope(current.app, cookie)
+    const changeSet = buildRuntimeChangeSet(scope)
+
+    const taskCreateResponse = await current.app.inject({
+      method: 'PUT',
+      url: `/api/academic/tasks/${changeSet.task.id}`,
+      headers: { cookie, origin: TEST_ORIGIN },
+      payload: { task: changeSet.task },
+    })
+    expect(taskCreateResponse.statusCode).toBe(200)
+
+    const placementCreateResponse = await current.app.inject({
+      method: 'PUT',
+      url: `/api/academic/task-placements/${changeSet.placement.taskId}`,
+      headers: { cookie, origin: TEST_ORIGIN },
+      payload: {
+        placement: changeSet.placement,
+      },
+    })
+    expect(placementCreateResponse.statusCode).toBe(200)
+    const createdPlacement = placementCreateResponse.json()
+
+    const movedPlacement = {
+      ...changeSet.placement,
+      dateISO: '2026-03-24',
+      startMinutes: 660,
+      endMinutes: 690,
+      startTime: '11:00',
+      endTime: '11:30',
+    }
+    const placementUpdateResponse = await current.app.inject({
+      method: 'PUT',
+      url: `/api/academic/task-placements/${changeSet.placement.taskId}`,
+      headers: { cookie, origin: TEST_ORIGIN },
+      payload: {
+        placement: movedPlacement,
+        expectedUpdatedAt: createdPlacement.placement.updatedAt,
+      },
+    })
+    expect(placementUpdateResponse.statusCode).toBe(200)
+
+    const taskListResponse = await current.app.inject({
+      method: 'GET',
+      url: '/api/academic/tasks',
+      headers: { cookie },
+    })
+    expect(taskListResponse.statusCode).toBe(200)
+    expect(taskListResponse.json().items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: changeSet.task.id,
+        dueDateISO: '2026-03-24',
+      }),
+    ]))
+
+    const bootstrapResponse = await current.app.inject({
+      method: 'GET',
+      url: '/api/academic/bootstrap',
+      headers: { cookie },
+    })
+    expect(bootstrapResponse.statusCode).toBe(200)
+    const bootstrap = bootstrapResponse.json() as AcademicBootstrapRuntimeView
+    expect(bootstrap.runtime.tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: changeSet.task.id,
+        dueDateISO: '2026-03-24',
+      }),
+    ]))
+    expect(bootstrap.runtime.taskPlacements[changeSet.placement.taskId]).toMatchObject({
+      taskId: changeSet.placement.taskId,
+      dateISO: '2026-03-24',
+      startMinutes: 660,
+      endMinutes: 690,
     })
   })
 

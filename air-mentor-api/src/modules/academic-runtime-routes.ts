@@ -31,6 +31,27 @@ import {
   requireRole,
 } from './support.js'
 
+export function taskPayloadWithPlacementDate(
+  payloadJson: string,
+  dueDateISO: string,
+  updatedAt: number,
+) {
+  const currentPayload = parseJson(payloadJson, {} as Record<string, unknown>)
+  const nextPayload: Record<string, unknown> = {
+    ...currentPayload,
+    dueDateISO,
+    updatedAt,
+  }
+  const scheduleMeta = currentPayload.scheduleMeta
+  if (scheduleMeta && typeof scheduleMeta === 'object' && !Array.isArray(scheduleMeta)) {
+    nextPayload.scheduleMeta = {
+      ...(scheduleMeta as Record<string, unknown>),
+      nextDueDateISO: dueDateISO,
+    }
+  }
+  return stringifyJson(nextPayload)
+}
+
 export async function registerAcademicRuntimeRoutes(
   app: FastifyInstance,
   context: RouteContext,
@@ -398,6 +419,14 @@ export async function registerAcademicRuntimeRoutes(
       }
     }
     const now = context.now()
+    const nowMillis = Date.parse(now)
+    const currentPayload = parseJson(taskRow.payloadJson, {} as Record<string, unknown>)
+    const currentPayloadDueDateISO = typeof currentPayload.dueDateISO === 'string' ? currentPayload.dueDateISO : null
+    const currentScheduleMeta = currentPayload.scheduleMeta
+    const currentScheduleDueDateISO = currentScheduleMeta && typeof currentScheduleMeta === 'object' && !Array.isArray(currentScheduleMeta)
+      && typeof (currentScheduleMeta as Record<string, unknown>).nextDueDateISO === 'string'
+      ? String((currentScheduleMeta as Record<string, unknown>).nextDueDateISO)
+      : null
     const [current] = await context.db
       .select()
       .from(academicTaskPlacements)
@@ -440,6 +469,30 @@ export async function registerAcademicRuntimeRoutes(
         updatedAt: now,
       })
     }
+    let runtimeTaskShadow: Record<string, unknown> | null = null
+    if (
+      taskRow.dueDateIso !== placement.dateISO
+      || currentPayloadDueDateISO !== placement.dateISO
+      || currentScheduleDueDateISO !== placement.dateISO
+    ) {
+      await context.db.update(academicTasks).set({
+        dueDateIso: placement.dateISO,
+        payloadJson: taskPayloadWithPlacementDate(taskRow.payloadJson, placement.dateISO, Number.isFinite(nowMillis) ? nowMillis : Date.now()),
+        updatedByFacultyId: auth.facultyId,
+        updatedAt: now,
+      }).where(eq(academicTasks.taskId, placement.taskId))
+      const [storedTask] = await context.db.select().from(academicTasks).where(eq(academicTasks.taskId, placement.taskId))
+      if (storedTask) {
+        const storedTransitions = await context.db
+          .select()
+          .from(academicTaskTransitions)
+          .where(eq(academicTaskTransitions.taskId, placement.taskId))
+          .orderBy(asc(academicTaskTransitions.occurredAt))
+        runtimeTaskShadow = await syncRuntimeTaskShadow(taskRecordWithVersion(storedTask, storedTransitions), {
+          writeRuntimeShadow: options.writeRuntimeShadow ?? true,
+        }) as Record<string, unknown>
+      }
+    }
     const [storedPlacement] = await context.db
       .select()
       .from(academicTaskPlacements)
@@ -458,6 +511,9 @@ export async function registerAcademicRuntimeRoutes(
       metadata: { updatedAt: record.updatedAt },
     })
     if (options.emitShadowDrift) {
+      if (runtimeTaskShadow) {
+        await maybeEmitRuntimeShadowDrift('tasks', placement.taskId, runtimeTaskShadow)
+      }
       await maybeEmitRuntimeShadowDrift('taskPlacements', placement.taskId, runtimePlacementShadow)
     }
     return {
