@@ -1,7 +1,7 @@
 {
   "status": "blocked",
   "pass": "overnight-ml-v8-corrected-logistic",
-  "captured_at": "2026-04-23T03:10:00+05:30",
+  "captured_at": "2026-04-23T03:18:45+05:30",
   "phase2_completion_reference": "2026-04-22T20:59:42Z",
   "probes": {
     "external_database_env": {
@@ -17,6 +17,15 @@
       "command": "node -e \"net.createServer().listen(0, '127.0.0.1')\"",
       "ok": false,
       "error": "Error: listen EPERM: operation not permitted 127.0.0.1"
+    },
+    "tsx_ipc_probe": {
+      "command": "LD_LIBRARY_PATH=/run/current-system/sw/share/nix-ld/lib /home/raed/projects/air-mentor-ui/node_modules/.bin/tsx scripts/verify-calibration-fixes.ts",
+      "ok": false,
+      "error": "Error: listen EPERM: operation not permitted /tmp/tsx-1002/3.pipe"
+    },
+    "sandbox_tcp_listener_table": {
+      "ok": true,
+      "listeners": []
     },
     "embedded_postgres_unix_socket_probe": {
       "ok": false,
@@ -35,6 +44,58 @@
         33893
       ],
       "error": "connect EPERM /tmp/.s.PGSQL.<port>"
+    },
+    "host_socket_lock_scan": {
+      "ok": false,
+      "lock_count_observed": 37,
+      "sample_ports": [
+        34925,
+        36461,
+        37091,
+        39511,
+        43101
+      ],
+      "connect_error": "Operation not permitted"
+    },
+    "project_root_evaluation_report_probe": {
+      "ok": false,
+      "path": "/home/raed/projects/air-mentor-ui/air-mentor-api/output/proof-risk-model/evaluation-report.json",
+      "file_timestamp_local": "2026-04-23 01:52:16.7992224350",
+      "generatedAt": "2026-04-20T02:51:40.283Z",
+      "seedProfile": "smoke-3",
+      "hasReproducibilityManifest": false,
+      "admissible_for_corrected_v8": false,
+      "reason": "File mtime is newer, but payload itself is a stale smoke-3 report generated on 2026-04-20 and cannot prove post-Phase-2 corrected training."
+    },
+    "verify_calibration_node_strip_types": {
+      "command": "node --experimental-strip-types scripts/verify-calibration-fixes.ts",
+      "ok": false,
+      "passing_checks": [
+        "isotonic-equivalence",
+        "isotonic-monotonic",
+        "local-ece-catches-local-miscal"
+      ],
+      "failing_check": "isotonic-scaling-not-quadratic",
+      "failure_detail": "150k/2k ratio=244.4x (should be <200x; legacy would be >1000x)"
+    },
+    "post_phase2_output_scan": {
+      "ok": false,
+      "post_phase2_dataset_dumps_found": false,
+      "post_phase2_metric_sidecars_found": false,
+      "latest_project_dataset_dump": {
+        "path": "/home/raed/projects/air-mentor-ui/air-mentor-api/output/proof-risk-model/retrain-20260422T120306Z/dataset_dump.json",
+        "timestamp_local": "2026-04-22 17:46:22.6180747640",
+        "timestamp_utc": "2026-04-22T12:16:22.618074764Z",
+        "admissible_for_corrected_v8": false,
+        "reason": "Predates Phase 2 completion."
+      },
+      "latest_project_feature_export": {
+        "path": "/home/raed/projects/air-mentor-ui/air-mentor-api/output/proof-risk-model/features.csv",
+        "timestamp_local": "2026-04-22 17:04:35.0434590970",
+        "timestamp_utc": "2026-04-22T11:34:35.043459097Z",
+        "admissible_for_corrected_v8": false,
+        "reason": "Predates Phase 2 completion."
+      }
     },
     "admissible_corrected_artifact_search": {
       "ok": false,

@@ -8,9 +8,10 @@
   - TCP listen probe 回 `Error: listen EPERM: operation not permitted 127.0.0.1`
   - embedded-postgres 改 Unix-domain socket，仍回 `FATAL: could not create any Unix-domain sockets`
   - `/tmp/.s.PGSQL.*` 既存 socket 抽样连接皆回 `connect EPERM`
-  证：`audit-map/22-evals/data/overnight-ml-v8-corrected-logistic-probes.json:1-38`
+  证：`audit-map/22-evals/data/overnight-ml-v8-corrected-logistic-probes.json:1-112`
 - 现存 `cov12` arte物不可充 corrected corpus：其文已自明 “does not claim v8 baseline is corrected”，且此 seed 组无 test-partition seed。证：`audit-map/32-reports/ml-retrain-catboost-20260422.md:111-113`, `audit-map/32-reports/ml-retrain-catboost-20260422.md:166-167`
-- 盘上亦无 post-Phase-2 corrected arte物可援。Phase 2 完于 `2026-04-22T20:59:42Z`；可见最新 retrain dir `retrain-coverage12-20260422T162939Z` 时戳仅 `2026-04-22T17:07:22.657205474Z`，先于 Phase 2。证：`audit-map/22-evals/data/overnight-ml-v8-corrected-logistic-probes.json:1-38`
+- 盘上亦无 post-Phase-2 corrected arte物可援。Phase 2 完于 `2026-04-22T20:59:42Z`；可见最新 retrain dir `retrain-coverage12-20260422T162939Z` 时戳仅 `2026-04-22T17:07:22.657205474Z`，先于 Phase 2；最新 `dataset_dump.json` 亦仅 `2026-04-22T17:46:22.618074764Z`，`metric-sidecars/*` 全盘未见。证：`audit-map/22-evals/data/overnight-ml-v8-corrected-logistic-probes.json:1-112`
+- 主仓 `output/proof-risk-model/evaluation-report.json` 虽于 `2026-04-23T01:52:16.7992224350` 落盘，然 payload 自陈 `generatedAt=2026-04-20T02:51:40.283Z`、`seedProfile=smoke-3`、且无 `reproducibilityManifest`；乃旧 smoke arte物之拷映，非 corrected v8 证。证：`audit-map/22-evals/data/overnight-ml-v8-corrected-logistic-probes.json:1-112`, `/home/raed/projects/air-mentor-ui/air-mentor-api/output/proof-risk-model/evaluation-report.json:1-30`
 
 ## Training
 
@@ -21,9 +22,11 @@
   - `metric sidecars`：overall / budget / local-calibration / overload-by-dimension / stability / queue-burden / reproducibility。
   - `meta.txt`：seed、git SHA、hash、sidecar path。
 - 快验仅得部分：
-  - `verify-calibration-fixes.ts` 纯逻辑 PASS，可证 calibration/local-ECE helper 未折。
+  - runbook 直令 `tsx scripts/verify-calibration-fixes.ts` 今亦阻于 `listen EPERM ... /tmp/tsx-1002/3.pipe`；是故 sandbox 内连 fast smoke 都不可循既有 `tsx` 入口。证：`audit-map/22-evals/data/overnight-ml-v8-corrected-logistic-probes.json:1-97`
+  - 改以 `node --experimental-strip-types scripts/verify-calibration-fixes.ts`，功能项 `isotonic-equivalence`、`isotonic-monotonic`、`local-ece-catches-local-miscal` 皆过；然性能闸 `isotonic-scaling-not-quadratic` 仍红，`150k/2k ratio=244.4x`，故 smoke 非全绿。证：`audit-map/22-evals/data/overnight-ml-v8-corrected-logistic-probes.json:1-97`
   - `tests/evaluate-proof-risk-model.test.ts` 仍有既存 2 红：其断言仍假设 challenger hard-route 取胜，已不合现 chooser 行为。证：`air-mentor-api/tests/evaluate-proof-risk-model.test.ts:120-121`, `air-mentor-api/tests/evaluate-proof-risk-model.test.ts:168-169`
-- 正式 corrected corpus rebuild / retrain 未成。阻因非 Phase 7 逻辑回归，乃运行域既禁本地 socket，亦无 `AIRMENTOR_EVAL_DATABASE_URL` / `DATABASE_URL` / `PG*` 旁路可借。证：`audit-map/22-evals/data/overnight-ml-v8-corrected-logistic-probes.json:1-38`
+- 正式 corrected corpus rebuild / retrain 未成。阻因非 Phase 7 逻辑回归，乃运行域既禁本地 socket，亦无 `AIRMENTOR_EVAL_DATABASE_URL` / `DATABASE_URL` / `PG*` 旁路可借。证：`audit-map/22-evals/data/overnight-ml-v8-corrected-logistic-probes.json:1-97`
+- 另验 sandbox listener/host socket：`ss -ltn` 为空；`/tmp` 下虽留 `37` 个 host PG lock/socket，AF_UNIX 连接仍一律 `Operation not permitted`。是故即便宿主残留 Postgres 存在，sandbox 亦不可借。证：`audit-map/22-evals/data/overnight-ml-v8-corrected-logistic-probes.json:1-97`
 
 ## Metrics
 
@@ -104,6 +107,7 @@
   - 无 corrected run arte物可 hash。
   - 无第二次 bytewise rerun 可比。
   - 无外部 DB path，可替代 embedded-postgres；新加 fallback 亦因 env 缺失而未能启用。
+  - 主仓现存 `evaluation-report.json` 自身亦无 `reproducibilityManifest`，故连 stale smoke run 亦不足作 replay witness。证：`audit-map/22-evals/data/overnight-ml-v8-corrected-logistic-probes.json:1-97`, `/home/raed/projects/air-mentor-ui/air-mentor-api/output/proof-risk-model/evaluation-report.json:1-30`
 
 附 sidecar：
 

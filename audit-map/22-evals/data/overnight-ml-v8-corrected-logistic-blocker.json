@@ -14,7 +14,11 @@
   "blockers": [
     {
       "kind": "sandbox_socket_restriction",
-      "detail": "Evaluator boot path depends on socket-capable database access. Direct TCP listen probe returned EPERM, embedded-postgres Unix-domain socket bind returned Operation not permitted, and existing /tmp Postgres sockets were not connectable."
+      "detail": "Evaluator boot path depends on socket-capable database access. Direct TCP listen probe returned EPERM, the standard tsx CLI also failed its IPC pipe listen with EPERM, embedded-postgres Unix-domain socket bind returned Operation not permitted, and existing /tmp Postgres sockets were not connectable."
+    },
+    {
+      "kind": "sandbox_cannot_attach_host_postgres",
+      "detail": "The sandbox saw 37 /tmp Postgres lock files but every AF_UNIX connect attempt still failed with Operation not permitted, so residual host databases are unusable from this pass."
     },
     {
       "kind": "no_external_database_configured",
@@ -22,7 +26,11 @@
     },
     {
       "kind": "no_post_phase2_corrected_artifact_on_disk",
-      "detail": "Accessible retrain artifacts predate Phase 2 completion; latest retrain-coverage12-20260422T162939Z was timestamped 2026-04-22T17:07:22Z and is inadmissible for corrected-v8 promotion."
+      "detail": "Accessible retrain artifacts, dataset dumps, and feature exports all predate Phase 2 completion; latest retrain-coverage12-20260422T162939Z was timestamped 2026-04-22T17:07:22Z and is inadmissible for corrected-v8 promotion."
+    },
+    {
+      "kind": "stale_project_root_report",
+      "detail": "The only newer root evaluation-report.json has file mtime 2026-04-23T01:52:16 local, but its payload still says generatedAt=2026-04-20T02:51:40.283Z with seedProfile=smoke-3 and no reproducibilityManifest, so it cannot count as a corrected-corpus witness."
     }
   ],
   "probe_artifact": "audit-map/22-evals/data/overnight-ml-v8-corrected-logistic-probes.json",
