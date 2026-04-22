@@ -69,6 +69,12 @@ def _find_orphans(task_id: int | None, dag_run_id: str | None) -> list[dict]:
         if not finished:
             continue
         finish_at = finished[0]["at"]
+        # Guard: if current attempt started AFTER the latest native_runner_finished,
+        # the finish event belongs to a prior (reaped) attempt. Skip so we don't
+        # collect/validate work that's been superseded by a fresh in-flight run.
+        started_at = row["started_at"] or row["claimed_at"] or ""
+        if started_at and started_at > finish_at:
+            continue
         validated = list(conn.execute(
             "SELECT at FROM task_events "
             "WHERE task_id=? AND kind IN ('validator_passed','validator_failed') "
