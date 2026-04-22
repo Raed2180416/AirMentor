@@ -7,17 +7,20 @@
 - 行向量与 label dump：`/tmp/cov12-20260422T162939Z/dataset_dump.json`
 - active weights / calibration：`/tmp/cov12-20260422T162939Z/cov12.json`
 - 此 export 含 `158400` rows，split 皆 `validation`；`held-out test = 0`。故下表皆为 validation-only diagnostic，而非 promotion gate 复判。
+- 此 export 仅 `39` 个 `feat_*` 列；现行 `OBSERVABLE_FEATURE_KEYS` 已 `44` 维。故今轮诊断覆盖交互项与 `cgpa/backlogMissing`，未覆盖后加之 `tt1/tt2/see/quiz/assignment Missing` 五旗。
 - operational head 取 `overallCourseRisk`；`overload`、`ECE`、`local-ECE`、budget spill 口径皆循 `air-mentor-api/scripts/evaluate-proof-risk-model.ts`。
+- 重评分取 `cov12.json.artifact.activeModelFromEndpoint.production.heads.overallCourseRisk` 之 `intercept + weights + isotonic calibration`，并依 serving path 对 `headProbabilities.overallCourseRisk` 作 `roundToFour`。
 - interaction 真集合依源码凡五：`tt1tt2ExamCompoundRiskScaled`、`courseworkCompoundRiskScaled`、`stagePostTt2TtCompoundInteractionScaled`、`attendanceTrendCompoundRiskScaled`、`stagePostAssignmentsCourseworkInteractionScaled`。auth prompt所列凡四；故本报告之 `all` 依源码取“五项全灭”，未列名之 `attendanceTrendCompoundRiskScaled` 仅随总闸入列。
 
 ## Findings
 
 1. `none` 下 `ROC-AUC 0.7769 / Brier 0.1343 / ECE 0.0001 / overload 1.0616`。然 budget 边界 `0.3792` 处有 `2764` exact ties，spill `1953`，且全盘仅 `78` unique probs。是 score bunching 甚于 calibration miss；其形更近 isotonic step-function 压扁，非局部阈值失真独作。
-2. 单项 ablation 里，降 overload 最多者为 `coursework interaction only` (`1.0141`)，次为 `TT interaction only` (`1.0414`)；两项 stage-gated term 仅微动总盘：`stage × TT only = 1.0586`，`stage × coursework only = 1.0569`。故主压强在 stage-blind compound term，非 stage × term。
+2. 单项 ablation 里，降 overload 最多者为 `coursework interaction only` (`1.0141`)，次为 `TT interaction only` (`1.0414`)；两项 stage-gated term 仅微动总盘：`stage × TT only = 1.0586`，`stage × coursework only = 1.0568`。故主压强在 stage-blind compound term，非 stage × term。
 3. `all` 令 overload 几近平 (`1.0039`)，tie@budget 降至 `669`，spill 仅 `123`；然同时 `ROC-AUC` 降至 `0.7745`，`Brier` 升至 `0.1353`，`ECE` 恶化至 `0.0189`，`local-ECE@0.85` 恶化至 `0.0238`。故“全关 interaction”可证因，不可作 fix。
 4. stage 条件裂隙甚明：baseline overload 峰在 `post-see 1.0819` 与 `post-tt2 1.0715`；最坏 ECE 却在 `pre-tt1 0.0186`。overload 峰与 calibration 峰不在同 stage，示因非“单一全局校准坏”，而是 stage-conditioned score compression / distribution shift。
 5. `all` 之改善不应误归于四个指名项。补算“named-4 off，惟留 `attendanceTrendCompoundRiskScaled`”得 overload 仅降至 `1.0163`；再灭此第五项，方至 `1.0039`。故未列名第五 interaction 亦属重要共犯。
 6. blanket ablation 具 stage 迁害：`all` 虽压 `post-see` overload 至 `1.0041`，却将 `post-tt1` 推高至 `1.1443`。是以 interaction 并非纯害；其于早中期仍供 separation，晚期方与 isotonic bunching 叠加成患。
+7. schema caveat 仍在：今轮 export 尚无 assessment-missingness 五旗，故可严证者为“interaction → tied-mass / stage shift”之贡献；不可据此宣称后加 missingness flags 已被排除或已证无关。
 
 ## Evidence
 
@@ -31,10 +34,10 @@ weights / calibration：`/tmp/cov12-20260422T162939Z/cov12.json`
 | TT interaction only | `tt1tt2ExamCompoundRiskScaled` | 0.7755 | 0.1348 | 0.0098 | 1.0414 | 0.3234 | 1453 | 1313 | 0.0098 |
 | coursework interaction only | `courseworkCompoundRiskScaled` | 0.7755 | 0.1347 | 0.0067 | 1.0141 | 0.3792 | 2256 | 448 | 0.0068 |
 | stage × TT only | `stagePostTt2TtCompoundInteractionScaled` | 0.7768 | 0.1343 | 0.0005 | 1.0586 | 0.3792 | 2751 | 1855 | 0.0005 |
-| stage × coursework only | `stagePostAssignmentsCourseworkInteractionScaled` | 0.7767 | 0.1343 | 0.0008 | 1.0569 | 0.3792 | 2720 | 1801 | 0.0008 |
+| stage × coursework only | `stagePostAssignmentsCourseworkInteractionScaled` | 0.7767 | 0.1343 | 0.0008 | 1.0568 | 0.3792 | 2720 | 1801 | 0.0008 |
 | all | all 5 interaction terms | 0.7745 | 0.1353 | 0.0189 | 1.0039 | 0.3138 | 669 | 123 | 0.0189 |
 
-补证：若仅灭 auth prompt所指名四项，而保 `attendanceTrendCompoundRiskScaled`，则 `ROC-AUC 0.7748 / Brier 0.1352 / ECE 0.0170 / overload 1.0163 / tie@budget 656 / spill 516`。是知 `attendanceTrendCompoundRiskScaled` 对 `all` 之余量改善约再去 `0.0124` overload。
+补证：若仅灭 auth prompt所指名四项，而保 `attendanceTrendCompoundRiskScaled`，则 `ROC-AUC 0.7748 / Brier 0.1351 / ECE 0.0170 / overload 1.0163 / tie@budget 656 / spill 516`。是知 `attendanceTrendCompoundRiskScaled` 对 `all` 之余量改善约再去 `0.0124` overload。
 
 源 feature export：`/tmp/cov12-20260422T162939Z/features.csv`  
 向量 / label：`/tmp/cov12-20260422T162939Z/dataset_dump.json`  
@@ -76,6 +79,7 @@ weights / calibration：`/tmp/cov12-20260422T162939Z/cov12.json`
 3. `post-see` 与 `post-tt2` 应另看 late-stage calibration / rebin；其 overload 峰远高于 `pre-tt1`，而 `pre-tt1` 之痛点更像 calibration drift 非 overload drift。
 4. `post-tt1` 不宜 blanket 去 interaction；`all-off` 于此 stage 反致 `1.1443` overload，示该 stage 仍赖 interaction 维持排序张力。
 5. 下轮宜正式补算单项 `attendanceTrendCompoundRiskScaled` ablation；今轮 ad hoc 旁证已示其不可忽。
+6. 若后续补齐 assessment-missingness 五旗 export，须复跑同一 ablation 表。今轮 `39 → 44` 维差，或使部分 `pre-tt1` / `post-assignments` 校准漂移与 interaction 贡献缠结。
 
 ## Recommendations
 
