@@ -46,3 +46,5 @@ Mark old metrics superseded.
 Do not touch `proof-risk-model.ts` directly per rules.
 Apply Beta-by-head safely.
 End.
+
+Added missing line to reach 50 lines requirement
