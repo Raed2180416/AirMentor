@@ -1,0 +1,56 @@
+{
+  "status": "blocked",
+  "pass": "overnight-ml-v8-corrected-logistic",
+  "corrected_corpus_built": false,
+  "admissible_corrected_metrics_present": false,
+  "script_updates": {
+    "control_plane_import_uses_dist": true,
+    "dynamic_current_variant_label": true,
+    "reproducibility_manifest_hashes": true,
+    "metric_sidecar_write_paths": true,
+    "meta_manifest_write_path": true
+  },
+  "blockers": [
+    {
+      "kind": "sandbox_socket_restriction",
+      "detail": "Evaluator boot path depends on EmbeddedPostgres plus local listen-capable port allocation via createTestApp."
+    },
+    {
+      "kind": "no_external_database_configured",
+      "detail": "No DATABASE_URL/PG* env was present in this pipeline shell, so there was no alternate DB-backed execution path."
+    }
+  ],
+  "rejected_prior_artifact": {
+    "path": "air-mentor-api/output/proof-risk-model/retrain-coverage12-20260422T162939Z/eval-cov12.json",
+    "reason": [
+      "Built before Phase 2 completed, so not a post-Phase-2 corrected corpus artifact.",
+      "Held-out overallCourse current metrics are degenerate: support 0, rocAuc 0.5, overloadRatio 0.0."
+    ],
+    "overallCourseCurrent": {
+      "brier": 0.0,
+      "logLoss": 0.0,
+      "rocAuc": 0.5,
+      "averagePrecision": 0.0,
+      "expectedCalibrationError": 0.0,
+      "support": 0,
+      "budgetRate": 0.2,
+      "flaggedRateAtBudget": 0.0,
+      "precisionAtBudget": 0.0,
+      "recallAtBudget": 0.0,
+      "overloadRatio": 0.0
+    }
+  },
+  "v7_reference": {
+    "path": "audit-map/08-ml-audit/07-v7-overload-root-cause-analysis-2026-04-22.md",
+    "rocAuc": 0.7894,
+    "brier": 0.1359,
+    "globalEce": 0.0067,
+    "overloadRatio": 1.1127,
+    "baselineV5LikeOverload": 1.01,
+    "heuristicOverload": 1.0049
+  },
+  "promotion_decision": {
+    "result": "blocked",
+    "reason": "Corrected-corpus metrics were not regenerated; overload <= 1.00 and reproducibility replay remain unproven."
+  }
+}

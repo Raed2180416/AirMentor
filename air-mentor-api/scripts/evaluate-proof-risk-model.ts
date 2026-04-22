@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -33,7 +34,7 @@ import {
   reviewProofCrosswalks,
   startProofSimulationRun,
   validateProofCurriculumImport,
-} from '../src/lib/msruas-proof-control-plane.js'
+} from '../dist/lib/msruas-proof-control-plane.js'
 import { resolveBatchPolicy } from '../src/modules/admin-structure.js'
 import {
   BASELINE_V5_LIKE_PROOF_RISK_TRAINING_CONFIG,
@@ -1000,6 +1001,70 @@ function currentGitSha(rootDir: string) {
   } catch {
     return null
   }
+}
+
+function sha256Hex(input: string) {
+  return createHash('sha256').update(input).digest('hex')
+}
+
+function sha256Json(value: unknown) {
+  return sha256Hex(JSON.stringify(value))
+}
+
+function currentVariantLabel(modelVersion: string | null | undefined) {
+  if (!modelVersion) return 'current'
+  const match = modelVersion.match(/observable-risk-logit-(.+)$/)
+  return match ? `current-${match[1]}` : `current-${modelVersion}`
+}
+
+function metricSidecarFileName(name: string) {
+  return `${name}.json`
+}
+
+function buildMetaFile(input: {
+  generatedAt: string
+  gitSha: string | null
+  reportPaths: {
+    outputDir: string
+    jsonPath: string
+    markdownPath: string
+  }
+  seedProfile: string
+  requestedSeeds: number[]
+  governedSeeds: number[]
+  selectedRuns: Array<{
+    simulationRunId: string
+    seed: number
+    split: SplitName
+    scenarioFamily: string
+  }>
+  reproducibilityManifest: {
+    splitHash: string
+    featureKeyHash: string
+    corpusHash: string
+    replayHash: string
+  }
+  env: Record<string, string>
+  metricSidecars: Record<string, string>
+}) {
+  return [
+    `GENERATED_AT=${input.generatedAt}`,
+    `GIT_SHA=${input.gitSha ?? 'unavailable'}`,
+    `OUTPUT_DIR=${input.reportPaths.outputDir}`,
+    `JSON_PATH=${input.reportPaths.jsonPath}`,
+    `MARKDOWN_PATH=${input.reportPaths.markdownPath}`,
+    `SEED_PROFILE=${input.seedProfile}`,
+    `REQUESTED_SEEDS=${input.requestedSeeds.join(',')}`,
+    `GOVERNED_SEEDS=${input.governedSeeds.join(',')}`,
+    `SELECTED_RUNS=${input.selectedRuns.map(run => `${run.seed}:${run.split}:${run.scenarioFamily}:${run.simulationRunId}`).join(',')}`,
+    `SPLIT_HASH=${input.reproducibilityManifest.splitHash}`,
+    `FEATURE_KEY_HASH=${input.reproducibilityManifest.featureKeyHash}`,
+    `CORPUS_HASH=${input.reproducibilityManifest.corpusHash}`,
+    `REPLAY_HASH=${input.reproducibilityManifest.replayHash}`,
+    ...Object.entries(input.env).map(([key, value]) => `${key}=${value}`),
+    ...Object.entries(input.metricSidecars).map(([key, value]) => `SIDECAR_${key.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}=${value}`),
+    '',
+  ].join('\n')
 }
 
 function governedRunStatusRank(status: typeof simulationRuns.$inferSelect.status) {
@@ -2275,9 +2340,95 @@ async function main() {
 
     const paths = evaluationPaths(process.cwd())
     const gitSha = currentGitSha(process.cwd())
+    const generatedAt = new Date().toISOString()
+    const currentVariantName = currentVariantLabel(currentLocalBundle.production.modelVersion)
+    const datasetDumpPath = path.join(paths.outputDir, 'dataset_dump.json')
+    const metricSidecarDir = path.join(paths.outputDir, 'metric-sidecars')
+    const metaPath = path.join(paths.outputDir, 'meta.txt')
+    const selectedRuns = selectedRunRows
+      .map(row => ({
+        simulationRunId: row.simulationRunId,
+        seed: row.seed,
+        split: splitByRunId.get(row.simulationRunId) ?? 'train',
+        scenarioFamily: scenarioFamilyByRunId.get(row.simulationRunId) ?? 'balanced',
+      }))
+      .sort((left, right) => left.seed - right.seed || left.simulationRunId.localeCompare(right.simulationRunId))
+    const reproducibilityManifest = {
+      manifestVersion: PROOF_CORPUS_MANIFEST_VERSION,
+      generatedAt,
+      gitSha,
+      featureSchemaVersion: currentLocalBundle.production.featureSchemaVersion,
+      featureKeys: [...OBSERVABLE_FEATURE_KEYS],
+      featureKeyHash: sha256Json(OBSERVABLE_FEATURE_KEYS),
+      seedProfile: seedSelection.profile,
+      requestedSeeds,
+      governedSeeds,
+      selectedRuns,
+      splitSummary,
+      worldSplitSummary,
+      splitHash: sha256Json(selectedRuns.map(run => ({
+        simulationRunId: run.simulationRunId,
+        seed: run.seed,
+        split: run.split,
+        scenarioFamily: run.scenarioFamily,
+      }))),
+      corpusHash: sha256Json({
+        totalStageEvidenceRows,
+        totalTestRows,
+        splitSummary,
+        worldSplitSummary,
+        rowsBySemester,
+        rowsByStage,
+        rowsByScenarioFamily,
+        positiveCountsByHeadBySplit,
+      }),
+      replayHash: sha256Json({
+        currentModelVersion: currentLocalBundle.production.modelVersion,
+        challengerModelVersion: currentLocalBundle.challenger.modelVersion,
+        currentVariantName,
+        selectedRuns,
+        splitSummary,
+        worldSplitSummary,
+        rowsBySemester,
+        rowsByStage,
+        rowsByScenarioFamily,
+        overallCourseCurrent: overallCourseVariantSummary.current,
+        overallCourseByStage: Object.fromEntries(
+          Object.entries(overallCourseVariantSummaryByStage).map(([stageKey, summary]) => [stageKey, summary.current]),
+        ),
+        overallCourseBySemester: Object.fromEntries(
+          Object.entries(overallCourseVariantSummaryBySemester).map(([semesterKey, summary]) => [semesterKey, summary.current]),
+        ),
+        overallCourseByScenarioFamily: Object.fromEntries(
+          Object.entries(overallCourseVariantSummaryByScenarioFamily).map(([scenarioFamily, summary]) => [scenarioFamily, summary.current]),
+        ),
+        stability: overallCourseStabilityByAdjacentStagePair,
+        queueBurdenByStage,
+      }),
+      env: {
+        AIRMENTOR_EVAL_SEED_PROFILE: process.env.AIRMENTOR_EVAL_SEED_PROFILE ?? '',
+        AIRMENTOR_EVAL_SEEDS: process.env.AIRMENTOR_EVAL_SEEDS ?? '',
+        AIRMENTOR_EVAL_CREATE_CONCURRENCY: String(createConcurrency),
+        AIRMENTOR_EVAL_SKIP_RECOMPUTE: String(skipRecompute),
+        AIRMENTOR_EVAL_EXPORT_FEATURES_CSV: featureExportPath ?? '',
+      },
+    }
+    const metricSidecars = {
+      overallCourseCurrent: path.join(metricSidecarDir, metricSidecarFileName('overall-course-current')),
+      overallCourseVariants: path.join(metricSidecarDir, metricSidecarFileName('overall-course-variants')),
+      modelHeadMetrics: path.join(metricSidecarDir, metricSidecarFileName('model-head-metrics')),
+      budgetMetrics: path.join(metricSidecarDir, metricSidecarFileName('budget-metrics')),
+      localCalibration: path.join(metricSidecarDir, metricSidecarFileName('local-calibration')),
+      overloadByStage: path.join(metricSidecarDir, metricSidecarFileName('overload-by-stage')),
+      overloadBySemester: path.join(metricSidecarDir, metricSidecarFileName('overload-by-semester')),
+      overloadByScenarioFamily: path.join(metricSidecarDir, metricSidecarFileName('overload-by-scenario-family')),
+      stabilityByAdjacentStage: path.join(metricSidecarDir, metricSidecarFileName('stability-by-adjacent-stage')),
+      queueBurden: path.join(metricSidecarDir, metricSidecarFileName('queue-burden')),
+      reproducibilityManifest: path.join(metricSidecarDir, metricSidecarFileName('reproducibility-manifest')),
+    }
 
     const output = {
-      generatedAt: new Date().toISOString(),
+      generatedAt,
       gitSha,
       seedProfile: seedSelection.profile,
       requestedSeeds,
@@ -2323,6 +2474,13 @@ async function main() {
         activeProductionArtifactVersion: activeProductionArtifactRow.artifactVersion,
         modelFamily: activeProductionArtifactRow.modelFamily,
         createdAt: activeProductionArtifactRow.createdAt,
+        deterministicReplay: {
+          algorithm: 'sha256',
+          splitHash: reproducibilityManifest.splitHash,
+          featureKeyHash: reproducibilityManifest.featureKeyHash,
+          corpusHash: reproducibilityManifest.corpusHash,
+          replayHash: reproducibilityManifest.replayHash,
+        },
         evaluationFromAdminEndpoint: modelEvaluationResponse,
         activeModelFromEndpoint: modelActiveResponse,
         correlationsFromEndpoint: modelCorrelationResponse,
@@ -2345,7 +2503,11 @@ async function main() {
         outputDir: paths.outputDir,
         jsonPath: paths.jsonPath,
         markdownPath: paths.markdownPath,
+        datasetDumpPath,
+        metricSidecarDir,
+        metaPath,
       },
+      currentVariantName,
       hybridGuardrails: {
         defaultAlpha: HYBRID_ROUTER_CONFIG.defaultAlpha,
         alphaGrid: [...HYBRID_ROUTER_CONFIG.alphaGrid],
@@ -2357,7 +2519,7 @@ async function main() {
         maxPrecisionAtBudgetDrop: HYBRID_ROUTER_CONFIG.maxPrecisionAtBudgetDrop,
       },
       hybridPlan: {
-        note: 'Validation-tuned stage router between current-v6 and challenger. Alpha 1 = current-v6, alpha 0 = challenger.',
+        note: `Validation-tuned stage router between ${currentVariantName} and challenger. Alpha 1 = ${currentVariantName}, alpha 0 = challenger.`,
         byHead: Object.fromEntries(headLabels.map(([headKey]) => [headKey, {
           fallbackAlpha: hybridPlanByHead[headKey].fallbackAlpha,
           fallbackMetrics: hybridPlanByHead[headKey].fallbackMetrics,
@@ -2385,6 +2547,8 @@ async function main() {
       stageRollups,
       queueBurdenSummary,
       topPrerequisiteEdges: modelCorrelationResponse.correlations?.prerequisiteEdges ?? [],
+      reproducibilityManifest,
+      metricSidecars,
     }
 
     await mkdir(paths.outputDir, { recursive: true })
@@ -2392,8 +2556,91 @@ async function main() {
     logProgress(`wrote JSON report to ${paths.jsonPath}`)
 
     const datasetDump = currentVariantBuilder.dumpDataset()
-    await writeFile(path.join(paths.outputDir, 'dataset_dump.json'), JSON.stringify(datasetDump))
-    logProgress(`wrote dataset dump to dataset_dump.json`)
+    await writeFile(datasetDumpPath, JSON.stringify(datasetDump))
+    logProgress(`wrote dataset dump to ${datasetDumpPath}`)
+
+    await mkdir(metricSidecarDir, { recursive: true })
+    const metricSidecarPayloads: Record<string, unknown> = {
+      overallCourseCurrent: {
+        variant: currentVariantName,
+        productionModelVersion: currentLocalBundle.production.modelVersion,
+        calibrationVersion: currentLocalBundle.production.calibrationVersion,
+        metrics: output.overallCourseVariantSummary.current,
+      },
+      overallCourseVariants: {
+        currentVariantName,
+        currentProductionModelVersion: currentLocalBundle.production.modelVersion,
+        baselineProductionModelVersion: baselineLocalBundle.production.modelVersion,
+        challengerModelVersion: currentLocalBundle.challenger.modelVersion,
+        summary: output.overallCourseVariantSummary,
+      },
+      modelHeadMetrics: output.modelSummary,
+      budgetMetrics: {
+        overall: output.overallCourseVariantSummary.current.budgetMetrics,
+        byStage: Object.fromEntries(
+          Object.entries(output.overallCourseVariantSummaryByStage).map(([stageKey, summary]) => [stageKey, summary.current.budgetMetrics]),
+        ),
+        bySemester: Object.fromEntries(
+          Object.entries(output.overallCourseVariantSummaryBySemester).map(([semesterKey, summary]) => [semesterKey, summary.current.budgetMetrics]),
+        ),
+        byScenarioFamily: Object.fromEntries(
+          Object.entries(output.overallCourseVariantSummaryByScenarioFamily).map(([scenarioFamily, summary]) => [scenarioFamily, summary.current.budgetMetrics]),
+        ),
+      },
+      localCalibration: {
+        overall: output.overallCourseVariantSummary.current.localCalibration,
+        byStage: Object.fromEntries(
+          Object.entries(output.overallCourseVariantSummaryByStage).map(([stageKey, summary]) => [stageKey, summary.current.localCalibration]),
+        ),
+        bySemester: Object.fromEntries(
+          Object.entries(output.overallCourseVariantSummaryBySemester).map(([semesterKey, summary]) => [semesterKey, summary.current.localCalibration]),
+        ),
+        byScenarioFamily: Object.fromEntries(
+          Object.entries(output.overallCourseVariantSummaryByScenarioFamily).map(([scenarioFamily, summary]) => [scenarioFamily, summary.current.localCalibration]),
+        ),
+      },
+      overloadByStage: Object.fromEntries(
+        Object.entries(output.overallCourseVariantSummaryByStage).map(([stageKey, summary]) => [stageKey, summary.current]),
+      ),
+      overloadBySemester: Object.fromEntries(
+        Object.entries(output.overallCourseVariantSummaryBySemester).map(([semesterKey, summary]) => [semesterKey, summary.current]),
+      ),
+      overloadByScenarioFamily: Object.fromEntries(
+        Object.entries(output.overallCourseVariantSummaryByScenarioFamily).map(([scenarioFamily, summary]) => [scenarioFamily, summary.current]),
+      ),
+      stabilityByAdjacentStage: output.overallCourseStabilityByAdjacentStagePair,
+      queueBurden: output.queueBurdenSummary,
+      reproducibilityManifest: output.reproducibilityManifest,
+    }
+    await Promise.all(
+      Object.entries(metricSidecars).map(([key, filePath]) => {
+        const payload = metricSidecarPayloads[key]
+        if (payload == null) {
+          throw new Error(`Missing metric sidecar payload for ${key}`)
+        }
+        return writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+      }),
+    )
+    logProgress(`wrote metric sidecars to ${metricSidecarDir}`)
+
+    await writeFile(metaPath, buildMetaFile({
+      generatedAt,
+      gitSha,
+      reportPaths: output.reportPaths,
+      seedProfile: output.seedProfile,
+      requestedSeeds: output.requestedSeeds,
+      governedSeeds: output.governedSeeds,
+      selectedRuns,
+      reproducibilityManifest: {
+        splitHash: reproducibilityManifest.splitHash,
+        featureKeyHash: reproducibilityManifest.featureKeyHash,
+        corpusHash: reproducibilityManifest.corpusHash,
+        replayHash: reproducibilityManifest.replayHash,
+      },
+      env: reproducibilityManifest.env,
+      metricSidecars,
+    }), 'utf8')
+    logProgress(`wrote meta manifest to ${metaPath}`)
 
     const markdown = [
       '# Proof Risk Model Evaluation',
@@ -2436,12 +2683,19 @@ async function main() {
       `- Git SHA: ${output.gitSha ?? 'unavailable'}`,
       `- JSON path: ${output.reportPaths.jsonPath}`,
       `- Markdown path: ${output.reportPaths.markdownPath}`,
+      `- Dataset dump path: ${output.reportPaths.datasetDumpPath}`,
+      `- Metric sidecar dir: ${output.reportPaths.metricSidecarDir}`,
+      `- Meta manifest path: ${output.reportPaths.metaPath}`,
       `- Hybrid alpha grid: ${output.hybridGuardrails.alphaGrid.join(', ')}`,
       `- Hybrid denylisted heads: ${output.hybridGuardrails.denylistedHeads.join(', ')}`,
       `- Hybrid minimum support: ${output.hybridGuardrails.minSupport}`,
       `- Hybrid max ROC-AUC drop: ${output.hybridGuardrails.maxRocAucDrop}`,
       `- Hybrid max ECE increase: ${output.hybridGuardrails.maxExpectedCalibrationErrorIncrease}`,
       `- Hybrid max precision@budget drop: ${output.hybridGuardrails.maxPrecisionAtBudgetDrop}`,
+      `- Split hash: ${output.reproducibilityManifest.splitHash}`,
+      `- Feature key hash: ${output.reproducibilityManifest.featureKeyHash}`,
+      `- Corpus hash: ${output.reproducibilityManifest.corpusHash}`,
+      `- Replay hash: ${output.reproducibilityManifest.replayHash}`,
       '',
       markdownTable(
         ['Head', 'Allowed Stages'],
@@ -2493,7 +2747,7 @@ async function main() {
       markdownTable(
         ['Variant', 'Brier', 'Log Loss', 'ROC-AUC', 'PR-AUC', 'ECE', 'Budget Rate', 'Flagged@Budget', 'Precision@Budget', 'Recall@Budget', 'Overload Ratio'],
         [
-          ['current-v6', output.overallCourseVariantSummary.current.brier, output.overallCourseVariantSummary.current.logLoss, output.overallCourseVariantSummary.current.rocAuc, output.overallCourseVariantSummary.current.averagePrecision, output.overallCourseVariantSummary.current.expectedCalibrationError, output.overallCourseVariantSummary.current.budgetMetrics.budgetRate, output.overallCourseVariantSummary.current.budgetMetrics.flaggedRateAtBudget, output.overallCourseVariantSummary.current.budgetMetrics.precisionAtBudget, output.overallCourseVariantSummary.current.budgetMetrics.recallAtBudget, output.overallCourseVariantSummary.current.budgetMetrics.overloadRatio],
+          [currentVariantName, output.overallCourseVariantSummary.current.brier, output.overallCourseVariantSummary.current.logLoss, output.overallCourseVariantSummary.current.rocAuc, output.overallCourseVariantSummary.current.averagePrecision, output.overallCourseVariantSummary.current.expectedCalibrationError, output.overallCourseVariantSummary.current.budgetMetrics.budgetRate, output.overallCourseVariantSummary.current.budgetMetrics.flaggedRateAtBudget, output.overallCourseVariantSummary.current.budgetMetrics.precisionAtBudget, output.overallCourseVariantSummary.current.budgetMetrics.recallAtBudget, output.overallCourseVariantSummary.current.budgetMetrics.overloadRatio],
           ['baseline-v5-like', output.overallCourseVariantSummary.baseline.brier, output.overallCourseVariantSummary.baseline.logLoss, output.overallCourseVariantSummary.baseline.rocAuc, output.overallCourseVariantSummary.baseline.averagePrecision, output.overallCourseVariantSummary.baseline.expectedCalibrationError, output.overallCourseVariantSummary.baseline.budgetMetrics.budgetRate, output.overallCourseVariantSummary.baseline.budgetMetrics.flaggedRateAtBudget, output.overallCourseVariantSummary.baseline.budgetMetrics.precisionAtBudget, output.overallCourseVariantSummary.baseline.budgetMetrics.recallAtBudget, output.overallCourseVariantSummary.baseline.budgetMetrics.overloadRatio],
           ['hybrid-router', output.overallCourseVariantSummary.hybrid.brier, output.overallCourseVariantSummary.hybrid.logLoss, output.overallCourseVariantSummary.hybrid.rocAuc, output.overallCourseVariantSummary.hybrid.averagePrecision, output.overallCourseVariantSummary.hybrid.expectedCalibrationError, output.overallCourseVariantSummary.hybrid.budgetMetrics.budgetRate, output.overallCourseVariantSummary.hybrid.budgetMetrics.flaggedRateAtBudget, output.overallCourseVariantSummary.hybrid.budgetMetrics.precisionAtBudget, output.overallCourseVariantSummary.hybrid.budgetMetrics.recallAtBudget, output.overallCourseVariantSummary.hybrid.budgetMetrics.overloadRatio],
           ['challenger', output.overallCourseVariantSummary.challenger.brier, output.overallCourseVariantSummary.challenger.logLoss, output.overallCourseVariantSummary.challenger.rocAuc, output.overallCourseVariantSummary.challenger.averagePrecision, output.overallCourseVariantSummary.challenger.expectedCalibrationError, output.overallCourseVariantSummary.challenger.budgetMetrics.budgetRate, output.overallCourseVariantSummary.challenger.budgetMetrics.flaggedRateAtBudget, output.overallCourseVariantSummary.challenger.budgetMetrics.precisionAtBudget, output.overallCourseVariantSummary.challenger.budgetMetrics.recallAtBudget, output.overallCourseVariantSummary.challenger.budgetMetrics.overloadRatio],
