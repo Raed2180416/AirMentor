@@ -15,3 +15,9 @@ Explicit imputation strategy.
 
 ## Calibration
 Beta-by-head default.
+
+## Simulation
+Simulator handles counterfactuals.
+
+## Seeded vs Runtime
+Defined authority limits.
