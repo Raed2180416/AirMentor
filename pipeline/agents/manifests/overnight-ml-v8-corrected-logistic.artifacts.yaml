@@ -1,0 +1,13 @@
+artifacts:
+  - path: audit-map/22-evals/overnight-ml-v8-corrected-logistic.md
+    min_lines: 40
+    min_bytes: 1500
+    write_mode: replace
+    required_sections:
+      - '# Overnight ML Phase 7: Corrected v8 Logistic Baseline'
+      - '## Inputs'
+      - '## Training'
+      - '## Metrics'
+      - '## Comparison vs v7'
+      - '## Promotion Decision'
+      - '## Reproducibility Manifest'

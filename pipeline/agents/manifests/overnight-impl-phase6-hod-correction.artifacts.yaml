@@ -1,0 +1,11 @@
+artifacts:
+  - path: audit-map/32-reports/overnight-impl-phase6-hod-correction.md
+    min_lines: 40
+    min_bytes: 1500
+    write_mode: replace
+    required_sections:
+      - '# Overnight Impl Phase 6: HOD Correction Cycle'
+      - '## Edits Applied'
+      - '## Tests Added / Updated'
+      - '## Validation Run'
+      - '## Remaining Risk'

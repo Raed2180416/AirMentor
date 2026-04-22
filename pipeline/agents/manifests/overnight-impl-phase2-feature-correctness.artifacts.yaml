@@ -1,0 +1,11 @@
+artifacts:
+  - path: audit-map/32-reports/overnight-impl-phase2-feature-correctness.md
+    min_lines: 40
+    min_bytes: 1500
+    write_mode: replace
+    required_sections:
+      - '# Overnight Impl Phase 2: Feature / Evidence / Runtime Correctness'
+      - '## Edits Applied'
+      - '## Tests Added / Updated'
+      - '## Validation Run'
+      - '## Remaining Risk'

@@ -1,0 +1,8 @@
+purpose: |
+  Train CatBoost challenger on corrected frozen corpus as shadow. Compare vs corrected v8 logistic on decision-aware metrics, not AUC alone.
+nonneg:
+  - Challenger kept as shadow/benchmark only
+  - Do not promote CatBoost unless it beats logistic on ranking AND proper scoring AND local calibration AND overload AND replayability
+  - GPU search candidates must be rerun through official reproducible path
+owner_files:
+  - audit-map/22-evals/overnight-ml-catboost-challenger.md
