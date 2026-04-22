@@ -217,3 +217,59 @@ Validation that this analysis succeeded:
 ---
 
 *Written out-of-band of the DAG by principal-architect. Not a substitute for empirical t46–t49 runs, but a hypothesis set and fix list that can be tested the moment the orchestrator unjams its dep chain.*
+
+---
+
+## Appendix A — F10 governance-layer audit (follow-up read, 2026-04-22 18:00Z)
+
+After writing the primary analysis, I audited `@/home/raed/projects/air-mentor-ui/air-mentor-api/src/lib/proof-queue-governance.ts` directly to check whether the queue-opening path is the overload source (intent §C.12 "Queue opening is governed by policy/capacity/budget"). **It is budget-aware.** Specifically at `@/home/raed/projects/air-mentor-ui/air-mentor-api/src/lib/proof-queue-governance.ts:306-329`:
+
+- `sectionLimit = Math.floor(sectionStudentCount × proofQueueActionableRateLimitForStage(stageKey))` — per-section cap scaled by enrolment × per-stage rate limit.
+- `facultyBudget` — per-faculty budget read from `facultyBudgetByKey` map.
+- Admission requires `currentSectionUsage < sectionLimit` **AND** `currentFacultyUsage < facultyBudget`. Otherwise candidate falls through to watch (`governanceReason: 'open_candidate_pruned_by_caps'`).
+
+**Implication for the overload metric**: the evaluator's `overloadRatio = flaggedRateAtBudget / budgetRate` is *not* a queue-overflow alarm. It is a **model-score-distribution shape diagnostic**: "what fraction of rows does the top-20%-by-score window include?" If ties at the 20th percentile inflate the count to 22.3%, governance still caps the actual queue load to section/faculty limits. Real queue load ≪ flagged count in all scenarios.
+
+**Revised interpretation of v7 cov-24 overload 1.1127:**
+- **NOT** "v7 opens 11% more student cases than can be handled."
+- **IS** "v7's score distribution has ~488 rows tied at the 80th-percentile boundary, causing the top-20% set to be operationally unstable — small threshold shifts or corpus jitter move hundreds of students in/out of the high-risk band."
+
+This is still a product-intent failure mode, but for a different reason than I initially framed:
+- § demo stability: mentors see the high-risk set flicker across stage transitions because small score perturbations swing tied-rows in/out.
+- § banding stability (§B, §C.12): `overallCourseRisk` drives UI banding; if prob=0.85 is tied for 488 rows, a 0.001 score shift relabels them all from high to medium or vice versa.
+- § queue-case continuity (§C.18 "dismissal = handled; later deterioration → new case"): score tie-flips between stages may generate spurious "new deterioration" cases that aren't real deterioration — they're ranking noise.
+
+**Downgraded severity + revised fix priority:**
+| Hypothesis | Original overload impact | Revised demo impact | Priority unchanged? |
+|---|---|---|---|
+| H1 Beta default | reduces tie-count at boundary | reduces UI/queue flicker across stages | YES — still topmost |
+| H3a missingness flags | reduces Sem1-pre-TT1 tied feature vectors | reduces Sem1 flicker | YES |
+| H3b Sem1-pre-TT1 exclusion from training | reduces that segment's tie density | UI-only; Sem1 already watch-only per §C.1 so demo impact is diagnostic | MEDIUM (was high) |
+| H3c scenario-family homogeneity in test | narrows test variance | limited demo impact | LOW |
+| H4 interaction ablations | depends on which feature over-weights | ditto | MEDIUM |
+| H5 local-ECE @ 0.85 | calibration accuracy at decision boundary | direct UI-band veracity | HIGH |
+
+**New finding**: even IF v7 passes the overload metric globally (≤1.00), **per-stage flicker stability** is the real demo gate. Need an additional metric: **top-k-set Jaccard stability across adjacent stages** for the same run_id. If `jaccard(top-20% at pre-TT1, top-20% at post-TT1) < 0.6`, the model is rearranging the set too aggressively across a 42-day window — that's a visible UI jumpiness.
+
+### Suggested new metric (future eval extension, not this commit)
+
+```ts
+type StabilityMetric = {
+  stageA: StageKey
+  stageB: StageKey
+  topKJaccard: number          // intersect(A-top20%, B-top20%) / union(A-top20%, B-top20%)
+  churnRate: number            // |symmetric-diff(A-top20%, B-top20%)| / union
+  meanProbShift: number        // avg |P_A(student) - P_B(student)|
+}
+```
+
+Compute for each adjacent stage pair × each head × each variant. Add `stabilityMetricsByStagePair` to `overallCourseVariantSummary`. Gate promotion on `minJaccard ≥ 0.65` across adjacent pairs (anything lower means the UI band would flip too aggressively).
+
+### Net effect on the RCA
+
+The tie-cluster-at-boundary is still the root cause. Fixing it (H1 Beta + H3a missingness flags, both shipped) will:
+- **Directly**: drop `overloadRatio` from 1.1127 → ~1.02 (my prediction).
+- **Indirectly**: raise top-k Jaccard stability across stages (un-measured today but expected improvement).
+
+The promotion gate remains: per-cell overload ≤ 1.00 + local-ECE @ 0.85 ≤ 0.02 + AUC ≥ v7 baseline. Stability metric can be phase 2 of the gate hardening.
+
