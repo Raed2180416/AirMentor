@@ -37,7 +37,7 @@ import {
   reviewProofCrosswalks,
   startProofSimulationRun,
   validateProofCurriculumImport,
-} from '../dist/lib/msruas-proof-control-plane.js'
+} from '../src/lib/msruas-proof-control-plane.js'
 import { resolveBatchPolicy } from '../src/modules/admin-structure.js'
 import {
   BASELINE_V5_LIKE_PROOF_RISK_TRAINING_CONFIG,
@@ -1450,8 +1450,8 @@ async function main() {
     const phaseArtifactLoadMs = Date.now() - startedAt - phaseRecomputeMs
     logProgress(`loaded artifacts, checkpoints, and model diagnostics (artifact-load phase: ${roundToTwo(phaseArtifactLoadMs / 1000)}s)`)
 
-    let activeProductionArtifactRow = artifactRows.find(row => row.activeFlag === 1 && row.status === 'active' && row.artifactType === 'production') ?? null
-    let activeCorrelationArtifactRow = artifactRows.find(row => row.activeFlag === 1 && row.status === 'active' && row.artifactType === 'correlation') ?? null
+    let activeProductionArtifactRow: typeof riskModelArtifacts.$inferSelect | null = artifactRows.find((row: typeof riskModelArtifacts.$inferSelect) => row.activeFlag === 1 && row.status === 'active' && row.artifactType === 'production') ?? null
+    let activeCorrelationArtifactRow: typeof riskModelArtifacts.$inferSelect | null = artifactRows.find((row: typeof riskModelArtifacts.$inferSelect) => row.activeFlag === 1 && row.status === 'active' && row.artifactType === 'correlation') ?? null
     if (!activeProductionArtifactRow || !activeCorrelationArtifactRow) {
       const missingArtifactsReason = skipRecompute
         ? 'skip recompute requested, but active artifacts missing; rebuilding governed artifacts once for consistency'
@@ -1476,8 +1476,8 @@ async function main() {
         getProofRiskModelEvaluation(current.db, { batchId: MSRUAS_PROOF_BATCH_ID, simulationRunId: null }),
         getProofRiskModelCorrelations(current.db, { batchId: MSRUAS_PROOF_BATCH_ID }),
       ])
-      activeProductionArtifactRow = artifactRows.find(row => row.activeFlag === 1 && row.status === 'active' && row.artifactType === 'production') ?? null
-      activeCorrelationArtifactRow = artifactRows.find(row => row.activeFlag === 1 && row.status === 'active' && row.artifactType === 'correlation') ?? null
+      activeProductionArtifactRow = artifactRows.find((row: typeof riskModelArtifacts.$inferSelect) => row.activeFlag === 1 && row.status === 'active' && row.artifactType === 'production') ?? null
+      activeCorrelationArtifactRow = artifactRows.find((row: typeof riskModelArtifacts.$inferSelect) => row.activeFlag === 1 && row.status === 'active' && row.artifactType === 'correlation') ?? null
     }
     if (!activeProductionArtifactRow || !activeCorrelationArtifactRow) {
       throw new Error('Active production or correlation artifact is missing after evaluation run generation')
