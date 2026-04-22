@@ -1,24 +1,22 @@
 # Contradiction Matrix ML
 
-## Missingness
-- Missingness is handled by mean imputation fallback, not zero-fill.
+## Scope
+- Reconcile ML intent claims against executable evidence with file:line anchors.
+- Preserve old metric claims but mark superseded where artifacts disagree.
+- Record authoritative prompt gap: `audit-map/20-prompts/fresh-sem1-principal-architect-overnight-pass.md` is missing in-repo.
 
-## Simulator Execution
-- Simulator runs offline for counterfactuals, not live.
-
-## Calibration
-- Beta-by-head calibration default, not Platt.
-
-## Policy Layer
-- Policy layer is external to model, not embedded.
-
+## Ledger
 | claim_id | intent_section | current_doc | current_code | resolved | files_to_change | eval_artifact |
 |---|---|---|---|---|---|---|
-| CLAIM_ML_001 | F/G | Model predicts attendance, CE, SEE, overall, downstream | `attendanceRisk` head exists | true | - | `air-mentor-api/catboost_info/` |
-| CLAIM_ML_002 | F/G | Operational banding applies thresholds to raw probs | Unknown | true | `audit-map/08-ml-audit/README.md` | - |
-| CLAIM_ML_003 | H | v7 model overloaded baseline (1.1127 vs 1.0) | Unknown | true | `audit-map/32-reports/overnight-reconcile-ml.md` | - |
-| CLAIM_ML_004 | J | Challenger status defined for champion/challenger flow | Unknown | true | `audit-map/08-ml-audit/README.md` | - |
-| CLAIM_ML_005 | N | Calibration uses Beta-by-head default | Unknown | true | `audit-map/08-ml-audit/README.md` | - |
-| CLAIM_ML_006 | N | Missingness strategy defined | Unknown | true | `audit-map/08-ml-audit/README.md` | - |
-| CLAIM_ML_007 | N | Seeded vs runtime scoring authority separate | Unknown | true | `audit-map/08-ml-audit/README.md` | - |
-| CLAIM_ML_008 | N | Counterfactual scope simulator-based | Unknown | true | `audit-map/08-ml-audit/README.md` | - |
+| CLAIM_ML_001 | F/G | Model emits final band directly. | Model computes head probabilities first, then maps `overallCourseRisk` to `riskBand` by thresholds in scoring path (`air-mentor-api/src/lib/proof-risk-model.ts:1955`, `air-mentor-api/src/lib/proof-risk-model.ts:1964`). | true | `audit-map/08-ml-audit/README.md`, `audit-map/32-reports/overnight-reconcile-ml.md` | - |
+| CLAIM_ML_002 | F/G | Risk system has four heads. | `RiskHeadKey` and training/scoring include five heads: attendance, CE, SEE, overall, downstream (`air-mentor-api/src/lib/proof-risk-model.ts:68`, `air-mentor-api/src/lib/proof-risk-model.ts:73`, `air-mentor-api/src/lib/proof-risk-model.ts:1824`). | true | `audit-map/08-ml-audit/README.md`, `audit-map/32-reports/overnight-reconcile-ml.md` | - |
+| CLAIM_ML_003 | N | Default calibration is Platt/sigmoid. | Allowed methods include `beta`; default training config includes `beta` and scorer exports per-head calibration metadata (`air-mentor-api/src/lib/proof-risk-model.ts:75`, `air-mentor-api/src/lib/proof-risk-model.ts:102`, `air-mentor-api/src/lib/proof-risk-model.ts:1981`). | true | `audit-map/08-ml-audit/README.md`, `audit-map/32-reports/overnight-reconcile-ml.md` | - |
+| CLAIM_ML_004 | J | Challenger flow is undocumented or absent. | Model bundle trains production logistic heads and challenger depth-2-tree heads, with dedicated challenger scoring function (`air-mentor-api/src/lib/proof-risk-model.ts:1819`, `air-mentor-api/src/lib/proof-risk-model.ts:1841`, `air-mentor-api/src/lib/proof-risk-model.ts:2004`). | true | `audit-map/08-ml-audit/README.md`, `audit-map/32-reports/overnight-reconcile-ml.md` | - |
+| CLAIM_ML_005 | N | Seed run and runtime authority are the same source. | Queue metadata/source type sets `simulation` vs `live-runtime`, and runtime service can rebuild/play active artifacts (`air-mentor-api/src/lib/proof-run-queue.ts:29`, `air-mentor-api/src/lib/proof-run-queue.ts:65`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:263`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:276`). | true | `audit-map/08-ml-audit/README.md`, `audit-map/32-reports/overnight-reconcile-ml.md` | - |
+| CLAIM_ML_006 | N | Counterfactual lift compares cross-stage outcomes only. | Replay builds a same-checkpoint no-action snapshot and runtime stores `counterfactualLiftScaled = noAction - actual` (`air-mentor-api/src/lib/proof-control-plane-playback-service.ts:816`, `air-mentor-api/src/lib/proof-control-plane-playback-service.ts:821`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:771`). | true | `audit-map/08-ml-audit/README.md`, `audit-map/32-reports/overnight-reconcile-ml.md` | - |
+| CLAIM_ML_007 | N | Monitoring behavior is part of model output head logic. | Monitoring is a separate decision engine keyed by `riskBand` and cooldown/window policy (`air-mentor-api/src/lib/monitoring-engine.ts:25`, `air-mentor-api/src/lib/monitoring-engine.ts:39`, `air-mentor-api/src/lib/monitoring-engine.ts:53`). | true | `audit-map/08-ml-audit/README.md`, `audit-map/32-reports/overnight-reconcile-ml.md` | - |
+| CLAIM_ML_008 | N | Counterfactual diagnostic wording unclear about efficacy meaning. | Policy diagnostics explicitly define same-checkpoint counterfactual semantics and support gate (`air-mentor-api/src/lib/proof-control-plane-policy-service.ts:405`, `air-mentor-api/src/lib/proof-control-plane-policy-service.ts:406`). | true | `audit-map/32-reports/overnight-reconcile-ml.md` | - |
+| CLAIM_ML_009 | H | v7 overload claim is exactly 1.1127 from active artifact. | Evaluator defines overload as `flaggedRateAtBudget / budgetRate`; active report shows 1.0683 overall and 1.3738 post-see sample points (`air-mentor-api/scripts/evaluate-proof-risk-model.ts:499`, `air-mentor-api/output/proof-risk-model/evaluation-report.json:58775`, `air-mentor-api/output/proof-risk-model/evaluation-report.json:58939`). | false | `audit-map/32-reports/overnight-reconcile-ml.md` | `air-mentor-api/output/proof-risk-model/evaluation-report.json:58770`, `air-mentor-api/output/proof-risk-model/evaluation-report.json:58934` |
+| CLAIM_ML_010 | H | Overload is purely model-side and unrelated to queue capacity policy. | Runtime applies overload penalties when faculty weekly load exceeds threshold, reducing queue budgets for Course Leader/Mentor/HoD (`air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:355`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:357`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:377`). | true | `audit-map/08-ml-audit/README.md`, `audit-map/32-reports/overnight-reconcile-ml.md` | - |
+| CLAIM_ML_011 | F/G | Inference engine owns model threshold-to-band mapping. | Risk-band mapping for model-backed output occurs in risk model scorer; inference engine here is driver/rule composition, not model head scorer (`air-mentor-api/src/lib/proof-risk-model.ts:1964`, `air-mentor-api/src/lib/inference-engine.ts:81`, `air-mentor-api/src/lib/inference-engine.ts:86`). | true | `audit-map/08-ml-audit/README.md`, `audit-map/32-reports/overnight-reconcile-ml.md` | - |
+| CLAIM_ML_012 | N | Prompt intent F/G/H/J/N is fully auditable from in-repo authoritative prompt text. | Authoritative overnight prompt file is missing from repo; reconciliation must rely on claim matrix + executable artifacts only (`audit-map/20-prompts/fresh-sem1-principal-architect-overnight-pass.md` missing, verified by repository search). | false | `audit-map/32-reports/overnight-reconcile-ml.md`, `audit-map/24-agent-memory/` | - |

@@ -1,46 +1,57 @@
 # Overnight Reconcile: ML Strategy
 
 ## Findings
-- ML layer separation rule verified: Model outputs raw probabilities; policy layer applies operational banding (thresholds).
-- 5 heads confirmed in `src/lib/proof-risk-model.ts`: attendanceRisk, ceRisk, seeRisk, overallCourseRisk, downstreamCarryoverRisk.
-- Calibration strategy verified: Beta-by-head calibration default (CLAIM_ML_005).
-- Missingness strategy verified: mean imputation fallback (CLAIM_ML_006).
+- Five model heads are explicit and complete: `attendanceRisk`, `ceRisk`, `seeRisk`, `overallCourseRisk`, and `downstreamCarryoverRisk` (`air-mentor-api/src/lib/proof-risk-model.ts:68`, `air-mentor-api/src/lib/proof-risk-model.ts:73`).
+- Production and challenger are trained in parallel on all five heads, with challenger using `depth-2-tree` artifacts (`air-mentor-api/src/lib/proof-risk-model.ts:1819`, `air-mentor-api/src/lib/proof-risk-model.ts:1843`, `air-mentor-api/src/lib/proof-risk-model.ts:1857`).
+- Model-backed scoring computes per-head probabilities first and only then maps overall probability to `riskBand`; this confirms probability-first architecture (`air-mentor-api/src/lib/proof-risk-model.ts:1955`, `air-mentor-api/src/lib/proof-risk-model.ts:1964`).
+- Calibration is not hardcoded to sigmoid/Platt: the allowed method set includes `beta`, and candidate selection is metric-driven (`air-mentor-api/src/lib/proof-risk-model.ts:75`, `air-mentor-api/src/lib/proof-risk-model.ts:102`, `air-mentor-api/src/lib/proof-risk-model.ts:856`, `air-mentor-api/src/lib/proof-risk-model.ts:971`).
+- The inference engine in this repo is a policy-driven explainer/rule path and should not be conflated with model training artifacts (`air-mentor-api/src/lib/inference-engine.ts:36`, `air-mentor-api/src/lib/inference-engine.ts:172`).
+- Monitoring decisions are downstream workflow outputs (`alert`/`watch`/`suppress`) keyed by `riskBand` and cooldown logic, not part of model fitting (`air-mentor-api/src/lib/monitoring-engine.ts:25`, `air-mentor-api/src/lib/monitoring-engine.ts:39`, `air-mentor-api/src/lib/monitoring-engine.ts:53`).
+- Seed-vs-runtime authority is explicit: queue metadata marks `simulation` vs `live-runtime`, and runtime may rebuild playback and active risk artifacts before scoring (`air-mentor-api/src/lib/proof-run-queue.ts:29`, `air-mentor-api/src/lib/proof-run-queue.ts:65`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:263`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:269`).
+- Counterfactual scope is same-checkpoint replay, not cross-stage only: no-action snapshots are built at stage boundaries and lift is recorded as no-action minus actual risk (`air-mentor-api/src/lib/proof-control-plane-playback-service.ts:816`, `air-mentor-api/src/lib/proof-control-plane-playback-service.ts:821`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:771`).
+- Policy diagnostics explicitly constrain counterfactual interpretation and support gates (`air-mentor-api/src/lib/proof-control-plane-policy-service.ts:405`, `air-mentor-api/src/lib/proof-control-plane-policy-service.ts:406`).
+- Prompt evidence gap remains: `audit-map/20-prompts/fresh-sem1-principal-architect-overnight-pass.md` is missing from repository, so this reconcile uses executable evidence + existing claim ledger.
 
 ## Ledger
 | claim_id | intent_section | current_doc | current_code | resolved | files_to_change | eval_artifact |
 |---|---|---|---|---|---|---|
-| C01 | F | Model outputs bands | Model outputs probs | Yes | audit-map/08-ml-audit/README.md | none |
-| C02 | G | Calibration is Platt | Beta-by-head | Yes | audit-map/08-ml-audit/README.md | none |
-| C03 | H | Missingness is zero-fill | Mean imputation | Yes | audit-map/14-reconciliation/contradiction-matrix-ml.md | none |
-| C04 | J | 4 heads | 5 heads | Yes | audit-map/08-ml-audit/README.md | none |
-| C05 | N | Simulator runs live | Simulator offline | Yes | audit-map/14-reconciliation/contradiction-matrix-ml.md | none |
-| C06 | F | Policy in model | Policy external | Yes | audit-map/08-ml-audit/README.md | none |
-| C07 | G | v7 overload unrecorded | v7 diagnosis added | Yes | audit-map/32-reports/overnight-reconcile-ml.md | none |
-| C08 | H | Monitor uses KS | Monitor uses PSI | Yes | audit-map/08-ml-audit/README.md | none |
-| C09 | N | Challenger status unverified | Champion/Challenger flow formalized | Yes | audit-map/08-ml-audit/README.md | none |
+| CLAIM_ML_001 | F/G | Model emits final band directly. | Model computes head probabilities then thresholds overall head to `riskBand` (`air-mentor-api/src/lib/proof-risk-model.ts:1955`, `air-mentor-api/src/lib/proof-risk-model.ts:1964`). | true | `audit-map/08-ml-audit/README.md`, `audit-map/14-reconciliation/contradiction-matrix-ml.md` | - |
+| CLAIM_ML_002 | F/G | Risk model has four heads. | Five heads are defined and trained (`air-mentor-api/src/lib/proof-risk-model.ts:68`, `air-mentor-api/src/lib/proof-risk-model.ts:1824`). | true | `audit-map/08-ml-audit/README.md`, `audit-map/14-reconciliation/contradiction-matrix-ml.md` | - |
+| CLAIM_ML_003 | N | Default calibration is Platt/sigmoid. | Default allowed set includes `beta`; per-head method is selected by metrics (`air-mentor-api/src/lib/proof-risk-model.ts:102`, `air-mentor-api/src/lib/proof-risk-model.ts:938`, `air-mentor-api/src/lib/proof-risk-model.ts:971`). | true | `audit-map/08-ml-audit/README.md`, `audit-map/14-reconciliation/contradiction-matrix-ml.md` | - |
+| CLAIM_ML_004 | J | Challenger is absent/undefined. | Challenger artifact and scoring path are present (`air-mentor-api/src/lib/proof-risk-model.ts:1841`, `air-mentor-api/src/lib/proof-risk-model.ts:2004`). | true | `audit-map/08-ml-audit/README.md`, `audit-map/14-reconciliation/contradiction-matrix-ml.md` | - |
+| CLAIM_ML_005 | N | Seeded and runtime scoring authority are identical. | Queue source type separates simulation/live-runtime; runtime can rebuild active artifacts (`air-mentor-api/src/lib/proof-run-queue.ts:29`, `air-mentor-api/src/lib/proof-run-queue.ts:92`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:263`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:276`). | true | `audit-map/08-ml-audit/README.md`, `audit-map/14-reconciliation/contradiction-matrix-ml.md` | - |
+| CLAIM_ML_006 | N | Counterfactual compares only cross-stage outcomes. | Replay and runtime lift are same-checkpoint no-action comparisons (`air-mentor-api/src/lib/proof-control-plane-playback-service.ts:816`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:771`). | true | `audit-map/08-ml-audit/README.md`, `audit-map/14-reconciliation/contradiction-matrix-ml.md` | - |
+| CLAIM_ML_007 | N | Monitoring logic is embedded in model. | Monitoring is separate and consumes band output (`air-mentor-api/src/lib/monitoring-engine.ts:25`, `air-mentor-api/src/lib/monitoring-engine.ts:39`). | true | `audit-map/08-ml-audit/README.md`, `audit-map/14-reconciliation/contradiction-matrix-ml.md` | - |
+| CLAIM_ML_008 | H | Overload metric source is undocumented. | Formula is explicit in evaluator: `flaggedRateAtBudget / budgetRate` (`air-mentor-api/scripts/evaluate-proof-risk-model.ts:499`, `air-mentor-api/scripts/evaluate-proof-risk-model.ts:500`). | true | `audit-map/08-ml-audit/README.md`, `audit-map/14-reconciliation/contradiction-matrix-ml.md` | - |
+| CLAIM_ML_009 | H | Current artifact confirms overload = 1.1127. | Checked artifact lines show 1.0683 and 1.3738 in cited slices, not 1.1127 (`air-mentor-api/output/proof-risk-model/evaluation-report.json:58775`, `air-mentor-api/output/proof-risk-model/evaluation-report.json:58939`). | false | `audit-map/14-reconciliation/contradiction-matrix-ml.md` | `air-mentor-api/output/proof-risk-model/evaluation-report.json:58770`, `air-mentor-api/output/proof-risk-model/evaluation-report.json:58934` |
+| CLAIM_ML_010 | H | Overload is model-only, independent of capacity policy. | Runtime capacity budgets include overload penalty by faculty load threshold (`air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:355`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:357`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:377`). | true | `audit-map/08-ml-audit/README.md`, `audit-map/14-reconciliation/contradiction-matrix-ml.md` | - |
 
 ## Evidence
-- `air-mentor-api/src/lib/proof-risk-model.ts:69` defines risk heads.
-- `air-mentor-api/src/lib/inference-engine.ts:120` handles mean imputation.
-- `air-mentor-api/src/lib/monitoring-engine.ts:85` uses PSI.
-- `audit-map/14-reconciliation/contradiction-matrix-ml.md` tracks layer separation contradiction resolution.
+- Model head taxonomy and scoring path: `air-mentor-api/src/lib/proof-risk-model.ts:68`, `air-mentor-api/src/lib/proof-risk-model.ts:1955`, `air-mentor-api/src/lib/proof-risk-model.ts:1964`.
+- Calibration search/selection and candidate set: `air-mentor-api/src/lib/proof-risk-model.ts:75`, `air-mentor-api/src/lib/proof-risk-model.ts:856`, `air-mentor-api/src/lib/proof-risk-model.ts:938`, `air-mentor-api/src/lib/proof-risk-model.ts:971`.
+- Champion/challenger training + challenger scoring: `air-mentor-api/src/lib/proof-risk-model.ts:1819`, `air-mentor-api/src/lib/proof-risk-model.ts:1841`, `air-mentor-api/src/lib/proof-risk-model.ts:2004`.
+- Policy diagnostics semantics for counterfactuals: `air-mentor-api/src/lib/proof-control-plane-policy-service.ts:405`, `air-mentor-api/src/lib/proof-control-plane-policy-service.ts:406`.
+- Replay-stage no-action construction and runtime lift registration: `air-mentor-api/src/lib/proof-control-plane-playback-service.ts:816`, `air-mentor-api/src/lib/proof-control-plane-playback-service.ts:827`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:771`.
+- Monitoring workflow separation: `air-mentor-api/src/lib/monitoring-engine.ts:25`, `air-mentor-api/src/lib/monitoring-engine.ts:39`, `air-mentor-api/src/lib/monitoring-engine.ts:53`.
+- Seed/runtime run authority split: `air-mentor-api/src/lib/proof-run-queue.ts:29`, `air-mentor-api/src/lib/proof-run-queue.ts:65`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:263`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:276`.
+- Overload formula and artifact values: `air-mentor-api/scripts/evaluate-proof-risk-model.ts:499`, `air-mentor-api/output/proof-risk-model/evaluation-report.json:58775`, `air-mentor-api/output/proof-risk-model/evaluation-report.json:58939`.
 
 ## v7 Overload Diagnosis
-1. Feature bloat (1.1127 vs 1.0 baseline) causing memory pressure.
-2. Missingness amplification in tree splits due to sequential imputation.
-3. Uncalibrated Beta prior shift leading to high false positives.
-4. Feature cross combinations in tree paths exceeding depth limits under concurrent load.
+- #1 Threshold-budget mismatch at selected operating point: evaluator budget is 0.2 but observed flagged rates exceed budget in cited slices, yielding overload > 1 (`air-mentor-api/output/proof-risk-model/evaluation-report.json:58770`, `air-mentor-api/output/proof-risk-model/evaluation-report.json:58772`, `air-mentor-api/output/proof-risk-model/evaluation-report.json:58775`).
+- #2 Stage concentration at `post-see`: overload ratio is materially higher (1.3738) in this stage sample, indicating stage-specific pressure (`air-mentor-api/output/proof-risk-model/evaluation-report.json:58934`, `air-mentor-api/output/proof-risk-model/evaluation-report.json:58936`, `air-mentor-api/output/proof-risk-model/evaluation-report.json:58939`).
+- #3 Capacity-policy coupling under faculty overload penalties: even with model scoring fixed, runtime budget clamps can tighten effective throughput when loads exceed threshold (`air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:355`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:357`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:377`).
+- Superseded metric note: prior doc value 1.1127 is retained as legacy claim only; current checked artifact snippets do not directly show 1.1127.
 
 ## Mitigation Plan
-- Batch missingness imputation ops.
-- Prune depth limits on tree heads.
-- Prune low-importance features.
-- Move counterfactual simulator execution entirely offline/async.
-- Enforce strict memory bounds on `downstreamCarryoverRisk` feature matrices.
+- Align thresholds to budget targets per stage (especially `post-see`) by re-running threshold sweeps against the same overload formula (`air-mentor-api/scripts/evaluate-proof-risk-model.ts:473`, `air-mentor-api/scripts/evaluate-proof-risk-model.ts:499`).
+- Add stage-specific guardrails so high-pressure stage distributions cannot dominate global budget behavior (`air-mentor-api/output/proof-risk-model/evaluation-report.json:58934`, `air-mentor-api/output/proof-risk-model/evaluation-report.json:58939`).
+- Separate model quality regressions from queue-capacity regressions in runbooks by logging overload penalties and budget key clamps with risk metrics (`air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:352`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:377`).
+- Keep counterfactual interpretation bounded to same-checkpoint semantics in stakeholder communication, preventing cross-stage overclaims (`air-mentor-api/src/lib/proof-control-plane-policy-service.ts:405`, `air-mentor-api/src/lib/proof-control-plane-playback-service.ts:816`).
+- Require explicit artifact line citations for any future overload headline value to avoid uncoupled narrative drift.
 
 ## Recommendations
-- Freeze v7 architecture.
-- Proceed with v8 using pruned feature set.
-- Formalize champion/challenger flow in `air-mentor-api/src/lib/inference-engine.ts`.
-- Standardize policy layer operational banding configurations.
-- Optimize beta calibration array processing.
+- Continue with the current four-layer architecture contract (model, policy, monitoring, simulator/runtime) and enforce claim placement by layer.
+- Treat 1.1127 as superseded pending direct artifact recovery; operationally track 1.0683 and 1.3738 slices as currently evidenced.
+- Keep champion/challenger parity checks in every retrain cycle to ensure both families remain comparable at head level.
+- Restore the missing authoritative prompt file or replace it with a versioned equivalent so intent sections F/G/H/J/N can be audited directly.
+- Add a lightweight citation lint for `audit-map` documents that rejects uncited ML claims.
