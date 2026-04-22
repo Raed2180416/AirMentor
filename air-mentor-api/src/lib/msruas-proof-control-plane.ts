@@ -3,6 +3,7 @@ import { and, asc, count, desc, eq, gt, inArray, isNotNull, like } from 'drizzle
 import type { AppDb } from '../db/client.js'
 import {
   academicRuntimeState,
+  academicTerms,
   alertDecisions,
   alertOutcomes,
   batches,
@@ -53,6 +54,7 @@ import {
   transcriptSubjectResults,
   transcriptTermResults,
   userAccounts,
+  userPasswordCredentials,
   worldContextSnapshots,
   offeringAssessmentSchemes,
   sessions,
@@ -200,6 +202,7 @@ import {
   MSRUAS_PROOF_BRANCH_ID,
   MSRUAS_PROOF_DEPARTMENT_ID,
   PROOF_FACULTY,
+  PROOF_SEMESTER_SIM_START_DATES,
   PROOF_TERM_DEFS,
   ensureMsruasProofBatchStructure,
   seedMsruasProofSandbox,
@@ -373,7 +376,7 @@ export type StudentAgentCardPayload = {
     currentReassessmentStatus: string | null
     currentQueueState?: string | null
     currentRecoveryState?: ProofRecoveryState | null
-    currentCgpa: number
+    currentCgpa: number | null
     backlogCount: number
     electiveFit: {
       recommendedCode: string
@@ -448,7 +451,7 @@ export type StudentAgentCardPayload = {
       semesterNumber: number
       riskBands: string[]
       sgpa: number
-      cgpaAfterSemester: number
+      cgpaAfterSemester: number | null
       backlogCount: number
       weakCoCount: number
       questionResultCoverage: number
@@ -2104,6 +2107,19 @@ function compareGovernedCorpusRuns(
   return left.simulationRunId.localeCompare(right.simulationRunId)
 }
 
+function runMatchesManifestScenarioFamily(
+  row: typeof simulationRuns.$inferSelect,
+  manifestEntry: (typeof PROOF_CORPUS_MANIFEST)[number] | undefined,
+) {
+  if (!manifestEntry) return true
+  const metrics = parseJson(row.metricsJson, {} as Record<string, unknown>)
+  const rawScenarioFamily = metrics.scenarioFamily
+  const resolvedScenarioFamily = typeof rawScenarioFamily === 'string'
+    ? rawScenarioFamily
+    : scenarioFamilyForSeed(row.seed)
+  return resolvedScenarioFamily === manifestEntry.scenarioFamily
+}
+
 function selectGovernedCorpusRuns(
   runRows: Array<typeof simulationRuns.$inferSelect>,
   manifest = PROOF_CORPUS_MANIFEST,
@@ -2112,8 +2128,10 @@ function selectGovernedCorpusRuns(
   const manifestBySeed = new Map(manifest.map(entry => [entry.seed, entry]))
   const manifestCandidatesBySeed = new Map<number, Array<typeof simulationRuns.$inferSelect>>()
   runRows.forEach(row => {
-    if (!manifestBySeed.has(row.seed)) return
+    const manifestEntry = manifestBySeed.get(row.seed)
+    if (!manifestEntry) return
     if (completeRunIds && !completeRunIds.has(row.simulationRunId)) return
+    if (!runMatchesManifestScenarioFamily(row, manifestEntry)) return
     manifestCandidatesBySeed.set(row.seed, [...(manifestCandidatesBySeed.get(row.seed) ?? []), row])
   })
 
@@ -2138,6 +2156,10 @@ function selectGovernedCorpusRuns(
       .map(row => row.simulationRunId)
       .sort()
     : []
+  const skippedScenarioMismatchManifestRunIds = runRows
+    .filter(row => manifestBySeed.has(row.seed) && !runMatchesManifestScenarioFamily(row, manifestBySeed.get(row.seed)))
+    .map(row => row.simulationRunId)
+    .sort()
 
   return {
     manifestBySeed,
@@ -2145,6 +2167,7 @@ function selectGovernedCorpusRuns(
     skippedNonManifestRunIds,
     skippedDuplicateManifestRunIds,
     skippedIncompleteManifestRunIds,
+    skippedScenarioMismatchManifestRunIds,
   }
 }
 
@@ -2160,7 +2183,7 @@ async function loadActiveProofRiskArtifacts(db: AppDb, batchId: string): Promise
   }
 }
 
-async function rebuildProofRiskArtifacts(db: AppDb, input: {
+export async function rebuildProofRiskArtifacts(db: AppDb, input: {
   batchId: string
   simulationRunId: string
   actorFacultyId?: string | null
@@ -2205,8 +2228,14 @@ async function rebuildProofRiskArtifacts(db: AppDb, input: {
     skippedNonManifestRunIds,
     skippedDuplicateManifestRunIds,
     skippedIncompleteManifestRunIds,
+    skippedScenarioMismatchManifestRunIds,
   } = selectGovernedCorpusRuns(runRows, PROOF_CORPUS_MANIFEST, completeRunIds)
-  const skippedSimulationRunIds = [...skippedNonManifestRunIds, ...skippedDuplicateManifestRunIds, ...skippedIncompleteManifestRunIds].sort()
+  const skippedSimulationRunIds = [
+    ...skippedNonManifestRunIds,
+    ...skippedDuplicateManifestRunIds,
+    ...skippedIncompleteManifestRunIds,
+    ...skippedScenarioMismatchManifestRunIds,
+  ].sort()
 
   const runMetadataById = new Map<string, ProofRunModelMetadata>(
     governedRunRows.map(row => {
@@ -2895,7 +2924,7 @@ async function insertRowsInChunks<T>(db: AppDb, table: unknown, rows: T[], chunk
   }
 }
 
-async function readRuntimeCurriculum(db: AppDb, curriculumImportVersionId: string): Promise<RuntimeCurriculum> {
+export async function readRuntimeCurriculum(db: AppDb, curriculumImportVersionId: string): Promise<RuntimeCurriculum> {
   const [nodeRows, edgeRows, bridgeRows, partitionRows, basketRows, optionRows] = await Promise.all([
     db.select().from(curriculumNodes).where(eq(curriculumNodes.curriculumImportVersionId, curriculumImportVersionId)),
     db.select().from(curriculumEdges).where(eq(curriculumEdges.curriculumImportVersionId, curriculumImportVersionId)),
@@ -2979,7 +3008,7 @@ async function syncCurriculumSnapshot(db: AppDb, batchId: string, importVersionI
   })))
 }
 
-async function emitSimulationAudit(db: AppDb, input: {
+export async function emitSimulationAudit(db: AppDb, input: {
   simulationRunId: string
   batchId: string
   actionType: string
@@ -3070,56 +3099,152 @@ function electiveRecommendationForStudent(input: {
   }
 }
 
-async function ensureSem6Offerings(db: AppDb, runtimeCourses: RuntimeCourse[], now: string) {
-  const sem6Courses = runtimeCourses.filter(course => course.semesterNumber === 6)
+function proofOfferingYearLabel(semesterNumber: number) {
+  if (semesterNumber <= 2) return '1st Year'
+  if (semesterNumber <= 4) return '2nd Year'
+  return '3rd Year'
+}
+
+function proofOfferingStageSeed(stageKey: PlaybackStageKey) {
+  switch (stageKey) {
+    case 'pre-tt1':
+      return {
+        stage: 1,
+        stageLabel: 'Pre-TT1',
+        stageDescription: 'Watch and early evidence window before TT1 closes.',
+        stageColor: '#64748b',
+        tt1Done: 0,
+        tt2Done: 0,
+        tt1Locked: 0,
+        tt2Locked: 0,
+        quizLocked: 0,
+        assignmentLocked: 0,
+        finalsLocked: 0,
+        pendingAction: null,
+      }
+    case 'post-tt1':
+      return {
+        stage: 2,
+        stageLabel: 'Post-TT1',
+        stageDescription: 'TT1 evidence is authoritative; watch/action rules apply from run policy.',
+        stageColor: '#f59e0b',
+        tt1Done: 1,
+        tt2Done: 0,
+        tt1Locked: 1,
+        tt2Locked: 0,
+        quizLocked: 0,
+        assignmentLocked: 0,
+        finalsLocked: 0,
+        pendingAction: 'TT1 review window active',
+      }
+    case 'post-tt2':
+      return {
+        stage: 3,
+        stageLabel: 'Post-TT2',
+        stageDescription: 'TT1 and TT2 evidence are authoritative; reassessment remains active.',
+        stageColor: '#f97316',
+        tt1Done: 1,
+        tt2Done: 1,
+        tt1Locked: 1,
+        tt2Locked: 1,
+        quizLocked: 0,
+        assignmentLocked: 0,
+        finalsLocked: 0,
+        pendingAction: 'TT2 review window active',
+      }
+    case 'post-assignments':
+      return {
+        stage: 4,
+        stageLabel: 'Post-Assignments',
+        stageDescription: 'Coursework and internals are locked for final review.',
+        stageColor: '#0ea5e9',
+        tt1Done: 1,
+        tt2Done: 1,
+        tt1Locked: 1,
+        tt2Locked: 1,
+        quizLocked: 1,
+        assignmentLocked: 1,
+        finalsLocked: 0,
+        pendingAction: 'Coursework review complete; SEE pending',
+      }
+    case 'post-see':
+      return {
+        stage: 5,
+        stageLabel: 'Post-SEE',
+        stageDescription: 'Semester closed; all assessment evidence is locked.',
+        stageColor: '#22c55e',
+        tt1Done: 1,
+        tt2Done: 1,
+        tt1Locked: 1,
+        tt2Locked: 1,
+        quizLocked: 1,
+        assignmentLocked: 1,
+        finalsLocked: 1,
+        pendingAction: 'Semester closed',
+      }
+  }
+}
+
+export async function ensureProofOfferings(db: AppDb, runtime: RuntimeCurriculum, now: string) {
   const courseRows = await db.select().from(courses).where(eq(courses.departmentId, MSRUAS_PROOF_DEPARTMENT_ID))
   const courseByTitle = new Map(courseRows.map(row => [row.title, row]))
-  const offeringRows = await db.select().from(sectionOfferings).where(eq(sectionOfferings.termId, 'term_mnc_sem6'))
+  const termBySemester = new Map<number, (typeof PROOF_TERM_DEFS)[number]>(
+    PROOF_TERM_DEFS.map(term => [term.semesterNumber, term] as const),
+  )
+  const proofTermIds = [...termBySemester.values()].map(term => term.termId)
+  const offeringRows = proofTermIds.length > 0
+    ? await db.select().from(sectionOfferings).where(inArray(sectionOfferings.termId, proofTermIds))
+    : []
   const ownershipRows = await db.select().from(facultyOfferingOwnerships)
   const currentByKey = new Map<string, typeof sectionOfferings.$inferSelect>()
   for (const offering of offeringRows) {
     const course = courseRows.find(row => row.courseId === offering.courseId)
-    if (!course) continue
-    currentByKey.set(`${course.title}::${offering.sectionCode}`, offering)
+    const term = PROOF_TERM_DEFS.find(item => item.termId === offering.termId)
+    if (!course || !term) continue
+    currentByKey.set(`${term.semesterNumber}::${course.title}::${offering.sectionCode}`, offering)
   }
 
   const courseLeaderFaculty = PROOF_FACULTY.filter(item => item.permissions.includes('COURSE_LEADER'))
   const newOfferingRows: Array<typeof sectionOfferings.$inferInsert> = []
   const newOwnershipRows: Array<typeof facultyOfferingOwnerships.$inferInsert> = []
   const offeringFacultyById = new Map<string, string>()
+  const stageSeed = proofOfferingStageSeed('pre-tt1')
 
   ;(['A', 'B'] as const).forEach((sectionCode, sectionOffset) => {
-    sem6Courses.forEach((course, courseIndex) => {
-      const key = `${course.title}::${sectionCode}`
+    runtime.courses.forEach((course, courseIndex) => {
+      const term = termBySemester.get(course.semesterNumber)
+      if (!term) return
+      const key = `${course.semesterNumber}::${course.title}::${sectionCode}`
       const current = currentByKey.get(key)
-      const faculty = courseLeaderFaculty[(courseIndex + (sectionOffset * 3)) % courseLeaderFaculty.length]
+      const faculty = courseLeaderFaculty[(courseIndex + (sectionOffset * 3) + (course.semesterNumber - 1)) % courseLeaderFaculty.length]
       if (current) {
         offeringFacultyById.set(current.offeringId, faculty.facultyId)
         return
       }
       const courseRow = courseByTitle.get(course.title)
       if (!courseRow) return
-      const offeringId = `mnc_s6_${course.internalCompilerId.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_${sectionCode.toLowerCase()}`
+      const offeringId = `mnc_s${course.semesterNumber}_${course.internalCompilerId.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_${sectionCode.toLowerCase()}`
       newOfferingRows.push({
         offeringId,
         courseId: courseRow.courseId,
-        termId: 'term_mnc_sem6',
+        termId: term.termId,
         branchId: MSRUAS_PROOF_BRANCH_ID,
         sectionCode,
-        yearLabel: '3rd Year',
-        attendance: sectionCode === 'A' ? 82 : 74,
+        yearLabel: proofOfferingYearLabel(course.semesterNumber),
+        attendance: 0,
         studentCount: 60,
-        stage: 2,
-        stageLabel: 'TT1 Review',
-        stageDescription: 'Observable monitoring window after TT1; reassessment stays active.',
-        stageColor: '#f59e0b',
-        tt1Done: 1,
-        tt2Done: 0,
-        tt1Locked: 1,
-        tt2Locked: 0,
-        quizLocked: 1,
-        assignmentLocked: 1,
-        pendingAction: 'Adaptive reassessment window active',
+        stage: stageSeed.stage,
+        stageLabel: stageSeed.stageLabel,
+        stageDescription: stageSeed.stageDescription,
+        stageColor: stageSeed.stageColor,
+        tt1Done: stageSeed.tt1Done,
+        tt2Done: stageSeed.tt2Done,
+        tt1Locked: stageSeed.tt1Locked,
+        tt2Locked: stageSeed.tt2Locked,
+        quizLocked: stageSeed.quizLocked,
+        assignmentLocked: stageSeed.assignmentLocked,
+        finalsLocked: stageSeed.finalsLocked,
+        pendingAction: stageSeed.pendingAction,
         status: 'active',
         version: 1,
         createdAt: now,
@@ -3141,11 +3266,17 @@ async function ensureSem6Offerings(db: AppDb, runtimeCourses: RuntimeCourse[], n
     })
   })
 
-  if (newOfferingRows.length > 0) await db.insert(sectionOfferings).values(newOfferingRows)
-  if (newOwnershipRows.length > 0) await db.insert(facultyOfferingOwnerships).values(newOwnershipRows)
+  // Idempotent under concurrency: evaluator (and any future parallel seed bootstrap) fires
+  // multiple startProofSimulationRun calls against a shared DB. Each recomputes the same
+  // static newOfferingRows / newOwnershipRows list from a cold select, then races the insert.
+  // Without ON CONFLICT DO NOTHING the 2nd concurrent call 23505s on section_offerings_pkey
+  // (or faculty_offering_ownerships_pkey) and the whole bootstrap tears down.
+  // See: air-mentor-api/scripts/evaluate-proof-risk-model.ts:1110 (mapWithConcurrency fan-out).
+  if (newOfferingRows.length > 0) await db.insert(sectionOfferings).values(newOfferingRows).onConflictDoNothing()
+  if (newOwnershipRows.length > 0) await db.insert(facultyOfferingOwnerships).values(newOwnershipRows).onConflictDoNothing()
 
   const refreshedOfferings = newOfferingRows.length > 0
-    ? await db.select().from(sectionOfferings).where(eq(sectionOfferings.termId, 'term_mnc_sem6'))
+    ? await db.select().from(sectionOfferings).where(inArray(sectionOfferings.termId, proofTermIds))
     : offeringRows
   return {
     offerings: refreshedOfferings,
@@ -3153,33 +3284,91 @@ async function ensureSem6Offerings(db: AppDb, runtimeCourses: RuntimeCourse[], n
   }
 }
 
-async function publishOperationalProjection(db: AppDb, input: {
+export async function publishOperationalProjection(db: AppDb, input: {
   simulationRunId: string
   batchId: string
   now: string
 }) {
-  const [observedRows, riskRows, alertRows, electiveRows] = await Promise.all([
+  const [run] = await db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, input.simulationRunId))
+  if (!run) throw new Error('Simulation run not found')
+
+  const [observedRows, riskRows, alertRows, electiveRows, allocationRows, stageStudentRows] = await Promise.all([
     db.select().from(studentObservedSemesterStates).where(eq(studentObservedSemesterStates.simulationRunId, input.simulationRunId)),
     db.select().from(riskAssessments).where(eq(riskAssessments.simulationRunId, input.simulationRunId)),
     db.select().from(alertDecisions),
     db.select().from(electiveRecommendations).where(eq(electiveRecommendations.simulationRunId, input.simulationRunId)),
+    db.select().from(teacherAllocations).where(eq(teacherAllocations.simulationRunId, input.simulationRunId)),
+    db.select().from(simulationStageStudentProjections).where(eq(simulationStageStudentProjections.simulationRunId, input.simulationRunId)),
   ])
 
-  const sem5OrEarlierRows = observedRows.filter(row => row.semesterNumber <= 5)
-  const sem6Rows = observedRows.filter(row => row.semesterNumber === 6)
-  const proofStudentIds = Array.from(new Set(observedRows.map(row => row.studentId)))
+  const activeSemesterNumber = run.activeOperationalSemester ?? run.semesterStart
+  const activeStageKey = (run.activeStageKey ?? 'pre-tt1') as PlaybackStageKey
+  const activeTerm = PROOF_TERM_DEFS.find(term => term.semesterNumber === activeSemesterNumber) ?? null
+  const historicalSummaryRows = observedRows.filter(row => {
+    if (row.semesterNumber >= activeSemesterNumber) return false
+    const payload = parseObservedStateRow(row)
+    return Array.isArray(payload.subjectScores)
+  })
+  const liveObservedOperationalRows = observedRows.filter(row => {
+    if (row.semesterNumber !== activeSemesterNumber) return false
+    const payload = parseObservedStateRow(row)
+    return typeof payload.offeringId === 'string' && payload.offeringId.length > 0
+  })
+  const liveProjectionOperationalRows = stageStudentRows.filter(row => {
+    if (row.semesterNumber !== activeSemesterNumber) return false
+    if (!row.offeringId) return false
+    const projection = parseJson<Record<string, unknown>>(row.projectionJson, {})
+    return String(projection.stageKey ?? '') === activeStageKey
+  })
+  const liveOperationalRows = liveObservedOperationalRows.map(row => {
+    const payload = parseObservedStateRow(row)
+    return {
+      studentId: row.studentId,
+      offeringId: typeof payload.offeringId === 'string' && payload.offeringId.length > 0 ? payload.offeringId : null,
+      payload,
+    }
+  })
+  if (liveOperationalRows.length === 0) {
+    liveOperationalRows.push(...liveProjectionOperationalRows.map(row => {
+      const projection = parseJson<Record<string, unknown>>(row.projectionJson, {})
+      const currentEvidence = parseJson<Record<string, unknown>>(
+        typeof projection.currentEvidence === 'string' ? projection.currentEvidence : null,
+        (projection.currentEvidence ?? {}) as Record<string, unknown>,
+      )
+      return {
+        studentId: row.studentId,
+        offeringId: row.offeringId ?? null,
+        payload: {
+          offeringId: row.offeringId ?? null,
+          courseCode: row.courseCode,
+          courseTitle: row.courseTitle,
+          attendancePct: Number(currentEvidence.attendancePct ?? 0),
+          tt1Pct: Number(currentEvidence.tt1Pct ?? 0),
+          tt2Pct: Number(currentEvidence.tt2Pct ?? 0),
+          quizPct: Number(currentEvidence.quizPct ?? 0),
+          assignmentPct: Number(currentEvidence.assignmentPct ?? 0),
+          seePct: Number(currentEvidence.seePct ?? 0),
+        },
+      }
+    }))
+  }
+  const proofStudentIds = Array.from(new Set([
+    ...observedRows.map(row => row.studentId),
+    ...liveOperationalRows.map(row => row.studentId),
+  ]))
   const proofOfferingIds = Array.from(new Set(
-    sem6Rows
-      .map(row => {
-        const payload = parseObservedStateRow(row)
-        return typeof payload.offeringId === 'string' && payload.offeringId.length > 0
-          ? payload.offeringId
-          : null
-      })
+    liveOperationalRows
+      .map(row => row.offeringId)
       .filter((value): value is string => value != null),
   ))
   const termBySemester = new Map<number, (typeof PROOF_TERM_DEFS)[number]>(PROOF_TERM_DEFS.map(term => [term.semesterNumber, term]))
   const proofTermIds = PROOF_TERM_DEFS.map(term => term.termId)
+  const coursePayloadByOfferingId = new Map<string, Record<string, unknown>>()
+  liveOperationalRows.forEach(row => {
+    const offeringId = row.offeringId
+    if (!offeringId) return
+    coursePayloadByOfferingId.set(offeringId, row.payload)
+  })
   const transcriptTermInsertRows: Array<typeof transcriptTermResults.$inferInsert> = []
   const transcriptSubjectInsertRows: Array<typeof transcriptSubjectResults.$inferInsert> = []
 
@@ -3201,7 +3390,7 @@ async function publishOperationalProjection(db: AppDb, input: {
     }
   }
 
-  if (input.batchId === MSRUAS_PROOF_BATCH_ID && proofStudentIds.length > 0 && proofOfferingIds.length > 0) {
+  if (input.batchId === MSRUAS_PROOF_BATCH_ID && proofStudentIds.length > 0 && proofOfferingIds.length > 0 && activeTerm) {
     // Re-activating a long-lived proof run must replace, not append, the live
     // runtime projection for those proof students.
     await db.delete(studentAttendanceSnapshots).where(and(
@@ -3212,11 +3401,11 @@ async function publishOperationalProjection(db: AppDb, input: {
     await db.delete(studentAssessmentScores).where(and(
       inArray(studentAssessmentScores.studentId, proofStudentIds),
       inArray(studentAssessmentScores.offeringId, proofOfferingIds),
-      eq(studentAssessmentScores.termId, 'term_mnc_sem6'),
+      eq(studentAssessmentScores.termId, activeTerm.termId),
     ))
   }
 
-  for (const row of sem5OrEarlierRows) {
+  for (const row of historicalSummaryRows) {
     const payload = parseObservedStateRow(row)
     const term = termBySemester.get(row.semesterNumber)
     if (!term) continue
@@ -3260,10 +3449,15 @@ async function publishOperationalProjection(db: AppDb, input: {
 
   const attendanceRows: Array<typeof studentAttendanceSnapshots.$inferInsert> = []
   const assessmentRows: Array<typeof studentAssessmentScores.$inferInsert> = []
-  for (const row of sem6Rows) {
-    const payload = parseObservedStateRow(row)
-    const offeringId = typeof payload.offeringId === 'string' ? payload.offeringId : null
-    if (!offeringId) continue
+  const visibleCoursework = (payload: Record<string, unknown>) => stageCourseworkEvidenceForStage({
+    stageKey: activeStageKey,
+    quizPct: payload.quizPct == null ? null : Number(payload.quizPct),
+    assignmentPct: payload.assignmentPct == null ? null : Number(payload.assignmentPct),
+  })
+  for (const row of liveOperationalRows) {
+    const payload = row.payload
+    const offeringId = row.offeringId
+    if (!offeringId || !activeTerm) continue
     const attendancePct = Math.round(Number(payload.attendancePct ?? 0))
     attendanceRows.push({
       attendanceSnapshotId: createId('attendance'),
@@ -3277,17 +3471,18 @@ async function publishOperationalProjection(db: AppDb, input: {
       createdAt: input.now,
       updatedAt: input.now,
     })
+    const courseworkEvidence = visibleCoursework(payload)
     const tt1Pct = Number(payload.tt1Pct ?? 0)
     const tt2Pct = Number(payload.tt2Pct ?? 0)
-    const quizPct = Number(payload.quizPct ?? 0)
-    const assignmentPct = Number(payload.assignmentPct ?? 0)
+    const quizPct = courseworkEvidence.quizPct == null ? null : Number(courseworkEvidence.quizPct)
+    const assignmentPct = courseworkEvidence.assignmentPct == null ? null : Number(courseworkEvidence.assignmentPct)
     const seePct = Number(payload.seePct ?? 0)
-    assessmentRows.push(
-      {
+    if (activeStageKey !== 'pre-tt1' && payload.tt1Pct != null) {
+      assessmentRows.push({
         assessmentScoreId: createId('assessment_tt1'),
         studentId: row.studentId,
         offeringId,
-        termId: 'term_mnc_sem6',
+        termId: activeTerm.termId,
         componentType: 'tt1',
         componentCode: 'TT1',
         score: Math.round((tt1Pct / 100) * 25),
@@ -3295,12 +3490,14 @@ async function publishOperationalProjection(db: AppDb, input: {
         evaluatedAt: input.now,
         createdAt: input.now,
         updatedAt: input.now,
-      },
-      {
+      })
+    }
+    if ((activeStageKey === 'post-tt2' || activeStageKey === 'post-assignments' || activeStageKey === 'post-see') && payload.tt2Pct != null) {
+      assessmentRows.push({
         assessmentScoreId: createId('assessment_tt2'),
         studentId: row.studentId,
         offeringId,
-        termId: 'term_mnc_sem6',
+        termId: activeTerm.termId,
         componentType: 'tt2',
         componentCode: 'TT2',
         score: Math.round((tt2Pct / 100) * 25),
@@ -3308,12 +3505,14 @@ async function publishOperationalProjection(db: AppDb, input: {
         evaluatedAt: input.now,
         createdAt: input.now,
         updatedAt: input.now,
-      },
-      {
+      })
+    }
+    if (quizPct != null) {
+      assessmentRows.push({
         assessmentScoreId: createId('assessment_quiz1'),
         studentId: row.studentId,
         offeringId,
-        termId: 'term_mnc_sem6',
+        termId: activeTerm.termId,
         componentType: 'quiz1',
         componentCode: 'Quiz 1',
         score: Math.round((quizPct / 100) * 10),
@@ -3321,12 +3520,14 @@ async function publishOperationalProjection(db: AppDb, input: {
         evaluatedAt: input.now,
         createdAt: input.now,
         updatedAt: input.now,
-      },
-      {
+      })
+    }
+    if (assignmentPct != null) {
+      assessmentRows.push({
         assessmentScoreId: createId('assessment_assignment1'),
         studentId: row.studentId,
         offeringId,
-        termId: 'term_mnc_sem6',
+        termId: activeTerm.termId,
         componentType: 'asgn1',
         componentCode: 'Assignment 1',
         score: Math.round((assignmentPct / 100) * 10),
@@ -3334,12 +3535,14 @@ async function publishOperationalProjection(db: AppDb, input: {
         evaluatedAt: input.now,
         createdAt: input.now,
         updatedAt: input.now,
-      },
-      {
+      })
+    }
+    if (activeStageKey === 'post-see' && payload.seePct != null) {
+      assessmentRows.push({
         assessmentScoreId: createId('assessment_see'),
         studentId: row.studentId,
         offeringId,
-        termId: 'term_mnc_sem6',
+        termId: activeTerm.termId,
         componentType: 'see',
         componentCode: 'SEE',
         score: Math.round((seePct / 100) * 40),
@@ -3347,14 +3550,58 @@ async function publishOperationalProjection(db: AppDb, input: {
         evaluatedAt: input.now,
         createdAt: input.now,
         updatedAt: input.now,
-      },
-    )
+      })
+    }
   }
   if (attendanceRows.length > 0) {
     await insertRowsInChunks(db, studentAttendanceSnapshots, attendanceRows)
   }
   if (assessmentRows.length > 0) {
     await insertRowsInChunks(db, studentAssessmentScores, assessmentRows)
+  }
+  if (proofOfferingIds.length > 0) {
+    const stageSeed = proofOfferingStageSeed(activeStageKey)
+    await db.update(sectionOfferings).set({
+      stage: stageSeed.stage,
+      stageLabel: stageSeed.stageLabel,
+      stageDescription: stageSeed.stageDescription,
+      stageColor: stageSeed.stageColor,
+      tt1Done: stageSeed.tt1Done,
+      tt2Done: stageSeed.tt2Done,
+      tt1Locked: stageSeed.tt1Locked,
+      tt2Locked: stageSeed.tt2Locked,
+      quizLocked: stageSeed.quizLocked,
+      assignmentLocked: stageSeed.assignmentLocked,
+      finalsLocked: stageSeed.finalsLocked,
+      pendingAction: stageSeed.pendingAction,
+      updatedAt: input.now,
+    }).where(inArray(sectionOfferings.offeringId, proofOfferingIds))
+
+    const loadsByFacultyId = new Map<string, Array<{
+      offeringId: string
+      courseCode: string
+      courseName: string
+      sectionCode: string
+      semesterNumber: number
+      weeklyHours: number
+    }>>()
+    allocationRows
+      .filter(row => row.semesterNumber === activeSemesterNumber && row.offeringId != null)
+      .forEach(row => {
+        if (!row.offeringId || !proofOfferingIds.includes(row.offeringId)) return
+        const payload = coursePayloadByOfferingId.get(row.offeringId) ?? {}
+        const current = loadsByFacultyId.get(row.facultyId) ?? []
+        current.push({
+          offeringId: row.offeringId,
+          courseCode: String(payload.courseCode ?? 'NA'),
+          courseName: String(payload.courseTitle ?? payload.courseCode ?? 'Unknown'),
+          sectionCode: row.sectionCode ?? '',
+          semesterNumber: activeSemesterNumber,
+          weeklyHours: row.plannedContactHours,
+        })
+        loadsByFacultyId.set(row.facultyId, current)
+      })
+    await upsertRuntimeSlice(db, 'timetableByFacultyId', buildTimetablePayload(loadsByFacultyId), input.now)
   }
 
   // GAP-1: Auto-seed assessment schemes so stage gates pass without manual teacher setup.
@@ -3426,14 +3673,19 @@ async function publishOperationalProjection(db: AppDb, input: {
   }
 
   const latestCgpaByStudent = new Map<string, number>()
-  for (const row of sem5OrEarlierRows) {
+  const historicalRowsByStudent = historicalSummaryRows
+    .slice()
+    .sort((left, right) => right.semesterNumber - left.semesterNumber || right.updatedAt.localeCompare(left.updatedAt))
+  for (const row of historicalRowsByStudent) {
+    if (latestCgpaByStudent.has(row.studentId)) continue
     const payload = parseObservedStateRow(row)
     const cgpa = Number(payload.cgpaAfterSemester ?? 0)
     latestCgpaByStudent.set(row.studentId, cgpa)
   }
-  for (const [studentId, cgpa] of latestCgpaByStudent.entries()) {
+  for (const studentId of proofStudentIds) {
     const [profile] = await db.select().from(studentAcademicProfiles).where(eq(studentAcademicProfiles.studentId, studentId))
     if (profile) {
+      const cgpa = latestCgpaByStudent.get(studentId) ?? 0
       await db.update(studentAcademicProfiles).set({
         prevCgpaScaled: Math.round(cgpa * 100),
         updatedAt: input.now,
@@ -3783,13 +4035,18 @@ export async function startProofSimulationRun(db: AppDb, input: {
     activate,
     deterministicPolicy,
     offerings,
+    offeringBySemesterCourseTitleSection,
     runSeed,
     runtime,
     scenarioProfile,
-    sem6,
-    sem6OfferingByCourseTitleSection,
     simulationRunId,
   } = await prepareSeededProofRunBootstrapService(db, input, proofControlPlaneSeededBootstrapServiceDeps)
+  const sem6 = runtime.courses.filter(course => course.semesterNumber === 6)
+  const sem6OfferingByCourseTitleSection = new Map<string, typeof sectionOfferings.$inferSelect>()
+  for (const [key, offering] of offeringBySemesterCourseTitleSection.entries()) {
+    if (!key.startsWith('6::')) continue
+    sem6OfferingByCourseTitleSection.set(key.slice(3), offering)
+  }
 
   const trajectories = Array.from({ length: 120 }, (_, index) => buildStudentTrajectory(index, runSeed, scenarioProfile))
   const mentorFaculty = PROOF_FACULTY.filter(item => item.permissions.includes('MENTOR'))
@@ -3826,9 +4083,9 @@ export async function startProofSimulationRun(db: AppDb, input: {
     courseLeaderFaculty,
     now: input.now,
     offerings,
+    offeringBySemesterCourseTitleSection,
     runSeed,
     runtimeCourses: runtime.courses,
-    sem6OfferingByCourseTitleSection,
     simulationRunId,
     trajectories,
   }, proofControlPlaneSeededScaffoldingServiceDeps)
@@ -3862,6 +4119,9 @@ export async function startProofSimulationRun(db: AppDb, input: {
       courseLeaderFaculty,
       deterministicPolicy,
       now: input.now,
+      offeringBySemesterCourseTitleSection: new Map(
+        [...offeringBySemesterCourseTitleSection.entries()].map(([key, offering]) => [key, { offeringId: offering.offeringId }] as const),
+      ),
       questionTemplatesByScope,
       runSeed,
       runtimeCourses: runtime.courses,
@@ -3969,7 +4229,7 @@ export async function startProofSimulationRun(db: AppDb, input: {
   }, proofControlPlaneSeededRunServiceDeps)
 }
 
-async function invalidateProofBatchSessions(db: AppDb, batchId: string) {
+export async function invalidateProofBatchSessions(db: AppDb, batchId: string) {
   const [batch] = await db.select({ branchId: batches.branchId }).from(batches).where(eq(batches.batchId, batchId))
   if (!batch) return
   const grantRows = await db.select({ facultyId: roleGrants.facultyId }).from(roleGrants).where(eq(roleGrants.scopeId, batch.branchId))
@@ -3979,6 +4239,19 @@ async function invalidateProofBatchSessions(db: AppDb, batchId: string) {
   const userIds = profileRows.map(r => r.userId)
   if (userIds.length === 0) return
   await db.delete(sessions).where(inArray(sessions.userId, userIds))
+}
+
+export async function deleteProofCredentials(db: AppDb, batchId: string): Promise<{ deletedCount: number }> {
+  const [batch] = await db.select({ branchId: batches.branchId }).from(batches).where(eq(batches.batchId, batchId))
+  if (!batch) return { deletedCount: 0 }
+  const grantRows = await db.select({ facultyId: roleGrants.facultyId }).from(roleGrants).where(eq(roleGrants.scopeId, batch.branchId))
+  const facultyIds = [...new Set(grantRows.map(r => r.facultyId))]
+  if (facultyIds.length === 0) return { deletedCount: 0 }
+  const profileRows = await db.select({ userId: facultyProfiles.userId }).from(facultyProfiles).where(inArray(facultyProfiles.facultyId, facultyIds))
+  const userIds = profileRows.map(r => r.userId)
+  if (userIds.length === 0) return { deletedCount: 0 }
+  await db.delete(userPasswordCredentials).where(inArray(userPasswordCredentials.userId, userIds))
+  return { deletedCount: userIds.length }
 }
 
 export async function archiveProofSimulationRun(db: AppDb, input: {
@@ -4041,12 +4314,37 @@ export async function activateProofSimulationRun(db: AppDb, input: {
     updatedAt: input.now,
   }).where(eq(simulationRuns.batchId, run.batchId))
   await invalidateProofBatchSessions(db, run.batchId)
+  // Fresh activation starts at semesterStart, NOT semesterEnd.
+  // semesterEnd is the final semester of the run, not the starting point.
+  // If the run was previously activated (activeOperationalSemester already set), preserve it.
+  const targetSemester = run.activeOperationalSemester != null && run.activeOperationalSemester > 0
+    ? run.activeOperationalSemester
+    : run.semesterStart
+  const targetStageKey = (run.activeStageKey ?? 'pre-tt1') as PlaybackStageKey
   await db.update(simulationRuns).set({
     activeFlag: 1,
     status: 'active',
-    activeOperationalSemester: run.activeOperationalSemester ?? run.semesterEnd,
+    activeOperationalSemester: targetSemester,
+    activeStageKey: targetStageKey,
+    simulatedDateIso: run.simulatedDateIso ?? PROOF_SEMESTER_SIM_START_DATES[targetSemester],
+    lifecycleState: 'active',
     updatedAt: input.now,
   }).where(eq(simulationRuns.simulationRunId, run.simulationRunId))
+  await db.update(batches).set({
+    currentSemester: targetSemester,
+    updatedAt: input.now,
+  }).where(eq(batches.batchId, run.batchId))
+  await db.update(academicTerms).set({
+    status: 'archived',
+    updatedAt: input.now,
+  }).where(eq(academicTerms.batchId, run.batchId))
+  await db.update(academicTerms).set({
+    status: 'active',
+    updatedAt: input.now,
+  }).where(and(
+    eq(academicTerms.batchId, run.batchId),
+    eq(academicTerms.semesterNumber, targetSemester),
+  ))
   await publishOperationalProjection(db, {
     simulationRunId: run.simulationRunId,
     batchId: run.batchId,
@@ -4078,6 +4376,7 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
   actorFacultyId?: string | null
   now: string
   rebuildModelArtifacts?: boolean
+  skipArtifactTraining?: boolean
 }) {
   return recomputeObservedOnlyRiskService(db, input, proofControlPlaneRuntimeServiceDeps)
 }
@@ -4116,6 +4415,7 @@ const proofControlPlaneRuntimeServiceDeps: ProofControlPlaneRuntimeServiceDeps =
   buildActionPolicyComparison,
   buildDeterministicId,
   buildNoActionSnapshot,
+  buildStageEvidenceSnapshot,
   ceShortfallLabelFromPct,
   clamp,
   createId,
@@ -4199,7 +4499,7 @@ const proofControlPlaneSeededBootstrapServiceDeps: ProofControlPlaneSeededBootst
   WORLD_ENGINE_VERSION,
   createId,
   deterministicPolicyFromResolved,
-  ensureSem6Offerings,
+  ensureProofOfferings,
   readRuntimeCurriculum,
   scenarioProfileForSeed,
 }
@@ -4326,6 +4626,8 @@ export async function buildStudentAgentCard(db: AppDb, input: {
   simulationRunId: string
   studentId: string
   simulationStageCheckpointId?: string | null
+  viewerFacultyId?: string | null
+  viewerRoleCode?: string | null
 }): Promise<StudentAgentCardPayload> {
   return buildStudentAgentCardService(db, input, proofControlPlaneTailServiceDeps)
 }
@@ -4334,6 +4636,8 @@ export async function buildStudentRiskExplorer(db: AppDb, input: {
   simulationRunId: string
   studentId: string
   simulationStageCheckpointId?: string | null
+  viewerFacultyId?: string | null
+  viewerRoleCode?: string | null
 }): Promise<StudentRiskExplorerPayload> {
   return buildStudentRiskExplorerService(db, input, proofControlPlaneTailServiceDeps)
 }
@@ -4359,6 +4663,8 @@ export async function listStudentAgentTimeline(db: AppDb, input: {
   simulationRunId: string
   studentId: string
   simulationStageCheckpointId?: string | null
+  viewerFacultyId?: string | null
+  viewerRoleCode?: string | null
 }) {
   return listStudentAgentTimelineService(db, input, proofControlPlaneTailServiceDeps)
 }
