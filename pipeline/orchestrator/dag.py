@@ -32,6 +32,8 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import os
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -153,8 +155,85 @@ def _has_cycle(nodes: list[NodeSpec]) -> bool:
     return any(visit(nid) for nid in ids)
 
 
+def _git_tracked_paths(paths: list[str]) -> set[str]:
+    """Return subset of `paths` that are tracked in git (`ls-files` hit).
+
+    Runs from REPO_ROOT. Unknown/untracked paths are absent from the return set.
+    If the repo is not a git repo (or `git` unavailable), returns `set(paths)`
+    so the check degrades open instead of blocking non-git test fixtures.
+    """
+    if not paths:
+        return set()
+    if not (REPO_ROOT / ".git").exists():
+        return set(paths)
+    try:
+        # --error-unmatch would be stricter but needs one call per path.
+        # ls-files with the list returns only tracked matches; we diff against
+        # the input to find the missing set.
+        res = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", "-z", "--", *paths],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=False,
+            check=False,
+        )
+        tracked = {p for p in res.stdout.decode("utf-8", "replace").split("\0") if p}
+        return tracked
+    except (FileNotFoundError, OSError):
+        return set(paths)
+
+
+def _verify_dag_files_tracked(nodes: list[NodeSpec]) -> None:
+    """Round-11 guard: every prompt_file / intent_file / manifest_file must be
+    tracked in git at DAG registration time. Prevents the failure mode where a
+    DAG spec references files that live only in the working tree as untracked
+    paths, which are silently lost on any `git checkout`, `git reset`, or stash
+    pop - exactly the class of bug that destroyed the overnight-dag-9f3b5b7d
+    pipeline mid-run in April 2026.
+
+    Escape hatch: set `AIRMENTOR_DAG_ALLOW_UNTRACKED=1` in env for dev/testing
+    against fixture DAGs that intentionally point to untracked stubs.
+    """
+    if os.environ.get("AIRMENTOR_DAG_ALLOW_UNTRACKED") == "1":
+        return
+    # Collect every referenced path from every node.
+    referenced: list[str] = []
+    for n in nodes:
+        for attr in ("prompt_file", "intent_file", "manifest_file"):
+            p = getattr(n, attr, None)
+            if p:
+                referenced.append(str(p))
+    if not referenced:
+        return
+    # de-dupe while preserving input order for stable error messages
+    seen: set[str] = set()
+    unique: list[str] = []
+    for p in referenced:
+        if p not in seen:
+            seen.add(p)
+            unique.append(p)
+    tracked = _git_tracked_paths(unique)
+    untracked = [p for p in unique if p not in tracked]
+    if untracked:
+        examples = "\n".join(f"  - {p}" for p in untracked[:10])
+        extra = f"\n  ... and {len(untracked) - 10} more" if len(untracked) > 10 else ""
+        raise ValueError(
+            "DAG references "
+            f"{len(untracked)} file(s) not tracked in git. Commit these paths "
+            "before registering the DAG so the pipeline is reproducible and "
+            "survives a clean git checkout:\n"
+            f"{examples}{extra}\n"
+            "Set AIRMENTOR_DAG_ALLOW_UNTRACKED=1 to bypass (dev only)."
+        )
+
+
 def materialise(dag: DagSpec) -> None:
-    """Insert every node as a task row (idempotent per dag_run_id)."""
+    """Insert every node as a task row (idempotent per dag_run_id).
+
+    Round-11 guard: every referenced prompt/intent/manifest path must be
+    git-tracked at registration time (see `_verify_dag_files_tracked`).
+    """
+    _verify_dag_files_tracked(dag.nodes)
     db.register_run(
         dag_run_id=dag.dag_run_id,
         dag_file=str(dag.dag_file),
