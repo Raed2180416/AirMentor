@@ -2,6 +2,7 @@
 
 Pass: `overnight-reconcile-proof-lifecycle`
 Date: 2026-04-22
+Run marker: 2026-04-22 overnight-reconcile-proof-lifecycle rerun。
 Scope: activation/runtime/stage-date authority/completed-inspectable vs stopped/reset semantics/next-stage pipeline。
 
 ## Findings
