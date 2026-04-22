@@ -517,8 +517,8 @@ const remedialPlanSchema = z.object({
 
 const unlockRequestSchema = z.object({
   offeringId: z.string(),
-  kind: z.enum(['tt1', 'tt2', 'quiz', 'assignment', 'attendance', 'finals']),
-  status: z.enum(['Pending', 'Approved', 'Rejected', 'Reset Completed']),
+  kind: z.enum(['tt1', 'tt2', 'quiz', 'assignment', 'attendance', 'finals', 'scheme', 'blueprint']),
+  status: z.enum(['Pending', 'Approved', 'Rejected', 'Reset Completed', 'Relocked']),
   requestedByRole: uiRoleSchema,
   requestedByFacultyId: z.string().optional(),
   requestedAt: z.number().finite(),
