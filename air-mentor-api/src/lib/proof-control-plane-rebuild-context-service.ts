@@ -71,6 +71,93 @@ export type PreparedPlaybackRebuildContext = {
   templateById: Map<string, typeof simulationQuestionTemplates.$inferSelect>
 }
 
+type ProofRunStageBoundaryCheckpointLike = {
+  simulationStageCheckpointId: string
+  semesterNumber: number
+  stageKey: string
+  stageOrder: number
+}
+
+export type ProofRunStageBoundarySnapshot = {
+  strictlyMonotonic: boolean
+  availableSemesters: number[]
+  semesters: Array<{
+    semesterNumber: number
+    stageCount: number
+    entryCheckpointId: string | null
+    entryStageKey: string | null
+    exitCheckpointId: string | null
+    exitStageKey: string | null
+    stageKeys: string[]
+    stageOrders: number[]
+  }>
+}
+
+export function buildProofRunStageBoundarySnapshot(
+  checkpointRows: ProofRunStageBoundaryCheckpointLike[],
+): ProofRunStageBoundarySnapshot {
+  const sortedRows = checkpointRows
+    .slice()
+    .sort((left, right) => (
+      left.semesterNumber - right.semesterNumber
+      || left.stageOrder - right.stageOrder
+      || left.simulationStageCheckpointId.localeCompare(right.simulationStageCheckpointId)
+    ))
+
+  let strictlyMonotonic = true
+  const bySemester = new Map<number, {
+    semesterNumber: number
+    stageCount: number
+    entryCheckpointId: string | null
+    entryStageKey: string | null
+    exitCheckpointId: string | null
+    exitStageKey: string | null
+    stageKeys: string[]
+    stageOrders: number[]
+    seenStageKeys: Set<string>
+    previousStageOrder: number | null
+  }>()
+
+  sortedRows.forEach(row => {
+    const current = bySemester.get(row.semesterNumber) ?? {
+      semesterNumber: row.semesterNumber,
+      stageCount: 0,
+      entryCheckpointId: null,
+      entryStageKey: null,
+      exitCheckpointId: null,
+      exitStageKey: null,
+      stageKeys: [],
+      stageOrders: [],
+      seenStageKeys: new Set<string>(),
+      previousStageOrder: null,
+    }
+    if (current.previousStageOrder != null && row.stageOrder <= current.previousStageOrder) {
+      strictlyMonotonic = false
+    }
+    if (current.seenStageKeys.has(row.stageKey)) {
+      strictlyMonotonic = false
+    }
+    if (current.entryCheckpointId == null) current.entryCheckpointId = row.simulationStageCheckpointId
+    if (current.entryStageKey == null) current.entryStageKey = row.stageKey
+    current.exitCheckpointId = row.simulationStageCheckpointId
+    current.exitStageKey = row.stageKey
+    current.stageCount += 1
+    current.stageKeys.push(row.stageKey)
+    current.stageOrders.push(row.stageOrder)
+    current.seenStageKeys.add(row.stageKey)
+    current.previousStageOrder = row.stageOrder
+    bySemester.set(row.semesterNumber, current)
+  })
+
+  return {
+    strictlyMonotonic,
+    availableSemesters: [...bySemester.keys()].sort((left, right) => left - right),
+    semesters: [...bySemester.values()]
+      .sort((left, right) => left.semesterNumber - right.semesterNumber)
+      .map(({ seenStageKeys: _seenStageKeys, previousStageOrder: _previousStageOrder, ...semester }) => semester),
+  }
+}
+
 export async function preparePlaybackRebuildContext(
   db: AppDb,
   input: PreparePlaybackRebuildContextInput,

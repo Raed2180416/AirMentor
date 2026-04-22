@@ -26,6 +26,7 @@ export type BuildSeededHistoricalSemesterRowsInput = {
   courseLeaderFaculty: Array<{ facultyId: string }>
   deterministicPolicy: MsruasDeterministicPolicy
   now: string
+  offeringBySemesterCourseTitleSection?: Map<string, { offeringId: string }>
   questionTemplatesByScope: Map<string, SimulatedQuestionTemplate[]>
   runSeed: number
   runtimeCourses: RuntimeCourse[]

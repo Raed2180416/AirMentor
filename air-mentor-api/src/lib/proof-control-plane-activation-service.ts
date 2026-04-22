@@ -5,6 +5,7 @@ import {
   simulationRuns,
   simulationStageCheckpoints,
 } from '../db/schema.js'
+import { buildProofRunStageBoundarySnapshot } from './proof-control-plane-rebuild-context-service.js'
 
 export type ActivateProofOperationalSemesterInput = {
   simulationRunId: string
@@ -29,6 +30,10 @@ export type ProofControlPlaneActivationServiceDeps = {
   }) => Promise<void>
 }
 
+export function canActivateProofRunLifecycle(lifecycleState: string | null | undefined) {
+  return lifecycleState == null || lifecycleState !== 'stopped'
+}
+
 export async function activateProofOperationalSemester(
   db: AppDb,
   input: ActivateProofOperationalSemesterInput,
@@ -51,11 +56,25 @@ export async function activateProofOperationalSemester(
   if (availableSemesters.length > 0 && !availableSemesters.includes(input.semesterNumber)) {
     throw new Error(`Semester ${input.semesterNumber} is not available for this proof run`)
   }
+  const stageBoundary = buildProofRunStageBoundarySnapshot(checkpointRows)
+  if (!stageBoundary.strictlyMonotonic) {
+    throw new Error('Simulation run stage boundaries are invalid')
+  }
+  if (!canActivateProofRunLifecycle(run.lifecycleState)) {
+    throw new Error('Stopped proof runs must be restored before activation')
+  }
 
   const previousOperationalSemester = run.activeOperationalSemester ?? run.semesterEnd ?? null
+  const previousLifecycleState = run.lifecycleState ?? null
+  const semesterBoundary = stageBoundary.semesters.find(item => item.semesterNumber === input.semesterNumber) ?? null
+  const targetStageKey = semesterBoundary?.entryStageKey ?? run.activeStageKey ?? 'pre-tt1'
 
   await db.update(simulationRuns).set({
     activeOperationalSemester: input.semesterNumber,
+    activeStageKey: targetStageKey,
+    simulatedDateIso: run.simulatedDateIso ?? input.now,
+    lifecycleState: 'active',
+    stageBoundaryJson: JSON.stringify(stageBoundary),
     updatedAt: input.now,
   }).where(eq(simulationRuns.simulationRunId, run.simulationRunId))
   await db.update(batches).set({
@@ -78,6 +97,9 @@ export async function activateProofOperationalSemester(
     payload: {
       previousOperationalSemester,
       activeOperationalSemester: input.semesterNumber,
+      previousLifecycleState,
+      lifecycleState: 'active',
+      activeStageKey: targetStageKey,
       availableSemesters,
     },
     createdByFacultyId: input.actorFacultyId ?? null,

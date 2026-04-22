@@ -118,6 +118,20 @@ type FacultyProofViewResult = {
   electiveFits: Array<Record<string, unknown>>
 }
 
+type TailInspectableRunLike = Pick<typeof simulationRuns.$inferSelect, 'activeOperationalSemester' | 'lifecycleState'>
+type TailBatchSemesterLike = Pick<typeof batches.$inferSelect, 'currentSemester'>
+
+export function isInspectableProofRunLifecycle(lifecycleState: string | null | undefined) {
+  return lifecycleState !== 'archived' && lifecycleState !== 'stopped'
+}
+
+export function resolveFacultyProofOperationalSemester(
+  run: TailInspectableRunLike | null | undefined,
+  batch: TailBatchSemesterLike | null | undefined,
+) {
+  return run?.activeOperationalSemester ?? batch?.currentSemester ?? null
+}
+
 function buildStudentAgentCardInflightKey(input: {
   simulationRunId: string
   studentId: string
@@ -412,13 +426,37 @@ export async function buildFacultyProofView(db: AppDb, input: {
     db.select().from(reassessmentResolutions),
   ])
 
-  const activeRunIds = new Set(runRows.map(row => row.simulationRunId))
-  const selectedActiveRun = pickMostRecentActiveRun(runRows)
+  const inspectableRunRows = runRows.filter(row => isInspectableProofRunLifecycle(row.lifecycleState))
+  const activeRunIds = new Set(inspectableRunRows.map(row => row.simulationRunId))
+  const selectedActiveRun = pickMostRecentActiveRun(inspectableRunRows)
   const selectedActiveRunId = selectedActiveRun?.simulationRunId ?? null
   const relevantOfferingIds = new Set(ownershipRows.filter(row => row.status === 'active').map(row => row.offeringId))
   const relevantStudentIds = new Set(mentorRows.filter(row => row.effectiveTo === null).map(row => row.studentId))
   const selectedBatch = selectedActiveRun ? (batchRows.find(row => row.batchId === selectedActiveRun.batchId) ?? null) : null
-  const selectedCurrentSemester = selectedActiveRun?.activeOperationalSemester ?? selectedBatch?.currentSemester ?? 6
+  const selectedCurrentSemester = resolveFacultyProofOperationalSemester(selectedActiveRun, selectedBatch)
+  const activeRunContexts = inspectableRunRows.map(run => {
+    const batch = batchRows.find(item => item.batchId === run.batchId) ?? null
+    const branch = batch ? branchRows.find(item => item.branchId === batch.branchId) ?? null : null
+    return {
+      batchId: run.batchId,
+      batchLabel: batch?.batchLabel ?? run.batchId,
+      branchName: branch?.name ?? null,
+      simulationRunId: run.simulationRunId,
+      runLabel: run.runLabel,
+      status: run.status,
+      seed: run.seed,
+      createdAt: run.createdAt,
+    }
+  })
+  if (selectedCurrentSemester == null) {
+    return {
+      ...buildUnavailableCountProvenance(),
+      activeRunContexts,
+      selectedCheckpoint: null,
+      monitoringQueue: [],
+      electiveFits: [],
+    }
+  }
   const operationalCheckpointSummary = selectedActiveRun
     ? resolveOperationalCheckpointSummary(
       await db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, selectedActiveRun.simulationRunId)),
@@ -564,7 +602,7 @@ export async function buildFacultyProofView(db: AppDb, input: {
 
   const electiveFits = filterElectiveRecommendationsForSemester(electiveRows, {
     simulationRunId: selectedActiveRunId,
-    semesterNumber: selectedActiveRun?.activeOperationalSemester ?? null,
+    semesterNumber: selectedCurrentSemester,
   })
     .filter(row => selectedActiveRunId ? true : activeRunIds.has(row.simulationRunId ?? ''))
     .filter(row => isFacultyProofStudentVisible({
@@ -589,23 +627,9 @@ export async function buildFacultyProofView(db: AppDb, input: {
     })
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
 
-  const activeRunContexts = runRows.map(run => {
-    const batch = batchById.get(run.batchId)
-    const branch = batch ? branchById.get(batch.branchId) : null
-    return {
-      batchId: run.batchId,
-      batchLabel: batch?.batchLabel ?? run.batchId,
-      branchName: branch?.name ?? null,
-      simulationRunId: run.simulationRunId,
-      runLabel: run.runLabel,
-      status: run.status,
-      seed: run.seed,
-      createdAt: run.createdAt,
-    }
-  })
   const countProvenance = selectedActiveRun
     ? buildProofCountProvenance({
-        activeOperationalSemester: selectedActiveRun.activeOperationalSemester ?? selectedBatch?.currentSemester ?? null,
+        activeOperationalSemester: selectedCurrentSemester,
         batchId: selectedActiveRun.batchId,
         batchLabel: selectedBatch?.batchLabel ?? selectedActiveRun.batchId,
         branchName: selectedBatch ? (branchById.get(selectedBatch.branchId)?.name ?? null) : null,
@@ -2178,7 +2202,7 @@ export async function buildStudentRiskExplorer(db: AppDb, input: {
   const previousSemesterSummary = card.overview.semesterSummaries.find(item => item.semesterNumber === currentSemesterNumber - 1) ?? null
   const derivedScenarioHeads = deriveScenarioRiskHeads({
     currentRiskProbScaled: inferred ? Math.round(inferred.riskProb * 100) : card.overview.currentStatus.riskProbScaled,
-    currentCgpa: card.summaryRail.currentCgpa,
+    currentCgpa: card.summaryRail.currentCgpa ?? 0,
     backlogCount: card.summaryRail.backlogCount,
     weakCoCount: card.overview.currentEvidence.weakCoCount,
     transferGapCount: card.topicAndCo.questionPatterns.transferGapCount,
@@ -2406,7 +2430,7 @@ export async function listStudentAgentTimeline(db: AppDb, input: {
       panelLabel: 'Observed' as const,
       kind: 'semester-summary' as const,
       title: `Semester ${item.semesterNumber} summary`,
-      detail: `SGPA ${item.sgpa.toFixed(2)} · CGPA ${item.cgpaAfterSemester.toFixed(2)} · backlogs ${item.backlogCount} · weak COs ${item.weakCoCount}.`,
+      detail: `SGPA ${item.sgpa.toFixed(2)} · CGPA ${(item.cgpaAfterSemester ?? 0).toFixed(2)} · backlogs ${item.backlogCount} · weak COs ${item.weakCoCount}.`,
       occurredAt: card.runContext.createdAt,
       semesterNumber: item.semesterNumber,
       citations: selectCitations(citationById, ['observed-semester-timeline']),
