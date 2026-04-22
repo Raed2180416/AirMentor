@@ -9,7 +9,9 @@ export type ObservableDriver = {
 export type ObservableInferenceInput = {
   attendancePct: number
   currentCgpa: number
+  cgpaMissing?: boolean
   backlogCount: number
+  backlogMissing?: boolean
   tt1Pct?: number | null
   tt2Pct?: number | null
   seePct?: number | null
@@ -19,6 +21,7 @@ export type ObservableInferenceInput = {
   attendanceHistoryRiskCount?: number
   questionWeaknessCount?: number
   interventionResponseScore?: number | null
+  stageKey?: string | null
   policy: ResolvedPolicy
 }
 
@@ -50,13 +53,13 @@ export function inferObservableDrivers(input: ObservableInferenceInput): Observa
     })
   }
 
-  if (input.currentCgpa > 0 && input.currentCgpa < riskRules.highRiskCgpaBelow) {
+  if (input.cgpaMissing !== true && input.currentCgpa > 0 && input.currentCgpa < riskRules.highRiskCgpaBelow) {
     drivers.push({
       label: `Current CGPA is below the high-risk threshold (${input.currentCgpa.toFixed(2)})`,
       impact: 0.2,
       feature: 'cgpa',
     })
-  } else if (input.currentCgpa > 0 && input.currentCgpa < riskRules.mediumRiskCgpaBelow) {
+  } else if (input.cgpaMissing !== true && input.currentCgpa > 0 && input.currentCgpa < riskRules.mediumRiskCgpaBelow) {
     drivers.push({
       label: `Current CGPA is below the watch threshold (${input.currentCgpa.toFixed(2)})`,
       impact: 0.1,
@@ -64,13 +67,13 @@ export function inferObservableDrivers(input: ObservableInferenceInput): Observa
     })
   }
 
-  if (input.backlogCount >= riskRules.highRiskBacklogCount) {
+  if (input.backlogMissing !== true && input.backlogCount >= riskRules.highRiskBacklogCount) {
     drivers.push({
       label: `Active backlog count is high (${input.backlogCount})`,
       impact: 0.18,
       feature: 'backlog',
     })
-  } else if (input.backlogCount >= riskRules.mediumRiskBacklogCount) {
+  } else if (input.backlogMissing !== true && input.backlogCount >= riskRules.mediumRiskBacklogCount) {
     drivers.push({
       label: `Active backlog count is above the watch threshold (${input.backlogCount})`,
       impact: 0.09,

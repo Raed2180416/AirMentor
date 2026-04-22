@@ -48,7 +48,12 @@ import {
 } from '../db/schema.js'
 import { badRequest, forbidden, notFound } from '../lib/http-errors.js'
 import { parseJson, stringifyJson } from '../lib/json.js'
-import { parseObservedStateRow } from '../lib/proof-observed-state.js'
+import {
+  parseObservedStateRow,
+  readObservedNullableNumber,
+  readObservedStateNumber,
+  selectObservedRowsThroughCheckpoint,
+} from '../lib/proof-observed-state.js'
 import { pickMostRecentActiveRun } from '../lib/proof-active-run.js'
 import {
   getProofRiskModelActive,
@@ -57,6 +62,7 @@ import {
 import {
   buildObservableFeaturePayload,
   scoreObservableRiskWithModel,
+  type ObservableSourceRefs,
 } from '../lib/proof-risk-model.js'
 import {
   buildGraphAwarePrerequisiteSummary,
@@ -1147,6 +1153,50 @@ function courseFamilyForCode(courseCode: string) {
   return match?.[0] ?? (normalized || 'GENERAL')
 }
 
+function resolveAuthoritativeStageOrder(
+  stagePolicy: StagePolicyPayload | undefined,
+  stageKey: string | null | undefined,
+) {
+  if (!stageKey) return null
+  const resolvedPolicy = stagePolicy ?? DEFAULT_STAGE_POLICY
+  return resolvedPolicy.stages.find(stage => stage.key === stageKey)?.order ?? null
+}
+
+function buildAcademicObservableSourceRefs(input: {
+  simulationRunId: string | null
+  simulationStageCheckpointId?: string | null
+  studentId: string
+  offeringId: string
+  semesterNumber: number
+  sectionCode: string
+  courseCode: string
+  courseTitle: string
+  stageKey: string | null
+  prerequisiteSummary: GraphAwarePrerequisiteSummary
+  weakCourseOutcomeCodes: string[]
+}): ObservableSourceRefs {
+  return {
+    simulationRunId: input.simulationRunId ?? 'academic-live-authoritative',
+    simulationStageCheckpointId: input.simulationStageCheckpointId ?? null,
+    studentId: input.studentId,
+    offeringId: input.offeringId,
+    semesterNumber: input.semesterNumber,
+    sectionCode: input.sectionCode,
+    courseCode: input.courseCode,
+    courseTitle: input.courseTitle,
+    courseFamily: courseFamilyForCode(input.courseCode),
+    coEvidenceMode: input.weakCourseOutcomeCodes.length > 0 ? 'rubric-derived' : null,
+    stageKey: input.stageKey,
+    prerequisiteCourseCodes: input.prerequisiteSummary.prerequisiteCourseCodes,
+    prerequisiteWeakCourseCodes: input.prerequisiteSummary.prerequisiteWeakCourseCodes,
+    weakCourseOutcomeCodes: input.weakCourseOutcomeCodes,
+    dominantQuestionTopics: [],
+    prerequisiteCompleteness: input.prerequisiteSummary.featureCompleteness,
+    featureCompleteness: input.prerequisiteSummary.featureCompleteness,
+    featureConfidenceClass: input.prerequisiteSummary.featureCompleteness.confidenceClass,
+  }
+}
+
 type CourseHistoryRecord = {
   courseCode: string
   semesterNumber: number
@@ -1394,7 +1444,9 @@ function buildStudentWhatIf(input: {
 function computeRiskFromActiveModelOrPolicy(input: {
   attendancePct: number
   currentCgpa: number
+  cgpaMissing?: boolean
   backlogCount: number
+  backlogMissing?: boolean
   tt1Pct?: number | null
   tt2Pct?: number | null
   quizPct?: number | null
@@ -1405,11 +1457,14 @@ function computeRiskFromActiveModelOrPolicy(input: {
   activeModel?: Awaited<ReturnType<typeof getProofRiskModelActive>>['production'] | null
   semesterProgress?: number
   prerequisiteSummary: GraphAwarePrerequisiteSummary
+  sourceRefs?: ObservableSourceRefs | null
 }) {
   const {
     attendancePct,
     currentCgpa,
+    cgpaMissing = false,
     backlogCount,
+    backlogMissing = false,
     tt1Pct = null,
     tt2Pct = null,
     quizPct = null,
@@ -1420,12 +1475,15 @@ function computeRiskFromActiveModelOrPolicy(input: {
     activeModel = null,
     semesterProgress = 1,
     prerequisiteSummary,
+    sourceRefs = null,
   } = input
   const featurePayload = buildObservableFeaturePayload({
     attendancePct,
     attendanceHistory: [],
     currentCgpa,
+    cgpaMissing,
     backlogCount,
+    backlogMissing,
     tt1Pct,
     tt2Pct,
     quizPct,
@@ -1446,7 +1504,9 @@ function computeRiskFromActiveModelOrPolicy(input: {
   const inference = scoreObservableRiskWithModel({
     attendancePct,
     currentCgpa,
+    cgpaMissing,
     backlogCount,
+    backlogMissing,
     tt1Pct,
     tt2Pct,
     quizPct,
@@ -1458,6 +1518,7 @@ function computeRiskFromActiveModelOrPolicy(input: {
     interventionResponseScore: null,
     policy,
     featurePayload,
+    sourceRefs,
     productionModel: activeModel,
   })
   return {
@@ -2804,17 +2865,14 @@ async function buildAcademicBootstrap(
     : []
   const playbackObservedSummaryByStudentId = new Map<string, PlaybackObservedStudentSummary>()
   if (stageCheckpointRow) {
-    playbackObservedStateRows
-      .filter(row => row.semesterNumber <= stageCheckpointRow.semesterNumber)
+    selectObservedRowsThroughCheckpoint(playbackObservedStateRows, stageCheckpointRow)
       .sort((left, right) => left.semesterNumber - right.semesterNumber || left.createdAt.localeCompare(right.createdAt))
       .forEach(row => {
         const payload = parseObservedStateRow(row)
         const existing = playbackObservedSummaryByStudentId.get(row.studentId) ?? { currentCgpa: null, backlogCount: null }
-        const nextCgpa = Number(payload.cgpa ?? payload.cgpaAfterSemester)
-        const nextBacklogCount = Number(payload.backlogCount)
         playbackObservedSummaryByStudentId.set(row.studentId, {
-          currentCgpa: Number.isFinite(nextCgpa) ? nextCgpa : existing.currentCgpa,
-          backlogCount: Number.isFinite(nextBacklogCount) ? nextBacklogCount : existing.backlogCount,
+          currentCgpa: readObservedStateNumber(payload, 'cgpa', 'cgpaAfterSemester') ?? existing.currentCgpa,
+          backlogCount: readObservedStateNumber(payload, 'backlogCount') ?? existing.backlogCount,
         })
       })
   }
@@ -2824,32 +2882,29 @@ async function buildAcademicBootstrap(
     const payload = parseJson(row.projectionJson, {} as Record<string, unknown>)
     const currentEvidence = (payload.currentEvidence ?? {}) as Record<string, unknown>
     const currentStatus = (payload.currentStatus ?? {}) as Record<string, unknown>
+    const riskProbScaled = readObservedNullableNumber(currentStatus.riskProbScaled) ?? row.riskProbScaled
+    const riskChangeFromPreviousCheckpointScaled = readObservedNullableNumber(currentStatus.riskChangeFromPreviousCheckpointScaled)
+      ?? readObservedNullableNumber(payload.riskChangeFromPreviousCheckpointScaled)
+    const counterfactualLiftScaled = readObservedNullableNumber(currentStatus.counterfactualLiftScaled)
+      ?? readObservedNullableNumber(payload.counterfactualLiftScaled)
     playbackStudentOverlayByOfferingStudent.set(`${row.offeringId}::${row.studentId}`, {
       simulationStageCheckpointId: row.simulationStageCheckpointId,
-      riskProbScaled: Number.isFinite(Number(currentStatus.riskProbScaled)) ? Number(currentStatus.riskProbScaled) : row.riskProbScaled,
+      riskProbScaled,
       riskBand: normalizePlaybackRiskBand(typeof currentStatus.riskBand === 'string' ? currentStatus.riskBand : row.riskBand),
       queueState: typeof currentStatus.queueState === 'string' ? currentStatus.queueState : row.queueState,
       reassessmentState: typeof currentStatus.reassessmentState === 'string' ? currentStatus.reassessmentState : row.reassessmentState,
       recommendedAction: typeof currentStatus.recommendedAction === 'string' ? currentStatus.recommendedAction : row.recommendedAction,
-      riskChangeFromPreviousCheckpointScaled: Number.isFinite(Number(currentStatus.riskChangeFromPreviousCheckpointScaled))
-        ? Number(currentStatus.riskChangeFromPreviousCheckpointScaled)
-        : Number.isFinite(Number(payload.riskChangeFromPreviousCheckpointScaled))
-          ? Number(payload.riskChangeFromPreviousCheckpointScaled)
-          : null,
-      counterfactualLiftScaled: Number.isFinite(Number(currentStatus.counterfactualLiftScaled))
-        ? Number(currentStatus.counterfactualLiftScaled)
-        : Number.isFinite(Number(payload.counterfactualLiftScaled))
-          ? Number(payload.counterfactualLiftScaled)
-          : null,
+      riskChangeFromPreviousCheckpointScaled,
+      counterfactualLiftScaled,
       attentionAreas: Array.isArray(currentStatus.attentionAreas)
         ? currentStatus.attentionAreas.filter((value): value is string => typeof value === 'string').slice(0, 4)
         : [],
-      attendancePct: Number.isFinite(Number(currentEvidence.attendancePct)) ? Number(currentEvidence.attendancePct) : null,
-      tt1Pct: Number.isFinite(Number(currentEvidence.tt1Pct)) ? Number(currentEvidence.tt1Pct) : null,
-      tt2Pct: Number.isFinite(Number(currentEvidence.tt2Pct)) ? Number(currentEvidence.tt2Pct) : null,
-      quizPct: Number.isFinite(Number(currentEvidence.quizPct)) ? Number(currentEvidence.quizPct) : null,
-      assignmentPct: Number.isFinite(Number(currentEvidence.assignmentPct)) ? Number(currentEvidence.assignmentPct) : null,
-      seePct: Number.isFinite(Number(currentEvidence.seePct)) ? Number(currentEvidence.seePct) : null,
+      attendancePct: readObservedNullableNumber(currentEvidence.attendancePct),
+      tt1Pct: readObservedNullableNumber(currentEvidence.tt1Pct),
+      tt2Pct: readObservedNullableNumber(currentEvidence.tt2Pct),
+      quizPct: readObservedNullableNumber(currentEvidence.quizPct),
+      assignmentPct: readObservedNullableNumber(currentEvidence.assignmentPct),
+      seePct: readObservedNullableNumber(currentEvidence.seePct),
     })
   }
   const activeEnrollmentByStudentId = new Map<string, typeof studentEnrollments.$inferSelect>()
@@ -2953,15 +3008,6 @@ async function buildAcademicBootstrap(
   for (const [studentId, entries] of interventionsByStudentId.entries()) {
     entries.sort((left, right) => right.date.localeCompare(left.date))
     interventionsByStudentId.set(studentId, entries)
-  }
-
-  const latestRiskAssessmentByStudentOffering = new Map<string, typeof riskAssessments.$inferSelect>()
-  for (const row of riskAssessmentRows) {
-    const key = `${row.studentId}::${row.offeringId}`
-    const current = latestRiskAssessmentByStudentOffering.get(key)
-    if (!current || row.assessedAt > current.assessedAt) {
-      latestRiskAssessmentByStudentOffering.set(key, row)
-    }
   }
 
   const latestElectiveRecommendationByStudentId = new Map<string, typeof electiveRecommendations.$inferSelect>()
@@ -3292,15 +3338,36 @@ async function buildAcademicBootstrap(
         tt2Blueprint: questionPapers.tt2,
         assessmentCells,
       })
-      const persistedRisk = latestRiskAssessmentByStudentOffering.get(runtimeKey)
+      const transcriptRows = transcriptTermsByStudentId.get(student.studentId) ?? []
+      const hasTranscriptHistory = transcriptRows.length > 0
+      const cgpaMissing = !hasTranscriptHistory && prevCgpa <= 0
+      const backlogMissing = !hasTranscriptHistory
+      const authoritativeCurrentCgpa = hasTranscriptHistory
+        ? transcriptAnalytics.currentCgpa
+        : prevCgpa > 0
+          ? prevCgpa
+          : 0
+      const authoritativeBacklogCount = hasTranscriptHistory ? transcriptAnalytics.latestBacklogCount : 0
       const batchIdForOffering = offeringRow ? (termById[offeringRow.termId]?.batchId ?? null) : null
+      const stagePolicy = batchIdForOffering ? resolvedStagePolicyByBatchId.get(batchIdForOffering) : undefined
+      const authoritativeStageKey = stageCheckpointRow?.stageKey ?? proofScopeRun?.activeStageKey ?? null
+      const authoritativeStageOrder = stageCheckpointRow?.stageOrder
+        ?? resolveAuthoritativeStageOrder(stagePolicy, authoritativeStageKey)
+        ?? offering.stage
+      const authoritativeSemesterProgress = Math.max(
+        0.25,
+        Math.min(1, authoritativeStageOrder / (stagePolicy?.stages.length ?? DEFAULT_STAGE_POLICY.stages.length)),
+      )
       const batchGraph = batchIdForOffering ? curriculumGraphByBatchId.get(batchIdForOffering) ?? null : null
       const resolvedCurriculumFeatureBundle = batchIdForOffering ? (resolvedCurriculumFeaturesByBatchId.get(batchIdForOffering) ?? null) : null
+      const weakCourseOutcomeCodes = outcomeBreakdown
+        .filter(item => item.overallAttainment > 0 && item.overallAttainment < 45)
+        .map(item => item.coId)
       const prerequisiteSource = {
         courseCode: normalizeCourseCode(offering.code),
         semesterNumber: offering.sem,
         score: averageNullable(outcomeBreakdown.map(item => item.overallAttainment)) ?? 0,
-        result: persistedRisk?.riskBand === 'High' ? 'Failed' : 'Ongoing',
+        result: 'Ongoing',
       }
       const prerequisiteSummary = batchGraph
         ? buildGraphAwarePrerequisiteSummary({
@@ -3325,57 +3392,57 @@ async function buildAcademicBootstrap(
             curriculumImportVersionId: resolvedCurriculumFeatureBundle?.curriculumImportVersion?.curriculumImportVersionId ?? null,
             curriculumFeatureProfileFingerprint: resolvedCurriculumFeatureBundle?.curriculumFeatureProfileFingerprint ?? null,
           })
-      const risk = persistedRisk
-        ? {
-            riskProb: persistedRisk.riskProbScaled / 100,
-            riskBand: persistedRisk.riskBand as 'Low' | 'Medium' | 'High',
-            riskCompleteness: prerequisiteSummary.featureCompleteness,
-            featureCompleteness: prerequisiteSummary.featureCompleteness,
-            featureProvenance: prerequisiteSummary.featureProvenance,
-          }
-        : computeRiskFromActiveModelOrPolicy({
-            attendancePct,
-            currentCgpa: transcriptAnalytics.currentCgpa,
-            backlogCount: transcriptAnalytics.latestBacklogCount,
-            tt1Pct,
-            tt2Pct,
-            quizPct,
-            assignmentPct,
-            seePct,
-            weakCoCount: outcomeBreakdown.filter(item => item.overallAttainment > 0 && item.overallAttainment < 45).length,
-            policy,
-            activeModel: batchIdForOffering ? (activeRiskModelByBatchId.get(batchIdForOffering) ?? null) : null,
-            semesterProgress: Math.max(0.25, Math.min(1, offering.stage / DEFAULT_STAGE_POLICY.stages.length)),
-            prerequisiteSummary,
-          })
+      const liveSourceRefs = buildAcademicObservableSourceRefs({
+        simulationRunId: proofScopeRun?.simulationRunId ?? null,
+        simulationStageCheckpointId: stageCheckpointRow?.simulationStageCheckpointId ?? null,
+        studentId: student.studentId,
+        offeringId: offering.offId,
+        semesterNumber: offering.sem,
+        sectionCode: offering.section,
+        courseCode: offering.code,
+        courseTitle: offering.title,
+        stageKey: authoritativeStageKey,
+        prerequisiteSummary,
+        weakCourseOutcomeCodes,
+      })
+      const risk = computeRiskFromActiveModelOrPolicy({
+        attendancePct,
+        currentCgpa: authoritativeCurrentCgpa,
+        cgpaMissing,
+        backlogCount: authoritativeBacklogCount,
+        backlogMissing,
+        tt1Pct,
+        tt2Pct,
+        quizPct,
+        assignmentPct,
+        seePct,
+        weakCoCount: weakCourseOutcomeCodes.length,
+        policy,
+        activeModel: batchIdForOffering ? (activeRiskModelByBatchId.get(batchIdForOffering) ?? null) : null,
+        semesterProgress: authoritativeSemesterProgress,
+        prerequisiteSummary,
+        sourceRefs: liveSourceRefs,
+      })
       const quizRawTotal = ['quiz1', 'quiz2'].reduce((sum, key) => sum + (assessmentMap[key]?.score ?? 0), 0)
-      const reasons = persistedRisk
-        ? z.array(z.object({
-            label: z.string(),
-            impact: z.number(),
-            feature: z.string(),
-          })).catch([]).parse(parseJson(persistedRisk.driversJson, []))
-        : risk.riskProb >= 0.35
-          ? buildStudentReasons({
-              attendancePct,
-              tt1Raw,
-              tt1Max,
-              tt2Raw,
-              tt2Max,
-              currentCgpa: transcriptAnalytics.currentCgpa,
-              quizRawTotal,
-              coScores: outcomeBreakdown.map(item => ({ coId: item.coId, overallAttainment: item.overallAttainment })),
-            })
-          : []
-      const whatIf = persistedRisk
-        ? []
-        : risk.riskProb >= 0.35
-          ? buildStudentWhatIf({
-              riskProb: risk.riskProb,
-              attendancePct,
-              coScores: outcomeBreakdown.map(item => ({ coId: item.coId, overallAttainment: item.overallAttainment })),
-            })
-          : []
+      const reasons = risk.riskProb >= 0.35
+        ? buildStudentReasons({
+            attendancePct,
+            tt1Raw,
+            tt1Max,
+            tt2Raw,
+            tt2Max,
+            currentCgpa: authoritativeCurrentCgpa,
+            quizRawTotal,
+            coScores: outcomeBreakdown.map(item => ({ coId: item.coId, overallAttainment: item.overallAttainment })),
+          })
+        : []
+      const whatIf = risk.riskProb >= 0.35
+        ? buildStudentWhatIf({
+            riskProb: risk.riskProb,
+            attendancePct,
+            coScores: outcomeBreakdown.map(item => ({ coId: item.coId, overallAttainment: item.overallAttainment })),
+          })
+        : []
       const mergedInterventions = [
         ...(interventionsByStudentId.get(student.studentId) ?? []),
         ...(meetingEntriesByStudentId.get(student.studentId) ?? []),
@@ -3384,7 +3451,7 @@ async function buildAcademicBootstrap(
         offering,
         student,
         prevCgpa,
-        currentCgpa: transcriptAnalytics.currentCgpa,
+        currentCgpa: authoritativeCurrentCgpa,
         attendanceSnapshot: attendanceSnapshot
           ? {
               presentClasses: attendanceSnapshot.presentClasses,
@@ -3398,7 +3465,7 @@ async function buildAcademicBootstrap(
         coScores: outcomeBreakdown.map(item => ({ coId: item.coId, attainment: item.overallAttainment })),
         whatIf,
         flags: {
-          backlog: transcriptAnalytics.latestBacklogCount > 0,
+          backlog: authoritativeBacklogCount > 0,
           lowAttendance: attendancePct < 75,
           declining: transcriptAnalytics.trend === 'Declining',
         },
