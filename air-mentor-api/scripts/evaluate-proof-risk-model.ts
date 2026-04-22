@@ -1,3 +1,5 @@
+import { createWriteStream } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { availableParallelism } from 'node:os'
 import path from 'node:path'
@@ -26,6 +28,7 @@ import {
   getProofRiskModelEvaluation,
   mergeCoEvidenceDiagnostics,
   mergePolicyDiagnostics,
+  rebuildProofRiskArtifacts,
   recomputeObservedOnlyRisk,
   reviewProofCrosswalks,
   startProofSimulationRun,
@@ -34,10 +37,12 @@ import {
 import { resolveBatchPolicy } from '../src/modules/admin-structure.js'
 import {
   BASELINE_V5_LIKE_PROOF_RISK_TRAINING_CONFIG,
+  OBSERVABLE_FEATURE_KEYS,
   PRODUCTION_RISK_THRESHOLDS,
   PROOF_CORPUS_MANIFEST,
   PROOF_CORPUS_MANIFEST_VERSION,
   createProofRiskModelTrainingBuilder,
+  featureVectorArrayFromPayload,
   scoreObservableRiskWithModel,
   scoreObservableRiskWithChallengerModel,
   type ProofRunModelMetadata,
@@ -66,6 +71,17 @@ type ProbabilityRow = {
 type HybridBlendChoice = {
   alpha: number
   metrics: HeadMetrics
+}
+
+export type HybridGuardrailViolation =
+  | 'support-below-min'
+  | 'roc-auc-drop-too-large'
+  | 'ece-increase-too-large'
+  | 'precision-at-budget-drop-too-large'
+
+type HybridBlendCandidateEvaluation = HybridBlendChoice & {
+  valid: boolean
+  violations: HybridGuardrailViolation[]
 }
 
 type HybridBlendPlan = {
@@ -237,7 +253,27 @@ const EVAL_SEED_PROFILES = {
   'manifest-64': DEFAULT_SEEDS,
 } as const
 const DEFAULT_PROGRESS_EVERY = 8
-const DEFAULT_CREATE_CONCURRENCY = Math.min(4, Math.max(1, availableParallelism() - 1))
+// Keep default below local DB saturation. Override with AIRMENTOR_EVAL_CREATE_CONCURRENCY when benchmarking.
+const DEFAULT_CREATE_CONCURRENCY = Math.max(1, Math.min(12, availableParallelism()))
+const HYBRID_ALLOWED_STAGES_BY_HEAD: Record<RiskHeadKey, string[]> = {
+  attendanceRisk: ['pre-tt1', 'post-tt1', 'post-tt2', 'post-assignments', 'post-see'],
+  ceRisk: ['post-tt1', 'post-tt2', 'post-assignments'],
+  seeRisk: ['post-tt2', 'post-assignments', 'post-see'],
+  overallCourseRisk: [],
+  downstreamCarryoverRisk: [],
+}
+const HYBRID_DENYLIST_HEADS: RiskHeadKey[] = ['downstreamCarryoverRisk', 'overallCourseRisk']
+
+export const HYBRID_ROUTER_CONFIG = {
+  defaultAlpha: 1,
+  alphaGrid: [1, 0] as const,
+  denylistedHeads: HYBRID_DENYLIST_HEADS,
+  allowedStagesByHead: HYBRID_ALLOWED_STAGES_BY_HEAD,
+  minSupport: 50,
+  maxRocAucDrop: 0.01,
+  maxExpectedCalibrationErrorIncrease: 0.02,
+  maxPrecisionAtBudgetDrop: 0.05,
+}
 const EVAL_PAGE_SIZE = 5_000
 
 function uniqueSortedSeeds(seeds: number[]) {
@@ -273,6 +309,20 @@ function parseProgressEvery() {
 function parseCreateConcurrency() {
   const raw = Number(process.env.AIRMENTOR_EVAL_CREATE_CONCURRENCY ?? DEFAULT_CREATE_CONCURRENCY)
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_CREATE_CONCURRENCY
+}
+
+function parseFeatureExportPath() {
+  return process.env.AIRMENTOR_EVAL_EXPORT_FEATURES_CSV?.trim() ?? null
+}
+
+function parseSkipRecompute() {
+  const raw = (process.env.AIRMENTOR_EVAL_SKIP_RECOMPUTE ?? '').trim().toLowerCase()
+  return raw === '1' || raw === 'true' || raw === 'yes'
+}
+
+function parsePrintJsonReport() {
+  const raw = (process.env.AIRMENTOR_EVAL_PRINT_JSON ?? '').trim().toLowerCase()
+  return raw === '1' || raw === 'true' || raw === 'yes'
 }
 
 function roundToFour(value: number) {
@@ -596,11 +646,42 @@ function compareHybridBlendChoice(left: HybridBlendChoice, right: HybridBlendCho
   return Math.abs(left.alpha - 1) - Math.abs(right.alpha - 1)
 }
 
+export function evaluateHybridBlendCandidate(
+  currentRows: ProbabilityRow[],
+  challengerRows: ProbabilityRow[],
+  alpha: number,
+): HybridBlendCandidateEvaluation {
+  const currentMetrics = summarizeMetrics(currentRows)
+  if (alpha === HYBRID_ROUTER_CONFIG.defaultAlpha) {
+    return {
+      alpha,
+      metrics: currentMetrics,
+      valid: true,
+      violations: [],
+    }
+  }
+
+  const metrics = summarizeMetrics(blendProbabilityRows(currentRows, challengerRows, alpha))
+  const violations: HybridGuardrailViolation[] = []
+
+  if (metrics.support < HYBRID_ROUTER_CONFIG.minSupport) violations.push('support-below-min')
+  if (currentMetrics.rocAuc - metrics.rocAuc > HYBRID_ROUTER_CONFIG.maxRocAucDrop) violations.push('roc-auc-drop-too-large')
+  if (metrics.expectedCalibrationError - currentMetrics.expectedCalibrationError > HYBRID_ROUTER_CONFIG.maxExpectedCalibrationErrorIncrease) violations.push('ece-increase-too-large')
+  if (metrics.budgetMetrics.precisionAtBudget < currentMetrics.budgetMetrics.precisionAtBudget - HYBRID_ROUTER_CONFIG.maxPrecisionAtBudgetDrop) violations.push('precision-at-budget-drop-too-large')
+
+  return {
+    alpha,
+    metrics,
+    valid: violations.length === 0,
+    violations,
+  }
+}
+
 export function chooseHybridBlendAlpha(
   currentRows: ProbabilityRow[],
   challengerRows: ProbabilityRow[],
   headKey: RiskHeadKey,
-  alphaGrid = [1, 0],
+  alphaGrid = [...HYBRID_ROUTER_CONFIG.alphaGrid],
 ): HybridBlendChoice {
   if (currentRows.length === 0 || challengerRows.length === 0) {
     return {
@@ -609,28 +690,15 @@ export function chooseHybridBlendAlpha(
     }
   }
   
-  if (headKey === 'downstreamCarryoverRisk' || headKey === 'overallCourseRisk') {
+  if (HYBRID_ROUTER_CONFIG.denylistedHeads.includes(headKey)) {
     return {
       alpha: 1,
       metrics: summarizeMetrics(currentRows),
     }
   }
 
-  const choices = alphaGrid.map(alpha => ({
-    alpha,
-    metrics: summarizeMetrics(blendProbabilityRows(currentRows, challengerRows, alpha)),
-  }))
-  
-  const currentChoice = choices.find(c => c.alpha === 1)!
-  
-  const validChoices = choices.filter(choice => {
-    if (choice.alpha === 1) return true
-    if (choice.metrics.support < 50) return false
-    if (currentChoice.metrics.rocAuc - choice.metrics.rocAuc > 0.01) return false
-    if (choice.metrics.expectedCalibrationError - currentChoice.metrics.expectedCalibrationError > 0.02) return false
-    if (choice.metrics.budgetMetrics.precisionAtBudget < currentChoice.metrics.budgetMetrics.precisionAtBudget - 0.05) return false
-    return true
-  })
+  const choices = alphaGrid.map(alpha => evaluateHybridBlendCandidate(currentRows, challengerRows, alpha))
+  const validChoices = choices.filter(choice => choice.valid)
 
   return validChoices.sort(compareHybridBlendChoice)[0]!
 }
@@ -646,13 +714,7 @@ export function buildHybridBlendPlan(
     challenger: ProbabilityRow[]
   }>,
 ): HybridBlendPlan {
-  const allowedStages: string[] = ({
-    attendanceRisk: ['pre-tt1', 'post-tt1', 'post-tt2', 'post-assignments', 'post-see'],
-    ceRisk: ['post-tt1', 'post-tt2', 'post-assignments'],
-    seeRisk: ['post-tt2', 'post-assignments', 'post-see'],
-    overallCourseRisk: [],
-    downstreamCarryoverRisk: [],
-  } as Record<RiskHeadKey, string[]>)[headKey] ?? []
+  const allowedStages = HYBRID_ROUTER_CONFIG.allowedStagesByHead[headKey] ?? []
 
   const fallback = chooseHybridBlendAlpha(validationRows.current, validationRows.challenger, headKey)
   return {
@@ -679,6 +741,53 @@ function summarizeVariantDelta(reference: HeadMetrics, candidate: HeadMetrics): 
     averagePrecisionLift: roundToFour(reference.averagePrecision - candidate.averagePrecision),
     calibrationGain: roundToFour(candidate.expectedCalibrationError - reference.expectedCalibrationError),
   }
+}
+
+// Phase 8 diagnostics: local reliability at arbitrary thresholds (±0.05 window)
+function summarizeLocalReliability(rows: ProbabilityRow[], thresholds: number[]): Array<{
+  threshold: number
+  support: number
+  meanPredicted: number
+  meanActual: number
+  calibrationError: number
+}> {
+  return thresholds.map(threshold => {
+    const windowRows = rows.filter(row => Math.abs(row.prob - threshold) <= 0.05)
+    if (!windowRows.length) return { threshold, support: 0, meanPredicted: 0, meanActual: 0, calibrationError: 0 }
+    const meanPredicted = roundToFour(average(windowRows.map(row => row.prob)))
+    const meanActual = roundToFour(average(windowRows.map(row => row.label)))
+    return {
+      threshold,
+      support: windowRows.length,
+      meanPredicted,
+      meanActual,
+      calibrationError: roundToFour(Math.abs(meanPredicted - meanActual)),
+    }
+  })
+}
+
+// Phase 8 diagnostics: score histogram across decile bins with label rate
+function scoreHistogram(rows: ProbabilityRow[], bins = 10): Array<{
+  binLow: number
+  binHigh: number
+  count: number
+  positiveRate: number
+  meanPredicted: number
+}> {
+  if (!rows.length) return []
+  const binWidth = 1 / bins
+  return Array.from({ length: bins }, (_, index) => {
+    const binLow = roundToFour(index * binWidth)
+    const binHigh = roundToFour((index + 1) * binWidth)
+    const binRows = rows.filter(row => row.prob >= binLow && (index === bins - 1 ? row.prob <= binHigh : row.prob < binHigh))
+    return {
+      binLow,
+      binHigh,
+      count: binRows.length,
+      positiveRate: binRows.length > 0 ? roundToFour(average(binRows.map(row => row.label))) : 0,
+      meanPredicted: binRows.length > 0 ? roundToFour(average(binRows.map(row => row.prob))) : 0,
+    }
+  })
 }
 
 function summarizeVariantComparison(input: Record<VariantName, ProbabilityRow[]>): VariantComparisonSummary {
@@ -756,6 +865,18 @@ function markdownTable(headers: string[], rows: Array<Array<string | number>>) {
 
 function logProgress(message: string) {
   console.error(`[proof-eval] ${message}`)
+}
+
+function currentGitSha(rootDir: string) {
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: rootDir,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+  } catch {
+    return null
+  }
 }
 
 function governedRunStatusRank(status: typeof simulationRuns.$inferSelect.status) {
@@ -911,6 +1032,9 @@ async function main() {
     const startedAt = Date.now()
     const progressEvery = parseProgressEvery()
     const createConcurrency = parseCreateConcurrency()
+    const featureExportPath = parseFeatureExportPath()
+    const skipRecompute = parseSkipRecompute()
+    const printJsonReport = parsePrintJsonReport()
     logProgress('initialized evaluation app and database')
     const resolvedPolicy = await resolveBatchPolicy({
       db: current.db,
@@ -1058,17 +1182,23 @@ async function main() {
       actorFacultyId: null,
       now: TEST_NOW,
     })
-    logProgress(`recomputing governed risk artifacts for run ${activeRunId}`)
-    await recomputeObservedOnlyRisk(current.db, {
-      simulationRunId: activeRunId,
-      policy: resolvedPolicy.effectivePolicy,
-      actorFacultyId: null,
-      now: TEST_NOW,
-    })
-    logProgress(`recompute finished after ${roundToTwo((Date.now() - startedAt) / 1000)}s`)
+    if (skipRecompute) {
+      logProgress(`skip recompute enabled (AIRMENTOR_EVAL_SKIP_RECOMPUTE=1); reusing existing governed artifacts for run ${activeRunId}`)
+    } else {
+      logProgress(`recomputing governed risk artifacts for run ${activeRunId}`)
+      await recomputeObservedOnlyRisk(current.db, {
+        simulationRunId: activeRunId,
+        policy: resolvedPolicy.effectivePolicy,
+        actorFacultyId: null,
+        now: TEST_NOW,
+        skipArtifactTraining: true,
+      })
+      logProgress(`recompute finished after ${roundToTwo((Date.now() - startedAt) / 1000)}s`)
+    }
+    const phaseRecomputeMs = Date.now() - startedAt
 
     const selectedGovernedRunIdList = [...selectedGovernedRunIds].sort()
-    const [
+    let [
       artifactRows,
       modelActiveResponse,
       modelEvaluationResponse,
@@ -1079,16 +1209,54 @@ async function main() {
       getProofRiskModelEvaluation(current.db, { batchId: MSRUAS_PROOF_BATCH_ID, simulationRunId: null }),
       getProofRiskModelCorrelations(current.db, { batchId: MSRUAS_PROOF_BATCH_ID }),
     ])
-    logProgress('loaded artifacts, checkpoints, and model diagnostics')
+    const phaseArtifactLoadMs = Date.now() - startedAt - phaseRecomputeMs
+    logProgress(`loaded artifacts, checkpoints, and model diagnostics (artifact-load phase: ${roundToTwo(phaseArtifactLoadMs / 1000)}s)`)
 
-    const activeProductionArtifactRow = artifactRows.find(row => row.activeFlag === 1 && row.status === 'active' && row.artifactType === 'production') ?? null
-    const activeCorrelationArtifactRow = artifactRows.find(row => row.activeFlag === 1 && row.status === 'active' && row.artifactType === 'correlation') ?? null
+    let activeProductionArtifactRow = artifactRows.find(row => row.activeFlag === 1 && row.status === 'active' && row.artifactType === 'production') ?? null
+    let activeCorrelationArtifactRow = artifactRows.find(row => row.activeFlag === 1 && row.status === 'active' && row.artifactType === 'correlation') ?? null
+    if (!activeProductionArtifactRow || !activeCorrelationArtifactRow) {
+      const missingArtifactsReason = skipRecompute
+        ? 'skip recompute requested, but active artifacts missing; rebuilding governed artifacts once for consistency'
+        : 'fast recompute skipped artifact training, but active artifacts are missing; rebuilding governed artifacts without replay rebuild'
+      logProgress(missingArtifactsReason)
+      const rebuildStartedAt = Date.now()
+      await rebuildProofRiskArtifacts(current.db, {
+        batchId: MSRUAS_PROOF_BATCH_ID,
+        simulationRunId: activeRunId,
+        actorFacultyId: null,
+        now: TEST_NOW,
+      })
+      logProgress(`rebuildProofRiskArtifacts finished in ${roundToTwo((Date.now() - rebuildStartedAt) / 1000)}s`)
+      ;[
+        artifactRows,
+        modelActiveResponse,
+        modelEvaluationResponse,
+        modelCorrelationResponse,
+      ] = await Promise.all([
+        current.db.select().from(riskModelArtifacts).where(eq(riskModelArtifacts.batchId, MSRUAS_PROOF_BATCH_ID)),
+        getProofRiskModelActive(current.db, { batchId: MSRUAS_PROOF_BATCH_ID }),
+        getProofRiskModelEvaluation(current.db, { batchId: MSRUAS_PROOF_BATCH_ID, simulationRunId: null }),
+        getProofRiskModelCorrelations(current.db, { batchId: MSRUAS_PROOF_BATCH_ID }),
+      ])
+      activeProductionArtifactRow = artifactRows.find(row => row.activeFlag === 1 && row.status === 'active' && row.artifactType === 'production') ?? null
+      activeCorrelationArtifactRow = artifactRows.find(row => row.activeFlag === 1 && row.status === 'active' && row.artifactType === 'correlation') ?? null
+    }
     if (!activeProductionArtifactRow || !activeCorrelationArtifactRow) {
       throw new Error('Active production or correlation artifact is missing after evaluation run generation')
     }
     const selectedRunRows = selectedGovernedRuns
     const splitByRunId = new Map(selectedRunRows.map(row => [row.simulationRunId, manifestBySeed.get(row.seed)?.split ?? 'train']))
     const scenarioFamilyByRunId = new Map(selectedRunRows.map(row => [row.simulationRunId, manifestBySeed.get(row.seed)?.scenarioFamily ?? 'balanced']))
+    const evaluationRunIdList = selectedRunRows
+      .filter(row => {
+        const split = splitByRunId.get(row.simulationRunId)
+        return split === 'validation' || split === 'test'
+      })
+      .map(row => row.simulationRunId)
+      .sort()
+    if (evaluationRunIdList.length === 0) {
+      throw new Error('Selected governed corpus does not contain validation/test runs for scoring pass-2')
+    }
     const runMetadataById = new Map<string, ProofRunModelMetadata>(selectedRunRows.map(row => [row.simulationRunId, {
       simulationRunId: row.simulationRunId,
       seed: row.seed,
@@ -1162,11 +1330,20 @@ async function main() {
     let totalStageEvidenceRows = 0
     let totalTestRows = 0
     let lastEvidenceSnapshotId: string | null = null
+    const featureCsvStream = featureExportPath
+      ? (() => {
+          const stream = createWriteStream(featureExportPath, { encoding: 'utf8' })
+          const featCols = OBSERVABLE_FEATURE_KEYS.map((_, i) => `feat_${i}`).join(',')
+          stream.write(`run_id,split,stage_key,scenario_family,label_attendance,label_ce,label_see,label_overall,label_downstream,${featCols}\n`)
+          return stream
+        })()
+      : null
+    const phasePass1StartAt = Date.now()
     for (;;) {
       const conditions = [
         eq(riskEvidenceSnapshots.batchId, MSRUAS_PROOF_BATCH_ID),
         isNotNull(riskEvidenceSnapshots.simulationStageCheckpointId),
-        inArray(riskEvidenceSnapshots.simulationRunId, selectedGovernedRunIdList),
+        inArray(riskEvidenceSnapshots.simulationRunId, evaluationRunIdList),
       ]
       if (lastEvidenceSnapshotId) conditions.push(gt(riskEvidenceSnapshots.riskEvidenceSnapshotId, lastEvidenceSnapshotId))
       const page = await current.db.select({
@@ -1203,6 +1380,18 @@ async function main() {
         headLabels.forEach(([headKey, labelKey]) => {
           positiveCountsByHeadBySplit[headKey][split] += labelPayload[labelKey]
         })
+        if (featureCsvStream) {
+          const featurePayload = JSON.parse(row.featureJson) as ObservableFeaturePayload
+          const feats = featureVectorArrayFromPayload(featurePayload, sourceRefs, true)
+          const scenarioFamily = scenarioFamilyByRunId.get(row.simulationRunId) ?? 'balanced'
+          featureCsvStream.write(
+            `${row.simulationRunId},${split},${stageKey},${scenarioFamily},`
+            + `${labelPayload.attendanceRiskLabel},${labelPayload.ceShortfallLabel},`
+            + `${labelPayload.seeShortfallLabel},${labelPayload.overallCourseFailLabel},`
+            + `${labelPayload.downstreamCarryoverLabel},`
+            + `${feats.join(',')}\n`,
+          )
+        }
       }
       coEvidenceDiagnosticsPages.push(buildCoEvidenceDiagnosticsFromRows(page.map(row => {
         const sourceRefs = JSON.parse(row.sourceRefsJson) as ObservableSourceRefs
@@ -1214,12 +1403,25 @@ async function main() {
       })))
       lastEvidenceSnapshotId = page[page.length - 1]?.riskEvidenceSnapshotId ?? null
     }
+    const phasePass1Ms = Date.now() - phasePass1StartAt
+    if (featureCsvStream) {
+      await new Promise<void>((resolve, reject) => {
+        featureCsvStream.end()
+        featureCsvStream.once('finish', resolve)
+        featureCsvStream.once('error', reject)
+      })
+      logProgress(`feature CSV export written to ${featureExportPath}`)
+    }
+    logProgress(`corpus ingestion pass-1 (training data) finished: ${totalStageEvidenceRows} rows in ${roundToTwo(phasePass1Ms / 1000)}s`)
 
+    const phaseTrainStartAt = Date.now()
     const currentLocalBundle = currentVariantBuilder.build(TEST_NOW)
     const baselineLocalBundle = baselineVariantBuilder.build(TEST_NOW)
     if (!currentLocalBundle || !baselineLocalBundle) {
       throw new Error('Local variant training failed after evaluator corpus extraction')
     }
+    const phaseTrainMs = Date.now() - phaseTrainStartAt
+    logProgress(`model training finished in ${roundToTwo(phaseTrainMs / 1000)}s`)
     const validationVariantHeadRows = Object.fromEntries(headLabels.map(([headKey]) => [headKey, createVariantProbabilityBuckets()])) as Record<RiskHeadKey, Record<VariantName, ProbabilityRow[]>>
     const validationVariantHeadRowsByStage = Object.fromEntries(headLabels.map(([headKey]) => [headKey, (
       {} as Record<string, Record<VariantName, ProbabilityRow[]>>
@@ -1234,6 +1436,7 @@ async function main() {
     const overallCourseVariantRowsByStage: Record<string, Record<VariantName, ProbabilityRow[]>> = {}
     totalTestRows = 0
     lastEvidenceSnapshotId = null
+    const phasePass2StartAt = Date.now()
     for (;;) {
       const conditions = [
         eq(riskEvidenceSnapshots.batchId, MSRUAS_PROOF_BATCH_ID),
@@ -1396,6 +1599,8 @@ async function main() {
       }
       lastEvidenceSnapshotId = page[page.length - 1]?.riskEvidenceSnapshotId ?? null
     }
+    const phasePass2Ms = Date.now() - phasePass2StartAt
+    logProgress(`corpus scoring pass-2 finished: ${totalTestRows} test rows scored in ${roundToTwo(phasePass2Ms / 1000)}s`)
 
     const hybridPlanByHead = Object.fromEntries(headLabels.map(([headKey]) => {
       const validationRowsByStage = Object.fromEntries(
@@ -1797,8 +2002,12 @@ async function main() {
       queueBurden: queueBurdenSummary.acceptanceGates,
     }
 
+    const paths = evaluationPaths(process.cwd())
+    const gitSha = currentGitSha(process.cwd())
+
     const output = {
       generatedAt: new Date().toISOString(),
+      gitSha,
       seedProfile: seedSelection.profile,
       requestedSeeds,
       governedSeeds,
@@ -1861,6 +2070,21 @@ async function main() {
           calibrationVersion: baselineLocalBundle.production.calibrationVersion,
         },
       },
+      reportPaths: {
+        outputDir: paths.outputDir,
+        jsonPath: paths.jsonPath,
+        markdownPath: paths.markdownPath,
+      },
+      hybridGuardrails: {
+        defaultAlpha: HYBRID_ROUTER_CONFIG.defaultAlpha,
+        alphaGrid: [...HYBRID_ROUTER_CONFIG.alphaGrid],
+        denylistedHeads: HYBRID_ROUTER_CONFIG.denylistedHeads,
+        allowedStagesByHead: HYBRID_ROUTER_CONFIG.allowedStagesByHead,
+        minSupport: HYBRID_ROUTER_CONFIG.minSupport,
+        maxRocAucDrop: HYBRID_ROUTER_CONFIG.maxRocAucDrop,
+        maxExpectedCalibrationErrorIncrease: HYBRID_ROUTER_CONFIG.maxExpectedCalibrationErrorIncrease,
+        maxPrecisionAtBudgetDrop: HYBRID_ROUTER_CONFIG.maxPrecisionAtBudgetDrop,
+      },
       hybridPlan: {
         note: 'Validation-tuned stage router between current-v6 and challenger. Alpha 1 = current-v6, alpha 0 = challenger.',
         byHead: Object.fromEntries(headLabels.map(([headKey]) => [headKey, {
@@ -1889,7 +2113,6 @@ async function main() {
       topPrerequisiteEdges: modelCorrelationResponse.correlations?.prerequisiteEdges ?? [],
     }
 
-    const paths = evaluationPaths(process.cwd())
     await mkdir(paths.outputDir, { recursive: true })
     await writeFile(paths.jsonPath, `${JSON.stringify(output, null, 2)}\n`, 'utf8')
     logProgress(`wrote JSON report to ${paths.jsonPath}`)
@@ -1931,6 +2154,26 @@ async function main() {
           `${item.checkpointCount}/${item.expectedCheckpointCount}`,
           item.stageEvidenceCount,
           String(item.complete),
+        ]),
+      ),
+      '',
+      '## Evaluator Config',
+      '',
+      `- Git SHA: ${output.gitSha ?? 'unavailable'}`,
+      `- JSON path: ${output.reportPaths.jsonPath}`,
+      `- Markdown path: ${output.reportPaths.markdownPath}`,
+      `- Hybrid alpha grid: ${output.hybridGuardrails.alphaGrid.join(', ')}`,
+      `- Hybrid denylisted heads: ${output.hybridGuardrails.denylistedHeads.join(', ')}`,
+      `- Hybrid minimum support: ${output.hybridGuardrails.minSupport}`,
+      `- Hybrid max ROC-AUC drop: ${output.hybridGuardrails.maxRocAucDrop}`,
+      `- Hybrid max ECE increase: ${output.hybridGuardrails.maxExpectedCalibrationErrorIncrease}`,
+      `- Hybrid max precision@budget drop: ${output.hybridGuardrails.maxPrecisionAtBudgetDrop}`,
+      '',
+      markdownTable(
+        ['Head', 'Allowed Stages'],
+        headLabels.map(([headKey]) => [
+          headKey,
+          output.hybridGuardrails.allowedStagesByHead[headKey].join(', ') || 'current-only',
         ]),
       ),
       '',
@@ -2140,12 +2383,68 @@ async function main() {
         ]),
       ),
       '',
+      '## Phase 8 Overload Diagnostics',
+      '',
+      '### Per-Stage Overload (overallCourseRisk — current variant)',
+      '',
+      markdownTable(
+        ['Stage', 'Support', 'Budget Rate', 'Flagged@Budget', 'Overload Ratio', 'ECE', 'Calibration Slope'],
+        Object.entries(overallCourseVariantSummaryByStage)
+          .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+          .map(([stageKey, summary]) => [
+            stageKey,
+            summary.current.support,
+            summary.current.budgetMetrics.budgetRate,
+            summary.current.budgetMetrics.flaggedRateAtBudget,
+            summary.current.budgetMetrics.overloadRatio,
+            summary.current.expectedCalibrationError,
+            summary.current.calibrationSlope,
+          ]),
+      ),
+      '',
+      '### Local Reliability at Decision Thresholds (overallCourseRisk — current)',
+      '',
+      markdownTable(
+        ['Threshold', 'Support (±0.05)', 'Mean Predicted', 'Mean Actual', 'Calibration Error'],
+        summarizeLocalReliability(overallCourseVariantRows.current, [0.4, 0.85]).map(item => [
+          item.threshold,
+          item.support,
+          item.meanPredicted,
+          item.meanActual,
+          item.calibrationError,
+        ]),
+      ),
+      '',
+      '### Score Histogram (overallCourseRisk — current, 10 bins)',
+      '',
+      markdownTable(
+        ['Bin Low', 'Bin High', 'Count', 'Positive Rate', 'Mean Predicted'],
+        scoreHistogram(overallCourseVariantRows.current).map(item => [
+          item.binLow,
+          item.binHigh,
+          item.count,
+          item.positiveRate,
+          item.meanPredicted,
+        ]),
+      ),
+      '',
     ].join('\n')
     await writeFile(paths.markdownPath, `${markdown}\n`, 'utf8')
     logProgress(`wrote Markdown report to ${paths.markdownPath}`)
-    logProgress(`evaluation completed in ${roundToTwo((Date.now() - startedAt) / 1000)}s`)
+    const totalMs = Date.now() - startedAt
+    logProgress([
+      `phase breakdown — recompute: ${roundToTwo(phaseRecomputeMs / 1000)}s`,
+      `artifact-load: ${roundToTwo(phaseArtifactLoadMs / 1000)}s`,
+      `pass-1 (corpus ingestion): ${roundToTwo(phasePass1Ms / 1000)}s`,
+      `train: ${roundToTwo(phaseTrainMs / 1000)}s`,
+      `pass-2 (scoring): ${roundToTwo(phasePass2Ms / 1000)}s`,
+      `report: ${roundToTwo((totalMs - phaseRecomputeMs - phaseArtifactLoadMs - phasePass1Ms - phaseTrainMs - phasePass2Ms) / 1000)}s`,
+    ].join(' | '))
+    logProgress(`evaluation completed in ${roundToTwo(totalMs / 1000)}s`)
 
-    console.log(JSON.stringify(output, null, 2))
+    if (printJsonReport) {
+      console.log(JSON.stringify(output, null, 2))
+    }
     console.log(`\nJSON report: ${paths.jsonPath}`)
     console.log(`Markdown report: ${paths.markdownPath}`)
   } finally {

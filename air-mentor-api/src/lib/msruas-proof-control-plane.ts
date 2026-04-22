@@ -2189,6 +2189,9 @@ export async function rebuildProofRiskArtifacts(db: AppDb, input: {
   actorFacultyId?: string | null
   now: string
 }) {
+  const __rebuildT0 = Date.now()
+  const __rlog = (label: string) => { console.error(`[rebuild] ${label} @ ${((Date.now() - __rebuildT0) / 1000).toFixed(2)}s`) }
+  __rlog('start')
   const [runRows, checkpointCountRows, stageEvidenceCountRows] = await Promise.all([
     db.select().from(simulationRuns).where(eq(simulationRuns.batchId, input.batchId)),
     db.select({
@@ -2203,6 +2206,7 @@ export async function rebuildProofRiskArtifacts(db: AppDb, input: {
       isNotNull(riskEvidenceSnapshots.simulationStageCheckpointId),
     )).groupBy(riskEvidenceSnapshots.simulationRunId),
   ])
+  __rlog(`counts loaded runs=${runRows.length} ckpt=${checkpointCountRows.length} evid=${stageEvidenceCountRows.length}`)
   const checkpointCountByRunId = new Map<string, number>()
   checkpointCountRows.forEach(row => {
     checkpointCountByRunId.set(row.simulationRunId, Number(row.checkpointCount))
@@ -2256,6 +2260,7 @@ export async function rebuildProofRiskArtifacts(db: AppDb, input: {
   )
   const governedRunIds = new Set(runMetadataById.keys())
   if (governedRunIds.size === 0) return null
+  __rlog(`governed runs selected: ${governedRunIds.size}`)
 
   const trainer = createProofRiskModelTrainingBuilder({
     runMetadataById,
@@ -2264,6 +2269,8 @@ export async function rebuildProofRiskArtifacts(db: AppDb, input: {
   const governedRunIdList = [...governedRunIds].sort()
   const governedCoEvidenceDiagnosticsPages: Array<ReturnType<typeof buildCoEvidenceDiagnosticsFromRows>> = []
   let lastEvidenceSnapshotId: string | null = null
+  let __evidencePagesLoaded = 0
+  let __evidenceRowsLoaded = 0
   for (;;) {
     const conditions = [
       eq(riskEvidenceSnapshots.batchId, input.batchId),
@@ -2295,9 +2302,14 @@ export async function rebuildProofRiskArtifacts(db: AppDb, input: {
       }
     })))
     lastEvidenceSnapshotId = page[page.length - 1]?.riskEvidenceSnapshotId ?? null
+    __evidencePagesLoaded += 1
+    __evidenceRowsLoaded += page.length
   }
+  __rlog(`evidence loaded pages=${__evidencePagesLoaded} rows=${__evidenceRowsLoaded}`)
 
+  const __trainT0 = Date.now()
   const bundle = trainer.build(input.now)
+  __rlog(`trainer.build finished in ${((Date.now() - __trainT0) / 1000).toFixed(2)}s`)
   if (!bundle) return null
 
   const evaluation = {
@@ -2376,6 +2388,7 @@ export async function rebuildProofRiskArtifacts(db: AppDb, input: {
     studentRows: stageStudentRows,
   })
   const uiParityCoEvidenceDiagnostics = buildCoEvidenceDiagnosticsFromRows(coEvidenceRows)
+  __rlog(`target-run evidence collected coEvidenceRows=${coEvidenceRows.length}`)
   const perRunDiagnostics: Array<NonNullable<ReturnType<typeof buildPolicyDiagnostics>>> = []
   for (let i = 0; i < governedRunRows.length; i += 4) {
     const chunk = governedRunRows.slice(i, i + 4)
@@ -2392,6 +2405,7 @@ export async function rebuildProofRiskArtifacts(db: AppDb, input: {
     for (const diag of diags) {
       if (diag) perRunDiagnostics.push(diag)
     }
+    __rlog(`per-run diagnostics chunk ${Math.floor(i / 4) + 1}/${Math.ceil(governedRunRows.length / 4)} done (${i + chunk.length}/${governedRunRows.length} runs)`)
   }
   const governedPolicyDiagnostics = mergePolicyDiagnostics(perRunDiagnostics)
   const governedCoEvidenceDiagnostics = mergeCoEvidenceDiagnostics(governedCoEvidenceDiagnosticsPages)
@@ -2920,7 +2934,15 @@ async function insertRowsInChunks<T>(db: AppDb, table: unknown, rows: T[], chunk
   for (let index = 0; index < rows.length; index += chunkSize) {
     const batch = rows.slice(index, index + chunkSize)
     if (batch.length === 0) continue
-    await db.insert(table as never).values(batch as never)
+    try {
+      await db.insert(table as never).values(batch as never)
+    } catch (error) {
+      const err = error as { message?: string; code?: string; detail?: string; constraint?: string; routine?: string; table?: string; cause?: unknown }
+      const cause = err?.cause as { message?: string; code?: string; detail?: string; constraint?: string; routine?: string; table?: string } | undefined
+      const pgErr = cause ?? err
+      console.error(`[insertRowsInChunks] FAILED table=${String((table as { _?: { name?: string } })?._?.name ?? '?')} chunk=${index}-${index + batch.length} code=${pgErr.code ?? '?'} constraint=${pgErr.constraint ?? '?'} routine=${pgErr.routine ?? '?'} table=${pgErr.table ?? '?'} detail=${(pgErr.detail ?? '').slice(0, 200)} message=${(pgErr.message ?? '').slice(0, 300)}`)
+      throw error
+    }
   }
 }
 
