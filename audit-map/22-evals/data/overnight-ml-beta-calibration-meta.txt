@@ -1,0 +1,12 @@
+[beta-calibration-v8-local] generated at 2026-04-22T22:52:50+00:00
+seed=4242
+gitSha=7323b21f1bb99480067a9f9e707163a4add7bcbd
+scriptSha256=7de07fb357785c1b4f6f82f3664d51ccaadc1d246a028732bf7e9c0b5a33d6b1
+featuresCsvSha256=f73243cca08271c9b49beda27ebc13fefa906498b9fcb05f2b2395b9f3a9845b
+calibrator=beta (Kull 2017)
+diagnostic=venn-abers (Inductive, single-pass)
+headsEvaluated=5/5
+blockedHeads=3
+promotionDecision=do-not-promote
+corpusAdmissibility=interim (inherits t57 caveat)
+metricSidecarDir=/home/raed/projects/air-mentor-ui/air-mentor-api/output/proof-risk-model/beta-calibration-v8-local-20260422T225234Z/metric-sidecars

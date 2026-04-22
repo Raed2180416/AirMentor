@@ -1,0 +1,137 @@
+{
+  "attendanceRisk": {
+    "brier": 0.014817297761856996,
+    "globalEce": 0.008278295765030672,
+    "label": "beta",
+    "localEce": [
+      {
+        "center": 0.4,
+        "ece": 0.1312837614203473,
+        "halfWidth": 0.08,
+        "meanLabel": 0.2644230769230769,
+        "meanProb": 0.39570683834342424,
+        "support": 208
+      },
+      {
+        "center": 0.85,
+        "ece": 0.06067639212591169,
+        "halfWidth": 0.08,
+        "meanLabel": 0.7960687960687961,
+        "meanProb": 0.8567451881947078,
+        "support": 407
+      }
+    ],
+    "meanLabel": 0.04097222222222222,
+    "meanProb": 0.0492505179872529,
+    "overloadRatio": 1.2020465407058334,
+    "rocAuc": 0.9905672218199373
+  },
+  "ceRisk": {
+    "brier": 0.02032250044047485,
+    "globalEce": 0.006213069208797667,
+    "label": "beta",
+    "localEce": [
+      {
+        "center": 0.4,
+        "ece": 0.012570499638785537,
+        "halfWidth": 0.08,
+        "meanLabel": 0.3772455089820359,
+        "meanProb": 0.38981600862082144,
+        "support": 167
+      },
+      {
+        "center": 0.85,
+        "ece": 0.1480043482843687,
+        "halfWidth": 0.08,
+        "meanLabel": 0.7,
+        "meanProb": 0.8480043482843687,
+        "support": 70
+      }
+    ],
+    "meanLabel": 0.02962962962962963,
+    "meanProb": 0.026970529609535592,
+    "overloadRatio": 0.9102553743218262,
+    "rocAuc": 0.9580037124284351
+  },
+  "downstreamCarryoverRisk": {
+    "brier": 0.10182746070707727,
+    "globalEce": 0.03963351668908276,
+    "label": "beta",
+    "localEce": [
+      {
+        "center": 0.4,
+        "ece": 0.12783918362568064,
+        "halfWidth": 0.08,
+        "meanLabel": 0.5266875981161695,
+        "meanProb": 0.39884841449048886,
+        "support": 1274
+      },
+      {
+        "center": 0.85,
+        "ece": 0.06257604879131784,
+        "halfWidth": 0.08,
+        "meanLabel": 0.9059609455292909,
+        "meanProb": 0.843384896737973,
+        "support": 1946
+      }
+    ],
+    "meanLabel": 0.28217592592592594,
+    "meanProb": 0.2527263330951524,
+    "overloadRatio": 0.8956339286062824,
+    "rocAuc": 0.927910989045583
+  },
+  "overallCourseRisk": {
+    "brier": 0.10793419019178832,
+    "globalEce": 0.02408881720924807,
+    "label": "beta",
+    "localEce": [
+      {
+        "center": 0.4,
+        "ece": 0.06395908432550096,
+        "halfWidth": 0.08,
+        "meanLabel": 0.454586129753915,
+        "meanProb": 0.39062704542841403,
+        "support": 2235
+      },
+      {
+        "center": 0.85,
+        "ece": 0.06707949029081284,
+        "halfWidth": 0.08,
+        "meanLabel": 0.8916666666666667,
+        "meanProb": 0.8245871763758539,
+        "support": 240
+      }
+    ],
+    "meanLabel": 0.18425925925925926,
+    "meanProb": 0.16017044205001119,
+    "overloadRatio": 0.8692667206734276,
+    "rocAuc": 0.8514928858252672
+  },
+  "seeRisk": {
+    "brier": 0.11858473760542745,
+    "globalEce": 0.024255885820409162,
+    "label": "beta",
+    "localEce": [
+      {
+        "center": 0.4,
+        "ece": 0.013059567986646925,
+        "halfWidth": 0.08,
+        "meanLabel": 0.40577175338871885,
+        "meanProb": 0.3927121854020719,
+        "support": 2287
+      },
+      {
+        "center": 0.85,
+        "ece": 0.010368218754556735,
+        "halfWidth": 0.08,
+        "meanLabel": 0.8372703412073491,
+        "meanProb": 0.8476385599619058,
+        "support": 381
+      }
+    ],
+    "meanLabel": 0.19282407407407406,
+    "meanProb": 0.17628386097370377,
+    "overloadRatio": 0.9142212237771913,
+    "rocAuc": 0.8257586693983587
+  }
+}

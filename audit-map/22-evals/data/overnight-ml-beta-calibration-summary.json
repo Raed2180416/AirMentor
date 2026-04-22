@@ -1,0 +1,590 @@
+{
+  "calibrator": "beta",
+  "calibratorRef": "Kull+Silva+Flach 2017 \u2014 log(p)+log(1-p) logistic",
+  "corpusAdmissibility": "interim",
+  "generatedAt": "2026-04-22T22:52:50+00:00",
+  "heads": {
+    "attendanceRisk": {
+      "betaParams": {
+        "a": 1.6806780852614716,
+        "b": 0.9296444400704936,
+        "c": -1.6364439908207922,
+        "degenerate": false
+      },
+      "calSize": 4320,
+      "head": "attendanceRisk",
+      "metricsBeta": {
+        "brier": 0.014817297761856996,
+        "globalEce": 0.008278295765030672,
+        "label": "beta",
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.1312837614203473,
+            "halfWidth": 0.08,
+            "meanLabel": 0.2644230769230769,
+            "meanProb": 0.39570683834342424,
+            "support": 208
+          },
+          {
+            "center": 0.85,
+            "ece": 0.06067639212591169,
+            "halfWidth": 0.08,
+            "meanLabel": 0.7960687960687961,
+            "meanProb": 0.8567451881947078,
+            "support": 407
+          }
+        ],
+        "meanLabel": 0.04097222222222222,
+        "meanProb": 0.0492505179872529,
+        "overloadRatio": 1.2020465407058334,
+        "rocAuc": 0.9905672218199373
+      },
+      "metricsIsotonic": {
+        "brier": 0.014876736190035747,
+        "globalEce": 0.00833523404901079,
+        "label": "isotonic (t57 baseline)",
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.05992713588566434,
+            "halfWidth": 0.08,
+            "meanLabel": 0.3575418994413408,
+            "meanProb": 0.41746903532700513,
+            "support": 179
+          },
+          {
+            "center": 0.85,
+            "ece": 0.07862319227730852,
+            "halfWidth": 0.08,
+            "meanLabel": 0.7871287128712872,
+            "meanProb": 0.8657519051485957,
+            "support": 606
+          }
+        ],
+        "meanLabel": 0.04097222222222222,
+        "meanProb": 0.04928810967330542,
+        "overloadRatio": 1.2029640327044036,
+        "rocAuc": 0.9886952193544075
+      },
+      "metricsRaw": {
+        "brier": 0.03569437325102897,
+        "globalEce": 0.07408812277092246,
+        "label": "raw",
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.3605403568714981,
+            "halfWidth": 0.08,
+            "meanLabel": 0.03197158081705151,
+            "meanProb": 0.3925119376885496,
+            "support": 563
+          },
+          {
+            "center": 0.85,
+            "ece": 0.4899097247270369,
+            "halfWidth": 0.08,
+            "meanLabel": 0.37389380530973454,
+            "meanProb": 0.8638035300367715,
+            "support": 452
+          }
+        ],
+        "meanLabel": 0.04097222222222222,
+        "meanProb": 0.11506034499314469,
+        "overloadRatio": 2.808252487968277,
+        "rocAuc": 0.9905672218199373
+      },
+      "promotion": {
+        "betaBlockedPerHead": true,
+        "betaEce04": 0.1312837614203473,
+        "betaEce85": 0.06067639212591169,
+        "delta04": 0.07135662553468297,
+        "delta85": -0.017946800151396824,
+        "isoEce04": 0.05992713588566434,
+        "isoEce85": 0.07862319227730852,
+        "worsensLocal04": true,
+        "worsensLocal85": false
+      },
+      "skipped": false,
+      "testPositives": 885,
+      "testSize": 21600,
+      "vennAbers": {
+        "coverageAt05": 0.999537037037037,
+        "degenerate": false,
+        "maxIntervalWidth": 0.8438968575048019,
+        "meanIntervalWidth": 0.8350230686198932,
+        "meanLower": 0.013602652579174005,
+        "meanUpper": 0.8486257211990672
+      }
+    },
+    "ceRisk": {
+      "betaParams": {
+        "a": 1.5713242377132057,
+        "b": 0.7742432867469202,
+        "c": -3.0494724229555934,
+        "degenerate": false
+      },
+      "calSize": 4320,
+      "head": "ceRisk",
+      "metricsBeta": {
+        "brier": 0.02032250044047485,
+        "globalEce": 0.006213069208797667,
+        "label": "beta",
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.012570499638785537,
+            "halfWidth": 0.08,
+            "meanLabel": 0.3772455089820359,
+            "meanProb": 0.38981600862082144,
+            "support": 167
+          },
+          {
+            "center": 0.85,
+            "ece": 0.1480043482843687,
+            "halfWidth": 0.08,
+            "meanLabel": 0.7,
+            "meanProb": 0.8480043482843687,
+            "support": 70
+          }
+        ],
+        "meanLabel": 0.02962962962962963,
+        "meanProb": 0.026970529609535592,
+        "overloadRatio": 0.9102553743218262,
+        "rocAuc": 0.9580037124284351
+      },
+      "metricsIsotonic": {
+        "brier": 0.020625637474579673,
+        "globalEce": 0.0071722766751911434,
+        "label": "isotonic (t57 baseline)",
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.37055984431626077,
+            "halfWidth": 0.08,
+            "meanLabel": 0.0,
+            "meanProb": 0.37055984431626077,
+            "support": 4
+          },
+          {
+            "center": 0.85,
+            "ece": 0.19278646095247687,
+            "halfWidth": 0.08,
+            "meanLabel": 0.6625,
+            "meanProb": 0.8552864609524768,
+            "support": 80
+          }
+        ],
+        "meanLabel": 0.02962962962962963,
+        "meanProb": 0.027189053163205523,
+        "overloadRatio": 0.9176305442581864,
+        "rocAuc": 0.9539935442509542
+      },
+      "metricsRaw": {
+        "brier": 0.08750292548500369,
+        "globalEce": 0.14949243843074692,
+        "label": "raw",
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.37190743931057185,
+            "halfWidth": 0.08,
+            "meanLabel": 0.01982815598149372,
+            "meanProb": 0.3917355952920656,
+            "support": 1513
+          },
+          {
+            "center": 0.85,
+            "ece": 0.6537401182445995,
+            "halfWidth": 0.08,
+            "meanLabel": 0.19047619047619047,
+            "meanProb": 0.84421630872079,
+            "support": 861
+          }
+        ],
+        "meanLabel": 0.02962962962962963,
+        "meanProb": 0.17912206806037656,
+        "overloadRatio": 6.045369797037709,
+        "rocAuc": 0.9580037124284351
+      },
+      "promotion": {
+        "betaBlockedPerHead": false,
+        "betaEce04": 0.012570499638785537,
+        "betaEce85": 0.1480043482843687,
+        "delta04": -0.35798934467747523,
+        "delta85": -0.044782112668108165,
+        "isoEce04": 0.37055984431626077,
+        "isoEce85": 0.19278646095247687,
+        "worsensLocal04": false,
+        "worsensLocal85": false
+      },
+      "skipped": false,
+      "testPositives": 640,
+      "testSize": 21600,
+      "vennAbers": {
+        "coverageAt05": 1.0,
+        "degenerate": false,
+        "maxIntervalWidth": 0.915994623655914,
+        "meanIntervalWidth": 0.833730457788589,
+        "meanLower": 0.0036838102419450075,
+        "meanUpper": 0.837414268030534
+      }
+    },
+    "downstreamCarryoverRisk": {
+      "betaParams": {
+        "a": 1.4918408311624132,
+        "b": 0.550113499660236,
+        "c": -0.21050259644622404,
+        "degenerate": false
+      },
+      "calSize": 4320,
+      "head": "downstreamCarryoverRisk",
+      "metricsBeta": {
+        "brier": 0.10182746070707727,
+        "globalEce": 0.03963351668908276,
+        "label": "beta",
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.12783918362568064,
+            "halfWidth": 0.08,
+            "meanLabel": 0.5266875981161695,
+            "meanProb": 0.39884841449048886,
+            "support": 1274
+          },
+          {
+            "center": 0.85,
+            "ece": 0.06257604879131784,
+            "halfWidth": 0.08,
+            "meanLabel": 0.9059609455292909,
+            "meanProb": 0.843384896737973,
+            "support": 1946
+          }
+        ],
+        "meanLabel": 0.28217592592592594,
+        "meanProb": 0.2527263330951524,
+        "overloadRatio": 0.8956339286062824,
+        "rocAuc": 0.927910989045583
+      },
+      "metricsIsotonic": {
+        "brier": 0.10027686554443772,
+        "globalEce": 0.0315127786503739,
+        "label": "isotonic (t57 baseline)",
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.07293176668563989,
+            "halfWidth": 0.08,
+            "meanLabel": 0.45869483213881557,
+            "meanProb": 0.3857630654531757,
+            "support": 2651
+          },
+          {
+            "center": 0.85,
+            "ece": 0.006093221462936227,
+            "halfWidth": 0.08,
+            "meanLabel": 0.8583617747440273,
+            "meanProb": 0.8522685532810911,
+            "support": 586
+          }
+        ],
+        "meanLabel": 0.28217592592592594,
+        "meanProb": 0.25258157713972135,
+        "overloadRatio": 0.895120929650202,
+        "rocAuc": 0.9271773719292964
+      },
+      "metricsRaw": {
+        "brier": 0.10807216712696709,
+        "globalEce": 0.07741182179098921,
+        "label": "raw",
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.02495854543147913,
+            "halfWidth": 0.08,
+            "meanLabel": 0.37103791174642636,
+            "meanProb": 0.3959964571779055,
+            "support": 1609
+          },
+          {
+            "center": 0.85,
+            "ece": 0.21623122378624082,
+            "halfWidth": 0.08,
+            "meanLabel": 0.6509500351864884,
+            "meanProb": 0.8671812589727292,
+            "support": 2842
+          }
+        ],
+        "meanLabel": 0.28217592592592594,
+        "meanProb": 0.35958774771691515,
+        "overloadRatio": 1.2743388598335303,
+        "rocAuc": 0.927910989045583
+      },
+      "promotion": {
+        "betaBlockedPerHead": true,
+        "betaEce04": 0.12783918362568064,
+        "betaEce85": 0.06257604879131784,
+        "delta04": 0.054907416940040754,
+        "delta85": 0.05648282732838161,
+        "isoEce04": 0.07293176668563989,
+        "isoEce85": 0.006093221462936227,
+        "worsensLocal04": true,
+        "worsensLocal85": true
+      },
+      "skipped": false,
+      "testPositives": 6095,
+      "testSize": 21600,
+      "vennAbers": {
+        "coverageAt05": 0.9999537037037037,
+        "degenerate": false,
+        "maxIntervalWidth": 0.8628712696806288,
+        "meanIntervalWidth": 0.833564137469708,
+        "meanLower": 0.04125231277358083,
+        "meanUpper": 0.8748164502432886
+      }
+    },
+    "overallCourseRisk": {
+      "betaParams": {
+        "a": 1.6370918460583925,
+        "b": 0.5564410932659055,
+        "c": -0.7942052169246208,
+        "degenerate": false
+      },
+      "calSize": 4320,
+      "head": "overallCourseRisk",
+      "metricsBeta": {
+        "brier": 0.10793419019178832,
+        "globalEce": 0.02408881720924807,
+        "label": "beta",
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.06395908432550096,
+            "halfWidth": 0.08,
+            "meanLabel": 0.454586129753915,
+            "meanProb": 0.39062704542841403,
+            "support": 2235
+          },
+          {
+            "center": 0.85,
+            "ece": 0.06707949029081284,
+            "halfWidth": 0.08,
+            "meanLabel": 0.8916666666666667,
+            "meanProb": 0.8245871763758539,
+            "support": 240
+          }
+        ],
+        "meanLabel": 0.18425925925925926,
+        "meanProb": 0.16017044205001119,
+        "overloadRatio": 0.8692667206734276,
+        "rocAuc": 0.8514928858252672
+      },
+      "metricsIsotonic": {
+        "brier": 0.10844252819184162,
+        "globalEce": 0.024835195338783693,
+        "label": "isotonic (t57 baseline)",
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.04843093979193308,
+            "halfWidth": 0.08,
+            "meanLabel": 0.4343189529810955,
+            "meanProb": 0.38588801318916244,
+            "support": 2063
+          },
+          {
+            "center": 0.85,
+            "ece": 0.002970732354688699,
+            "halfWidth": 0.08,
+            "meanLabel": 0.8140495867768595,
+            "meanProb": 0.8110788544221708,
+            "support": 242
+          }
+        ],
+        "meanLabel": 0.18425925925925926,
+        "meanProb": 0.16051957225583458,
+        "overloadRatio": 0.871161497669856,
+        "rocAuc": 0.8501828737900626
+      },
+      "metricsRaw": {
+        "brier": 0.15600267894694897,
+        "globalEce": 0.20242112826168276,
+        "label": "raw",
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.2595950352985962,
+            "halfWidth": 0.08,
+            "meanLabel": 0.13249211356466878,
+            "meanProb": 0.39208714886326496,
+            "support": 3804
+          },
+          {
+            "center": 0.85,
+            "ece": 0.2831027805693943,
+            "halfWidth": 0.08,
+            "meanLabel": 0.5630630630630631,
+            "meanProb": 0.8461658436324574,
+            "support": 1998
+          }
+        ],
+        "meanLabel": 0.18425925925925926,
+        "meanProb": 0.386680387520942,
+        "overloadRatio": 2.0985669272493337,
+        "rocAuc": 0.8514928858252672
+      },
+      "promotion": {
+        "betaBlockedPerHead": true,
+        "betaEce04": 0.06395908432550096,
+        "betaEce85": 0.06707949029081284,
+        "delta04": 0.015528144533567878,
+        "delta85": 0.06410875793612414,
+        "isoEce04": 0.04843093979193308,
+        "isoEce85": 0.002970732354688699,
+        "worsensLocal04": true,
+        "worsensLocal85": true
+      },
+      "skipped": false,
+      "testPositives": 3980,
+      "testSize": 21600,
+      "vennAbers": {
+        "coverageAt05": 1.0,
+        "degenerate": false,
+        "maxIntervalWidth": 0.8640776699029126,
+        "meanIntervalWidth": 0.8337908678361237,
+        "meanLower": 0.026209510063769415,
+        "meanUpper": 0.8600003778998931
+      }
+    },
+    "seeRisk": {
+      "betaParams": {
+        "a": 1.3305511936139867,
+        "b": 1.0239278968339596,
+        "c": -1.4838057576111365,
+        "degenerate": false
+      },
+      "calSize": 4320,
+      "head": "seeRisk",
+      "metricsBeta": {
+        "brier": 0.11858473760542745,
+        "globalEce": 0.024255885820409162,
+        "label": "beta",
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.013059567986646925,
+            "halfWidth": 0.08,
+            "meanLabel": 0.40577175338871885,
+            "meanProb": 0.3927121854020719,
+            "support": 2287
+          },
+          {
+            "center": 0.85,
+            "ece": 0.010368218754556735,
+            "halfWidth": 0.08,
+            "meanLabel": 0.8372703412073491,
+            "meanProb": 0.8476385599619058,
+            "support": 381
+          }
+        ],
+        "meanLabel": 0.19282407407407406,
+        "meanProb": 0.17628386097370377,
+        "overloadRatio": 0.9142212237771913,
+        "rocAuc": 0.8257586693983587
+      },
+      "metricsIsotonic": {
+        "brier": 0.11953971596858744,
+        "globalEce": 0.02820106384643877,
+        "label": "isotonic (t57 baseline)",
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.0675914555769152,
+            "halfWidth": 0.08,
+            "meanLabel": 0.3942172073342736,
+            "meanProb": 0.3266257517573584,
+            "support": 1418
+          },
+          {
+            "center": 0.85,
+            "ece": 0.014853832348123097,
+            "halfWidth": 0.08,
+            "meanLabel": 0.8571428571428571,
+            "meanProb": 0.842289024794734,
+            "support": 21
+          }
+        ],
+        "meanLabel": 0.19282407407407406,
+        "meanProb": 0.1768936688148572,
+        "overloadRatio": 0.9173837326292715,
+        "rocAuc": 0.8246974338918245
+      },
+      "metricsRaw": {
+        "brier": 0.17985705948236813,
+        "globalEce": 0.23076526486994114,
+        "label": "raw",
+        "localEce": [
+          {
+            "center": 0.4,
+            "ece": 0.25436235236518345,
+            "halfWidth": 0.08,
+            "meanLabel": 0.14022804560912183,
+            "meanProb": 0.3945903979743053,
+            "support": 4999
+          },
+          {
+            "center": 0.85,
+            "ece": 0.3205464014942243,
+            "halfWidth": 0.08,
+            "meanLabel": 0.5191863153028201,
+            "meanProb": 0.8397327167970444,
+            "support": 2163
+          }
+        ],
+        "meanLabel": 0.19282407407407406,
+        "meanProb": 0.4235893389440151,
+        "overloadRatio": 2.196765839421543,
+        "rocAuc": 0.8257586693983587
+      },
+      "promotion": {
+        "betaBlockedPerHead": false,
+        "betaEce04": 0.013059567986646925,
+        "betaEce85": 0.010368218754556735,
+        "delta04": -0.05453188759026828,
+        "delta85": -0.004485613593566362,
+        "isoEce04": 0.0675914555769152,
+        "isoEce85": 0.014853832348123097,
+        "worsensLocal04": false,
+        "worsensLocal85": false
+      },
+      "skipped": false,
+      "testPositives": 4165,
+      "testSize": 21600,
+      "vennAbers": {
+        "coverageAt05": 0.9999537037037037,
+        "degenerate": false,
+        "maxIntervalWidth": 0.896875,
+        "meanIntervalWidth": 0.8340857891160697,
+        "meanLower": 0.02597846991203606,
+        "meanUpper": 0.8600642590281058
+      }
+    }
+  },
+  "promotion": {
+    "blockedHeads": [
+      "attendanceRisk",
+      "overallCourseRisk",
+      "downstreamCarryoverRisk"
+    ],
+    "decision": "do-not-promote",
+    "headsEvaluated": [
+      "attendanceRisk",
+      "ceRisk",
+      "seeRisk",
+      "overallCourseRisk",
+      "downstreamCarryoverRisk"
+    ],
+    "reason": "3/5 heads see local-ECE regression at 0.4 or 0.85 vs t57 isotonic baseline \u2014 Beta calibration blocked per Phase 9 nonneg clause \"Promotion blocked if local calibration worsens\""
+  },
+  "seed": 4242
+}

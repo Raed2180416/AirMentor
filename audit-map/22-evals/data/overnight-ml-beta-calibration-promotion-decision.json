@@ -1,0 +1,75 @@
+{
+  "global": {
+    "blockedHeads": [
+      "attendanceRisk",
+      "overallCourseRisk",
+      "downstreamCarryoverRisk"
+    ],
+    "decision": "do-not-promote",
+    "headsEvaluated": [
+      "attendanceRisk",
+      "ceRisk",
+      "seeRisk",
+      "overallCourseRisk",
+      "downstreamCarryoverRisk"
+    ],
+    "reason": "3/5 heads see local-ECE regression at 0.4 or 0.85 vs t57 isotonic baseline \u2014 Beta calibration blocked per Phase 9 nonneg clause \"Promotion blocked if local calibration worsens\""
+  },
+  "perHead": {
+    "attendanceRisk": {
+      "betaBlockedPerHead": true,
+      "betaEce04": 0.1312837614203473,
+      "betaEce85": 0.06067639212591169,
+      "delta04": 0.07135662553468297,
+      "delta85": -0.017946800151396824,
+      "isoEce04": 0.05992713588566434,
+      "isoEce85": 0.07862319227730852,
+      "worsensLocal04": true,
+      "worsensLocal85": false
+    },
+    "ceRisk": {
+      "betaBlockedPerHead": false,
+      "betaEce04": 0.012570499638785537,
+      "betaEce85": 0.1480043482843687,
+      "delta04": -0.35798934467747523,
+      "delta85": -0.044782112668108165,
+      "isoEce04": 0.37055984431626077,
+      "isoEce85": 0.19278646095247687,
+      "worsensLocal04": false,
+      "worsensLocal85": false
+    },
+    "downstreamCarryoverRisk": {
+      "betaBlockedPerHead": true,
+      "betaEce04": 0.12783918362568064,
+      "betaEce85": 0.06257604879131784,
+      "delta04": 0.054907416940040754,
+      "delta85": 0.05648282732838161,
+      "isoEce04": 0.07293176668563989,
+      "isoEce85": 0.006093221462936227,
+      "worsensLocal04": true,
+      "worsensLocal85": true
+    },
+    "overallCourseRisk": {
+      "betaBlockedPerHead": true,
+      "betaEce04": 0.06395908432550096,
+      "betaEce85": 0.06707949029081284,
+      "delta04": 0.015528144533567878,
+      "delta85": 0.06410875793612414,
+      "isoEce04": 0.04843093979193308,
+      "isoEce85": 0.002970732354688699,
+      "worsensLocal04": true,
+      "worsensLocal85": true
+    },
+    "seeRisk": {
+      "betaBlockedPerHead": false,
+      "betaEce04": 0.013059567986646925,
+      "betaEce85": 0.010368218754556735,
+      "delta04": -0.05453188759026828,
+      "delta85": -0.004485613593566362,
+      "isoEce04": 0.0675914555769152,
+      "isoEce85": 0.014853832348123097,
+      "worsensLocal04": false,
+      "worsensLocal85": false
+    }
+  }
+}

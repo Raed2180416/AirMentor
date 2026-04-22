@@ -1,0 +1,42 @@
+{
+  "attendanceRisk": {
+    "coverageAt05": 0.999537037037037,
+    "degenerate": false,
+    "maxIntervalWidth": 0.8438968575048019,
+    "meanIntervalWidth": 0.8350230686198932,
+    "meanLower": 0.013602652579174005,
+    "meanUpper": 0.8486257211990672
+  },
+  "ceRisk": {
+    "coverageAt05": 1.0,
+    "degenerate": false,
+    "maxIntervalWidth": 0.915994623655914,
+    "meanIntervalWidth": 0.833730457788589,
+    "meanLower": 0.0036838102419450075,
+    "meanUpper": 0.837414268030534
+  },
+  "downstreamCarryoverRisk": {
+    "coverageAt05": 0.9999537037037037,
+    "degenerate": false,
+    "maxIntervalWidth": 0.8628712696806288,
+    "meanIntervalWidth": 0.833564137469708,
+    "meanLower": 0.04125231277358083,
+    "meanUpper": 0.8748164502432886
+  },
+  "overallCourseRisk": {
+    "coverageAt05": 1.0,
+    "degenerate": false,
+    "maxIntervalWidth": 0.8640776699029126,
+    "meanIntervalWidth": 0.8337908678361237,
+    "meanLower": 0.026209510063769415,
+    "meanUpper": 0.8600003778998931
+  },
+  "seeRisk": {
+    "coverageAt05": 0.9999537037037037,
+    "degenerate": false,
+    "maxIntervalWidth": 0.896875,
+    "meanIntervalWidth": 0.8340857891160697,
+    "meanLower": 0.02597846991203606,
+    "meanUpper": 0.8600642590281058
+  }
+}

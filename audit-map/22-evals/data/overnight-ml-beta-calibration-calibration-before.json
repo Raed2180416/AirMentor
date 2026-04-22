@@ -1,0 +1,282 @@
+{
+  "attendanceRisk": {
+    "isotonic": {
+      "brier": 0.014876736190035747,
+      "globalEce": 0.00833523404901079,
+      "label": "isotonic (t57 baseline)",
+      "localEce": [
+        {
+          "center": 0.4,
+          "ece": 0.05992713588566434,
+          "halfWidth": 0.08,
+          "meanLabel": 0.3575418994413408,
+          "meanProb": 0.41746903532700513,
+          "support": 179
+        },
+        {
+          "center": 0.85,
+          "ece": 0.07862319227730852,
+          "halfWidth": 0.08,
+          "meanLabel": 0.7871287128712872,
+          "meanProb": 0.8657519051485957,
+          "support": 606
+        }
+      ],
+      "meanLabel": 0.04097222222222222,
+      "meanProb": 0.04928810967330542,
+      "overloadRatio": 1.2029640327044036,
+      "rocAuc": 0.9886952193544075
+    },
+    "raw": {
+      "brier": 0.03569437325102897,
+      "globalEce": 0.07408812277092246,
+      "label": "raw",
+      "localEce": [
+        {
+          "center": 0.4,
+          "ece": 0.3605403568714981,
+          "halfWidth": 0.08,
+          "meanLabel": 0.03197158081705151,
+          "meanProb": 0.3925119376885496,
+          "support": 563
+        },
+        {
+          "center": 0.85,
+          "ece": 0.4899097247270369,
+          "halfWidth": 0.08,
+          "meanLabel": 0.37389380530973454,
+          "meanProb": 0.8638035300367715,
+          "support": 452
+        }
+      ],
+      "meanLabel": 0.04097222222222222,
+      "meanProb": 0.11506034499314469,
+      "overloadRatio": 2.808252487968277,
+      "rocAuc": 0.9905672218199373
+    }
+  },
+  "ceRisk": {
+    "isotonic": {
+      "brier": 0.020625637474579673,
+      "globalEce": 0.0071722766751911434,
+      "label": "isotonic (t57 baseline)",
+      "localEce": [
+        {
+          "center": 0.4,
+          "ece": 0.37055984431626077,
+          "halfWidth": 0.08,
+          "meanLabel": 0.0,
+          "meanProb": 0.37055984431626077,
+          "support": 4
+        },
+        {
+          "center": 0.85,
+          "ece": 0.19278646095247687,
+          "halfWidth": 0.08,
+          "meanLabel": 0.6625,
+          "meanProb": 0.8552864609524768,
+          "support": 80
+        }
+      ],
+      "meanLabel": 0.02962962962962963,
+      "meanProb": 0.027189053163205523,
+      "overloadRatio": 0.9176305442581864,
+      "rocAuc": 0.9539935442509542
+    },
+    "raw": {
+      "brier": 0.08750292548500369,
+      "globalEce": 0.14949243843074692,
+      "label": "raw",
+      "localEce": [
+        {
+          "center": 0.4,
+          "ece": 0.37190743931057185,
+          "halfWidth": 0.08,
+          "meanLabel": 0.01982815598149372,
+          "meanProb": 0.3917355952920656,
+          "support": 1513
+        },
+        {
+          "center": 0.85,
+          "ece": 0.6537401182445995,
+          "halfWidth": 0.08,
+          "meanLabel": 0.19047619047619047,
+          "meanProb": 0.84421630872079,
+          "support": 861
+        }
+      ],
+      "meanLabel": 0.02962962962962963,
+      "meanProb": 0.17912206806037656,
+      "overloadRatio": 6.045369797037709,
+      "rocAuc": 0.9580037124284351
+    }
+  },
+  "downstreamCarryoverRisk": {
+    "isotonic": {
+      "brier": 0.10027686554443772,
+      "globalEce": 0.0315127786503739,
+      "label": "isotonic (t57 baseline)",
+      "localEce": [
+        {
+          "center": 0.4,
+          "ece": 0.07293176668563989,
+          "halfWidth": 0.08,
+          "meanLabel": 0.45869483213881557,
+          "meanProb": 0.3857630654531757,
+          "support": 2651
+        },
+        {
+          "center": 0.85,
+          "ece": 0.006093221462936227,
+          "halfWidth": 0.08,
+          "meanLabel": 0.8583617747440273,
+          "meanProb": 0.8522685532810911,
+          "support": 586
+        }
+      ],
+      "meanLabel": 0.28217592592592594,
+      "meanProb": 0.25258157713972135,
+      "overloadRatio": 0.895120929650202,
+      "rocAuc": 0.9271773719292964
+    },
+    "raw": {
+      "brier": 0.10807216712696709,
+      "globalEce": 0.07741182179098921,
+      "label": "raw",
+      "localEce": [
+        {
+          "center": 0.4,
+          "ece": 0.02495854543147913,
+          "halfWidth": 0.08,
+          "meanLabel": 0.37103791174642636,
+          "meanProb": 0.3959964571779055,
+          "support": 1609
+        },
+        {
+          "center": 0.85,
+          "ece": 0.21623122378624082,
+          "halfWidth": 0.08,
+          "meanLabel": 0.6509500351864884,
+          "meanProb": 0.8671812589727292,
+          "support": 2842
+        }
+      ],
+      "meanLabel": 0.28217592592592594,
+      "meanProb": 0.35958774771691515,
+      "overloadRatio": 1.2743388598335303,
+      "rocAuc": 0.927910989045583
+    }
+  },
+  "overallCourseRisk": {
+    "isotonic": {
+      "brier": 0.10844252819184162,
+      "globalEce": 0.024835195338783693,
+      "label": "isotonic (t57 baseline)",
+      "localEce": [
+        {
+          "center": 0.4,
+          "ece": 0.04843093979193308,
+          "halfWidth": 0.08,
+          "meanLabel": 0.4343189529810955,
+          "meanProb": 0.38588801318916244,
+          "support": 2063
+        },
+        {
+          "center": 0.85,
+          "ece": 0.002970732354688699,
+          "halfWidth": 0.08,
+          "meanLabel": 0.8140495867768595,
+          "meanProb": 0.8110788544221708,
+          "support": 242
+        }
+      ],
+      "meanLabel": 0.18425925925925926,
+      "meanProb": 0.16051957225583458,
+      "overloadRatio": 0.871161497669856,
+      "rocAuc": 0.8501828737900626
+    },
+    "raw": {
+      "brier": 0.15600267894694897,
+      "globalEce": 0.20242112826168276,
+      "label": "raw",
+      "localEce": [
+        {
+          "center": 0.4,
+          "ece": 0.2595950352985962,
+          "halfWidth": 0.08,
+          "meanLabel": 0.13249211356466878,
+          "meanProb": 0.39208714886326496,
+          "support": 3804
+        },
+        {
+          "center": 0.85,
+          "ece": 0.2831027805693943,
+          "halfWidth": 0.08,
+          "meanLabel": 0.5630630630630631,
+          "meanProb": 0.8461658436324574,
+          "support": 1998
+        }
+      ],
+      "meanLabel": 0.18425925925925926,
+      "meanProb": 0.386680387520942,
+      "overloadRatio": 2.0985669272493337,
+      "rocAuc": 0.8514928858252672
+    }
+  },
+  "seeRisk": {
+    "isotonic": {
+      "brier": 0.11953971596858744,
+      "globalEce": 0.02820106384643877,
+      "label": "isotonic (t57 baseline)",
+      "localEce": [
+        {
+          "center": 0.4,
+          "ece": 0.0675914555769152,
+          "halfWidth": 0.08,
+          "meanLabel": 0.3942172073342736,
+          "meanProb": 0.3266257517573584,
+          "support": 1418
+        },
+        {
+          "center": 0.85,
+          "ece": 0.014853832348123097,
+          "halfWidth": 0.08,
+          "meanLabel": 0.8571428571428571,
+          "meanProb": 0.842289024794734,
+          "support": 21
+        }
+      ],
+      "meanLabel": 0.19282407407407406,
+      "meanProb": 0.1768936688148572,
+      "overloadRatio": 0.9173837326292715,
+      "rocAuc": 0.8246974338918245
+    },
+    "raw": {
+      "brier": 0.17985705948236813,
+      "globalEce": 0.23076526486994114,
+      "label": "raw",
+      "localEce": [
+        {
+          "center": 0.4,
+          "ece": 0.25436235236518345,
+          "halfWidth": 0.08,
+          "meanLabel": 0.14022804560912183,
+          "meanProb": 0.3945903979743053,
+          "support": 4999
+        },
+        {
+          "center": 0.85,
+          "ece": 0.3205464014942243,
+          "halfWidth": 0.08,
+          "meanLabel": 0.5191863153028201,
+          "meanProb": 0.8397327167970444,
+          "support": 2163
+        }
+      ],
+      "meanLabel": 0.19282407407407406,
+      "meanProb": 0.4235893389440151,
+      "overloadRatio": 2.196765839421543,
+      "rocAuc": 0.8257586693983587
+    }
+  }
+}
