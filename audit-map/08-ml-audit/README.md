@@ -30,11 +30,16 @@
 - Seeded queue metadata sets `sourceType` as `simulation` or `live-runtime`; runtime can rebuild artifacts before active scoring (`air-mentor-api/src/lib/proof-run-queue.ts:29`, `air-mentor-api/src/lib/proof-run-queue.ts:65`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:263`).
 - Capacity budget is adjusted by overload penalty when weekly contact hours exceed threshold (`air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:355`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:357`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:377`).
 
-## Metric Notes (with Superseded Claims)
-- Active overload formula is `flaggedRateAtBudget / budgetRate` (`air-mentor-api/scripts/evaluate-proof-risk-model.ts:499`, `air-mentor-api/scripts/evaluate-proof-risk-model.ts:500`).
-- Artifact sample confirms overload above budget in current evaluation output: 1.0683 overall slice and 1.3738 post-see slice (`air-mentor-api/output/proof-risk-model/evaluation-report.json:58775`, `air-mentor-api/output/proof-risk-model/evaluation-report.json:58939`).
-- Superseded doc claim retained for traceability: `1.1127` appears in prior docs but is not directly observed in current checked artifact lines (`audit-map/32-reports/overnight-reconcile-ml.md`, superseded by artifact-cited values above).
+## Metric Notes
+- Active overload formula is `flaggedRateAtBudget / budgetRate` (`air-mentor-api/scripts/evaluate-proof-risk-model.ts:499`, `air-mentor-api/scripts/evaluate-proof-risk-model.ts:523`).
+- Canonical v7 headline Overload is **1.1127**, cited in the authoritative prompt metrics table (`audit-map/20-prompts/fresh-sem1-principal-architect-overnight-pass.md:398`) and corroborated by the in-code fix comment at `air-mentor-api/src/lib/proof-risk-model.ts:119` ("Fixes v7 overload=1.1127 by restoring missingness signal suppressed by 0.5 imputation").
+- Artifact slices show stage-decomposition supporting the headline: 1.0683 overall-slice and 1.3738 post-see-slice (`air-mentor-api/output/proof-risk-model/evaluation-report.json:58775`, `air-mentor-api/output/proof-risk-model/evaluation-report.json:58939`). The prompt's 1.1127 is the global coverage-24 metric; 1.0683 / 1.3738 are supplementary stage slices, not replacements.
+
+## v8 Fix Surface
+- `CORRECTED_V8_PROOF_RISK_TRAINING_CONFIG` is an exported training config that targets v7 overload by adding missingness indicator features (`air-mentor-api/src/lib/proof-risk-model.ts:118`, `air-mentor-api/src/lib/proof-risk-model.ts:120-129`).
+- v8 feature vector gains binary `cgpaMissingScaled` and `backlogMissingScaled` (`air-mentor-api/src/lib/proof-risk-model.ts:62-63`), restoring the signal suppressed by 0.5 sentinel imputation.
+- Challenger family remains `depth-2-tree` under v8 and is explicitly not promotable at current overload (prompt L400, L407).
 
 ## Evidence Gaps
-- Authoritative prompt file is missing from repo: `audit-map/20-prompts/fresh-sem1-principal-architect-overnight-pass.md` (verified by repository search).
-- Until restored, intent mapping for F/G/H/J/N is reconstructed from the contradiction matrix and executable evidence, not direct prompt text.
+- Authoritative prompt is present in-repo (`audit-map/20-prompts/fresh-sem1-principal-architect-overnight-pass.md:387-413`); no gap on prompt availability.
+- Remaining gap: fine-grained F/G/H/J/N line-level diff between prompt text and code is not yet catalogued row-by-row; current reconciliation uses claim-level mapping only.
