@@ -2702,6 +2702,59 @@ async function main() {
         ]),
       ),
       '',
+      '### Per-Semester Overload (overallCourseRisk — current variant, intent §N.4)',
+      '',
+      markdownTable(
+        ['Semester', 'Support', 'Flagged@Budget', 'Overload Ratio', 'ECE', 'Local-ECE @ 0.4', 'Local-ECE @ 0.85'],
+        Object.entries(overallCourseVariantSummaryBySemester)
+          .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+          .map(([semesterKey, summary]) => [
+            semesterKey,
+            summary.current.support,
+            summary.current.budgetMetrics.flaggedRateAtBudget,
+            summary.current.budgetMetrics.overloadRatio,
+            summary.current.expectedCalibrationError,
+            summary.current.localCalibration.localEceAt04,
+            summary.current.localCalibration.localEceAt085,
+          ]),
+      ),
+      '',
+      '### Per-ScenarioFamily Overload (overallCourseRisk — current variant, intent §N.4)',
+      '',
+      markdownTable(
+        ['Scenario Family', 'Support', 'Flagged@Budget', 'Overload Ratio', 'ECE', 'Local-ECE @ 0.4', 'Local-ECE @ 0.85'],
+        Object.entries(overallCourseVariantSummaryByScenarioFamily)
+          .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+          .map(([scenarioFamily, summary]) => [
+            scenarioFamily,
+            summary.current.support,
+            summary.current.budgetMetrics.flaggedRateAtBudget,
+            summary.current.budgetMetrics.overloadRatio,
+            summary.current.expectedCalibrationError,
+            summary.current.localCalibration.localEceAt04,
+            summary.current.localCalibration.localEceAt085,
+          ]),
+      ),
+      '',
+      '### Top-k Stability (overallCourseRisk — current, top-20% across adjacent stages, RCA §A)',
+      '',
+      'Jaccard < 0.65 or churn > 0.50 or probShift > 0.10 indicates UI banding flicker — the high-risk set rearranges aggressively across a 42-day stage window, producing visible demo jumpiness.',
+      '',
+      markdownTable(
+        ['Stage A', 'Stage B', 'Runs', 'Mean Jaccard', 'Median Jaccard', 'Min Jaccard', 'Mean Churn', 'P95 Churn', 'Mean Prob Shift'],
+        overallCourseStabilityByAdjacentStagePair.map(item => [
+          item.stageA,
+          item.stageB,
+          item.runCount,
+          item.meanJaccard,
+          item.medianJaccard,
+          item.minJaccard,
+          item.meanChurnRate,
+          item.p95ChurnRate,
+          item.meanProbShift,
+        ]),
+      ),
+      '',
     ].join('\n')
     await writeFile(paths.markdownPath, `${markdown}\n`, 'utf8')
     logProgress(`wrote Markdown report to ${paths.markdownPath}`)
