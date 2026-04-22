@@ -1,9 +1,10 @@
 # ML Contradiction Matrix
 
 ## Resolved
-- Model vs Policy: Separated. Model predict, Policy act.
-- Simulator Scope: Bound to counterfactuals.
-- Seeded vs Runtime: Defined authority limits.
+- Model vs Policy: Separated. Model predict (cite: `air-mentor-api/src/lib/proof-risk-model.ts:20-50`), Policy act.
+- Simulator Scope: Bound to counterfactuals (cite: `air-mentor-api/src/lib/monitoring-engine.ts:35`).
+- Seeded vs Runtime: Defined authority limits (cite: `air-mentor-api/src/lib/proof-observed-state.ts:15`).
+- Calibration: Beta-by-head missing in docs, present in code (cite: `air-mentor-api/src/lib/inference-engine.ts:70`).
 
 ## Ledger
 | claim_id | intent_section | current_doc | current_code | resolved | files_to_change | eval_artifact |
