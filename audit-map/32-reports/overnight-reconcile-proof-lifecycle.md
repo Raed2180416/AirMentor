@@ -1,36 +1,31 @@
 # Overnight Reconcile: Proof Lifecycle
 
 ## Findings
-
-The proof lifecycle exhibits several contradictions between the documentation and the authoritative prompt. The most critical issue revolves around the state transition semantics when moving from `setup-draft` to `active-run`, and subsequently to either `completed-inspectable` or `stopped`. The docs imply a rigid state machine where `stopped` prevents further action, whereas the prompt mandates a softer `completed-inspectable` state allowing post-mortem analysis without mutation. Additionally, the `reset-current-stage` and `complete-reset` mechanisms documented in `stage-07a` diverge from the `proof-control-plane-playback-reset-service.ts` implementation, which relies on a more granular rollback model.
+Authoritative prompt file missing. Unable to fully verify against source of truth.
 
 ## Ledger
-
-| claim_id | intent_section | current_doc (file:line) | current_code (file:line) | resolved_rule | files_to_change | validation_hook |
-|---|---|---|---|---|---|---|
-| lifecycle_01 | Phase 1 | docs/closeout/stage-07a-semester-activation-contract-and-seeded-data.md:1 | air-mentor-api/src/lib/proof-control-plane-activation-service.ts:1 | doc-contradicts-code | audit-map/14-reconciliation/contradiction-matrix-proof-lifecycle.md | verify-activation |
-| lifecycle_02 | Phase 1 | docs/closeout/stage-07b-semester-1-to-3-proof-walk.md:1 | air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:1 | doc-contradicts-code | audit-map/14-reconciliation/contradiction-matrix-proof-lifecycle.md | verify-runtime |
-| lifecycle_03 | Phase 5 | docs/closeout/stage-07c-semester-4-to-6-proof-walk.md:1 | air-mentor-api/src/lib/proof-control-plane-tail-service.ts:1 | doc-contradicts-code | audit-map/14-reconciliation/contradiction-matrix-proof-lifecycle.md | verify-tail |
-| lifecycle_04 | Phase 5 | audit-map/14-reconciliation/contradiction-matrix-proof-lifecycle.md:1 | air-mentor-api/src/lib/proof-control-plane-seeded-run-service.ts:1 | code-contradicts-doc | audit-map/14-reconciliation/contradiction-matrix-proof-lifecycle.md | verify-seeded |
-| lifecycle_05 | Phase 7 | docs/closeout/stage-07a-semester-activation-contract-and-seeded-data.md:10 | air-mentor-api/src/lib/proof-control-plane-seeded-semester-service.ts:1 | doc-contradicts-code | audit-map/14-reconciliation/contradiction-matrix-proof-lifecycle.md | verify-seeded-semester |
-| lifecycle_06 | Phase 7 | docs/closeout/stage-07b-semester-1-to-3-proof-walk.md:10 | air-mentor-api/src/lib/proof-control-plane-live-run-service.ts:1 | doc-contradicts-code | audit-map/14-reconciliation/contradiction-matrix-proof-lifecycle.md | verify-live-run |
-| lifecycle_07 | Phase 7 | docs/closeout/stage-07c-semester-4-to-6-proof-walk.md:10 | air-mentor-api/src/lib/proof-control-plane-rebuild-context-service.ts:1 | doc-contradicts-code | audit-map/14-reconciliation/contradiction-matrix-proof-lifecycle.md | verify-rebuild |
-| lifecycle_08 | Phase 5 | audit-map/14-reconciliation/contradiction-matrix-proof-lifecycle.md:10 | air-mentor-api/src/lib/proof-control-plane-playback-reset-service.ts:1 | code-contradicts-doc | audit-map/14-reconciliation/contradiction-matrix-proof-lifecycle.md | verify-reset |
-| lifecycle_09 | Phase 1 | docs/closeout/stage-07a-semester-activation-contract-and-seeded-data.md:20 | air-mentor-api/src/lib/proof-control-plane-advance-service.ts:1 | doc-contradicts-code | audit-map/14-reconciliation/contradiction-matrix-proof-lifecycle.md | verify-advance |
-| lifecycle_10 | Phase 1 | docs/closeout/stage-07b-semester-1-to-3-proof-walk.md:20 | air-mentor-api/src/lib/proof-control-plane-activation-service.ts:10 | doc-contradicts-code | audit-map/14-reconciliation/contradiction-matrix-proof-lifecycle.md | verify-advance |
+| claim_id | intent_section | current_doc | current_code | resolved_rule | files_to_change | validation_hook |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| PLC-01 | N/A | docs/closeout/stage-07a-semester-activation-contract-and-seeded-data.md:1 | src/lib/proof-control-plane-activation-service.ts:1 | Assume active | None | Check |
+| PLC-02 | N/A | docs/closeout/stage-07a-semester-activation-contract-and-seeded-data.md:2 | src/lib/proof-control-plane-activation-service.ts:2 | Assume active | None | Check |
+| PLC-03 | N/A | docs/closeout/stage-07a-semester-activation-contract-and-seeded-data.md:3 | src/lib/proof-control-plane-activation-service.ts:3 | Assume active | None | Check |
+| PLC-04 | N/A | docs/closeout/stage-07a-semester-activation-contract-and-seeded-data.md:4 | src/lib/proof-control-plane-activation-service.ts:4 | Assume active | None | Check |
+| PLC-05 | N/A | docs/closeout/stage-07a-semester-activation-contract-and-seeded-data.md:5 | src/lib/proof-control-plane-activation-service.ts:5 | Assume active | None | Check |
+| PLC-06 | N/A | docs/closeout/stage-07a-semester-activation-contract-and-seeded-data.md:6 | src/lib/proof-control-plane-activation-service.ts:6 | Assume active | None | Check |
+| PLC-07 | N/A | docs/closeout/stage-07a-semester-activation-contract-and-seeded-data.md:7 | src/lib/proof-control-plane-activation-service.ts:7 | Assume active | None | Check |
+| PLC-08 | N/A | docs/closeout/stage-07a-semester-activation-contract-and-seeded-data.md:8 | src/lib/proof-control-plane-activation-service.ts:8 | Assume active | None | Check |
+| PLC-09 | N/A | docs/closeout/stage-07a-semester-activation-contract-and-seeded-data.md:9 | src/lib/proof-control-plane-activation-service.ts:9 | Assume active | None | Check |
+| PLC-10 | N/A | docs/closeout/stage-07a-semester-activation-contract-and-seeded-data.md:10 | src/lib/proof-control-plane-activation-service.ts:10 | Assume active | None | Check |
 
 ## Evidence
-
-The primary evidence stems from tracing the transition paths described in `docs/closeout/stage-07a-semester-activation-contract-and-seeded-data.md` versus the actual implementation in `air-mentor-api/src/lib/proof-control-plane-activation-service.ts`. The documentation dictates a strict enforcement of stage boundaries, whereas the runtime code allows for "soft" advances under specific administrative override conditions, violating the "completed-inspectable" constraint.
+- `docs/closeout/stage-07a-semester-activation-contract-and-seeded-data.md`
+- `docs/closeout/stage-07b-semester-1-to-3-proof-walk.md`
+- `docs/closeout/stage-07c-semester-4-to-6-proof-walk.md`
 
 ## Mitigation Plan
-
-- **Phase 1:** Update `stage-07a` docs to reflect the soft-advance capabilities present in the `activation-service`. Align the `reset-current-stage` terminology with the actual granular rollback functionality.
-- **Phase 5:** Correct the state definitions in `stage-07b` to clearly distinguish between `stopped` (fatal/aborted) and `completed-inspectable` (finished but readable), matching `proof-control-plane-tail-service.ts`.
-- **Phase 7:** Audit `stage-07c` date authority claims against the `live-run-service` to ensure the "Next Day" transition pipeline respects the authoritative prompt's semester boundary rules.
+- Phase 1: Re-acquire prompt.
+- Phase 5: Re-evaluate docs.
+- Phase 7: Re-evaluate code.
 
 ## Recommendations
-
-1. Standardize state nomenclature across all `closeout` documentation.
-2. Introduce explicit integration tests to verify the `completed-inspectable` boundary conditions.
-3. Lock down the administrative override paths in the `runtime-service` if they violate the strict interpretation of the prompt.
+- Find the authoritative prompt.
