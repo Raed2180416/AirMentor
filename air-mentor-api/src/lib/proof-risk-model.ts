@@ -61,6 +61,16 @@ export const OBSERVABLE_FEATURE_KEYS = [
   // v8 missingness indicators: sentinel 0.5 imputation in current pipeline → binary flag restores info
   'cgpaMissingScaled',
   'backlogMissingScaled',
+  // v8b missingness indicators for assessment evidence: null-vs-zero disambiguation
+  // (intent §G.4: explicit missingness, never silent zero-collapse).
+  // tt1Pct/tt2Pct/seePct/quizPct/assignmentPct are number|null in payload.
+  // Without these flags, a Sem1 pre-TT1 row with tt1Pct=null is indistinguishable
+  // from a student who scored 0% on TT1. Flags restore the distinction.
+  'tt1MissingScaled',
+  'tt2MissingScaled',
+  'seeMissingScaled',
+  'quizMissingScaled',
+  'assignmentMissingScaled',
 ] as const
 
 export const PROOF_SCENARIO_FAMILIES = [
@@ -84,7 +94,11 @@ export type RiskHeadKey =
 export type SplitName = 'train' | 'validation' | 'test'
 export type CalibrationMethod = 'identity' | 'sigmoid' | 'isotonic' | 'beta' | 'venn-abers'
 export type ScenarioFamily = (typeof PROOF_SCENARIO_FAMILIES)[number]
-export type ChallengerModelFamily = 'depth-2-tree'
+// Serving-side challenger families. 'catboost' denotes a CatBoost model whose
+// JSON artefact is produced by scripts/train_catboost_challenger.py and loaded
+// by the Python-interop serving path (phase 10 intent). 'depth-2-tree' remains
+// the in-process TS challenger baseline.
+export type ChallengerModelFamily = 'depth-2-tree' | 'catboost'
 export type ProofRiskTrainingVariantId = 'production-v7' | 'production-v8' | 'baseline-v5-like'
 
 export type ProofCorpusManifestEntry = {
@@ -685,6 +699,15 @@ function featureVectorFromPayload(
     stagePostAssignmentsCourseworkInteractionScaled: includeInteractionFeatures ? stageIndicators.stagePostAssignmentsScaled * (safePctToRisk(payload.quizPct) + safePctToRisk(payload.assignmentPct)) / 2 : 0,
     cgpaMissingScaled: payload.cgpaMissing ? 1 : 0,
     backlogMissingScaled: payload.backlogMissing ? 1 : 0,
+    // v8b: assessment-evidence missingness derived from nullable payload fields.
+    // Independent of cgpa/backlog which have explicit boolean flags (zero is a
+    // legitimate CGPA value so explicit flag is required); here null uniquely
+    // means "not yet entered" and 0 uniquely means "entered, scored zero".
+    tt1MissingScaled: payload.tt1Pct == null ? 1 : 0,
+    tt2MissingScaled: payload.tt2Pct == null ? 1 : 0,
+    seeMissingScaled: payload.seePct == null ? 1 : 0,
+    quizMissingScaled: payload.quizPct == null ? 1 : 0,
+    assignmentMissingScaled: payload.assignmentPct == null ? 1 : 0,
   }
 }
 
@@ -836,6 +859,9 @@ function fitIsotonicCalibration(rows: Array<{ label: number; rawProb: number }>)
       index,
     }))
     .sort((left, right) => left.rawProb - right.rawProb || left.index - right.index)
+  // Blocks with weight===0 are tombstones (merged-away). Avoids O(n²) Array.splice
+  // in the PAV merge loop; each merge becomes O(1) + amortized O(1) rewind via
+  // next-live scan. Final compact pass drops tombstones in O(n).
   const blocks = ordered.map(row => ({
     lower: row.rawProb,
     upper: row.rawProb,
@@ -843,25 +869,43 @@ function fitIsotonicCalibration(rows: Array<{ label: number; rawProb: number }>)
     total: row.label,
     value: row.label,
   }))
-  for (let index = 0; index < blocks.length - 1;) {
-    if (blocks[index]!.value <= blocks[index + 1]!.value) {
-      index += 1
+  const nextLive = (from: number): number => {
+    let j = from
+    while (j < blocks.length && blocks[j]!.weight === 0) j += 1
+    return j
+  }
+  const prevLive = (from: number): number => {
+    let j = from
+    while (j >= 0 && blocks[j]!.weight === 0) j -= 1
+    return j
+  }
+  let index = 0
+  while (index < blocks.length) {
+    const j = nextLive(index + 1)
+    if (j >= blocks.length) break
+    const left = blocks[index]!
+    const right = blocks[j]!
+    if (left.value <= right.value) {
+      index = j
       continue
     }
-    const merged = {
-      lower: blocks[index]!.lower,
-      upper: blocks[index + 1]!.upper,
-      weight: blocks[index]!.weight + blocks[index + 1]!.weight,
-      total: blocks[index]!.total + blocks[index + 1]!.total,
-      value: 0,
+    const totalWeight = left.weight + right.weight
+    const totalSum = left.total + right.total
+    blocks[index] = {
+      lower: left.lower,
+      upper: right.upper,
+      weight: totalWeight,
+      total: totalSum,
+      value: totalSum / totalWeight,
     }
-    merged.value = merged.total / merged.weight
-    blocks.splice(index, 2, merged)
-    if (index > 0) index -= 1
+    blocks[j] = { ...right, weight: 0 }  // tombstone
+    const back = prevLive(index - 1)
+    index = back >= 0 ? back : index
   }
+  const live = blocks.filter(block => block.weight > 0)
   return {
-    thresholds: blocks.map(block => roundToFour(block.upper)),
-    values: blocks.map(block => roundToFour(clamp(block.value, 0.0001, 0.9999))),
+    thresholds: live.map(block => roundToFour(block.upper)),
+    values: live.map(block => roundToFour(clamp(block.value, 0.0001, 0.9999))),
   }
 }
 
@@ -1042,10 +1086,28 @@ function chooseCalibration(
     return currentBest
   }, baseline)
 
-  const selected = (
-    best.validationMetrics.brierScore <= baseline.validationMetrics.brierScore
-    || best.validationMetrics.expectedCalibrationError <= baseline.validationMetrics.expectedCalibrationError
-  ) ? best : baseline
+  // Intent §G.3 (FROZEN ML STRATEGY / Calibration): "default production
+  // calibrator path: Beta calibration by head. Venn-Abers can be used as a
+  // shadow/diagnostic uncertainty path if useful." Prior selection-by-Brier
+  // logic would silently promote Venn-Abers or isotonic to production when
+  // they won Brier by a hair, violating the frozen strategy. We now force
+  // Beta whenever it exists and is non-degraded (brier within 1.5x baseline
+  // and ECE within 2x baseline). Other candidates remain computed so shadow
+  // diagnostics are still available via downstream inspection, but production
+  // calibrator is deterministically Beta.
+  const beta = candidates.find(candidate => candidate.method === 'beta')
+  const betaBrierDegraded =
+    beta != null
+    && beta.validationMetrics.brierScore > baseline.validationMetrics.brierScore * 1.5
+  const betaEceDegraded =
+    beta != null
+    && beta.validationMetrics.expectedCalibrationError > Math.max(baseline.validationMetrics.expectedCalibrationError * 2, 0.05)
+  const selected = beta != null && !betaBrierDegraded && !betaEceDegraded
+    ? beta
+    : ((
+        best.validationMetrics.brierScore <= baseline.validationMetrics.brierScore
+        || best.validationMetrics.expectedCalibrationError <= baseline.validationMetrics.expectedCalibrationError
+      ) ? best : baseline)
 
   return {
     calibration: selected,
