@@ -9,6 +9,10 @@ vi.mock('../src/lib/msruas-proof-control-plane.js', () => ({
 }))
 
 import { startProofRunWorker } from '../src/lib/proof-run-queue.js'
+import {
+  enqueueProofSimulationRun,
+  retryQueuedProofSimulationRun,
+} from '../src/lib/proof-run-queue.js'
 
 function createClaimedRunRow() {
   return {
@@ -36,6 +40,37 @@ function createClaimedRunRow() {
   }
 }
 
+function createInsertOnlyDb() {
+  const insertValues = vi.fn().mockResolvedValue(undefined)
+  return {
+    db: {
+      insert: vi.fn(() => ({
+        values: insertValues,
+      })),
+    },
+    insertValues,
+  }
+}
+
+function createSelectInsertDb(run: Record<string, unknown>) {
+  const selectWhere = vi.fn().mockResolvedValue([run])
+  const selectFrom = vi.fn(() => ({
+    where: selectWhere,
+  }))
+  const insertValues = vi.fn().mockResolvedValue(undefined)
+  return {
+    db: {
+      select: vi.fn(() => ({
+        from: selectFrom,
+      })),
+      insert: vi.fn(() => ({
+        values: insertValues,
+      })),
+    },
+    insertValues,
+  }
+}
+
 describe('proof run queue worker', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -56,6 +91,7 @@ describe('proof run queue worker', () => {
 
     const query = vi.fn()
       .mockResolvedValueOnce({ rows: [createClaimedRunRow()] })
+      .mockResolvedValueOnce({ rows: [{ simulation_run_id: 'simulation_run_001' }] })
       .mockResolvedValueOnce({ rows: [] })
 
     const stopWorker = startProofRunWorker({
@@ -82,10 +118,10 @@ describe('proof run queue worker', () => {
     await stopPromise
 
     expect(stopped).toBe(true)
-    expect(query).toHaveBeenCalledTimes(2)
+    expect(query).toHaveBeenCalledTimes(3)
 
     await vi.advanceTimersByTimeAsync(5_000)
-    expect(query).toHaveBeenCalledTimes(2)
+    expect(query).toHaveBeenCalledTimes(3)
   })
 
   it('does not let the worker steal direct synchronous running runs', async () => {
@@ -104,10 +140,88 @@ describe('proof run queue worker', () => {
 
     const claimSql = String(query.mock.calls[0]?.[0] ?? '')
     expect(claimSql).toMatch(
-      /WHERE\s+\(\s*status = 'queued'\s+OR\s+\(status = 'running' AND worker_lease_token IS NOT NULL\)\s*\)/,
+      /status = 'queued'[\s\S]+status = 'running'[\s\S]+worker_lease_token IS NOT NULL[\s\S]+executionStarted/,
     )
     expect(claimSql).not.toContain(`status IN ('queued', 'running')`)
 
     await stopWorker()
+  })
+
+  it('defaults queued reruns to non-activating mode until explicitly requested', async () => {
+    const { db, insertValues } = createInsertOnlyDb()
+
+    const queued = await enqueueProofSimulationRun(db as never, {
+      batchId: 'batch_branch_mnc_btech_2023',
+      curriculumImportVersionId: 'curriculum_import_001',
+      policy: {} as never,
+      now: '2026-04-03T00:00:00.000Z',
+    })
+
+    expect(queued.progress).toMatchObject({
+      requestedActivate: false,
+    })
+    expect(insertValues.mock.calls[0]?.[0]).toMatchObject({
+      status: 'queued',
+      progressJson: expect.stringContaining('"requestedActivate":false'),
+    })
+  })
+
+  it('creates a fresh retry attempt row instead of mutating the original run', async () => {
+    const run = {
+      simulationRunId: 'simulation_run_001',
+      batchId: 'batch_branch_mnc_btech_2023',
+      curriculumImportVersionId: 'curriculum_import_001',
+      curriculumFeatureProfileId: null,
+      curriculumFeatureProfileFingerprint: null,
+      parentSimulationRunId: null,
+      runLabel: 'Proof run 001',
+      status: 'failed',
+      activeFlag: 0,
+      seed: 42,
+      sectionCount: 2,
+      studentCount: 120,
+      facultyCount: 6,
+      semesterStart: 1,
+      semesterEnd: 6,
+      activeOperationalSemester: 6,
+      activeStageKey: 'post-assignments',
+      simulatedDateIso: null,
+      setupConfigJson: null,
+      scenarioConfigJson: null,
+      lifecycleState: 'completed',
+      runMode: 'background-worker',
+      stageBoundaryJson: null,
+      sourceType: 'simulation',
+      policySnapshotJson: '{}',
+      engineVersionsJson: '{}',
+      metricsJson: '{}',
+      progressJson: JSON.stringify({ requestedActivate: true, attemptNumber: 1 }),
+      startedAt: '2026-04-03T00:00:00.000Z',
+      completedAt: '2026-04-03T00:30:00.000Z',
+      failureCode: 'PROOF_RUN_EXECUTION_FAILED',
+      failureMessage: 'boom',
+      workerLeaseToken: null,
+      workerLeaseExpiresAt: null,
+      createdAt: '2026-04-03T00:00:00.000Z',
+      updatedAt: '2026-04-03T00:30:00.000Z',
+    }
+    const { db, insertValues } = createSelectInsertDb(run)
+
+    const retried = await retryQueuedProofSimulationRun(db as never, {
+      simulationRunId: run.simulationRunId,
+      now: '2026-04-03T01:00:00.000Z',
+    })
+
+    expect(retried.simulationRunId).not.toBe(run.simulationRunId)
+    expect(retried.progress).toMatchObject({
+      requestedActivate: true,
+      retryOf: run.simulationRunId,
+      attemptNumber: 2,
+    })
+    expect(insertValues.mock.calls[0]?.[0]).toMatchObject({
+      parentSimulationRunId: run.simulationRunId,
+      status: 'queued',
+      progressJson: expect.stringContaining('"attemptNumber":2'),
+    })
   })
 })
