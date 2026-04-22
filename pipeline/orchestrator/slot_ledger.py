@@ -235,11 +235,16 @@ def refresh_from_disk() -> None:
             # we previously wrote; leave non-quota cooldowns (e.g. 48h
             # anthropic OAuth credit lockout with reason='credit-lockout')
             # intact because those originate from mark_cooldown(), not from
-            # this sync loop.
+            # this sync loop. sqlite3.Row uses keyed indexing (no .get()).
             existing = db.get_slot(slot)
-            if existing and existing.get("cooldown_reason") == "usage-cap-reached":
-                fields["cooldown_until"] = None
-                fields["cooldown_reason"] = None
+            if existing is not None:
+                try:
+                    prior_reason = existing["cooldown_reason"]
+                except (IndexError, KeyError):
+                    prior_reason = None
+                if prior_reason == "usage-cap-reached":
+                    fields["cooldown_until"] = None
+                    fields["cooldown_reason"] = None
         db.upsert_slot(slot, **fields)
 
     # 4. native-codex health
