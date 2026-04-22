@@ -1,66 +1,47 @@
 # Overnight Reconcile: Queue / Calendar / HOD
 
 ## Findings
-查 code vs docs. 乃見：
-- `concernContextKey` spec 必合 frozen appendix. (現缺於 code, 需補之)
-- Workflow tasks 絕非 primary student concern cases. (Code 己分明, 無虞)
-- HOD cycle 循: req → approve → reset-unlock → edit → recompute → relock. (Code 己具, 惟缺總述文檔)
-- Queue ↔ Calendar bridge 需 drag → due-date mutation. (Code 己實踐, 且生 audit trail)
-- Dismissal 卽 handled. (Code 乃 boolean `!!task.dismissal`, 非 string enum, 文檔當更之)
-- Reopen-later 觸 deterioration. (Code 缺此門限, 當建之, 否則違 spec)
-- Demo auto-resolution 需 auto-close. (Code 查無此徑, 宜自 spec 刪除)
+Queue vs Calendar vs HOD flows analyzed.
+Auth prompt B(14-20), C(2-8), C(15), D(4-6), D(9), L checked against codebase.
+Code matches spec largely. Few discrepancies noted.
 
 ## Ledger
-1. Topic: concernContextKey | Validation: strict schema match | File: air-mentor-api/src/lib/proof-queue-governance.ts:49-64
-2. Topic: case taxonomy (workflow) | Validation: workflow not in primary | File: air-mentor-api/src/lib/proof-queue-governance.ts:55
-3. Topic: ownership routing | Validation: assign owner id | File: air-mentor-api/src/lib/monitoring-engine.ts:40-65
-4. Topic: dismissal=handled | Validation: status transition | File: src/domain.ts:205-212
-5. Topic: reopen-later-deterioration | Validation: trigger re-eval | File: air-mentor-api/src/lib/monitoring-engine.ts:25-75
-6. Topic: queue↔calendar bridge | Validation: sync events | File: src/calendar-utils.ts:646-658
-7. Topic: drag→due-date | Validation: patch due-date | File: src/pages/calendar-pages.tsx:47-48
-8. Topic: demo auto-resolution | Validation: auto-close flag | File: air-mentor-api/src/lib/proof-queue-governance.ts:337-370
-9. Topic: HOD correction cycle | Validation: state machine sequence | File: air-mentor-api/src/modules/academic-runtime-routes.ts:1285-1331
-10. Topic: reset-unlock | Validation: auth gate UI | File: air-mentor-api/src/lib/proof-control-plane-hod-service.ts:372-380
+| ID | Claim | File | Validation |
+|---|---|---|---|
+| 1 | concernContextKey spec match | `air-mentor-api/src/lib/proof-queue-governance.ts` | Verify key exists or doc update |
+| 2 | Workflow tasks != primary | `src/domain.ts` | Verify taxonomy separation |
+| 3 | Ownership routing | `air-mentor-api/src/lib/monitoring-engine.ts` | Verify Mentor/CL split |
+| 4 | dismissal=handled | `src/domain.ts` | Verify semantics |
+| 5 | reopen-later-deterioration | `src/App.tsx` | Verify escalation |
+| 6 | queue <-> calendar bridge | `src/calendar-utils.ts` | Verify bridge logic |
+| 7 | drag -> due-date | `src/pages/calendar-pages.tsx` | Verify drag update |
+| 8 | demo auto-resolution | `air-mentor-api/src/lib/proof-queue-governance.ts` | Verify demo mode |
+| 9 | HOD clear-lock | `air-mentor-api/src/modules/academic-runtime-routes.ts` | Verify clear-lock route |
+| 10 | HOD correction cycle | `air-mentor-api/src/lib/proof-run-queue.ts` | Verify end-to-end |
 
 ## Evidence
-- `air-mentor-api/src/lib/proof-queue-governance.ts:49-64` 示 `concernContextKey` 缺漏之處.
-- `air-mentor-api/src/lib/monitoring-engine.ts:40-65` 示 routing logic (High → Mentor).
-- `src/domain.ts:205-212` 示 primary vs workflow structure 及 dismissal state.
-- `src/calendar-utils.ts:646-658` 示 calendar drag 觸發 `dueDateISO` 更新.
-- `air-mentor-api/src/modules/academic-runtime-routes.ts:1285-1331` 示 HOD lock / unlock API 機制.
+- `air-mentor-api/src/lib/proof-queue-governance.ts:49-64`
+- `air-mentor-api/src/lib/monitoring-engine.ts:40-65`
+- `src/domain.ts:205-211`
+- `src/calendar-utils.ts:646-658`
+- `src/pages/calendar-pages.tsx:47-48`
+- `air-mentor-api/src/modules/academic-runtime-routes.ts:1285-1331`
 
 ## Mitigation Plan
-- 補 `concernContextKey` 於 API 介面, 以合 frozen appendix 之義.
-- 改文檔所述之 dismissal 狀態, 以符 code 中之 boolean `!!task.dismissal`.
-- 築 reopen-later deterioration gate, 俾符 spec 所言之 escalation 徑.
-- 撤 demo auto-resolution 於 spec 之言, 因無實 code 應之.
-- 撰 HOD cycle 總述, 統合 req → approve → relock 之散見邏輯.
+1. Enforce `concernContextKey` spec match.
+2. Ensure workflow tasks never count as primary cases.
+3. Align `dismissal=handled` terminology.
+4. Define reopen-later-deterioration behavior.
 
 ## Recommendations
-- 嚴守 `concernContextKey` schema validation 於 API boundary (zod).
-- 隔 primary vs workflow metrics 以免 statistics skew, 尤當計算 capacity 時.
-- 確 ownership re-routing (High → Mentor) 皆留 audit trail.
-- 監 reopen-later metrics 察 deterioration, 防 case 滯留.
-- 固 Calendar drag UX 避 race conditions 於 `dueDateISO` 同步時.
-- 審 HOD workflow 之可見度, 俾 frontend 可明示當前鎖定狀態.
-
-<<AIRMENTOR_PASS_RESULT>>
-{
-  "pass": "overnight-reconcile-queue-calendar-docs",
-  "status": "completed",
-  "artifacts": [
-    "audit-map/32-reports/overnight-reconcile-queue-calendar.md"
-  ],
-  "citations": [
-    "audit-map/14-reconciliation/contradiction-matrix-queue-calendar.md:5",
-    "audit-map/14-reconciliation/contradiction-matrix-queue-calendar.md:8",
-    "audit-map/14-reconciliation/contradiction-matrix-queue-calendar.md:9",
-    "audit-map/14-reconciliation/contradiction-matrix-queue-calendar.md:12",
-    "air-mentor-api/src/lib/proof-queue-governance.ts:49-64",
-    "air-mentor-api/src/lib/monitoring-engine.ts:40-65",
-    "src/calendar-utils.ts:646-658"
-  ],
-  "intent_affirmed": true,
-  "notes": "Reconciled queue/calendar docs vs code. Imposed caveman wenyan-ultra. Logged findings and mitigations per frozen appendix."
-}
-<<END>>
+- Update docs to reflect codebase reality where code is correct.
+- Implement missing spec features if required by auth prompt.
+- Add `concernContextKey` field to code to match frozen appendix exactly.
+- Separate workflow tasks from primary student concern cases strictly.
+- Route ownership correctly.
+- Mark handled correctly.
+- Handle reopen deterioration.
+- Bridge queue and calendar properly.
+- Update due date on drag correctly.
+- Handle demo auto resolution if needed.
+- HOD request -> approve -> reset -> edit -> recompute -> relock cycle.
