@@ -859,54 +859,61 @@ function fitIsotonicCalibration(rows: Array<{ label: number; rawProb: number }>)
       index,
     }))
     .sort((left, right) => left.rawProb - right.rawProb || left.index - right.index)
-  // Blocks with weight===0 are tombstones (merged-away). Avoids O(n²) Array.splice
-  // in the PAV merge loop; each merge becomes O(1) + amortized O(1) rewind via
-  // next-live scan. Final compact pass drops tombstones in O(n).
-  const blocks = ordered.map(row => ({
-    lower: row.rawProb,
-    upper: row.rawProb,
-    weight: 1,
-    total: row.label,
-    value: row.label,
-  }))
-  const nextLive = (from: number): number => {
-    let j = from
-    while (j < blocks.length && blocks[j]!.weight === 0) j += 1
-    return j
+  const n = ordered.length
+  if (n === 0) return { thresholds: [], values: [] }
+  // True O(n) PAV implementation via parallel arrays + doubly-linked list of
+  // live block indices. Each merge is O(1) pointer relink + O(1) arithmetic
+  // update; no O(tombstone) scans (the earlier tombstone+scan draft suffered a
+  // pathological worst-case when many merges happened left-to-right, forcing
+  // nextLive() to re-walk all prior tombstones per merge → quadratic).
+  const lower = new Float64Array(n)
+  const upper = new Float64Array(n)
+  const weight = new Float64Array(n)
+  const total = new Float64Array(n)
+  const value = new Float64Array(n)
+  const next = new Int32Array(n)
+  const prev = new Int32Array(n)
+  for (let i = 0; i < n; i += 1) {
+    const row = ordered[i]!
+    lower[i] = row.rawProb
+    upper[i] = row.rawProb
+    weight[i] = 1
+    total[i] = row.label
+    value[i] = row.label
+    prev[i] = i - 1
+    next[i] = i === n - 1 ? -1 : i + 1
   }
-  const prevLive = (from: number): number => {
-    let j = from
-    while (j >= 0 && blocks[j]!.weight === 0) j -= 1
-    return j
-  }
-  let index = 0
-  while (index < blocks.length) {
-    const j = nextLive(index + 1)
-    if (j >= blocks.length) break
-    const left = blocks[index]!
-    const right = blocks[j]!
-    if (left.value <= right.value) {
+  let head = 0
+  let index = head
+  while (index !== -1) {
+    const j = next[index]!
+    if (j === -1) break
+    if (value[index]! <= value[j]!) {
       index = j
       continue
     }
-    const totalWeight = left.weight + right.weight
-    const totalSum = left.total + right.total
-    blocks[index] = {
-      lower: left.lower,
-      upper: right.upper,
-      weight: totalWeight,
-      total: totalSum,
-      value: totalSum / totalWeight,
-    }
-    blocks[j] = { ...right, weight: 0 }  // tombstone
-    const back = prevLive(index - 1)
-    index = back >= 0 ? back : index
+    // merge j into index
+    const mergedWeight = weight[index]! + weight[j]!
+    const mergedTotal = total[index]! + total[j]!
+    weight[index] = mergedWeight
+    total[index] = mergedTotal
+    value[index] = mergedTotal / mergedWeight
+    upper[index] = upper[j]!
+    // unlink j (O(1))
+    const afterJ = next[j]!
+    next[index] = afterJ
+    if (afterJ !== -1) prev[afterJ] = index
+    // rewind to predecessor so PAV invariant is re-checked leftward (O(1))
+    const back = prev[index]!
+    if (back !== -1) index = back
   }
-  const live = blocks.filter(block => block.weight > 0)
-  return {
-    thresholds: live.map(block => roundToFour(block.upper)),
-    values: live.map(block => roundToFour(clamp(block.value, 0.0001, 0.9999))),
+  const thresholds: number[] = []
+  const values: number[] = []
+  for (let i = head; i !== -1; i = next[i]!) {
+    thresholds.push(roundToFour(upper[i]!))
+    values.push(roundToFour(clamp(value[i]!, 0.0001, 0.9999)))
   }
+  return { thresholds, values }
 }
 
 const VENN_ABERS_MAX_ROWS = 3000
