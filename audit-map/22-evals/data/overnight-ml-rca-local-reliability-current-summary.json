@@ -1,0 +1,130 @@
+{
+  "purpose": "Local reliability RCA for the current v6 smoke-3 retained corpus at decision thresholds 0.4 and 0.85.",
+  "feature_export_path": "/home/raed/projects/air-mentor-ui/air-mentor-api/output/proof-risk-model/features.csv",
+  "scoring_artifact_path": "air-mentor-api/output/proof-risk-model/evaluation-report.json",
+  "source_artifact_thresholds": {
+    "medium": 0.4,
+    "high": 0.85
+  },
+  "feature_export_stage_id_map": {
+    "0": "post-tt2",
+    "1": "post-assignments",
+    "2": "pre-tt1",
+    "3": "post-see",
+    "4": "post-tt1"
+  },
+  "reconstruction_check": {
+    "test_rows": 21600,
+    "reconstructed_brier": 0.1216,
+    "report_brier": 0.1216,
+    "reconstructed_global_ece": 0.0191,
+    "report_global_ece": 0.0195
+  },
+  "overall_windows": {
+    "0.4": {
+      "support": 3255,
+      "mean_pred": 0.4016,
+      "mean_actual": 0.4565,
+      "local_ece": 0.055
+    },
+    "0.85": {
+      "support": 10,
+      "mean_pred": 0.8133,
+      "mean_actual": 0.8,
+      "local_ece": 0.0133
+    }
+  },
+  "high_threshold_density": {
+    "overall_gt_0_85": 11,
+    "overall_max_prob": 0.9999,
+    "by_stage_gt_0_85": {
+      "pre-tt1": 0,
+      "post-tt1": 0,
+      "post-tt2": 3,
+      "post-assignments": 3,
+      "post-see": 5
+    }
+  },
+  "stage_windows": {
+    "pre-tt1": {
+      "global_ece": 0.0313,
+      "0.4": {
+        "support": 602,
+        "mean_pred": 0.406,
+        "mean_actual": 0.4585,
+        "local_ece": 0.0524
+      },
+      "0.85": {
+        "support": 0,
+        "mean_pred": 0.0,
+        "mean_actual": 0.0,
+        "local_ece": 0.0
+      }
+    },
+    "post-tt1": {
+      "global_ece": 0.0204,
+      "0.4": {
+        "support": 646,
+        "mean_pred": 0.4018,
+        "mean_actual": 0.4458,
+        "local_ece": 0.044
+      },
+      "0.85": {
+        "support": 3,
+        "mean_pred": 0.8222,
+        "mean_actual": 1.0,
+        "local_ece": 0.1778
+      }
+    },
+    "post-tt2": {
+      "global_ece": 0.0269,
+      "0.4": {
+        "support": 611,
+        "mean_pred": 0.4032,
+        "mean_actual": 0.455,
+        "local_ece": 0.0518
+      },
+      "0.85": {
+        "support": 1,
+        "mean_pred": 0.8,
+        "mean_actual": 1.0,
+        "local_ece": 0.2
+      }
+    },
+    "post-assignments": {
+      "global_ece": 0.0269,
+      "0.4": {
+        "support": 608,
+        "mean_pred": 0.4022,
+        "mean_actual": 0.4457,
+        "local_ece": 0.0435
+      },
+      "0.85": {
+        "support": 2,
+        "mean_pred": 0.8167,
+        "mean_actual": 1.0,
+        "local_ece": 0.1833
+      }
+    },
+    "post-see": {
+      "global_ece": 0.0368,
+      "0.4": {
+        "support": 788,
+        "mean_pred": 0.3961,
+        "mean_actual": 0.4734,
+        "local_ece": 0.0772
+      },
+      "0.85": {
+        "support": 4,
+        "mean_pred": 0.8083,
+        "mean_actual": 0.5,
+        "local_ece": 0.3083
+      }
+    }
+  },
+  "notes": [
+    "Retained feature CSV contains validation plus test rows only; local reliability windows use split=test to align with the retained report support of 21600.",
+    "Scoring uses the current-v6 active artifact weights and isotonic calibration from air-mentor-api/output/proof-risk-model/evaluation-report.json.",
+    "The retained feature CSV stores numeric stage ids; mapping was recovered from the stage one-hot features feat_26 through feat_30."
+  ]
+}
