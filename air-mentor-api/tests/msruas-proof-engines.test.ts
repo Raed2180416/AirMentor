@@ -280,6 +280,32 @@ describe('msruas proof engines', () => {
     expect(steppedDown.note).toContain('Risk eased from high to medium')
   })
 
+  it('keeps missing prior history separate from zero-valued assessment evidence in degraded inference', () => {
+    const inferred = inferObservableRisk({
+      attendancePct: 82,
+      currentCgpa: 0,
+      cgpaMissing: true,
+      backlogCount: 0,
+      backlogMissing: true,
+      tt1Pct: 0,
+      tt2Pct: null,
+      seePct: null,
+      quizPct: null,
+      assignmentPct: null,
+      weakCoCount: 0,
+      attendanceHistoryRiskCount: 0,
+      questionWeaknessCount: 0,
+      interventionResponseScore: null,
+      stageKey: 'pre-tt1',
+      policy: DEFAULT_POLICY,
+    })
+
+    const features = inferred.observableDrivers.map(driver => driver.feature)
+    expect(features).toContain('tt1')
+    expect(features).not.toContain('cgpa')
+    expect(features).not.toContain('backlog')
+  })
+
   it('converts CE thresholds to percentages and only surfaces coursework once the stage allows it', () => {
     expect(ceMinimumPctForPolicy(DEFAULT_POLICY)).toBe(40)
     expect(ceShortfallLabelFromPct(39.9, DEFAULT_POLICY)).toBe(1)

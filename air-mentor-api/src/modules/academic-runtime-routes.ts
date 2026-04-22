@@ -208,6 +208,19 @@ export async function registerAcademicRuntimeRoutes(
     }, { level: 'warn' })
   }
 
+  async function upsertStudentPatchShadow(nextPatchesByKey: Record<string, Record<string, unknown>>) {
+    if (Object.keys(nextPatchesByKey).length === 0) return
+    const currentStudentPatches = await getAcademicRuntimeState(context, 'studentPatches') as Record<string, Record<string, unknown>>
+    const mergedStudentPatches = { ...currentStudentPatches }
+    for (const [patchKey, patchValue] of Object.entries(nextPatchesByKey)) {
+      mergedStudentPatches[patchKey] = {
+        ...(currentStudentPatches[patchKey] ?? {}),
+        ...patchValue,
+      }
+    }
+    await saveAcademicRuntimeState(context, 'studentPatches', mergedStudentPatches)
+  }
+
   async function listVisibleTaskRecords(
     auth: ReturnType<typeof requireRole>,
   ) {
@@ -1021,6 +1034,7 @@ export async function registerAcademicRuntimeRoutes(
     const { offering } = await getOfferingContext(context, params.offeringId)
     const capturedAt = body.capturedAt ?? context.now()
     const now = context.now()
+    const studentPatchUpdates: Record<string, Record<string, unknown>> = {}
 
     for (const entry of body.entries) {
       if (entry.presentClasses > entry.totalClasses) {
@@ -1039,6 +1053,10 @@ export async function registerAcademicRuntimeRoutes(
         createdAt: now,
         updatedAt: now,
       })
+      studentPatchUpdates[`${params.offeringId}::${enrollment.studentId}`] = {
+        present: entry.presentClasses,
+        totalClasses: entry.totalClasses,
+      }
     }
 
     const averageAttendance = body.entries.length > 0
@@ -1050,6 +1068,7 @@ export async function registerAcademicRuntimeRoutes(
       version: offering.version + 1,
       updatedAt: now,
     }).where(eq(sectionOfferings.offeringId, params.offeringId))
+    await upsertStudentPatchShadow(studentPatchUpdates)
 
     if (body.lock) {
       const currentLockPayload = await getAcademicRuntimeState(context, 'lockByOffering') as Record<string, Record<string, boolean>>
@@ -1108,6 +1127,7 @@ export async function registerAcademicRuntimeRoutes(
       : buildDefaultSchemeFromPolicy(policy)
     const evaluatedAt = body.evaluatedAt ?? context.now()
     const now = context.now()
+    const studentPatchUpdates: Record<string, Record<string, unknown>> = {}
 
     const lockField = params.kind === 'tt1'
       ? 'tt1Locked'
@@ -1229,6 +1249,33 @@ export async function registerAcademicRuntimeRoutes(
           updatedAt: now,
         })
       }
+      const patchKey = `${params.offeringId}::${enrollment.studentId}`
+      if (params.kind === 'tt1') {
+        studentPatchUpdates[patchKey] = {
+          ...(studentPatchUpdates[patchKey] ?? {}),
+          tt1LeafScores: Object.fromEntries(entry.components.map(component => [component.componentCode, component.score])),
+        }
+      } else if (params.kind === 'tt2') {
+        studentPatchUpdates[patchKey] = {
+          ...(studentPatchUpdates[patchKey] ?? {}),
+          tt2LeafScores: Object.fromEntries(entry.components.map(component => [component.componentCode, component.score])),
+        }
+      } else if (params.kind === 'quiz') {
+        studentPatchUpdates[patchKey] = {
+          ...(studentPatchUpdates[patchKey] ?? {}),
+          quizScores: Object.fromEntries(entry.components.map(component => [component.componentCode, component.score])),
+        }
+      } else if (params.kind === 'assignment') {
+        studentPatchUpdates[patchKey] = {
+          ...(studentPatchUpdates[patchKey] ?? {}),
+          assignmentScores: Object.fromEntries(entry.components.map(component => [component.componentCode, component.score])),
+        }
+      } else if (params.kind === 'finals') {
+        studentPatchUpdates[patchKey] = {
+          ...(studentPatchUpdates[patchKey] ?? {}),
+          seeScore: aggregateScore,
+        }
+      }
       if (params.kind === 'tt1' || params.kind === 'tt2') {
         await context.db.insert(studentAssessmentScores).values({
           assessmentScoreId: createId('assessment'),
@@ -1245,6 +1292,7 @@ export async function registerAcademicRuntimeRoutes(
         })
       }
     }
+    await upsertStudentPatchShadow(studentPatchUpdates)
 
     if (params.kind === 'tt1' || params.kind === 'tt2' || body.lock) {
       const nextOfferingPatch: Partial<typeof sectionOfferings.$inferInsert> = {

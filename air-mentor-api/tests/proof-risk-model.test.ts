@@ -261,12 +261,44 @@ describe('proof risk model', () => {
       correlations: bundle!.correlations,
     })
 
-    expect(scored.queuePriorityScore).toBe(scored.riskProb)
+    expect(scored.queuePriorityScore).toBe(0)
     expect(scored.queuePrioritySource).toBe('overall-course-risk-head')
+    expect(scored.rankingAllowed).toBe(false)
     for (const display of Object.values(scored.headDisplay)) {
       expect(display.displayProbabilityAllowed).toBe(false)
       expect(display.supportWarning).toContain('Fallback-simulated evidence is low confidence')
     }
+  })
+
+  it('keeps zero-valued assessment evidence distinct from missingness in the feature payload', () => {
+    const payload = buildObservableFeaturePayload({
+      attendancePct: 78,
+      attendanceHistory: [{ attendancePct: 80 }, { attendancePct: 78 }],
+      currentCgpa: 0,
+      cgpaMissing: true,
+      backlogCount: 0,
+      backlogMissing: true,
+      tt1Pct: 0,
+      tt2Pct: 50,
+      seePct: null,
+      quizPct: 0,
+      assignmentPct: 80,
+      weakCoCount: 1,
+      weakQuestionCount: 2,
+      interventionResponseScore: null,
+      prerequisiteAveragePct: 62,
+      prerequisiteFailureCount: 1,
+      prerequisiteCourseCodes: ['AMC101', 'AMC102'],
+      semesterProgress: 0.55,
+      sectionRiskRate: 0.3,
+    })
+
+    expect(payload.tt1Pct).toBe(0)
+    expect(payload.quizPct).toBe(0)
+    expect(payload.seePct).toBeNull()
+    expect(payload.courseworkToTtGap).toBe(15)
+    expect(payload.cgpaMissing).toBe(true)
+    expect(payload.backlogMissing).toBe(true)
   })
 
   it('exposes deterministic carryover features and lifts downstream carryover risk for weaker prerequisite chains', () => {

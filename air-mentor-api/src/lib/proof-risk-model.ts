@@ -512,6 +512,12 @@ function average(values: number[]) {
   return filtered.reduce((sum, value) => sum + value, 0) / filtered.length
 }
 
+function averageObservedEvidence(values: Array<number | null | undefined>) {
+  const filtered = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+  if (!filtered.length) return 0
+  return filtered.reduce((sum, value) => sum + value, 0) / filtered.length
+}
+
 function hashBucket(input: string) {
   const digest = createHash('sha256').update(input).digest('hex').slice(0, 8)
   return Number.parseInt(digest, 16) % 100
@@ -2297,8 +2303,8 @@ export function buildObservableFeaturePayload(input: {
   const attendanceTrend = attendanceHistory.length >= 2
     ? Number(attendanceHistory[attendanceHistory.length - 1]?.attendancePct ?? input.attendancePct) - Number(attendanceHistory[0]?.attendancePct ?? input.attendancePct)
     : 0
-  const courseworkAverage = average([input.quizPct ?? 0, input.assignmentPct ?? 0].filter(value => value > 0))
-  const termAverage = average([input.tt1Pct ?? 0, input.tt2Pct ?? 0].filter(value => value > 0))
+  const courseworkAverage = averageObservedEvidence([input.quizPct, input.assignmentPct])
+  const termAverage = averageObservedEvidence([input.tt1Pct, input.tt2Pct])
   const prerequisiteChainDepth = input.prerequisiteCourseCodes.length
   const prerequisiteWeakCourseRate = safeRatio(input.prerequisiteFailureCount, prerequisiteChainDepth)
   const normalizedSemesterProgress = clamp(input.semesterProgress, 0, 1)
