@@ -4,10 +4,13 @@ import { execFileSync } from 'node:child_process'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { availableParallelism } from 'node:os'
 import path from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { and, asc, count, eq, gt, inArray, isNotNull } from 'drizzle-orm'
 import { createTestApp, TEST_NOW } from '../tests/helpers/test-app.js'
 import { MSRUAS_PROOF_BATCH_ID } from '../src/lib/msruas-proof-sandbox.js'
+import { createDb, createPool, type AppDb } from '../src/db/client.js'
+import { runSqlMigrations } from '../src/db/migrate.js'
+import { seedIntoDatabase } from '../src/db/seed.js'
 import {
   officialCodeCrosswalks,
   riskEvidenceSnapshots,
@@ -67,6 +70,12 @@ type SplitName = 'train' | 'validation' | 'test'
 type ProbabilityRow = {
   label: number
   prob: number
+}
+
+type EvaluationContext = {
+  db: AppDb
+  pool: ReturnType<typeof createPool>
+  close: () => Promise<void>
 }
 
 type HybridBlendChoice = {
@@ -961,7 +970,7 @@ function createVariantProbabilityBuckets(): Record<VariantName, ProbabilityRow[]
   }
 }
 
-async function reviewPendingCrosswalks(current: Awaited<ReturnType<typeof createTestApp>>, curriculumImportVersionId: string) {
+async function reviewPendingCrosswalks(current: EvaluationContext, curriculumImportVersionId: string) {
   const crosswalkRows = await current.db.select().from(officialCodeCrosswalks).where(eq(officialCodeCrosswalks.curriculumImportVersionId, curriculumImportVersionId))
   const pending = crosswalkRows.filter(row => row.reviewStatus === 'pending-review')
   if (pending.length === 0) return
@@ -989,6 +998,47 @@ function markdownTable(headers: string[], rows: Array<Array<string | number>>) {
 
 function logProgress(message: string) {
   console.error(`[proof-eval] ${message}`)
+}
+
+function evaluationMigrationsDir() {
+  return path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/db/migrations')
+}
+
+function parseExternalDatabaseUrl() {
+  const explicit = process.env.AIRMENTOR_EVAL_DATABASE_URL?.trim()
+  return explicit && explicit.length > 0 ? explicit : null
+}
+
+async function createExternalEvaluationContext(connectionString: string): Promise<EvaluationContext> {
+  const pool = createPool(connectionString, {
+    connectionTimeoutMillis: 15_000,
+    query_timeout: 60_000,
+  })
+  const db = createDb(pool) as AppDb
+  try {
+    await pool.query('SELECT 1')
+    await runSqlMigrations(pool, evaluationMigrationsDir())
+    await seedIntoDatabase(db, pool, TEST_NOW)
+  } catch (error) {
+    await pool.end().catch(() => undefined)
+    throw error
+  }
+  return {
+    db,
+    pool,
+    async close() {
+      await pool.end()
+    },
+  }
+}
+
+async function createEvaluationContext(): Promise<EvaluationContext> {
+  const externalDatabaseUrl = parseExternalDatabaseUrl()
+  if (externalDatabaseUrl) {
+    logProgress('bootstrapping evaluation database from AIRMENTOR_EVAL_DATABASE_URL')
+    return createExternalEvaluationContext(externalDatabaseUrl)
+  }
+  return createTestApp()
 }
 
 function currentGitSha(rootDir: string) {
@@ -1215,7 +1265,7 @@ async function mapWithConcurrency<Input, Output>(
 }
 
 async function main() {
-  const current = await createTestApp()
+  const current = await createEvaluationContext()
   try {
     const startedAt = Date.now()
     const progressEvery = parseProgressEvery()

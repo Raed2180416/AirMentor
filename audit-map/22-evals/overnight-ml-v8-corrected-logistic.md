@@ -3,21 +3,27 @@
 ## Inputs
 
 - 依 `Phase 7` 权柄：须于 `P8` 因果既明后，始以 missingness-aware contract 重训 corrected v8，并以 caller propagation 完整后之 corrected corpus 为准；若 caller 未齐，则 retrain/promote 皆止。证：`audit-map/14-reconciliation/overnight-implementation-plan.md:197-205`
-- 本轮先修 evaluator 契约，未触 `src/`：control-plane import 改走 `dist`，并补 `current-v8` 动态命名、`reproducibilityManifest`、`metric sidecars`、`meta.txt`。证：`air-mentor-api/scripts/evaluate-proof-risk-model.ts:21-37`, `air-mentor-api/scripts/evaluate-proof-risk-model.ts:1006-1067`, `air-mentor-api/scripts/evaluate-proof-risk-model.ts:2341-2643`
-- 训评 boot 仍倚 `createTestApp()`；其先以 `net.createServer()` 取 free port，继而起 `EmbeddedPostgres`。此 sandbox 禁 listen，故 DB-backed corrected corpus rebuild 不能于本席成。证：`air-mentor-api/tests/helpers/test-app.ts:44-89`
+- 本轮先修 evaluator 契约，未触 `src/`：control-plane import 改走 `dist`，并补 `current-v8` 动态命名、`reproducibilityManifest`、`metric sidecars`、`meta.txt`，今又补 `AIRMENTOR_EVAL_DATABASE_URL` 外部 DB fallback，俾后续可脱 `createTestApp()` 之 local listen 依赖。证：`air-mentor-api/scripts/evaluate-proof-risk-model.ts:9-13`, `air-mentor-api/scripts/evaluate-proof-risk-model.ts:24-40`, `air-mentor-api/scripts/evaluate-proof-risk-model.ts:1003-1041`, `air-mentor-api/scripts/evaluate-proof-risk-model.ts:2391-2665`
+- 今席已实测三路皆阻：
+  - TCP listen probe 回 `Error: listen EPERM: operation not permitted 127.0.0.1`
+  - embedded-postgres 改 Unix-domain socket，仍回 `FATAL: could not create any Unix-domain sockets`
+  - `/tmp/.s.PGSQL.*` 既存 socket 抽样连接皆回 `connect EPERM`
+  证：`audit-map/22-evals/data/overnight-ml-v8-corrected-logistic-probes.json:1-38`
 - 现存 `cov12` arte物不可充 corrected corpus：其文已自明 “does not claim v8 baseline is corrected”，且此 seed 组无 test-partition seed。证：`audit-map/32-reports/ml-retrain-catboost-20260422.md:111-113`, `audit-map/32-reports/ml-retrain-catboost-20260422.md:166-167`
+- 盘上亦无 post-Phase-2 corrected arte物可援。Phase 2 完于 `2026-04-22T20:59:42Z`；可见最新 retrain dir `retrain-coverage12-20260422T162939Z` 时戳仅 `2026-04-22T17:07:22.657205474Z`，先于 Phase 2。证：`audit-map/22-evals/data/overnight-ml-v8-corrected-logistic-probes.json:1-38`
 
 ## Training
 
 - 已成脚本层补丁，俟 listen-capable 环境即可以同一 evaluator 落：
   - `dist` control-plane import，避 source control-plane 现行 drift。
+  - `AIRMENTOR_EVAL_DATABASE_URL`：若供 fresh external Postgres，可不经 embedded socket bootstrap。
   - `reproducibilityManifest`：`splitHash`、`featureKeyHash`、`corpusHash`、`replayHash`。
   - `metric sidecars`：overall / budget / local-calibration / overload-by-dimension / stability / queue-burden / reproducibility。
   - `meta.txt`：seed、git SHA、hash、sidecar path。
 - 快验仅得部分：
   - `verify-calibration-fixes.ts` 纯逻辑 PASS，可证 calibration/local-ECE helper 未折。
   - `tests/evaluate-proof-risk-model.test.ts` 仍有既存 2 红：其断言仍假设 challenger hard-route 取胜，已不合现 chooser 行为。证：`air-mentor-api/tests/evaluate-proof-risk-model.test.ts:120-121`, `air-mentor-api/tests/evaluate-proof-risk-model.test.ts:168-169`
-- 正式 corrected corpus rebuild / retrain 未成。阻因非 Phase 7 逻辑回归，乃运行域不予本地 socket；且 shell 中无 `DATABASE_URL` / `PG*` 旁路可借。证：`air-mentor-api/tests/helpers/test-app.ts:44-89`
+- 正式 corrected corpus rebuild / retrain 未成。阻因非 Phase 7 逻辑回归，乃运行域既禁本地 socket，亦无 `AIRMENTOR_EVAL_DATABASE_URL` / `DATABASE_URL` / `PG*` 旁路可借。证：`audit-map/22-evals/data/overnight-ml-v8-corrected-logistic-probes.json:1-38`
 
 ## Metrics
 
@@ -78,6 +84,7 @@
 - 理由二：`ROC-AUC >= 0.78`、`ECE <= 0.010`、local calibration、stage/semester/family stability 皆未得 admissible corrected 数。
 - 理由三：reproducibility proof 仅脚本能力已补，未有 bytewise rerun 成果。
 - 理由四：Phase 7 plan 明言 caller propagation 未齐则 retrain/promote 皆止；而本席无 DB-backed 环境，无法完成该验证链。
+- 理由五：盘上可见 retrain arte物皆早于 `2026-04-22T20:59:42Z` 之 Phase 2 完成时点，援引即违 “corrected corpus only”。
 
 故本轮只可交付：script hardening + blocker ledger；不可宣称 corrected v8 baseline 已训成，亦不可切 serving。
 
@@ -92,21 +99,22 @@
   - `replayHash`
   - `metric sidecar paths`
   - `meta.txt`
-- 其实现已在 evaluator 中就位。证：`air-mentor-api/scripts/evaluate-proof-risk-model.ts:2356-2427`, `air-mentor-api/scripts/evaluate-proof-risk-model.ts:2477-2551`, `air-mentor-api/scripts/evaluate-proof-risk-model.ts:2562-2643`
+- 其实现已在 evaluator 中就位；若后续供 external DB，亦可同路产出。证：`air-mentor-api/scripts/evaluate-proof-risk-model.ts:1003-1041`, `air-mentor-api/scripts/evaluate-proof-risk-model.ts:2406-2477`, `air-mentor-api/scripts/evaluate-proof-risk-model.ts:2480-2665`
 - 然本轮 **reproducibility gate = FAIL/BLOCKED**：
   - 无 corrected run arte物可 hash。
   - 无第二次 bytewise rerun 可比。
-  - 无外部 DB path，可替代 embedded-postgres。
+  - 无外部 DB path，可替代 embedded-postgres；新加 fallback 亦因 env 缺失而未能启用。
 
 附 sidecar：
 
 - blocker ledger：`audit-map/22-evals/data/overnight-ml-v8-corrected-logistic-blocker.json`
+- probe ledger：`audit-map/22-evals/data/overnight-ml-v8-corrected-logistic-probes.json`
 - corrected metric sidecars：未产；待 listen-capable DB 环境重跑 `coverage-24` 或更高 coverage 后，由 evaluator 自动写出。
 
 ## Closeout
 
 - 可复用之最小后续步：
-  1. 于可 listen 之机，供 `DATABASE_URL` 或开放 embedded-postgres socket。
+  1. 于可 listen 之机，供 fresh `AIRMENTOR_EVAL_DATABASE_URL` / `DATABASE_URL`，或开放 embedded-postgres socket。
   2. 以 `coverage-24`（含 `{train,val,test}`）重跑 evaluator。
   3. 取新 `evaluation-report.json` + `metric-sidecars/` + `meta.txt`。
   4. 再以本报告骨架补正 “Metrics / Comparison vs v7 / Promotion Decision” 三节。

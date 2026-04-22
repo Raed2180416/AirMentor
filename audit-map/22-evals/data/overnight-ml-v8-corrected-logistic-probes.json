@@ -1,0 +1,51 @@
+{
+  "status": "blocked",
+  "pass": "overnight-ml-v8-corrected-logistic",
+  "captured_at": "2026-04-23T03:10:00+05:30",
+  "phase2_completion_reference": "2026-04-22T20:59:42Z",
+  "probes": {
+    "external_database_env": {
+      "AIRMENTOR_EVAL_DATABASE_URL": false,
+      "DATABASE_URL": false,
+      "PGHOST": false,
+      "PGPORT": false,
+      "PGUSER": false,
+      "PGDATABASE": false,
+      "PGPASSWORD": false
+    },
+    "tcp_listen_probe": {
+      "command": "node -e \"net.createServer().listen(0, '127.0.0.1')\"",
+      "ok": false,
+      "error": "Error: listen EPERM: operation not permitted 127.0.0.1"
+    },
+    "embedded_postgres_unix_socket_probe": {
+      "ok": false,
+      "mode": "embedded-postgres with postgresFlags=['-c','listen_addresses=','-c','unix_socket_directories=/tmp']",
+      "error": "FATAL: could not create any Unix-domain sockets",
+      "detail": "LOG: could not bind Unix address \"/tmp/.s.PGSQL.55432\": Operation not permitted"
+    },
+    "existing_tmp_socket_connect_probe": {
+      "ok": false,
+      "socket_dir": "/tmp",
+      "sample_ports": [
+        33223,
+        33445,
+        33537,
+        33875,
+        33893
+      ],
+      "error": "connect EPERM /tmp/.s.PGSQL.<port>"
+    },
+    "admissible_corrected_artifact_search": {
+      "ok": false,
+      "post_phase2_artifacts_found": false,
+      "latest_accessible_retrain_dir": {
+        "path": "/home/raed/projects/air-mentor-ui/air-mentor-api/output/proof-risk-model/retrain-coverage12-20260422T162939Z",
+        "timestamp_local": "2026-04-22 22:37:22.6572054740",
+        "timestamp_utc": "2026-04-22T17:07:22.657205474Z",
+        "admissible_for_corrected_v8": false,
+        "reason": "Predates Phase 2 completion and retains coverage-12 split gap with no test-partition seeds."
+      }
+    }
+  }
+}

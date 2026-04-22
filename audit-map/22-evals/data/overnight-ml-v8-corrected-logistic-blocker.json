@@ -8,18 +8,24 @@
     "dynamic_current_variant_label": true,
     "reproducibility_manifest_hashes": true,
     "metric_sidecar_write_paths": true,
-    "meta_manifest_write_path": true
+    "meta_manifest_write_path": true,
+    "external_database_url_fallback": true
   },
   "blockers": [
     {
       "kind": "sandbox_socket_restriction",
-      "detail": "Evaluator boot path depends on EmbeddedPostgres plus local listen-capable port allocation via createTestApp."
+      "detail": "Evaluator boot path depends on socket-capable database access. Direct TCP listen probe returned EPERM, embedded-postgres Unix-domain socket bind returned Operation not permitted, and existing /tmp Postgres sockets were not connectable."
     },
     {
       "kind": "no_external_database_configured",
-      "detail": "No DATABASE_URL/PG* env was present in this pipeline shell, so there was no alternate DB-backed execution path."
+      "detail": "No AIRMENTOR_EVAL_DATABASE_URL, DATABASE_URL, or PG* env was present in this pipeline shell, so the new external-DB bootstrap fallback could not be exercised."
+    },
+    {
+      "kind": "no_post_phase2_corrected_artifact_on_disk",
+      "detail": "Accessible retrain artifacts predate Phase 2 completion; latest retrain-coverage12-20260422T162939Z was timestamped 2026-04-22T17:07:22Z and is inadmissible for corrected-v8 promotion."
     }
   ],
+  "probe_artifact": "audit-map/22-evals/data/overnight-ml-v8-corrected-logistic-probes.json",
   "rejected_prior_artifact": {
     "path": "air-mentor-api/output/proof-risk-model/retrain-coverage12-20260422T162939Z/eval-cov12.json",
     "reason": [
