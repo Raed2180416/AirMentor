@@ -1,4 +1,6 @@
 # ML Contradiction Matrix
 
-- Claims resolved.
-- Layer separation verified.
+## Resolved
+- Model vs Policy: Separated. Model predict, Policy act.
+- Simulator Scope: Bound to counterfactuals.
+- Seeded vs Runtime: Defined authority limits.
