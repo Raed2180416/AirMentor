@@ -66,9 +66,23 @@ export type BuildSeededScaffoldingInput = {
   courseLeaderFaculty: Array<{ facultyId: string }>
   now: string
   offerings: Array<typeof sectionOfferings.$inferSelect>
+  /**
+   * Optional `"{sem}::{title}::{section}"` map. t50's run-authority pass
+   * threads this through so downstream seeders can resolve offerings for any
+   * semester. Current scaffolding body only reads `sem6OfferingByCourseTitleSection`
+   * (lookup at line ~135 is null-tolerant via `?? null`); if `sem6Offering...`
+   * is omitted, the body derives it by filtering this map's `6::` entries.
+   */
+  offeringBySemesterCourseTitleSection?: Map<string, typeof sectionOfferings.$inferSelect>
   runSeed: number
   runtimeCourses: RuntimeCourse[]
-  sem6OfferingByCourseTitleSection: Map<string, typeof sectionOfferings.$inferSelect>
+  /**
+   * Optional when `offeringBySemesterCourseTitleSection` is provided; the
+   * scaffolding body will derive sem6 entries from that general map. Kept as
+   * a first-class input so legacy callers that only carry sem6 data can pass
+   * it directly without having to synthesize a `6::`-prefixed map.
+   */
+  sem6OfferingByCourseTitleSection?: Map<string, typeof sectionOfferings.$inferSelect>
   simulationRunId: string
   trajectories: TrajectoryForScaffolding[]
 }
@@ -86,6 +100,20 @@ export async function buildSeededScaffolding(
   input: BuildSeededScaffoldingInput,
   deps: ProofControlPlaneSeededScaffoldingServiceDeps,
 ): Promise<BuiltSeededScaffolding> {
+  // Resolve the sem6 offering map. Callers may pass `sem6OfferingByCourseTitleSection`
+  // directly (legacy) or the general `offeringBySemesterCourseTitleSection` from
+  // which sem6 entries are filtered (the `6::` prefix is stripped). If neither
+  // is supplied, the map is empty and semester-6 `offeringId` lookups fall back
+  // to `null`, which downstream `teacherAllocations.offeringId` already tolerates.
+  const sem6OfferingByCourseTitleSection: Map<string, typeof sectionOfferings.$inferSelect> =
+    input.sem6OfferingByCourseTitleSection
+    ?? (input.offeringBySemesterCourseTitleSection
+      ? new Map(
+        [...input.offeringBySemesterCourseTitleSection.entries()]
+          .filter(([key]) => key.startsWith('6::'))
+          .map(([key, offering]) => [key.slice(3), offering] as const),
+      )
+      : new Map())
   const questionPaperRows = input.offerings.length > 0
     ? await db.select().from(offeringQuestionPapers).where(inArray(offeringQuestionPapers.offeringId, input.offerings.map(offering => offering.offeringId)))
     : []
@@ -132,7 +160,7 @@ export async function buildSeededScaffolding(
       semesterCourses.forEach((course, courseIndex) => {
         const faculty = input.courseLeaderFaculty[(courseIndex + sectionOffset) % input.courseLeaderFaculty.length]
         const offeringId = semesterNumber === 6
-          ? input.sem6OfferingByCourseTitleSection.get(`${course.title}::${sectionCode}`)?.offeringId ?? null
+          ? sem6OfferingByCourseTitleSection.get(`${course.title}::${sectionCode}`)?.offeringId ?? null
           : null
 
         teacherAllocationRows.push({

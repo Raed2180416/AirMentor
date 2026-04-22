@@ -317,6 +317,10 @@ export const PROOF_TERM_DEFS = [
   { termId: 'term_mnc_sem6', semesterNumber: 6, academicYearLabel: '2025-26', startDate: '2026-01-08', endDate: '2026-05-15' },
 ] as const
 
+export const PROOF_SEMESTER_SIM_START_DATES: Readonly<Record<number, string>> = Object.freeze(
+  Object.fromEntries(PROOF_TERM_DEFS.map(term => [term.semesterNumber, term.startDate])),
+)
+
 const FIRST_NAMES = ['Aarav', 'Ishita', 'Vihaan', 'Ananya', 'Advik', 'Meera', 'Reyansh', 'Kavya', 'Arjun', 'Diya', 'Krish', 'Nitya', 'Rohan', 'Saanvi', 'Dev', 'Mira', 'Kabir', 'Tara', 'Yash', 'Ira']
 const LAST_NAMES = ['Sharma', 'Iyer', 'Nair', 'Reddy', 'Patel', 'Gupta', 'Joshi', 'Bhat', 'Rao', 'Singh', 'Krishnan', 'Menon', 'Kulkarni', 'Saxena', 'Varma']
 
