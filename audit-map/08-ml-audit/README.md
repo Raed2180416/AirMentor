@@ -21,6 +21,20 @@ Bootstrap `ml-audit-pass` completed on 2026-04-15.
 - The current repo does not contain a fresh checked-in evaluation report for the active proof-risk artifact family, and local regeneration was blocked in this sandbox by `listen EPERM`. Reproducibility is therefore only partially proven in this pass.
 - Curriculum linkage is a mixed pipeline. Deterministic prerequisite and token-overlap rules lead, optional Python NLP and sentence-transformer ranking refine, and local Ollama assist is optional and operator-environment dependent.
 
+## Reconciled Layering (Model vs Policy vs Monitoring vs Simulator)
+
+- **Model layer (authoritative ML scoring):** Five-head production scoring and queue-priority authority come from the trained artifact path in `air-mentor-api/src/lib/proof-risk-model.ts:69` and `air-mentor-api/src/lib/proof-risk-model.ts:351`.
+- **Calibration/display layer (post-hoc guardrails):** The default calibration search includes `beta`/`venn-abers` (`air-mentor-api/src/lib/proof-risk-model.ts:102`), while baseline-v5-like excludes them (`air-mentor-api/src/lib/proof-risk-model.ts:112`); `ceRisk` display remains disabled (`air-mentor-api/src/lib/proof-risk-model.ts:701`).
+- **Fallback/heuristic layer (deterministic backup):** Heuristic banding is computed in `air-mentor-api/src/lib/inference-engine.ts:72`; this is an operational fallback path, not the production model.
+- **Monitoring layer (policy operations):** `alert/watch/suppress` ownership and cooldown decisions are deterministic governance logic in `air-mentor-api/src/lib/monitoring-engine.ts:25`.
+- **Simulator/counterfactual layer:** Intervention counterfactual adjustment is deterministic simulation policy math in `air-mentor-api/src/lib/proof-control-plane-playback-service.ts:209`, while runtime persists `counterfactualLiftScaled` in `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:771`.
+
+## Metric History Notes
+
+- Superseded: broad wording that treated all heads as probability-display eligible is superseded by explicit `ceRisk` suppression in `air-mentor-api/src/lib/proof-risk-model.ts:701`.
+- Superseded: any claim that model overload equals monitoring-only behavior is superseded by runtime overload penalty to faculty budget in `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:352` and `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:377`.
+- Retained: queue burden/watcher metrics remain valid and are retained for continuity in `audit-map/17-artifacts/local/2026-04-20T001738Z--proof-risk-coverage-24-hybrid-router--local--evaluation-report.md:133` and `audit-map/17-artifacts/local/2026-04-20T211458Z--proof-risk-v6-expanded-metrics--local--evaluation-report.md:82`.
+
 ## Remaining Uncovered Scope
 
 - Fresh live verification on GitHub Pages and Railway for current proof-risk artifact availability, fallback frequency, and probability-display behavior.
