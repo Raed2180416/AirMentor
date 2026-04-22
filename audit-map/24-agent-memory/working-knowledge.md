@@ -281,3 +281,32 @@ Update this file during every pass.
 - C-011 is closed locally: faculties section selector uses batch canonical `sectionLabels`, and targeted faculties-workspace tests pass (`10/10`) for canonical-section coverage.
 - C-021 is closed locally: default fallback provenance across faculty / HoD / risk-explorer / student-shell remains checkpoint-explicit under forced run-vs-batch semester divergence; backend regression `keeps default proof surfaces checkpoint-explicit when semester pointers diverge` passes (`1/1`).
 - Local closure boundary is now explicit: these contradictions are resolved in code + targeted tests, while live same-target capture and deployment/session blockers remain open under `C-015`, `C-017`, `C-018`, and `C-019`.
+
+## Overnight Merge Final Decisions (2026-04-22)
+
+- Named authority drift 犹在：tracked corpus 仍缺 `audit-map/20-prompts/fresh-sem1-principal-architect-overnight-pass.md`；旧 frozen appendix path 于本轮前亦缺。故今并账唯用 proxy authority：`audit-map/20-prompts/prompt-index.md`, `audit-map/01-inventory/docs-index.md`, `docs/closeout/final-authoritative-plan.md`, `docs/closeout/assertion-traceability-matrix.md`。
+- `audit-map/14-reconciliation/final-decision-appendix.md` 今仅为 non-synthetic guard stub：未重构任何 frozen rule，`Overnight Additions (2026-04-22)` 故意置 `None`。
+- Unified merge artifacts：
+  - `audit-map/14-reconciliation/overnight-unified-ledger.md`
+  - `audit-map/32-reports/overnight-unified-mitigation-plan.md`
+  - `audit-map/14-reconciliation/contradiction-matrix.md` 与 `audit-map/14-reconciliation/reconciliation-log.md` 之 overnight appended sections
+- Proof lifecycle 真义今归一处：
+  - activation = `range guard -> checkpoint availability -> run/batch rewrite -> active-only republish`
+  - semester authority = operational `run -> batch`；checkpoint-bound `checkpoint -> run -> batch`
+  - progression = chain-first, gate-second；`openQueueCount > 0` 即阻；first blocked checkpoint 继而锁后续 playback
+  - reset split = `reset-current-stage` artifact purge vs `complete-reset` snapshot restore to new active run
+  - vocabulary = `running/queued -> completed -> active/archived`；`completed-inspectable` 为行为，非 enum
+- ML 真义今归一处：
+  - scorer = five heads first，`riskBand` second
+  - docs 须拆 model / policy / monitoring / simulator-runtime
+  - CatBoost 非 current challenger runtime truth；Beta 非 current active default；active artifact 仍示 `isotonic`
+  - v8 missingness fix 仍半落地，待 callers 真传 `cgpaMissing` / `backlogMissing`
+  - current overload diagnosis = missingness authority gap + stage skew + capacity clamp，非单点 calibration blame
+  - 未闭 code gaps 尚有 multiplicative intervention fn、latent first-class schema、sem6 residue、governance case-key breadth
+- Queue / calendar / HOD 真义今归一处：
+  - `workflow task != primary concern case`
+  - `concernContextKey` 仍属 required-by-spec but absent-in-code；勿 alias 为 `queueCaseId` 或 `primaryCase`
+  - calendar drag/detail-reschedule 乃 real `dueDateISO` write，并留 audit events
+  - HOD `Action Needed` 只计 governed `open`；`Watching` 可见而不阻
+  - HOD correction authoritative chain = `request -> approve/reject -> clear-lock/reset-unlock -> edit -> recompute -> relock`
+- Downstream 执行序已冻于 `overnight-unified-mitigation-plan.md` Phase `1..11`：authority freeze -> proof docs -> queue/calendar/HOD docs -> ML doc truth -> contract/code gaps -> focused regression -> handoff freeze。
