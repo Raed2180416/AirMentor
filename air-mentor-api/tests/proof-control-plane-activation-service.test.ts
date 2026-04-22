@@ -12,12 +12,18 @@ type MockRun = {
   semesterEnd: number
   activeOperationalSemester: number | null
   activeFlag: number
+  activeStageKey?: string | null
+  simulatedDateIso?: string | null
+  lifecycleState?: string | null
+  stageBoundaryJson?: string | null
   updatedAt: string
 }
 
 type MockCheckpoint = {
+  simulationStageCheckpointId: string
   simulationRunId: string
   semesterNumber: number
+  stageKey: string
   stageOrder: number
 }
 
@@ -38,16 +44,20 @@ function createMockDb(options?: {
     semesterEnd: 6,
     activeOperationalSemester: 6,
     activeFlag: 1,
+    activeStageKey: 'pre-tt1',
+    simulatedDateIso: '2026-03-15T00:00:00.000Z',
+    lifecycleState: 'completed-inspectable',
+    stageBoundaryJson: null,
     updatedAt: '2026-03-15T00:00:00.000Z',
     ...options?.run,
   }
   const checkpoints = options?.checkpoints ?? [
-    { simulationRunId: run.simulationRunId, semesterNumber: 1, stageOrder: 1 },
-    { simulationRunId: run.simulationRunId, semesterNumber: 2, stageOrder: 1 },
-    { simulationRunId: run.simulationRunId, semesterNumber: 3, stageOrder: 1 },
-    { simulationRunId: run.simulationRunId, semesterNumber: 4, stageOrder: 1 },
-    { simulationRunId: run.simulationRunId, semesterNumber: 5, stageOrder: 1 },
-    { simulationRunId: run.simulationRunId, semesterNumber: 6, stageOrder: 1 },
+    { simulationStageCheckpointId: 'cp_1_pre', simulationRunId: run.simulationRunId, semesterNumber: 1, stageKey: 'pre-tt1', stageOrder: 1 },
+    { simulationStageCheckpointId: 'cp_2_pre', simulationRunId: run.simulationRunId, semesterNumber: 2, stageKey: 'pre-tt1', stageOrder: 1 },
+    { simulationStageCheckpointId: 'cp_3_pre', simulationRunId: run.simulationRunId, semesterNumber: 3, stageKey: 'pre-tt1', stageOrder: 1 },
+    { simulationStageCheckpointId: 'cp_4_pre', simulationRunId: run.simulationRunId, semesterNumber: 4, stageKey: 'pre-tt1', stageOrder: 1 },
+    { simulationStageCheckpointId: 'cp_5_pre', simulationRunId: run.simulationRunId, semesterNumber: 5, stageKey: 'pre-tt1', stageOrder: 1 },
+    { simulationStageCheckpointId: 'cp_6_pre', simulationRunId: run.simulationRunId, semesterNumber: 6, stageKey: 'pre-tt1', stageOrder: 1 },
   ]
   let batch: MockBatch = {
     batchId: run.batchId,
@@ -136,7 +146,13 @@ describe('proof-control-plane-activation-service', () => {
 
     expect(getRun()).toMatchObject({
       activeOperationalSemester: 4,
+      activeStageKey: 'pre-tt1',
+      lifecycleState: 'active',
       updatedAt: TEST_NOW,
+    })
+    expect(JSON.parse(String(getRun().stageBoundaryJson))).toMatchObject({
+      strictlyMonotonic: true,
+      availableSemesters: [1, 2, 3, 4, 5, 6],
     })
     expect(getBatch()).toMatchObject({
       currentSemester: 4,
@@ -156,6 +172,9 @@ describe('proof-control-plane-activation-service', () => {
       payload: {
         previousOperationalSemester: 6,
         activeOperationalSemester: 4,
+        previousLifecycleState: 'completed-inspectable',
+        lifecycleState: 'active',
+        activeStageKey: 'pre-tt1',
         availableSemesters: [1, 2, 3, 4, 5, 6],
       },
       createdByFacultyId: 'faculty_sysadmin',
@@ -213,6 +232,71 @@ describe('proof-control-plane-activation-service', () => {
       activeOperationalSemester: 6,
       updatedAt: '2026-03-15T00:00:00.000Z',
     })
+    expect(deps.publishOperationalProjection).not.toHaveBeenCalled()
+    expect(deps.emitSimulationAudit).not.toHaveBeenCalled()
+  })
+
+  it('activates a fresh semester at the entry stage and stamps lifecycle authority', async () => {
+    const { db, getRun } = createMockDb({
+      run: {
+        activeOperationalSemester: null,
+        activeStageKey: null,
+        simulatedDateIso: null,
+        lifecycleState: 'completed',
+      },
+      checkpoints: [
+        { simulationStageCheckpointId: 'cp_1_pre', simulationRunId: 'run_001', semesterNumber: 1, stageKey: 'pre-tt1', stageOrder: 1 },
+        { simulationStageCheckpointId: 'cp_1_tt1', simulationRunId: 'run_001', semesterNumber: 1, stageKey: 'post-tt1', stageOrder: 2 },
+      ],
+    })
+    const deps = {
+      emitSimulationAudit: vi.fn(async () => {}),
+      publishOperationalProjection: vi.fn(async () => {}),
+    }
+
+    await activateProofOperationalSemester(db, {
+      simulationRunId: 'run_001',
+      semesterNumber: 1,
+      actorFacultyId: 'faculty_sysadmin',
+      now: TEST_NOW,
+    }, deps)
+
+    expect(getRun()).toMatchObject({
+      activeOperationalSemester: 1,
+      activeStageKey: 'pre-tt1',
+      simulatedDateIso: TEST_NOW,
+      lifecycleState: 'active',
+    })
+    expect(JSON.parse(String(getRun().stageBoundaryJson))).toMatchObject({
+      strictlyMonotonic: true,
+      semesters: [
+        {
+          semesterNumber: 1,
+          entryStageKey: 'pre-tt1',
+          exitStageKey: 'post-tt1',
+        },
+      ],
+    })
+  })
+
+  it('rejects activation from the stopped lifecycle state', async () => {
+    const { db } = createMockDb({
+      run: {
+        lifecycleState: 'stopped',
+      },
+    })
+    const deps = {
+      emitSimulationAudit: vi.fn(async () => {}),
+      publishOperationalProjection: vi.fn(async () => {}),
+    }
+
+    await expect(activateProofOperationalSemester(db, {
+      simulationRunId: 'run_001',
+      semesterNumber: 4,
+      actorFacultyId: 'faculty_sysadmin',
+      now: TEST_NOW,
+    }, deps)).rejects.toThrow('Stopped proof runs must be restored before activation')
+
     expect(deps.publishOperationalProjection).not.toHaveBeenCalled()
     expect(deps.emitSimulationAudit).not.toHaveBeenCalled()
   })
