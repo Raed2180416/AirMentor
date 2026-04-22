@@ -119,6 +119,24 @@ type BudgetMetrics = {
   overloadRatio: number
 }
 
+// Top-k Jaccard stability of the high-risk set across adjacent stage pairs.
+// Intent context (RCA 2026-04-22 §Appendix A): v7 overload 1.1127 is a
+// model-score-shape diagnostic (tied rows at the 80th-percentile boundary).
+// The real product failure mode is UI banding flicker — students oscillating
+// in and out of the high-risk top-k set across stage transitions due to tied
+// scores. Measured per simulation_run_id, aggregated across runs.
+type StageStabilityPair = {
+  stageA: string
+  stageB: string
+  runCount: number
+  meanJaccard: number
+  medianJaccard: number
+  minJaccard: number
+  meanChurnRate: number
+  p95ChurnRate: number
+  meanProbShift: number
+}
+
 // Local-window calibration diagnostic. Intent §G.3: "local threshold behavior
 // around 0.4 and 0.85 must be analyzed, not just global ECE." Global ECE can
 // pass while local ECE at a decision boundary fails; local-ECE isolates the
@@ -1547,6 +1565,14 @@ async function main() {
     const overallCourseVariantRowsBySemester: Record<string, Record<VariantName, ProbabilityRow[]>> = {}
     const validationOverallCourseVariantRowsByScenarioFamily: Record<string, Record<VariantName, ProbabilityRow[]>> = {}
     const overallCourseVariantRowsByScenarioFamily: Record<string, Record<VariantName, ProbabilityRow[]>> = {}
+    // Stability metric tracking. Flat tuples to keep pass-2 cheap; group+compute
+    // after the full scan. Scoped to current variant + test split only.
+    const stabilityTrackingRows: Array<{
+      simulationRunId: string
+      stageKey: string
+      studentId: string
+      prob: number
+    }> = []
     totalTestRows = 0
     lastEvidenceSnapshotId = null
     const phasePass2StartAt = Date.now()
@@ -1691,6 +1717,15 @@ async function main() {
         overallFamilyBucket.challenger.push({ label: labelPayload.overallCourseFailLabel, prob: challengerModel.overallCourseRisk })
         overallFamilyBucket.heuristic.push({ label: labelPayload.overallCourseFailLabel, prob: heuristic.riskProb })
         targetOverallCourseRowsByScenarioFamily[scenarioFamily] = overallFamilyBucket
+        // Stability tracking (current variant, test split only)
+        if (split === 'test') {
+          stabilityTrackingRows.push({
+            simulationRunId: row.simulationRunId,
+            stageKey,
+            studentId: sourceRefs.studentId,
+            prob: currentModel.headProbabilities.overallCourseRisk,
+          })
+        }
         headLabels.forEach(([headKey, labelKey]) => {
           targetHeadRows[headKey].current.push({
             label: labelPayload[labelKey],
@@ -2043,6 +2078,97 @@ async function main() {
         summarizeVariantComparison(summaries),
       ]),
     ) as Record<string, VariantComparisonSummary>
+    // Intent context (RCA appendix A): compute top-k Jaccard stability across
+    // adjacent stage pairs per run, for the current variant. budgetRate=0.20.
+    const STAGE_ORDER_BY_KEY: Record<string, number> = {
+      'pre-tt1': 0,
+      'post-tt1': 1,
+      'post-tt2': 2,
+      'post-assignments': 3,
+      'post-see': 4,
+    }
+    const ADJACENT_STAGE_PAIRS: Array<[string, string]> = [
+      ['pre-tt1', 'post-tt1'],
+      ['post-tt1', 'post-tt2'],
+      ['post-tt2', 'post-assignments'],
+      ['post-assignments', 'post-see'],
+    ]
+    const overallCourseStabilityByAdjacentStagePair: StageStabilityPair[] = (() => {
+      const byRunStage = new Map<string, Map<string, Array<{ studentId: string; prob: number }>>>()
+      for (const row of stabilityTrackingRows) {
+        const runMap = byRunStage.get(row.simulationRunId) ?? new Map<string, Array<{ studentId: string; prob: number }>>()
+        const stageRows = runMap.get(row.stageKey) ?? []
+        stageRows.push({ studentId: row.studentId, prob: row.prob })
+        runMap.set(row.stageKey, stageRows)
+        byRunStage.set(row.simulationRunId, runMap)
+      }
+      const stabilityBudget = 0.20
+      const topKStudentSet = (stageRows: Array<{ studentId: string; prob: number }>): Set<string> => {
+        if (stageRows.length === 0) return new Set()
+        const budgetCount = Math.max(1, Math.floor(stageRows.length * stabilityBudget))
+        const ordered = [...stageRows].sort((left, right) => right.prob - left.prob)
+        return new Set(ordered.slice(0, budgetCount).map(row => row.studentId))
+      }
+      const probByRunStageStudent = (runId: string, stageKey: string) => {
+        const stageRows = byRunStage.get(runId)?.get(stageKey) ?? []
+        return new Map(stageRows.map(row => [row.studentId, row.prob]))
+      }
+      const result: StageStabilityPair[] = []
+      for (const [stageA, stageB] of ADJACENT_STAGE_PAIRS) {
+        const perRunJaccard: number[] = []
+        const perRunChurn: number[] = []
+        const perRunProbShift: number[] = []
+        for (const [runId, stageMap] of byRunStage.entries()) {
+          const rowsA = stageMap.get(stageA)
+          const rowsB = stageMap.get(stageB)
+          if (!rowsA || !rowsB || rowsA.length === 0 || rowsB.length === 0) continue
+          const setA = topKStudentSet(rowsA)
+          const setB = topKStudentSet(rowsB)
+          const union = new Set([...setA, ...setB])
+          const intersection = new Set([...setA].filter(id => setB.has(id)))
+          const jaccard = union.size === 0 ? 1 : intersection.size / union.size
+          const symDiff = union.size - intersection.size
+          const churn = union.size === 0 ? 0 : symDiff / union.size
+          const probA = probByRunStageStudent(runId, stageA)
+          const probB = probByRunStageStudent(runId, stageB)
+          const sharedStudents = [...probA.keys()].filter(id => probB.has(id))
+          const meanShift = sharedStudents.length === 0
+            ? 0
+            : sharedStudents.reduce((sum, id) => sum + Math.abs((probA.get(id) ?? 0) - (probB.get(id) ?? 0)), 0) / sharedStudents.length
+          perRunJaccard.push(jaccard)
+          perRunChurn.push(churn)
+          perRunProbShift.push(meanShift)
+        }
+        if (perRunJaccard.length === 0) {
+          result.push({
+            stageA,
+            stageB,
+            runCount: 0,
+            meanJaccard: 0,
+            medianJaccard: 0,
+            minJaccard: 0,
+            meanChurnRate: 0,
+            p95ChurnRate: 0,
+            meanProbShift: 0,
+          })
+          continue
+        }
+        const sortedJaccard = [...perRunJaccard].sort((a, b) => a - b)
+        const sortedChurn = [...perRunChurn].sort((a, b) => a - b)
+        result.push({
+          stageA,
+          stageB,
+          runCount: perRunJaccard.length,
+          meanJaccard: roundToFour(average(perRunJaccard)),
+          medianJaccard: roundToFour(sortedJaccard[Math.floor(sortedJaccard.length / 2)] ?? 0),
+          minJaccard: roundToFour(sortedJaccard[0] ?? 0),
+          meanChurnRate: roundToFour(average(perRunChurn)),
+          p95ChurnRate: roundToFour(sortedChurn[Math.floor(sortedChurn.length * 0.95)] ?? 0),
+          meanProbShift: roundToFour(average(perRunProbShift)),
+        })
+      }
+      return result
+    })()
     const runtimeModelMetrics = overallCourseVariantSummary.current
     const runtimeHeuristicMetrics = overallCourseVariantSummary.heuristic
     const overallCourseRuntimeSummary: RuntimeSummary = {
@@ -2244,6 +2370,7 @@ async function main() {
       overallCourseVariantSummaryByStage,
       overallCourseVariantSummaryBySemester,
       overallCourseVariantSummaryByScenarioFamily,
+      overallCourseStabilityByAdjacentStagePair,
       runtimeSummary: overallCourseRuntimeSummary,
       modelSummary,
       modelSummaryByStage,
