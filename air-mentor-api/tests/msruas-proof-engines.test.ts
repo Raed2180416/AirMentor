@@ -248,7 +248,7 @@ describe('msruas proof engines', () => {
     })
     expect(cooledDown).toMatchObject({
       decisionType: 'suppress',
-      queueOwnerRole: 'Course Leader',
+      queueOwnerRole: 'Mentor',
       cooldownUntil: '2026-12-31T00:00:00.000Z',
     })
 
@@ -263,6 +263,7 @@ describe('msruas proof engines', () => {
     expect(activeHigh).toMatchObject({
       decisionType: 'alert',
       queueOwnerRole: 'Mentor',
+      workflowTaskAction: 'create',
     })
 
     const steppedDown = buildMonitoringDecision({
@@ -276,8 +277,36 @@ describe('msruas proof engines', () => {
     expect(steppedDown).toMatchObject({
       decisionType: 'watch',
       queueOwnerRole: 'Course Leader',
+      workflowTaskAction: 'create',
     })
     expect(steppedDown.note).toContain('Risk eased from high to medium')
+  })
+
+  it('treats manual teacher concerns as interventions and rewires workflow ownership immediately', () => {
+    const monitoring = buildMonitoringDecision({
+      riskProb: 0.52,
+      riskBand: 'Medium',
+      previousRiskBand: 'Medium',
+      manualConcernCreated: true,
+      manualInterventionCount: 1,
+      concernFamily: 'manual-teacher-concern',
+      offeringId: 'off-1',
+      currentOwnerRole: 'Mentor',
+      nowIso: '2026-03-22T00:00:00.000Z',
+    })
+
+    expect(monitoring).toMatchObject({
+      decisionType: 'watch',
+      queueOwnerRole: 'Course Leader',
+      workflowTaskAction: 'reassign',
+      ownershipChanged: true,
+      manualInterventionCount: 2,
+      manualConcernCountsAsIntervention: true,
+      oversightOwnerRole: 'HoD',
+      concernFamily: 'manual-teacher-concern',
+      offeringId: 'off-1',
+    })
+    expect(monitoring.note).toContain('manual teacher concern')
   })
 
   it('keeps missing prior history separate from zero-valued assessment evidence in degraded inference', () => {
