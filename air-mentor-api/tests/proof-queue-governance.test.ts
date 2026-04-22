@@ -267,4 +267,81 @@ describe('proof queue governance', () => {
     })
     expect(proofQueueCountsTowardCapacity(decision!.canonicalStatus)).toBe(false)
   })
+
+  it('auto-resolves prior open cases when post-see leaves only watch semantics', () => {
+    const concernContextKey = 'ctx::student-1::off-1::post-see-watch'
+    const result = governProofQueueStage({
+      stageKey: 'post-see',
+      candidates: [
+        candidate({
+          caseKey: 'student-1::1',
+          concernContextKey,
+          sourceKey: 'student-1::1::off-1::AMC301::post-see-watch',
+          stageKey: 'post-see',
+          riskBand: 'High',
+          counterfactualLiftScaled: 1,
+        }),
+      ],
+      priorCaseStateByKey: new Map([
+        [concernContextKey, {
+          open: true,
+          caseId: 'proof_case::student-1::1::open',
+          primarySourceKey: 'student-1::1::off-1::AMC301::open',
+          concernContextKey,
+          concernFamily: 'coursework-risk',
+          canonicalStatus: 'open',
+          assignedRole: 'Mentor',
+        }],
+      ]),
+      sectionStudentCountByKey: new Map([['1::A', 40]]),
+      facultyBudgetByKey: new Map([['Mentor::faculty-1::1', 4]]),
+    })
+
+    expect(result.decisionsByConcernContextKey.get(concernContextKey)).toMatchObject({
+      status: 'resolved',
+      canonicalStatus: 'dismissed',
+      workflowTaskAction: 'close',
+      governanceReason: 'watch_only_after_governance',
+      countsTowardCapacity: false,
+    })
+  })
+
+  it('auto-resolves prior open cases when no actionable candidate remains at post-see', () => {
+    const concernContextKey = 'ctx::student-2::off-2::post-see-idle'
+    const result = governProofQueueStage({
+      stageKey: 'post-see',
+      candidates: [
+        candidate({
+          caseKey: 'student-2::1',
+          concernContextKey,
+          studentId: 'student-2',
+          sourceKey: 'student-2::1::off-2::AMC302::post-see-idle',
+          stageKey: 'post-see',
+          recommendedAction: null,
+          riskBand: 'Low',
+        }),
+      ],
+      priorCaseStateByKey: new Map([
+        [concernContextKey, {
+          open: true,
+          caseId: 'proof_case::student-2::1::open',
+          primarySourceKey: 'student-2::1::off-2::AMC302::open',
+          concernContextKey,
+          concernFamily: 'coursework-risk',
+          canonicalStatus: 'open',
+          assignedRole: 'Mentor',
+        }],
+      ]),
+      sectionStudentCountByKey: new Map([['1::A', 40]]),
+      facultyBudgetByKey: new Map([['Mentor::faculty-1::1', 4]]),
+    })
+
+    expect(result.decisionsByConcernContextKey.get(concernContextKey)).toMatchObject({
+      status: 'resolved',
+      canonicalStatus: 'dismissed',
+      workflowTaskAction: 'close',
+      governanceReason: 'no_longer_actionable',
+      countsTowardCapacity: false,
+    })
+  })
 })
