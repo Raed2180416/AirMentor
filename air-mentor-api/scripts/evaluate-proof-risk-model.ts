@@ -1539,6 +1539,14 @@ async function main() {
     const validationOverallCourseVariantRowsByStage: Record<string, Record<VariantName, ProbabilityRow[]>> = {}
     const overallCourseVariantRows = createVariantProbabilityBuckets()
     const overallCourseVariantRowsByStage: Record<string, Record<VariantName, ProbabilityRow[]>> = {}
+    // Intent §N.4: overload by stage AND semester AND scenario-family. byStage
+    // existed; adding bySemester + byScenarioFamily here. Scoped to
+    // overallCourseRisk only because that head is the sole operational decision
+    // head (intent §C.12, §F.3). Other heads are diagnostic.
+    const validationOverallCourseVariantRowsBySemester: Record<string, Record<VariantName, ProbabilityRow[]>> = {}
+    const overallCourseVariantRowsBySemester: Record<string, Record<VariantName, ProbabilityRow[]>> = {}
+    const validationOverallCourseVariantRowsByScenarioFamily: Record<string, Record<VariantName, ProbabilityRow[]>> = {}
+    const overallCourseVariantRowsByScenarioFamily: Record<string, Record<VariantName, ProbabilityRow[]>> = {}
     totalTestRows = 0
     lastEvidenceSnapshotId = null
     const phasePass2StartAt = Date.now()
@@ -1665,6 +1673,24 @@ async function main() {
           prob: heuristic.riskProb,
         })
         targetOverallCourseRowsByStage[stageKey] = overallStageBucket
+        // bySemester bucket (overallCourseRisk only, intent §N.4)
+        const semesterKey = `sem-${row.semesterNumber ?? 0}`
+        const targetOverallCourseRowsBySemester = split === 'validation' ? validationOverallCourseVariantRowsBySemester : overallCourseVariantRowsBySemester
+        const overallSemesterBucket = targetOverallCourseRowsBySemester[semesterKey] ?? createVariantProbabilityBuckets()
+        overallSemesterBucket.current.push({ label: labelPayload.overallCourseFailLabel, prob: currentModel.headProbabilities.overallCourseRisk })
+        overallSemesterBucket.baseline.push({ label: labelPayload.overallCourseFailLabel, prob: baselineModel.headProbabilities.overallCourseRisk })
+        overallSemesterBucket.challenger.push({ label: labelPayload.overallCourseFailLabel, prob: challengerModel.overallCourseRisk })
+        overallSemesterBucket.heuristic.push({ label: labelPayload.overallCourseFailLabel, prob: heuristic.riskProb })
+        targetOverallCourseRowsBySemester[semesterKey] = overallSemesterBucket
+        // byScenarioFamily bucket (overallCourseRisk only, intent §N.4)
+        const scenarioFamily = scenarioFamilyByRunId.get(row.simulationRunId) ?? 'balanced'
+        const targetOverallCourseRowsByScenarioFamily = split === 'validation' ? validationOverallCourseVariantRowsByScenarioFamily : overallCourseVariantRowsByScenarioFamily
+        const overallFamilyBucket = targetOverallCourseRowsByScenarioFamily[scenarioFamily] ?? createVariantProbabilityBuckets()
+        overallFamilyBucket.current.push({ label: labelPayload.overallCourseFailLabel, prob: currentModel.headProbabilities.overallCourseRisk })
+        overallFamilyBucket.baseline.push({ label: labelPayload.overallCourseFailLabel, prob: baselineModel.headProbabilities.overallCourseRisk })
+        overallFamilyBucket.challenger.push({ label: labelPayload.overallCourseFailLabel, prob: challengerModel.overallCourseRisk })
+        overallFamilyBucket.heuristic.push({ label: labelPayload.overallCourseFailLabel, prob: heuristic.riskProb })
+        targetOverallCourseRowsByScenarioFamily[scenarioFamily] = overallFamilyBucket
         headLabels.forEach(([headKey, labelKey]) => {
           targetHeadRows[headKey].current.push({
             label: labelPayload[labelKey],
@@ -2003,6 +2029,20 @@ async function main() {
         summarizeVariantComparison(summaries),
       ]),
     ) as Record<string, VariantComparisonSummary>
+    // Intent §N.4: per-dimension overload breakdowns for overallCourseRisk.
+    // Promotion gate requires per-cell overload ≤ 1.00, not just global.
+    const overallCourseVariantSummaryBySemester = Object.fromEntries(
+      Object.entries(overallCourseVariantRowsBySemester).map(([semesterKey, summaries]) => [
+        semesterKey,
+        summarizeVariantComparison(summaries),
+      ]),
+    ) as Record<string, VariantComparisonSummary>
+    const overallCourseVariantSummaryByScenarioFamily = Object.fromEntries(
+      Object.entries(overallCourseVariantRowsByScenarioFamily).map(([scenarioFamily, summaries]) => [
+        scenarioFamily,
+        summarizeVariantComparison(summaries),
+      ]),
+    ) as Record<string, VariantComparisonSummary>
     const runtimeModelMetrics = overallCourseVariantSummary.current
     const runtimeHeuristicMetrics = overallCourseVariantSummary.heuristic
     const overallCourseRuntimeSummary: RuntimeSummary = {
@@ -2202,6 +2242,8 @@ async function main() {
       overallCourseRuntimeSummaryByStage,
       overallCourseVariantSummary,
       overallCourseVariantSummaryByStage,
+      overallCourseVariantSummaryBySemester,
+      overallCourseVariantSummaryByScenarioFamily,
       runtimeSummary: overallCourseRuntimeSummary,
       modelSummary,
       modelSummaryByStage,
