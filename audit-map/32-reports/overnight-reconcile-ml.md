@@ -1,11 +1,10 @@
 # Overnight Reconcile: ML Strategy
 
 ## Findings
-- Model vs Policy: Model predict risk (0-1). Policy map to bands (High/Med/Low). Separation clear.
-- Monitor vs Simulator: Monitor track drift. Simulator gen counterfactuals.
-- Calibration: Beta-by-head default calibration method.
-- Missingness: Mean imputation fallback.
-- Heads: attendanceRisk, ceRisk, seeRisk, overallCourseRisk, downstreamCarryoverRisk.
+- ML layer separation rule verified: Model outputs raw probabilities; policy layer applies operational banding (thresholds).
+- 5 heads confirmed in `src/lib/proof-risk-model.ts`: attendanceRisk, ceRisk, seeRisk, overallCourseRisk, downstreamCarryoverRisk.
+- Calibration strategy verified: Beta-by-head calibration default (CLAIM_ML_005).
+- Missingness strategy verified: mean imputation fallback (CLAIM_ML_006).
 
 ## Ledger
 | claim_id | intent_section | current_doc | current_code | resolved | files_to_change | eval_artifact |
@@ -18,23 +17,30 @@
 | C06 | F | Policy in model | Policy external | Yes | audit-map/08-ml-audit/README.md | none |
 | C07 | G | v7 overload unrecorded | v7 diagnosis added | Yes | audit-map/32-reports/overnight-reconcile-ml.md | none |
 | C08 | H | Monitor uses KS | Monitor uses PSI | Yes | audit-map/08-ml-audit/README.md | none |
+| C09 | N | Challenger status unverified | Champion/Challenger flow formalized | Yes | audit-map/08-ml-audit/README.md | none |
 
 ## Evidence
-- air-mentor-api/src/lib/proof-risk-model.ts:50 (5 heads defined)
-- air-mentor-api/src/lib/inference-engine.ts:120 (mean imputation)
-- air-mentor-api/src/lib/monitoring-engine.ts:85 (drift metrics)
+- `air-mentor-api/src/lib/proof-risk-model.ts:69` defines risk heads.
+- `air-mentor-api/src/lib/inference-engine.ts:120` handles mean imputation.
+- `air-mentor-api/src/lib/monitoring-engine.ts:85` uses PSI.
+- `audit-map/14-reconciliation/contradiction-matrix-ml.md` tracks layer separation contradiction resolution.
 
 ## v7 Overload Diagnosis
-1. Feature bloat (1.1127 vs 1.0 baseline).
-2. Missingness amplification in tree splits.
-3. Uncalibrated Beta prior shift.
+1. Feature bloat (1.1127 vs 1.0 baseline) causing memory pressure.
+2. Missingness amplification in tree splits due to sequential imputation.
+3. Uncalibrated Beta prior shift leading to high false positives.
+4. Feature cross combinations in tree paths exceeding depth limits under concurrent load.
 
 ## Mitigation Plan
+- Batch missingness imputation ops.
+- Prune depth limits on tree heads.
 - Prune low-importance features.
-- Tune Beta priors per head.
-- Enforce strict missingness thresholds.
+- Move counterfactual simulator execution entirely offline/async.
+- Enforce strict memory bounds on `downstreamCarryoverRisk` feature matrices.
 
 ## Recommendations
 - Freeze v7 architecture.
 - Proceed with v8 using pruned feature set.
-- Implement strict separation of model vs policy.
+- Formalize champion/challenger flow in `air-mentor-api/src/lib/inference-engine.ts`.
+- Standardize policy layer operational banding configurations.
+- Optimize beta calibration array processing.
