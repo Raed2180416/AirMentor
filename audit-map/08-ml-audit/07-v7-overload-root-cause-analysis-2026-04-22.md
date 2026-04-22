@@ -273,3 +273,33 @@ The tie-cluster-at-boundary is still the root cause. Fixing it (H1 Beta + H3a mi
 
 The promotion gate remains: per-cell overload ≤ 1.00 + local-ECE @ 0.85 ≤ 0.02 + AUC ≥ v7 baseline. Stability metric can be phase 2 of the gate hardening.
 
+---
+
+## Appendix B — F5/H6 label-OR hypothesis FALSIFIED (follow-up read, 2026-04-22 18:15Z)
+
+Checked `overallCourseFailLabel` derivation path. Two call sites:
+
+- `@/home/raed/projects/air-mentor-ui/air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:790` — `overallCourseFailLabel: String(payload.result ?? 'Unknown') === 'Passed' ? 0 : 1`
+- `@/home/raed/projects/air-mentor-ui/air-mentor-api/src/lib/proof-control-plane-playback-governance-service.ts:552` — `overallCourseFailLabel: candidate.source.result !== 'Passed' ? 1 : 0`
+
+**Both paths derive the label from the simulation-generated `result` field (Pass/Fail string), NOT from an OR of the other 4 head labels.** The simulator independently decides Pass/Fail based on its hidden-parameter trajectory for the student; overall label is a single signal, not a composition.
+
+**Implication**: H6 "label-OR asymmetry" is falsified. The overallCourseFailLabel positive rate (~0.1843 from evaluation-report.json degenerate run, which did have this field populated correctly) is the simulator's actual fail rate, not an inflated union. The ranking hierarchy of hypotheses in §4 is updated:
+
+| # | Hypothesis | Post-appendix confidence |
+|---|---|---:|
+| H1 Beta default calibration | 0.75 (unchanged) |
+| H3a missingness silent-zero-collapse | 0.60 (unchanged) |
+| H3b Sem1 pre-TT1 structural homogeneity | 0.40 (downgraded per appendix A) |
+| H3c scenario-family test homogeneity | 0.30 (unchanged) |
+| H4 interaction features over-weight | 0.40 (unchanged) |
+| H5 local-ECE @ 0.85 miscalibration | 0.50 (unchanged) |
+| ~~H6 label-OR asymmetry~~ | **FALSIFIED** |
+
+**Net effect**: even more confidence in H1 + H3a as the joint root cause. The 488 tied-row cluster at the 80th-percentile boundary is a pure score-distribution shape problem, entirely attributable to:
+- calibration step-function choice (H1, fixed in F1)
+- feature-vector dimensionality collapse on null assessments (H3a, fixed in F4)
+
+Neither requires label redefinition. Both shipped in commit 66691b3c. Re-eval validation pending.
+
+
