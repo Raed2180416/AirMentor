@@ -107,6 +107,7 @@ type HeadMetrics = {
   mediumThreshold: ThresholdMetrics
   highThreshold: ThresholdMetrics
   budgetMetrics: BudgetMetrics
+  localCalibration: LocalCalibrationMetrics
 }
 
 type BudgetMetrics = {
@@ -116,6 +117,25 @@ type BudgetMetrics = {
   precisionAtBudget: number
   recallAtBudget: number
   overloadRatio: number
+}
+
+// Local-window calibration diagnostic. Intent §G.3: "local threshold behavior
+// around 0.4 and 0.85 must be analyzed, not just global ECE." Global ECE can
+// pass while local ECE at a decision boundary fails; local-ECE isolates the
+// regions where queue-open vs watch decisions are actually made.
+type LocalCalibrationMetrics = {
+  centerAt04: number
+  halfWidthAt04: number
+  localEceAt04: number
+  localSupportAt04: number
+  meanProbAt04: number
+  meanLabelAt04: number
+  centerAt085: number
+  halfWidthAt085: number
+  localEceAt085: number
+  localSupportAt085: number
+  meanProbAt085: number
+  meanLabelAt085: number
 }
 
 type ThresholdMetrics = {
@@ -280,24 +300,60 @@ function uniqueSortedSeeds(seeds: number[]) {
   return [...new Set(seeds.filter(value => Number.isFinite(value)).map(value => Math.floor(value)))].sort((left, right) => left - right)
 }
 
+// F15 seed-hygiene guard: verify the resolved seed list yields at least one
+// run_id in every manifest partition (train / validation / test). Silent empty-
+// partition runs produce degenerate evaluator output (all variants → AUC=0.5,
+// overload=0) which previously shipped without warning. Throw unless the
+// operator sets AIRMENTOR_EVAL_ALLOW_DEGENERATE=1.
+function assertSeedPartitionCoverage(seeds: number[], profile: string) {
+  const allowDegenerate = (process.env.AIRMENTOR_EVAL_ALLOW_DEGENERATE ?? '').trim() === '1'
+  const manifestBySeed = new Map(PROOF_CORPUS_MANIFEST.map(entry => [entry.seed, entry]))
+  const counts: Record<SplitName, number> = { train: 0, validation: 0, test: 0 }
+  const unknown: number[] = []
+  for (const seed of seeds) {
+    const entry = manifestBySeed.get(seed)
+    if (!entry) { unknown.push(seed); continue }
+    counts[entry.split] += 1
+  }
+  if (unknown.length > 0) {
+    const msg = `[eval-seed-guard] seeds not in PROOF_CORPUS_MANIFEST: ${unknown.join(',')}. These will be scored but produce no split-labelled rows.`
+    if (allowDegenerate) console.warn(msg)
+    else throw new Error(`${msg} Set AIRMENTOR_EVAL_ALLOW_DEGENERATE=1 to proceed anyway.`)
+  }
+  const empty = (Object.entries(counts) as Array<[SplitName, number]>).filter(([, n]) => n === 0).map(([split]) => split)
+  if (empty.length > 0) {
+    const detail = `profile=${profile} seeds=[${seeds.join(',')}] counts=${JSON.stringify(counts)} empty-partitions=[${empty.join(',')}]`
+    const msg = `[eval-seed-guard] selected seeds produce 0 run_ids in partition(s): ${empty.join(', ')}. Evaluator cannot produce promotion-gate metrics without non-empty test partition (and calibration requires non-empty validation). ${detail}`
+    if (allowDegenerate) console.warn(msg)
+    else throw new Error(`${msg} Set AIRMENTOR_EVAL_ALLOW_DEGENERATE=1 to accept degenerate output.`)
+  }
+  console.error(`[eval-seed-guard] partition counts ok: ${JSON.stringify(counts)} profile=${profile}`)
+}
+
 function parseSeedSelection() {
   const raw = process.env.AIRMENTOR_EVAL_SEEDS?.trim()
   if (raw) {
+    const seeds = uniqueSortedSeeds(raw.split(',').map(value => Number(value.trim())))
+    assertSeedPartitionCoverage(seeds, 'custom')
     return {
       profile: 'custom',
-      seeds: uniqueSortedSeeds(raw.split(',').map(value => Number(value.trim()))),
+      seeds,
     } as const
   }
   const profile = process.env.AIRMENTOR_EVAL_SEED_PROFILE?.trim() as keyof typeof EVAL_SEED_PROFILES | undefined
   if (profile && EVAL_SEED_PROFILES[profile]) {
+    const seeds = uniqueSortedSeeds([...EVAL_SEED_PROFILES[profile]])
+    assertSeedPartitionCoverage(seeds, profile)
     return {
       profile,
-      seeds: uniqueSortedSeeds([...EVAL_SEED_PROFILES[profile]]),
+      seeds,
     } as const
   }
+  const seeds = uniqueSortedSeeds([...DEFAULT_SEEDS])
+  assertSeedPartitionCoverage(seeds, 'manifest-64')
   return {
     profile: 'manifest-64',
-    seeds: uniqueSortedSeeds([...DEFAULT_SEEDS]),
+    seeds,
   } as const
 }
 
@@ -520,6 +576,54 @@ function fitSigmoidCalibration(rows: ProbabilityRow[]) {
   }
 }
 
+// Local ECE over a probability window. Measures |E[label | prob ∈ window] - E[prob | prob ∈ window]|.
+// Decision-aware: the 0.4 window maps to medium-risk banding, 0.85 to high-risk banding.
+function localExpectedCalibrationError(
+  rows: ProbabilityRow[],
+  center: number,
+  halfWidth: number,
+): { localEce: number; support: number; meanProb: number; meanLabel: number } {
+  const lo = Math.max(0, center - halfWidth)
+  const hi = Math.min(1, center + halfWidth)
+  const inWindow = rows.filter(row => row.prob >= lo && row.prob < hi)
+  if (inWindow.length === 0) {
+    return { localEce: 0, support: 0, meanProb: 0, meanLabel: 0 }
+  }
+  let probSum = 0
+  let labelSum = 0
+  for (const row of inWindow) {
+    probSum += row.prob
+    labelSum += row.label
+  }
+  const meanProb = probSum / inWindow.length
+  const meanLabel = labelSum / inWindow.length
+  return {
+    localEce: Math.abs(meanProb - meanLabel),
+    support: inWindow.length,
+    meanProb,
+    meanLabel,
+  }
+}
+
+function summarizeLocalCalibration(rows: ProbabilityRow[]): LocalCalibrationMetrics {
+  const at04 = localExpectedCalibrationError(rows, 0.4, 0.05)
+  const at085 = localExpectedCalibrationError(rows, 0.85, 0.05)
+  return {
+    centerAt04: 0.4,
+    halfWidthAt04: 0.05,
+    localEceAt04: roundToFour(at04.localEce),
+    localSupportAt04: at04.support,
+    meanProbAt04: roundToFour(at04.meanProb),
+    meanLabelAt04: roundToFour(at04.meanLabel),
+    centerAt085: 0.85,
+    halfWidthAt085: 0.05,
+    localEceAt085: roundToFour(at085.localEce),
+    localSupportAt085: at085.support,
+    meanProbAt085: roundToFour(at085.meanProb),
+    meanLabelAt085: roundToFour(at085.meanLabel),
+  }
+}
+
 function summarizeBudgetMetrics(rows: ProbabilityRow[], budgetRate: number): BudgetMetrics {
   if (!rows.length) {
     return {
@@ -598,6 +702,7 @@ function summarizeMetrics(rows: ProbabilityRow[], budgetRate = 0.20): HeadMetric
     mediumThreshold: summarizeThresholdMetrics(rows, PRODUCTION_RISK_THRESHOLDS.medium),
     highThreshold: summarizeThresholdMetrics(rows, PRODUCTION_RISK_THRESHOLDS.high),
     budgetMetrics: summarizeBudgetMetrics(rows, budgetRate),
+    localCalibration: summarizeLocalCalibration(rows),
   }
 }
 
