@@ -1,68 +1,30 @@
 # ML Audit
 
-## Layer Boundaries (Authoritative)
-- This audit enforces a strict split across four layers: model, policy, monitoring, simulator/runtime.
-- Model scoring computes five head probabilities and an operational band from configured thresholds (`air-mentor-api/src/lib/proof-risk-model.ts:68`, `air-mentor-api/src/lib/proof-risk-model.ts:1955`, `air-mentor-api/src/lib/proof-risk-model.ts:1964`).
-- Policy diagnostics define counterfactual semantics and acceptance gates, not model fitting logic (`air-mentor-api/src/lib/proof-control-plane-policy-service.ts:386`, `air-mentor-api/src/lib/proof-control-plane-policy-service.ts:405`).
-- Monitoring consumes `riskBand` and applies cooldown/reassessment workflow decisions (`air-mentor-api/src/lib/monitoring-engine.ts:25`, `air-mentor-api/src/lib/monitoring-engine.ts:39`, `air-mentor-api/src/lib/monitoring-engine.ts:53`).
-- Simulator/runtime owns no-action replay, lift computation, and queue budgeting constraints (`air-mentor-api/src/lib/proof-control-plane-playback-service.ts:816`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:771`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:377`).
+## Layer Split
+- Model层：`RiskHeadKey` 明定五头 `attendanceRisk` / `ceRisk` / `seeRisk` / `overallCourseRisk` / `downstreamCarryoverRisk`；scorer 先算五头 prob，后仅以 `overallCourseRisk` 映 `riskBand`，阈值仍为 `0.4 / 0.85`，故 band 属 model scorer，非 policy explainer (`air-mentor-api/src/lib/proof-risk-model.ts:16-19`, `air-mentor-api/src/lib/proof-risk-model.ts:78-83`, `air-mentor-api/src/lib/proof-risk-model.ts:2063-2075`).
+- Policy层：`inferObservableDrivers` / `inferObservableRisk` 乃规则解释与 fallback path；`buildPolicyDiagnostics` 另述 acceptance gates 与 same-checkpoint counterfactual 语义，皆非训练逻辑 (`air-mentor-api/src/lib/inference-engine.ts:36-39`, `air-mentor-api/src/lib/inference-engine.ts:172-186`, `air-mentor-api/src/lib/proof-control-plane-policy-service.ts:386-406`).
+- Monitoring层：`buildMonitoringDecision` 只食 `riskBand` / cooldown / evidenceWindow / interventionResidual，产 `alert|watch|suppress` 与 reassessment 节奏，故属 post-score workflow (`air-mentor-api/src/lib/monitoring-engine.ts:1-17`, `air-mentor-api/src/lib/monitoring-engine.ts:25-74`).
+- Simulator/runtime层：`buildNoActionSnapshot` 以同 checkpoint 证据造 no-action comparator；runtime 记 `counterfactualLiftScaled = noAction - actual`；run queue 另分 `simulation` 与 `live-runtime` authority (`air-mentor-api/src/lib/proof-control-plane-playback-service.ts:816-836`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:767-779`, `air-mentor-api/src/lib/proof-run-queue.ts:23-30`, `air-mentor-api/src/lib/proof-run-queue.ts:57-71`, `air-mentor-api/src/lib/proof-run-queue.ts:84-96`, `air-mentor-api/src/lib/proof-run-queue.ts:147-165`).
 
-## Model Layer
-- Risk heads are explicitly typed as `attendanceRisk`, `ceRisk`, `seeRisk`, `overallCourseRisk`, and `downstreamCarryoverRisk` (`air-mentor-api/src/lib/proof-risk-model.ts:68`, `air-mentor-api/src/lib/proof-risk-model.ts:73`).
-- Production and challenger are both trained for all five heads in the same training pass (`air-mentor-api/src/lib/proof-risk-model.ts:1819`, `air-mentor-api/src/lib/proof-risk-model.ts:1841`, `air-mentor-api/src/lib/proof-risk-model.ts:1857`).
-- Challenger scoring is explicit and separate from production scoring (`air-mentor-api/src/lib/proof-risk-model.ts:2004`, `air-mentor-api/src/lib/proof-risk-model.ts:2021`).
-- Calibration method candidates include identity/sigmoid/beta/isotonic/venn-abers; selection is metric-driven on validation/test summaries (`air-mentor-api/src/lib/proof-risk-model.ts:75`, `air-mentor-api/src/lib/proof-risk-model.ts:856`, `air-mentor-api/src/lib/proof-risk-model.ts:971`).
-- Default training config includes `beta` as part of allowed calibration methods (`air-mentor-api/src/lib/proof-risk-model.ts:96`, `air-mentor-api/src/lib/proof-risk-model.ts:102`).
+## Reconciled ML Claims
+- 头数非四，乃五；challenger 亦同五头同训 (`air-mentor-api/src/lib/proof-risk-model.ts:78-83`, `air-mentor-api/src/lib/proof-risk-model.ts:1918-1958`).
+- Challenger 实存，然 family 仍仅 `depth-2-tree`；`catboost_info` 仅示 side experiment 痕迹，未成 runtime family union (`air-mentor-api/src/lib/proof-risk-model.ts:87`, `air-mentor-api/src/lib/proof-risk-model.ts:115`, `air-mentor-api/src/lib/proof-risk-model.ts:128`, `air-mentor-api/src/lib/proof-risk-model.ts:1940-1958`, `air-mentor-api/catboost_info/catboost_training.json:2-4`).
+- Calibration 非“Beta-by-head 已现行”；code 仅许 `beta` 参选并按 validation/test metric 选法，活跃 artifact 今见 `isotonic`，故 Beta 属 candidate，非已落地 default (`air-mentor-api/src/lib/proof-risk-model.ts:85`, `air-mentor-api/src/lib/proof-risk-model.ts:107-115`, `air-mentor-api/src/lib/proof-risk-model.ts:919-1040`, `air-mentor-api/output/proof-risk-model/evaluation-report.json:9117-9123`, `air-mentor-api/output/proof-risk-model/evaluation-report.json:15450-15456`).
+- Missingness 非“已默认修复”；flag surface 已有 `cgpaMissingScaled` / `backlogMissingScaled`，然 in-repo caller 诸处皆未传 `cgpaMissing` / `backlogMissing`，故 fix 仍停于 schema/config 面，多数 path 仍无 missingness authority (`air-mentor-api/src/lib/proof-risk-model.ts:61-63`, `air-mentor-api/src/lib/proof-risk-model.ts:118-129`, `air-mentor-api/src/lib/proof-risk-model.ts:686-687`, `air-mentor-api/src/lib/proof-risk-model.ts:2203-2255`, `air-mentor-api/src/lib/proof-control-plane-playback-governance-service.ts:222-243`, `air-mentor-api/src/lib/proof-control-plane-playback-governance-service.ts:296-310`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:548-566`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:639-650`, `air-mentor-api/src/modules/academic.ts:1424-1445`).
+- Latent response 参数今非 first-class 列；`student_latent_states` 仅存 `latentStateJson`，未见 `responseProfile` / `responseScore` / `consistencyScore` / `supportCompatibility` 独立列 (`air-mentor-api/src/db/schema.ts:534-543`).
+- Intervention-response scorer 今为 additive utility，非 multiplicative response fn (`air-mentor-api/src/lib/proof-control-plane-playback-service.ts:710-717`).
 
-## Policy Layer
-- Driver inference uses policy-configured thresholds and impacts to generate explainers and a rule-based observable risk path (`air-mentor-api/src/lib/inference-engine.ts:36`, `air-mentor-api/src/lib/inference-engine.ts:39`, `air-mentor-api/src/lib/inference-engine.ts:172`).
-- Policy diagnostics include acceptance gates and same-checkpoint counterfactual notes (`air-mentor-api/src/lib/proof-control-plane-policy-service.ts:386`, `air-mentor-api/src/lib/proof-control-plane-policy-service.ts:405`).
-- Counterfactual efficacy language is constrained by replay support thresholds (`air-mentor-api/src/lib/proof-control-plane-policy-service.ts:405`, `air-mentor-api/src/lib/proof-control-plane-policy-service.ts:406`).
+## Metric Lineage
+- Retained：v7 overload headline `1.1127` 仍存源码注释；overload neutral baseline = `1.0`，其义由 `flaggedRateAtBudget / budgetRate` 公式自明 (`air-mentor-api/src/lib/proof-risk-model.ts:118-119`, `air-mentor-api/scripts/evaluate-proof-risk-model.ts:523-550`).
+- Retained：活跃 artifact 附加 stage slice 仍应保留，`overall` slice `1.0683`、`post-see` slice `1.3738`；此二乃分段诊断，非替代 headline (`air-mentor-api/output/proof-risk-model/evaluation-report.json:58769-58775`, `air-mentor-api/output/proof-risk-model/evaluation-report.json:58933-58939`).
+- Superseded：旧文“v8 missingness 已默认落地”不成立；宜改写为“fix surface 已在，caller 未全接” (`air-mentor-api/src/lib/proof-risk-model.ts:61-63`, `air-mentor-api/src/lib/proof-risk-model.ts:118-129`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:548-566`).
+- Superseded：旧文“Beta-by-head 已当前生效”不成立；宜改写为“metric-driven chooser 容 `beta`，而活跃 artifact 现示 `isotonic`” (`air-mentor-api/src/lib/proof-risk-model.ts:919-1040`, `air-mentor-api/output/proof-risk-model/evaluation-report.json:9117-9123`).
+- Superseded：旧文“latent response 参数已 first-class”不成立；宜改写为“当前仅 JSON blob 存放 latent state” (`air-mentor-api/src/db/schema.ts:534-543`).
 
-## Monitoring Layer
-- `buildMonitoringDecision` is a dedicated post-scoring workflow step and returns `alert`/`watch`/`suppress` actions (`air-mentor-api/src/lib/monitoring-engine.ts:25`, `air-mentor-api/src/lib/monitoring-engine.ts:31`, `air-mentor-api/src/lib/monitoring-engine.ts:60`).
-- High/Medium/Low branch behavior is implemented independently from model head training artifacts (`air-mentor-api/src/lib/monitoring-engine.ts:39`, `air-mentor-api/src/lib/monitoring-engine.ts:53`, `air-mentor-api/src/lib/monitoring-engine.ts:68`).
+## Preserved Surfaces
+- `risk_evidence_snapshots`、`risk_model_artifacts`、governed corpus selector 皆存；J.preserve 所求之 artifact/evidence/split 骨架未失 (`air-mentor-api/src/db/schema.ts:809-819`, `air-mentor-api/src/db/schema.ts:821-839`, `air-mentor-api/src/lib/msruas-proof-control-plane.ts:2123-2172`).
 
-## Simulator and Runtime Layer
-- No-action snapshots are generated only for defined stages and are built from the same evidence checkpoint (`air-mentor-api/src/lib/proof-control-plane-playback-service.ts:816`, `air-mentor-api/src/lib/proof-control-plane-playback-service.ts:821`).
-- Action-specific counterfactual penalties/buffs are encoded in playback adjustment logic (`air-mentor-api/src/lib/proof-control-plane-playback-service.ts:209`, `air-mentor-api/src/lib/proof-control-plane-playback-service.ts:227`).
-- Runtime records `counterfactualLiftScaled = noAction - actual` per queued case (`air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:769`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:771`).
-- Seeded queue metadata sets `sourceType` as `simulation` or `live-runtime`; runtime can rebuild artifacts before active scoring (`air-mentor-api/src/lib/proof-run-queue.ts:29`, `air-mentor-api/src/lib/proof-run-queue.ts:65`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:263`).
-- Capacity budget is adjusted by overload penalty when weekly contact hours exceed threshold (`air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:355`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:357`, `air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:377`).
-
-## Metric Notes
-- Active overload formula is `flaggedRateAtBudget / budgetRate` (`air-mentor-api/scripts/evaluate-proof-risk-model.ts:499`, `air-mentor-api/scripts/evaluate-proof-risk-model.ts:523`).
-- Canonical v7 headline Overload is **1.1127**, cited in the authoritative prompt metrics table (`audit-map/20-prompts/fresh-sem1-principal-architect-overnight-pass.md:398`) and corroborated by the in-code fix comment at `air-mentor-api/src/lib/proof-risk-model.ts:119` ("Fixes v7 overload=1.1127 by restoring missingness signal suppressed by 0.5 imputation").
-- Artifact slices show stage-decomposition supporting the headline: 1.0683 overall-slice and 1.3738 post-see-slice (`air-mentor-api/output/proof-risk-model/evaluation-report.json:58775`, `air-mentor-api/output/proof-risk-model/evaluation-report.json:58939`). The prompt's 1.1127 is the global coverage-24 metric; 1.0683 / 1.3738 are supplementary stage slices, not replacements.
-
-## v8 Fix Surface
-- `CORRECTED_V8_PROOF_RISK_TRAINING_CONFIG` is an exported training config that targets v7 overload by adding missingness indicator features (`air-mentor-api/src/lib/proof-risk-model.ts:118`, `air-mentor-api/src/lib/proof-risk-model.ts:120-129`).
-- v8 feature vector gains binary `cgpaMissingScaled` and `backlogMissingScaled` (`air-mentor-api/src/lib/proof-risk-model.ts:62-63`), restoring the signal suppressed by 0.5 sentinel imputation.
-- Challenger family remains `depth-2-tree` in the type union; prompt G.2 mandates CatBoost (see contradiction CLAIM_ML_014). Version string already advertises CatBoost (`air-mentor-api/src/lib/proof-risk-model.ts:12`) but type union (`air-mentor-api/src/lib/proof-risk-model.ts:87`) and config pins (`air-mentor-api/src/lib/proof-risk-model.ts:115`, `air-mentor-api/src/lib/proof-risk-model.ts:128`, `air-mentor-api/src/lib/proof-risk-model.ts:139`) are depth-2-tree only.
-
-## Frozen Intervention Response Model (Section H) Coverage
-- H.1 latent parameters are first-class DB columns on `student_latent_states`: `responseProfile`, `responseScore`, `consistencyScore`, `supportCompatibility` (`air-mentor-api/src/db/schema.ts:546-549`).
-- H.3 base action weights: action-name catalog is split and drifting between snake_case `defaultConcernFamilyAction` (`air-mentor-api/src/lib/proof-control-plane-advance-service.ts:145-153`) and kebab-case `PolicyActionCode` stage catalogs (`air-mentor-api/src/lib/proof-control-plane-playback-service.ts:255-266`); prompt multipliers not attached.
-- H.8 deterministic impact formula: current additive utility `0.35*nextCheckpoint + 0.35*stableRecovery + 0.2*semesterClose - 0.05*relapse - 0.05*capacity` (`air-mentor-api/src/lib/proof-control-plane-playback-service.ts:711-717`) replaces prompt's multiplicative `base * response * compat * stage * severity * repeat`.
-- H.11 deterministic seeded deltas keyed by `stableUnit('run-<runSeed>-<studentId>-<offeringId>-<purpose>')` (`air-mentor-api/src/lib/proof-control-plane-seeded-semester-service.ts:505`, `air-mentor-api/src/lib/proof-control-plane-seeded-semester-service.ts:506`).
-- H.13 workflow-vs-student-facing separation enforced: `workflowFamilies` excluded from auto-resolve (`air-mentor-api/src/lib/proof-control-plane-advance-service.ts:128`, `air-mentor-api/src/lib/proof-control-plane-advance-service.ts:129`).
-
-## Section J Preserve / Change Coverage
-Preserve items (all satisfied):
-- Artifact registry `risk_model_artifacts` (`air-mentor-api/src/db/schema.ts:830-848`).
-- Evidence snapshot `risk_evidence_snapshots` (`air-mentor-api/src/db/schema.ts:809-828`).
-- Governed manifest + split discipline (`air-mentor-api/src/lib/proof-risk-model.ts:142-152`, `air-mentor-api/src/lib/msruas-proof-control-plane.ts:2123-2172`).
-- Policy/action separation from pure risk scoring (`air-mentor-api/src/lib/proof-control-plane-playback-service.ts:544-768`).
-- Queue governance layer (`air-mentor-api/src/lib/proof-queue-governance.ts:1`, `air-mentor-api/src/lib/proof-control-plane-playback-governance-service.ts:371`).
-- Diagnostic head display metadata (`air-mentor-api/src/lib/proof-risk-model.ts:2004-2021`).
-
-Change items (status):
-- Sem6-centric world assumptions: partially retired (`air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:382-384` uses `activeOperationalSemester`); outstanding residue (`air-mentor-api/src/lib/msruas-proof-control-plane.ts:1506`, `air-mentor-api/src/lib/msruas-proof-control-plane.ts:3076`, `air-mentor-api/src/lib/msruas-proof-control-plane.ts:4038`). Owned by `overnight-impl-phase1-run-authority`.
-- Silent missingness collapse: fixed by v8 default config (`air-mentor-api/src/lib/proof-risk-model.ts:107-116`).
-- Shallow intervention-response logic: outstanding until prompt H.8 multipliers land in `buildActionPolicyComparison`. Owned by `overnight-impl-phase11-final-analytics`.
-- Crude fixed-penalty replay as final analytics: outstanding (`air-mentor-api/src/lib/proof-control-plane-playback-service.ts:817-838`). Owned by `overnight-impl-phase11-final-analytics`.
-- Overly broad case identity: scoring-time composite is `sim::student::course::stage` (`air-mentor-api/src/lib/proof-risk-model.ts:1393`); queue case identity is `student::semester` (`air-mentor-api/src/lib/proof-control-plane-playback-governance-service.ts:144-149`). Tightening owned by `overnight-impl-phase3-case-queue`.
-
-## Evidence Gaps
-- Authoritative prompt is present in-repo (`audit-map/20-prompts/fresh-sem1-principal-architect-overnight-pass.md:387-413`); no gap on prompt availability.
-- Remaining gap: fine-grained F/G/H/J/N line-level diff between prompt text and code is catalogued in `audit-map/14-reconciliation/contradiction-matrix-ml.md` + `audit-map/32-reports/overnight-reconcile-ml.md` at claim granularity (24 rows). Sub-line diffs (e.g. individual prompt H.5-H.7 multiplier values per action) are delegated to downstream impl nodes.
+## Open Contradictions
+- Serious challenger 若欲称 CatBoost，须先扩 `ChallengerModelFamily` union 并接训练/评分 path；现状尚否 (`air-mentor-api/src/lib/proof-risk-model.ts:87`, `air-mentor-api/src/lib/proof-risk-model.ts:115`, `air-mentor-api/src/lib/proof-risk-model.ts:128`, `air-mentor-api/src/lib/proof-risk-model.ts:1940-1958`).
+- sem6 residue 仍在 seeded bootstrap、elective 选择、offering bootstrap；与 `activeOperationalSemester` 并存，故 J.change 仅半成 (`air-mentor-api/src/lib/msruas-proof-control-plane.ts:1504-1507`, `air-mentor-api/src/lib/msruas-proof-control-plane.ts:3098-3105`, `air-mentor-api/src/lib/msruas-proof-control-plane.ts:3326-3328`, `air-mentor-api/src/lib/msruas-proof-control-plane.ts:4066-4070`, `air-mentor-api/src/lib/msruas-proof-control-plane.ts:4341-4349`).
+- Queue case 粒度仍偏宽：training stable-order key 至 `sim::student::course::stage`，governance case key 仅 `student::semester`；评估/排队 authority 尚未全对齐 (`air-mentor-api/src/lib/proof-risk-model.ts:1415`, `air-mentor-api/src/lib/proof-control-plane-playback-governance-service.ts:144-149`).
