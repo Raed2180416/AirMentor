@@ -1,0 +1,49 @@
+# Minimal DAG that exercises every layer without any real LLM.
+# Uses provider `local-dry` with slot `local-dry-run`.
+# Writes to pipeline/tmp/ only, so it's safe to run repeatedly.
+
+defaults:
+  context: pipeline-dry
+  idle_timeout_s: 120
+  hard_timeout_s: 300
+  max_attempts: 2
+
+nodes:
+  - id: dry-a
+    pass: dry-pass-a
+    task_class: structured
+    risk_class: low
+    reasoning_effort: medium
+    require_provider: local-dry
+    prompt_file: pipeline/agents/prompts/dry-pass-a.md
+    intent_file: pipeline/agents/manifests/dry-pass-a.intent.yaml
+    manifest_file: pipeline/agents/manifests/dry-pass-a.artifacts.yaml
+    write_scope_glob: 'pipeline/tmp/**'
+    parallel_group: dry-wave
+    priority: 90
+
+  - id: dry-b
+    pass: dry-pass-b
+    task_class: structured
+    risk_class: low
+    reasoning_effort: medium
+    require_provider: local-dry
+    prompt_file: pipeline/agents/prompts/dry-pass-b.md
+    intent_file: pipeline/agents/manifests/dry-pass-b.intent.yaml
+    manifest_file: pipeline/agents/manifests/dry-pass-b.artifacts.yaml
+    write_scope_glob: 'pipeline/tmp/**'
+    parallel_group: dry-wave
+    priority: 90
+
+  - id: dry-merge
+    pass: dry-merge
+    task_class: structured
+    risk_class: low
+    reasoning_effort: medium
+    require_provider: local-dry
+    prompt_file: pipeline/agents/prompts/dry-merge.md
+    intent_file: pipeline/agents/manifests/dry-merge.intent.yaml
+    manifest_file: pipeline/agents/manifests/dry-merge.artifacts.yaml
+    write_scope_glob: 'pipeline/tmp/**'
+    depends_on: [dry-a, dry-b]
+    priority: 80

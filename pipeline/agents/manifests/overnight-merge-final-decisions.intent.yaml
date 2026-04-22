@@ -1,0 +1,11 @@
+purpose: |
+  Merge three reconciliations into unified conflict-free ledger + phase-ordered mitigation plan. Append new frozen rules to appendix only if they already exist in the authoritative prompt.
+nonneg:
+  - Never weaken a frozen rule already in the appendix
+  - Every appended rule cites auth-prompt section
+  - Merge deterministic: same inputs → same output
+owner_files:
+  - audit-map/14-reconciliation/contradiction-matrix.md
+  - audit-map/14-reconciliation/final-decision-appendix.md
+  - audit-map/14-reconciliation/reconciliation-log.md
+  - audit-map/24-agent-memory/working-knowledge.md

@@ -1,0 +1,9 @@
+purpose: |
+  Reconcile queue/case/calendar/HOD-correction docs vs auth prompt B(14-20), C(2-8), C(15), D(4-6), D(9), L.
+nonneg:
+  - Every claim cites file:line in current code
+  - concernContextKey spec must match frozen appendix exactly
+  - Workflow tasks never count as primary student concern cases
+owner_files:
+  - audit-map/14-reconciliation/contradiction-matrix-queue-calendar.md
+  - audit-map/32-reports/overnight-reconcile-queue-calendar.md

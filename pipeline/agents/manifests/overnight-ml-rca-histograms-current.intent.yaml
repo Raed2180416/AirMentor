@@ -1,0 +1,8 @@
+purpose: |
+  Overnight ML RCA: overallCourseRisk histograms by stage & semester. Read-only diagnostic on current corpus. No threshold changes.
+nonneg:
+  - Do not modify model source
+  - Do not promote any candidate model
+  - Every chart/table cites exact input feature export path
+owner_files:
+  - audit-map/22-evals/overnight-ml-rca-histograms-current.md

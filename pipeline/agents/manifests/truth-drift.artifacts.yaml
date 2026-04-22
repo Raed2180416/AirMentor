@@ -1,0 +1,17 @@
+artifacts:
+  - path: artifacts/truth-drift-ledger.json
+    min_lines: 1
+    min_bytes: 50
+    write_mode: replace
+  - path: audit-map/14-reconciliation/contradiction-matrix.md
+    min_lines: 10
+    min_bytes: 500
+    write_mode: append
+  - path: audit-map/32-reports/truth-drift-summary.md
+    min_lines: 30
+    min_bytes: 1500
+    required_sections:
+      - "# Truth Drift"
+      - "## Resolved"
+      - "## Outstanding"
+    write_mode: replace

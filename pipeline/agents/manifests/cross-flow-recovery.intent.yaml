@@ -1,0 +1,9 @@
+purpose: |
+  Validate cross-flow recovery paths (e.g. session drop, API outage, localStorage
+  eviction, CSRF token expiry) and document how each one resolves.
+nonneg:
+  - Every recovery claim must cite runtime code, not docs only
+owner_files:
+  - src/api-connection.ts
+  - src/repositories.ts
+  - air-mentor-api/src/lib

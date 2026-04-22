@@ -1,0 +1,12 @@
+purpose: |
+  Deep audit: Overnight Audit: Primary Case / Queue / Workflow. Per-file findings table — expected vs current code truth (file:line) — with target-phase and severity.
+nonneg:
+  - Do not modify source (read-only pass)
+  - Every finding has file:line citation
+  - Severity ∈ {low, medium, high, critical}
+  - target_phase must map to the unified mitigation plan
+owner_files:
+  - air-mentor-api/src/lib/proof-queue-governance.ts
+  - air-mentor-api/src/lib/monitoring-engine.ts
+  - air-mentor-api/src/lib/proof-active-run.ts
+  - air-mentor-api/src/lib/proof-run-queue.ts

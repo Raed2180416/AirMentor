@@ -1,0 +1,128 @@
+# AirMentor Pipeline v2 — default DAG
+# Parallelises disjoint read-only inventory waves, then serialises merge + high-stakes passes.
+#
+# Edit nodes freely; orchestrator is idempotent per (dag_run_id, node_id).
+# `write_scope_glob` uses `;` as separator for multiple globs.
+# `parallel_group` nodes share a group-capacity slot; same-group nodes are serialised
+# unless the scheduler explicitly allows parallel within that group (handled in
+# orchestrator/main.py — currently we cap to 1 per group).
+
+defaults:
+  context: pipeline
+  idle_timeout_s: 1800
+  hard_timeout_s: 14400
+  max_attempts: 4
+
+nodes:
+  # ---------- Wave 1: read-only inventory (disjoint scopes, safe parallel) ----------
+  - id: inventory-frontend
+    pass: inventory-pass
+    task_class: structured
+    risk_class: medium
+    reasoning_effort: high
+    prompt_file: audit-map/20-prompts/inventory-pass.md
+    intent_file: pipeline/agents/manifests/inventory-frontend.intent.yaml
+    manifest_file: pipeline/agents/manifests/inventory-frontend.artifacts.yaml
+    write_scope_glob: 'audit-map/16-scripts/**;audit-map/17-artifacts/**;audit-map/32-reports/**'
+    parallel_group: inventory
+    priority: 90
+
+  - id: inventory-backend
+    pass: inventory-pass
+    task_class: structured
+    risk_class: medium
+    reasoning_effort: high
+    prompt_file: audit-map/20-prompts/inventory-pass.md
+    intent_file: pipeline/agents/manifests/inventory-backend.intent.yaml
+    manifest_file: pipeline/agents/manifests/inventory-backend.artifacts.yaml
+    write_scope_glob: 'audit-map/17-artifacts/**;audit-map/32-reports/**'
+    parallel_group: inventory
+    priority: 90
+
+  - id: inventory-scripts
+    pass: inventory-pass
+    task_class: bookkeeping
+    risk_class: low
+    reasoning_effort: medium
+    prompt_file: audit-map/20-prompts/inventory-pass.md
+    intent_file: pipeline/agents/manifests/inventory-scripts.intent.yaml
+    manifest_file: pipeline/agents/manifests/inventory-scripts.artifacts.yaml
+    write_scope_glob: 'audit-map/17-artifacts/**;audit-map/32-reports/**'
+    parallel_group: inventory
+    priority: 85
+
+  # ---------- Wave 2: synthesis (merge controller; serial) ----------
+  - id: merge-inventory
+    pass: synthesis-pass
+    task_class: structured
+    risk_class: medium
+    reasoning_effort: high
+    prompt_file: audit-map/20-prompts/synthesis-pass.md
+    intent_file: pipeline/agents/manifests/merge-inventory.intent.yaml
+    manifest_file: pipeline/agents/manifests/merge-inventory.artifacts.yaml
+    write_scope_glob: 'audit-map/14-reconciliation/**;audit-map/23-coverage/**;audit-map/24-agent-memory/**;audit-map/32-reports/**'
+    parallel_group: ~
+    depends_on: [inventory-frontend, inventory-backend, inventory-scripts]
+    priority: 80
+
+  # ---------- Wave 3: high-stakes integrity passes (serial, shared ledgers) ----------
+  - id: truth-drift
+    pass: truth-drift-reconciliation-pass
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/truth-drift-reconciliation-pass.md
+    intent_file: pipeline/agents/manifests/truth-drift.intent.yaml
+    manifest_file: pipeline/agents/manifests/truth-drift.artifacts.yaml
+    write_scope_glob: 'audit-map/14-reconciliation/**;audit-map/23-coverage/**;audit-map/24-agent-memory/**;audit-map/32-reports/**'
+    depends_on: [merge-inventory]
+    priority: 75
+
+  - id: feature-intent
+    pass: feature-intent-integrity-pass
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/feature-intent-integrity-pass.md
+    intent_file: pipeline/agents/manifests/feature-intent.intent.yaml
+    manifest_file: pipeline/agents/manifests/feature-intent.artifacts.yaml
+    write_scope_glob: 'audit-map/14-reconciliation/**;audit-map/23-coverage/**;audit-map/32-reports/**'
+    depends_on: [truth-drift]
+    priority: 70
+
+  - id: cross-flow-recovery
+    pass: cross-flow-recovery-pass
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/cross-flow-recovery-pass.md
+    intent_file: pipeline/agents/manifests/cross-flow-recovery.intent.yaml
+    manifest_file: pipeline/agents/manifests/cross-flow-recovery.artifacts.yaml
+    write_scope_glob: 'audit-map/14-reconciliation/**;audit-map/32-reports/**'
+    depends_on: [feature-intent]
+    priority: 65
+
+  # ---------- Wave 4: closure + verification (serial) ----------
+  - id: claim-verification
+    pass: claim-verification-pass
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/claim-verification-pass.md
+    intent_file: pipeline/agents/manifests/claim-verification.intent.yaml
+    manifest_file: pipeline/agents/manifests/claim-verification.artifacts.yaml
+    write_scope_glob: 'audit-map/32-reports/**'
+    depends_on: [cross-flow-recovery]
+    priority: 60
+
+  - id: closure-readiness
+    pass: closure-readiness-pass
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/closure-readiness-pass.md
+    intent_file: pipeline/agents/manifests/closure-readiness.intent.yaml
+    manifest_file: pipeline/agents/manifests/closure-readiness.artifacts.yaml
+    write_scope_glob: 'audit-map/32-reports/**'
+    depends_on: [claim-verification]
+    priority: 55

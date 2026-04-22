@@ -1,0 +1,11 @@
+artifacts:
+  - path: audit-map/32-reports/inventory-backend.md
+    min_lines: 40
+    min_bytes: 2000
+    required_sections:
+      - "# Backend Inventory"
+      - "## Route Modules"
+      - "## Database Tables"
+      - "## Middleware Stack"
+      - "## Seed Chain"
+    write_mode: replace

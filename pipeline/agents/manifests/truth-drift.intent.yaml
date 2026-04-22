@@ -1,0 +1,10 @@
+purpose: |
+  Find and close every truth-drift between expected, implemented, tested, and
+  live behaviour. Must cite exact file:line evidence for every claim.
+nonneg:
+  - Every claim in truth-drift-ledger.md must have a file:line citation
+  - No claim without citation
+  - Never delete existing ledger rows; mark superseded instead
+owner_files:
+  - audit-map/14-reconciliation/contradiction-matrix.md
+  - audit-map/23-coverage/coverage-ledger.md

@@ -1,0 +1,10 @@
+purpose: |
+  Inventory every shell/JS script under scripts/ and audit-map/16-scripts/.
+  Classify by purpose and declare its invocation contract.
+nonneg:
+  - Do not change or rename any script
+  - Writes limited to audit-map/17-artifacts/** and audit-map/32-reports/**
+owner_files:
+  - scripts/run-detached.sh
+  - audit-map/16-scripts/_audit-common.sh
+  - audit-map/16-scripts/run-audit-pass.sh

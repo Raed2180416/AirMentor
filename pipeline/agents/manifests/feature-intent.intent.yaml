@@ -1,0 +1,10 @@
+purpose: |
+  Verify every feature's intent (stated in audit-map/*.md and repo README) is
+  preserved by the current implementation. Produce a ledger keyed by feature
+  slug.
+nonneg:
+  - Intent claims must reference repo file:line evidence
+  - Do not weaken the intent statement; only append clarifications
+owner_files:
+  - airmentor-feature-registry.md
+  - audit-map/24-agent-memory/working-knowledge.md

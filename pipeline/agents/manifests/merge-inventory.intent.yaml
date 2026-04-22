@@ -1,0 +1,12 @@
+purpose: |
+  Merge the three inventory waves into a single reconciled map. Resolve any
+  conflicts by re-reading source; do not invent content. Writes shared ledgers
+  under merge-controller lock.
+nonneg:
+  - Never discard information from the wave outputs without recording why
+  - Writes limited to audit-map/14-reconciliation/**, 23-coverage/**,
+    24-agent-memory/**, 32-reports/**
+owner_files:
+  - audit-map/14-reconciliation/contradiction-matrix.md
+  - audit-map/23-coverage/coverage-ledger.md
+  - audit-map/24-agent-memory/working-knowledge.md

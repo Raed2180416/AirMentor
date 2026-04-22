@@ -1,0 +1,13 @@
+artifacts:
+  - path: audit-map/32-reports/overnight-reconcile-ml.md
+    min_lines: 50
+    min_bytes: 2000
+    write_mode: replace
+    required_sections:
+      - '# Overnight Reconcile: ML Strategy'
+      - '## Findings'
+      - '## Ledger'
+      - '## Evidence'
+      - '## v7 Overload Diagnosis'
+      - '## Mitigation Plan'
+      - '## Recommendations'
