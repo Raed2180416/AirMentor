@@ -20,7 +20,14 @@ import {
   playbackCheckpointNowIso,
   prerequisiteSummaryForSource,
   seeShortfallLabel,
+  type StageEvidenceRealizationInput,
 } from './proof-control-plane-playback-service.js'
+import type {
+  EvidenceApplierInterventionInput,
+} from './proof-stage-realization-evidence-applier.js'
+import type {
+  StudentLatentProfileForIntervention,
+} from './proof-intervention-response-types.js'
 import {
   buildObservableFeaturePayload,
   featureHash,
@@ -95,6 +102,22 @@ type StageCandidate = {
   downstreamCarryover: 0 | 1
 }
 
+// Phase-6d realization data bundle — optional. When present AND
+// AIRMENTOR_STAGE_REALIZATION_V1=1 is set in env, buildStageCandidate passes a
+// realization input into buildStageEvidenceSnapshot so intervention deltas flow
+// through to risk inference + queue projections. When absent / flag off, the
+// governance pipeline is bytewise identical to pre-Phase-6d behaviour.
+//
+// The bundle is keyed the same way the data-fetcher groups its output:
+//   sourceKey = `${studentId}::${offeringId ?? ''}`
+// so a caller that uses proof-stage-realization-data-fetcher to assemble the
+// `interventionsInWindowBySourceKey` Map can plug it straight in.
+export type PlaybackGovernanceRealizationData = {
+  runSeed: number
+  studentProfileByStudentId: ReadonlyMap<string, StudentLatentProfileForIntervention>
+  interventionsInWindowBySourceKey: ReadonlyMap<string, ReadonlyArray<EvidenceApplierInterventionInput>>
+}
+
 export type BuildPlaybackGovernanceArtifactsInput = {
   simulationRunId: string
   now: string
@@ -124,6 +147,7 @@ export type BuildPlaybackGovernanceArtifactsInput = {
     production: ProductionRiskModelArtifact | null
     correlations: CorrelationArtifact | null
   }
+  realizationData?: PlaybackGovernanceRealizationData
 }
 
 export type BuildPlaybackGovernanceArtifactsResult = {
@@ -172,6 +196,30 @@ function facultyAssignmentForSource(
   }
 }
 
+// Phase-6d: assemble an optional StageEvidenceRealizationInput for this (source,
+// stage) pair from the governance-level realizationData bundle. Returns undefined
+// when realization is not enabled / not available for this source — in which case
+// buildStageEvidenceSnapshot takes the baseline-only path.
+function realizationInputForSource(
+  realizationData: PlaybackGovernanceRealizationData | undefined,
+  source: StageCourseProjectionSource,
+): StageEvidenceRealizationInput | undefined {
+  if (!realizationData) return undefined
+  const profile = realizationData.studentProfileByStudentId.get(source.studentId)
+  if (!profile) return undefined
+  const sourceKey = `${source.studentId}::${source.offeringId ?? ''}`
+  const interventions = realizationData.interventionsInWindowBySourceKey.get(sourceKey) ?? []
+  // Even zero-length interventions are fine — the applier has a fast-path that
+  // returns baseline unchanged. We still pass the realization input so the
+  // downstream wire stays consistent and observable.
+  return {
+    runId: source.offeringId ?? source.studentId,
+    runSeed: realizationData.runSeed,
+    studentProfile: profile,
+    interventionsInWindow: interventions,
+  }
+}
+
 function buildStageCandidate(
   input: BuildPlaybackGovernanceArtifactsInput,
   source: StageCourseProjectionSource,
@@ -197,6 +245,7 @@ function buildStageCandidate(
     stageKey: stage.key,
     policy: input.policy,
     templatesById: input.templateById,
+    realization: realizationInputForSource(input.realizationData, source),
   })
   const sourceRefs: ObservableSourceRefsWithFeatureMetadata = {
     simulationRunId: input.simulationRunId,
