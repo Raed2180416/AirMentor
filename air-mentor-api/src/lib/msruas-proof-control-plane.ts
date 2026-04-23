@@ -133,7 +133,21 @@ import {
   buildPlaybackStageSummaries as buildPlaybackStageSummariesService,
   type ProofControlPlaneStageSummaryServiceDeps,
 } from './proof-control-plane-stage-summary-service.js'
-import { buildPlaybackGovernanceArtifacts } from './proof-control-plane-playback-governance-service.js'
+import {
+  buildPlaybackGovernanceArtifacts,
+  type PlaybackGovernanceRealizationData,
+} from './proof-control-plane-playback-governance-service.js'
+import {
+  buildSeverityContextByStudentId,
+} from './proof-stage-realization-bundle-assembler.js'
+import {
+  groupInterventionsByStudentAndOffering,
+  parseLatentProfileForIntervention,
+} from './proof-stage-realization-data-fetcher.js'
+import type {
+  StudentLatentProfileForIntervention,
+} from './proof-intervention-response-types.js'
+import { STAGE_REALIZATION_FLAG_NAME } from './proof-stage-realization-evidence-applier.js'
 import { resetPlaybackStageArtifacts } from './proof-control-plane-playback-reset-service.js'
 import {
   buildSectionRiskRateByStage as buildSectionRiskRateByStageService,
@@ -2857,6 +2871,76 @@ export async function rebuildSimulationStagePlayback(db: AppDb, input: {
     sources,
     templatesById: templateById,
   }, proofControlPlaneSectionRiskServiceDeps)
+
+  // Phase-6d wire: when AIRMENTOR_STAGE_REALIZATION_V1=1 is set, assemble the
+  // PlaybackGovernanceRealizationData bundle from studentInterventions +
+  // studentLatentStates rows so intervention deltas flow through risk inference
+  // + queue projections. Flag-off path skips the DB reads entirely and keeps the
+  // governance pipeline bytewise identical to pre-Phase-6d behaviour.
+  let realizationData: PlaybackGovernanceRealizationData | undefined
+  if (process.env[STAGE_REALIZATION_FLAG_NAME] === '1') {
+    const offeringIds = Array.from(new Set(
+      sources.map(s => s.offeringId).filter((id): id is string => !!id),
+    ))
+    const studentIds = Array.from(new Set(sources.map(s => s.studentId)))
+    const interventionRowsAll = offeringIds.length > 0
+      ? await db.select().from(studentInterventions).where(
+          inArray(studentInterventions.offeringId, offeringIds),
+        )
+      : []
+    const latentRowsAll = await db.select().from(studentLatentStates).where(
+      eq(studentLatentStates.simulationRunId, input.simulationRunId),
+    )
+
+    // Severity context per student — heuristic from source.previousCgpa +
+    // previousBacklogCount. Callers with real prior-stage inference results
+    // could pass explicit overrides; MVP uses the heuristic which matches MSRUAS
+    // policy thresholds (cgpa<4.5 or backlog>=2 = High; cgpa<7 or backlog>=1 = Medium; Low).
+    const summaries = studentIds.map(studentId => {
+      const firstSource = sources.find(s => s.studentId === studentId)
+      return {
+        studentId,
+        cgpa: firstSource?.previousCgpa ?? null,
+        backlogCount: firstSource?.previousBacklogCount ?? null,
+      }
+    })
+    const severityContextByStudentId = buildSeverityContextByStudentId({ summaries })
+
+    // Multi-semester latent profile pick: keep the profile from the highest
+    // semester number available per student (most recent trajectory state).
+    const latentProfileByStudentId = new Map<string, StudentLatentProfileForIntervention>()
+    const latentRowsSortedDesc = [...latentRowsAll].sort((a, b) => b.semesterNumber - a.semesterNumber)
+    for (const row of latentRowsSortedDesc) {
+      if (latentProfileByStudentId.has(row.studentId)) continue
+      const parsed = parseLatentProfileForIntervention(row.latentStateJson)
+      if (parsed) latentProfileByStudentId.set(row.studentId, parsed)
+    }
+
+    // Group all interventions under a single stageKeyApplied='pre-tt1' so they
+    // contribute to every downstream stage's ordinal tracking. The applier's
+    // mark-delta math does not depend on exact applied stage; ordinal-in-stage
+    // tracking stays deterministic via occurredAt ordering.
+    const interventionsInWindowBySourceKey = groupInterventionsByStudentAndOffering({
+      interventionRows: interventionRowsAll.map(row => ({
+        interventionId: row.interventionId,
+        studentId: row.studentId,
+        offeringId: row.offeringId,
+        interventionType: row.interventionType,
+        occurredAt: row.occurredAt,
+        createdAt: row.createdAt,
+      })),
+      semesterNumber: semesterNumbers[semesterNumbers.length - 1] ?? 1,
+      stageKeyApplied: 'pre-tt1',
+      severityContextByStudentId,
+    })
+
+    realizationData = {
+      runSeed: run.seed,
+      studentProfileByStudentId: latentProfileByStudentId,
+      interventionsInWindowBySourceKey,
+    }
+  }
+
   const {
     studentProjectionRows,
     queueProjectionRows,
@@ -2888,6 +2972,7 @@ export async function rebuildSimulationStagePlayback(db: AppDb, input: {
     sources,
     templateById,
     activeRiskArtifacts,
+    realizationData,
   })
 
   const {
