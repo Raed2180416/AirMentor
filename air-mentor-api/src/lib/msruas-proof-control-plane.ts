@@ -166,11 +166,8 @@ import {
   buildSeededSemesterSixRows,
   type ProofControlPlaneSeededSemesterServiceDeps,
 } from './proof-control-plane-seeded-semester-service.js'
-import {
-  applySectionOverridesToProfile,
-  parseSectionOverridesJson,
-  type SectionOverrides,
-} from './proof-section-override-applier.js'
+import { parseSectionOverridesJson } from './proof-section-override-applier.js'
+import { maybeApplySectionOverridesToTrajectory } from './proof-section-override-trajectory-wire.js'
 import {
   prepareSeededProofRunBootstrap as prepareSeededProofRunBootstrapService,
   type ProofControlPlaneSeededBootstrapServiceDeps,
@@ -1486,62 +1483,6 @@ function deterministicPolicyFromResolved(policy: ResolvedPolicy): MsruasDetermin
     sgpaCgpaRules: {
       includeFailedCredits: policy.sgpaCgpaRules.includeFailedCredits,
       repeatedCoursePolicy: policy.sgpaCgpaRules.repeatedCoursePolicy,
-    },
-  }
-}
-
-// Track C Phase 2 (2026-04-23): post-process a built trajectory's derived
-// latent scalars by applying per-section overrides. Pure fn — no DB/FS I/O.
-// Flag-gated at the applier: AIRMENTOR_SECTION_OVERRIDES_V1 off -> identity
-// passthrough, so baseline simulations are byte-identical to pre-Track-C.
-function maybeApplySectionOverridesToTrajectory(
-  trajectory: StudentTrajectory,
-  sectionOverrides: SectionOverrides | null,
-  runSeed: number,
-): StudentTrajectory {
-  if (!sectionOverrides) return trajectory
-  const applied = applySectionOverridesToProfile({
-    latent: {
-      behavior: {
-        practiceCompliance: trajectory.profile.behavior.practiceCompliance,
-        helpSeekingTendency: trajectory.profile.behavior.helpSeekingTendency,
-        examPressure: trajectory.profile.behavior.examPressure,
-        attendancePropensity: trajectory.profile.behavior.attendancePropensity,
-      },
-      dynamics: {
-        consistency: trajectory.profile.dynamics.consistency,
-        volatility: trajectory.profile.dynamics.volatility,
-      },
-      intervention: {
-        interventionReceptivity: trajectory.profile.intervention.interventionReceptivity,
-      },
-    },
-    sectionCode: trajectory.sectionCode,
-    overrides: sectionOverrides,
-    studentId: trajectory.studentId,
-    runSeed: `run-${runSeed}`,
-  })
-  if (!applied.applied) return trajectory
-  return {
-    ...trajectory,
-    profile: {
-      ...trajectory.profile,
-      behavior: {
-        ...trajectory.profile.behavior,
-        practiceCompliance: roundToTwo(applied.latent.behavior.practiceCompliance),
-        helpSeekingTendency: roundToTwo(applied.latent.behavior.helpSeekingTendency),
-        examPressure: roundToTwo(applied.latent.behavior.examPressure),
-        attendancePropensity: roundToTwo(applied.latent.behavior.attendancePropensity),
-      },
-      dynamics: {
-        ...trajectory.profile.dynamics,
-        consistency: roundToTwo(applied.latent.dynamics.consistency),
-        volatility: roundToTwo(applied.latent.dynamics.volatility),
-      },
-      intervention: {
-        ...trajectory.profile.intervention,
-        interventionReceptivity: roundToTwo(applied.latent.intervention.interventionReceptivity),
-      },
     },
   }
 }
