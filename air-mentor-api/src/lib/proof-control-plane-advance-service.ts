@@ -19,6 +19,40 @@ import {
   type StagePolicyPayload,
   type StagePolicyStageKey,
 } from './stage-policy.js'
+import { STAGE_REALIZATION_FLAG_NAME } from './proof-stage-realization-evidence-applier.js'
+
+// Phase-6c audit payload builder. Exported so unit tests can exercise the payload
+// shape without standing up a full DB mock. persistResolvedAdvance passes the same
+// resolution object in.
+export type StageRealizationAppliedAuditPayload = {
+  transitionFrom: { semesterNumber: number; stageKey: StagePolicyStageKey }
+  transitionTo: { semesterNumber: number; stageKey: StagePolicyStageKey }
+  crossedSemesterBoundary: boolean
+  realizationFlag: string
+  note: string
+}
+
+export function buildStageRealizationAppliedAuditPayload(input: {
+  resolution: ProofAdvanceResolution
+}): StageRealizationAppliedAuditPayload {
+  return {
+    transitionFrom: {
+      semesterNumber: input.resolution.previous.semesterNumber,
+      stageKey: input.resolution.previous.stageKey,
+    },
+    transitionTo: {
+      semesterNumber: input.resolution.current.semesterNumber,
+      stageKey: input.resolution.current.stageKey,
+    },
+    crossedSemesterBoundary: input.resolution.crossedSemesterBoundary,
+    realizationFlag: STAGE_REALIZATION_FLAG_NAME,
+    note: 'Stage evidence re-realized with intervention deltas folded in (Phase 6d).',
+  }
+}
+
+export function isStageRealizationAuditEnabled(): boolean {
+  return process.env[STAGE_REALIZATION_FLAG_NAME] === '1'
+}
 
 type AdvanceProofRunRow = Pick<typeof simulationRuns.$inferSelect,
   | 'simulationRunId'
@@ -308,6 +342,23 @@ async function persistResolvedAdvance(
       await deps.rebuildSimulationStagePlayback(db, {
         simulationRunId: run.simulationRunId,
         policy: input.policy,
+        now: input.now,
+      })
+    }
+    // Phase-6c: when AIRMENTOR_STAGE_REALIZATION_V1=1 is set, the rebuildSimulation-
+    // StagePlayback call above will have re-realized every student's evidence with
+    // intervention deltas folded in (via the Phase-6d wire). Emit a companion
+    // audit entry so faculty / HoD / auditors can see the stage transition WAS
+    // realization-aware. Downstream consumers (HoD console, audit trail) can read
+    // this marker to render the "marks reflect interventions" badge on the stage
+    // timeline. Flag-off path skips this entry.
+    if (isStageRealizationAuditEnabled()) {
+      await deps.emitSimulationAudit(db, {
+        simulationRunId: run.simulationRunId,
+        batchId: run.batchId,
+        actionType: 'stage-realization-applied',
+        payload: buildStageRealizationAppliedAuditPayload({ resolution }),
+        createdByFacultyId: input.actorFacultyId ?? null,
         now: input.now,
       })
     }
