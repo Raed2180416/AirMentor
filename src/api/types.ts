@@ -1852,6 +1852,44 @@ export type ApiAcademicHodProofBundle = {
   reassessments: ApiAcademicHodProofReassessment[]
 }
 
+export type ApiAcademicHodProofCounterfactualScalar =
+  | 'tt1Pct'
+  | 'tt2Pct'
+  | 'quizPct'
+  | 'assignmentPct'
+  | 'seePct'
+  | 'totalPct'
+
+export type ApiAcademicHodProofCounterfactualStudentStageDiff = {
+  studentId: string
+  semesterNumber: number
+  stageKey: string
+  deltas: Partial<Record<ApiAcademicHodProofCounterfactualScalar, number>>
+}
+
+export type ApiAcademicHodProofCounterfactualAggregate = {
+  totalStudents: number
+  totalStages: number
+  totalStudentStagePairs: number
+  byScalar: Record<ApiAcademicHodProofCounterfactualScalar, {
+    samples: number
+    meanDelta: number
+    medianDelta: number
+    positiveCount: number
+    negativeCount: number
+    zeroCount: number
+    maxDelta: number
+    minDelta: number
+  }>
+}
+
+export type ApiAcademicHodProofCounterfactualReport = {
+  runIdBaseline: string
+  runIdRealized: string
+  studentStageDiffs: ApiAcademicHodProofCounterfactualStudentStageDiff[]
+  aggregate: ApiAcademicHodProofCounterfactualAggregate
+}
+
 export type ApiAdminSearchRoute = {
   section: 'overview' | 'faculties' | 'students' | 'faculty-members' | 'requests'
   academicFacultyId?: string
