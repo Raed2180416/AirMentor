@@ -496,9 +496,17 @@ def execute_task(task_id: int) -> None:
             )
     if route is None:
         # Long wait outside lock so other workers can progress.
+        # Round-8 fix (2026-04-23): pass a refresh callback so busy_sibling_slots
+        # re-computes each poll. Prevents the stuck-in-wait failure mode where
+        # the initial exclude list froze at task-claim time and never saw
+        # sibling tasks release their slots.
         busy_slots = _busy_sibling_slots(task_row["dag_run_id"], task_id)
-        route = router.wait_for_any_slot(task_row, exclude_slots=busy_slots,
-                                         max_wait_seconds=6 * 3600)
+        route = router.wait_for_any_slot(
+            task_row,
+            exclude_slots=busy_slots,
+            refresh_exclude_slots=lambda: _busy_sibling_slots(task_row["dag_run_id"], task_id),
+            max_wait_seconds=6 * 3600,
+        )
         if route is None:
             db.set_task_state(task_id, "failed", last_failure_class="no_route",
                               last_error="no route available within budget")

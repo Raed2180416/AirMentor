@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Callable, Iterable
 
 from . import db, slot_ledger
 
@@ -346,16 +346,29 @@ def wait_for_any_slot(
     task_row,
     *,
     exclude_slots: Iterable[str] = (),
+    refresh_exclude_slots: Callable[[], Iterable[str]] | None = None,
     max_wait_seconds: int = 6 * 3600,
     poll_seconds: int = 30,
 ) -> Route | None:
     """Block until a slot is ready or budget exhausted.
 
     Emits `waiting_slot` events so the TUI shows live ETA.
+
+    Round-8 fix (2026-04-23): when `refresh_exclude_slots` is provided, call it
+    each iteration to re-compute the busy-sibling-slots list. Without this the
+    executor's initial busy_sibling_slots is frozen at task-claim time — if a
+    sibling releases its slot later (e.g., fails / completes), this wait loop
+    never sees the freed slot and hangs until the hard deadline. Observed in
+    fresh-sem1 dispatch: task 74 failed on codex-03 at 01:27 but tasks 75/76
+    continued waiting with codex-03 in their exclude list until abort at 01:39.
     """
     deadline = time.time() + max_wait_seconds
     while True:
-        route = choose_route(task_row, exclude_slots=exclude_slots, refresh=True)
+        current_exclude = (
+            list(refresh_exclude_slots()) if refresh_exclude_slots is not None
+            else list(exclude_slots)
+        )
+        route = choose_route(task_row, exclude_slots=current_exclude, refresh=True)
         if route is not None:
             return route
         pick, eta = slot_ledger.soonest_available(task_row)
@@ -364,6 +377,7 @@ def wait_for_any_slot(
             "earliest_slot": pick.slot if pick else None,
             "earliest_provider": pick.provider if pick else None,
             "eta_seconds": eta,
+            "current_exclude": current_exclude,
         }
         if task_row:
             db.log_event(task_row["id"], "waiting_slot", payload)
