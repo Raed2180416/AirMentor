@@ -20,36 +20,18 @@ test('flow-11 stop: credential deletion + session invalidation semantics', async
   const hodPreLogin = await loginWithApiContext(request, 'hod').catch(err => ({ error: err as Error }))
   expect('error' in hodPreLogin ? hodPreLogin.error.message : '').toBe('')
 
-  // Sysadmin performs the stop action.
+  // Sysadmin performs the stop action. The dedicated /stop route is now
+  // wired in admin-proof-sandbox.ts and maps through
+  // proof-control-plane-playback-reset-service.stopProofSimulationRun,
+  // which deletes proof credentials and invalidates proof-faculty sessions
+  // (§L.11 + §O.3). Archive fallback is removed — it has different semantics
+  // and must not silently pass the stop contract.
   const { session: sysadminSession } = await loginWithApiContext(request, 'system-admin')
-  // Look up the stop endpoint. The current seeded API exposes an archive
-  // variant at `/api/admin/proof-runs/:runId/archive`. Section §B.23 + §L.11
-  // describe "stop" as distinct from "archive" (stop deletes credentials
-  // and invalidates sessions). If a dedicated `/stop` endpoint exists, use
-  // it. Otherwise, fall back to archive + stopped-lifecycle expectations.
   const stopResponse = await request.post(`/api/admin/proof-runs/${encodeURIComponent(seededRun.runId)}/stop`, {
     headers: { 'X-AirMentor-CSRF': sysadminSession.csrfToken },
     data: {},
-    failOnStatusCode: false,
   })
-
-  if (stopResponse.status() === 404) {
-    // Fallback: the stop endpoint is not wired yet. Mark the spec as a
-    // "contract" — document the missing wiring but do not fail the run.
-    // This keeps the flow in the validation ladder for when the backend
-    // implements it, per prompt §L.11.
-    console.log('flow-11 stop endpoint /api/admin/proof-runs/:runId/stop not wired; asserting archive path instead.')
-    const archiveResponse = await request.post(`/api/admin/proof-runs/${encodeURIComponent(seededRun.runId)}/archive`, {
-      headers: { 'X-AirMentor-CSRF': sysadminSession.csrfToken },
-      data: {},
-      failOnStatusCode: false,
-    })
-    expect(archiveResponse.ok()).toBeTruthy()
-    // Archive does NOT guarantee credential deletion; we note it and exit.
-    return
-  }
-
-  expect(stopResponse.ok()).toBeTruthy()
+  expect(stopResponse.ok(), `stop route must succeed; got ${stopResponse.status()}`).toBeTruthy()
 
   // Post-stop: the run's lifecycleState should be 'stopped' (or legacy
   // 'archived' if the backend uses a different vocab). Check the dashboard.

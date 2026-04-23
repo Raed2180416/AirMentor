@@ -62,7 +62,7 @@ test('flow-10 counterfactual-simulator route returns projected Sem-6 report shap
   }
 })
 
-test('flow-10 HOD counterfactual UI panel surface renders without error', async ({ page, seededRun }) => {
+test('flow-10 HOD counterfactual UI panel surface renders simulator-based analytics without error', async ({ page, seededRun }) => {
   expect(seededRun.runId).toMatch(/^simulation_run_/)
   const consoleErrors: string[] = []
   page.on('console', msg => {
@@ -80,18 +80,20 @@ test('flow-10 HOD counterfactual UI panel surface renders without error', async 
   await expect(tabBtn).toBeVisible()
   await tabBtn.click()
 
-  // Either the counterfactual panel renders, or the EmptyState is shown —
-  // both are legal per hod-pages.tsx:715-721. What must NOT happen is a
-  // hard error / page blank.
-  const emptyStateOrPanel = page.locator('text=/Counterfactual panel not wired|Counterfactual impact|projected|simulated|baseline/i').first()
-  await expect(emptyStateOrPanel).toBeVisible({ timeout: 10_000 })
+  // Simulator panel is now the primary surface (§C.13 + §G.6 + §L.10). It is
+  // identified by data-proof-section="hod-counterfactual-simulator" per
+  // hod-counterfactual-simulator-panel.tsx. Hard-fail if it is missing.
+  const simulatorPanel = page.locator('[data-proof-section="hod-counterfactual-simulator"]').first()
+  await expect(simulatorPanel).toBeVisible({ timeout: 15_000 })
+  await expect(simulatorPanel).toContainText(/Projected Counterfactual/i)
+  await expect(simulatorPanel).toContainText(/projected/i)
 
   // Hard intent per §G.6 + §C.13: demo copy MUST use projected/simulated/
-  // counterfactual language, not "proven" or "caused". Rule this in by
-  // checking that no word-fragment like "caused by interventions" appears.
+  // counterfactual language, NEVER phrasing that implies the model
+  // causally proved anything on its own.
   const prohibited = page.locator('text=/interventions proved|caused by interventions|risk model proved/i')
   await expect(prohibited).toHaveCount(0)
 
   // No console errors should have surfaced during panel render.
-  expect(consoleErrors.filter(e => !e.toLowerCase().includes('not wired'))).toEqual([])
+  expect(consoleErrors).toEqual([])
 })

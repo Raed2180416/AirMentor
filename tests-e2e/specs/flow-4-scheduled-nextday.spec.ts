@@ -17,67 +17,73 @@ test('flow-4 scheduled task + calendar drag + Next Day transition', async ({ req
   const baseDate = new Date(seededRun.simulatedDateIso)
   const futureDate = new Date(baseDate.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
-  const taskCreateResp = await request.post('/api/academic/tasks', {
+  // Task create uses the authoritative PUT route per academic-runtime-routes
+  // (sync POST-style path is deprecated). We issue a unique id client-side
+  // and PUT it, matching the real UI code path.
+  const taskId = `flow4-scheduled-${Date.now()}`
+  const studentId = 'mnc_s_2023_001'
+  const offeringId = 'off_mnc_2023_sem1_programming'
+  const taskCreateResp = await request.put(`/api/academic/tasks/${encodeURIComponent(taskId)}`, {
     headers: { 'X-AirMentor-CSRF': clSession.csrfToken },
     data: {
-      title: 'Flow-4 scheduled follow-up',
-      dueDateISO: futureDate,
-      assignedTo: 'Course Leader',
-      actionHint: 'Follow up on Flow-4 scheduled task contract',
-      priority: 1,
+      task: {
+        id: taskId,
+        studentId,
+        studentName: 'Flow-4 Seeded Student',
+        studentUsn: 'MNC2023-FLOW4',
+        offeringId,
+        courseCode: 'SEED-CODE',
+        courseName: 'Seed Course',
+        year: '2023',
+        riskProb: 0.45,
+        riskBand: 'Medium',
+        title: 'Flow-4 scheduled follow-up',
+        due: futureDate,
+        dueDateISO: futureDate,
+        status: 'New',
+        actionHint: 'Follow up on Flow-4 scheduled task contract',
+        priority: 1,
+        createdAt: Date.now(),
+        assignedTo: 'Course Leader',
+      },
     },
-    failOnStatusCode: false,
   })
-  if (!taskCreateResp.ok()) {
-    console.log(`flow-4 task-create endpoint unsupported (${taskCreateResp.status()}). Contract documented.`)
-    return
-  }
-  const task = await taskCreateResp.json()
-  const taskId = String(task.id ?? task.taskId)
-  expect(taskId).toBeTruthy()
+  expect(taskCreateResp.ok(), `task PUT must succeed; got ${taskCreateResp.status()}`).toBeTruthy()
 
-  // Step 2 — drag task to a new date via taskPlacements.
+  // Step 2 — drag task to a new date via taskPlacement PUT (dedicated route).
   const draggedDate = new Date(baseDate.getTime() + 5 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-  const dragResp = await request.post(`/api/academic/task-placements`, {
+  const dragResp = await request.put(`/api/academic/task-placements/${encodeURIComponent(taskId)}`, {
     headers: { 'X-AirMentor-CSRF': clSession.csrfToken },
     data: {
-      taskId,
-      dateISO: draggedDate,
-      placementMode: 'untimed',
-      updatedAt: Date.now(),
+      placement: {
+        taskId,
+        dateISO: draggedDate,
+        placementMode: 'untimed',
+        updatedAt: Date.now(),
+      },
     },
-    failOnStatusCode: false,
   })
-  if (!dragResp.ok()) {
-    console.log(`flow-4 task-placement endpoint unsupported (${dragResp.status()}). Contract documented.`)
-    return
-  }
+  expect(dragResp.ok(), `task-placement PUT must succeed; got ${dragResp.status()}`).toBeTruthy()
 
-  // Step 3 — re-read the task and verify underlying dueDateISO/dueAtIso
-  // mutated to the dragged date. §B.20: drag MUST change underlying date.
-  const taskReadResp = await request.get(`/api/academic/tasks/${encodeURIComponent(taskId)}`, {
+  // Step 3 — re-list tasks and verify underlying dueDateISO mutated to the
+  // dragged date. §B.20 contract: drag MUST change underlying date.
+  const taskListResp = await request.get('/api/academic/tasks', {
     headers: { 'X-AirMentor-CSRF': clSession.csrfToken },
-    failOnStatusCode: false,
   })
-  if (!taskReadResp.ok()) {
-    console.log(`flow-4 task-read endpoint unsupported; dragging mutation cannot be verified.`)
-    return
-  }
-  const updatedTask = await taskReadResp.json()
-  const storedDate = String(updatedTask.dueDateISO ?? updatedTask.dueDate ?? '').slice(0, 10)
+  expect(taskListResp.ok()).toBeTruthy()
+  const taskListBody = await taskListResp.json()
+  const refreshedTask = (taskListBody.items ?? []).find((row: { id: string }) => row.id === taskId)
+  expect(refreshedTask, 'task must be visible in /api/academic/tasks list after placement').toBeTruthy()
+  const storedDate = String(refreshedTask.dueDateISO ?? refreshedTask.dueDate ?? '').slice(0, 10)
   expect(storedDate).toBe(draggedDate)
 
-  // Step 4 — Next Day advance. Simulated date should advance by exactly one day.
+  // Step 4 — Next Day advance. Simulated date advances by exactly one day.
   const { session: sysSession } = await loginWithApiContext(request, 'system-admin')
   const advanceResp = await request.post(`/api/admin/proof-runs/${encodeURIComponent(seededRun.runId)}/advance`, {
     headers: { 'X-AirMentor-CSRF': sysSession.csrfToken },
     data: { mode: 'day' },
-    failOnStatusCode: false,
   })
-  if (!advanceResp.ok()) {
-    console.log('flow-4 advance(day) endpoint unsupported. Boundary cross test skipped.')
-    return
-  }
+  expect(advanceResp.ok(), `advance(day) must succeed; got ${advanceResp.status()}`).toBeTruthy()
   const dashboardResp = await request.get(`/api/admin/batches/${seededRun.batchId}/proof-dashboard`, {
     headers: { 'X-AirMentor-CSRF': sysSession.csrfToken },
   })
