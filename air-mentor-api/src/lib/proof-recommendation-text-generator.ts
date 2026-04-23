@@ -74,6 +74,36 @@ const WEAKNESS_TO_PRIMARY_ACTION: Readonly<Record<Exclude<ProofInterventionDomin
   mentoring: 'mentor_meeting',
 }
 
+// Human-readable short labels for every ProofInterventionActionCode. Used by UI
+// surfaces that currently display the raw action code (e.g., the proof queue tile
+// title, student projection tooltips). This is a small, deterministic lookup — the
+// full recommendation-text generator is still available for callers that need a
+// complete rationale + metrics narrative.
+const HUMAN_LABEL_BY_ACTION_CODE: Readonly<Record<string, string>> = {
+  attendance_warning: 'Send attendance warning',
+  targeted_remedial_plan: 'Run targeted remedial plan',
+  structured_study_plan: 'Assign structured study plan',
+  extra_academic_support_plan: 'Extra academic support plan',
+  mentor_meeting: 'Schedule mentor meeting',
+  faculty_followup_reminder: 'Faculty follow-up reminder',
+  hod_escalation_student_action: 'Escalate student case to HoD',
+  generic_default_family_action: 'Review and plan next step',
+}
+
+export function humanLabelForActionCode(actionCode: string | null | undefined): string | null {
+  if (actionCode == null) return null
+  if (typeof actionCode !== 'string' || actionCode.trim() === '') return null
+  const mapped = HUMAN_LABEL_BY_ACTION_CODE[actionCode]
+  if (mapped) return mapped
+  // Unknown / legacy code: normalise snake-case / kebab-case -> Title Case. Keeps
+  // deterministic output without throwing.
+  return actionCode
+    .split(/[_\-]+/)
+    .map(token => token.length === 0 ? '' : token[0]!.toUpperCase() + token.slice(1).toLowerCase())
+    .join(' ')
+    .trim()
+}
+
 function suggestedActionsFor(input: {
   riskBand: 'High' | 'Medium' | 'Low'
   weakness: ProofInterventionDominantWeakness

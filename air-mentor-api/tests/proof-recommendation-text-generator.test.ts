@@ -3,6 +3,7 @@ import {
   deriveDeferHod,
   deriveDominantWeakness,
   generateRecommendationText,
+  humanLabelForActionCode,
 } from '../src/lib/proof-recommendation-text-generator.js'
 import type {
   RecommendationInterventionHistory,
@@ -36,6 +37,40 @@ function makeInput(overrides: Partial<RecommendationTextInput> = {}): Recommenda
     seePct: overrides.seePct ?? null,
   }
 }
+
+describe('recommendation-text-generator · humanLabelForActionCode', () => {
+  it('returns canonical labels for all known enum codes', () => {
+    expect(humanLabelForActionCode('attendance_warning')).toBe('Send attendance warning')
+    expect(humanLabelForActionCode('targeted_remedial_plan')).toBe('Run targeted remedial plan')
+    expect(humanLabelForActionCode('structured_study_plan')).toBe('Assign structured study plan')
+    expect(humanLabelForActionCode('extra_academic_support_plan')).toBe('Extra academic support plan')
+    expect(humanLabelForActionCode('mentor_meeting')).toBe('Schedule mentor meeting')
+    expect(humanLabelForActionCode('faculty_followup_reminder')).toBe('Faculty follow-up reminder')
+    expect(humanLabelForActionCode('hod_escalation_student_action')).toBe('Escalate student case to HoD')
+    expect(humanLabelForActionCode('generic_default_family_action')).toBe('Review and plan next step')
+  })
+
+  it('falls back to Title Case for unknown snake_case legacy codes', () => {
+    expect(humanLabelForActionCode('legacy_custom_code')).toBe('Legacy Custom Code')
+  })
+
+  it('falls back to Title Case for unknown kebab-case legacy codes', () => {
+    expect(humanLabelForActionCode('tier1-direct-intervention')).toBe('Tier1 Direct Intervention')
+  })
+
+  it('returns null for null / undefined / empty input', () => {
+    expect(humanLabelForActionCode(null)).toBeNull()
+    expect(humanLabelForActionCode(undefined)).toBeNull()
+    expect(humanLabelForActionCode('')).toBeNull()
+    expect(humanLabelForActionCode('   ')).toBeNull()
+  })
+
+  it('is deterministic across repeated calls', () => {
+    for (let i = 0; i < 20; i++) {
+      expect(humanLabelForActionCode('targeted_remedial_plan')).toBe('Run targeted remedial plan')
+    }
+  })
+})
 
 describe('recommendation-text-generator · deriveDeferHod', () => {
   it('Low/Medium never defer', () => {
