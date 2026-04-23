@@ -17,6 +17,7 @@ API endpoints audited:
 
 - HoD proof bundle endpoints in `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/air-mentor-api/src/modules/academic-proof-routes.ts:62-178`.
 - Student shell card and risk explorer endpoints in `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/air-mentor-api/src/modules/academic-proof-routes.ts:324-359`.
+- Faculty profile proof endpoint in `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/air-mentor-api/src/modules/admin-control-plane.ts:698-735` and `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/air-mentor-api/src/modules/admin-control-plane.ts:1121-1133`.
 
 Projection / DB tables audited:
 
@@ -34,6 +35,7 @@ UI files audited:
 - `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/src/academic-faculty-profile-page.tsx`
 - `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/src/academic-route-pages.tsx`
 - `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/src/academic-proof-summary-strip.tsx`
+- `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/src/system-admin-proof-dashboard-workspace.tsx`
 
 Audit method:
 
@@ -57,6 +59,7 @@ Audit method:
 | Student Shell summary + overview | Yes | Yes | Partial | Yes | Partial | No (calibration method only) | Yes | M10 |
 | Student Shell assessment evidence panel | No | No | Partial | No | No | No | No | M11 |
 | Risk Explorer | Yes | Yes | Yes | Yes | Partial | Yes | Yes | M12 |
+| System-admin proof dashboard checkpoint queue preview | Yes | Yes | No | Yes | No | No | Yes | M13 |
 
 ### Matrix evidence map
 
@@ -72,6 +75,7 @@ Audit method:
 - M10: Student Shell summary and overview show band, probability, calibration method, action, attention areas, and counterfactual, but no model/calibration version, in `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/src/pages/student-shell.tsx:303-353` and `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/src/pages/student-shell.tsx:402-430`.
 - M11: Student Shell assessment panel tries to render driver chips in `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/src/pages/student-shell.tsx:490-505`, but checkpoint card assembly writes `drivers: []` for every component in `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/air-mentor-api/src/lib/proof-control-plane-tail-service.ts:1803-1819`.
 - M12: Risk Explorer exposes model version, calibration version, top drivers, and counterfactual in `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/src/pages/risk-explorer.tsx:243-258`, `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/src/pages/risk-explorer.tsx:408-490`, and `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/src/pages/risk-explorer.tsx:576-590`; payload provenance comes from `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/air-mentor-api/src/lib/proof-control-plane-tail-service.ts:2230-2257`.
+- M13: System-admin proof dashboard queue preview renders band, probability, raw `recommendedAction`, no-action probability, and lift with no driver or model provenance layer in `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/src/system-admin-proof-dashboard-workspace.tsx:871-885`.
 
 ## Findings
 
@@ -103,6 +107,10 @@ Course pages consistently show band and probability. The dedicated `Risk` tab ad
 
 The repo includes a parity adapter that normalizes the same core checkpoint metrics out of Student Shell, Risk Explorer, HoD watch rows, and faculty monitoring queue rows. The parity tests assert equality for the same student/checkpoint fixture across all four selectors. This is strong evidence that band/probability mismatch across those surfaces is already guarded against. I found no contradicting selector logic in the audited files. Evidence: `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/src/student-checkpoint-parity.ts:24-96` and `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/tests/student-checkpoint-parity.test.ts:63-175`.
 
+### F8. Internal sysadmin playback preview still leaks raw checkpoint action codes.
+
+The system-admin proof dashboard is not the main faculty demo surface, but it does consume the same queue projection rows and currently prints `item.simulatedActionTaken ?? item.recommendedAction` directly beside risk probability and no-action comparator. That means internal demos, screenshots, or operator reviews can still expose raw stage-policy codes after the faculty helper wiring work. Evidence: `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/src/system-admin-proof-dashboard-workspace.tsx:871-885` and `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/air-mentor-api/src/lib/proof-control-plane-playback-governance-service.ts:553-577`.
+
 ## Gaps that would hurt the demo
 
 1. HoD cannot defend the watchlist with drivers or model/calibration provenance. This undermines both trust and governance in the highest-stakes surface. Evidence: `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/src/pages/hod-pages.tsx:211-214`, `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/src/pages/hod-pages.tsx:817-885`, and `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/src/api/types.ts:1650-1853`.
@@ -120,6 +128,7 @@ The repo includes a parity adapter that normalizes the same core checkpoint metr
 | `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/air-mentor-api/src/lib/proof-control-plane-tail-service.ts:265-297` and `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/src/academic-route-pages.tsx:68-98` | Populate checkpoint queue `drivers` from stage projection payload or the attached evidence snapshot so dashboard cards can keep a concrete `why` label. | In checkpoint scope, a course-leader alert card shows a driver label rather than falling back to raw `recommendedAction`. |
 | `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/src/academic-faculty-profile-page.tsx:261-275` and `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/src/pages/risk-explorer.tsx:453-460` | Humanise `recommendedAction` everywhere the UI renders it directly. Reuse `humanLabelForActionCode()` or add a frontend mirror with the same fallback behavior. | Faculty profile and Risk Explorer advanced tab never render raw hyphen/snake-case action codes in visible copy. |
 | `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/air-mentor-api/src/lib/proof-control-plane-tail-service.ts:1803-1819` and `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/src/pages/student-shell.tsx:490-505` | Stop writing `drivers: []` for checkpoint `assessmentComponents`; at minimum copy the top 3 observable drivers from the selected stage row or synthesize component-local driver labels from `attentionAreas`. | Checkpoint-bound Student Shell assessment tab displays non-empty driver chips for a fixture that already has checkpoint attention areas / top drivers. |
+| `@/home/raed/.local/state/airmentor/pipeline/worktrees/fresh-sem1-audit-dispatch-dag-1610428c-20260423T091928Z/ml-risk-ui-audit/src/system-admin-proof-dashboard-workspace.tsx:871-885` | Reuse the same action humanisation helper on sysadmin queue preview cards so internal proof reviews match faculty copy. | Sysadmin checkpoint queue preview never renders raw hyphen/snake-case action codes in visible copy. |
 
 ## Verification commands
 
