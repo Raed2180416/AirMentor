@@ -2,6 +2,7 @@ import type {
   ApiAcademicBootstrap,
   ApiAcademicFaculty,
   ApiAcademicHodProofBundle,
+  ApiAcademicHodProofCounterfactualReport,
   ApiAcademicMeeting,
   ApiActivateProofSemesterRequest,
   ApiActivateProofSemesterResponse,
@@ -521,6 +522,15 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     if (filter?.simulationStageCheckpointId) searchParams.set('simulationStageCheckpointId', filter.simulationStageCheckpointId)
     const query = searchParams.toString()
     return this.request<{ items: ApiAcademicHodProofReassessment[] }>(`/api/academic/hod/proof-reassessments${query ? `?${query}` : ''}`)
+  }
+
+  async getAcademicHodProofCounterfactual(input: { runIdBaseline: string; runIdRealized: string }) {
+    const searchParams = new URLSearchParams()
+    searchParams.set('runIdBaseline', input.runIdBaseline)
+    searchParams.set('runIdRealized', input.runIdRealized)
+    return this.request<ApiAcademicHodProofCounterfactualReport>(
+      `/api/academic/hod/proof-counterfactual?${searchParams.toString()}`,
+    )
   }
 
   async acknowledgeAcademicProofReassessment(reassessmentEventId: string, payload: ApiProofReassessmentAcknowledgeRequest = {}) {
