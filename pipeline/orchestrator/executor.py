@@ -153,11 +153,18 @@ def _compose_prompt(task_row, route: router.Route, *, briefing_path: Path | None
             + body + "\n"
         )
 
+    # Round-9 fix (2026-04-23): contract MUST be the final instruction the model
+    # sees. Previously contract_txt sat between scope and base_prompt; gpt-5.4
+    # with xhigh reasoning would forget the structured-exit marker by the end
+    # of its response (observed failure across 3 attempts on 3 different task
+    # types). Moving the contract to after base_prompt makes it the last thing
+    # the model processes before generating its final message.
     return (
         f"# Pipeline Pass: {pass_name}\n\n"
         f"{route_banner}\n\n"
-        f"{intent_txt}{manifest_txt}{scope_txt}{briefing_txt}{contract_txt}\n\n"
-        f"---\n\n{base_prompt}\n"
+        f"{intent_txt}{manifest_txt}{scope_txt}{briefing_txt}\n\n"
+        f"---\n\n{base_prompt}\n\n"
+        f"---\n\n{contract_txt}\n"
     )
 
 

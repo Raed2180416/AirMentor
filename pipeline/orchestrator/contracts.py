@@ -97,10 +97,10 @@ def render_prompt_contract(pass_name: str) -> str:
     Instructs the model how to emit the exit marker. Deterministic wording.
     """
     return f"""
-## MANDATORY EXIT CONTRACT — read before ending
+## MANDATORY EXIT CONTRACT — THIS IS YOUR LAST INSTRUCTION
 
-Before you end this session, you MUST emit exactly ONE result block at the
-bottom of your final message, in this exact literal form:
+You MUST end your final assistant message with EXACTLY ONE marker block in
+this literal form (no prose after it, no markdown code fence around it):
 
 {MARKER_START}
 {{
@@ -113,16 +113,20 @@ bottom of your final message, in this exact literal form:
 }}
 {MARKER_END}
 
+CRITICAL — the orchestrator CANNOT detect your work without this marker.
+If you skip it, your session is classified as FAILED even if every artifact
+is written perfectly. This is non-negotiable.
+
 Rules:
-- status="completed" only if you actually wrote every required artifact.
-- status="partial" if you wrote some but not all; list what is missing in `notes`.
-- status="blocked" if you could not proceed; explain why in `notes`.
-- `citations` MUST reference real file paths with real line numbers.
-  If you reference a non-existent file or line, the orchestrator will reject.
-- `intent_affirmed` MUST be true only if you did not change product intent
-  described in the intent file. Set false if you changed intent.
-- Do NOT print anything after the {MARKER_END} line.
-- Emit the block exactly once. Duplicates cause rejection.
+- status="completed" ONLY if every required artifact exists and is substantive.
+- status="partial"/"blocked" allowed if you cannot finish; explain in `notes`.
+- `citations` MUST reference real existing file paths with real line numbers.
+- `intent_affirmed=true` ONLY if you did not change product intent.
+- Do NOT print anything after {MARKER_END}.
+- Emit the block exactly once.
+
+Copy-paste the block above, fill in the 4 real fields, and send it as the
+final lines of your final message. That is all.
 """
 
 
