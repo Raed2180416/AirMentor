@@ -32,6 +32,7 @@ import {
 import {
   ensureMsruasProofBatchStructure,
   MSRUAS_PROOF_BATCH_ID,
+  rehydrateProofFacultyCredentials,
 } from '../lib/msruas-proof-sandbox.js'
 import { emitAuditEvent, parseOrThrow, requireRole } from './support.js'
 import {
@@ -470,6 +471,26 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
       entityType: 'ProofSimulationRun',
       entityId: params.simulationRunId,
       action: body.mode === 'day' ? 'AdvancedDay' : 'AdvancedStage',
+      actorRole: auth.activeRoleGrant.roleCode,
+      actorId: auth.facultyId,
+      after: result,
+    })
+    return result
+  })
+
+  // POST /api/admin/proof-sandbox/rehydrate-credentials — re-inserts deleted
+  // PROOF_FACULTY password credentials (idempotent). Needed by the Playwright
+  // flow-11 stop spec to restore login for subsequent tests without a full
+  // re-seed. SYSTEM_ADMIN only.
+  app.post('/api/admin/proof-sandbox/rehydrate-credentials', {
+    schema: { tags: ['admin-proof'], summary: 'Rehydrate proof faculty password credentials (idempotent)' },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
+    const result = await rehydrateProofFacultyCredentials(context.db, context.now())
+    await emitAuditEvent(context, {
+      entityType: 'ProofSandbox',
+      entityId: MSRUAS_PROOF_BATCH_ID,
+      action: 'RehydratedFacultyCredentials',
       actorRole: auth.activeRoleGrant.roleCode,
       actorId: auth.facultyId,
       after: result,

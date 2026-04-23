@@ -278,6 +278,29 @@ export async function ensureMsruasProofBatchStructure(db: AppDb, now: string) {
   }
 }
 
+// Re-insert proof faculty password credentials for any PROOF_FACULTY entries
+// whose userAccount exists but whose userPasswordCredentials row was deleted
+// (e.g. by stopProofSimulationRun / §L.11 demo finale). This keeps the
+// Playwright flow-ladder idempotent: after flow-11 wipes proof creds, the
+// next test's fixture can rehydrate them without reseeding the whole
+// cohort.
+export async function rehydrateProofFacultyCredentials(db: AppDb, now: string) {
+  let rehydratedCount = 0
+  for (const faculty of PROOF_FACULTY) {
+    const [account] = await db.select().from(userAccounts).where(eq(userAccounts.userId, faculty.userId))
+    if (!account) continue
+    const [cred] = await db.select().from(userPasswordCredentials).where(eq(userPasswordCredentials.userId, faculty.userId))
+    if (cred) continue
+    await db.insert(userPasswordCredentials).values({
+      userId: faculty.userId,
+      passwordHash: await hashPassword('faculty1234'),
+      updatedAt: now,
+    })
+    rehydratedCount += 1
+  }
+  return { rehydratedCount }
+}
+
 export async function ensureMsruasProofSandboxSeeded(db: AppDb, options: {
   institutionId?: string
   now: string
