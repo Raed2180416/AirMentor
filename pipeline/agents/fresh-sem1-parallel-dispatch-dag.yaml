@@ -13,13 +13,18 @@ defaults:
   idle_timeout_s: 1800
   hard_timeout_s: 14400
   max_attempts: 3
+  require_provider: codex
+  requested_model: gpt-5.4
+  reasoning_effort: xhigh
 
 nodes:
   - id: playwright-harness-bootstrap
     pass: playwright-harness-bootstrap-pass
     task_class: structured
     risk_class: medium
-    reasoning_effort: high
+    reasoning_effort: xhigh
+    require_provider: codex
+    requested_model: gpt-5.4
     prompt_file: audit-map/20-prompts/playwright-harness-bootstrap-pass.md
     intent_file: pipeline/agents/manifests/playwright-harness-bootstrap.intent.yaml
     manifest_file: pipeline/agents/manifests/playwright-harness-bootstrap.artifacts.yaml
@@ -31,7 +36,9 @@ nodes:
     pass: trajectory-realism-analyzer-pass
     task_class: structured
     risk_class: low
-    reasoning_effort: high
+    reasoning_effort: xhigh
+    require_provider: codex
+    requested_model: gpt-5.4
     prompt_file: audit-map/20-prompts/trajectory-realism-analyzer-pass.md
     intent_file: pipeline/agents/manifests/trajectory-realism-analyzer.intent.yaml
     manifest_file: pipeline/agents/manifests/trajectory-realism-analyzer.artifacts.yaml
@@ -43,7 +50,9 @@ nodes:
     pass: ml-risk-ui-audit-pass
     task_class: structured
     risk_class: low
-    reasoning_effort: high
+    reasoning_effort: xhigh
+    require_provider: codex
+    requested_model: gpt-5.4
     prompt_file: audit-map/20-prompts/ml-risk-ui-audit-pass.md
     intent_file: pipeline/agents/manifests/ml-risk-ui-audit.intent.yaml
     manifest_file: pipeline/agents/manifests/ml-risk-ui-audit.artifacts.yaml
