@@ -1,0 +1,18 @@
+purpose: |
+  Audit every UI surface that consumes ML risk output (band, probability, top drivers,
+  recommended action, model version, counterfactual lift) and produce a coverage
+  matrix + findings + proposed fixes. Pure read-only audit — no source changes.
+nonneg:
+  - Do not modify any source under src/** or air-mentor-api/src/**
+  - Do not modify tests
+  - Every finding must cite file:line
+  - The coverage matrix must be a concrete table, not prose
+  - No false-positives — every gap flagged is reproducible
+owner_files:
+  - air-mentor-api/src/lib/proof-risk-model.ts
+  - air-mentor-api/src/lib/proof-control-plane-playback-service.ts
+  - air-mentor-api/src/modules/academic.ts
+  - src/pages/hod-pages.tsx
+  - src/pages/course-pages.tsx
+  - src/risk-explorer.tsx
+  - src/pages/student-shell.tsx

@@ -1,0 +1,23 @@
+artifacts:
+  - path: scripts/analyze-trajectory-realism.mjs
+    min_lines: 80
+    min_bytes: 2500
+    required_sections: []
+    write_mode: replace
+  - path: audit-map/32-reports/trajectory-realism-analysis.md
+    min_lines: 120
+    min_bytes: 5000
+    required_sections:
+      - "# Trajectory Realism Analysis"
+      - "## TL;DR verdict"
+      - "## Sim run under review"
+      - "## Section 1: Mark distributions"
+      - "## Section 2: CGPA distribution"
+      - "## Section 3: Attendance"
+      - "## Section 4: Backlog progression"
+      - "## Section 5: Intervention effect"
+      - "## Section 6: Prereq correlations"
+      - "## Section 7: Teacher effect"
+      - "## Open realism concerns"
+      - "## Recommended fixes ordered by impact"
+    write_mode: replace
