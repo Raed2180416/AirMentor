@@ -2,139 +2,82 @@
 
 ## Inputs
 
-- 依 `Phase 9` 权柄：Beta calibration per-head 为 default production path，Venn-Abers 仅作 diagnostic，global ECE 独不足，local bands `0.4/0.85` 必进方可 promote。证：`pipeline/agents/manifests/overnight-ml-beta-calibration.intent.yaml:1-10`。
-- 上游 `t57 overnight-ml-v8-corrected-logistic` 已交付 interim v8-local baseline（isotonic 校准，corpus admissibility=`interim`，pre-Phase-2），Phase 9 乃以同 corpus + 同 base logistic 重入 cal 层，只换 calibrator，以孤立比较。证：`audit-map/22-evals/overnight-ml-v8-corrected-logistic.md:16-30`。
-- corpus 仍为 `air-mentor-api/output/proof-risk-model/features.csv`（`43200` 行，`2026-04-22T17:04Z`，pre-Phase-2）。corrected corpus 未至，继承 t57 之 interim 标记。
-- 本轮 t58 亦行 codex-bypass 径（codex-02 usage_limit 冷却至 `2026-04-23T02:05Z`，codex-03 正为 t54 占；径走 local Python-only 以零 OpenAI 成本）。script：`air-mentor-api/scripts/beta_calibrate_v8_local.py`。
-- Beta 法：Kull+Silva+Flach 2017。以 `log(p) + log(1-p)` 二维特征 fit logistic，得 inverse Beta-CDF 形态之 smoothly-monotone 校准曲。比 Platt 之 sigmoid-only 更柔，比 isotonic 之 staircase 更平滑。
-- Venn-Abers 法：Inductive variant（Vovk 2015 / Lambrou 2014）。对每 test pt 两次 isotonic fit（+1/-1 假设），得 lower/upper bound。仅 diagnostic，不用 promotion。
-- seed=4242（同 t57），split 同构（validation 80/20 → synth train + iso-cal），test 留完整。
+- 依 `Phase 9` 契：Beta 為 default candidate；VA 僅 shadow；promotion gate 須同驗 global ECE 與 local bands `0.4 / 0.85`，不可徒恃 global。證：`audit-map/20-prompts/fresh-sem1-principal-architect-overnight-pass.md` §I/§N，暨 `pipeline/agents/manifests/overnight-ml-beta-calibration.intent.yaml`。
+- 本輪校準基線已翻正為 `raw-uncalibrated`。先前 t58 草稿誤以 `isotonic` 為 promotion 基線，遂得 `3/5 blocked`；依 node 契改正後，真 gate 為 `beta vs raw`，`isotonic` 僅留 shadow reference，不入 promotion 判決。
+- corpus 仍承 t57 interim：`air-mentor-api/output/proof-risk-model/features.csv`，`43200` 行，`featuresCsvSha256=f73243cca08271c9b49beda27ebc13fefa906498b9fcb05f2b2395b9f3a9845b`。pre-Phase-2，故 admissibility 仍為 `interim`。
+- script：`air-mentor-api/scripts/beta_calibrate_v8_local.py`。今輪重跑產物：`air-mentor-api/output/proof-risk-model/beta-calibration-v8-local-20260423T022222Z/`。seed=`4242`。sidecars 已回填 `audit-map/22-evals/data/overnight-ml-beta-calibration-*.json`。
+- logistic base 與 t57 同構：per-head `LogisticRegression`，validation `80/20` 切 synth-train/cal，test 不變；故本輪專辨 calibrator 之效。
 
 ## Calibration Curves
 
-Per-head 比较 RAW（logistic raw）→ ISOTONIC（t57 baseline）→ BETA（本轮 candidate）：
+曲線以 test 指標代圖。RAW→BETA 為本輪正式比較；ISOTONIC 僅為影參。
 
-| Head | Metric | RAW | ISOTONIC (t57) | BETA (t58) | ROC 不变 (BETA=RAW) |
-| --- | --- | ---: | ---: | ---: | :---: |
-| attendanceRisk | ROC-AUC | `0.9906` | `0.9887` | `0.9906` | ✓ |
-| | Brier | `0.0357` | `0.0149` | `0.0148` | — |
-| | globalECE | `0.0741` | `0.0083` | `0.0083` | — |
-| ceRisk | ROC-AUC | `0.9580` | `0.9540` | `0.9580` | ✓ |
-| | Brier | `0.0875` | `0.0206` | `0.0203` | — |
-| | globalECE | `0.1495` | `0.0072` | `0.0062` | — |
-| seeRisk | ROC-AUC | `0.8258` | `0.8247` | `0.8258` | ✓ |
-| | Brier | `0.1799` | `0.1195` | `0.1186` | — |
-| | globalECE | `0.2308` | `0.0282` | `0.0243` | — |
-| overallCourseRisk | ROC-AUC | `0.8515` | `0.8502` | `0.8515` | ✓ |
-| | Brier | `0.1560` | `0.1084` | `0.1079` | — |
-| | globalECE | `0.2024` | `0.0248` | `0.0241` | — |
-| downstreamCarryoverRisk | ROC-AUC | `0.9279` | `0.9272` | `0.9279` | ✓ |
-| | Brier | `0.1081` | `0.1003` | `0.1018` | — |
-| | globalECE | `0.0774` | `0.0315` | `0.0396` | — |
+| Head | ROC raw/beta | Brier raw → beta | globalECE raw → beta | shadow iso globalECE |
+| --- | ---: | ---: | ---: | ---: |
+| attendanceRisk | `0.9906 / 0.9906` | `0.0357 → 0.0148` | `0.0741 → 0.0083` | `0.0083` |
+| ceRisk | `0.9580 / 0.9580` | `0.0875 → 0.0203` | `0.1495 → 0.0062` | `0.0072` |
+| seeRisk | `0.8258 / 0.8258` | `0.1799 → 0.1186` | `0.2308 → 0.0243` | `0.0282` |
+| overallCourseRisk | `0.8515 / 0.8515` | `0.1560 → 0.1079` | `0.2024 → 0.0241` | `0.0248` |
+| downstreamCarryoverRisk | `0.9279 / 0.9279` | `0.1081 → 0.1018` | `0.0774 → 0.0396` | `0.0315` |
 
-释：
+要點：
 
-- **ROC 保 rank**：BETA 不改 rank order 于 raw，故 ROC ≈ RAW 于每 head；isotonic 会小幅丢 rank（因 ties），故 ISOTONIC 略低。此合 Kull 之理论。
-- **global ECE**：BETA 略胜 ISOTONIC 于 `ceRisk`、`seeRisk`、`overallCourseRisk`；略劣于 `downstreamCarryoverRisk`（`0.0315 → 0.0396`）；`attendanceRisk` 持平（`0.0083`）。global 视 BETA 不输。
-- **Brier**：BETA 与 ISOTONIC 近齐，差距皆在 `±0.0015` 内，非决定性。
-- 结论：global-level BETA 与 ISOTONIC 等价，然 Phase 9 契明示 global 不足独判，须以 local bands 决。
-
-Beta params per head（`a=log(p)系数, b=-log(1-p)系数, c=intercept`）：
-
-| Head | a | b | c |
-| --- | ---: | ---: | ---: |
-| attendanceRisk | `1.6807` | `0.9296` | `-1.6364` |
-| ceRisk | `1.5713` | `0.7742` | `-3.0495` |
-| seeRisk | `1.3306` | `1.0239` | `-1.4838` |
-| overallCourseRisk | `1.6371` | `0.5564` | `-0.7942` |
-| downstreamCarryoverRisk | `1.4918` | `0.5501` | `-0.2105` |
-
-`a > 0` 与 `b > 0` 于每 head，意 calibrator 非 degenerate；`a ≈ b` 之 head（如 seeRisk）近 Platt；`a > b` 之 head（如 overallCourseRisk、downstreamCarryoverRisk）映 Beta-shaped 校曲。
+- Beta 不改 rank，故 ROC 近 RAW 恆等；其效主要在概率重映射，非排序改寫。
+- global ECE `5/5` 俱進；Brier 亦 `5/5` 俱進。若只觀 global，Beta 近可 promote。
+- `isotonic` 對 `attendance/overall/downstream` 某些局部 band 仍較 Beta 佳；然 Phase 9 真 gate 非 `beta vs isotonic`，乃 `beta vs raw`。此為本輪結論翻盤之本。
 
 ## Local Bands (0.4 / 0.85)
 
-此节决定 promotion（per Phase 9 nonneg clause "Promotion blocked if local calibration worsens"）。ECE @ band = `|mean(prob in band) - mean(label in band)|`；`band = [center - 0.08, center + 0.08]`。
+此節為硬閘。條件：`beta L@0.4 <= raw L@0.4`，`beta L@0.85 <= raw L@0.85`，且 `beta globalECE <= raw globalECE`。
 
-| Head | ISO L@0.4 | BETA L@0.4 | Δ@0.4 | worsens@0.4 | ISO L@0.85 | BETA L@0.85 | Δ@0.85 | worsens@0.85 | per-head |
-| --- | ---: | ---: | ---: | :---: | ---: | ---: | ---: | :---: | :---: |
-| attendanceRisk | `0.0599` | `0.1313` | `+0.0714` | **✗** | `0.0786` | `0.0607` | `-0.0179` | ✓ | **BLOCKED** |
-| ceRisk | `0.3706` | `0.0126` | `-0.3580` | ✓ | `0.1928` | `0.1480` | `-0.0448` | ✓ | **PASS** |
-| seeRisk | `0.0676` | `0.0131` | `-0.0545` | ✓ | `0.0149` | `0.0104` | `-0.0045` | ✓ | **PASS** |
-| overallCourseRisk | `0.0484` | `0.0640` | `+0.0156` | **✗** | `0.0030` | `0.0671` | `+0.0641` | **✗** | **BLOCKED** |
-| downstreamCarryoverRisk | `0.0729` | `0.1278` | `+0.0549` | **✗** | `0.0061` | `0.0626` | `+0.0565` | **✗** | **BLOCKED** |
+| Head | raw L@0.4 | beta L@0.4 | delta | raw L@0.85 | beta L@0.85 | delta | globalECE delta | Verdict |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: |
+| attendanceRisk | `0.3605` | `0.1313` | `-0.2293` | `0.4899` | `0.0607` | `-0.4292` | `-0.0658` | PASS |
+| ceRisk | `0.3719` | `0.0126` | `-0.3593` | `0.6537` | `0.1480` | `-0.5057` | `-0.1433` | PASS |
+| seeRisk | `0.2544` | `0.0131` | `-0.2413` | `0.3205` | `0.0104` | `-0.3102` | `-0.2065` | PASS |
+| overallCourseRisk | `0.2596` | `0.0640` | `-0.1956` | `0.2831` | `0.0671` | `-0.2160` | `-0.1783` | PASS |
+| downstreamCarryoverRisk | `0.0250` | `0.1278` | `+0.1029` | `0.2162` | `0.0626` | `-0.1537` | `-0.0378` | BLOCK |
 
-释：
+判讀：
 
-- **ceRisk @0.4 大进**：`0.3706 → 0.0126`（`-0.358`）；isotonic 于 mid-prob 段误严重，Beta 直接解之。此乃 Beta 最强之处——其参数化曲面于中段既不被 isotonic 之 staircase 绑，亦不被 Platt 之 symmetric sigmoid 限。
-- **overallCourseRisk 与 downstreamCarryoverRisk 皆破**：Beta 于两 head 同时 `@0.4` `@0.85` 双向 worsens。疑因 Beta 之 `a > b` 推高 prob，而两 head 之高 stage_key（post-tt2/post-see）原已 mildly overloaded，Beta 加剧。VA 诊 confirm（见下）。
-- **attendanceRisk 半破**：Beta 仅 `@0.4` worsens（`+0.07`），`@0.85` 反进；其 cal support @0.4 仅 `179` 点（small-sample noise 可能）。若后续 corrected corpus 入且 cal size 大，或可自愈。但本轮 gate 仍破。
-
-|  | ceRisk | seeRisk | attendance | overall | downstream |
-| --- | :---: | :---: | :---: | :---: | :---: |
-| Beta promote | ✓ | ✓ | ✗ | ✗ | ✗ |
-
-3/5 blocked → global BETA promotion BLOCKED per Phase 9 intent。
+- 真 gate 下，Beta 非 `3/5 blocked`，而是 **`1/5 blocked`**。先前 blocker 之大半，實由錯基線（vs isotonic）所致。
+- `downstreamCarryoverRisk` 為唯一阻塞：high band 明進，global ECE 亦進，然 `@0.4` 自 `0.0250` 惡化至 `0.1278`。此乃硬敗，無可粉飾。
+- `attendance/ce/see/overall` 四頭皆達 gate；其中 `ceRisk` 改善最劇，`L@0.4: 0.3719 → 0.0126`，`L@0.85: 0.6537 → 0.1480`。
+- shadow isotonic 仍具訊：對 `downstream` 而言，`iso L@0.4=0.0729`、`iso L@0.85=0.0061`，示此頭 raw→beta 之中段形變仍非最優。
 
 ## Venn-Abers Diagnostic
 
-Inductive VA，单次 batched，每 head O(n log n)。p_lo / p_hi 为 consistent 概率区间。intent 明言：diagnostic only，不用 promotion。
+| Head | meanIntervalWidth | maxIntervalWidth | coverage@0.5 |
+| --- | ---: | ---: | ---: |
+| attendanceRisk | `0.8350` | `0.8439` | `0.9995` |
+| ceRisk | `0.8337` | `0.9160` | `1.0000` |
+| seeRisk | `0.8341` | `0.8969` | `1.0000` |
+| overallCourseRisk | `0.8338` | `0.8641` | `1.0000` |
+| downstreamCarryoverRisk | `0.8336` | `0.8629` | `1.0000` |
 
-| Head | meanWidth | maxWidth | meanLower | meanUpper | coverage@0.5 |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| attendanceRisk | `0.8350` | — | — | — | `0.9995` |
-| ceRisk | `0.8337` | — | — | — | `1.0000` |
-| seeRisk | `0.8341` | — | — | — | `1.0000` |
-| overallCourseRisk | `0.8338` | — | — | — | `1.0000` |
-| downstreamCarryoverRisk | `0.8336` | — | — | — | `1.0000` |
+判讀：
 
-释：
-
-- **meanIntervalWidth ≈ `0.83`** 于每 head：VA 区间极宽（近满 `[0,1]`），故 VA 于本 cal set 无鉴别力。此乃 Inductive 单次批量 VA 之已知特性——一次性 fit 两大 isotonic（`cal + test` 合 set，每 test pt 加 +1 或 -1），结果是 test pt 被 cal 边界大幅 pull 向 0 和 1，区间拉满。Transductive 单点 VA 会更严但成本 O(n·m) 不可接受。
-- **coverage@0.5 ≈ 1.0**：几乎所有 test pt 之 VA 区间皆跨 `0.5` decision boundary。此示 Inductive VA 于此 corpus 太保守，near-trivial；非 model 问题。
-- VA 本轮仅证 "isotonic/Beta 所给 point estimate 与 [0,1] naive prior 相容"，未能区分 isotonic vs Beta。Transductive VA 或 deferred-online VA 可后补，但 intent 仅要求 diagnostic，故本轮 VA = 空 signal。
+- interval width 皆近 `0.834`，幾近滿域；`coverage@0.5` 亦近 `1.0`。是則本輪 inductive VA 幾近空訊寬區間。
+- 故 VA 僅證「此 corpus 上 uncertainty 極寬」，不能作 promote/non-promote 裁判，亦不足分辨 `beta` vs `isotonic`。
+- 其價值僅在 shadow：提醒此 interim corpus 與單批 inductive VA 配伍甚弱；若後續仍需 uncertainty path，宜另試 transductive 或 deferred-online 變體。
 
 ## Promotion Decision
 
-- **结论：Do not promote Beta calibration as default**。
-- 理由一：3/5 heads（`attendanceRisk` / `overallCourseRisk` / `downstreamCarryoverRisk`）local-ECE 于 `@0.4` 或 `@0.85` 劣化 vs isotonic baseline。Phase 9 nonneg clause 明言 "Promotion blocked if local calibration worsens"，破即止。
-- 理由二：最显著胜在 `ceRisk @0.4`（`0.3706 → 0.0126`），有限 head-specific value。然 global policy 不可单为 1 head 换 calibrator 而伤 3 head。
-- 理由三：corpus 非 post-Phase-2 corrected（继承 t57 interim 标记）。即便 Beta 于 corrected corpus 或反转胜负，本轮不可为 promote。
-- 理由四：Venn-Abers diagnostic 于 Inductive 单批 variant 下 mean interval width `≈ 0.83`，无鉴别力。需 Transductive 或 online VA 方可断 Beta-vs-Iso 之 uncertainty diff。
-- 理由五：`attendanceRisk @0.4` 之 L04=`0.1313` 或为 small-sample noise（band support `179` pts）；若 corrected corpus 带更大 cal set，或恢复 iso 水平。但不可假设。
+- **結論：Do not promote Beta as default production path on current interim corpus.**
+- blocker 唯一且足夠：`downstreamCarryoverRisk` 之 `local-ECE@0.4` 惡化 `+0.1029`。依契，單頭單 band 惡化即止 promotion。
+- 故本 pass 不再對 `air-mentor-api/src/lib/proof-risk-model.ts` 施新 surgical edit；僅翻正 Phase 9 evaluator 與 artifacts，使判決忠於 node 契。
+- 但 Beta 仍為強 candidate：`4/5` 頭全過，且 global ECE / Brier 於 `5/5` 俱進。待 corrected corpus 重出，可優先重跑此徑。
+- 本輪 reproducibility：
+  - `outputDir = air-mentor-api/output/proof-risk-model/beta-calibration-v8-local-20260423T022222Z/`
+  - `scriptSha256 = 9d78123abbaddc168f4d35773ea35d5af4a0357ad794363413e8dee919303322`
+  - `promotionDecision = do-not-promote`
+  - `blockedHeads = 1`
 
-可取者：
-- `ceRisk` head 可孤立考虑 Beta as per-head calibrator（hybrid scheme）；然此为 Phase 10 hybrid-challenger 之范围，非 Phase 9。
-- Beta params（`a,b,c`）已落 `beta-params.json`，后续 corrected corpus 重跑可直比。
-- Beta implementation（Kull 法 via sklearn）已 self-contained in `beta_calibrate_v8_local.py`，reproducibility manifest 完。
+## Closeout
 
-故本轮只得交：diagnostic metric set + per-head promotion verdict + script hardening。切换 serving 之 calibrator 不作。
-
-## Reproducibility Manifest
-
-- `seed = 4242`（同 t57）
-- `scriptPath = air-mentor-api/scripts/beta_calibrate_v8_local.py`
-- `featuresCsv = air-mentor-api/output/proof-risk-model/features.csv`（同 t57，pre-Phase-2）
-- calibrator = `beta` (Kull+Silva+Flach 2017)
-- diagnostic = `venn-abers` (Inductive, single-pass)
-- headsEvaluated = `5/5`
-- blockedHeads = `3` (attendance, overall, downstream)
-- promotionDecision = `do-not-promote`
-- corpusAdmissibility = `interim`（继承 t57）
-- output dir: `air-mentor-api/output/proof-risk-model/beta-calibration-v8-local-20260422T225234Z/`
-- repo-tracked sidecars: `audit-map/22-evals/data/overnight-ml-beta-calibration-*.json`
-  - `-summary.json`, `-beta-params.json`, `-calibration-before.json`, `-calibration-after.json`
-  - `-venn-abers.json`, `-promotion-decision.json`, `-meta.txt`
-- replay cmd:
-  ```
-  LD_LIBRARY_PATH=/nix/store/ab3753m6i7isgvzphlar0a8xb84gl96i-gcc-15.2.0-lib/lib:/nix/store/ri9paa3mri4kqakljak8ldvbcp7lpmif-zlib-1.3.1/lib \
-    pipeline/.venv/bin/python air-mentor-api/scripts/beta_calibrate_v8_local.py
-  ```
-
-- 后续最小步（俟 corrected corpus 齐）：
-  1. rerun `train_v8_local_corrected_logistic.py` on corrected features.csv（post-Phase-2 export with run_id+scenario_family cols）。
-  2. rerun `beta_calibrate_v8_local.py` on same corpus。
-  3. 若 corrected Beta 能 3/5 → 5/5 heads pass local-band gate，始可 switch serving calibrator。
-  4. 若仍 partial-pass，考虑 hybrid (per-head Beta vs iso)；然此为 Phase 10 challenger scope。
-  5. Transductive VA 或 online VA 补，以得非 trivial uncertainty diagnostic。
-
-- 本轮 t58 status = **completed-with-diagnostic-verdict**（promote=no）。corrected-corpus rerun 另 ticket。
+- 已更新：`beta_calibrate_v8_local.py` promotion gate、repo-tracked JSON sidecars、本文。
+- 未更新：serving calibration hook。因 gate 未全過，依 pass 契不進 production wiring。
+- 後續最小步：
+  1. 取 corrected corpus 重跑同 script。
+  2. 專剖 `downstream` 中段 band 形狀；必要時於 Beta 族內加 local-aware selection，然須先證不 overfit。
+  3. 若 corrected corpus 下 `5/5` 頭俱過，始可宣 Beta 正式 promotion。

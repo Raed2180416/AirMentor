@@ -1,12 +1,12 @@
-[beta-calibration-v8-local] generated at 2026-04-22T22:52:50+00:00
+[beta-calibration-v8-local] generated at 2026-04-23T02:22:37+00:00
 seed=4242
-gitSha=7323b21f1bb99480067a9f9e707163a4add7bcbd
-scriptSha256=7de07fb357785c1b4f6f82f3664d51ccaadc1d246a028732bf7e9c0b5a33d6b1
+gitSha=dbc7a961b28be592d18e5bbcdbdada2b34d307ed
+scriptSha256=9d78123abbaddc168f4d35773ea35d5af4a0357ad794363413e8dee919303322
 featuresCsvSha256=f73243cca08271c9b49beda27ebc13fefa906498b9fcb05f2b2395b9f3a9845b
 calibrator=beta (Kull 2017)
 diagnostic=venn-abers (Inductive, single-pass)
 headsEvaluated=5/5
-blockedHeads=3
+blockedHeads=1
 promotionDecision=do-not-promote
 corpusAdmissibility=interim (inherits t57 caveat)
-metricSidecarDir=/home/raed/projects/air-mentor-ui/air-mentor-api/output/proof-risk-model/beta-calibration-v8-local-20260422T225234Z/metric-sidecars
+metricSidecarDir=/home/raed/.local/state/airmentor/pipeline/worktrees/overnight-dag-9f3b5b7d-20260422T151153Z/overnight-ml-beta-calibration/air-mentor-api/output/proof-risk-model/beta-calibration-v8-local-20260423T022222Z/metric-sidecars
