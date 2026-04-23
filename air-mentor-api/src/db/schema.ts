@@ -493,6 +493,11 @@ export const simulationRuns = pgTable('simulation_runs', {
   simulatedDateIso: text('simulated_date_iso'),
   setupConfigJson: text('setup_config_json'),
   scenarioConfigJson: text('scenario_config_json'),
+  // Track C Phase 1b: per-section latent-profile overrides (MSRUAS counterfactual
+  // tuning). JSON shape parsed by proof-section-override-applier.ts. Flag-gated
+  // by AIRMENTOR_SECTION_OVERRIDES_V1 at the applier site so flag-off runs are
+  // byte-identical. Nullable — absent = use batch defaults.
+  sectionOverridesJson: text('section_overrides_json'),
   lifecycleState: text('lifecycle_state'),
   runMode: text('run_mode'),
   stageBoundaryJson: text('stage_boundary_json'),
