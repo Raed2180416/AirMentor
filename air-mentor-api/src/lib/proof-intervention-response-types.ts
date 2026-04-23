@@ -76,7 +76,9 @@ export type StudentLatentProfileForIntervention = {
   dynamics: {
     forgetRate: number
     relearnRate: number
+    transferGainRate: number
     studyGainRate: number
+    fatigueRate: number
     consistency: number
     volatility: number
     recoveryTendency: number
@@ -92,6 +94,71 @@ export type StudentLatentProfileForIntervention = {
     temporaryUpliftCredit: number
     expectedRecoveryThreshold: number
   }
+}
+
+// Broader structural profile used by the stage-slice simulator. Includes latentBase
+// signals (section-ability / foundations / self-regulation) + readiness + behavior +
+// assessment strengths that the existing linear-additive mark formulas depend on.
+// Kept structurally compatible with the full StudentTrajectory in msruas-proof-control-plane.ts.
+export type StudentLatentBaseForSimulation = {
+  academicPotential: number
+  mathematicsFoundation: number
+  computingFoundation: number
+  selfRegulation: number
+  attendanceDiscipline: number
+  supportResponsiveness: number
+}
+
+export type StudentReadinessForSimulation = {
+  mathReadiness: number
+  programmingReadiness: number
+  logicReadiness: number
+  statsReadiness: number
+  systemsReadiness: number
+  communicationReadiness: number
+  labReadiness: number
+}
+
+export type StudentBehaviorForSimulation = StudentLatentProfileForIntervention['behavior'] & {
+  attendancePropensity: number
+  selfCheckTendency: number
+  deadlineDiscipline: number
+  timePressureSensitivity: number
+  courseworkReliability: number
+}
+
+export type StudentAssessmentForSimulation = {
+  quizRecallStrength: number
+  assignmentCompletionStrength: number
+  termTestApplicationStrength: number
+  seeEndurance: number
+  labExecutionStrength: number
+  partialCreditConversion: number
+  carelessErrorRate: number
+  multiStepBreakdownRisk: number
+}
+
+export type StudentTrajectoryForSimulation = {
+  studentId: string
+  sectionCode: 'A' | 'B'
+  latentBase: StudentLatentBaseForSimulation
+  profile: {
+    readiness: StudentReadinessForSimulation
+    dynamics: StudentLatentProfileForIntervention['dynamics']
+    behavior: StudentBehaviorForSimulation
+    assessment: StudentAssessmentForSimulation
+    intervention: StudentLatentProfileForIntervention['intervention']
+  }
+}
+
+// Minimal subset of RuntimeCourse fields used by the slice-simulator.
+// Kept narrow so tests can construct mocks easily without pulling the full schema.
+export type CourseForSimulation = {
+  internalCompilerId: string
+  title: string
+  assessmentProfile: string
+  explicitPrerequisites: string[]
+  addedPrerequisites: string[]
 }
 
 export type InterventionSeverityContext = {
