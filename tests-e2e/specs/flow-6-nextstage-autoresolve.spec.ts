@@ -25,17 +25,17 @@ test('flow-6 Next Stage auto-resolves open actionable cases in demo mode', async
     ? beforeActive.queueProjections.filter((q: { queueState?: string }) => q.queueState === 'open').length
     : 0
 
-  // Drive Next Stage. Endpoint lives under /api/admin/proof-runs/:runId/advance
-  // with `mode: 'stage'` or similar per persistResolvedAdvance in the code.
+  // Drive Next Stage. POST /api/admin/proof-runs/:runId/advance is now wired
+  // in admin-proof-sandbox.ts and dispatches through
+  // proof-control-plane-advance-service.advanceProofSimulationStage. Hard-
+  // fail on non-200: the flow cannot be proved without real stage advance.
   const advanceResp = await request.post(`/api/admin/proof-runs/${encodeURIComponent(seededRun.runId)}/advance`, {
     headers: { 'X-AirMentor-CSRF': session.csrfToken },
     data: { mode: 'stage' },
-    failOnStatusCode: false,
   })
-  if (!advanceResp.ok()) {
-    console.log('flow-6 advance endpoint not yet wired at /api/admin/proof-runs/:id/advance — documenting gap.')
-    return
-  }
+  expect(advanceResp.ok(), `advance(stage) must succeed; got ${advanceResp.status()}`).toBeTruthy()
+  const advanceBody = await advanceResp.json()
+  expect(advanceBody.stageTransitioned, 'advance(stage) must mark stageTransitioned=true').toBeTruthy()
 
   const afterDashboard = await request.get(`/api/admin/batches/${seededRun.batchId}/proof-dashboard`, {
     headers: { 'X-AirMentor-CSRF': session.csrfToken },

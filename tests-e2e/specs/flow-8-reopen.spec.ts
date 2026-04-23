@@ -51,15 +51,12 @@ test('flow-8 reopen: closed case stays closed, later deterioration opens new cas
     .map(([key]) => key)
 
   // Step 2 — drive Next Stage to auto-resolve open cases per §C.15 demo mode.
+  // Hard-fail on non-200 now that the /advance route is wired.
   const advanceResp = await request.post(`/api/admin/proof-runs/${encodeURIComponent(seededRun.runId)}/advance`, {
     headers: { 'X-AirMentor-CSRF': session.csrfToken },
     data: { mode: 'stage' },
-    failOnStatusCode: false,
   })
-  if (!advanceResp.ok()) {
-    console.log(`flow-8 advance(stage) unsupported (${advanceResp.status()}). Contract noted.`)
-    return
-  }
+  expect(advanceResp.ok(), `advance(stage) must succeed; got ${advanceResp.status()}`).toBeTruthy()
 
   const snapshotB = await fetchCaseSnapshot()
 

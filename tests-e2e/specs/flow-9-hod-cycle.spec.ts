@@ -1,121 +1,147 @@
-// Flow 9 — HOD correction cycle. Prompt §L.9 + §D.6 + §C.6.
+// Flow 9 — HOD correction cycle. Prompt §L.9 + §D.6 + §C.6 + §C.15.
 //
-// - Teacher requests a post-lock edit → Pending.
-// - HOD receives workflow item, approves → Approved.
-// - System resets/unlocks → Reset Completed (editor truly reopens).
-// - Teacher submits the corrected value → triggers recompute.
-// - Surface relocks → Relocked (cycle closed).
+// - Course Leader opens an unlock-request on an academic task → Pending.
+// - HOD approves → Approved.
+// - HOD drives reset-complete → Reset Completed (editor reopens).
+// - Course Leader submits corrected value → stays Reset Completed,
+//   engine.triggersRecompute = true.
+// - HOD relocks → Relocked (cycle closed).
 //
-// Enforced by proof-hod-correction-cycle-engine.ts. This spec drives the
-// cycle via the live API (where wired) + exercises the HOD workflow UI.
-//
-// NOTE: Until Phase-6 wire-into-routes lands, the backing endpoint may not
-// exist yet. The spec falls back to a direct engine-level contract check
-// via an internal admin request so the flow remains in the validation
-// ladder.
+// Route: POST /api/academic/unlock-requests/:taskId/transition (single
+// endpoint that drives proof-hod-correction-cycle-engine.ts).
 
 import { expect } from '../support/playwright-runtime'
-import { loginAs, loginWithApiContext } from '../helpers/login-as'
+import { loginWithApiContext } from '../helpers/login-as'
 import { test } from '../fixtures/seeded-run-fixture'
 
-test('flow-9 HOD cycle: teacher request → HOD approve → reset → teacher edit → relock', async ({ request, seededRun }) => {
+async function seedCorrectionCycleTask(request: { put: Function }, csrfToken: string) {
+  // Put a pristine task into the academic store so the correction-cycle
+  // route has something to drive. Status is 'New' and no unlockRequest
+  // payload yet — the 'request' transition must be the first one legal.
+  const taskId = `flow9-hod-cycle-${Date.now()}`
+  const studentId = 'mnc_s_2023_001'
+  const offeringId = 'off_mnc_2023_sem1_programming'
+  const resp = await request.put(`/api/academic/tasks/${encodeURIComponent(taskId)}`, {
+    headers: { 'X-AirMentor-CSRF': csrfToken },
+    data: {
+      task: {
+        id: taskId,
+        studentId,
+        studentName: 'Flow-9 Seeded Student',
+        studentUsn: 'MNC2023-FLOW9',
+        offeringId,
+        courseCode: 'SEED-CODE',
+        courseName: 'Seed Course',
+        year: '2023',
+        riskProb: 0.5,
+        riskBand: 'Medium',
+        title: 'Flow-9 correction cycle fixture',
+        due: 'This week',
+        status: 'New',
+        actionHint: 'Unlock-request correction cycle fixture',
+        priority: 1,
+        createdAt: Date.now(),
+        assignedTo: 'Course Leader',
+      },
+    },
+  })
+  expect(resp.ok(), `seed task PUT must succeed; got ${resp.status()}`).toBeTruthy()
+  return { taskId, offeringId }
+}
+
+async function drive(request: { post: Function }, csrfToken: string, taskId: string, body: Record<string, unknown>) {
+  return request.post(`/api/academic/unlock-requests/${encodeURIComponent(taskId)}/transition`, {
+    headers: { 'X-AirMentor-CSRF': csrfToken },
+    data: body,
+  })
+}
+
+test('flow-9 HOD cycle: teacher request → HOD approve → reset-complete → teacher edit → relock', async ({ request, seededRun }) => {
   expect(seededRun.runId).toMatch(/^simulation_run_/)
 
-  // Step 1 — Course Leader opens an unlock request for TT1 marks.
   const { session: clSession } = await loginWithApiContext(request, 'course-leader')
-  // Find a recent offering for the course-leader's scope via the dashboard.
-  const dashboardResp = await request.get(`/api/admin/batches/${seededRun.batchId}/proof-dashboard`, {
-    headers: { 'X-AirMentor-CSRF': clSession.csrfToken },
-    failOnStatusCode: false,
+  const { taskId } = await seedCorrectionCycleTask(request, clSession.csrfToken)
+
+  // Step 1 — Course Leader opens unlock request (kind=tt1 → evidence scope).
+  const requestResp = await drive(request, clSession.csrfToken, taskId, {
+    action: 'request',
+    kind: 'tt1',
+    note: 'Correction needed per flow-9 test',
   })
-  if (!dashboardResp.ok()) {
-    // Course leader may not have admin-dashboard access; skip the API probe.
-    console.log('flow-9 course leader cannot read admin dashboard (expected). Skipping direct API probe.')
-    return
-  }
-
-  const requestOpenResp = await request.post('/api/academic/unlock-requests', {
-    headers: { 'X-AirMentor-CSRF': clSession.csrfToken },
-    data: {
-      simulationRunId: seededRun.runId,
-      kind: 'tt1',
-      requestNote: 'Correction needed per flow-9 test',
-    },
-    failOnStatusCode: false,
-  })
-
-  if (requestOpenResp.status() === 404) {
-    // §L.9 declares the HOD cycle as a required flow but the backing route
-    // may not be wired yet (Phase-6 wire-into-routes is a separate TODO).
-    // Mark this as a documented gap and exit cleanly.
-    console.log('flow-9 /api/academic/unlock-requests not wired yet; state machine tested at engine level only.')
-    return
-  }
-
-  expect(requestOpenResp.ok()).toBeTruthy()
-  const requestBody = await requestOpenResp.json()
-  expect(requestBody.status).toBe('Pending')
+  expect(requestResp.ok(), `request: expected 2xx got ${requestResp.status()}`).toBeTruthy()
+  const requestBody = await requestResp.json()
+  expect(requestBody.unlockRequest.status).toBe('Pending')
+  expect(requestBody.engine.nextStatus).toBe('Pending')
+  expect(requestBody.engine.scope).toBe('evidence')
 
   // Step 2 — HOD approves.
   const { session: hodSession } = await loginWithApiContext(request, 'hod')
-  const approveResp = await request.post(`/api/academic/unlock-requests/${requestBody.unlockRequestId}/approve`, {
-    headers: { 'X-AirMentor-CSRF': hodSession.csrfToken },
-    data: { reviewNote: 'Approved per flow-9 test' },
-    failOnStatusCode: false,
+  const approveResp = await drive(request, hodSession.csrfToken, taskId, {
+    action: 'approve',
+    reviewNote: 'Approved per flow-9 test',
   })
-  if (!approveResp.ok()) {
-    console.log('flow-9 approve endpoint not wired. Partial flow verified.')
-    return
-  }
+  expect(approveResp.ok(), `approve: expected 2xx got ${approveResp.status()}`).toBeTruthy()
   const approveBody = await approveResp.json()
-  expect(approveBody.status).toBe('Approved')
+  expect(approveBody.unlockRequest.status).toBe('Approved')
 
-  // Step 3 — System-driven reset-complete.
-  const resetResp = await request.post(`/api/academic/unlock-requests/${requestBody.unlockRequestId}/reset-complete`, {
-    headers: { 'X-AirMentor-CSRF': hodSession.csrfToken },
-    data: {},
-    failOnStatusCode: false,
+  // Step 3 — HOD drives reset-complete. Engine must mark surfaceReopens=true.
+  const resetResp = await drive(request, hodSession.csrfToken, taskId, {
+    action: 'reset-complete',
   })
-  if (!resetResp.ok()) {
-    console.log('flow-9 reset-complete endpoint not wired.')
-    return
-  }
-  expect((await resetResp.json()).status).toBe('Reset Completed')
+  expect(resetResp.ok(), `reset-complete: expected 2xx got ${resetResp.status()}`).toBeTruthy()
+  const resetBody = await resetResp.json()
+  expect(resetBody.unlockRequest.status).toBe('Reset Completed')
+  expect(resetBody.engine.surfaceReopens).toBeTruthy()
 
-  // Step 4 — Course leader submits correction (drives recompute).
-  const submitResp = await request.post(`/api/academic/unlock-requests/${requestBody.unlockRequestId}/teacher-edit-submit`, {
-    headers: { 'X-AirMentor-CSRF': clSession.csrfToken },
-    data: { tt1Pct: 72 },
-    failOnStatusCode: false,
+  // Step 4 — Course leader submits correction; engine flips triggersRecompute.
+  const submitResp = await drive(request, clSession.csrfToken, taskId, {
+    action: 'teacher-edit-submit',
+    note: 'Corrected TT1 mark submitted',
   })
-  if (!submitResp.ok()) {
-    console.log('flow-9 teacher-edit-submit endpoint not wired.')
-    return
-  }
+  expect(submitResp.ok(), `teacher-edit-submit: expected 2xx got ${submitResp.status()}`).toBeTruthy()
+  const submitBody = await submitResp.json()
+  expect(submitBody.unlockRequest.status).toBe('Reset Completed')
+  expect(submitBody.engine.triggersRecompute).toBeTruthy()
 
-  // Step 5 — System relocks.
-  const relockResp = await request.post(`/api/academic/unlock-requests/${requestBody.unlockRequestId}/relock`, {
-    headers: { 'X-AirMentor-CSRF': hodSession.csrfToken },
-    data: {},
-    failOnStatusCode: false,
+  // Step 5 — HOD relocks. Terminal.
+  const relockResp = await drive(request, hodSession.csrfToken, taskId, {
+    action: 'relock',
   })
-  if (!relockResp.ok()) {
-    console.log('flow-9 relock endpoint not wired.')
-    return
-  }
-  expect((await relockResp.json()).status).toBe('Relocked')
+  expect(relockResp.ok(), `relock: expected 2xx got ${relockResp.status()}`).toBeTruthy()
+  const relockBody = await relockResp.json()
+  expect(relockBody.unlockRequest.status).toBe('Relocked')
+  expect(relockBody.engine.nextActions).toEqual([])
 })
 
 test('flow-9 HOD cycle: illegal transitions rejected (engine contract via route)', async ({ request, seededRun }) => {
-  // Direct API attempt to approve from a non-existent request should 404/400.
-  const { session: hodSession } = await loginWithApiContext(request, 'hod')
-  const illegal = await request.post('/api/academic/unlock-requests/nonexistent-id/approve', {
-    headers: { 'X-AirMentor-CSRF': hodSession.csrfToken },
-    data: {},
+  expect(seededRun.runId).toBeTruthy()
+  // A Course Leader cannot approve (HOD/SYSTEM_ADMIN only). Engine returns
+  // forbidden-role → 403.
+  const { session: clSession } = await loginWithApiContext(request, 'course-leader')
+  const { taskId } = await seedCorrectionCycleTask(request, clSession.csrfToken)
+  // Open a Pending request first.
+  const requestResp = await drive(request, clSession.csrfToken, taskId, {
+    action: 'request',
+    kind: 'tt1',
+  })
+  expect(requestResp.ok()).toBeTruthy()
+  // Course Leader attempts approve → must fail with 403.
+  const illegalApprove = await request.post(`/api/academic/unlock-requests/${encodeURIComponent(taskId)}/transition`, {
+    headers: { 'X-AirMentor-CSRF': clSession.csrfToken },
+    data: { action: 'approve' },
     failOnStatusCode: false,
   })
-  // Either 404 (route exists but id missing), or 404 (route not wired yet).
-  // Both are non-200 — that's what the engine contract forbids.
-  expect(illegal.ok()).toBeFalsy()
-  expect(seededRun.runId).toBeTruthy()
+  expect(illegalApprove.ok()).toBeFalsy()
+  expect(illegalApprove.status()).toBe(403)
+
+  // HOD attempts reset-complete before approve → engine says illegal-
+  // transition → 400.
+  const { session: hodSession } = await loginWithApiContext(request, 'hod')
+  const illegalReset = await request.post(`/api/academic/unlock-requests/${encodeURIComponent(taskId)}/transition`, {
+    headers: { 'X-AirMentor-CSRF': hodSession.csrfToken },
+    data: { action: 'reset-complete' },
+    failOnStatusCode: false,
+  })
+  expect(illegalReset.ok()).toBeFalsy()
+  expect(illegalReset.status()).toBe(400)
 })

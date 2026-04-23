@@ -41,6 +41,7 @@ test('flow-5 boundary cross: Next Day across TT1 boundary triggers exactly one s
 
   // Advance day 50 times (enough to cross pre-tt1→post-tt1 at day 42 for
   // Sem-1 default anchor). We stop early if stage already advanced.
+  // /advance is now wired in admin-proof-sandbox.ts — hard-fail on non-200.
   let crossed = false
   let advanceCount = 0
   const MAX_DAYS = 60
@@ -48,12 +49,8 @@ test('flow-5 boundary cross: Next Day across TT1 boundary triggers exactly one s
     const advResp = await request.post(`/api/admin/proof-runs/${encodeURIComponent(seededRun.runId)}/advance`, {
       headers: { 'X-AirMentor-CSRF': session.csrfToken },
       data: { mode: 'day' },
-      failOnStatusCode: false,
     })
-    if (!advResp.ok()) {
-      console.log(`flow-5 advance(day) endpoint unsupported (${advResp.status()}). Contract noted.`)
-      return
-    }
+    expect(advResp.ok(), `advance(day) iteration ${i} must succeed; got ${advResp.status()}`).toBeTruthy()
     advanceCount += 1
     const afterResp = await request.get(`/api/admin/batches/${seededRun.batchId}/proof-dashboard`, {
       headers: { 'X-AirMentor-CSRF': session.csrfToken },

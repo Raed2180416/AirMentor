@@ -875,8 +875,11 @@ export function StudentDrawer({
    ACTION QUEUE (Right Sidebar)
    ══════════════════════════════════════════════════════════════ */
 
-export function ActionQueue({ role, tasks, resolvedTaskIds, onResolveTask, onUndoTask, onOpenStudent, onOpenTaskComposer, onRemedialCheckIn, onReassignTask, onOpenUnlockReview, onOpenQueueHistory, onApproveUnlock, onRejectUnlock, onResetComplete, onToggleSchedulePause, onEditSchedule, onDismissTask, onDismissSeries }: { role: Role; tasks: SharedTask[]; resolvedTaskIds: Record<string, number>; onResolveTask: (id: string) => void; onUndoTask: (id: string) => void; onOpenStudent: (task: SharedTask) => void; onOpenTaskComposer: (input?: { offeringId?: string; studentId?: string; taskType?: TaskType }) => void; onRemedialCheckIn: (taskId: string) => void; onReassignTask: (taskId: string, toRole: Role) => void; onOpenUnlockReview: (taskId: string) => void; onOpenQueueHistory: () => void; onApproveUnlock: (taskId: string) => void; onRejectUnlock: (taskId: string) => void; onResetComplete: (taskId: string) => void; onToggleSchedulePause: (taskId: string) => void; onEditSchedule: (taskId: string) => void; onDismissTask: (taskId: string) => void; onDismissSeries: (taskId: string) => void }) {
-  const todayISO = toTodayISO()
+export function ActionQueue({ role, tasks, resolvedTaskIds, simulatedDateISO, onResolveTask, onUndoTask, onOpenStudent, onOpenTaskComposer, onRemedialCheckIn, onReassignTask, onOpenUnlockReview, onOpenQueueHistory, onApproveUnlock, onRejectUnlock, onResetComplete, onToggleSchedulePause, onEditSchedule, onDismissTask, onDismissSeries }: { role: Role; tasks: SharedTask[]; resolvedTaskIds: Record<string, number>; simulatedDateISO?: string; onResolveTask: (id: string) => void; onUndoTask: (id: string) => void; onOpenStudent: (task: SharedTask) => void; onOpenTaskComposer: (input?: { offeringId?: string; studentId?: string; taskType?: TaskType }) => void; onRemedialCheckIn: (taskId: string) => void; onReassignTask: (taskId: string, toRole: Role) => void; onOpenUnlockReview: (taskId: string) => void; onOpenQueueHistory: () => void; onApproveUnlock: (taskId: string) => void; onRejectUnlock: (taskId: string) => void; onResetComplete: (taskId: string) => void; onToggleSchedulePause: (taskId: string) => void; onEditSchedule: (taskId: string) => void; onDismissTask: (taskId: string) => void; onDismissSeries: (taskId: string) => void }) {
+  // §B.14 + audit §5.2: queue visibility must honor the simulated date (the
+  // proof-playback currentDateISO from the backend), not wall-clock time.
+  // toTodayISO() is only the fallback for non-proof sessions (e.g. live mode).
+  const todayISO = simulatedDateISO ?? toTodayISO()
   const [showQueueHelp, setShowQueueHelp] = useState(false)
   const active = tasks
     .filter(t => isTaskActiveForQueue(t, resolvedTaskIds, todayISO))
@@ -1545,7 +1548,10 @@ function OperationalWorkspace({
     return base.filter(t => mentorScopedIds.has(t.studentId) || supervisedMenteeUsns.has(t.studentUsn))
   }, [allTasksList, role, supervisedOfferingIds, supervisedMenteeIds, supervisedMenteeUsns])
 
-  const pendingActionCount = roleTasks.filter(task => isTaskActiveForQueue(task, resolvedTasks, toTodayISO())).length
+  // Pending action badge count must use the proof-playback simulated date
+  // (§B.14 + audit §5.2). Without this, tasks scheduled for simulated-future
+  // but wall-clock-past show up too early, or vice versa.
+  const pendingActionCount = roleTasks.filter(task => isTaskActiveForQueue(task, resolvedTasks, proofVirtualDateISO ?? toTodayISO())).length
   const layoutMode: LayoutMode = !sidebarCollapsed && showActionQueue
     ? 'three-column'
     : (!sidebarCollapsed || showActionQueue ? 'split' : 'focus')
@@ -3466,7 +3472,7 @@ function OperationalWorkspace({
               transition={{ duration: 0.22, ease: 'easeOut' }}
               style={{ overflow: 'hidden', flexShrink: 0 }}
             >
-              <ActionQueue role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onResolveTask={handleResolveTask} onUndoTask={handleUndoTask} onOpenTaskComposer={handleOpenTaskComposer} onRemedialCheckIn={handleRemedialCheckIn} onOpenStudent={handleOpenTaskStudent} onReassignTask={handleReassignTask} onOpenUnlockReview={handleOpenUnlockReview} onOpenQueueHistory={handleOpenQueueHistory} onApproveUnlock={handleApproveUnlock} onRejectUnlock={handleRejectUnlock} onResetComplete={handleResetComplete} onToggleSchedulePause={handleToggleSchedulePause} onEditSchedule={handleEditSchedule} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />
+              <ActionQueue role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} simulatedDateISO={proofVirtualDateISO} onResolveTask={handleResolveTask} onUndoTask={handleUndoTask} onOpenTaskComposer={handleOpenTaskComposer} onRemedialCheckIn={handleRemedialCheckIn} onOpenStudent={handleOpenTaskStudent} onReassignTask={handleReassignTask} onOpenUnlockReview={handleOpenUnlockReview} onOpenQueueHistory={handleOpenQueueHistory} onApproveUnlock={handleApproveUnlock} onRejectUnlock={handleRejectUnlock} onResetComplete={handleResetComplete} onToggleSchedulePause={handleToggleSchedulePause} onEditSchedule={handleEditSchedule} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />
             </motion.div>
           )}
         </AnimatePresence>
