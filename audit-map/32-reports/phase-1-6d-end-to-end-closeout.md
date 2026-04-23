@@ -119,18 +119,21 @@ Determinism: 20 repeat runs produce identical output per scenario
 ## 6. Pipeline dispatch status (automation)
 
 DAG: `@/home/raed/projects/air-mentor-ui/pipeline/agents/fresh-sem1-parallel-dispatch-dag.yaml`  
-dag_run_id: `fresh-sem1-parallel-dispatch-dag-374dd738-20260423T010633Z`  
 Routing: `require_provider=codex`, `requested_model=gpt-5.4`, `reasoning_effort=xhigh`
 
-| Task | Node | Status | Slot | Notes |
-|---|---|---|---|---|
-| 74 | `playwright-harness-bootstrap` | failed (validator) | codex-03 gpt-5.4 | Agent delivered usable harness on attempt 1 (5 `tests-e2e/**` files + report + package.json); committed as c84eb327 ancestor of HEAD. Validator failed on `intent_guard` owner-files check. Fixed for future retries: `owner_files: []` in intent.yaml. |
-| 75 | `trajectory-realism-analyzer` | running / waiting | codex-02 (ETA ~3400s cooldown) | Waiting for codex-02 to exit usage-limit cooldown. Other codex slots (01/04/05/06) show `ready=0` from stale status files; their cooldowns expired 2026-04-20 but `execution_verification_state` stale. |
-| 76 | `ml-risk-ui-audit` | running / waiting | codex-02 (shared wait) | Same blocker as task 75. |
+| DAG Run | Result | Reason |
+|---|---|---|
+| `...010015Z` (antigravity) | 3/3 failed | Gemini-3-flash never emits AirMentor structured exit marker — wrong provider |
+| `...010633Z` (codex, pre-fix) | 1/3 delivered artifacts, 2/3 stuck | Playwright harness reached artifact scope (c84eb327 committed on ancestor) but failed `intent_guard` owner_files check; tasks 75/76 hung waiting for codex-02 cooldown with codex-03 frozen in `exclude_slots` |
+| `...013928Z` (codex, post-abort) | not claimed | Race with start.sh's fresh dispatch |
+| `...013935Z` (codex, pre-router-fix) | 3/3 failed | Playwright task 80 agent did not emit structured exit marker on any of 3 attempts; 81/82 stuck on same wait bug |
+| `...014538Z` (codex, post-router-fix) | 3/3 failed | Router fix confirmed working (slot rotated across tasks 83→84→85 after each released codex-03) but codex-CLI + gpt-5.4 agent still not emitting structured exit marker on playwright / trajectory / ml-audit prompts. Next session: investigate codex agent contract adherence. |
 
-Orchestrator tmux sessions:  
-- `airmentor-pipe-orchestrator`  
-- `airmentor-pipe-tui`  
+Persistent pipeline-side take-aways:
+1. Round-8 fix applied: `wait_for_any_slot` now accepts `refresh_exclude_slots` callback, re-computes busy-sibling-slots each poll. Commit `ee037ebf`.
+2. Agent-side structured-exit failure is a SEPARATE issue from slot routing. The codex CLI + gpt-5.4 combination appears to not reliably emit the required marker. Options for next session: tighten prompt with explicit marker format example, switch to `gpt-5.3-codex` (codex slot's native preferred model), or refactor `contracts.py` to synthesize a marker from the agent's natural-language outcome when the marker is absent but artifacts match scope.
+3. The playwright harness (c84eb327) is the only pipeline output that landed successfully this session — its files are usable and tested manually (scope_glob + grounding validators passed).
+4. Tracks E (trajectory realism analyzer) and C (ML risk UI audit) are still PENDING — pipeline attempts did not deliver them. Re-dispatch with sharper prompts next session, or author manually.
 
 ## 7. Deferred (next session)
 
@@ -157,13 +160,17 @@ The IDE surfaces a number of errors on `@/home/raed/projects/air-mentor-ui/air-m
 
 Remediation: reload IDE window / restart TS server.
 
-## 9. Commit trail
+## 9. Commit trail (18 commits this session)
 
 ```
+ee037ebf fix(pipeline): wait_for_any_slot refresh-exclude-list callback (round-8)
+ba3c0aad docs(track-c): section-sliders UI design spec for next session
+af1f7452 test(e2e): Track D Flow Spec 2 intervention-affects-marks
+14132e7e docs(closeout): Phase 1-6d end-to-end session closeout report
 240902b8 test(proof): Phase 1-6d E2E integration test (7 scenarios)
-(previous) feat(proof+pipeline): Phase 6d E2E demo script + pipeline intent relax + gitignore
+a80250d8 feat(proof+pipeline): Phase 6d E2E demo script + pipeline intent relax + gitignore
 d1b4c63b feat(proof): Phase 6c advance-service stage-realization audit hook
-(pipeline) pipeline: playwright-harness-bootstrap-pass (playwright-harness-bootstrap)  [c84eb327]
+c84eb327 pipeline: playwright-harness-bootstrap-pass (pipeline-delivered)
 93eea791 feat(proof): Phase 6d-4 final wire assembler into rebuildSimulationStagePlayback
 ddab77ac feat(proof): Phase 6d-3 bundle assembler consumer-side glue
 ae2befa9 feat(proof): Phase 6d-2 wire realizationData into buildPlaybackGovernanceArtifacts
