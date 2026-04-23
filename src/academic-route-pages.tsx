@@ -4,6 +4,7 @@ import { T, mono, sora, yearColor, type Mentee, type Offering, type Student, typ
 import { type EntryKind, type Role, type SharedTask } from './domain'
 import type { ApiAcademicFacultyProfile } from './api/types'
 import { AcademicProofSummaryStrip } from './academic-proof-summary-strip'
+import { humanLabelForActionCode } from './action-code-humaniser'
 import { useAppSelectors } from './selectors'
 import { inferKindFromPendingAction } from './page-utils'
 import { Bar, Btn, Card, Chip, PageBackButton, PageShell, StagePips } from './ui-primitives'
@@ -84,7 +85,7 @@ export function CLDashboard({
         studentName: item.studentName,
         phone: student?.phone ?? '',
         riskProbScaled: item.riskProbScaled,
-        reasonLabel: item.drivers[0]?.label ?? item.recommendedAction ?? null,
+        reasonLabel: item.drivers[0]?.label ?? humanLabelForActionCode(item.recommendedAction) ?? null,
         courseCode: item.courseCode,
         yearLabel: offering?.year ?? null,
         sectionCode: item.sectionCode ?? offering?.section ?? null,

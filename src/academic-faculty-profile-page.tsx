@@ -10,6 +10,7 @@ import type {
   ApiAdminCalendarMarker,
 } from './api/types'
 import { describeProofProvenance } from './proof-provenance'
+import { humanLabelForActionCode } from './action-code-humaniser'
 import { ProofSurfaceHero, ProofSurfaceLauncher } from './proof-surface-shell'
 import { InfoBanner, MetricCard } from './system-admin-ui'
 import {
@@ -467,7 +468,7 @@ export function FacultyProfilePage({
                           style={{ display: 'grid', gap: 4 }}
                         >
                           <div style={{ ...mono, fontSize: 10, color: T.text }}>
-                            {item.studentName} · {item.courseCode} · {item.riskBand} · {item.recommendedAction}
+                            {item.studentName} · {item.courseCode} · {item.riskBand} · {humanLabelForActionCode(item.recommendedAction) ?? 'No action'}
                           </div>
                           <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
                             Evidence: attendance {item.observedEvidence.attendancePct}%, TT1 {item.observedEvidence.tt1Pct}%, TT2 {item.observedEvidence.tt2Pct}%, quiz {item.observedEvidence.quizPct}%, assignment {item.observedEvidence.assignmentPct}%, SEE {item.observedEvidence.seePct}%, weak COs {item.observedEvidence.weakCoCount}, weak questions {item.observedEvidence.weakQuestionCount}, CGPA {item.observedEvidence.cgpa}, backlogs {item.observedEvidence.backlogCount}.

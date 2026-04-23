@@ -21,6 +21,8 @@ import {
   sendStudentAgentMessage,
   startStudentAgentSession,
 } from '../lib/msruas-proof-control-plane.js'
+import { buildCounterfactualReport } from '../lib/proof-counterfactual-reader.js'
+import { fetchCounterfactualSnapshotRows } from '../lib/proof-counterfactual-fetcher.js'
 import {
   assertAcademicAccess,
   evaluateFacultyContextAccess,
@@ -183,6 +185,35 @@ export async function registerAcademicProofRoutes(
       filters: query,
     })
     return { items: result.reassessments }
+  })
+
+  app.get('/api/academic/hod/proof-counterfactual', {
+    schema: {
+      tags: ['academic'],
+      summary: 'Diff realized vs baseline mark snapshots for two proof runs, answering "how much did interventions move the needle?"',
+    },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN', 'HOD'])
+    assertAcademicAccess(evaluateFacultyContextAccess(auth))
+    const querySchema = z.object({
+      runIdBaseline: z.string().min(1),
+      runIdRealized: z.string().min(1),
+    })
+    const query = parseOrThrow(querySchema, request.query)
+    if (query.runIdBaseline === query.runIdRealized) {
+      throw badRequest('runIdBaseline and runIdRealized must be two distinct simulation runs')
+    }
+    const [baselineRows, realizedRows] = await Promise.all([
+      fetchCounterfactualSnapshotRows(context.db, { simulationRunId: query.runIdBaseline }),
+      fetchCounterfactualSnapshotRows(context.db, { simulationRunId: query.runIdRealized }),
+    ])
+    const report = buildCounterfactualReport({
+      runIdBaseline: query.runIdBaseline,
+      runIdRealized: query.runIdRealized,
+      baselineRows,
+      realizedRows,
+    })
+    return report
   })
 
   app.post('/api/academic/proof-reassessments/:reassessmentEventId/acknowledge', {

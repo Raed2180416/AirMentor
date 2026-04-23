@@ -8,6 +8,7 @@ import type {
 import type { BatchSetupReadiness } from './batch-setup-readiness'
 import { T, mono, sora } from './data'
 import { describeProofAvailability, describeProofProvenance, type ProofProvenanceLike } from './proof-provenance'
+import { humanLabelForActionCode } from './action-code-humaniser'
 import { ProofSurfaceHero, ProofSurfaceLauncher, ProofSurfaceTabPanel, ProofSurfaceTabs } from './proof-surface-shell'
 import { InfoBanner, RestoreBanner } from './system-admin-ui'
 import { Btn, Card, Chip, getAccessiblePrimaryAccent } from './ui-primitives'
@@ -872,7 +873,7 @@ export function SystemAdminProofDashboardWorkspace({
                       <Card key={item.simulationStageQueueProjectionId} style={{ padding: 10, background: T.surface }}>
                         <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.courseCode} · {item.assignedToRole} · {item.riskBand} · {item.status}</div>
                         <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.8 }}>
-                          {item.taskType} · action {item.simulatedActionTaken ?? item.recommendedAction ?? 'none'} · risk {item.riskProbScaled}%{item.noActionRiskProbScaled != null ? ` vs no-action ${item.noActionRiskProbScaled}%` : ''}.
+                          {item.taskType} · action {humanLabelForActionCode(item.simulatedActionTaken ?? item.recommendedAction) ?? 'none'} · risk {item.riskProbScaled}%{item.noActionRiskProbScaled != null ? ` vs no-action ${item.noActionRiskProbScaled}%` : ''}.
                         </div>
                         {item.coEvidenceMode ? (
                           <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 4, lineHeight: 1.8 }}>
