@@ -1,0 +1,43 @@
+# Fresh-sem1 audit-only dispatch DAG — 2026-04-23 round-9
+#
+# Narrower rerun after the round-9 marker-emission fix (contract now at end of
+# prompt). Playwright harness already landed via c84eb327 on main; only the
+# two read-only audit nodes remain.
+
+defaults:
+  context: pipeline
+  idle_timeout_s: 1800
+  hard_timeout_s: 14400
+  max_attempts: 2
+  require_provider: codex
+  requested_model: gpt-5.4
+  reasoning_effort: xhigh
+
+nodes:
+  - id: trajectory-realism-analyzer
+    pass: trajectory-realism-analyzer-pass
+    task_class: structured
+    risk_class: low
+    reasoning_effort: xhigh
+    require_provider: codex
+    requested_model: gpt-5.4
+    prompt_file: audit-map/20-prompts/trajectory-realism-analyzer-pass.md
+    intent_file: pipeline/agents/manifests/trajectory-realism-analyzer.intent.yaml
+    manifest_file: pipeline/agents/manifests/trajectory-realism-analyzer.artifacts.yaml
+    write_scope_glob: 'scripts/analyze-trajectory-realism.*;audit-map/32-reports/trajectory-realism-analysis.md'
+    parallel_group: fresh-sem1-trajectory
+    priority: 85
+
+  - id: ml-risk-ui-audit
+    pass: ml-risk-ui-audit-pass
+    task_class: structured
+    risk_class: low
+    reasoning_effort: xhigh
+    require_provider: codex
+    requested_model: gpt-5.4
+    prompt_file: audit-map/20-prompts/ml-risk-ui-audit-pass.md
+    intent_file: pipeline/agents/manifests/ml-risk-ui-audit.intent.yaml
+    manifest_file: pipeline/agents/manifests/ml-risk-ui-audit.artifacts.yaml
+    write_scope_glob: 'audit-map/32-reports/ml-risk-ui-audit.md'
+    parallel_group: fresh-sem1-ui-audit
+    priority: 80
