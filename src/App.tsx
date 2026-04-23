@@ -112,6 +112,7 @@ import type {
   ApiAcademicBootstrap,
   ApiAcademicFacultyProfile,
   ApiAcademicHodProofBundle,
+  ApiAcademicHodProofCounterfactualReport,
   ApiAcademicLoginFaculty,
   ApiPasswordSetupInspectResponse,
   ApiPasswordSetupRequestResponse,
@@ -1132,6 +1133,7 @@ type OperationalWorkspaceProps = {
   onRoleChange?: (role: Role) => Promise<void> | void
   loadFacultyProfile?: (facultyId: string) => Promise<ApiAcademicFacultyProfile>
   loadHodProofAnalytics?: () => Promise<ApiAcademicHodProofBundle>
+  loadHodProofCounterfactual?: (input: { runIdBaseline: string; runIdRealized: string }) => Promise<ApiAcademicHodProofCounterfactualReport>
   loadStudentAgentCard?: (studentId: string) => Promise<ApiStudentAgentCard>
   loadStudentAgentTimeline?: (studentId: string) => Promise<{ items: ApiStudentAgentTimelineItem[] }>
   startStudentAgentSession?: (studentId: string) => Promise<ApiStudentAgentSession>
@@ -1151,6 +1153,7 @@ function OperationalWorkspace({
   onRoleChange,
   loadFacultyProfile,
   loadHodProofAnalytics,
+  loadHodProofCounterfactual,
   loadStudentAgentCard,
   loadStudentAgentTimeline,
   startStudentAgentSession,
@@ -3376,6 +3379,7 @@ function OperationalWorkspace({
     hodProofAnalytics,
     hodProofLoading,
     hodProofError,
+    loadHodProofCounterfactual,
     handleOpenQueueHistory,
     selectedUnlockTask,
     selectedUnlockTaskOffering,
