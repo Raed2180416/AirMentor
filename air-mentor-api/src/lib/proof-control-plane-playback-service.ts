@@ -16,6 +16,14 @@ import type {
   StageCourseProjectionSource,
   StageEvidenceSnapshot,
 } from './msruas-proof-control-plane.js'
+import {
+  applyRealizationToEvidenceSnapshot,
+  type EvidenceApplierInterventionInput,
+} from './proof-stage-realization-evidence-applier.js'
+import type {
+  InterventionStageKey,
+  StudentLatentProfileForIntervention,
+} from './proof-intervention-response-types.js'
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
@@ -767,11 +775,23 @@ export function buildActionPolicyComparison(input: {
   }
 }
 
+// Optional realization input. When provided AND AIRMENTOR_STAGE_REALIZATION_V1=1 is set,
+// buildStageEvidenceSnapshot folds intervention deltas into the baseline evidence via
+// the Phase-5 applier before returning. Existing callers omit the field entirely and
+// get the baseline snapshot unchanged (backward-compatible).
+export type StageEvidenceRealizationInput = {
+  runId: string
+  runSeed: number
+  studentProfile: StudentLatentProfileForIntervention
+  interventionsInWindow: ReadonlyArray<EvidenceApplierInterventionInput>
+}
+
 export function buildStageEvidenceSnapshot(input: {
   source: StageCourseProjectionSource
   stageKey: PlaybackStageKey
   policy: ResolvedPolicy
   templatesById: Map<string, typeof simulationQuestionTemplates.$inferSelect>
+  realization?: StageEvidenceRealizationInput
 }) {
   const includedAttendance = input.source.attendanceHistory.slice(0, attendanceCheckpointCountForStage(input.stageKey))
   const latestAttendance = includedAttendance[includedAttendance.length - 1]
@@ -786,7 +806,9 @@ export function buildStageEvidenceSnapshot(input: {
     quizPct: input.source.quizPct,
     assignmentPct: input.source.assignmentPct,
   })
-  const snapshot: StageEvidenceSnapshot = {
+
+  // Baseline snapshot — identical to pre-Phase-5 behaviour.
+  const baselineSnapshot: StageEvidenceSnapshot = {
     attendancePct: latestAttendance?.attendancePct ?? input.source.attendancePct,
     tt1Pct: (input.stageKey === 'post-tt1' || input.stageKey === 'post-tt2' || input.stageKey === 'post-assignments' || input.stageKey === 'post-see')
       ? input.source.tt1Pct
@@ -810,7 +832,42 @@ export function buildStageEvidenceSnapshot(input: {
     weakCourseOutcomes,
     questionPatterns,
   }
-  return snapshot
+
+  // Phase-5 realization wrap. Flag-off / no realization input / empty intervention list
+  // return baseline unchanged (all no-op paths are inside the applier itself).
+  if (!input.realization) return baselineSnapshot
+  const realizationOutput = applyRealizationToEvidenceSnapshot({
+    baseline: {
+      attendancePct: baselineSnapshot.attendancePct,
+      tt1Pct: baselineSnapshot.tt1Pct,
+      tt2Pct: baselineSnapshot.tt2Pct,
+      quizPct: baselineSnapshot.quizPct,
+      assignmentPct: baselineSnapshot.assignmentPct,
+      seePct: baselineSnapshot.seePct,
+      cePct: null,  // CE is not included in StageEvidenceSnapshot today; leave null
+    },
+    studentProfile: input.realization.studentProfile,
+    runId: input.realization.runId,
+    studentId: input.source.studentId,
+    semesterNumber: input.source.semesterNumber,
+    stageKey: input.stageKey as InterventionStageKey,
+    interventionsInWindow: input.realization.interventionsInWindow,
+  })
+  if (!realizationOutput.flagOn || realizationOutput.impact.totalImpact === 0) {
+    return baselineSnapshot
+  }
+  // Build the realized snapshot — preserve baseline-only fields (CO counts, CGPA, etc.)
+  // and only swap the assessment marks that the applier touched.
+  const realizedSnapshot: StageEvidenceSnapshot = {
+    ...baselineSnapshot,
+    attendancePct: realizationOutput.realized.attendancePct,
+    tt1Pct: realizationOutput.realized.tt1Pct,
+    tt2Pct: realizationOutput.realized.tt2Pct,
+    quizPct: realizationOutput.realized.quizPct,
+    assignmentPct: realizationOutput.realized.assignmentPct,
+    seePct: realizationOutput.realized.seePct,
+  }
+  return realizedSnapshot
 }
 
 export function buildNoActionSnapshot(input: {
