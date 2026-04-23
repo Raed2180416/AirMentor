@@ -1,0 +1,18 @@
+purpose: |
+  Produce an unbiased realism audit of the AirMentor simulated student trajectories.
+  Compare observed mark / CGPA / attendance / backlog / intervention-effect / prereq
+  correlation / teacher-effect distributions against plausible priors for an Indian
+  engineering university (MSRUAS).
+nonneg:
+  - Do not modify simulation engines or any source under src/** / air-mentor-api/src/**
+  - Do not modify test files
+  - Do not soft-pedal findings — every verdict is Pass / Soft fail / Hard fail
+  - Every observation must have a reproducible code or DB citation
+  - Script must be re-runnable by the user — report regeneration is deterministic
+owner_files:
+  - air-mentor-api/src/lib/msruas-proof-sandbox.ts
+  - air-mentor-api/src/lib/proof-stage-slice-simulator.ts
+  - air-mentor-api/src/lib/proof-stage-realization-service.ts
+  - air-mentor-api/src/lib/proof-stage-realization-evidence-applier.ts
+  - air-mentor-api/src/db/schema.ts
+  - air-mentor-api/src/db/client.ts

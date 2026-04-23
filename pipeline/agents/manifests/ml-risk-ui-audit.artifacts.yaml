@@ -1,0 +1,13 @@
+artifacts:
+  - path: audit-map/32-reports/ml-risk-ui-audit.md
+    min_lines: 100
+    min_bytes: 4500
+    required_sections:
+      - "# ML Risk UI Audit"
+      - "## Scope"
+      - "## Coverage matrix"
+      - "## Findings"
+      - "## Gaps that would hurt the demo"
+      - "## Proposed fixes"
+      - "## Follow-up code-changes"
+    write_mode: replace

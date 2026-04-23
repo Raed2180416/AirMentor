@@ -1,0 +1,52 @@
+# Fresh-sem1 parallel dispatch DAG — 2026-04-23
+#
+# Three independent nodes with non-overlapping write scopes, all dispatched in the
+# `fresh-sem1-parallel` group. Group capacity is 1 per group by default, so we tag
+# each node with a distinct `parallel_group` to make them genuinely parallel within
+# the orchestrator's slot ledger.
+#
+# Every node receives a rich product-intent briefing in its prompt file (see the
+# three files under audit-map/20-prompts/).
+
+defaults:
+  context: pipeline
+  idle_timeout_s: 1800
+  hard_timeout_s: 14400
+  max_attempts: 3
+
+nodes:
+  - id: playwright-harness-bootstrap
+    pass: playwright-harness-bootstrap-pass
+    task_class: structured
+    risk_class: medium
+    reasoning_effort: high
+    prompt_file: audit-map/20-prompts/playwright-harness-bootstrap-pass.md
+    intent_file: pipeline/agents/manifests/playwright-harness-bootstrap.intent.yaml
+    manifest_file: pipeline/agents/manifests/playwright-harness-bootstrap.artifacts.yaml
+    write_scope_glob: 'tests-e2e/**;playwright.config.*;package.json;audit-map/32-reports/playwright-harness-bootstrap.md'
+    parallel_group: fresh-sem1-playwright
+    priority: 90
+
+  - id: trajectory-realism-analyzer
+    pass: trajectory-realism-analyzer-pass
+    task_class: structured
+    risk_class: low
+    reasoning_effort: high
+    prompt_file: audit-map/20-prompts/trajectory-realism-analyzer-pass.md
+    intent_file: pipeline/agents/manifests/trajectory-realism-analyzer.intent.yaml
+    manifest_file: pipeline/agents/manifests/trajectory-realism-analyzer.artifacts.yaml
+    write_scope_glob: 'scripts/analyze-trajectory-realism.*;audit-map/32-reports/trajectory-realism-analysis.md'
+    parallel_group: fresh-sem1-trajectory
+    priority: 85
+
+  - id: ml-risk-ui-audit
+    pass: ml-risk-ui-audit-pass
+    task_class: structured
+    risk_class: low
+    reasoning_effort: high
+    prompt_file: audit-map/20-prompts/ml-risk-ui-audit-pass.md
+    intent_file: pipeline/agents/manifests/ml-risk-ui-audit.intent.yaml
+    manifest_file: pipeline/agents/manifests/ml-risk-ui-audit.artifacts.yaml
+    write_scope_glob: 'audit-map/32-reports/ml-risk-ui-audit.md'
+    parallel_group: fresh-sem1-ui-audit
+    priority: 80
