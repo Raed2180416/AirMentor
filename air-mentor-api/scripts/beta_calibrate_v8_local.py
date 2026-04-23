@@ -4,11 +4,11 @@ Phase 9: Beta calibration + Venn-Abers diagnostic for v8-local logistic baseline
 Context
 -------
 Downstream of t57 (overnight-ml-v8-corrected-logistic). t57 delivered an interim
-v8 baseline with per-head `LogisticRegression` + isotonic calibration. Local
-calibration at ECE bands 0.4 and 0.85 regressed vs v7 (ceRisk @0.4=0.3706,
-attendanceRisk @0.85=0.0786). t58 intent: apply Beta calibration by head as
-default production path, run Venn-Abers as diagnostic, evaluate global + local
-calibration, do not promote if local bands worsen.
+v8 baseline with per-head `LogisticRegression` + isotonic calibration. Phase 9
+compares Beta calibration against the pre-calibrated raw logistic scores for
+promotion, while still carrying isotonic as a shadow reference so local-vs-t57
+behavior remains inspectable. Promotion remains blocked if Beta worsens local
+ECE at bands 0.4 or 0.85, or if global ECE regresses vs raw.
 
 This script is the cost-free local-only pipeline fallback for t58, same shape
 as t57's `train_v8_local_corrected_logistic.py`:
@@ -24,7 +24,7 @@ Inputs
 
 Outputs (under `air-mentor-api/output/proof-risk-model/beta-calibration-v8-local-<TS>Z/`)
   - beta-params.json         per-head Beta logistic params {a, b, c}
-  - calibration-before.json  raw + isotonic-calibrated metrics per head
+  - calibration-before.json  raw + isotonic-shadow metrics per head
   - calibration-after.json   Beta-calibrated metrics per head
   - venn-abers.json          diagnostic lower/upper bounds per head
   - promotion-decision.json  per-head + global verdict
@@ -39,7 +39,7 @@ Beta calibration
 ----------------
 Follows Kull+Silva+Flach 2017. Fit a logistic regression on the 2-dim feature
 `[log(p), log(1-p)]` to predict labels, giving a closed-form inverse Beta-CDF
-calibration curve. Falls back to Platt scaling when the calibration slice is
+calibration curve. Falls back to identity when the calibration slice is
 degenerate.
 
 Venn-Abers (diagnostic)
@@ -246,22 +246,32 @@ def process_head(df: pd.DataFrame, feat_cols: list[str], miss_cols: list[str],
     metrics_iso = _metric_block(p_test_iso, 'isotonic (t57 baseline)')
     metrics_beta = _metric_block(p_test_beta, 'beta')
 
-    # Promotion gate: Beta must not worsen local ECE at 0.4 or 0.85 vs isotonic
-    iso_ece04 = metrics_iso['localEce'][0]['ece']
-    iso_ece85 = metrics_iso['localEce'][1]['ece']
+    # Promotion gate per Phase 9 intent: compare Beta vs pre-calibrated raw.
+    raw_ece04 = metrics_raw['localEce'][0]['ece']
+    raw_ece85 = metrics_raw['localEce'][1]['ece']
     beta_ece04 = metrics_beta['localEce'][0]['ece']
     beta_ece85 = metrics_beta['localEce'][1]['ece']
     promotion = {
-        'isoEce04': iso_ece04, 'betaEce04': beta_ece04,
-        'isoEce85': iso_ece85, 'betaEce85': beta_ece85,
-        'delta04': ((beta_ece04 - iso_ece04) if (iso_ece04 is not None and beta_ece04 is not None) else None),
-        'delta85': ((beta_ece85 - iso_ece85) if (iso_ece85 is not None and beta_ece85 is not None) else None),
+        'baseline': 'raw-uncalibrated',
+        'rawGlobalEce': metrics_raw['globalEce'],
+        'betaGlobalEce': metrics_beta['globalEce'],
+        'rawEce04': raw_ece04,
+        'betaEce04': beta_ece04,
+        'rawEce85': raw_ece85,
+        'betaEce85': beta_ece85,
+        'deltaGlobalEce': metrics_beta['globalEce'] - metrics_raw['globalEce'],
+        'delta04': ((beta_ece04 - raw_ece04) if (raw_ece04 is not None and beta_ece04 is not None) else None),
+        'delta85': ((beta_ece85 - raw_ece85) if (raw_ece85 is not None and beta_ece85 is not None) else None),
+        'shadowIsotonicEce04': metrics_iso['localEce'][0]['ece'],
+        'shadowIsotonicEce85': metrics_iso['localEce'][1]['ece'],
     }
-    worsens04 = (iso_ece04 is not None and beta_ece04 is not None and beta_ece04 > iso_ece04 + 1e-4)
-    worsens85 = (iso_ece85 is not None and beta_ece85 is not None and beta_ece85 > iso_ece85 + 1e-4)
+    worsens04 = (raw_ece04 is not None and beta_ece04 is not None and beta_ece04 > raw_ece04 + 1e-4)
+    worsens85 = (raw_ece85 is not None and beta_ece85 is not None and beta_ece85 > raw_ece85 + 1e-4)
+    global_ece_worse = metrics_beta['globalEce'] > metrics_raw['globalEce'] + 1e-4
     promotion['worsensLocal04'] = bool(worsens04)
     promotion['worsensLocal85'] = bool(worsens85)
-    promotion['betaBlockedPerHead'] = bool(worsens04 or worsens85)
+    promotion['globalEceWorse'] = bool(global_ece_worse)
+    promotion['betaBlockedPerHead'] = bool(worsens04 or worsens85 or global_ece_worse)
 
     return {
         'head': head_key,
@@ -324,6 +334,8 @@ def main() -> int:
         'generatedAt': _dt.datetime.now(_dt.timezone.utc).isoformat(timespec='seconds'),
         'calibrator': 'beta',
         'calibratorRef': 'Kull+Silva+Flach 2017 — log(p)+log(1-p) logistic',
+        'promotionBaseline': 'raw-uncalibrated',
+        'shadowReference': 'isotonic (t57 baseline)',
         'corpusAdmissibility': 'interim',
         'seed': SEED,
         'heads': results,
@@ -331,11 +343,11 @@ def main() -> int:
             'decision': ('do-not-promote' if blocked_heads else 'promote-beta-as-default'),
             'blockedHeads': blocked_heads,
             'reason': (
-                f'{len(blocked_heads)}/{len(HEADS)} heads see local-ECE regression at '
-                f'0.4 or 0.85 vs t57 isotonic baseline — Beta calibration blocked per Phase 9 '
-                f'nonneg clause "Promotion blocked if local calibration worsens"'
+                f'{len(blocked_heads)}/{len(HEADS)} heads regress on local-ECE@0.4, '
+                f'local-ECE@0.85, or global ECE vs raw logistic baseline — Beta blocked by '
+                f'Phase 9 validation gate'
                 if blocked_heads
-                else 'all 5 heads maintain or improve local-ECE at 0.4 and 0.85'
+                else 'all 5 heads maintain or improve local-ECE at 0.4/0.85 and do not worsen global ECE vs raw'
             ),
             'headsEvaluated': [h for h, r in results.items() if not r.get('skipped')],
         },
