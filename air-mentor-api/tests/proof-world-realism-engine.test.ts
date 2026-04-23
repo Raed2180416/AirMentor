@@ -19,7 +19,9 @@ import type {
 function makeProfile(overrides: Partial<{
   forgetRate: number
   relearnRate: number
+  transferGainRate: number
   studyGainRate: number
+  fatigueRate: number
   consistency: number
   volatility: number
   recoveryTendency: number
@@ -35,7 +37,9 @@ function makeProfile(overrides: Partial<{
     dynamics: {
       forgetRate: overrides.forgetRate ?? 0.1,
       relearnRate: overrides.relearnRate ?? 0.55,
+      transferGainRate: overrides.transferGainRate ?? 0.4,
       studyGainRate: overrides.studyGainRate ?? 0.5,
+      fatigueRate: overrides.fatigueRate ?? 0.08,
       consistency: overrides.consistency ?? 0.6,
       volatility: overrides.volatility ?? 0.2,
       recoveryTendency: overrides.recoveryTendency ?? 0.5,
