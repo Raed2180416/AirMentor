@@ -3,6 +3,7 @@ import { AcademicWorkspaceContentShell } from './academic-workspace-content-shel
 import { FacultyProfilePage } from './academic-faculty-profile-page'
 import { CLDashboard, MentorView, MenteeDetailPage, UnlockReviewPage, QueueHistoryPage } from './academic-route-pages'
 import { HodCounterfactualPanel } from './hod-counterfactual-panel'
+import { HodCounterfactualSimulatorPanel } from './hod-counterfactual-simulator-panel'
 import type { LayoutMode } from './domain'
 import type { Role } from './domain'
 
@@ -255,16 +256,28 @@ export function AcademicWorkspaceRouteSurface({
           loading={workspace.hodProofLoading}
           error={workspace.hodProofError}
           counterfactualPanel={(() => {
-            const runIdRealized = workspace.hodProofAnalytics?.summary?.activeRunContext?.simulationRunId
-            const runIdBaseline = typeof window !== 'undefined'
+            // Phase-11 authoritative path (prompt §C.13 + §G.6 + §L.10). Uses
+            // the simulator counterfactual report for ONE active run. Falls
+            // back to the legacy flag-diff diagnostic panel only when the URL
+            // still includes ?counterfactualBaseline=… (dev/diagnostic mode).
+            const runId = workspace.hodProofAnalytics?.summary?.activeRunContext?.simulationRunId
+            const counterfactualBaseline = typeof window !== 'undefined'
               ? new URL(window.location.href).searchParams.get('counterfactualBaseline') ?? ''
               : ''
-            if (!workspace.loadHodProofCounterfactual || !runIdRealized || !runIdBaseline) return undefined
+            if (counterfactualBaseline && runId && workspace.loadHodProofCounterfactual) {
+              return (
+                <HodCounterfactualPanel
+                  runIdBaseline={counterfactualBaseline}
+                  runIdRealized={runId}
+                  loadReport={workspace.loadHodProofCounterfactual}
+                />
+              )
+            }
+            if (!workspace.loadHodProofCounterfactualSimulator || !runId) return undefined
             return (
-              <HodCounterfactualPanel
-                runIdBaseline={runIdBaseline}
-                runIdRealized={runIdRealized}
-                loadReport={workspace.loadHodProofCounterfactual}
+              <HodCounterfactualSimulatorPanel
+                runId={runId}
+                loadReport={workspace.loadHodProofCounterfactualSimulator}
               />
             )
           })()}

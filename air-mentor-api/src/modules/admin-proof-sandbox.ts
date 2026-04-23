@@ -6,6 +6,8 @@ import { simulationRuns } from '../db/schema.js'
 import {
   activateProofOperationalSemester,
   activateProofSimulationRun,
+  advanceProofSimulationDay,
+  advanceProofSimulationStage,
   approveProofCurriculumImport,
   buildProofBatchDashboard,
   createProofCurriculumImport,
@@ -19,6 +21,7 @@ import {
   recomputeObservedOnlyRisk,
   restoreProofSimulationSnapshot,
   reviewProofCrosswalks,
+  stopProofSimulationRun,
   validateProofCurriculumImport,
   archiveProofSimulationRun,
 } from '../lib/msruas-proof-control-plane.js'
@@ -107,6 +110,13 @@ const activateSemesterSchema = z.object({
     z.literal(5),
     z.literal(6),
   ]),
+})
+
+// Advance mode selector — 'day' = Next Day (§B.9/§L.5); 'stage' = Next Stage
+// (§C.15/§L.6). Both route through the same service to guarantee identical
+// transition pipeline when Next Day crosses a stage boundary (§L.5 contract).
+const advanceBodySchema = z.object({
+  mode: z.union([z.literal('day'), z.literal('stage')]),
 })
 
 const activateSemesterBodySchema = {
@@ -432,6 +442,63 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
       actorId: auth.facultyId,
     })
     return { ok: true }
+  })
+
+  // POST /api/admin/proof-runs/:runId/advance — Next Day / Next Stage
+  // authoritative advance (§B.9, §C.15, §L.4-6). Body picks mode.
+  app.post('/api/admin/proof-runs/:simulationRunId/advance', {
+    schema: {
+      tags: ['admin-proof'],
+      summary: 'Advance a proof simulation run by one day or one stage',
+    },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
+    const params = parseOrThrow(runParamsSchema, request.params)
+    const body = parseOrThrow(advanceBodySchema, request.body)
+    const result = body.mode === 'day'
+      ? await advanceProofSimulationDay(context.db, {
+          simulationRunId: params.simulationRunId,
+          actorFacultyId: auth.facultyId,
+          now: context.now(),
+        })
+      : await advanceProofSimulationStage(context.db, {
+          simulationRunId: params.simulationRunId,
+          actorFacultyId: auth.facultyId,
+          now: context.now(),
+        })
+    await emitAuditEvent(context, {
+      entityType: 'ProofSimulationRun',
+      entityId: params.simulationRunId,
+      action: body.mode === 'day' ? 'AdvancedDay' : 'AdvancedStage',
+      actorRole: auth.activeRoleGrant.roleCode,
+      actorId: auth.facultyId,
+      after: result,
+    })
+    return result
+  })
+
+  // POST /api/admin/proof-runs/:runId/stop — demo finale (§L.11 + §O.3).
+  // Deletes proof credentials, invalidates proof-faculty sessions, marks
+  // the run lifecycle `stopped`. SYSTEM_ADMIN session is not affected.
+  app.post('/api/admin/proof-runs/:simulationRunId/stop', {
+    schema: { tags: ['admin-proof'], summary: 'Stop a proof simulation run (credential + session sweep)' },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
+    const params = parseOrThrow(runParamsSchema, request.params)
+    const result = await stopProofSimulationRun(context.db, {
+      simulationRunId: params.simulationRunId,
+      actorFacultyId: auth.facultyId,
+      now: context.now(),
+    })
+    await emitAuditEvent(context, {
+      entityType: 'ProofSimulationRun',
+      entityId: params.simulationRunId,
+      action: 'Stopped',
+      actorRole: auth.activeRoleGrant.roleCode,
+      actorId: auth.facultyId,
+      after: result,
+    })
+    return result
   })
 
   app.post('/api/admin/proof-runs/:simulationRunId/recompute-risk', {

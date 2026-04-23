@@ -3,6 +3,7 @@ import type {
   ApiAcademicFaculty,
   ApiAcademicHodProofBundle,
   ApiAcademicHodProofCounterfactualReport,
+  ApiAcademicHodProofCounterfactualSimulatorReport,
   ApiAcademicMeeting,
   ApiActivateProofSemesterRequest,
   ApiActivateProofSemesterResponse,
@@ -525,11 +526,24 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
   }
 
   async getAcademicHodProofCounterfactual(input: { runIdBaseline: string; runIdRealized: string }) {
+    // Legacy diagnostic-only route. Prompt §G.6 marks this as "temporary
+    // diagnostic"; final Sem-6 analytics must use
+    // getAcademicHodProofCounterfactualSimulator below.
     const searchParams = new URLSearchParams()
     searchParams.set('runIdBaseline', input.runIdBaseline)
     searchParams.set('runIdRealized', input.runIdRealized)
     return this.request<ApiAcademicHodProofCounterfactualReport>(
       `/api/academic/hod/proof-counterfactual?${searchParams.toString()}`,
+    )
+  }
+
+  async getAcademicHodProofCounterfactualSimulator(input: { runId: string }) {
+    // Phase-11 authoritative path (prompt §C.13 + §G.6 + §L.10). Returns the
+    // projected with-vs-without-intervention report for ONE run.
+    const searchParams = new URLSearchParams()
+    searchParams.set('runId', input.runId)
+    return this.request<ApiAcademicHodProofCounterfactualSimulatorReport>(
+      `/api/academic/hod/proof-counterfactual-simulator?${searchParams.toString()}`,
     )
   }
 

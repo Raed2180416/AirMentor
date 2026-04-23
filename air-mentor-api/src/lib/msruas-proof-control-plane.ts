@@ -148,7 +148,17 @@ import type {
   StudentLatentProfileForIntervention,
 } from './proof-intervention-response-types.js'
 import { STAGE_REALIZATION_FLAG_NAME } from './proof-stage-realization-evidence-applier.js'
-import { resetPlaybackStageArtifacts } from './proof-control-plane-playback-reset-service.js'
+import {
+  resetPlaybackStageArtifacts,
+  stopProofSimulationRun as stopProofSimulationRunService,
+  type ProofPlaybackResetServiceDeps,
+} from './proof-control-plane-playback-reset-service.js'
+import {
+  advanceProofSimulationDay as advanceProofSimulationDayService,
+  advanceProofSimulationStage as advanceProofSimulationStageService,
+  type AdvanceProofSimulationInput,
+  type ProofAdvanceServiceDeps,
+} from './proof-control-plane-advance-service.js'
 import {
   buildSectionRiskRateByStage as buildSectionRiskRateByStageService,
   type ProofControlPlaneSectionRiskServiceDeps,
@@ -4634,6 +4644,23 @@ const proofControlPlaneActivationServiceDeps: ProofControlPlaneActivationService
   publishOperationalProjection,
 }
 
+const proofAdvanceServiceDeps: ProofAdvanceServiceDeps = {
+  createId,
+  emitSimulationAudit,
+  publishOperationalProjection,
+  rebuildSimulationStagePlayback,
+}
+
+// Stop semantics: mark run stopped, invalidate proof faculty sessions, delete
+// proof credentials. Used by admin /stop route (§L.11 demo finale).
+const proofPlaybackResetServiceDeps: ProofPlaybackResetServiceDeps = {
+  emitSimulationAudit,
+  publishOperationalProjection,
+  rebuildSimulationStagePlayback,
+  deleteProofCredentials,
+  invalidateProofBatchSessions,
+}
+
 const proofControlPlaneHodServiceDeps: ProofControlPlaneHodServiceDeps = {
   average,
   buildEvidenceTimelineFromRows,
@@ -4683,6 +4710,32 @@ export async function activateProofOperationalSemester(db: AppDb, input: {
   now: string
 }) {
   return activateProofOperationalSemesterService(db, input, proofControlPlaneActivationServiceDeps)
+}
+
+// Next Day authoritative advance (§B.9 + §L.5). Crosses stage boundary
+// through the same service path as Next Stage when simulated date passes the
+// boundary, so the UI never has two advance pipelines to keep in sync.
+export async function advanceProofSimulationDay(db: AppDb, input: AdvanceProofSimulationInput) {
+  return advanceProofSimulationDayService(db, input, proofAdvanceServiceDeps)
+}
+
+// Next Stage authoritative advance (§C.15 + §L.6). Open cases auto-resolve at
+// the post-see boundary inside the same service to keep resolution history
+// single-source-of-truth.
+export async function advanceProofSimulationStage(db: AppDb, input: AdvanceProofSimulationInput) {
+  return advanceProofSimulationStageService(db, input, proofAdvanceServiceDeps)
+}
+
+// Stop semantics (§L.11 + §O.3). Deletes proof credentials, invalidates
+// proof faculty sessions for the batch, marks the run lifecycle `stopped`.
+// SYSTEM_ADMIN session survives because the admin is not a proof-faculty
+// grant and therefore not swept by invalidateProofBatchSessions.
+export async function stopProofSimulationRun(db: AppDb, input: {
+  simulationRunId: string
+  actorFacultyId?: string | null
+  now: string
+}) {
+  return stopProofSimulationRunService(db, input, proofPlaybackResetServiceDeps)
 }
 
 export async function buildHodProofAnalytics(db: AppDb, input: {

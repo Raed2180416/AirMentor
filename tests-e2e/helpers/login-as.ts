@@ -39,10 +39,15 @@ function csrfHeaders(csrfToken: string) {
   }
 }
 
-async function readJson(response: Response, label: string) {
+async function readJson(response: any, label: string) {
   const text = await response.text()
-  if (!response.ok) {
-    throw new Error(`${label} failed with ${response.status}: ${text.slice(0, 800)}`)
+  // Playwright APIResponse exposes ok()/status() as methods, while the
+  // DOM Response exposes them as properties. Accept both shapes so the
+  // helper can be reused from browser-page contexts too.
+  const okValue = typeof response.ok === 'function' ? response.ok() : response.ok
+  const statusValue = typeof response.status === 'function' ? response.status() : response.status
+  if (!okValue) {
+    throw new Error(`${label} failed with ${statusValue}: ${String(text).slice(0, 800)}`)
   }
   return text ? JSON.parse(text) : null
 }

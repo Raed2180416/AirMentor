@@ -29,6 +29,35 @@ async function readProofDashboard(requestContext: { get: Function }, csrfToken: 
   return readJson(response, `Read proof dashboard for ${PROOF_BATCH_ID}`)
 }
 
+async function readProofRunCheckpoints(requestContext: { get: Function }, csrfToken: string, runId: string) {
+  const response = await requestContext.get(`/api/admin/proof-runs/${encodeURIComponent(runId)}/checkpoints`, {
+    headers: csrfHeaders(csrfToken),
+  })
+  return readJson(response, `Read proof checkpoints for ${runId}`)
+}
+
+async function waitForMaterializedRun(requestContext: { get: Function }, csrfToken: string, runId: string) {
+  const deadline = Date.now() + RUN_READY_TIMEOUT_MS
+  while (Date.now() < deadline) {
+    const dashboard = await readProofDashboard(requestContext, csrfToken)
+    const runPreview = Array.isArray(dashboard.proofRuns)
+      ? dashboard.proofRuns.find((candidate: { simulationRunId: string }) => candidate.simulationRunId === runId) ?? null
+      : null
+    if (runPreview?.status === 'failed') {
+      throw new Error(`Proof run ${runId} failed while waiting for background materialization.`)
+    }
+
+    const checkpoints = await readProofRunCheckpoints(requestContext, csrfToken, runId)
+    const checkpointCount = Array.isArray(checkpoints.items) ? checkpoints.items.length : 0
+    if (checkpointCount > 0) {
+      return dashboard
+    }
+
+    await new Promise(resolve => setTimeout(resolve, RUN_POLL_INTERVAL_MS))
+  }
+  throw new Error(`Timed out waiting for proof run ${runId} to finish background materialization.`)
+}
+
 async function waitForActivatedRun(requestContext: { get: Function }, csrfToken: string, runId: string) {
   const deadline = Date.now() + RUN_READY_TIMEOUT_MS
   while (Date.now() < deadline) {
@@ -67,6 +96,10 @@ export const test = base.extend({
     })
     const createdRun = await readJson(createResponse, 'Create seeded proof run')
     const runId = String(createdRun.simulationRunId)
+
+    // Fresh proof runs materialize in the background worker. Activating too
+    // early can race that worker and hang the control-plane call.
+    await waitForMaterializedRun(request, session.csrfToken, runId)
 
     const activateResponse = await request.post(`/api/admin/proof-runs/${encodeURIComponent(runId)}/activate`, {
       headers: csrfHeaders(session.csrfToken),
