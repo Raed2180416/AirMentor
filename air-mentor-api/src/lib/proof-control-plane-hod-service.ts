@@ -639,7 +639,11 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
                 coEvidenceMode: typeof evidence.coEvidenceMode === 'string' ? evidence.coEvidenceMode : null,
                 interventionRecoveryStatus: typeof evidence.interventionRecoveryStatus === 'string' ? evidence.interventionRecoveryStatus : null,
               },
-              drivers: [],
+              drivers: (() => {
+                const status = (payload.currentStatus ?? {}) as Record<string, unknown>
+                const list = Array.isArray(status.observableDrivers) ? status.observableDrivers : []
+                return list.slice(0, 5)
+              })(),
             }
           }),
           evidenceTimeline,

@@ -671,6 +671,7 @@ export function buildPlaybackGovernanceArtifacts(
             counterfactualLiftScaled: candidate.counterfactualLiftScaled,
             recommendedAction: candidate.inference.recommendedAction,
             attentionAreas: candidate.inference.observableDrivers.slice(0, 4).map(driver => driver.label),
+            observableDrivers: candidate.inference.observableDrivers.slice(0, 5),
             modelVersion: candidate.inference.modelVersion,
             calibrationVersion: candidate.inference.calibrationVersion,
             headProbabilities: candidate.inference.headProbabilities,
