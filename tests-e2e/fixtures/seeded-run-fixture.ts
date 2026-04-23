@@ -83,6 +83,28 @@ async function waitForActivatedRun(requestContext: { get: Function }, csrfToken:
 export const test = base.extend({
   seededRun: async ({ request }, use, testInfo) => {
     const { session } = await loginWithApiContext(request, 'system-admin')
+
+    // Test isolation: the flow-11 stop spec deletes proof faculty credentials
+    // by design (§L.11 + §O.3). Since Playwright specs run in the same worker
+    // and share the seeded backend process, subsequent tests would fail to
+    // log in as HOD / course-leader / mentor. Rehydrate credentials idempot-
+    // ently before every test. No-op when creds already exist.
+    const rehydrateResp = await request.post('/api/admin/proof-sandbox/rehydrate-credentials', {
+      headers: csrfHeaders(session.csrfToken),
+      data: {},
+      failOnStatusCode: false,
+    })
+    if (!rehydrateResp.ok) {
+      // If the endpoint isn't available yet (old server), surface but don't
+      // hard-fail — the subsequent tests will fail loudly if creds actually
+      // are missing.
+      const body = await rehydrateResp.text()
+      await testInfo.attach('rehydrate-credentials-warning', {
+        body: Buffer.from(`rehydrate endpoint status ${rehydrateResp.status}: ${body}\n`, 'utf8'),
+        contentType: 'text/plain',
+      })
+    }
+
     const runLabel = `playwright-smoke:${testInfo.title}:${Date.now()}`
 
     const createResponse = await request.post(`/api/admin/batches/${PROOF_BATCH_ID}/proof-runs`, {

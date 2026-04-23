@@ -511,6 +511,12 @@ export async function buildProofBatchDashboard(db: AppDb, batchId: string, deps:
       runLabel: activeRun.runLabel,
       seed: activeRun.seed,
       activeOperationalSemester: activeRun.activeOperationalSemester,
+      // Phase-11 audit §5.2: dashboard must surface the authoritative active
+      // stage + simulated date so flow-5/6/8 specs (and the HOD analytics UI)
+      // can probe the real run-authority state without reading DB directly.
+      activeStageKey: activeRun.activeStageKey ?? null,
+      simulatedDateIso: activeRun.simulatedDateIso ?? null,
+      lifecycleState: activeRun.lifecycleState ?? null,
       createdAt: activeRun.createdAt,
       startedAt: activeRun.startedAt,
       completedAt: activeRun.completedAt,

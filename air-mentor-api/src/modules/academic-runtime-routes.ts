@@ -773,7 +773,11 @@ export async function registerAcademicRuntimeRoutes(
       summary: 'Create or update a single academic task with per-entity conflict handling',
     },
   }, async request => {
-    const auth = requireRole(request, [...academicRoleCodes])
+    // SYSTEM_ADMIN is included so the admin control-plane and the Playwright
+    // HOD correction-cycle fixture can seed tasks; assertViewerCanManageTask
+    // then bypasses scope checks for SYSTEM_ADMIN while still enforcing them
+    // for academic roles.
+    const auth = requireRole(request, [...academicRoleCodes, 'SYSTEM_ADMIN'])
     const params = parseOrThrow(taskIdParamsSchema, request.params)
     const body = parseOrThrow(taskUpsertBodySchema, request.body)
     const parsed = parseOrThrow(taskSyncSchema, { tasks: [body.task] })

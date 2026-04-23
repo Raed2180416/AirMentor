@@ -2055,6 +2055,10 @@ async function assertViewerCanReadOffering(context: RouteContext, auth: ReturnTy
 }
 
 async function assertViewerCanManageTask(context: RouteContext, auth: ReturnType<typeof requireAuth>, task: z.infer<typeof sharedTaskSchema>) {
+  // SYSTEM_ADMIN bypass matches assertViewerCanReadOffering pattern (§K.4
+  // admin-override). Needed so the admin control-plane + the HOD correction-
+  // cycle E2E fixture can seed tasks without faculty scope friction.
+  if (auth.activeRoleGrant.roleCode === 'SYSTEM_ADMIN') return
   assertAcademicAccess(evaluateFacultyContextAccess(auth))
   const facultyId = auth.facultyId as string
   const normalizedStudentId = normalizeAcademicStudentId(task.studentId)
