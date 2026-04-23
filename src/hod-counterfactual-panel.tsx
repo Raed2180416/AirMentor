@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import { T, mono, sora } from './data'
-import type { AirMentorApiClient } from './api/client'
 import type {
   ApiAcademicHodProofCounterfactualReport,
   ApiAcademicHodProofCounterfactualScalar,
@@ -46,15 +45,15 @@ function deltaIcon(delta: number) {
 }
 
 type HodCounterfactualPanelProps = {
-  client: AirMentorApiClient
   runIdBaseline: string
   runIdRealized: string
+  loadReport: (input: { runIdBaseline: string; runIdRealized: string }) => Promise<ApiAcademicHodProofCounterfactualReport>
 }
 
 export function HodCounterfactualPanel({
-  client,
   runIdBaseline,
   runIdRealized,
+  loadReport,
 }: HodCounterfactualPanelProps) {
   const [report, setReport] = useState<ApiAcademicHodProofCounterfactualReport | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -72,7 +71,7 @@ export function HodCounterfactualPanel({
       setLoading(true)
       setError(null)
       try {
-        const data = await client.getAcademicHodProofCounterfactual({ runIdBaseline, runIdRealized })
+        const data = await loadReport({ runIdBaseline, runIdRealized })
         if (!cancelled) setReport(data)
       } catch (err) {
         if (!cancelled) {
@@ -87,7 +86,7 @@ export function HodCounterfactualPanel({
     return () => {
       cancelled = true
     }
-  }, [client, runIdBaseline, runIdRealized])
+  }, [loadReport, runIdBaseline, runIdRealized])
 
   const aggregateRows = useMemo(() => {
     if (!report) return []

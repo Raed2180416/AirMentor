@@ -2,6 +2,7 @@ import { lazy } from 'react'
 import { AcademicWorkspaceContentShell } from './academic-workspace-content-shell'
 import { FacultyProfilePage } from './academic-faculty-profile-page'
 import { CLDashboard, MentorView, MenteeDetailPage, UnlockReviewPage, QueueHistoryPage } from './academic-route-pages'
+import { HodCounterfactualPanel } from './hod-counterfactual-panel'
 import type { LayoutMode } from './domain'
 import type { Role } from './domain'
 
@@ -253,6 +254,20 @@ export function AcademicWorkspaceRouteSurface({
           reassessmentRows={workspace.hodProofAnalytics?.reassessments ?? []}
           loading={workspace.hodProofLoading}
           error={workspace.hodProofError}
+          counterfactualPanel={(() => {
+            const runIdRealized = workspace.hodProofAnalytics?.summary?.activeRunContext?.simulationRunId
+            const runIdBaseline = typeof window !== 'undefined'
+              ? new URL(window.location.href).searchParams.get('counterfactualBaseline') ?? ''
+              : ''
+            if (!workspace.loadHodProofCounterfactual || !runIdRealized || !runIdBaseline) return undefined
+            return (
+              <HodCounterfactualPanel
+                runIdBaseline={runIdBaseline}
+                runIdRealized={runIdRealized}
+                loadReport={workspace.loadHodProofCounterfactual}
+              />
+            )
+          })()}
         />
       )}
       {role === 'HoD' && page === 'course' && workspace.offering && (
