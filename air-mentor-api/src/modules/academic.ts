@@ -56,6 +56,7 @@ import {
   selectObservedRowsThroughCheckpoint,
 } from '../lib/proof-observed-state.js'
 import { pickMostRecentActiveRun } from '../lib/proof-active-run.js'
+import { humanLabelForActionCode } from '../lib/proof-recommendation-text-generator.js'
 import {
   getProofRiskModelActive,
   buildHodProofAnalytics,
@@ -989,7 +990,7 @@ export function buildProofWorkflowTaskFromQueueProjection(input: {
     : 'Follow-up'
   const queueNote = typeof detail.note === 'string'
     ? detail.note
-    : input.queueProjection.recommendedAction ?? 'Review the proof queue case and confirm the next intervention step.'
+    : humanLabelForActionCode(input.queueProjection.recommendedAction) ?? 'Review the proof queue case and confirm the next intervention step.'
   const priorityRank = Number.isFinite(Number(detail.priorityRank)) ? Number(detail.priorityRank) : null
   return sharedTaskSchema.parse({
     id: taskId,
@@ -1002,8 +1003,8 @@ export function buildProofWorkflowTaskFromQueueProjection(input: {
     year: offering?.yearLabel ?? offering?.sectionCode ?? `Semester ${input.queueProjection.semesterNumber}`,
     riskProb: input.queueProjection.riskProbScaled / 100,
     riskBand: riskBandSchema.parse(input.queueProjection.riskBand),
-    title: input.queueProjection.recommendedAction
-      ? `Follow-up: ${input.queueProjection.recommendedAction}`
+    title: humanLabelForActionCode(input.queueProjection.recommendedAction)
+      ? `Follow-up: ${humanLabelForActionCode(input.queueProjection.recommendedAction)}`
       : `Follow-up: ${input.queueProjection.courseCode} proof queue case`,
     due: taskDueLabelFromDate(dueDateISO, input.anchorDateISO),
     dueDateISO: dueDateISO ?? undefined,
@@ -2736,7 +2737,7 @@ function toPlaybackReasonRows(attentionAreas: string[], recommendedAction: strin
   }
   if (!recommendedAction) return []
   return [{
-    label: `Recommended action: ${recommendedAction}`,
+    label: `Recommended action: ${humanLabelForActionCode(recommendedAction) ?? recommendedAction}`,
     impact: 0.08,
     feature: 'proof-checkpoint',
   }]
