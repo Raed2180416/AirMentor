@@ -33,18 +33,21 @@ CatBoost 测结：
 
 | Head | ROC-AUC | PR-AUC | Brier | Global ECE | local-ECE@0.4 | local-ECE@0.85 | Overload | P@20% | R@20% | rocSpread |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| attendanceRisk | `0.9854` | `0.8063` | `0.0140` | `0.0067` | `0.0224` | `0.2010` | `1.1199` | `0.2035` | `0.9932` | `0.0136` |
-| ceRisk | `0.9309` | `0.3967` | `0.0246` | `0.0192` | `0.1535` | `0.2939` | `0.7506` | `0.1320` | `0.8914` | `0.2571` |
-| seeRisk | `0.8599` | `0.5685` | `0.1072` | `0.0467` | `0.0025` | `0.2157` | `0.8790` | `0.5367` | `0.5568` | `0.1993` |
-| overallCourseRisk | `0.9039` | `0.6321` | `0.0850` | `0.0304` | `0.0075` | `0.1023` | `0.9004` | `0.5708` | `0.6197` | `0.1420` |
-| downstreamCarryoverRisk | `0.9423` | `0.8204` | `0.0894` | `0.0436` | `0.0844` | `0.0927` | `0.9711` | `0.8074` | `0.5725` | `0.0216` |
+| attendanceRisk | `0.9854` | `0.8342` | `0.0140` | `0.0067` | `0.0224` | `0.2010` | `1.1199` | `0.2019` | `0.9853` | `0.0151` |
+| ceRisk | `0.9309` | `0.3484` | `0.0246` | `0.0192` | `0.1535` | `0.2939` | `0.7506` | `0.1382` | `0.9328` | `0.2225` |
+| seeRisk | `0.8599` | `0.6447` | `0.1072` | `0.0467` | `0.0025` | `0.2157` | `0.8790` | `0.5650` | `0.5861` | `0.2701` |
+| overallCourseRisk | `0.9039` | `0.7346` | `0.0850` | `0.0304` | `0.0075` | `0.1023` | `0.9004` | `0.6252` | `0.6786` | `0.2133` |
+| downstreamCarryoverRisk | `0.9423` | `0.8454` | `0.0894` | `0.0436` | `0.0844` | `0.0927` | `0.9711` | `0.8343` | `0.5913` | `0.0039` |
+| **macro avg** | **`0.9245`** | **`0.6815`** | **`0.0640`** | **`0.0293`** | **`0.0541`** | **`0.1811`** | **`0.9242`** | **`0.4729`** | **`0.7548`** | **`0.1450`** |
 
 释：
 
-- ROC 大胜于 `overallCourseRisk`（`0.850 → 0.904`）、`seeRisk`（`0.825 → 0.860`）、`downstreamCarryoverRisk`（`0.927 → 0.942`）；持平于 `attendanceRisk`；弱于 `ceRisk`（`0.954 → 0.931`）。
-- Brier 改于 4/5 head（ceRisk 除外），per-head 胜负具体见 head-to-head 节。
-- 显著症：**local-ECE @0.85 于 4/5 head 倒退**（attendance: `0.08→0.20`，ce: `0.19→0.29`，see: `0.01→0.22`，overall: `0.003→0.102`）。CatBoost 之 raw score 分布集中，isotonic 难 map 到 0.85 高 prob 段，致高 prob 桶内 mean_prob 高于 mean_label。
-- `overallCourseRisk` 与 `downstreamCarryoverRisk`（policy-critical heads）overload `0.9004` / `0.9711` — 离 `1.0` 近于 baseline 之 `0.871` / `0.895`，overload gate 得进。
+- macro 观：CatBoost 胜于 ranking / PR / Brier（`ROC 0.9089→0.9245`, `PR 0.6301→0.6815`, `Brier 0.0728→0.0640`），然 global ECE 反退（`0.0200→0.0293`），故不可仅看 rank/proper。
+- ROC 大胜于 `overallCourseRisk`（`0.850 → 0.904`）、`seeRisk`（`0.825 → 0.860`）、`downstreamCarryoverRisk`（`0.927 → 0.942`）；`attendanceRisk` 反微退；`ceRisk` 明退。
+- Brier 改于 4/5 head（`ceRisk` 除外）；PR-AUC 亦改于 4/5 head（同为 `ceRisk` 独退）。
+- 显著症：**local-ECE @0.4 于 4/5 head 改，然 @0.85 于 5/5 head 俱倒退**。CatBoost 之 raw score 分布更陡，isotonic 于高 prob 段 support 稀薄，致 `mean_prob` 普高于 `mean_label`。
+- `overallCourseRisk` 与 `downstreamCarryoverRisk`（policy-critical heads）overload `0.9004` / `0.9711`，较 baseline `0.8712` / `0.8951` 更近 `1.0`，此门为进。
+- stage-stability 未全优：`rocSpread` 于 4/5 head 较 logistic 更大，仅 `downstreamCarryoverRisk` 由 `0.0096 → 0.0039` 得稳。
 - `ceRisk` 三闸同破（rank/proper/overload）：CatBoost 于极稀阶组（pos_rate≈2%）表现远劣于 linear model；class imbalance 下 tree-based 易 memorise negative cluster，logistic 借 class_weight 更稳。
 
 ## Head-to-Head vs Logistic v8
@@ -63,7 +66,7 @@ CatBoost 测结：
 | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | attendanceRisk | ✗ (`.985`<`.989`) | ✓ (`.014`<`.015`) | ✗ (@0.85 `.20`>`.08`) | ✓ (`1.12`<`1.20`) | ✓ | **3/5** | **shadow** |
 | ceRisk | ✗ (`.931`<`.954`) | ✗ (`.025`>`.021`) | ✗ (@0.85 `.29`>`.19`) | ✗ (`.75`>`.92`—更离 1.0) | ✓ | **1/5** | **shadow** |
-| seeRisk | ✓ (`.860`>`.825`) | ✓ (`.107`<`.120`) | ✗ (@0.85 `.22`>`.01`) | ✗ (`.88`<`.92` 但 bal) ⚠ | ✓ | **3/5** | **shadow** |
+| seeRisk | ✓ (`.860`>`.825`) | ✓ (`.107`<`.120`) | ✗ (@0.85 `.22`>`.01`) | ✗ (`.879` 距 `1.0` 远于 `.917`) ⚠ | ✓ | **3/5** | **shadow** |
 | overallCourseRisk | ✓ (`.904`>`.850`) | ✓ (`.085`<`.108`) | ✗ (@0.85 `.10`>`.003`) | ✓ (`.90`>`.87`—更近 1.0) | ✓ | **4/5** | **shadow** |
 | downstreamCarryoverRisk | ✓ (`.942`>`.927`) | ✓ (`.089`<`.100`) | ✗ (@0.85 `.09`>`.006`) | ✓ (`.97`>`.90`—更近 1.0) | ✓ | **4/5** | **shadow** |
 
@@ -100,6 +103,7 @@ CatBoost 测结：
 - CatBoost params：`iterations=300, depth=6, lr=0.05, l2_leaf_reg=3.0, loss=Logloss, metric=AUC`
 - output dir: `air-mentor-api/output/proof-risk-model/catboost-challenger-local-20260422T225904Z/`
 - model artefacts: `catboost-<head>.cbm` × 5（gitignored output tree）
+- 今轮复核依 repo-tracked sidecar/json；现地未重训，盖此 workspace 缺 `catboost` Python 依赖。
 - repo-tracked sidecars (under `audit-map/22-evals/data/overnight-ml-catboost-challenger-*.json`):
   - `-head-to-head.json` — full summary with all heads + 5-gate
   - `-per-head-metrics.json` — challenger only
@@ -109,8 +113,7 @@ CatBoost 测结：
   - `-meta.txt` — seed/git/hash/params
 - replay cmd:
   ```
-  LD_LIBRARY_PATH=/nix/store/ab3753m6i7isgvzphlar0a8xb84gl96i-gcc-15.2.0-lib/lib:/nix/store/ri9paa3mri4kqakljak8ldvbcp7lpmif-zlib-1.3.1/lib \
-    pipeline/.venv/bin/python air-mentor-api/scripts/train_catboost_challenger_local.py
+  python3 air-mentor-api/scripts/train_catboost_challenger_local.py
   ```
 - 后续最小步（俟 corrected corpus 齐）：
   1. rerun `train_v8_local_corrected_logistic.py` on corrected features.csv (post-Phase-2)。
