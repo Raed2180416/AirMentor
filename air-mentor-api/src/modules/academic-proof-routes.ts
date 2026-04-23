@@ -23,6 +23,8 @@ import {
 } from '../lib/msruas-proof-control-plane.js'
 import { buildCounterfactualReport } from '../lib/proof-counterfactual-reader.js'
 import { fetchCounterfactualSnapshotRows } from '../lib/proof-counterfactual-fetcher.js'
+import { buildSimulatorCounterfactualReport } from '../lib/proof-counterfactual-simulator-aggregator.js'
+import { fetchSimulatorProjectionRows } from '../lib/proof-counterfactual-simulator-fetcher.js'
 import {
   assertAcademicAccess,
   evaluateFacultyContextAccess,
@@ -190,9 +192,12 @@ export async function registerAcademicProofRoutes(
   app.get('/api/academic/hod/proof-counterfactual', {
     schema: {
       tags: ['academic'],
-      summary: 'Diff realized vs baseline mark snapshots for two proof runs, answering "how much did interventions move the needle?"',
+      summary: 'DIAGNOSTIC ONLY — flag-diff baseline-vs-realized across two proof runs. For final demo analytics use /proof-counterfactual-simulator.',
     },
   }, async request => {
+    // Temporary diagnostic per prompt §G.6. Final Sem-6 demo analytics MUST
+    // use the simulator-based no-intervention branch exposed by the sibling
+    // route /proof-counterfactual-simulator below.
     const auth = requireRole(request, ['SYSTEM_ADMIN', 'HOD'])
     assertAcademicAccess(evaluateFacultyContextAccess(auth))
     const querySchema = z.object({
@@ -212,6 +217,32 @@ export async function registerAcademicProofRoutes(
       runIdRealized: query.runIdRealized,
       baselineRows,
       realizedRows,
+    })
+    return report
+  })
+
+  app.get('/api/academic/hod/proof-counterfactual-simulator', {
+    schema: {
+      tags: ['academic'],
+      summary: 'Phase-11 simulator-based counterfactual — projected with-vs-without intervention report for ONE run. Authoritative Sem-6 analytics path.',
+    },
+  }, async request => {
+    // Phase-11 final analytics path. Reads stored simulation_stage_student_projections
+    // (noActionRiskProbScaled + realized marks) for the given run and produces
+    // per-(student, stage) counterfactuals plus projected Sem-6 rollups.
+    //
+    // Access: HOD or SYSTEM_ADMIN. Prompt §B.8 HOD owns oversight analytics.
+    const auth = requireRole(request, ['SYSTEM_ADMIN', 'HOD'])
+    assertAcademicAccess(evaluateFacultyContextAccess(auth))
+    const querySchema = z.object({
+      runId: z.string().min(1),
+    })
+    const query = parseOrThrow(querySchema, request.query)
+    const rows = await fetchSimulatorProjectionRows(context.db, { simulationRunId: query.runId })
+    const report = buildSimulatorCounterfactualReport({
+      runId: query.runId,
+      generatedAt: context.now(),
+      rows,
     })
     return report
   })

@@ -214,7 +214,13 @@ function pickInterventionResponseForStage(response: StageCourseProjectionSource[
   return response.residual
 }
 
-function counterfactualAdjustment(actionTaken: string | null) {
+// Exported so the Phase-11 simulator-based counterfactual aggregator
+// (proof-counterfactual-simulator-aggregator.ts) can apply the exact same
+// deterministic penalties to realized marks and derive the projected no-
+// intervention trajectory without needing to reconstruct a full
+// StageEvidenceSnapshot. Keeping this as the single source of truth avoids
+// drift between live no-action scoring and projected Sem6 analytics.
+export function counterfactualAdjustment(actionTaken: string | null) {
   if (!actionTaken) {
     return {
       attendancePenalty: 0,
