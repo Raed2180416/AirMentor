@@ -30,3 +30,4 @@ tmp_*.cjs
 *.njsproj
 *.sln
 *.sw?
+tests-e2e/artifacts/

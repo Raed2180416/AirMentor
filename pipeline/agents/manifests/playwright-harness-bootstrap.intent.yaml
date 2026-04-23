@@ -8,9 +8,4 @@ nonneg:
   - Do not delete or rename existing files
   - Writes limited to tests-e2e/**, playwright.config.*, package.json, and one report
   - Must include verification_commands the user can run to confirm the smoke test passes
-owner_files:
-  - src/App.tsx
-  - src/portal-entry.tsx
-  - src/proof-surface-launcher.tsx
-  - air-mentor-api/src/app.ts
-  - air-mentor-api/src/lib/msruas-proof-control-plane.ts
+owner_files: []
