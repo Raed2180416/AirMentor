@@ -54,6 +54,14 @@ export async function buildApp(options: BuildAppOptions) {
       })
     }
     if (requestPath === '/api/client-telemetry') return
+    // /api/session/login is credential-authenticated, not session-authenticated:
+    // if a stale session cookie is still on the client, CSRF would spuriously
+    // block a fresh login (the client has no way to know the stale csrf token).
+    // Credential verification in the route itself is the actual gate here; a
+    // login-CSRF attacker would need to know identifier+password anyway.
+    // The login handler rotates sessionId + csrfToken so any stale auth is
+    // immediately invalidated.
+    if (requestPath === '/api/session/login') return
     const sessionId = request.cookies[context.config.sessionCookieName]
     if (!sessionId) return
     const csrfHeader = readSingleHeaderValue(request.headers['x-airmentor-csrf'])

@@ -113,6 +113,7 @@ import type {
   ApiAcademicFacultyProfile,
   ApiAcademicHodProofBundle,
   ApiAcademicHodProofCounterfactualReport,
+  ApiAcademicHodProofCounterfactualSimulatorReport,
   ApiAcademicLoginFaculty,
   ApiPasswordSetupInspectResponse,
   ApiPasswordSetupRequestResponse,
@@ -1134,6 +1135,7 @@ type OperationalWorkspaceProps = {
   loadFacultyProfile?: (facultyId: string) => Promise<ApiAcademicFacultyProfile>
   loadHodProofAnalytics?: () => Promise<ApiAcademicHodProofBundle>
   loadHodProofCounterfactual?: (input: { runIdBaseline: string; runIdRealized: string }) => Promise<ApiAcademicHodProofCounterfactualReport>
+  loadHodProofCounterfactualSimulator?: (input: { runId: string }) => Promise<ApiAcademicHodProofCounterfactualSimulatorReport>
   loadStudentAgentCard?: (studentId: string) => Promise<ApiStudentAgentCard>
   loadStudentAgentTimeline?: (studentId: string) => Promise<{ items: ApiStudentAgentTimelineItem[] }>
   startStudentAgentSession?: (studentId: string) => Promise<ApiStudentAgentSession>
@@ -3985,6 +3987,24 @@ export function OperationalApp() {
     }
   }, [apiClient, playbackCheckpointId])
 
+  // Phase-11 authoritative simulator counterfactual loader. Prompt §C.13 +
+  // §G.6 + §L.10 — replaces the diagnostic flag-diff loader as the primary
+  // final-analytics path.
+  const loadAcademicHodProofCounterfactualSimulator = useCallback(async (input: { runId: string }) => {
+    if (!apiClient) throw new Error('Academic backend is unavailable.')
+    try {
+      return await apiClient.getAcademicHodProofCounterfactualSimulator(input)
+    } catch (error) {
+      emitClientOperationalEvent('proof.counterfactual_simulator.load_failed', {
+        workspace: 'academic',
+        simulationRunId: input.runId,
+        simulationStageCheckpointId: playbackCheckpointId,
+        error: normalizeClientTelemetryError(error),
+      }, { level: 'warn' })
+      throw error
+    }
+  }, [apiClient, playbackCheckpointId])
+
   const loadAcademicStudentAgentCard = useCallback(async (studentId: string) => {
     if (!apiClient) throw new Error('Academic backend is unavailable.')
     try {
@@ -4096,6 +4116,7 @@ export function OperationalApp() {
             onRoleChange={handleRemoteRoleChange}
             loadFacultyProfile={loadAcademicFacultyProfile}
             loadHodProofAnalytics={loadAcademicHodProofAnalytics}
+            loadHodProofCounterfactualSimulator={loadAcademicHodProofCounterfactualSimulator}
             loadStudentAgentCard={loadAcademicStudentAgentCard}
             loadStudentAgentTimeline={loadAcademicStudentAgentTimeline}
             startStudentAgentSession={startAcademicStudentAgentSession}
