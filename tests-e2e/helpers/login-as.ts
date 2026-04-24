@@ -85,6 +85,33 @@ export async function loginWithApiContext(requestContext: { post: Function }, ro
   return { actor, session }
 }
 
-export async function loginAs(page: { context: () => { request: { post: Function } } }, role: keyof typeof SEEDED_ROLE_FIXTURES) {
-  return loginWithApiContext(page.context().request, role)
+export async function loginAs(
+  page: {
+    context: () => { request: { post: Function } }
+    reload?: (opts?: { waitUntil?: string }) => Promise<unknown>
+    url?: () => string
+  },
+  role: keyof typeof SEEDED_ROLE_FIXTURES,
+) {
+  const result = await loginWithApiContext(page.context().request, role)
+  // After the API-level login we have the session cookie + CSRF token sitting
+  // in the browser-context cookie jar. The React app, however, only
+  // re-evaluates its authentication state when it (re)mounts its root —
+  // navigating to the same hash route does NOT remount. So we force a full
+  // page reload here. Specs that never left the portal can skip this by
+  // calling loginWithApiContext directly.
+  if (typeof page.reload === 'function' && typeof page.url === 'function') {
+    const currentUrl = page.url()
+    if (currentUrl && !currentUrl.startsWith('about:')) {
+      // waitUntil: 'domcontentloaded' — a full `networkidle` reload used to
+      // time out because the UI's health-check retry loop keeps firing
+      // background requests during the 'Server Not Running' banner
+      // sequence, so the page never hits 500 ms of network silence.
+      // domcontentloaded is sufficient to guarantee the React root
+      // remounted with the new session cookie in scope; specs then wait on
+      // concrete role-gated surface markers (e.g. hod-proof-analytics).
+      await page.reload({ waitUntil: 'domcontentloaded' })
+    }
+  }
+  return result
 }
