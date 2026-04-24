@@ -32,12 +32,18 @@ def _seed_task(require_provider=None, requested_model=None, task_class="structur
 
 
 def test_pick_prefers_higher_provider_priority():
+    # Priority floor check (slot_ledger.PROVIDER_PRIORITY). As of the
+    # 2026-04-22 reprioritisation, `codex` (11, native CLI, 6 rotating
+    # seats, gpt-5.4 xhigh) sits above `github-copilot` (10, rich catalog
+    # incl. opus-4.7). Higher-priority provider must win when all else is
+    # equal. If we later revert copilot > codex, flip this assertion and
+    # the PROVIDER_PRIORITY numbers together.
     _seed_slot("codex-05", provider="codex", ready=1, preferred_model="gpt-5.4")
     _seed_slot("copilot-X", provider="github-copilot", ready=1, preferred_model="gpt-5.4")
     task = _seed_task()
     pick = slot_ledger.pick_best_slot(task)
     assert pick is not None
-    assert pick.slot == "copilot-X"
+    assert pick.slot == "codex-05"
 
 
 def test_cooldown_excludes_slot():
