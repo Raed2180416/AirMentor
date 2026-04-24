@@ -18,6 +18,13 @@ def _isolated_db(tmp_path, monkeypatch):
     """Each test gets its own fresh SQLite DB."""
     db_file = tmp_path / "pipeline.db"
     monkeypatch.setenv("AIRMENTOR_PIPELINE_DB", str(db_file))
+    # DAG materialisation verifies that all referenced files are tracked in
+    # git so that production runs are reproducible from a clean checkout.
+    # Test DAGs legitimately live under pytest's tmp_path (never tracked),
+    # so opt into the documented dev-only bypass for every test. Tests that
+    # want to exercise the real tracking check can monkeypatch it back to
+    # "0" explicitly.
+    monkeypatch.setenv("AIRMENTOR_DAG_ALLOW_UNTRACKED", "1")
     # pipeline.orchestrator.db resolves DEFAULT_DB_PATH at import, so force refresh
     from pipeline.orchestrator import db
     monkeypatch.setattr(db, "DEFAULT_DB_PATH", db_file, raising=False)
