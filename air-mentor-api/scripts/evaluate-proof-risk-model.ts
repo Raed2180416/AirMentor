@@ -1578,10 +1578,17 @@ async function main() {
       : null
     const phasePass1StartAt = Date.now()
     for (;;) {
+      // Pass-1 (training-data ingestion) MUST include train runs alongside val+test,
+      // otherwise ProofRiskDatasetBuilder trains on zero rows and pass-2 scoring
+      // collapses to the constant prior (root cause of 2026-04-24 full-64 collapse:
+      // commit a75bc33d5 narrowed this filter to evaluationRunIdList=val+test only).
+      // Pass-2 scoring loop (below) is still split-filtered to validation/test only
+      // for metric computation, so widening here does not leak train rows into
+      // variant-comparison buckets.
       const conditions = [
         eq(riskEvidenceSnapshots.batchId, MSRUAS_PROOF_BATCH_ID),
         isNotNull(riskEvidenceSnapshots.simulationStageCheckpointId),
-        inArray(riskEvidenceSnapshots.simulationRunId, evaluationRunIdList),
+        inArray(riskEvidenceSnapshots.simulationRunId, selectedGovernedRunIdList),
       ]
       if (lastEvidenceSnapshotId) conditions.push(gt(riskEvidenceSnapshots.riskEvidenceSnapshotId, lastEvidenceSnapshotId))
       const page = await current.db.select({
@@ -1658,8 +1665,22 @@ async function main() {
     if (!currentLocalBundle || !baselineLocalBundle) {
       throw new Error('Local variant training failed after evaluator corpus extraction')
     }
+    // Regression guard (see commit a75bc33d5 / full-64 2026-04-24 collapse): if the
+    // variant builders did not see train rows, every logistic head converges to
+    // weights=0 + intercept=logit(baseRate≈0.01) and pass-2 scoring collapses to
+    // the constant prior (AUC ≈ 0.50). Fail fast instead of silently emitting a
+    // degenerate artifact the promotion pipeline will misread as "production".
+    const currentTrainSupport = currentLocalBundle.production.headSupportSummary.overallCourseRisk.trainSupport
+    const baselineTrainSupport = baselineLocalBundle.production.headSupportSummary.overallCourseRisk.trainSupport
+    if (currentTrainSupport === 0 || baselineTrainSupport === 0) {
+      throw new Error(
+        `Pass-1 corpus ingestion produced zero train rows for variant builder `
+        + `(current trainSupport=${currentTrainSupport}, baseline trainSupport=${baselineTrainSupport}); `
+        + `check evaluator pass-1 query filter and runMetadataById split assignments.`,
+      )
+    }
     const phaseTrainMs = Date.now() - phaseTrainStartAt
-    logProgress(`model training finished in ${roundToTwo(phaseTrainMs / 1000)}s`)
+    logProgress(`model training finished in ${roundToTwo(phaseTrainMs / 1000)}s (train rows: current=${currentTrainSupport}, baseline=${baselineTrainSupport})`)
     const validationVariantHeadRows = Object.fromEntries(headLabels.map(([headKey]) => [headKey, createVariantProbabilityBuckets()])) as Record<RiskHeadKey, Record<VariantName, ProbabilityRow[]>>
     const validationVariantHeadRowsByStage = Object.fromEntries(headLabels.map(([headKey]) => [headKey, (
       {} as Record<string, Record<VariantName, ProbabilityRow[]>>
