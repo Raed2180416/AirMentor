@@ -70,15 +70,36 @@ test('flow-10 HOD counterfactual UI panel surface renders simulator-based analyt
   })
   await page.goto('/#/app', { waitUntil: 'domcontentloaded' })
   await loginAs(page, 'hod')
-  await page.goto('/#/app', { waitUntil: 'networkidle' })
+  // loginAs already reloads with waitUntil:'networkidle'. A second goto here
+  // used to race the app's health-check retry loop (the "Server Not Running"
+  // banner keeps polling while it reattaches), which could burn the 120s
+  // test budget before a single assertion ran. The surface visibility check
+  // below is the real readiness gate.
 
   const hodSurface = page.locator('[data-proof-surface="hod-proof-analytics"]').first()
-  await expect(hodSurface).toBeVisible()
+  // hodSurface only renders once the proof-bundle has loaded AND its summary
+  // carries an activeRunContext (see src/pages/hod-pages.tsx loading/error/
+  // empty branches). Visibility here is a stronger guarantee than a network
+  // listener that would miss responses fired before the listener attached.
+  await expect(hodSurface).toBeVisible({ timeout: 30_000 })
 
-  // Click the Counterfactual Impact tab.
-  const tabBtn = page.getByRole('button', { name: /Counterfactual Impact/i }).first()
+  // Click the Counterfactual Impact tab. ProofSurfaceTabs renders each tab
+  // with role="tab" (standard ARIA), not role="button". Query by tab role
+  // to match real markup.
+  const tabBtn = page.getByRole('tab', { name: /Counterfactual Impact/i }).first()
   await expect(tabBtn).toBeVisible()
-  await tabBtn.click()
+
+  // Tab-click + simulator fetch atomically: kick the tab and then wait for
+  // the simulator route response before asserting on DOM. Removes the
+  // mount→fetch→render race that made a 15s DOM-poll flaky.
+  const [simulatorResponse] = await Promise.all([
+    page.waitForResponse(
+      response => response.url().includes('/api/academic/hod/proof-counterfactual-simulator') && response.status() === 200,
+      { timeout: 45_000 },
+    ),
+    tabBtn.click(),
+  ])
+  expect(simulatorResponse.ok()).toBeTruthy()
 
   // Simulator panel is now the primary surface (§C.13 + §G.6 + §L.10). It is
   // identified by data-proof-section="hod-counterfactual-simulator" per
