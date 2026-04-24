@@ -310,3 +310,10 @@ Update this file during every pass.
   - HOD `Action Needed` 只计 governed `open`；`Watching` 可见而不阻
   - HOD correction authoritative chain = `request -> approve/reject -> clear-lock/reset-unlock -> edit -> recompute -> relock`
 - Downstream 执行序已冻于 `overnight-unified-mitigation-plan.md` Phase `1..11`：authority freeze -> proof docs -> queue/calendar/HOD docs -> ML doc truth -> contract/code gaps -> focused regression -> handoff freeze。
+
+## Queue / Case / Calendar Reconciliation (2026-04-25)
+- `concernContextKey` spec 凍結為 4-tuple [studentId + offeringId + concernFamily + semesterNumber]；碼中冗餘 `courseCode` 待清理。
+- Workflow 任務隔離：`approval-unlock`, `escalation-review` 等 workflow 嚴禁混入 primary student concern case。
+- HOD Correction 鏈條閉環：記述 `request -> approve -> reset-unlock -> edit -> recompute -> relock` 完整週期。
+- Dismissal = Handled：確認 `dismissal` 與 `handled` 語義合一，均指 Case 結案。
+- Calendar 權威同步：Calendar drag 須確保 DB `due_at` 之權威寫回，非僅 UI 表現。
