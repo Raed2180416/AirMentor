@@ -90,6 +90,25 @@ Update this file during every pass.
 - The UX friction ledger remains useful as a code/test-informed hypothesis set, but its ranking of the "strongest friction cluster" is inference-backed rather than user- or live-validated evidence.
 - The durable baseline for the validation phase is now `audit-map/32-reports/claim-verification-matrix.md`.
 
+## Flow 1 Faculty Bootstrap Remediation (2026-04-25)
+
+- Flow 1 Brave/chromium failure was confirmed as a real product/demo blocker, not a Firefox/Zen harness artifact: after sysadmin created a fresh Sem 1 / pre-TT1 proof run, proof faculty could authenticate but the teacher portfolio rendered `Faculty Context Unavailable`.
+- Root cause: active proof bootstrap scoped `sectionOfferings` through `status='active'`; seeded/provisioned Sem 1 proof offerings could remain `archived` from the baseline seed, so `buildAcademicBootstrap()` derived empty scoped offerings/ownership/branch intersections and omitted authenticated proof faculty from `snapshot.faculty`.
+- Local remediation touched the active proof projection/provisioning path:
+  - `air-mentor-api/src/lib/msruas-proof-control-plane.ts` now reactivates existing proof offerings during `ensureProofOfferings(...)`, ensures missing active ownership rows are recreated, marks published operational proof offerings `status='active'`, and publishes the active operational projection immediately for create-and-activate seeded runs.
+  - `air-mentor-api/tests/academic-parity.test.ts` now asserts that after Sem 1 activation, generated proof faculty `mnc_t1` HoD, `mnc_t2` Course Leader, and `mnc_t8` Mentor all remain present in `/api/academic/bootstrap` with expected role visibility.
+  - `tests-e2e/helpers/login-as.ts` now validates both expected role and expected faculty identity before accepting a seeded login, preventing same-role/wrong-faculty context leakage.
+  - `tests-e2e/specs/flow-1-fresh-start.spec.ts` now avoids `networkidle` for the academic shell and gives the seeded proof materialization path a 300s test timeout.
+  - `tests-e2e/fixtures/seeded-run-fixture.ts` now reauthenticates sysadmin before cleanup archive, because page-level proof-faculty login/logout mutates the shared request-context cookie jar.
+- Verification evidence:
+  - Fresh Brave/chromium Flow 1 run passed: `AIRMENTOR_PW_FRONTEND_BASE_URL=http://127.0.0.1:5194 AIRMENTOR_PW_API_BASE_URL=http://127.0.0.1:4024 AIRMENTOR_PW_BROWSER=chromium AIRMENTOR_PW_CHROMIUM_EXECUTABLE=/run/current-system/sw/bin/brave AIRMENTOR_PW_DISABLE_VIDEO=1 nix develop -c npx playwright test -c tests-e2e/playwright.config.ts tests-e2e/specs/flow-1-fresh-start.spec.ts --reporter=line` → `2 passed (7.6m)`.
+  - Targeted backend regression passed: `npm --workspace air-mentor-api exec -- vitest run tests/academic-parity.test.ts -t 'keeps generated proof faculty in the academic bootstrap after Sem 1 activation' --reporter=dot` → `1 passed | 11 skipped`.
+  - Focused frontend checks passed: `npm test -- --run tests/academic-session-shell.test.tsx tests/system-admin-proof-dashboard-workspace.test.tsx --reporter=dot` → `2 passed`, `17 passed`.
+  - Project diagnostics reported no errors/warnings, and focused ESLint/TypeScript checks completed successfully for the changed surfaces.
+- DAG status was re-polled during this remediation: tasks 88, 89, and 90 remain completed; task 91 remains failed with `last_failure="merge_conflict"`; tasks 92-116 remain pending.
+- `git diff --check` currently reports pre-existing/unrelated whitespace drift in `pipeline/agents/manifests/inventory-frontend.intent.yaml` and a line-ending warning in `node_modules/fast-json-stringify/test/json-add-comma.test.js`; do not conflate that with the Flow 1 remediation.
+- Product-intent takeaway: the demo path must not depend on hardcoded mock-course rows staying in the original Sem 6 seed state. Creating or activating an MSRUAS B.Tech M&C 2023 proof run must make the relevant generated teacher/student/course projection operational so teacher credentials land in valid role workspaces.
+
 ## Next Deep-Dive Priorities
 
 1. rerun `live-behavior-pass` from a network-enabled environment with `AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER` and `AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD` so the authenticated Pages + Railway closeout suite can execute end-to-end and refresh Railway `/`, `/health`, `/openapi.json`, and session-contract evidence
@@ -317,3 +336,30 @@ Update this file during every pass.
 - HOD Correction 鏈條閉環：記述 `request -> approve -> reset-unlock -> edit -> recompute -> relock` 完整週期。
 - Dismissal = Handled：確認 `dismissal` 與 `handled` 語義合一，均指 Case 結案。
 - Calendar 權威同步：Calendar drag 須確保 DB `due_at` 之權威寫回，非僅 UI 表現。
+
+## Overnight Merge Final Decisions (2026-04-25)
+
+- **Authority 升格**：`audit-map/20-prompts/fresh-sem1-principal-architect-overnight-pass.md` 今已可直引（三子 pass 均直引）；frozen appendix 已於 2026-04-25 寫入 15 條 `Overnight Additions` 真實條目，不再 proxy-only。
+- **P1 Blocking Discrepancy**：Sem1 stage-offset parity（BLK-PL-01）：auth-prompt 設 `42/93/114/129`，default policy 設 `35/77/98/119`，須擇一收斂後方可宣稱 "fully reconciled"。
+- **Proof lifecycle 真義（2026-04-25 update）**：
+  - activation = `range guard → checkpoint available-semester guard → run/batch rewrite → active-only republish`
+  - stopped-run ban：`lifecycleState=stopped` 時 activation/advance 均拒；須 restore 先行
+  - semester authority = operational `run → batch`；checkpoint-bound `checkpoint → run → batch`
+  - date authority = deterministic `run.createdAt + semesterDayOffset`，非 UI clock
+  - Next Day / Next Stage 同走 `advanceProofSimulation` pipeline，side-effects 共線
+  - demo auto-resolve: transition 至 `post-see` 寫 `autoResolutionMode='post-see-open-cases-may-auto-resolve'`
+  - reset split = `reset-current-stage` artifact purge vs `complete-reset` new active run
+  - `completed-inspectable` 為行為語義；stop = 刪憑證 + 失效 session
+- **ML 真義（2026-04-25 update）**：
+  - CatBoost 仍非 runtime challenger（`depth-2-tree` union only）；Beta 非 active default（active artifact = `isotonic`）
+  - v8 missingness 仍半落地：caller 未傳 `cgpaMissing`/`backlogMissing`
+  - v7 overload 複合診斷：missingness gap + score bunching + interaction skew + capacity clamp
+  - 四層分拆凍結：model / policy / monitoring / simulator-runtime 嚴禁互冒
+- **Queue / calendar / HOD 真義（2026-04-25 update）**：
+  - `concernContextKey` 4-tuple 已冻於 appendix；現碼 absent，待 P9 補齊
+  - primary taxonomy canonical 5 類已冻；`fallbackConcernFamily` 遺舊名待清
+  - workflow task 永不計 primary concern case（appendix "Workflow Isolation" 已冻）
+  - calendar drag = real `dueDateISO` write + audit event（appendix "Calendar Bridge" 已冻）
+  - HOD correction full cycle code-backed；文檔閉環待 P5
+- **Open implementation drifts**：Sem1 offset parity（P1 blocking）、`concernContextKey` 缺碼、taxonomy legacy names、missingness callers、multiplicative intervention fn、latent param first-class schema、sem6 residue、governance case-key breadth、reopen-deterioration escalation gate。
+- **Downstream 執行序凍於** `audit-map/32-reports/overnight-unified-mitigation-plan.md` Phase `1..11`：authority freeze + Sem1 offset resolution → proof docs → queue/taxonomy docs → calendar/HOD closure → ML doc → ML code gaps → contract impl → sem6 cleanup → regression → handoff freeze。
