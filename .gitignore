@@ -31,3 +31,6 @@ tmp_*.cjs
 *.sln
 *.sw?
 tests-e2e/artifacts/
+
+# Ctxo local cache (never committed)
+.ctxo/.cache/
