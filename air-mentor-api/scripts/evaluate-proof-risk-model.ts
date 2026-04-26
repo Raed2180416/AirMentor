@@ -6,7 +6,7 @@ import { availableParallelism } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { and, asc, count, eq, gt, inArray, isNotNull } from 'drizzle-orm'
-import { createTestApp, TEST_NOW } from '../tests/helpers/test-app.js'
+import { createPersistentTestApp, createTestApp, TEST_NOW } from '../tests/helpers/test-app.js'
 import { MSRUAS_PROOF_BATCH_ID } from '../src/lib/msruas-proof-sandbox.js'
 import { createDb, createPool, type AppDb } from '../src/db/client.js'
 import { runSqlMigrations } from '../src/db/migrate.js'
@@ -1037,6 +1037,11 @@ async function createEvaluationContext(): Promise<EvaluationContext> {
   if (externalDatabaseUrl) {
     logProgress('bootstrapping evaluation database from AIRMENTOR_EVAL_DATABASE_URL')
     return createExternalEvaluationContext(externalDatabaseUrl)
+  }
+  const evalDbDir = process.env.AIRMENTOR_EVAL_DB_DIR?.trim() || null
+  if (evalDbDir) {
+    logProgress(`using persistent evaluation database at ${evalDbDir} (restart-safe; pair with AIRMENTOR_EVAL_SKIP_RECOMPUTE=1)`)
+    return createPersistentTestApp(evalDbDir)
   }
   return createTestApp()
 }
