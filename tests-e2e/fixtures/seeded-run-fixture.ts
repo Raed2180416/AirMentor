@@ -14,29 +14,39 @@ function csrfHeaders(csrfToken: string) {
   }
 }
 
-async function readJson(response: Response, label: string) {
+type AnyHttpResponse = {
+  text(): Promise<string>
+  ok: boolean | (() => boolean)
+  status: number | (() => number)
+}
+
+async function readJson(response: AnyHttpResponse, label: string) {
   const text = await response.text()
-  if (!response.ok) {
-    throw new Error(`${label} failed with ${response.status}: ${text.slice(0, 800)}`)
+  const ok = typeof response.ok === 'function' ? response.ok() : response.ok
+  const status = typeof response.status === 'function' ? response.status() : response.status
+  if (!ok) {
+    throw new Error(`${label} failed with ${String(status)}: ${text.slice(0, 800)}`)
   }
   return text ? JSON.parse(text) : null
 }
 
-async function readProofDashboard(requestContext: { get: Function }, csrfToken: string) {
+type GetContext = { get(url: string, options?: Record<string, unknown>): Promise<AnyHttpResponse> }
+
+async function readProofDashboard(requestContext: GetContext, csrfToken: string) {
   const response = await requestContext.get(`/api/admin/batches/${PROOF_BATCH_ID}/proof-dashboard`, {
     headers: csrfHeaders(csrfToken),
   })
   return readJson(response, `Read proof dashboard for ${PROOF_BATCH_ID}`)
 }
 
-async function readProofRunCheckpoints(requestContext: { get: Function }, csrfToken: string, runId: string) {
+async function readProofRunCheckpoints(requestContext: GetContext, csrfToken: string, runId: string) {
   const response = await requestContext.get(`/api/admin/proof-runs/${encodeURIComponent(runId)}/checkpoints`, {
     headers: csrfHeaders(csrfToken),
   })
   return readJson(response, `Read proof checkpoints for ${runId}`)
 }
 
-async function waitForMaterializedRun(requestContext: { get: Function }, csrfToken: string, runId: string) {
+async function waitForMaterializedRun(requestContext: GetContext, csrfToken: string, runId: string) {
   const deadline = Date.now() + RUN_READY_TIMEOUT_MS
   while (Date.now() < deadline) {
     const dashboard = await readProofDashboard(requestContext, csrfToken)
@@ -58,7 +68,7 @@ async function waitForMaterializedRun(requestContext: { get: Function }, csrfTok
   throw new Error(`Timed out waiting for proof run ${runId} to finish background materialization.`)
 }
 
-async function waitForActivatedRun(requestContext: { get: Function }, csrfToken: string, runId: string) {
+async function waitForActivatedRun(requestContext: GetContext, csrfToken: string, runId: string) {
   const deadline = Date.now() + RUN_READY_TIMEOUT_MS
   while (Date.now() < deadline) {
     const dashboard = await readProofDashboard(requestContext, csrfToken)
@@ -157,6 +167,7 @@ export const test = base.extend({
       throw new Error(`Run ${runId} does not expose the Semester 1 / pre-tt1 checkpoint required for the smoke harness.`)
     }
 
+    // eslint-disable-next-line react-hooks/rules-of-hooks
     await use({
       runId,
       batchId: PROOF_BATCH_ID,

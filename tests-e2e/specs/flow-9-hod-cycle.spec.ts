@@ -14,9 +14,12 @@ import { expect } from '../support/playwright-runtime'
 import { loginWithApiContext } from '../helpers/login-as'
 import { test } from '../fixtures/seeded-run-fixture'
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type PlaywrightResp = { ok(): boolean; status(): number; json(): Promise<any> }
+
 async function seedCorrectionCycleTask(request: {
-  put: Function
-  post: Function
+  put(url: string, options?: Record<string, unknown>): Promise<PlaywrightResp>
+  post(url: string, options?: Record<string, unknown>): Promise<PlaywrightResp>
 }, csrfTokenPromise: Promise<string>) {
   // Put a pristine task into the academic store so the correction-cycle
   // route has something to drive. Status is 'New' and no unlockRequest
@@ -60,7 +63,7 @@ async function seedCorrectionCycleTask(request: {
   return { taskId, offeringId }
 }
 
-async function drive(request: { post: Function }, csrfToken: string, taskId: string, body: Record<string, unknown>) {
+async function drive(request: { post(url: string, options?: Record<string, unknown>): Promise<PlaywrightResp> }, csrfToken: string, taskId: string, body: Record<string, unknown>) {
   return request.post(`/api/academic/unlock-requests/${encodeURIComponent(taskId)}/transition`, {
     headers: { 'X-AirMentor-CSRF': csrfToken },
     data: body,

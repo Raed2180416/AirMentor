@@ -63,7 +63,6 @@ export function createNoopEmailTransport(): EmailTransport {
     mode: 'noop',
     async sendPasswordSetupEmail(opts) {
       // Local dev: log the link so the operator can copy it
-      // eslint-disable-next-line no-console
       console.log(`[email-transport:noop] password-setup email suppressed (${opts.purpose}) → to=${opts.to} link=${opts.setupLink}`)
       return { delivered: false, previewUrl: null }
     },

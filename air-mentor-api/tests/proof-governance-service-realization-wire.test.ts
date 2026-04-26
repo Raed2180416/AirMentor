@@ -136,7 +136,7 @@ describe('governance-service · Phase-6d realization wire contract', () => {
 
   it('flag on + bundle but missing profile -> baseline returned (defensive path)', () => {
     process.env[STAGE_REALIZATION_FLAG_NAME] = '1'
-    const baseline = makeBaseline()
+    const _baseline = makeBaseline()
     // Simulate what realizationInputForSource does when profile is missing:
     // it returns undefined, and buildStageEvidenceSnapshot falls through to
     // baseline without calling the applier.

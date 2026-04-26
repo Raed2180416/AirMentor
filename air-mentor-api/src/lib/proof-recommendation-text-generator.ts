@@ -98,7 +98,7 @@ export function humanLabelForActionCode(actionCode: string | null | undefined): 
   // Unknown / legacy code: normalise snake-case / kebab-case -> Title Case. Keeps
   // deterministic output without throwing.
   return actionCode
-    .split(/[_\-]+/)
+    .split(/[_-]+/)
     .map(token => token.length === 0 ? '' : token[0]!.toUpperCase() + token.slice(1).toLowerCase())
     .join(' ')
     .trim()

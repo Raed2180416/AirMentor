@@ -39,7 +39,13 @@ function csrfHeaders(csrfToken: string) {
   }
 }
 
-async function readJson(response: any, label: string) {
+type AnyHttpResponse = {
+  text(): Promise<string>
+  ok: boolean | (() => boolean)
+  status: number | (() => number)
+}
+
+async function readJson(response: AnyHttpResponse, label: string) {
   const text = await response.text()
   // Playwright APIResponse exposes ok()/status() as methods, while the
   // DOM Response exposes them as properties. Accept both shapes so the
@@ -52,7 +58,7 @@ async function readJson(response: any, label: string) {
   return text ? JSON.parse(text) : null
 }
 
-export async function loginWithApiContext(requestContext: { post: Function }, role: keyof typeof SEEDED_ROLE_FIXTURES) {
+export async function loginWithApiContext(requestContext: { post(url: string, options?: Record<string, unknown>): Promise<AnyHttpResponse> }, role: keyof typeof SEEDED_ROLE_FIXTURES) {
   const actor = SEEDED_ROLE_FIXTURES[role]
   if (role === 'student') {
     throw new Error('Student login is not provisioned in the seeded backend yet.')
@@ -87,7 +93,7 @@ export async function loginWithApiContext(requestContext: { post: Function }, ro
 
 export async function loginAs(
   page: {
-    context: () => { request: { post: Function } }
+    context: () => { request: { post(url: string, options?: Record<string, unknown>): Promise<AnyHttpResponse> } }
     reload?: (opts?: { waitUntil?: string }) => Promise<unknown>
     url?: () => string
   },

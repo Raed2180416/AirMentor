@@ -4,26 +4,28 @@
 // produce IDENTICAL probabilities for the same test rows.
 
 import { describe, it, expect } from 'vitest'
-import { createHash } from 'node:crypto'
 import {
   createProofRiskModelTrainingBuilder,
   scoreObservableRiskWithModel,
-  scoreObservableRiskWithChallengerModel,
   OBSERVABLE_FEATURE_KEYS,
   featureVectorArrayFromPayload,
   type ObservableFeaturePayload,
   type ObservableLabelPayload,
   type ObservableSourceRefs,
+  type ProofCorpusManifestEntry,
   type ProofRunModelMetadata,
+  type ScenarioFamily,
 } from '../src/lib/proof-risk-model.js'
+import type { ObservableInferenceInput } from '../src/lib/inference-engine.js'
 
 const STAGE_KEYS = ['pre-tt1', 'post-tt1', 'post-tt2', 'post-assignments', 'post-see'] as const
 const SECTION_CODES = ['A', 'B', 'C'] as const
 const COURSE_FAMILIES = ['core', 'elective', 'lab'] as const
-const SCENARIO_FAMILIES = [
-  'balanced', 'weak-foundation', 'low-attendance', 'high-forgetting',
-  'coursework-inflation', 'exam-fragility', 'carryover-heavy', 'intervention-resistant',
-] as const
+type SyntheticProofCorpusManifestEntry = ProofCorpusManifestEntry & {
+  courseworkPct: number
+  ttAggressivenessPct: number
+  attendancePct: number
+}
 
 function mulberry32(seed: number) {
   let t = seed >>> 0
@@ -35,7 +37,7 @@ function mulberry32(seed: number) {
   }
 }
 
-function makeRowSet(seed: number, scenarioFamily: typeof SCENARIO_FAMILIES[number], runId: string) {
+function makeRowSet(seed: number, scenarioFamily: ScenarioFamily, runId: string) {
   const rng = mulberry32(seed)
   const rows: Array<{ featureJson: string; labelJson: string; sourceRefsJson: string }> = []
   // For each scenario, emit ~540 rows (= 6 semesters × 3 sections × 5 stages × 6 students)
@@ -161,7 +163,7 @@ describe('proof-risk-model: training vs pass-2 scoring parity [RCA]', () => {
     // Build 8-world corpus: enough to trigger beta calibration
     //   splitSummary aim: 5 train, 2 val, 1 test (or similar) via runMetadataById
     const runMetadataById = new Map<string, ProofRunModelMetadata>()
-    const seedPlan: Array<{ seed: number; split: 'train' | 'validation' | 'test'; family: typeof SCENARIO_FAMILIES[number] }> = [
+    const seedPlan: Array<{ seed: number; split: 'train' | 'validation' | 'test'; family: ScenarioFamily }> = [
       { seed: 101, split: 'train', family: 'balanced' },
       { seed: 202, split: 'train', family: 'weak-foundation' },
       { seed: 303, split: 'train', family: 'low-attendance' },
@@ -173,14 +175,14 @@ describe('proof-risk-model: training vs pass-2 scoring parity [RCA]', () => {
       { seed: 909, split: 'test', family: 'balanced' },
     ]
     // manifest derived from seedPlan: required so ProofRiskDatasetBuilder accepts all seeds.
-    const manifest = seedPlan.map(({ seed, split, family }) => ({
+    const manifest: SyntheticProofCorpusManifestEntry[] = seedPlan.map(({ seed, split, family }) => ({
       seed,
       split,
       scenarioFamily: family,
       courseworkPct: 0.45,
       ttAggressivenessPct: 0.5,
       attendancePct: 0.82,
-    })) as any
+    }))
 
     const allRows: Array<{ featureJson: string; labelJson: string; sourceRefsJson: string }> = []
     const rowsByRun: Record<string, typeof allRows> = {}
@@ -251,10 +253,10 @@ describe('proof-risk-model: training vs pass-2 scoring parity [RCA]', () => {
             mediumRiskBacklogCount: 1,
           },
           assessmentPassingThresholds: { tt1: 40, tt2: 40, quiz: 40, assignment: 40, see: 45 },
-          ceComponentCaps: {} as any,
-          workingCalendar: {} as any,
+          ceComponentCaps: {},
+          workingCalendar: {},
           budgetCapacityRatio: 0.2,
-        } as any,
+        } as unknown as ObservableInferenceInput['policy'],
         featurePayload,
         sourceRefs,
         productionModel: production,
@@ -355,7 +357,7 @@ describe('proof-risk-model: training vs pass-2 scoring parity [RCA]', () => {
     // accidentally narrows pass-1 ingestion will be caught. It also documents
     // the exact symptom: weights=0, intercept≈logit(0.01), AUC≈0.5.
     const runMetadataById = new Map<string, ProofRunModelMetadata>()
-    const seedPlan: Array<{ seed: number; split: 'train' | 'validation' | 'test'; family: typeof SCENARIO_FAMILIES[number] }> = [
+    const seedPlan: Array<{ seed: number; split: 'train' | 'validation' | 'test'; family: ScenarioFamily }> = [
       { seed: 101, split: 'train', family: 'balanced' },
       { seed: 202, split: 'train', family: 'weak-foundation' },
       { seed: 303, split: 'train', family: 'low-attendance' },
@@ -363,10 +365,10 @@ describe('proof-risk-model: training vs pass-2 scoring parity [RCA]', () => {
       { seed: 808, split: 'validation', family: 'intervention-resistant' },
       { seed: 909, split: 'test', family: 'balanced' },
     ]
-    const manifest = seedPlan.map(({ seed, split, family }) => ({
+    const manifest: SyntheticProofCorpusManifestEntry[] = seedPlan.map(({ seed, split, family }) => ({
       seed, split, scenarioFamily: family,
       courseworkPct: 0.45, ttAggressivenessPct: 0.5, attendancePct: 0.82,
-    })) as any
+    }))
 
     // Build the corpus BUT only feed val+test rows into the builder — mirroring
     // the pre-fix evaluator behaviour (pass-1 filter narrowed to evaluationRunIdList).

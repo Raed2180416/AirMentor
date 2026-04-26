@@ -20,6 +20,7 @@ import type {
 import type {
   StageCourseProjectionSource,
 } from '../src/lib/msruas-proof-control-plane.js'
+import type { simulationQuestionTemplates } from '../src/db/schema.js'
 import type { ResolvedPolicy } from '../src/modules/admin-structure.js'
 
 function makeSource(overrides: Partial<StageCourseProjectionSource> = {}): StageCourseProjectionSource {
@@ -122,7 +123,7 @@ function makeIntervention(overrides: Partial<EvidenceApplierInterventionInput> =
   }
 }
 
-const emptyTemplates = new Map<string, never>() as any
+const emptyTemplates = new Map<string, typeof simulationQuestionTemplates.$inferSelect>()
 
 describe('buildStageEvidenceSnapshot · Phase-6a realization wire-up', () => {
   const originalFlag = process.env[STAGE_REALIZATION_FLAG_NAME]

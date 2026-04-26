@@ -6,7 +6,6 @@
  * or CI before any cov-24 eval launch to catch regressions in the calibration
  * pipeline fast.
  */
-import { fileURLToPath } from 'node:url'
 import { performance } from 'node:perf_hooks'
 
 type Row = { label: number; rawProb: number }
@@ -29,13 +28,6 @@ function makeRows(n: number, seed: number, positiveRate: number, noise: number):
     out.push({ label, rawProb })
   }
   return out
-}
-
-function brier(rows: Array<{ label: number; prob: number }>): number {
-  if (rows.length === 0) return 0
-  let sum = 0
-  for (const row of rows) sum += (row.prob - row.label) ** 2
-  return sum / rows.length
 }
 
 type IsotonicOutput = { thresholds: number[]; values: number[] }
@@ -68,7 +60,7 @@ function fitIsotonicCalibration(rows: Row[]): IsotonicOutput {
     prev[i] = i - 1
     next[i] = i === n - 1 ? -1 : i + 1
   }
-  let head = 0
+  const head = 0
   let index = head
   while (index !== -1) {
     const j = next[index]!

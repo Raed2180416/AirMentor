@@ -167,7 +167,7 @@ export function betaQuantile(u: number, a: number, b: number): number {
       - logBetaFn
     const pdf = Math.exp(logPdf)
     if (pdf < 1e-12) break
-    let step = f / pdf
+    const step = f / pdf
     let damp = 1
     let trial = x - step * damp
     while ((trial <= 0 || trial >= 1) && damp > 1e-6) {

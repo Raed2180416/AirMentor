@@ -72,7 +72,7 @@ function createMockDb(options?: {
     updatedAt: '2026-03-20T00:00:00.000Z',
     ...options?.run,
   }
-  let snapshots = options?.snapshots ?? [
+  const snapshots = options?.snapshots ?? [
     {
       simulationResetSnapshotId: 'snapshot_stage_001',
       simulationRunId: run.simulationRunId,
