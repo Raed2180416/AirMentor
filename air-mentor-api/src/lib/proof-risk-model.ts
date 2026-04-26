@@ -889,7 +889,7 @@ function fitIsotonicCalibration(rows: Array<{ label: number; rawProb: number }>)
     prev[i] = i - 1
     next[i] = i === n - 1 ? -1 : i + 1
   }
-  let head = 0
+  const head = 0
   let index = head
   while (index !== -1) {
     const j = next[index]!

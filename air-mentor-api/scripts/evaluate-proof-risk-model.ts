@@ -2216,13 +2216,6 @@ async function main() {
     ) as Record<string, VariantComparisonSummary>
     // Intent context (RCA appendix A): compute top-k Jaccard stability across
     // adjacent stage pairs per run, for the current variant. budgetRate=0.20.
-    const STAGE_ORDER_BY_KEY: Record<string, number> = {
-      'pre-tt1': 0,
-      'post-tt1': 1,
-      'post-tt2': 2,
-      'post-assignments': 3,
-      'post-see': 4,
-    }
     const ADJACENT_STAGE_PAIRS: Array<[string, string]> = [
       ['pre-tt1', 'post-tt1'],
       ['post-tt1', 'post-tt2'],

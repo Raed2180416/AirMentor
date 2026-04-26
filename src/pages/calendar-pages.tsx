@@ -331,6 +331,14 @@ export function CalendarTimetablePage({
   const [mode, setMode] = useState<'calendar' | 'timetable'>('calendar')
   const [selectedDateISO, setSelectedDateISO] = useState(() => calendarAnchorDateISO)
   const [monthAnchorISO, setMonthAnchorISO] = useState(() => `${calendarAnchorDateISO.slice(0, 7)}-01`)
+  // Track the last proof anchor we synced so we can detect checkpoint changes
+  // and update selection during the render phase (no effect needed).
+  const [syncedAnchor, setSyncedAnchor] = useState(calendarAnchorDateISO)
+  if (currentDateISO && syncedAnchor !== calendarAnchorDateISO) {
+    setSyncedAnchor(calendarAnchorDateISO)
+    setSelectedDateISO(calendarAnchorDateISO)
+    setMonthAnchorISO(`${calendarAnchorDateISO.slice(0, 7)}-01`)
+  }
   const [addTarget, setAddTarget] = useState<AddTargetState | null>(null)
   const [extraClassDraft, setExtraClassDraft] = useState<ExtraClassDraftState | null>(null)
   const [detailsState, setDetailsState] = useState<BlockDetailsState | null>(null)
@@ -348,12 +356,6 @@ export function CalendarTimetablePage({
   const shellRef = useRef<HTMLDivElement | null>(null)
   const suppressDetailClickUntilRef = useRef(0)
   const [pageWidth, setPageWidth] = useState(1400)
-
-  useEffect(() => {
-    if (!currentDateISO) return
-    setSelectedDateISO(calendarAnchorDateISO)
-    setMonthAnchorISO(`${calendarAnchorDateISO.slice(0, 7)}-01`)
-  }, [calendarAnchorDateISO, currentDateISO])
 
   const isEditable = editableOverride ?? activeRole === 'Course Leader'
   const canOpenCourseWorkspace = canOpenCourseWorkspaceOverride ?? activeRole !== 'Mentor'

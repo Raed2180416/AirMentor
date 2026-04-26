@@ -2863,7 +2863,7 @@ async function buildAcademicBootstrap(
     courseOutcomeOverrideRows,
     schemeRows,
     questionPaperRows,
-    riskAssessmentRows,
+    _riskAssessmentRows,
     electiveRecommendationRows,
     academicTaskRows,
     academicTaskTransitionRows,

@@ -2329,7 +2329,7 @@ function OperationalWorkspace({
         },
       }))
     }
-  }, [allTasksList, currentTeacherId, role, taskPlacements])
+  }, [allTasksList, currentTeacherId, proofVirtualDateISO, role, taskPlacements])
 
   const handleToggleSchedulePause = useCallback((taskId: string) => {
     setAllTasksList(prev => prev.map(task => {
@@ -2370,7 +2370,7 @@ function OperationalWorkspace({
         },
       }))
     }
-  }, [currentTeacherId, role, taskPlacements])
+  }, [currentTeacherId, proofVirtualDateISO, role, taskPlacements])
 
   const handleDismissTask = useCallback((taskId: string) => {
     setAllTasksList(prev => prev.map(task => {
@@ -2497,7 +2497,7 @@ function OperationalWorkspace({
         offeringId: task.offeringId,
       },
     }))
-  }, [allTasksList, appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, repositories, role, taskPlacements])
+  }, [allTasksList, appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, proofVirtualDateISO, repositories, role, taskPlacements])
 
   const resolveCommittedClassRange = useCallback((blockId: string, input: { day: Weekday; dateISO?: string; startMinutes: number; endMinutes: number }) => {
     if (!currentFacultyTimetable) return null
@@ -2848,7 +2848,7 @@ function OperationalWorkspace({
         },
       }))
     }
-  }, [allOfferings, appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, getStudentsPatched, repositories, role])
+  }, [allOfferings, appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, getStudentsPatched, proofVirtualDateISO, repositories, role])
 
   const handleRemedialCheckIn = useCallback((taskId: string) => {
     setAllTasksList(prev => prev.map(task => {

@@ -47,8 +47,10 @@ import type {
   ObservableSourceRefsWithFeatureMetadata,
   PlaybackStageKey,
   PolicyPhenotype,
+  StageCourseProjectionSource,
   StageEvidenceSnapshot,
 } from './msruas-proof-control-plane.js'
+import type { StageEvidenceRealizationInput } from './proof-control-plane-playback-service.js'
 
 type RuntimeStageDef = {
   key: string
@@ -61,7 +63,13 @@ export type ProofControlPlaneRuntimeServiceDeps = {
   PLAYBACK_STAGE_DEFS: RuntimeStageDef[]
   MONITORING_POLICY_VERSION: string
   average: (values: number[]) => number
-  buildStageEvidenceSnapshot?: (...args: any[]) => unknown
+  buildStageEvidenceSnapshot?: (input: {
+    source: StageCourseProjectionSource
+    stageKey: PlaybackStageKey
+    policy: ResolvedPolicy
+    templatesById: Map<string, typeof simulationQuestionTemplates.$inferSelect>
+    realization?: StageEvidenceRealizationInput
+  }) => StageEvidenceSnapshot
   buildActionPolicyComparison: (input: {
     stageKey: PlaybackStageKey
     evidence: StageEvidenceSnapshot
