@@ -1258,11 +1258,11 @@ export type ApiStudentAgentCard = {
     policyLabel: ApiStudentAgentPanelLabel
     currentEvidence: {
       attendancePct: number
-      tt1Pct: number
-      tt2Pct: number
-      quizPct: number
-      assignmentPct: number
-      seePct: number
+      tt1Pct: number | null
+      tt2Pct: number | null
+      quizPct: number | null
+      assignmentPct: number | null
+      seePct: number | null
       weakCoCount: number
       weakQuestionCount: number
       interventionRecoveryStatus: string | null
@@ -1358,9 +1358,9 @@ export type ApiStudentAgentCard = {
       coTitle: string
       trend: string
       topics: string[]
-      tt1Pct: number
-      tt2Pct: number
-      seePct: number
+      tt1Pct: number | null
+      tt2Pct: number | null
+      seePct: number | null
       transferGap: number
       coEvidenceMode?: string | null
     }>
@@ -1380,11 +1380,11 @@ export type ApiStudentAgentCard = {
       courseTitle: string
       sectionCode: string | null
       attendancePct: number
-      tt1Pct: number
-      tt2Pct: number
-      quizPct: number
-      assignmentPct: number
-      seePct: number
+      tt1Pct: number | null
+      tt2Pct: number | null
+      quizPct: number | null
+      assignmentPct: number | null
+      seePct: number | null
       weakCoCount: number
       weakQuestionCount: number
       drivers: Array<{ label: string; impact: number; feature: string }>
@@ -1592,11 +1592,11 @@ export type ApiFacultyProofOperations = {
     decisionNote: string | null
     observedEvidence: {
       attendancePct: number
-      tt1Pct: number
-      tt2Pct: number
-      quizPct: number
-      assignmentPct: number
-      seePct: number
+      tt1Pct: number | null
+      tt2Pct: number | null
+      quizPct: number | null
+      assignmentPct: number | null
+      seePct: number | null
       cgpa: number
       backlogCount: number
       weakCoCount: number
@@ -1761,11 +1761,11 @@ export type ApiAcademicHodProofStudentWatch = {
   nextDueAt: string | null
   observedEvidence: {
     attendancePct: number
-    tt1Pct: number
-    tt2Pct: number
-    quizPct: number
-    assignmentPct: number
-    seePct: number
+    tt1Pct: number | null
+    tt2Pct: number | null
+    quizPct: number | null
+    assignmentPct: number | null
+    seePct: number | null
     cgpa: number
     backlogCount: number
     weakCoCount: number
@@ -1797,11 +1797,11 @@ export type ApiAcademicHodProofStudentWatch = {
     counterfactualLiftScaled?: number | null
     observedEvidence: {
       attendancePct: number
-      tt1Pct: number
-      tt2Pct: number
-      quizPct: number
-      assignmentPct: number
-      seePct: number
+      tt1Pct: number | null
+      tt2Pct: number | null
+      quizPct: number | null
+      assignmentPct: number | null
+      seePct: number | null
       cgpa: number
       backlogCount: number
       weakCoCount: number

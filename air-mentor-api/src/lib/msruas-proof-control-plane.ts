@@ -66,6 +66,7 @@ import {
 } from './academic-provisioning.js'
 import { createId } from './ids.js'
 import { parseJson } from './json.js'
+import { nullablePct } from './proof-evidence-normalization.js'
 import { parseObservedStateRow } from './proof-observed-state.js'
 import { pickMostRecentActiveRun } from './proof-active-run.js'
 import {
@@ -417,11 +418,11 @@ export type StudentAgentCardPayload = {
     policyLabel: StudentAgentPanelLabel
     currentEvidence: {
       attendancePct: number
-      tt1Pct: number
-      tt2Pct: number
-      quizPct: number
-      assignmentPct: number
-      seePct: number
+      tt1Pct: number | null
+      tt2Pct: number | null
+      quizPct: number | null
+      assignmentPct: number | null
+      seePct: number | null
       weakCoCount: number
       weakQuestionCount: number
       coEvidenceMode?: string | null
@@ -498,9 +499,9 @@ export type StudentAgentCardPayload = {
       trend: string
       topics: string[]
       evidenceMode: string
-      tt1Pct: number
-      tt2Pct: number
-      seePct: number
+      tt1Pct: number | null
+      tt2Pct: number | null
+      seePct: number | null
       transferGap: number
     }>
     questionPatterns: {
@@ -519,11 +520,11 @@ export type StudentAgentCardPayload = {
       courseTitle: string
       sectionCode: string | null
       attendancePct: number
-      tt1Pct: number
-      tt2Pct: number
-      quizPct: number
-      assignmentPct: number
-      seePct: number
+      tt1Pct: number | null
+      tt2Pct: number | null
+      quizPct: number | null
+      assignmentPct: number | null
+      seePct: number | null
       weakCoCount: number
       weakQuestionCount: number
       coEvidenceMode?: string | null
@@ -2029,12 +2030,12 @@ export type StageCourseProjectionSource = {
   courseFamily: string
   attendanceHistory: AttendanceHistoryEntry[]
   attendancePct: number
-  tt1Pct: number
-  tt2Pct: number
-  quizPct: number
-  assignmentPct: number
+  tt1Pct: number | null
+  tt2Pct: number | null
+  quizPct: number | null
+  assignmentPct: number | null
   cePct: number
-  seePct: number
+  seePct: number | null
   finalMark: number
   result: string
   previousCgpa: number
@@ -2073,9 +2074,9 @@ export type StageEvidenceSnapshot = {
     trend: string
     topics: string[]
     evidenceMode: string
-    tt1Pct: number
-    tt2Pct: number
-    seePct: number
+    tt1Pct: number | null
+    tt2Pct: number | null
+    seePct: number | null
     transferGap: number
   }>
   questionPatterns: ReturnType<typeof summarizeQuestionPatterns>
@@ -3462,11 +3463,11 @@ export async function publishOperationalProjection(db: AppDb, input: {
           courseCode: row.courseCode,
           courseTitle: row.courseTitle,
           attendancePct: Number(currentEvidence.attendancePct ?? 0),
-          tt1Pct: Number(currentEvidence.tt1Pct ?? 0),
-          tt2Pct: Number(currentEvidence.tt2Pct ?? 0),
-          quizPct: Number(currentEvidence.quizPct ?? 0),
-          assignmentPct: Number(currentEvidence.assignmentPct ?? 0),
-          seePct: Number(currentEvidence.seePct ?? 0),
+          tt1Pct: nullablePct(currentEvidence.tt1Pct),
+          tt2Pct: nullablePct(currentEvidence.tt2Pct),
+          quizPct: nullablePct(currentEvidence.quizPct),
+          assignmentPct: nullablePct(currentEvidence.assignmentPct),
+          seePct: nullablePct(currentEvidence.seePct),
         },
       }
     }))

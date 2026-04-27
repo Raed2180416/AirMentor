@@ -37,6 +37,7 @@ import {
   RISK_FEATURE_SCHEMA_VERSION,
   scoreObservableRiskWithModel,
 } from './proof-risk-model.js'
+import { roundNullablePct } from './proof-evidence-normalization.js'
 import { buildMonitoringDecision } from './monitoring-engine.js'
 import {
   governProofQueueStage,
@@ -650,11 +651,11 @@ export function buildPlaybackGovernanceArtifacts(
           stageOccurredAt: playbackCheckpointNowIso(input.run.createdAt, candidate.source.semesterNumber, stage),
           currentEvidence: {
             attendancePct: roundToOne(candidate.evidence.attendancePct),
-            tt1Pct: roundToOne(candidate.evidence.tt1Pct ?? 0),
-            tt2Pct: roundToOne(candidate.evidence.tt2Pct ?? 0),
-            quizPct: roundToOne(candidate.evidence.quizPct ?? 0),
-            assignmentPct: roundToOne(candidate.evidence.assignmentPct ?? 0),
-            seePct: roundToOne(candidate.evidence.seePct ?? 0),
+            tt1Pct: roundNullablePct(candidate.evidence.tt1Pct),
+            tt2Pct: roundNullablePct(candidate.evidence.tt2Pct),
+            quizPct: roundNullablePct(candidate.evidence.quizPct),
+            assignmentPct: roundNullablePct(candidate.evidence.assignmentPct),
+            seePct: roundNullablePct(candidate.evidence.seePct),
             weakCoCount: candidate.evidence.weakCoCount,
             weakQuestionCount: candidate.evidence.weakQuestionCount,
             coEvidenceMode: candidate.sourceRefs.coEvidenceMode ?? null,

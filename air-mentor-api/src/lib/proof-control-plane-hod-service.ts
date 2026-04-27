@@ -31,6 +31,7 @@ import {
 } from '../db/schema.js'
 import { parseJson } from './json.js'
 import { pickMostRecentActiveRun } from './proof-active-run.js'
+import { nullablePct } from './proof-evidence-normalization.js'
 import { parseObservedStateRow } from './proof-observed-state.js'
 import {
   filterElectiveRecommendationsForSemester,
@@ -575,11 +576,11 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
           nextDueAt: typeof currentStatus.dueAt === 'string' ? currentStatus.dueAt : null,
           observedEvidence: {
             attendancePct: Number(primaryEvidence.attendancePct ?? 0),
-            tt1Pct: Number(primaryEvidence.tt1Pct ?? 0),
-            tt2Pct: Number(primaryEvidence.tt2Pct ?? 0),
-            quizPct: Number(primaryEvidence.quizPct ?? 0),
-            assignmentPct: Number(primaryEvidence.assignmentPct ?? 0),
-            seePct: Number(primaryEvidence.seePct ?? 0),
+            tt1Pct: nullablePct(primaryEvidence.tt1Pct),
+            tt2Pct: nullablePct(primaryEvidence.tt2Pct),
+            quizPct: nullablePct(primaryEvidence.quizPct),
+            assignmentPct: nullablePct(primaryEvidence.assignmentPct),
+            seePct: nullablePct(primaryEvidence.seePct),
             cgpa: 0,
             backlogCount: 0,
             weakCoCount: Number(primaryEvidence.weakCoCount ?? 0),
@@ -627,11 +628,11 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
               recommendedAction: row.recommendedAction ?? 'Continue routine monitoring on the current evidence window.',
               observedEvidence: {
                 attendancePct: Number(evidence.attendancePct ?? 0),
-                tt1Pct: Number(evidence.tt1Pct ?? 0),
-                tt2Pct: Number(evidence.tt2Pct ?? 0),
-                quizPct: Number(evidence.quizPct ?? 0),
-                assignmentPct: Number(evidence.assignmentPct ?? 0),
-                seePct: Number(evidence.seePct ?? 0),
+                tt1Pct: nullablePct(evidence.tt1Pct),
+                tt2Pct: nullablePct(evidence.tt2Pct),
+                quizPct: nullablePct(evidence.quizPct),
+                assignmentPct: nullablePct(evidence.assignmentPct),
+                seePct: nullablePct(evidence.seePct),
                 cgpa: 0,
                 backlogCount: 0,
                 weakCoCount: Number(evidence.weakCoCount ?? 0),
@@ -1076,11 +1077,11 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
           recommendedAction: row.recommendedAction,
           observedEvidence: {
             attendancePct: Number(rowEvidence.attendancePct ?? 0),
-            tt1Pct: Number(rowEvidence.tt1Pct ?? 0),
-            tt2Pct: Number(rowEvidence.tt2Pct ?? 0),
-            quizPct: Number(rowEvidence.quizPct ?? 0),
-            assignmentPct: Number(rowEvidence.assignmentPct ?? 0),
-            seePct: Number(rowEvidence.seePct ?? 0),
+            tt1Pct: nullablePct(rowEvidence.tt1Pct),
+            tt2Pct: nullablePct(rowEvidence.tt2Pct),
+            quizPct: nullablePct(rowEvidence.quizPct),
+            assignmentPct: nullablePct(rowEvidence.assignmentPct),
+            seePct: nullablePct(rowEvidence.seePct),
             cgpa: Number(rowEvidence.cgpa ?? 0),
             backlogCount: Number(rowEvidence.backlogCount ?? 0),
             weakCoCount: Number(rowEvidence.weakCoCount ?? 0),
@@ -1116,11 +1117,11 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
         nextDueAt,
         observedEvidence: {
           attendancePct: Number(primaryEvidence.attendancePct ?? 0),
-          tt1Pct: Number(primaryEvidence.tt1Pct ?? 0),
-          tt2Pct: Number(primaryEvidence.tt2Pct ?? 0),
-          quizPct: Number(primaryEvidence.quizPct ?? 0),
-          assignmentPct: Number(primaryEvidence.assignmentPct ?? 0),
-          seePct: Number(primaryEvidence.seePct ?? 0),
+          tt1Pct: nullablePct(primaryEvidence.tt1Pct),
+          tt2Pct: nullablePct(primaryEvidence.tt2Pct),
+          quizPct: nullablePct(primaryEvidence.quizPct),
+          assignmentPct: nullablePct(primaryEvidence.assignmentPct),
+          seePct: nullablePct(primaryEvidence.seePct),
           cgpa: Number(primaryEvidence.cgpa ?? 0),
           backlogCount: Number(primaryEvidence.backlogCount ?? latestTranscriptByStudent.get(studentId)?.backlogCount ?? 0),
           weakCoCount: Number(primaryEvidence.weakCoCount ?? 0),

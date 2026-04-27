@@ -11,11 +11,11 @@ export type StudentCheckpointCoreMetrics = {
   riskChangeFromPreviousCheckpointScaled: number | null | undefined
   evidence: {
     attendancePct: number
-    tt1Pct: number
-    tt2Pct: number
-    quizPct: number
-    assignmentPct: number
-    seePct: number
+    tt1Pct: number | null
+    tt2Pct: number | null
+    quizPct: number | null
+    assignmentPct: number | null
+    seePct: number | null
     weakCoCount: number
     weakQuestionCount: number
   }

@@ -32,6 +32,10 @@ function PanelLabel({ label }: { label: ApiStudentAgentPanelLabel }) {
   )
 }
 
+function formatEvidencePct(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value)}%` : 'Not recorded yet'
+}
+
 function CitationList({ citations }: { citations: ApiStudentAgentMessage['citations'] }) {
   if (citations.length === 0) return null
   return (
@@ -354,8 +358,8 @@ export function StudentShellPage({
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
               <MetricCard label="Attendance" value={`${Math.round(card.overview.currentEvidence.attendancePct)}%`} helper="Current observed attendance" />
-              <MetricCard label="TT Window" value={`${Math.round(card.overview.currentEvidence.tt1Pct)}% / ${Math.round(card.overview.currentEvidence.tt2Pct)}%`} helper="TT1 and TT2" />
-              <MetricCard label="SEE" value={`${Math.round(card.overview.currentEvidence.seePct)}%`} helper="Observed semester-end evidence" />
+              <MetricCard label="TT Window" value={`${formatEvidencePct(card.overview.currentEvidence.tt1Pct)} / ${formatEvidencePct(card.overview.currentEvidence.tt2Pct)}`} helper="TT1 and TT2" />
+              <MetricCard label="SEE" value={formatEvidencePct(card.overview.currentEvidence.seePct)} helper="Observed semester-end evidence" />
               <MetricCard label="Weak COs" value={String(card.overview.currentEvidence.weakCoCount)} helper="Current weak course outcomes" />
             </div>
           </div>
@@ -391,7 +395,7 @@ export function StudentShellPage({
                   <PanelLabel label={card.overview.observedLabel} />
                   <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Current observed evidence</div>
                   <div style={{ ...mono, fontSize: 11, color: T.muted, lineHeight: 1.8 }}>
-                    Attendance {Math.round(card.overview.currentEvidence.attendancePct)}% · TT1 {Math.round(card.overview.currentEvidence.tt1Pct)}% · TT2 {Math.round(card.overview.currentEvidence.tt2Pct)}% · quiz {Math.round(card.overview.currentEvidence.quizPct)}% · assignment {Math.round(card.overview.currentEvidence.assignmentPct)}% · SEE {Math.round(card.overview.currentEvidence.seePct)}%.
+                    Attendance {Math.round(card.overview.currentEvidence.attendancePct)}% · TT1 {formatEvidencePct(card.overview.currentEvidence.tt1Pct)} · TT2 {formatEvidencePct(card.overview.currentEvidence.tt2Pct)} · quiz {formatEvidencePct(card.overview.currentEvidence.quizPct)} · assignment {formatEvidencePct(card.overview.currentEvidence.assignmentPct)} · SEE {formatEvidencePct(card.overview.currentEvidence.seePct)}.
                   </div>
                   {card.overview.currentEvidence.coEvidenceMode ? (
                     <div style={{ ...mono, fontSize: 10, color: T.dim, lineHeight: 1.8 }}>
@@ -476,7 +480,7 @@ export function StudentShellPage({
                     <Card key={item.coCode} style={{ padding: 10, background: T.surface2 }}>
                       <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.coCode} · {item.coTitle}</div>
                       <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
-                        Trend {item.trend} · TT1 {Math.round(item.tt1Pct)}% · TT2 {Math.round(item.tt2Pct)}% · SEE {Math.round(item.seePct)}% · transfer gap {item.transferGap.toFixed(2)}
+                        Trend {item.trend} · TT1 {formatEvidencePct(item.tt1Pct)} · TT2 {formatEvidencePct(item.tt2Pct)} · SEE {formatEvidencePct(item.seePct)} · transfer gap {item.transferGap.toFixed(2)}
                       </div>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
                         {item.topics.map(topic => <Chip key={`${item.coCode}-${topic}`} color={T.warning}>{topic}</Chip>)}
@@ -496,7 +500,7 @@ export function StudentShellPage({
                     <Card key={`${item.courseCode}-${item.sectionCode ?? 'na'}`} style={{ padding: 10, background: T.surface2 }}>
                       <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.courseCode} · {item.courseTitle}{item.sectionCode ? ` · Section ${item.sectionCode}` : ''}</div>
                       <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.8 }}>
-                        Attendance {Math.round(item.attendancePct)}% · TT1 {Math.round(item.tt1Pct)}% · TT2 {Math.round(item.tt2Pct)}% · quiz {Math.round(item.quizPct)}% · assignment {Math.round(item.assignmentPct)}% · SEE {Math.round(item.seePct)}%.
+                        Attendance {Math.round(item.attendancePct)}% · TT1 {formatEvidencePct(item.tt1Pct)} · TT2 {formatEvidencePct(item.tt2Pct)} · quiz {formatEvidencePct(item.quizPct)} · assignment {formatEvidencePct(item.assignmentPct)} · SEE {formatEvidencePct(item.seePct)}.
                       </div>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
                         <Chip color={T.warning}>Weak COs {item.weakCoCount}</Chip>
