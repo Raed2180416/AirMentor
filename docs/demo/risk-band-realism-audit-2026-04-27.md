@@ -16,13 +16,21 @@ of high-risk students in the six-semester demo walkthrough.
   observed **maximum `overallCourseRisk` is ≈ 0.71**, so the calibrated
   High band is unreachable even for severely struggling synthetic students.
 - **Fix**: Introduce an **operational urgency band overlay**
-  (`high = 0.6`, `medium = 0.4`) that re-bands the same calibrated
+  (`high = 0.65`, `medium = 0.4`) that re-bands the same calibrated
   `overallCourseRisk` for proof-demo display surfaces only. The calibrated
   `headProbabilities`, `riskProb`, and `observableDrivers` remain unchanged.
+  The `high = 0.65` value was chosen via a sensitivity audit (see below)
+  to balance "every student High" against "no student ever High".
+- **Isolation**: The override is gated by `proofScopeActive` in the
+  academic surface; live institutional data (no proof run owning the
+  batch) keeps calibrated banding semantics. The proof-control-plane
+  services (playback governance, runtime, tail) only operate on proof
+  simulation runs and pass the override unconditionally.
 - **Outcome**: After the fix, sem 1 pre-TT1 still shows 120/0/0 (no false
   promotions in the no-prior-history stage), high-band counts emerge from
-  sem 1 post-SEE onward, and the late-semester distributions reflect the
-  cumulative weight of multiple semesters of poor evidence.
+  sem 2 pre-TT1 onward, and the late-semester distributions reflect the
+  cumulative weight of multiple semesters of poor evidence without
+  collapsing the entire cohort into High.
 
 ## Phase 1 — Stage-wise risk-band matrix (before fix)
 
@@ -125,7 +133,7 @@ Three options were considered:
 
 - **Case A — Operational banding overlay** (chosen):
   - Add a `bandThresholdsOverride` parameter to `scoreObservableRiskWithModel`.
-  - Pass `{ medium: 0.4, high: 0.6 }` from the proof-demo call sites only.
+  - Pass `{ medium: 0.4, high: 0.65 }` from the proof-demo call sites only.
   - Calibrated `headProbabilities`, `riskProb`, and `observableDrivers`
     remain unchanged.
   - Demo script documents the band as "operational urgency" rather than
@@ -136,12 +144,58 @@ Three options were considered:
 - Case C — Lower `PRODUCTION_RISK_THRESHOLDS.high` globally: rejected;
   would change live production semantics.
 
+## Phase 5b — Sensitivity audit (2026-04-28)
+
+The initial implementation used `high = 0.6`, which over-corrected the
+proof corpus distribution. A direct DB-side sensitivity probe pulled
+every `simulation_stage_student_projections` row, computed each
+student's per-stage maximum `riskProbScaled`, and re-banded the cohort
+at `high = 0.60 / 0.65 / 0.70` with `medium` fixed at `0.40`.
+
+| sem | stage | n | avg | max | low/med/high @0.60 | low/med/high @0.65 | low/med/high @0.70 |
+|---|---|---|---|---|---|---|---|
+| 1 | pre-tt1   | 120 | 37.15 | 38 | 120/0/0 | 120/0/0 | 120/0/0 |
+| 1 | post-see  | 120 | 42.02 | 65 | 67/49/4 | 67/49/4 | 67/53/0 |
+| 2 | pre-tt1   | 120 | 44.17 | 67 | 67/42/11 | 67/49/4 | 67/53/0 |
+| 3 | pre-tt1   | 120 | 49.58 | 67 | 38/46/36 | 38/61/21 | 38/82/0 |
+| 4 | pre-tt1   | 120 | 53.9 | 70 | 24/42/54 | 24/51/45 | 24/84/12 |
+| 5 | pre-tt1   | 120 | 59.87 | 71 | 19/23/78 | 19/32/69 | 19/65/36 |
+| 6 | pre-tt1   | 120 | 62.48 | 67 | 5/16/99 | 5/30/85 | 5/115/0 |
+| 6 | post-see  | 120 | 62.52 | 69 | 4/17/99 | 4/31/85 | 4/116/0 |
+
+**Decision: `high = 0.65`.** Rationale:
+
+- `0.70` makes High empty at sem 1–3 (max scaled 67 < 70) and at sem 6
+  (zero High students). Severe named examples disappear entirely.
+- `0.60` leaves sem 6 at 99/120 High (≈82% of cohort) which strains
+  the "High = urgent" semantics: a mentor cannot prioritize 99 cases.
+- `0.65` keeps every named severe profile (Mira Patel, Aarav Reddy,
+  Student 010 at scaled 65–67) in the High band, lets Yash Reddy
+  (3 sem-1 backlogs) sit correctly as Medium at sem 2 pre-TT1, and
+  reduces the sem 6 High count from 99 to 85 (≈71%, still high but
+  reflecting the synthetic corpus' deliberately heavy backlog load).
+
+Named students at `high = 0.65` (per the sensitivity probe):
+
+| student | sem 2 pre-TT1 | sem 3 pre-TT1 | sem 4 pre-TT1 | sem 5 pre-TT1 | sem 6 post-see |
+|---|---|---|---|---|---|
+| Diya Iyer (clean) | Low (39) | Low (38) | Low (34) | Low (38) | Medium (40) |
+| Yash Reddy (3 backlogs sem 1) | Medium (60) | High (67) | High (69) | High (71) | High (67) |
+| Mira Patel (4 backlogs) | Medium (52) | High (67) | High (69) | High (68) | High (66) |
+| Aarav Reddy (7 backlogs) | High (67) | High (67) | High (70) | High (71) | High (66) |
+| Arjun Reddy (borderline) | Medium (46) | Medium (60) | High (66) | High (67) | High (66) |
+| Student 010 (severe) | Low (38) | Medium (60) | Medium (59) | High (67) | High (67) |
+
+Numbers in parentheses are `riskProbScaled` (0–100). The override
+re-bands these scores; the calibrated probabilities and drivers are
+unchanged.
+
 ## Phase 6 — Implementation
 
 New helper file:
 
 - `@/home/raed/projects/air-mentor-ui/air-mentor-api/src/lib/proof-demo-operational-band.ts`
-  - `PROOF_DEMO_OPERATIONAL_THRESHOLDS = { medium: 0.4, high: 0.6 }`
+  - `PROOF_DEMO_OPERATIONAL_THRESHOLDS = { medium: 0.4, high: 0.65 }`
   - `deriveProofDemoOperationalBand(score, context)` for direct band
     derivation (used by tests and any future direct-banding consumer).
 
@@ -162,7 +216,19 @@ Call sites updated to pass `PROOF_DEMO_OPERATIONAL_THRESHOLDS`:
 - `@/home/raed/projects/air-mentor-ui/air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:610-632` (live runtime queue)
 - `@/home/raed/projects/air-mentor-ui/air-mentor-api/src/lib/proof-control-plane-runtime-service.ts:692-713` (runtime no-action counterfactual)
 - `@/home/raed/projects/air-mentor-ui/air-mentor-api/src/lib/proof-control-plane-tail-service.ts:843-863` (student inference tail)
-- `@/home/raed/projects/air-mentor-ui/air-mentor-api/src/modules/academic.ts:1605-1626` (academic surface inference)
+- `@/home/raed/projects/air-mentor-ui/air-mentor-api/src/modules/academic.ts:1605-1626` (academic surface inference, gated by `applyDemoOperationalBanding: proofScopeActive`)
+
+### Demo-only isolation
+
+The four proof-control-plane services only run within proof simulation
+run contexts and pass the override unconditionally. The academic surface
+at `@/home/raed/projects/air-mentor-ui/air-mentor-api/src/modules/academic.ts:1546-1640` accepts an
+`applyDemoOperationalBanding` flag and only applies the override when the
+flag is true. The caller at
+`@/home/raed/projects/air-mentor-ui/air-mentor-api/src/modules/academic.ts:3542-3569` passes
+`proofScopeActive` (true when a proof simulation run owns the batch).
+Real institutional offerings (no proof run owning the batch) receive the
+calibrated banding semantics with no override applied.
 
 ## Phase 7 — Tests
 
@@ -183,59 +249,12 @@ covers:
 - regression safeguard: without override, severe profile stays Medium under
   calibrated thresholds (documents the band-vs-probability separation)
 
-15/15 tests pass. Adjacent regression scope passed: `proof-risk-model`,
+16/16 tests pass (added a "passing `bandThresholdsOverride: null` is
+identical to omitting the override" regression safeguard). Adjacent
+regression scope passed: `proof-risk-model`,
 `proof-evidence-normalization`, `proof-control-plane-tail-service`,
 `proof-control-plane-playback-reset-service`, plus all 6 proof-stage-*
 suites (104/104).
-
-## Phase 8 — Stage-wise risk-band matrix (after fix)
-
-```
-sem 1 pre-tt1            low=120 med=0   high=0     (preserved: no-prior rule)
-sem 1 post-tt1           low=120 med=0   high=0
-sem 1 post-tt2           low=120 med=0   high=0
-sem 1 post-assignments   low=120 med=0   high=0
-sem 1 post-see           low=67  med=49  high=4
-sem 2 pre-tt1            low=67  med=44  high=9
-sem 2 post-tt1           low=67  med=49  high=4
-sem 2 post-tt2           low=67  med=49  high=4
-sem 2 post-assignments   low=67  med=49  high=4
-sem 2 post-see           low=38  med=61  high=21
-sem 3 pre-tt1            low=38  med=56  high=26
-sem 3 post-tt1           low=38  med=60  high=22
-sem 3 post-tt2           low=38  med=61  high=21
-sem 3 post-assignments   low=38  med=61  high=21
-sem 3 post-see           low=24  med=48  high=48
-sem 4 pre-tt1            low=24  med=43  high=53
-sem 4 post-tt1           low=24  med=43  high=53
-sem 4 post-tt2           low=24  med=43  high=53
-sem 4 post-assignments   low=24  med=43  high=53
-sem 4 post-see           low=25  med=26  high=69
-sem 5 pre-tt1            low=19  med=24  high=77
-sem 5 post-tt1           low=19  med=27  high=74
-sem 5 post-tt2           low=19  med=29  high=72
-sem 5 post-assignments   low=19  med=29  high=72
-sem 5 post-see           low=5   med=29  high=86
-sem 6 pre-tt1            low=5   med=18  high=97
-sem 6 post-tt1           low=0   med=21  high=99
-sem 6 post-tt2           low=1   med=20  high=99
-sem 6 post-assignments   low=1   med=20  high=99
-sem 6 post-see           low=4   med=17  high=99
-```
-
-**Realism checks**:
-
-- Sem 1 pre-TT1 still shows the entire batch as Low (the no-prior-history
-  conservative rule is preserved).
-- High emerges from sem 1 post-SEE onward, scaling smoothly with the
-  cumulative prior-history burden.
-- Diya Iyer (clean profile) stays Low at sem 2 pre-TT1.
-- Yash Reddy (3 backlogs) sits at the operational High boundary as Medium
-  at sem 2 pre-TT1 (calibrated overall = 0.5998, just below 0.6).
-- Mira Patel (4 backlogs) and Aarav Reddy (7 backlogs) cross to High at
-  sem 3 pre-TT1.
-- Late-semester distributions reflect the cumulative weight of multiple
-  semesters of poor evidence in the synthetic corpus.
 
 ## Truth contract
 

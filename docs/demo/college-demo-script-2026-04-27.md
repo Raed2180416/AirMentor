@@ -101,10 +101,11 @@ If anything fails: read the troubleshooting table in
 > band is an *operational urgency* classification — it tells you who
 > to act on first. It is not a re-quote of the calibrated
 > probability. The calibrated probability stays where the trained
-> model put it. The operational High threshold is set so that
-> evidence-supported severe cases surface as actionable, while clean
-> early-semester cohorts stay Low. Sem 1 pre-TT1 is conservative on
-> purpose — there is no prior history to score from."
+> model put it. The operational High threshold (0.65) was tuned via
+> a sensitivity audit so evidence-supported severe cases surface as
+> actionable, while clean early-semester cohorts stay Low. Sem 1
+> pre-TT1 is conservative on purpose — there is no prior history to
+> score from."
 
 ## 8. Stage advance, evidence reveal (90s)
 
@@ -129,15 +130,16 @@ If anything fails: read the troubleshooting table in
 - Activate sem 2 pre-TT1.
 
 > "Now we are at the start of semester 2. Prior CGPA and backlogs
-> from sem 1 are real. Nine students reach the operational High
-> band purely from prior history. Diya Iyer stays Low because her
-> sem 1 was clean. Yash Reddy sits at the High boundary as Medium
-> because he carries three sem-1 backlogs."
+> from sem 1 are real. Four students reach the operational High
+> band purely from prior history — the most distressed sem-1
+> tail. Diya Iyer stays Low because her sem 1 was clean. Yash Reddy
+> stays Medium with three sem-1 backlogs; that's a watch case, not
+> yet an urgent case."
 
 - Activate sem 4 pre-TT1.
 
 > "At the start of semester 4 the prior-history signal dominates.
-> Fifty-three students start in the operational High band purely
+> Forty-four students start in the operational High band purely
 > from accumulated CGPA, backlog, and prerequisite pressure. The
 > pre-TT1 view DOES use historical evidence when it is available."
 
@@ -147,11 +149,14 @@ If anything fails: read the troubleshooting table in
 - Open the queue panel.
 
 > "At sem 6 post-TT1, the operational queue surfaces the High urgency
-> cohort first. Each row carries a recommended action: attendance
-> recovery, targeted tutoring, prerequisite bridge, or pre-SEE
-> rescue. Note that the band is operational urgency, not a
-> probability re-quote — the calibrated probability is still shown
-> on the row for transparency."
+> cohort — about 85 students out of 120 in this synthetic batch.
+> That number reflects the deterministic seed where the majority of
+> students carry four or more backlogs by sem 6; in a real cohort
+> the High count would be smaller. Each row carries a recommended
+> action: attendance recovery, targeted tutoring, prerequisite
+> bridge, or pre-SEE rescue. The band is operational urgency, not
+> a probability re-quote — the calibrated probability is still on
+> the row for transparency."
 
 ## 9b. Marks progression story (90s)
 
@@ -181,17 +186,19 @@ Then add the caveat:
 > flow and plausible governance behavior, not claiming production
 > academic calibration."
 
-Safe students (with operational bands at sem 2/3 pre-TT1):
+Safe students (with operational bands at high = 0.65):
 
 - Diya Iyer (`mnc_student_030`) — clean strong observed coursework;
-  Low at sem 2 pre-TT1.
-- Yash Reddy (`mnc_student_079`) — three sem-1 backlogs; sits at the
-  High boundary as Medium at sem 2 pre-TT1.
+  Low through sem 5 pre-TT1, Medium only at sem 6 post-SEE.
+- Yash Reddy (`mnc_student_079`) — three sem-1 backlogs; Medium at
+  sem 2 pre-TT1, escalates to **High** at sem 3 pre-TT1 once
+  cumulative backlogs cross seven.
 - Mira Patel (`mnc_student_096`) — four backlogs; **High** at sem 3
   pre-TT1 from prior history alone.
 - Aarav Reddy (`mnc_student_061`) — seven backlogs; **High** at
-  sem 3 pre-TT1 from prior history alone.
-- Arjun Reddy (`mnc_student_069`) — borderline pass/fail concern.
+  sem 2 pre-TT1 onward from prior history alone (top severity).
+- Arjun Reddy (`mnc_student_069`) — borderline; Medium at sem 2-3
+  pre-TT1, **High** at sem 4 pre-TT1 onward.
 
 Guardrail:
 
