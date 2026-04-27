@@ -2101,11 +2101,25 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
   sourceRefs?: ObservableSourceRefs | null
   productionModel?: ProductionRiskModelArtifact | null
   correlations?: CorrelationArtifact | null
+  // Optional banding threshold override. When provided, the returned
+  // `riskBand` reflects these thresholds instead of the calibrated
+  // production model thresholds. Used by the proof-demo display surfaces
+  // (see `proof-demo-operational-band.ts`) to expose operational urgency
+  // bands without altering calibrated `headProbabilities` or driver text.
+  bandThresholdsOverride?: { readonly medium: number; readonly high: number } | null
 }): ModelBackedRiskOutput {
   const fallback = inferObservableRisk(input)
   const fallbackSuppressionWarning = displaySuppressionWarningForFallbackSourceRefs(input.sourceRefs)
   const rankingSuppressedReason = rankingSuppressionReasonForFallbackSourceRefs(input.sourceRefs)
   const rankingAllowed = rankingSuppressedReason == null
+  const bandThresholdsOverride = input.bandThresholdsOverride ?? null
+  const bandFromScore = (score: number, thresholds: { medium: number; high: number }): 'High' | 'Medium' | 'Low' => {
+    return score >= thresholds.high
+      ? 'High'
+      : score >= thresholds.medium
+        ? 'Medium'
+        : 'Low'
+  }
   if (!input.productionModel || input.productionModel.featureSchemaVersion !== RISK_FEATURE_SCHEMA_VERSION) {
     const fallbackDisplay = Object.fromEntries(
       (Object.keys(HEAD_LABEL_KEYS) as RiskHeadKey[]).map(headKey => [headKey, {
@@ -2114,8 +2128,12 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
         calibrationMethod: 'identity' as CalibrationMethod,
       }]),
     ) as ModelBackedRiskOutput['headDisplay']
+    const fallbackBand = bandThresholdsOverride
+      ? bandFromScore(fallback.riskProb, bandThresholdsOverride)
+      : fallback.riskBand
     return {
       ...fallback,
+      riskBand: fallbackBand,
       modelVersion: 'observable-inference-v2',
       calibrationVersion: null,
       headProbabilities: {
@@ -2143,11 +2161,10 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
     downstreamCarryoverRisk: scoreWithLogistic(input.productionModel.heads.downstreamCarryoverRisk, vector),
   } satisfies Record<RiskHeadKey, number>
   const officialOverall = headProbabilities.overallCourseRisk
-  const riskBand: 'High' | 'Medium' | 'Low' = officialOverall >= input.productionModel.thresholds.high
-    ? 'High'
-    : officialOverall >= input.productionModel.thresholds.medium
-      ? 'Medium'
-      : 'Low'
+  const riskBand: 'High' | 'Medium' | 'Low' = bandFromScore(
+    officialOverall,
+    bandThresholdsOverride ?? input.productionModel.thresholds,
+  )
   const observableDrivers = inferObservableDrivers(input)
   const recommendedAction = riskBand === 'High'
     ? 'Immediate mentor follow-up and reassessment before the next evaluation checkpoint.'

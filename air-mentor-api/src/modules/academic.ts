@@ -66,6 +66,7 @@ import {
   scoreObservableRiskWithModel,
   type ObservableSourceRefs,
 } from '../lib/proof-risk-model.js'
+import { PROOF_DEMO_OPERATIONAL_THRESHOLDS } from '../lib/proof-demo-operational-band.js'
 import {
   buildGraphAwarePrerequisiteSummary,
   buildMissingGraphAwarePrerequisiteSummary,
@@ -1621,6 +1622,7 @@ function computeRiskFromActiveModelOrPolicy(input: {
     featurePayload,
     sourceRefs,
     productionModel: activeModel,
+    bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
   })
   return {
     riskProb: inference.riskProb,

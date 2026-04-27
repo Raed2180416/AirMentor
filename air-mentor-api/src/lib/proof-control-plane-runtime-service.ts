@@ -26,6 +26,7 @@ import { parseJson } from './json.js'
 import { buildMonitoringDecision } from './monitoring-engine.js'
 import { MSRUAS_PROOF_BRANCH_ID, MSRUAS_PROOF_DEPARTMENT_ID } from './msruas-proof-sandbox.js'
 import { parseObservedStateRow } from './proof-observed-state.js'
+import { PROOF_DEMO_OPERATIONAL_THRESHOLDS } from './proof-demo-operational-band.js'
 import {
   buildObservableFeaturePayload,
   featureHash,
@@ -627,6 +628,7 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       sourceRefs: fallbackSourceRefs,
       productionModel: activeRiskArtifacts.production,
       correlations: activeRiskArtifacts.correlations,
+      bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
     })
     const liveEvidence: StageEvidenceSnapshot = {
       attendancePct: Number(payload.attendancePct ?? 0),
@@ -707,6 +709,7 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       sourceRefs: fallbackSourceRefs,
       productionModel: activeRiskArtifacts.production,
       correlations: activeRiskArtifacts.correlations,
+      bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
     })
     const monitoring = buildMonitoringDecision({
       riskProb: inference.riskProb,
