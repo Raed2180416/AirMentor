@@ -24,19 +24,26 @@
 //     real risk signal.
 //
 // Threshold rationale:
-//   * Operational High = 0.6 sits clearly above Medium (0.4) and above the
-//     observed Medium plateau in the proof corpus (~0.45-0.55), while being
-//     reachable by students whose evidence (cgpa<5, backlog>=3, weak
-//     attendance, weak TT1) genuinely warrants urgent intervention.
+//   * Operational High = 0.65 sits between the heaviest Medium plateau
+//     (~0.55-0.62) and the observed maximum overallCourseRisk in the proof
+//     corpus (~0.71). Students with evidence-supported severe profiles
+//     (cgpa<5, backlog>=4, prerequisite pressure) cross 0.65 and surface as
+//     High; students with milder issues (e.g. 3 sem-1 backlogs and
+//     borderline cgpa) stay Medium until the next semester accumulates more
+//     evidence. Tuned via sensitivity audit on the deterministic proof
+//     corpus (see `docs/demo/risk-band-realism-audit-2026-04-27.md`).
 //   * Operational Medium = 0.4 matches the calibrated medium boundary so
 //     the existing Medium band semantics carry over unchanged.
 //
 // Apply this overlay only when banding the demo proof projections. Live
 // production banding uses the calibrated `productionModel.thresholds`.
+// Demo-context callers must opt in via `bandThresholdsOverride`; the
+// `academic.ts` surface gates the override behind `proofScopeActive` so
+// real institutional data never receives the demo banding.
 
 export const PROOF_DEMO_OPERATIONAL_THRESHOLDS = {
   medium: 0.4,
-  high: 0.6,
+  high: 0.65,
 } as const
 
 export type ProofDemoOperationalBandThresholds = {

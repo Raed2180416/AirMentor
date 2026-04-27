@@ -8,23 +8,25 @@ import { scoreObservableRiskWithModel } from '../src/lib/proof-risk-model.js'
 import { DEFAULT_POLICY } from '../src/modules/admin-structure.js'
 
 describe('proof-demo operational band', () => {
-  it('uses high=0.6, medium=0.4 thresholds', () => {
-    expect(PROOF_DEMO_OPERATIONAL_THRESHOLDS.high).toBe(0.6)
+  it('uses high=0.65, medium=0.4 thresholds', () => {
+    expect(PROOF_DEMO_OPERATIONAL_THRESHOLDS.high).toBe(0.65)
     expect(PROOF_DEMO_OPERATIONAL_THRESHOLDS.medium).toBe(0.4)
     expect(PROOF_DEMO_OPERATIONAL_THRESHOLDS.high).toBeLessThan(0.85)
+    expect(PROOF_DEMO_OPERATIONAL_THRESHOLDS.high).toBeGreaterThan(PROOF_DEMO_OPERATIONAL_THRESHOLDS.medium)
   })
 
-  it('classifies score >= 0.6 as High', () => {
-    expect(deriveProofDemoOperationalBand(0.6).band).toBe('High')
+  it('classifies score >= 0.65 as High', () => {
     expect(deriveProofDemoOperationalBand(0.65).band).toBe('High')
+    expect(deriveProofDemoOperationalBand(0.67).band).toBe('High')
     expect(deriveProofDemoOperationalBand(0.71).band).toBe('High')
     expect(deriveProofDemoOperationalBand(0.95).band).toBe('High')
   })
 
-  it('classifies 0.4 <= score < 0.6 as Medium', () => {
+  it('classifies 0.4 <= score < 0.65 as Medium', () => {
     expect(deriveProofDemoOperationalBand(0.4).band).toBe('Medium')
     expect(deriveProofDemoOperationalBand(0.5).band).toBe('Medium')
-    expect(deriveProofDemoOperationalBand(0.5999).band).toBe('Medium')
+    expect(deriveProofDemoOperationalBand(0.6).band).toBe('Medium')
+    expect(deriveProofDemoOperationalBand(0.6499).band).toBe('Medium')
   })
 
   it('classifies score < 0.4 as Low', () => {
@@ -43,7 +45,7 @@ describe('proof-demo operational band', () => {
   })
 
   it('rationale text reflects the chosen band', () => {
-    expect(deriveProofDemoOperationalBand(0.65).rationaleKind).toBe('operational-high-evidence-supported')
+    expect(deriveProofDemoOperationalBand(0.7).rationaleKind).toBe('operational-high-evidence-supported')
     expect(deriveProofDemoOperationalBand(0.5).rationaleKind).toBe('operational-medium-active-monitoring')
     expect(deriveProofDemoOperationalBand(0.2).rationaleKind).toBe('operational-low-routine-monitoring')
   })
@@ -75,22 +77,34 @@ describe('scoreObservableRiskWithModel bandThresholdsOverride', () => {
     policy: DEFAULT_POLICY,
     featurePayload: {
       attendancePct: 70,
+      attendanceTrend: 0,
+      attendanceHistoryRiskCount: 2,
       currentCgpa: 4.5,
       backlogCount: 5,
+      cgpaMissing: false,
+      backlogMissing: false,
       tt1Pct: 38,
       tt2Pct: null,
+      seePct: null,
       quizPct: null,
       assignmentPct: null,
-      seePct: null,
       weakCoCount: 1,
       weakQuestionCount: 1,
-      attendanceHistoryRiskCount: 2,
+      courseworkToTtGap: 0,
+      ttMomentum: 0,
       interventionResponseScore: -0.05,
+      prerequisitePressure: 0,
       prerequisiteAveragePct: 50,
       prerequisiteFailureCount: 2,
-      prerequisiteCourseCodes: [],
-      sectionRiskRate: 0.2,
+      prerequisiteChainDepth: 0,
+      prerequisiteWeakCourseRate: 0,
+      prerequisiteCarryoverLoad: 0,
+      prerequisiteRecencyWeightedFailure: 0,
+      downstreamDependencyLoad: 0,
+      weakPrerequisiteChainCount: 0,
+      repeatedWeakPrerequisiteFamilyCount: 0,
       semesterProgress: 0.3,
+      sectionRiskRate: 0.2,
     },
   } as const
 
@@ -108,9 +122,10 @@ describe('scoreObservableRiskWithModel bandThresholdsOverride', () => {
       bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
     })
     expect(result.riskProb).toBe(heuristic.riskProb)
-    // riskProb of a struggling student should cross the operational High
-    // threshold (0.6) but may or may not cross the heuristic 0.7 threshold.
-    if (heuristic.riskProb >= 0.6) {
+    // riskProb of a struggling student should land somewhere in the
+    // operational band lattice. Verify the override re-band agrees with the
+    // operational threshold definition.
+    if (heuristic.riskProb >= 0.65) {
       expect(result.riskBand).toBe('High')
     } else if (heuristic.riskProb >= 0.4) {
       expect(result.riskBand).toBe('Medium')
@@ -164,7 +179,6 @@ describe('scoreObservableRiskWithModel bandThresholdsOverride', () => {
         interventionResponseScore: null,
         prerequisiteAveragePct: 0,
         prerequisiteFailureCount: 0,
-        prerequisiteCourseCodes: [],
         semesterProgress: 0.0,
       },
     } as const
@@ -204,7 +218,6 @@ describe('scoreObservableRiskWithModel bandThresholdsOverride', () => {
         attendanceHistoryRiskCount: 0,
         prerequisiteAveragePct: 60,
         prerequisiteFailureCount: 1,
-        prerequisiteCourseCodes: [],
         semesterProgress: 0.0,
       },
     } as const
@@ -248,7 +261,6 @@ describe('scoreObservableRiskWithModel bandThresholdsOverride', () => {
         interventionResponseScore: -0.15,
         prerequisiteAveragePct: 40,
         prerequisiteFailureCount: 4,
-        prerequisiteCourseCodes: [],
         semesterProgress: 0.4,
       },
     } as const
@@ -258,6 +270,17 @@ describe('scoreObservableRiskWithModel bandThresholdsOverride', () => {
     })
     expect(result.riskBand).toBe('High')
     expect(result.riskProb).toBeGreaterThanOrEqual(PROOF_DEMO_OPERATIONAL_THRESHOLDS.high)
+  })
+
+  it('passing bandThresholdsOverride: null is identical to omitting the override', () => {
+    const omitted = scoreObservableRiskWithModel(baseInput)
+    const explicitNull = scoreObservableRiskWithModel({
+      ...baseInput,
+      bandThresholdsOverride: null,
+    })
+    expect(explicitNull.riskBand).toBe(omitted.riskBand)
+    expect(explicitNull.riskProb).toBe(omitted.riskProb)
+    expect(explicitNull.headProbabilities).toEqual(omitted.headProbabilities)
   })
 
   it('without override, severe profile stays Medium under calibrated thresholds (regression safeguard)', () => {
@@ -288,7 +311,6 @@ describe('scoreObservableRiskWithModel bandThresholdsOverride', () => {
         interventionResponseScore: -0.15,
         prerequisiteAveragePct: 40,
         prerequisiteFailureCount: 4,
-        prerequisiteCourseCodes: [],
         semesterProgress: 0.4,
       },
     } as const
