@@ -128,6 +128,49 @@ If anything fails: read the troubleshooting table in
 > recommended action: attendance recovery, targeted tutoring,
 > prerequisite bridge, or pre-SEE rescue."
 
+## 9b. Marks progression story (90s)
+
+Use only the selected students in
+`docs/demo/demo-safe-student-picks-2026-04-27.md`. Do not randomly
+click students for the marks-realism story.
+
+> "At pre-TT1, we intentionally avoid showing future marks."
+
+> "After TT1, the system can identify early academic weakness."
+
+> "After TT2, we can distinguish recovery from persistent weakness."
+
+> "After assignments/quizzes, coursework evidence refines but does not
+> magically erase exam weakness."
+
+> "After SEE, the system reflags exam fragility if final performance
+> contradicts coursework."
+
+> "From semester 4 onward, accumulated CGPA/backlogs/prerequisite
+> history visibly differentiates pre-TT1 risk."
+
+Then add the caveat:
+
+> "Tonight's proof run uses the stable synthetic baseline. B1 mark
+> realism is not enabled, so I am demonstrating stage-safe evidence
+> flow and plausible governance behavior, not claiming production
+> academic calibration."
+
+Safe students:
+
+- Diya Iyer (`mnc_student_030`) — clean strong observed coursework.
+- Yash Reddy (`mnc_student_079`) — attendance/carryover risk.
+- Mira Patel (`mnc_student_096`) — academic weakness / tutoring.
+- Aarav Reddy (`mnc_student_061`) — prerequisite/carryover history.
+- Arjun Reddy (`mnc_student_069`) — borderline pass/fail concern.
+
+Guardrail:
+
+- Do not use post-TT2/post-SEE as proof of final-exam realism tonight.
+  Current synthetic projection payloads conservatively show missing
+  TT2/SEE as `0%` in driver text. Use those stages only to explain
+  checkpoint mechanics unless B1 realism is separately proven.
+
 ## 10. HoD analytics (90s)
 
 - Logout teacher. Login `devika.shetty / faculty1234`.
