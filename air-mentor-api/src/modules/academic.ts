@@ -1560,6 +1560,11 @@ function computeRiskFromActiveModelOrPolicy(input: {
   semesterProgress?: number
   prerequisiteSummary: GraphAwarePrerequisiteSummary
   sourceRefs?: ObservableSourceRefs | null
+  // When true, re-band the calibrated overallCourseRisk through the demo
+  // operational urgency thresholds. The caller must verify the offering is
+  // in a proof/seeded run before passing true; live institutional data
+  // must use calibrated banding.
+  applyDemoOperationalBanding?: boolean
 }) {
   const {
     attendancePct,
@@ -1578,6 +1583,7 @@ function computeRiskFromActiveModelOrPolicy(input: {
     semesterProgress = 1,
     prerequisiteSummary,
     sourceRefs = null,
+    applyDemoOperationalBanding = false,
   } = input
   const featurePayload = buildObservableFeaturePayload({
     attendancePct,
@@ -1622,7 +1628,7 @@ function computeRiskFromActiveModelOrPolicy(input: {
     featurePayload,
     sourceRefs,
     productionModel: activeModel,
-    bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
+    bandThresholdsOverride: applyDemoOperationalBanding ? PROOF_DEMO_OPERATIONAL_THRESHOLDS : null,
   })
   return {
     riskProb: inference.riskProb,
@@ -3556,6 +3562,10 @@ async function buildAcademicBootstrap(
         semesterProgress: authoritativeSemesterProgress,
         prerequisiteSummary,
         sourceRefs: liveSourceRefs,
+        // Gate the operational urgency overlay behind the proof-scope
+        // signal. Real institutional offerings (no proof run owning the
+        // batch) keep calibrated banding semantics.
+        applyDemoOperationalBanding: proofScopeActive,
       })
       const quizRawTotal = ['quiz1', 'quiz2'].reduce((sum, key) => sum + (assessmentMap[key]?.score ?? 0), 0)
       const reasons = risk.riskProb >= 0.35
