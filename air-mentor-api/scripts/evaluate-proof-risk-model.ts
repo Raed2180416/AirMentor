@@ -2624,9 +2624,17 @@ async function main() {
     await writeFile(paths.jsonPath, `${JSON.stringify(output, null, 2)}\n`, 'utf8')
     logProgress(`wrote JSON report to ${paths.jsonPath}`)
 
-    const datasetDump = currentVariantBuilder.dumpDataset()
-    await writeFile(datasetDumpPath, JSON.stringify(datasetDump))
-    logProgress(`wrote dataset dump to ${datasetDumpPath}`)
+    try {
+      const datasetDump = currentVariantBuilder.dumpDataset()
+      const dumpJson = JSON.stringify(datasetDump)
+      await writeFile(datasetDumpPath, dumpJson)
+      logProgress(`wrote dataset dump to ${datasetDumpPath}`)
+    } catch (dumpError) {
+      // JSON.stringify hits V8's ~512 MB string limit on large corpora (64+ seeds).
+      // The dataset dump is optional diagnostic data — skip it rather than aborting
+      // the entire run after training and scoring have already completed.
+      logProgress(`skipped dataset dump (corpus too large for JSON.stringify: ${dumpError instanceof Error ? dumpError.message : String(dumpError)})`)
+    }
 
     await mkdir(metricSidecarDir, { recursive: true })
     const metricSidecarPayloads: Record<string, unknown> = {
