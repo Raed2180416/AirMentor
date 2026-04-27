@@ -22,6 +22,7 @@
 | 17. Configurability | PASS for representative checks; restart-driven reset is canonical ✅ |
 | 18. Browser screenshots | PARTIAL — captured via Playwright nix shell where time allowed; otherwise verified via API artifacts ⚠️ |
 | 19. GitHub Pages live | PARTIAL — bundle deploys; mixed-content blocks Pages→laptop API ⚠️ |
+| 19b. ngrok bridge for Pages | EVALUATED 2026-04-27, **RED**. Tunnel + CORS work; browser drops cookies cross-site because seeded backend emits `SameSite=Lax` instead of `None` regardless of env. Local frontend + local backend remains the single primary path. See `@/home/raed/projects/air-mentor-ui/docs/demo/ngrok-evaluation-2026-04-27.md` ❌ |
 | 20. Lightning ML | NOT BLOCKING — current-v8 synthetic baseline used ✅ |
 
 ## Outstanding P0 issues

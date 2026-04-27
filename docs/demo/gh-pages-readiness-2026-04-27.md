@@ -56,6 +56,20 @@ We choose Option 1 + Option 3.
   flow, with the explicit framing that "Pages hosts the bundle, the
   API is the laptop tonight".
 
+## ngrok bridge: evaluated and rejected for tomorrow (2026-04-27)
+
+A 75-minute time-boxed evaluation of the existing ngrok setup
+(`@/home/raed/projects/air-mentor-ui/docs/demo/ngrok-evaluation-2026-04-27.md`) confirmed:
+
+- Tunnel comes up fine, CORS preflight passes, POST login returns 200
+  via the Pages origin.
+- BUT browsers refuse the session cookie because the seeded backend
+  consistently emits `SameSite=Lax` (no `Secure`), even with
+  `SESSION_COOKIE_SAME_SITE=none` and `SESSION_COOKIE_SECURE=true` in
+  the environment. Authenticated GETs from Pages → ngrok return 401.
+- Decision: **RED**, do not promote ngrok for tomorrow. Keep local
+  frontend + local backend as the single primary path.
+
 ## Verification
 
 | Check | Result |
