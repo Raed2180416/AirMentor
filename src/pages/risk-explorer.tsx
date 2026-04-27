@@ -56,6 +56,10 @@ function renderHeadHelper(display: ApiRiskHeadDisplay | undefined, baseHelper: s
   return pieces.join(' · ')
 }
 
+function formatEvidencePct(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value)}%` : 'Not recorded yet'
+}
+
 function renderFeatureCompletenessLabel(featureCompleteness: ApiFeatureCompleteness | null) {
   if (!featureCompleteness) return 'Unavailable'
   return featureCompleteness.fallbackMode === 'graph-aware' ? 'Graph aware' : 'Policy only'
@@ -439,9 +443,9 @@ export function RiskExplorerPage({
                 <Card data-proof-section="current-evidence" style={{ padding: 16, display: 'grid', gap: 10 }}>
                   <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Current Evidence</div>
                   <MetricCard label="Attendance" value={`${explorer.currentEvidence.attendancePct}%`} helper="Checkpoint-visible attendance only." />
-                  <MetricCard label="TT1 / TT2" value={`${explorer.currentEvidence.tt1Pct}% / ${explorer.currentEvidence.tt2Pct}%`} helper="Observed term-test evidence." />
-                  <MetricCard label="Quiz / Assignment" value={`${explorer.currentEvidence.quizPct}% / ${explorer.currentEvidence.assignmentPct}%`} helper="Coursework evidence." />
-                  <MetricCard label="SEE" value={`${explorer.currentEvidence.seePct}%`} helper="SEE evidence where available in the selected window." />
+                  <MetricCard label="TT1 / TT2" value={`${formatEvidencePct(explorer.currentEvidence.tt1Pct)} / ${formatEvidencePct(explorer.currentEvidence.tt2Pct)}`} helper="Observed term-test evidence." />
+                  <MetricCard label="Quiz / Assignment" value={`${formatEvidencePct(explorer.currentEvidence.quizPct)} / ${formatEvidencePct(explorer.currentEvidence.assignmentPct)}`} helper="Coursework evidence." />
+                  <MetricCard label="SEE" value={formatEvidencePct(explorer.currentEvidence.seePct)} helper="SEE evidence where available in the selected window." />
                   <MetricCard label="Focus Outcomes / Weak Questions" value={`${explorer.currentEvidence.weakCoCount} / ${explorer.currentEvidence.weakQuestionCount}`} helper="Observed weakness counts only." />
                 </Card>
               )}

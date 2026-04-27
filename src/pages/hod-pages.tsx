@@ -26,8 +26,8 @@ function toRiskBand(band?: string | null): RiskBand | null {
   return null
 }
 
-function formatPercent(value: number) {
-  return `${Math.round(value)}%`
+function formatPercent(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value)}%` : 'Not recorded yet'
 }
 
 function formatHours(value: number) {

@@ -16,6 +16,7 @@ import type {
   StageCourseProjectionSource,
   StageEvidenceSnapshot,
 } from './msruas-proof-control-plane.js'
+import { nullablePct } from './proof-evidence-normalization.js'
 import {
   applyRealizationToEvidenceSnapshot,
   type EvidenceApplierInterventionInput,
@@ -134,23 +135,23 @@ function summarizeCoRows(rows: Array<typeof studentCoStates.$inferSelect>) {
       const state = parseJson(row.stateJson, {} as Record<string, unknown>)
       const scoreHistory = parseJson(
         JSON.stringify(state.coObservedScoreHistory ?? {}),
-        { tt1Pct: 0, tt2Pct: 0, seePct: 0 },
-      ) as { tt1Pct: number; tt2Pct: number; seePct: number }
+        {},
+      ) as { tt1Pct?: unknown; tt2Pct?: unknown; seePct?: unknown }
       return {
         coCode: row.coCode,
         coTitle: row.coTitle,
         trend: String(state.coTrend ?? 'flat'),
         topics: parseJson(JSON.stringify(state.topics ?? []), [] as string[]),
         evidenceMode: String(state.coEvidenceMode ?? 'fallback-simulated'),
-        tt1Pct: Number(scoreHistory.tt1Pct ?? 0),
-        tt2Pct: Number(scoreHistory.tt2Pct ?? 0),
-        seePct: Number(scoreHistory.seePct ?? 0),
+        tt1Pct: nullablePct(scoreHistory.tt1Pct),
+        tt2Pct: nullablePct(scoreHistory.tt2Pct),
+        seePct: nullablePct(scoreHistory.seePct),
         transferGap: Number(state.coTransferGap ?? 0),
       }
     })
     .sort((left, right) => {
-      const leftStrength = Math.min(left.tt2Pct, left.seePct)
-      const rightStrength = Math.min(right.tt2Pct, right.seePct)
+      const leftStrength = Math.min(left.tt2Pct ?? 100, left.seePct ?? 100)
+      const rightStrength = Math.min(right.tt2Pct ?? 100, right.seePct ?? 100)
       return leftStrength - rightStrength || left.coCode.localeCompare(right.coCode)
     })
 }
@@ -200,10 +201,12 @@ function stageWeakCourseOutcomes(rows: Array<typeof studentCoStates.$inferSelect
   return summarizeCoRows(rows)
     .filter(row => {
       if (stageKey === 'pre-tt1') return false
-      if (stageKey === 'post-tt1') return row.tt1Pct < 45
-      if (stageKey === 'post-tt2') return row.tt2Pct < 45
-      if (stageKey === 'post-assignments') return row.tt2Pct < 45
-      return Math.min(row.tt2Pct || 100, row.seePct || 100) < 45 || row.seePct < 45
+      if (stageKey === 'post-tt1') return row.tt1Pct != null && row.tt1Pct < 45
+      if (stageKey === 'post-tt2') return row.tt2Pct != null && row.tt2Pct < 45
+      if (stageKey === 'post-assignments') return row.tt2Pct != null && row.tt2Pct < 45
+      const tt2 = row.tt2Pct ?? 100
+      const see = row.seePct ?? 100
+      return Math.min(tt2, see) < 45 || (row.seePct != null && row.seePct < 45)
     })
     .slice(0, 6)
 }
@@ -994,5 +997,6 @@ export function ceShortfallLabel(source: StageCourseProjectionSource, policy: Re
 
 export function seeShortfallLabel(source: StageCourseProjectionSource, policy: ResolvedPolicy) {
   const seeMinimumPct = (policy.passRules.minimumSeeMark / policy.passRules.seeMaximum) * 100
+  if (source.seePct == null) return 0 as const
   return source.seePct < seeMinimumPct ? 1 as const : 0 as const
 }

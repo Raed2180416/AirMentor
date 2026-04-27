@@ -17,6 +17,7 @@ import {
   teacherAllocations,
   teacherLoadProfiles,
 } from '../db/schema.js'
+import { nullablePct } from './proof-evidence-normalization.js'
 import { parseObservedStateRow } from './proof-observed-state.js'
 import type { StageCourseProjectionSource } from './msruas-proof-control-plane.js'
 
@@ -283,12 +284,12 @@ export async function preparePlaybackRebuildContext(
             courseFamily: curriculumNode?.assessmentProfile ?? 'general',
             attendanceHistory: deps.parseJson(JSON.stringify(record.attendanceHistory ?? []), [] as AttendanceHistoryEntry[]),
             attendancePct: Number(record.attendancePct ?? 0),
-            tt1Pct: Number(record.tt1Pct ?? 0),
-            tt2Pct: Number(record.tt2Pct ?? 0),
-            quizPct: Number(record.quizPct ?? 0),
-            assignmentPct: Number(record.assignmentPct ?? 0),
+            tt1Pct: nullablePct(record.tt1Pct),
+            tt2Pct: nullablePct(record.tt2Pct),
+            quizPct: nullablePct(record.quizPct),
+            assignmentPct: nullablePct(record.assignmentPct),
             cePct: Number(record.cePct ?? 0),
-            seePct: Number(record.seePct ?? 0),
+            seePct: nullablePct(record.seePct),
             finalMark: Number(record.score ?? 0),
             result: String(record.result ?? 'Unknown'),
             previousCgpa: previousSummary.cgpa,
@@ -321,12 +322,12 @@ export async function preparePlaybackRebuildContext(
         courseFamily: curriculumNode?.assessmentProfile ?? 'general',
         attendanceHistory: deps.parseJson(JSON.stringify(payload.attendanceHistory ?? []), [] as AttendanceHistoryEntry[]),
         attendancePct: Number(payload.attendancePct ?? 0),
-        tt1Pct: Number(payload.tt1Pct ?? 0),
-        tt2Pct: Number(payload.tt2Pct ?? 0),
-        quizPct: Number(payload.quizPct ?? 0),
-        assignmentPct: Number(payload.assignmentPct ?? 0),
+        tt1Pct: nullablePct(payload.tt1Pct),
+        tt2Pct: nullablePct(payload.tt2Pct),
+        quizPct: nullablePct(payload.quizPct),
+        assignmentPct: nullablePct(payload.assignmentPct),
         cePct: Number(payload.cePct ?? 0),
-        seePct: Number(payload.seePct ?? 0),
+        seePct: nullablePct(payload.seePct),
         finalMark: Number(payload.finalMark ?? 0),
         result: String(payload.result ?? 'Unknown'),
         previousCgpa: previousSummary.cgpa,

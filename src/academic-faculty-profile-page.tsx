@@ -35,6 +35,10 @@ function formatDateLabel(value?: string | null) {
   return parsed.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+function formatEvidencePct(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value)}%` : 'Not recorded yet'
+}
+
 function describeCalendarMarkerType(markerType: ApiAdminCalendarMarker['markerType']) {
   if (markerType === 'semester-start') return 'Semester Start'
   if (markerType === 'semester-end') return 'Semester End'
@@ -471,7 +475,7 @@ export function FacultyProfilePage({
                             {item.studentName} · {item.courseCode} · {item.riskBand} · {humanLabelForActionCode(item.recommendedAction) ?? 'No action'}
                           </div>
                           <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.7 }}>
-                            Evidence: attendance {item.observedEvidence.attendancePct}%, TT1 {item.observedEvidence.tt1Pct}%, TT2 {item.observedEvidence.tt2Pct}%, quiz {item.observedEvidence.quizPct}%, assignment {item.observedEvidence.assignmentPct}%, SEE {item.observedEvidence.seePct}%, weak COs {item.observedEvidence.weakCoCount}, weak questions {item.observedEvidence.weakQuestionCount}, CGPA {item.observedEvidence.cgpa}, backlogs {item.observedEvidence.backlogCount}.
+                            Evidence: attendance {formatEvidencePct(item.observedEvidence.attendancePct)}, TT1 {formatEvidencePct(item.observedEvidence.tt1Pct)}, TT2 {formatEvidencePct(item.observedEvidence.tt2Pct)}, quiz {formatEvidencePct(item.observedEvidence.quizPct)}, assignment {formatEvidencePct(item.observedEvidence.assignmentPct)}, SEE {formatEvidencePct(item.observedEvidence.seePct)}, weak COs {item.observedEvidence.weakCoCount}, weak questions {item.observedEvidence.weakQuestionCount}, CGPA {item.observedEvidence.cgpa}, backlogs {item.observedEvidence.backlogCount}.
                           </div>
                           {item.observedEvidence.interventionRecoveryStatus ? (
                             <div style={{ ...mono, fontSize: 10, color: T.dim }}>
