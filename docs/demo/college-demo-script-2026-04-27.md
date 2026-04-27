@@ -86,12 +86,25 @@ If anything fails: read the troubleshooting table in
 
 - Reopen the student's risk explorer.
 
-> "Probability moved from 0.6257 to 0.6330. The band did NOT flip
-> because we did not cross the high-risk threshold of 0.7. That is
-> honest behavior. The driver panel now attributes the new risk to
-> the attendance drop."
+> "The calibrated risk probability moved from 0.6257 to 0.6330 and
+> the operational band stayed at the same level. That is honest
+> behavior — the calibrated probability changed by what the new
+> evidence actually justifies, and the displayed band reflects
+> operational urgency, not a re-quote of the probability. The driver
+> panel now attributes the new risk to the attendance drop."
 
 (Restore attendance with another save, optional.)
+
+### Operational banding caveat (read once, when High first appears)
+
+> "A note on the High / Medium / Low band you see on screen. The
+> band is an *operational urgency* classification — it tells you who
+> to act on first. It is not a re-quote of the calibrated
+> probability. The calibrated probability stays where the trained
+> model put it. The operational High threshold is set so that
+> evidence-supported severe cases surface as actionable, while clean
+> early-semester cohorts stay Low. Sem 1 pre-TT1 is conservative on
+> purpose — there is no prior history to score from."
 
 ## 8. Stage advance, evidence reveal (90s)
 
@@ -100,33 +113,45 @@ If anything fails: read the troubleshooting table in
 > "Watch what happens when we move to the start of semester 1, before
 > TT1 closes."
 
-- Show the cohort: 0 low / 120 medium / 0 high. No queue. No
+- Show the cohort: 120 low / 0 medium / 0 high. No queue. No
   recommendations.
 
 > "There is no prior CGPA, no backlog, no prerequisite history at
-> this point. The system refuses to overclaim."
+> this point. The system refuses to overclaim — every student is
+> banded Low until evidence arrives."
 
 - Activate sem 1 post-TT1 view.
 
-> "TT1 evidence comes in. The cohort moves to all-low because the
-> seeded sem 1 cohort performs well on TT1. Risk delta minus 4.8."
+> "TT1 evidence comes in. The cohort stays in Low because the seeded
+> sem 1 cohort performs well on TT1. The first High urgency cases
+> only emerge after the SEE checkpoint at the end of sem 1."
+
+- Activate sem 2 pre-TT1.
+
+> "Now we are at the start of semester 2. Prior CGPA and backlogs
+> from sem 1 are real. Nine students reach the operational High
+> band purely from prior history. Diya Iyer stays Low because her
+> sem 1 was clean. Yash Reddy sits at the High boundary as Medium
+> because he carries three sem-1 backlogs."
 
 - Activate sem 4 pre-TT1.
 
-> "Now we are at the start of semester 4. Prior history is rich.
-> Sixteen students start with a low-risk band purely from the prior
-> CGPA / backlog / prerequisite signal. The pre-TT1 view DOES use
-> historical evidence when it is available."
+> "At the start of semester 4 the prior-history signal dominates.
+> Fifty-three students start in the operational High band purely
+> from accumulated CGPA, backlog, and prerequisite pressure. The
+> pre-TT1 view DOES use historical evidence when it is available."
 
 ## 9. Queue + recommendation (60s)
 
 - Activate sem 6 post-TT1.
 - Open the queue panel.
 
-> "Twenty-two queue cases open at post-TT1 — that's the first stage
-> the system asks the teacher to act. Each row carries a
-> recommended action: attendance recovery, targeted tutoring,
-> prerequisite bridge, or pre-SEE rescue."
+> "At sem 6 post-TT1, the operational queue surfaces the High urgency
+> cohort first. Each row carries a recommended action: attendance
+> recovery, targeted tutoring, prerequisite bridge, or pre-SEE
+> rescue. Note that the band is operational urgency, not a
+> probability re-quote — the calibrated probability is still shown
+> on the row for transparency."
 
 ## 9b. Marks progression story (90s)
 
@@ -156,12 +181,16 @@ Then add the caveat:
 > flow and plausible governance behavior, not claiming production
 > academic calibration."
 
-Safe students:
+Safe students (with operational bands at sem 2/3 pre-TT1):
 
-- Diya Iyer (`mnc_student_030`) — clean strong observed coursework.
-- Yash Reddy (`mnc_student_079`) — attendance/carryover risk.
-- Mira Patel (`mnc_student_096`) — academic weakness / tutoring.
-- Aarav Reddy (`mnc_student_061`) — prerequisite/carryover history.
+- Diya Iyer (`mnc_student_030`) — clean strong observed coursework;
+  Low at sem 2 pre-TT1.
+- Yash Reddy (`mnc_student_079`) — three sem-1 backlogs; sits at the
+  High boundary as Medium at sem 2 pre-TT1.
+- Mira Patel (`mnc_student_096`) — four backlogs; **High** at sem 3
+  pre-TT1 from prior history alone.
+- Aarav Reddy (`mnc_student_061`) — seven backlogs; **High** at
+  sem 3 pre-TT1 from prior history alone.
 - Arjun Reddy (`mnc_student_069`) — borderline pass/fail concern.
 
 Guardrail:
@@ -241,6 +270,9 @@ Guardrail:
 3. "CatBoost is integrated." — research, not demo.
 4. "B1 mark realism is enabled." — synthetic baseline only.
 5. "We have institutional data onboarded." — proof sandbox only.
+6. "The High band means X% chance of failure." — High is
+   operational urgency, not a probability re-quote. Cite the
+   calibrated probability on the row instead.
 
 ## Things to SAY proudly
 
