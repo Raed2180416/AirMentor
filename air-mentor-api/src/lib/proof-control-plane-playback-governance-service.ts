@@ -38,6 +38,7 @@ import {
   scoreObservableRiskWithModel,
 } from './proof-risk-model.js'
 import { roundNullablePct } from './proof-evidence-normalization.js'
+import { PROOF_DEMO_OPERATIONAL_THRESHOLDS } from './proof-demo-operational-band.js'
 import { buildMonitoringDecision } from './monitoring-engine.js'
 import {
   governProofQueueStage,
@@ -309,6 +310,7 @@ function buildStageCandidate(
     sourceRefs,
     productionModel: input.activeRiskArtifacts.production,
     correlations: input.activeRiskArtifacts.correlations,
+    bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
   })
   const policyComparison = buildActionPolicyComparison({
     stageKey: stage.key,
@@ -383,6 +385,7 @@ function buildStageCandidate(
     sourceRefs,
     productionModel: input.activeRiskArtifacts.production,
     correlations: input.activeRiskArtifacts.correlations,
+    bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
   })
   const riskProbScaled = Math.round(inference.riskProb * 100)
   const noActionRiskProbScaled = Math.round(noActionInference.riskProb * 100)

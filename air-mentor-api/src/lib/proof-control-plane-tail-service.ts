@@ -37,6 +37,7 @@ import {
 import { parseJson } from './json.js'
 import { pickMostRecentActiveRun } from './proof-active-run.js'
 import { nullablePct } from './proof-evidence-normalization.js'
+import { PROOF_DEMO_OPERATIONAL_THRESHOLDS } from './proof-demo-operational-band.js'
 import { parseObservedStateRow } from './proof-observed-state.js'
 import {
   type FacultyProofViewerRole,
@@ -858,6 +859,7 @@ async function loadProofRiskInferenceContext(db: AppDb, input: {
       sourceRefs,
       productionModel: activeArtifacts.production,
       correlations: activeArtifacts.correlations,
+      bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
     })
     : null
 
