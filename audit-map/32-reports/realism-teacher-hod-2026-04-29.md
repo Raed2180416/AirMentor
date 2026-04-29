@@ -22,6 +22,8 @@ Evidence:
 - Session/role payload read from `air-mentor-api/src/modules/session.ts:39-88`.
 - API full-walk artifact: `/tmp/airmentor-demo-logs/realism-2026-04-29/full-walk/walk-summary.json`.
 - Role-switch precision probe output was captured in terminal and reflected in this report.
+- Browser smoke summary: `/tmp/airmentor-demo-logs/realism-2026-04-29/browser/browser-smoke-summary.json`.
+- Browser screenshots: `hod-proof-analytics.png`, `hod-counterfactual.png`, `course-leader.png`, `mentor.png`, `system-admin-app.png`.
 
 ## Teacher Operations Matrix
 
@@ -62,6 +64,15 @@ Sysadmin negative check:
 - Sysadmin received 403 on scoped HoD summary endpoints.
 - This is strict role boundary behavior. If the product intends sysadmin override, routes must change; current route code requires `HOD` for those surfaces.
 
+## Browser Role Evidence
+
+- HoD browser flow rendered `data-proof-surface="hod-proof-analytics"` and captured `/tmp/airmentor-demo-logs/realism-2026-04-29/browser/hod-proof-analytics.png`.
+- HoD counterfactual browser flow clicked `Counterfactual Impact`, observed simulator response 200, and captured `/tmp/airmentor-demo-logs/realism-2026-04-29/browser/hod-counterfactual.png`.
+- Counterfactual copy was checked for prohibited causal framing; `prohibitedCopyFound=false`.
+- Course leader browser flow rendered scoped dashboard/proof overlay and captured `/tmp/airmentor-demo-logs/realism-2026-04-29/browser/course-leader.png`.
+- Mentor browser flow rendered mentee scope/proof overlay and captured `/tmp/airmentor-demo-logs/realism-2026-04-29/browser/mentor.png`.
+- Browser network failures were 0; the only non-OK browser responses were three `/api/preferences/ui` 409 stale-version conflicts.
+
 ## Permission And Scope Findings
 
 1. **HOD grant is not the same as active HOD role.**
@@ -88,19 +99,18 @@ Course leaders see course offerings. Mentor-only user sees zero courses, which i
 
 ## Blockers
 
-- **Browser blocker:** no Chrome installed, so HoD UI role switch was API-verified only.
 - **Edit-persistence blocker:** attendance/marks edit was not actually mutated and re-read.
 - **Manual demo blocker:** if user logs in as `devika.shetty` and does not switch role, HoD page will 403.
+- **Console-noise blocker:** `/api/preferences/ui` stale-version 409s remain visible in browser logs.
 
 ## Reverification Needed
 
-- Browser-run HoD role switch and confirm HoD dashboard renders.
 - Perform one bounded teacher edit on a safe fixture, recompute, and re-read affected risk/queue row.
-- Verify mentor page shows expected mentee scope, not merely zero courses.
-- Verify counterfactual panel UI always supplies `runId` and labels projection as simulated.
+- Keep manual HoD role switch explicit in the demo script.
+- Fix or suppress stale-version UI preference conflicts before polished demo.
 
 ## Verdict
 
 **Teacher/HoD verdict: CONDITIONAL PASS.**
 
-Permission boundaries are mostly correct and strict. HoD analytics work after explicit role switch. Remaining gap is browser proof and actual edit-persistence proof.
+Permission boundaries are mostly correct and strict. HoD analytics, counterfactual, course leader, and mentor surfaces now have browser evidence. Remaining gaps are actual edit-persistence proof and UI preference 409 cleanup.

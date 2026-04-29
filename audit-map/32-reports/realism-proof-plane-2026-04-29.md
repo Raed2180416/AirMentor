@@ -103,17 +103,17 @@ Sem 6 post-SEE reports `playbackAccessible=false` with reason: playback is block
 
 - **Demo-prep blocker:** Run recompute/readiness before browser demo; otherwise checkpoints may appear absent.
 - **Playback blocker:** Resolve or explain the Sem 2 post-TT1 queue blocker before Sem 6 playback.
-- **Browser evidence blocker:** UI rendering not proven because Chrome is absent.
+- **Browser caveat:** Browser smoke now renders current active checkpoint proof overlays, but it did not resolve or click through the blocked Sem 6 playback path.
 
 ## Reverification Needed
 
 - Rerun precision probe after queue resolution.
 - Confirm Sem 6 post-SEE `playbackAccessible=true` if demo requires clicking playback.
-- Rerun browser UI once Chrome/Chromium is installed.
 - Capture checkpoint detail rows for at least five named students and compare evidence timing.
+- Re-run browser smoke after queue preparation if final demo includes Sem 6 playback.
 
 ## Verdict
 
-**Proof-plane verdict: PASS for API realism, CONDITIONAL for browser demo.**
+**Proof-plane verdict: PASS for API realism, CONDITIONAL for final playback demo.**
 
-The 6×5 proof-plane exists and the risk trajectory is coherent. The main demo risk is operational: readiness/recompute and queue-resolution must be done before the final browser walkthrough.
+The 6×5 proof-plane exists and the risk trajectory is coherent. Browser rendering is now proven for active proof overlays, but the main demo risk remains operational: readiness/recompute and queue-resolution must be done before any final-stage playback walkthrough.
