@@ -14,15 +14,15 @@
 
 Read and cross-checked the following owner files and handoff documents:
 
-- `docs/demo/risk-band-realism-audit-2026-04-27.md` — root cause analysis and sensitivity audit
+- `docs/demo/risk-band-realism-audit-2026-04-27.md:1–266` — root cause analysis and sensitivity audit
 - `air-mentor-api/src/lib/proof-risk-model.ts:2099–2203` — `scoreObservableRiskWithModel` with override path
-- `air-mentor-api/src/lib/proof-demo-operational-band.ts` — overlay constants and `deriveProofDemoOperationalBand`
+- `air-mentor-api/src/lib/proof-demo-operational-band.ts:1–116` — overlay constants and `deriveProofDemoOperationalBand`
 - `air-mentor-api/src/lib/inference-engine.ts:1–191` — heuristic driver generation and riskProb accumulation
 - `air-mentor-api/src/lib/proof-recommendation-text-generator.ts:1–280` — recommendation and rationale templates
 - `air-mentor-api/src/lib/proof-queue-governance.ts:1–120` — queue governance rate limits
 - `air-mentor-api/tests/proof-demo-operational-band.test.ts:1–330` — 16 test cases for override path
 - `air-mentor-api/tests/proof-risk-model.test.ts:1–80` — training and scoring test scaffold
-- `docs/demo/demo-safe-student-picks-2026-04-27.md` — named student evidence
+- `docs/demo/demo-safe-student-picks-2026-04-27.md:1–61` — named student evidence
 - `docs/demo/college-demo-script-2026-04-27.md` — verbatim demo lines
 - `scripts/analyze-trajectory-realism.mjs:1–60` — archetype and faculty seed definitions
 
