@@ -1,0 +1,14 @@
+purpose: |
+  Merge all independent realism audits into one defensible verdict. Preserve dissent, elevate browser blockers, and produce a prioritized fix and re-verification queue.
+nonneg:
+  - Keep intent and feature intent at the front of every judgment
+  - Do not modify product code; write audit artifacts only
+  - Browser blockers override API-only green claims
+  - Future evidence leaks and fake probability or causal claims are critical unless disproven
+  - Separate demo blockers, must-fix before demo, caveat-acceptable items, and production debt
+owner_files:
+  - audit-map/32-reports/realism-browser-e2e-2026-04-29.md
+  - audit-map/32-reports/realism-proof-plane-2026-04-29.md
+  - audit-map/32-reports/realism-teacher-hod-2026-04-29.md
+  - audit-map/32-reports/realism-ml-sanity-2026-04-29.md
+  - audit-map/32-reports/realism-readiness-security-2026-04-29.md

@@ -1,0 +1,27 @@
+artifacts:
+  - path: audit-map/32-reports/realism-readiness-security-2026-04-29.md
+    min_lines: 100
+    min_bytes: 4500
+    write_mode: replace
+    required_sections:
+      - '# Readiness And Security Audit — 2026-04-29'
+      - '## Intent And Feature Intent'
+      - '## Method'
+      - '## Real Data Contract'
+      - '## Import Validation Gates'
+      - '## Privacy Security And Audit Gates'
+      - '## Model Governance Gates'
+      - '## Real Data Validation Gates'
+      - '## Operational Readiness Gates'
+      - '## Blockers'
+      - '## Demo-Safe Caveats'
+      - '## Verdict'
+  - path: audit-map/24-agent-memory/realism-readiness-security-2026-04-29.md
+    min_lines: 12
+    min_bytes: 600
+    write_mode: replace
+    required_sections:
+      - '# Readiness Security Handoff — 2026-04-29'
+      - '## Tested'
+      - '## Blockers'
+      - '## Next Actions'

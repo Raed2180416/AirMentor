@@ -1,0 +1,17 @@
+purpose: |
+  Teacher and HoD operations realism audit. Verify real permission scope, editability, persistence, risk recompute, queue/recommendation explanation, session restore, and HoD analytics through realistic faculty workflows.
+nonneg:
+  - Keep intent and feature intent at the front of every judgment
+  - Do not modify product code; write audit artifacts only
+  - Teacher must see assigned scope and not unrelated scope
+  - Marks edits must be valid only at valid stages
+  - HoD counterfactuals must not claim causal proof
+  - Every finding must separate browser evidence from API support
+owner_files:
+  - src/pages/course-pages.tsx
+  - src/pages/hod-pages.tsx
+  - src/academic-session-shell.tsx
+  - air-mentor-api/src/modules/academic.ts
+  - air-mentor-api/src/lib/proof-control-plane-hod-service.ts
+  - air-mentor-api/src/lib/proof-counterfactual-simulator-aggregator.ts
+  - tests-e2e/specs/flow-9-hod-cycle.spec.ts
