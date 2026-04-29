@@ -1,0 +1,17 @@
+purpose: |
+  Six-semester proof-plane realism audit across every stage and all students. Verify stage evidence availability, prior-history rules, risk explanations, queue state, calendar state, and recommendations against realistic academic use.
+nonneg:
+  - Keep intent and feature intent at the front of every judgment
+  - Do not modify product code; write audit artifacts only
+  - Cover 6 semesters × 5 stages, not only named students
+  - Sem 1 pre-TT1 must not invent prior CGPA, backlog, or prerequisite history
+  - Later pre-TT1 stages may use prior history only when actually available
+  - Future evidence leaks are critical findings
+owner_files:
+  - air-mentor-api/src/lib/proof-control-plane-stage-summary-service.ts
+  - air-mentor-api/src/lib/proof-control-plane-dashboard-service.ts
+  - air-mentor-api/src/lib/proof-control-plane-runtime-service.ts
+  - air-mentor-api/src/lib/proof-risk-model.ts
+  - air-mentor-api/src/lib/proof-observed-state.ts
+  - air-mentor-api/src/lib/proof-provenance.ts
+  - scripts/analyze-trajectory-realism.mjs

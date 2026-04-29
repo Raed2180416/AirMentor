@@ -1,0 +1,89 @@
+# AirMentor realism verification DAG — 2026-04-29
+
+defaults:
+  context: pipeline
+  idle_timeout_s: 2700
+  hard_timeout_s: 21600
+  max_attempts: 2
+
+nodes:
+  - id: realism-browser-e2e
+    pass: realism-browser-e2e
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    require_provider: codex
+    prompt_file: audit-map/20-prompts/realism/realism-browser-e2e.md
+    intent_file: pipeline/agents/manifests/realism-browser-e2e.intent.yaml
+    manifest_file: pipeline/agents/manifests/realism-browser-e2e.artifacts.yaml
+    write_scope_glob: 'audit-map/32-reports/realism-browser-e2e-2026-04-29.md;audit-map/24-agent-memory/realism-browser-e2e-2026-04-29.md'
+    parallel_group: realism-audit
+    priority: 100
+
+  - id: realism-proof-plane
+    pass: realism-proof-plane
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    require_provider: codex
+    prompt_file: audit-map/20-prompts/realism/realism-proof-plane.md
+    intent_file: pipeline/agents/manifests/realism-proof-plane.intent.yaml
+    manifest_file: pipeline/agents/manifests/realism-proof-plane.artifacts.yaml
+    write_scope_glob: 'audit-map/32-reports/realism-proof-plane-2026-04-29.md;audit-map/24-agent-memory/realism-proof-plane-2026-04-29.md'
+    parallel_group: realism-audit
+    priority: 98
+
+  - id: realism-teacher-hod
+    pass: realism-teacher-hod
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    require_provider: codex
+    prompt_file: audit-map/20-prompts/realism/realism-teacher-hod.md
+    intent_file: pipeline/agents/manifests/realism-teacher-hod.intent.yaml
+    manifest_file: pipeline/agents/manifests/realism-teacher-hod.artifacts.yaml
+    write_scope_glob: 'audit-map/32-reports/realism-teacher-hod-2026-04-29.md;audit-map/24-agent-memory/realism-teacher-hod-2026-04-29.md'
+    parallel_group: realism-audit
+    priority: 96
+
+  - id: realism-ml-sanity
+    pass: realism-ml-sanity
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/realism/realism-ml-sanity.md
+    intent_file: pipeline/agents/manifests/realism-ml-sanity.intent.yaml
+    manifest_file: pipeline/agents/manifests/realism-ml-sanity.artifacts.yaml
+    write_scope_glob: 'audit-map/32-reports/realism-ml-sanity-2026-04-29.md;audit-map/24-agent-memory/realism-ml-sanity-2026-04-29.md'
+    parallel_group: realism-audit
+    priority: 94
+
+  - id: realism-readiness-security
+    pass: realism-readiness-security
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/realism/realism-readiness.md
+    intent_file: pipeline/agents/manifests/realism-readiness-security.intent.yaml
+    manifest_file: pipeline/agents/manifests/realism-readiness-security.artifacts.yaml
+    write_scope_glob: 'audit-map/32-reports/realism-readiness-security-2026-04-29.md;audit-map/24-agent-memory/realism-readiness-security-2026-04-29.md'
+    parallel_group: realism-audit
+    priority: 92
+
+  - id: realism-merge-verdict
+    pass: realism-merge-verdict
+    task_class: high-stakes
+    risk_class: high
+    reasoning_effort: xhigh
+    prompt_file: audit-map/20-prompts/realism/realism-merge-verdict.md
+    intent_file: pipeline/agents/manifests/realism-merge-verdict.intent.yaml
+    manifest_file: pipeline/agents/manifests/realism-merge-verdict.artifacts.yaml
+    write_scope_glob: 'audit-map/32-reports/realism-verdict-2026-04-29.md;audit-map/24-agent-memory/realism-merge-verdict-2026-04-29.md'
+    parallel_group: ~
+    depends_on:
+      - realism-browser-e2e
+      - realism-proof-plane
+      - realism-teacher-hod
+      - realism-ml-sanity
+      - realism-readiness-security
+    priority: 80

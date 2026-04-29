@@ -1,0 +1,16 @@
+purpose: |
+  ML realism audit for risk bands, marks, CO mappings, explanations, recommendations, calibration caveats, and governance. Judge whether outputs are defensible for a realistic college demo.
+nonneg:
+  - Keep intent and feature intent at the front of every judgment
+  - Do not modify product code; write audit artifacts only
+  - Preserve truth contract: calibrated probability and operational urgency band are distinct
+  - Flag cohort collapse, fake probability claims, causal overclaim, future evidence leaks, and missingness as zero
+  - Separate pre-demo blockers from post-demo ML improvement work
+owner_files:
+  - air-mentor-api/src/lib/proof-risk-model.ts
+  - air-mentor-api/src/lib/inference-engine.ts
+  - air-mentor-api/src/lib/proof-demo-operational-band.ts
+  - air-mentor-api/src/lib/proof-recommendation-text-generator.ts
+  - air-mentor-api/src/lib/proof-queue-governance.ts
+  - scripts/analyze-trajectory-realism.mjs
+  - air-mentor-api/scripts/evaluate-proof-risk-model.ts

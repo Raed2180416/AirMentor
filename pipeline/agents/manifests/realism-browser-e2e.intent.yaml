@@ -1,0 +1,16 @@
+purpose: |
+  Browser-first adversarial realism audit. Validate the demo as an average college evaluator using real roles, permissions, semesters, stages, and evidence timing. Do not rubber-stamp readiness.
+nonneg:
+  - Keep intent and feature intent at the front of every judgment
+  - Do not modify product code; write audit artifacts only
+  - Browser evidence outranks API-only evidence for display readiness
+  - Flag crashes, fatal console errors, infinite loading, stale inactive runs, future evidence leaks, missing evidence shown as zero, and fake probability claims
+  - Every finding must include realistic role/page/stage expectation and evidence
+owner_files:
+  - src/App.tsx
+  - src/system-admin-live-app.tsx
+  - src/pages/hod-pages.tsx
+  - src/pages/course-pages.tsx
+  - src/pages/calendar-pages.tsx
+  - tests-e2e/playwright.config.ts
+  - scripts/system-admin-proof-risk-smoke.mjs

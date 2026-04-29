@@ -1,0 +1,25 @@
+artifacts:
+  - path: audit-map/32-reports/realism-proof-plane-2026-04-29.md
+    min_lines: 90
+    min_bytes: 4000
+    write_mode: replace
+    required_sections:
+      - '# Proof-Plane Realism Audit — 2026-04-29'
+      - '## Intent And Feature Intent'
+      - '## Method'
+      - '## Six-Semester Stage Matrix'
+      - '## Whole-Student Realism Findings'
+      - '## Evidence Timing Findings'
+      - '## Queue Calendar Findings'
+      - '## Blockers'
+      - '## Reverification Needed'
+      - '## Verdict'
+  - path: audit-map/24-agent-memory/realism-proof-plane-2026-04-29.md
+    min_lines: 12
+    min_bytes: 600
+    write_mode: replace
+    required_sections:
+      - '# Proof-Plane Handoff — 2026-04-29'
+      - '## Tested'
+      - '## Blockers'
+      - '## Next Actions'
