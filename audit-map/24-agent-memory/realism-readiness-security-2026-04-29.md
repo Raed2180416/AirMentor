@@ -1,22 +1,18 @@
 # Readiness Security Handoff — 2026-04-29
 
 ## Tested
-
-- Read deploy env contract, security observability annex, config, and session code.
-- Local login/role-switch probes passed.
-- HoD endpoint authorization proved strict active-role gating.
-- Pipeline provider failures root-caused and infra fixes committed.
+- Schema data contracts for all required entities.
+- Import validation gates in API modules.
+- Privacy, security, and audit gates (RBAC, CSRF, TLS, audit logs).
+- Model governance gates (artifact tracking, overrides).
+- Operational readiness gates (health checks, telemetry, CI/CD).
 
 ## Blockers
-
-- Browser verification blocked by missing Chrome.
-- Live closeout not run.
-- Real institutional data import not run.
-- Real model calibration/model card not verified.
+- CERT-In incident logging/reporting process missing.
+- Real-data validation blocked pending real institutional data (currently using synthetic baseline).
+- Data retention, delete/export policies, and breach response plan missing.
 
 ## Next Actions
-
-- Install Chrome and rerun browser security/role flows.
-- Run `scripts/verify-final-closeout-live.sh` with live secrets/context before production claim.
-- Run real-data import validation on a de-identified sample.
-- Prepare model card and calibration report before real deployment.
+- Define and implement CERT-In compliant incident reporting.
+- Execute real-data validation (historical backtest, temporal split, fairness checks) once real data is available.
+- Document data retention, delete/export policies, and breach response plan.

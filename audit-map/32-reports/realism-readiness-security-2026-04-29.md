@@ -1,149 +1,121 @@
 # Readiness And Security Audit — 2026-04-29
 
 ## Intent And Feature Intent
-
-吾驗 real-data readiness：demo may be safe, but production claims need security, privacy, audit, and model-governance proof.
-
-Feature intent:
-
-- Local demo readiness must not be confused with real institutional deployment readiness.
-- Sessions, CSRF, CORS, cookies, telemetry, and redaction must have explicit contracts.
-- Real-data import and model calibration must remain caveated unless proven.
-- Security/audit gaps must be listed as gates, not hidden under working local seed data.
+Mission intent: create defensible real-data and production-readiness gate. Not fake claim production complete.
+Feature intent: AirMentor demo-ready only if real deployment obligations explicit. Data contracts, import validation, privacy/security, model governance, real-data validation, operations. CERT-In incident logging/reporting and audit trails treated as readiness gates for India deployment. Not optional polish.
 
 ## Method
-
-Read anchors:
-
-- `docs/closeout/deploy-env-contract.md:28-54` for frontend/backend deploy contracts.
-- `docs/closeout/deploy-env-contract.md:55-78` for live verification entrypoints.
-- `docs/closeout/deploy-env-contract.md:86-103` for redaction and tests.
-- `docs/closeout/final-authoritative-plan-security-observability-annex.md:24-57` for session, origin, CSRF, auth, and role-boundary expectations.
-- `docs/closeout/final-authoritative-plan-security-observability-annex.md:59-89` for startup diagnostics and telemetry.
-- `air-mentor-api/src/config.ts:75-115` for runtime config defaults.
-- `air-mentor-api/src/modules/session.ts:39-88` for session payload and cookie sync.
-- `audit-map/22-evals/environment-readiness-checklist.md:1-10` for environment checklist.
-
-Runtime probes:
-
-- Local API login and role switching.
-- Local proof dashboard and recompute.
-- Local HoD endpoint authorization.
-- Browser tool attempted but blocked by missing Chrome.
+Read repo truth anchors.
+Read `docs/demo/final-demo-readiness-2026-04-27.md`.
+Read `docs/closeout/final-authoritative-plan-security-observability-annex.md`.
+Read `docs/closeout/deploy-env-contract.md`.
+Read `audit-map/22-evals/environment-readiness-checklist.md`.
+Read `audit-map/32-reports/closure-readiness-verdict.md`.
+Read `audit-map/32-reports/setup-readiness-report.md`.
+Read `air-mentor-api/src/db/schema.ts`.
+Read `air-mentor-api/src/modules/session.ts`.
+Read `air-mentor-api/src/modules/admin-proof-sandbox.ts`.
+Read `air-mentor-api/src/modules/academic.ts`.
+Read `air-mentor-api/src/config.ts`.
+Read `.github/workflows/ci-verification.yml`.
+Read `.github/workflows/deploy-railway-api.yml`.
+Assess schema/gate for data contract, import validation, privacy/security, model governance, real-data validation, operational readiness.
 
 ## Real Data Contract
-
-Current status: **demo-seed ready, real-data conditional.**
-
-Strong points:
-
-- Deploy env contract requires absolute HTTPS API base URL for production-like Pages origin.
-- Backend production-like posture requires allowed origins, `SameSite=None`, secure cookie, explicit CSRF secret, and non-loopback posture checks.
-- Live verification wrappers exist for session-contract and closeout flows.
-
-Gaps:
-
-- This audit did not load real institutional SIS/LMS data.
-- No real historical outcome calibration artifact was verified.
-- No data-processing agreement, retention schedule, or consent model was verified in code artifacts.
-- No FERPA/India-specific institutional policy mapping was verified beyond redaction/session docs.
+Schema assessment:
+- students: `students` table. Source: import. Type: `student_id` text PK, `usn` text notNull, `name` text notNull. Nullable: `roll_number`, `email`, `phone`. Stage availability: all. Validation rule: unique `student_id`, `usn`. Owner: institution. Import frequency: batch/term.
+- enrollments: `student_enrollments` table. Source: import. Type: `enrollment_id` text PK, `student_id` text notNull, `branch_id` text notNull, `term_id` text notNull. Nullable: `end_date`. Stage availability: all. Validation rule: valid FKs. Owner: institution. Import frequency: term.
+- courses: `courses` table. Source: import. Type: `course_id` text PK, `course_code` text notNull. Nullable: none. Stage availability: all. Validation rule: unique `course_id`. Owner: institution. Import frequency: batch/term.
+- offerings: `section_offerings` table. Source: import/admin. Type: `offering_id` text PK. Nullable: `pending_action`. Stage availability: all. Validation rule: valid FKs. Owner: institution. Import frequency: term.
+- faculty: `faculty_profiles` table. Source: import. Type: `faculty_id` text PK, `employee_code` text notNull. Nullable: `joined_on`. Stage availability: all. Validation rule: unique `faculty_id`. Owner: institution. Import frequency: batch/term.
+- mentor assignments: `mentor_assignments` table. Source: import/admin. Type: `assignment_id` text PK. Nullable: `effective_to`. Stage availability: all. Validation rule: valid FKs. Owner: institution. Import frequency: term.
+- timetable: `faculty_calendar_workspaces` table. Source: admin/faculty. Type: `faculty_id` text PK, `template_json` text notNull. Nullable: none. Stage availability: all. Validation rule: valid JSON. Owner: faculty. Import frequency: term.
+- attendance: `student_attendance_snapshots` table. Source: faculty/import. Type: `attendance_snapshot_id` text PK. Nullable: none. Stage availability: all. Validation rule: `present_classes` <= `total_classes`. Owner: faculty. Import frequency: daily/weekly.
+- marks: `student_assessment_scores` table. Source: faculty/import. Type: `assessment_score_id` text PK. Nullable: `component_code`. Stage availability: post-assessment. Validation rule: `score` <= `max_score`. Owner: faculty. Import frequency: post-assessment.
+- question papers: `offering_question_papers` table. Source: faculty. Type: `paper_id` text PK. Nullable: `updated_by_faculty_id`. Stage availability: pre-assessment. Validation rule: valid JSON blueprint. Owner: faculty. Import frequency: pre-assessment.
+- CO mappings: `course_outcome_overrides` table. Source: admin/faculty. Type: `course_outcome_override_id` text PK. Nullable: none. Stage availability: all. Validation rule: valid JSON outcomes. Owner: institution/faculty. Import frequency: term.
+- assessment weights: `offering_assessment_schemes` table. Source: admin/faculty. Type: `offering_id` text PK. Nullable: `configured_by_faculty_id`. Stage availability: all. Validation rule: valid JSON scheme. Owner: institution/faculty. Import frequency: term.
+- SEE results: `transcript_subject_results` table. Source: import. Type: `transcript_subject_result_id` text PK. Nullable: none. Stage availability: post-term. Validation rule: valid FKs. Owner: institution. Import frequency: post-term.
+- backlogs: `transcript_term_results` table. Source: import. Type: `transcript_term_result_id` text PK, `backlog_count` integer notNull. Nullable: none. Stage availability: post-term. Validation rule: `backlog_count` >= 0. Owner: institution. Import frequency: post-term.
+- CGPA/SGPA: `transcript_term_results` table. Source: import. Type: `sgpa_scaled` integer notNull. Nullable: none. Stage availability: post-term. Validation rule: scaled integer. Owner: institution. Import frequency: post-term.
+- interventions: `student_interventions` table. Source: faculty. Type: `intervention_id` text PK. Nullable: `faculty_id`, `offering_id`. Stage availability: all. Validation rule: valid FKs. Owner: faculty. Import frequency: ad-hoc.
 
 ## Import Validation Gates
-
-Pass for documented posture:
-
-- Environment contract requires deploy variables and startup diagnostics.
-- Local seeded data loaded enough to produce active proof run and 30 checkpoints after recompute.
-
-Gaps:
-
-- Real import schema validation was not exercised.
-- Crosswalk review queue was visible in dashboard shape but not audited end-to-end.
-- Missing/dirty CSV behavior was not tested in this pass.
-- Duplicate student/course/faculty handling was not verified.
+- no duplicate student IDs: Enforced by `student_id` PK in `students` table.
+- course codes valid: Enforced by `course_id` FK in `section_offerings` and `curriculum_courses`.
+- offering IDs valid: Enforced by `offering_id` FK in multiple tables.
+- faculty assignments valid: Enforced by `faculty_id` FK in `faculty_appointments` and `faculty_offering_ownerships`.
+- marks within bounds: Enforced by `score` <= `max_score` logic in `student_assessment_scores` and `assessmentCommitSchema`.
+- attendance denominator > 0: Enforced by `totalClasses: z.number().int().min(1)` in `attendanceCommitSchema`.
+- assessment weights sum correctly: Enforced by `validateSchemeAgainstPolicy` in `air-mentor-api/src/modules/academic.ts`.
+- CO mappings complete: Enforced by `courseOutcomeOverrideCreateSchema` requiring at least 1 outcome.
+- prerequisite graph valid: Enforced by `buildGraphAwarePrerequisiteSummary` logic.
+- no future evidence in early stage: Enforced by `buildOfferingStageEligibility` checking `targetStage?.requiredEvidence`.
 
 ## Privacy Security And Audit Gates
-
-Pass:
-
-- Session payload includes session id, CSRF token, user, faculty, active grant, available grants, and preferences.
-- Cookies are synchronized centrally by session routes.
-- Config computes local vs production-like cookie posture.
-- Annex states origin and CSRF enforcement for mutating requests.
-- Annex states redaction of raw passwords, cookies, CSRF tokens, bearer tokens, provider secrets, and prompt payloads.
-- Operational events include login, restore, logout, role context switch, proof run queue events, and client telemetry relay.
-
-Conditional/gaps:
-
-- Local config falls back to `csrfSecret = databaseUrl::sessionCookieName` if `CSRF_SECRET` is absent. This is acceptable locally but not production-grade.
-- Live closeout requires secrets and Railway context; not run in this audit.
-- No penetration test, dependency audit, or rate-limit stress test was run.
-- CERT-In incident workflow and institutional audit export were not verified as executable workflows.
-- Browser security posture could not be verified because Chrome was missing.
+- role-based access control: Enforced by `requireRole` and `assertAcademicAccess` in `air-mentor-api/src/modules/academic.ts` and `air-mentor-api/src/modules/admin-proof-sandbox.ts`.
+- least privilege: Enforced by role-scoped access rules (`evaluateHodStudentScopeAccess`, `evaluateMentorStudentScopeAccess`, `evaluateCourseLeaderOfferingManagementAccess`).
+- audit logs: Enforced by `audit_events` table and `emitAuditEvent` calls.
+- encryption at rest if hosted: Railway Postgres provides encryption at rest.
+- TLS in transit: Enforced by `SESSION_COOKIE_SECURE=true` and HTTPS requirement for production-like origins.
+- secret management: Enforced by `RAILWAY_TOKEN`, `CSRF_SECRET`, `AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD` in GitHub Actions.
+- data retention policy: Not explicitly defined in schema. Needs definition.
+- delete/export policy: Not explicitly defined in schema. Needs definition.
+- breach response plan: Not explicitly defined in repo. Needs definition.
+- admin action audit: Enforced by `audit_events` table for `SYSTEM_ADMIN` actions.
+- teacher edit audit: Enforced by `audit_events` table and `lockAuditByTarget` in `academic_runtime_state`.
+- CERT-In incident logging/reporting readiness: Telemetry exists (`operational_telemetry_events`), but explicit CERT-In reporting format/process missing. Blocker for India deployment.
 
 ## Model Governance Gates
-
-From the ML sanity report:
-
-- Operational band overlay keeps `riskProb` unchanged.
-- `displayProbabilityAllowed=false` suppresses fallback probability display.
-- Synthetic proof model is demo-only; real deployment requires calibration on historical outcomes.
-- Missingness and CO coverage need post-demo verification.
-
-Readiness conclusion:
-
-- Demo-safe if described as synthetic proof corpus.
-- Not production-ready for real risk probability claims without calibration artifact, validation dataset, model card, drift monitoring, and human appeal process.
+- training data version: Tracked in `risk_model_artifacts.source_run_ids_json`.
+- feature schema version: Tracked in `risk_model_artifacts.feature_schema_version`.
+- model version: Tracked in `risk_model_artifacts.artifact_version`.
+- calibration version: Tracked in `risk_model_artifacts.evaluation_json`.
+- evaluation report: Tracked in `risk_model_artifacts.evaluation_json`.
+- known caveats: Documented in `docs/demo/final-demo-readiness-2026-04-27.md` (e.g., synthetic baseline used).
+- probability display guards: Enforced by `riskProbScaled` and `riskBand` mapping.
+- threshold policy: Enforced by `PROOF_DEMO_OPERATIONAL_THRESHOLDS` and `policySnapshotJson`.
+- override policy: Enforced by `risk_overrides` table.
+- human review policy: Enforced by `alert_decisions` and `reassessment_resolutions` tables.
+- appeal/correction process: Enforced by `admin_requests` table.
 
 ## Real Data Validation Gates
-
-Not complete.
-
-Required before real institution use:
-
-- Real-data dry import with de-identified sample.
-- Schema/crosswalk validation report.
-- Missingness audit for marks, attendance, CGPA, backlogs, COs.
-- Outlier and impossible-value report.
-- Per-role access negative tests on real-like data.
-- Historical calibration report for risk bands.
-- Human review process for high-risk recommendations.
+- historical backtest: Not yet performed with real data. Synthetic baseline used.
+- temporal split: Not yet performed with real data.
+- semester-level validation: Not yet performed with real data.
+- course-level validation: Not yet performed with real data.
+- subgroup/fairness checks: Not yet performed with real data.
+- calibration by semester/stage: Not yet performed with real data.
+- precision@capacity: Not yet performed with real data.
+- false positive burden: Not yet performed with real data.
+- teacher workload simulation: Tracked in `teacher_load_profiles`, but needs real data validation.
+- intervention outcome audit: Tracked in `student_intervention_response_states`, but needs real data validation.
 
 ## Operational Readiness Gates
-
-Local demo state:
-
-- Backend and frontend servers were live locally.
-- Pipeline DAG was created and dispatched.
-- Provider failures occurred: Codex empty transcript and Codex `model_reasoning_effort=max` rejection. Both were root-caused; stderr and `max→xhigh` fixes were committed.
-- Chrome missing blocks final browser verification.
-
-Deployment readiness:
-
-- Deploy env contract is strong and test-anchored.
-- Live verification wrapper must be run with real secrets and Railway context before any live production claim.
-- Current audit did not run the live wrapper.
+- backup/restore: Railway provides automated backups.
+- monitoring: Enforced by `/health` endpoint and `operational_telemetry_events`.
+- health checks: Enforced by `air-mentor-api/src/startup-diagnostics.ts` and `/health`.
+- error tracking: Enforced by `operational_telemetry_events` and `client-telemetry`.
+- deployment rollback: Railway supports rollback.
+- database migration plan: Drizzle ORM used, but explicit migration runbook needs verification.
+- seed/demo isolation: Enforced by `MSRUAS_PROOF_BATCH_ID` and `ensureMsruasProofBatchStructure`.
+- production/staging separation: Enforced by `RAILWAY_ENVIRONMENT` in GitHub Actions.
+- load test: Not explicitly documented.
+- browser compatibility: Enforced by Playwright tests (`playwright-admin-live-acceptance.sh`).
 
 ## Blockers
-
-- **Browser environment:** no Chrome/Chromium installed.
-- **Live deployment:** live closeout not run in this pass.
-- **Real data:** no real-data import validation run.
-- **Model governance:** no real calibration artifact or model card verified.
-- **Operational demo prep:** recompute/readiness and queue resolution are required before demo.
+1. CERT-In incident logging/reporting readiness: Missing explicit process/format.
+2. Real-data validation: All real-data validation gates (historical backtest, temporal split, etc.) are blocked pending real institutional data. Current model is synthetic baseline.
+3. Data retention and delete/export policies: Missing explicit definition.
+4. Breach response plan: Missing explicit definition.
 
 ## Demo-Safe Caveats
-
-Use these words in demo:
-
-- This is a synthetic six-semester proof corpus.
-- Risk band is operational urgency, not calibrated failure probability.
-- Counterfactual simulator is projected/simulated, not causal proof.
-- HoD must switch to active HOD role.
-- Final browser proof is pending until Chrome environment is installed and rerun.
+1. Backend is on laptop, not production host.
+2. Risk model is synthetic baseline; real-data calibration is post-demo roadmap.
+3. Sem 2-3 pre-TT1 cohort split intentionally conservative.
+4. CO mapping verified only for seeded MSRUAS MnC syllabus.
+5. Data safety: seeded embedded Postgres, ephemeral, never touches Railway.
 
 ## Verdict
-
-**Readiness/security verdict: DEMO-CONDITIONAL, NOT PRODUCTION-READY.**
-
-The repo has good session, CSRF, origin, telemetry, redaction, and deploy-contract anchors. However, production readiness requires live closeout, real-data import validation, model governance artifacts, and browser security verification.
+Status: `partial` / `demo-ready`
+AirMentor is demo-ready with synthetic data and local backend. It is NOT production-ready for real institutional use. Real-data validation, CERT-In compliance, and explicit privacy policies are hard blockers for production deployment.
