@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 CODEX_BIN = os.environ.get("AIRMENTOR_CODEX_BIN", "codex")
+CODEX_REASONING_EFFORTS = {"none", "minimal", "low", "medium", "high", "xhigh"}
 
 
 @dataclass
@@ -70,6 +71,14 @@ def _flatten_transcript(events: list[dict]) -> str:
     return "\n".join(out)
 
 
+def _codex_reasoning_effort(reasoning_effort: str) -> str:
+    if reasoning_effort == "max":
+        return "xhigh"
+    if reasoning_effort in CODEX_REASONING_EFFORTS:
+        return reasoning_effort
+    return "high"
+
+
 def run(
     *,
     prompt_text: str,
@@ -85,6 +94,7 @@ def run(
 
     Prompt text is piped via stdin (codex exec accepts `-` for stdin).
     """
+    cli_reasoning_effort = _codex_reasoning_effort(reasoning_effort)
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".last.txt", delete=False
     ) as last_msg_fp:
@@ -94,7 +104,7 @@ def run(
         CODEX_BIN, "exec",
         "-C", str(cwd),
         "-m", model,
-        "-c", f"model_reasoning_effort=\"{reasoning_effort}\"",
+        "-c", f"model_reasoning_effort=\"{cli_reasoning_effort}\"",
         "--json",
         "--output-last-message", str(last_msg_path),
         "--full-auto",
@@ -109,7 +119,7 @@ def run(
             CODEX_BIN, "resume", resume_session_id,
             "-C", str(cwd),
             "-m", model,
-            "-c", f"model_reasoning_effort=\"{reasoning_effort}\"",
+            "-c", f"model_reasoning_effort=\"{cli_reasoning_effort}\"",
             "--json",
             "--output-last-message", str(last_msg_path),
             "--full-auto",
