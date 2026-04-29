@@ -161,10 +161,16 @@ def run(
         except OSError:
             pass
 
+    transcript = _flatten_transcript(events) or last_message
+    if proc.returncode != 0 and proc.stderr:
+        stderr_text = proc.stderr.strip()
+        if stderr_text:
+            transcript = (transcript + "\n\n" if transcript else "") + f"[codex stderr]\n{stderr_text}"
+
     return CodexResult(
         session_id=_extract_session_id(events),
         last_message=last_message,
-        transcript=_flatten_transcript(events) or last_message,
+        transcript=transcript,
         exit_code=proc.returncode,
         stderr=proc.stderr or "",
         events=events,
