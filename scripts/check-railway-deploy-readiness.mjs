@@ -12,8 +12,9 @@ const diagnosticArtifactPrefix = (process.env.RAILWAY_DIAGNOSTIC_ARTIFACT_PREFIX
 const railwayService = process.env.RAILWAY_SERVICE ?? ''
 const railwayEnvironment = process.env.RAILWAY_ENVIRONMENT ?? ''
 const expectedFrontendOrigin = process.env.EXPECTED_FRONTEND_ORIGIN?.trim() ?? ''
+const renderPublicApiUrl = process.env.RENDER_PUBLIC_API_URL?.trim() ?? ''
 const railwayPublicApiUrl = process.env.RAILWAY_PUBLIC_API_URL?.trim() ?? ''
-const apiBaseUrl = railwayPublicApiUrl
+const apiBaseUrl = renderPublicApiUrl || railwayPublicApiUrl
 const systemAdminIdentifier = process.env.AIRMENTOR_LIVE_SYSTEM_ADMIN_IDENTIFIER?.trim() ?? ''
 const systemAdminPassword = process.env.AIRMENTOR_LIVE_SYSTEM_ADMIN_PASSWORD?.trim() ?? ''
 const desiredCsrfSecret = process.env.RAILWAY_CSRF_SECRET?.trim() ?? ''
@@ -663,7 +664,7 @@ async function runPreflight() {
 
 async function runHealthCheck() {
   if (!apiBaseUrl) {
-    throw new Error('RAILWAY_PUBLIC_API_URL is required for the live health verification.')
+    throw new Error('RENDER_PUBLIC_API_URL or RAILWAY_PUBLIC_API_URL is required for the live health verification.')
   }
   const health = await pollHealth(apiBaseUrl)
   const report = {
@@ -684,7 +685,7 @@ async function runHealthCheck() {
 
 async function runSessionContract() {
   if (!apiBaseUrl) {
-    throw new Error('RAILWAY_PUBLIC_API_URL is required for the live session-contract verification.')
+    throw new Error('RENDER_PUBLIC_API_URL or RAILWAY_PUBLIC_API_URL is required for the live session-contract verification.')
   }
   if (!expectedFrontendOrigin) {
     throw new Error('EXPECTED_FRONTEND_ORIGIN is required for the live session-contract verification.')
