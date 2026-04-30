@@ -10,7 +10,9 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+air-mentor-api/dist/
 *.local
+.claude/settings.local.json
 output/*
 air-mentor-api/output/
 test-results/

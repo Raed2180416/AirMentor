@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx vitest *)",
+      "Bash(npx tsc *)",
+      "Bash(npm install *)",
+      "Bash(npm audit *)",
+      "Bash(gh variable *)",
+      "Bash(gh workflow *)",
+      "Bash(gh run *)",
+      "Bash(ngrok version *)",
+      "Bash(ngrok config *)",
+      "Bash(openssl rand *)",
+      "Bash(node -e \"console.log\\(require\\('node:crypto'\\).randomBytes\\(32\\).toString\\('hex'\\)\\)\")",
+      "Bash(echo \"deploy running in background, PID $!\")",
+      "Bash(xargs kill *)",
+      "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")",
+      "Read(//tmp/**)"
+    ]
+  }
+}
