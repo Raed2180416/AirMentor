@@ -61,11 +61,11 @@
 
 | Feature | Status | Refs |
 |---|---|---|
-| Observable risk heuristic engine | works (functionally) but **not literature-anchored** | C14 → P1 |
+| Observable risk heuristic engine | works (literature-anchored, see `docs/paper-evidence/01-literature-table.md`) | C14 closed (P1 done) |
 | Trained logistic baseline (proof-risk-model.ts on 64 worlds) | partial | distribution leak; E8 → P2 |
 | Decision-tree challenger | partial | same corpus, same leak | E8 → P2 |
 | Recommended-action band thresholds (≥0.7 / ≥0.35) | partial | hardcoded GAP-6 | C14, audit-map/08-ml-audit/01 |
-| Driver impact values 0.28 / 0.14 / 0.20 / 0.10 / 0.05 | broken (per paper review) — no citations | C14, E1–E5 → P1 |
+| Driver impact values 0.28 / 0.14 / 0.20 / 0.10 / 0.05 | works (literature-anchored via `learning-dynamics-constants.ts`; engineering-tier rows disclosed in `docs/paper-evidence/01-literature-table.md`) | C14, E1–E5 closed (P1 done) |
 | weakCO threshold (`tt2Pct < 50 ‖ seePct < 45`) | broken (hardcoded, ignores config) | C4 → P3 |
 | Per-program model artifact / version | missing | F1, F2 → P7 |
 | Calibration metrics (Brier, ECE, reliability) | missing | E12 → P2 |
@@ -110,7 +110,7 @@
 | Feature | Status | Refs |
 |---|---|---|
 | 8 scenario families implemented (`scenarioProfileForSeed`) | works | `air-mentor-api/src/lib/msruas-proof-control-plane.ts:988-1036` |
-| Family parameter shifts grounded in literature | broken (no citations) | C15, E6 → P1 |
+| Family parameter shifts grounded in literature | works (literature anchors per family in `docs/paper-evidence/scenario-grounding.md`; magnitudes engineering-tier defended by P2 sensitivity sweep) | C15, E6 closed (P1 done) |
 | Per-program family subset | missing | D6 → P6 |
 
 ## 9. UX polish (cosmetic group, all P4)
