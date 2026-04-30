@@ -77,10 +77,51 @@ block, then re-run the timeline math at roadmap §9.1.
   default to A; flagged here so P3 task 3.7 enters with "full replace" and
   not "coexist".
 
+### 2026-05-01 · phase(P1) · literature foundation
+
+- New `air-mentor-api/src/lib/learning-dynamics-constants.ts` — single
+  source of truth for inference impacts, band thresholds, scenario-family
+  fingerprints, Bloom→mastery targets, edge-weight defaults. Each
+  constant carries `@bib` (matching `docs/references.bib`) or
+  `@source institutional / engineering`. Source-class split: 12 / 11 / 9
+  of 32 total.
+- Refactored `air-mentor-api/src/lib/inference-engine.ts` — removed
+  every magic number from the heuristic, imported named constants only.
+  Behaviour-preserving (verified by 74 unit tests + 78 engine tests
+  green; one pre-existing `msruas-proof-engines.test.ts > "converts CE
+  thresholds"` failure on the demo branch is **unrelated** to P1 — it
+  reproduces on `git stash` of the P1 changes).
+- New `air-mentor-api/tests/learning-dynamics-constants.test.ts` — 47
+  invariant tests; covers magnitude bounds, monotonicity, dominance of
+  attendance per Credé 2010, scenario load-bearing axes, summary
+  arithmetic.
+- New `docs/references.bib` — 22 entries (≥15 P1 bar passed).
+- New `docs/paper-evidence/01-literature-table.md` — per-constant
+  audit trail + source-class summary.
+- New `docs/paper-evidence/scenario-grounding.md` — 8 families mapped
+  to literature anchors with fingerprint table and P2 split preview.
+
+Roadmap §4 issue closures (logged here, mirrored in §4 of the
+roadmap by the next P1-followup commit):
+
+| ID | New status |
+|---|---|
+| C14 | partial → done (lit-anchored). Threshold-tunability deferred to P3 (still GAP-6). |
+| C15 | partial → done. |
+| E1, E2, E3, E4, E5 | done. |
+| E6 | done. |
+| E7 | done. |
+| E15 | done. |
+
+P1.6 disclosure (risk thresholds 50% / 45%): **institutional**
+anchor disclosed in `docs/paper-evidence/01-literature-table.md`
+Section A and Section C; the 50/45 weakCO threshold is replaced by
+a Bloom-derived `mastery < target * 0.85` rule in P3.
+
 ### Pending — to be filled as phases land
 
 ```
-2026-05-?? · phase(P1) · learning-dynamics-constants, references.bib, …
-2026-05-?? · phase(P2) · generative-process split, baselines, …
+2026-05-?? · phase(P2) · generative-process split, baselines, sensitivity, calibration
+2026-05-?? · phase(P3) · Bloom-mastery, edge-weight, impact preview, Recalibrate rename
 …
 ```
