@@ -161,11 +161,11 @@ Phase ID maps to §5 catalog.
 | E5 | Intervention response model lacks citation (Tinto, Bean) | done (P1) — `tinto1993leaving`, `bean2001psychology` | P1 |
 | E6 | 8 scenario families not mapped to documented retention failure modes | done (P1) — `docs/paper-evidence/scenario-grounding.md` | P1 |
 | E7 | No `references.bib` exists | done (P1) — 22 entries in `docs/references.bib` | P1 |
-| E8 | Distribution leak: train and validate on same generative process (PROOF_CORPUS_MANIFEST 64 worlds split randomly) | pending | P2 |
-| E9 | No baseline models for comparison (majority class, simple logistic, RF) | pending | P2 |
+| E8 | Distribution leak: train and validate on same generative process (PROOF_CORPUS_MANIFEST 64 worlds split randomly) | done (P2.1) — `generativeSplit` field family-disjoint per protocol B in `docs/paper-evidence/02-validation-protocol.md`; protocol A retained for in-distribution evaluation | P2 |
+| E9 | No baseline models for comparison (majority class, simple logistic, RF) | partial — `baseline-v5-like` + `depth-2-tree` challenger + heuristic already exist; majority-class + 2-feature logistic still missing | P2 |
 | E10 | No sensitivity analysis on critical parameters | pending | P2 |
 | E11 | No adversarial validation corpus (different generative process) | pending | P2 |
-| E12 | No calibration metrics (Brier, ECE, reliability diagram) | pending | P2 |
+| E12 | No calibration metrics (Brier, ECE, reliability diagram) | partial — Brier / ECE / slope / intercept in `RiskMetricSummary`; reliability-diagram artifact still missing | P2 |
 | E13 | No bootstrap confidence intervals on AUC | pending | P2 |
 | E14 | No per-feature importance via permutation | pending | P2 |
 | E15 | No `docs/paper-evidence/` artifacts directory | done (P0+P1) — directory + README + `01-literature-table.md` + `scenario-grounding.md` committed | P1 |

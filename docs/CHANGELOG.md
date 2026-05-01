@@ -118,10 +118,59 @@ anchor disclosed in `docs/paper-evidence/01-literature-table.md`
 Section A and Section C; the 50/45 weakCO threshold is replaced by
 a Bloom-derived `mastery < target * 0.85` rule in P3.
 
+### 2026-05-01 · phase(P0) · K8 untrack node_modules/.vite caches
+
+- 24 vite/vitest cache files removed from index. `.gitignore` extended
+  with explicit `node_modules/.vite/` + `air-mentor-api/node_modules/.vite/`.
+- Out of scope: ~21,109 broader `node_modules/*` entries still tracked
+  — captured in `audit-map/24-agent-memory/p2-entry-context-2026-05-01.md`
+  for a dedicated future sweep with code-owner sign-off.
+
+### 2026-05-01 · phase(P2) · task 2.1 family-disjoint generative-process split
+
+- New field `ProofCorpusManifestEntry.generativeSplit` (`SplitName`) on
+  every entry. Train families ⊥ val families ⊥ test families:
+  - train  ← weak-foundation, low-attendance, high-forgetting, coursework-inflation
+  - val    ← exam-fragility, carryover-heavy
+  - test   ← intervention-resistant, balanced
+- Helper `selectGenerativeSplitEntries(split)` returns the partition.
+- Helper `generativeSplitForFamily(family)` is total over `PROOF_SCENARIO_FAMILIES`.
+- Index-based `split` field preserved untouched — the deployed
+  production-v8 / production-v7 / baseline-v5-like training pipelines
+  stay valid. The two protocols answer different questions; both are
+  retained.
+- New tests `tests/proof-generative-split.test.ts` — 15 invariants:
+  exhaustive + disjoint family assignment, field consistency, sizing
+  (32 / 16 / 16), the two protocols genuinely disagree, balanced lands
+  only in test under protocol B.
+- Zero regressions: `proof-risk-model.test.ts`,
+  `proof-risk-scoring-parity.test.ts` (test fixtures patched to set
+  `generativeSplit`), `evaluate-proof-risk-model.test.ts`,
+  `learning-dynamics-constants.test.ts` all green.
+- New `docs/paper-evidence/02-validation-protocol.md` — methodological
+  contract for the paper Experiments section; documents the two
+  protocols, what each answers, expected risk on protocol B (AUC drop),
+  and the reviewer-question pre-empt table.
+
+Roadmap §4 status flips:
+- E8 → done.
+- E9 → partial (already had baseline-v5-like + depth-2-tree challenger;
+  majority-class + 2-feature logistic still missing — next P2 commit).
+- E12 → partial (Brier/ECE/slope/intercept already in `RiskMetricSummary`;
+  reliability-diagram artifact still missing).
+- E10, E11, E13, E14 → still pending; queued for next P2 commits.
+
+P2 entry context (deferred items kept in mind):
+- `audit-map/24-agent-memory/p2-entry-context-2026-05-01.md` documents
+  the roadmap-vs-reality reconciliation, the prior `coverage-24` /
+  hybrid-router investigation (do not lose), the pre-existing
+  `msruas-proof-engines.test.ts > "converts CE thresholds"` failure
+  root-cause analysis, and the L1–L9 default disposition.
+
 ### Pending — to be filled as phases land
 
 ```
-2026-05-?? · phase(P2) · generative-process split, baselines, sensitivity, calibration
+2026-05-?? · phase(P2) · majority-class + 2-feature baselines, sensitivity sweep, reliability diagram, bootstrap CIs, permutation importance
 2026-05-?? · phase(P3) · Bloom-mastery, edge-weight, impact preview, Recalibrate rename
 …
 ```

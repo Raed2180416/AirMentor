@@ -62,8 +62,8 @@
 | Feature | Status | Refs |
 |---|---|---|
 | Observable risk heuristic engine | works (literature-anchored, see `docs/paper-evidence/01-literature-table.md`) | C14 closed (P1 done) |
-| Trained logistic baseline (proof-risk-model.ts on 64 worlds) | partial | distribution leak; E8 → P2 |
-| Decision-tree challenger | partial | same corpus, same leak | E8 → P2 |
+| Trained logistic baseline (proof-risk-model.ts on 64 worlds) | partial — in-distribution split protocol A (legacy index-based) backs production-v8; family-disjoint protocol B added in P2.1 for cross-family generalisation reporting | E8 closed (P2.1); E9 partial → P2 |
+| Decision-tree challenger | partial — `depth-2-tree` family in code; `catboost` Python-interop scaffolded; not promoted | E8 closed (P2.1); promotion pending P7 |
 | Recommended-action band thresholds (≥0.7 / ≥0.35) | partial | hardcoded GAP-6 | C14, audit-map/08-ml-audit/01 |
 | Driver impact values 0.28 / 0.14 / 0.20 / 0.10 / 0.05 | works (literature-anchored via `learning-dynamics-constants.ts`; engineering-tier rows disclosed in `docs/paper-evidence/01-literature-table.md`) | C14, E1–E5 closed (P1 done) |
 | weakCO threshold (`tt2Pct < 50 ‖ seePct < 45`) | broken (hardcoded, ignores config) | C4 → P3 |

@@ -6,6 +6,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   createProofRiskModelTrainingBuilder,
+  generativeSplitForFamily,
   scoreObservableRiskWithModel,
   OBSERVABLE_FEATURE_KEYS,
   featureVectorArrayFromPayload,
@@ -178,6 +179,7 @@ describe('proof-risk-model: training vs pass-2 scoring parity [RCA]', () => {
     const manifest: SyntheticProofCorpusManifestEntry[] = seedPlan.map(({ seed, split, family }) => ({
       seed,
       split,
+      generativeSplit: generativeSplitForFamily(family),
       scenarioFamily: family,
       courseworkPct: 0.45,
       ttAggressivenessPct: 0.5,
@@ -366,7 +368,7 @@ describe('proof-risk-model: training vs pass-2 scoring parity [RCA]', () => {
       { seed: 909, split: 'test', family: 'balanced' },
     ]
     const manifest: SyntheticProofCorpusManifestEntry[] = seedPlan.map(({ seed, split, family }) => ({
-      seed, split, scenarioFamily: family,
+      seed, split, generativeSplit: generativeSplitForFamily(family), scenarioFamily: family,
       courseworkPct: 0.45, ttAggressivenessPct: 0.5, attendancePct: 0.82,
     }))
 
