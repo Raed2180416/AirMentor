@@ -11,6 +11,8 @@ node_modules
 dist
 dist-ssr
 air-mentor-api/dist/
+node_modules/.vite/
+air-mentor-api/node_modules/.vite/
 *.local
 .claude/settings.local.json
 output/*
