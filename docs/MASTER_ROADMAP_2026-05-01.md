@@ -162,12 +162,12 @@ Phase ID maps to §5 catalog.
 | E6 | 8 scenario families not mapped to documented retention failure modes | done (P1) — `docs/paper-evidence/scenario-grounding.md` | P1 |
 | E7 | No `references.bib` exists | done (P1) — 22 entries in `docs/references.bib` | P1 |
 | E8 | Distribution leak: train and validate on same generative process (PROOF_CORPUS_MANIFEST 64 worlds split randomly) | done (P2.1) — `generativeSplit` field family-disjoint per protocol B in `docs/paper-evidence/02-validation-protocol.md`; protocol A retained for in-distribution evaluation | P2 |
-| E9 | No baseline models for comparison (majority class, simple logistic, RF) | partial — `baseline-v5-like` + `depth-2-tree` challenger + heuristic already exist; majority-class + 2-feature logistic still missing | P2 |
-| E10 | No sensitivity analysis on critical parameters | pending | P2 |
-| E11 | No adversarial validation corpus (different generative process) | pending | P2 |
-| E12 | No calibration metrics (Brier, ECE, reliability diagram) | partial — Brier / ECE / slope / intercept in `RiskMetricSummary`; reliability-diagram artifact still missing | P2 |
-| E13 | No bootstrap confidence intervals on AUC | pending | P2 |
-| E14 | No per-feature importance via permutation | pending | P2 |
+| E9 | No baseline models for comparison (majority class, simple logistic, RF) | done (P2 deep-dig) — `proof-risk-baselines.ts` with majority-class + 2-feature-logistic-IRLS; existing `baseline-v5-like` + `depth-2-tree` challenger + heuristic comparator | P2 |
+| E10 | No sensitivity analysis on critical parameters | done (P2 deep-dig) — `proof-risk-sensitivity.ts` OAT sweep + markdown rendering; 8 unit tests | P2 |
+| E11 | No adversarial validation corpus (different generative process) | done (P2 deep-dig) — `proof-risk-adversarial-corpus.ts` power-law forgetting + matched exponential control via same code path; 12 unit tests | P2 |
+| E12 | No calibration metrics (Brier, ECE, reliability diagram) | done (P2 deep-dig) — Brier/ECE/slope/intercept in `RiskMetricSummary` plus `reliabilityDiagramData()` (bins + ECE + MCE) in `proof-risk-evaluation-stats.ts`; figure render is P10 work | P2 |
+| E13 | No bootstrap confidence intervals on AUC | done (P2 deep-dig) — `bootstrapAucCi`, `bootstrapBrierCi`, `bootstrapMetricCi` in `proof-risk-evaluation-stats.ts`; deterministic mulberry32-seeded | P2 |
+| E14 | No per-feature importance via permutation | done (P2 deep-dig) — `permutationFeatureImportance()` in `proof-risk-evaluation-stats.ts`; Breiman 2001 / sklearn pattern; direction-aware | P2 |
 | E15 | No `docs/paper-evidence/` artifacts directory | done (P0+P1) — directory + README + `01-literature-table.md` + `scenario-grounding.md` committed | P1 |
 
 ### Group F — Recalibration Mechanism
@@ -254,7 +254,12 @@ Phase ID maps to §5 catalog.
 | K5 | No `docs/CAPABILITY_MATRIX.md` (works/partial/cosmetic) | done (P0) | P0 |
 | K6 | `.gitignore` should exclude `dist/` | done (P0) — explicit `air-mentor-api/dist/` + `.claude/settings.local.json` | P0 |
 | K7 | Branch strategy for phase work (`research/p1-*`, etc.) | done (P0) — `docs/BRANCH_STRATEGY.md`; remote branch protection still pending manual GitHub step | P0 |
-| K8 | `node_modules/.vite/*` files tracked despite gitignore — same root cause as K1 | pending (new, P0 follow-up) | P0 |
+| K8 | `node_modules/.vite/*` files tracked despite gitignore — same root cause as K1 | done — narrow `.vite/*` cleanup `9b6421d1`; broader 21,086-file `node_modules/` tree untracked `24d6ec26` | P0 |
+| K9 | ~50 in-flight `src/*` realism-readiness WIP changes (D2) — uncommitted, dependent set | captured-with-handoff (`audit-map/24-agent-memory/deferred-disposition-2026-05-02.md` §D2) | P0 follow-up |
+| K10 | `tests/msruas-proof-engines.test.ts > "converts CE thresholds"` pre-existing failure (D4) | done — `dc57600f`; intent decided by `audit-map/32-reports/proof-readiness-closeout-2026-04-30.md` lines 76–78 | P0 |
+| K11 | Untracked durable artefacts (audit-map reports, design docs, readiness governance) (D3) | done — `77f0c468` commits 17 artefacts; `.ctxo/` and `.superpowers/` gitignored | P0 follow-up |
+| K12 | Branch protection on `main` (D6) | captured-with-handoff (manual GitHub UI step; exact rule list in `audit-map/24-agent-memory/deferred-disposition-2026-05-02.md` §D6) | P0 follow-up |
+| K13 | Demo branch ↔ `main` reconciliation (D7) | captured-with-handoff (`docs/BRANCH_STRATEGY.md` §"When the demo branch merges back" + `deferred-disposition-2026-05-02.md` §D7) | P0 follow-up |
 
 ### Group L — Strategic Decisions Required
 

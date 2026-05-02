@@ -68,9 +68,15 @@
 | Driver impact values 0.28 / 0.14 / 0.20 / 0.10 / 0.05 | works (literature-anchored via `learning-dynamics-constants.ts`; engineering-tier rows disclosed in `docs/paper-evidence/01-literature-table.md`) | C14, E1–E5 closed (P1 done) |
 | weakCO threshold (`tt2Pct < 50 ‖ seePct < 45`) | broken (hardcoded, ignores config) | C4 → P3 |
 | Per-program model artifact / version | missing | F1, F2 → P7 |
-| Calibration metrics (Brier, ECE, reliability) | missing | E12 → P2 |
-| Bootstrap CIs on AUC | missing | E13 → P2 |
-| Permutation feature importance | missing | E14 → P2 |
+| Calibration metrics (Brier, ECE, reliability) | works (Brier/ECE/slope/intercept in `RiskMetricSummary`; `reliabilityDiagramData()` in `proof-risk-evaluation-stats.ts`; figure render P10) | E12 closed (P2 deep-dig) |
+| Bootstrap CIs on AUC | works (`bootstrapAucCi` / `bootstrapBrierCi` / `bootstrapMetricCi` in `proof-risk-evaluation-stats.ts`) | E13 closed (P2 deep-dig) |
+| Permutation feature importance | works (`permutationFeatureImportance()` in `proof-risk-evaluation-stats.ts`) | E14 closed (P2 deep-dig) |
+| Adversarial corpus (power-law forgetting + control) | works (`proof-risk-adversarial-corpus.ts`) | E11 closed (P2 deep-dig) |
+| Majority-class baseline | works (`trainMajorityClassBaseline`) | E9 closed (P2 deep-dig) |
+| 2-feature logistic baseline (attendance + CGPA, IRLS) | works (`trainTwoFeatureLogisticBaseline`) | E9 closed (P2 deep-dig) |
+| OAT sensitivity sweep | works (`runOneAtATimeSensitivity` + markdown render) | E10 closed (P2 deep-dig) |
+| Evaluator generative-split-{train,val,test} profiles | works (in `EVAL_SEED_PROFILES`) | D18 closed (P2 deep-dig) |
+| Paper-evidence generator (baseline + corpus + permutation) | works (`scripts/generate-baseline-paper-evidence.ts` → `docs/paper-evidence/03-baseline-results.md`) | D19-partial closed (P2 deep-dig); full evaluator rerun handed off |
 | Recalibration service | missing | F3, F5 → P7 |
 
 ## 5. Curriculum
@@ -169,7 +175,17 @@
 | `docs/BRANCH_STRATEGY.md` | works | K7 closed (P0) |
 | `docs/paper-evidence/` directory | works | E15 closed (P0, README only) |
 | Branch protection on `main` | pending | K7 (manual GitHub step) |
-| `node_modules/.vite/*` tracked despite gitignore | broken | **K8** (new, follow-up P0) |
+| `node_modules/.vite/*` tracked despite gitignore | works | K8 closed (`9b6421d1`) |
+| Broader `node_modules/*` tracked (21,086 files) | works | D1 / K8 broader closed (`24d6ec26`) — repo dropped from ≈27,400 to 6,361 tracked files |
+| Untracked durable artefacts (audit reports, design docs, readiness governance) | works | D3 closed (`77f0c468`) — 17 artefacts committed |
+| Pre-existing `msruas-proof-engines.test.ts > "converts CE thresholds"` failure | works | D4 closed (`dc57600f`) |
+| Duplicate `ScenarioFamily` type | works | D8 closed (`5a25de3d`) — re-export from canonical source |
+| In-flight `src/*` realism-readiness WIP (~50 files) | partial — captured-with-handoff | K9 — `audit-map/24-agent-memory/deferred-disposition-2026-05-02.md` §D2 |
+| Branch protection on `main` | missing — captured-with-handoff | K12 / D6 — manual GitHub UI step |
+| Demo branch ↔ `main` reconciliation | missing — captured-with-handoff | K13 / D7 |
+| Full evaluator rerun under generative-split-* profiles | missing — needs embedded-postgres-capable host | D19-rest |
+| CatBoost Python-interop end-to-end | scaffold-only — captured-with-handoff | D20 / P7 |
+| L1–L9 user decisions | defaults proposed; user confirmation pending | D5 |
 
 ---
 
