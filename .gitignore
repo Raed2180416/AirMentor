@@ -36,6 +36,6 @@ tmp_*.cjs
 *.sw?
 tests-e2e/artifacts/
 
-# Ctxo local cache (never committed)
+# Tool caches (never committed)
 .ctxo/
 .superpowers/
