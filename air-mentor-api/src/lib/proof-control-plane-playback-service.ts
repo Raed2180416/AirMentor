@@ -85,7 +85,7 @@ export function stageCourseworkEvidenceForStage(input: {
   quizPct: number | null
   assignmentPct: number | null
 }) {
-  if (input.stageKey === 'pre-tt1' || input.stageKey === 'post-tt1') {
+  if (input.stageKey === 'pre-tt1' || input.stageKey === 'post-tt1' || input.stageKey === 'post-tt2') {
     return {
       quizPct: null,
       assignmentPct: null,
