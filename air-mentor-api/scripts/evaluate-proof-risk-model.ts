@@ -294,12 +294,32 @@ const COVERAGE_32_SEEDS = [
   4141, 4242, 4343, 4444, 4545, 4646, 4747, 4848,
   5757, 5858, 5959, 6060, 6161, 6262, 6363, 6464,
 ]
+// P2 task 2.1 / D18 closure — generative-process (family-disjoint)
+// split profiles. These select seeds whose `generativeSplit` field
+// equals the named partition (out-of-distribution evaluation
+// protocol; the legacy index-based split is the in-distribution
+// protocol). `selectGenerativeSplitEntries` is the canonical reader.
+// See docs/paper-evidence/02-validation-protocol.md.
+import { selectGenerativeSplitEntries } from '../src/lib/proof-risk-model.js'
+const GENERATIVE_SPLIT_TRAIN_SEEDS = selectGenerativeSplitEntries('train').map(entry => entry.seed)
+const GENERATIVE_SPLIT_VAL_SEEDS = selectGenerativeSplitEntries('validation').map(entry => entry.seed)
+const GENERATIVE_SPLIT_TEST_SEEDS = selectGenerativeSplitEntries('test').map(entry => entry.seed)
+
 const EVAL_SEED_PROFILES = {
   'smoke-3': [101, 4141, 5353],
   'coverage-24': COVERAGE_24_SEEDS,
   'coverage-32': COVERAGE_32_SEEDS,
   'manifest-64': DEFAULT_SEEDS,
+  'generative-split-train': GENERATIVE_SPLIT_TRAIN_SEEDS,
+  'generative-split-val': GENERATIVE_SPLIT_VAL_SEEDS,
+  'generative-split-test': GENERATIVE_SPLIT_TEST_SEEDS,
 } as const
+
+const GENERATIVE_SPLIT_PROFILES: ReadonlySet<string> = new Set([
+  'generative-split-train',
+  'generative-split-val',
+  'generative-split-test',
+])
 const DEFAULT_PROGRESS_EVERY = 8
 // Keep default below local DB saturation. Override with AIRMENTOR_EVAL_CREATE_CONCURRENCY when benchmarking.
 const DEFAULT_CREATE_CONCURRENCY = Math.max(1, Math.min(12, availableParallelism()))
@@ -336,26 +356,48 @@ function uniqueSortedSeeds(seeds: number[]) {
 function assertSeedPartitionCoverage(seeds: number[], profile: string) {
   const allowDegenerate = (process.env.AIRMENTOR_EVAL_ALLOW_DEGENERATE ?? '').trim() === '1'
   const manifestBySeed = new Map(PROOF_CORPUS_MANIFEST.map(entry => [entry.seed, entry]))
+  // Generative-split profiles intentionally select seeds from a single
+  // partition under their *own* protocol (family-disjoint). The legacy
+  // index-based partition counts will look skewed for these profiles —
+  // that's the correct behaviour, not a degeneracy. We do still enforce
+  // that the partition is non-empty under whichever protocol applies.
+  const isGenerativeSplitProfile = GENERATIVE_SPLIT_PROFILES.has(profile)
+  const splitField: 'split' | 'generativeSplit' = isGenerativeSplitProfile ? 'generativeSplit' : 'split'
   const counts: Record<SplitName, number> = { train: 0, validation: 0, test: 0 }
   const unknown: number[] = []
   for (const seed of seeds) {
     const entry = manifestBySeed.get(seed)
     if (!entry) { unknown.push(seed); continue }
-    counts[entry.split] += 1
+    counts[entry[splitField]] += 1
   }
   if (unknown.length > 0) {
     const msg = `[eval-seed-guard] seeds not in PROOF_CORPUS_MANIFEST: ${unknown.join(',')}. These will be scored but produce no split-labelled rows.`
     if (allowDegenerate) console.warn(msg)
     else throw new Error(`${msg} Set AIRMENTOR_EVAL_ALLOW_DEGENERATE=1 to proceed anyway.`)
   }
-  const empty = (Object.entries(counts) as Array<[SplitName, number]>).filter(([, n]) => n === 0).map(([split]) => split)
-  if (empty.length > 0) {
-    const detail = `profile=${profile} seeds=[${seeds.join(',')}] counts=${JSON.stringify(counts)} empty-partitions=[${empty.join(',')}]`
-    const msg = `[eval-seed-guard] selected seeds produce 0 run_ids in partition(s): ${empty.join(', ')}. Evaluator cannot produce promotion-gate metrics without non-empty test partition (and calibration requires non-empty validation). ${detail}`
-    if (allowDegenerate) console.warn(msg)
-    else throw new Error(`${msg} Set AIRMENTOR_EVAL_ALLOW_DEGENERATE=1 to accept degenerate output.`)
+  // For generative-split profiles, require the *target* partition to
+  // be the populated one. For legacy profiles, require all three
+  // partitions to be populated (calibration + promotion-gate need
+  // every partition).
+  if (isGenerativeSplitProfile) {
+    const targetPartition: SplitName = profile === 'generative-split-train'
+      ? 'train'
+      : profile === 'generative-split-val' ? 'validation' : 'test'
+    if (counts[targetPartition] === 0) {
+      const msg = `[eval-seed-guard] generative-split profile '${profile}' selected zero seeds whose generativeSplit='${targetPartition}'. seeds=[${seeds.join(',')}]`
+      if (allowDegenerate) console.warn(msg)
+      else throw new Error(`${msg} Set AIRMENTOR_EVAL_ALLOW_DEGENERATE=1 to proceed anyway.`)
+    }
+  } else {
+    const empty = (Object.entries(counts) as Array<[SplitName, number]>).filter(([, n]) => n === 0).map(([split]) => split)
+    if (empty.length > 0) {
+      const detail = `profile=${profile} seeds=[${seeds.join(',')}] counts=${JSON.stringify(counts)} empty-partitions=[${empty.join(',')}]`
+      const msg = `[eval-seed-guard] selected seeds produce 0 run_ids in partition(s): ${empty.join(', ')}. Evaluator cannot produce promotion-gate metrics without non-empty test partition (and calibration requires non-empty validation). ${detail}`
+      if (allowDegenerate) console.warn(msg)
+      else throw new Error(`${msg} Set AIRMENTOR_EVAL_ALLOW_DEGENERATE=1 to accept degenerate output.`)
+    }
   }
-  console.error(`[eval-seed-guard] partition counts ok: ${JSON.stringify(counts)} profile=${profile}`)
+  console.error(`[eval-seed-guard] partition counts ok (splitField=${splitField}): ${JSON.stringify(counts)} profile=${profile}`)
 }
 
 function parseSeedSelection() {
