@@ -301,15 +301,14 @@ export const RISK_BAND_MEDIUM_THRESHOLD = 0.35
  * The exact magnitudes are engineering-tier: defended by the P2
  * sensitivity sweep (±20% AUC delta) per roadmap §5 P2 task 2.3.
  */
-export type ScenarioFamily =
-  | 'weak-foundation'
-  | 'low-attendance'
-  | 'high-forgetting'
-  | 'coursework-inflation'
-  | 'exam-fragility'
-  | 'carryover-heavy'
-  | 'intervention-resistant'
-  | 'balanced'
+// Reconciled (D8 closure 2026-05-01): re-export the canonical
+// scenario-family enum from `proof-risk-model.ts`. This keeps
+// `PROOF_SCENARIO_FAMILIES` (runtime tuple, ordering matters for
+// manifest indexing) and `ScenarioFamily` (string-literal union) the
+// single source of truth across the codebase. Prior duplicate type
+// declared here was compile-safe (same 8 strings) but drift-prone.
+export type { ScenarioFamily } from './proof-risk-model.js'
+import type { ScenarioFamily } from './proof-risk-model.js'
 
 export type ScenarioFingerprint = {
   sectionAbilityShift: number
