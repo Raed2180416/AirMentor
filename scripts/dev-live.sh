@@ -19,4 +19,4 @@ echo "Backend log: $backend_log"
 
 AIRMENTOR_UI_PROXY_API_TARGET="$api_base_url" \
 VITE_AIRMENTOR_API_BASE_URL="/" \
-npm exec vite -- --host "$ui_host" --port "$ui_port"
+npm exec vite -- --host "$ui_host" --port "$ui_port" --strictPort
