@@ -134,6 +134,50 @@ describe('Two protocols are genuinely different (sanity)', () => {
   })
 })
 
+describe('Evaluator profile wire-in (D18) — generative-split-{train,val,test}', () => {
+  // The evaluator script `air-mentor-api/scripts/evaluate-proof-risk-model.ts`
+  // exposes `EVAL_SEED_PROFILES['generative-split-{train,val,test}']`,
+  // populated from `selectGenerativeSplitEntries`. We assert the
+  // population invariants here so the evaluator script's import is
+  // guaranteed to resolve to non-empty seed lists.
+  it('train profile resolves to 32 seeds whose family is in PROOF_GENERATIVE_SPLIT_FAMILIES.train', () => {
+    const entries = selectGenerativeSplitEntries('train')
+    expect(entries).toHaveLength(32)
+    const trainFamilies = new Set(PROOF_GENERATIVE_SPLIT_FAMILIES.train)
+    for (const entry of entries) {
+      expect(trainFamilies.has(entry.scenarioFamily)).toBe(true)
+    }
+  })
+
+  it('val profile resolves to 16 seeds whose family is in PROOF_GENERATIVE_SPLIT_FAMILIES.validation', () => {
+    const entries = selectGenerativeSplitEntries('validation')
+    expect(entries).toHaveLength(16)
+    const valFamilies = new Set(PROOF_GENERATIVE_SPLIT_FAMILIES.validation)
+    for (const entry of entries) {
+      expect(valFamilies.has(entry.scenarioFamily)).toBe(true)
+    }
+  })
+
+  it('test profile resolves to 16 seeds whose family is in PROOF_GENERATIVE_SPLIT_FAMILIES.test', () => {
+    const entries = selectGenerativeSplitEntries('test')
+    expect(entries).toHaveLength(16)
+    const testFamilies = new Set(PROOF_GENERATIVE_SPLIT_FAMILIES.test)
+    for (const entry of entries) {
+      expect(testFamilies.has(entry.scenarioFamily)).toBe(true)
+    }
+  })
+
+  it('train ∪ val ∪ test seed sets = full manifest seeds (no orphan, no duplication)', () => {
+    const fromGenerative = [
+      ...selectGenerativeSplitEntries('train'),
+      ...selectGenerativeSplitEntries('validation'),
+      ...selectGenerativeSplitEntries('test'),
+    ].map(entry => entry.seed).sort((a, b) => a - b)
+    const fromManifest = PROOF_CORPUS_MANIFEST.map(entry => entry.seed).sort((a, b) => a - b)
+    expect(fromGenerative).toEqual(fromManifest)
+  })
+})
+
 describe('Generative-process split closes E8 (distribution leak)', () => {
   // E8 = "train and validate on same generative process". Under the new
   // protocol no scenario family appears in both train and val/test.
