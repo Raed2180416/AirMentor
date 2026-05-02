@@ -167,10 +167,76 @@ P2 entry context (deferred items kept in mind):
   `msruas-proof-engines.test.ts > "converts CE thresholds"` failure
   root-cause analysis, and the L1–L9 default disposition.
 
+### 2026-05-02 · phase(P2) · deep-dig closure of P0/P1/P2 deferred ledger
+
+- **D4 closure** (`dc57600f`) — `msruas-proof-engines.test.ts > "converts
+  CE thresholds"` pre-existing failure resolved by accepting the
+  in-flight `proof-control-plane-playback-service.ts:88` `post-tt2`
+  suppression as correct (intent confirmed by
+  `audit-map/32-reports/proof-readiness-closeout-2026-04-30.md`
+  lines 76–78) and updating the test. 102/102 affected-file tests pass.
+- **D8 closure + E9 + E10 + E12 + E13 + E14** (`fef27927`) —
+  three new self-contained validation modules:
+  - `proof-risk-evaluation-stats.ts` — `rocAucFromArrays` (mid-rank
+    tie handling), `bootstrapMetricCi` / `bootstrapAucCi` /
+    `bootstrapBrierCi`, `permutationFeatureImportance`,
+    `reliabilityDiagramData`. 28 unit tests.
+  - `proof-risk-baselines.ts` — `trainMajorityClassBaseline`,
+    `trainTwoFeatureLogisticBaseline` (Newton-Raphson IRLS, ridge
+    1e-3, 50-iter cap, 1e-8 tolerance, 3×3 Cramer's-rule solve).
+    11 unit tests.
+  - `proof-risk-sensitivity.ts` — `runOneAtATimeSensitivity` +
+    `renderSensitivityMarkdown`. 8 unit tests.
+  - `learning-dynamics-constants.ts` re-exports `ScenarioFamily` from
+    `proof-risk-model.ts` (D8 reconcile).
+- **D14 + D18 + D19-partial** (`41fc2982`) —
+  - `proof-risk-adversarial-corpus.ts`: power-law forgetting +
+    matched exponential control through one code path; 12 unit tests.
+  - Evaluator profiles: `generative-split-{train,val,test}` added to
+    `EVAL_SEED_PROFILES`; `assertSeedPartitionCoverage` now
+    splitField-aware. 4 new tests.
+  - `scripts/generate-baseline-paper-evidence.ts` runs deterministic
+    end-to-end and emits `docs/paper-evidence/03-baseline-results.md`:
+    - adversarial AUC = 0.9918, 95% CI [0.9795, 0.9996]
+    - control      AUC = 0.9974, 95% CI [0.9911, 1.0000]
+    - permutation: attendancePct ΔAUC = 0.4633 (load-bearing) vs
+      currentCgpa ΔAUC = 0.0016 (negligible) — confirms Credé 2010.
+- **D3 closure** (`77f0c468`) — 17 untracked durable artefacts
+  committed (audit-map reports, design docs, readiness governance,
+  superpowers plans/specs); `.ctxo/` and `.superpowers/` tool caches
+  gitignored.
+- **D1 closure** (`24d6ec26`) — broader K8 follow-up: 21,086 tracked
+  `node_modules/*` entries removed from index. Working tree
+  unaffected (gitignore already covered the path; `npm install`
+  regenerates on demand). Repo tracked-file count fell from ≈27,400
+  to 6,361.
+
+Roadmap §4 status flips at this commit:
+- E9 partial→done; E10 pending→done; E11 pending→done; E12
+  partial→done; E13 pending→done; E14 pending→done.
+- K8 narrow→done; new rows K9 (D2 in-flight WIP, captured),
+  K10 (D4 pre-existing failure, done), K11 (D3 untracked artefacts,
+  done), K12 (D6 branch protection, captured), K13 (D7 demo branch
+  reconciliation, captured).
+
+**Captured-with-handoff** (no closure possible without external
+action or downstream phase work): D2 (~50 in-flight src/* WIP),
+D5 (L1–L9 user decisions), D6 (GitHub branch-protection UI),
+D7 (demo↔main reconciliation), D9 (engineering-tier disclosure
+for paper Limitations — P10), D10 (50/45 weakCO threshold replacement
+— P3 task 3.3), D11 (GAP-6 operator-tunable band thresholds —
+P3/P5), D19-rest (full evaluator rerun under generative-split
+profiles — needs embedded-postgres-capable host),
+D20 (CatBoost end-to-end — P7).
+
+Comprehensive disposition table:
+`audit-map/24-agent-memory/deferred-disposition-2026-05-02.md`.
+
 ### Pending — to be filled as phases land
 
 ```
-2026-05-?? · phase(P2) · majority-class + 2-feature baselines, sensitivity sweep, reliability diagram, bootstrap CIs, permutation importance
-2026-05-?? · phase(P3) · Bloom-mastery, edge-weight, impact preview, Recalibrate rename
+2026-05-?? · phase(P3) · Bloom-mastery wire-through, edge-weight, impact preview, Recalibrate rename
+2026-05-?? · phase(P4) · UX label sweep
+2026-05-?? · phase(P2-tail) · full evaluator rerun under generative-split profiles (D19-rest)
 …
 ```
