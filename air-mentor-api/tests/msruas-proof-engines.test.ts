@@ -358,8 +358,23 @@ describe('msruas proof engines', () => {
       assignmentPct: null,
     })
 
+    // Quiz and assignment are suppressed at post-tt2 because the
+    // post-assignments stage (where assignments are graded) is later in
+    // the lifecycle than post-tt2. Documented per-stage visible-signal
+    // table: audit-map/32-reports/proof-readiness-closeout-2026-04-30.md
+    // (see lines 76-78).
     expect(stageCourseworkEvidenceForStage({
       stageKey: 'post-tt2',
+      quizPct: 72,
+      assignmentPct: 74,
+    })).toEqual({
+      quizPct: null,
+      assignmentPct: null,
+    })
+
+    // Coursework first surfaces at post-assignments.
+    expect(stageCourseworkEvidenceForStage({
+      stageKey: 'post-assignments',
       quizPct: 72,
       assignmentPct: 74,
     })).toEqual({
