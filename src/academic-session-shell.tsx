@@ -99,6 +99,7 @@ function AcademicLoginPage({
 }: AcademicLoginPageProps) {
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [passwordHelpIdentifier, setPasswordHelpIdentifier] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -106,7 +107,7 @@ function AcademicLoginPage({
   const selectedOption = useMemo(() => {
     const key = identifier.trim().toLowerCase()
     if (!key) return null
-    return facultyOptions.find(option => option.username.toLowerCase() === key) ?? null
+    return facultyOptions.find(option => option.username.toLowerCase() === key || option.email.toLowerCase() === key) ?? null
   }, [facultyOptions, identifier])
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -245,6 +246,25 @@ function AcademicLoginPage({
               </form>
             ) : (
               <form onSubmit={event => { void handleSubmit(event) }} style={{ marginTop: 22, display: 'grid', gap: 14 }}>
+                {facultyOptions.length > 0 && !selectedOption ? (
+                  <div style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 12px' }}>
+                    <div style={{ ...mono, fontSize: 10, color: T.dim, marginBottom: 8 }}>Demo — select a profile to autofill · password: <span style={{ color: T.success, fontWeight: 700 }}>faculty1234</span></div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {facultyOptions.slice(0, 6).map(option => (
+                        <button
+                          key={option.facultyId}
+                          type="button"
+                          disabled={busy}
+                          onClick={() => setIdentifier(option.username)}
+                          style={{ ...mono, fontSize: 10, color: T.accent, background: `${T.accent}14`, border: `1px solid ${T.accent}30`, borderRadius: 8, padding: '4px 10px', cursor: 'pointer' }}
+                        >
+                          {option.username}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
                 <div>
                   <AcademicFieldLabel>Username Or Email</AcademicFieldLabel>
                   <AcademicInput
@@ -252,7 +272,7 @@ function AcademicLoginPage({
                     value={identifier}
                     onChange={event => setIdentifier(event.target.value)}
                     disabled={busy}
-                    placeholder="e.g. kavitha.rao or kavitha.rao@msruas.ac.in"
+                    placeholder={facultyOptions.length > 0 ? `e.g. ${facultyOptions[0]?.username ?? 'devika.shetty'}` : 'e.g. faculty.username'}
                     autoComplete="username"
                   />
                 </div>
@@ -268,8 +288,13 @@ function AcademicLoginPage({
                 ) : null}
 
                 <div>
-                  <AcademicFieldLabel>Password</AcademicFieldLabel>
-                  <AcademicInput id="teacher-password" type="password" value={password} onChange={event => setPassword(event.target.value)} disabled={busy} placeholder="••••••••" autoComplete="current-password" />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                    <AcademicFieldLabel>Password</AcademicFieldLabel>
+                    <Btn variant="ghost" size="sm" type="button" onClick={() => setShowPassword(value => !value)}>
+                      {showPassword ? 'Hide Password' : 'Show Password'}
+                    </Btn>
+                  </div>
+                  <AcademicInput id="teacher-password" type={showPassword ? 'text' : 'password'} value={password} onChange={event => setPassword(event.target.value)} disabled={busy} placeholder="••••••••" autoComplete="current-password" />
                 </div>
 
                 {errorMessage ? <AcademicNotice message={errorMessage} tone="error" /> : null}
