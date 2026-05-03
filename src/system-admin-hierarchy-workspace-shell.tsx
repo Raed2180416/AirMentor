@@ -9,6 +9,7 @@ type SystemAdminHierarchyWorkspaceShellProps = {
   toneColor: string
   restoreNotice: RestoreNotice
   onResetRestore: () => void
+  onDismissRestore?: () => void
   selectorControls: ReactNode
   selectorHelperText: ReactNode
   workspaceColumns: string
@@ -36,6 +37,7 @@ export function SystemAdminHierarchyWorkspaceShell({
   toneColor,
   restoreNotice,
   onResetRestore,
+  onDismissRestore,
   selectorControls,
   selectorHelperText,
   workspaceColumns,
@@ -74,6 +76,7 @@ export function SystemAdminHierarchyWorkspaceShell({
           message={restoreNotice.message}
           actionLabel="Reset workspace"
           onAction={onResetRestore}
+          onDismiss={onDismissRestore}
         />
       ) : null}
 

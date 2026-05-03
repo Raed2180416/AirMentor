@@ -37,6 +37,7 @@ import {
   Btn,
   Card,
   Chip,
+  Tooltip,
   getFieldChromeStyle,
   withAlpha,
 } from './ui-primitives'
@@ -479,6 +480,7 @@ type SystemAdminFacultiesWorkspaceProps = {
   toneColor: string
   restoreNotice: RestoreNotice
   onResetRestore: () => void
+  onDismissRestoreNotice?: () => void
   selectedAcademicFaculty: ApiAcademicFaculty | null
   selectedDepartment: ApiDepartment | null
   selectedBranch: ApiBranch | null
@@ -623,6 +625,7 @@ export function SystemAdminFacultiesWorkspace({
   toneColor,
   restoreNotice,
   onResetRestore,
+  onDismissRestoreNotice,
   selectedAcademicFaculty,
   selectedDepartment,
   selectedBranch,
@@ -1542,6 +1545,7 @@ export function SystemAdminFacultiesWorkspace({
       toneColor={toneColor}
       restoreNotice={restoreNotice}
       onResetRestore={onResetRestore}
+      onDismissRestore={onDismissRestoreNotice}
       selectorControls={selectorControls}
       selectorHelperText="Search narrows automatically to the active selector scope. `Year` is a UI alias for the canonical batch record beneath it."
       workspaceColumns={universityWorkspaceColumns}
@@ -1931,7 +1935,7 @@ export function SystemAdminFacultiesWorkspace({
                   <Card style={{ padding: 12, background: T.surface, display: 'grid', gap: 10 }}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
                       <div>
-                        <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>If multiple configs exist, prefer</div>
+                        <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}><Tooltip label="Controls which configuration wins when a batch inherits from a scope profile and also has a local override.">If multiple configs exist, prefer</Tooltip></div>
                         <select value={curriculumFeatureBindingMode} onChange={event => setCurriculumFeatureBindingMode(event.target.value as typeof curriculumFeatureBindingMode)} style={{ width: '100%' }}>
                           <option value="inherit-scope-profile">Department / branch default</option>
                           <option value="pin-profile">A specific profile</option>
@@ -1950,7 +1954,7 @@ export function SystemAdminFacultiesWorkspace({
                         </select>
                       </div>
                       <div>
-                        <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Apply configuration to</div>
+                        <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}><Tooltip label="Saving to 'Just this batch' creates a batch-local override. Saving to 'Shared scope profile' updates the shared config for all batches in the selected department or branch.">Apply configuration to</Tooltip></div>
                         <select value={curriculumFeatureTargetMode} onChange={event => setCurriculumFeatureTargetMode(event.target.value as typeof curriculumFeatureTargetMode)} style={{ width: '100%' }}>
                           <option value="batch-local-override">Just this batch</option>
                           <option value="scope-profile">Shared scope profile</option>

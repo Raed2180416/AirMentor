@@ -12,7 +12,7 @@ import { ProofSimulationControls, type ProofAdvanceControlMode } from './proof-s
 import { humanLabelForActionCode } from './action-code-humaniser'
 import { ProofSurfaceHero, ProofSurfaceLauncher, ProofSurfaceTabPanel, ProofSurfaceTabs } from './proof-surface-shell'
 import { InfoBanner, RestoreBanner } from './system-admin-ui'
-import { Btn, Card, Chip, getAccessiblePrimaryAccent } from './ui-primitives'
+import { Btn, Card, Chip, Tooltip, getAccessiblePrimaryAccent } from './ui-primitives'
 
 type DiagnosticsRecord = Record<string, unknown> | null | undefined
 
@@ -323,6 +323,8 @@ export function SystemAdminProofDashboardWorkspace({
     ? `${Math.max(0, Math.round(pendingProofRun.queueAgeSeconds))}s in queue`
     : null
   const teacherLoadCount = activeRunDetail?.teacherAllocationLoad.length ?? 0
+  const proofRunStatusColor = (status: string) =>
+    status === 'running' ? T.accent : status === 'completed' ? T.success : status === 'failed' ? T.danger : T.dim
   const queuePreviewCount = activeRunDetail?.queuePreview.length ?? 0
   const productionEvaluation = activeProductionDiagnostics?.evaluation
   const productionEvaluationKeys = productionEvaluation && typeof productionEvaluation === 'object'
@@ -578,7 +580,7 @@ export function SystemAdminProofDashboardWorkspace({
         </>
       ) : pendingProofRun ? (
         <>
-          <Chip color={pendingProofRun.status === 'failed' ? T.danger : T.warning}>{pendingProofRun.status}</Chip>
+          <Chip color={proofRunStatusColor(pendingProofRun.status)}>{pendingProofRun.status}</Chip>
           <Chip color={T.dim}>{pendingProofRun.runLabel}</Chip>
           <Chip color={T.dim}>{pendingProofRunPhase} · {pendingProofRunPercent}%</Chip>
         </>
@@ -971,7 +973,7 @@ export function SystemAdminProofDashboardWorkspace({
                 <div style={{ ...mono, fontSize: 10, color: T.text, lineHeight: 1.6 }}>Manifest {activeDiagnosticsTrainingManifestVersion ?? 'unknown'}</div>
                 <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>Splits: {formatSplitSummary(activeDiagnosticsSplitSummary)}</div>
                 <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>Worlds: {formatSplitSummary(activeDiagnosticsWorldSplitSummary)}</div>
-                <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>Scenario families: {formatKeyedCounts(activeModelDiagnostics?.scenarioFamilySummary ?? activeDiagnosticsScenarioFamilies)}</div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}><Tooltip label="Scenario families classify synthetic student trajectories into behavioural archetypes (e.g. attendance-driven, early-warning) so the risk model trains on a diverse, controlled mix of outcomes.">Scenario families</Tooltip>: {formatKeyedCounts(activeModelDiagnostics?.scenarioFamilySummary ?? activeDiagnosticsScenarioFamilies)}</div>
                 {activeDiagnosticsHeadSupportSummary ? <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>Head support: {formatHeadSupportSummary(activeDiagnosticsHeadSupportSummary)}</div> : null}
                 {activeDiagnosticsGovernedRunCount != null || activeDiagnosticsSkippedRunCount != null ? <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>Governed runs: {activeDiagnosticsGovernedRunCount ?? 'unknown'} · skipped runs: {activeDiagnosticsSkippedRunCount ?? 0}</div> : null}
               </Card>
@@ -1041,7 +1043,7 @@ export function SystemAdminProofDashboardWorkspace({
                   <Card key={item.simulationRunId} style={{ padding: 10, background: T.surface }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
                       <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.runLabel}</div>
-                      <Chip color={item.activeFlag ? T.success : T.dim}>{item.activeFlag ? 'Active' : item.status}</Chip>
+                      <Chip color={item.activeFlag ? T.success : proofRunStatusColor(item.status)}>{item.activeFlag ? 'Active' : item.status}</Chip>
                     </div>
                     <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>Seed {item.seed} · {new Date(item.createdAt).toLocaleString('en-IN')}</div>
                     {item.progress ? <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{String(item.progress.phase ?? item.status)} · {String(item.progress.percent ?? 0)}%</div> : null}
@@ -1138,7 +1140,7 @@ export function SystemAdminProofDashboardWorkspace({
               </div>
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-              <Chip color={pendingProofRun.status === 'failed' ? T.danger : T.warning}>{pendingProofRun.status}</Chip>
+              <Chip color={proofRunStatusColor(pendingProofRun.status)}>{pendingProofRun.status}</Chip>
               <Chip color={T.dim}>{pendingProofRunPhase} · {pendingProofRunPercent}%</Chip>
               {pendingProofRunAge ? <Chip color={T.dim}>{pendingProofRunAge}</Chip> : null}
             </div>
