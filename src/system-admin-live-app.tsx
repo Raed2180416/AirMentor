@@ -657,6 +657,7 @@ function parseCurriculumFeatureLines(value: string) {
     .filter(Boolean)
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function buildCurriculumFeaturePayload(form: CurriculumFeatureFormState): ApiCurriculumFeatureConfigPayload {
   const outcomes = parseCurriculumFeatureLines(form.outcomesText).map((line, index) => {
     const [id, bloom, ...descParts] = line.split('|').map(part => part.trim())
@@ -704,6 +705,7 @@ export function buildCurriculumFeaturePayload(form: CurriculumFeatureFormState):
   }
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function validateCurriculumFeaturePrerequisites(
   targetCourse: ApiCurriculumFeatureConfigBundle['items'][number],
   prerequisites: ApiCurriculumFeatureConfigPayload['prerequisites'],
@@ -3928,8 +3930,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         : ` Candidate generation ran in ${result.candidateGenerationStatus.status} mode via ${result.candidateGenerationStatus.provider.replace('-', ' ')}.`
       setFlashMessage(
         queuedCount > 0
-          ? `Bootstrap imported ${result.createdCourseCount} live course rows, synced ${result.upsertedProfileCourseCount} profile items, generated ${result.generatedCandidateCount} linkage candidates, and queued ${queuedCount} proof refresh${queuedCount === 1 ? '' : 'es'}.${generationNote}`
-          : `Bootstrap imported ${result.createdCourseCount} live course rows, synced ${result.upsertedProfileCourseCount} profile items, and generated ${result.generatedCandidateCount} linkage candidates.${generationNote}`,
+          ? `Bootstrap imported ${result.createdCourseCount} live course rows, synced ${result.upsertedProfileCourseCount} profile items, generated ${result.generatedCandidateCount} prerequisite suggestion${result.generatedCandidateCount === 1 ? '' : 's'}, and queued ${queuedCount} proof refresh${queuedCount === 1 ? '' : 'es'}.${generationNote}`
+          : `Bootstrap imported ${result.createdCourseCount} live course rows, synced ${result.upsertedProfileCourseCount} profile items, and generated ${result.generatedCandidateCount} prerequisite suggestion${result.generatedCandidateCount === 1 ? '' : 's'}.${generationNote}`,
       )
     })
   }
@@ -3965,8 +3967,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         : ` Candidate generation ran in ${result.candidateGenerationStatus.status} mode via ${result.candidateGenerationStatus.provider.replace('-', ' ')}.`
       setFlashMessage(
         result.items.length > 0
-          ? `Regenerated ${result.items.length} linkage candidate${result.items.length === 1 ? '' : 's'} for ${selectedCurriculumFeatureItem?.courseCode ?? 'the selected scope'}.${generationNote}`
-          : `No linkage candidates were generated for ${selectedCurriculumFeatureItem?.courseCode ?? 'the selected scope'}.${generationNote}`,
+          ? `Generated ${result.items.length} prerequisite suggestion${result.items.length === 1 ? '' : 's'} for ${selectedCurriculumFeatureItem?.courseCode ?? 'the selected scope'}.${generationNote}`
+          : `No prerequisite suggestions generated for ${selectedCurriculumFeatureItem?.courseCode ?? 'the selected scope'}.${generationNote}`,
       )
     })
   }
@@ -4007,17 +4009,17 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           batchIds: result.affectedBatchIds,
           curriculumImportVersionId: result.curriculumImportVersionId,
           message: result.proofRefreshWarning
-            ?? 'Curriculum linkage was approved, but proof refresh queueing failed for one or more affected batches. Retry immediately to restore proof parity.',
+            ?? 'Prerequisite suggestion accepted, but proof refresh queueing failed for one or more affected batches. Retry immediately to restore proof parity.',
         })
       } else {
         setCurriculumProofRefreshRetry(null)
       }
       setFlashMessage(
         !result.proofRefreshQueued
-          ? `Curriculum linkage approved, but proof refresh queueing failed. ${result.proofRefreshWarning ?? 'Use Retry proof refresh to re-queue the affected batches.'}`
+          ? `Suggestion accepted, but proof refresh queueing failed. ${result.proofRefreshWarning ?? 'Use Retry proof refresh to re-queue the affected batches.'}`
           : queuedCount > 0
-          ? `Curriculum linkage approved and ${queuedCount} affected batch proof run${queuedCount === 1 ? '' : 's'} queued.`
-          : 'Curriculum linkage approved.',
+          ? `Suggestion accepted and ${queuedCount} affected batch proof run${queuedCount === 1 ? '' : 's'} queued.`
+          : 'Prerequisite suggestion accepted.',
       )
     })
   }
@@ -4030,7 +4032,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       })
       await refreshCurriculumLinkageCandidates(selectedBatch.batchId)
       setCurriculumLinkageReviewNote('')
-      setFlashMessage('Curriculum linkage candidate rejected.')
+      setFlashMessage('Prerequisite suggestion rejected.')
     })
   }
 
