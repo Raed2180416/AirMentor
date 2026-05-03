@@ -190,6 +190,7 @@ import {
   MSRUAS_PROOF_VALIDATOR_VERSION,
   validateCompiledCurriculum,
 } from './msruas-curriculum-compiler.js'
+import { BLOOM_LEVEL_MASTERY_TARGET, MASTERY_WEAKNESS_RATIO } from './learning-dynamics-constants.js'
 import { inferObservableRisk } from './inference-engine.js'
 import { buildMonitoringDecision } from './monitoring-engine.js'
 import { DEFAULT_STAGE_POLICY, type StagePolicyStageKey } from './stage-policy.js'
@@ -698,6 +699,7 @@ export type ProofCheckpointSummaryPayload = {
   mediumRiskCount?: number
   lowRiskCount?: number
   openQueueCount?: number
+  liveBlockingQueueItemCount?: number
   resolvedQueueCount?: number
   noActionHighRiskCount?: number
   electiveVisibleCount?: number
@@ -724,8 +726,10 @@ export type RuntimeCourse = {
   matchStatus: string
   mappingNote: string | null
   assessmentProfile: string
+  outcomeBloomLevel: string | null
   explicitPrerequisites: string[]
   addedPrerequisites: string[]
+  prerequisiteEdges: Array<{ title: string; weight: number }>
   bridgeModules: string[]
   tt1Topics: string[]
   tt2Topics: string[]
@@ -1073,10 +1077,13 @@ function coDefinitionsForCourse(course: RuntimeCourse) {
     topicPool.filter((_, index) => index % 3 === 1),
     topicPool.filter((_, index) => index % 3 === 2),
   ].map(group => group.filter(Boolean))
+  const bloomKey = (course.outcomeBloomLevel ?? 'apply') as keyof typeof BLOOM_LEVEL_MASTERY_TARGET
+  const masteryTarget = BLOOM_LEVEL_MASTERY_TARGET[bloomKey] ?? BLOOM_LEVEL_MASTERY_TARGET.apply
   return groups.map((topics, index) => ({
     coCode: `${courseCodeForRuntime(course)}-CO${index + 1}`,
     coTitle: topics[0] ? `${topics[0]} competency` : `Course outcome ${index + 1}`,
     topics: topics.length > 0 ? topics : [course.title],
+    masteryTarget,
   }))
 }
 
@@ -1276,13 +1283,14 @@ function buildCourseOutcomeStates(input: {
         transferGap: roundToTwo(transferGap),
         recoveryAfterIntervention: roundToTwo(recoveryAfterIntervention),
       } satisfies CourseOutcomeSummary,
+      masteryTarget: outcome.masteryTarget,
     }
   })
 
   return {
     rows: outcomes.map(outcome => outcome.row),
     summaries: outcomes.map(outcome => outcome.summary),
-    weakCoCount: outcomes.filter(outcome => outcome.summary.observedScores.tt2Pct < 50 || outcome.summary.observedScores.seePct < 45).length,
+    weakCoCount: outcomes.filter(outcome => outcome.summary.mastery < outcome.masteryTarget * MASTERY_WEAKNESS_RATIO).length,
   }
 }
 
@@ -1598,11 +1606,17 @@ function courseEmphasis(course: Pick<RuntimeCourse, 'title'>) {
 }
 
 function prerequisiteAverage(course: RuntimeCourse, scoresByCourseTitle: Map<string, number>) {
-  const signals = [...course.explicitPrerequisites, ...course.addedPrerequisites]
-    .map(title => scoresByCourseTitle.get(title))
-    .filter((value): value is number => typeof value === 'number')
-  if (signals.length === 0) return 0.58
-  return clamp(signals.reduce((sum, value) => sum + value, 0) / (signals.length * 100), 0.2, 0.95)
+  const edges = course.prerequisiteEdges.length > 0
+    ? course.prerequisiteEdges
+    : [...course.explicitPrerequisites.map(title => ({ title, weight: 1.0 })),
+       ...course.addedPrerequisites.map(title => ({ title, weight: 0.5 }))]
+  const weighted = edges
+    .map(edge => ({ score: scoresByCourseTitle.get(edge.title), weight: edge.weight }))
+    .filter((e): e is { score: number; weight: number } => typeof e.score === 'number')
+  if (weighted.length === 0) return 0.58
+  const totalWeight = weighted.reduce((sum, e) => sum + e.weight, 0)
+  const weightedSum = weighted.reduce((sum, e) => sum + (e.score * e.weight), 0)
+  return clamp(weightedSum / (totalWeight * 100), 0.2, 0.95)
 }
 
 function teacherEffect(facultyId: string, course: RuntimeCourse, sectionCode: string, runSeed: number) {
@@ -3057,12 +3071,15 @@ export async function readRuntimeCurriculum(db: AppDb, curriculumImportVersionId
   const nodesById = new Map(nodeRows.map(row => [row.curriculumNodeId, row]))
   const explicitSourcesByTarget = new Map<string, string[]>()
   const addedSourcesByTarget = new Map<string, string[]>()
+  const edgesByTarget = new Map<string, Array<{ title: string; weight: number }>>()
   for (const edge of edgeRows) {
     const source = nodesById.get(edge.sourceCurriculumNodeId)
     const target = nodesById.get(edge.targetCurriculumNodeId)
     if (!source || !target) continue
+    const effectiveWeight = edge.weightOverride ?? edge.weight ?? (edge.edgeKind === 'added' ? 0.5 : 1.0)
     const targetMap = edge.edgeKind === 'explicit' ? explicitSourcesByTarget : addedSourcesByTarget
     targetMap.set(target.curriculumNodeId, [...(targetMap.get(target.curriculumNodeId) ?? []), source.title])
+    edgesByTarget.set(target.curriculumNodeId, [...(edgesByTarget.get(target.curriculumNodeId) ?? []), { title: source.title, weight: effectiveWeight }])
   }
   const bridgeRowsByNodeId = new Map(bridgeRows.map(row => [row.curriculumNodeId, row]))
   const partitionsByNodeKind = new Map(partitionRows.map(row => [`${row.curriculumNodeId}::${row.partitionKind}`, row]))
@@ -3080,8 +3097,10 @@ export async function readRuntimeCurriculum(db: AppDb, curriculumImportVersionId
     matchStatus: row.matchStatus,
     mappingNote: row.mappingNote,
     assessmentProfile: row.assessmentProfile,
+    outcomeBloomLevel: row.outcomeBloomLevel ?? null,
     explicitPrerequisites: [...(explicitSourcesByTarget.get(row.curriculumNodeId) ?? [])].sort(),
     addedPrerequisites: [...(addedSourcesByTarget.get(row.curriculumNodeId) ?? [])].sort(),
+    prerequisiteEdges: (edgesByTarget.get(row.curriculumNodeId) ?? []).sort((a, b) => a.title.localeCompare(b.title)),
     bridgeModules: parseJson(bridgeRowsByNodeId.get(row.curriculumNodeId)?.moduleTitlesJson ?? '[]', [] as string[]),
     tt1Topics: parseJson(partitionsByNodeKind.get(`${row.curriculumNodeId}::tt1`)?.topicsJson ?? '[]', [] as string[]),
     tt2Topics: parseJson(partitionsByNodeKind.get(`${row.curriculumNodeId}::tt2`)?.topicsJson ?? '[]', [] as string[]),
@@ -3148,6 +3167,8 @@ export async function emitSimulationAudit(db: AppDb, input: {
 }
 
 async function ensureProofCourses(db: AppDb, runtimeCourses: RuntimeCourse[], now: string) {
+  const [institution] = await db.select().from(institutions).limit(1)
+  if (!institution) throw new Error('Institution not configured')
   const existingRows = await db.select().from(courses).where(eq(courses.departmentId, MSRUAS_PROOF_DEPARTMENT_ID))
   const existingByCodeTitle = new Map(existingRows.map(row => [`${row.courseCode}::${row.title}`, row]))
   const courseIdByInternalId = new Map<string, string>()
@@ -3164,7 +3185,7 @@ async function ensureProofCourses(db: AppDb, runtimeCourses: RuntimeCourse[], no
     const courseId = `course_${course.internalCompilerId.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`
     newRows.push({
       courseId,
-      institutionId: 'msruas',
+      institutionId: institution.institutionId,
       courseCode,
       title: course.title,
       defaultCredits: course.credits,
@@ -3339,6 +3360,18 @@ export async function ensureProofOfferings(db: AppDb, runtime: RuntimeCurriculum
       const faculty = courseLeaderFaculty[(courseIndex + (sectionOffset * 3) + (course.semesterNumber - 1)) % courseLeaderFaculty.length]
       if (current) {
         offeringFacultyById.set(current.offeringId, faculty.facultyId)
+        if (!ownershipRows.some(row => row.offeringId === current.offeringId && row.facultyId === faculty.facultyId && row.status === 'active')) {
+          newOwnershipRows.push({
+            ownershipId: `ownership_${faculty.facultyId}_${current.offeringId}`,
+            offeringId: current.offeringId,
+            facultyId: faculty.facultyId,
+            ownershipRole: 'owner',
+            status: 'active',
+            version: 1,
+            createdAt: now,
+            updatedAt: now,
+          })
+        }
         return
       }
       const courseRow = courseByTitle.get(course.title)
@@ -3411,14 +3444,21 @@ export async function publishOperationalProjection(db: AppDb, input: {
 }) {
   const [run] = await db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, input.simulationRunId))
   if (!run) throw new Error('Simulation run not found')
+  if (input.batchId === MSRUAS_PROOF_BATCH_ID && run.curriculumImportVersionId) {
+    const runtime = await readRuntimeCurriculum(db, run.curriculumImportVersionId)
+    await ensureProofOfferings(db, runtime, input.now)
+  }
 
-  const [observedRows, riskRows, alertRows, electiveRows, allocationRows, stageStudentRows] = await Promise.all([
+  const [observedRows, riskRows, alertRows, electiveRows, allocationRows, stageStudentRows, termRows, offeringRows, courseRows] = await Promise.all([
     db.select().from(studentObservedSemesterStates).where(eq(studentObservedSemesterStates.simulationRunId, input.simulationRunId)),
     db.select().from(riskAssessments).where(eq(riskAssessments.simulationRunId, input.simulationRunId)),
     db.select().from(alertDecisions),
     db.select().from(electiveRecommendations).where(eq(electiveRecommendations.simulationRunId, input.simulationRunId)),
     db.select().from(teacherAllocations).where(eq(teacherAllocations.simulationRunId, input.simulationRunId)),
     db.select().from(simulationStageStudentProjections).where(eq(simulationStageStudentProjections.simulationRunId, input.simulationRunId)),
+    db.select().from(academicTerms).where(eq(academicTerms.batchId, input.batchId)),
+    db.select().from(sectionOfferings),
+    db.select().from(courses),
   ])
 
   const activeSemesterNumber = run.activeOperationalSemester ?? run.semesterStart
@@ -3429,25 +3469,83 @@ export async function publishOperationalProjection(db: AppDb, input: {
     const payload = parseObservedStateRow(row)
     return Array.isArray(payload.subjectScores)
   })
-  const liveObservedOperationalRows = observedRows.filter(row => {
-    if (row.semesterNumber !== activeSemesterNumber) return false
-    const payload = parseObservedStateRow(row)
-    return typeof payload.offeringId === 'string' && payload.offeringId.length > 0
+  const termById = new Map(termRows.map(row => [row.termId, row]))
+  const courseById = new Map(courseRows.map(row => [row.courseId, row]))
+  const offeringIdBySemesterSectionCourse = new Map<string, string>()
+  offeringRows.forEach(offering => {
+    const term = termById.get(offering.termId)
+    const course = courseById.get(offering.courseId)
+    if (!term || !course) return
+    const sectionCode = offering.sectionCode.trim().toUpperCase()
+    offeringIdBySemesterSectionCourse.set(`${term.semesterNumber}::${sectionCode}::${course.courseCode}`, offering.offeringId)
+    offeringIdBySemesterSectionCourse.set(`${term.semesterNumber}::${sectionCode}::${course.title}`, offering.offeringId)
   })
-  const liveProjectionOperationalRows = stageStudentRows.filter(row => {
-    if (row.semesterNumber !== activeSemesterNumber) return false
-    if (!row.offeringId) return false
+  const resolveObservedOfferingId = (
+    semesterNumber: number,
+    sectionCode: string | null | undefined,
+    payload: Record<string, unknown>,
+  ) => {
+    const directOfferingId = typeof payload.offeringId === 'string' && payload.offeringId.length > 0
+      ? payload.offeringId
+      : null
+    if (directOfferingId) return directOfferingId
+    const normalizedSectionCode = (sectionCode ?? '').trim().toUpperCase()
+    if (!normalizedSectionCode) return null
+    const courseCode = typeof payload.courseCode === 'string' ? payload.courseCode : null
+    const courseTitle = typeof payload.title === 'string'
+      ? payload.title
+      : typeof payload.courseTitle === 'string'
+        ? payload.courseTitle
+        : null
+    return (courseCode ? offeringIdBySemesterSectionCourse.get(`${semesterNumber}::${normalizedSectionCode}::${courseCode}`) : null)
+      ?? (courseTitle ? offeringIdBySemesterSectionCourse.get(`${semesterNumber}::${normalizedSectionCode}::${courseTitle}`) : null)
+      ?? null
+  }
+  type LiveOperationalRow = { studentId: string; offeringId: string; payload: Record<string, unknown> }
+  const liveObservedOperationalRows: LiveOperationalRow[] = observedRows.flatMap((row): LiveOperationalRow[] => {
+    if (row.semesterNumber !== activeSemesterNumber) return []
+    const payload = parseObservedStateRow(row)
+    const directOfferingId = resolveObservedOfferingId(row.semesterNumber, row.sectionCode, payload)
+    if (directOfferingId) {
+      return [{
+        studentId: row.studentId,
+        offeringId: directOfferingId,
+        payload: {
+          ...payload,
+          offeringId: directOfferingId,
+        },
+      }]
+    }
+    const subjectScores = Array.isArray(payload.subjectScores) ? payload.subjectScores : []
+    return subjectScores.flatMap((subject): LiveOperationalRow[] => {
+      const subjectPayload = subject as Record<string, unknown>
+      const offeringId = resolveObservedOfferingId(row.semesterNumber, row.sectionCode, subjectPayload)
+      if (!offeringId) return []
+      return [{
+        studentId: row.studentId,
+        offeringId,
+        payload: {
+          ...payload,
+          ...subjectPayload,
+          offeringId,
+          courseTitle: subjectPayload.title ?? subjectPayload.courseTitle ?? subjectPayload.courseCode,
+        },
+      }]
+    })
+  })
+  const liveProjectionOperationalRows = stageStudentRows.flatMap(row => {
+    if (row.semesterNumber !== activeSemesterNumber) return []
+    if (!row.offeringId) return []
     const projection = parseJson<Record<string, unknown>>(row.projectionJson, {})
     return String(projection.stageKey ?? '') === activeStageKey
+      ? [{ ...row, offeringId: row.offeringId }]
+      : []
   })
-  const liveOperationalRows = liveObservedOperationalRows.map(row => {
-    const payload = parseObservedStateRow(row)
-    return {
-      studentId: row.studentId,
-      offeringId: typeof payload.offeringId === 'string' && payload.offeringId.length > 0 ? payload.offeringId : null,
-      payload,
-    }
-  })
+  const liveOperationalRows: LiveOperationalRow[] = liveObservedOperationalRows.map(row => ({
+    studentId: row.studentId,
+    offeringId: row.offeringId,
+    payload: row.payload,
+  }))
   if (liveOperationalRows.length === 0) {
     liveOperationalRows.push(...liveProjectionOperationalRows.map(row => {
       const projection = parseJson<Record<string, unknown>>(row.projectionJson, {})
@@ -3457,9 +3555,9 @@ export async function publishOperationalProjection(db: AppDb, input: {
       )
       return {
         studentId: row.studentId,
-        offeringId: row.offeringId ?? null,
+        offeringId: row.offeringId,
         payload: {
-          offeringId: row.offeringId ?? null,
+          offeringId: row.offeringId,
           courseCode: row.courseCode,
           courseTitle: row.courseTitle,
           attendancePct: Number(currentEvidence.attendancePct ?? 0),
@@ -3884,8 +3982,13 @@ export async function createProofCurriculumImport(db: AppDb, input: {
     matchStatus: course.matchStatus,
     mappingNote: course.mappingNote,
     assessmentProfile: course.assessmentProfile,
+    outcomeBloomLevel: null,
     explicitPrerequisites: course.explicitPrerequisites,
     addedPrerequisites: course.addedPrerequisites,
+    prerequisiteEdges: [
+      ...course.explicitPrerequisites.map(title => ({ title, weight: 1.0 })),
+      ...course.addedPrerequisites.map(title => ({ title, weight: 0.5 })),
+    ],
     bridgeModules: course.bridgeModules,
     tt1Topics: course.tt1Topics,
     tt2Topics: course.tt2Topics,
@@ -4403,7 +4506,6 @@ export async function archiveProofSimulationRun(db: AppDb, input: {
     createdByFacultyId: input.actorFacultyId ?? null,
     now: input.now,
   })
-  await invalidateProofBatchSessions(db, run.batchId)
 }
 
 export async function activateProofSimulationRun(db: AppDb, input: {
@@ -4442,7 +4544,6 @@ export async function activateProofSimulationRun(db: AppDb, input: {
     status: 'completed',
     updatedAt: input.now,
   }).where(eq(simulationRuns.batchId, run.batchId))
-  await invalidateProofBatchSessions(db, run.batchId)
   // Fresh activation starts at semesterStart, NOT semesterEnd.
   // semesterEnd is the final semester of the run, not the starting point.
   // If the run was previously activated (activeOperationalSemester already set), preserve it.
@@ -4474,6 +4575,10 @@ export async function activateProofSimulationRun(db: AppDb, input: {
     eq(academicTerms.batchId, run.batchId),
     eq(academicTerms.semesterNumber, targetSemester),
   ))
+  if (run.batchId === MSRUAS_PROOF_BATCH_ID && run.curriculumImportVersionId) {
+    const runtime = await readRuntimeCurriculum(db, run.curriculumImportVersionId)
+    await ensureProofOfferings(db, runtime, input.now)
+  }
   await publishOperationalProjection(db, {
     simulationRunId: run.simulationRunId,
     batchId: run.batchId,
@@ -4507,6 +4612,11 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
   rebuildModelArtifacts?: boolean
   skipArtifactTraining?: boolean
 }) {
+  const [run] = await db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, input.simulationRunId))
+  if (run?.batchId === MSRUAS_PROOF_BATCH_ID && run.curriculumImportVersionId) {
+    const runtime = await readRuntimeCurriculum(db, run.curriculumImportVersionId)
+    await ensureProofOfferings(db, runtime, input.now)
+  }
   return recomputeObservedOnlyRiskService(db, input, proofControlPlaneRuntimeServiceDeps)
 }
 

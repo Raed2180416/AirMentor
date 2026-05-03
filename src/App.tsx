@@ -3638,6 +3638,7 @@ export function OperationalApp() {
         return {
           facultyId: account.facultyId,
           username: accountUsername,
+          email: account.email,
           name: account.name,
           displayName: account.name,
           designation: account.roleTitle,
@@ -3645,6 +3646,9 @@ export function OperationalApp() {
           departmentCode: account.dept,
           roleTitle: account.roleTitle,
           allowedRoles: account.allowedRoles,
+          courseCodes: account.courseCodes,
+          offeringIds: account.offeringIds,
+          menteeIds: account.menteeIds,
         }
       })))
       return snapshot

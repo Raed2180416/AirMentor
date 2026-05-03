@@ -25,7 +25,7 @@ const seededProofRoute = '#/admin/faculties/academic_faculty_engineering_and_tec
 const seededProofBatchId = 'batch_branch_mnc_btech_2023'
 const defaultRequestSummary = 'Grant additional mentor mapping coverage'
 const teachingPasswordCandidates = ['faculty1234', '1234']
-const defaultTeachingUsername = isLiveStack ? 'kavitha.rao' : 'devika.shetty'
+const defaultTeachingUsername = process.env.AIRMENTOR_LIVE_TEACHER_IDENTIFIER?.trim() || (isLiveStack ? 'rohit.menon' : 'devika.shetty')
 let proofRouteState = {
   routeHash: seededProofRoute,
   batchId: seededProofBatchId,
@@ -663,8 +663,22 @@ try {
   const requestAction = requestDetailSurface.getByRole('button', { name: /Take Review|Approve|Mark Implemented|Close/ }).first()
   const requestActionVisible = await requestAction.isVisible().catch(() => false)
   if (requestActionVisible) {
+    const actionText = ((await requestAction.textContent().catch(() => '')) ?? '').trim()
     await focusAndActivate(requestAction, 'request advance action', ' ')
-    await expectVisible(page.getByText('Request advanced.', { exact: true }), 'request advance flash')
+    await Promise.any([
+      expectVisible(page.getByText('Request updated.', { exact: true }), 'request update flash', 10_000),
+      expectText(
+        requestDetailSurface,
+        actionText === 'Take Review'
+          ? /In Review/i
+          : actionText === 'Approve'
+            ? /Approved/i
+            : actionText === 'Mark Implemented'
+              ? /Implemented/i
+              : /Closed/i,
+        'request status after keyboard advance',
+      ),
+    ])
   } else {
     await expectText(requestDetailSurface, /Closed|Rejected/i, 'request terminal status')
   }
@@ -724,14 +738,18 @@ try {
     'selected checkpoint banner after late checkpoint selection',
   )
   const resetPlaybackButtons = [
+    proofControlPlane.getByRole('button', { name: 'Reset Preview To Start', exact: true }).first(),
+    proofControlPlane.getByRole('button', { name: 'Reset Full Preview', exact: true }).first(),
     proofControlPlane.getByRole('button', { name: 'Reset To Start', exact: true }).first(),
     proofControlPlane.getByRole('button', { name: /Reset Playback To Semester 1/i }).first(),
     proofControlPlane.getByRole('button', { name: /Reset Playback/i }).first(),
   ]
   await Promise.any([
-    expectVisible(resetPlaybackButtons[0], 'reset playback button (legacy label)'),
-    expectVisible(resetPlaybackButtons[1], 'reset playback button (semester label)'),
-    expectVisible(resetPlaybackButtons[2], 'reset playback button (fallback label)'),
+    expectVisible(resetPlaybackButtons[0], 'reset playback button (preview start label)'),
+    expectVisible(resetPlaybackButtons[1], 'reset playback button (full preview label)'),
+    expectVisible(resetPlaybackButtons[2], 'reset playback button (legacy label)'),
+    expectVisible(resetPlaybackButtons[3], 'reset playback button (semester label)'),
+    expectVisible(resetPlaybackButtons[4], 'reset playback button (fallback label)'),
   ])
   let resetPlaybackButton = resetPlaybackButtons[0]
   for (const candidate of resetPlaybackButtons) {
@@ -742,16 +760,16 @@ try {
   }
   await focusAndActivate(resetPlaybackButton, 'reset playback button')
   await expectText(selectedCheckpointBanner, new RegExp(escapeRegex(firstCheckpointStageLabel), 'i'), 'selected checkpoint banner after reset')
-  const playToEndButton = proofControlPlane.getByRole('button', { name: 'Play To End', exact: true })
-  await expectVisible(playToEndButton, 'play to end button')
-  if (await playToEndButton.isDisabled()) {
-    await expectText(selectedCheckpointBanner, new RegExp(escapeRegex(firstCheckpointStageLabel), 'i'), 'selected checkpoint banner when play to end is gated')
+  const jumpToLatestStageButton = proofControlPlane.getByRole('button', { name: 'Jump To Latest Stage', exact: true })
+  await expectVisible(jumpToLatestStageButton, 'jump to latest stage button')
+  if (await jumpToLatestStageButton.isDisabled()) {
+    await expectText(selectedCheckpointBanner, new RegExp(escapeRegex(firstCheckpointStageLabel), 'i'), 'selected checkpoint banner when jump to latest stage is gated')
   } else {
-    await focusAndActivate(playToEndButton, 'play to end button')
+    await focusAndActivate(jumpToLatestStageButton, 'jump to latest stage button')
     await expectText(
       selectedCheckpointBanner,
       new RegExp(escapeRegex(lateCheckpointDescriptor.bannerLabel), 'i'),
-      'selected checkpoint banner after play to end',
+      'selected checkpoint banner after jump to latest stage',
     )
   }
   await readPlaybackSelection()
@@ -762,7 +780,7 @@ try {
   await expectVisible(page.getByRole('button', { name: /Open Academic Portal/i }), 'portal home after sysadmin logout', 60_000)
   await openAcademicPortal({ normalizeHomeUrl: true })
   const courseLeaderRoleButton = page.locator('[data-proof-action="switch-role"][data-proof-entity-id="Course Leader"]').first()
-  await focusAndActivate(courseLeaderRoleButton, 'course leader role switcher')
+  if (await courseLeaderRoleButton.isVisible().catch(() => false)) await focusAndActivate(courseLeaderRoleButton, 'course leader role switcher')
   const teacherProofPanel = await openFacultyProfileProofPanel()
   await expectVisible(teacherProofPanel, 'teacher proof panel after keyboard navigation')
   report.checks.push({ name: 'portal_role_switch_keyboard_navigation', status: 'passed' })

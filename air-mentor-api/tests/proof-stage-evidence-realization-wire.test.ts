@@ -137,7 +137,7 @@ describe('buildStageEvidenceSnapshot · Phase-6a realization wire-up', () => {
     else process.env[STAGE_REALIZATION_FLAG_NAME] = originalFlag
   })
 
-  it('no realization input -> baseline snapshot (backward compatible)', () => {
+  it('no realization input -> post-tt2 snapshot hides future CE evidence', () => {
     const source = makeSource()
     const snapshot = buildStageEvidenceSnapshot({
       source,
@@ -145,11 +145,11 @@ describe('buildStageEvidenceSnapshot · Phase-6a realization wire-up', () => {
       policy: makePolicy(),
       templatesById: emptyTemplates,
     })
-    // Baseline pass-through for all assessment fields
     expect(snapshot.tt1Pct).toBe(55)
     expect(snapshot.tt2Pct).toBe(52)
-    expect(snapshot.quizPct).toBe(61)
-    expect(snapshot.assignmentPct).toBe(65)
+    expect(snapshot.quizPct).toBeNull()
+    expect(snapshot.assignmentPct).toBeNull()
+    expect(snapshot.seePct).toBeNull()
   })
 
   it('realization input + flag off -> baseline snapshot (flag gate)', () => {
@@ -168,8 +168,8 @@ describe('buildStageEvidenceSnapshot · Phase-6a realization wire-up', () => {
       },
     })
     expect(snapshot.tt2Pct).toBe(52)
-    expect(snapshot.quizPct).toBe(61)
-    expect(snapshot.assignmentPct).toBe(65)
+    expect(snapshot.quizPct).toBeNull()
+    expect(snapshot.assignmentPct).toBeNull()
   })
 
   it('realization input + flag on + zero interventions -> baseline (no-op)', () => {
@@ -188,7 +188,7 @@ describe('buildStageEvidenceSnapshot · Phase-6a realization wire-up', () => {
       },
     })
     expect(snapshot.tt2Pct).toBe(52)
-    expect(snapshot.quizPct).toBe(61)
+    expect(snapshot.quizPct).toBeNull()
   })
 
   it('realization input + flag on + workflow-only interventions -> baseline (zero-impact filter)', () => {
@@ -210,11 +210,11 @@ describe('buildStageEvidenceSnapshot · Phase-6a realization wire-up', () => {
       },
     })
     expect(snapshot.tt2Pct).toBe(52)
-    expect(snapshot.quizPct).toBe(61)
-    expect(snapshot.assignmentPct).toBe(65)
+    expect(snapshot.quizPct).toBeNull()
+    expect(snapshot.assignmentPct).toBeNull()
   })
 
-  it('realization input + flag on + student-facing intervention -> realized delta applied', () => {
+  it('realization input + flag on + student-facing intervention -> realized delta applied at CE stage', () => {
     process.env[STAGE_REALIZATION_FLAG_NAME] = '1'
     const source = makeSource({
       tt2Pct: 50,
@@ -223,13 +223,13 @@ describe('buildStageEvidenceSnapshot · Phase-6a realization wire-up', () => {
     })
     const baseline = buildStageEvidenceSnapshot({
       source,
-      stageKey: 'post-tt2',
+      stageKey: 'post-assignments',
       policy: makePolicy(),
       templatesById: emptyTemplates,
     })
     const realized = buildStageEvidenceSnapshot({
       source,
-      stageKey: 'post-tt2',
+      stageKey: 'post-assignments',
       policy: makePolicy(),
       templatesById: emptyTemplates,
       realization: {
@@ -264,7 +264,7 @@ describe('buildStageEvidenceSnapshot · Phase-6a realization wire-up', () => {
     const profile = makeProfile({ interventionReceptivity: 0.7, practiceCompliance: 0.7 })
     const input = {
       source,
-      stageKey: 'post-tt2' as const,
+      stageKey: 'post-assignments' as const,
       policy: makePolicy(),
       templatesById: emptyTemplates,
       realization: {

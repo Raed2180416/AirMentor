@@ -31,11 +31,13 @@ import {
 } from '../lib/proof-run-queue.js'
 import {
   ensureMsruasProofBatchStructure,
+  ensureMsruasProofSandboxSeeded,
   MSRUAS_PROOF_BATCH_ID,
   rehydrateProofFacultyCredentials,
 } from '../lib/msruas-proof-sandbox.js'
 import { emitAuditEvent, parseOrThrow, requireRole } from './support.js'
 import {
+  DEFAULT_POLICY,
   resolveBatchCurriculumFeatures,
   resolveBatchPolicy,
 } from './admin-structure.js'
@@ -168,7 +170,6 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
   }, async request => {
     requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(batchParamsSchema, request.params)
-    await ensureProofSandboxBatch(context, params.batchId)
     return buildProofBatchDashboard(context.db, params.batchId)
   })
 
@@ -243,7 +244,14 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
     const auth = requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(batchParamsSchema, request.params)
     const body = parseOrThrow(createImportSchema, request.body)
-    await ensureProofSandboxBatch(context, params.batchId)
+    if (params.batchId === MSRUAS_PROOF_BATCH_ID) {
+      await ensureMsruasProofSandboxSeeded(context.db, {
+        now: context.now(),
+        policy: DEFAULT_POLICY,
+      })
+    } else {
+      await ensureProofSandboxBatch(context, params.batchId)
+    }
     const result = await createProofCurriculumImport(context.db, {
       batchId: params.batchId,
       sourcePath: body.sourcePath,

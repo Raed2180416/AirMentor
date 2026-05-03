@@ -830,7 +830,8 @@ describe('RiskExplorerPage', () => {
     expect(markup).toContain('Held-out positive support is below the probability display threshold.')
     expect(markup).toContain('synthetic-blueprint')
     expect(markup).toContain('Simulated Intervention / Realized Path')
-    expect(markup).toContain('structured-study-plan')
+    expect(markup).toContain('Structured study plan')
+    expect(markup).not.toContain('structured-study-plan')
   })
 
   it('renders an explicit proof load error before the unavailable empty state', () => {

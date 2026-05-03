@@ -9,7 +9,7 @@ import { buildApp } from '../../src/app.js'
 import { loadConfig } from '../../src/config.js'
 import { createDb, createPool, type AppDb } from '../../src/db/client.js'
 import { runSqlMigrations } from '../../src/db/migrate.js'
-import { seedIntoDatabase } from '../../src/db/seed.js'
+import { seedIntoDatabase, type SeedProfile } from '../../src/db/seed.js'
 import { buildCsrfToken } from '../../src/lib/csrf.js'
 import type { EmailTransport } from '../../src/lib/email-transport.js'
 
@@ -64,6 +64,7 @@ function findFreePort() {
 export async function createTestApp(options?: {
   env?: NodeJS.ProcessEnv
   emailTransport?: EmailTransport
+  seedProfile?: SeedProfile
 }) {
   const port = await findFreePort()
   const databaseDir = await mkdtemp(path.join(tmpdir(), 'airmentor-postgres-test-'))
@@ -89,7 +90,7 @@ export async function createTestApp(options?: {
     const db = createDb(pool) as AppDb
     const migrationsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../src/db/migrations')
     await runSqlMigrations(pool, migrationsDir)
-    await seedIntoDatabase(db, pool, TEST_NOW)
+    await seedIntoDatabase(db, pool, TEST_NOW, { profile: options?.seedProfile })
 
     const config = loadConfig({
       DATABASE_URL: connectionString,

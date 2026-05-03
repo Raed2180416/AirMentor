@@ -99,6 +99,7 @@ export function buildSeededHistoricalSemesterRows(
     let semesterInterventionCount = 0
 
     semesterCourses.forEach((course, courseIndex) => {
+      const offering = input.offeringBySemesterCourseTitleSection?.get(`${semesterNumber}::${course.title}::${input.trajectory.sectionCode}`) ?? null
       const faculty = input.courseLeaderFaculty[(courseIndex + (input.trajectory.sectionCode === 'B' ? 1 : 0)) % input.courseLeaderFaculty.length]
       const simulation = deps.simulateSemesterCourse({
         student: input.trajectory,
@@ -124,6 +125,7 @@ export function buildSeededHistoricalSemesterRows(
         student: input.trajectory,
         course,
         semesterNumber,
+        offeringId: offering?.offeringId ?? null,
         mastery: Number(simulation.latentSummary.mastery ?? 0),
         tt1Pct: simulation.tt1Pct,
         tt2Pct: simulation.tt2Pct,
@@ -138,6 +140,7 @@ export function buildSeededHistoricalSemesterRows(
         student: input.trajectory,
         course,
         semesterNumber,
+        offeringId: offering?.offeringId ?? null,
         mastery: Number(simulation.latentSummary.mastery ?? 0),
         prereq: Number(simulation.latentSummary.prereq ?? 0),
         runSeed: input.runSeed,
@@ -151,7 +154,7 @@ export function buildSeededHistoricalSemesterRows(
           studentId: input.trajectory.studentId,
           semesterNumber,
           curriculumNodeId: course.curriculumNodeId,
-          offeringId: null,
+          offeringId: offering?.offeringId ?? null,
           simulationQuestionTemplateId: result.simulationQuestionTemplateId,
           componentType: result.componentType,
           sectionCode: input.trajectory.sectionCode,
@@ -182,7 +185,7 @@ export function buildSeededHistoricalSemesterRows(
             interventionId,
             studentId: input.trajectory.studentId,
             facultyId: deps.mentorFaculty[input.trajectoryIndex % deps.mentorFaculty.length].facultyId,
-            offeringId: null,
+            offeringId: offering?.offeringId ?? null,
             interventionType,
             note: `Generated ${interventionType} for ${deps.courseCodeForRuntime(course)} in semester ${semesterNumber}.`,
             occurredAt: input.now,
@@ -196,7 +199,7 @@ export function buildSeededHistoricalSemesterRows(
           studentId: input.trajectory.studentId,
           semesterNumber,
           sectionCode: input.trajectory.sectionCode,
-          offeringId: null,
+          offeringId: offering?.offeringId ?? null,
           interventionId,
           interventionType,
           responseStateJson: JSON.stringify({
@@ -235,6 +238,7 @@ export function buildSeededHistoricalSemesterRows(
       semesterWeakCoCount += coStates.weakCoCount
       semesterQuestionCoverage += questionResults.results.length
       subjectScores.push({
+        offeringId: offering?.offeringId ?? null,
         courseCode: deps.courseCodeForRuntime(course),
         title: course.title,
         credits: course.credits,

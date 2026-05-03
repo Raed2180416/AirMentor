@@ -28,7 +28,6 @@ import {
   transcriptSubjectResults,
   transcriptTermResults,
 } from '../src/db/schema.js'
-import { parseObservedStateRow } from '../src/lib/proof-observed-state.js'
 import { MSRUAS_PROOF_BATCH_ID, PROOF_TERM_DEFS } from '../src/lib/msruas-proof-sandbox.js'
 import { PROOF_CORPUS_MANIFEST } from '../src/lib/proof-risk-model.js'
 import { createTestApp, loginAs, TEST_ORIGIN } from './helpers/test-app.js'
@@ -85,20 +84,20 @@ function timetableRangesOverlap(
 async function readPublishedOperationalProjectionCounts(simulationRunId: string) {
   if (!current) throw new Error('Test app is not initialized')
 
+  const [run] = await current.db.select().from(simulationRuns).where(
+    eq(simulationRuns.simulationRunId, simulationRunId),
+  )
+  const activeSemester = run?.activeOperationalSemester ?? run?.semesterStart ?? 6
+  const activeTermIds = new Set<string>(PROOF_TERM_DEFS
+    .filter(term => term.semesterNumber === activeSemester)
+    .map(term => term.termId))
+  const activeOfferingIds = new Set((await current.db.select().from(sectionOfferings))
+    .filter(row => activeTermIds.has(row.termId))
+    .map(row => row.offeringId))
   const observedRows = await current.db.select().from(studentObservedSemesterStates).where(
     eq(studentObservedSemesterStates.simulationRunId, simulationRunId),
   )
   const proofStudentIds = new Set(observedRows.map(row => row.studentId))
-  const proofOfferingIds = new Set(
-    observedRows
-      .map(row => {
-        const payload = parseObservedStateRow(row)
-        return typeof payload.offeringId === 'string' && payload.offeringId.length > 0
-          ? payload.offeringId
-          : null
-      })
-      .filter((value): value is string => value != null),
-  )
   const proofTermIds = new Set<string>(PROOF_TERM_DEFS.map(term => term.termId))
 
   const transcriptRows = (await current.db.select().from(transcriptTermResults)).filter(row => (
@@ -111,13 +110,13 @@ async function readPublishedOperationalProjectionCounts(simulationRunId: string)
   )).length
   const attendanceCount = (await current.db.select().from(studentAttendanceSnapshots)).filter(row => (
     proofStudentIds.has(row.studentId)
-    && proofOfferingIds.has(row.offeringId)
+    && activeOfferingIds.has(row.offeringId)
     && row.source.startsWith('proof-run:')
   )).length
   const assessmentCount = (await current.db.select().from(studentAssessmentScores)).filter(row => (
     proofStudentIds.has(row.studentId)
-    && proofOfferingIds.has(row.offeringId)
-    && row.termId === 'term_mnc_sem6'
+    && activeOfferingIds.has(row.offeringId)
+    && activeTermIds.has(row.termId ?? '')
   )).length
 
   return {
@@ -212,7 +211,7 @@ describe('admin control plane routes', () => {
     expect(outOfScopeResponse.statusCode).toBe(403)
   })
 
-  it('keeps admin-created non-proof faculty out of teaching bootstrap while preserving admin master data', async () => {
+  it('removes deleted faculty from admin and teaching workspaces while preserving audit history', async () => {
     current = await createTestApp()
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
     expect(adminLogin.response.statusCode).toBe(200)
@@ -1031,6 +1030,63 @@ describe('admin control plane routes', () => {
     ))).toBe(true)
   }, 300000)
 
+  it('computes proof dashboard playback gates from live queue-case timeline', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const dashboardBefore = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/batches/${MSRUAS_PROOF_BATCH_ID}/proof-dashboard`,
+      headers: { cookie: adminLogin.cookie },
+    })
+    expect(dashboardBefore.statusCode).toBe(200)
+    const activeRunId = dashboardBefore.json().activeRunDetail?.simulationRunId as string | undefined
+    expect(activeRunId).toBeTruthy()
+
+    const recomputeRiskResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRunId}/recompute-risk`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+    expect(recomputeRiskResponse.statusCode).toBe(200)
+
+    const dashboardResponse = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/batches/${MSRUAS_PROOF_BATCH_ID}/proof-dashboard`,
+      headers: { cookie: adminLogin.cookie },
+    })
+    expect(dashboardResponse.statusCode).toBe(200)
+    const checkpoints = dashboardResponse.json().activeRunDetail.checkpoints as Array<{
+      simulationStageCheckpointId: string
+      semesterNumber: number
+      stageKey: string
+      openQueueCount?: number
+      blockingQueueItemCount?: number
+      stageAdvanceBlocked?: boolean
+      playbackAccessible?: boolean
+      blockedByCheckpointId?: string | null
+      blockedProgressionReason?: string | null
+    }>
+    const sem2PostTt1 = checkpoints.find(item => item.semesterNumber === 2 && item.stageKey === 'post-tt1')
+    const sem6PostSee = checkpoints.find(item => item.semesterNumber === 6 && item.stageKey === 'post-see')
+
+    expect(sem2PostTt1).toBeTruthy()
+    expect(sem6PostSee).toBeTruthy()
+    expect(sem2PostTt1).toMatchObject({
+      openQueueCount: expect.any(Number),
+      blockingQueueItemCount: 0,
+      stageAdvanceBlocked: false,
+      playbackAccessible: true,
+    })
+    expect(Number(sem2PostTt1?.openQueueCount ?? 0)).toBeGreaterThan(0)
+    expect(sem6PostSee).toMatchObject({
+      playbackAccessible: true,
+      blockedByCheckpointId: null,
+      blockedProgressionReason: null,
+    })
+  }, 300000)
+
   it('keeps proof-dashboard stable across repeated semester activation reads', async () => {
     current = await createTestApp()
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
@@ -1179,7 +1235,7 @@ describe('admin control plane routes', () => {
     expect(countsAfterSemesterFour.transcriptTermCount).toBeGreaterThan(0)
     expect(countsAfterSemesterFour.transcriptSubjectCount).toBeGreaterThan(0)
     expect(countsAfterSemesterFour.attendanceCount).toBeGreaterThan(0)
-    expect(countsAfterSemesterFour.assessmentCount).toBeGreaterThan(0)
+    expect(countsAfterSemesterFour.assessmentCount).toBe(0)
 
     const restoreSemesterSix = await current.app.inject({
       method: 'POST',
@@ -1197,7 +1253,19 @@ describe('admin control plane routes', () => {
     })
 
     const countsAfterSemesterSix = await readPublishedOperationalProjectionCounts(activeRunId!)
-    expect(countsAfterSemesterSix).toEqual(countsAfterSemesterFour)
+    expect(countsAfterSemesterSix.transcriptTermCount).toBeGreaterThan(countsAfterSemesterFour.transcriptTermCount)
+    expect(countsAfterSemesterSix.transcriptSubjectCount).toBeGreaterThan(countsAfterSemesterFour.transcriptSubjectCount)
+    expect(countsAfterSemesterSix.attendanceCount).toBe(countsAfterSemesterFour.attendanceCount)
+    expect(countsAfterSemesterSix.assessmentCount).toBe(0)
+
+    const restoreSemesterSixAgain = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRunId}/activate-semester`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: { semesterNumber: 6 },
+    })
+    expect(restoreSemesterSixAgain.statusCode).toBe(200)
+    expect(await readPublishedOperationalProjectionCounts(activeRunId!)).toEqual(countsAfterSemesterSix)
   }, 300000)
 
   proofRcIt('re-seeds proof batch routes after the canonical batch disappears', async () => {
@@ -1493,6 +1561,25 @@ describe('admin control plane routes', () => {
       payload: { identifier: 'delete.me', password: 'faculty1234' },
     })
     expect(deletedFacultyLogin.statusCode).not.toBe(200)
+  })
+
+  it('does not expose system-admin identities in the teaching portal login list', async () => {
+    current = await createTestApp()
+
+    const publicFaculty = await current.app.inject({
+      method: 'GET',
+      url: '/api/academic/public/faculty',
+    })
+
+    expect(publicFaculty.statusCode).toBe(200)
+    const items = publicFaculty.json().items as Array<{
+      facultyId: string
+      username: string
+      allowedRoles: string[]
+    }>
+    expect(items.some(item => item.facultyId === 'fac_sysadmin')).toBe(false)
+    expect(items.some(item => item.username === 'sysadmin')).toBe(false)
+    expect(items.flatMap(item => item.allowedRoles)).not.toContain('SYSTEM_ADMIN')
   })
 
   it('previews and applies scoped mentor bulk assignment with confirmation and audit coverage', async () => {

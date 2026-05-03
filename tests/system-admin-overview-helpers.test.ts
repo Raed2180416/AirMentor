@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   computeOverviewScopedCounts,
   describeRegistryScope,
+  formatOverviewFacultyCaption,
   isCurrentRoleGrant,
   isLeaderLikeOwnership,
   matchesFacultyScope,
@@ -445,13 +446,18 @@ describe('system-admin-overview-helpers', () => {
   })
 
   describe('computeOverviewScopedCounts', () => {
-    it('returns global student counts when scope is null', () => {
+    it('returns global student and faculty counts when scope is null', () => {
       const counts = computeOverviewScopedCounts(dataset, null)
       expect(counts.studentCount).toBe(2)
       expect(counts.mentoredCount).toBe(1)
       expect(counts.mentorGapCount).toBe(1)
-      expect(counts.facultyCount).toBe(0)
-      expect(counts.ownershipCount).toBe(0)
+      expect(counts.facultyCount).toBe(1)
+      expect(counts.ownershipCount).toBe(1)
+    })
+
+    it('formats the unscoped faculty overview without a false scope-required zero state', () => {
+      const counts = computeOverviewScopedCounts(dataset, null)
+      expect(formatOverviewFacultyCaption(counts, false)).toBe('1 profiles · 1 active class owners')
     })
 
     it('returns scoped counts for faculty-level scope', () => {

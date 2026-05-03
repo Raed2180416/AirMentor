@@ -1,4 +1,4 @@
-import { integer, text, pgTable } from 'drizzle-orm/pg-core'
+import { integer, real, text, pgTable } from 'drizzle-orm/pg-core'
 
 export const institutions = pgTable('institutions', {
   institutionId: text('institution_id').primaryKey(),
@@ -392,6 +392,8 @@ export const curriculumNodes = pgTable('curriculum_nodes', {
   matchStatus: text('match_status').notNull(),
   mappingNote: text('mapping_note'),
   assessmentProfile: text('assessment_profile').notNull(),
+  outcomeBloomLevel: text('outcome_bloom_level'),
+  outcomeMasteryTarget: real('outcome_mastery_target'),
   status: text('status').notNull(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
@@ -405,6 +407,8 @@ export const curriculumEdges = pgTable('curriculum_edges', {
   targetCurriculumNodeId: text('target_curriculum_node_id').notNull().references(() => curriculumNodes.curriculumNodeId),
   edgeKind: text('edge_kind').notNull(),
   rationale: text('rationale').notNull(),
+  weight: real('weight').notNull().default(1.0),
+  weightOverride: real('weight_override'),
   status: text('status').notNull(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),

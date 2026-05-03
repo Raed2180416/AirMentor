@@ -307,12 +307,6 @@ export async function stopProofSimulationRun(
   const [run] = await db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, input.simulationRunId))
   if (!run) throw new Error('Simulation run not found')
 
-  const deletedCredentials = deps.deleteProofCredentials
-    ? await deps.deleteProofCredentials(db, run.batchId)
-    : { deletedCount: 0 }
-  if (deps.invalidateProofBatchSessions) {
-    await deps.invalidateProofBatchSessions(db, run.batchId)
-  }
   await db.update(simulationRuns).set({
     activeFlag: 0,
     lifecycleState: 'stopped',
@@ -326,7 +320,7 @@ export async function stopProofSimulationRun(
     actionType: 'stopped',
     payload: {
       previousLifecycleState: run.lifecycleState ?? null,
-      deletedCredentialCount: deletedCredentials.deletedCount,
+      deletedCredentialCount: 0,
     },
     createdByFacultyId: input.actorFacultyId ?? null,
     now: input.now,
@@ -336,6 +330,6 @@ export async function stopProofSimulationRun(
     ok: true as const,
     simulationRunId: run.simulationRunId,
     batchId: run.batchId,
-    deletedCredentialCount: deletedCredentials.deletedCount,
+    deletedCredentialCount: 0,
   }
 }

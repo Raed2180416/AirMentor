@@ -164,7 +164,14 @@ export function expectVersion(currentVersion: number, nextVersion: number, entit
 export function parseOrThrow<T>(schema: ZodType<T>, value: unknown): T {
   const parsed = schema.safeParse(value)
   if (!parsed.success) {
-    throw badRequest('Request validation failed', parsed.error.flatten())
+    throw badRequest('Request validation failed', {
+      ...parsed.error.flatten(),
+      issues: parsed.error.issues.map(issue => ({
+        path: issue.path.join('.'),
+        message: issue.message,
+        code: issue.code,
+      })),
+    })
   }
   return parsed.data
 }

@@ -19,6 +19,7 @@ import {
   simulationRuns,
   simulationQuestionTemplates,
   simulationStageCheckpoints,
+  simulationStageQueueCases,
   simulationStageOfferingProjections,
   simulationStageQueueProjections,
   simulationStageStudentProjections,
@@ -53,6 +54,7 @@ type ProofCheckpointSummaryLike = {
   previousCheckpointId: string | null
   nextCheckpointId: string | null
   openQueueCount?: number
+  liveBlockingQueueItemCount?: number
   blockingQueueItemCount?: number
   stageAdvanceBlocked?: boolean
   playbackAccessible?: boolean
@@ -64,7 +66,7 @@ export type ProofControlPlaneBatchServiceDeps = {
   getProofRiskModelDiagnostics: (db: AppDb, input: { batchId: string; simulationRunId: string | null }) => Promise<Record<string, unknown>>
   parseProofCheckpointSummary: (row: typeof simulationStageCheckpoints.$inferSelect) => ProofCheckpointSummaryLike
   queueStatusPriority: (status: string | null | undefined) => number
-  withProofPlaybackGate: (summaries: ProofCheckpointSummaryLike[]) => ProofCheckpointSummaryLike[]
+  withProofPlaybackGate: (summaries: ProofCheckpointSummaryLike[], queueCaseRows?: Array<typeof simulationStageQueueCases.$inferSelect>) => ProofCheckpointSummaryLike[]
 }
 
 async function resolveProofCheckpointForRun(
@@ -86,11 +88,14 @@ export async function listProofRunCheckpoints(db: AppDb, input: {
   simulationRunId: string
 }, deps: ProofControlPlaneBatchServiceDeps) {
   const { parseProofCheckpointSummary, withProofPlaybackGate } = deps
-  const rows = await db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, input.simulationRunId)).orderBy(
-    asc(simulationStageCheckpoints.semesterNumber),
-    asc(simulationStageCheckpoints.stageOrder),
-  )
-  return withProofPlaybackGate(rows.map(parseProofCheckpointSummary))
+  const [rows, queueCaseRows] = await Promise.all([
+    db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, input.simulationRunId)).orderBy(
+      asc(simulationStageCheckpoints.semesterNumber),
+      asc(simulationStageCheckpoints.stageOrder),
+    ),
+    db.select().from(simulationStageQueueCases).where(eq(simulationStageQueueCases.simulationRunId, input.simulationRunId)),
+  ])
+  return withProofPlaybackGate(rows.map(parseProofCheckpointSummary), queueCaseRows)
 }
 
 export async function getProofRunCheckpointDetail(db: AppDb, input: {
@@ -103,15 +108,16 @@ export async function getProofRunCheckpointDetail(db: AppDb, input: {
     input.simulationRunId,
     input.simulationStageCheckpointId,
   )
-  const [queueRows, offeringRows] = await Promise.all([
+  const [queueRows, offeringRows, queueCaseRows] = await Promise.all([
     db.select().from(simulationStageQueueProjections).where(eq(simulationStageQueueProjections.simulationStageCheckpointId, input.simulationStageCheckpointId)),
     db.select().from(simulationStageOfferingProjections).where(eq(simulationStageOfferingProjections.simulationStageCheckpointId, input.simulationStageCheckpointId)),
+    db.select().from(simulationStageQueueCases).where(eq(simulationStageQueueCases.simulationRunId, input.simulationRunId)),
   ])
   const orderedCheckpointRows = await db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, input.simulationRunId)).orderBy(
     asc(simulationStageCheckpoints.semesterNumber),
     asc(simulationStageCheckpoints.stageOrder),
   )
-  const checkpointSummary = withProofPlaybackGate(orderedCheckpointRows.map(parseProofCheckpointSummary))
+  const checkpointSummary = withProofPlaybackGate(orderedCheckpointRows.map(parseProofCheckpointSummary), queueCaseRows)
     .find(item => item.simulationStageCheckpointId === input.simulationStageCheckpointId)
     ?? parseProofCheckpointSummary(checkpoint)
   return {
@@ -175,7 +181,7 @@ export async function getProofRunCheckpointStudentDetail(db: AppDb, input: {
   studentId: string
 }, deps: ProofControlPlaneBatchServiceDeps) {
   const { parseProofCheckpointSummary, withProofPlaybackGate } = deps
-  const [checkpoint, student, projectionRows] = await Promise.all([
+  const [checkpoint, student, projectionRows, queueCaseRows] = await Promise.all([
     resolveProofCheckpointForRun(db, input.simulationRunId, input.simulationStageCheckpointId),
     db.select().from(students).where(eq(students.studentId, input.studentId)).then(rows => rows[0] ?? null),
     db.select().from(simulationStageStudentProjections).where(and(
@@ -183,13 +189,14 @@ export async function getProofRunCheckpointStudentDetail(db: AppDb, input: {
       eq(simulationStageStudentProjections.simulationStageCheckpointId, input.simulationStageCheckpointId),
       eq(simulationStageStudentProjections.studentId, input.studentId),
     )),
+    db.select().from(simulationStageQueueCases).where(eq(simulationStageQueueCases.simulationRunId, input.simulationRunId)),
   ])
   if (!student) throw notFound('Student not found')
   const orderedCheckpointRows = await db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, input.simulationRunId)).orderBy(
     asc(simulationStageCheckpoints.semesterNumber),
     asc(simulationStageCheckpoints.stageOrder),
   )
-  const checkpointSummary = withProofPlaybackGate(orderedCheckpointRows.map(parseProofCheckpointSummary))
+  const checkpointSummary = withProofPlaybackGate(orderedCheckpointRows.map(parseProofCheckpointSummary), queueCaseRows)
     .find(item => item.simulationStageCheckpointId === input.simulationStageCheckpointId)
     ?? parseProofCheckpointSummary(checkpoint)
   return {
@@ -304,6 +311,7 @@ export async function buildProofBatchDashboard(db: AppDb, batchId: string, deps:
     activeInterventionResponses,
     activeWorldContexts,
     activeStageCheckpoints,
+    activeStageQueueCases,
     activeStageQueueRows,
     activeRiskRows,
   ] = activeRunId
@@ -324,11 +332,12 @@ export async function buildProofBatchDashboard(db: AppDb, batchId: string, deps:
           asc(simulationStageCheckpoints.semesterNumber),
           asc(simulationStageCheckpoints.stageOrder),
         ),
+        db.select().from(simulationStageQueueCases).where(eq(simulationStageQueueCases.simulationRunId, activeRunId)),
         db.select().from(simulationStageQueueProjections).where(eq(simulationStageQueueProjections.simulationRunId, activeRunId)),
         db.select().from(riskAssessments).where(eq(riskAssessments.simulationRunId, activeRunId)),
       ])
-    : [[], [], [], [], [], [], [], [], [], [], [], []]
-  const activeCheckpointSummaries = withProofPlaybackGate(activeStageCheckpoints.map(parseProofCheckpointSummary))
+    : [[], [], [], [], [], [], [], [], [], [], [], [], []]
+  const activeCheckpointSummaries = withProofPlaybackGate(activeStageCheckpoints.map(parseProofCheckpointSummary), activeStageQueueCases)
   const riskIds = activeRiskRows.map(row => row.riskAssessmentId)
   const [activeReassessments, activeAlerts] = riskIds.length > 0
     ? await Promise.all([

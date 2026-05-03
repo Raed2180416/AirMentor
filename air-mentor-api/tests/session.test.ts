@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm'
 import { loginRateLimitWindows, userAccounts, userPasswordCredentials } from '../src/db/schema.js'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createTestApp, loginAs, TEST_NOW, TEST_ORIGIN } from './helpers/test-app.js'
+import { MSRUAS_PROOF_SIMULATION_RUN_ID } from '../src/lib/msruas-proof-sandbox.js'
 
 let current: Awaited<ReturnType<typeof createTestApp>> | null = null
 
@@ -134,6 +135,109 @@ describe('session routes', () => {
     expect(login.response.statusCode).toBe(200)
     expect(login.body.user.email).toBe('kavitha.rao@msruas.ac.in')
     expect(login.body.activeRoleGrant.roleCode).toBe('COURSE_LEADER')
+  })
+
+  it('accepts username and email identifiers for seeded system-admin login', async () => {
+    current = await createTestApp()
+
+    const usernameLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+    expect(usernameLogin.response.statusCode).toBe(200)
+    expect(usernameLogin.body.user.username).toBe('sysadmin')
+    expect(usernameLogin.body.activeRoleGrant.roleCode).toBe('SYSTEM_ADMIN')
+
+    const emailLogin = await loginAs(current.app, 'sysadmin@airmentor.local', 'admin1234')
+    expect(emailLogin.response.statusCode).toBe(200)
+    expect(emailLogin.body.user.email).toBe('sysadmin@airmentor.local')
+    expect(emailLogin.body.activeRoleGrant.roleCode).toBe('SYSTEM_ADMIN')
+  })
+
+  it('keeps real teacher credentials and sessions after stopping a proof simulation', async () => {
+    current = await createTestApp()
+
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+    const teacherLogin = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+    expect(teacherLogin.response.statusCode).toBe(200)
+
+    const [teacherUser] = await current.db.select().from(userAccounts).where(eq(userAccounts.username, 'devika.shetty'))
+    expect(teacherUser).toBeTruthy()
+    const credentialsBeforeStop = await current.db.select().from(userPasswordCredentials).where(eq(userPasswordCredentials.userId, teacherUser.userId))
+    expect(credentialsBeforeStop).toHaveLength(1)
+
+    const stop = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${MSRUAS_PROOF_SIMULATION_RUN_ID}/stop`,
+      headers: {
+        origin: TEST_ORIGIN,
+        cookie: adminLogin.cookie,
+      },
+    })
+    expect(stop.statusCode).toBe(200)
+
+    const restoredTeacherSession = await current.app.inject({
+      method: 'GET',
+      url: '/api/session',
+      headers: { cookie: teacherLogin.cookie },
+    })
+    expect(restoredTeacherSession.statusCode).toBe(200)
+    expect(restoredTeacherSession.json().user.username).toBe('devika.shetty')
+
+    const credentialsAfterStop = await current.db.select().from(userPasswordCredentials).where(eq(userPasswordCredentials.userId, teacherUser.userId))
+    expect(credentialsAfterStop).toHaveLength(1)
+
+    const relogin = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+    expect(relogin.response.statusCode).toBe(200)
+  })
+
+  it('keeps real teacher sessions after activating a proof simulation', async () => {
+    current = await createTestApp()
+
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+    const teacherLogin = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+    expect(teacherLogin.response.statusCode).toBe(200)
+
+    const activate = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${MSRUAS_PROOF_SIMULATION_RUN_ID}/activate`,
+      headers: {
+        origin: TEST_ORIGIN,
+        cookie: adminLogin.cookie,
+      },
+    })
+    expect(activate.statusCode).toBe(200)
+
+    const restoredTeacherSession = await current.app.inject({
+      method: 'GET',
+      url: '/api/session',
+      headers: { cookie: teacherLogin.cookie },
+    })
+    expect(restoredTeacherSession.statusCode).toBe(200)
+    expect(restoredTeacherSession.json().user.username).toBe('devika.shetty')
+  })
+
+  it('keeps real teacher sessions after archiving a proof simulation', async () => {
+    current = await createTestApp()
+
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+    const teacherLogin = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+    expect(teacherLogin.response.statusCode).toBe(200)
+
+    const archive = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${MSRUAS_PROOF_SIMULATION_RUN_ID}/archive`,
+      headers: {
+        origin: TEST_ORIGIN,
+        cookie: adminLogin.cookie,
+      },
+    })
+    expect(archive.statusCode).toBe(200)
+
+    const restoredTeacherSession = await current.app.inject({
+      method: 'GET',
+      url: '/api/session',
+      headers: { cookie: teacherLogin.cookie },
+    })
+    expect(restoredTeacherSession.statusCode).toBe(200)
+    expect(restoredTeacherSession.json().user.username).toBe('devika.shetty')
   })
 
   it('requests, inspects, and redeems a password reset link while clearing old sessions', async () => {

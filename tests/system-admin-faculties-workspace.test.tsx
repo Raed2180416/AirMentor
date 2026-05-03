@@ -923,6 +923,61 @@ describe('system-admin faculties workspace parity', () => {
     expect(markup).toContain('Save Model Inputs')
   })
 
+  it('does not block same-semester added prerequisite links in model inputs', () => {
+    const markup = renderWorkspace('overview', {
+      curriculumSemesterEntries: [
+        {
+          semesterNumber: 5,
+          courses: [
+            {
+              ...data.curriculumCourses[0],
+              curriculumCourseId: 'curr_1',
+              semesterNumber: 5,
+            },
+            {
+              curriculumCourseId: 'curr_2',
+              batchId: 'batch_2022',
+              semesterNumber: 5,
+              courseId: 'course_2',
+              courseCode: 'CS502',
+              title: 'Operating Systems',
+              credits: 4,
+              status: 'active',
+              version: 1,
+              createdAt: '2026-01-01T00:00:00.000Z',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+        },
+      ],
+      selectedCurriculumFeatureCourseId: 'curr_1',
+      selectedCurriculumFeatureItem: {
+        curriculumCourseId: 'curr_1',
+        courseCode: 'CS501',
+        semesterNumber: 5,
+        prerequisites: [],
+        bridgeModules: [],
+        outcomes: [],
+        assessmentProfile: 'admin-authored',
+        resolvedSource: null,
+        localOverride: null,
+      } as never,
+      curriculumFeatureForm: {
+        assessmentProfile: 'admin-authored',
+        outcomesText: 'CO1 | Understand | Explain the concept',
+        prerequisitesText: 'CS502 | added | Same semester supporting signal',
+        bridgeModulesText: '',
+        tt1TopicsText: '',
+        tt2TopicsText: '',
+        seeTopicsText: '',
+        workbookTopicsText: '',
+      },
+    })
+
+    expect(markup).not.toContain('Prerequisite validation failed')
+    expect(markup).not.toContain('Found semester 5 -&gt; 5.')
+  })
+
   it('renders canonical proof scope provenance when the proof pilot batch is active', () => {
     const canonicalProofBatch = {
       ...data.batches[0],

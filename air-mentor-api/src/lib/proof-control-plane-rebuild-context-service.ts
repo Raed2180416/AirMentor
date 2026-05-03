@@ -1,15 +1,19 @@
 import { eq } from 'drizzle-orm'
 import type { AppDb } from '../db/client.js'
 import {
+  academicTerms,
+  courses,
   curriculumEdges,
   curriculumNodes,
   electiveRecommendations,
   facultyOfferingOwnerships,
   mentorAssignments,
   roleGrants,
+  sectionOfferings,
   simulationRuns,
   simulationQuestionTemplates,
   simulationStageCheckpoints,
+  studentAttendanceSnapshots,
   studentCoStates,
   studentObservedSemesterStates,
   studentQuestionResults,
@@ -178,6 +182,10 @@ export async function preparePlaybackRebuildContext(
     ownershipRows,
     mentorRows,
     grantRows,
+    termRows,
+    offeringRows,
+    courseRows,
+    attendanceRows,
   ] = await Promise.all([
     db.select().from(students),
     db.select().from(studentObservedSemesterStates).where(eq(studentObservedSemesterStates.simulationRunId, input.simulationRunId)),
@@ -192,6 +200,10 @@ export async function preparePlaybackRebuildContext(
     db.select().from(facultyOfferingOwnerships).where(eq(facultyOfferingOwnerships.status, 'active')),
     db.select().from(mentorAssignments),
     db.select().from(roleGrants).where(eq(roleGrants.status, 'active')),
+    db.select().from(academicTerms).where(eq(academicTerms.batchId, input.run.batchId)),
+    db.select().from(sectionOfferings),
+    db.select().from(courses),
+    db.select().from(studentAttendanceSnapshots),
   ])
 
   const studentById = new Map(studentRows.map(row => [row.studentId, row]))
@@ -199,6 +211,43 @@ export async function preparePlaybackRebuildContext(
     curriculumNodeRows.map(row => [`${row.semesterNumber}::${row.courseCode}`, row] as const),
   )
   const templateById = new Map(questionTemplateRows.map(row => [row.simulationQuestionTemplateId, row] as const))
+  const courseById = new Map(courseRows.map(row => [row.courseId, row] as const))
+  const termById = new Map(termRows.map(row => [row.termId, row] as const))
+  const offeringBySemesterCourseSection = new Map<string, typeof sectionOfferings.$inferSelect>()
+  offeringRows.forEach(offering => {
+    const term = termById.get(offering.termId)
+    const course = courseById.get(offering.courseId)
+    if (!term || !course) return
+    offeringBySemesterCourseSection.set(`${term.semesterNumber}::${course.courseCode}::${offering.sectionCode}`, offering)
+    offeringBySemesterCourseSection.set(`${term.semesterNumber}::${course.title}::${offering.sectionCode}`, offering)
+  })
+  const latestTeacherAttendanceByStudentOffering = new Map<string, typeof studentAttendanceSnapshots.$inferSelect>()
+  attendanceRows
+    .filter(row => row.source === 'teacher-workspace')
+    .forEach(row => {
+      const key = `${row.studentId}::${row.offeringId}`
+      const current = latestTeacherAttendanceByStudentOffering.get(key)
+      if (!current || row.capturedAt > current.capturedAt || (row.capturedAt === current.capturedAt && row.updatedAt > current.updatedAt)) {
+        latestTeacherAttendanceByStudentOffering.set(key, row)
+      }
+    })
+  const applyTeacherAttendanceOverride = (source: StageCourseProjectionSource): StageCourseProjectionSource => {
+    if (!source.offeringId) return source
+    const attendance = latestTeacherAttendanceByStudentOffering.get(`${source.studentId}::${source.offeringId}`)
+    if (!attendance) return source
+    const historyEntry: AttendanceHistoryEntry = {
+      checkpoint: 'teacher-workspace',
+      checkpointLabel: 'Teacher Workspace',
+      presentClasses: attendance.presentClasses,
+      totalClasses: attendance.totalClasses,
+      attendancePct: attendance.attendancePercent,
+    }
+    return {
+      ...source,
+      attendancePct: attendance.attendancePercent,
+      attendanceHistory: [historyEntry, historyEntry, historyEntry, historyEntry],
+    }
+  }
 
   const checkpointBySemesterStage = new Map<string, typeof simulationStageCheckpoints.$inferInsert>()
   const semesterNumbers = Array.from(
@@ -266,21 +315,27 @@ export async function preparePlaybackRebuildContext(
         subjectScores.forEach(subject => {
           const record = subject as Record<string, unknown>
           const courseCode = String(record.courseCode ?? 'NA')
+          const courseTitle = String(record.title ?? courseCode)
           const curriculumNode = curriculumNodeBySemesterCode.get(`${row.semesterNumber}::${courseCode}`) ?? null
-          const sourceKey = `${row.studentId}::${row.semesterNumber}::::${courseCode}`
-          const coSourceRows = coRowsBySourceKey.get(sourceKey) ?? []
-          const questionSourceRows = questionRowsBySourceKey.get(sourceKey) ?? []
-          sources.push({
+          const offeringId = typeof record.offeringId === 'string'
+            ? record.offeringId
+            : (offeringBySemesterCourseSection.get(`${row.semesterNumber}::${courseCode}::${row.sectionCode}`)
+              ?? offeringBySemesterCourseSection.get(`${row.semesterNumber}::${courseTitle}::${row.sectionCode}`))?.offeringId ?? null
+          const sourceKey = `${row.studentId}::${row.semesterNumber}::${offeringId ?? ''}::${courseCode}`
+          const legacySourceKey = `${row.studentId}::${row.semesterNumber}::::${courseCode}`
+          const coSourceRows = coRowsBySourceKey.get(sourceKey) ?? coRowsBySourceKey.get(legacySourceKey) ?? []
+          const questionSourceRows = questionRowsBySourceKey.get(sourceKey) ?? questionRowsBySourceKey.get(legacySourceKey) ?? []
+          sources.push(applyTeacherAttendanceOverride({
             studentId: row.studentId,
             studentName: student?.name ?? row.studentId,
             usn: student?.usn ?? '',
             semesterNumber: row.semesterNumber,
             sectionCode: row.sectionCode,
             termId: row.termId,
-            offeringId: null,
+            offeringId,
             curriculumNodeId: curriculumNode?.curriculumNodeId ?? null,
             courseCode,
-            courseTitle: String(record.title ?? courseCode),
+            courseTitle,
             courseFamily: curriculumNode?.assessmentProfile ?? 'general',
             attendanceHistory: deps.parseJson(JSON.stringify(record.attendanceHistory ?? []), [] as AttendanceHistoryEntry[]),
             attendancePct: Number(record.attendancePct ?? 0),
@@ -299,7 +354,7 @@ export async function preparePlaybackRebuildContext(
             questionRows: questionSourceRows,
             coRows: coSourceRows,
             interventionResponse: deps.toInterventionResponse(record.interventionResponse),
-          })
+          }))
         })
         return
       }
@@ -308,7 +363,7 @@ export async function preparePlaybackRebuildContext(
       const courseCode = String(payload.courseCode ?? 'NA')
       const curriculumNode = curriculumNodeBySemesterCode.get(`${row.semesterNumber}::${courseCode}`) ?? null
       const sourceKey = `${row.studentId}::${row.semesterNumber}::${offeringId ?? ''}::${courseCode}`
-      sources.push({
+      sources.push(applyTeacherAttendanceOverride({
         studentId: row.studentId,
         studentName: student?.name ?? row.studentId,
         usn: student?.usn ?? '',
@@ -337,7 +392,7 @@ export async function preparePlaybackRebuildContext(
         questionRows: questionRowsBySourceKey.get(sourceKey) ?? [],
         coRows: coRowsBySourceKey.get(sourceKey) ?? [],
         interventionResponse: deps.toInterventionResponse(payload.interventionResponse),
-      })
+      }))
     })
 
   const sourceByStudentNodeId = new Map<string, StageCourseProjectionSource>()

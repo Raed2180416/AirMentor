@@ -1,11 +1,17 @@
 import {
   simulationStageCheckpoints,
   simulationStageOfferingProjections,
+  simulationStageQueueCases,
   simulationStageQueueProjections,
   simulationStageStudentProjections,
 } from '../db/schema.js'
 import { parseJson } from './json.js'
 import type { ProofCheckpointSummaryPayload } from './msruas-proof-control-plane.js'
+
+type QueueCaseTimelineRow = Pick<
+  typeof simulationStageQueueCases.$inferSelect,
+  'simulationStageCheckpointId' | 'studentId' | 'semesterNumber' | 'status' | 'countsTowardCapacity' | 'caseJson'
+>
 
 function average(values: number[]) {
   if (values.length === 0) return 0
@@ -138,10 +144,68 @@ export function parseProofCheckpointSummary(
   } satisfies ProofCheckpointSummaryPayload)
 }
 
-export function withProofPlaybackGate(summaries: ProofCheckpointSummaryPayload[]) {
-  const firstBlockedIndex = summaries.findIndex(summary => Number(summary.blockingQueueItemCount ?? summary.openQueueCount ?? 0) > 0)
+function queueCaseTimelineKey(row: QueueCaseTimelineRow) {
+  const payload = parseJson(row.caseJson, {} as Record<string, unknown>)
+  return typeof payload.caseKey === 'string' && payload.caseKey.length > 0
+    ? payload.caseKey
+    : `${row.studentId}::${row.semesterNumber}`
+}
+
+export function liveBlockingQueueCountsByCheckpoint(
+  summaries: ProofCheckpointSummaryPayload[],
+  queueCaseRows: QueueCaseTimelineRow[],
+) {
+  const checkpointIndexById = new Map(summaries.map((summary, index) => [summary.simulationStageCheckpointId, index]))
+  const rowsByCaseKey = new Map<string, QueueCaseTimelineRow[]>()
+  queueCaseRows.forEach(row => {
+    if (!checkpointIndexById.has(row.simulationStageCheckpointId)) return
+    const key = queueCaseTimelineKey(row)
+    const rows = rowsByCaseKey.get(key) ?? []
+    rows.push(row)
+    rowsByCaseKey.set(key, rows)
+  })
+
+  const countsByCheckpointId = new Map<string, number>()
+  rowsByCaseKey.forEach(rows => {
+    const orderedRows = rows
+      .slice()
+      .sort((left, right) => (
+        (checkpointIndexById.get(left.simulationStageCheckpointId) ?? Number.MAX_SAFE_INTEGER)
+        - (checkpointIndexById.get(right.simulationStageCheckpointId) ?? Number.MAX_SAFE_INTEGER)
+      ))
+    orderedRows.forEach((row, rowIndex) => {
+      if (row.status !== 'Open' || Number(row.countsTowardCapacity ?? 0) <= 0) return
+      const hasLaterClosure = orderedRows.slice(rowIndex + 1).some(nextRow => (
+        nextRow.status === 'Resolved' || nextRow.status === 'Watching' || nextRow.status === 'Closed'
+      ))
+      if (hasLaterClosure) return
+      countsByCheckpointId.set(
+        row.simulationStageCheckpointId,
+        (countsByCheckpointId.get(row.simulationStageCheckpointId) ?? 0) + 1,
+      )
+    })
+  })
+  return countsByCheckpointId
+}
+
+export function withProofPlaybackGate(
+  summaries: ProofCheckpointSummaryPayload[],
+  queueCaseRows?: QueueCaseTimelineRow[],
+) {
+  const liveBlockingCounts = queueCaseRows
+    ? liveBlockingQueueCountsByCheckpoint(summaries, queueCaseRows)
+    : null
+  const blockingCountForSummary = (summary: ProofCheckpointSummaryPayload) => Number(
+    (liveBlockingCounts ? (liveBlockingCounts.get(summary.simulationStageCheckpointId) ?? 0) : undefined)
+    ?? summary.liveBlockingQueueItemCount
+    ?? summary.blockingQueueItemCount
+    ?? summary.openQueueCount
+    ?? 0,
+  )
+  const firstBlockedIndex = summaries.findIndex(summary => blockingCountForSummary(summary) > 0)
   return summaries.map((summary, index) => {
-    const stageAdvanceBlocked = Number(summary.blockingQueueItemCount ?? summary.openQueueCount ?? 0) > 0
+    const blockingQueueItemCount = blockingCountForSummary(summary)
+    const stageAdvanceBlocked = blockingQueueItemCount > 0
     const playbackAccessible = firstBlockedIndex === -1 || index <= firstBlockedIndex
     const blockedByCheckpointId = firstBlockedIndex !== -1 && index > firstBlockedIndex
       ? summaries[firstBlockedIndex]?.simulationStageCheckpointId ?? null
@@ -149,7 +213,7 @@ export function withProofPlaybackGate(summaries: ProofCheckpointSummaryPayload[]
     return {
       ...summary,
       stageAdvanceBlocked,
-      blockingQueueItemCount: Number(summary.blockingQueueItemCount ?? summary.openQueueCount ?? 0),
+      blockingQueueItemCount,
       playbackAccessible,
       blockedByCheckpointId,
       blockedProgressionReason: !playbackAccessible && blockedByCheckpointId

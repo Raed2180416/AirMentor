@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import type { RouteContext } from '../app.js'
@@ -31,11 +31,13 @@ import {
   studentEnrollments,
   policyOverrides,
   reassessmentEvents,
+  riskEvidenceSnapshots,
   roleGrants,
   riskAssessments,
   sectionOfferings,
   simulationRuns,
   stagePolicyOverrides,
+  studentCoStates,
 } from '../db/schema.js'
 import { badRequest, conflict, notFound } from '../lib/http-errors.js'
 import { createId } from '../lib/ids.js'
@@ -58,11 +60,9 @@ import {
   type ScopeTypeValue,
   type StagePolicyPayload,
 } from '../lib/stage-policy.js'
-import {
-  ensureMsruasProofBatchStructure,
-  MSRUAS_PROOF_BATCH_ID,
-} from '../lib/msruas-proof-sandbox.js'
-import { emitAuditEvent, expectVersion, parseOrThrow, requireRole } from './support.js'
+import { inferObservableRisk } from '../lib/inference-engine.js'
+import { BLOOM_LEVEL_MASTERY_TARGET, MASTERY_WEAKNESS_RATIO } from '../lib/learning-dynamics-constants.js'
+import { emitAuditEvent, expectVersion, getAuditEventsForEntity, parseOrThrow, requireRole } from './support.js'
 
 const weekdaySchema = z.enum(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])
 export const scopeTypeSchema = z.enum(scopeTypeValues)
@@ -222,7 +222,7 @@ const curriculumFeatureOutcomeSchema = z.object({
 
 const curriculumFeatureEdgeSchema = z.object({
   sourceCourseCode: z.string().min(1),
-  edgeKind: z.enum(['explicit', 'added']).default('explicit'),
+  edgeKind: z.enum(['explicit', 'added']),
   rationale: z.string().min(1),
 })
 
@@ -919,6 +919,8 @@ async function upsertCurriculumNodeForCourse(context: RouteContext, input: {
     matchStatus: 'admin-authored',
     mappingNote: 'System-admin managed curriculum snapshot.',
     assessmentProfile: input.assessmentProfile ?? 'admin-authored',
+    outcomeBloomLevel: null,
+    outcomeMasteryTarget: null,
     status: input.curriculumCourse.status === 'deleted' || input.curriculumCourse.status === 'archived' ? 'deleted' : 'active',
     createdAt: input.now,
     updatedAt: input.now,
@@ -1152,9 +1154,6 @@ function scopeReferencesDeletedBatch(scopeId: string, batchIds: Set<string>) {
 async function getBatchScopeContext(context: RouteContext, batchId: string, requestedSectionCode?: string | null): Promise<BatchScopeContext> {
   const [institution] = await context.db.select().from(institutions)
   if (!institution) throw notFound('Institution is not configured')
-  if (batchId === MSRUAS_PROOF_BATCH_ID) {
-    await ensureMsruasProofBatchStructure(context.db, context.now())
-  }
 
   const [batch] = await context.db.select().from(batches).where(eq(batches.batchId, batchId))
   if (!batch) throw notFound('Batch not found')
@@ -1579,6 +1578,163 @@ export async function resolveBatchCurriculumFeatures(context: RouteContext, batc
   }
 }
 
+async function computeConfigImpactPreview(context: RouteContext, input: {
+  batchId: string
+  curriculumCourseId: string
+  proposedOutcomes: Array<{ id: string; bloom: string }>
+}) {
+  const [courseRow] = await context.db.select().from(curriculumCourses).where(eq(curriculumCourses.curriculumCourseId, input.curriculumCourseId))
+  if (!courseRow || courseRow.batchId !== input.batchId) return null
+
+  const nodeRows = await context.db.select().from(curriculumNodes)
+  const nodeRow = findCurriculumNodeForCourse(nodeRows, courseRow)
+  if (!nodeRow) return null
+
+  const runRows = await context.db.select().from(simulationRuns)
+    .where(and(eq(simulationRuns.batchId, input.batchId), isNotNull(simulationRuns.activeFlag)))
+    .orderBy(desc(simulationRuns.updatedAt))
+  const activeRun = runRows.find(r => r.status === 'active') ?? runRows[0] ?? null
+  if (!activeRun) return null
+
+  const coRows = await context.db.select().from(studentCoStates)
+    .where(and(
+      eq(studentCoStates.simulationRunId, activeRun.simulationRunId),
+      eq(studentCoStates.curriculumNodeId, nodeRow.curriculumNodeId),
+    ))
+
+  const cosByStudent = new Map<string, Array<{ coCode: string; mastery: number }>>()
+  for (const row of coRows) {
+    const state = parseJson(row.stateJson, {} as Record<string, unknown>)
+    const mastery = typeof state.coMasteryEstimate === 'number' ? state.coMasteryEstimate : 0
+    const list = cosByStudent.get(row.studentId) ?? []
+    list.push({ coCode: row.coCode, mastery })
+    cosByStudent.set(row.studentId, list)
+  }
+  if (cosByStudent.size === 0) return null
+
+  const resolvedFeatures = await resolveBatchCurriculumFeatures(context, input.batchId)
+  const currentItem = resolvedFeatures.items.find(item => item.curriculumCourseId === input.curriculumCourseId)
+  const currentOutcomes = currentItem?.resolvedConfig.outcomes ?? []
+
+  const bloomToTarget = (bloom: string): number =>
+    BLOOM_LEVEL_MASTERY_TARGET[bloom as keyof typeof BLOOM_LEVEL_MASTERY_TARGET] ?? BLOOM_LEVEL_MASTERY_TARGET.apply
+
+  const currentTargets = currentOutcomes.map(o => bloomToTarget(o.bloom))
+  const proposedTargets = input.proposedOutcomes.map(o => bloomToTarget(o.bloom))
+
+  const evidenceRows = await context.db.select({
+    studentId: riskEvidenceSnapshots.studentId,
+    featureJson: riskEvidenceSnapshots.featureJson,
+    createdAt: riskEvidenceSnapshots.createdAt,
+  }).from(riskEvidenceSnapshots)
+    .where(and(
+      eq(riskEvidenceSnapshots.simulationRunId, activeRun.simulationRunId),
+      eq(riskEvidenceSnapshots.batchId, input.batchId),
+    ))
+    .orderBy(desc(riskEvidenceSnapshots.createdAt))
+
+  const latestEvidenceByStudent = new Map<string, Record<string, unknown>>()
+  for (const row of evidenceRows) {
+    if (!latestEvidenceByStudent.has(row.studentId)) {
+      latestEvidenceByStudent.set(row.studentId, parseJson(row.featureJson, {} as Record<string, unknown>))
+    }
+  }
+
+  const policy = DEFAULT_POLICY
+
+  type BandCount = { Low: number; Medium: number; High: number }
+  const current: BandCount = { Low: 0, Medium: 0, High: 0 }
+  const projected: BandCount = { Low: 0, Medium: 0, High: 0 }
+  const affectedStudents: Array<{
+    studentId: string
+    currentRiskBand: string
+    projectedRiskBand: string
+    currentWeakCoCount: number
+    projectedWeakCoCount: number
+  }> = []
+
+  for (const [studentId, cos] of cosByStudent) {
+    const evidence = latestEvidenceByStudent.get(studentId)
+    if (!evidence) continue
+
+    const currentWeak = cos.filter((co, i) =>
+      co.mastery < (currentTargets[i] ?? BLOOM_LEVEL_MASTERY_TARGET.apply) * MASTERY_WEAKNESS_RATIO,
+    ).length
+    const proposedWeak = cos.filter((co, i) =>
+      co.mastery < (proposedTargets[i] ?? BLOOM_LEVEL_MASTERY_TARGET.apply) * MASTERY_WEAKNESS_RATIO,
+    ).length
+
+    const attendance = typeof evidence.attendancePct === 'number' ? evidence.attendancePct : 75
+    const cgpa = typeof evidence.currentCgpa === 'number' ? evidence.currentCgpa : 6.0
+    const backlog = typeof evidence.backlogCount === 'number' ? evidence.backlogCount : 0
+
+    const currentInfer = inferObservableRisk({
+      attendancePct: attendance,
+      currentCgpa: cgpa,
+      backlogCount: backlog,
+      tt1Pct: typeof evidence.tt1Pct === 'number' ? evidence.tt1Pct : null,
+      tt2Pct: typeof evidence.tt2Pct === 'number' ? evidence.tt2Pct : null,
+      seePct: typeof evidence.seePct === 'number' ? evidence.seePct : null,
+      quizPct: typeof evidence.quizPct === 'number' ? evidence.quizPct : null,
+      assignmentPct: typeof evidence.assignmentPct === 'number' ? evidence.assignmentPct : null,
+      weakCoCount: currentWeak,
+      attendanceHistoryRiskCount: typeof evidence.attendanceHistoryRiskCount === 'number' ? evidence.attendanceHistoryRiskCount : 0,
+      questionWeaknessCount: typeof evidence.weakQuestionCount === 'number' ? evidence.weakQuestionCount : 0,
+      interventionResponseScore: typeof evidence.interventionResponseScore === 'number' ? evidence.interventionResponseScore : null,
+      policy,
+    })
+    const projectedInfer = proposedWeak === currentWeak ? currentInfer : inferObservableRisk({
+      attendancePct: attendance,
+      currentCgpa: cgpa,
+      backlogCount: backlog,
+      tt1Pct: typeof evidence.tt1Pct === 'number' ? evidence.tt1Pct : null,
+      tt2Pct: typeof evidence.tt2Pct === 'number' ? evidence.tt2Pct : null,
+      seePct: typeof evidence.seePct === 'number' ? evidence.seePct : null,
+      quizPct: typeof evidence.quizPct === 'number' ? evidence.quizPct : null,
+      assignmentPct: typeof evidence.assignmentPct === 'number' ? evidence.assignmentPct : null,
+      weakCoCount: proposedWeak,
+      attendanceHistoryRiskCount: typeof evidence.attendanceHistoryRiskCount === 'number' ? evidence.attendanceHistoryRiskCount : 0,
+      questionWeaknessCount: typeof evidence.weakQuestionCount === 'number' ? evidence.weakQuestionCount : 0,
+      interventionResponseScore: typeof evidence.interventionResponseScore === 'number' ? evidence.interventionResponseScore : null,
+      policy,
+    })
+
+    current[currentInfer.riskBand]++
+    projected[projectedInfer.riskBand]++
+
+    if (currentInfer.riskBand !== projectedInfer.riskBand || currentWeak !== proposedWeak) {
+      affectedStudents.push({
+        studentId,
+        currentRiskBand: currentInfer.riskBand,
+        projectedRiskBand: projectedInfer.riskBand,
+        currentWeakCoCount: currentWeak,
+        projectedWeakCoCount: proposedWeak,
+      })
+    }
+  }
+
+  const total = Math.max(1, cosByStudent.size)
+  return {
+    studentCount: cosByStudent.size,
+    currentDistribution: {
+      low: Math.round((current.Low / total) * 100) / 100,
+      medium: Math.round((current.Medium / total) * 100) / 100,
+      high: Math.round((current.High / total) * 100) / 100,
+    },
+    projectedDistribution: {
+      low: Math.round((projected.Low / total) * 100) / 100,
+      medium: Math.round((projected.Medium / total) * 100) / 100,
+      high: Math.round((projected.High / total) * 100) / 100,
+    },
+    delta: {
+      low: Math.round(((projected.Low - current.Low) / total) * 100) / 100,
+      medium: Math.round(((projected.Medium - current.Medium) / total) * 100) / 100,
+      high: Math.round(((projected.High - current.High) / total) * 100) / 100,
+    },
+    affectedStudents: affectedStudents.slice(0, 50),
+  }
+}
+
 async function materializeResolvedCurriculumFeatureItems(context: RouteContext, input: {
   batchId: string
   actorFacultyId?: string | null
@@ -1790,7 +1946,7 @@ function validateResolvedCurriculumFeatureItems(input: {
         })
         continue
       }
-      if ((prerequisite.edgeKind === 'explicit' || prerequisite.edgeKind === 'added') && sourceRow.semesterNumber >= targetRow.semesterNumber) {
+      if (prerequisite.edgeKind === 'explicit' && sourceRow.semesterNumber >= targetRow.semesterNumber) {
         errors.push({
           targetCourseCode: targetRow.courseCode,
           sourceCourseCode: sourceRow.courseCode,
@@ -3404,6 +3560,24 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
     return resolveBatchCurriculumFeatures(context, params.batchId)
   })
 
+  app.post('/api/admin/batches/:batchId/curriculum-feature-config/preview', {
+    schema: { tags: ['admin-structure'], summary: 'Preview impact of a proposed feature config change on current risk distribution' },
+  }, async request => {
+    requireRole(request, ['SYSTEM_ADMIN'])
+    const params = parseOrThrow(z.object({ batchId: z.string().min(1) }), request.params)
+    const body = parseOrThrow(z.object({
+      curriculumCourseId: z.string().min(1),
+      proposedOutcomes: z.array(z.object({ id: z.string().min(1), bloom: z.string().min(1) })).min(1),
+    }), request.body)
+    const result = await computeConfigImpactPreview(context, {
+      batchId: params.batchId,
+      curriculumCourseId: body.curriculumCourseId,
+      proposedOutcomes: body.proposedOutcomes,
+    })
+    if (!result) throw notFound('No active proof run or curriculum node found for this batch/course')
+    return result
+  })
+
   app.post('/api/admin/batches/:batchId/curriculum/bootstrap', {
     schema: { tags: ['admin-structure'], summary: 'Bootstrap a supported curriculum manifest into the selected batch' },
   }, async request => {
@@ -3842,12 +4016,27 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
       curriculumImportVersionId,
     })
 
+    const beforeItem = beforeResolved.items.find(item => item.curriculumCourseId === params.curriculumCourseId)
+    const previewForAudit = normalizedPayload.outcomes.length > 0
+      ? await computeConfigImpactPreview(context, {
+          batchId: params.batchId,
+          curriculumCourseId: params.curriculumCourseId,
+          proposedOutcomes: normalizedPayload.outcomes.map(o => ({ id: o.id, bloom: o.bloom })),
+        })
+      : null
     await emitAuditEvent(context, {
       entityType: 'CurriculumFeatureConfig',
       entityId: `${params.batchId}:${params.curriculumCourseId}`,
       action: 'updated',
       actorRole: auth.activeRoleGrant.roleCode,
       actorId: auth.facultyId,
+      before: beforeItem ? {
+        assessmentProfile: beforeItem.resolvedConfig.assessmentProfile,
+        outcomes: beforeItem.resolvedConfig.outcomes,
+        prerequisites: beforeItem.resolvedConfig.prerequisites,
+        bridgeModules: beforeItem.resolvedConfig.bridgeModules,
+        topicPartitions: beforeItem.resolvedConfig.topicPartitions,
+      } : null,
       after: {
         curriculumCourseId: params.curriculumCourseId,
         curriculumImportVersionId,
@@ -3857,6 +4046,12 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
         bridgeModules: normalizedPayload.bridgeModules,
         topicPartitions: normalizedPayload.topicPartitions,
       },
+      metadata: previewForAudit ? {
+        projectedDelta: previewForAudit.delta,
+        studentCount: previewForAudit.studentCount,
+        affectedStudentCount: previewForAudit.affectedStudents.length,
+        affectedBatchIds,
+      } : { affectedBatchIds },
     })
 
     return {
@@ -3869,6 +4064,15 @@ export async function registerAdminStructureRoutes(app: FastifyInstance, context
       targetMode: body.targetMode,
       curriculumFeatureProfileId: null,
     }
+  })
+
+  app.get('/api/admin/batches/:batchId/curriculum-feature-config/:curriculumCourseId/history', {
+    schema: { tags: ['admin-structure'], summary: 'Configuration change history for one curriculum course' },
+  }, async request => {
+    requireRole(request, ['SYSTEM_ADMIN'])
+    const params = parseOrThrow(z.object({ batchId: z.string().min(1), curriculumCourseId: z.string().min(1) }), request.params)
+    const events = await getAuditEventsForEntity(context, 'CurriculumFeatureConfig', `${params.batchId}:${params.curriculumCourseId}`)
+    return { events }
   })
 
   app.get('/api/admin/curriculum-feature-profiles', {

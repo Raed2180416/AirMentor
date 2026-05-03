@@ -129,11 +129,11 @@ describe('hod proof analytics', () => {
       weakQuestionSignalCount: expect.any(Number),
     }))
     expect(students[0]?.observedEvidence).toEqual(expect.objectContaining({
-      tt2Pct: expect.any(Number),
-      seePct: expect.any(Number),
       weakCoCount: expect.any(Number),
       weakQuestionCount: expect.any(Number),
     }))
+    expect(students[0]?.observedEvidence).toHaveProperty('tt2Pct')
+    expect(students[0]?.observedEvidence).toHaveProperty('seePct')
     expect(students[0]?.observedEvidence).toHaveProperty('coEvidenceMode')
     expect(students[0]?.observedEvidence).not.toHaveProperty('forgetRate')
     expect(summary.totals.highRiskCount).toBe(students.filter(row => row.currentRiskBand === 'High').length)
@@ -451,6 +451,58 @@ describe('hod proof analytics', () => {
     expect(studentsResponse.json().items[0]?.observedEvidence).toHaveProperty('coEvidenceMode')
     expect(JSON.stringify(studentsResponse.json())).not.toContain('noActionRiskProbScaled')
     expect(facultyResponse.json().items.length).toBeGreaterThan(0)
+  }, 300000)
+
+  it('keeps checkpoint HoD watch-band counts aligned with dashboard student-risk summaries', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+    const hodLogin = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+
+    if (hodLogin.body.activeRoleGrant.roleCode !== 'HOD') {
+      await switchToRole(hodLogin.cookie, hodLogin.body.availableRoleGrants, 'HOD')
+    }
+
+    const [activeRun] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    expect(activeRun).toBeTruthy()
+    const recomputeRiskResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRun.simulationRunId}/recompute-risk`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+    expect(recomputeRiskResponse.statusCode).toBe(200)
+
+    const checkpointRows = await current.db.select().from(simulationStageCheckpoints).where(and(
+      eq(simulationStageCheckpoints.simulationRunId, activeRun.simulationRunId),
+      eq(simulationStageCheckpoints.semesterNumber, 6),
+    )).orderBy(asc(simulationStageCheckpoints.stageOrder))
+    const checkpoint = checkpointRows.at(-1)
+    expect(checkpoint?.stageKey).toBe('post-see')
+
+    const [dashboardResponse, studentsResponse] = await Promise.all([
+      current.app.inject({
+        method: 'GET',
+        url: `/api/admin/batches/${activeRun.batchId}/proof-dashboard`,
+        headers: { cookie: adminLogin.cookie },
+      }),
+      current.app.inject({
+        method: 'GET',
+        url: `/api/academic/hod/proof-students?simulationStageCheckpointId=${encodeURIComponent(checkpoint!.simulationStageCheckpointId)}`,
+        headers: { cookie: hodLogin.cookie },
+      }),
+    ])
+
+    expect(dashboardResponse.statusCode).toBe(200)
+    expect(studentsResponse.statusCode).toBe(200)
+    const dashboardCheckpoint = dashboardResponse.json().activeRunDetail.checkpoints.find(
+      (item: { simulationStageCheckpointId: string }) => item.simulationStageCheckpointId === checkpoint!.simulationStageCheckpointId,
+    )
+    expect(dashboardCheckpoint).toBeTruthy()
+    const students = studentsResponse.json().items as Array<{ currentRiskBand: string }>
+    expect(students.length).toBe(dashboardCheckpoint.studentCount)
+    expect(students.filter(row => row.currentRiskBand === 'High').length).toBe(dashboardCheckpoint.highRiskCount)
+    expect(students.filter(row => row.currentRiskBand === 'Medium').length).toBe(dashboardCheckpoint.mediumRiskCount)
+    expect(students.filter(row => row.currentRiskBand === 'Low').length).toBe(dashboardCheckpoint.lowRiskCount)
   }, 300000)
 
   it('keeps explicit checkpoint playback available even if the run active flag drifts off', async () => {

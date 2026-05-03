@@ -20,6 +20,7 @@ import {
   simulationQuestionTemplates,
   simulationRuns,
   simulationStageCheckpoints,
+  simulationStageQueueCases,
   simulationStageQueueProjections,
   simulationStageStudentProjections,
   studentAgentCards,
@@ -91,6 +92,7 @@ type ProofCheckpointSummaryLike = {
   previousCheckpointId: string | null
   nextCheckpointId: string | null
   openQueueCount?: number
+  liveBlockingQueueItemCount?: number
   blockingQueueItemCount?: number
   stageAdvanceBlocked?: boolean
   playbackAccessible?: boolean
@@ -149,6 +151,7 @@ function buildStudentAgentCardInflightKey(input: {
 
 function resolveOperationalCheckpointSummary(
   checkpointRows: Array<typeof simulationStageCheckpoints.$inferSelect>,
+  queueCaseRows: Array<typeof simulationStageQueueCases.$inferSelect>,
   semesterNumber: number,
   deps: Pick<ProofControlPlaneTailServiceDeps, 'parseProofCheckpointSummary' | 'withProofPlaybackGate'>,
 ) {
@@ -157,6 +160,7 @@ function resolveOperationalCheckpointSummary(
       .slice()
       .sort((left, right) => left.semesterNumber - right.semesterNumber || left.stageOrder - right.stageOrder)
       .map(deps.parseProofCheckpointSummary),
+    queueCaseRows,
   )
   const semesterSummaries = summaries.filter(item => item.semesterNumber === semesterNumber)
   return semesterSummaries
@@ -199,7 +203,7 @@ export type ProofControlPlaneTailServiceDeps = {
   queueProjectionAssignedFacultyId: (row: typeof simulationStageQueueProjections.$inferSelect | typeof simulationStageQueueProjections.$inferInsert) => string | null
   queueStatusPriority: (status: string | null | undefined) => number
   uniqueSorted: (values: Iterable<string>) => string[]
-  withProofPlaybackGate: (summaries: ProofCheckpointSummaryLike[]) => ProofCheckpointSummaryLike[]
+  withProofPlaybackGate: (summaries: ProofCheckpointSummaryLike[], queueCaseRows?: Array<typeof simulationStageQueueCases.$inferSelect>) => ProofCheckpointSummaryLike[]
 }
 
 export async function buildFacultyProofView(db: AppDb, input: {
@@ -234,11 +238,12 @@ export async function buildFacultyProofView(db: AppDb, input: {
       db.select().from(branches),
     ])
     if (!checkpoint) throw new Error('Simulation stage checkpoint not found')
+    const queueCaseRows = await db.select().from(simulationStageQueueCases).where(eq(simulationStageQueueCases.simulationRunId, checkpoint.simulationRunId))
     const orderedCheckpointRows = await db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, checkpoint.simulationRunId)).orderBy(
       asc(simulationStageCheckpoints.semesterNumber),
       asc(simulationStageCheckpoints.stageOrder),
     )
-    const checkpointSummary = deps.withProofPlaybackGate(orderedCheckpointRows.map(deps.parseProofCheckpointSummary))
+    const checkpointSummary = deps.withProofPlaybackGate(orderedCheckpointRows.map(deps.parseProofCheckpointSummary), queueCaseRows)
       .find(item => item.simulationStageCheckpointId === checkpoint.simulationStageCheckpointId)
       ?? deps.parseProofCheckpointSummary(checkpoint)
     const run = runRows.find(row => row.simulationRunId === checkpoint.simulationRunId) ?? null
@@ -462,6 +467,7 @@ export async function buildFacultyProofView(db: AppDb, input: {
   const operationalCheckpointSummary = selectedActiveRun
     ? resolveOperationalCheckpointSummary(
       await db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, selectedActiveRun.simulationRunId)),
+      await db.select().from(simulationStageQueueCases).where(eq(simulationStageQueueCases.simulationRunId, selectedActiveRun.simulationRunId)),
       selectedCurrentSemester,
       deps,
     )
@@ -1221,6 +1227,7 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
     orderedStageCheckpointRows,
     stageStudentRows,
     stageQueueRows,
+    stageQueueCaseRows,
   ] = await Promise.all([
     db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, input.simulationRunId)).then(rows => rows[0] ?? null),
     db.select().from(students).where(eq(students.studentId, input.studentId)).then(rows => rows[0] ?? null),
@@ -1287,6 +1294,9 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
           eq(simulationStageQueueProjections.simulationStageCheckpointId, input.simulationStageCheckpointId),
         ))
       : Promise.resolve([]),
+    input.simulationStageCheckpointId
+      ? db.select().from(simulationStageQueueCases).where(eq(simulationStageQueueCases.simulationRunId, input.simulationRunId))
+      : Promise.resolve([]),
   ])
 
   if (!run) throw new Error(`Simulation run ${input.simulationRunId} was not found`)
@@ -1334,25 +1344,6 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
       ? db.select().from(courses).where(inArray(courses.courseId, referencedCourseIds))
       : Promise.resolve([] as Array<typeof courses.$inferSelect>),
   ])
-  if (
-    !input.simulationStageCheckpointId
-    && run.activeOperationalSemester != null
-    && batch
-    && run.activeOperationalSemester !== batch.currentSemester
-  ) {
-    const operationalCheckpointSummary = resolveOperationalCheckpointSummary(
-      await db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, input.simulationRunId)),
-      run.activeOperationalSemester,
-      deps,
-    )
-    if (operationalCheckpointSummary) {
-      const checkpointCard = await buildStudentAgentCard(db, {
-        ...input,
-        simulationStageCheckpointId: operationalCheckpointSummary.simulationStageCheckpointId,
-      }, deps)
-      return checkpointCard
-    }
-  }
   const currentSemester = stageCheckpoint?.semesterNumber
     ?? run.activeOperationalSemester
     ?? behaviorProfile?.currentSemester
@@ -1655,6 +1646,7 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
   if (stageCheckpoint) {
     const stageCheckpointSummary = deps.withProofPlaybackGate(
       orderedStageCheckpointRows.map(deps.parseProofCheckpointSummary),
+      stageQueueCaseRows,
     ).find(item => item.simulationStageCheckpointId === stageCheckpoint.simulationStageCheckpointId)
       ?? deps.parseProofCheckpointSummary(stageCheckpoint)
     checkpointContext = {
