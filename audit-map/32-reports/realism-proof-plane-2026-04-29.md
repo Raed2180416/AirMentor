@@ -21,6 +21,8 @@ Evidence sources:
 - Final dashboard `/tmp/airmentor-demo-logs/realism-2026-04-29/full-walk/proof-dashboard-final.json`.
 - Precision probe `/tmp/airmentor-demo-logs/realism-2026-04-29/precision/precision-summary.json`.
 - Corrected stage-key check from final dashboard: stages are `pre-tt1`, `post-tt1`, `post-tt2`, `post-assignments`, `post-see`.
+- Final live browser proof-risk smoke `/tmp/airmentor-demo-logs/realism-2026-04-29/final-browser-smoke-devika/final-live-devika-semester-walk-summary.json`.
+- Stage A after-fixes browser proof-risk smoke `/tmp/airmentor-demo-logs/realism-2026-04-29/stage-a-after-fixes/browser-proof-source-sem1-sem6-devika/stage-a-after-fixes-devika-semester-walk-summary.json`.
 
 ## Six-Semester Stage Matrix
 
@@ -95,25 +97,31 @@ Queue state is realistic but demo-sensitive.
 - Sem 6 post-TT1 open queue is 23.
 - Watch queue grows as cumulative risk grows.
 
-Important blocker:
+Fix B correction:
 
-Sem 6 post-SEE reports `playbackAccessible=false` with reason: playback is blocked until queue items for `stage_checkpoint_45dd134a0ac969ea05a049e7` are resolved. This is defensible governance, but it can break a demo that expects free playback at the final stage.
+Sem 6 post-SEE is no longer blocked merely because Sem 2 post-TT1 had historical `Open` queue rows. Playback gating now computes live-blocking counts from the queue-case timeline: an `Open` case blocks only when no later checkpoint row for the same case transitions to `Watching`, `Resolved`, or `Closed`. The focused API regression `computes proof dashboard playback gates from live queue-case timeline` proves Sem 2 post-TT1 can retain `openQueueCount > 0` while `blockingQueueItemCount=0`, `stageAdvanceBlocked=false`, and Sem 6 post-SEE `playbackAccessible=true`.
+
+Verification:
+
+- `npx vitest run tests/proof-control-plane-checkpoint-service.test.ts tests/proof-control-plane-dashboard-service.test.ts --reporter=dot`
+- `npx vitest run tests/admin-control-plane.test.ts --reporter=dot -t "computes proof dashboard playback gates"`
+- `npx vitest run tests/hod-proof-analytics.test.ts --reporter=dot -t "keeps the default HoD slice aligned with activated semesters 4 through 6"`
+- `npx vitest run tests/student-agent-shell.test.ts --reporter=dot -t "keeps the default student shell aligned with activated semesters 4 through 6"`
+- `npx tsc -p tsconfig.json --noEmit`
 
 ## Blockers
 
 - **Demo-prep blocker:** Run recompute/readiness before browser demo; otherwise checkpoints may appear absent.
-- **Playback blocker:** Resolve or explain the Sem 2 post-TT1 queue blocker before Sem 6 playback.
-- **Browser caveat:** Browser smoke now renders current active checkpoint proof overlays, but it did not resolve or click through the blocked Sem 6 playback path.
+- **Browser evidence caveat:** Final and Stage A browser smokes were captured before Fix B, so their Sem 6 playback-blocked banner evidence is stale for the corrected backend state. Re-run browser smoke if screenshot proof of Sem 6 `playbackAccessible=true` is needed.
 
 ## Reverification Needed
 
-- Rerun precision probe after queue resolution.
-- Confirm Sem 6 post-SEE `playbackAccessible=true` if demo requires clicking playback.
+- Rerun precision probe after Fix B on the live demo stack.
+- Confirm Sem 6 post-SEE `playbackAccessible=true` in a fresh browser smoke if the demo requires screenshot/video evidence.
 - Capture checkpoint detail rows for at least five named students and compare evidence timing.
-- Re-run browser smoke after queue preparation if final demo includes Sem 6 playback.
 
 ## Verdict
 
-**Proof-plane verdict: PASS for API realism, CONDITIONAL for final playback demo.**
+**Proof-plane verdict: PASS for API realism and timeline-aware playback gating, CONDITIONAL for fresh browser capture.**
 
-The 6×5 proof-plane exists and the risk trajectory is coherent. Browser rendering is now proven for active proof overlays, but the main demo risk remains operational: readiness/recompute and queue-resolution must be done before any final-stage playback walkthrough.
+The 6×5 proof-plane exists and the risk trajectory is coherent. Browser rendering is proven for Sem 1 and Sem 6 proof-risk surfaces. Fix B corrects playback gating so resolved/watched historical queue cases no longer block later checkpoints. The remaining demo risk is operational evidence freshness: run recompute/readiness and rerun browser smoke if final-stage playback must be shown visually.

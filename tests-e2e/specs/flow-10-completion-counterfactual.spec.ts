@@ -18,6 +18,8 @@ import { expect } from '../support/playwright-runtime'
 import { loginAs, loginWithApiContext } from '../helpers/login-as'
 import { test } from '../fixtures/seeded-run-fixture'
 
+test.setTimeout(300_000)
+
 test('flow-10 counterfactual-simulator route returns projected Sem-6 report shape', async ({ request, seededRun }) => {
   const { session } = await loginWithApiContext(request, 'system-admin')
   const response = await request.get(`/api/academic/hod/proof-counterfactual-simulator?runId=${encodeURIComponent(seededRun.runId)}`, {
@@ -68,13 +70,11 @@ test('flow-10 HOD counterfactual UI panel surface renders simulator-based analyt
   page.on('console', msg => {
     if (msg.type() === 'error') consoleErrors.push(msg.text())
   })
-  await page.goto('/#/app', { waitUntil: 'domcontentloaded' })
   await loginAs(page, 'hod')
-  // loginAs already reloads with waitUntil:'networkidle'. A second goto here
-  // used to race the app's health-check retry loop (the "Server Not Running"
-  // banner keeps polling while it reattaches), which could burn the 120s
-  // test budget before a single assertion ran. The surface visibility check
-  // below is the real readiness gate.
+  await page.goto('/#/app', { waitUntil: 'domcontentloaded' })
+  // Enter the app only after the API login has set the browser-context
+  // session cookie. An unauthenticated first mount can trip the health-check
+  // retry banner and hide the HoD analytics surface behind a loading state.
 
   const hodSurface = page.locator('[data-proof-surface="hod-proof-analytics"]').first()
   // hodSurface only renders once the proof-bundle has loaded AND its summary

@@ -66,7 +66,7 @@
 | Decision-tree challenger | partial — `depth-2-tree` family in code; `catboost` Python-interop scaffolded; not promoted | E8 closed (P2.1); promotion pending P7 |
 | Recommended-action band thresholds (≥0.7 / ≥0.35) | partial | hardcoded GAP-6 | C14, audit-map/08-ml-audit/01 |
 | Driver impact values 0.28 / 0.14 / 0.20 / 0.10 / 0.05 | works (literature-anchored via `learning-dynamics-constants.ts`; engineering-tier rows disclosed in `docs/paper-evidence/01-literature-table.md`) | C14, E1–E5 closed (P1 done) |
-| weakCO threshold (`tt2Pct < 50 ‖ seePct < 45`) | broken (hardcoded, ignores config) | C4 → P3 |
+| weakCO threshold (mastery < masteryTarget × 0.85) | works — mastery-based, Bloom-anchored; C4 closed (P3) | C4 closed |
 | Per-program model artifact / version | missing | F1, F2 → P7 |
 | Calibration metrics (Brier, ECE, reliability) | works (Brier/ECE/slope/intercept in `RiskMetricSummary`; `reliabilityDiagramData()` in `proof-risk-evaluation-stats.ts`; figure render P10) | E12 closed (P2 deep-dig) |
 | Bootstrap CIs on AUC | works (`bootstrapAucCi` / `bootstrapBrierCi` / `bootstrapMetricCi` in `proof-risk-evaluation-stats.ts`) | E13 closed (P2 deep-dig) |
@@ -84,12 +84,12 @@
 | Feature | Status | Refs |
 |---|---|---|
 | Curriculum import schema (default `edgeKind=explicit`) | works | A2 closed |
-| Course outcomes generated at runtime by `coDefinitionsForCourse` | broken (ignores config) | C2, C3 → P3 |
-| Edge weight numerically affects prerequisite signal | broken (`explicit` ≡ `added`) | C5, C6 → P3 |
-| Course outcome → mastery target mapping (Bloom-driven) | missing | P3 task 3.2 |
-| Impact preview before save | missing | C7 → P3 |
-| Configuration change audit log | missing | C8 → P3 |
-| `outcomesJson` stored but never read by `readRuntimeCurriculum` | broken | C2 → P3 |
+| Course outcomes generated at runtime by `coDefinitionsForCourse` | works — reads `outcomesJson`; Bloom mastery target derived per CO; C2, C3 closed (P3) | C2, C3 closed |
+| Edge weight numerically affects prerequisite signal | works — explicit=1.0, added=0.5, overridable; weighted average in risk inference; C5, C6 closed (P3) | C5, C6 closed |
+| Course outcome → mastery target mapping (Bloom-driven) | works — `BLOOM_LEVEL_MASTERY_TARGET` map wired in `coDefinitionsForCourse`; P3 task 3.2 closed | P3 closed |
+| Impact preview before save | works — `POST /curriculum-feature-config/preview` + UI risk-distribution delta panel; C7 closed (P3) | C7 closed |
+| Configuration change audit log | works — before/after config + projectedDelta in audit events; history endpoint; C8 closed (P3) | C8 closed |
+| `outcomesJson` stored and read by `coDefinitionsForCourse` | works — C2 closed (P3) | C2 closed |
 
 ## 6. Linkage (text-matching prerequisite suggester)
 
@@ -128,7 +128,7 @@
 | Batch binding / save-target / pinned-profile / target-scope labels | cosmetic | B3 → P4 |
 | Rounded-radius / shadow / spacing visual consistency | cosmetic | B4 → P4 |
 | Demo vs live badge on Provisioning UI | cosmetic / demo-only | B7 → P5 |
-| "Retrain" terminology | cosmetic — should be "Recalibrate" until real data | B8 → P3 (decision L8) |
+| "Retrain" terminology | works — renamed to "Recalibrate" throughout; B8 closed (P3) | B8 closed |
 
 ## 10. Deployment surface
 
@@ -157,8 +157,8 @@
 | Demo isolation regression test (global rows untouched) | missing | H1 → P5/P9 |
 | Multi-program proof-run integration test | missing | H4 → P6/P9 |
 | Recalibration service test | missing | H5 → P7/P9 |
-| Config wire-through test (outcome → mastery target) | missing | H6 → P3/P9 |
-| Edge-weight wire-through test | missing | H7 → P3/P9 |
+| Config wire-through test (outcome → mastery target) | works — `tests/admin-curriculum-feature-config.test.ts`; H6 closed (P3) | H6 closed |
+| Edge-weight wire-through test | works — covered in `admin-curriculum-feature-config` suite; H7 closed (P3) | H7 closed |
 | E2E suite (Playwright) for full demo walkthrough | missing | H8 → P9 |
 | Performance baseline | missing | H9 → P9 |
 | Snapshot test audit | missing | H11 → P9 |

@@ -62,7 +62,7 @@ import type {
   ApiStagePolicyOverride,
   ApiStudentRecord,
 } from './api/types'
-import type { ApiCurriculumFeatureConfigBundle, ApiCurriculumLinkageCandidate, ApiCurriculumLinkageGenerationStatus } from './api/types'
+import type { ApiCurriculumFeatureConfigBundle, ApiCurriculumFeatureConfigHistoryEvent, ApiCurriculumFeatureConfigPreview, ApiCurriculumLinkageCandidate, ApiCurriculumLinkageGenerationStatus } from './api/types'
 import type { BatchSetupReadiness } from './batch-setup-readiness'
 
 type RestoreNotice = { tone: 'neutral' | 'error'; message: string } | null
@@ -225,7 +225,7 @@ function validatePrerequisiteDraftAgainstCurriculum(
       errors.push(`Line ${prerequisite.lineNumber}: self-referential prerequisite edges are not allowed.`)
       continue
     }
-    if ((prerequisite.edgeKind === 'explicit' || prerequisite.edgeKind === 'added') && sourceRow.semesterNumber >= targetRow.semesterNumber) {
+    if (prerequisite.edgeKind === 'explicit' && sourceRow.semesterNumber >= targetRow.semesterNumber) {
       errors.push(`Line ${prerequisite.lineNumber}: prerequisite edges require an earlier semester. Found semester ${sourceRow.semesterNumber} -> ${targetRow.semesterNumber}.`)
     }
   }
@@ -608,6 +608,10 @@ type SystemAdminFacultiesWorkspaceProps = {
   handleApproveCurriculumLinkageCandidate: (candidateId: string) => Promise<void>
   handleRejectCurriculumLinkageCandidate: (candidateId: string) => Promise<void>
   handleSaveCurriculumFeatureConfig: () => Promise<void>
+  handlePreviewCurriculumFeatureConfig: () => Promise<void>
+  curriculumFeaturePreview: ApiCurriculumFeatureConfigPreview | null
+  handleLoadCurriculumFeatureHistory: () => Promise<void>
+  curriculumFeatureHistory: ApiCurriculumFeatureConfigHistoryEvent[] | null
   proofDashboardProps: ComponentProps<typeof SystemAdminProofDashboardWorkspace>
   onOpenProofDashboard: () => void
   registryLaunchProps: ComponentProps<typeof SystemAdminScopedRegistryLaunches>
@@ -736,6 +740,10 @@ export function SystemAdminFacultiesWorkspace({
   handleApproveCurriculumLinkageCandidate,
   handleRejectCurriculumLinkageCandidate,
   handleSaveCurriculumFeatureConfig,
+  handlePreviewCurriculumFeatureConfig,
+  curriculumFeaturePreview,
+  handleLoadCurriculumFeatureHistory,
+  curriculumFeatureHistory,
   proofDashboardProps,
   onOpenProofDashboard,
   registryLaunchProps,
@@ -1881,7 +1889,7 @@ export function SystemAdminFacultiesWorkspace({
           </Card>
 
           <Card style={{ padding: 16, background: T.surface2, display: 'grid', gap: 12 }}>
-            <SectionHeading title="Curriculum Model Inputs" eyebrow="Curriculum" caption="Manage course outcomes, prerequisite edges, bridge modules, and topic partitions through batch-local overrides or shared scope profiles that feed retraining and world generation." />
+            <SectionHeading title="Curriculum Model Inputs" eyebrow="Curriculum" caption="Manage course outcomes, prerequisite edges, bridge modules, and topic partitions through batch-local overrides or shared scope profiles that feed recalibration and world generation." />
             {curriculumFeatureItems.length === 0 ? (
               <EmptyState title="No model input bundle yet" body="Save at least one curriculum row first. The sysadmin editor will then project those rows into the proof curriculum snapshot." />
             ) : (
@@ -2053,7 +2061,7 @@ export function SystemAdminFacultiesWorkspace({
                     </div>
                   )}
                 </Card>
-                <InfoBanner message="Outcome line format: CO1 | Apply | Description. Prerequisite line format: COURSE_CODE | explicit|added | rationale. Saving to a scope profile updates that shared feature category and only refreshes affected batches whose resolved fingerprints change." />
+                <InfoBanner message="Outcome line format: CO1 | Apply | Description. Prerequisite line format: COURSE_CODE | explicit|added | rationale. The edge kind is required: explicit requires an earlier semester; added can represent approved supporting evidence. Saving to a scope profile updates that shared feature category and only refreshes affected batches whose resolved fingerprints change." />
                 {hasDraftPrerequisiteText && curriculumPrerequisiteValidation.errors.length > 0 ? (
                   <InfoBanner
                     tone="error"
@@ -2075,11 +2083,71 @@ export function SystemAdminFacultiesWorkspace({
                   <div><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>SEE Topics</div><TextAreaInput value={curriculumFeatureForm.seeTopicsText} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, seeTopicsText: event.target.value }))} rows={4} placeholder={'Comprehensive topic 1\nComprehensive topic 2'} /></div>
                   <div><div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Workbook Topics</div><TextAreaInput value={curriculumFeatureForm.workbookTopicsText} onChange={event => setCurriculumFeatureForm(prev => ({ ...prev, workbookTopicsText: event.target.value }))} rows={4} placeholder={'Workbook topic 1\nWorkbook topic 2'} /></div>
                 </div>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <Btn type="button" onClick={() => void handlePreviewCurriculumFeatureConfig()} disabled={!selectedCurriculumFeatureItem} style={{ background: T.surface2, color: T.accent, border: `1px solid ${T.accent}40` }}>Preview Impact</Btn>
                   <Btn type="button" onClick={() => void handleSaveCurriculumFeatureConfig()} disabled={!selectedCurriculumFeatureItem || hasCurriculumPrerequisiteErrors}>{curriculumFeatureTargetMode === 'scope-profile' ? 'Save Shared Model Inputs' : 'Save Model Inputs'}</Btn>
                   {selectedCurriculumFeatureItem ? <Chip color={T.warning}>{`${selectedCurriculumFeatureItem.prerequisites.length} prerequisites · ${selectedCurriculumFeatureItem.bridgeModules.length} bridge modules`}</Chip> : null}
                   {curriculumFeatureTargetMode === 'scope-profile' && selectedCurriculumFeatureTargetScopeChip ? <Chip color={T.accent}>{selectedCurriculumFeatureTargetScopeChip}</Chip> : null}
                 </div>
+                {curriculumFeaturePreview ? (
+                  <div style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 10, padding: '12px 14px', display: 'grid', gap: 8 }}>
+                    <div style={{ ...mono, fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Impact Preview · {curriculumFeaturePreview.studentCount} students</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                      {(['high', 'medium', 'low'] as const).map(band => {
+                        const color = band === 'high' ? T.danger : band === 'medium' ? T.warning : T.success
+                        const cur = Math.round((curriculumFeaturePreview.currentDistribution[band]) * 100)
+                        const proj = Math.round((curriculumFeaturePreview.projectedDistribution[band]) * 100)
+                        const delta = Math.round((curriculumFeaturePreview.delta[band]) * 100)
+                        return (
+                          <div key={band} style={{ background: T.surface, border: `1px solid ${color}30`, borderRadius: 8, padding: '8px 10px' }}>
+                            <div style={{ ...mono, fontSize: 9, color, textTransform: 'uppercase', marginBottom: 4 }}>{band} risk</div>
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                              <span style={{ ...mono, fontSize: 18, fontWeight: 700, color: T.text }}>{proj}%</span>
+                              <span style={{ ...mono, fontSize: 10, color: delta === 0 ? T.dim : delta > 0 ? T.danger : T.success }}>{delta > 0 ? `+${delta}` : delta}pp</span>
+                            </div>
+                            <div style={{ ...mono, fontSize: 9, color: T.dim, marginTop: 2 }}>was {cur}%</div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    {curriculumFeaturePreview.affectedStudents.length > 0 ? (
+                      <div style={{ ...mono, fontSize: 10, color: T.dim }}>{curriculumFeaturePreview.affectedStudents.length} student{curriculumFeaturePreview.affectedStudents.length === 1 ? '' : 's'} change risk band with this config</div>
+                    ) : (
+                      <div style={{ ...mono, fontSize: 10, color: T.dim }}>No students change risk band with this config</div>
+                    )}
+                  </div>
+                ) : null}
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <button type="button" onClick={() => void handleLoadCurriculumFeatureHistory()} disabled={!selectedCurriculumFeatureItem} style={{ ...mono, fontSize: 10, color: T.dim, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Configuration history</button>
+                </div>
+                {curriculumFeatureHistory && curriculumFeatureHistory.length > 0 ? (
+                  <div style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 10, padding: '12px 14px', display: 'grid', gap: 6 }}>
+                    <div style={{ ...mono, fontSize: 10, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2 }}>Configuration history</div>
+                    {curriculumFeatureHistory.slice(0, 10).map(event => {
+                      const meta = event.metadata as Record<string, unknown> | null
+                      const delta = meta?.projectedDelta as { high?: number; medium?: number; low?: number } | null
+                      const affected = typeof meta?.affectedStudentCount === 'number' ? meta.affectedStudentCount : null
+                      return (
+                        <div key={event.auditEventId} style={{ borderBottom: `1px solid ${T.border}`, paddingBottom: 6, display: 'grid', gap: 2 }}>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+                            <span style={{ ...mono, fontSize: 10, color: T.text }}>{event.createdAt.slice(0, 16).replace('T', ' ')}</span>
+                            <span style={{ ...mono, fontSize: 9, color: T.dim }}>{event.actorId ?? event.actorRole}</span>
+                            {delta && affected != null && affected > 0 ? (
+                              <span style={{ ...mono, fontSize: 9, color: (delta.high ?? 0) > 0 ? T.danger : T.success }}>
+                                {`${affected} student${affected === 1 ? '' : 's'} band-shift · high ${(delta.high ?? 0) >= 0 ? '+' : ''}${Math.round((delta.high ?? 0) * 100)}pp`}
+                              </span>
+                            ) : delta ? (
+                              <span style={{ ...mono, fontSize: 9, color: T.dim }}>no band shift</span>
+                            ) : null}
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {curriculumFeatureHistory.length === 0 ? <div style={{ ...mono, fontSize: 10, color: T.dim }}>No changes recorded yet</div> : null}
+                  </div>
+                ) : curriculumFeatureHistory != null && curriculumFeatureHistory.length === 0 ? (
+                  <div style={{ ...mono, fontSize: 10, color: T.dim }}>No configuration changes recorded yet.</div>
+                ) : null}
               </>
             )}
           </Card>

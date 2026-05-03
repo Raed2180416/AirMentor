@@ -31,6 +31,10 @@ export type OverviewScopedCounts = {
   ownershipCount: number
 }
 
+export function formatOverviewFacultyCaption(counts: OverviewScopedCounts, _hasHierarchyScope: boolean) {
+  return `${counts.facultyCount} profiles · ${counts.ownershipCount} active class owners`
+}
+
 export function isLeaderLikeOwnership(role: string) {
   const normalized = role.trim().toLowerCase()
   return normalized.includes('course') || normalized.includes('leader') || normalized.includes('owner') || normalized.includes('primary')
@@ -151,8 +155,8 @@ export function computeOverviewScopedCounts(
       studentCount: globalStudents.length,
       mentoredCount: globalStudents.filter(item => item.activeMentorAssignment).length,
       mentorGapCount: globalStudents.filter(item => !item.activeMentorAssignment).length,
-      facultyCount: 0,
-      ownershipCount: 0,
+      facultyCount: visibleFacultyMembers.length,
+      ownershipCount: activeVisibleOwnerships.length,
     }
   }
 

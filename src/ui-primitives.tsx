@@ -848,6 +848,7 @@ export const Btn = ({
   id,
   role,
   title,
+  style: styleOverride,
 }: {
   children: ReactNode
   onClick?: () => void
@@ -864,6 +865,7 @@ export const Btn = ({
   id?: string
   role?: string
   title?: string
+  style?: CSSProperties
 }) => {
   const shouldReduceMotion = useReducedMotion()
   const pad = size === 'sm' ? '8px 12px' : size === 'lg' ? '12px 18px' : '10px 14px'
@@ -918,6 +920,7 @@ export const Btn = ({
         display: 'inline-flex',
         alignItems: 'center',
         gap: 6,
+        ...styleOverride,
       }}
     >
       {children}

@@ -334,7 +334,7 @@ describe('proof-control-plane-playback-reset-service', () => {
     }))
   })
 
-  it('stops the run, deletes credentials, and invalidates batch sessions', async () => {
+  it('stops the run without deleting real credentials or invalidating real sessions', async () => {
     const { db, getRun } = createMockDb({
       run: {
         lifecycleState: 'active',
@@ -357,19 +357,19 @@ describe('proof-control-plane-playback-reset-service', () => {
       ok: true,
       simulationRunId: 'run_001',
       batchId: 'batch_001',
-      deletedCredentialCount: 3,
+      deletedCredentialCount: 0,
     })
     expect(getRun()).toMatchObject({
       activeFlag: 0,
       lifecycleState: 'stopped',
       status: 'completed',
     })
-    expect(deps.deleteProofCredentials).toHaveBeenCalledWith(db, 'batch_001')
-    expect(deps.invalidateProofBatchSessions).toHaveBeenCalledWith(db, 'batch_001')
+    expect(deps.deleteProofCredentials).not.toHaveBeenCalled()
+    expect(deps.invalidateProofBatchSessions).not.toHaveBeenCalled()
     expect(deps.emitSimulationAudit).toHaveBeenCalledWith(db, expect.objectContaining({
       actionType: 'stopped',
       payload: expect.objectContaining({
-        deletedCredentialCount: 3,
+        deletedCredentialCount: 0,
       }),
     }))
   })

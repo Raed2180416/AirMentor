@@ -45,7 +45,27 @@ describe('academic bootstrap proof calendar bridge', () => {
       .select()
       .from(simulationStageCheckpoints)
       .where(eq(simulationStageCheckpoints.simulationRunId, activeRun.simulationRunId))
-    const targetCheckpoint = checkpointRows.find(row => row.semesterNumber === targetOffering.sem) ?? checkpointRows[0]
+    let targetCheckpoint = checkpointRows.find(row => row.semesterNumber === targetOffering.sem) ?? checkpointRows[0]
+    if (!targetCheckpoint) {
+      const [createdCheckpoint] = await current.db.insert(simulationStageCheckpoints).values({
+        simulationStageCheckpointId: `proof_calendar_bridge_checkpoint_${targetOffering.offId}`,
+        simulationRunId: activeRun.simulationRunId,
+        semesterNumber: targetOffering.sem,
+        stageKey: 'post-tt1',
+        stageLabel: 'Post TT1',
+        stageDescription: 'Synthetic checkpoint seeded for proof calendar bridge isolation.',
+        stageOrder: 2,
+        previousCheckpointId: null,
+        nextCheckpointId: null,
+        summaryJson: JSON.stringify({
+          source: 'academic-proof-calendar-bridge.test',
+          intent: 'minimal checkpoint for workflow-task projection bridge',
+        }),
+        createdAt: TEST_NOW,
+        updatedAt: TEST_NOW,
+      }).returning()
+      targetCheckpoint = createdCheckpoint
+    }
     expect(targetCheckpoint).toBeTruthy()
     if (!targetCheckpoint) throw new Error('Expected a checkpoint for the proof calendar bridge test')
 

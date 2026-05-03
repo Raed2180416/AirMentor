@@ -212,6 +212,63 @@ describe('student agent shell', () => {
     expect(checkpointItems[1]?.body.toLowerCase()).toContain('no-action comparator')
   })
 
+  it('allows proof recompute after a checkpoint-scoped student card has been cached', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+    const login = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+
+    const roleResponse = login.body.activeRoleGrant.roleCode === 'COURSE_LEADER'
+      ? login.body
+      : (await switchToRole(login.cookie, login.body.availableRoleGrants, 'COURSE_LEADER')).json()
+
+    const [activeRun] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    expect(activeRun).toBeTruthy()
+    const recomputeResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRun.simulationRunId}/recompute-risk`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+    expect(recomputeResponse.statusCode).toBe(200)
+
+    const [selectedCheckpoint] = await current.db.select().from(simulationStageCheckpoints).where(and(
+      eq(simulationStageCheckpoints.simulationRunId, activeRun.simulationRunId),
+      eq(simulationStageCheckpoints.semesterNumber, 6),
+    )).orderBy(asc(simulationStageCheckpoints.stageOrder))
+    expect(selectedCheckpoint).toBeTruthy()
+
+    const ownershipRows = await current.db.select().from(facultyOfferingOwnerships).where(and(
+      eq(facultyOfferingOwnerships.facultyId, roleResponse.faculty.facultyId),
+      eq(facultyOfferingOwnerships.status, 'active'),
+    ))
+    const ownedOfferingIds = new Set(ownershipRows.map(row => row.offeringId))
+    expect(ownedOfferingIds.size).toBeGreaterThan(0)
+    const observedRows = await current.db.select().from(studentObservedSemesterStates).where(and(
+      eq(studentObservedSemesterStates.simulationRunId, activeRun.simulationRunId),
+      eq(studentObservedSemesterStates.semesterNumber, 6),
+    ))
+    const accessibleStudentId = observedRows.find(row => {
+      const offeringId = getObservedOfferingId(row)
+      return !!offeringId && ownedOfferingIds.has(offeringId)
+    })?.studentId
+    expect(accessibleStudentId).toBeTruthy()
+
+    const checkpointCardResponse = await current.app.inject({
+      method: 'GET',
+      url: `/api/academic/student-shell/students/${accessibleStudentId}/card?simulationStageCheckpointId=${encodeURIComponent(selectedCheckpoint.simulationStageCheckpointId)}`,
+      headers: { cookie: login.cookie },
+    })
+    expect(checkpointCardResponse.statusCode).toBe(200)
+
+    const recomputeAfterCardResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRun.simulationRunId}/recompute-risk`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+    expect(recomputeAfterCardResponse.statusCode).toBe(200)
+  }, 300000)
+
   it('enforces mentor and HoD scope and allows system admin archived-run inspection', async () => {
     current = await createTestApp()
     const mentorLogin = await loginAs(current.app, 'devika.shetty', 'faculty1234')

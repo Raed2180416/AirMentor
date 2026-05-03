@@ -2097,6 +2097,7 @@ export type ApiAdminRequestDetail = ApiAdminRequestSummary & {
 export type ApiAcademicLoginFaculty = {
   facultyId: string
   username: string
+  email: string
   name: string
   displayName: string
   designation: string
@@ -2104,6 +2105,9 @@ export type ApiAcademicLoginFaculty = {
   departmentCode: string
   roleTitle: string
   allowedRoles: Array<'Course Leader' | 'Mentor' | 'HoD'>
+  courseCodes: string[]
+  offeringIds: string[]
+  menteeIds: string[]
 }
 
 export type ApiAcademicRuntimeState = {
@@ -2342,6 +2346,31 @@ export type ApiCurriculumFeatureConfigSaveResult = {
   proofRefresh?: ApiProofRefresh
   targetMode?: 'batch-local-override' | 'scope-profile'
   curriculumFeatureProfileId?: string | null
+}
+
+export type ApiCurriculumFeatureConfigHistoryEvent = {
+  auditEventId: string
+  action: string
+  actorRole: string
+  actorId: string | null
+  before: unknown | null
+  after: unknown | null
+  metadata: unknown | null
+  createdAt: string
+}
+
+export type ApiCurriculumFeatureConfigPreview = {
+  studentCount: number
+  currentDistribution: { low: number; medium: number; high: number }
+  projectedDistribution: { low: number; medium: number; high: number }
+  delta: { low: number; medium: number; high: number }
+  affectedStudents: Array<{
+    studentId: string
+    currentRiskBand: string
+    projectedRiskBand: string
+    currentWeakCoCount: number
+    projectedWeakCoCount: number
+  }>
 }
 
 export type ApiCurriculumFeatureBindingSaveResult = {

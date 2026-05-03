@@ -59,7 +59,7 @@ async function waitForMaterializedRun(requestContext: GetContext, csrfToken: str
 
     const checkpoints = await readProofRunCheckpoints(requestContext, csrfToken, runId)
     const checkpointCount = Array.isArray(checkpoints.items) ? checkpoints.items.length : 0
-    if (checkpointCount > 0) {
+    if (runPreview?.status === 'completed' && checkpointCount > 0) {
       return dashboard
     }
 
@@ -76,12 +76,12 @@ async function waitForActivatedRun(requestContext: GetContext, csrfToken: string
     const checkpointCount = activeRun?.simulationRunId === runId
       ? Number(activeRun.checkpoints?.length ?? 0)
       : 0
-    if (activeRun?.simulationRunId === runId && checkpointCount > 0) {
-      return dashboard
-    }
     const runPreview = Array.isArray(dashboard.proofRuns)
       ? dashboard.proofRuns.find((candidate: { simulationRunId: string }) => candidate.simulationRunId === runId) ?? null
       : null
+    if (activeRun?.simulationRunId === runId && (runPreview?.status === 'completed' || runPreview?.status === 'active') && checkpointCount > 0) {
+      return dashboard
+    }
     if (runPreview?.status === 'failed') {
       throw new Error(`Proof run ${runId} failed while waiting for checkpoint materialization.`)
     }
@@ -177,8 +177,9 @@ export const test = base.extend({
     // Cleanup is best-effort: archive the throwaway run so later e2e flows do not inherit it,
     // but do not fail the completed smoke if archival itself flakes.
     try {
+      const { session: cleanupSession } = await loginWithApiContext(request, 'system-admin')
       const archiveResponse = await request.post(`/api/admin/proof-runs/${encodeURIComponent(runId)}/archive`, {
-        headers: csrfHeaders(session.csrfToken),
+        headers: csrfHeaders(cleanupSession.csrfToken),
         data: {},
       })
       await readJson(archiveResponse, `Archive proof run ${runId}`)

@@ -20,6 +20,7 @@ import {
   sectionOfferings,
   simulationRuns,
   simulationStageCheckpoints,
+  simulationStageQueueCases,
   simulationStageQueueProjections,
   simulationStageStudentProjections,
   students,
@@ -55,6 +56,7 @@ type ProofCheckpointSummaryLike = {
   previousCheckpointId: string | null
   nextCheckpointId: string | null
   openQueueCount?: number
+  liveBlockingQueueItemCount?: number
   blockingQueueItemCount?: number
   stageAdvanceBlocked?: boolean
   playbackAccessible?: boolean
@@ -77,6 +79,7 @@ type HodProofAnalyticsResult = {
 
 function resolveOperationalCheckpointSummary(
   checkpointRows: Array<typeof simulationStageCheckpoints.$inferSelect>,
+  queueCaseRows: Array<typeof simulationStageQueueCases.$inferSelect>,
   semesterNumber: number,
   deps: Pick<ProofControlPlaneHodServiceDeps, 'parseProofCheckpointSummary' | 'withProofPlaybackGate'>,
 ) {
@@ -85,6 +88,7 @@ function resolveOperationalCheckpointSummary(
       .slice()
       .sort((left, right) => left.semesterNumber - right.semesterNumber || left.stageOrder - right.stageOrder)
       .map(deps.parseProofCheckpointSummary),
+    queueCaseRows,
   )
   const semesterSummaries = summaries.filter(item => item.semesterNumber === semesterNumber)
   return semesterSummaries
@@ -93,6 +97,12 @@ function resolveOperationalCheckpointSummary(
     .find(item => item.playbackAccessible !== false)
     ?? semesterSummaries.at(-1)
     ?? null
+}
+
+function riskBandWeight(riskBand: string | null | undefined) {
+  if (riskBand === 'High') return 2
+  if (riskBand === 'Medium') return 1
+  return 0
 }
 
 export type ProofControlPlaneHodServiceDeps = {
@@ -109,7 +119,7 @@ export type ProofControlPlaneHodServiceDeps = {
   queueProjectionAssignedFacultyId: (row: typeof simulationStageQueueProjections.$inferSelect) => string | null
   roundToOne: (value: number) => number
   uniqueSorted: (values: Iterable<string>) => string[]
-  withProofPlaybackGate: (summaries: ProofCheckpointSummaryLike[]) => ProofCheckpointSummaryLike[]
+  withProofPlaybackGate: (summaries: ProofCheckpointSummaryLike[], queueCaseRows?: Array<typeof simulationStageQueueCases.$inferSelect>) => ProofCheckpointSummaryLike[]
 }
 
 export async function buildHodProofAnalytics(db: AppDb, input: {
@@ -172,6 +182,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
     transcriptRows,
     stageCheckpointRows,
     stageStudentRows,
+    stageQueueCaseRows,
     stageQueueRows,
   ] = await Promise.all([
     db.select().from(facultyAppointments),
@@ -201,6 +212,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
     db.select().from(transcriptTermResults),
     db.select().from(simulationStageCheckpoints),
     db.select().from(simulationStageStudentProjections),
+    db.select().from(simulationStageQueueCases),
     db.select().from(simulationStageQueueProjections),
   ])
 
@@ -276,6 +288,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
   const operationalCheckpointSummary = activeRunId
     ? resolveOperationalCheckpointSummary(
       stageCheckpointRows.filter(row => row.simulationRunId === activeRunId),
+      stageQueueCaseRows.filter(row => row.simulationRunId === activeRunId),
       currentSemester,
       { parseProofCheckpointSummary, withProofPlaybackGate },
     )
@@ -355,6 +368,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
         .filter(row => row.simulationRunId === activeRunId)
         .sort((left, right) => left.semesterNumber - right.semesterNumber || left.stageOrder - right.stageOrder)
         .map(parseProofCheckpointSummary),
+      stageQueueCaseRows.filter(row => row.simulationRunId === activeRunId),
     ).find(item => item.simulationStageCheckpointId === checkpoint.simulationStageCheckpointId)
       ?? parseProofCheckpointSummary(checkpoint)
     const checkpointStudentRows = stageStudentRows
@@ -533,12 +547,21 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
             if (leftRank !== rightRank) return leftRank - rightRank
             return right.riskProbScaled - left.riskProbScaled || left.courseCode.localeCompare(right.courseCode)
           })
-        const primary = rowsForStudent[0]
-        if (!primary) return null
+        const actionPrimary = rowsForStudent[0]
+        const riskPrimary = rowsForStudent
+          .slice()
+          .sort((left, right) =>
+            riskBandWeight(right.riskBand) - riskBandWeight(left.riskBand)
+            || right.riskProbScaled - left.riskProbScaled
+            || left.courseCode.localeCompare(right.courseCode)
+          )[0] ?? null
+        const primary = riskPrimary ?? actionPrimary
+        if (!primary || !actionPrimary) return null
         const primaryPayload = parseJson(primary.projectionJson, {} as Record<string, unknown>)
+        const actionPayload = parseJson(actionPrimary.projectionJson, {} as Record<string, unknown>)
         const primaryEvidence = (primaryPayload.currentEvidence ?? {}) as Record<string, unknown>
-        const currentStatus = (primaryPayload.currentStatus ?? {}) as Record<string, unknown>
-        const governance = (primaryPayload.governance ?? {}) as Record<string, unknown>
+        const currentStatus = (actionPayload.currentStatus ?? {}) as Record<string, unknown>
+        const governance = (actionPayload.governance ?? {}) as Record<string, unknown>
         const counterfactualPolicy = (primaryPayload.counterfactualPolicyDiagnostics ?? {}) as Record<string, unknown>
         const evidenceTimeline = buildEvidenceTimelineFromRows(observedRows
           .filter(row => row.simulationRunId === activeRunId && row.studentId === studentId)

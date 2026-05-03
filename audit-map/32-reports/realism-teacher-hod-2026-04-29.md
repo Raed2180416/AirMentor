@@ -24,6 +24,12 @@ Evidence:
 - Role-switch precision probe output was captured in terminal and reflected in this report.
 - Browser smoke summary: `/tmp/airmentor-demo-logs/realism-2026-04-29/browser/browser-smoke-summary.json`.
 - Browser screenshots: `hod-proof-analytics.png`, `hod-counterfactual.png`, `course-leader.png`, `mentor.png`, `system-admin-app.png`.
+- Teacher attendance persistence probe: `/tmp/airmentor-demo-logs/realism-2026-04-29/teacher-edit/teacher-attendance-persistence.json`.
+- Final full-role browser proof smoke: `/tmp/airmentor-demo-logs/realism-2026-04-29/final-browser-smoke-devika/final-live-devika-semester-walk-summary.json`.
+- Deep Wave repaired Sem 1 full-role browser proof smoke: `/tmp/airmentor-demo-logs/realism-2026-04-29/deep-wave-self/browser-proof-source-sem1-devika-after-recompute-repair/deep-wave-source-sem1-devika-after-recompute-repair-semester-walk-summary.json`.
+- Deep Wave repaired Sem 6 full-role browser proof smoke: `/tmp/airmentor-demo-logs/realism-2026-04-29/deep-wave-self/browser-proof-source-sem6-devika-after-recompute-repair/deep-wave-source-sem6-devika-after-recompute-repair-semester-walk-summary.json`.
+- Stage A after-fixes Sem 1/Sem 6 browser proof smoke: `/tmp/airmentor-demo-logs/realism-2026-04-29/stage-a-after-fixes/browser-proof-source-sem1-sem6-devika/stage-a-after-fixes-devika-semester-walk-summary.json`.
+- API regression: `npx vitest run tests/academic-parity.test.ts --reporter=dot -t "projects teacher attendance edits"`.
 
 ## Teacher Operations Matrix
 
@@ -36,9 +42,11 @@ Evidence:
 
 Teacher edit smoke:
 
-- Course leader `rohit.menon` saw offering `course_amc_s6_32`, title `Data Science and Analytics`.
-- Risk recompute endpoint returned status 200 after the walk.
-- The smoke did not mutate attendance; it only verified at least one offering was scoped.
+- Course leader `rohit.menon` committed attendance through `PUT /api/academic/offerings/mnc_s1_amc_s1_02_a/attendance`.
+- Target student `mnc_student_001` changed from `present=0,totalClasses=0` to `present=1,totalClasses=2` after academic bootstrap re-read.
+- Academic risk moved from `riskProb=0.3997` to `riskProb=0.3828`; attendance reason changed from `0%` to `50%`.
+- Recompute endpoint `POST /api/admin/proof-runs/sim_mnc_2023_first6_v1/recompute-risk` returned `{"ok":true}`.
+- Stage A bridge regression now proves recomputed seeded proof projection consumption for this bounded attendance path: `simulationStageStudentProjections.projectionJson.currentEvidence.attendancePct === 50` for `mnc_student_001` / `mnc_s1_amc_s1_02_a`.
 
 ## HoD Analytics Matrix
 
@@ -71,7 +79,12 @@ Sysadmin negative check:
 - Counterfactual copy was checked for prohibited causal framing; `prohibitedCopyFound=false`.
 - Course leader browser flow rendered scoped dashboard/proof overlay and captured `/tmp/airmentor-demo-logs/realism-2026-04-29/browser/course-leader.png`.
 - Mentor browser flow rendered mentee scope/proof overlay and captured `/tmp/airmentor-demo-logs/realism-2026-04-29/browser/mentor.png`.
-- Browser network failures were 0; the only non-OK browser responses were three `/api/preferences/ui` 409 stale-version conflicts.
+- Final full-role smoke used `devika.shetty` because that account owns `COURSE_LEADER`, `MENTOR`, and `HOD` grants; Sem 1 and Sem 6 proof-risk surfaces passed with screenshots under `/tmp/airmentor-demo-logs/realism-2026-04-29/final-browser-smoke-devika/`.
+- Deep Wave Sem 1 repaired browser smoke passed after recompute repaired historical proof offerings/ownerships; backend log shows `mnc_t1` Course Leader bootstrap `offeringCount=2, facultyCount=1`, then HOD bootstrap `offeringCount=12, facultyCount=12`.
+- Deep Wave Sem 6 repaired browser smoke passed with the same role path and backend counts.
+- Stage A after-fixes Sem 1/Sem 6 browser smoke passed again with corrected Sem 6 earlier-checkpoint blocker banner and healthy Course Leader/HOD bootstrap counts; this browser evidence predates Fix B.
+- Fix B API regressions now prove dashboard, HoD, and student-shell checkpoint contexts use the same timeline-aware playback gate, so historical queue cases that later moved to `Watching`/`Resolved`/`Closed` no longer block Sem 6 playback.
+- Final targeted artifact scan found no `/api/preferences/ui`, `response:409`, `Stale version`, `requestfailed`, or `pageerror` hits in keyboard, accessibility, and proof-smoke artifacts.
 
 ## Permission And Scope Findings
 
@@ -91,26 +104,32 @@ Route uses `requireRole(['SYSTEM_ADMIN', 'HOD'])` at `air-mentor-api/src/modules
 
 Course leaders see course offerings. Mentor-only user sees zero courses, which is plausible if the UI expects mentor lists instead of course leadership.
 
+5. **Deep Wave faculty-context failure was an academic proof repair gap.**
+
+Sem 1 checkpoint playback originally had students but no matching checkpoint-scoped faculty because the recompute path did not guarantee all-semester `section_offerings` and active `faculty_offering_ownerships`. `ensureProofOfferings` now backfills active ownerships for existing offerings, and `recomputeObservedOnlyRisk` repairs proof offerings before rebuilding risk. Browser Sem 1 and Sem 6 now both pass using `devika.shetty`.
+
 ## Edit Persistence And Recompute Findings
 
-- The full-walk did not perform a real attendance mark mutation, so edit persistence is not fully proven.
+- A bounded real attendance mutation now proves academic persistence for one course-leader-owned offering and student.
+- The seeded proof replay now proves that this attendance edit flows into immutable proof checkpoint projections after recompute.
+- Bridge fix source path: historical seeded sources carry `offeringId`, rebuild recovers historical offering IDs for legacy rows, and latest `teacher-workspace` attendance snapshots override playback evidence before projection persistence.
 - Recompute risk returned 200 and changed dashboard readiness from 0 checkpoints initially to 30 checkpoints finally.
 - This is a strong proof-plane readiness signal but also means recompute must be part of demo prep.
 
 ## Blockers
 
-- **Edit-persistence blocker:** attendance/marks edit was not actually mutated and re-read.
-- **Manual demo blocker:** if user logs in as `devika.shetty` and does not switch role, HoD page will 403.
-- **Console-noise blocker:** `/api/preferences/ui` stale-version 409s remain visible in browser logs.
+- **Proof-consumption caveat:** bounded attendance edit projection now passed; marks/interventions still need separate bridge coverage if demo claims those paths.
+- **Manual demo caveat:** if user logs in as `devika.shetty` and does not switch role, HoD page will 403 by design.
+- **Fresh-browser caveat:** Sem 6 playback is fixed at backend/API-consumer level by Fix B, but a fresh browser smoke is needed if visual screenshot evidence of accessible Sem 6 playback is required.
 
 ## Reverification Needed
 
-- Perform one bounded teacher edit on a safe fixture, recompute, and re-read affected risk/queue row.
+- Extend proof-projection bridge tests if the demo needs to claim non-attendance teacher edits affect seeded proof checkpoint state.
 - Keep manual HoD role switch explicit in the demo script.
-- Fix or suppress stale-version UI preference conflicts before polished demo.
+- Re-run browser proof smoke after Fix B if final-stage accessible playback must be shown visually.
 
 ## Verdict
 
 **Teacher/HoD verdict: CONDITIONAL PASS.**
 
-Permission boundaries are mostly correct and strict. HoD analytics, counterfactual, course leader, and mentor surfaces now have browser evidence. Remaining gaps are actual edit-persistence proof and UI preference 409 cleanup.
+Permission boundaries are mostly correct and strict. HoD analytics, counterfactual, course leader, mentor, Deep Wave faculty-context repair, keyboard, accessibility, bounded academic edit persistence, bounded attendance proof-projection consumption, and Fix B timeline-aware playback gating now have evidence. Remaining gaps are broader edit-type bridge coverage and fresh browser capture if free final-stage playback must be demonstrated visually.

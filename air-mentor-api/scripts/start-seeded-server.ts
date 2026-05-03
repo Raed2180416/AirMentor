@@ -87,7 +87,9 @@ async function main() {
     const db = createDb(pool) as AppDb
     const migrationsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/db/migrations')
     await runSqlMigrations(pool, migrationsDir)
-    await seedIntoDatabase(db, pool, baseNow)
+    await seedIntoDatabase(db, pool, baseNow, {
+      profile: process.env.AIRMENTOR_SEED_PROFILE === 'control-only' ? 'control-only' : 'full',
+    })
 
     const config = loadConfig({
       ...process.env,

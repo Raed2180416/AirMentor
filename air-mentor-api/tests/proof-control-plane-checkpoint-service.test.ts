@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { stageSummaryPayload } from '../src/lib/proof-control-plane-checkpoint-service.js'
+import { stageSummaryPayload, withProofPlaybackGate } from '../src/lib/proof-control-plane-checkpoint-service.js'
 
 describe('proof-control-plane-checkpoint-service', () => {
   it('summarizes checkpoint risk and queue counts by unique student and primary queue case', () => {
@@ -90,6 +90,67 @@ describe('proof-control-plane-checkpoint-service', () => {
       noActionHighRiskCount: 1,
       stageAdvanceBlocked: true,
       blockingQueueItemCount: 1,
+    })
+  })
+
+  it('does not gate later playback on historical open queue cases that later move to watching', () => {
+    const gated = withProofPlaybackGate([
+      {
+        simulationStageCheckpointId: 'checkpoint_sem2_post_tt1',
+        simulationRunId: 'run_001',
+        semesterNumber: 2,
+        stageKey: 'post-tt1',
+        stageLabel: 'Post TT1',
+        stageDescription: 'First checkpoint after TT1 evidence is present and locked.',
+        stageOrder: 2,
+        previousCheckpointId: null,
+        nextCheckpointId: 'checkpoint_sem2_post_tt2',
+        openQueueCount: 10,
+        watchQueueCount: 43,
+        resolvedQueueCount: 0,
+        liveBlockingQueueItemCount: 0,
+      },
+      {
+        simulationStageCheckpointId: 'checkpoint_sem2_post_tt2',
+        simulationRunId: 'run_001',
+        semesterNumber: 2,
+        stageKey: 'post-tt2',
+        stageLabel: 'Post TT2',
+        stageDescription: 'Second checkpoint after TT2 evidence is present and locked.',
+        stageOrder: 3,
+        previousCheckpointId: 'checkpoint_sem2_post_tt1',
+        nextCheckpointId: 'checkpoint_sem6_post_see',
+        openQueueCount: 0,
+        watchQueueCount: 10,
+        resolvedQueueCount: 0,
+        liveBlockingQueueItemCount: 0,
+      },
+      {
+        simulationStageCheckpointId: 'checkpoint_sem6_post_see',
+        simulationRunId: 'run_001',
+        semesterNumber: 6,
+        stageKey: 'post-see',
+        stageLabel: 'Post SEE',
+        stageDescription: 'Final evidence checkpoint after SEE lands.',
+        stageOrder: 5,
+        previousCheckpointId: 'checkpoint_sem2_post_tt2',
+        nextCheckpointId: null,
+        openQueueCount: 0,
+        watchQueueCount: 0,
+        resolvedQueueCount: 0,
+        liveBlockingQueueItemCount: 0,
+      },
+    ] as never)
+
+    expect(gated.find(item => item.simulationStageCheckpointId === 'checkpoint_sem2_post_tt1')).toMatchObject({
+      stageAdvanceBlocked: false,
+      blockingQueueItemCount: 0,
+      playbackAccessible: true,
+    })
+    expect(gated.find(item => item.simulationStageCheckpointId === 'checkpoint_sem6_post_see')).toMatchObject({
+      playbackAccessible: true,
+      blockedByCheckpointId: null,
+      blockedProgressionReason: null,
     })
   })
 })

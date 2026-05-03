@@ -178,7 +178,82 @@ describe('admin curriculum feature config', () => {
     })
   })
 
-  it('rejects prerequisite edges that point to a course in the same semester', async () => {
+  it('allows added prerequisite links that point to a course in the same semester', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const initialResponse = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/batches/${MSRUAS_PROOF_BATCH_ID}/curriculum-feature-config`,
+      headers: { cookie: adminLogin.cookie },
+    })
+
+    expect(initialResponse.statusCode).toBe(200)
+    const initialConfig = initialResponse.json() as {
+      items: Array<{
+        curriculumCourseId: string
+        semesterNumber: number
+        courseCode: string
+      }>
+    }
+
+    const targetCourse = initialConfig.items.find(item => item.semesterNumber >= 5) ?? null
+    const sameSemesterPrerequisite = initialConfig.items.find(item => item.curriculumCourseId !== targetCourse?.curriculumCourseId && item.semesterNumber === targetCourse?.semesterNumber) ?? null
+
+    expect(targetCourse).toBeTruthy()
+    expect(sameSemesterPrerequisite).toBeTruthy()
+    if (!targetCourse || !sameSemesterPrerequisite) throw new Error('Expected proof batch curriculum rows in the same semester for the added-link validation test')
+
+    const response = await current.app.inject({
+      method: 'PUT',
+      url: `/api/admin/batches/${MSRUAS_PROOF_BATCH_ID}/curriculum-feature-config/${targetCourse.curriculumCourseId}`,
+      headers: {
+        cookie: adminLogin.cookie,
+        origin: TEST_ORIGIN,
+      },
+      payload: {
+        assessmentProfile: 'ce-40-see-60',
+        outcomes: [
+          { id: 'CO1', bloom: 'Analyze', desc: 'Use same-semester support evidence.' },
+        ],
+        prerequisites: [
+          {
+            sourceCourseCode: sameSemesterPrerequisite.courseCode,
+            edgeKind: 'added',
+            rationale: 'Same-semester supporting signal approved by sysadmin review.',
+          },
+        ],
+        bridgeModules: [],
+        topicPartitions: {
+          tt1: [],
+          tt2: [],
+          see: [],
+          workbook: [],
+        },
+      },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      ok: true,
+      curriculumCourseId: targetCourse.curriculumCourseId,
+    })
+
+    const refreshedResponse = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/batches/${MSRUAS_PROOF_BATCH_ID}/curriculum-feature-config`,
+      headers: { cookie: adminLogin.cookie },
+    })
+    expect(refreshedResponse.statusCode).toBe(200)
+    const refreshedCourse = refreshedResponse.json().items.find((item: { curriculumCourseId: string }) => item.curriculumCourseId === targetCourse.curriculumCourseId)
+    expect(refreshedCourse?.prerequisites).toContainEqual(expect.objectContaining({
+      sourceCourseCode: sameSemesterPrerequisite.courseCode,
+      edgeKind: 'added',
+      rationale: 'Same-semester supporting signal approved by sysadmin review.',
+    }))
+  })
+
+  it('rejects explicit prerequisite edges that point to a course in the same semester', async () => {
     current = await createTestApp()
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
 
@@ -239,6 +314,67 @@ describe('admin curriculum feature config', () => {
     })
     expect(JSON.stringify(response.json())).toContain('Prerequisite edges require an earlier semester')
     expect(JSON.stringify(response.json())).toContain(`semester ${sameSemesterPrerequisite.semesterNumber} -> ${targetCourse.semesterNumber}`)
+  })
+
+  it('rejects prerequisite payloads that omit the edge kind instead of defaulting to explicit', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const initialResponse = await current.app.inject({
+      method: 'GET',
+      url: `/api/admin/batches/${MSRUAS_PROOF_BATCH_ID}/curriculum-feature-config`,
+      headers: { cookie: adminLogin.cookie },
+    })
+
+    expect(initialResponse.statusCode).toBe(200)
+    const initialConfig = initialResponse.json() as {
+      items: Array<{
+        curriculumCourseId: string
+        semesterNumber: number
+        courseCode: string
+      }>
+    }
+
+    const targetCourse = initialConfig.items.find(item => item.semesterNumber >= 5) ?? null
+    const earlierSemesterPrerequisite = initialConfig.items.find(item => item.curriculumCourseId !== targetCourse?.curriculumCourseId && item.semesterNumber < (targetCourse?.semesterNumber ?? 0)) ?? null
+
+    expect(targetCourse).toBeTruthy()
+    expect(earlierSemesterPrerequisite).toBeTruthy()
+    if (!targetCourse || !earlierSemesterPrerequisite) throw new Error('Expected proof batch curriculum rows with an earlier-semester prerequisite candidate')
+
+    const response = await current.app.inject({
+      method: 'PUT',
+      url: `/api/admin/batches/${MSRUAS_PROOF_BATCH_ID}/curriculum-feature-config/${targetCourse.curriculumCourseId}`,
+      headers: {
+        cookie: adminLogin.cookie,
+        origin: TEST_ORIGIN,
+      },
+      payload: {
+        assessmentProfile: 'ce-40-see-60',
+        outcomes: [
+          { id: 'CO1', bloom: 'Analyze', desc: 'Reject missing edge kind explicitly.' },
+        ],
+        prerequisites: [
+          {
+            sourceCourseCode: earlierSemesterPrerequisite.courseCode,
+            rationale: 'This would be valid only if the backend silently defaulted edgeKind to explicit.',
+          },
+        ],
+        bridgeModules: [],
+        topicPartitions: {
+          tt1: [],
+          tt2: [],
+          see: [],
+          workbook: [],
+        },
+      },
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(response.json()).toMatchObject({
+      error: 'BAD_REQUEST',
+    })
+    expect(JSON.stringify(response.json())).toContain('prerequisites.0.edgeKind')
   })
 
   it('rejects non-mock provisioning requests that still ask for synthetic students', async () => {

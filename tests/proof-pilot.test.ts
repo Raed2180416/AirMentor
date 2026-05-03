@@ -4,6 +4,7 @@ import {
   resolveAdminDirectoryScopeFilter,
   resolveAuthoritativeOperationalSemester,
   resolveCanonicalProofBatch,
+  resolveProofDashboardBatchId,
   routeTargetsCanonicalProofHierarchy,
   shouldResolveCanonicalProofRoute,
 } from '../src/proof-pilot'
@@ -41,6 +42,33 @@ const dataset: Pick<LiveAdminDataset, 'batches'> = {
 describe('proof pilot helpers', () => {
   it('resolves the canonical proof batch from the live dataset', () => {
     expect(resolveCanonicalProofBatch(dataset)?.batchLabel).toBe('2023 Proof')
+  })
+
+  it('resolves the proof dashboard route to the canonical proof batch', () => {
+    expect(resolveProofDashboardBatchId({
+      route: { section: 'proof-dashboard' },
+      routeScopedBatchId: null,
+      data: dataset,
+    })).toBe(CANONICAL_PROOF_BATCH_ID)
+  })
+
+  it('preserves an explicit route batch for proof dashboard data when available', () => {
+    expect(resolveProofDashboardBatchId({
+      route: {
+        section: 'faculties',
+        batchId: 'batch_2022',
+      },
+      routeScopedBatchId: 'batch_2022',
+      data: dataset,
+    })).toBe('batch_2022')
+  })
+
+  it('does not invent proof dashboard data scope for unrelated admin routes', () => {
+    expect(resolveProofDashboardBatchId({
+      route: { section: 'overview' },
+      routeScopedBatchId: null,
+      data: dataset,
+    })).toBeNull()
   })
 
   it('marks only explicit proof-hierarchy faculty routes as canonical-proof targets', () => {

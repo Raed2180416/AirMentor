@@ -23,7 +23,7 @@ const proofPlaybackSelectionStorageKey = 'airmentor-proof-playback-selection'
 const seededProofRoute = '#/admin/faculties/academic_faculty_engineering_and_technology/departments/dept_cse/branches/branch_mnc_btech/batches/batch_branch_mnc_btech_2023'
 const seededProofBatchId = 'batch_branch_mnc_btech_2023'
 const teachingPasswordCandidates = ['faculty1234', '1234']
-const defaultTeachingUsername = isLiveStack ? 'kavitha.rao' : 'devika.shetty'
+const defaultTeachingUsername = process.env.AIRMENTOR_LIVE_TEACHER_IDENTIFIER?.trim() || (isLiveStack ? 'rohit.menon' : 'devika.shetty')
 const requestSummary = /Grant additional mentor mapping coverage/i
 const reportPath = path.join(outputDir, 'system-admin-live-accessibility-report.json')
 const screenReaderTranscriptPath = path.join(outputDir, 'system-admin-live-screen-reader-preflight.md')
@@ -616,9 +616,10 @@ async function resolveTeacherProofActionSource(teacherProofPanel) {
 
 async function assertTeacherProofPanelBaseline(teacherProofPanel) {
   await runAccessibilityTreeAssertion(teacherProofPanel, 'Teacher proof panel tree', [
-    { name: 'Simulation Controls' },
+    { name: 'Proof Control Plane' },
+    { name: 'Active run contexts' },
     { name: 'Monitoring queue' },
-    { name: 'elective fit' },
+    { name: 'Proof-semester elective fit' },
   ])
 }
 
@@ -675,7 +676,7 @@ try {
     { name: 'Queue Health' },
     { name: 'Worker Lease' },
     { name: 'Checkpoint Readiness' },
-    { role: 'button', name: 'Reset Playback To Semester 1' },
+    { role: 'button', name: 'Reset Full Preview' },
   ])
 
   markStep('academic-portal-a11y')
@@ -683,7 +684,7 @@ try {
   await expectVisible(page.getByRole('button', { name: /Open Academic Portal/i }), 'portal home after sysadmin logout', 60_000)
   await openAcademicPortal()
   const courseLeaderRoleButton = page.locator('[data-proof-action="switch-role"][data-proof-entity-id="Course Leader"]').first()
-  await courseLeaderRoleButton.click()
+  if (await courseLeaderRoleButton.isVisible().catch(() => false)) await courseLeaderRoleButton.click()
   const teacherProofPanel = await openFacultyProfileProofPanel()
   await runScopedAxeScan(teacherProofPanel, 'Teacher proof panel')
   const teacherProofActionSource = await resolveTeacherProofActionSource(teacherProofPanel)

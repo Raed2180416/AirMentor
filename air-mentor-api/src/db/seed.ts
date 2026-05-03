@@ -78,6 +78,8 @@ import { seedMsruasProofSandbox } from '../lib/msruas-proof-sandbox.js'
 import { hashPassword } from '../lib/passwords.js'
 import { nowIso } from '../lib/time.js'
 
+export type SeedProfile = 'full' | 'control-only'
+
 function parseAcademicYearStart(academicYearLabel: string) {
   const match = academicYearLabel.match(/^(\d{4})/)
   return match ? Number(match[1]) : new Date().getUTCFullYear()
@@ -113,7 +115,13 @@ export async function seedDatabase(databaseUrl: string) {
   }
 }
 
-export async function seedIntoDatabase(db: AppDb, client: { query: (sql: string, params?: unknown[]) => Promise<unknown> }, now = nowIso()) {
+export async function seedIntoDatabase(
+  db: AppDb,
+  client: { query: (sql: string, params?: unknown[]) => Promise<unknown> },
+  now = nowIso(),
+  options: { profile?: SeedProfile } = {},
+) {
+  const seedProfile = options.profile ?? 'full'
   const seededAcademicFaculty = {
     academicFacultyId: 'academic_faculty_engineering_and_technology',
     institutionId: seedData.institution.institutionId,
@@ -337,6 +345,62 @@ export async function seedIntoDatabase(db: AppDb, client: { query: (sql: string,
     updatedAt: now,
     version: 1,
   })
+
+  if (seedProfile === 'control-only') {
+    const sysadmin = seedData.faculty.find(faculty => faculty.facultyId === 'fac_sysadmin')
+    if (!sysadmin) throw new Error('Control-only seed profile requires fac_sysadmin in platform seed data')
+    await db.insert(userAccounts).values({
+      userId: sysadmin.userId,
+      institutionId: seedData.institution.institutionId,
+      username: sysadmin.username,
+      email: sysadmin.email,
+      phone: sysadmin.phone,
+      status: sysadmin.status,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    })
+    await db.insert(userPasswordCredentials).values({
+      userId: sysadmin.userId,
+      passwordHash: await hashPassword(sysadmin.password),
+      updatedAt: now,
+    })
+    await db.insert(uiPreferences).values({
+      userId: sysadmin.userId,
+      themeMode: 'frosted-focus-light',
+      version: 1,
+      updatedAt: now,
+    })
+    await db.insert(facultyProfiles).values({
+      facultyId: sysadmin.facultyId,
+      userId: sysadmin.userId,
+      employeeCode: sysadmin.employeeCode,
+      displayName: sysadmin.displayName,
+      designation: sysadmin.designation,
+      joinedOn: sysadmin.joinedOn,
+      status: sysadmin.status,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    })
+    const systemAdminGrant = sysadmin.roleGrants.find(grant => grant.roleCode === 'SYSTEM_ADMIN')
+    if (!systemAdminGrant) throw new Error('Control-only seed profile requires a SYSTEM_ADMIN grant for fac_sysadmin')
+    await db.insert(roleGrants).values({
+      grantId: systemAdminGrant.grantId,
+      facultyId: sysadmin.facultyId,
+      roleCode: systemAdminGrant.roleCode,
+      scopeType: systemAdminGrant.scopeType,
+      scopeId: systemAdminGrant.scopeId,
+      startDate: systemAdminGrant.startDate,
+      endDate: null,
+      status: systemAdminGrant.status,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    })
+    await db.insert(policyOverrides).values(institutionPolicyOverride)
+    return
+  }
 
   await db.insert(academicFaculties).values(seededAcademicFaculty)
 

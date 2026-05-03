@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { AIRMENTOR_STORAGE_KEYS, createAirMentorRepositories, createLocalAirMentorRepositories } from '../src/repositories'
-import type { AirMentorApiClientLike } from '../src/api/client'
+import { AirMentorApiError, type AirMentorApiClientLike } from '../src/api/client'
 import type { ApiAcademicBootstrap, ApiLoginRequest, ApiSessionResponse, ApiUiPreferences } from '../src/api/types'
 import type { CalendarAuditEvent, SharedTask, TaskCalendarPlacement } from '../src/domain'
 
@@ -750,5 +750,52 @@ describe('HTTP repository mode', () => {
 
     await repositories.sessionPreferences.switchRemoteRoleContext('grant-hod')
     expect(restoreSession).not.toHaveBeenCalled()
+  })
+
+  it('serializes remote theme saves so overlapping toggles do not send stale preference versions', async () => {
+    const storage = new MemoryStorage()
+    let remotePreferences: ApiUiPreferences = {
+      userId: 'user-1',
+      themeMode: 'frosted-focus-light',
+      version: 1,
+      updatedAt: '2026-03-16T00:00:00.000Z',
+    }
+    const getUiPreferences = vi.fn(async () => ({ ...remotePreferences }))
+    const saveUiPreferences = vi.fn(async ({ themeMode, version }) => {
+      if (version !== remotePreferences.version) {
+        throw new AirMentorApiError(409, 'Stale version for UI preferences', remotePreferences)
+      }
+      remotePreferences = {
+        userId: 'user-1',
+        themeMode,
+        version: version + 1,
+        updatedAt: `2026-03-16T00:00:0${version}.000Z`,
+      }
+      return { ...remotePreferences }
+    })
+
+    const repositories = createAirMentorRepositories({
+      storage,
+      repositoryMode: 'http',
+      apiClient: createApiClientMock({
+        getUiPreferences,
+        saveUiPreferences,
+      }),
+    })
+
+    await expect(Promise.all([
+      repositories.sessionPreferences.saveTheme('frosted-focus-dark'),
+      repositories.sessionPreferences.saveTheme('frosted-focus-light'),
+    ])).resolves.toEqual([undefined, undefined])
+
+    expect(saveUiPreferences).toHaveBeenNthCalledWith(1, {
+      themeMode: 'frosted-focus-dark',
+      version: 1,
+    })
+    expect(saveUiPreferences).toHaveBeenNthCalledWith(2, {
+      themeMode: 'frosted-focus-light',
+      version: 2,
+    })
+    expect(storage.getItem(AIRMENTOR_STORAGE_KEYS.themeMode)).toBe('frosted-focus-light')
   })
 })

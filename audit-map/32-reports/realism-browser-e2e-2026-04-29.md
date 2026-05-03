@@ -25,7 +25,13 @@ Evidence:
 - Smoke summary: `/tmp/airmentor-demo-logs/realism-2026-04-29/browser/browser-smoke-summary.json`.
 - Console log: `/tmp/airmentor-demo-logs/realism-2026-04-29/browser/browser-console.json`.
 - Network log: `/tmp/airmentor-demo-logs/realism-2026-04-29/browser/browser-network.json`.
-- Screenshots: `hod-proof-analytics.png`, `hod-counterfactual.png`, `course-leader.png`, `mentor.png`, `system-admin-app.png`.
+- Browser screenshots: `hod-proof-analytics.png`, `hod-counterfactual.png`, `course-leader.png`, `mentor.png`, `system-admin-app.png`.
+- Final live proof-risk smoke: `/tmp/airmentor-demo-logs/realism-2026-04-29/final-browser-smoke-devika/final-live-devika-semester-walk-summary.json`.
+- Deep Wave Sem 1 repaired proof-risk smoke: `/tmp/airmentor-demo-logs/realism-2026-04-29/deep-wave-self/browser-proof-source-sem1-devika-after-recompute-repair/deep-wave-source-sem1-devika-after-recompute-repair-semester-walk-summary.json`.
+- Deep Wave Sem 6 repaired proof-risk smoke: `/tmp/airmentor-demo-logs/realism-2026-04-29/deep-wave-self/browser-proof-source-sem6-devika-after-recompute-repair/deep-wave-source-sem6-devika-after-recompute-repair-semester-walk-summary.json`.
+- Stage A after-fixes proof-risk smoke: `/tmp/airmentor-demo-logs/realism-2026-04-29/stage-a-after-fixes/browser-proof-source-sem1-sem6-devika/stage-a-after-fixes-devika-semester-walk-summary.json`.
+- Keyboard regression: `/tmp/airmentor-demo-logs/realism-2026-04-29/browser-keyboard-final/system-admin-live-keyboard-regression-report.json`.
+- Accessibility regression: `/tmp/airmentor-demo-logs/realism-2026-04-29/browser-accessibility-final2/system-admin-live-accessibility-report.json`.
 
 Read-first anchors:
 
@@ -46,9 +52,9 @@ Read-first anchors:
 | Course leader | `course-leader.png` captured | profile/bootstrap calls 200 | Pass | Course leader sees scoped dashboard and proof overlay. |
 | Mentor | `mentor.png` captured | profile/bootstrap calls 200 | Pass | Mentor sees mentees and proof overlay. |
 | Sysadmin proof dashboard API | Browser session + request context | dashboard status 200, `checkpointCount=30` | Pass | Active run `sim_mnc_2023_first6_v1`, semester 1 pre-TT1 active stage. |
-| Console errors | Captured | 3 stale UI preference conflicts | Caveat | Not proof/role blocking, but should be fixed before polished demo. |
-| Network failures | Captured | 0 failed requests | Pass | Only non-OK responses were 3 expected/stale `preferences/ui` 409s. |
-| Accessibility/keyboard | Not covered by this smoke | none | Gap | Existing Playwright accessibility scripts still need dedicated run if required. |
+| Console errors | Final targeted smokes captured no preference 409 hits | 0 stale preference hits in final artifact grep | Pass | Earlier `/api/preferences/ui` stale-version noise was fixed by serializing theme saves. |
+| Network failures | Captured | 0 failed requests in final targeted artifact grep | Pass | Final keyboard/a11y/proof-smoke artifact scan found no `requestfailed`, `pageerror`, or `/api/preferences/ui` 409 evidence. |
+| Accessibility/keyboard | Dedicated live regressions run | keyboard 6/6 checks passed; accessibility 16 report entries, 0 violations | Pass | A11y tree assertions and focus/keyboard paths now run against live `4173/4000`. |
 
 ## Browser Smoke Results
 
@@ -81,20 +87,23 @@ The browser clicked the `Counterfactual Impact` tab, observed `/api/academic/hod
 
 `devika.shetty` can start as `COURSE_LEADER`; after switching to `grant_mnc_t1_hod`, browser HoD analytics renders and API calls pass.
 
-5. **Current browser caveat is UI preference concurrency noise.**
+5. **UI preference concurrency noise was fixed and rerun.**
 
-Console/page errors contain three `Stale version for UI preferences` failures from `/api/preferences/ui` 409 during theme/preference save. This does not block proof surfaces, but it is visible browser noise and should be cleaned before a polished demo.
+The stale `/api/preferences/ui` 409 noise was root-caused to overlapping theme saves using the same remote preference version. `src/repositories.ts` now serializes remote theme saves and retries once on stale-version 409. Regression coverage was added in `tests/repositories-http.test.ts`. Final keyboard, accessibility, and proof-smoke artifact scans found no `/api/preferences/ui`, `response:409`, or `Stale version` hits.
 
-6. **Final-stage playback remains a separate proof-plane/demo-prep issue.**
+6. **Final-stage playback backend/API gating is fixed; browser artifacts need rerun for fresh visual proof.**
 
-This smoke verified current active semester/stage and role pages. It did not resolve the earlier Sem 6 post-SEE queue blocker.
+The final full-role smoke with `devika.shetty` passed for Sem 1 and Sem 6 role surfaces, including teacher, HoD, risk explorer, and student shell screenshots. Those browser artifacts were captured before Fix B and still record Sem 6 post-SEE as `playbackAccessible=false`. The backend/API fix now computes playback gates from live queue-case timeline state; focused dashboard, HoD, and student-shell regressions prove Sem 6 post-SEE becomes `playbackAccessible=true` when historical Sem 2 open cases later move to `Watching`/`Resolved`/`Closed`.
+
+7. **Deep Wave faculty-context blocker is fixed and browser-proven.**
+
+Root cause was not the React faculty-context component. The proof recompute path rebuilt checkpoint playback before guaranteeing all-semester proof `section_offerings` and active `faculty_offering_ownerships`; Sem 1 checkpoint bootstrap therefore returned `facultyCount=0`. The repair makes proof offering ensure idempotently backfill ownerships and makes proof recompute run that repair before rebuilding risk. Re-run evidence shows Sem 1 `COURSE_LEADER` bootstrap now has `offeringCount=2, facultyCount=1`; Sem 1 and Sem 6 full-role browser smokes both passed.
 
 ## Remaining Blockers
 
-- **Playback blocker:** Resolve or intentionally explain the earlier queue blocker before final Sem 6 playback demo.
-- **Edit-persistence blocker:** One bounded teacher edit mutation + recompute + re-read remains unproven.
-- **Console-noise blocker for polished demo:** Fix or suppress stale-version UI preference conflicts.
-- **Accessibility gap:** Dedicated accessibility/keyboard Playwright checks were not part of this smoke.
+- **Fresh browser evidence caveat:** Re-run browser smoke if the demo needs visual proof of Sem 6 `playbackAccessible=true` after Fix B.
+- **Proof-consumption caveat:** One bounded teacher attendance edit now persists through academic bootstrap and recomputed proof projection evidence; broader edit types still need separate proof.
+- **Production-readiness blocker:** Real-data import, model governance, privacy/security, and deployment closeout are still not production-proven.
 
 ## Reverification Completed
 
@@ -103,6 +112,13 @@ This smoke verified current active semester/stage and role pages. It did not res
 - HoD counterfactual simulator visibly renders and calls the correct endpoint with `runId`.
 - Course leader and mentor pages visibly render scoped proof overlays.
 - Sysadmin dashboard API under browser-authenticated context returns 30 checkpoints.
+- Final full-role proof smoke passed for Sem 1 and Sem 6 using `devika.shetty` with screenshots under `/tmp/airmentor-demo-logs/realism-2026-04-29/final-browser-smoke-devika/`.
+- Deep Wave repaired Sem 1 smoke passed with screenshots under `/tmp/airmentor-demo-logs/realism-2026-04-29/deep-wave-self/browser-proof-source-sem1-devika-after-recompute-repair/`.
+- Deep Wave repaired Sem 6 smoke passed with screenshots under `/tmp/airmentor-demo-logs/realism-2026-04-29/deep-wave-self/browser-proof-source-sem6-devika-after-recompute-repair/`.
+- Stage A after-fixes Sem 1/Sem 6 proof smoke passed with corrected Sem 6 earlier-checkpoint banner and teacher-edit proof bridge code under `/tmp/airmentor-demo-logs/realism-2026-04-29/stage-a-after-fixes/browser-proof-source-sem1-sem6-devika/`; this browser artifact predates Fix B and should be rerun if current Sem 6 accessible playback needs screenshot evidence.
+- Fix B API/browser-consumer parity passed via targeted dashboard, HoD, and student-shell regression tests after changing playback gating to live queue-case timeline semantics.
+- Keyboard live regression passed: request flow, modal focus trap, proof checkpoint controls, portal role switch, teacher proof surface, and playback restore/reset path.
+- Accessibility live regression passed with 16 report entries and 0 axe violations; screen-reader preflight transcript was written.
 
 ## Artifact Paths
 
@@ -116,9 +132,15 @@ This smoke verified current active semester/stage and role pages. It did not res
 - `/tmp/airmentor-demo-logs/realism-2026-04-29/browser/system-admin-app.png`
 - `/tmp/airmentor-demo-logs/realism-2026-04-29/full-walk/proof-dashboard-final.json`
 - `/tmp/airmentor-demo-logs/realism-2026-04-29/precision/precision-summary.json`
+- `/tmp/airmentor-demo-logs/realism-2026-04-29/final-browser-smoke-devika/final-live-devika-semester-walk-summary.json`
+- `/tmp/airmentor-demo-logs/realism-2026-04-29/deep-wave-self/browser-proof-source-sem1-devika-after-recompute-repair/deep-wave-source-sem1-devika-after-recompute-repair-semester-walk-summary.json`
+- `/tmp/airmentor-demo-logs/realism-2026-04-29/deep-wave-self/browser-proof-source-sem6-devika-after-recompute-repair/deep-wave-source-sem6-devika-after-recompute-repair-semester-walk-summary.json`
+- `/tmp/airmentor-demo-logs/realism-2026-04-29/stage-a-after-fixes/browser-proof-source-sem1-sem6-devika/stage-a-after-fixes-devika-semester-walk-summary.json`
+- `/tmp/airmentor-demo-logs/realism-2026-04-29/browser-keyboard-final/system-admin-live-keyboard-regression-report.json`
+- `/tmp/airmentor-demo-logs/realism-2026-04-29/browser-accessibility-final2/system-admin-live-accessibility-report.json`
 
 ## Verdict
 
 **Browser E2E verdict: PASS WITH CAVEATS.**
 
-Browser proof is no longer blocked. Core role surfaces and HoD counterfactual are visually and network-verified. The final demo is still conditional because Sem 6 playback preparation, one teacher edit persistence proof, accessibility checks, and UI-preference 409 cleanup remain open.
+Browser proof is no longer blocked for core role surfaces. HoD counterfactual, Sem 1/Sem 6 proof-risk surfaces, keyboard navigation, accessibility smoke, Deep Wave faculty-context repair, bounded teacher-edit proof projection, and Fix B API gating are verified. The final demo is still conditional because fresh browser capture after Fix B and production readiness are not proven.

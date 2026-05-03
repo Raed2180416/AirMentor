@@ -56,8 +56,8 @@ export function isStageRealizationEnabled(): boolean {
 export const STAGE_NEW_REALIZATIONS: Readonly<Record<InterventionStageKey, ReadonlyArray<AssessmentType | 'attendanceCheckpoint' | 'ce' | 'overall'>>> = {
   'pre-tt1':          ['attendanceCheckpoint', 'attendance'],
   'post-tt1':         ['attendanceCheckpoint', 'attendance', 'tt1'],
-  'post-tt2':         ['attendanceCheckpoint', 'attendance', 'tt2', 'quiz', 'assignment'],
-  'post-assignments': ['attendanceCheckpoint', 'attendance', 'ce'],
+  'post-tt2':         ['attendanceCheckpoint', 'attendance', 'tt2'],
+  'post-assignments': ['attendanceCheckpoint', 'attendance', 'quiz', 'assignment', 'ce'],
   'post-see':         ['attendanceCheckpoint', 'attendance', 'see', 'overall'],
 }
 
@@ -66,7 +66,7 @@ export const STAGE_NEW_REALIZATIONS: Readonly<Record<InterventionStageKey, Reado
 export const STAGE_CUMULATIVE_VISIBLE: Readonly<Record<InterventionStageKey, ReadonlySet<AssessmentType | 'ce' | 'overall'>>> = {
   'pre-tt1':          new Set<AssessmentType | 'ce' | 'overall'>(['attendance']),
   'post-tt1':         new Set<AssessmentType | 'ce' | 'overall'>(['attendance', 'tt1']),
-  'post-tt2':         new Set<AssessmentType | 'ce' | 'overall'>(['attendance', 'tt1', 'tt2', 'quiz', 'assignment']),
+  'post-tt2':         new Set<AssessmentType | 'ce' | 'overall'>(['attendance', 'tt1', 'tt2']),
   'post-assignments': new Set<AssessmentType | 'ce' | 'overall'>(['attendance', 'tt1', 'tt2', 'quiz', 'assignment', 'ce']),
   'post-see':         new Set<AssessmentType | 'ce' | 'overall'>(['attendance', 'tt1', 'tt2', 'quiz', 'assignment', 'ce', 'see', 'overall']),
 }

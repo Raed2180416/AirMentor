@@ -123,6 +123,7 @@ const runtimeStateKeys = [
 
 const runtimeStateKeySchema = z.enum(runtimeStateKeys)
 type RuntimeStateKey = z.infer<typeof runtimeStateKeySchema>
+type AssessmentScoreSnapshot = { score: number; maxScore: number; evaluatedAt: string; updatedAt: string }
 
 const runtimeDefaults = {
   studentPatches: {},
@@ -139,6 +140,44 @@ const runtimeDefaults = {
   taskPlacements: {},
   calendarAudit: [] as Array<Record<string, unknown>>,
 } satisfies Record<RuntimeStateKey, unknown>
+
+function visibleAssessmentComponentTypesForStage(stageKey: string | null | undefined) {
+  if (!stageKey) return null
+  switch (stageKey) {
+    case 'pre-tt1':
+      return new Set<string>()
+    case 'post-tt1':
+      return new Set(['tt1', 'tt1_leaf'])
+    case 'post-tt2':
+      return new Set(['tt1', 'tt1_leaf', 'tt2', 'tt2_leaf'])
+    case 'post-assignments':
+      return new Set(['tt1', 'tt1_leaf', 'tt2', 'tt2_leaf', 'quiz1', 'quiz2', 'asgn1', 'asgn2'])
+    case 'post-see':
+      return null
+    default:
+      return null
+  }
+}
+
+function filterAssessmentMapForStage(
+  assessmentMap: Record<string, AssessmentScoreSnapshot>,
+  stageKey: string | null | undefined,
+) {
+  const visibleTypes = visibleAssessmentComponentTypesForStage(stageKey)
+  if (!visibleTypes) return assessmentMap
+  return Object.fromEntries(
+    Object.entries(assessmentMap).filter(([componentType]) => visibleTypes.has(componentType)),
+  ) as Record<string, AssessmentScoreSnapshot>
+}
+
+function filterAssessmentCellsForStage(
+  cells: Array<typeof studentAssessmentScores.$inferSelect>,
+  stageKey: string | null | undefined,
+) {
+  const visibleTypes = visibleAssessmentComponentTypesForStage(stageKey)
+  if (!visibleTypes) return cells
+  return cells.filter(cell => visibleTypes.has(cell.componentType))
+}
 
 const facultyCalendarAdminWorkspaceSchema = z.object({
   publishedAt: z.string().nullable().optional(),
@@ -747,6 +786,7 @@ const publicFacultyResponseSchema = z.object({
   items: z.array(z.object({
     facultyId: z.string(),
     username: z.string(),
+    email: z.string(),
     name: z.string(),
     displayName: z.string(),
     designation: z.string(),
@@ -3443,8 +3483,25 @@ async function buildAcademicBootstrap(
         tt1: buildDefaultQuestionPaper('tt1', resolvedCourseOutcomesByOfferingId.get(offering.offId) ?? []),
         tt2: buildDefaultQuestionPaper('tt2', resolvedCourseOutcomesByOfferingId.get(offering.offId) ?? []),
       }
-      const assessmentMap = latestAssessmentsByStudentOffering.get(runtimeKey) ?? {}
-      const assessmentCells = latestAssessmentCellsByStudentOffering.get(runtimeKey) ?? []
+      const batchIdForOffering = offeringRow ? (termById[offeringRow.termId]?.batchId ?? null) : null
+      const stagePolicy = batchIdForOffering ? resolvedStagePolicyByBatchId.get(batchIdForOffering) : undefined
+      const authoritativeStageKey = stageCheckpointRow?.stageKey ?? proofScopeRun?.activeStageKey ?? null
+      const authoritativeStageOrder = stageCheckpointRow?.stageOrder
+        ?? resolveAuthoritativeStageOrder(stagePolicy, authoritativeStageKey)
+        ?? offering.stage
+      const authoritativeSemesterProgress = Math.max(
+        0.25,
+        Math.min(1, authoritativeStageOrder / (stagePolicy?.stages.length ?? DEFAULT_STAGE_POLICY.stages.length)),
+      )
+      const assessmentStageKey = proofScopeActive ? authoritativeStageKey : null
+      const assessmentMap = filterAssessmentMapForStage(
+        latestAssessmentsByStudentOffering.get(runtimeKey) ?? {},
+        assessmentStageKey,
+      )
+      const assessmentCells = filterAssessmentCellsForStage(
+        latestAssessmentCellsByStudentOffering.get(runtimeKey) ?? [],
+        assessmentStageKey,
+      )
       const tt1Raw = assessmentMap.tt1?.score ?? null
       const tt2Raw = assessmentMap.tt2?.score ?? null
       const tt1Max = Math.max(1, assessmentMap.tt1?.maxScore ?? questionPapers.tt1.totalMarks)
@@ -3488,16 +3545,6 @@ async function buildAcademicBootstrap(
           ? prevCgpa
           : 0
       const authoritativeBacklogCount = hasTranscriptHistory ? transcriptAnalytics.latestBacklogCount : 0
-      const batchIdForOffering = offeringRow ? (termById[offeringRow.termId]?.batchId ?? null) : null
-      const stagePolicy = batchIdForOffering ? resolvedStagePolicyByBatchId.get(batchIdForOffering) : undefined
-      const authoritativeStageKey = stageCheckpointRow?.stageKey ?? proofScopeRun?.activeStageKey ?? null
-      const authoritativeStageOrder = stageCheckpointRow?.stageOrder
-        ?? resolveAuthoritativeStageOrder(stagePolicy, authoritativeStageKey)
-        ?? offering.stage
-      const authoritativeSemesterProgress = Math.max(
-        0.25,
-        Math.min(1, authoritativeStageOrder / (stagePolicy?.stages.length ?? DEFAULT_STAGE_POLICY.stages.length)),
-      )
       const batchGraph = batchIdForOffering ? curriculumGraphByBatchId.get(batchIdForOffering) ?? null : null
       const resolvedCurriculumFeatureBundle = batchIdForOffering ? (resolvedCurriculumFeaturesByBatchId.get(batchIdForOffering) ?? null) : null
       const weakCourseOutcomeCodes = outcomeBreakdown
@@ -3846,6 +3893,7 @@ async function buildAcademicBootstrap(
     .map(row => {
       const user = userById[row.userId]
       const grants = roleGrantRows.filter(grant => grant.facultyId === row.facultyId)
+      if (grants.some(grant => grant.roleCode === 'SYSTEM_ADMIN')) return null
       const proofScopedGrants = grants.filter(grantIntersectsProofScope)
       const primaryAppointment = primaryAppointmentByFacultyId.get(row.facultyId)
       const appointmentDepartment = primaryAppointment ? departmentById[primaryAppointment.departmentId] : undefined
@@ -4231,6 +4279,7 @@ async function buildPublicFacultyList(context: RouteContext): Promise<PublicFacu
     items: snapshot.faculty.map(account => ({
       facultyId: account.facultyId,
       username: account.username,
+      email: account.email,
       name: account.name,
       displayName: account.name,
       designation: account.roleTitle,

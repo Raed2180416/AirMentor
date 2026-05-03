@@ -48,7 +48,9 @@ import type {
   ApiCurriculumFeatureBindingSaveResult,
   ApiCurriculumBootstrapResult,
   ApiCurriculumFeatureConfigBundle,
+  ApiCurriculumFeatureConfigHistoryEvent,
   ApiCurriculumFeatureConfigPayload,
+  ApiCurriculumFeatureConfigPreview,
   ApiCurriculumFeatureConfigSaveResult,
   ApiCurriculumFeatureProfile,
   ApiCurriculumLinkageCandidate,
@@ -248,6 +250,8 @@ export interface AirMentorApiClientLike {
   retryProofRun(simulationRunId: string): Promise<{ simulationRunId: string; status: string; activeFlag: boolean; createdAt: string; startedAt: string | null; completedAt: string | null; failureCode: string | null; failureMessage: string | null; progress: Record<string, unknown> | null }>
   activateProofRun(simulationRunId: string): Promise<{ ok: true }>
   activateProofSemester(simulationRunId: string, payload: ApiActivateProofSemesterRequest): Promise<ApiActivateProofSemesterResponse>
+  advanceProofRun(simulationRunId: string, payload: { mode: 'day' | 'stage' }): Promise<Record<string, unknown>>
+  stopProofRun(simulationRunId: string): Promise<Record<string, unknown>>
   archiveProofRun(simulationRunId: string): Promise<{ ok: true }>
   recomputeProofRunRisk(simulationRunId: string): Promise<{ ok: true }>
   restoreProofRunSnapshot(simulationRunId: string, payload?: { simulationResetSnapshotId?: string }): Promise<{ simulationRunId: string; activeFlag: boolean }>
@@ -321,6 +325,8 @@ export interface AirMentorApiClientLike {
   updateCurriculumFeatureProfile(curriculumFeatureProfileId: string, payload: Pick<ApiCurriculumFeatureProfile, 'name' | 'scopeType' | 'scopeId' | 'status' | 'version'>): Promise<ApiCurriculumFeatureProfile>
   saveCurriculumFeatureBinding(batchId: string, payload: Pick<ApiBatchCurriculumFeatureBinding, 'bindingMode' | 'curriculumFeatureProfileId' | 'status' | 'version'>): Promise<ApiCurriculumFeatureBindingSaveResult>
   saveCurriculumFeatureConfig(batchId: string, curriculumCourseId: string, payload: ApiCurriculumFeatureConfigPayload): Promise<ApiCurriculumFeatureConfigSaveResult>
+  previewCurriculumFeatureConfig(batchId: string, curriculumCourseId: string, proposedOutcomes: Array<{ id: string; bloom: string }>): Promise<ApiCurriculumFeatureConfigPreview>
+  getCurriculumFeatureConfigHistory(batchId: string, curriculumCourseId: string): Promise<{ events: ApiCurriculumFeatureConfigHistoryEvent[] }>
   provisionBatch(batchId: string, payload: ApiBatchProvisioningRequest): Promise<ApiBatchProvisioningResponse>
   saveOfferingAssessmentScheme(offeringId: string, payload: { scheme: SchemeState }): Promise<{ offeringId: string; scheme: SchemeState; version: number; policySnapshot: unknown }>
   saveOfferingQuestionPaper(offeringId: string, kind: TTKind, payload: { blueprint: TermTestBlueprint }): Promise<{ paperId: string; offeringId: string; kind: TTKind; blueprint: TermTestBlueprint; version: number }>
@@ -1112,6 +1118,20 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     })
   }
 
+  async advanceProofRun(simulationRunId: string, payload: { mode: 'day' | 'stage' }) {
+    return this.request<Record<string, unknown>>(`/api/admin/proof-runs/${simulationRunId}/advance`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async stopProofRun(simulationRunId: string) {
+    return this.request<Record<string, unknown>>(`/api/admin/proof-runs/${simulationRunId}/stop`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+  }
+
   async archiveProofRun(simulationRunId: string) {
     return this.request<{ ok: true }>(`/api/admin/proof-runs/${simulationRunId}/archive`, {
       method: 'POST',
@@ -1347,6 +1367,22 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
         method: 'PUT',
         body: JSON.stringify(payload),
       },
+    )
+  }
+
+  async previewCurriculumFeatureConfig(batchId: string, curriculumCourseId: string, proposedOutcomes: Array<{ id: string; bloom: string }>) {
+    return this.request<ApiCurriculumFeatureConfigPreview>(
+      `/api/admin/batches/${batchId}/curriculum-feature-config/preview`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ curriculumCourseId, proposedOutcomes }),
+      },
+    )
+  }
+
+  async getCurriculumFeatureConfigHistory(batchId: string, curriculumCourseId: string) {
+    return this.request<{ events: ApiCurriculumFeatureConfigHistoryEvent[] }>(
+      `/api/admin/batches/${batchId}/curriculum-feature-config/${curriculumCourseId}/history`,
     )
   }
 

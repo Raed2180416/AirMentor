@@ -12,11 +12,10 @@
 ## Blockers
 
 - First dashboard before recompute had `checkpointCount=0`.
-- Sem 6 post-SEE playback is blocked by unresolved queue items at checkpoint `stage_checkpoint_45dd134a0ac969ea05a049e7`.
-- Browser smoke did not resolve/click through the blocked Sem 6 playback path.
+- Fix B now computes playback gating from live queue-case timeline state, so Sem 6 post-SEE is no longer blocked by historical Sem 2 open rows that later moved to Watching/Resolved/Closed.
+- Browser smoke artifacts predate Fix B, so fresh browser capture is needed if the final demo includes Sem 6 accessible playback.
 
 ## Next Actions
 
 - Include recompute/readiness in demo prep.
-- Resolve queue blocker if playback must be shown.
-- Re-run browser smoke after queue preparation if final demo includes Sem 6 playback.
+- Re-run browser smoke after Fix B if final demo includes Sem 6 playback.

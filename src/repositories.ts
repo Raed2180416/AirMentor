@@ -10,7 +10,7 @@ import {
   type StudentHistoryRecord,
 } from './data'
 import { AirMentorApiClient, AirMentorApiError, type AirMentorApiClientLike } from './api/client'
-import type { ApiAcademicBootstrap, ApiAcademicRuntimeKey, ApiLoginRequest, ApiSessionResponse } from './api/types'
+import type { ApiAcademicBootstrap, ApiAcademicRuntimeKey, ApiLoginRequest, ApiSessionResponse, ApiUiPreferences } from './api/types'
 import {
   type AcademicMeeting,
   type CalendarAuditEvent,
@@ -523,12 +523,34 @@ function createHttpSessionPreferencesRepository({
   facultyStorageKey: string
 }): SessionPreferencesRepository {
   const resolvedStorage = resolveStorage(storage)
+  let cachedUiPreferences: ApiUiPreferences | null = null
+  let remoteThemeSaveQueue: Promise<void> = Promise.resolve()
 
   function cacheSession(session: ApiSessionResponse | null) {
+    cachedUiPreferences = session?.preferences ?? null
     const themeMode = session?.preferences.themeMode
     if (themeMode) writeThemeSnapshot(resolvedStorage, themeMode)
     writeFacultySnapshot(resolvedStorage, facultyStorageKey, session?.faculty?.facultyId ?? null)
     return session
+  }
+
+  async function persistThemePreference(mode: ThemeMode) {
+    try {
+      const preferences = cachedUiPreferences ?? await client.getUiPreferences()
+      try {
+        cachedUiPreferences = await client.saveUiPreferences({ themeMode: mode, version: preferences.version })
+      } catch (error) {
+        if (!(error instanceof AirMentorApiError) || error.status !== 409) throw error
+        const freshPreferences = await client.getUiPreferences()
+        cachedUiPreferences = await client.saveUiPreferences({ themeMode: mode, version: freshPreferences.version })
+      }
+    } catch (error) {
+      if (error instanceof AirMentorApiError && error.status === 401) {
+        cachedUiPreferences = null
+        return
+      }
+      throw error
+    }
   }
 
   return {
@@ -541,12 +563,9 @@ function createHttpSessionPreferencesRepository({
     },
     async saveTheme(mode) {
       writeThemeSnapshot(resolvedStorage, mode)
-      try {
-        const preferences = await client.getUiPreferences()
-        await client.saveUiPreferences({ themeMode: mode, version: preferences.version })
-      } catch (error) {
-        if (!(error instanceof AirMentorApiError) || error.status !== 401) throw error
-      }
+      const nextSave = remoteThemeSaveQueue.catch(() => undefined).then(() => persistThemePreference(mode))
+      remoteThemeSaveQueue = nextSave
+      await nextSave
     },
     async saveCurrentFacultyId(facultyId) {
       writeFacultySnapshot(resolvedStorage, facultyStorageKey, facultyId)

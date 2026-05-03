@@ -55,12 +55,19 @@ describe('ensureProofOfferings concurrent bootstrap', () => {
       'term_mnc_sem6',
     ]
 
+    await ensureProofOfferings(db, runtime, TEST_NOW)
     // Ensure seed state: any offerings already present from sandbox seed are fine;
     // the fix must be idempotent regardless. Snapshot pre-count for later checks.
     const prePopulated = await db
       .select()
       .from(sectionOfferings)
       .where(inArray(sectionOfferings.termId, proofTermIds))
+    const semOneOfferingIdsMissingOwners = prePopulated
+      .filter(row => row.termId === 'term_mnc_sem1')
+      .slice(0, 2)
+      .map(row => row.offeringId)
+    expect(semOneOfferingIdsMissingOwners.length).toBeGreaterThan(0)
+    await db.delete(facultyOfferingOwnerships).where(inArray(facultyOfferingOwnerships.offeringId, semOneOfferingIdsMissingOwners))
 
     const CALLERS = 4
     const results = await Promise.all(
@@ -90,6 +97,15 @@ describe('ensureProofOfferings concurrent bootstrap', () => {
       .from(facultyOfferingOwnerships)
     const ownershipIds = ownerships.map(row => row.ownershipId)
     expect(new Set(ownershipIds).size, 'no duplicate ownership_id rows').toBe(ownershipIds.length)
+    const activeOwnedOfferingIds = new Set(
+      ownerships
+        .filter(row => row.status === 'active')
+        .map(row => row.offeringId),
+    )
+    expect(
+      offeringsAfter.filter(row => !activeOwnedOfferingIds.has(row.offeringId)).map(row => row.offeringId),
+      'every proof offering must have an active course-leader ownership after idempotent ensure',
+    ).toEqual([])
 
     // Composite-key sanity: exactly one row per (term, course, section) triple.
     const compositeKeys = offeringsAfter.map(row => `${row.termId}::${row.courseId}::${row.sectionCode}`)
