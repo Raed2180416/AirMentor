@@ -193,6 +193,7 @@ import {
   getShellBarStyle,
   withAlpha,
 } from './ui-primitives'
+import { useDismissibleSessionNotice } from './hooks/use-dismissible-session-notice'
 
 type SystemAdminLiveAppProps = {
   apiBaseUrl: string
@@ -2008,7 +2009,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const [remindersSupported, setRemindersSupported] = useState(true)
   const [universityTab, setUniversityTab] = useState<UniversityTab>('overview')
   const [selectedSectionCode, setSelectedSectionCode] = useState<string | null>(null)
-  const [facultiesRestoreNotice, setFacultiesRestoreNotice] = useState<{ tone: 'neutral' | 'error'; message: string } | null>(null)
+  const { notice: facultiesRestoreNotice, setNotice: setFacultiesRestoreNotice, dismissNotice: dismissFacultiesRestoreNotice } = useDismissibleSessionNotice()
   const [route, setRoute] = useState<LiveAdminRoute>(() => parseAdminRoute(typeof window === 'undefined' ? '' : window.location.hash))
   const [routeHistory, setRouteHistory] = useState<AdminWorkspaceSnapshot[]>([])
   const [registryScope, setRegistryScope] = useState<UniversityScopeState | null>(null)
@@ -6642,6 +6643,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             toneColor={ADMIN_SECTION_TONES.faculties}
             restoreNotice={facultiesRestoreNotice}
             onResetRestore={handleResetFacultiesWorkspaceRestore}
+            onDismissRestoreNotice={dismissFacultiesRestoreNotice}
             selectedAcademicFaculty={selectedAcademicFaculty}
             selectedDepartment={selectedDepartment}
             selectedBranch={selectedBranch}
