@@ -1283,7 +1283,7 @@ export function SystemAdminFacultiesWorkspace({
               <Btn type="button" variant="ghost" onClick={() => void handleBootstrapCurriculumManifest()}>Import Curriculum From Manifest</Btn>
             </div>
           </div>
-          <InfoBanner message="This imports the bundled proof curriculum seed (manifest key msruas-mnc-seed), regenerates linkage candidates, and queues any proof refresh required for the affected batches." />
+          <InfoBanner message="This imports the bundled proof curriculum seed (manifest key msruas-mnc-seed), regenerates prerequisite suggestions, and queues any proof refresh required for the affected batches." />
           {selectedCurriculumSemesterCourses.length === 0 ? <EmptyState title="No curriculum rows for this semester" body="Create the first course row below or import the governed proof curriculum seed into this batch." /> : (
             <div style={{ display: 'grid', gap: 10 }}>
               {selectedCurriculumSemesterCourses.map(course => {
@@ -1931,11 +1931,11 @@ export function SystemAdminFacultiesWorkspace({
                   <Card style={{ padding: 12, background: T.surface, display: 'grid', gap: 10 }}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
                       <div>
-                        <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Batch Binding Mode</div>
+                        <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>If multiple configs exist, prefer</div>
                         <select value={curriculumFeatureBindingMode} onChange={event => setCurriculumFeatureBindingMode(event.target.value as typeof curriculumFeatureBindingMode)} style={{ width: '100%' }}>
-                          <option value="inherit-scope-profile">Inherit scope profile</option>
-                          <option value="pin-profile">Pin specific profile</option>
-                          <option value="local-only">Local only</option>
+                          <option value="inherit-scope-profile">Department / branch default</option>
+                          <option value="pin-profile">A specific profile</option>
+                          <option value="local-only">This batch only</option>
                         </select>
                       </div>
                       <div>
@@ -1950,10 +1950,10 @@ export function SystemAdminFacultiesWorkspace({
                         </select>
                       </div>
                       <div>
-                        <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Save Target Mode</div>
+                        <div style={{ ...mono, fontSize: 9, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Apply configuration to</div>
                         <select value={curriculumFeatureTargetMode} onChange={event => setCurriculumFeatureTargetMode(event.target.value as typeof curriculumFeatureTargetMode)} style={{ width: '100%' }}>
-                          <option value="batch-local-override">Batch-local override</option>
-                          <option value="scope-profile">Scope profile</option>
+                          <option value="batch-local-override">Just this batch</option>
+                          <option value="scope-profile">Shared scope profile</option>
                         </select>
                       </div>
                       <div>
@@ -1969,7 +1969,7 @@ export function SystemAdminFacultiesWorkspace({
                     </div>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <Chip color={curriculumFeatureConfig?.binding?.bindingMode === 'local-only' ? T.orange : T.accent}>
-                        {`Current binding · ${curriculumFeatureConfig?.binding?.bindingMode ?? 'inherit-scope-profile'}`}
+                        {`Binding · ${curriculumFeatureConfig?.binding?.bindingMode === 'local-only' ? 'this batch only' : curriculumFeatureConfig?.binding?.bindingMode === 'pin-profile' ? 'pinned profile' : 'dept/branch default'}`}
                       </Chip>
                       {selectedCurriculumFeatureItem?.appliedProfiles?.map(profile => (
                         <Chip key={profile.curriculumFeatureProfileId} color={T.success}>{`${formatScopeTypeLabel(profile.scopeType)} · ${profile.name}`}</Chip>
@@ -1988,9 +1988,9 @@ export function SystemAdminFacultiesWorkspace({
                 <Card style={{ padding: 12, background: T.surface, display: 'grid', gap: 10 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                     <div style={{ display: 'grid', gap: 6 }}>
-                      <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>Curriculum Linkage Review</div>
+                      <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>Prerequisite Suggestions</div>
                       <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
-                        Deterministic matching leads, semantic overlap follows, and local Ollama assist is optional. Nothing changes the active graph until you approve a candidate or edit prerequisites directly.
+                        Suggestions come from three signals: official curriculum manifest, topic similarity, and optional AI assist. Nothing changes the active graph until you accept a suggestion or edit prerequisites directly.
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -2004,7 +2004,7 @@ export function SystemAdminFacultiesWorkspace({
                         </Chip>
                       ) : null}
                       <Btn type="button" variant="ghost" onClick={() => void handleRegenerateCurriculumLinkageCandidates()} disabled={!selectedCurriculumFeatureItem}>
-                        Regenerate Selected Course
+                        {selectedCurriculumFeatureItem ? `Re-suggest for ${selectedCurriculumFeatureItem.courseCode}` : 'Re-suggest prerequisites'}
                       </Btn>
                     </div>
                   </div>
@@ -2021,11 +2021,11 @@ export function SystemAdminFacultiesWorkspace({
                     />
                   </div>
                   {curriculumLinkageCandidatesLoading ? (
-                    <InfoBanner message="Refreshing curriculum linkage candidates for the selected batch." />
+                    <InfoBanner message="Loading prerequisite suggestions for the selected course…" />
                   ) : !selectedCurriculumFeatureItem ? (
-                    <EmptyState title="Select a model-input course" body="Choose a course above to review candidate prerequisite and cross-course links for that one curriculum row." />
+                    <EmptyState title="Select a course" body="Choose a course above to review prerequisite suggestions for it." />
                   ) : selectedCurriculumLinkageCandidates.length === 0 ? (
-                    <EmptyState title="No linkage candidates" body="This course currently has no pending or reviewed candidate edges. Regenerate after editing outcomes, topics, or bridge modules." />
+                    <EmptyState title="No suggestions yet" body="No prerequisite suggestions for this course. Click Re-suggest after editing outcomes, topics, or bridge modules." />
                   ) : (
                     <div style={{ display: 'grid', gap: 10 }}>
                       {selectedCurriculumLinkageCandidates.map(candidate => (
@@ -2045,15 +2045,19 @@ export function SystemAdminFacultiesWorkspace({
                           </div>
                           <div style={{ ...mono, fontSize: 10, color: T.text, lineHeight: 1.8 }}>{candidate.rationale}</div>
                           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                            {candidate.sources.map(source => <Chip key={`${candidate.curriculumLinkageCandidateId}:${source}`} color={T.dim}>{source}</Chip>)}
+                            {candidate.sources.map(source => {
+                              const label = source === 'manifest' ? 'Official curriculum manifest' : source === 'semantic' ? 'Topic similarity' : source === 'llm' ? 'AI suggestion (qwen2.5:7b)' : source
+                              const color = source === 'manifest' ? T.accent : source === 'llm' ? T.warning : T.dim
+                              return <Chip key={`${candidate.curriculumLinkageCandidateId}:${source}`} color={color}>{`${candidate.confidenceScaled}% — ${label}`}</Chip>
+                            })}
                           </div>
                           {candidate.reviewNote ? <div style={{ ...mono, fontSize: 10, color: T.warning, lineHeight: 1.8 }}>{`Review note · ${candidate.reviewNote}`}</div> : null}
                           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                             <Btn type="button" variant="ghost" onClick={() => void handleApproveCurriculumLinkageCandidate(candidate.curriculumLinkageCandidateId)} disabled={candidate.status !== 'pending'}>
-                              Approve Link
+                              Accept suggestion
                             </Btn>
                             <Btn type="button" variant="danger" onClick={() => void handleRejectCurriculumLinkageCandidate(candidate.curriculumLinkageCandidateId)} disabled={candidate.status !== 'pending'}>
-                              Reject Link
+                              Reject suggestion
                             </Btn>
                           </div>
                         </Card>

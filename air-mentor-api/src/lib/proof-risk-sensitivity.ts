@@ -49,7 +49,7 @@ export type SensitivityRow = {
   aucDeltaMagnitude: number
 }
 
-export type SensitivitySweepResult<R> = {
+export type SensitivitySweepResult = {
   baselineAuc: number
   rows: SensitivityRow[]
   /** Paramters ranked by max |aucDelta| across their perturbation set. */
@@ -75,7 +75,7 @@ export function runOneAtATimeSensitivity<R>(
   rows: ReadonlyArray<R>,
   labels: ArrayLike<number>,
   defaultPerturbations: ReadonlyArray<number> = [0.8, 1.2],
-): SensitivitySweepResult<R> {
+): SensitivitySweepResult {
   if (rows.length !== labels.length) {
     throw new Error(`[runOneAtATimeSensitivity] length mismatch: rows=${rows.length} labels=${labels.length}`)
   }
@@ -128,7 +128,7 @@ export function runOneAtATimeSensitivity<R>(
  * `docs/paper-evidence/04-sensitivity-analysis.md`. Pure
  * string-building so callers can also pipe into a CLI script.
  */
-export function renderSensitivityMarkdown(result: SensitivitySweepResult<unknown>, title = 'OAT sensitivity sweep'): string {
+export function renderSensitivityMarkdown(result: SensitivitySweepResult, title = 'OAT sensitivity sweep'): string {
   const lines: string[] = []
   lines.push(`# ${title}`)
   lines.push('')
@@ -151,7 +151,7 @@ export function renderSensitivityMarkdown(result: SensitivitySweepResult<unknown
   lines.push('')
   lines.push('| Rank | Parameter | max |ΔAUC| |')
   lines.push('|---:|---|---:|')
-  result.rankedByMagnitude.forEach((row, index) => {
+  result.rankedByMagnitude.forEach((row: { parameterName: string; maxMagnitude: number }, index: number) => {
     lines.push(`| ${index + 1} | ${row.parameterName} | ${row.maxMagnitude.toFixed(4)} |`)
   })
   return lines.join('\n')
