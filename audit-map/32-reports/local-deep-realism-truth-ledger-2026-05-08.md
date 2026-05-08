@@ -17,6 +17,10 @@ A claim is green only when browser, API, code path, and a repeatable command or 
 | Design spec | `docs/superpowers/specs/2026-05-08-local-deep-realism-audit-design.md` | green | Approved local-only campaign scope. |
 | Local backend health | `curl -fsS http://127.0.0.1:4000/health` | green | Returned `{"ok":true}` on 2026-05-08. |
 | Local frontend health | `curl -fsS -I http://127.0.0.1:5173/` | green | Returned `HTTP/1.1 200 OK` after `bash scripts/demo-start-frontend.sh`. |
+| Frontend targeted Vitest | terminal output | green | `tests/system-admin-proof-dashboard-workspace.test.tsx`, `tests/faculty-profile-proof.test.tsx`, `tests/academic-route-pages.test.tsx`: 3 files, 36 tests passed. |
+| Backend targeted Vitest | terminal output | green | `proof-control-plane-advance-service`, `proof-control-plane-dashboard-service`, `proof-queue-governance`, `academic-proof-routes`: 4 files, 21 tests passed. |
+| Frontend TypeScript | terminal output | green | `npx tsc -p tsconfig.app.json --noEmit --pretty false` exited 0. |
+| Backend TypeScript | terminal output | green | `npx tsc -p tsconfig.json --noEmit --pretty false` in `air-mentor-api` exited 0. |
 
 ## Current Truth Snapshot
 
@@ -74,3 +78,7 @@ No findings yet.
 - `curl -fsS http://127.0.0.1:4000/health`: returned `{"ok":true}`.
 - `curl -fsS -I http://127.0.0.1:5173/`: initially connection refused; after `bash scripts/demo-start-frontend.sh`, returned `HTTP/1.1 200 OK`.
 - `bash scripts/demo-start-frontend.sh`: started Vite on `http://127.0.0.1:5173/`; background command id `158`; log `/tmp/airmentor-demo-logs/frontend.log`.
+- `npx vitest run tests/system-admin-proof-dashboard-workspace.test.tsx tests/faculty-profile-proof.test.tsx tests/academic-route-pages.test.tsx --reporter=dot`: 3 files passed, 36 tests passed.
+- `npx vitest run tests/proof-control-plane-advance-service.test.ts tests/proof-control-plane-dashboard-service.test.ts tests/proof-queue-governance.test.ts tests/academic-proof-routes.test.ts --reporter=dot` in `air-mentor-api`: 4 files passed, 21 tests passed.
+- `npx tsc -p tsconfig.app.json --noEmit --pretty false`: exited 0.
+- `npx tsc -p tsconfig.json --noEmit --pretty false` in `air-mentor-api`: exited 0.
