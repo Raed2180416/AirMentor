@@ -22,6 +22,21 @@ A claim is green only when browser, API, code path, and a repeatable command or 
 |---|---|---|---|
 | Local target | Local frontend + local backend are the only active targets for this pass. | user instruction + design spec | green |
 
+## Current Code Map — Pass 1
+
+| Surface | Authoritative file(s) | Notes |
+|---|---|---|
+| Local backend startup | `scripts/demo-start-backend.sh`, `scripts/run-local-backend-for-testing.sh`, `air-mentor-api/scripts/start-seeded-server.ts` | Demo backend starts on `127.0.0.1:4000` with seeded embedded/local Postgres mode and local CORS origins. |
+| Local frontend startup | `scripts/demo-start-frontend.sh`, `package.json` scripts `dev`, `dev:local-backend` | Local Vite frontend starts on `127.0.0.1:5173` and points at `http://127.0.0.1:4000`. |
+| Proof bootstrap | `scripts/demo-bootstrap-proof.mjs`, `air-mentor-api/src/modules/admin-proof-sandbox.ts` | Script logs in as `sysadmin`, creates/validates/approves proof import, recomputes existing active run if needed, and enqueues an activated run if checkpoints are absent. |
+| Admin proof APIs | `air-mentor-api/src/modules/admin-proof-sandbox.ts` | Exposes dashboard, model diagnostics, checkpoints, student detail, imports, crosswalk review, run create/retry/activate/activate-semester/archive/advance/rehydrate/stop/recompute/restore/evidence-timeline. |
+| E2E fixture | `tests-e2e/fixtures/seeded-run-fixture.ts` | Playwright fixture logs in system admin, rehydrates proof faculty credentials, creates a deterministic fresh proof run, waits for materialization, activates it, activates semester 1, and archives it after use. |
+| E2E specs | `tests-e2e/specs/*.spec.ts` | Current flow suite covers fresh start, evidence reaction, next day, boundary crossing, next stage auto-resolve, reopen, HoD cycle, completion/counterfactual, stop, labels, interventions, carryover, receptivity, and smoke. |
+| Playwright runtime | `tests-e2e/playwright.config.ts`, `tests-e2e/support/playwright-runtime.ts`, `flake.nix` | Config defaults to Firefox, local frontend/API bases, single worker, retained trace/screenshot on failure, optional Nix-provided browser executable, and webServer bootstrap unless reuse/skip env is set. |
+| Nix Playwright helpers | `scripts/playwright-smoke.sh`, `scripts/playwright-firefox-acceptance.sh`, `flake.nix` | Shell scripts recurse into `nix develop` when `playwright` is missing; flake includes `playwright-test` and announces wrapped runtime. |
+| Sysadmin proof UI | `src/system-admin-proof-dashboard-workspace.tsx`, `src/proof-simulation-controls.tsx` | UI receives proof dashboard state and exposes create, stop, next stage, next day, previous day, previous stage, reset stage, reset proof run, playback jump/reset, and recompute risk. |
+| HoD counterfactual UI | `src/hod-counterfactual-panel.tsx` | Current component compares baseline and realized runs via `loadReport`; wording still references flag-off/flag-on trajectories and must be checked against the newer HoD simulator flow in Pass 2/5. |
+
 ## Stale or Risky Prior Claims
 
 | Claim | Source | Risk | New verification needed |
