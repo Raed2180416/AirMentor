@@ -15,6 +15,8 @@ A claim is green only when browser, API, code path, and a repeatable command or 
 | Evidence | Path | Status | Notes |
 |---|---|---|---|
 | Design spec | `docs/superpowers/specs/2026-05-08-local-deep-realism-audit-design.md` | green | Approved local-only campaign scope. |
+| Local backend health | `curl -fsS http://127.0.0.1:4000/health` | green | Returned `{"ok":true}` on 2026-05-08. |
+| Local frontend health | `curl -fsS -I http://127.0.0.1:5173/` | green | Returned `HTTP/1.1 200 OK` after `bash scripts/demo-start-frontend.sh`. |
 
 ## Current Truth Snapshot
 
@@ -69,4 +71,6 @@ No findings yet.
 
 ## Commands Run
 
-No commands run yet.
+- `curl -fsS http://127.0.0.1:4000/health`: returned `{"ok":true}`.
+- `curl -fsS -I http://127.0.0.1:5173/`: initially connection refused; after `bash scripts/demo-start-frontend.sh`, returned `HTTP/1.1 200 OK`.
+- `bash scripts/demo-start-frontend.sh`: started Vite on `http://127.0.0.1:5173/`; background command id `158`; log `/tmp/airmentor-demo-logs/frontend.log`.
