@@ -241,17 +241,17 @@ export const T = {
 }
 
 export const yearColor = (y: string): string =>
-  ({ '1st Year': '#f59e0b', '2nd Year': '#6366f1', '3rd Year': '#10b981', '4th Year': '#ec4899', 'Batch 2024': '#2D8AF0' } as Record<string, string>)[y] || T.muted
+  ({ '1st Year': T.warning, '2nd Year': T.accent, '3rd Year': T.success, '4th Year': T.danger, 'Batch 2024': T.accent } as Record<string, string>)[y] || T.dim
 
 export const stageColor = (s: Stage): string => (
-  s === 1 ? '#f97316'
-    : s === 2 ? '#3b82f6'
-      : s === 3 ? '#a855f7'
-        : s === 4 ? '#8b5cf6'
-          : s === 5 ? '#ef4444'
-            : '#10b981'
+  s === 1 ? T.warning
+    : s === 2 ? T.accent
+      : s === 3 ? T.success
+        : s === 4 ? T.accent
+          : s === 5 ? T.danger
+            : T.success
 )
-export const CO_COLORS = ['#6366f1', '#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6']
+export const CO_COLORS = [T.accent, T.success, T.warning, T.danger, T.accent, T.success]
 
 export const mono: React.CSSProperties = { fontFamily: "'JetBrains Mono', monospace" }
 export const sora: React.CSSProperties = { fontFamily: "'Sora', sans-serif" }

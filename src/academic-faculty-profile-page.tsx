@@ -12,6 +12,8 @@ import type {
 import { describeProofProvenance } from './proof-provenance'
 import { humanLabelForActionCode } from './action-code-humaniser'
 import { ProofSurfaceHero, ProofSurfaceLauncher } from './proof-surface-shell'
+import { ProofSimulationControls, type ProofPlaybackControlDirection } from './proof-simulation-controls'
+import { clearProofPlaybackSelection, writeProofPlaybackSelection } from './proof-playback'
 import { InfoBanner, MetricCard } from './system-admin-ui'
 import {
   Btn,
@@ -62,6 +64,9 @@ export type FacultyProfilePageProps = {
   onOpenStudentProfile: (studentId: string, offeringId?: string | null) => void
   onOpenStudentShell: (studentId: string) => void
   onOpenRiskExplorer: (studentId: string) => void
+  onAdvanceProofRun?: (simulationRunId: string, mode: 'day' | 'previous-day' | 'stage') => void
+  onStopProofRun?: (simulationRunId: string) => void
+  onStepProofPlayback?: (direction: ProofPlaybackControlDirection) => void
 }
 
 export function FacultyProfilePage({
@@ -75,6 +80,9 @@ export function FacultyProfilePage({
   onOpenStudentProfile,
   onOpenStudentShell,
   onOpenRiskExplorer,
+  onAdvanceProofRun,
+  onStopProofRun,
+  onStepProofPlayback,
 }: FacultyProfilePageProps) {
   const liveProfilePresent = profile != null
   const livePermissions = profile?.permissions.filter(item => item.status === 'active') ?? []
@@ -167,7 +175,31 @@ export function FacultyProfilePage({
       if (left.dateISO !== right.dateISO) return left.dateISO.localeCompare(right.dateISO)
       return (left.startMinutes ?? -1) - (right.startMinutes ?? -1)
     })
-    .slice(0, 5)
+    .slice(0, 4)
+  const activeRunCheckpoints = proofOps?.activeRunCheckpoints?.length
+    ? proofOps.activeRunCheckpoints
+    : selectedProofCheckpoint ? [selectedProofCheckpoint] : []
+  const handleProofPlaybackStep = (direction: ProofPlaybackControlDirection) => {
+    if (activeProofRun && selectedProofCheckpoint) {
+      const targetCheckpointId = direction === 'previous'
+        ? selectedProofCheckpoint.previousCheckpointId
+        : direction === 'next'
+          ? selectedProofCheckpoint.nextCheckpointId
+          : direction === 'start'
+            ? activeRunCheckpoints[0]?.simulationStageCheckpointId
+            : null
+      if (targetCheckpointId) {
+        writeProofPlaybackSelection({
+          simulationRunId: activeProofRun.simulationRunId,
+          simulationStageCheckpointId: targetCheckpointId,
+          updatedAt: new Date().toISOString(),
+        })
+      } else if (direction === 'end') {
+        clearProofPlaybackSelection()
+      }
+    }
+    onStepProofPlayback?.(direction)
+  }
   const displayPermission = (permission: string) => {
     if (permission === 'COURSE_LEADER') return 'Course Leader'
     if (permission === 'SYSTEM_ADMIN') return 'System Admin'
@@ -421,6 +453,25 @@ export function FacultyProfilePage({
             eyebrow="Proof Control Plane"
             title="Proof Control Plane"
             description="This panel only surfaces rerunnable proof data: active simulation runs, observed risk queue items, and elective-fit summaries. It does not expose latent-state internals."
+            headerActions={activeProofRun && onAdvanceProofRun ? (
+              <ProofSimulationControls
+                activeRunDetail={activeProofRun}
+                activeRunCheckpoints={activeRunCheckpoints}
+                selectedProofCheckpoint={selectedProofCheckpoint}
+                selectedProofCheckpointCanStepForward={Boolean(selectedProofCheckpoint?.nextCheckpointId)}
+                selectedProofCheckpointCanPlayToEnd={Boolean(selectedProofCheckpoint?.nextCheckpointId)}
+                baselineSnapshot={null}
+                resetStageSnapshot={null}
+                createDisabled
+                stopDisabled={!onStopProofRun}
+                onCreateProofSimulation={() => undefined}
+                onStopProofRun={onStopProofRun ?? (() => undefined)}
+                onAdvanceProofRun={onAdvanceProofRun}
+                onRestoreProofSnapshot={() => undefined}
+                onResetProofRunFromScratch={() => undefined}
+                onStepProofPlayback={handleProofPlaybackStep}
+              />
+            ) : undefined}
             notices={(
               <div data-proof-section="proof-authority-note" style={{ display: 'grid', gap: 8 }}>
                 <InfoBanner message="This proof panel controls the faculty preview data only. Nearby teaching summaries follow the selected preview stage where possible, while permissions and timetable governance stay on live data." />

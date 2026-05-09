@@ -98,6 +98,8 @@ import type {
   ApiTranscriptSubjectResult,
   ApiTranscriptTermResult,
   ApiUiPreferences,
+  ApiDemoWorkspace,
+  ApiDemoProvisioningPreview,
 } from './types.js'
 import type {
   MeetingStatus,
@@ -135,6 +137,8 @@ export interface AirMentorApiClientLike {
   getAcademicHodProofFaculty(filter?: { section?: string; semester?: number; facultyId?: string; simulationStageCheckpointId?: string }): Promise<{ items: ApiAcademicHodProofFacultyRollup[] }>
   getAcademicHodProofStudents(filter?: { section?: string; semester?: number; riskBand?: string; courseCode?: string; studentId?: string; simulationStageCheckpointId?: string }): Promise<{ items: ApiAcademicHodProofStudentWatch[] }>
   getAcademicHodProofReassessments(filter?: { section?: string; semester?: number; riskBand?: string; status?: string; facultyId?: string; courseCode?: string; studentId?: string; simulationStageCheckpointId?: string }): Promise<{ items: ApiAcademicHodProofReassessment[] }>
+  advanceAcademicProofRun(simulationRunId: string, payload: { mode: 'day' | 'previous-day' | 'stage' }): Promise<Record<string, unknown>>
+  stopAcademicProofRun(simulationRunId: string): Promise<Record<string, unknown>>
   acknowledgeAcademicProofReassessment(reassessmentEventId: string, payload?: ApiProofReassessmentAcknowledgeRequest): Promise<ApiProofReassessmentAcknowledgeResponse>
   resolveAcademicProofReassessment(reassessmentEventId: string, payload: ApiProofReassessmentResolveRequest): Promise<ApiProofReassessmentResolveResponse>
   getAcademicStudentAgentCard(studentId: string, filter?: { simulationRunId?: string; simulationStageCheckpointId?: string }): Promise<ApiStudentAgentCard>
@@ -250,7 +254,7 @@ export interface AirMentorApiClientLike {
   retryProofRun(simulationRunId: string): Promise<{ simulationRunId: string; status: string; activeFlag: boolean; createdAt: string; startedAt: string | null; completedAt: string | null; failureCode: string | null; failureMessage: string | null; progress: Record<string, unknown> | null }>
   activateProofRun(simulationRunId: string): Promise<{ ok: true }>
   activateProofSemester(simulationRunId: string, payload: ApiActivateProofSemesterRequest): Promise<ApiActivateProofSemesterResponse>
-  advanceProofRun(simulationRunId: string, payload: { mode: 'day' | 'stage' }): Promise<Record<string, unknown>>
+  advanceProofRun(simulationRunId: string, payload: { mode: 'day' | 'previous-day' | 'stage' }): Promise<Record<string, unknown>>
   stopProofRun(simulationRunId: string): Promise<Record<string, unknown>>
   archiveProofRun(simulationRunId: string): Promise<{ ok: true }>
   recomputeProofRunRisk(simulationRunId: string): Promise<{ ok: true }>
@@ -564,6 +568,20 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     return this.request<ApiProofReassessmentResolveResponse>(`/api/academic/proof-reassessments/${encodeURIComponent(reassessmentEventId)}/resolve`, {
       method: 'POST',
       body: JSON.stringify(payload),
+    })
+  }
+
+  async advanceAcademicProofRun(simulationRunId: string, payload: { mode: 'day' | 'previous-day' | 'stage' }) {
+    return this.request<Record<string, unknown>>(`/api/academic/proof-runs/${encodeURIComponent(simulationRunId)}/advance`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async stopAcademicProofRun(simulationRunId: string) {
+    return this.request<Record<string, unknown>>(`/api/academic/proof-runs/${encodeURIComponent(simulationRunId)}/stop`, {
+      method: 'POST',
+      body: JSON.stringify({}),
     })
   }
 
@@ -1118,7 +1136,7 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     })
   }
 
-  async advanceProofRun(simulationRunId: string, payload: { mode: 'day' | 'stage' }) {
+  async advanceProofRun(simulationRunId: string, payload: { mode: 'day' | 'previous-day' | 'stage' }) {
     return this.request<Record<string, unknown>>(`/api/admin/proof-runs/${simulationRunId}/advance`, {
       method: 'POST',
       body: JSON.stringify(payload),
@@ -1391,6 +1409,34 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
       method: 'POST',
       body: JSON.stringify(payload),
     })
+  }
+
+  async listDemoWorkspaces() {
+    return this.request<ApiDemoWorkspace[]>('/api/admin/demo-workspaces')
+  }
+
+  async createDemoWorkspace(payload: { name: string; ownerFacultyId?: string; batchId?: string }) {
+    return this.request<ApiDemoWorkspace>('/api/admin/demo-workspaces', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async previewDemoProvisioning(
+    demoWorkspaceId: string,
+    payload: { batchId: string; termId: string; sectionLabels: string[]; studentsPerSection: number },
+  ) {
+    return this.request<ApiDemoProvisioningPreview>(
+      `/api/admin/demo-workspaces/${demoWorkspaceId}/provision/preview`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    )
+  }
+
+  async resetDemoWorkspace(demoWorkspaceId: string) {
+    return this.request<{ deletedStudents: number; deletedOfferings: number; deletedRuns: number }>(
+      `/api/admin/demo-workspaces/${demoWorkspaceId}`,
+      { method: 'DELETE' },
+    )
   }
 
   async saveOfferingAssessmentScheme(offeringId: string, payload: { scheme: SchemeState }) {

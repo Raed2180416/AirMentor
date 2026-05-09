@@ -1567,6 +1567,7 @@ export type ApiFacultyProofOperations = {
     createdAt: string
   }>
   selectedCheckpoint: ApiSimulationStageCheckpointSummary | null
+  activeRunCheckpoints?: ApiSimulationStageCheckpointSummary[]
   monitoringQueue: Array<{
     riskAssessmentId: string
     simulationRunId: string | null
@@ -2703,4 +2704,23 @@ export type ApiAcademicFacultyProfile = {
     recentDecisionTypes: string[]
   }
   proofOperations: ApiFacultyProofOperations
+}
+
+export type ApiDemoWorkspace = {
+  demoWorkspaceId: string
+  name: string
+  ownerFacultyId: string | null
+  batchId: string | null
+  status: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type ApiDemoProvisioningPreview = {
+  batchLabel: string
+  termLabel: string
+  sections: string[]
+  estimatedStudentCount: number
+  estimatedOfferingCount: number
+  curriculumCourseCount: number
 }

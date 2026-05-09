@@ -65,8 +65,10 @@ export function AllStudentsPage({
   const [selectedRisk, setSelectedRisk] = useState<'all' | RiskBand>('all')
 
   const rows = useMemo(() => offerings.flatMap(offering => getStudentsPatched(offering).map(student => {
-    const attendancePct = Math.round((student.present / Math.max(1, student.totalClasses)) * 100)
-    return { offering, student, attendancePct }
+    const hasAttendance = student.totalClasses > 0
+    const attendancePct = hasAttendance ? Math.round((student.present / Math.max(1, student.totalClasses)) * 100) : null
+    const riskApplicable = offering.stage >= 2 && student.riskBand != null && student.riskProb != null
+    return { offering, student, attendancePct, hasAttendance, riskApplicable }
   })), [getStudentsPatched, offerings])
 
   const filteredRows = useMemo(() => {
@@ -77,15 +79,15 @@ export function AllStudentsPage({
       .filter(item => {
         if (selectedYear !== 'all' && item.offering.year !== selectedYear) return false
         if (selectedCourse !== 'all' && item.offering.code !== selectedCourse) return false
-        if (selectedRisk !== 'all' && normalizeRiskBand(item.student.riskBand) !== selectedRisk) return false
+        if (selectedRisk !== 'all' && (!item.riskApplicable || normalizeRiskBand(item.student.riskBand) !== selectedRisk)) return false
         if (!search) return true
         return item.student.name.toLowerCase().includes(search) || item.student.usn.toLowerCase().includes(search)
       })
       .sort((left, right) => {
-        const byRisk = riskOrder[normalizeRiskBand(left.student.riskBand)] - riskOrder[normalizeRiskBand(right.student.riskBand)]
+        const byRisk = riskOrder[left.riskApplicable ? normalizeRiskBand(left.student.riskBand) : 'Low'] - riskOrder[right.riskApplicable ? normalizeRiskBand(right.student.riskBand) : 'Low']
         if (byRisk !== 0) return byRisk
-        const leftProb = left.student.riskProb ?? 0
-        const rightProb = right.student.riskProb ?? 0
+        const leftProb = left.riskApplicable ? (left.student.riskProb ?? 0) : 0
+        const rightProb = right.riskApplicable ? (right.student.riskProb ?? 0) : 0
         if (leftProb !== rightProb) return rightProb - leftProb
         return left.student.name.localeCompare(right.student.name)
       })
@@ -122,26 +124,27 @@ export function AllStudentsPage({
       </Card>
 
       <Card style={{ padding: 0 }}>
-        <HScrollArea style={{ maxHeight: 560 }}>
+        <HScrollArea vertical dataRosterScroll="all-students" style={{ maxHeight: 560 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 1, background: T.surface }}>
               <tr>{['Student', 'USN', 'Class', 'Attendance', 'Risk', 'Actions'].map(header => <TH key={header}>{header}</TH>)}</tr>
             </thead>
             <tbody>
-              {filteredRows.map(({ offering, student, attendancePct }) => {
+              {filteredRows.map(({ offering, student, attendancePct, hasAttendance, riskApplicable }) => {
                 const riskColor = student.riskBand === 'High' ? T.danger : student.riskBand === 'Medium' ? T.warning : T.success
+                const attendanceColor = !hasAttendance ? T.dim : attendancePct! >= 75 ? T.success : attendancePct! >= 65 ? T.warning : T.danger
                 return (
-                  <tr key={`${offering.offId}-${student.id}`} style={{ borderBottom: `1px solid ${T.border}` }}>
+                  <tr key={`${offering.offId}-${student.id}`} data-clickable-row="true" onClick={() => onOpenStudent(student, offering)} style={{ borderBottom: `1px solid ${T.border}`, cursor: 'pointer' }}>
                     <TD><div style={{ ...sora, fontWeight: 600, fontSize: 12, color: T.text }}>{student.name}</div></TD>
                     <TD><span style={{ ...mono, fontSize: 11, color: T.muted }}>{student.usn}</span></TD>
                     <TD><span style={{ ...mono, fontSize: 11, color: T.muted }}>{offering.code} · {offering.year} · Sec {offering.section}</span></TD>
                     <TD>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <Bar val={attendancePct} color={attendancePct >= 75 ? T.success : attendancePct >= 65 ? T.warning : T.danger} h={5} />
-                        <span style={{ ...mono, fontSize: 10, color: T.muted, minWidth: 34 }}>{attendancePct}%</span>
+                        <Bar val={attendancePct ?? 0} color={attendanceColor} h={5} />
+                        <span style={{ ...mono, fontSize: 10, color: T.muted, minWidth: 34 }}>{hasAttendance ? `${attendancePct}%` : 'Not applicable yet'}</span>
                       </div>
                     </TD>
-                    <TD><Chip color={riskColor} size={9}>{student.riskBand}{student.riskProb !== null ? ` · ${Math.round(student.riskProb * 100)}%` : ''}</Chip></TD>
+                    <TD>{riskApplicable ? <Chip color={riskColor} size={9}>{student.riskBand}{student.riskProb !== null ? ` · ${Math.round(student.riskProb * 100)}%` : ''}</Chip> : <Chip color={T.dim} size={9}>Not applicable yet</Chip>}</TD>
                     <TD>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         <Btn size="sm" variant="ghost" onClick={() => onOpenStudent(student, offering)}><Eye size={11} /> Profile</Btn>

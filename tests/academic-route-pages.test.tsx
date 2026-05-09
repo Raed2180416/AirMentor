@@ -370,6 +370,79 @@ describe('academic route pages', () => {
     expect(screen.getByText(/You are viewing (a saved preview checkpoint|the active simulation snapshot|live data)/)).toBeTruthy()
   })
 
+  it('opens active proof controls from the course leader floating proof launcher', () => {
+    const onAdvanceProofRun = vi.fn()
+    const onStopProofRun = vi.fn()
+    const proofProfileWithActiveRun = {
+      ...proofProfile,
+      proofOperations: {
+        ...proofProfile.proofOperations,
+        activeRunContexts: [{
+          batchId: 'batch_mnc_2023',
+          simulationRunId: 'run_001',
+          runLabel: 'Proof Run 1',
+          batchLabel: '2023 Mathematics and Computing',
+          branchName: 'B.Tech Mathematics and Computing',
+          status: 'active',
+          seed: 42,
+          createdAt: '2026-03-16T00:00:00.000Z',
+        }],
+      },
+    } satisfies ApiAcademicFacultyProfile
+
+    renderWithSelectors(createElement(CLDashboard, {
+      offerings: [],
+      pendingTaskCount: 3,
+      proofProfile: proofProfileWithActiveRun,
+      onOpenCourse: vi.fn(),
+      onOpenStudent: vi.fn(),
+      onOpenStudents: vi.fn(),
+      onOpenUpload: vi.fn(),
+      onOpenCalendar: vi.fn(),
+      onOpenPendingActions: vi.fn(),
+      onAdvanceProofRun,
+      onStopProofRun,
+      onStepProofPlayback: vi.fn(),
+      teacherInitials: 'AR',
+      greetingHeadline: 'Welcome back',
+      greetingMeta: 'Proof-aligned teaching scope',
+      greetingSubline: 'Checkpoint-bound view',
+    }))
+
+    fireEvent.click(screen.getByRole('button', { name: /Proof Control/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Next Stage' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Next Day' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Stop Proof Run' }))
+
+    expect(onAdvanceProofRun).toHaveBeenCalledWith('run_001', 'stage')
+    expect(onAdvanceProofRun).toHaveBeenCalledWith('run_001', 'day')
+    expect(onStopProofRun).toHaveBeenCalledWith('run_001')
+  })
+
+  it('opens the full student roster from the course leader total-students metric', () => {
+    const onOpenStudents = vi.fn()
+
+    renderWithSelectors(createElement(CLDashboard, {
+      offerings: [],
+      pendingTaskCount: 3,
+      proofProfile,
+      onOpenCourse: vi.fn(),
+      onOpenStudent: vi.fn(),
+      onOpenStudents,
+      onOpenUpload: vi.fn(),
+      onOpenCalendar: vi.fn(),
+      onOpenPendingActions: vi.fn(),
+      teacherInitials: 'AR',
+      greetingHeadline: 'Welcome back',
+      greetingMeta: 'Proof-aligned teaching scope',
+      greetingSubline: 'Checkpoint-bound view',
+    }))
+
+    fireEvent.click(screen.getByText('Total Students'))
+
+    expect(onOpenStudents).toHaveBeenCalledTimes(1)
+  })
+
   it('prefers proof-scoped totals over summed offering totals on the course leader dashboard', () => {
     const offerings = [
       makeOffering(),

@@ -2354,7 +2354,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         message: 'Saved faculties workspace state could not be restored. Reset workspace to return to the default University overview.',
       })
     }
-  }, [route])
+  }, [route, setFacultiesRestoreNotice])
 
   useEffect(() => {
     if (typeof window === 'undefined' || route.section !== 'faculties') return
@@ -2556,13 +2556,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
   useEffect(() => {
     if (!proofDashboardBatchId) return
-    const runStatus = proofDashboard?.activeRunDetail?.status ?? null
-    if (runStatus !== 'queued' && runStatus !== 'running') return
+    const hasPendingProofRun = proofDashboard?.proofRuns.some(run => run.status === 'queued' || run.status === 'running') ?? false
+    if (!hasPendingProofRun) return
     const timer = window.setInterval(() => {
       void refreshProofDashboard(proofDashboardBatchId)
-    }, 5_000)
+    }, 2_000)
     return () => window.clearInterval(timer)
-  }, [proofDashboard?.activeRunDetail?.status, proofDashboardBatchId, refreshProofDashboard])
+  }, [proofDashboard?.proofRuns, proofDashboardBatchId, refreshProofDashboard])
 
   const getQueuedProofRefreshCount = useCallback((value: unknown) => {
     if (!value || typeof value !== 'object') return 0
@@ -4471,7 +4471,16 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
   const handleAdvanceProofRun = async (simulationRunId: string, mode: ProofAdvanceControlMode) => {
     await runAction(async () => {
-      await apiClient.advanceProofRun(simulationRunId, { mode })
+      try {
+        await apiClient.advanceProofRun(simulationRunId, { mode })
+      } catch (error) {
+        if (error instanceof AirMentorApiError && error.status === 409) {
+          await refreshProofDashboard(proofControlBatchId)
+          setFlashMessage('Proof run is still preparing checkpoints. Refreshed status; retry when progress finishes.')
+          return
+        }
+        throw error
+      }
       clearProofPlaybackSelection()
       setSelectedProofCheckpointSource('auto')
       setProofPlaybackRestoreNotice(null)
@@ -6113,7 +6122,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     setSelectedSectionCode(null)
     setUniversityTab('overview')
     setFacultiesRestoreNotice(null)
-  }, [route])
+  }, [route, setFacultiesRestoreNotice])
   // --- Breadcrumbs ---
   const topBarBreadcrumbs: BreadcrumbSegment[] = (() => {
     if (route.section === 'overview') return [{ label: 'Dashboard' }]
