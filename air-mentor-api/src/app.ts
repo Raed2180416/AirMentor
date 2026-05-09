@@ -162,6 +162,7 @@ export async function buildApp(options: BuildAppOptions) {
   const { registerClientTelemetryRoutes } = await import('./modules/client-telemetry.js')
   const { registerAcademicRoutes } = await import('./modules/academic.js')
   const { registerAdminControlPlaneRoutes } = await import('./modules/admin-control-plane.js')
+  const { registerAdminDemoWorkspaceRoutes } = await import('./modules/admin-demo-workspace.js')
   modules.push(
     registerSessionRoutes,
     registerInstitutionRoutes,
@@ -174,6 +175,7 @@ export async function buildApp(options: BuildAppOptions) {
     registerClientTelemetryRoutes,
     registerAcademicRoutes,
     registerAdminControlPlaneRoutes,
+    registerAdminDemoWorkspaceRoutes,
   )
 
   for (const registerModule of modules) {

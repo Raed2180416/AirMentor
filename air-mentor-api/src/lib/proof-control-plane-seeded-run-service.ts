@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, ne } from 'drizzle-orm'
 import type { AppDb } from '../db/client.js'
 import {
   alertDecisions,
@@ -197,14 +197,9 @@ export async function finalizeSeededProofRun(
     db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, input.simulationRunId)),
   ])
   const stageBoundary = buildProofRunStageBoundarySnapshot(checkpointRows)
-  const activeOperationalSemester = currentRun?.activeOperationalSemester ?? null
-  const activeStageKey = activeOperationalSemester == null
-    ? (currentRun?.activeStageKey ?? null)
-    : (
-      stageBoundary.semesters.find(item => item.semesterNumber === activeOperationalSemester)?.entryStageKey
-      ?? currentRun?.activeStageKey
-      ?? 'pre-tt1'
-    )
+  const entrySemester = stageBoundary.semesters[0] ?? null
+  const activeOperationalSemester = entrySemester?.semesterNumber ?? currentRun?.activeOperationalSemester ?? 1
+  const activeStageKey = entrySemester?.entryStageKey ?? currentRun?.activeStageKey ?? 'pre-tt1'
   const lifecycleState = input.activate ? 'completed-inspectable' : 'completed'
   const setupConfig = {
     activate: input.activate,
@@ -264,6 +259,7 @@ export async function finalizeSeededProofRun(
   await db.update(simulationRuns).set({
     status: 'completed',
     activeFlag: input.activate ? 1 : 0,
+    activeOperationalSemester,
     activeStageKey: activeStageKey ?? null,
     completedAt: input.now,
     simulatedDateIso: currentRun?.simulatedDateIso ?? input.now,
@@ -297,6 +293,18 @@ export async function finalizeSeededProofRun(
     }),
     updatedAt: input.now,
   }).where(eq(simulationRuns.simulationRunId, input.simulationRunId))
+
+  if (input.activate) {
+    await db.update(simulationRuns).set({
+      status: 'completed',
+      activeFlag: 0,
+      updatedAt: input.now,
+    }).where(and(
+      eq(simulationRuns.batchId, input.batchId),
+      ne(simulationRuns.simulationRunId, input.simulationRunId),
+      eq(simulationRuns.activeFlag, 1),
+    ))
+  }
 
   return {
     simulationRunId: input.simulationRunId,

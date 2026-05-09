@@ -7,6 +7,7 @@ import {
   activateProofOperationalSemester,
   activateProofSimulationRun,
   advanceProofSimulationDay,
+  advanceProofSimulationPreviousDay,
   advanceProofSimulationStage,
   approveProofCurriculumImport,
   buildProofBatchDashboard,
@@ -119,7 +120,7 @@ const activateSemesterSchema = z.object({
 // (§C.15/§L.6). Both route through the same service to guarantee identical
 // transition pipeline when Next Day crosses a stage boundary (§L.5 contract).
 const advanceBodySchema = z.object({
-  mode: z.union([z.literal('day'), z.literal('stage')]),
+  mode: z.union([z.literal('day'), z.literal('previous-day'), z.literal('stage')]),
 })
 
 const activateSemesterBodySchema = {
@@ -464,21 +465,24 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
     const auth = requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(runParamsSchema, request.params)
     const body = parseOrThrow(advanceBodySchema, request.body)
+    const input = {
+      simulationRunId: params.simulationRunId,
+      actorFacultyId: auth.facultyId,
+      now: context.now(),
+    }
     const result = body.mode === 'day'
-      ? await advanceProofSimulationDay(context.db, {
-          simulationRunId: params.simulationRunId,
-          actorFacultyId: auth.facultyId,
-          now: context.now(),
-        })
-      : await advanceProofSimulationStage(context.db, {
-          simulationRunId: params.simulationRunId,
-          actorFacultyId: auth.facultyId,
-          now: context.now(),
-        })
+      ? await advanceProofSimulationDay(context.db, input)
+      : body.mode === 'previous-day'
+        ? await advanceProofSimulationPreviousDay(context.db, input)
+        : await advanceProofSimulationStage(context.db, input)
     await emitAuditEvent(context, {
       entityType: 'ProofSimulationRun',
       entityId: params.simulationRunId,
-      action: body.mode === 'day' ? 'AdvancedDay' : 'AdvancedStage',
+      action: body.mode === 'day'
+        ? 'AdvancedDay'
+        : body.mode === 'previous-day'
+          ? 'AdvancedPreviousDay'
+          : 'AdvancedStage',
       actorRole: auth.activeRoleGrant.roleCode,
       actorId: auth.facultyId,
       after: result,

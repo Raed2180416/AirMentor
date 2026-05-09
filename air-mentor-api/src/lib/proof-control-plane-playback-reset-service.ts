@@ -314,13 +314,20 @@ export async function stopProofSimulationRun(
     updatedAt: input.now,
   }).where(eq(simulationRuns.simulationRunId, run.simulationRunId))
 
+  const credentialSweep = deps.deleteProofCredentials
+    ? await deps.deleteProofCredentials(db, run.batchId)
+    : { deletedCount: 0 }
+  if (deps.invalidateProofBatchSessions) {
+    await deps.invalidateProofBatchSessions(db, run.batchId)
+  }
+
   await deps.emitSimulationAudit(db, {
     simulationRunId: run.simulationRunId,
     batchId: run.batchId,
     actionType: 'stopped',
     payload: {
       previousLifecycleState: run.lifecycleState ?? null,
-      deletedCredentialCount: 0,
+      deletedCredentialCount: credentialSweep.deletedCount,
     },
     createdByFacultyId: input.actorFacultyId ?? null,
     now: input.now,
@@ -330,6 +337,6 @@ export async function stopProofSimulationRun(
     ok: true as const,
     simulationRunId: run.simulationRunId,
     batchId: run.batchId,
-    deletedCredentialCount: 0,
+    deletedCredentialCount: credentialSweep.deletedCount,
   }
 }

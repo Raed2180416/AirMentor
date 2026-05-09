@@ -156,6 +156,7 @@ import {
 } from './proof-control-plane-playback-reset-service.js'
 import {
   advanceProofSimulationDay as advanceProofSimulationDayService,
+  advanceProofSimulationPreviousDay as advanceProofSimulationPreviousDayService,
   advanceProofSimulationStage as advanceProofSimulationStageService,
   type AdvanceProofSimulationInput,
   type ProofAdvanceServiceDeps,
@@ -4544,19 +4545,16 @@ export async function activateProofSimulationRun(db: AppDb, input: {
     status: 'completed',
     updatedAt: input.now,
   }).where(eq(simulationRuns.batchId, run.batchId))
-  // Fresh activation starts at semesterStart, NOT semesterEnd.
-  // semesterEnd is the final semester of the run, not the starting point.
-  // If the run was previously activated (activeOperationalSemester already set), preserve it.
-  const targetSemester = run.activeOperationalSemester != null && run.activeOperationalSemester > 0
-    ? run.activeOperationalSemester
-    : run.semesterStart
-  const targetStageKey = (run.activeStageKey ?? 'pre-tt1') as PlaybackStageKey
+  const [activationRun] = await db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, run.simulationRunId))
+  if (!activationRun) throw new Error('Simulation run not found')
+  const targetSemester = activationRun.activeOperationalSemester ?? activationRun.semesterStart
+  const targetStageKey = (activationRun.activeStageKey ?? 'pre-tt1') as PlaybackStageKey
   await db.update(simulationRuns).set({
     activeFlag: 1,
     status: 'active',
     activeOperationalSemester: targetSemester,
     activeStageKey: targetStageKey,
-    simulatedDateIso: run.simulatedDateIso ?? PROOF_SEMESTER_SIM_START_DATES[targetSemester],
+    simulatedDateIso: activationRun.simulatedDateIso ?? PROOF_SEMESTER_SIM_START_DATES[targetSemester],
     lifecycleState: 'active',
     updatedAt: input.now,
   }).where(eq(simulationRuns.simulationRunId, run.simulationRunId))
@@ -4828,6 +4826,10 @@ export async function activateProofOperationalSemester(db: AppDb, input: {
 // boundary, so the UI never has two advance pipelines to keep in sync.
 export async function advanceProofSimulationDay(db: AppDb, input: AdvanceProofSimulationInput) {
   return advanceProofSimulationDayService(db, input, proofAdvanceServiceDeps)
+}
+
+export async function advanceProofSimulationPreviousDay(db: AppDb, input: AdvanceProofSimulationInput) {
+  return advanceProofSimulationPreviousDayService(db, input, proofAdvanceServiceDeps)
 }
 
 // Next Stage authoritative advance (§C.15 + §L.6). Open cases auto-resolve at

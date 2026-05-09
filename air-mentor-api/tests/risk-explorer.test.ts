@@ -390,8 +390,17 @@ describe('student risk explorer', () => {
         activeOperationalSemester: number | null
         monitoringStudent?: { studentId: string } | null
         monitoringQueue: Array<{ studentId: string }>
+        activeRunCheckpoints: Array<{ simulationStageCheckpointId: string; simulationRunId: string; previousCheckpointId: string | null }>
       }
     }
+    expect(facultyProfile.proofOperations.activeRunCheckpoints.length).toBeGreaterThan(1)
+    expect(facultyProfile.proofOperations.activeRunCheckpoints[0]).toMatchObject({
+      simulationRunId: activeRun.simulationRunId,
+      previousCheckpointId: null,
+    })
+    expect(facultyProfile.proofOperations.activeRunCheckpoints.map(checkpoint => checkpoint.simulationStageCheckpointId)).toContain(
+      selectedCheckpoint.simulationStageCheckpointId,
+    )
     const mentorRows = await current.db.select().from(mentorAssignments).where(eq(mentorAssignments.facultyId, facultyLogin.body.faculty.facultyId))
     const mentorScopedStudentId = mentorRows.find(row => row.effectiveTo === null)?.studentId ?? mentorRows[0]?.studentId ?? null
     const primaryStudentId = facultyProfile.proofOperations.monitoringStudent?.studentId
