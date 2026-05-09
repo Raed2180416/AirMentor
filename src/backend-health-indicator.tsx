@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { T, mono } from './data'
 
 const DEFAULT_POLL_INTERVAL_MS = 15_000
-const DEFAULT_TIMEOUT_MS = 4_000
+const DEFAULT_TIMEOUT_MS = 6_000
+const DEFAULT_FAILURE_THRESHOLD = 2
 
 export type BackendHealthMonitorSnapshot = {
   isOffline: boolean
@@ -16,6 +17,7 @@ type BackendHealthMonitorOptions = {
   enabled?: boolean
   pollIntervalMs?: number
   timeoutMs?: number
+  failureThreshold?: number
 }
 
 function normalizeBaseUrl(value: string) {
@@ -55,20 +57,30 @@ export function useBackendHealthMonitor(apiBaseUrl: string, options: BackendHeal
     enabled = true,
     pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
     timeoutMs = DEFAULT_TIMEOUT_MS,
+    failureThreshold = DEFAULT_FAILURE_THRESHOLD,
   } = options
   const normalizedBaseUrl = useMemo(() => normalizeBaseUrl(apiBaseUrl), [apiBaseUrl])
   const [isOffline, setIsOffline] = useState(false)
   const [checking, setChecking] = useState(false)
   const [lastHealthyAt, setLastHealthyAt] = useState<number | null>(null)
+  const consecutiveFailures = useRef(0)
 
   const runCheck = useCallback(async () => {
     if (!enabled || !normalizedBaseUrl) return
     setChecking(true)
     const healthy = await probeBackendHealth(normalizedBaseUrl, timeoutMs)
-    setIsOffline(!healthy)
-    if (healthy) setLastHealthyAt(Date.now())
+    if (healthy) {
+      consecutiveFailures.current = 0
+      setIsOffline(false)
+      setLastHealthyAt(Date.now())
+    } else {
+      consecutiveFailures.current += 1
+      if (consecutiveFailures.current >= failureThreshold) {
+        setIsOffline(true)
+      }
+    }
     setChecking(false)
-  }, [enabled, normalizedBaseUrl, timeoutMs])
+  }, [enabled, normalizedBaseUrl, timeoutMs, failureThreshold])
 
   useEffect(() => {
     if (!enabled || !normalizedBaseUrl) return

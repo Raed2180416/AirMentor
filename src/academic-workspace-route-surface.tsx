@@ -62,6 +62,9 @@ export function AcademicWorkspaceRouteSurface({
           onOpenStudentProfile={workspace.handleOpenStudentProfile}
           onOpenStudentShell={workspace.handleOpenStudentShell}
           onOpenRiskExplorer={workspace.handleOpenRiskExplorer}
+          onAdvanceProofRun={workspace.handleAdvanceProofRun}
+          onStopProofRun={workspace.handleStopProofRun}
+          onStepProofPlayback={workspace.handleStepProofPlayback}
         />
       )}
       {role === 'Course Leader' && page === 'dashboard' && (
@@ -71,9 +74,13 @@ export function AcademicWorkspaceRouteSurface({
           proofProfile={workspace.facultyProfile}
           onOpenCourse={workspace.handleOpenCourse}
           onOpenStudent={workspace.handleOpenStudent}
+          onOpenStudents={workspace.handleOpenStudents}
           onOpenUpload={workspace.handleOpenUpload}
           onOpenCalendar={workspace.handleOpenCalendar}
           onOpenPendingActions={workspace.handleToggleActionQueue}
+          onAdvanceProofRun={workspace.handleAdvanceProofRun}
+          onStopProofRun={workspace.handleStopProofRun}
+          onStepProofPlayback={workspace.handleStepProofPlayback}
           teacherInitials={workspace.currentTeacher.initials}
           greetingHeadline={workspace.greetingHeadline}
           greetingMeta={workspace.greetingMeta}

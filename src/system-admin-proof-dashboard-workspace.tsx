@@ -47,6 +47,36 @@ function formatAgeSeconds(seconds: number | null | undefined) {
   return `${Math.round(seconds / 3600)}h`
 }
 
+function formatEtaSeconds(seconds: number | null | undefined) {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds)) return null
+  const normalized = Math.max(0, Math.round(seconds))
+  if (normalized < 60) return `${normalized}s`
+  const minutes = Math.floor(normalized / 60)
+  const remainingSeconds = normalized % 60
+  return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`
+}
+
+function readProgressNumber(progress: Record<string, unknown> | null | undefined, key: string) {
+  const value = progress?.[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function readProgressPhase(progress: Record<string, unknown> | null | undefined, fallback: string) {
+  const phase = progress?.phase
+  return typeof phase === 'string' && phase.trim() ? phase : fallback
+}
+
+function formatProofProgress(progress: Record<string, unknown> | null | undefined, fallbackPhase: string) {
+  const phase = readProgressPhase(progress, fallbackPhase)
+  const percent = readProgressNumber(progress, 'percent')
+  const eta = formatEtaSeconds(readProgressNumber(progress, 'etaSeconds'))
+  return [
+    phase,
+    percent != null ? `${Math.max(0, Math.min(100, Math.round(percent)))}%` : null,
+    eta ? `ETA ~${eta}` : null,
+  ].filter((value): value is string => Boolean(value)).join(' · ')
+}
+
 function formatLeaseState(leaseState: 'leased' | 'expired' | 'released' | null | undefined) {
   if (!leaseState) return 'unleased'
   return leaseState
@@ -234,6 +264,7 @@ export function SystemAdminProofDashboardWorkspace({
   onReviewPendingCrosswalks,
   onApproveLatestProofImport,
   onCreateProofRun,
+  onRecomputeProofRunRisk,
   onCreateProofSimulation = onCreateProofRun,
   onActivateProofRun,
   onActivateProofSemester,
@@ -313,12 +344,13 @@ export function SystemAdminProofDashboardWorkspace({
     ? proofDashboard?.proofRuns.find(run => run.status === 'running' || run.status === 'queued') ?? proofDashboard?.proofRuns[0] ?? null
     : null
   const pendingProofRunProgress = pendingProofRun?.progress
-  const pendingProofRunPhase = typeof pendingProofRunProgress?.phase === 'string'
-    ? pendingProofRunProgress.phase
-    : pendingProofRun?.status ?? 'queued'
+  const pendingProofRunPhase = readProgressPhase(pendingProofRunProgress, pendingProofRun?.status ?? 'queued')
   const pendingProofRunPercent = typeof pendingProofRunProgress?.percent === 'number'
     ? Math.max(0, Math.min(100, pendingProofRunProgress.percent))
     : pendingProofRun?.status === 'running' ? 50 : 0
+  const pendingProofRunProgressLabel = pendingProofRun
+    ? formatProofProgress(pendingProofRun.progress, pendingProofRun.status)
+    : null
   const pendingProofRunAge = typeof pendingProofRun?.queueAgeSeconds === 'number'
     ? `${Math.max(0, Math.round(pendingProofRun.queueAgeSeconds))}s in queue`
     : null
@@ -456,6 +488,7 @@ export function SystemAdminProofDashboardWorkspace({
       onRestoreProofSnapshot={onRestoreProofSnapshot}
       onResetProofRunFromScratch={onResetProofRunFromScratch}
       onStepProofPlayback={onStepProofPlayback}
+      onRecomputeProofRunRisk={onRecomputeProofRunRisk}
       beforeAction={beforeAction}
     />
   )
@@ -789,7 +822,7 @@ export function SystemAdminProofDashboardWorkspace({
                   <div style={{ display: 'grid', gap: 4 }}>
                     <div>{activeRunDetail.runLabel}</div>
                     <div>Seed {activeRunDetail.seed} · {activeRunDetail.status}</div>
-                    {activeRunDetail.progress ? <div>{String(activeRunDetail.progress.phase ?? 'running')} · {String(activeRunDetail.progress.percent ?? 0)}%</div> : null}
+                    {activeRunDetail.progress ? <div>{formatProofProgress(activeRunDetail.progress, activeRunDetail.status)}</div> : null}
                   </div>
                 )}
                 detail={activeRunDetail.failureMessage ? activeRunDetail.failureMessage : `${activeRunSnapshots.length} saved snapshots · ${activeRunDetail.monitoringSummary.riskAssessmentCount} watch scores`}
@@ -1141,7 +1174,7 @@ export function SystemAdminProofDashboardWorkspace({
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               <Chip color={proofRunStatusColor(pendingProofRun.status)}>{pendingProofRun.status}</Chip>
-              <Chip color={T.dim}>{pendingProofRunPhase} · {pendingProofRunPercent}%</Chip>
+              <Chip color={T.dim}>{pendingProofRunProgressLabel ?? `${pendingProofRunPhase} · ${pendingProofRunPercent}%`}</Chip>
               {pendingProofRunAge ? <Chip color={T.dim}>{pendingProofRunAge}</Chip> : null}
             </div>
           </div>
@@ -1154,7 +1187,7 @@ export function SystemAdminProofDashboardWorkspace({
             <Card style={{ padding: 10, background: T.surface2 }}>
               <div style={{ ...mono, fontSize: 10, color: T.text }}>{pendingProofRun.runLabel}</div>
               <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
-                Seed {pendingProofRun.seed} · {pendingProofRun.status} · {pendingProofRunPhase} · {pendingProofRunPercent}%
+                Seed {pendingProofRun.seed} · {pendingProofRun.status} · {pendingProofRunProgressLabel ?? `${pendingProofRunPhase} · ${pendingProofRunPercent}%`}
               </div>
               {pendingProofRun.queueAgeSeconds != null || pendingProofRun.leaseState || pendingProofRun.retryState ? (
                 <div style={{ ...mono, fontSize: 10, color: pendingProofRun.leaseState === 'expired' ? T.warning : T.muted, marginTop: 4, lineHeight: 1.6 }}>

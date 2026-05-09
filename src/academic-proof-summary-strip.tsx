@@ -2,6 +2,7 @@ import type { ApiAcademicFacultyProfile } from './api/types'
 import { T, mono, sora } from './data'
 import { describeProofProvenance } from './proof-provenance'
 import { ProofSurfaceLauncher } from './proof-surface-shell'
+import { ProofSimulationControls, type ProofAdvanceControlMode, type ProofPlaybackControlDirection } from './proof-simulation-controls'
 import { InfoBanner } from './system-admin-ui'
 import { Btn, Card, Chip } from './ui-primitives'
 
@@ -9,6 +10,9 @@ type AcademicProofSummaryStripProps = {
   profile: ApiAcademicFacultyProfile | null
   surfaceId: string
   surfaceLabel: string
+  onAdvanceProofRun?: (simulationRunId: string, mode: ProofAdvanceControlMode) => void
+  onStopProofRun?: (simulationRunId: string) => void
+  onStepProofPlayback?: (direction: ProofPlaybackControlDirection) => void
 }
 
 function toMetricId(label: string) {
@@ -32,6 +36,9 @@ export function AcademicProofSummaryStrip({
   profile,
   surfaceId,
   surfaceLabel,
+  onAdvanceProofRun,
+  onStopProofRun,
+  onStepProofPlayback,
 }: AcademicProofSummaryStripProps) {
   const proofOps = profile?.proofOperations ?? null
   const summarySurfaceId = `${surfaceId}-proof-summary`
@@ -69,6 +76,11 @@ export function AcademicProofSummaryStrip({
   const electiveFitCount = proofOps.electiveFits.length
   const activeRunCount = proofOps.activeRunContexts.length
   const proofModeChipLabel = proofOps.scopeMode === 'proof' ? 'Preview data' : 'Live data'
+  const activeProofRun = proofOps.activeRunContexts[0] ?? null
+  const activeRunCheckpoints = proofOps.activeRunCheckpoints ?? []
+  const proofControlHandlers = activeProofRun && onAdvanceProofRun && onStepProofPlayback
+    ? { onAdvanceProofRun, onStopProofRun, onStepProofPlayback }
+    : null
 
   return (
     <>
@@ -96,6 +108,25 @@ export function AcademicProofSummaryStrip({
               </Chip>
               <Chip color={T.success}>{`${activeRunCount} run${activeRunCount === 1 ? '' : 's'}`}</Chip>
             </div>
+            {proofControlHandlers ? (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <ProofSimulationControls
+                  activeRunDetail={activeProofRun}
+                  activeRunCheckpoints={activeRunCheckpoints}
+                  selectedProofCheckpoint={selectedCheckpoint}
+                  selectedProofCheckpointCanStepForward={Boolean(selectedCheckpoint?.nextCheckpointId)}
+                  selectedProofCheckpointCanPlayToEnd={Boolean(selectedCheckpoint?.nextCheckpointId)}
+                  createDisabled
+                  stopDisabled={!proofControlHandlers.onStopProofRun}
+                  onCreateProofSimulation={() => undefined}
+                  onStopProofRun={proofControlHandlers.onStopProofRun ?? (() => undefined)}
+                  onAdvanceProofRun={proofControlHandlers.onAdvanceProofRun}
+                  onRestoreProofSnapshot={() => undefined}
+                  onResetProofRunFromScratch={() => undefined}
+                  onStepProofPlayback={proofControlHandlers.onStepProofPlayback}
+                />
+              </div>
+            ) : null}
           </div>
         )}
         popupFooter={({ closePopup, jumpToTarget }) => (

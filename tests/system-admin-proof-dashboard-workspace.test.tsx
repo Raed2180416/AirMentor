@@ -251,7 +251,7 @@ describe('SystemAdminProofDashboardWorkspace', () => {
         completedAt: null,
         failureCode: null,
         failureMessage: null,
-        progress: { phase: 'queued', percent: 0 },
+        progress: { phase: 'building-checkpoints', percent: 25, etaSeconds: 90 },
         metrics: {},
         queueAgeSeconds: 18,
         leaseState: null,
@@ -272,7 +272,42 @@ describe('SystemAdminProofDashboardWorkspace', () => {
 
     expect(screen.getAllByText('Queued Proof Run').length).toBeGreaterThan(0)
     expect(screen.getByText(/Waiting for the proof worker/i)).toBeTruthy()
+    expect(screen.getAllByText(/building-checkpoints · 25% · ETA ~1m 30s/i).length).toBeGreaterThan(0)
     expect(screen.queryByText('No simulation yet')).toBeNull()
+  })
+
+  it('shows immediate loading feedback while an advance action is in flight', async () => {
+    let finishAdvance!: () => void
+    const selectedCheckpoint = buildCheckpoint({
+      simulationStageCheckpointId: 'checkpoint_current',
+      stageLabel: 'Current',
+      previousCheckpointId: 'checkpoint_previous',
+      nextCheckpointId: 'checkpoint_next',
+      playbackAccessible: true,
+      stageAdvanceBlocked: false,
+      blockedByCheckpointId: null,
+      blockedProgressionReason: null,
+    })
+    const advanceProofRun = vi.fn(() => new Promise<void>(resolve => {
+      finishAdvance = resolve
+    }))
+
+    render(createElement(SystemAdminProofDashboardWorkspace, buildWorkspaceProps({
+      proofDashboard: buildActiveProofDashboard([selectedCheckpoint]),
+      showLauncher: false,
+      activeRunCheckpoints: [selectedCheckpoint],
+      selectedProofCheckpoint: selectedCheckpoint,
+      onAdvanceProofRun: advanceProofRun,
+    })))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next Stage' }))
+
+    const loadingButton = screen.getByRole('button', { name: /Advancing Stage/i }) as HTMLButtonElement
+    expect(loadingButton.disabled).toBe(true)
+    expect(screen.getByText(/Working… Advancing Stage/i)).toBeTruthy()
+
+    finishAdvance()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Next Stage' })).toBeTruthy())
   })
 
   it('exposes the active simulation controls in the proof panel', () => {
@@ -312,6 +347,7 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     const restoreProofSnapshot = vi.fn()
     const resetProofRunFromScratch = vi.fn()
     const stepPlayback = vi.fn()
+    const recomputeProofRunRisk = vi.fn()
 
     render(createElement(SystemAdminProofDashboardWorkspace, buildWorkspaceProps({
       proofDashboard: buildActiveProofDashboard(checkpoints),
@@ -325,6 +361,7 @@ describe('SystemAdminProofDashboardWorkspace', () => {
       onRestoreProofSnapshot: restoreProofSnapshot,
       onResetProofRunFromScratch: resetProofRunFromScratch,
       onStepProofPlayback: stepPlayback,
+      onRecomputeProofRunRisk: recomputeProofRunRisk,
     })))
 
     const controlNames = [
@@ -335,6 +372,7 @@ describe('SystemAdminProofDashboardWorkspace', () => {
       'Previous Stage',
       'Reset Stage',
       'Reset Proof Run',
+      'Recompute Risk',
     ]
     controlNames.forEach(name => {
       expect(screen.getByRole('button', { name })).toBeTruthy()
@@ -347,6 +385,7 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Previous Stage' }))
     fireEvent.click(screen.getByRole('button', { name: 'Reset Stage' }))
     fireEvent.click(screen.getByRole('button', { name: 'Reset Proof Run' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Recompute Risk' }))
 
     expect(stopProofRun).toHaveBeenCalledWith('run_001')
     expect(advanceProofRun).toHaveBeenCalledWith('run_001', 'stage')
@@ -354,6 +393,36 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     expect(stepPlayback).toHaveBeenCalledWith('previous')
     expect(restoreProofSnapshot).toHaveBeenCalledWith('run_001', 'snapshot_001')
     expect(resetProofRunFromScratch).toHaveBeenCalledWith('run_001', 'snapshot_001')
+    expect(recomputeProofRunRisk).toHaveBeenCalled()
+  })
+
+  it('keeps advance controls disabled while the active run has no checkpoint chain', () => {
+    const advanceProofRun = vi.fn()
+    const stopProofRun = vi.fn()
+
+    render(createElement(SystemAdminProofDashboardWorkspace, buildWorkspaceProps({
+      proofDashboard: buildActiveProofDashboard([]),
+      showLauncher: false,
+      activeRunCheckpoints: [],
+      selectedProofCheckpoint: null,
+      onAdvanceProofRun: advanceProofRun,
+      onStopProofRun: stopProofRun,
+    })))
+
+    const nextStage = screen.getByRole('button', { name: 'Next Stage' }) as HTMLButtonElement
+    const nextDay = screen.getByRole('button', { name: 'Next Day' }) as HTMLButtonElement
+    const previousDay = screen.getByRole('button', { name: 'Previous Day' }) as HTMLButtonElement
+
+    expect(nextStage.disabled).toBe(true)
+    expect(nextDay.disabled).toBe(true)
+    expect(previousDay.disabled).toBe(true)
+
+    fireEvent.click(nextStage)
+    fireEvent.click(nextDay)
+    fireEvent.click(previousDay)
+
+    expect(advanceProofRun).not.toHaveBeenCalled()
+    expect(stopProofRun).not.toHaveBeenCalled()
   })
 
   it('lets admins dismiss a restored playback notice without resetting playback', () => {

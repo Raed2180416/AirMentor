@@ -50,6 +50,16 @@ export function getAccessibleDangerAccent(tone = T.danger) {
 export const ACCESSIBLE_PRIMARY_ACCENT = getAccessiblePrimaryAccent()
 export const ACCESSIBLE_DANGER_ACCENT = getAccessibleDangerAccent()
 
+export type SemanticTone = 'accent' | 'success' | 'warning' | 'danger' | 'neutral'
+
+export function getSemanticTone(tone: SemanticTone) {
+  if (tone === 'success') return T.success
+  if (tone === 'warning') return T.warning
+  if (tone === 'danger') return T.danger
+  if (tone === 'neutral') return T.dim
+  return T.accent
+}
+
 type SurfaceRole = 'primary' | 'secondary' | 'field' | 'selected' | 'warning' | 'danger' | 'success' | 'modal'
 
 export function withAlpha(color: string, alpha: string) {
@@ -604,7 +614,7 @@ export const Chip = ({ children, color = T.muted, size = 11 }: { children: React
   )
 }
 
-export function HScrollArea({ children, style }: { children: ReactNode; style?: CSSProperties }) {
+export function HScrollArea({ children, style, vertical = false, dataRosterScroll }: { children: ReactNode; style?: CSSProperties; vertical?: boolean; dataRosterScroll?: string }) {
   const ref = useRef<HTMLDivElement | null>(null)
   const drag = useRef({ pointerId: -1, startX: 0, startScrollLeft: 0, active: false })
   const [dragging, setDragging] = useState(false)
@@ -654,7 +664,8 @@ export function HScrollArea({ children, style }: { children: ReactNode; style?: 
     <div
       ref={ref}
       className={`scrollable-x scroll-pane scroll-pane--dense${dragging ? ' is-dragging' : ''}`}
-      style={{ overflowX: 'auto', cursor: dragging ? 'grabbing' : 'grab', overscrollBehaviorX: 'contain', ...style }}
+      data-roster-scroll={dataRosterScroll}
+      style={{ overflowX: 'auto', overflowY: vertical ? 'auto' : style?.overflowY, cursor: dragging ? 'grabbing' : 'grab', overscrollBehaviorX: 'contain', ...style }}
       tabIndex={0}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}

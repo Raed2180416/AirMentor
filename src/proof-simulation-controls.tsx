@@ -1,9 +1,16 @@
-import type { ApiProofDashboard, ApiSimulationStageCheckpointSummary } from './api/types'
+import { useState } from 'react'
+import type { ApiSimulationStageCheckpointSummary } from './api/types'
 import { Btn } from './ui-primitives'
 
-type ProofActiveRunDetail = NonNullable<ApiProofDashboard['activeRunDetail']>
-type ProofRunSnapshot = ProofActiveRunDetail['snapshots'][number]
-export type ProofAdvanceControlMode = 'day' | 'stage'
+type ProofActiveRunDetail = {
+  simulationRunId: string
+}
+type ProofRunSnapshot = {
+  simulationResetSnapshotId: string
+}
+export type ProofAdvanceControlMode = 'day' | 'previous-day' | 'stage'
+export type ProofPlaybackControlDirection = 'previous' | 'next' | 'start' | 'end'
+type ProofControlActionResult = void | Promise<void>
 
 type ProofSimulationControlsProps = {
   activeRunDetail: ProofActiveRunDetail | null
@@ -14,12 +21,14 @@ type ProofSimulationControlsProps = {
   baselineSnapshot?: ProofRunSnapshot | null
   resetStageSnapshot?: ProofRunSnapshot | null
   createDisabled?: boolean
-  onCreateProofSimulation: () => void
-  onStopProofRun: (simulationRunId: string) => void
-  onAdvanceProofRun: (simulationRunId: string, mode: ProofAdvanceControlMode) => void
-  onRestoreProofSnapshot: (simulationRunId: string, simulationResetSnapshotId?: string) => void
-  onResetProofRunFromScratch: (simulationRunId: string, simulationResetSnapshotId?: string) => void
-  onStepProofPlayback: (direction: 'previous' | 'next' | 'start' | 'end') => void
+  stopDisabled?: boolean
+  onCreateProofSimulation: () => ProofControlActionResult
+  onStopProofRun: (simulationRunId: string) => ProofControlActionResult
+  onAdvanceProofRun: (simulationRunId: string, mode: ProofAdvanceControlMode) => ProofControlActionResult
+  onRestoreProofSnapshot: (simulationRunId: string, simulationResetSnapshotId?: string) => ProofControlActionResult
+  onResetProofRunFromScratch: (simulationRunId: string, simulationResetSnapshotId?: string) => ProofControlActionResult
+  onStepProofPlayback: (direction: ProofPlaybackControlDirection) => ProofControlActionResult
+  onRecomputeProofRunRisk?: () => ProofControlActionResult
   beforeAction?: () => void
 }
 
@@ -32,31 +41,59 @@ export function ProofSimulationControls({
   baselineSnapshot,
   resetStageSnapshot,
   createDisabled = false,
+  stopDisabled = false,
   onCreateProofSimulation,
   onStopProofRun,
   onAdvanceProofRun,
   onRestoreProofSnapshot,
   onResetProofRunFromScratch,
   onStepProofPlayback,
+  onRecomputeProofRunRisk,
   beforeAction,
 }: ProofSimulationControlsProps) {
+  const [pendingActionLabel, setPendingActionLabel] = useState<string | null>(null)
   const runId = activeRunDetail?.simulationRunId ?? null
   const selectedIsFirst = !!selectedProofCheckpoint && selectedProofCheckpoint.simulationStageCheckpointId === activeRunCheckpoints[0]?.simulationStageCheckpointId
-  const runAction = (action: () => void) => {
+  const advanceDisabled = activeRunCheckpoints.length === 0 && !selectedProofCheckpoint
+  const actionLocked = pendingActionLabel != null
+  const runAction = (label: string, action: () => ProofControlActionResult) => {
     beforeAction?.()
-    action()
+    const result = action()
+    if (result && typeof result === 'object' && typeof result.then === 'function') {
+      setPendingActionLabel(label)
+      void result.catch(() => undefined).finally(() => setPendingActionLabel(null))
+    }
   }
+  const renderLabel = (idleLabel: string, pendingLabel: string) => pendingActionLabel === pendingLabel ? `${pendingLabel}...` : idleLabel
+  const pendingNotice = pendingActionLabel ? (
+    <span
+      role="status"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        fontSize: 11,
+        opacity: 0.86,
+        animation: 'pulse 1s ease-in-out infinite',
+      }}
+    >
+      Working… {pendingActionLabel}
+    </span>
+  ) : null
 
   if (!runId) {
     return (
-      <Btn
-        size="sm"
-        dataProofAction="proof-create-simulation"
-        disabled={createDisabled}
-        onClick={() => runAction(onCreateProofSimulation)}
-      >
-        Create Proof Run
-      </Btn>
+      <>
+        <Btn
+          size="sm"
+          dataProofAction="proof-create-simulation"
+          disabled={createDisabled || actionLocked}
+          onClick={() => runAction('Creating Proof Run', onCreateProofSimulation)}
+        >
+          {renderLabel('Create Proof Run', 'Creating Proof Run')}
+        </Btn>
+        {pendingNotice}
+      </>
     )
   }
 
@@ -66,87 +103,102 @@ export function ProofSimulationControls({
         size="sm"
         variant="danger"
         dataProofAction="proof-stop-simulation"
-        onClick={() => runAction(() => onStopProofRun(runId))}
+        onClick={() => runAction('Stopping Proof Run', () => onStopProofRun(runId))}
+        disabled={stopDisabled || actionLocked}
       >
-        Stop Proof Run
+        {renderLabel('Stop Proof Run', 'Stopping Proof Run')}
       </Btn>
       <Btn
         size="sm"
         dataProofAction="proof-next-stage"
-        onClick={() => runAction(() => onAdvanceProofRun(runId, 'stage'))}
+        onClick={() => runAction('Advancing Stage', () => onAdvanceProofRun(runId, 'stage'))}
+        disabled={advanceDisabled || actionLocked}
       >
-        Next Stage
+        {renderLabel('Next Stage', 'Advancing Stage')}
       </Btn>
       <Btn
         size="sm"
         dataProofAction="proof-next-day"
-        onClick={() => runAction(() => onAdvanceProofRun(runId, 'day'))}
+        onClick={() => runAction('Advancing Day', () => onAdvanceProofRun(runId, 'day'))}
+        disabled={advanceDisabled || actionLocked}
       >
-        Next Day
+        {renderLabel('Next Day', 'Advancing Day')}
       </Btn>
       <Btn
         size="sm"
         variant="ghost"
         dataProofAction="proof-previous-day"
-        onClick={() => runAction(() => onStepProofPlayback('previous'))}
-        disabled={!selectedProofCheckpoint?.previousCheckpointId}
+        onClick={() => runAction('Moving Back One Day', () => onAdvanceProofRun(runId, 'previous-day'))}
+        disabled={advanceDisabled || actionLocked}
       >
-        Previous Day
+        {renderLabel('Previous Day', 'Moving Back One Day')}
       </Btn>
       <Btn
         size="sm"
         variant="ghost"
         dataProofAction="proof-previous-stage"
-        onClick={() => runAction(() => onStepProofPlayback('previous'))}
-        disabled={!selectedProofCheckpoint?.previousCheckpointId}
+        onClick={() => runAction('Opening Previous Stage', () => onStepProofPlayback('previous'))}
+        disabled={actionLocked || !selectedProofCheckpoint?.previousCheckpointId}
       >
-        Previous Stage
+        {renderLabel('Previous Stage', 'Opening Previous Stage')}
       </Btn>
       <Btn
         size="sm"
         variant="ghost"
         dataProofAction="proof-reset-stage"
-        onClick={() => runAction(() => onRestoreProofSnapshot(runId, resetStageSnapshot?.simulationResetSnapshotId))}
-        disabled={!resetStageSnapshot}
+        onClick={() => runAction('Resetting Stage', () => onRestoreProofSnapshot(runId, resetStageSnapshot?.simulationResetSnapshotId))}
+        disabled={actionLocked || !resetStageSnapshot}
       >
-        Reset Stage
+        {renderLabel('Reset Stage', 'Resetting Stage')}
       </Btn>
       <Btn
         size="sm"
         variant="ghost"
         dataProofAction="proof-reset-simulation"
-        onClick={() => runAction(() => onResetProofRunFromScratch(runId, baselineSnapshot?.simulationResetSnapshotId))}
-        disabled={!baselineSnapshot}
+        onClick={() => runAction('Resetting Proof Run', () => onResetProofRunFromScratch(runId, baselineSnapshot?.simulationResetSnapshotId))}
+        disabled={actionLocked || !baselineSnapshot}
       >
-        Reset Proof Run
+        {renderLabel('Reset Proof Run', 'Resetting Proof Run')}
       </Btn>
       <Btn
         size="sm"
         variant="ghost"
         dataProofAction="proof-playback-next"
-        onClick={() => runAction(() => onStepProofPlayback('next'))}
-        disabled={!selectedProofCheckpointCanStepForward || !selectedProofCheckpoint?.nextCheckpointId}
+        onClick={() => runAction('Opening Next Checkpoint', () => onStepProofPlayback('next'))}
+        disabled={actionLocked || !selectedProofCheckpointCanStepForward || !selectedProofCheckpoint?.nextCheckpointId}
       >
-        Preview Next Checkpoint
+        {renderLabel('Preview Next Checkpoint', 'Opening Next Checkpoint')}
       </Btn>
       <Btn
         size="sm"
         variant="ghost"
         dataProofAction="proof-playback-end"
-        onClick={() => runAction(() => onStepProofPlayback('end'))}
-        disabled={!selectedProofCheckpointCanPlayToEnd}
+        onClick={() => runAction('Jumping To Latest Stage', () => onStepProofPlayback('end'))}
+        disabled={actionLocked || !selectedProofCheckpointCanPlayToEnd}
       >
-        Jump To Latest Stage
+        {renderLabel('Jump To Latest Stage', 'Jumping To Latest Stage')}
       </Btn>
       <Btn
         size="sm"
         variant="ghost"
         dataProofAction="proof-playback-reset"
-        onClick={() => runAction(() => onStepProofPlayback('start'))}
-        disabled={activeRunCheckpoints.length === 0 || selectedIsFirst}
+        onClick={() => runAction('Resetting Playback', () => onStepProofPlayback('start'))}
+        disabled={actionLocked || activeRunCheckpoints.length === 0 || selectedIsFirst}
       >
-        Reset Playback
+        {renderLabel('Reset Playback', 'Resetting Playback')}
       </Btn>
+      {onRecomputeProofRunRisk ? (
+        <Btn
+          size="sm"
+          variant="ghost"
+          dataProofAction="proof-recompute-risk"
+          onClick={() => runAction('Recomputing Risk', onRecomputeProofRunRisk)}
+          disabled={actionLocked}
+        >
+          {renderLabel('Recompute Risk', 'Recomputing Risk')}
+        </Btn>
+      ) : null}
+      {pendingNotice}
     </>
   )
 }

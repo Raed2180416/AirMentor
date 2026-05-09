@@ -13,8 +13,11 @@ import { describeProofAvailability, describeProofProvenance, normalizeProofPanel
 import { ProofSurfaceHero, ProofSurfaceLauncher, ProofSurfaceTabPanel, ProofSurfaceTabs } from '../proof-surface-shell'
 import { Btn, Card, Chip, FieldInput, PageBackButton, PageShell } from '../ui-primitives'
 import { EmptyState, InfoBanner, MetricCard } from '../system-admin-ui'
+import { humanLabelForActionCode } from '../action-code-humaniser'
 
 type StudentShellTabId = 'overview' | 'topic-co' | 'assessment' | 'interventions' | 'timeline' | 'chat'
+
+const EMPTY_STUDENT_AGENT_TIMELINE: ApiStudentAgentTimelineItem[] = []
 
 function PanelLabel({ label }: { label: ApiStudentAgentPanelLabel }) {
   const normalizedLabel = normalizeProofPanelLabel(label)
@@ -84,7 +87,7 @@ export function StudentShellPage({
   startSession,
   sendMessage,
   initialCard = null,
-  initialTimeline = [],
+  initialTimeline = EMPTY_STUDENT_AGENT_TIMELINE,
   initialSession = null,
   initialActiveTab = 'overview',
   initialError = '',
@@ -543,7 +546,7 @@ export function StudentShellPage({
                   <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Intervention history</div>
                   {card.interventions.interventionHistory.length > 0 ? card.interventions.interventionHistory.map(item => (
                     <Card key={item.interventionId} style={{ padding: 10, background: T.surface2 }}>
-                      <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.interventionType}</div>
+                      <div data-proof-field="intervention-type-label" style={{ ...mono, fontSize: 10, color: T.text }}>{humanLabelForActionCode(item.interventionType) ?? item.interventionType}</div>
                       <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.8 }}>{item.note}</div>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
                         <Chip color={item.accepted === true ? T.success : item.accepted === false ? T.warning : T.dim}>Accepted {item.accepted == null ? 'n/a' : item.accepted ? 'Yes' : 'No'}</Chip>
