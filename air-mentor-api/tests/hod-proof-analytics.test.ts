@@ -24,6 +24,30 @@ async function switchToRole(cookie: string, availableRoleGrants: Array<{ grantId
   return response
 }
 
+function captureSql(pool: { query: unknown }) {
+  const statements: string[] = []
+  const originalQuery = pool.query
+  ;(pool as { query: (...args: unknown[]) => unknown }).query = (...args: unknown[]) => {
+    const firstArg = args[0]
+    if (typeof firstArg === 'string') {
+      statements.push(firstArg)
+    } else if (
+      firstArg
+      && typeof firstArg === 'object'
+      && typeof (firstArg as { text?: unknown }).text === 'string'
+    ) {
+      statements.push((firstArg as { text: string }).text)
+    }
+    return (originalQuery as (...queryArgs: unknown[]) => unknown).apply(pool, args)
+  }
+  return {
+    statements,
+    restore() {
+      pool.query = originalQuery
+    },
+  }
+}
+
 describe('hod proof analytics', () => {
   it('serves live in-scope HoD analytics and reconciles with dashboard and faculty profile', async () => {
     current = await createTestApp()
@@ -834,6 +858,46 @@ describe('hod proof analytics', () => {
       } else {
         expect(checkpointSummaryPayload.electiveDistribution.length).toBeGreaterThan(0)
       }
+    }
+  })
+
+  it('scopes heavy proof-bundle payload queries to the active run', async () => {
+    current = await createTestApp()
+    const hodLogin = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+    if (hodLogin.body.activeRoleGrant.roleCode !== 'HOD') {
+      await switchToRole(hodLogin.cookie, hodLogin.body.availableRoleGrants, 'HOD')
+    }
+
+    const capture = captureSql(current.pool)
+    try {
+      const response = await current.app.inject({
+        method: 'GET',
+        url: '/api/academic/hod/proof-bundle',
+        headers: { cookie: hodLogin.cookie },
+      })
+      expect(response.statusCode).toBe(200)
+    } finally {
+      capture.restore()
+    }
+
+    const scopedTables = [
+      'student_observed_semester_states',
+      'risk_assessments',
+      'teacher_load_profiles',
+      'teacher_allocations',
+      'elective_recommendations',
+      'simulation_stage_checkpoints',
+      'simulation_stage_student_projections',
+      'simulation_stage_queue_cases',
+      'simulation_stage_queue_projections',
+    ]
+    for (const tableName of scopedTables) {
+      const tableStatements = capture.statements.filter(statement => statement.includes(`"${tableName}"`))
+      expect(tableStatements.length, `Expected ${tableName} to be queried`).toBeGreaterThan(0)
+      expect(
+        tableStatements.some(statement => /where[\s\S]*"simulation_run_id"/i.test(statement)),
+        `Expected ${tableName} query to scope by simulation_run_id`,
+      ).toBe(true)
     }
   })
 })
