@@ -17,6 +17,7 @@
 // correct but not the demo path this spec guards; it gets its own test.
 
 import { expect } from '../support/playwright-runtime'
+import { apiPath } from '../helpers/api-url'
 import { loginWithApiContext } from '../helpers/login-as'
 import { test } from '../fixtures/seeded-run-fixture'
 
@@ -30,7 +31,7 @@ test('flow-4 Next Day advance mutates simulatedDateIso by exactly one day in Sem
   const { session: sysSession } = await loginWithApiContext(request, 'system-admin')
 
   // Read pre-advance authoritative state.
-  const beforeResp = await request.get(`/api/admin/batches/${seededRun.batchId}/proof-dashboard`, {
+  const beforeResp = await request.get(apiPath(`/api/admin/batches/${seededRun.batchId}/proof-dashboard`), {
     headers: { 'X-AirMentor-CSRF': sysSession.csrfToken },
   })
   expect(beforeResp.ok()).toBeTruthy()
@@ -41,7 +42,7 @@ test('flow-4 Next Day advance mutates simulatedDateIso by exactly one day in Sem
   expect(beforeSim).toMatch(/^\d{4}-\d{2}-\d{2}$/)
 
   // Advance one simulated day.
-  const advanceResp = await request.post(`/api/admin/proof-runs/${encodeURIComponent(seededRun.runId)}/advance`, {
+  const advanceResp = await request.post(apiPath(`/api/admin/proof-runs/${encodeURIComponent(seededRun.runId)}/advance`), {
     headers: { 'X-AirMentor-CSRF': sysSession.csrfToken },
     data: { mode: 'day' },
   })
@@ -51,7 +52,7 @@ test('flow-4 Next Day advance mutates simulatedDateIso by exactly one day in Sem
   expect(String(advanceBody.simulatedDateIso).slice(0, 10)).toBe(addDaysIso(beforeSim, 1))
 
   // Re-read dashboard and verify simulatedDateIso round-tripped.
-  const afterResp = await request.get(`/api/admin/batches/${seededRun.batchId}/proof-dashboard`, {
+  const afterResp = await request.get(apiPath(`/api/admin/batches/${seededRun.batchId}/proof-dashboard`), {
     headers: { 'X-AirMentor-CSRF': sysSession.csrfToken },
   })
   const afterActive = (await afterResp.json()).activeRunDetail

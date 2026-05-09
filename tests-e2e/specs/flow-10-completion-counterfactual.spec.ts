@@ -15,6 +15,7 @@
 // realism spec (flow-10-completion-realism) does deeper bound checks.
 
 import { expect } from '../support/playwright-runtime'
+import { apiPath } from '../helpers/api-url'
 import { loginAs, loginWithApiContext } from '../helpers/login-as'
 import { test } from '../fixtures/seeded-run-fixture'
 
@@ -22,7 +23,7 @@ test.setTimeout(300_000)
 
 test('flow-10 counterfactual-simulator route returns projected Sem-6 report shape', async ({ request, seededRun }) => {
   const { session } = await loginWithApiContext(request, 'system-admin')
-  const response = await request.get(`/api/academic/hod/proof-counterfactual-simulator?runId=${encodeURIComponent(seededRun.runId)}`, {
+  const response = await request.get(apiPath(`/api/academic/hod/proof-counterfactual-simulator?runId=${encodeURIComponent(seededRun.runId)}`), {
     headers: { 'X-AirMentor-CSRF': session.csrfToken },
   })
   expect(response.ok()).toBeTruthy()
@@ -71,7 +72,14 @@ test('flow-10 HOD counterfactual UI panel surface renders simulator-based analyt
     if (msg.type() === 'error') consoleErrors.push(msg.text())
   })
   await loginAs(page, 'hod')
-  await page.goto('/#/app', { waitUntil: 'domcontentloaded' })
+  const [proofBundleResponse] = await Promise.all([
+    page.waitForResponse(
+      response => response.url().includes('/api/academic/hod/proof-bundle') && response.status() === 200,
+      { timeout: 75_000 },
+    ),
+    page.goto('/#/app', { waitUntil: 'domcontentloaded' }),
+  ])
+  expect(proofBundleResponse.ok()).toBeTruthy()
   // Enter the app only after the API login has set the browser-context
   // session cookie. An unauthenticated first mount can trip the health-check
   // retry banner and hide the HoD analytics surface behind a loading state.
@@ -81,7 +89,7 @@ test('flow-10 HOD counterfactual UI panel surface renders simulator-based analyt
   // carries an activeRunContext (see src/pages/hod-pages.tsx loading/error/
   // empty branches). Visibility here is a stronger guarantee than a network
   // listener that would miss responses fired before the listener attached.
-  await expect(hodSurface).toBeVisible({ timeout: 30_000 })
+  await expect(hodSurface).toBeVisible({ timeout: 15_000 })
 
   // Click the Counterfactual Impact tab. ProofSurfaceTabs renders each tab
   // with role="tab" (standard ARIA), not role="button". Query by tab role

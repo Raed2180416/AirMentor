@@ -11,6 +11,7 @@
 // endpoint that drives proof-hod-correction-cycle-engine.ts).
 
 import { expect } from '../support/playwright-runtime'
+import { apiPath } from '../helpers/api-url'
 import { loginWithApiContext } from '../helpers/login-as'
 import { test } from '../fixtures/seeded-run-fixture'
 
@@ -35,7 +36,7 @@ async function seedCorrectionCycleTask(request: {
   const studentId = 'mnc_student_001'
   const offeringId = 'mnc_s6_amc_s6_32_a'
   const csrfToken = await csrfTokenPromise
-  const resp = await request.put(`/api/academic/tasks/${encodeURIComponent(taskId)}`, {
+  const resp = await request.put(apiPath(`/api/academic/tasks/${encodeURIComponent(taskId)}`), {
     headers: { 'X-AirMentor-CSRF': csrfToken },
     data: {
       task: {
@@ -64,7 +65,7 @@ async function seedCorrectionCycleTask(request: {
 }
 
 async function drive(request: { post(url: string, options?: Record<string, unknown>): Promise<PlaywrightResp> }, csrfToken: string, taskId: string, body: Record<string, unknown>) {
-  return request.post(`/api/academic/unlock-requests/${encodeURIComponent(taskId)}/transition`, {
+  return request.post(apiPath(`/api/academic/unlock-requests/${encodeURIComponent(taskId)}/transition`), {
     headers: { 'X-AirMentor-CSRF': csrfToken },
     data: body,
   })
@@ -153,7 +154,7 @@ test('flow-9 HOD cycle: illegal transitions rejected (engine contract via route)
   // Re-login as Course Leader explicitly so cookie is fresh, attempt approve
   // → must fail with 403 (engine forbidden-role).
   const cl2 = await loginWithApiContext(request, 'course-leader')
-  const illegalApprove = await request.post(`/api/academic/unlock-requests/${encodeURIComponent(taskId)}/transition`, {
+  const illegalApprove = await request.post(apiPath(`/api/academic/unlock-requests/${encodeURIComponent(taskId)}/transition`), {
     headers: { 'X-AirMentor-CSRF': cl2.session.csrfToken },
     data: { action: 'approve' },
     failOnStatusCode: false,
@@ -164,7 +165,7 @@ test('flow-9 HOD cycle: illegal transitions rejected (engine contract via route)
   // HOD re-login, attempt reset-complete before approve → engine says
   // illegal-transition → 400.
   const hod = await loginWithApiContext(request, 'hod')
-  const illegalReset = await request.post(`/api/academic/unlock-requests/${encodeURIComponent(taskId)}/transition`, {
+  const illegalReset = await request.post(apiPath(`/api/academic/unlock-requests/${encodeURIComponent(taskId)}/transition`), {
     headers: { 'X-AirMentor-CSRF': hod.session.csrfToken },
     data: { action: 'reset-complete' },
     failOnStatusCode: false,

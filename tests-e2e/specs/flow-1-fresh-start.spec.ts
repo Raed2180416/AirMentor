@@ -15,6 +15,7 @@
 // watch-only UI copy.
 
 import { expect } from '../support/playwright-runtime'
+import { apiPath } from '../helpers/api-url'
 import { loginAs, loginWithApiContext } from '../helpers/login-as'
 import { test } from '../fixtures/seeded-run-fixture'
 
@@ -22,7 +23,7 @@ test('flow-1 fresh-start: Sem-1 pre-TT1 watch-only, no fake history, risk watch 
   // --- API contract assertions ---
   // Re-authenticate as sysadmin so we can read the admin dashboard.
   const { session } = await loginWithApiContext(request, 'system-admin')
-  const dashboardResponse = await request.get(`/api/admin/batches/${seededRun.batchId}/proof-dashboard`, {
+  const dashboardResponse = await request.get(apiPath(`/api/admin/batches/${seededRun.batchId}/proof-dashboard`), {
     headers: { 'X-AirMentor-CSRF': session.csrfToken },
   })
   expect(dashboardResponse.ok()).toBeTruthy()

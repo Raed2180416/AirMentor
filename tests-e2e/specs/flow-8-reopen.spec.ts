@@ -11,6 +11,7 @@
 // signature of reopen-on-new-case (§C.2 + proof-queue-governance.ts).
 
 import { expect } from '../support/playwright-runtime'
+import { apiPath } from '../helpers/api-url'
 import { loginWithApiContext } from '../helpers/login-as'
 import { test } from '../fixtures/seeded-run-fixture'
 
@@ -19,7 +20,7 @@ test('flow-8 reopen: closed case stays closed, later deterioration opens new cas
 
   // Helper to snapshot the full queue-case set for later diffing.
   async function fetchCaseSnapshot() {
-    const resp = await request.get(`/api/admin/batches/${seededRun.batchId}/proof-dashboard`, {
+    const resp = await request.get(apiPath(`/api/admin/batches/${seededRun.batchId}/proof-dashboard`), {
       headers: { 'X-AirMentor-CSRF': session.csrfToken },
     })
     const json = await resp.json()
@@ -52,7 +53,7 @@ test('flow-8 reopen: closed case stays closed, later deterioration opens new cas
 
   // Step 2 — drive Next Stage to auto-resolve open cases per §C.15 demo mode.
   // Hard-fail on non-200 now that the /advance route is wired.
-  const advanceResp = await request.post(`/api/admin/proof-runs/${encodeURIComponent(seededRun.runId)}/advance`, {
+  const advanceResp = await request.post(apiPath(`/api/admin/proof-runs/${encodeURIComponent(seededRun.runId)}/advance`), {
     headers: { 'X-AirMentor-CSRF': session.csrfToken },
     data: { mode: 'stage' },
   })

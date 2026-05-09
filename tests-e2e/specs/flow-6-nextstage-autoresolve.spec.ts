@@ -8,12 +8,13 @@
 // - Improvement is usually present, but not always (§H.10).
 
 import { expect } from '../support/playwright-runtime'
+import { apiPath } from '../helpers/api-url'
 import { loginWithApiContext } from '../helpers/login-as'
 import { test } from '../fixtures/seeded-run-fixture'
 
 test('flow-6 Next Stage auto-resolves open actionable cases in demo mode', async ({ request, seededRun }) => {
   const { session } = await loginWithApiContext(request, 'system-admin')
-  const beforeDashboard = await request.get(`/api/admin/batches/${seededRun.batchId}/proof-dashboard`, {
+  const beforeDashboard = await request.get(apiPath(`/api/admin/batches/${seededRun.batchId}/proof-dashboard`), {
     headers: { 'X-AirMentor-CSRF': session.csrfToken },
   })
   const beforeJson = await beforeDashboard.json()
@@ -29,7 +30,7 @@ test('flow-6 Next Stage auto-resolves open actionable cases in demo mode', async
   // in admin-proof-sandbox.ts and dispatches through
   // proof-control-plane-advance-service.advanceProofSimulationStage. Hard-
   // fail on non-200: the flow cannot be proved without real stage advance.
-  const advanceResp = await request.post(`/api/admin/proof-runs/${encodeURIComponent(seededRun.runId)}/advance`, {
+  const advanceResp = await request.post(apiPath(`/api/admin/proof-runs/${encodeURIComponent(seededRun.runId)}/advance`), {
     headers: { 'X-AirMentor-CSRF': session.csrfToken },
     data: { mode: 'stage' },
   })
@@ -37,7 +38,7 @@ test('flow-6 Next Stage auto-resolves open actionable cases in demo mode', async
   const advanceBody = await advanceResp.json()
   expect(advanceBody.stageTransitioned, 'advance(stage) must mark stageTransitioned=true').toBeTruthy()
 
-  const afterDashboard = await request.get(`/api/admin/batches/${seededRun.batchId}/proof-dashboard`, {
+  const afterDashboard = await request.get(apiPath(`/api/admin/batches/${seededRun.batchId}/proof-dashboard`), {
     headers: { 'X-AirMentor-CSRF': session.csrfToken },
   })
   const afterJson = await afterDashboard.json()
