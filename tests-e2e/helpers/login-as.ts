@@ -1,3 +1,5 @@
+import { apiPath } from './api-url'
+
 const SEEDED_ROLE_FIXTURES = {
   'system-admin': {
     identifier: 'sysadmin',
@@ -64,7 +66,7 @@ export async function loginWithApiContext(requestContext: { post(url: string, op
     throw new Error('Student login is not provisioned in the seeded backend yet.')
   }
 
-  const loginResponse = await requestContext.post('/api/session/login', {
+  const loginResponse = await requestContext.post(apiPath('/api/session/login'), {
     data: {
       identifier: actor.identifier,
       password: actor.password,
@@ -79,7 +81,7 @@ export async function loginWithApiContext(requestContext: { post(url: string, op
     if (!targetGrant) {
       throw new Error(`Role ${actor.roleCode} is not available for seeded actor ${actor.identifier}.`)
     }
-    const switchResponse = await requestContext.post('/api/session/role-context', {
+    const switchResponse = await requestContext.post(apiPath('/api/session/role-context'), {
       headers: csrfHeaders(session.csrfToken),
       data: {
         roleGrantId: targetGrant.grantId,

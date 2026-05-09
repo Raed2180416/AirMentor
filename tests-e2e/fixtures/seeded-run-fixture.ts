@@ -1,5 +1,6 @@
 import { test as base } from '../support/playwright-runtime'
 import { loginWithApiContext } from '../helpers/login-as'
+import { apiPath } from '../helpers/api-url'
 
 const PROOF_BATCH_ID = 'batch_branch_mnc_btech_2023'
 const PROOF_CURRICULUM_IMPORT_ID = 'curriculum_import_mnc_2023_first6_v1'
@@ -7,6 +8,12 @@ const DETERMINISTIC_SEED_NOW = '2026-03-16T00:00:00Z'
 const DETERMINISTIC_RUN_SEED = 20260316
 const RUN_READY_TIMEOUT_MS = 240_000
 const RUN_POLL_INTERVAL_MS = 2_500
+
+type SeededRunFixture = {
+  runId: string
+  batchId: string
+  simulatedDateIso: string
+}
 
 function csrfHeaders(csrfToken: string) {
   return {
@@ -33,14 +40,14 @@ async function readJson(response: AnyHttpResponse, label: string) {
 type GetContext = { get(url: string, options?: Record<string, unknown>): Promise<AnyHttpResponse> }
 
 async function readProofDashboard(requestContext: GetContext, csrfToken: string) {
-  const response = await requestContext.get(`/api/admin/batches/${PROOF_BATCH_ID}/proof-dashboard`, {
+  const response = await requestContext.get(apiPath(`/api/admin/batches/${PROOF_BATCH_ID}/proof-dashboard`), {
     headers: csrfHeaders(csrfToken),
   })
   return readJson(response, `Read proof dashboard for ${PROOF_BATCH_ID}`)
 }
 
 async function readProofRunCheckpoints(requestContext: GetContext, csrfToken: string, runId: string) {
-  const response = await requestContext.get(`/api/admin/proof-runs/${encodeURIComponent(runId)}/checkpoints`, {
+  const response = await requestContext.get(apiPath(`/api/admin/proof-runs/${encodeURIComponent(runId)}/checkpoints`), {
     headers: csrfHeaders(csrfToken),
   })
   return readJson(response, `Read proof checkpoints for ${runId}`)
@@ -90,7 +97,7 @@ async function waitForActivatedRun(requestContext: GetContext, csrfToken: string
   throw new Error(`Timed out waiting for proof run ${runId} to become the active checkpoint-bearing run.`)
 }
 
-export const test = base.extend({
+export const test = base.extend<{ seededRun: SeededRunFixture }>({
   seededRun: async ({ request }, use, testInfo) => {
     const { session } = await loginWithApiContext(request, 'system-admin')
 
@@ -99,7 +106,7 @@ export const test = base.extend({
     // and share the seeded backend process, subsequent tests would fail to
     // log in as HOD / course-leader / mentor. Rehydrate credentials idempot-
     // ently before every test. No-op when creds already exist.
-    const rehydrateResp = await request.post('/api/admin/proof-sandbox/rehydrate-credentials', {
+    const rehydrateResp = await request.post(apiPath('/api/admin/proof-sandbox/rehydrate-credentials'), {
       headers: csrfHeaders(session.csrfToken),
       data: {},
       failOnStatusCode: false,
@@ -117,7 +124,7 @@ export const test = base.extend({
 
     const runLabel = `playwright-smoke:${testInfo.title}:${Date.now()}`
 
-    const createResponse = await request.post(`/api/admin/batches/${PROOF_BATCH_ID}/proof-runs`, {
+    const createResponse = await request.post(apiPath(`/api/admin/batches/${PROOF_BATCH_ID}/proof-runs`), {
       headers: csrfHeaders(session.csrfToken),
       data: {
         curriculumImportVersionId: PROOF_CURRICULUM_IMPORT_ID,
@@ -133,7 +140,7 @@ export const test = base.extend({
     // early can race that worker and hang the control-plane call.
     await waitForMaterializedRun(request, session.csrfToken, runId)
 
-    const activateResponse = await request.post(`/api/admin/proof-runs/${encodeURIComponent(runId)}/activate`, {
+    const activateResponse = await request.post(apiPath(`/api/admin/proof-runs/${encodeURIComponent(runId)}/activate`), {
       headers: csrfHeaders(session.csrfToken),
       data: {},
     })
@@ -141,7 +148,7 @@ export const test = base.extend({
 
     await waitForActivatedRun(request, session.csrfToken, runId)
 
-    const activateSemesterResponse = await request.post(`/api/admin/proof-runs/${encodeURIComponent(runId)}/activate-semester`, {
+    const activateSemesterResponse = await request.post(apiPath(`/api/admin/proof-runs/${encodeURIComponent(runId)}/activate-semester`), {
       headers: csrfHeaders(session.csrfToken),
       data: {
         semesterNumber: 1,
@@ -178,7 +185,7 @@ export const test = base.extend({
     // but do not fail the completed smoke if archival itself flakes.
     try {
       const { session: cleanupSession } = await loginWithApiContext(request, 'system-admin')
-      const archiveResponse = await request.post(`/api/admin/proof-runs/${encodeURIComponent(runId)}/archive`, {
+      const archiveResponse = await request.post(apiPath(`/api/admin/proof-runs/${encodeURIComponent(runId)}/archive`), {
         headers: csrfHeaders(cleanupSession.csrfToken),
         data: {},
       })

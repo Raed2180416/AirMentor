@@ -12,6 +12,7 @@
 // because the seededRun fixture always boots a new run per test.
 
 import { expect } from '../support/playwright-runtime'
+import { apiPath } from '../helpers/api-url'
 import { loginWithApiContext } from '../helpers/login-as'
 import { test } from '../fixtures/seeded-run-fixture'
 
@@ -27,7 +28,7 @@ test('flow-11 stop: credential deletion + session invalidation semantics', async
   // (§L.11 + §O.3). Archive fallback is removed — it has different semantics
   // and must not silently pass the stop contract.
   const { session: sysadminSession } = await loginWithApiContext(request, 'system-admin')
-  const stopResponse = await request.post(`/api/admin/proof-runs/${encodeURIComponent(seededRun.runId)}/stop`, {
+  const stopResponse = await request.post(apiPath(`/api/admin/proof-runs/${encodeURIComponent(seededRun.runId)}/stop`), {
     headers: { 'X-AirMentor-CSRF': sysadminSession.csrfToken },
     data: {},
   })
@@ -35,7 +36,7 @@ test('flow-11 stop: credential deletion + session invalidation semantics', async
 
   // Post-stop: the run's lifecycleState should be 'stopped' (or legacy
   // 'archived' if the backend uses a different vocab). Check the dashboard.
-  const dashboardResponse = await request.get(`/api/admin/batches/${seededRun.batchId}/proof-dashboard`, {
+  const dashboardResponse = await request.get(apiPath(`/api/admin/batches/${seededRun.batchId}/proof-dashboard`), {
     headers: { 'X-AirMentor-CSRF': sysadminSession.csrfToken },
   })
   expect(dashboardResponse.ok()).toBeTruthy()
@@ -49,7 +50,7 @@ test('flow-11 stop: credential deletion + session invalidation semantics', async
   }
 
   // Login with a proof credential MUST now fail. Try HoD first.
-  const hodPostLogin = await request.post('/api/session/login', {
+  const hodPostLogin = await request.post(apiPath('/api/session/login'), {
     data: { identifier: 'devika.shetty', password: 'faculty1234' },
     failOnStatusCode: false,
   })
@@ -64,7 +65,7 @@ test('flow-11 stop: credential deletion + session invalidation semantics', async
   }
 
   // Sysadmin session MUST remain valid (sysadmin is not a proof credential).
-  const sysadminMe = await request.get('/api/session', {
+  const sysadminMe = await request.get(apiPath('/api/session'), {
     headers: { 'X-AirMentor-CSRF': sysadminSession.csrfToken },
     failOnStatusCode: false,
   })

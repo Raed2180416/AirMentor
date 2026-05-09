@@ -10,13 +10,14 @@
 // drift.
 
 import { expect } from '../support/playwright-runtime'
+import { apiPath } from '../helpers/api-url'
 import { loginWithApiContext } from '../helpers/login-as'
 import { test } from '../fixtures/seeded-run-fixture'
 
 test('flow-2 early evidence: quiz entered in Sem-1 pre-TT1 immediately shifts risk scalar', async ({ request, seededRun }) => {
   const { session } = await loginWithApiContext(request, 'system-admin')
 
-  const beforeDashboard = await request.get(`/api/admin/batches/${seededRun.batchId}/proof-dashboard`, {
+  const beforeDashboard = await request.get(apiPath(`/api/admin/batches/${seededRun.batchId}/proof-dashboard`), {
     headers: { 'X-AirMentor-CSRF': session.csrfToken },
   })
   expect(beforeDashboard.ok()).toBeTruthy()

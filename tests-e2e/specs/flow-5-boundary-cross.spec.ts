@@ -11,6 +11,7 @@
 //   (b) checkpoint count for the NEW stage is exactly 1 (no duplicates)
 
 import { expect } from '../support/playwright-runtime'
+import { apiPath } from '../helpers/api-url'
 import { loginWithApiContext } from '../helpers/login-as'
 import { test } from '../fixtures/seeded-run-fixture'
 
@@ -20,7 +21,7 @@ test('flow-5 boundary cross: Next Day across TT1 boundary triggers exactly one s
   const { session } = await loginWithApiContext(request, 'system-admin')
 
   // Read initial state.
-  const beforeResp = await request.get(`/api/admin/batches/${seededRun.batchId}/proof-dashboard`, {
+  const beforeResp = await request.get(apiPath(`/api/admin/batches/${seededRun.batchId}/proof-dashboard`), {
     headers: { 'X-AirMentor-CSRF': session.csrfToken },
   })
   const beforeJson = await beforeResp.json()
@@ -46,13 +47,13 @@ test('flow-5 boundary cross: Next Day across TT1 boundary triggers exactly one s
   let advanceCount = 0
   const MAX_DAYS = 60
   for (let i = 0; i < MAX_DAYS && !crossed; i += 1) {
-    const advResp = await request.post(`/api/admin/proof-runs/${encodeURIComponent(seededRun.runId)}/advance`, {
+    const advResp = await request.post(apiPath(`/api/admin/proof-runs/${encodeURIComponent(seededRun.runId)}/advance`), {
       headers: { 'X-AirMentor-CSRF': session.csrfToken },
       data: { mode: 'day' },
     })
     expect(advResp.ok(), `advance(day) iteration ${i} must succeed; got ${advResp.status()}`).toBeTruthy()
     advanceCount += 1
-    const afterResp = await request.get(`/api/admin/batches/${seededRun.batchId}/proof-dashboard`, {
+    const afterResp = await request.get(apiPath(`/api/admin/batches/${seededRun.batchId}/proof-dashboard`), {
       headers: { 'X-AirMentor-CSRF': session.csrfToken },
     })
     const afterJson = await afterResp.json()
