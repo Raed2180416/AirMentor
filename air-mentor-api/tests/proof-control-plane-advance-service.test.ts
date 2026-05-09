@@ -7,6 +7,7 @@ import {
 } from '../src/db/schema.js'
 import {
   advanceProofSimulationDay,
+  advanceProofSimulationPreviousDay,
   advanceProofSimulationStage,
   resolveProofAdvance,
 } from '../src/lib/proof-control-plane-advance-service.js'
@@ -247,5 +248,110 @@ describe('proof-control-plane-advance-service', () => {
       terminalLifecyclePreserved: true,
       autoResolutionMode: null,
     })
+  })
+
+  it('moves proof authority one persisted day backward without changing stage authority', async () => {
+    const resolution = resolveProofAdvance({
+      mode: 'previous-day' as never,
+      run: {
+        simulationRunId: 'run_day_back',
+        batchId: 'batch_001',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        semesterStart: 1,
+        semesterEnd: 2,
+        activeFlag: 1,
+        activeOperationalSemester: 1,
+        activeStageKey: 'post-tt1',
+        simulatedDateIso: '2026-02-06T00:00:00.000Z',
+        lifecycleState: 'active',
+        stageBoundaryJson: null,
+      },
+      stageBoundary: {
+        strictlyMonotonic: true,
+        availableSemesters: [1],
+        semesters: [{
+          semesterNumber: 1,
+          stageCount: 2,
+          entryCheckpointId: 'cp_1_pre',
+          entryStageKey: 'pre-tt1',
+          exitCheckpointId: 'cp_1_tt1',
+          exitStageKey: 'post-tt1',
+          stageKeys: ['pre-tt1', 'post-tt1'],
+          stageOrders: [1, 2],
+        }],
+      },
+    })
+
+    expect(resolution).toMatchObject({
+      simulatedDateIso: '2026-02-05T00:00:00.000Z',
+      stageTransitioned: false,
+      current: expect.objectContaining({
+        semesterNumber: 1,
+        stageKey: 'post-tt1',
+      }),
+    })
+  })
+
+  it('moves persisted proof day backward even when the active run has no checkpoint chain', async () => {
+    const { db, getRun, getInsertedSnapshots } = createMockDb({
+      run: {
+        activeOperationalSemester: 1,
+        activeStageKey: 'pre-tt1',
+        simulatedDateIso: '2026-03-16T00:00:00.000Z',
+      },
+      checkpoints: [],
+    })
+    const deps = {
+      createId: vi.fn(() => 'simulation_reset_003'),
+      emitSimulationAudit: vi.fn(async () => {}),
+      publishOperationalProjection: vi.fn(async () => {}),
+      rebuildSimulationStagePlayback: vi.fn(async () => {}),
+    }
+
+    const result = await advanceProofSimulationPreviousDay(db, {
+      simulationRunId: 'run_001',
+      actorFacultyId: 'faculty_course_leader',
+      now: '2026-03-16T12:00:00.000Z',
+      policy: {} as never,
+    }, deps)
+
+    expect(result).toMatchObject({
+      simulationRunId: 'run_001',
+      activeOperationalSemester: 1,
+      previousStageKey: 'pre-tt1',
+      activeStageKey: 'pre-tt1',
+      simulatedDateIso: '2026-03-15T00:00:00.000Z',
+      stageTransitioned: false,
+      crossedSemesterBoundary: false,
+    })
+    expect(getRun()).toMatchObject({
+      activeOperationalSemester: 1,
+      activeStageKey: 'pre-tt1',
+      simulatedDateIso: '2026-03-15T00:00:00.000Z',
+    })
+    expect(getInsertedSnapshots()).toHaveLength(0)
+    expect(deps.rebuildSimulationStagePlayback).not.toHaveBeenCalled()
+  })
+
+  it('reports not-ready instead of an internal error when advancing before checkpoints exist', async () => {
+    const { db } = createMockDb({ checkpoints: [] })
+    const deps = {
+      createId: vi.fn(() => 'simulation_reset_not_ready'),
+      emitSimulationAudit: vi.fn(async () => {}),
+      publishOperationalProjection: vi.fn(async () => {}),
+      rebuildSimulationStagePlayback: vi.fn(async () => {}),
+    }
+
+    await expect(advanceProofSimulationStage(db, {
+      simulationRunId: 'run_001',
+      actorFacultyId: 'faculty_sysadmin',
+      now: '2026-02-04T12:00:00.000Z',
+      policy: {} as never,
+    }, deps)).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'CONFLICT',
+      message: 'Proof run is still preparing its stage checkpoints. Try again after the worker finishes.',
+    })
+    expect(deps.publishOperationalProjection).not.toHaveBeenCalled()
   })
 })

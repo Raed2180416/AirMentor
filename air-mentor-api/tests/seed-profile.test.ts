@@ -2,11 +2,13 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { eq, like } from 'drizzle-orm'
 import {
   academicFaculties,
+  academicTerms,
   batches,
   branches,
   departments,
   facultyProfiles,
   roleGrants,
+  simulationRuns,
   students,
   userAccounts,
 } from '../src/db/schema.js'
@@ -167,5 +169,36 @@ describe('seed profiles', () => {
     ])
     expect(proofBatches).toHaveLength(1)
     expect(proofStudents).toHaveLength(120)
+  })
+
+  it('starts the explicit first-six-semester proof import at semester 1 authority', async () => {
+    current = await createTestApp({
+      seedProfile: 'control-only',
+    })
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const importResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/batches/${MSRUAS_PROOF_BATCH_ID}/proof-imports`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+    expect(importResponse.statusCode).toBe(200)
+
+    const [[proofBatch], [activeRun], termRows] = await Promise.all([
+      current.db.select().from(batches).where(eq(batches.batchId, MSRUAS_PROOF_BATCH_ID)),
+      current.db.select().from(simulationRuns).where(eq(simulationRuns.batchId, MSRUAS_PROOF_BATCH_ID)),
+      current.db.select().from(academicTerms).where(eq(academicTerms.batchId, MSRUAS_PROOF_BATCH_ID)),
+    ])
+
+    expect(proofBatch.currentSemester).toBe(1)
+    expect(activeRun).toMatchObject({
+      semesterStart: 1,
+      semesterEnd: 6,
+      activeOperationalSemester: 1,
+      activeStageKey: 'pre-tt1',
+    })
+    expect(termRows.find(term => term.semesterNumber === 1)?.status).toBe('active')
+    expect(termRows.find(term => term.semesterNumber === 6)?.status).toBe('archived')
   })
 })

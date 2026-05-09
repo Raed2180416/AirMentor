@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm'
 import { integer, real, text, pgTable } from 'drizzle-orm/pg-core'
 
 export const institutions = pgTable('institutions', {
@@ -182,6 +183,7 @@ export const students = pgTable('students', {
   phone: text('phone'),
   admissionDate: text('admission_date').notNull(),
   status: text('status').notNull(),
+  demoWorkspaceId: text('demo_workspace_id').default(sql`NULL`),
   version: integer('version').notNull().default(1),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
@@ -197,6 +199,7 @@ export const studentEnrollments = pgTable('student_enrollments', {
   academicStatus: text('academic_status').notNull(),
   startDate: text('start_date').notNull(),
   endDate: text('end_date'),
+  demoWorkspaceId: text('demo_workspace_id').default(sql`NULL`),
   version: integer('version').notNull().default(1),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
@@ -209,6 +212,7 @@ export const mentorAssignments = pgTable('mentor_assignments', {
   effectiveFrom: text('effective_from').notNull(),
   effectiveTo: text('effective_to'),
   source: text('source').notNull(),
+  demoWorkspaceId: text('demo_workspace_id').default(sql`NULL`),
   version: integer('version').notNull().default(1),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
@@ -506,6 +510,7 @@ export const simulationRuns = pgTable('simulation_runs', {
   runMode: text('run_mode'),
   stageBoundaryJson: text('stage_boundary_json'),
   sourceType: text('source_type').notNull(),
+  demoWorkspaceId: text('demo_workspace_id').default(sql`NULL`),
   policySnapshotJson: text('policy_snapshot_json').notNull(),
   engineVersionsJson: text('engine_versions_json').notNull(),
   metricsJson: text('metrics_json').notNull(),
@@ -543,6 +548,7 @@ export const teacherAllocations = pgTable('teacher_allocations', {
   sectionCode: text('section_code'),
   allocationRole: text('allocation_role').notNull(),
   plannedContactHours: integer('planned_contact_hours').notNull(),
+  demoWorkspaceId: text('demo_workspace_id').default(sql`NULL`),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 })
@@ -1018,6 +1024,7 @@ export const sectionOfferings = pgTable('section_offerings', {
   finalsLocked: integer('finals_locked').notNull().default(0),
   pendingAction: text('pending_action'),
   status: text('status').notNull(),
+  demoWorkspaceId: text('demo_workspace_id').default(sql`NULL`),
   version: integer('version').notNull().default(1),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
@@ -1042,6 +1049,7 @@ export const facultyOfferingOwnerships = pgTable('faculty_offering_ownerships', 
   facultyId: text('faculty_id').notNull().references(() => facultyProfiles.facultyId),
   ownershipRole: text('ownership_role').notNull(),
   status: text('status').notNull(),
+  demoWorkspaceId: text('demo_workspace_id').default(sql`NULL`),
   version: integer('version').notNull().default(1),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
@@ -1349,6 +1357,16 @@ export const adminReminders = pgTable('admin_reminders', {
   updatedAt: text('updated_at').notNull(),
 })
 
+export const demoWorkspaces = pgTable('demo_workspaces', {
+  demoWorkspaceId: text('demo_workspace_id').primaryKey(),
+  name: text('name').notNull(),
+  ownerFacultyId: text('owner_faculty_id'),
+  batchId: text('batch_id').references(() => batches.batchId),
+  status: text('status').notNull().default('active'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
 export const allTables = {
   institutions,
   departments,
@@ -1439,6 +1457,7 @@ export const allTables = {
   auditEvents,
   operationalTelemetryEvents,
   adminReminders,
+  demoWorkspaces,
 }
 
 export type SchemaTableMap = typeof allTables

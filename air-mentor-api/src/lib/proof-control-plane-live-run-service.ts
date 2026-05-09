@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, ne } from 'drizzle-orm'
 import type { AppDb } from '../db/client.js'
 import {
   academicTerms,
@@ -217,15 +217,6 @@ export async function startLiveBatchProofSimulationRun(
   subjectResultRows.forEach(row => {
     subjectRowsByTranscriptId.set(row.transcriptTermResultId, [...(subjectRowsByTranscriptId.get(row.transcriptTermResultId) ?? []), row])
   })
-
-  if (activate) {
-    await db.update(simulationRuns).set({
-      activeFlag: 0,
-      status: 'completed',
-      lifecycleState: 'completed',
-      updatedAt: input.now,
-    }).where(eq(simulationRuns.batchId, input.batchId))
-  }
 
   const baseRunValues = {
     batchId: input.batchId,
@@ -512,6 +503,19 @@ export async function startLiveBatchProofSimulationRun(
     }),
     updatedAt: input.now,
   }).where(eq(simulationRuns.simulationRunId, simulationRunId))
+
+  if (activate) {
+    await db.update(simulationRuns).set({
+      activeFlag: 0,
+      status: 'completed',
+      lifecycleState: 'completed',
+      updatedAt: input.now,
+    }).where(and(
+      eq(simulationRuns.batchId, input.batchId),
+      ne(simulationRuns.simulationRunId, simulationRunId),
+      eq(simulationRuns.activeFlag, 1),
+    ))
+  }
 
   await deps.emitSimulationAudit(db, {
     simulationRunId,

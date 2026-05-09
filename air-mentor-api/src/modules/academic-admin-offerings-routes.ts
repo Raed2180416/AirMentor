@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm'
+import { and, asc, eq, isNull } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import type { RouteContext } from '../app.js'
@@ -19,6 +19,7 @@ import {
   offeringStageAdvancementAudits,
   roleGrants,
   sectionOfferings,
+  simulationRuns,
   studentAcademicProfiles,
   studentAssessmentScores,
   studentAttendanceSnapshots,
@@ -290,6 +291,12 @@ export async function registerAcademicAdminOfferingRoutes(
     if (term.batchId && term.batchId !== batch.batchId) throw badRequest('Term does not belong to the selected batch')
     const [department] = await context.db.select().from(departments).where(eq(departments.departmentId, branch.departmentId))
     if (!department) throw notFound('Department not found')
+    const [activeLiveRun] = await context.db
+      .select({ simulationRunId: simulationRuns.simulationRunId })
+      .from(simulationRuns)
+      .where(and(eq(simulationRuns.batchId, params.batchId), eq(simulationRuns.activeFlag, 1), isNull(simulationRuns.demoWorkspaceId)))
+      .limit(1)
+    if (activeLiveRun) throw badRequest('An active live simulation run exists for this batch. Archive or reset it before reprovisioning.')
     const sections = (body.sectionLabels.length > 0 ? body.sectionLabels : parseJson(batch.sectionLabelsJson, [] as string[]))
       .map(item => item.trim())
       .filter(Boolean)
@@ -435,6 +442,7 @@ export async function registerAcademicAdminOfferingRoutes(
           finalsLocked: 0,
           pendingAction: null,
           status: 'active',
+          demoWorkspaceId: null,
           version: 1,
           createdAt: now,
           updatedAt: now,
@@ -467,6 +475,7 @@ export async function registerAcademicAdminOfferingRoutes(
             facultyId: assignedFaculty.facultyId,
             ownershipRole: 'course-professor',
             status: 'active',
+            demoWorkspaceId: null,
             version: 1,
             createdAt: now,
             updatedAt: now,

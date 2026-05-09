@@ -218,5 +218,32 @@ describe('academic bootstrap proof calendar bridge', () => {
       taskType: 'Follow-up',
       sourceRole: 'System',
     })
+
+    await current.db
+      .update(simulationRuns)
+      .set({
+        simulatedDateIso: '2026-03-21T00:00:00.000Z',
+        updatedAt: TEST_NOW,
+      })
+      .where(eq(simulationRuns.simulationRunId, activeRun.simulationRunId))
+
+    const advancedDayBootstrapResponse = await current.app.inject({
+      method: 'GET',
+      url: `/api/academic/bootstrap?simulationStageCheckpointId=${encodeURIComponent(targetCheckpoint.simulationStageCheckpointId)}`,
+      headers: { cookie: login.cookie },
+    })
+    expect(advancedDayBootstrapResponse.statusCode).toBe(200)
+    const advancedDayBootstrap = advancedDayBootstrapResponse.json()
+    expect(advancedDayBootstrap.proofPlayback).toMatchObject({
+      simulationRunId: activeRun.simulationRunId,
+      simulationStageCheckpointId: targetCheckpoint.simulationStageCheckpointId,
+      currentDateISO: '2026-03-21',
+    })
+    const advancedDayTasks = advancedDayBootstrap.runtime.tasks.filter((task: { id: string }) => task.id === `proof-workflow-task::${queueCaseId}`)
+    expect(advancedDayTasks).toHaveLength(1)
+    expect(advancedDayTasks[0]).toMatchObject({
+      dueDateISO: '2026-03-20',
+      due: 'Overdue',
+    })
   })
 })

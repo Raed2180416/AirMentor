@@ -168,7 +168,7 @@ export async function enqueueProofSimulationRun(db: AppDb, input: {
     facultyCount: queueMetadata.facultyCount,
     semesterStart: queueMetadata.semesterStart,
     semesterEnd: queueMetadata.semesterEnd,
-    activeOperationalSemester: queueMetadata.semesterEnd,
+    activeOperationalSemester: queueMetadata.semesterStart,
     sourceType: queueMetadata.sourceType,
     policySnapshotJson: JSON.stringify(input.policy),
     engineVersionsJson: JSON.stringify({

@@ -117,6 +117,7 @@ type FacultyProofViewResult = {
     createdAt: string
     [key: string]: unknown
   }>
+  activeRunCheckpoints: ProofCheckpointSummaryLike[]
   selectedCheckpoint: ProofCheckpointSummaryLike | null
   monitoringQueue: Array<Record<string, unknown>>
   electiveFits: Array<Record<string, unknown>>
@@ -243,7 +244,8 @@ export async function buildFacultyProofView(db: AppDb, input: {
       asc(simulationStageCheckpoints.semesterNumber),
       asc(simulationStageCheckpoints.stageOrder),
     )
-    const checkpointSummary = deps.withProofPlaybackGate(orderedCheckpointRows.map(deps.parseProofCheckpointSummary), queueCaseRows)
+    const activeRunCheckpoints = deps.withProofPlaybackGate(orderedCheckpointRows.map(deps.parseProofCheckpointSummary), queueCaseRows)
+    const checkpointSummary = activeRunCheckpoints
       .find(item => item.simulationStageCheckpointId === checkpoint.simulationStageCheckpointId)
       ?? deps.parseProofCheckpointSummary(checkpoint)
     const run = runRows.find(row => row.simulationRunId === checkpoint.simulationRunId) ?? null
@@ -389,6 +391,7 @@ export async function buildFacultyProofView(db: AppDb, input: {
         seed: run.seed,
         createdAt: run.createdAt,
       }],
+      activeRunCheckpoints,
       selectedCheckpoint: checkpointSummary,
       monitoringQueue: queueItems,
       electiveFits: electiveFits.slice(0, 12),
@@ -459,15 +462,29 @@ export async function buildFacultyProofView(db: AppDb, input: {
     return {
       ...buildUnavailableCountProvenance(),
       activeRunContexts,
+      activeRunCheckpoints: [],
       selectedCheckpoint: null,
       monitoringQueue: [],
       electiveFits: [],
     }
   }
+  const selectedActiveRunCheckpointRows = selectedActiveRun
+    ? await db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, selectedActiveRun.simulationRunId))
+    : []
+  const selectedActiveRunQueueCaseRows = selectedActiveRun
+    ? await db.select().from(simulationStageQueueCases).where(eq(simulationStageQueueCases.simulationRunId, selectedActiveRun.simulationRunId))
+    : []
+  const activeRunCheckpoints = deps.withProofPlaybackGate(
+    selectedActiveRunCheckpointRows
+      .slice()
+      .sort((left, right) => left.semesterNumber - right.semesterNumber || left.stageOrder - right.stageOrder)
+      .map(deps.parseProofCheckpointSummary),
+    selectedActiveRunQueueCaseRows,
+  )
   const operationalCheckpointSummary = selectedActiveRun
     ? resolveOperationalCheckpointSummary(
-      await db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, selectedActiveRun.simulationRunId)),
-      await db.select().from(simulationStageQueueCases).where(eq(simulationStageQueueCases.simulationRunId, selectedActiveRun.simulationRunId)),
+      selectedActiveRunCheckpointRows,
+      selectedActiveRunQueueCaseRows,
       selectedCurrentSemester,
       deps,
     )
@@ -649,6 +666,7 @@ export async function buildFacultyProofView(db: AppDb, input: {
   return {
     ...countProvenance,
     activeRunContexts,
+    activeRunCheckpoints,
     selectedCheckpoint: null,
     monitoringQueue: queueItems,
     electiveFits: electiveFits.slice(0, 12),

@@ -144,9 +144,48 @@ describe('proof queue governance', () => {
       governanceReason: 'watch_only_after_governance',
     })
     expect(result.decisions.get('student-3::1')).toMatchObject({
-      status: 'opened',
+      status: 'watch',
+      canonicalStatus: 'watch',
+      countsTowardCapacity: false,
+      governanceReason: 'watch_only_after_governance',
+    })
+  })
+
+  it('admits only high-risk candidates to the open action queue', () => {
+    const result = governProofQueueStage({
+      stageKey: 'post-assignments',
+      candidates: [
+        candidate({
+          caseKey: 'student-high::1',
+          studentId: 'student-high',
+          sourceKey: 'student-high::1::off-1::AMC301',
+          concernContextKey: 'ctx::student-high::off-1::coursework',
+          riskBand: 'High',
+          counterfactualLiftScaled: 5,
+        }),
+        candidate({
+          caseKey: 'student-medium::1',
+          studentId: 'student-medium',
+          sourceKey: 'student-medium::1::off-2::AMC302',
+          concernContextKey: 'ctx::student-medium::off-2::coursework',
+          riskBand: 'Medium',
+          counterfactualLiftScaled: 12,
+        }),
+      ],
+      sectionStudentCountByKey: new Map([['1::A', 60]]),
+      facultyBudgetByKey: new Map([['Mentor::faculty-1::1', 10]]),
+    })
+
+    const openDecisions = Array.from(result.decisions.values()).filter(item => item.canonicalStatus === 'opened')
+    expect(openDecisions).toHaveLength(1)
+    expect(openDecisions[0]).toMatchObject({
+      studentId: 'student-high',
       canonicalStatus: 'opened',
       countsTowardCapacity: true,
+    })
+    expect(result.decisions.get('student-medium::1')).toMatchObject({
+      canonicalStatus: 'watch',
+      countsTowardCapacity: false,
     })
   })
 

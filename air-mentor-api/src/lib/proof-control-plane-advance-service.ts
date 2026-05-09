@@ -20,6 +20,7 @@ import {
   type StagePolicyStageKey,
 } from './stage-policy.js'
 import { STAGE_REALIZATION_FLAG_NAME } from './proof-stage-realization-evidence-applier.js'
+import { conflict } from './http-errors.js'
 
 // Phase-6c audit payload builder. Exported so unit tests can exercise the payload
 // shape without standing up a full DB mock. persistResolvedAdvance passes the same
@@ -68,7 +69,7 @@ type AdvanceProofRunRow = Pick<typeof simulationRuns.$inferSelect,
   | 'stageBoundaryJson'
 >
 
-export type ProofAdvanceMode = 'next-day' | 'next-stage'
+export type ProofAdvanceMode = 'next-day' | 'previous-day' | 'next-stage'
 
 export type ProofAdvanceServiceDeps = {
   createId: (prefix: string) => string
@@ -208,6 +209,26 @@ export function buildProofAdvanceChain(input: {
   return orderedPoints
 }
 
+function buildFallbackCurrentChainPoint(input: {
+  run: Pick<AdvanceProofRunRow, 'activeOperationalSemester' | 'activeStageKey' | 'createdAt' | 'semesterStart'>
+  stagePolicy?: StagePolicyPayload
+}): ProofAdvanceChainPoint {
+  const policy = input.stagePolicy ?? DEFAULT_STAGE_POLICY
+  const stageKey = normalizeStageKey(input.run.activeStageKey) ?? 'pre-tt1'
+  const stageDef = stagePolicyStageByKey(policy, stageKey)
+  const semesterNumber = input.run.activeOperationalSemester ?? input.run.semesterStart ?? 1
+  return {
+    chainIndex: 0,
+    positionId: `${semesterNumber}::${stageKey}`,
+    previousPositionId: null,
+    nextPositionId: null,
+    semesterNumber,
+    stageKey,
+    stageOrder: stageDef.order,
+    occurredAt: playbackCheckpointNowIso(input.run.createdAt, semesterNumber, stageDef),
+  }
+}
+
 function resolveCurrentChainPoint(
   chain: ProofAdvanceChainPoint[],
   run: Pick<AdvanceProofRunRow, 'activeOperationalSemester' | 'activeStageKey'>,
@@ -233,7 +254,27 @@ export function resolveProofAdvance(input: {
     stagePolicy: input.stagePolicy,
   })
   if (chain.length === 0) {
-    throw new Error('Simulation run stage chain is empty')
+    if (input.mode === 'previous-day') {
+      const current = buildFallbackCurrentChainPoint({
+        run: input.run,
+        stagePolicy: input.stagePolicy,
+      })
+      const currentDateIso = input.run.simulatedDateIso ?? input.now ?? input.run.createdAt
+      return {
+        mode: input.mode,
+        previous: current,
+        current,
+        next: null,
+        simulatedDateIso: addDaysIso(currentDateIso, -1),
+        stageTransitioned: false,
+        crossedSemesterBoundary: false,
+        terminalLifecyclePreserved: false,
+        lifecycleState: input.run.lifecycleState ?? 'active',
+        nextBoundaryAt: null,
+        autoResolutionMode: null,
+      } satisfies ProofAdvanceResolution
+    }
+    throw conflict('Proof run is still preparing its stage checkpoints. Try again after the worker finishes.')
   }
   const previous = resolveCurrentChainPoint(chain, input.run)
   if (!previous) {
@@ -243,10 +284,12 @@ export function resolveProofAdvance(input: {
   const currentDateIso = input.run.simulatedDateIso ?? previous.occurredAt ?? input.now ?? input.run.createdAt
   const advancedDateIso = input.mode === 'next-day'
     ? addDaysIso(currentDateIso, 1)
-    : (next?.occurredAt ?? currentDateIso)
+    : input.mode === 'previous-day'
+      ? addDaysIso(currentDateIso, -1)
+      : (next?.occurredAt ?? currentDateIso)
   const stageTransitioned = next != null && (
     input.mode === 'next-stage'
-    || next.occurredAt.localeCompare(advancedDateIso) <= 0
+    || (input.mode === 'next-day' && next.occurredAt.localeCompare(advancedDateIso) <= 0)
   )
   const current = stageTransitioned ? next! : previous
   const terminalLifecyclePreserved = current.chainIndex === chain.length - 1
@@ -375,7 +418,11 @@ async function persistResolvedAdvance(
   await deps.emitSimulationAudit(db, {
     simulationRunId: run.simulationRunId,
     batchId: run.batchId,
-    actionType: input.mode === 'next-day' ? 'advanced-day' : 'advanced-stage',
+    actionType: input.mode === 'next-day'
+      ? 'advanced-day'
+      : input.mode === 'previous-day'
+        ? 'advanced-previous-day'
+        : 'advanced-stage',
     payload: {
       previousOperationalSemester: resolution.previous.semesterNumber,
       activeOperationalSemester: resolution.current.semesterNumber,
@@ -438,6 +485,17 @@ export async function advanceProofSimulationDay(
   return advanceProofSimulation(db, {
     ...input,
     mode: 'next-day',
+  }, deps)
+}
+
+export async function advanceProofSimulationPreviousDay(
+  db: AppDb,
+  input: AdvanceProofSimulationInput,
+  deps: ProofAdvanceServiceDeps,
+) {
+  return advanceProofSimulation(db, {
+    ...input,
+    mode: 'previous-day',
   }, deps)
 }
 

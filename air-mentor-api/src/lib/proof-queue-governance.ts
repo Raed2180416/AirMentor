@@ -239,11 +239,11 @@ function candidateEligibility(candidate: ProofQueueCandidate) {
     }
   }
   if (candidate.stageKey === 'post-tt1') {
-    if (candidate.riskBand === 'Medium' && candidate.policyPhenotype === 'diffuse-amber') {
+    if (candidate.riskBand !== 'High') {
       return {
         openEligible: false,
         watchEligible: true,
-        reason: 'diffuse_amber_watch_only',
+        reason: 'post_tt1_medium_watch_only',
       }
     }
     return {
@@ -257,17 +257,6 @@ function candidateEligibility(candidate: ProofQueueCandidate) {
       openEligible: true,
       watchEligible: true,
       reason: 'high_risk_lift_gate_passed',
-    }
-  }
-  if (
-    candidate.riskBand === 'Medium'
-    && candidate.policyPhenotype !== 'diffuse-amber'
-    && candidate.counterfactualLiftScaled >= PROOF_QUEUE_ACTIONABLE_LIFT_THRESHOLD
-  ) {
-    return {
-      openEligible: true,
-      watchEligible: true,
-      reason: 'medium_risk_lift_gate_passed',
     }
   }
   return {

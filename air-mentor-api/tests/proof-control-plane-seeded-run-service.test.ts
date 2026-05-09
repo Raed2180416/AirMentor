@@ -23,21 +23,22 @@ function createMockDb() {
   }
   const checkpointRows = [
     {
-      simulationStageCheckpointId: 'cp_6_pre',
+      simulationStageCheckpointId: 'cp_1_pre',
       simulationRunId: 'run_001',
-      semesterNumber: 6,
+      semesterNumber: 1,
       stageKey: 'pre-tt1',
       stageOrder: 1,
     },
     {
-      simulationStageCheckpointId: 'cp_6_tt1',
+      simulationStageCheckpointId: 'cp_1_tt1',
       simulationRunId: 'run_001',
-      semesterNumber: 6,
+      semesterNumber: 1,
       stageKey: 'post-tt1',
       stageOrder: 2,
     },
   ]
   const insertedSnapshots: Array<Record<string, unknown>> = []
+  const runUpdates: Array<Record<string, unknown>> = []
 
   const db = {
     select() {
@@ -63,7 +64,13 @@ function createMockDb() {
           set(values: Record<string, unknown>) {
             return {
               where: async () => {
-                run = { ...run, ...values }
+                runUpdates.push(values)
+                const deactivatesOtherActiveRuns = values.activeFlag === 0
+                  && values.status === 'completed'
+                  && !('completedAt' in values)
+                if (!deactivatesOtherActiveRuns) {
+                  run = { ...run, ...values }
+                }
               },
             }
           },
@@ -86,13 +93,14 @@ function createMockDb() {
   return {
     db,
     getRun: () => run,
+    getRunUpdates: () => runUpdates,
     getSnapshots: () => insertedSnapshots,
   }
 }
 
 describe('proof-control-plane-seeded-run-service', () => {
   it('does not write live-profile history and stamps completed-inspectable authority', async () => {
-    const { db, getRun, getSnapshots } = createMockDb()
+    const { db, getRun, getRunUpdates, getSnapshots } = createMockDb()
     const deps = {
       PROOF_FACULTY: [{ facultyId: 'faculty_001', permissions: ['COURSE_LEADER'] }],
       buildTimetablePayload: vi.fn(() => ({})),
@@ -153,17 +161,19 @@ describe('proof-control-plane-seeded-run-service', () => {
     expect(getRun()).toMatchObject({
       status: 'completed',
       activeFlag: 1,
+      activeOperationalSemester: 1,
       lifecycleState: 'completed-inspectable',
       runMode: 'seeded-proof',
       activeStageKey: 'pre-tt1',
       simulatedDateIso: TEST_NOW,
     })
+    expect(getRunUpdates().map(update => update.activeFlag)).toEqual([1, 0])
 
     const [snapshot] = getSnapshots()
     expect(snapshot).toBeTruthy()
     const payload = JSON.parse(String(snapshot.snapshotJson))
     expect(payload.runAuthority).toMatchObject({
-      activeOperationalSemester: 6,
+      activeOperationalSemester: 1,
       activeStageKey: 'pre-tt1',
       lifecycleState: 'completed-inspectable',
       runMode: 'seeded-proof',

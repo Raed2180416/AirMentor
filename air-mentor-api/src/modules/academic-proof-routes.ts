@@ -17,9 +17,13 @@ import {
   buildHodProofAnalytics,
   buildStudentAgentCard,
   buildStudentRiskExplorer,
+  advanceProofSimulationDay,
+  advanceProofSimulationPreviousDay,
+  advanceProofSimulationStage,
   listStudentAgentTimeline,
   sendStudentAgentMessage,
   startStudentAgentSession,
+  stopProofSimulationRun,
 } from '../lib/msruas-proof-control-plane.js'
 import { buildCounterfactualReport } from '../lib/proof-counterfactual-reader.js'
 import { fetchCounterfactualSnapshotRows } from '../lib/proof-counterfactual-fetcher.js'
@@ -27,6 +31,7 @@ import { buildSimulatorCounterfactualReport } from '../lib/proof-counterfactual-
 import { fetchSimulatorProjectionRows } from '../lib/proof-counterfactual-simulator-fetcher.js'
 import {
   assertAcademicAccess,
+  evaluateActiveProofRunAccess,
   evaluateFacultyContextAccess,
   evaluateStudentShellSessionMessageAccess,
 } from './academic-access.js'
@@ -62,6 +67,10 @@ export async function registerAcademicProofRoutes(
     studentShellQuerySchema,
     studentShellSessionCreateSchema,
   } = deps
+
+  const proofAdvanceSchema = z.object({
+    mode: z.enum(['day', 'previous-day', 'stage']),
+  })
 
   app.get('/api/academic/hod/proof-summary', {
     schema: {
@@ -245,6 +254,49 @@ export async function registerAcademicProofRoutes(
       rows,
     })
     return report
+  })
+
+  app.post('/api/academic/proof-runs/:simulationRunId/advance', {
+    schema: {
+      tags: ['academic'],
+      summary: 'Advance the active proof run from the academic workspace',
+    },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN', ...academicRoleCodes])
+    assertAcademicAccess(evaluateFacultyContextAccess(auth, { allowSystemAdmin: true }))
+    const params = parseOrThrow(z.object({ simulationRunId: z.string().min(1) }), request.params)
+    const body = parseOrThrow(proofAdvanceSchema, request.body ?? {})
+    const [run] = await context.db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, params.simulationRunId))
+    if (!run) throw notFound('Simulation run not found')
+    assertAcademicAccess(evaluateActiveProofRunAccess(auth, run.activeFlag === 1, 'Academic proof controls may advance only the active proof run'))
+
+    const input = {
+      simulationRunId: params.simulationRunId,
+      actorFacultyId: auth.facultyId ?? null,
+      now: context.now(),
+    }
+    if (body.mode === 'day') return advanceProofSimulationDay(context.db, input)
+    if (body.mode === 'previous-day') return advanceProofSimulationPreviousDay(context.db, input)
+    return advanceProofSimulationStage(context.db, input)
+  })
+
+  app.post('/api/academic/proof-runs/:simulationRunId/stop', {
+    schema: {
+      tags: ['academic'],
+      summary: 'Stop the active proof run from the academic workspace',
+    },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN', ...academicRoleCodes])
+    assertAcademicAccess(evaluateFacultyContextAccess(auth, { allowSystemAdmin: true }))
+    const params = parseOrThrow(z.object({ simulationRunId: z.string().min(1) }), request.params)
+    const [run] = await context.db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, params.simulationRunId))
+    if (!run) throw notFound('Simulation run not found')
+    assertAcademicAccess(evaluateActiveProofRunAccess(auth, run.activeFlag === 1, 'Academic proof controls may stop only the active proof run'))
+    return stopProofSimulationRun(context.db, {
+      simulationRunId: params.simulationRunId,
+      actorFacultyId: auth.facultyId ?? null,
+      now: context.now(),
+    })
   })
 
   app.post('/api/academic/proof-reassessments/:reassessmentEventId/acknowledge', {

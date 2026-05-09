@@ -96,14 +96,6 @@ export async function prepareSeededProofRunBootstrap(
   const simulationRunId = input.simulationRunId ?? deps.createId('simulation_run')
   const activate = input.activate ?? true
 
-  if (activate) {
-    await db.update(simulationRuns).set({
-      activeFlag: 0,
-      updatedAt: input.now,
-      status: 'completed',
-    }).where(eq(simulationRuns.batchId, input.batchId))
-  }
-
   // Two offering-ensurer pathways:
   //   1. `ensureProofOfferings` (preferred, added by t50): ensures offerings for
   //      every semester; bootstrap then reloads the full row set from DB.
@@ -161,7 +153,7 @@ export async function prepareSeededProofRunBootstrap(
     facultyCount: deps.PROOF_FACULTY.length,
     semesterStart: 1,
     semesterEnd: 6,
-    activeOperationalSemester: 6,
+    activeOperationalSemester: 1,
     sourceType: 'simulation' as const,
     policySnapshotJson: JSON.stringify(input.policy),
     engineVersionsJson: JSON.stringify({

@@ -4,7 +4,7 @@ import { emitOperationalEvent } from '../lib/telemetry.js'
 import { parseOrThrow, requireRole } from './support.js'
 import type { AcademicRouteDependencies } from './academic.js'
 import { AppError, notFound } from '../lib/http-errors.js'
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import { simulationRuns, simulationStageCheckpoints } from '../db/schema.js'
 
 export async function registerAcademicBootstrapRoutes(
@@ -42,6 +42,14 @@ export async function registerAcademicBootstrapRoutes(
       .from(simulationRuns)
       .where(eq(simulationRuns.activeFlag, 1))
     if (activeRuns.length === 0) {
+      const pendingRuns = await context.db
+        .select({ simulationRunId: simulationRuns.simulationRunId })
+        .from(simulationRuns)
+        .where(inArray(simulationRuns.status, ['queued', 'running']))
+        .limit(1)
+      if (pendingRuns.length > 0) {
+        throw new AppError(403, 'NO_ACTIVE_PROOF_RUN', 'A proof simulation is being prepared — this usually takes a few minutes. Please try again shortly.')
+      }
       throw new AppError(403, 'NO_ACTIVE_PROOF_RUN', 'No simulation is currently active. Ask your administrator to start a proof run.')
     }
     const query = parseOrThrow(academicBootstrapQuerySchema, request.query)
