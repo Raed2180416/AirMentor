@@ -2277,13 +2277,17 @@ async function resolveProofReassessmentAccess(input: {
       .where(eq(simulationRuns.simulationRunId, risk.simulationRunId))
     : []
   if (!run) throw notFound('Proof reassessment run context not found')
+  if ((run.demoWorkspaceId ?? null) !== (input.auth.demoWorkspaceId ?? null)) {
+    throw new AppError(403, 'PROOF_RUN_SCOPE_MISMATCH', 'Proof run is not available in this workspace scope.')
+  }
 
   if (input.auth.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
     const activeRunRows = await input.context.db
       .select()
       .from(simulationRuns)
       .where(eq(simulationRuns.activeFlag, 1))
-    const activeRun = pickMostRecentActiveRun(activeRunRows)
+    const scopedActiveRunRows = activeRunRows.filter(row => (row.demoWorkspaceId ?? null) === (input.auth.demoWorkspaceId ?? null))
+    const activeRun = pickMostRecentActiveRun(scopedActiveRunRows)
     if (!activeRun || activeRun.simulationRunId !== run.simulationRunId) {
       throw forbidden('Academic roles may modify proof reassessments only for the active proof run')
     }

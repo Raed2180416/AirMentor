@@ -10,6 +10,9 @@ import {
   sessions,
   simulationStageCheckpoints,
   studentObservedSemesterStates,
+  reassessmentEvents,
+  riskAssessments,
+  alertDecisions,
 } from '../src/db/schema.js'
 import {
   assertSafeDemoScopeName,
@@ -639,6 +642,63 @@ describe('demo workspace isolation', () => {
     })
     expect(cardRes.statusCode).toBe(403)
     expect(cardRes.json()).toMatchObject({
+      error: 'PROOF_RUN_SCOPE_MISMATCH',
+    })
+  })
+
+  it('rejects demo reassessment acknowledgement of a global proof run event', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const createRes = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/demo-workspaces',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: { name: 'Scoped Reassessment Demo' },
+    })
+    expect(createRes.statusCode).toBe(200)
+    const demoWs = createRes.json() as { demoWorkspaceId: string }
+
+    const demoAdminLoginRes = await current.app.inject({
+      method: 'POST',
+      url: '/api/session/login',
+      headers: {
+        origin: TEST_ORIGIN,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+      payload: { identifier: 'sysadmin', password: 'admin1234' },
+    })
+    expect(demoAdminLoginRes.statusCode).toBe(200)
+    const demoAdminCookie = Array.isArray(demoAdminLoginRes.headers['set-cookie'])
+      ? demoAdminLoginRes.headers['set-cookie'][0]
+      : demoAdminLoginRes.headers['set-cookie']
+    expect(demoAdminCookie).toBeTruthy()
+
+    const reassessmentRows = await current.db
+      .select({
+        reassessmentEventId: reassessmentEvents.reassessmentEventId,
+        runDemoWorkspaceId: simulationRuns.demoWorkspaceId,
+        alertDecisionId: alertDecisions.alertDecisionId,
+      })
+      .from(reassessmentEvents)
+      .innerJoin(riskAssessments, eq(riskAssessments.riskAssessmentId, reassessmentEvents.riskAssessmentId))
+      .innerJoin(simulationRuns, eq(simulationRuns.simulationRunId, riskAssessments.simulationRunId))
+      .innerJoin(alertDecisions, eq(alertDecisions.riskAssessmentId, reassessmentEvents.riskAssessmentId))
+    const globalReassessment = reassessmentRows.find(row => row.runDemoWorkspaceId === null)
+    expect(globalReassessment).toBeTruthy()
+
+    const acknowledgeRes = await current.app.inject({
+      method: 'POST',
+      url: `/api/academic/proof-reassessments/${globalReassessment?.reassessmentEventId}/acknowledge`,
+      headers: {
+        cookie: demoAdminCookie,
+        origin: TEST_ORIGIN,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+      payload: { note: 'demo scope probe' },
+    })
+    expect(acknowledgeRes.statusCode).toBe(403)
+    expect(acknowledgeRes.json()).toMatchObject({
       error: 'PROOF_RUN_SCOPE_MISMATCH',
     })
   })
