@@ -47,7 +47,7 @@ import {
   userAccounts,
   institutions,
 } from '../db/schema.js'
-import { badRequest, forbidden, notFound } from '../lib/http-errors.js'
+import { AppError, badRequest, forbidden, notFound } from '../lib/http-errors.js'
 import { parseJson, stringifyJson } from '../lib/json.js'
 import {
   parseObservedStateRow,
@@ -1090,6 +1090,7 @@ async function resolveStudentShellRun(
           activeFlag: simulationRuns.activeFlag,
           activeOperationalSemester: simulationRuns.activeOperationalSemester,
           seed: simulationRuns.seed,
+          demoWorkspaceId: simulationRuns.demoWorkspaceId,
           createdAt: simulationRuns.createdAt,
           updatedAt: simulationRuns.updatedAt,
         })
@@ -1097,10 +1098,14 @@ async function resolveStudentShellRun(
         .innerJoin(simulationRuns, eq(simulationRuns.simulationRunId, simulationStageCheckpoints.simulationRunId))
         .where(eq(simulationStageCheckpoints.simulationStageCheckpointId, simulationStageCheckpointId))
       : await context.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+  const scopedRunRows = runRows.filter(row => (row.demoWorkspaceId ?? null) === (auth.demoWorkspaceId ?? null))
   const [run] = requestedRunId || simulationStageCheckpointId
     ? runRows
-    : [pickMostRecentActiveRun(runRows)]
+    : [pickMostRecentActiveRun(scopedRunRows)]
   if (!run) throw notFound('Proof run not found')
+  if ((run.demoWorkspaceId ?? null) !== (auth.demoWorkspaceId ?? null)) {
+    throw new AppError(403, 'PROOF_RUN_SCOPE_MISMATCH', 'Proof run is not available in this workspace scope.')
+  }
   assertAcademicAccess(evaluateActiveProofRunAccess(auth, run.activeFlag === 1))
   return run
 }
