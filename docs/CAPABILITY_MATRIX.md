@@ -115,7 +115,7 @@
 
 | Feature | Status | Refs |
 |---|---|---|
-| 8 scenario families implemented (`scenarioProfileForSeed`) | works | `air-mentor-api/src/lib/msruas-proof-control-plane.ts:988-1036` |
+| 8 scenario families implemented (`scenarioProfileForSeed`) | works locally for seeded M&C proof | `air-mentor-api/src/lib/msruas-proof-control-plane.ts:988-1036`; true Section B override-run comparison covered by `air-mentor-api/tests/proof-realism-audit.test.ts`; D6 still missing for per-program family subset |
 | Family parameter shifts grounded in literature | works (literature anchors per family in `docs/paper-evidence/scenario-grounding.md`; magnitudes engineering-tier defended by P2 sensitivity sweep) | C15, E6 closed (P1 done) |
 | Per-program family subset | missing | D6 → P6 |
 
@@ -159,7 +159,7 @@
 | Recalibration service test | missing | H5 → P7/P9 |
 | Config wire-through test (outcome → mastery target) | works — `tests/admin-curriculum-feature-config.test.ts`; H6 closed (P3) | H6 closed |
 | Edge-weight wire-through test | works — covered in `admin-curriculum-feature-config` suite; H7 closed (P3) | H7 closed |
-| E2E suite (Playwright) for full demo walkthrough | missing | H8 → P9 |
+| E2E suite (Playwright) for full demo walkthrough | partial | focused local Firefox specs: `tests-e2e/specs/proof-ui-population.spec.ts`, `tests-e2e/specs/editable-data-recompute.spec.ts`, `tests-e2e/specs/full-demo-ladder.spec.ts`; H8 remains open for full regression pack/performance |
 | Performance baseline | missing | H9 → P9 |
 | Snapshot test audit | missing | H11 → P9 |
 
