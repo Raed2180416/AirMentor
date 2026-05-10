@@ -160,7 +160,7 @@
 | Config wire-through test (outcome → mastery target) | works — `tests/admin-curriculum-feature-config.test.ts`; H6 closed (P3) | H6 closed |
 | Edge-weight wire-through test | works — covered in `admin-curriculum-feature-config` suite; H7 closed (P3) | H7 closed |
 | E2E suite (Playwright) for full demo walkthrough | works | fresh local Firefox all-spec run on 2026-05-10 passed 20/20 in 42.2m on fresh ports 4100/5174, covering `editable-data-recompute`, `flow-1`, `flow-2`, `flow-4`, `flow-5`, `flow-6`, `flow-8`, `flow-9`, `flow-10`, `flow-11`, `full-demo-ladder`, `humanised-action-labels`, `intervention-affects-marks`, `multi-semester-carryover`, `proof-ui-population`, `receptivity-differentiation`, and `smoke`; performance baseline remains separate H9 |
-| Performance baseline | missing | H9 → P9 |
+| Performance baseline | partial — local seeded H9 browser/API performance baseline passed green on 2026-05-10 with fresh Firefox ports `4100/5174` and report `audit-map/32-reports/performance-baseline-2026-05-10.md`; production load, cold-start, real-data, and multi-tenant scale budgets remain unproven | H9 → P9/P8 |
 | Snapshot test audit | missing | H11 → P9 |
 
 ## 12. Process
