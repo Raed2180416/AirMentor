@@ -543,6 +543,82 @@ describe('demo workspace isolation', () => {
     expect(Object.values(snapshot.studentsByOffering).flat()).toHaveLength(0)
   })
 
+  it('rejects demo bootstrap playback of a global checkpoint', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const createRes = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/demo-workspaces',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: { name: 'Scoped Checkpoint Demo' },
+    })
+    expect(createRes.statusCode).toBe(200)
+    const demoWs = createRes.json() as { demoWorkspaceId: string }
+
+    const demoTeacherLoginRes = await current.app.inject({
+      method: 'POST',
+      url: '/api/session/login',
+      headers: {
+        origin: TEST_ORIGIN,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+      payload: { identifier: 'devika.shetty', password: 'faculty1234' },
+    })
+    expect(demoTeacherLoginRes.statusCode).toBe(200)
+    const demoTeacherCookie = Array.isArray(demoTeacherLoginRes.headers['set-cookie'])
+      ? demoTeacherLoginRes.headers['set-cookie'][0]
+      : demoTeacherLoginRes.headers['set-cookie']
+    expect(demoTeacherCookie).toBeTruthy()
+
+    const [globalActiveRun] = await current.db
+      .select()
+      .from(simulationRuns)
+      .where(eq(simulationRuns.activeFlag, 1))
+    expect(globalActiveRun.demoWorkspaceId).toBeNull()
+    const globalCheckpointId = `stage_checkpoint_global_scope_probe_${Date.now()}`
+    await current.db.insert(simulationStageCheckpoints).values({
+      simulationStageCheckpointId: globalCheckpointId,
+      simulationRunId: globalActiveRun.simulationRunId,
+      semesterNumber: 1,
+      stageKey: 'pre-tt1',
+      stageLabel: 'Pre TT1',
+      stageDescription: 'Global checkpoint scope probe',
+      stageOrder: 1,
+      previousCheckpointId: null,
+      nextCheckpointId: null,
+      summaryJson: JSON.stringify({ scope: 'global-checkpoint-scope-probe' }),
+      createdAt: TEST_NOW,
+      updatedAt: TEST_NOW,
+    })
+
+    await current.db.insert(simulationRuns).values({
+      ...globalActiveRun,
+      simulationRunId: `simulation_run_demo_checkpoint_${Date.now()}`,
+      parentSimulationRunId: globalActiveRun.simulationRunId,
+      runLabel: 'Scoped checkpoint demo run',
+      status: 'active',
+      activeFlag: 1,
+      demoWorkspaceId: demoWs.demoWorkspaceId,
+      createdAt: '2026-05-10T00:00:02.000Z',
+      updatedAt: '2026-05-10T00:00:02.000Z',
+    })
+
+    const bootstrapRes = await current.app.inject({
+      method: 'GET',
+      url: `/api/academic/bootstrap?simulationStageCheckpointId=${encodeURIComponent(globalCheckpointId)}`,
+      headers: {
+        cookie: demoTeacherCookie,
+        origin: TEST_ORIGIN,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+    })
+    expect(bootstrapRes.statusCode).toBe(403)
+    expect(bootstrapRes.json()).toMatchObject({
+      error: 'PROOF_RUN_SCOPE_MISMATCH',
+    })
+  })
+
   it('rejects demo academic control of a global proof run', async () => {
     current = await createTestApp()
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')

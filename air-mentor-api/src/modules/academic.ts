@@ -1122,11 +1122,15 @@ async function resolveAcademicStageCheckpoint(
   if (checkpoint.simulationRunId !== simulationRunId) {
     throw forbidden('Simulation stage checkpoint does not belong to the selected proof run')
   }
+  const [run] = await context.db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, checkpoint.simulationRunId))
+  if (!run) throw notFound('Simulation run not found')
+  if ((run.demoWorkspaceId ?? null) !== (auth.demoWorkspaceId ?? null)) {
+    throw new AppError(403, 'PROOF_RUN_SCOPE_MISMATCH', 'Proof run is not available in this workspace scope.')
+  }
   if (auth.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
-    const [activeRun] = await context.db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, checkpoint.simulationRunId))
     assertAcademicAccess(evaluateActiveProofRunAccess(
       auth,
-      !!activeRun && activeRun.activeFlag === 1,
+      run.activeFlag === 1,
       'Academic roles may inspect only checkpoints from the active proof run',
     ))
   }
