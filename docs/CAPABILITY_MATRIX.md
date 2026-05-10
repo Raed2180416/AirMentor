@@ -154,12 +154,12 @@
 | Surface | Status | Refs |
 |---|---|---|
 | Critical-path coverage audit (≥80%) | missing | H10 → P9 |
-| Demo isolation regression test (global rows untouched) | partial — backend schema/reset/session-pointer/scoped-bootstrap/scoped-academic-snapshot/proof-run activation/admin-scope/academic-proof-scope/student-shell-scope/reassessment-scope/checkpoint-scope regressions and frontend pointer/header tests covered; fresh local Firefox P5/P9 focused browser pack passed 12/12 on 2026-05-10 via `flow-1`, `flow-2`, `flow-4`, `flow-5`, `flow-6`, `flow-8`, `flow-9`, `flow-10`, `flow-11`; full all-spec regression/performance remains pending | H1 → P5/P9 |
+| Demo isolation regression test (global rows untouched) | partial — backend schema/reset/session-pointer/scoped-bootstrap/scoped-academic-snapshot/proof-run activation/admin-scope/academic-proof-scope/student-shell-scope/reassessment-scope/checkpoint-scope regressions and frontend pointer/header tests covered; fresh local Firefox P5/P9 focused browser pack passed 12/12 on 2026-05-10 via `flow-1`, `flow-2`, `flow-4`, `flow-5`, `flow-6`, `flow-8`, `flow-9`, `flow-10`, `flow-11`; fresh all-spec Firefox regression passed 20/20 in 42.2m on ports 4100/5174; performance baseline remains pending | H1 → P5/P9 |
 | Multi-program proof-run integration test | missing | H4 → P6/P9 |
 | Recalibration service test | missing | H5 → P7/P9 |
 | Config wire-through test (outcome → mastery target) | works — `tests/admin-curriculum-feature-config.test.ts`; H6 closed (P3) | H6 closed |
 | Edge-weight wire-through test | works — covered in `admin-curriculum-feature-config` suite; H7 closed (P3) | H7 closed |
-| E2E suite (Playwright) for full demo walkthrough | partial | focused local Firefox specs: `tests-e2e/specs/proof-ui-population.spec.ts`, `tests-e2e/specs/editable-data-recompute.spec.ts`, `tests-e2e/specs/full-demo-ladder.spec.ts`; fresh P5/P9 focused Firefox run on 2026-05-10 passed 12/12 in 22.7m on fresh ports 4100/5174 with `flow-1`, `flow-2`, `flow-4`, `flow-5`, `flow-6`, `flow-8`, `flow-9`, `flow-10`, `flow-11`; H8 remains open for full all-spec regression pack/performance |
+| E2E suite (Playwright) for full demo walkthrough | works | fresh local Firefox all-spec run on 2026-05-10 passed 20/20 in 42.2m on fresh ports 4100/5174, covering `editable-data-recompute`, `flow-1`, `flow-2`, `flow-4`, `flow-5`, `flow-6`, `flow-8`, `flow-9`, `flow-10`, `flow-11`, `full-demo-ladder`, `humanised-action-labels`, `intervention-affects-marks`, `multi-semester-carryover`, `proof-ui-population`, `receptivity-differentiation`, and `smoke`; performance baseline remains separate H9 |
 | Performance baseline | missing | H9 → P9 |
 | Snapshot test audit | missing | H11 → P9 |
 
