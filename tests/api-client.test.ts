@@ -170,6 +170,47 @@ describe('AirMentorApiClient', () => {
     }))
   })
 
+  it('sends the active demo workspace pointer header when configured', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      sessionId: 'session-1',
+      csrfToken: 'csrf-token-1',
+      demoWorkspaceId: 'demo_ws_001',
+      user: { userId: 'user-1', username: 'sysadmin', email: 'sysadmin@example.com' },
+      faculty: { facultyId: 'fac_sysadmin', displayName: 'System Admin' },
+      activeRoleGrant: {
+        grantId: 'grant-1',
+        facultyId: 'fac_sysadmin',
+        roleCode: 'SYSTEM_ADMIN',
+        scopeType: 'institution',
+        scopeId: 'inst-1',
+        status: 'active',
+        version: 1,
+      },
+      availableRoleGrants: [],
+      preferences: {
+        userId: 'user-1',
+        themeMode: 'frosted-focus-light',
+        version: 1,
+        updatedAt: '2026-03-16T00:00:00.000Z',
+      },
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }))
+
+    const client = new AirMentorApiClient('http://127.0.0.1:4000', fetchMock as typeof fetch, () => ({
+      demoWorkspaceId: 'demo_ws_001',
+    }))
+    const result = await client.restoreSession()
+
+    expect(result.demoWorkspaceId).toBe('demo_ws_001')
+    expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:4000/api/session', expect.objectContaining({
+      headers: expect.objectContaining({
+        'X-AirMentor-Demo-Workspace': 'demo_ws_001',
+      }),
+    }))
+  })
+
   it('threads checkpoint playback filters and admin checkpoint routes through the API client', async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL) => new Response(JSON.stringify({
       ok: true,

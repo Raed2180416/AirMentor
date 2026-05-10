@@ -1,4 +1,5 @@
 import { AIRMENTOR_STORAGE_KEYS } from './repositories'
+import { ACTIVE_DEMO_WORKSPACE_POINTER_STORAGE_KEY } from './demo-workspace-pointer'
 
 export type PortalRoute = 'home' | 'app' | 'admin'
 
@@ -38,4 +39,5 @@ export function clearPortalWorkspaceHints(storageLike: MutableStorageLike | null
   storageLike?.removeItem(AIRMENTOR_STORAGE_KEYS.currentAdminFacultyId)
   storageLike?.removeItem(AIRMENTOR_STORAGE_KEYS.currentFacultyId)
   storageLike?.removeItem(AIRMENTOR_STORAGE_KEYS.legacyCurrentTeacherId)
+  storageLike?.removeItem(ACTIVE_DEMO_WORKSPACE_POINTER_STORAGE_KEY)
 }

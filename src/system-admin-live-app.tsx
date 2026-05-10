@@ -25,6 +25,7 @@ import {
   UserCog,
 } from 'lucide-react'
 import { AirMentorApiClient, AirMentorApiError } from './api/client'
+import { readActiveDemoWorkspacePointer } from './demo-workspace-pointer'
 import type {
   ApiAcademicFaculty,
   ApiAdminFacultyPasswordSetupResponse,
@@ -1977,7 +1978,7 @@ function AdminMiniStat({
 }
 
 export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLiveAppProps) {
-  const apiClient = useMemo(() => new AirMentorApiClient(apiBaseUrl), [apiBaseUrl])
+  const apiClient = useMemo(() => new AirMentorApiClient(apiBaseUrl, undefined, readActiveDemoWorkspacePointer), [apiBaseUrl])
   const repositories = useMemo(() => createAirMentorRepositories({ repositoryMode: 'http', apiClient }), [apiClient])
 
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => repositories.sessionPreferences.getThemeSnapshot() ?? normalizeThemeMode(null))
