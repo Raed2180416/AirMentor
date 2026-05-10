@@ -1433,7 +1433,7 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
   }
 
   async resetDemoWorkspace(demoWorkspaceId: string) {
-    return this.request<{ deletedStudents: number; deletedOfferings: number; deletedRuns: number }>(
+    return this.request<{ deletedStudents: number; deletedOfferings: number; deletedRuns: number; deletedSchema?: boolean; scopeName?: string | null }>(
       `/api/admin/demo-workspaces/${demoWorkspaceId}`,
       { method: 'DELETE' },
     )

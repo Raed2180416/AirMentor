@@ -198,6 +198,45 @@ describe('demo workspace isolation', () => {
     expect(listedAfter.some(r => r.demoWorkspaceId === demoWs.demoWorkspaceId)).toBe(false)
   })
 
+  it('drops the demo schema on reset while preserving global rows', async () => {
+    current = await createTestApp()
+    const login = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const baseStudents = await current.db.select().from(students)
+    const baseOfferings = await current.db.select().from(sectionOfferings)
+    const baseRuns = await current.db.select().from(simulationRuns)
+
+    const createRes = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/demo-workspaces',
+      headers: { cookie: login.cookie, origin: TEST_ORIGIN },
+      payload: { name: 'Reset Schema Demo' },
+    })
+    expect(createRes.statusCode).toBe(200)
+    const demoWs = createRes.json() as { demoWorkspaceId: string; scopeName: string | null }
+    expect(demoWs.scopeName).toBeTruthy()
+    expect(await demoWorkspaceSchemaExists(current.pool, demoWs.scopeName ?? '')).toBe(true)
+
+    const quotedScopeName = quotePgIdentifier(demoWs.scopeName ?? '')
+    await current.pool.query(`CREATE TABLE ${quotedScopeName}.demo_marker (id TEXT PRIMARY KEY)`)
+    await current.pool.query(`INSERT INTO ${quotedScopeName}.demo_marker (id) VALUES ('marker_1')`)
+
+    const resetRes = await current.app.inject({
+      method: 'DELETE',
+      url: `/api/admin/demo-workspaces/${demoWs.demoWorkspaceId}`,
+      headers: { cookie: login.cookie, origin: TEST_ORIGIN },
+    })
+    expect(resetRes.statusCode).toBe(200)
+    const resetBody = resetRes.json() as { deletedSchema?: boolean; scopeName?: string | null }
+    expect(resetBody.deletedSchema).toBe(true)
+    expect(resetBody.scopeName).toBe(demoWs.scopeName)
+    expect(await demoWorkspaceSchemaExists(current.pool, demoWs.scopeName ?? '')).toBe(false)
+
+    expect((await current.db.select().from(students)).length).toBe(baseStudents.length)
+    expect((await current.db.select().from(sectionOfferings)).length).toBe(baseOfferings.length)
+    expect((await current.db.select().from(simulationRuns)).length).toBe(baseRuns.length)
+  })
+
   it('preview provisioning returns estimated counts', async () => {
     current = await createTestApp()
     const login = await loginAs(current.app, 'sysadmin', 'admin1234')

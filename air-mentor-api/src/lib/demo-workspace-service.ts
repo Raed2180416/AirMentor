@@ -5,6 +5,7 @@ import { stringifyJson } from './json.js'
 import {
   buildDemoScopeName,
   createDemoWorkspaceSchema,
+  dropDemoWorkspaceSchema,
 } from './demo-workspace-scope.js'
 import {
   demoWorkspaces,
@@ -155,12 +156,20 @@ export async function resetDemoWorkspace(
   deletedStudents: number
   deletedOfferings: number
   deletedRuns: number
+  deletedSchema: boolean
+  scopeName: string | null
 }> {
   const [demoWs] = await context.db
     .select()
     .from(demoWorkspaces)
     .where(eq(demoWorkspaces.demoWorkspaceId, demoWorkspaceId))
   if (!demoWs) throw new Error(`Demo workspace ${demoWorkspaceId} not found`)
+
+  let deletedSchema = false
+  if (demoWs.scopeKind === 'schema' && demoWs.scopeName) {
+    await dropDemoWorkspaceSchema(context.pool, demoWs.scopeName)
+    deletedSchema = true
+  }
 
   // 1. Get IDs for cascade
   const demoStudents = await context.db
@@ -254,5 +263,7 @@ export async function resetDemoWorkspace(
     deletedStudents: demoStudentIds.length,
     deletedOfferings: demoOfferingIds.length,
     deletedRuns: demoRunIds.length,
+    deletedSchema,
+    scopeName: demoWs.scopeName ?? null,
   }
 }
