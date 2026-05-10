@@ -79,6 +79,29 @@ export async function activateProofRunSemester(requestContext: RequestContext, r
   return readJson(response, `Activate semester ${semesterNumber} for ${runId}`)
 }
 
+export async function advanceProofRunToCheckpoint(
+  requestContext: RequestContext,
+  runId: string,
+  batchId: string,
+  csrfToken: string,
+  targetSemester: number,
+  targetStageKey: string,
+) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const dashboard = await readProofDashboard(requestContext, batchId, csrfToken)
+    const active = dashboard.activeRunDetail ?? null
+    if (active?.activeOperationalSemester === targetSemester && String(active.activeStageKey).toLowerCase() === targetStageKey) {
+      return dashboard
+    }
+    const response = await requestContext.post(apiPath(`/api/admin/proof-runs/${encodeURIComponent(runId)}/advance`), {
+      headers: csrfHeaders(csrfToken),
+      data: { mode: 'stage' },
+    })
+    await readJson(response, `Advance ${runId} toward semester ${targetSemester} ${targetStageKey}`)
+  }
+  throw new Error(`Timed out advancing ${runId} to semester ${targetSemester} stage ${targetStageKey}`)
+}
+
 export async function createStudentIntervention(requestContext: RequestContext, csrfToken: string, payload: Record<string, unknown>) {
   const response = await requestContext.post(apiPath('/api/admin/student-interventions'), {
     headers: csrfHeaders(csrfToken),
