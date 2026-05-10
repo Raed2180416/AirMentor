@@ -52,9 +52,9 @@
 | Checkpoints & playback | works | — |
 | Background worker polls `simulationRuns` every 5s | works | — |
 | Active proof run + new provisioning collision rule | broken | C9 → P5 (decision pending) |
-| Reset Demo Workspace | missing | C10 → P5 |
-| Provisioning preview / dry run | missing | C11 → P5 |
-| Demo data isolation (`demoWorkspaceId`) | missing | C1, H1 → P5 |
+| Reset Demo Workspace | partial — schema drop + demo-session invalidation verified by `air-mentor-api/tests/demo-isolation.test.ts`; full seeded demo data-plane reset still pending | C10 → P5 |
+| Provisioning preview / dry run | works for estimate-only preview via `air-mentor-api/tests/demo-isolation.test.ts` | C11 → P5 |
+| Demo data isolation (`demoWorkspaceId`) | partial — schema registry/reset and demo session pointer isolation verified by `air-mentor-api/tests/demo-isolation.test.ts`, `tests/demo-workspace-pointer.test.ts`, and `tests/api-client.test.ts`; broad academic/proof schema routing deferred | C1, H1 → P5/P9 |
 | Multi-program switch | missing | D9 → P6 |
 
 ## 4. Inference & risk
@@ -154,7 +154,7 @@
 | Surface | Status | Refs |
 |---|---|---|
 | Critical-path coverage audit (≥80%) | missing | H10 → P9 |
-| Demo isolation regression test (global rows untouched) | missing | H1 → P5/P9 |
+| Demo isolation regression test (global rows untouched) | partial — backend schema/reset/session-pointer regressions and frontend pointer/header tests covered; full browser walkthrough pending | H1 → P5/P9 |
 | Multi-program proof-run integration test | missing | H4 → P6/P9 |
 | Recalibration service test | missing | H5 → P7/P9 |
 | Config wire-through test (outcome → mastery target) | works — `tests/admin-curriculum-feature-config.test.ts`; H6 closed (P3) | H6 closed |
