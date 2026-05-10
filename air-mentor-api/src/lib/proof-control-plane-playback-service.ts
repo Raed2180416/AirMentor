@@ -43,6 +43,17 @@ function safePct(value: number | null | undefined) {
   return clamp(roundToTwo(value), 0, 100)
 }
 
+function overallPctFromFinalMark(policy: ResolvedPolicy, finalMark: number) {
+  return roundToTwo(clamp((finalMark / policy.passRules.overallMaximum) * 100, 0, 100))
+}
+
+function overallPctFromComponentPcts(policy: ResolvedPolicy, cePct: number | null, seePct: number | null) {
+  if (cePct == null || seePct == null) return null
+  const ceMark = (cePct / 100) * policy.passRules.ceMaximum
+  const seeMark = (seePct / 100) * policy.passRules.seeMaximum
+  return roundToTwo(clamp(((ceMark + seeMark) / policy.passRules.overallMaximum) * 100, 0, 100))
+}
+
 function addDaysIso(isoString: string, days: number) {
   const date = new Date(isoString)
   date.setUTCDate(date.getUTCDate() + days)
@@ -827,8 +838,14 @@ export function buildStageEvidenceSnapshot(input: {
       : null,
     quizPct: courseworkEvidence.quizPct,
     assignmentPct: courseworkEvidence.assignmentPct,
+    cePct: (input.stageKey === 'post-assignments' || input.stageKey === 'post-see')
+      ? input.source.cePct
+      : null,
     seePct: input.stageKey === 'post-see'
       ? input.source.seePct
+      : null,
+    overallPct: input.stageKey === 'post-see'
+      ? overallPctFromFinalMark(input.policy, input.source.finalMark)
       : null,
     weakCoCount: weakCourseOutcomes.length,
     weakQuestionCount: questionPatterns.weakQuestionCount,
@@ -853,7 +870,7 @@ export function buildStageEvidenceSnapshot(input: {
       quizPct: baselineSnapshot.quizPct,
       assignmentPct: baselineSnapshot.assignmentPct,
       seePct: baselineSnapshot.seePct,
-      cePct: null,  // CE is not included in StageEvidenceSnapshot today; leave null
+      cePct: baselineSnapshot.cePct,
     },
     studentProfile: input.realization.studentProfile,
     runId: input.realization.runId,
@@ -874,7 +891,11 @@ export function buildStageEvidenceSnapshot(input: {
     tt2Pct: realizationOutput.realized.tt2Pct,
     quizPct: realizationOutput.realized.quizPct,
     assignmentPct: realizationOutput.realized.assignmentPct,
+    cePct: realizationOutput.realized.cePct,
     seePct: realizationOutput.realized.seePct,
+    overallPct: baselineSnapshot.overallPct == null
+      ? null
+      : overallPctFromComponentPcts(input.policy, realizationOutput.realized.cePct, realizationOutput.realized.seePct),
   }
   return realizedSnapshot
 }

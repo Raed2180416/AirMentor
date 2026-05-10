@@ -2074,7 +2074,9 @@ export type StageEvidenceSnapshot = {
   tt2Pct: number | null
   quizPct: number | null
   assignmentPct: number | null
+  cePct: number | null
   seePct: number | null
+  overallPct: number | null
   weakCoCount: number
   weakQuestionCount: number
   attentionAreas: string[]
