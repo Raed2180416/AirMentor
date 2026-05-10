@@ -24,6 +24,7 @@ function createSessionResponse(overrides?: Partial<ApiSessionResponse>): ApiSess
   return {
     sessionId: 'session-1',
     csrfToken: 'csrf-session-1',
+    demoWorkspaceId: null,
     user: {
       userId: 'user-1',
       username: 'sysadmin',

@@ -6,6 +6,7 @@ function makeSession(overrides: Partial<ApiSessionResponse> = {}): ApiSessionRes
   return {
     sessionId: 'session_1',
     csrfToken: 'csrf_1',
+    demoWorkspaceId: null,
     user: {
       userId: 'user_1',
       username: 'sysadmin',

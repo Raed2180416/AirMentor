@@ -4,6 +4,7 @@ function normalizeSessionResponse(session: ApiSessionResponse) {
   return {
     sessionId: session.sessionId,
     csrfToken: session.csrfToken,
+    demoWorkspaceId: session.demoWorkspaceId,
     user: session.user,
     faculty: session.faculty,
     activeRoleGrant: session.activeRoleGrant,

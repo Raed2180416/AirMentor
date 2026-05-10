@@ -49,6 +49,7 @@ export type ApiUiPreferences = {
 export type ApiSessionResponse = {
   sessionId: string
   csrfToken: string
+  demoWorkspaceId: string | null
   user: {
     userId: string
     username: string

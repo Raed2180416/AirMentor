@@ -101,6 +101,7 @@ import type {
   ApiDemoWorkspace,
   ApiDemoProvisioningPreview,
 } from './types.js'
+import type { ActiveDemoWorkspacePointer } from '../demo-workspace-pointer.js'
 import type {
   MeetingStatus,
   EntryKind,
@@ -367,6 +368,7 @@ export interface AirMentorApiClientLike {
 }
 
 type FetchLike = typeof fetch
+type DemoWorkspacePointerProvider = () => ActiveDemoWorkspacePointer | null
 
 function getDefaultFetch(): FetchLike {
   return globalThis.fetch.bind(globalThis) as FetchLike
@@ -406,11 +408,13 @@ function buildAdminDirectoryScopeQuery(filter?: ApiAdminDirectoryScopeFilter) {
 export class AirMentorApiClient implements AirMentorApiClientLike {
   private readonly baseUrl: string
   private readonly fetchImpl: FetchLike
+  private readonly demoWorkspacePointerProvider?: DemoWorkspacePointerProvider
   private csrfToken: string | null = null
 
-  constructor(baseUrl: string, fetchImpl?: FetchLike) {
+  constructor(baseUrl: string, fetchImpl?: FetchLike, demoWorkspacePointerProvider?: DemoWorkspacePointerProvider) {
     this.baseUrl = baseUrl.replace(/\/$/, '')
     this.fetchImpl = fetchImpl ?? getDefaultFetch()
+    this.demoWorkspacePointerProvider = demoWorkspacePointerProvider
   }
 
   async restoreSession() {
@@ -1620,9 +1624,11 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     const hasBody = init?.body !== undefined
     const method = (init?.method ?? 'GET').toUpperCase()
     const cacheMode = init?.cache ?? (isMutatingRequestMethod(method) ? undefined : 'no-store')
+    const demoWorkspacePointer = this.demoWorkspacePointerProvider?.() ?? null
     const resolvedHeaders = {
       ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
       ...toHeaderRecord(init?.headers),
+      ...(demoWorkspacePointer ? { 'X-AirMentor-Demo-Workspace': demoWorkspacePointer.demoWorkspaceId } : {}),
       ...(isMutatingRequestMethod(method) && this.csrfToken ? { 'X-AirMentor-CSRF': this.csrfToken } : {}),
     }
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, {

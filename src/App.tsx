@@ -107,6 +107,7 @@ import {
   withAlpha,
 } from './ui-primitives'
 import { AirMentorApiClient, AirMentorApiError } from './api/client'
+import { readActiveDemoWorkspacePointer } from './demo-workspace-pointer'
 import { useApiConnectionTarget } from './api-connection'
 import type {
   ApiAcademicBootstrap,
@@ -3575,7 +3576,7 @@ export function OperationalApp() {
   const apiBaseUrl = apiConnection.activeBaseUrl
   const liveAcademicMode = apiConnection.candidateBaseUrls.length > 0
   const telemetrySinkUrl = import.meta.env.VITE_AIRMENTOR_TELEMETRY_SINK_URL?.trim() || ''
-  const apiClient = useMemo(() => (apiBaseUrl ? new AirMentorApiClient(apiBaseUrl) : null), [apiBaseUrl])
+  const apiClient = useMemo(() => (apiBaseUrl ? new AirMentorApiClient(apiBaseUrl, undefined, readActiveDemoWorkspacePointer) : null), [apiBaseUrl])
   const backendHealthMonitor = useBackendHealthMonitor(apiBaseUrl, { enabled: liveAcademicMode })
   const startupDiagnostics = useMemo(
     () => collectFrontendStartupDiagnostics({ apiBaseUrl: configuredApiBaseUrl || apiBaseUrl, telemetrySinkUrl }),
