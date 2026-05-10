@@ -30,7 +30,7 @@ export async function registerAdminDemoWorkspaceRoutes(
       summary: 'Create a new demo workspace',
     },
   }, async request => {
-    requireRole(request, ['SYSTEM_ADMIN'])
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
     const body = parseOrThrow(
       z.object({
         name: z.string().min(1),
@@ -39,7 +39,10 @@ export async function registerAdminDemoWorkspaceRoutes(
       }),
       request.body,
     )
-    return createDemoWorkspace(context, body)
+    return createDemoWorkspace(context, {
+      ...body,
+      createdByFacultyId: auth.facultyId ?? null,
+    })
   })
 
   app.post('/api/admin/demo-workspaces/:demoWorkspaceId/provision/preview', {
