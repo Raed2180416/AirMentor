@@ -44,11 +44,16 @@ export function sortActiveRoleGrantRows(rows: Array<typeof roleGrants.$inferSele
   })
 }
 
-export async function resolveRequestAuth(context: RouteContext, sessionId: string | undefined) {
+export async function resolveRequestAuth(
+  context: RouteContext,
+  sessionId: string | undefined,
+  requestedDemoWorkspaceId: string | null = null,
+) {
   if (!sessionId) return null
   const [session] = await context.db.select().from(sessions).where(eq(sessions.sessionId, sessionId))
   if (!session) return null
   if (new Date(session.expiresAt).getTime() <= new Date(context.now()).getTime()) return null
+  if ((session.demoWorkspaceId ?? null) !== requestedDemoWorkspaceId) return null
 
   const [user] = await context.db.select().from(userAccounts).where(eq(userAccounts.userId, session.userId))
   if (!user || user.status !== 'active') return null
@@ -66,6 +71,7 @@ export async function resolveRequestAuth(context: RouteContext, sessionId: strin
     userId: user.userId,
     username: user.username,
     email: user.email,
+    demoWorkspaceId: session.demoWorkspaceId ?? null,
     facultyId: faculty?.facultyId ?? null,
     facultyName: faculty?.displayName ?? null,
     activeRoleGrant: mapRoleGrant(active),

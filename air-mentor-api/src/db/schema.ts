@@ -111,6 +111,7 @@ export const sessions = pgTable('sessions', {
   sessionId: text('session_id').primaryKey(),
   userId: text('user_id').notNull().references(() => userAccounts.userId),
   activeRoleGrantId: text('active_role_grant_id'),
+  demoWorkspaceId: text('demo_workspace_id'),
   expiresAt: text('expires_at').notNull(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
