@@ -1,7 +1,12 @@
-import { eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import type { RouteContext } from '../app.js'
 import { createId } from './ids.js'
-import { stringifyJson } from './json.js'
+import { parseJson, stringifyJson } from './json.js'
+import { conflict, notFound } from './http-errors.js'
+import {
+  MSRUAS_PROOF_BATCH_ID,
+  MSRUAS_PROOF_SIMULATION_RUN_ID,
+} from './msruas-proof-sandbox.js'
 import {
   buildDemoScopeName,
   createDemoWorkspaceSchema,
@@ -23,6 +28,7 @@ import {
   studentLatentStates,
   teacherLoadProfiles,
   worldContextSnapshots,
+  simulationStageCheckpoints,
   studentCoStates,
   studentTopicStates,
   riskEvidenceSnapshots,
@@ -32,6 +38,84 @@ import {
   curriculumCourses,
   sessions,
 } from '../db/schema.js'
+
+type ProvisionedCounts = {
+  students: number
+  enrollments: number
+  offerings: number
+  ownerships: number
+  runs: number
+  checkpoints: number
+}
+
+function demoIdPrefix(demoWorkspaceId: string) {
+  return `demo_${demoWorkspaceId.replace(/[^a-zA-Z0-9_]+/g, '_')}`
+}
+
+function cloneId(demoWorkspaceId: string, sourceId: string) {
+  return `${demoIdPrefix(demoWorkspaceId)}__${sourceId}`
+}
+
+function parseMetadata(value: string | null | undefined) {
+  return parseJson(value ?? '{}', {} as Record<string, unknown>)
+}
+
+async function resolveSourceProofRun(context: RouteContext) {
+  const [activeGlobalRun] = await context.db
+    .select()
+    .from(simulationRuns)
+    .where(and(
+      eq(simulationRuns.batchId, MSRUAS_PROOF_BATCH_ID),
+      eq(simulationRuns.activeFlag, 1),
+      isNull(simulationRuns.demoWorkspaceId),
+    ))
+    .limit(1)
+  if (activeGlobalRun) return activeGlobalRun
+
+  const [canonicalRun] = await context.db
+    .select()
+    .from(simulationRuns)
+    .where(eq(simulationRuns.simulationRunId, MSRUAS_PROOF_SIMULATION_RUN_ID))
+  if (canonicalRun && (canonicalRun.demoWorkspaceId ?? null) === null) return canonicalRun
+
+  const globalRuns = await context.db
+    .select()
+    .from(simulationRuns)
+    .where(and(eq(simulationRuns.batchId, MSRUAS_PROOF_BATCH_ID), isNull(simulationRuns.demoWorkspaceId)))
+  const latestRun = globalRuns.slice().sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0]
+  if (!latestRun) throw conflict('No seeded MSRUAS proof run is available for demo provisioning')
+  return latestRun
+}
+
+async function summarizeProvisionedWorkspace(
+  context: RouteContext,
+  demoWorkspaceId: string,
+  activeSimulationRunId: string,
+): Promise<{
+  demoWorkspaceId: string
+  activeSimulationRunId: string
+  provisionedCounts: ProvisionedCounts
+}> {
+  const [studentRows, enrollmentRows, offeringRows, ownershipRows, checkpointRows] = await Promise.all([
+    context.db.select().from(students).where(eq(students.demoWorkspaceId, demoWorkspaceId)),
+    context.db.select().from(studentEnrollments).where(eq(studentEnrollments.demoWorkspaceId, demoWorkspaceId)),
+    context.db.select().from(sectionOfferings).where(eq(sectionOfferings.demoWorkspaceId, demoWorkspaceId)),
+    context.db.select().from(facultyOfferingOwnerships).where(eq(facultyOfferingOwnerships.demoWorkspaceId, demoWorkspaceId)),
+    context.db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, activeSimulationRunId)),
+  ])
+  return {
+    demoWorkspaceId,
+    activeSimulationRunId,
+    provisionedCounts: {
+      students: studentRows.length,
+      enrollments: enrollmentRows.length,
+      offerings: offeringRows.length,
+      ownerships: ownershipRows.length,
+      runs: 1,
+      checkpoints: checkpointRows.length,
+    },
+  }
+}
 
 export async function listDemoWorkspaces(context: RouteContext) {
   return context.db.select().from(demoWorkspaces).orderBy(demoWorkspaces.createdAt)
@@ -148,6 +232,169 @@ export async function previewDemoProvisioning(
     estimatedOfferingCount,
     curriculumCourseCount,
   }
+}
+
+export async function provisionDemoWorkspace(
+  context: RouteContext,
+  demoWorkspaceId: string,
+): Promise<{
+  demoWorkspaceId: string
+  activeSimulationRunId: string
+  provisionedCounts: ProvisionedCounts
+}> {
+  const now = context.now()
+  const [demoWs] = await context.db
+    .select()
+    .from(demoWorkspaces)
+    .where(eq(demoWorkspaces.demoWorkspaceId, demoWorkspaceId))
+  if (!demoWs) throw notFound('Demo workspace not found')
+  if (demoWs.status !== 'active') throw conflict('Demo workspace is not active')
+
+  if (demoWs.activeSimulationRunId) {
+    const [existingRun] = await context.db
+      .select()
+      .from(simulationRuns)
+      .where(eq(simulationRuns.simulationRunId, demoWs.activeSimulationRunId))
+    if (existingRun && existingRun.demoWorkspaceId === demoWorkspaceId) {
+      return summarizeProvisionedWorkspace(context, demoWorkspaceId, existingRun.simulationRunId)
+    }
+  }
+
+  const sourceRun = await resolveSourceProofRun(context)
+  const sourceTerms = await context.db
+    .select()
+    .from(academicTerms)
+    .where(eq(academicTerms.batchId, sourceRun.batchId))
+  const sourceTermIds = sourceTerms.map(row => row.termId)
+  if (sourceTermIds.length === 0) throw conflict('No academic terms are available for demo provisioning')
+
+  const sourceOfferings = await context.db
+    .select()
+    .from(sectionOfferings)
+    .where(and(inArray(sectionOfferings.termId, sourceTermIds), isNull(sectionOfferings.demoWorkspaceId)))
+  if (sourceOfferings.length === 0) throw conflict('No seeded offerings are available for demo provisioning')
+
+  const sourceOfferingIds = sourceOfferings.map(row => row.offeringId)
+  const sourceEnrollments = await context.db
+    .select()
+    .from(studentEnrollments)
+    .where(and(inArray(studentEnrollments.termId, sourceTermIds), isNull(studentEnrollments.demoWorkspaceId)))
+  const sourceStudentIds = [...new Set(sourceEnrollments.map(row => row.studentId))]
+  if (sourceStudentIds.length === 0) throw conflict('No seeded students are available for demo provisioning')
+
+  const [
+    sourceStudents,
+    sourceProfiles,
+    sourceMentors,
+    sourceOwnerships,
+  ] = await Promise.all([
+    context.db.select().from(students).where(and(inArray(students.studentId, sourceStudentIds), isNull(students.demoWorkspaceId))),
+    context.db.select().from(studentAcademicProfiles).where(inArray(studentAcademicProfiles.studentId, sourceStudentIds)),
+    context.db.select().from(mentorAssignments).where(and(inArray(mentorAssignments.studentId, sourceStudentIds), isNull(mentorAssignments.demoWorkspaceId))),
+    context.db.select().from(facultyOfferingOwnerships).where(and(inArray(facultyOfferingOwnerships.offeringId, sourceOfferingIds), isNull(facultyOfferingOwnerships.demoWorkspaceId))),
+  ])
+
+  const studentIdBySource = new Map(sourceStudents.map(row => [row.studentId, cloneId(demoWorkspaceId, row.studentId)]))
+  const offeringIdBySource = new Map(sourceOfferings.map(row => [row.offeringId, cloneId(demoWorkspaceId, row.offeringId)]))
+  const clonedRunId = cloneId(demoWorkspaceId, sourceRun.simulationRunId)
+  const termById = new Map(sourceTerms.map(row => [row.termId, row]))
+  const offeringSemesters = sourceOfferings
+    .map(row => termById.get(row.termId)?.semesterNumber ?? null)
+    .filter((value): value is number => value != null)
+  const targetSemester = offeringSemesters.includes(sourceRun.activeOperationalSemester)
+    ? sourceRun.activeOperationalSemester
+    : Math.max(...offeringSemesters)
+
+  await context.db.insert(students).values(sourceStudents.map(row => ({
+    ...row,
+    studentId: studentIdBySource.get(row.studentId) ?? cloneId(demoWorkspaceId, row.studentId),
+    usn: `${row.usn}-DEMO-${demoIdPrefix(demoWorkspaceId)}`,
+    email: row.email ? row.email.replace('@', `+${demoIdPrefix(demoWorkspaceId)}@`) : null,
+    demoWorkspaceId,
+    createdAt: now,
+    updatedAt: now,
+  }))).onConflictDoNothing()
+
+  if (sourceProfiles.length > 0) {
+    await context.db.insert(studentAcademicProfiles).values(sourceProfiles.map(row => ({
+      ...row,
+      studentId: studentIdBySource.get(row.studentId) ?? cloneId(demoWorkspaceId, row.studentId),
+      createdAt: now,
+      updatedAt: now,
+    }))).onConflictDoNothing()
+  }
+
+  await context.db.insert(sectionOfferings).values(sourceOfferings.map(row => ({
+    ...row,
+    offeringId: offeringIdBySource.get(row.offeringId) ?? cloneId(demoWorkspaceId, row.offeringId),
+    demoWorkspaceId,
+    createdAt: now,
+    updatedAt: now,
+  }))).onConflictDoNothing()
+
+  await context.db.insert(studentEnrollments).values(sourceEnrollments.map(row => ({
+    ...row,
+    enrollmentId: cloneId(demoWorkspaceId, row.enrollmentId),
+    studentId: studentIdBySource.get(row.studentId) ?? cloneId(demoWorkspaceId, row.studentId),
+    demoWorkspaceId,
+    createdAt: now,
+    updatedAt: now,
+  }))).onConflictDoNothing()
+
+  if (sourceMentors.length > 0) {
+    await context.db.insert(mentorAssignments).values(sourceMentors.map(row => ({
+      ...row,
+      assignmentId: cloneId(demoWorkspaceId, row.assignmentId),
+      studentId: studentIdBySource.get(row.studentId) ?? cloneId(demoWorkspaceId, row.studentId),
+      demoWorkspaceId,
+      createdAt: now,
+      updatedAt: now,
+    }))).onConflictDoNothing()
+  }
+
+  if (sourceOwnerships.length > 0) {
+    await context.db.insert(facultyOfferingOwnerships).values(sourceOwnerships.map(row => ({
+      ...row,
+      ownershipId: cloneId(demoWorkspaceId, row.ownershipId),
+      offeringId: offeringIdBySource.get(row.offeringId) ?? cloneId(demoWorkspaceId, row.offeringId),
+      demoWorkspaceId,
+      createdAt: now,
+      updatedAt: now,
+    }))).onConflictDoNothing()
+  }
+
+  await context.db.insert(simulationRuns).values({
+    ...sourceRun,
+    simulationRunId: clonedRunId,
+    parentSimulationRunId: sourceRun.simulationRunId,
+    runLabel: `Demo workspace ${demoWs.name}: ${sourceRun.runLabel}`,
+    status: 'active',
+    activeFlag: 1,
+    activeOperationalSemester: targetSemester,
+    activeStageKey: sourceRun.activeStageKey ?? 'pre-tt1',
+    lifecycleState: 'active',
+    demoWorkspaceId,
+    createdAt: now,
+    updatedAt: now,
+  }).onConflictDoNothing()
+
+  const result = await summarizeProvisionedWorkspace(context, demoWorkspaceId, clonedRunId)
+  const metadata = parseMetadata(demoWs.metadataJson)
+  await context.db.update(demoWorkspaces).set({
+    batchId: sourceRun.batchId,
+    sourceBatchId: sourceRun.batchId,
+    activeSimulationRunId: clonedRunId,
+    metadataJson: stringifyJson({
+      ...metadata,
+      storageMode: 'schema',
+      sourceBatchId: sourceRun.batchId,
+      provisionedCounts: result.provisionedCounts,
+    }),
+    status: 'active',
+    updatedAt: now,
+  }).where(eq(demoWorkspaces.demoWorkspaceId, demoWorkspaceId))
+
+  return result
 }
 
 export async function resetDemoWorkspace(
