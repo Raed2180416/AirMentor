@@ -292,6 +292,9 @@ describe('demo workspace isolation', () => {
         offerings: number
         ownerships: number
         runs: number
+        checkpoints: number
+        observedStates: number
+        riskAssessments: number
       }
     }
     expect(provisioned.demoWorkspaceId).toBe(demoWs.demoWorkspaceId)
@@ -301,6 +304,9 @@ describe('demo workspace isolation', () => {
     expect(provisioned.provisionedCounts.offerings).toBeGreaterThan(0)
     expect(provisioned.provisionedCounts.ownerships).toBeGreaterThan(0)
     expect(provisioned.provisionedCounts.runs).toBe(1)
+    expect(provisioned.provisionedCounts.checkpoints).toBeGreaterThan(0)
+    expect(provisioned.provisionedCounts.observedStates).toBeGreaterThan(0)
+    expect(provisioned.provisionedCounts.riskAssessments).toBeGreaterThan(0)
 
     const provisionAgainRes = await current.app.inject({
       method: 'POST',
@@ -342,10 +348,25 @@ describe('demo workspace isolation', () => {
       .select()
       .from(facultyOfferingOwnerships)
       .where(eq(facultyOfferingOwnerships.demoWorkspaceId, demoWs.demoWorkspaceId))
+    const demoCheckpoints = await current.db
+      .select()
+      .from(simulationStageCheckpoints)
+      .where(eq(simulationStageCheckpoints.simulationRunId, provisioned.activeSimulationRunId))
+    const demoObservedStates = await current.db
+      .select()
+      .from(studentObservedSemesterStates)
+      .where(eq(studentObservedSemesterStates.simulationRunId, provisioned.activeSimulationRunId))
+    const demoRiskAssessments = await current.db
+      .select()
+      .from(riskAssessments)
+      .where(eq(riskAssessments.simulationRunId, provisioned.activeSimulationRunId))
     expect(demoStudents.length).toBe(provisioned.provisionedCounts.students)
     expect(demoEnrollments.length).toBe(provisioned.provisionedCounts.enrollments)
     expect(demoOfferings.length).toBe(provisioned.provisionedCounts.offerings)
     expect(demoOwnerships.length).toBe(provisioned.provisionedCounts.ownerships)
+    expect(demoCheckpoints.length).toBe(provisioned.provisionedCounts.checkpoints)
+    expect(demoObservedStates.length).toBe(provisioned.provisionedCounts.observedStates)
+    expect(demoRiskAssessments.length).toBe(provisioned.provisionedCounts.riskAssessments)
 
     const demoTeacherLoginAfter = await current.app.inject({
       method: 'POST',
