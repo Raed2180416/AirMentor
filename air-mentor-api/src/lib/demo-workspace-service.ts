@@ -1,6 +1,12 @@
 import { eq, inArray } from 'drizzle-orm'
 import type { RouteContext } from '../app.js'
 import { createId } from './ids.js'
+import { stringifyJson } from './json.js'
+import {
+  buildDemoScopeName,
+  createDemoWorkspaceSchema,
+  dropDemoWorkspaceSchema,
+} from './demo-workspace-scope.js'
 import {
   demoWorkspaces,
   students,
@@ -36,21 +42,50 @@ export async function createDemoWorkspace(
     name: string
     ownerFacultyId?: string
     batchId?: string
+    createdByFacultyId?: string | null
   },
 ): Promise<typeof demoWorkspaces.$inferSelect> {
   const now = context.now()
   const demoWorkspaceId = createId('demo_ws')
-  const row: typeof demoWorkspaces.$inferSelect = {
+  const scopeName = buildDemoScopeName(demoWorkspaceId)
+  const metadata = {
+    storageMode: 'schema',
+    sourceBatchId: input.batchId ?? null,
+    provisionedCounts: {
+      students: 0,
+      offerings: 0,
+      runs: 0,
+    },
+  }
+  const row: typeof demoWorkspaces.$inferInsert = {
     demoWorkspaceId,
     name: input.name,
     ownerFacultyId: input.ownerFacultyId ?? null,
     batchId: input.batchId ?? null,
-    status: 'active',
+    scopeKind: 'schema',
+    scopeName,
+    sourceBatchId: input.batchId ?? null,
+    activeSimulationRunId: null,
+    createdByFacultyId: input.createdByFacultyId ?? null,
+    stoppedAt: null,
+    resetAt: null,
+    metadataJson: stringifyJson(metadata),
+    status: 'provisioning',
     createdAt: now,
     updatedAt: now,
   }
   await context.db.insert(demoWorkspaces).values(row)
-  return row
+  await createDemoWorkspaceSchema(context.pool, scopeName)
+  await context.db.update(demoWorkspaces).set({
+    status: 'active',
+    updatedAt: now,
+  }).where(eq(demoWorkspaces.demoWorkspaceId, demoWorkspaceId))
+  const [created] = await context.db
+    .select()
+    .from(demoWorkspaces)
+    .where(eq(demoWorkspaces.demoWorkspaceId, demoWorkspaceId))
+  if (!created) throw new Error(`Demo workspace ${demoWorkspaceId} was not created`)
+  return created
 }
 
 export async function previewDemoProvisioning(
@@ -121,12 +156,20 @@ export async function resetDemoWorkspace(
   deletedStudents: number
   deletedOfferings: number
   deletedRuns: number
+  deletedSchema: boolean
+  scopeName: string | null
 }> {
   const [demoWs] = await context.db
     .select()
     .from(demoWorkspaces)
     .where(eq(demoWorkspaces.demoWorkspaceId, demoWorkspaceId))
   if (!demoWs) throw new Error(`Demo workspace ${demoWorkspaceId} not found`)
+
+  let deletedSchema = false
+  if (demoWs.scopeKind === 'schema' && demoWs.scopeName) {
+    await dropDemoWorkspaceSchema(context.pool, demoWs.scopeName)
+    deletedSchema = true
+  }
 
   // 1. Get IDs for cascade
   const demoStudents = await context.db
@@ -220,5 +263,7 @@ export async function resetDemoWorkspace(
     deletedStudents: demoStudentIds.length,
     deletedOfferings: demoOfferingIds.length,
     deletedRuns: demoRunIds.length,
+    deletedSchema,
+    scopeName: demoWs.scopeName ?? null,
   }
 }
