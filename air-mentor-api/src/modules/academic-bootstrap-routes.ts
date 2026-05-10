@@ -68,6 +68,7 @@ export async function registerAcademicBootstrapRoutes(
       facultyId: auth.facultyId ?? null,
       roleCode: auth.activeRoleGrant.roleCode ?? null,
       simulationStageCheckpointId: query.simulationStageCheckpointId,
+      demoWorkspaceId: auth.demoWorkspaceId ?? null,
     })
     emitOperationalEvent('academic.bootstrap.loaded', {
       facultyId: auth.facultyId ?? null,
