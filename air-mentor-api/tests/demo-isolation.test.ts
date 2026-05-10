@@ -539,6 +539,55 @@ describe('demo workspace isolation', () => {
     expect(Object.values(snapshot.studentsByOffering).flat()).toHaveLength(0)
   })
 
+  it('rejects demo academic control of a global proof run', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const createRes = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/demo-workspaces',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: { name: 'Scoped Academic Control Demo' },
+    })
+    expect(createRes.statusCode).toBe(200)
+    const demoWs = createRes.json() as { demoWorkspaceId: string }
+
+    const demoTeacherLoginRes = await current.app.inject({
+      method: 'POST',
+      url: '/api/session/login',
+      headers: {
+        origin: TEST_ORIGIN,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+      payload: { identifier: 'devika.shetty', password: 'faculty1234' },
+    })
+    expect(demoTeacherLoginRes.statusCode).toBe(200)
+    const demoTeacherCookie = Array.isArray(demoTeacherLoginRes.headers['set-cookie'])
+      ? demoTeacherLoginRes.headers['set-cookie'][0]
+      : demoTeacherLoginRes.headers['set-cookie']
+    expect(demoTeacherCookie).toBeTruthy()
+
+    const [globalActiveRun] = await current.db
+      .select()
+      .from(simulationRuns)
+      .where(eq(simulationRuns.activeFlag, 1))
+    expect(globalActiveRun.demoWorkspaceId).toBeNull()
+
+    const stopRes = await current.app.inject({
+      method: 'POST',
+      url: `/api/academic/proof-runs/${globalActiveRun.simulationRunId}/stop`,
+      headers: {
+        cookie: demoTeacherCookie,
+        origin: TEST_ORIGIN,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+    })
+    expect(stopRes.statusCode).toBe(403)
+    expect(stopRes.json()).toMatchObject({
+      error: 'PROOF_RUN_SCOPE_MISMATCH',
+    })
+  })
+
   it('creates, lists, and resets a demo workspace without touching live data', async () => {
     current = await createTestApp()
     const login = await loginAs(current.app, 'sysadmin', 'admin1234')

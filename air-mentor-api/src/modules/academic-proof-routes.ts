@@ -11,7 +11,7 @@ import {
   studentAgentSessions,
 } from '../db/schema.js'
 import { createId } from '../lib/ids.js'
-import { badRequest, notFound } from '../lib/http-errors.js'
+import { AppError, badRequest, notFound } from '../lib/http-errors.js'
 import { parseJson, stringifyJson } from '../lib/json.js'
 import {
   buildHodProofAnalytics,
@@ -41,6 +41,19 @@ import {
   parseOrThrow,
   requireRole,
 } from './support.js'
+
+async function resolveScopedAcademicProofRun(
+  context: RouteContext,
+  auth: ReturnType<typeof requireRole>,
+  simulationRunId: string,
+) {
+  const [run] = await context.db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, simulationRunId))
+  if (!run) throw notFound('Simulation run not found')
+  if ((run.demoWorkspaceId ?? null) !== (auth.demoWorkspaceId ?? null)) {
+    throw new AppError(403, 'PROOF_RUN_SCOPE_MISMATCH', 'Proof run is not available in this workspace scope.')
+  }
+  return run
+}
 
 export async function registerAcademicProofRoutes(
   app: FastifyInstance,
@@ -217,6 +230,10 @@ export async function registerAcademicProofRoutes(
     if (query.runIdBaseline === query.runIdRealized) {
       throw badRequest('runIdBaseline and runIdRealized must be two distinct simulation runs')
     }
+    await Promise.all([
+      resolveScopedAcademicProofRun(context, auth, query.runIdBaseline),
+      resolveScopedAcademicProofRun(context, auth, query.runIdRealized),
+    ])
     const [baselineRows, realizedRows] = await Promise.all([
       fetchCounterfactualSnapshotRows(context.db, { simulationRunId: query.runIdBaseline }),
       fetchCounterfactualSnapshotRows(context.db, { simulationRunId: query.runIdRealized }),
@@ -247,6 +264,7 @@ export async function registerAcademicProofRoutes(
       runId: z.string().min(1),
     })
     const query = parseOrThrow(querySchema, request.query)
+    await resolveScopedAcademicProofRun(context, auth, query.runId)
     const rows = await fetchSimulatorProjectionRows(context.db, { simulationRunId: query.runId })
     const report = buildSimulatorCounterfactualReport({
       runId: query.runId,
@@ -266,8 +284,7 @@ export async function registerAcademicProofRoutes(
     assertAcademicAccess(evaluateFacultyContextAccess(auth, { allowSystemAdmin: true }))
     const params = parseOrThrow(z.object({ simulationRunId: z.string().min(1) }), request.params)
     const body = parseOrThrow(proofAdvanceSchema, request.body ?? {})
-    const [run] = await context.db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, params.simulationRunId))
-    if (!run) throw notFound('Simulation run not found')
+    const run = await resolveScopedAcademicProofRun(context, auth, params.simulationRunId)
     assertAcademicAccess(evaluateActiveProofRunAccess(auth, run.activeFlag === 1, 'Academic proof controls may advance only the active proof run'))
 
     const input = {
@@ -289,8 +306,7 @@ export async function registerAcademicProofRoutes(
     const auth = requireRole(request, ['SYSTEM_ADMIN', ...academicRoleCodes])
     assertAcademicAccess(evaluateFacultyContextAccess(auth, { allowSystemAdmin: true }))
     const params = parseOrThrow(z.object({ simulationRunId: z.string().min(1) }), request.params)
-    const [run] = await context.db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, params.simulationRunId))
-    if (!run) throw notFound('Simulation run not found')
+    const run = await resolveScopedAcademicProofRun(context, auth, params.simulationRunId)
     assertAcademicAccess(evaluateActiveProofRunAccess(auth, run.activeFlag === 1, 'Academic proof controls may stop only the active proof run'))
     return stopProofSimulationRun(context.db, {
       simulationRunId: params.simulationRunId,
