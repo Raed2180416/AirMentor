@@ -1895,7 +1895,7 @@ export type ApiAcademicHodProofCounterfactualReport = {
 // Matches `CounterfactualSimulatorReport` produced by
 // `@air-mentor-api/src/lib/proof-counterfactual-simulator-aggregator.ts`.
 // UI language MUST stay projected/simulated (§C.13 + §G.6 + §L.10) — never
-// claim the risk model proved causal uplift on its own.
+// present simulator output as causal proof on its own.
 
 export type ApiAcademicHodProofSimulatorStageKey =
   | 'pre-tt1'
