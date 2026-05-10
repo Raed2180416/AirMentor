@@ -364,6 +364,115 @@ describe('demo workspace isolation', () => {
     expect(demoAfter.demoWorkspaceId).toBe(demoWs.demoWorkspaceId)
   })
 
+  it('rejects demo admin control of a global proof run', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const createRes = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/demo-workspaces',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: { name: 'Scoped Control Demo' },
+    })
+    expect(createRes.statusCode).toBe(200)
+    const demoWs = createRes.json() as { demoWorkspaceId: string }
+
+    const demoAdminLoginRes = await current.app.inject({
+      method: 'POST',
+      url: '/api/session/login',
+      headers: {
+        origin: TEST_ORIGIN,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+      payload: { identifier: 'sysadmin', password: 'admin1234' },
+    })
+    expect(demoAdminLoginRes.statusCode).toBe(200)
+    const demoAdminCookie = Array.isArray(demoAdminLoginRes.headers['set-cookie'])
+      ? demoAdminLoginRes.headers['set-cookie'][0]
+      : demoAdminLoginRes.headers['set-cookie']
+    expect(demoAdminCookie).toBeTruthy()
+
+    const [globalActiveRun] = await current.db
+      .select()
+      .from(simulationRuns)
+      .where(eq(simulationRuns.activeFlag, 1))
+    expect(globalActiveRun.demoWorkspaceId).toBeNull()
+
+    const activateRes = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${globalActiveRun.simulationRunId}/activate`,
+      headers: {
+        cookie: demoAdminCookie,
+        origin: TEST_ORIGIN,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+    })
+    expect(activateRes.statusCode).toBe(403)
+    expect(activateRes.json()).toMatchObject({
+      error: 'PROOF_RUN_SCOPE_MISMATCH',
+    })
+  })
+
+  it('rejects global admin control of a demo proof run', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const createRes = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/demo-workspaces',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: { name: 'Scoped Global Control Demo' },
+    })
+    expect(createRes.statusCode).toBe(200)
+    const demoWs = createRes.json() as { demoWorkspaceId: string }
+
+    const [globalActiveRun] = await current.db
+      .select()
+      .from(simulationRuns)
+      .where(eq(simulationRuns.activeFlag, 1))
+    expect(globalActiveRun.demoWorkspaceId).toBeNull()
+
+    const demoRunId = `simulation_run_demo_global_control_${Date.now()}`
+    await current.db.insert(simulationRuns).values({
+      ...globalActiveRun,
+      simulationRunId: demoRunId,
+      parentSimulationRunId: globalActiveRun.simulationRunId,
+      runLabel: 'Scoped global control demo run',
+      status: 'completed',
+      activeFlag: 0,
+      demoWorkspaceId: demoWs.demoWorkspaceId,
+      createdAt: TEST_NOW,
+      updatedAt: TEST_NOW,
+    })
+    await current.db.insert(simulationStageCheckpoints).values({
+      simulationStageCheckpointId: `stage_checkpoint_demo_global_control_${Date.now()}`,
+      simulationRunId: demoRunId,
+      semesterNumber: 1,
+      stageKey: 'pre-tt1',
+      stageLabel: 'Pre TT1',
+      stageDescription: 'Initial demo checkpoint',
+      stageOrder: 1,
+      previousCheckpointId: null,
+      nextCheckpointId: null,
+      summaryJson: JSON.stringify({ scope: 'demo-global-control-test' }),
+      createdAt: TEST_NOW,
+      updatedAt: TEST_NOW,
+    })
+
+    const activateRes = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${demoRunId}/activate`,
+      headers: {
+        cookie: adminLogin.cookie,
+        origin: TEST_ORIGIN,
+      },
+    })
+    expect(activateRes.statusCode).toBe(403)
+    expect(activateRes.json()).toMatchObject({
+      error: 'PROOF_RUN_SCOPE_MISMATCH',
+    })
+  })
+
   it('creates, lists, and resets a demo workspace without touching live data', async () => {
     current = await createTestApp()
     const login = await loginAs(current.app, 'sysadmin', 'admin1234')

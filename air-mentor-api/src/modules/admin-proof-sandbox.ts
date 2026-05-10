@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import type { RouteContext } from '../app.js'
 import { simulationRuns } from '../db/schema.js'
+import { AppError, notFound } from '../lib/http-errors.js'
 import {
   activateProofOperationalSemester,
   activateProofSimulationRun,
@@ -71,9 +72,17 @@ const checkpointStudentParamsSchema = z.object({
   studentId: z.string().min(1),
 })
 
-async function requireProofRunBatchId(context: RouteContext, simulationRunId: string) {
+async function requireScopedProofRun(context: RouteContext, auth: ReturnType<typeof requireRole>, simulationRunId: string) {
   const [run] = await context.db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, simulationRunId))
-  if (!run) throw new Error('Simulation run not found')
+  if (!run) throw notFound('Simulation run not found')
+  if ((run.demoWorkspaceId ?? null) !== (auth.demoWorkspaceId ?? null)) {
+    throw new AppError(403, 'PROOF_RUN_SCOPE_MISMATCH', 'Proof run is not available in this workspace scope.')
+  }
+  return run
+}
+
+async function requireProofRunBatchId(context: RouteContext, auth: ReturnType<typeof requireRole>, simulationRunId: string) {
+  const run = await requireScopedProofRun(context, auth, simulationRunId)
   return run.batchId
 }
 
@@ -208,8 +217,9 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
   app.get('/api/admin/proof-runs/:simulationRunId/checkpoints', {
     schema: { tags: ['admin-proof'], summary: 'List immutable playback checkpoints for a proof simulation run' },
   }, async request => {
-    requireRole(request, ['SYSTEM_ADMIN'])
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(runParamsSchema, request.params)
+    await requireScopedProofRun(context, auth, params.simulationRunId)
     return {
       items: await listProofRunCheckpoints(context.db, {
         simulationRunId: params.simulationRunId,
@@ -220,8 +230,9 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
   app.get('/api/admin/proof-runs/:simulationRunId/checkpoints/:checkpointId', {
     schema: { tags: ['admin-proof'], summary: 'Read one immutable playback checkpoint for a proof simulation run' },
   }, async request => {
-    requireRole(request, ['SYSTEM_ADMIN'])
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(checkpointParamsSchema, request.params)
+    await requireScopedProofRun(context, auth, params.simulationRunId)
     return getProofRunCheckpointDetail(context.db, {
       simulationRunId: params.simulationRunId,
       simulationStageCheckpointId: params.checkpointId,
@@ -231,8 +242,9 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
   app.get('/api/admin/proof-runs/:simulationRunId/checkpoints/:checkpointId/students/:studentId', {
     schema: { tags: ['admin-proof'], summary: 'Read one student detail row for a proof playback checkpoint' },
   }, async request => {
-    requireRole(request, ['SYSTEM_ADMIN'])
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(checkpointStudentParamsSchema, request.params)
+    await requireScopedProofRun(context, auth, params.simulationRunId)
     return getProofRunCheckpointStudentDetail(context.db, {
       simulationRunId: params.simulationRunId,
       simulationStageCheckpointId: params.checkpointId,
@@ -372,6 +384,7 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
   }, async request => {
     const auth = requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(runParamsSchema, request.params)
+    await requireScopedProofRun(context, auth, params.simulationRunId)
     const retried = await retryQueuedProofSimulationRun(context.db, {
       simulationRunId: params.simulationRunId,
       now: context.now(),
@@ -392,6 +405,7 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
   }, async request => {
     const auth = requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(runParamsSchema, request.params)
+    await requireScopedProofRun(context, auth, params.simulationRunId)
     await activateProofSimulationRun(context.db, {
       simulationRunId: params.simulationRunId,
       actorFacultyId: auth.facultyId,
@@ -420,6 +434,7 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
     const auth = requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(runParamsSchema, request.params)
     const body = parseOrThrow(activateSemesterSchema, request.body)
+    await requireScopedProofRun(context, auth, params.simulationRunId)
     const result = await activateProofOperationalSemester(context.db, {
       simulationRunId: params.simulationRunId,
       semesterNumber: body.semesterNumber,
@@ -442,6 +457,7 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
   }, async request => {
     const auth = requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(runParamsSchema, request.params)
+    await requireScopedProofRun(context, auth, params.simulationRunId)
     await archiveProofSimulationRun(context.db, {
       simulationRunId: params.simulationRunId,
       actorFacultyId: auth.facultyId,
@@ -468,6 +484,7 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
     const auth = requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(runParamsSchema, request.params)
     const body = parseOrThrow(advanceBodySchema, request.body)
+    await requireScopedProofRun(context, auth, params.simulationRunId)
     const input = {
       simulationRunId: params.simulationRunId,
       actorFacultyId: auth.facultyId,
@@ -521,6 +538,7 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
   }, async request => {
     const auth = requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(runParamsSchema, request.params)
+    await requireScopedProofRun(context, auth, params.simulationRunId)
     const result = await stopProofSimulationRun(context.db, {
       simulationRunId: params.simulationRunId,
       actorFacultyId: auth.facultyId,
@@ -542,7 +560,7 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
   }, async request => {
     const auth = requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(runParamsSchema, request.params)
-    const batchId = await requireProofRunBatchId(context, params.simulationRunId)
+    const batchId = await requireProofRunBatchId(context, auth, params.simulationRunId)
     const resolved = await resolveBatchPolicy(context, batchId)
     await recomputeObservedOnlyRisk(context.db, {
       simulationRunId: params.simulationRunId,
@@ -566,7 +584,7 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
     const auth = requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(runParamsSchema, request.params)
     const body = parseOrThrow(restoreSnapshotSchema, request.body)
-    const batchId = await requireProofRunBatchId(context, params.simulationRunId)
+    const batchId = await requireProofRunBatchId(context, auth, params.simulationRunId)
     const resolved = await resolveBatchPolicy(context, batchId)
     const restored = await restoreProofSimulationSnapshot(context.db, {
       simulationRunId: params.simulationRunId,
@@ -589,8 +607,9 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
   app.get('/api/admin/proof-runs/:simulationRunId/students/:studentId/evidence-timeline', {
     schema: { tags: ['admin-proof'], summary: 'Read a student evidence timeline for a proof simulation run' },
   }, async request => {
-    requireRole(request, ['SYSTEM_ADMIN'])
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(evidenceParamsSchema, request.params)
+    await requireScopedProofRun(context, auth, params.simulationRunId)
     return {
       items: await getProofStudentEvidenceTimeline(context.db, {
         simulationRunId: params.simulationRunId,
