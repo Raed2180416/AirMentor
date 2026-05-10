@@ -63,6 +63,22 @@ export async function advanceProofRunStage(requestContext: RequestContext, runId
   return readJson(response, `Advance proof run ${runId} by stage`)
 }
 
+export async function recomputeProofRunRisk(requestContext: RequestContext, runId: string, csrfToken: string) {
+  const response = await requestContext.post(apiPath(`/api/admin/proof-runs/${encodeURIComponent(runId)}/recompute-risk`), {
+    headers: csrfHeaders(csrfToken),
+    data: {},
+  })
+  return readJson(response, `Recompute proof risk for ${runId}`)
+}
+
+export async function activateProofRunSemester(requestContext: RequestContext, runId: string, csrfToken: string, semesterNumber: number) {
+  const response = await requestContext.post(apiPath(`/api/admin/proof-runs/${encodeURIComponent(runId)}/activate-semester`), {
+    headers: csrfHeaders(csrfToken),
+    data: { semesterNumber },
+  })
+  return readJson(response, `Activate semester ${semesterNumber} for ${runId}`)
+}
+
 export async function createStudentIntervention(requestContext: RequestContext, csrfToken: string, payload: Record<string, unknown>) {
   const response = await requestContext.post(apiPath('/api/admin/student-interventions'), {
     headers: csrfHeaders(csrfToken),
