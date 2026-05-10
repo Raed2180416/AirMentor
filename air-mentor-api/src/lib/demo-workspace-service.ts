@@ -30,6 +30,7 @@ import {
   batches,
   academicTerms,
   curriculumCourses,
+  sessions,
 } from '../db/schema.js'
 
 export async function listDemoWorkspaces(context: RouteContext) {
@@ -156,6 +157,7 @@ export async function resetDemoWorkspace(
   deletedStudents: number
   deletedOfferings: number
   deletedRuns: number
+  deletedSessions: number
   deletedSchema: boolean
   scopeName: string | null
 }> {
@@ -164,6 +166,14 @@ export async function resetDemoWorkspace(
     .from(demoWorkspaces)
     .where(eq(demoWorkspaces.demoWorkspaceId, demoWorkspaceId))
   if (!demoWs) throw new Error(`Demo workspace ${demoWorkspaceId} not found`)
+
+  const demoSessions = await context.db
+    .select({ sessionId: sessions.sessionId })
+    .from(sessions)
+    .where(eq(sessions.demoWorkspaceId, demoWorkspaceId))
+  await context.db
+    .delete(sessions)
+    .where(eq(sessions.demoWorkspaceId, demoWorkspaceId))
 
   let deletedSchema = false
   if (demoWs.scopeKind === 'schema' && demoWs.scopeName) {
@@ -263,6 +273,7 @@ export async function resetDemoWorkspace(
     deletedStudents: demoStudentIds.length,
     deletedOfferings: demoOfferingIds.length,
     deletedRuns: demoRunIds.length,
+    deletedSessions: demoSessions.length,
     deletedSchema,
     scopeName: demoWs.scopeName ?? null,
   }

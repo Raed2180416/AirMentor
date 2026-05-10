@@ -7,6 +7,7 @@ import {
   simulationRuns,
   demoWorkspaces,
   batches,
+  sessions,
 } from '../src/db/schema.js'
 import {
   assertSafeDemoScopeName,
@@ -65,6 +66,107 @@ describe('demo workspace isolation', () => {
     expect(row.sourceBatchId).toBe(batch.batchId)
     expect(row.createdByFacultyId).toBeTruthy()
     expect(await demoWorkspaceSchemaExists(current.pool, body.scopeName ?? '')).toBe(true)
+  })
+
+  it('binds demo sessions to the active demo workspace pointer and rejects pointer drift', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const createRes = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/demo-workspaces',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: { name: 'Session Scope Demo' },
+    })
+    expect(createRes.statusCode).toBe(200)
+    const demoWs = createRes.json() as { demoWorkspaceId: string }
+
+    const demoLoginRes = await current.app.inject({
+      method: 'POST',
+      url: '/api/session/login',
+      headers: {
+        origin: TEST_ORIGIN,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+      payload: { identifier: 'sysadmin', password: 'admin1234' },
+    })
+    expect(demoLoginRes.statusCode).toBe(200)
+    const demoLoginBody = demoLoginRes.json() as { sessionId: string; demoWorkspaceId?: string | null }
+    expect(demoLoginBody.demoWorkspaceId).toBe(demoWs.demoWorkspaceId)
+
+    const demoCookie = Array.isArray(demoLoginRes.headers['set-cookie'])
+      ? demoLoginRes.headers['set-cookie'][0]
+      : demoLoginRes.headers['set-cookie']
+    expect(demoCookie).toBeTruthy()
+
+    const [sessionRow] = await current.db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.sessionId, demoLoginBody.sessionId))
+    expect(sessionRow.demoWorkspaceId).toBe(demoWs.demoWorkspaceId)
+
+    const restoreWithPointer = await current.app.inject({
+      method: 'GET',
+      url: '/api/session',
+      headers: {
+        cookie: demoCookie,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+    })
+    expect(restoreWithPointer.statusCode).toBe(200)
+    expect((restoreWithPointer.json() as { demoWorkspaceId?: string | null }).demoWorkspaceId).toBe(demoWs.demoWorkspaceId)
+
+    const restoreWithoutPointer = await current.app.inject({
+      method: 'GET',
+      url: '/api/session',
+      headers: { cookie: demoCookie },
+    })
+    expect(restoreWithoutPointer.statusCode).toBe(401)
+
+    const otherCreateRes = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/demo-workspaces',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: { name: 'Other Session Scope Demo' },
+    })
+    expect(otherCreateRes.statusCode).toBe(200)
+    const otherWs = otherCreateRes.json() as { demoWorkspaceId: string }
+
+    const restoreWithWrongPointer = await current.app.inject({
+      method: 'GET',
+      url: '/api/session',
+      headers: {
+        cookie: demoCookie,
+        'x-airmentor-demo-workspace': otherWs.demoWorkspaceId,
+      },
+    })
+    expect(restoreWithWrongPointer.statusCode).toBe(401)
+
+    const globalRestore = await current.app.inject({
+      method: 'GET',
+      url: '/api/session',
+      headers: { cookie: adminLogin.cookie },
+    })
+    expect(globalRestore.statusCode).toBe(200)
+    expect((globalRestore.json() as { demoWorkspaceId?: string | null }).demoWorkspaceId).toBeNull()
+
+    const resetRes = await current.app.inject({
+      method: 'DELETE',
+      url: `/api/admin/demo-workspaces/${demoWs.demoWorkspaceId}`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+    })
+    expect(resetRes.statusCode).toBe(200)
+    expect((resetRes.json() as { deletedSessions?: number }).deletedSessions).toBe(1)
+
+    const restoreAfterReset = await current.app.inject({
+      method: 'GET',
+      url: '/api/session',
+      headers: {
+        cookie: demoCookie,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+    })
+    expect(restoreAfterReset.statusCode).toBe(401)
   })
 
   it('creates, lists, and resets a demo workspace without touching live data', async () => {
