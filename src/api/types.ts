@@ -2711,6 +2711,14 @@ export type ApiDemoWorkspace = {
   name: string
   ownerFacultyId: string | null
   batchId: string | null
+  scopeKind: string
+  scopeName: string | null
+  sourceBatchId: string | null
+  activeSimulationRunId: string | null
+  createdByFacultyId: string | null
+  stoppedAt: string | null
+  resetAt: string | null
+  metadataJson: string | null
   status: string
   createdAt: string
   updatedAt: string
