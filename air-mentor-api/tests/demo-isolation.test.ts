@@ -473,6 +473,72 @@ describe('demo workspace isolation', () => {
     })
   })
 
+  it('does not expose global academic rows when a demo active proof run has no demo rows', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const createRes = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/demo-workspaces',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: { name: 'Scoped Academic Snapshot Demo' },
+    })
+    expect(createRes.statusCode).toBe(200)
+    const demoWs = createRes.json() as { demoWorkspaceId: string }
+
+    const demoTeacherLoginRes = await current.app.inject({
+      method: 'POST',
+      url: '/api/session/login',
+      headers: {
+        origin: TEST_ORIGIN,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+      payload: { identifier: 'devika.shetty', password: 'faculty1234' },
+    })
+    expect(demoTeacherLoginRes.statusCode).toBe(200)
+    const demoTeacherCookie = Array.isArray(demoTeacherLoginRes.headers['set-cookie'])
+      ? demoTeacherLoginRes.headers['set-cookie'][0]
+      : demoTeacherLoginRes.headers['set-cookie']
+    expect(demoTeacherCookie).toBeTruthy()
+
+    const [globalActiveRun] = await current.db
+      .select()
+      .from(simulationRuns)
+      .where(eq(simulationRuns.activeFlag, 1))
+    expect(globalActiveRun.demoWorkspaceId).toBeNull()
+
+    const demoRunId = `simulation_run_demo_snapshot_${Date.now()}`
+    await current.db.insert(simulationRuns).values({
+      ...globalActiveRun,
+      simulationRunId: demoRunId,
+      parentSimulationRunId: globalActiveRun.simulationRunId,
+      runLabel: 'Scoped academic snapshot demo run',
+      status: 'active',
+      activeFlag: 1,
+      demoWorkspaceId: demoWs.demoWorkspaceId,
+      createdAt: '2026-05-10T00:00:01.000Z',
+      updatedAt: '2026-05-10T00:00:01.000Z',
+    })
+
+    const bootstrapRes = await current.app.inject({
+      method: 'GET',
+      url: '/api/academic/bootstrap',
+      headers: {
+        cookie: demoTeacherCookie,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+    })
+    expect(bootstrapRes.statusCode).toBe(200)
+    const snapshot = bootstrapRes.json() as {
+      offerings: unknown[]
+      mentees: unknown[]
+      studentsByOffering: Record<string, unknown[]>
+    }
+    expect(snapshot.offerings).toHaveLength(0)
+    expect(snapshot.mentees).toHaveLength(0)
+    expect(Object.values(snapshot.studentsByOffering).flat()).toHaveLength(0)
+  })
+
   it('creates, lists, and resets a demo workspace without touching live data', async () => {
     current = await createTestApp()
     const login = await loginAs(current.app, 'sysadmin', 'admin1234')

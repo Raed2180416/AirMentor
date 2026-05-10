@@ -2881,6 +2881,7 @@ async function buildAcademicBootstrap(
     facultyId?: string | null
     roleCode?: string | null
     simulationStageCheckpointId?: string | null
+    demoWorkspaceId?: string | null
   } = {},
 ) {
   const runtimeEntries = await Promise.all(runtimeStateKeys.map(async stateKey => {
@@ -2972,16 +2973,25 @@ async function buildAcademicBootstrap(
       : Promise.resolve([]),
   ])
 
+  const demoWorkspaceId = viewer.demoWorkspaceId ?? null
+  const matchesDemoWorkspace = (row: { demoWorkspaceId?: string | null }) => (row.demoWorkspaceId ?? null) === demoWorkspaceId
+  const workspaceRunRows = runRows.filter(matchesDemoWorkspace)
+  const workspaceOfferingRows = offeringRows.filter(matchesDemoWorkspace)
+  const workspaceOwnershipRows = ownershipRows.filter(matchesDemoWorkspace)
+  const workspaceStudentRows = studentRows.filter(matchesDemoWorkspace)
+  const workspaceEnrollmentRows = enrollmentRows.filter(matchesDemoWorkspace)
+  const workspaceMentorRows = mentorRows.filter(matchesDemoWorkspace)
+
   const courseById = Object.fromEntries(courseRows.map(row => [row.courseId, row]))
   const termById = Object.fromEntries(termRows.map(row => [row.termId, row]))
   const branchById = Object.fromEntries(branchRows.map(row => [row.branchId, row]))
   const departmentById = Object.fromEntries(departmentRows.map(row => [row.departmentId, row]))
   const offeringRowById = Object.fromEntries(offeringRows.map(row => [row.offeringId, row]))
   const userById = Object.fromEntries(userRows.map(row => [row.userId, row]))
-  const activeRunRows = runRows.filter(row => row.activeFlag === 1)
+  const activeRunRows = workspaceRunRows.filter(row => row.activeFlag === 1)
   const selectedActiveRun = pickMostRecentActiveRun(activeRunRows)
   const proofScopeRun = stageCheckpointRow
-    ? (runRows.find(row => row.simulationRunId === stageCheckpointRow.simulationRunId) ?? null)
+    ? (workspaceRunRows.find(row => row.simulationRunId === stageCheckpointRow.simulationRunId) ?? null)
     : selectedActiveRun
   const proofCurrentDateISO = proofPlaybackCurrentDateISO({
     checkpoint: stageCheckpointRow,
@@ -2997,22 +3007,22 @@ async function buildAcademicBootstrap(
       .map(row => row.termId),
   )
   const scopedOfferingRows = proofScopeActive
-    ? offeringRows.filter(row => scopedTermIds.has(row.termId))
-    : offeringRows
+    ? workspaceOfferingRows.filter(row => scopedTermIds.has(row.termId))
+    : workspaceOfferingRows
   const scopedOfferingIds = new Set(scopedOfferingRows.map(row => row.offeringId))
   const scopedEnrollmentRows = proofScopeActive
-    ? enrollmentRows.filter(row => scopedTermIds.has(row.termId))
-    : enrollmentRows
+    ? workspaceEnrollmentRows.filter(row => scopedTermIds.has(row.termId))
+    : workspaceEnrollmentRows
   const scopedStudentIds = new Set(scopedEnrollmentRows.map(row => row.studentId))
   const scopedStudentRows = proofScopeActive
-    ? studentRows.filter(row => scopedStudentIds.has(row.studentId))
-    : studentRows
+    ? workspaceStudentRows.filter(row => scopedStudentIds.has(row.studentId))
+    : workspaceStudentRows
   const scopedOwnershipRows = proofScopeActive
-    ? ownershipRows.filter(row => scopedOfferingIds.has(row.offeringId))
-    : ownershipRows
+    ? workspaceOwnershipRows.filter(row => scopedOfferingIds.has(row.offeringId))
+    : workspaceOwnershipRows
   const scopedMentorRows = proofScopeActive
-    ? mentorRows.filter(row => scopedStudentIds.has(row.studentId))
-    : mentorRows
+    ? workspaceMentorRows.filter(row => scopedStudentIds.has(row.studentId))
+    : workspaceMentorRows
   const scopedBranchIds = new Set(scopedOfferingRows.map(row => row.branchId))
   const scopedDepartmentIds = new Set(
     Array.from(scopedBranchIds)
