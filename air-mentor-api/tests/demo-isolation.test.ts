@@ -9,6 +9,7 @@ import {
   batches,
   sessions,
   simulationStageCheckpoints,
+  studentObservedSemesterStates,
 } from '../src/db/schema.js'
 import {
   assertSafeDemoScopeName,
@@ -584,6 +585,60 @@ describe('demo workspace isolation', () => {
     })
     expect(stopRes.statusCode).toBe(403)
     expect(stopRes.json()).toMatchObject({
+      error: 'PROOF_RUN_SCOPE_MISMATCH',
+    })
+  })
+
+  it('rejects demo student-shell access to a global proof run', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const createRes = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/demo-workspaces',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: { name: 'Scoped Student Shell Demo' },
+    })
+    expect(createRes.statusCode).toBe(200)
+    const demoWs = createRes.json() as { demoWorkspaceId: string }
+
+    const demoAdminLoginRes = await current.app.inject({
+      method: 'POST',
+      url: '/api/session/login',
+      headers: {
+        origin: TEST_ORIGIN,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+      payload: { identifier: 'sysadmin', password: 'admin1234' },
+    })
+    expect(demoAdminLoginRes.statusCode).toBe(200)
+    const demoAdminCookie = Array.isArray(demoAdminLoginRes.headers['set-cookie'])
+      ? demoAdminLoginRes.headers['set-cookie'][0]
+      : demoAdminLoginRes.headers['set-cookie']
+    expect(demoAdminCookie).toBeTruthy()
+
+    const [globalActiveRun] = await current.db
+      .select()
+      .from(simulationRuns)
+      .where(eq(simulationRuns.activeFlag, 1))
+    expect(globalActiveRun.demoWorkspaceId).toBeNull()
+    const [observedState] = await current.db
+      .select()
+      .from(studentObservedSemesterStates)
+      .where(eq(studentObservedSemesterStates.simulationRunId, globalActiveRun.simulationRunId))
+    expect(observedState).toBeTruthy()
+
+    const cardRes = await current.app.inject({
+      method: 'GET',
+      url: `/api/academic/student-shell/students/${observedState.studentId}/card?simulationRunId=${encodeURIComponent(globalActiveRun.simulationRunId)}`,
+      headers: {
+        cookie: demoAdminCookie,
+        origin: TEST_ORIGIN,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+    })
+    expect(cardRes.statusCode).toBe(403)
+    expect(cardRes.json()).toMatchObject({
       error: 'PROOF_RUN_SCOPE_MISMATCH',
     })
   })
