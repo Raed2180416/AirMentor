@@ -6,6 +6,7 @@ import {
   createDemoWorkspace,
   listDemoWorkspaces,
   previewDemoProvisioning,
+  provisionDemoWorkspace,
   resetDemoWorkspace,
 } from '../lib/demo-workspace-service.js'
 import { parseOrThrow, requireRole } from './support.js'
@@ -72,6 +73,20 @@ export async function registerAdminDemoWorkspaceRoutes(
       sectionLabels: body.sectionLabels,
       studentsPerSection: body.studentsPerSection,
     })
+  })
+
+  app.post('/api/admin/demo-workspaces/:demoWorkspaceId/provision', {
+    schema: {
+      tags: ['admin-demo-workspace'],
+      summary: 'Provision complete seeded demo data for a demo workspace',
+    },
+  }, async request => {
+    requireRole(request, ['SYSTEM_ADMIN'])
+    const params = parseOrThrow(
+      z.object({ demoWorkspaceId: z.string().min(1) }),
+      request.params,
+    )
+    return provisionDemoWorkspace(context, params.demoWorkspaceId)
   })
 
   app.delete('/api/admin/demo-workspaces/:demoWorkspaceId', {
