@@ -58,6 +58,7 @@ export type PrepareSeededProofRunBootstrapInput = {
   simulationRunId?: string
   activate?: boolean
   sectionOverridesJson?: string | null
+  demoWorkspaceId?: string | null
 }
 
 export type PreparedSeededProofRunBootstrap = {
@@ -156,6 +157,7 @@ export async function prepareSeededProofRunBootstrap(
     semesterEnd: 6,
     activeOperationalSemester: 1,
     sourceType: 'simulation' as const,
+    demoWorkspaceId: input.demoWorkspaceId ?? null,
     sectionOverridesJson: input.sectionOverridesJson ?? null,
     policySnapshotJson: JSON.stringify(input.policy),
     engineVersionsJson: JSON.stringify({

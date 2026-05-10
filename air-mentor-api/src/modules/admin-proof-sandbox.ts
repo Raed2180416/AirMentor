@@ -354,6 +354,7 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
       runLabel: body.runLabel,
       activate: body.activate,
       sectionOverridesJson: body.sectionOverridesJson ?? null,
+      demoWorkspaceId: auth.demoWorkspaceId ?? null,
     })
     await emitAuditEvent(context, {
       entityType: 'ProofSimulationRun',

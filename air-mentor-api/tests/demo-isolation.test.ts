@@ -8,6 +8,7 @@ import {
   demoWorkspaces,
   batches,
   sessions,
+  simulationStageCheckpoints,
 } from '../src/db/schema.js'
 import {
   assertSafeDemoScopeName,
@@ -15,6 +16,10 @@ import {
   demoWorkspaceSchemaExists,
   quotePgIdentifier,
 } from '../src/lib/demo-workspace-scope.js'
+import {
+  MSRUAS_PROOF_BATCH_ID,
+  MSRUAS_PROOF_CURRICULUM_IMPORT_ID,
+} from '../src/lib/msruas-proof-sandbox.js'
 
 let current: Awaited<ReturnType<typeof createTestApp>> | null = null
 
@@ -167,6 +172,196 @@ describe('demo workspace isolation', () => {
       },
     })
     expect(restoreAfterReset.statusCode).toBe(401)
+  })
+
+  it('does not let a demo-bound teacher bootstrap from the global active proof run', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const createRes = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/demo-workspaces',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: { name: 'Scoped Bootstrap Demo' },
+    })
+    expect(createRes.statusCode).toBe(200)
+    const demoWs = createRes.json() as { demoWorkspaceId: string }
+
+    const demoTeacherLoginRes = await current.app.inject({
+      method: 'POST',
+      url: '/api/session/login',
+      headers: {
+        origin: TEST_ORIGIN,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+      payload: { identifier: 'devika.shetty', password: 'faculty1234' },
+    })
+    expect(demoTeacherLoginRes.statusCode).toBe(200)
+    const demoTeacherCookie = Array.isArray(demoTeacherLoginRes.headers['set-cookie'])
+      ? demoTeacherLoginRes.headers['set-cookie'][0]
+      : demoTeacherLoginRes.headers['set-cookie']
+    expect(demoTeacherCookie).toBeTruthy()
+
+    const [globalActiveRun] = await current.db
+      .select()
+      .from(simulationRuns)
+      .where(eq(simulationRuns.activeFlag, 1))
+    expect(globalActiveRun).toBeTruthy()
+    expect(globalActiveRun.demoWorkspaceId).toBeNull()
+
+    const bootstrapRes = await current.app.inject({
+      method: 'GET',
+      url: '/api/academic/bootstrap',
+      headers: {
+        cookie: demoTeacherCookie,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+    })
+    expect(bootstrapRes.statusCode).toBe(403)
+    expect(bootstrapRes.json()).toMatchObject({
+      error: 'NO_ACTIVE_PROOF_RUN',
+    })
+  })
+
+  it('tags proof runs created from a demo-bound sysadmin session with the demo workspace', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const createRes = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/demo-workspaces',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: { name: 'Scoped Proof Run Demo' },
+    })
+    expect(createRes.statusCode).toBe(200)
+    const demoWs = createRes.json() as { demoWorkspaceId: string }
+
+    const demoAdminLoginRes = await current.app.inject({
+      method: 'POST',
+      url: '/api/session/login',
+      headers: {
+        origin: TEST_ORIGIN,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+      payload: { identifier: 'sysadmin', password: 'admin1234' },
+    })
+    expect(demoAdminLoginRes.statusCode).toBe(200)
+    const demoAdminCookie = Array.isArray(demoAdminLoginRes.headers['set-cookie'])
+      ? demoAdminLoginRes.headers['set-cookie'][0]
+      : demoAdminLoginRes.headers['set-cookie']
+    expect(demoAdminCookie).toBeTruthy()
+
+    const createRunRes = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/batches/${MSRUAS_PROOF_BATCH_ID}/proof-runs`,
+      headers: {
+        cookie: demoAdminCookie,
+        origin: TEST_ORIGIN,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+      payload: {
+        curriculumImportVersionId: MSRUAS_PROOF_CURRICULUM_IMPORT_ID,
+        seed: 20260510,
+        runLabel: 'Scoped proof run demo test',
+        activate: false,
+      },
+    })
+    expect(createRunRes.statusCode).toBe(200)
+    const createdRun = createRunRes.json() as { simulationRunId: string }
+
+    const [runRow] = await current.db
+      .select()
+      .from(simulationRuns)
+      .where(eq(simulationRuns.simulationRunId, createdRun.simulationRunId))
+    expect(runRow.demoWorkspaceId).toBe(demoWs.demoWorkspaceId)
+  })
+
+  it('activates a demo proof run without deactivating the global active proof run', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const createRes = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/demo-workspaces',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: { name: 'Scoped Activation Demo' },
+    })
+    expect(createRes.statusCode).toBe(200)
+    const demoWs = createRes.json() as { demoWorkspaceId: string }
+
+    const demoAdminLoginRes = await current.app.inject({
+      method: 'POST',
+      url: '/api/session/login',
+      headers: {
+        origin: TEST_ORIGIN,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+      payload: { identifier: 'sysadmin', password: 'admin1234' },
+    })
+    expect(demoAdminLoginRes.statusCode).toBe(200)
+    const demoAdminCookie = Array.isArray(demoAdminLoginRes.headers['set-cookie'])
+      ? demoAdminLoginRes.headers['set-cookie'][0]
+      : demoAdminLoginRes.headers['set-cookie']
+    expect(demoAdminCookie).toBeTruthy()
+
+    const [globalActiveRun] = await current.db
+      .select()
+      .from(simulationRuns)
+      .where(eq(simulationRuns.activeFlag, 1))
+    expect(globalActiveRun).toBeTruthy()
+    expect(globalActiveRun.demoWorkspaceId).toBeNull()
+
+    const demoRunId = `simulation_run_demo_activation_${Date.now()}`
+    await current.db.insert(simulationRuns).values({
+      ...globalActiveRun,
+      simulationRunId: demoRunId,
+      parentSimulationRunId: globalActiveRun.simulationRunId,
+      runLabel: 'Scoped activation demo run',
+      status: 'completed',
+      activeFlag: 0,
+      demoWorkspaceId: demoWs.demoWorkspaceId,
+      createdAt: TEST_NOW,
+      updatedAt: TEST_NOW,
+    })
+    await current.db.insert(simulationStageCheckpoints).values({
+      simulationStageCheckpointId: `stage_checkpoint_demo_activation_${Date.now()}`,
+      simulationRunId: demoRunId,
+      semesterNumber: 1,
+      stageKey: 'pre-tt1',
+      stageLabel: 'Pre TT1',
+      stageDescription: 'Initial demo checkpoint',
+      stageOrder: 1,
+      previousCheckpointId: null,
+      nextCheckpointId: null,
+      summaryJson: JSON.stringify({ scope: 'demo-activation-test' }),
+      createdAt: TEST_NOW,
+      updatedAt: TEST_NOW,
+    })
+
+    const activateRes = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${demoRunId}/activate`,
+      headers: {
+        cookie: demoAdminCookie,
+        origin: TEST_ORIGIN,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+    })
+    expect(activateRes.statusCode).toBe(200)
+
+    const [globalAfter] = await current.db
+      .select()
+      .from(simulationRuns)
+      .where(eq(simulationRuns.simulationRunId, globalActiveRun.simulationRunId))
+    const [demoAfter] = await current.db
+      .select()
+      .from(simulationRuns)
+      .where(eq(simulationRuns.simulationRunId, demoRunId))
+    expect(globalAfter.activeFlag).toBe(1)
+    expect(globalAfter.status).toBe('active')
+    expect(demoAfter.activeFlag).toBe(1)
+    expect(demoAfter.status).toBe('active')
+    expect(demoAfter.demoWorkspaceId).toBe(demoWs.demoWorkspaceId)
   })
 
   it('creates, lists, and resets a demo workspace without touching live data', async () => {
