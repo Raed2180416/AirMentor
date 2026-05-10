@@ -39,6 +39,7 @@ tests-e2e/artifacts/
 # Tool caches (never committed)
 .ctxo/
 .superpowers/
+.worktrees/
 
 # Ctxo local cache (never committed)
 .ctxo/.cache/
