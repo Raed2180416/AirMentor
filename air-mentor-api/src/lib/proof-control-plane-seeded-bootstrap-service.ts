@@ -57,6 +57,7 @@ export type PrepareSeededProofRunBootstrapInput = {
   parentSimulationRunId?: string | null
   simulationRunId?: string
   activate?: boolean
+  sectionOverridesJson?: string | null
 }
 
 export type PreparedSeededProofRunBootstrap = {
@@ -155,6 +156,7 @@ export async function prepareSeededProofRunBootstrap(
     semesterEnd: 6,
     activeOperationalSemester: 1,
     sourceType: 'simulation' as const,
+    sectionOverridesJson: input.sectionOverridesJson ?? null,
     policySnapshotJson: JSON.stringify(input.policy),
     engineVersionsJson: JSON.stringify({
       compilerVersion: deps.MSRUAS_PROOF_VALIDATOR_VERSION,

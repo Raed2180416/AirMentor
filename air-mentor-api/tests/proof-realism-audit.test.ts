@@ -34,6 +34,19 @@ async function materializeActiveRunPlayback() {
   return activeRun
 }
 
+async function waitForCompletedProofRun(simulationRunId: string) {
+  if (!current) throw new Error('Expected test app')
+  let lastStatus = 'missing'
+  for (let attempt = 0; attempt < 180; attempt += 1) {
+    const [run] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, simulationRunId))
+    lastStatus = run?.status ?? 'missing'
+    if (run?.status === 'completed') return run
+    if (run?.status === 'failed') throw new Error(`Proof run ${simulationRunId} failed: ${run.failureMessage ?? run.failureCode ?? 'unknown'}`)
+    await new Promise(resolve => setTimeout(resolve, 500))
+  }
+  throw new Error(`Timed out waiting for proof run ${simulationRunId}; last status ${lastStatus}`)
+}
+
 describe('proof realism audit', () => {
   it('audits seeded proof rows for stage coverage, plausible marks, and risk alignment', async () => {
     current = await createTestApp()
@@ -104,4 +117,99 @@ describe('proof realism audit', () => {
     expect(comparison.sectionBMeanOverallDelta).toBeLessThan(-4)
     expect(comparison.sectionBRiskDelta).toBeGreaterThan(5)
   }, 300_000)
+
+  it('compares two real proof runs when Section B overrides stress classroom conditions', async () => {
+    const previousFlag = process.env.AIRMENTOR_SECTION_OVERRIDES_V1
+    process.env.AIRMENTOR_SECTION_OVERRIDES_V1 = '1'
+    try {
+      current = await createTestApp()
+      const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+      const createBaseline = await current.app.inject({
+        method: 'POST',
+        url: '/api/admin/batches/batch_branch_mnc_btech_2023/proof-runs',
+        headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+        payload: {
+          curriculumImportVersionId: 'curriculum_import_mnc_2023_first6_v1',
+          seed: 20260316,
+          runLabel: 'vitest-realism-baseline',
+          activate: false,
+        },
+      })
+      expect(createBaseline.statusCode).toBe(200)
+      const baselineRun = createBaseline.json() as { simulationRunId: string }
+      await waitForCompletedProofRun(baselineRun.simulationRunId)
+
+      const createStressed = await current.app.inject({
+        method: 'POST',
+        url: '/api/admin/batches/batch_branch_mnc_btech_2023/proof-runs',
+        headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+        payload: {
+          curriculumImportVersionId: 'curriculum_import_mnc_2023_first6_v1',
+          seed: 20260316,
+          runLabel: 'vitest-realism-section-b-stressed',
+          activate: false,
+          sectionOverridesJson: JSON.stringify({
+            B: {
+              practiceCompliance: 0.2,
+              interventionReceptivity: 0.2,
+              examPressure: 0.9,
+              helpSeekingTendency: 0.2,
+              attendancePropensity: 0.2,
+              consistency: 0.2,
+              volatility: 0.9,
+            },
+          }),
+        },
+      })
+      expect(createStressed.statusCode).toBe(200)
+      const stressedRun = createStressed.json() as { simulationRunId: string }
+      await waitForCompletedProofRun(stressedRun.simulationRunId)
+
+      for (const run of [baselineRun, stressedRun]) {
+        const recomputeResponse = await current.app.inject({
+          method: 'POST',
+          url: `/api/admin/proof-runs/${run.simulationRunId}/recompute-risk`,
+          headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+          payload: {},
+        })
+        expect(recomputeResponse.statusCode).toBe(200)
+      }
+
+      const baselineCheckpointRows = await current.db.select().from(simulationStageCheckpoints).where(
+        eq(simulationStageCheckpoints.simulationRunId, baselineRun.simulationRunId),
+      ).orderBy(asc(simulationStageCheckpoints.semesterNumber), asc(simulationStageCheckpoints.stageOrder))
+      const stressedCheckpointRows = await current.db.select().from(simulationStageCheckpoints).where(
+        eq(simulationStageCheckpoints.simulationRunId, stressedRun.simulationRunId),
+      ).orderBy(asc(simulationStageCheckpoints.semesterNumber), asc(simulationStageCheckpoints.stageOrder))
+      const baselineProjectionRows = await current.db.select().from(simulationStageStudentProjections).where(
+        eq(simulationStageStudentProjections.simulationRunId, baselineRun.simulationRunId),
+      )
+      const stressedProjectionRows = await current.db.select().from(simulationStageStudentProjections).where(
+        eq(simulationStageStudentProjections.simulationRunId, stressedRun.simulationRunId),
+      )
+
+      const baseline = auditProofRealismRows({ checkpointRows: baselineCheckpointRows, projectionRows: baselineProjectionRows })
+      const stressed = auditProofRealismRows({ checkpointRows: stressedCheckpointRows, projectionRows: stressedProjectionRows })
+      const comparison = compareProofClassroomSetups({
+        baseline,
+        candidate: stressed,
+        expectedDirection: 'candidate-section-b-stressed',
+        minSectionBMeanOverallDrop: 1.5,
+        minSectionBRiskIncrease: 5,
+      })
+
+      expect(baseline.stageMatrix.verdict).toBe('pass')
+      expect(stressed.stageMatrix.verdict).toBe('pass')
+      expect(baseline.markProgression.invalidMarkCount).toBe(0)
+      expect(stressed.markProgression.invalidMarkCount).toBe(0)
+      expect(comparison.issues, JSON.stringify(comparison)).toEqual([])
+      expect(comparison.verdict).toBe('pass')
+      expect(comparison.sectionBMeanOverallDelta).toBeLessThan(-1.5)
+      expect(comparison.sectionBRiskDelta).toBeGreaterThan(5)
+    } finally {
+      if (previousFlag === undefined) delete process.env.AIRMENTOR_SECTION_OVERRIDES_V1
+      else process.env.AIRMENTOR_SECTION_OVERRIDES_V1 = previousFlag
+    }
+  }, 420_000)
 })
