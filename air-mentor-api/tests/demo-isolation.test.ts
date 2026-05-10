@@ -4,6 +4,8 @@ import { createTestApp, loginAs, TEST_NOW, TEST_ORIGIN } from './helpers/test-ap
 import {
   students,
   sectionOfferings,
+  studentEnrollments,
+  facultyOfferingOwnerships,
   simulationRuns,
   demoWorkspaces,
   batches,
@@ -225,6 +227,191 @@ describe('demo workspace isolation', () => {
     expect(bootstrapRes.json()).toMatchObject({
       error: 'NO_ACTIVE_PROOF_RUN',
     })
+  })
+
+  it('provisions a complete demo workspace without exposing or mutating global proof state', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+
+    const [globalActiveBefore] = await current.db
+      .select()
+      .from(simulationRuns)
+      .where(eq(simulationRuns.activeFlag, 1))
+    expect(globalActiveBefore).toBeTruthy()
+    expect(globalActiveBefore.demoWorkspaceId).toBeNull()
+
+    const globalStudentCountBefore = await current.db.select().from(students)
+    const globalOfferingCountBefore = await current.db.select().from(sectionOfferings)
+
+    const createRes = await current.app.inject({
+      method: 'POST',
+      url: '/api/admin/demo-workspaces',
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: { name: 'Provisioned Demo Workspace' },
+    })
+    expect(createRes.statusCode).toBe(200)
+    const demoWs = createRes.json() as { demoWorkspaceId: string }
+
+    const demoTeacherLoginBefore = await current.app.inject({
+      method: 'POST',
+      url: '/api/session/login',
+      headers: {
+        origin: TEST_ORIGIN,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+      payload: { identifier: 'devika.shetty', password: 'faculty1234' },
+    })
+    expect(demoTeacherLoginBefore.statusCode).toBe(200)
+    const demoTeacherCookieBefore = Array.isArray(demoTeacherLoginBefore.headers['set-cookie'])
+      ? demoTeacherLoginBefore.headers['set-cookie'][0]
+      : demoTeacherLoginBefore.headers['set-cookie']
+
+    const bootstrapBefore = await current.app.inject({
+      method: 'GET',
+      url: '/api/academic/bootstrap',
+      headers: {
+        cookie: demoTeacherCookieBefore,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+    })
+    expect(bootstrapBefore.statusCode).toBe(403)
+    expect(bootstrapBefore.json()).toMatchObject({ error: 'NO_ACTIVE_PROOF_RUN' })
+
+    const provisionRes = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/demo-workspaces/${demoWs.demoWorkspaceId}/provision`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+    })
+    expect(provisionRes.statusCode).toBe(200)
+    const provisioned = provisionRes.json() as {
+      demoWorkspaceId: string
+      activeSimulationRunId: string
+      provisionedCounts: {
+        students: number
+        enrollments: number
+        offerings: number
+        ownerships: number
+        runs: number
+      }
+    }
+    expect(provisioned.demoWorkspaceId).toBe(demoWs.demoWorkspaceId)
+    expect(provisioned.activeSimulationRunId).toMatch(/^demo_/)
+    expect(provisioned.provisionedCounts.students).toBeGreaterThan(0)
+    expect(provisioned.provisionedCounts.enrollments).toBeGreaterThan(0)
+    expect(provisioned.provisionedCounts.offerings).toBeGreaterThan(0)
+    expect(provisioned.provisionedCounts.ownerships).toBeGreaterThan(0)
+    expect(provisioned.provisionedCounts.runs).toBe(1)
+
+    const provisionAgainRes = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/demo-workspaces/${demoWs.demoWorkspaceId}/provision`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+    })
+    expect(provisionAgainRes.statusCode).toBe(200)
+    expect((provisionAgainRes.json() as { activeSimulationRunId: string }).activeSimulationRunId)
+      .toBe(provisioned.activeSimulationRunId)
+
+    const [demoRun] = await current.db
+      .select()
+      .from(simulationRuns)
+      .where(eq(simulationRuns.simulationRunId, provisioned.activeSimulationRunId))
+    expect(demoRun.demoWorkspaceId).toBe(demoWs.demoWorkspaceId)
+    expect(demoRun.activeFlag).toBe(1)
+
+    const [globalActiveAfterProvision] = await current.db
+      .select()
+      .from(simulationRuns)
+      .where(eq(simulationRuns.simulationRunId, globalActiveBefore.simulationRunId))
+    expect(globalActiveAfterProvision.activeFlag).toBe(1)
+    expect(globalActiveAfterProvision.status).toBe('active')
+    expect(globalActiveAfterProvision.demoWorkspaceId).toBeNull()
+
+    const demoStudents = await current.db
+      .select()
+      .from(students)
+      .where(eq(students.demoWorkspaceId, demoWs.demoWorkspaceId))
+    const demoEnrollments = await current.db
+      .select()
+      .from(studentEnrollments)
+      .where(eq(studentEnrollments.demoWorkspaceId, demoWs.demoWorkspaceId))
+    const demoOfferings = await current.db
+      .select()
+      .from(sectionOfferings)
+      .where(eq(sectionOfferings.demoWorkspaceId, demoWs.demoWorkspaceId))
+    const demoOwnerships = await current.db
+      .select()
+      .from(facultyOfferingOwnerships)
+      .where(eq(facultyOfferingOwnerships.demoWorkspaceId, demoWs.demoWorkspaceId))
+    expect(demoStudents.length).toBe(provisioned.provisionedCounts.students)
+    expect(demoEnrollments.length).toBe(provisioned.provisionedCounts.enrollments)
+    expect(demoOfferings.length).toBe(provisioned.provisionedCounts.offerings)
+    expect(demoOwnerships.length).toBe(provisioned.provisionedCounts.ownerships)
+
+    const demoTeacherLoginAfter = await current.app.inject({
+      method: 'POST',
+      url: '/api/session/login',
+      headers: {
+        origin: TEST_ORIGIN,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+      payload: { identifier: 'devika.shetty', password: 'faculty1234' },
+    })
+    expect(demoTeacherLoginAfter.statusCode).toBe(200)
+    const demoTeacherCookieAfter = Array.isArray(demoTeacherLoginAfter.headers['set-cookie'])
+      ? demoTeacherLoginAfter.headers['set-cookie'][0]
+      : demoTeacherLoginAfter.headers['set-cookie']
+    const bootstrapAfter = await current.app.inject({
+      method: 'GET',
+      url: '/api/academic/bootstrap',
+      headers: {
+        cookie: demoTeacherCookieAfter,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+    })
+    expect(bootstrapAfter.statusCode).toBe(200)
+    const bootstrap = bootstrapAfter.json() as {
+      offerings: unknown[]
+      faculty: unknown[]
+      mentees: unknown[]
+    }
+    expect(bootstrap.offerings.length).toBeGreaterThan(0)
+    expect(bootstrap.faculty.length).toBeGreaterThan(0)
+    expect(bootstrap.mentees.length).toBeGreaterThan(0)
+
+    const resetRes = await current.app.inject({
+      method: 'DELETE',
+      url: `/api/admin/demo-workspaces/${demoWs.demoWorkspaceId}`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+    })
+    expect(resetRes.statusCode).toBe(200)
+    expect((resetRes.json() as { deletedStudents: number }).deletedStudents)
+      .toBe(provisioned.provisionedCounts.students)
+
+    const restoreAfterReset = await current.app.inject({
+      method: 'GET',
+      url: '/api/session',
+      headers: {
+        cookie: demoTeacherCookieAfter,
+        'x-airmentor-demo-workspace': demoWs.demoWorkspaceId,
+      },
+    })
+    expect(restoreAfterReset.statusCode).toBe(401)
+
+    const [globalActiveAfterReset] = await current.db
+      .select()
+      .from(simulationRuns)
+      .where(eq(simulationRuns.simulationRunId, globalActiveBefore.simulationRunId))
+    expect(globalActiveAfterReset.activeFlag).toBe(1)
+    expect(globalActiveAfterReset.status).toBe('active')
+
+    const globalStudentCountAfter = await current.db.select().from(students)
+    const globalOfferingCountAfter = await current.db.select().from(sectionOfferings)
+    expect(globalStudentCountAfter.filter(row => row.demoWorkspaceId === null)).toHaveLength(
+      globalStudentCountBefore.filter(row => row.demoWorkspaceId === null).length,
+    )
+    expect(globalOfferingCountAfter.filter(row => row.demoWorkspaceId === null)).toHaveLength(
+      globalOfferingCountBefore.filter(row => row.demoWorkspaceId === null).length,
+    )
   })
 
   it('tags proof runs created from a demo-bound sysadmin session with the demo workspace', async () => {
