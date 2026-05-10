@@ -1,12 +1,11 @@
-import fs from 'node:fs/promises'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import * as fs from 'node:fs/promises'
+import * as path from 'node:path'
 import { expect } from '../support/playwright-runtime'
 import { loginAs, loginWithApiContext } from '../helpers/login-as'
 import { advanceProofRunStage, advanceProofRunToCheckpoint, readProofDashboard } from '../helpers/proof-run-api'
 import { test } from '../fixtures/seeded-run-fixture'
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+const repoRoot = process.cwd()
 const reportPath = path.join(repoRoot, 'audit-map/32-reports/performance-baseline-2026-05-10.md')
 
 const budgets = {
@@ -30,7 +29,7 @@ type Metric = {
 }
 
 function nowMs() {
-  return Number(process.hrtime.bigint() / 1_000_000n)
+  return Date.now()
 }
 
 function classify(durationMs: number, budgetMs: number): Metric['verdict'] {
@@ -68,6 +67,7 @@ function renderReport(input: {
   sha: string
   frontendBaseUrl: string
   apiBaseUrl: string
+  outputDir: string
   runId: string
   batchId: string
   metrics: Metric[]
@@ -106,6 +106,22 @@ Measure local seeded MSRUAS demo performance for evaluator-critical proof surfac
 - Video: expected disabled for local Nix Firefox runs
 - Proof run: \`${input.runId}\`
 - Batch: \`${input.batchId}\`
+
+## Port Preflight
+
+Before running this spec, use:
+
+\`\`\`bash
+ss -ltnp '( sport = :4000 or sport = :4100 or sport = :5173 or sport = :5174 )' || true
+\`\`\`
+
+For the recorded run, fresh measurement ports were \`${input.apiBaseUrl}\` and \`${input.frontendBaseUrl}\`. The run was executed without killing or reusing the pre-existing backend on \`4000\`; post-run verification should show \`4100\` and \`5174\` closed again.
+
+## Command
+
+\`\`\`bash
+AIRMENTOR_GIT_BRANCH="$(git branch --show-current)" AIRMENTOR_GIT_SHA="$(git rev-parse --short HEAD)" AIRMENTOR_PW_FRONTEND_BASE_URL=${input.frontendBaseUrl} AIRMENTOR_PW_API_BASE_URL=${input.apiBaseUrl} AIRMENTOR_PW_DISABLE_VIDEO=1 AIRMENTOR_PW_BROWSER=firefox AIRMENTOR_PW_FIREFOX_EXECUTABLE=/nix/store/jqpxpar1pvk37f1kjwhkp26dj1wrpw4d-playwright-firefox/firefox/firefox npx --no-install playwright test tests-e2e/specs/performance-baseline.spec.ts --config=tests-e2e/playwright.config.ts --reporter=line --output=${input.outputDir}
+\`\`\`
 
 ## Verdict
 
@@ -222,6 +238,7 @@ test('H9 performance baseline: evaluator proof surfaces stay within local demo b
     sha: process.env.AIRMENTOR_GIT_SHA ?? 'unrecorded-by-test',
     frontendBaseUrl: process.env.AIRMENTOR_PW_FRONTEND_BASE_URL ?? 'http://127.0.0.1:5173',
     apiBaseUrl: process.env.AIRMENTOR_PW_API_BASE_URL ?? 'http://127.0.0.1:4000',
+    outputDir: process.env.AIRMENTOR_PW_OUTPUT_DIR ?? 'output/playwright/h9-performance-baseline',
     runId: seededRun.runId,
     batchId: seededRun.batchId,
     metrics,

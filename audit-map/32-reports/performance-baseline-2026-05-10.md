@@ -6,26 +6,30 @@ Measure local seeded MSRUAS demo performance for evaluator-critical proof surfac
 
 ## Environment
 
-- Branch: `h9-performance-baseline-2026-05-10`
-- SHA: `3fb651b3`
+- Branch: `college-demo-2026-04-27`
+- SHA: `30fc6886`
 - Frontend: `http://127.0.0.1:5174`
 - Backend: `http://127.0.0.1:4100`
 - Browser: Playwright `firefox` unless overridden by env
 - Video: expected disabled for local Nix Firefox runs
-- Proof run: `simulation_run_df6c8592-0b76-4f08-a498-866810ecf25e`
+- Proof run: `simulation_run_bf79f99b-e92d-4af4-a3ad-77618a6b509b`
 - Batch: `batch_branch_mnc_btech_2023`
 
 ## Port Preflight
 
-Before the run, `ss -ltnp '( sport = :4000 or sport = :4100 or sport = :5173 or sport = :5174 )' || true` showed only the pre-existing backend on `127.0.0.1:4000` (`MainThread`, pid `9098`). Fresh ports `4100` and `5174` were free and used for the measurement run. After Playwright exited, `4100` and `5174` were closed again; the pre-existing backend on `4000` remained untouched.
+Before running this spec, use:
+
+```bash
+ss -ltnp '( sport = :4000 or sport = :4100 or sport = :5173 or sport = :5174 )' || true
+```
+
+For the recorded run, fresh measurement ports were `http://127.0.0.1:4100` and `http://127.0.0.1:5174`. The run was executed without killing or reusing the pre-existing backend on `4000`; post-run verification should show `4100` and `5174` closed again.
 
 ## Command
 
 ```bash
-AIRMENTOR_GIT_BRANCH="$(git branch --show-current)" AIRMENTOR_GIT_SHA="$(git rev-parse --short HEAD)" AIRMENTOR_PW_FRONTEND_BASE_URL=http://127.0.0.1:5174 AIRMENTOR_PW_API_BASE_URL=http://127.0.0.1:4100 AIRMENTOR_PW_DISABLE_VIDEO=1 AIRMENTOR_PW_BROWSER=firefox AIRMENTOR_PW_FIREFOX_EXECUTABLE=/nix/store/jqpxpar1pvk37f1kjwhkp26dj1wrpw4d-playwright-firefox/firefox/firefox node_modules/.bin/playwright test tests-e2e/specs/performance-baseline.spec.ts --config=tests-e2e/playwright.config.ts --reporter=line --output=output/playwright/h9-performance-baseline
+AIRMENTOR_GIT_BRANCH="$(git branch --show-current)" AIRMENTOR_GIT_SHA="$(git rev-parse --short HEAD)" AIRMENTOR_PW_FRONTEND_BASE_URL=http://127.0.0.1:5174 AIRMENTOR_PW_API_BASE_URL=http://127.0.0.1:4100 AIRMENTOR_PW_DISABLE_VIDEO=1 AIRMENTOR_PW_BROWSER=firefox AIRMENTOR_PW_FIREFOX_EXECUTABLE=/nix/store/jqpxpar1pvk37f1kjwhkp26dj1wrpw4d-playwright-firefox/firefox/firefox npx --no-install playwright test tests-e2e/specs/performance-baseline.spec.ts --config=tests-e2e/playwright.config.ts --reporter=line --output=output/playwright/h9-performance-baseline-root-verify
 ```
-
-Result: `1 passed (3.4m)`.
 
 ## Verdict
 
@@ -37,13 +41,13 @@ Result: `1 passed (3.4m)`.
 
 | Surface | Measured | Budget | Verdict |
 |---|---:|---:|---|
-| System admin proof dashboard visible | 6.40s | 20.00s | pass |
-| Course Leader proof shell visible | 1.33s | 30.00s | pass |
-| Single Next Stage proof advance | 2.64s | 60.00s | pass |
-| Setup heavy HoD context at Sem6 post-SEE | 83.05s | informational | info |
-| HoD proof bundle response | 10.68s | 30.00s | pass |
-| HoD analytics surface visible after bundle | 8.95s | 45.00s | pass |
-| Counterfactual simulator response | 0.98s | 90.00s | pass |
+| System admin proof dashboard visible | 5.93s | 20.00s | pass |
+| Course Leader proof shell visible | 0.84s | 30.00s | pass |
+| Single Next Stage proof advance | 2.65s | 60.00s | pass |
+| Setup heavy HoD context at Sem6 post-SEE | 80.38s | informational | info |
+| HoD proof bundle response | 10.14s | 30.00s | pass |
+| HoD analytics surface visible after bundle | 8.96s | 45.00s | pass |
+| Counterfactual simulator response | 0.94s | 90.00s | pass |
 | Counterfactual simulator panel visible | 0.89s | 30.00s | pass |
 
 ## Browser Console Errors
