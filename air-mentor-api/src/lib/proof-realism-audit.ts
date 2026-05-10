@@ -242,6 +242,8 @@ export function compareProofClassroomSetups(input: {
   baseline: ProofRealismAuditReport
   candidate: ProofRealismAuditReport
   expectedDirection: 'candidate-section-b-stressed'
+  minSectionBMeanOverallDrop?: number
+  minSectionBRiskIncrease?: number
 }): ProofClassroomSetupComparison {
   const issues: string[] = []
   const baselineB = input.baseline.sections.B
@@ -253,9 +255,11 @@ export function compareProofClassroomSetups(input: {
   const sectionBRiskDelta = candidateB && baselineB
     ? roundTo(candidateB.meanRiskProbScaled - baselineB.meanRiskProbScaled, 4)
     : 0
+  const minSectionBMeanOverallDrop = input.minSectionBMeanOverallDrop ?? 4
+  const minSectionBRiskIncrease = input.minSectionBRiskIncrease ?? 5
   if (input.expectedDirection === 'candidate-section-b-stressed') {
-    if (sectionBMeanOverallDelta >= -4) issues.push(`Section B overall delta ${sectionBMeanOverallDelta} is not materially lower`)
-    if (sectionBRiskDelta <= 5) issues.push(`Section B risk delta ${sectionBRiskDelta} is not materially higher`)
+    if (sectionBMeanOverallDelta > -minSectionBMeanOverallDrop) issues.push(`Section B overall delta ${sectionBMeanOverallDelta} is not materially lower`)
+    if (sectionBRiskDelta <= minSectionBRiskIncrease) issues.push(`Section B risk delta ${sectionBRiskDelta} is not materially higher`)
   }
   return {
     verdict: issues.length === 0 ? 'pass' : 'fail',

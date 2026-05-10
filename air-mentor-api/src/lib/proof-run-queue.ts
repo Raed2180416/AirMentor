@@ -49,6 +49,7 @@ type QueueRow = {
   source_type: string
   policy_snapshot_json: string
   progress_json: string | null
+  section_overrides_json: string | null
   worker_lease_token: string | null
   created_at: string
   updated_at: string
@@ -146,6 +147,7 @@ export async function enqueueProofSimulationRun(db: AppDb, input: {
   runLabel?: string
   parentSimulationRunId?: string | null
   activate?: boolean
+  sectionOverridesJson?: string | null
 }) {
   const queueMetadata = await buildQueueMetadata(db, input.batchId)
   const runSeed = input.seed ?? Math.floor(Date.now() % 100000)
@@ -170,6 +172,7 @@ export async function enqueueProofSimulationRun(db: AppDb, input: {
     semesterEnd: queueMetadata.semesterEnd,
     activeOperationalSemester: queueMetadata.semesterStart,
     sourceType: queueMetadata.sourceType,
+    sectionOverridesJson: input.sectionOverridesJson ?? null,
     policySnapshotJson: JSON.stringify(input.policy),
     engineVersionsJson: JSON.stringify({
       queueMode: 'background-worker',
@@ -251,6 +254,7 @@ export async function retryQueuedProofSimulationRun(db: AppDb, input: {
     runMode: run.runMode,
     stageBoundaryJson: run.stageBoundaryJson,
     sourceType: run.sourceType,
+    sectionOverridesJson: run.sectionOverridesJson ?? null,
     policySnapshotJson: run.policySnapshotJson,
     engineVersionsJson: run.engineVersionsJson,
     metricsJson: run.metricsJson,
@@ -440,6 +444,7 @@ async function executeClaimedProofRun(db: AppDb, pool: Pick<Pool, 'query'>, row:
     runLabel: row.run_label,
     parentSimulationRunId: row.parent_simulation_run_id,
     activate: Boolean(progress.requestedActivate ?? false),
+    sectionOverridesJson: row.section_overrides_json,
   })
 }
 

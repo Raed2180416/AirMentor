@@ -34,6 +34,7 @@ function createClaimedRunRow() {
     source_type: 'simulation',
     policy_snapshot_json: '{}',
     progress_json: JSON.stringify({ requestedActivate: true }),
+    section_overrides_json: JSON.stringify({ B: { examPressure: 0.88 } }),
     worker_lease_token: null,
     created_at: '2026-04-03T00:00:00.000Z',
     updated_at: '2026-04-03T00:00:00.000Z',
@@ -147,6 +148,30 @@ describe('proof run queue worker', () => {
     await stopWorker()
   })
 
+  it('passes queued section overrides into proof run execution', async () => {
+    proofRunQueueMocks.startProofSimulationRun.mockResolvedValue(undefined)
+    const query = vi.fn()
+      .mockResolvedValueOnce({ rows: [createClaimedRunRow()] })
+      .mockResolvedValueOnce({ rows: [{ simulation_run_id: 'simulation_run_001' }] })
+      .mockResolvedValueOnce({ rows: [] })
+
+    const stopWorker = startProofRunWorker({
+      db: {} as never,
+      pool: { query },
+      clock: () => '2026-04-03T00:00:00.000Z',
+      startDelayMs: 0,
+      pollMs: 1_000,
+      heartbeatMs: 1_000,
+    })
+
+    await vi.advanceTimersByTimeAsync(0)
+    await stopWorker()
+
+    expect(proofRunQueueMocks.startProofSimulationRun).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      sectionOverridesJson: JSON.stringify({ B: { examPressure: 0.88 } }),
+    }))
+  })
+
   it('defaults queued reruns to non-activating mode until explicitly requested', async () => {
     const { db, insertValues } = createInsertOnlyDb()
 
@@ -162,6 +187,7 @@ describe('proof run queue worker', () => {
     })
     expect(insertValues.mock.calls[0]?.[0]).toMatchObject({
       status: 'queued',
+      sectionOverridesJson: null,
       progressJson: expect.stringContaining('"requestedActivate":false'),
     })
   })

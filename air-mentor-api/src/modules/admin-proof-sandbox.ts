@@ -99,6 +99,7 @@ const startRunSchema = z.object({
   seed: z.number().int().positive().optional(),
   runLabel: z.string().min(1).optional(),
   activate: z.boolean().optional(),
+  sectionOverridesJson: z.string().optional().nullable(),
 })
 
 const restoreSnapshotSchema = z.object({
@@ -352,6 +353,7 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
       seed: body.seed,
       runLabel: body.runLabel,
       activate: body.activate,
+      sectionOverridesJson: body.sectionOverridesJson ?? null,
     })
     await emitAuditEvent(context, {
       entityType: 'ProofSimulationRun',
