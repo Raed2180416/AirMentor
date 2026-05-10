@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { and, asc, count, desc, eq, gt, inArray, isNotNull, like } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, like } from 'drizzle-orm'
 import type { AppDb } from '../db/client.js'
 import {
   academicRuntimeState,
@@ -4258,6 +4258,7 @@ export async function startProofSimulationRun(db: AppDb, input: {
   // proof-section-override-applier.ts. Flag-gated by AIRMENTOR_SECTION_OVERRIDES_V1
   // at the applier site so flag-off path is byte-identical to pre-Track-C.
   sectionOverridesJson?: string | null
+  demoWorkspaceId?: string | null
 }) {
   if (input.batchId !== MSRUAS_PROOF_BATCH_ID) {
     return startLiveBatchProofSimulationRun(db, input)
@@ -4540,13 +4541,17 @@ export async function activateProofSimulationRun(db: AppDb, input: {
       runLabel: run.runLabel,
       parentSimulationRunId: run.parentSimulationRunId ?? null,
       activate: true,
+      demoWorkspaceId: run.demoWorkspaceId ?? null,
     })
   }
+  const runScopeCondition = run.demoWorkspaceId
+    ? eq(simulationRuns.demoWorkspaceId, run.demoWorkspaceId)
+    : isNull(simulationRuns.demoWorkspaceId)
   await db.update(simulationRuns).set({
     activeFlag: 0,
     status: 'completed',
     updatedAt: input.now,
-  }).where(eq(simulationRuns.batchId, run.batchId))
+  }).where(and(eq(simulationRuns.batchId, run.batchId), runScopeCondition))
   const [activationRun] = await db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, run.simulationRunId))
   if (!activationRun) throw new Error('Simulation run not found')
   const targetSemester = activationRun.activeOperationalSemester ?? activationRun.semesterStart
