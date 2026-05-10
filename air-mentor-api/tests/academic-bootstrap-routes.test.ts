@@ -51,6 +51,7 @@ describe('academic bootstrap routes', () => {
         userId: 'mnc_t1',
         username: 'mnc_t1',
         email: 'mnc_t1@msruas.ac.in',
+        demoWorkspaceId: null,
         facultyId: 'mnc_t1',
         facultyName: 'Faculty MNC T1',
         activeRoleGrant: {

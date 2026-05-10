@@ -100,6 +100,7 @@ describe('academic proof routes', () => {
         userId: 'faculty_hod',
         username: 'faculty_hod',
         email: 'faculty_hod@msruas.ac.in',
+        demoWorkspaceId: null,
         facultyName: 'Faculty HoD',
         activeRoleGrant: {
           grantId: 'grant_hod',
@@ -247,6 +248,7 @@ describe('academic proof routes', () => {
         userId: 'faculty_hod',
         username: 'faculty_hod',
         email: 'faculty_hod@msruas.ac.in',
+        demoWorkspaceId: null,
         facultyName: 'Faculty HoD',
         activeRoleGrant: {
           grantId: 'grant_hod',
@@ -335,6 +337,7 @@ describe('academic proof routes', () => {
         userId: 'faculty_course_leader',
         username: 'faculty_course_leader',
         email: 'faculty_course_leader@msruas.ac.in',
+        demoWorkspaceId: null,
         facultyName: 'Faculty Course Leader',
         activeRoleGrant: {
           grantId: 'grant_course_leader',
@@ -420,6 +423,7 @@ describe('academic proof routes', () => {
         userId: 'faculty_course_leader',
         username: 'faculty_course_leader',
         email: 'faculty_course_leader@msruas.ac.in',
+        demoWorkspaceId: null,
         facultyName: 'Faculty Course Leader',
         activeRoleGrant: {
           grantId: 'grant_course_leader',
