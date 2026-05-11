@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from './support/playwright-runtime'
@@ -21,6 +22,10 @@ const frontendAltHost = frontendUrl.hostname === '127.0.0.1'
 const frontendCorsAllowedOrigins = [frontendUrl.origin, `${frontendUrl.protocol}//${frontendAltHost}:${frontendPort}`]
   .filter((value, index, values) => values.indexOf(value) === index)
   .join(',')
+const viteBin = [
+  path.join(repoRoot, 'node_modules/vite/bin/vite.js'),
+  path.resolve(repoRoot, '../../node_modules/vite/bin/vite.js'),
+].find(candidate => existsSync(candidate)) ?? path.join(repoRoot, 'node_modules/vite/bin/vite.js')
 const webServer = skipWebServer
   ? undefined
   : [
@@ -49,7 +54,7 @@ const webServer = skipWebServer
         },
       },
       {
-        command: `cd ${JSON.stringify(repoRoot)} && VITE_AIRMENTOR_API_BASE_URL=/ AIRMENTOR_UI_PROXY_API_TARGET=${JSON.stringify(apiUrl.origin)} node node_modules/vite/bin/vite.js --host ${JSON.stringify(frontendUrl.hostname)} --port ${JSON.stringify(frontendPort)} --strictPort`,
+        command: `cd ${JSON.stringify(repoRoot)} && VITE_AIRMENTOR_API_BASE_URL=/ AIRMENTOR_UI_PROXY_API_TARGET=${JSON.stringify(apiUrl.origin)} node ${JSON.stringify(viteBin)} --host ${JSON.stringify(frontendUrl.hostname)} --port ${JSON.stringify(frontendPort)} --strictPort`,
         url: frontendBaseUrl,
         timeout: 120_000,
         reuseExistingServer,

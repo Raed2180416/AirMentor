@@ -141,6 +141,7 @@ export interface AirMentorApiClientLike {
   getAcademicHodProofReassessments(filter?: { section?: string; semester?: number; riskBand?: string; status?: string; facultyId?: string; courseCode?: string; studentId?: string; simulationStageCheckpointId?: string }): Promise<{ items: ApiAcademicHodProofReassessment[] }>
   advanceAcademicProofRun(simulationRunId: string, payload: { mode: 'day' | 'previous-day' | 'stage' }): Promise<Record<string, unknown>>
   stopAcademicProofRun(simulationRunId: string): Promise<Record<string, unknown>>
+  recomputeAcademicProofRunRisk(simulationRunId: string): Promise<{ ok: true }>
   acknowledgeAcademicProofReassessment(reassessmentEventId: string, payload?: ApiProofReassessmentAcknowledgeRequest): Promise<ApiProofReassessmentAcknowledgeResponse>
   resolveAcademicProofReassessment(reassessmentEventId: string, payload: ApiProofReassessmentResolveRequest): Promise<ApiProofReassessmentResolveResponse>
   getAcademicStudentAgentCard(studentId: string, filter?: { simulationRunId?: string; simulationStageCheckpointId?: string }): Promise<ApiStudentAgentCard>
@@ -585,6 +586,13 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
 
   async stopAcademicProofRun(simulationRunId: string) {
     return this.request<Record<string, unknown>>(`/api/academic/proof-runs/${encodeURIComponent(simulationRunId)}/stop`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+  }
+
+  async recomputeAcademicProofRunRisk(simulationRunId: string) {
+    return this.request<{ ok: true }>(`/api/academic/proof-runs/${encodeURIComponent(simulationRunId)}/recompute-risk`, {
       method: 'POST',
       body: JSON.stringify({}),
     })

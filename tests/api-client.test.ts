@@ -320,6 +320,23 @@ describe('AirMentorApiClient', () => {
     }))
   })
 
+  it('posts academic proof recompute-risk through the academic workspace route', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => new Response(JSON.stringify({
+      ok: true,
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }))
+    const client = new AirMentorApiClient('http://127.0.0.1:4000', fetchMock as typeof fetch)
+
+    await expect(client.recomputeAcademicProofRunRisk('sim_active_demo')).resolves.toEqual({ ok: true })
+
+    expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:4000/api/academic/proof-runs/sim_active_demo/recompute-risk', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({}),
+    }))
+  })
+
   it('threads the additive academic runtime resource routes through the API client', async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL) => new Response(JSON.stringify({
       ok: true,

@@ -21,6 +21,7 @@ import {
   advanceProofSimulationPreviousDay,
   advanceProofSimulationStage,
   listStudentAgentTimeline,
+  recomputeObservedOnlyRisk,
   sendStudentAgentMessage,
   startStudentAgentSession,
   stopProofSimulationRun,
@@ -73,6 +74,7 @@ export async function registerAcademicProofRoutes(
     proofReassessmentResolveSchema,
     proofResolutionCreditByOutcome,
     proofResolutionRecoveryState,
+    resolveBatchPolicy,
     resolveAcademicStageCheckpoint,
     resolveProofReassessmentAccess,
     resolveStudentShellRun,
@@ -313,6 +315,28 @@ export async function registerAcademicProofRoutes(
       actorFacultyId: auth.facultyId ?? null,
       now: context.now(),
     })
+  })
+
+  app.post('/api/academic/proof-runs/:simulationRunId/recompute-risk', {
+    schema: {
+      tags: ['academic'],
+      summary: 'Recompute observable-only risk for the active proof run from the academic workspace',
+    },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN', ...academicRoleCodes])
+    assertAcademicAccess(evaluateFacultyContextAccess(auth, { allowSystemAdmin: true }))
+    const params = parseOrThrow(z.object({ simulationRunId: z.string().min(1) }), request.params)
+    const run = await resolveScopedAcademicProofRun(context, auth, params.simulationRunId)
+    assertAcademicAccess(evaluateActiveProofRunAccess(auth, run.activeFlag === 1, 'Academic proof controls may recompute only the active proof run'))
+    const resolved = await resolveBatchPolicy(context, run.batchId)
+    await recomputeObservedOnlyRisk(context.db, {
+      simulationRunId: params.simulationRunId,
+      policy: resolved.effectivePolicy,
+      actorFacultyId: auth.facultyId ?? null,
+      now: context.now(),
+      rebuildModelArtifacts: false,
+    })
+    return { ok: true }
   })
 
   app.post('/api/academic/proof-reassessments/:reassessmentEventId/acknowledge', {

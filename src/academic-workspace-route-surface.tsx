@@ -78,6 +78,11 @@ export function AcademicWorkspaceRouteSurface({
           onOpenUpload={workspace.handleOpenUpload}
           onOpenCalendar={workspace.handleOpenCalendar}
           onOpenPendingActions={workspace.handleToggleActionQueue}
+          loadStudentRiskExplorer={workspace.loadStudentRiskExplorer}
+          loadStudentAgentCard={workspace.loadStudentAgentCard}
+          onCommitDemoAttendanceEdit={workspace.handleCommitDemoAttendanceEdit}
+          onRecomputeProofRunRisk={workspace.handleRecomputeProofRunRisk}
+          onResolveProofReassessment={workspace.handleResolveProofReassessment}
           onAdvanceProofRun={workspace.handleAdvanceProofRun}
           onStopProofRun={workspace.handleStopProofRun}
           onStepProofPlayback={workspace.handleStepProofPlayback}
