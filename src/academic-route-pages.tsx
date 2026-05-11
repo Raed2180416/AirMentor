@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react'
 import { AlertTriangle, Eye, Mail, Phone, Search, Users, X } from 'lucide-react'
 import { T, mono, sora, yearColor, type Mentee, type Offering, type Student, type StudentHistoryRecord, type YearGroup } from './data'
 import { type EntryKind, type Role, type SharedTask } from './domain'
-import type { ApiAcademicFacultyProfile } from './api/types'
+import type { ApiAcademicFacultyProfile, ApiProofReassessmentResolveResponse, ApiStudentAgentCard, ApiStudentRiskExplorer } from './api/types'
 import type { ProofAdvanceControlMode, ProofPlaybackControlDirection } from './proof-simulation-controls'
 import { AcademicProofSummaryStrip } from './academic-proof-summary-strip'
 import { humanLabelForActionCode } from './action-code-humaniser'
+import { DemoRealityLoopPanel } from './demo-reality-loop'
 import { useAppSelectors } from './selectors'
 import { inferKindFromPendingAction } from './page-utils'
 import { Bar, Btn, Card, Chip, PageBackButton, PageShell, StagePips } from './ui-primitives'
@@ -42,7 +43,12 @@ type CLDashboardProps = {
   onOpenUpload: (offering?: Offering, kind?: EntryKind) => void
   onOpenCalendar: () => void
   onOpenPendingActions: () => void
-  onAdvanceProofRun?: (simulationRunId: string, mode: ProofAdvanceControlMode) => void
+  loadStudentRiskExplorer?: (studentId: string) => Promise<ApiStudentRiskExplorer>
+  loadStudentAgentCard?: (studentId: string) => Promise<ApiStudentAgentCard>
+  onCommitDemoAttendanceEdit?: (offeringId: string, studentId: string, nextAttendancePct: number) => Promise<void>
+  onRecomputeProofRunRisk?: (simulationRunId: string, options?: { refreshWorkspace?: boolean }) => Promise<void>
+  onResolveProofReassessment?: (reassessmentEventId: string, options?: { refreshWorkspace?: boolean }) => Promise<ApiProofReassessmentResolveResponse>
+  onAdvanceProofRun?: (simulationRunId: string, mode: ProofAdvanceControlMode, options?: { refreshWorkspace?: boolean }) => Promise<void> | void
   onStopProofRun?: (simulationRunId: string) => void
   onStepProofPlayback?: (direction: ProofPlaybackControlDirection) => void
   teacherInitials: string
@@ -61,6 +67,11 @@ export function CLDashboard({
   onOpenUpload,
   onOpenCalendar,
   onOpenPendingActions,
+  loadStudentRiskExplorer,
+  loadStudentAgentCard,
+  onCommitDemoAttendanceEdit,
+  onRecomputeProofRunRisk,
+  onResolveProofReassessment,
   onAdvanceProofRun,
   onStopProofRun,
   onStepProofPlayback,
@@ -183,6 +194,17 @@ export function CLDashboard({
           </Card>
         ))}
       </div>
+
+      <DemoRealityLoopPanel
+        proofProfile={proofProfile ?? null}
+        offerings={offerings}
+        loadStudentRiskExplorer={loadStudentRiskExplorer}
+        loadStudentAgentCard={loadStudentAgentCard}
+        onCommitAttendanceEdit={onCommitDemoAttendanceEdit}
+        onRecomputeProofRunRisk={onRecomputeProofRunRisk}
+        onResolveReassessment={onResolveProofReassessment}
+        onAdvanceProofRun={onAdvanceProofRun}
+      />
 
       {highRiskCount > 0 && (
         <Card glow={T.danger} style={{ padding: '18px 22px', marginBottom: 24 }}>

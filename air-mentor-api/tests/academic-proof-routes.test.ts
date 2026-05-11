@@ -11,6 +11,7 @@ const proofRouteMocks = vi.hoisted(() => ({
   buildStudentAgentCard: vi.fn(),
   buildStudentRiskExplorer: vi.fn(),
   listStudentAgentTimeline: vi.fn(),
+  recomputeObservedOnlyRisk: vi.fn(),
   sendStudentAgentMessage: vi.fn(),
   startStudentAgentSession: vi.fn(),
 }))
@@ -23,6 +24,7 @@ vi.mock('../src/lib/msruas-proof-control-plane.js', () => ({
   buildStudentAgentCard: proofRouteMocks.buildStudentAgentCard,
   buildStudentRiskExplorer: proofRouteMocks.buildStudentRiskExplorer,
   listStudentAgentTimeline: proofRouteMocks.listStudentAgentTimeline,
+  recomputeObservedOnlyRisk: proofRouteMocks.recomputeObservedOnlyRisk,
   sendStudentAgentMessage: proofRouteMocks.sendStudentAgentMessage,
   startStudentAgentSession: proofRouteMocks.startStudentAgentSession,
 }))
@@ -48,6 +50,7 @@ describe('academic proof routes', () => {
     proofRouteMocks.advanceProofSimulationDay.mockResolvedValue({ simulationRunId: 'sim_parallel_active_checkpoint_scope', mode: 'day' })
     proofRouteMocks.advanceProofSimulationPreviousDay.mockResolvedValue({ simulationRunId: 'sim_parallel_active_checkpoint_scope', mode: 'previous-day' })
     proofRouteMocks.advanceProofSimulationStage.mockResolvedValue({ simulationRunId: 'sim_parallel_active_checkpoint_scope', mode: 'stage' })
+    proofRouteMocks.recomputeObservedOnlyRisk.mockResolvedValue(undefined)
     proofRouteMocks.startStudentAgentSession.mockResolvedValue({
       studentAgentSessionId: 'agent_session_001',
       simulationRunId: 'sim_parallel_active_checkpoint_scope',
@@ -393,6 +396,99 @@ describe('academic proof routes', () => {
       now: '2026-03-31T00:00:00.000Z',
     })
     expect(proofRouteMocks.advanceProofSimulationDay).not.toHaveBeenCalled()
+  })
+
+  it('lets academic roles recompute only the active scoped proof run through the teacher proof control route', async () => {
+    const context = {
+      db: {
+        select: () => ({
+          from: (table: unknown) => ({
+            where: async () => {
+              if (table === simulationRuns) {
+                return [{
+                  simulationRunId: 'sim_active_demo',
+                  batchId: 'batch_mnc_2023',
+                  activeFlag: 1,
+                  demoWorkspaceId: 'demo_ws_001',
+                }]
+              }
+              return []
+            },
+          }),
+        }),
+      },
+      now: () => '2026-05-11T08:00:00.000Z',
+    }
+    const resolveBatchPolicy = vi.fn().mockResolvedValue({
+      effectivePolicy: { attendanceRules: { minimumRequiredPercent: 75 } },
+    })
+
+    app = fastify()
+    app.addHook('onRequest', async (request: FastifyRequest) => {
+      request.auth = {
+        sessionId: 'session_course_leader',
+        facultyId: 'faculty_course_leader',
+        userId: 'faculty_course_leader',
+        username: 'devika.shetty',
+        email: 'devika.shetty@msruas.ac.in',
+        demoWorkspaceId: 'demo_ws_001',
+        facultyName: 'Devika Shetty',
+        activeRoleGrant: {
+          grantId: 'grant_course_leader',
+          facultyId: 'faculty_course_leader',
+          roleCode: 'COURSE_LEADER',
+          scopeType: 'section',
+          scopeId: 'section_a',
+          status: 'active',
+          version: 1,
+        },
+        availableRoleGrants: [],
+      }
+    })
+
+    await registerAcademicProofRoutes(app, context as never, {
+      academicRoleCodes: ['COURSE_LEADER', 'MENTOR', 'HOD'],
+      assertStudentShellScope: vi.fn().mockResolvedValue(undefined),
+      hodProofCourseQuerySchema: z.object({}).passthrough(),
+      hodProofFacultyQuerySchema: z.object({}).passthrough(),
+      hodProofReassessmentQuerySchema: z.object({}).passthrough(),
+      hodProofStudentQuerySchema: z.object({}).passthrough(),
+      hodProofSummaryQuerySchema: z.object({}).passthrough(),
+      proofReassessmentAcknowledgeSchema: z.object({}).passthrough(),
+      proofReassessmentParamsSchema: z.object({ reassessmentEventId: z.string().min(1) }),
+      proofReassessmentResolveSchema: z.object({}).passthrough(),
+      proofResolutionCreditByOutcome: vi.fn(),
+      proofResolutionRecoveryState: vi.fn(),
+      resolveAcademicStageCheckpoint: vi.fn(),
+      resolveBatchPolicy,
+      resolveProofReassessmentAccess: vi.fn(),
+      resolveStudentShellRun: vi.fn(),
+      studentShellMessageSchema: z.object({ prompt: z.string().min(1) }),
+      studentShellQuerySchema: z.object({
+        simulationRunId: z.string().min(1).optional(),
+        simulationStageCheckpointId: z.string().min(1).optional(),
+      }),
+      studentShellSessionCreateSchema: z.object({
+        simulationRunId: z.string().min(1).optional(),
+        simulationStageCheckpointId: z.string().min(1).optional(),
+      }),
+    } as never)
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/academic/proof-runs/sim_active_demo/recompute-risk',
+      payload: {},
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ ok: true })
+    expect(resolveBatchPolicy).toHaveBeenCalledWith(context, 'batch_mnc_2023')
+    expect(proofRouteMocks.recomputeObservedOnlyRisk).toHaveBeenCalledWith(context.db, {
+      simulationRunId: 'sim_active_demo',
+      policy: { attendanceRules: { minimumRequiredPercent: 75 } },
+      actorFacultyId: 'faculty_course_leader',
+      now: '2026-05-11T08:00:00.000Z',
+    })
   })
 
   it('lets academic roles move the active proof run one persisted day backward', async () => {

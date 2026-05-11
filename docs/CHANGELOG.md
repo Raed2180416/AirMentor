@@ -234,6 +234,19 @@ Comprehensive disposition table:
 
 ### Pending — to be filled as phases land
 
+### 2026-05-11 · phase(P5/P9-local) · Course Leader guided demo reality loop
+
+- Added local-only Course Leader **Demo Reality Loop** panel for one proof-queue student: before snapshot, deterministic attendance edit, academic observed-only recompute, risk/card refresh, reassessment resolution, and next-stage advance.
+- Added academic workspace recompute-risk route `POST /api/academic/proof-runs/:simulationRunId/recompute-risk`, scoped to active academic proof runs, plus API client wrapper.
+- Updated `docs/CAPABILITY_MATRIX.md` with conservative `partial / demo-only` status.
+- Verification:
+  - `npx --no-install vitest run tests/demo-reality-loop.test.tsx tests/academic-route-pages.test.tsx tests/api-client.test.ts --reporter=dot` → 27/27 passed.
+  - `npx --no-install vitest run air-mentor-api/tests/academic-proof-routes.test.ts --config air-mentor-api/vitest.config.ts --reporter=dot` → 5/5 passed.
+  - `npx --no-install tsc -p tsconfig.app.json --noEmit`, `npx --no-install tsc -p tsconfig.tests.json --noEmit`, `npx --no-install tsc -p air-mentor-api/tsconfig.json --noEmit` → passed.
+  - `PLAYWRIGHT_TEST_IMPORT=/nix/store/w94nd74jw950wlwm06f51n62d0sb5yp0-playwright-test-1.57.0/lib/node_modules/@playwright/test/index.js AIRMENTOR_PW_DISABLE_VIDEO=1 AIRMENTOR_PW_BROWSER=firefox AIRMENTOR_PW_API_BASE_URL=http://127.0.0.1:4100 AIRMENTOR_PW_FRONTEND_BASE_URL=http://127.0.0.1:5173 nix develop -c playwright test tests-e2e/specs/guided-demo-reality-loop.spec.ts --config tests-e2e/playwright.config.ts --reporter=list` → 1/1 passed in 2.8m.
+  - `npm run lint -- --max-warnings=0` and `git diff --check` → passed.
+- Non-claims: no full six-semester ladder proof for this panel, no real-data production ML validity, no multi-program generality.
+
 ```
 2026-05-?? · phase(P3) · Bloom-mastery wire-through, edge-weight, impact preview, Recalibrate rename
 2026-05-?? · phase(P4) · UX label sweep
