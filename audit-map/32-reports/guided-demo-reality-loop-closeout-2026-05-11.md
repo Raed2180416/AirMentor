@@ -8,6 +8,7 @@ This closeout covers the local AirMentor Course Leader guided demo reality loop 
 
 - `0bb760af` — `feat: add guided demo reality loop`
 - `082bc373` — `perf: skip proof artifact rebuild on teacher recompute`
+- `a4a30484` — `docs: close out guided demo proof`
 
 ## What changed
 
@@ -93,6 +94,20 @@ Result:
   - Next Stage auto-resolve behavior
   - full demo ladder surfaces for sysadmin, teacher, mentor, and HoD from Sem 1 to Sem 6
 
+### Complete browser suite
+
+Command:
+
+```bash
+PLAYWRIGHT_TEST_IMPORT=/nix/store/w94nd74jw950wlwm06f51n62d0sb5yp0-playwright-test-1.57.0/lib/node_modules/@playwright/test/index.js AIRMENTOR_PW_DISABLE_VIDEO=1 AIRMENTOR_PW_BROWSER=firefox AIRMENTOR_PW_API_BASE_URL=http://127.0.0.1:4100 AIRMENTOR_PW_FRONTEND_BASE_URL=http://127.0.0.1:5173 nix develop -c playwright test tests-e2e/specs --config tests-e2e/playwright.config.ts --reporter=list
+```
+
+Result:
+
+- `22 passed (48.3m)`
+- This was a fresh full Playwright browser run over every spec in `tests-e2e/specs` on Nix Firefox.
+- `tests-e2e/specs/performance-baseline.spec.ts` rewrote `audit-map/32-reports/performance-baseline-2026-05-10.md` with run-specific measurements during the suite; that generated report diff was inspected and reverted because it included stale branch metadata and should not be committed as part of this guided-demo branch.
+
 ### Backend realism and stage evidence
 
 Command:
@@ -137,7 +152,7 @@ git diff --check
 
 Results:
 
-- Frontend unit/API pack: `3 passed`, `27 passed` tests.
+- Frontend unit/API/causal pack: `4 passed`, `29 passed` tests on the final post-browser verification run.
 - Backend route pack: `1 passed`, `5 passed` tests.
 - Typecheck gates passed.
 - Lint passed with `--max-warnings=0`.
