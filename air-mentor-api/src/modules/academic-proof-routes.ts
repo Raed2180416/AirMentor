@@ -334,6 +334,7 @@ export async function registerAcademicProofRoutes(
       policy: resolved.effectivePolicy,
       actorFacultyId: auth.facultyId ?? null,
       now: context.now(),
+      rebuildModelArtifacts: false,
     })
     return { ok: true }
   })
