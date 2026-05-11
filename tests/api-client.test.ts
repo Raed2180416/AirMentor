@@ -211,6 +211,38 @@ describe('AirMentorApiClient', () => {
     }))
   })
 
+  it('provisions a seeded demo workspace through the admin API client', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      demoWorkspaceId: 'demo_ws_001',
+      activeSimulationRunId: 'demo_demo_ws_001__simulation_run_001',
+      provisionedCounts: {
+        students: 64,
+        enrollments: 384,
+        offerings: 30,
+        ownerships: 30,
+        runs: 1,
+        checkpoints: 30,
+        observedStates: 384,
+        riskAssessments: 384,
+      },
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }))
+
+    const client = new AirMentorApiClient('http://127.0.0.1:4000', fetchMock as typeof fetch)
+    const result = await client.provisionDemoWorkspace('demo_ws_001')
+
+    expect(result.activeSimulationRunId).toMatch(/^demo_/)
+    expect(result.provisionedCounts.checkpoints).toBeGreaterThan(0)
+    expect(result.provisionedCounts.observedStates).toBeGreaterThan(0)
+    expect(result.provisionedCounts.riskAssessments).toBeGreaterThan(0)
+    expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:4000/api/admin/demo-workspaces/demo_ws_001/provision', expect.objectContaining({
+      method: 'POST',
+      credentials: 'include',
+    }))
+  })
+
   it('threads checkpoint playback filters and admin checkpoint routes through the API client', async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL) => new Response(JSON.stringify({
       ok: true,

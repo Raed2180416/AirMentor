@@ -666,6 +666,7 @@ function renderWorkspace(
     batchProvisioningForm: makeBatchProvisioningForm(),
     setBatchProvisioningForm: () => {},
     handleProvisionBatch: async () => {},
+    handleProvisionSeededDemoWorkspace: async () => {},
     batchFacultyPool: data.facultyMembers,
     batchMentorEligibleFaculty: data.facultyMembers,
     batchOfferingsWithoutOwner: [],
@@ -789,6 +790,9 @@ describe('system-admin faculties workspace parity', () => {
     expect(markup).toContain('Batch 2022 · Section A')
     expect(markup).toContain('Prof. Kavitha Rao')
     expect(markup).toContain('Run Batch Provisioning')
+    expect(markup).toContain('Seeded Demo Workspace')
+    expect(markup).toContain('Provision Seeded Demo Workspace')
+    expect(markup).toContain('Clone the MSRUAS proof dataset into a disposable demo workspace')
     expect(markup).toContain('Current semester term 2024-25')
     expect(markup).toContain('Finish setup before stage progression or proof preview')
     expect(markup).toContain('Proof preview buttons stay locked until every blocker above is cleared.')

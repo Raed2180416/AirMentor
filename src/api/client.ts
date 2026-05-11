@@ -100,6 +100,7 @@ import type {
   ApiUiPreferences,
   ApiDemoWorkspace,
   ApiDemoProvisioningPreview,
+  ApiDemoProvisioningResult,
 } from './types.js'
 import type { ActiveDemoWorkspacePointer } from '../demo-workspace-pointer.js'
 import type {
@@ -1433,6 +1434,13 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     return this.request<ApiDemoProvisioningPreview>(
       `/api/admin/demo-workspaces/${demoWorkspaceId}/provision/preview`,
       { method: 'POST', body: JSON.stringify(payload) },
+    )
+  }
+
+  async provisionDemoWorkspace(demoWorkspaceId: string) {
+    return this.request<ApiDemoProvisioningResult>(
+      `/api/admin/demo-workspaces/${demoWorkspaceId}/provision`,
+      { method: 'POST' },
     )
   }
 

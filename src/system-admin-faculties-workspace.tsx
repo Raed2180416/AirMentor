@@ -563,6 +563,7 @@ type SystemAdminFacultiesWorkspaceProps = {
   batchProvisioningForm: BatchProvisioningFormState
   setBatchProvisioningForm: Dispatch<SetStateAction<BatchProvisioningFormState>>
   handleProvisionBatch: () => Promise<void>
+  handleProvisionSeededDemoWorkspace: () => Promise<void>
   batchFacultyPool: ApiFacultyRecord[]
   batchMentorEligibleFaculty: ApiFacultyRecord[]
   batchOfferingsWithoutOwner: LiveAdminDataset['offerings']
@@ -706,6 +707,7 @@ export function SystemAdminFacultiesWorkspace({
   batchProvisioningForm,
   setBatchProvisioningForm,
   handleProvisionBatch,
+  handleProvisionSeededDemoWorkspace,
   batchFacultyPool,
   batchMentorEligibleFaculty,
   batchOfferingsWithoutOwner,
@@ -1461,6 +1463,14 @@ export function SystemAdminFacultiesWorkspace({
           {currentSemesterTerm ? <Chip color={T.success}>{`Current semester term ${currentSemesterTerm.academicYearLabel}`}</Chip> : <Chip color={T.warning}>Add a term before running batch provisioning</Chip>}
         </div>
       </form>
+      <Card style={{ padding: 14, background: T.surface, display: 'grid', gap: 12 }}>
+        <SectionHeading title="Seeded Demo Workspace" eyebrow="P5-D" caption="Clone the MSRUAS proof dataset into a disposable demo workspace, including seeded academic rows, proof artifacts, and playback checkpoints." />
+        <InfoBanner message="After provisioning, sign in again so the session is bound to the demo workspace pointer rather than the global proof run." />
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Btn type="button" variant="secondary" onClick={() => void handleProvisionSeededDemoWorkspace()}>Provision Seeded Demo Workspace</Btn>
+          <Chip color={T.warning}>Disposable demo scope</Chip>
+        </div>
+      </Card>
       <Card style={{ padding: 14, background: T.surface, display: 'grid', gap: 12 }}>
         <SectionHeading title="Bulk Mentor Assignment" eyebrow="Permissions" caption={`Preview or apply mentor links for ${selectedSectionCode ? `Section ${selectedSectionCode}` : `Batch ${selectedBatch.batchLabel}`} using only mentor-ready faculty.`} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>

@@ -2733,3 +2733,18 @@ export type ApiDemoProvisioningPreview = {
   estimatedOfferingCount: number
   curriculumCourseCount: number
 }
+
+export type ApiDemoProvisioningResult = {
+  demoWorkspaceId: string
+  activeSimulationRunId: string
+  provisionedCounts: {
+    students: number
+    enrollments: number
+    offerings: number
+    ownerships: number
+    runs: number
+    checkpoints: number
+    observedStates: number
+    riskAssessments: number
+  }
+}

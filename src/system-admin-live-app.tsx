@@ -25,7 +25,7 @@ import {
   UserCog,
 } from 'lucide-react'
 import { AirMentorApiClient, AirMentorApiError } from './api/client'
-import { readActiveDemoWorkspacePointer } from './demo-workspace-pointer'
+import { readActiveDemoWorkspacePointer, writeActiveDemoWorkspacePointer } from './demo-workspace-pointer'
 import type {
   ApiAcademicFaculty,
   ApiAdminFacultyPasswordSetupResponse,
@@ -4320,6 +4320,42 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     })
   }
 
+  const handleProvisionSeededDemoWorkspace = async () => {
+    if (!selectedBatch) return
+    if (!window.confirm(`Provision a disposable seeded demo workspace for ${selectedBatch.batchLabel}?`)) return
+    const activeSessionId = session?.sessionId ?? null
+    setActionError('')
+    try {
+      const workspace = await apiClient.createDemoWorkspace({
+        name: `MSRUAS seeded demo · ${selectedBatch.batchLabel}`,
+        ownerFacultyId: session?.faculty?.facultyId ?? undefined,
+        batchId: selectedBatch.batchId,
+      })
+      const provisioned = await apiClient.provisionDemoWorkspace(workspace.demoWorkspaceId)
+      await apiClient.logout().catch(error => {
+        emitClientOperationalEvent('auth.session.logout_failed', {
+          workspace: 'system-admin',
+          sessionId: activeSessionId,
+          error: normalizeClientTelemetryError(error),
+        }, { level: 'warn' })
+      })
+      writeActiveDemoWorkspacePointer({ demoWorkspaceId: workspace.demoWorkspaceId })
+      clearRegistryScope()
+      setDismissedQueueItemKeys([])
+      setSession(null)
+      setData(EMPTY_DATA)
+      setStagePolicyOverrides([])
+      setDataError('')
+      setPassword('')
+      setFlashMessage('')
+      if (typeof window !== 'undefined') {
+        window.alert(`Seeded demo workspace ready with ${provisioned.provisionedCounts.checkpoints} checkpoints, ${provisioned.provisionedCounts.observedStates} observed states, and ${provisioned.provisionedCounts.riskAssessments} risk assessments. Sign in again to enter the demo workspace.`)
+      }
+    } catch (error) {
+      setActionError(toErrorMessage(error))
+    }
+  }
+
   const handlePreviewBulkMentorAssignment = async () => {
     if (!selectedBatch) return
     const result = await runAction(async () => apiClient.bulkApplyMentorAssignments(
@@ -6724,6 +6760,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             batchProvisioningForm={batchProvisioningForm}
             setBatchProvisioningForm={setBatchProvisioningForm}
             handleProvisionBatch={handleProvisionBatch}
+            handleProvisionSeededDemoWorkspace={handleProvisionSeededDemoWorkspace}
             batchFacultyPool={batchFacultyPool}
             batchMentorEligibleFaculty={batchMentorEligibleFaculty}
             batchOfferingsWithoutOwner={batchOfferingsWithoutOwner}
