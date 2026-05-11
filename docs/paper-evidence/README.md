@@ -15,6 +15,7 @@
 | `scenario-grounding.md` | P1 | Methods · Scenario Engine |
 | `02-validation-protocol.md` | P2 | Experiments · Validation |
 | `03-baseline-results.md` | P2 | Experiments · Baselines |
+| `airmentor-paper-evidence-boundaries-2026-05-11.md` | Deterministic campaign Phase 1 | Paper claim boundary matrix |
 | `04-sensitivity-analysis.md` | P2 | Experiments · Sensitivity |
 | `05-multi-program-evidence.md` | P6 | Experiments · Transfer |
 | `06-recalibration-results.md` | P7 | Experiments · Recalibration |
