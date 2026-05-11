@@ -240,6 +240,7 @@ Comprehensive disposition table:
 - Added academic workspace recompute-risk route `POST /api/academic/proof-runs/:simulationRunId/recompute-risk`, scoped to active academic proof runs, plus API client wrapper.
 - Performance follow-up: the Course Leader recompute route now reuses active proof-risk artifacts (`rebuildModelArtifacts: false`) instead of retraining/rebuilding model artifacts on every guided panel recompute; focused Firefox evidence moved from a second `[rebuild]` block during recompute and `1/1 passed in 2.8m` to no second `[rebuild]` block and `1/1 passed in 2.2m`.
 - Updated `docs/CAPABILITY_MATRIX.md` with conservative `partial / demo-only` status.
+- Added final evidence dossier at `audit-map/32-reports/guided-demo-reality-loop-closeout-2026-05-11.md`.
 - Verification:
   - `npx --no-install vitest run tests/demo-reality-loop.test.tsx tests/academic-route-pages.test.tsx tests/api-client.test.ts --reporter=dot` → 27/27 passed.
   - `npx --no-install vitest run air-mentor-api/tests/academic-proof-routes.test.ts --config air-mentor-api/vitest.config.ts --reporter=dot` → 5/5 passed.
