@@ -488,6 +488,7 @@ describe('academic proof routes', () => {
       policy: { attendanceRules: { minimumRequiredPercent: 75 } },
       actorFacultyId: 'faculty_course_leader',
       now: '2026-05-11T08:00:00.000Z',
+      rebuildModelArtifacts: false,
     })
   })
 
