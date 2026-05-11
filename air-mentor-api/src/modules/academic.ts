@@ -4382,6 +4382,7 @@ function createAcademicRouteDependencies() {
     proofResolutionRecoveryState,
     questionPaperParamsSchema,
     resolveAcademicStageCheckpoint,
+    resolveBatchPolicy,
     resolveCourseOutcomesForOffering,
     resolveProofReassessmentAccess,
     resolveStudentShellRun,

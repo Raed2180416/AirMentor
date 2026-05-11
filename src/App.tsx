@@ -118,6 +118,7 @@ import type {
   ApiAcademicLoginFaculty,
   ApiPasswordSetupInspectResponse,
   ApiPasswordSetupRequestResponse,
+  ApiProofReassessmentResolveResponse,
   ApiSessionResponse,
   ApiStudentAgentCard,
   ApiStudentAgentMessage,
@@ -1154,7 +1155,10 @@ type OperationalWorkspaceProps = {
   startStudentAgentSession?: (studentId: string) => Promise<ApiStudentAgentSession>
   sendStudentAgentMessage?: (sessionId: string, payload: { prompt: string }) => Promise<{ items: ApiStudentAgentMessage[] }>
   loadStudentRiskExplorer?: (studentId: string) => Promise<ApiStudentRiskExplorer>
-  onAdvanceProofRun?: (simulationRunId: string, mode: 'day' | 'previous-day' | 'stage') => Promise<void> | void
+  onCommitDemoAttendanceEdit?: (offeringId: string, studentId: string, nextAttendancePct: number) => Promise<void>
+  onRecomputeProofRunRisk?: (simulationRunId: string, options?: { refreshWorkspace?: boolean }) => Promise<void>
+  onResolveProofReassessment?: (reassessmentEventId: string, options?: { refreshWorkspace?: boolean }) => Promise<ApiProofReassessmentResolveResponse>
+  onAdvanceProofRun?: (simulationRunId: string, mode: 'day' | 'previous-day' | 'stage', options?: { refreshWorkspace?: boolean }) => Promise<void> | void
   onStopProofRun?: (simulationRunId: string) => Promise<void> | void
   onStepProofPlayback?: (direction: 'previous' | 'next' | 'start' | 'end') => Promise<void> | void
   academicBootstrap: ApiAcademicBootstrap
@@ -1178,6 +1182,9 @@ function OperationalWorkspace({
   startStudentAgentSession,
   sendStudentAgentMessage,
   loadStudentRiskExplorer,
+  onCommitDemoAttendanceEdit,
+  onRecomputeProofRunRisk,
+  onResolveProofReassessment,
   onAdvanceProofRun,
   onStopProofRun,
   onStepProofPlayback,
@@ -2467,6 +2474,29 @@ function OperationalWorkspace({
     commitStudentPatch(offeringId, studentId, existing => ({ ...existing, ...patch }))
   }, [commitStudentPatch])
 
+  const handleCommitDemoAttendanceEdit = useCallback(async (offeringId: string, studentId: string, nextAttendancePct: number) => {
+    if (onCommitDemoAttendanceEdit) {
+      await onCommitDemoAttendanceEdit(offeringId, studentId, nextAttendancePct)
+      return
+    }
+    const offeringForEdit = allOfferings.find(item => item.offId === offeringId)
+    if (!offeringForEdit) throw new Error('Demo attendance edit offering is unavailable.')
+    const studentForEdit = getStudentsPatched(offeringForEdit).find(student => (student.id.split('::').at(-1) ?? student.id) === studentId || student.id === studentId)
+    if (!studentForEdit) throw new Error('Demo attendance edit student is unavailable.')
+    const totalClasses = Math.max(1, studentForEdit.totalClasses || 50)
+    const presentClasses = Math.max(0, Math.min(totalClasses, Math.round((nextAttendancePct / 100) * totalClasses)))
+    commitStudentPatch(offeringId, studentForEdit.id, existing => ({
+      ...existing,
+      present: presentClasses,
+      totalClasses,
+    }))
+    await repositories.entryData.commitAttendanceEntries(offeringId, {
+      entries: [{ studentId, presentClasses, totalClasses }],
+      capturedAt: new Date().toISOString(),
+      lock: false,
+    })
+  }, [allOfferings, commitStudentPatch, getStudentsPatched, onCommitDemoAttendanceEdit, repositories])
+
   const handleScheduleTask = useCallback((taskId: string, input: TaskPlacementDraft) => {
     if (!currentTeacher || !currentFacultyTimetable || !currentTeacher.allowedRoles.includes('Course Leader')) return
     const task = allTasksList.find(item => item.id === taskId)
@@ -3423,6 +3453,9 @@ function OperationalWorkspace({
     startStudentAgentSession,
     sendStudentAgentMessage,
     loadStudentRiskExplorer,
+    handleCommitDemoAttendanceEdit,
+    handleRecomputeProofRunRisk: onRecomputeProofRunRisk,
+    handleResolveProofReassessment: onResolveProofReassessment,
     handleAdvanceProofRun: onAdvanceProofRun,
     handleStopProofRun: onStopProofRun,
     handleStepProofPlayback: onStepProofPlayback,
@@ -4100,12 +4133,14 @@ export function OperationalApp() {
     }
   }, [apiClient, playbackCheckpointId])
 
-  const handleAdvanceAcademicProofRun = useCallback(async (simulationRunId: string, mode: 'day' | 'previous-day' | 'stage') => {
+  const handleAdvanceAcademicProofRun = useCallback(async (simulationRunId: string, mode: 'day' | 'previous-day' | 'stage', options: { refreshWorkspace?: boolean } = {}) => {
     if (!apiClient) throw new Error('Academic backend is unavailable.')
     await apiClient.advanceAcademicProofRun(simulationRunId, { mode })
-    clearProofPlaybackSelection()
-    setProofPlaybackNotice(null)
-    await refreshAcademicProjection()
+    if (options.refreshWorkspace !== false) {
+      clearProofPlaybackSelection()
+      setProofPlaybackNotice(null)
+      await refreshAcademicProjection()
+    }
   }, [apiClient, refreshAcademicProjection])
 
   const handleStopAcademicProofRun = useCallback(async (simulationRunId: string) => {
@@ -4114,6 +4149,26 @@ export function OperationalApp() {
     clearProofPlaybackSelection()
     setProofPlaybackNotice(null)
     await refreshAcademicProjection()
+  }, [apiClient, refreshAcademicProjection])
+
+  const handleRecomputeAcademicProofRunRisk = useCallback(async (simulationRunId: string, options: { refreshWorkspace?: boolean } = {}) => {
+    if (!apiClient) throw new Error('Academic backend is unavailable.')
+    await apiClient.recomputeAcademicProofRunRisk(simulationRunId)
+    if (options.refreshWorkspace !== false) {
+      await refreshAcademicProjection()
+    }
+  }, [apiClient, refreshAcademicProjection])
+
+  const handleResolveAcademicProofReassessment = useCallback(async (reassessmentEventId: string, options: { refreshWorkspace?: boolean } = {}) => {
+    if (!apiClient) throw new Error('Academic backend is unavailable.')
+    const result = await apiClient.resolveAcademicProofReassessment(reassessmentEventId, {
+      outcome: 'completed_improving',
+      note: 'Demo Reality Loop guided intervention resolution.',
+    })
+    if (options.refreshWorkspace !== false) {
+      await refreshAcademicProjection()
+    }
+    return result
   }, [apiClient, refreshAcademicProjection])
 
   const handleStepAcademicProofPlayback = useCallback(async () => {
@@ -4174,6 +4229,8 @@ export function OperationalApp() {
             startStudentAgentSession={startAcademicStudentAgentSession}
             sendStudentAgentMessage={sendAcademicStudentAgentMessage}
             loadStudentRiskExplorer={loadAcademicStudentRiskExplorer}
+            onRecomputeProofRunRisk={handleRecomputeAcademicProofRunRisk}
+            onResolveProofReassessment={handleResolveAcademicProofReassessment}
             onAdvanceProofRun={handleAdvanceAcademicProofRun}
             onStopProofRun={handleStopAcademicProofRun}
             onStepProofPlayback={handleStepAcademicProofPlayback}
