@@ -29,6 +29,9 @@
     "verify:final-closeout": "bash scripts/verify-final-closeout.sh",
     "verify:final-closeout:live": "bash scripts/verify-final-closeout-live.sh",
     "diagnostics:all": "npx tsc -p tsconfig.app.json --noEmit || true; npx tsc -p tsconfig.node.json --noEmit || true; npx tsc -p tests/tsconfig.json --noEmit || true; npx tsc -p air-mentor-api/tsconfig.json --noEmit || true; npm run -s lint || true",
+    "e2e": "playwright test --config=tests-e2e/playwright.config.ts",
+    "e2e:attached": "AIRMENTOR_PW_SKIP_WEBSERVER=1 AIRMENTOR_PW_REUSE_SERVER=1 playwright test --config=tests-e2e/playwright.config.ts",
+    "e2e:install": "playwright install firefox chromium",
     "test": "vitest run",
     "preview": "vite preview",
     "playwright:version": "nix develop -c playwright --version",
@@ -50,6 +53,7 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@eslint/js": "^9.39.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^24.10.1",

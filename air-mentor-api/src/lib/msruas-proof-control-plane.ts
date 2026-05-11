@@ -1,8 +1,9 @@
 import { existsSync } from 'node:fs'
-import { and, asc, count, desc, eq, gt, inArray, isNotNull, like } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, like } from 'drizzle-orm'
 import type { AppDb } from '../db/client.js'
 import {
   academicRuntimeState,
+  academicTerms,
   alertDecisions,
   alertOutcomes,
   batches,
@@ -53,6 +54,7 @@ import {
   transcriptSubjectResults,
   transcriptTermResults,
   userAccounts,
+  userPasswordCredentials,
   worldContextSnapshots,
   offeringAssessmentSchemes,
   sessions,
@@ -64,6 +66,7 @@ import {
 } from './academic-provisioning.js'
 import { createId } from './ids.js'
 import { parseJson } from './json.js'
+import { nullablePct } from './proof-evidence-normalization.js'
 import { parseObservedStateRow } from './proof-observed-state.js'
 import { pickMostRecentActiveRun } from './proof-active-run.js'
 import {
@@ -131,8 +134,33 @@ import {
   buildPlaybackStageSummaries as buildPlaybackStageSummariesService,
   type ProofControlPlaneStageSummaryServiceDeps,
 } from './proof-control-plane-stage-summary-service.js'
-import { buildPlaybackGovernanceArtifacts } from './proof-control-plane-playback-governance-service.js'
-import { resetPlaybackStageArtifacts } from './proof-control-plane-playback-reset-service.js'
+import {
+  buildPlaybackGovernanceArtifacts,
+  type PlaybackGovernanceRealizationData,
+} from './proof-control-plane-playback-governance-service.js'
+import {
+  buildSeverityContextByStudentId,
+} from './proof-stage-realization-bundle-assembler.js'
+import {
+  groupInterventionsByStudentAndOffering,
+  parseLatentProfileForIntervention,
+} from './proof-stage-realization-data-fetcher.js'
+import type {
+  StudentLatentProfileForIntervention,
+} from './proof-intervention-response-types.js'
+import { STAGE_REALIZATION_FLAG_NAME } from './proof-stage-realization-evidence-applier.js'
+import {
+  resetPlaybackStageArtifacts,
+  stopProofSimulationRun as stopProofSimulationRunService,
+  type ProofPlaybackResetServiceDeps,
+} from './proof-control-plane-playback-reset-service.js'
+import {
+  advanceProofSimulationDay as advanceProofSimulationDayService,
+  advanceProofSimulationPreviousDay as advanceProofSimulationPreviousDayService,
+  advanceProofSimulationStage as advanceProofSimulationStageService,
+  type AdvanceProofSimulationInput,
+  type ProofAdvanceServiceDeps,
+} from './proof-control-plane-advance-service.js'
 import {
   buildSectionRiskRateByStage as buildSectionRiskRateByStageService,
   type ProofControlPlaneSectionRiskServiceDeps,
@@ -150,6 +178,8 @@ import {
   buildSeededSemesterSixRows,
   type ProofControlPlaneSeededSemesterServiceDeps,
 } from './proof-control-plane-seeded-semester-service.js'
+import { parseSectionOverridesJson } from './proof-section-override-applier.js'
+import { maybeApplySectionOverridesToTrajectory } from './proof-section-override-trajectory-wire.js'
 import {
   prepareSeededProofRunBootstrap as prepareSeededProofRunBootstrapService,
   type ProofControlPlaneSeededBootstrapServiceDeps,
@@ -161,6 +191,7 @@ import {
   MSRUAS_PROOF_VALIDATOR_VERSION,
   validateCompiledCurriculum,
 } from './msruas-curriculum-compiler.js'
+import { BLOOM_LEVEL_MASTERY_TARGET, MASTERY_WEAKNESS_RATIO } from './learning-dynamics-constants.js'
 import { inferObservableRisk } from './inference-engine.js'
 import { buildMonitoringDecision } from './monitoring-engine.js'
 import { DEFAULT_STAGE_POLICY, type StagePolicyStageKey } from './stage-policy.js'
@@ -200,6 +231,7 @@ import {
   MSRUAS_PROOF_BRANCH_ID,
   MSRUAS_PROOF_DEPARTMENT_ID,
   PROOF_FACULTY,
+  PROOF_SEMESTER_SIM_START_DATES,
   PROOF_TERM_DEFS,
   ensureMsruasProofBatchStructure,
   seedMsruasProofSandbox,
@@ -373,7 +405,7 @@ export type StudentAgentCardPayload = {
     currentReassessmentStatus: string | null
     currentQueueState?: string | null
     currentRecoveryState?: ProofRecoveryState | null
-    currentCgpa: number
+    currentCgpa: number | null
     backlogCount: number
     electiveFit: {
       recommendedCode: string
@@ -388,11 +420,11 @@ export type StudentAgentCardPayload = {
     policyLabel: StudentAgentPanelLabel
     currentEvidence: {
       attendancePct: number
-      tt1Pct: number
-      tt2Pct: number
-      quizPct: number
-      assignmentPct: number
-      seePct: number
+      tt1Pct: number | null
+      tt2Pct: number | null
+      quizPct: number | null
+      assignmentPct: number | null
+      seePct: number | null
       weakCoCount: number
       weakQuestionCount: number
       coEvidenceMode?: string | null
@@ -448,7 +480,7 @@ export type StudentAgentCardPayload = {
       semesterNumber: number
       riskBands: string[]
       sgpa: number
-      cgpaAfterSemester: number
+      cgpaAfterSemester: number | null
       backlogCount: number
       weakCoCount: number
       questionResultCoverage: number
@@ -469,9 +501,9 @@ export type StudentAgentCardPayload = {
       trend: string
       topics: string[]
       evidenceMode: string
-      tt1Pct: number
-      tt2Pct: number
-      seePct: number
+      tt1Pct: number | null
+      tt2Pct: number | null
+      seePct: number | null
       transferGap: number
     }>
     questionPatterns: {
@@ -490,11 +522,11 @@ export type StudentAgentCardPayload = {
       courseTitle: string
       sectionCode: string | null
       attendancePct: number
-      tt1Pct: number
-      tt2Pct: number
-      quizPct: number
-      assignmentPct: number
-      seePct: number
+      tt1Pct: number | null
+      tt2Pct: number | null
+      quizPct: number | null
+      assignmentPct: number | null
+      seePct: number | null
       weakCoCount: number
       weakQuestionCount: number
       coEvidenceMode?: string | null
@@ -668,6 +700,7 @@ export type ProofCheckpointSummaryPayload = {
   mediumRiskCount?: number
   lowRiskCount?: number
   openQueueCount?: number
+  liveBlockingQueueItemCount?: number
   resolvedQueueCount?: number
   noActionHighRiskCount?: number
   electiveVisibleCount?: number
@@ -694,8 +727,10 @@ export type RuntimeCourse = {
   matchStatus: string
   mappingNote: string | null
   assessmentProfile: string
+  outcomeBloomLevel: string | null
   explicitPrerequisites: string[]
   addedPrerequisites: string[]
+  prerequisiteEdges: Array<{ title: string; weight: number }>
   bridgeModules: string[]
   tt1Topics: string[]
   tt2Topics: string[]
@@ -1043,10 +1078,13 @@ function coDefinitionsForCourse(course: RuntimeCourse) {
     topicPool.filter((_, index) => index % 3 === 1),
     topicPool.filter((_, index) => index % 3 === 2),
   ].map(group => group.filter(Boolean))
+  const bloomKey = (course.outcomeBloomLevel ?? 'apply') as keyof typeof BLOOM_LEVEL_MASTERY_TARGET
+  const masteryTarget = BLOOM_LEVEL_MASTERY_TARGET[bloomKey] ?? BLOOM_LEVEL_MASTERY_TARGET.apply
   return groups.map((topics, index) => ({
     coCode: `${courseCodeForRuntime(course)}-CO${index + 1}`,
     coTitle: topics[0] ? `${topics[0]} competency` : `Course outcome ${index + 1}`,
     topics: topics.length > 0 ? topics : [course.title],
+    masteryTarget,
   }))
 }
 
@@ -1246,13 +1284,14 @@ function buildCourseOutcomeStates(input: {
         transferGap: roundToTwo(transferGap),
         recoveryAfterIntervention: roundToTwo(recoveryAfterIntervention),
       } satisfies CourseOutcomeSummary,
+      masteryTarget: outcome.masteryTarget,
     }
   })
 
   return {
     rows: outcomes.map(outcome => outcome.row),
     summaries: outcomes.map(outcome => outcome.summary),
-    weakCoCount: outcomes.filter(outcome => outcome.summary.observedScores.tt2Pct < 50 || outcome.summary.observedScores.seePct < 45).length,
+    weakCoCount: outcomes.filter(outcome => outcome.summary.mastery < outcome.masteryTarget * MASTERY_WEAKNESS_RATIO).length,
   }
 }
 
@@ -1568,11 +1607,17 @@ function courseEmphasis(course: Pick<RuntimeCourse, 'title'>) {
 }
 
 function prerequisiteAverage(course: RuntimeCourse, scoresByCourseTitle: Map<string, number>) {
-  const signals = [...course.explicitPrerequisites, ...course.addedPrerequisites]
-    .map(title => scoresByCourseTitle.get(title))
-    .filter((value): value is number => typeof value === 'number')
-  if (signals.length === 0) return 0.58
-  return clamp(signals.reduce((sum, value) => sum + value, 0) / (signals.length * 100), 0.2, 0.95)
+  const edges = course.prerequisiteEdges.length > 0
+    ? course.prerequisiteEdges
+    : [...course.explicitPrerequisites.map(title => ({ title, weight: 1.0 })),
+       ...course.addedPrerequisites.map(title => ({ title, weight: 0.5 }))]
+  const weighted = edges
+    .map(edge => ({ score: scoresByCourseTitle.get(edge.title), weight: edge.weight }))
+    .filter((e): e is { score: number; weight: number } => typeof e.score === 'number')
+  if (weighted.length === 0) return 0.58
+  const totalWeight = weighted.reduce((sum, e) => sum + e.weight, 0)
+  const weightedSum = weighted.reduce((sum, e) => sum + (e.score * e.weight), 0)
+  return clamp(weightedSum / (totalWeight * 100), 0.2, 0.95)
 }
 
 function teacherEffect(facultyId: string, course: RuntimeCourse, sectionCode: string, runSeed: number) {
@@ -2000,12 +2045,12 @@ export type StageCourseProjectionSource = {
   courseFamily: string
   attendanceHistory: AttendanceHistoryEntry[]
   attendancePct: number
-  tt1Pct: number
-  tt2Pct: number
-  quizPct: number
-  assignmentPct: number
+  tt1Pct: number | null
+  tt2Pct: number | null
+  quizPct: number | null
+  assignmentPct: number | null
   cePct: number
-  seePct: number
+  seePct: number | null
   finalMark: number
   result: string
   previousCgpa: number
@@ -2029,7 +2074,9 @@ export type StageEvidenceSnapshot = {
   tt2Pct: number | null
   quizPct: number | null
   assignmentPct: number | null
+  cePct: number | null
   seePct: number | null
+  overallPct: number | null
   weakCoCount: number
   weakQuestionCount: number
   attentionAreas: string[]
@@ -2044,9 +2091,9 @@ export type StageEvidenceSnapshot = {
     trend: string
     topics: string[]
     evidenceMode: string
-    tt1Pct: number
-    tt2Pct: number
-    seePct: number
+    tt1Pct: number | null
+    tt2Pct: number | null
+    seePct: number | null
     transferGap: number
   }>
   questionPatterns: ReturnType<typeof summarizeQuestionPatterns>
@@ -2104,6 +2151,19 @@ function compareGovernedCorpusRuns(
   return left.simulationRunId.localeCompare(right.simulationRunId)
 }
 
+function runMatchesManifestScenarioFamily(
+  row: typeof simulationRuns.$inferSelect,
+  manifestEntry: (typeof PROOF_CORPUS_MANIFEST)[number] | undefined,
+) {
+  if (!manifestEntry) return true
+  const metrics = parseJson(row.metricsJson, {} as Record<string, unknown>)
+  const rawScenarioFamily = metrics.scenarioFamily
+  const resolvedScenarioFamily = typeof rawScenarioFamily === 'string'
+    ? rawScenarioFamily
+    : scenarioFamilyForSeed(row.seed)
+  return resolvedScenarioFamily === manifestEntry.scenarioFamily
+}
+
 function selectGovernedCorpusRuns(
   runRows: Array<typeof simulationRuns.$inferSelect>,
   manifest = PROOF_CORPUS_MANIFEST,
@@ -2112,8 +2172,10 @@ function selectGovernedCorpusRuns(
   const manifestBySeed = new Map(manifest.map(entry => [entry.seed, entry]))
   const manifestCandidatesBySeed = new Map<number, Array<typeof simulationRuns.$inferSelect>>()
   runRows.forEach(row => {
-    if (!manifestBySeed.has(row.seed)) return
+    const manifestEntry = manifestBySeed.get(row.seed)
+    if (!manifestEntry) return
     if (completeRunIds && !completeRunIds.has(row.simulationRunId)) return
+    if (!runMatchesManifestScenarioFamily(row, manifestEntry)) return
     manifestCandidatesBySeed.set(row.seed, [...(manifestCandidatesBySeed.get(row.seed) ?? []), row])
   })
 
@@ -2138,6 +2200,10 @@ function selectGovernedCorpusRuns(
       .map(row => row.simulationRunId)
       .sort()
     : []
+  const skippedScenarioMismatchManifestRunIds = runRows
+    .filter(row => manifestBySeed.has(row.seed) && !runMatchesManifestScenarioFamily(row, manifestBySeed.get(row.seed)))
+    .map(row => row.simulationRunId)
+    .sort()
 
   return {
     manifestBySeed,
@@ -2145,6 +2211,7 @@ function selectGovernedCorpusRuns(
     skippedNonManifestRunIds,
     skippedDuplicateManifestRunIds,
     skippedIncompleteManifestRunIds,
+    skippedScenarioMismatchManifestRunIds,
   }
 }
 
@@ -2160,12 +2227,15 @@ async function loadActiveProofRiskArtifacts(db: AppDb, batchId: string): Promise
   }
 }
 
-async function rebuildProofRiskArtifacts(db: AppDb, input: {
+export async function rebuildProofRiskArtifacts(db: AppDb, input: {
   batchId: string
   simulationRunId: string
   actorFacultyId?: string | null
   now: string
 }) {
+  const __rebuildT0 = Date.now()
+  const __rlog = (label: string) => { console.error(`[rebuild] ${label} @ ${((Date.now() - __rebuildT0) / 1000).toFixed(2)}s`) }
+  __rlog('start')
   const [runRows, checkpointCountRows, stageEvidenceCountRows] = await Promise.all([
     db.select().from(simulationRuns).where(eq(simulationRuns.batchId, input.batchId)),
     db.select({
@@ -2180,6 +2250,7 @@ async function rebuildProofRiskArtifacts(db: AppDb, input: {
       isNotNull(riskEvidenceSnapshots.simulationStageCheckpointId),
     )).groupBy(riskEvidenceSnapshots.simulationRunId),
   ])
+  __rlog(`counts loaded runs=${runRows.length} ckpt=${checkpointCountRows.length} evid=${stageEvidenceCountRows.length}`)
   const checkpointCountByRunId = new Map<string, number>()
   checkpointCountRows.forEach(row => {
     checkpointCountByRunId.set(row.simulationRunId, Number(row.checkpointCount))
@@ -2205,8 +2276,14 @@ async function rebuildProofRiskArtifacts(db: AppDb, input: {
     skippedNonManifestRunIds,
     skippedDuplicateManifestRunIds,
     skippedIncompleteManifestRunIds,
+    skippedScenarioMismatchManifestRunIds,
   } = selectGovernedCorpusRuns(runRows, PROOF_CORPUS_MANIFEST, completeRunIds)
-  const skippedSimulationRunIds = [...skippedNonManifestRunIds, ...skippedDuplicateManifestRunIds, ...skippedIncompleteManifestRunIds].sort()
+  const skippedSimulationRunIds = [
+    ...skippedNonManifestRunIds,
+    ...skippedDuplicateManifestRunIds,
+    ...skippedIncompleteManifestRunIds,
+    ...skippedScenarioMismatchManifestRunIds,
+  ].sort()
 
   const runMetadataById = new Map<string, ProofRunModelMetadata>(
     governedRunRows.map(row => {
@@ -2227,6 +2304,7 @@ async function rebuildProofRiskArtifacts(db: AppDb, input: {
   )
   const governedRunIds = new Set(runMetadataById.keys())
   if (governedRunIds.size === 0) return null
+  __rlog(`governed runs selected: ${governedRunIds.size}`)
 
   const trainer = createProofRiskModelTrainingBuilder({
     runMetadataById,
@@ -2235,6 +2313,8 @@ async function rebuildProofRiskArtifacts(db: AppDb, input: {
   const governedRunIdList = [...governedRunIds].sort()
   const governedCoEvidenceDiagnosticsPages: Array<ReturnType<typeof buildCoEvidenceDiagnosticsFromRows>> = []
   let lastEvidenceSnapshotId: string | null = null
+  let __evidencePagesLoaded = 0
+  let __evidenceRowsLoaded = 0
   for (;;) {
     const conditions = [
       eq(riskEvidenceSnapshots.batchId, input.batchId),
@@ -2266,9 +2346,14 @@ async function rebuildProofRiskArtifacts(db: AppDb, input: {
       }
     })))
     lastEvidenceSnapshotId = page[page.length - 1]?.riskEvidenceSnapshotId ?? null
+    __evidencePagesLoaded += 1
+    __evidenceRowsLoaded += page.length
   }
+  __rlog(`evidence loaded pages=${__evidencePagesLoaded} rows=${__evidenceRowsLoaded}`)
 
+  const __trainT0 = Date.now()
   const bundle = trainer.build(input.now)
+  __rlog(`trainer.build finished in ${((Date.now() - __trainT0) / 1000).toFixed(2)}s`)
   if (!bundle) return null
 
   const evaluation = {
@@ -2347,6 +2432,7 @@ async function rebuildProofRiskArtifacts(db: AppDb, input: {
     studentRows: stageStudentRows,
   })
   const uiParityCoEvidenceDiagnostics = buildCoEvidenceDiagnosticsFromRows(coEvidenceRows)
+  __rlog(`target-run evidence collected coEvidenceRows=${coEvidenceRows.length}`)
   const perRunDiagnostics: Array<NonNullable<ReturnType<typeof buildPolicyDiagnostics>>> = []
   for (let i = 0; i < governedRunRows.length; i += 4) {
     const chunk = governedRunRows.slice(i, i + 4)
@@ -2363,6 +2449,7 @@ async function rebuildProofRiskArtifacts(db: AppDb, input: {
     for (const diag of diags) {
       if (diag) perRunDiagnostics.push(diag)
     }
+    __rlog(`per-run diagnostics chunk ${Math.floor(i / 4) + 1}/${Math.ceil(governedRunRows.length / 4)} done (${i + chunk.length}/${governedRunRows.length} runs)`)
   }
   const governedPolicyDiagnostics = mergePolicyDiagnostics(perRunDiagnostics)
   const governedCoEvidenceDiagnostics = mergeCoEvidenceDiagnostics(governedCoEvidenceDiagnosticsPages)
@@ -2814,6 +2901,76 @@ export async function rebuildSimulationStagePlayback(db: AppDb, input: {
     sources,
     templatesById: templateById,
   }, proofControlPlaneSectionRiskServiceDeps)
+
+  // Phase-6d wire: when AIRMENTOR_STAGE_REALIZATION_V1=1 is set, assemble the
+  // PlaybackGovernanceRealizationData bundle from studentInterventions +
+  // studentLatentStates rows so intervention deltas flow through risk inference
+  // + queue projections. Flag-off path skips the DB reads entirely and keeps the
+  // governance pipeline bytewise identical to pre-Phase-6d behaviour.
+  let realizationData: PlaybackGovernanceRealizationData | undefined
+  if (process.env[STAGE_REALIZATION_FLAG_NAME] === '1') {
+    const offeringIds = Array.from(new Set(
+      sources.map(s => s.offeringId).filter((id): id is string => !!id),
+    ))
+    const studentIds = Array.from(new Set(sources.map(s => s.studentId)))
+    const interventionRowsAll = offeringIds.length > 0
+      ? await db.select().from(studentInterventions).where(
+          inArray(studentInterventions.offeringId, offeringIds),
+        )
+      : []
+    const latentRowsAll = await db.select().from(studentLatentStates).where(
+      eq(studentLatentStates.simulationRunId, input.simulationRunId),
+    )
+
+    // Severity context per student — heuristic from source.previousCgpa +
+    // previousBacklogCount. Callers with real prior-stage inference results
+    // could pass explicit overrides; MVP uses the heuristic which matches MSRUAS
+    // policy thresholds (cgpa<4.5 or backlog>=2 = High; cgpa<7 or backlog>=1 = Medium; Low).
+    const summaries = studentIds.map(studentId => {
+      const firstSource = sources.find(s => s.studentId === studentId)
+      return {
+        studentId,
+        cgpa: firstSource?.previousCgpa ?? null,
+        backlogCount: firstSource?.previousBacklogCount ?? null,
+      }
+    })
+    const severityContextByStudentId = buildSeverityContextByStudentId({ summaries })
+
+    // Multi-semester latent profile pick: keep the profile from the highest
+    // semester number available per student (most recent trajectory state).
+    const latentProfileByStudentId = new Map<string, StudentLatentProfileForIntervention>()
+    const latentRowsSortedDesc = [...latentRowsAll].sort((a, b) => b.semesterNumber - a.semesterNumber)
+    for (const row of latentRowsSortedDesc) {
+      if (latentProfileByStudentId.has(row.studentId)) continue
+      const parsed = parseLatentProfileForIntervention(row.latentStateJson)
+      if (parsed) latentProfileByStudentId.set(row.studentId, parsed)
+    }
+
+    // Group all interventions under a single stageKeyApplied='pre-tt1' so they
+    // contribute to every downstream stage's ordinal tracking. The applier's
+    // mark-delta math does not depend on exact applied stage; ordinal-in-stage
+    // tracking stays deterministic via occurredAt ordering.
+    const interventionsInWindowBySourceKey = groupInterventionsByStudentAndOffering({
+      interventionRows: interventionRowsAll.map(row => ({
+        interventionId: row.interventionId,
+        studentId: row.studentId,
+        offeringId: row.offeringId,
+        interventionType: row.interventionType,
+        occurredAt: row.occurredAt,
+        createdAt: row.createdAt,
+      })),
+      semesterNumber: semesterNumbers[semesterNumbers.length - 1] ?? 1,
+      stageKeyApplied: 'pre-tt1',
+      severityContextByStudentId,
+    })
+
+    realizationData = {
+      runSeed: run.seed,
+      studentProfileByStudentId: latentProfileByStudentId,
+      interventionsInWindowBySourceKey,
+    }
+  }
+
   const {
     studentProjectionRows,
     queueProjectionRows,
@@ -2845,6 +3002,7 @@ export async function rebuildSimulationStagePlayback(db: AppDb, input: {
     sources,
     templateById,
     activeRiskArtifacts,
+    realizationData,
   })
 
   const {
@@ -2891,11 +3049,19 @@ async function insertRowsInChunks<T>(db: AppDb, table: unknown, rows: T[], chunk
   for (let index = 0; index < rows.length; index += chunkSize) {
     const batch = rows.slice(index, index + chunkSize)
     if (batch.length === 0) continue
-    await db.insert(table as never).values(batch as never)
+    try {
+      await db.insert(table as never).values(batch as never)
+    } catch (error) {
+      const err = error as { message?: string; code?: string; detail?: string; constraint?: string; routine?: string; table?: string; cause?: unknown }
+      const cause = err?.cause as { message?: string; code?: string; detail?: string; constraint?: string; routine?: string; table?: string } | undefined
+      const pgErr = cause ?? err
+      console.error(`[insertRowsInChunks] FAILED table=${String((table as { _?: { name?: string } })?._?.name ?? '?')} chunk=${index}-${index + batch.length} code=${pgErr.code ?? '?'} constraint=${pgErr.constraint ?? '?'} routine=${pgErr.routine ?? '?'} table=${pgErr.table ?? '?'} detail=${(pgErr.detail ?? '').slice(0, 200)} message=${(pgErr.message ?? '').slice(0, 300)}`)
+      throw error
+    }
   }
 }
 
-async function readRuntimeCurriculum(db: AppDb, curriculumImportVersionId: string): Promise<RuntimeCurriculum> {
+export async function readRuntimeCurriculum(db: AppDb, curriculumImportVersionId: string): Promise<RuntimeCurriculum> {
   const [nodeRows, edgeRows, bridgeRows, partitionRows, basketRows, optionRows] = await Promise.all([
     db.select().from(curriculumNodes).where(eq(curriculumNodes.curriculumImportVersionId, curriculumImportVersionId)),
     db.select().from(curriculumEdges).where(eq(curriculumEdges.curriculumImportVersionId, curriculumImportVersionId)),
@@ -2908,12 +3074,15 @@ async function readRuntimeCurriculum(db: AppDb, curriculumImportVersionId: strin
   const nodesById = new Map(nodeRows.map(row => [row.curriculumNodeId, row]))
   const explicitSourcesByTarget = new Map<string, string[]>()
   const addedSourcesByTarget = new Map<string, string[]>()
+  const edgesByTarget = new Map<string, Array<{ title: string; weight: number }>>()
   for (const edge of edgeRows) {
     const source = nodesById.get(edge.sourceCurriculumNodeId)
     const target = nodesById.get(edge.targetCurriculumNodeId)
     if (!source || !target) continue
+    const effectiveWeight = edge.weightOverride ?? edge.weight ?? (edge.edgeKind === 'added' ? 0.5 : 1.0)
     const targetMap = edge.edgeKind === 'explicit' ? explicitSourcesByTarget : addedSourcesByTarget
     targetMap.set(target.curriculumNodeId, [...(targetMap.get(target.curriculumNodeId) ?? []), source.title])
+    edgesByTarget.set(target.curriculumNodeId, [...(edgesByTarget.get(target.curriculumNodeId) ?? []), { title: source.title, weight: effectiveWeight }])
   }
   const bridgeRowsByNodeId = new Map(bridgeRows.map(row => [row.curriculumNodeId, row]))
   const partitionsByNodeKind = new Map(partitionRows.map(row => [`${row.curriculumNodeId}::${row.partitionKind}`, row]))
@@ -2931,8 +3100,10 @@ async function readRuntimeCurriculum(db: AppDb, curriculumImportVersionId: strin
     matchStatus: row.matchStatus,
     mappingNote: row.mappingNote,
     assessmentProfile: row.assessmentProfile,
+    outcomeBloomLevel: row.outcomeBloomLevel ?? null,
     explicitPrerequisites: [...(explicitSourcesByTarget.get(row.curriculumNodeId) ?? [])].sort(),
     addedPrerequisites: [...(addedSourcesByTarget.get(row.curriculumNodeId) ?? [])].sort(),
+    prerequisiteEdges: (edgesByTarget.get(row.curriculumNodeId) ?? []).sort((a, b) => a.title.localeCompare(b.title)),
     bridgeModules: parseJson(bridgeRowsByNodeId.get(row.curriculumNodeId)?.moduleTitlesJson ?? '[]', [] as string[]),
     tt1Topics: parseJson(partitionsByNodeKind.get(`${row.curriculumNodeId}::tt1`)?.topicsJson ?? '[]', [] as string[]),
     tt2Topics: parseJson(partitionsByNodeKind.get(`${row.curriculumNodeId}::tt2`)?.topicsJson ?? '[]', [] as string[]),
@@ -2979,7 +3150,7 @@ async function syncCurriculumSnapshot(db: AppDb, batchId: string, importVersionI
   })))
 }
 
-async function emitSimulationAudit(db: AppDb, input: {
+export async function emitSimulationAudit(db: AppDb, input: {
   simulationRunId: string
   batchId: string
   actionType: string
@@ -2999,6 +3170,8 @@ async function emitSimulationAudit(db: AppDb, input: {
 }
 
 async function ensureProofCourses(db: AppDb, runtimeCourses: RuntimeCourse[], now: string) {
+  const [institution] = await db.select().from(institutions).limit(1)
+  if (!institution) throw new Error('Institution not configured')
   const existingRows = await db.select().from(courses).where(eq(courses.departmentId, MSRUAS_PROOF_DEPARTMENT_ID))
   const existingByCodeTitle = new Map(existingRows.map(row => [`${row.courseCode}::${row.title}`, row]))
   const courseIdByInternalId = new Map<string, string>()
@@ -3015,7 +3188,7 @@ async function ensureProofCourses(db: AppDb, runtimeCourses: RuntimeCourse[], no
     const courseId = `course_${course.internalCompilerId.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`
     newRows.push({
       courseId,
-      institutionId: 'msruas',
+      institutionId: institution.institutionId,
       courseCode,
       title: course.title,
       defaultCredits: course.credits,
@@ -3070,56 +3243,164 @@ function electiveRecommendationForStudent(input: {
   }
 }
 
-async function ensureSem6Offerings(db: AppDb, runtimeCourses: RuntimeCourse[], now: string) {
-  const sem6Courses = runtimeCourses.filter(course => course.semesterNumber === 6)
+function proofOfferingYearLabel(semesterNumber: number) {
+  if (semesterNumber <= 2) return '1st Year'
+  if (semesterNumber <= 4) return '2nd Year'
+  return '3rd Year'
+}
+
+function proofOfferingStageSeed(stageKey: PlaybackStageKey) {
+  switch (stageKey) {
+    case 'pre-tt1':
+      return {
+        stage: 1,
+        stageLabel: 'Pre-TT1',
+        stageDescription: 'Watch and early evidence window before TT1 closes.',
+        stageColor: '#64748b',
+        tt1Done: 0,
+        tt2Done: 0,
+        tt1Locked: 0,
+        tt2Locked: 0,
+        quizLocked: 0,
+        assignmentLocked: 0,
+        finalsLocked: 0,
+        pendingAction: null,
+      }
+    case 'post-tt1':
+      return {
+        stage: 2,
+        stageLabel: 'Post-TT1',
+        stageDescription: 'TT1 evidence is authoritative; watch/action rules apply from run policy.',
+        stageColor: '#f59e0b',
+        tt1Done: 1,
+        tt2Done: 0,
+        tt1Locked: 1,
+        tt2Locked: 0,
+        quizLocked: 0,
+        assignmentLocked: 0,
+        finalsLocked: 0,
+        pendingAction: 'TT1 review window active',
+      }
+    case 'post-tt2':
+      return {
+        stage: 3,
+        stageLabel: 'Post-TT2',
+        stageDescription: 'TT1 and TT2 evidence are authoritative; reassessment remains active.',
+        stageColor: '#f97316',
+        tt1Done: 1,
+        tt2Done: 1,
+        tt1Locked: 1,
+        tt2Locked: 1,
+        quizLocked: 0,
+        assignmentLocked: 0,
+        finalsLocked: 0,
+        pendingAction: 'TT2 review window active',
+      }
+    case 'post-assignments':
+      return {
+        stage: 4,
+        stageLabel: 'Post-Assignments',
+        stageDescription: 'Coursework and internals are locked for final review.',
+        stageColor: '#0ea5e9',
+        tt1Done: 1,
+        tt2Done: 1,
+        tt1Locked: 1,
+        tt2Locked: 1,
+        quizLocked: 1,
+        assignmentLocked: 1,
+        finalsLocked: 0,
+        pendingAction: 'Coursework review complete; SEE pending',
+      }
+    case 'post-see':
+      return {
+        stage: 5,
+        stageLabel: 'Post-SEE',
+        stageDescription: 'Semester closed; all assessment evidence is locked.',
+        stageColor: '#22c55e',
+        tt1Done: 1,
+        tt2Done: 1,
+        tt1Locked: 1,
+        tt2Locked: 1,
+        quizLocked: 1,
+        assignmentLocked: 1,
+        finalsLocked: 1,
+        pendingAction: 'Semester closed',
+      }
+  }
+}
+
+export async function ensureProofOfferings(db: AppDb, runtime: RuntimeCurriculum, now: string) {
   const courseRows = await db.select().from(courses).where(eq(courses.departmentId, MSRUAS_PROOF_DEPARTMENT_ID))
   const courseByTitle = new Map(courseRows.map(row => [row.title, row]))
-  const offeringRows = await db.select().from(sectionOfferings).where(eq(sectionOfferings.termId, 'term_mnc_sem6'))
+  const termBySemester = new Map<number, (typeof PROOF_TERM_DEFS)[number]>(
+    PROOF_TERM_DEFS.map(term => [term.semesterNumber, term] as const),
+  )
+  const proofTermIds = [...termBySemester.values()].map(term => term.termId)
+  const offeringRows = proofTermIds.length > 0
+    ? await db.select().from(sectionOfferings).where(inArray(sectionOfferings.termId, proofTermIds))
+    : []
   const ownershipRows = await db.select().from(facultyOfferingOwnerships)
   const currentByKey = new Map<string, typeof sectionOfferings.$inferSelect>()
   for (const offering of offeringRows) {
     const course = courseRows.find(row => row.courseId === offering.courseId)
-    if (!course) continue
-    currentByKey.set(`${course.title}::${offering.sectionCode}`, offering)
+    const term = PROOF_TERM_DEFS.find(item => item.termId === offering.termId)
+    if (!course || !term) continue
+    currentByKey.set(`${term.semesterNumber}::${course.title}::${offering.sectionCode}`, offering)
   }
 
   const courseLeaderFaculty = PROOF_FACULTY.filter(item => item.permissions.includes('COURSE_LEADER'))
   const newOfferingRows: Array<typeof sectionOfferings.$inferInsert> = []
   const newOwnershipRows: Array<typeof facultyOfferingOwnerships.$inferInsert> = []
   const offeringFacultyById = new Map<string, string>()
+  const stageSeed = proofOfferingStageSeed('pre-tt1')
 
   ;(['A', 'B'] as const).forEach((sectionCode, sectionOffset) => {
-    sem6Courses.forEach((course, courseIndex) => {
-      const key = `${course.title}::${sectionCode}`
+    runtime.courses.forEach((course, courseIndex) => {
+      const term = termBySemester.get(course.semesterNumber)
+      if (!term) return
+      const key = `${course.semesterNumber}::${course.title}::${sectionCode}`
       const current = currentByKey.get(key)
-      const faculty = courseLeaderFaculty[(courseIndex + (sectionOffset * 3)) % courseLeaderFaculty.length]
+      const faculty = courseLeaderFaculty[(courseIndex + (sectionOffset * 3) + (course.semesterNumber - 1)) % courseLeaderFaculty.length]
       if (current) {
         offeringFacultyById.set(current.offeringId, faculty.facultyId)
+        if (!ownershipRows.some(row => row.offeringId === current.offeringId && row.facultyId === faculty.facultyId && row.status === 'active')) {
+          newOwnershipRows.push({
+            ownershipId: `ownership_${faculty.facultyId}_${current.offeringId}`,
+            offeringId: current.offeringId,
+            facultyId: faculty.facultyId,
+            ownershipRole: 'owner',
+            status: 'active',
+            version: 1,
+            createdAt: now,
+            updatedAt: now,
+          })
+        }
         return
       }
       const courseRow = courseByTitle.get(course.title)
       if (!courseRow) return
-      const offeringId = `mnc_s6_${course.internalCompilerId.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_${sectionCode.toLowerCase()}`
+      const offeringId = `mnc_s${course.semesterNumber}_${course.internalCompilerId.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_${sectionCode.toLowerCase()}`
       newOfferingRows.push({
         offeringId,
         courseId: courseRow.courseId,
-        termId: 'term_mnc_sem6',
+        termId: term.termId,
         branchId: MSRUAS_PROOF_BRANCH_ID,
         sectionCode,
-        yearLabel: '3rd Year',
-        attendance: sectionCode === 'A' ? 82 : 74,
+        yearLabel: proofOfferingYearLabel(course.semesterNumber),
+        attendance: 0,
         studentCount: 60,
-        stage: 2,
-        stageLabel: 'TT1 Review',
-        stageDescription: 'Observable monitoring window after TT1; reassessment stays active.',
-        stageColor: '#f59e0b',
-        tt1Done: 1,
-        tt2Done: 0,
-        tt1Locked: 1,
-        tt2Locked: 0,
-        quizLocked: 1,
-        assignmentLocked: 1,
-        pendingAction: 'Adaptive reassessment window active',
+        stage: stageSeed.stage,
+        stageLabel: stageSeed.stageLabel,
+        stageDescription: stageSeed.stageDescription,
+        stageColor: stageSeed.stageColor,
+        tt1Done: stageSeed.tt1Done,
+        tt2Done: stageSeed.tt2Done,
+        tt1Locked: stageSeed.tt1Locked,
+        tt2Locked: stageSeed.tt2Locked,
+        quizLocked: stageSeed.quizLocked,
+        assignmentLocked: stageSeed.assignmentLocked,
+        finalsLocked: stageSeed.finalsLocked,
+        pendingAction: stageSeed.pendingAction,
         status: 'active',
         version: 1,
         createdAt: now,
@@ -3141,11 +3422,17 @@ async function ensureSem6Offerings(db: AppDb, runtimeCourses: RuntimeCourse[], n
     })
   })
 
-  if (newOfferingRows.length > 0) await db.insert(sectionOfferings).values(newOfferingRows)
-  if (newOwnershipRows.length > 0) await db.insert(facultyOfferingOwnerships).values(newOwnershipRows)
+  // Idempotent under concurrency: evaluator (and any future parallel seed bootstrap) fires
+  // multiple startProofSimulationRun calls against a shared DB. Each recomputes the same
+  // static newOfferingRows / newOwnershipRows list from a cold select, then races the insert.
+  // Without ON CONFLICT DO NOTHING the 2nd concurrent call 23505s on section_offerings_pkey
+  // (or faculty_offering_ownerships_pkey) and the whole bootstrap tears down.
+  // See: air-mentor-api/scripts/evaluate-proof-risk-model.ts:1110 (mapWithConcurrency fan-out).
+  if (newOfferingRows.length > 0) await db.insert(sectionOfferings).values(newOfferingRows).onConflictDoNothing()
+  if (newOwnershipRows.length > 0) await db.insert(facultyOfferingOwnerships).values(newOwnershipRows).onConflictDoNothing()
 
   const refreshedOfferings = newOfferingRows.length > 0
-    ? await db.select().from(sectionOfferings).where(eq(sectionOfferings.termId, 'term_mnc_sem6'))
+    ? await db.select().from(sectionOfferings).where(inArray(sectionOfferings.termId, proofTermIds))
     : offeringRows
   return {
     offerings: refreshedOfferings,
@@ -3153,33 +3440,156 @@ async function ensureSem6Offerings(db: AppDb, runtimeCourses: RuntimeCourse[], n
   }
 }
 
-async function publishOperationalProjection(db: AppDb, input: {
+export async function publishOperationalProjection(db: AppDb, input: {
   simulationRunId: string
   batchId: string
   now: string
 }) {
-  const [observedRows, riskRows, alertRows, electiveRows] = await Promise.all([
+  const [run] = await db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, input.simulationRunId))
+  if (!run) throw new Error('Simulation run not found')
+  if (input.batchId === MSRUAS_PROOF_BATCH_ID && run.curriculumImportVersionId) {
+    const runtime = await readRuntimeCurriculum(db, run.curriculumImportVersionId)
+    await ensureProofOfferings(db, runtime, input.now)
+  }
+
+  const [observedRows, riskRows, alertRows, electiveRows, allocationRows, stageStudentRows, termRows, offeringRows, courseRows] = await Promise.all([
     db.select().from(studentObservedSemesterStates).where(eq(studentObservedSemesterStates.simulationRunId, input.simulationRunId)),
     db.select().from(riskAssessments).where(eq(riskAssessments.simulationRunId, input.simulationRunId)),
     db.select().from(alertDecisions),
     db.select().from(electiveRecommendations).where(eq(electiveRecommendations.simulationRunId, input.simulationRunId)),
+    db.select().from(teacherAllocations).where(eq(teacherAllocations.simulationRunId, input.simulationRunId)),
+    db.select().from(simulationStageStudentProjections).where(eq(simulationStageStudentProjections.simulationRunId, input.simulationRunId)),
+    db.select().from(academicTerms).where(eq(academicTerms.batchId, input.batchId)),
+    db.select().from(sectionOfferings),
+    db.select().from(courses),
   ])
 
-  const sem5OrEarlierRows = observedRows.filter(row => row.semesterNumber <= 5)
-  const sem6Rows = observedRows.filter(row => row.semesterNumber === 6)
-  const proofStudentIds = Array.from(new Set(observedRows.map(row => row.studentId)))
+  const activeSemesterNumber = run.activeOperationalSemester ?? run.semesterStart
+  const activeStageKey = (run.activeStageKey ?? 'pre-tt1') as PlaybackStageKey
+  const activeTerm = PROOF_TERM_DEFS.find(term => term.semesterNumber === activeSemesterNumber) ?? null
+  const historicalSummaryRows = observedRows.filter(row => {
+    if (row.semesterNumber >= activeSemesterNumber) return false
+    const payload = parseObservedStateRow(row)
+    return Array.isArray(payload.subjectScores)
+  })
+  const termById = new Map(termRows.map(row => [row.termId, row]))
+  const courseById = new Map(courseRows.map(row => [row.courseId, row]))
+  const offeringIdBySemesterSectionCourse = new Map<string, string>()
+  offeringRows.forEach(offering => {
+    const term = termById.get(offering.termId)
+    const course = courseById.get(offering.courseId)
+    if (!term || !course) return
+    const sectionCode = offering.sectionCode.trim().toUpperCase()
+    offeringIdBySemesterSectionCourse.set(`${term.semesterNumber}::${sectionCode}::${course.courseCode}`, offering.offeringId)
+    offeringIdBySemesterSectionCourse.set(`${term.semesterNumber}::${sectionCode}::${course.title}`, offering.offeringId)
+  })
+  const resolveObservedOfferingId = (
+    semesterNumber: number,
+    sectionCode: string | null | undefined,
+    payload: Record<string, unknown>,
+  ) => {
+    const directOfferingId = typeof payload.offeringId === 'string' && payload.offeringId.length > 0
+      ? payload.offeringId
+      : null
+    if (directOfferingId) return directOfferingId
+    const normalizedSectionCode = (sectionCode ?? '').trim().toUpperCase()
+    if (!normalizedSectionCode) return null
+    const courseCode = typeof payload.courseCode === 'string' ? payload.courseCode : null
+    const courseTitle = typeof payload.title === 'string'
+      ? payload.title
+      : typeof payload.courseTitle === 'string'
+        ? payload.courseTitle
+        : null
+    return (courseCode ? offeringIdBySemesterSectionCourse.get(`${semesterNumber}::${normalizedSectionCode}::${courseCode}`) : null)
+      ?? (courseTitle ? offeringIdBySemesterSectionCourse.get(`${semesterNumber}::${normalizedSectionCode}::${courseTitle}`) : null)
+      ?? null
+  }
+  type LiveOperationalRow = { studentId: string; offeringId: string; payload: Record<string, unknown> }
+  const liveObservedOperationalRows: LiveOperationalRow[] = observedRows.flatMap((row): LiveOperationalRow[] => {
+    if (row.semesterNumber !== activeSemesterNumber) return []
+    const payload = parseObservedStateRow(row)
+    const directOfferingId = resolveObservedOfferingId(row.semesterNumber, row.sectionCode, payload)
+    if (directOfferingId) {
+      return [{
+        studentId: row.studentId,
+        offeringId: directOfferingId,
+        payload: {
+          ...payload,
+          offeringId: directOfferingId,
+        },
+      }]
+    }
+    const subjectScores = Array.isArray(payload.subjectScores) ? payload.subjectScores : []
+    return subjectScores.flatMap((subject): LiveOperationalRow[] => {
+      const subjectPayload = subject as Record<string, unknown>
+      const offeringId = resolveObservedOfferingId(row.semesterNumber, row.sectionCode, subjectPayload)
+      if (!offeringId) return []
+      return [{
+        studentId: row.studentId,
+        offeringId,
+        payload: {
+          ...payload,
+          ...subjectPayload,
+          offeringId,
+          courseTitle: subjectPayload.title ?? subjectPayload.courseTitle ?? subjectPayload.courseCode,
+        },
+      }]
+    })
+  })
+  const liveProjectionOperationalRows = stageStudentRows.flatMap(row => {
+    if (row.semesterNumber !== activeSemesterNumber) return []
+    if (!row.offeringId) return []
+    const projection = parseJson<Record<string, unknown>>(row.projectionJson, {})
+    return String(projection.stageKey ?? '') === activeStageKey
+      ? [{ ...row, offeringId: row.offeringId }]
+      : []
+  })
+  const liveOperationalRows: LiveOperationalRow[] = liveObservedOperationalRows.map(row => ({
+    studentId: row.studentId,
+    offeringId: row.offeringId,
+    payload: row.payload,
+  }))
+  if (liveOperationalRows.length === 0) {
+    liveOperationalRows.push(...liveProjectionOperationalRows.map(row => {
+      const projection = parseJson<Record<string, unknown>>(row.projectionJson, {})
+      const currentEvidence = parseJson<Record<string, unknown>>(
+        typeof projection.currentEvidence === 'string' ? projection.currentEvidence : null,
+        (projection.currentEvidence ?? {}) as Record<string, unknown>,
+      )
+      return {
+        studentId: row.studentId,
+        offeringId: row.offeringId,
+        payload: {
+          offeringId: row.offeringId,
+          courseCode: row.courseCode,
+          courseTitle: row.courseTitle,
+          attendancePct: Number(currentEvidence.attendancePct ?? 0),
+          tt1Pct: nullablePct(currentEvidence.tt1Pct),
+          tt2Pct: nullablePct(currentEvidence.tt2Pct),
+          quizPct: nullablePct(currentEvidence.quizPct),
+          assignmentPct: nullablePct(currentEvidence.assignmentPct),
+          seePct: nullablePct(currentEvidence.seePct),
+        },
+      }
+    }))
+  }
+  const proofStudentIds = Array.from(new Set([
+    ...observedRows.map(row => row.studentId),
+    ...liveOperationalRows.map(row => row.studentId),
+  ]))
   const proofOfferingIds = Array.from(new Set(
-    sem6Rows
-      .map(row => {
-        const payload = parseObservedStateRow(row)
-        return typeof payload.offeringId === 'string' && payload.offeringId.length > 0
-          ? payload.offeringId
-          : null
-      })
+    liveOperationalRows
+      .map(row => row.offeringId)
       .filter((value): value is string => value != null),
   ))
   const termBySemester = new Map<number, (typeof PROOF_TERM_DEFS)[number]>(PROOF_TERM_DEFS.map(term => [term.semesterNumber, term]))
   const proofTermIds = PROOF_TERM_DEFS.map(term => term.termId)
+  const coursePayloadByOfferingId = new Map<string, Record<string, unknown>>()
+  liveOperationalRows.forEach(row => {
+    const offeringId = row.offeringId
+    if (!offeringId) return
+    coursePayloadByOfferingId.set(offeringId, row.payload)
+  })
   const transcriptTermInsertRows: Array<typeof transcriptTermResults.$inferInsert> = []
   const transcriptSubjectInsertRows: Array<typeof transcriptSubjectResults.$inferInsert> = []
 
@@ -3201,7 +3611,7 @@ async function publishOperationalProjection(db: AppDb, input: {
     }
   }
 
-  if (input.batchId === MSRUAS_PROOF_BATCH_ID && proofStudentIds.length > 0 && proofOfferingIds.length > 0) {
+  if (input.batchId === MSRUAS_PROOF_BATCH_ID && proofStudentIds.length > 0 && proofOfferingIds.length > 0 && activeTerm) {
     // Re-activating a long-lived proof run must replace, not append, the live
     // runtime projection for those proof students.
     await db.delete(studentAttendanceSnapshots).where(and(
@@ -3212,11 +3622,11 @@ async function publishOperationalProjection(db: AppDb, input: {
     await db.delete(studentAssessmentScores).where(and(
       inArray(studentAssessmentScores.studentId, proofStudentIds),
       inArray(studentAssessmentScores.offeringId, proofOfferingIds),
-      eq(studentAssessmentScores.termId, 'term_mnc_sem6'),
+      eq(studentAssessmentScores.termId, activeTerm.termId),
     ))
   }
 
-  for (const row of sem5OrEarlierRows) {
+  for (const row of historicalSummaryRows) {
     const payload = parseObservedStateRow(row)
     const term = termBySemester.get(row.semesterNumber)
     if (!term) continue
@@ -3260,10 +3670,15 @@ async function publishOperationalProjection(db: AppDb, input: {
 
   const attendanceRows: Array<typeof studentAttendanceSnapshots.$inferInsert> = []
   const assessmentRows: Array<typeof studentAssessmentScores.$inferInsert> = []
-  for (const row of sem6Rows) {
-    const payload = parseObservedStateRow(row)
-    const offeringId = typeof payload.offeringId === 'string' ? payload.offeringId : null
-    if (!offeringId) continue
+  const visibleCoursework = (payload: Record<string, unknown>) => stageCourseworkEvidenceForStage({
+    stageKey: activeStageKey,
+    quizPct: payload.quizPct == null ? null : Number(payload.quizPct),
+    assignmentPct: payload.assignmentPct == null ? null : Number(payload.assignmentPct),
+  })
+  for (const row of liveOperationalRows) {
+    const payload = row.payload
+    const offeringId = row.offeringId
+    if (!offeringId || !activeTerm) continue
     const attendancePct = Math.round(Number(payload.attendancePct ?? 0))
     attendanceRows.push({
       attendanceSnapshotId: createId('attendance'),
@@ -3277,17 +3692,18 @@ async function publishOperationalProjection(db: AppDb, input: {
       createdAt: input.now,
       updatedAt: input.now,
     })
+    const courseworkEvidence = visibleCoursework(payload)
     const tt1Pct = Number(payload.tt1Pct ?? 0)
     const tt2Pct = Number(payload.tt2Pct ?? 0)
-    const quizPct = Number(payload.quizPct ?? 0)
-    const assignmentPct = Number(payload.assignmentPct ?? 0)
+    const quizPct = courseworkEvidence.quizPct == null ? null : Number(courseworkEvidence.quizPct)
+    const assignmentPct = courseworkEvidence.assignmentPct == null ? null : Number(courseworkEvidence.assignmentPct)
     const seePct = Number(payload.seePct ?? 0)
-    assessmentRows.push(
-      {
+    if (activeStageKey !== 'pre-tt1' && payload.tt1Pct != null) {
+      assessmentRows.push({
         assessmentScoreId: createId('assessment_tt1'),
         studentId: row.studentId,
         offeringId,
-        termId: 'term_mnc_sem6',
+        termId: activeTerm.termId,
         componentType: 'tt1',
         componentCode: 'TT1',
         score: Math.round((tt1Pct / 100) * 25),
@@ -3295,12 +3711,14 @@ async function publishOperationalProjection(db: AppDb, input: {
         evaluatedAt: input.now,
         createdAt: input.now,
         updatedAt: input.now,
-      },
-      {
+      })
+    }
+    if ((activeStageKey === 'post-tt2' || activeStageKey === 'post-assignments' || activeStageKey === 'post-see') && payload.tt2Pct != null) {
+      assessmentRows.push({
         assessmentScoreId: createId('assessment_tt2'),
         studentId: row.studentId,
         offeringId,
-        termId: 'term_mnc_sem6',
+        termId: activeTerm.termId,
         componentType: 'tt2',
         componentCode: 'TT2',
         score: Math.round((tt2Pct / 100) * 25),
@@ -3308,12 +3726,14 @@ async function publishOperationalProjection(db: AppDb, input: {
         evaluatedAt: input.now,
         createdAt: input.now,
         updatedAt: input.now,
-      },
-      {
+      })
+    }
+    if (quizPct != null) {
+      assessmentRows.push({
         assessmentScoreId: createId('assessment_quiz1'),
         studentId: row.studentId,
         offeringId,
-        termId: 'term_mnc_sem6',
+        termId: activeTerm.termId,
         componentType: 'quiz1',
         componentCode: 'Quiz 1',
         score: Math.round((quizPct / 100) * 10),
@@ -3321,12 +3741,14 @@ async function publishOperationalProjection(db: AppDb, input: {
         evaluatedAt: input.now,
         createdAt: input.now,
         updatedAt: input.now,
-      },
-      {
+      })
+    }
+    if (assignmentPct != null) {
+      assessmentRows.push({
         assessmentScoreId: createId('assessment_assignment1'),
         studentId: row.studentId,
         offeringId,
-        termId: 'term_mnc_sem6',
+        termId: activeTerm.termId,
         componentType: 'asgn1',
         componentCode: 'Assignment 1',
         score: Math.round((assignmentPct / 100) * 10),
@@ -3334,12 +3756,14 @@ async function publishOperationalProjection(db: AppDb, input: {
         evaluatedAt: input.now,
         createdAt: input.now,
         updatedAt: input.now,
-      },
-      {
+      })
+    }
+    if (activeStageKey === 'post-see' && payload.seePct != null) {
+      assessmentRows.push({
         assessmentScoreId: createId('assessment_see'),
         studentId: row.studentId,
         offeringId,
-        termId: 'term_mnc_sem6',
+        termId: activeTerm.termId,
         componentType: 'see',
         componentCode: 'SEE',
         score: Math.round((seePct / 100) * 40),
@@ -3347,14 +3771,58 @@ async function publishOperationalProjection(db: AppDb, input: {
         evaluatedAt: input.now,
         createdAt: input.now,
         updatedAt: input.now,
-      },
-    )
+      })
+    }
   }
   if (attendanceRows.length > 0) {
     await insertRowsInChunks(db, studentAttendanceSnapshots, attendanceRows)
   }
   if (assessmentRows.length > 0) {
     await insertRowsInChunks(db, studentAssessmentScores, assessmentRows)
+  }
+  if (proofOfferingIds.length > 0) {
+    const stageSeed = proofOfferingStageSeed(activeStageKey)
+    await db.update(sectionOfferings).set({
+      stage: stageSeed.stage,
+      stageLabel: stageSeed.stageLabel,
+      stageDescription: stageSeed.stageDescription,
+      stageColor: stageSeed.stageColor,
+      tt1Done: stageSeed.tt1Done,
+      tt2Done: stageSeed.tt2Done,
+      tt1Locked: stageSeed.tt1Locked,
+      tt2Locked: stageSeed.tt2Locked,
+      quizLocked: stageSeed.quizLocked,
+      assignmentLocked: stageSeed.assignmentLocked,
+      finalsLocked: stageSeed.finalsLocked,
+      pendingAction: stageSeed.pendingAction,
+      updatedAt: input.now,
+    }).where(inArray(sectionOfferings.offeringId, proofOfferingIds))
+
+    const loadsByFacultyId = new Map<string, Array<{
+      offeringId: string
+      courseCode: string
+      courseName: string
+      sectionCode: string
+      semesterNumber: number
+      weeklyHours: number
+    }>>()
+    allocationRows
+      .filter(row => row.semesterNumber === activeSemesterNumber && row.offeringId != null)
+      .forEach(row => {
+        if (!row.offeringId || !proofOfferingIds.includes(row.offeringId)) return
+        const payload = coursePayloadByOfferingId.get(row.offeringId) ?? {}
+        const current = loadsByFacultyId.get(row.facultyId) ?? []
+        current.push({
+          offeringId: row.offeringId,
+          courseCode: String(payload.courseCode ?? 'NA'),
+          courseName: String(payload.courseTitle ?? payload.courseCode ?? 'Unknown'),
+          sectionCode: row.sectionCode ?? '',
+          semesterNumber: activeSemesterNumber,
+          weeklyHours: row.plannedContactHours,
+        })
+        loadsByFacultyId.set(row.facultyId, current)
+      })
+    await upsertRuntimeSlice(db, 'timetableByFacultyId', buildTimetablePayload(loadsByFacultyId), input.now)
   }
 
   // GAP-1: Auto-seed assessment schemes so stage gates pass without manual teacher setup.
@@ -3426,14 +3894,19 @@ async function publishOperationalProjection(db: AppDb, input: {
   }
 
   const latestCgpaByStudent = new Map<string, number>()
-  for (const row of sem5OrEarlierRows) {
+  const historicalRowsByStudent = historicalSummaryRows
+    .slice()
+    .sort((left, right) => right.semesterNumber - left.semesterNumber || right.updatedAt.localeCompare(left.updatedAt))
+  for (const row of historicalRowsByStudent) {
+    if (latestCgpaByStudent.has(row.studentId)) continue
     const payload = parseObservedStateRow(row)
     const cgpa = Number(payload.cgpaAfterSemester ?? 0)
     latestCgpaByStudent.set(row.studentId, cgpa)
   }
-  for (const [studentId, cgpa] of latestCgpaByStudent.entries()) {
+  for (const studentId of proofStudentIds) {
     const [profile] = await db.select().from(studentAcademicProfiles).where(eq(studentAcademicProfiles.studentId, studentId))
     if (profile) {
+      const cgpa = latestCgpaByStudent.get(studentId) ?? 0
       await db.update(studentAcademicProfiles).set({
         prevCgpaScaled: Math.round(cgpa * 100),
         updatedAt: input.now,
@@ -3512,8 +3985,13 @@ export async function createProofCurriculumImport(db: AppDb, input: {
     matchStatus: course.matchStatus,
     mappingNote: course.mappingNote,
     assessmentProfile: course.assessmentProfile,
+    outcomeBloomLevel: null,
     explicitPrerequisites: course.explicitPrerequisites,
     addedPrerequisites: course.addedPrerequisites,
+    prerequisiteEdges: [
+      ...course.explicitPrerequisites.map(title => ({ title, weight: 1.0 })),
+      ...course.addedPrerequisites.map(title => ({ title, weight: 0.5 })),
+    ],
     bridgeModules: course.bridgeModules,
     tt1Topics: course.tt1Topics,
     tt2Topics: course.tt2Topics,
@@ -3775,6 +4253,12 @@ export async function startProofSimulationRun(db: AppDb, input: {
   activate?: boolean
   skipArtifactRebuild?: boolean
   skipActiveRiskRecompute?: boolean
+  // Track C Phase 2 (2026-04-23): optional per-section latent-profile overrides
+  // applied to student trajectories at build time. Parsed by
+  // proof-section-override-applier.ts. Flag-gated by AIRMENTOR_SECTION_OVERRIDES_V1
+  // at the applier site so flag-off path is byte-identical to pre-Track-C.
+  sectionOverridesJson?: string | null
+  demoWorkspaceId?: string | null
 }) {
   if (input.batchId !== MSRUAS_PROOF_BATCH_ID) {
     return startLiveBatchProofSimulationRun(db, input)
@@ -3783,15 +4267,24 @@ export async function startProofSimulationRun(db: AppDb, input: {
     activate,
     deterministicPolicy,
     offerings,
+    offeringBySemesterCourseTitleSection,
     runSeed,
     runtime,
     scenarioProfile,
-    sem6,
-    sem6OfferingByCourseTitleSection,
     simulationRunId,
   } = await prepareSeededProofRunBootstrapService(db, input, proofControlPlaneSeededBootstrapServiceDeps)
+  const sem6 = runtime.courses.filter(course => course.semesterNumber === 6)
+  const sem6OfferingByCourseTitleSection = new Map<string, typeof sectionOfferings.$inferSelect>()
+  for (const [key, offering] of offeringBySemesterCourseTitleSection.entries()) {
+    if (!key.startsWith('6::')) continue
+    sem6OfferingByCourseTitleSection.set(key.slice(3), offering)
+  }
 
-  const trajectories = Array.from({ length: 120 }, (_, index) => buildStudentTrajectory(index, runSeed, scenarioProfile))
+  const sectionOverrides = parseSectionOverridesJson(input.sectionOverridesJson ?? null)
+  const trajectories = Array.from({ length: 120 }, (_, index) => {
+    const raw = buildStudentTrajectory(index, runSeed, scenarioProfile)
+    return maybeApplySectionOverridesToTrajectory(raw, sectionOverrides, runSeed)
+  })
   const mentorFaculty = PROOF_FACULTY.filter(item => item.permissions.includes('MENTOR'))
   const courseLeaderFaculty = PROOF_FACULTY.filter(item => item.permissions.includes('COURSE_LEADER'))
 
@@ -3826,9 +4319,9 @@ export async function startProofSimulationRun(db: AppDb, input: {
     courseLeaderFaculty,
     now: input.now,
     offerings,
+    offeringBySemesterCourseTitleSection,
     runSeed,
     runtimeCourses: runtime.courses,
-    sem6OfferingByCourseTitleSection,
     simulationRunId,
     trajectories,
   }, proofControlPlaneSeededScaffoldingServiceDeps)
@@ -3862,6 +4355,9 @@ export async function startProofSimulationRun(db: AppDb, input: {
       courseLeaderFaculty,
       deterministicPolicy,
       now: input.now,
+      offeringBySemesterCourseTitleSection: new Map(
+        [...offeringBySemesterCourseTitleSection.entries()].map(([key, offering]) => [key, { offeringId: offering.offeringId }] as const),
+      ),
       questionTemplatesByScope,
       runSeed,
       runtimeCourses: runtime.courses,
@@ -3969,7 +4465,7 @@ export async function startProofSimulationRun(db: AppDb, input: {
   }, proofControlPlaneSeededRunServiceDeps)
 }
 
-async function invalidateProofBatchSessions(db: AppDb, batchId: string) {
+export async function invalidateProofBatchSessions(db: AppDb, batchId: string) {
   const [batch] = await db.select({ branchId: batches.branchId }).from(batches).where(eq(batches.batchId, batchId))
   if (!batch) return
   const grantRows = await db.select({ facultyId: roleGrants.facultyId }).from(roleGrants).where(eq(roleGrants.scopeId, batch.branchId))
@@ -3979,6 +4475,19 @@ async function invalidateProofBatchSessions(db: AppDb, batchId: string) {
   const userIds = profileRows.map(r => r.userId)
   if (userIds.length === 0) return
   await db.delete(sessions).where(inArray(sessions.userId, userIds))
+}
+
+export async function deleteProofCredentials(db: AppDb, batchId: string): Promise<{ deletedCount: number }> {
+  const [batch] = await db.select({ branchId: batches.branchId }).from(batches).where(eq(batches.batchId, batchId))
+  if (!batch) return { deletedCount: 0 }
+  const grantRows = await db.select({ facultyId: roleGrants.facultyId }).from(roleGrants).where(eq(roleGrants.scopeId, batch.branchId))
+  const facultyIds = [...new Set(grantRows.map(r => r.facultyId))]
+  if (facultyIds.length === 0) return { deletedCount: 0 }
+  const profileRows = await db.select({ userId: facultyProfiles.userId }).from(facultyProfiles).where(inArray(facultyProfiles.facultyId, facultyIds))
+  const userIds = profileRows.map(r => r.userId)
+  if (userIds.length === 0) return { deletedCount: 0 }
+  await db.delete(userPasswordCredentials).where(inArray(userPasswordCredentials.userId, userIds))
+  return { deletedCount: userIds.length }
 }
 
 export async function archiveProofSimulationRun(db: AppDb, input: {
@@ -4001,7 +4510,6 @@ export async function archiveProofSimulationRun(db: AppDb, input: {
     createdByFacultyId: input.actorFacultyId ?? null,
     now: input.now,
   })
-  await invalidateProofBatchSessions(db, run.batchId)
 }
 
 export async function activateProofSimulationRun(db: AppDb, input: {
@@ -4033,20 +4541,49 @@ export async function activateProofSimulationRun(db: AppDb, input: {
       runLabel: run.runLabel,
       parentSimulationRunId: run.parentSimulationRunId ?? null,
       activate: true,
+      demoWorkspaceId: run.demoWorkspaceId ?? null,
     })
   }
+  const runScopeCondition = run.demoWorkspaceId
+    ? eq(simulationRuns.demoWorkspaceId, run.demoWorkspaceId)
+    : isNull(simulationRuns.demoWorkspaceId)
   await db.update(simulationRuns).set({
     activeFlag: 0,
     status: 'completed',
     updatedAt: input.now,
-  }).where(eq(simulationRuns.batchId, run.batchId))
-  await invalidateProofBatchSessions(db, run.batchId)
+  }).where(and(eq(simulationRuns.batchId, run.batchId), runScopeCondition))
+  const [activationRun] = await db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, run.simulationRunId))
+  if (!activationRun) throw new Error('Simulation run not found')
+  const targetSemester = activationRun.activeOperationalSemester ?? activationRun.semesterStart
+  const targetStageKey = (activationRun.activeStageKey ?? 'pre-tt1') as PlaybackStageKey
   await db.update(simulationRuns).set({
     activeFlag: 1,
     status: 'active',
-    activeOperationalSemester: run.activeOperationalSemester ?? run.semesterEnd,
+    activeOperationalSemester: targetSemester,
+    activeStageKey: targetStageKey,
+    simulatedDateIso: activationRun.simulatedDateIso ?? PROOF_SEMESTER_SIM_START_DATES[targetSemester],
+    lifecycleState: 'active',
     updatedAt: input.now,
   }).where(eq(simulationRuns.simulationRunId, run.simulationRunId))
+  await db.update(batches).set({
+    currentSemester: targetSemester,
+    updatedAt: input.now,
+  }).where(eq(batches.batchId, run.batchId))
+  await db.update(academicTerms).set({
+    status: 'archived',
+    updatedAt: input.now,
+  }).where(eq(academicTerms.batchId, run.batchId))
+  await db.update(academicTerms).set({
+    status: 'active',
+    updatedAt: input.now,
+  }).where(and(
+    eq(academicTerms.batchId, run.batchId),
+    eq(academicTerms.semesterNumber, targetSemester),
+  ))
+  if (run.batchId === MSRUAS_PROOF_BATCH_ID && run.curriculumImportVersionId) {
+    const runtime = await readRuntimeCurriculum(db, run.curriculumImportVersionId)
+    await ensureProofOfferings(db, runtime, input.now)
+  }
   await publishOperationalProjection(db, {
     simulationRunId: run.simulationRunId,
     batchId: run.batchId,
@@ -4078,7 +4615,13 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
   actorFacultyId?: string | null
   now: string
   rebuildModelArtifacts?: boolean
+  skipArtifactTraining?: boolean
 }) {
+  const [run] = await db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, input.simulationRunId))
+  if (run?.batchId === MSRUAS_PROOF_BATCH_ID && run.curriculumImportVersionId) {
+    const runtime = await readRuntimeCurriculum(db, run.curriculumImportVersionId)
+    await ensureProofOfferings(db, runtime, input.now)
+  }
   return recomputeObservedOnlyRiskService(db, input, proofControlPlaneRuntimeServiceDeps)
 }
 
@@ -4116,6 +4659,7 @@ const proofControlPlaneRuntimeServiceDeps: ProofControlPlaneRuntimeServiceDeps =
   buildActionPolicyComparison,
   buildDeterministicId,
   buildNoActionSnapshot,
+  buildStageEvidenceSnapshot,
   ceShortfallLabelFromPct,
   clamp,
   createId,
@@ -4199,7 +4743,7 @@ const proofControlPlaneSeededBootstrapServiceDeps: ProofControlPlaneSeededBootst
   WORLD_ENGINE_VERSION,
   createId,
   deterministicPolicyFromResolved,
-  ensureSem6Offerings,
+  ensureProofOfferings,
   readRuntimeCurriculum,
   scenarioProfileForSeed,
 }
@@ -4214,6 +4758,23 @@ const proofControlPlaneBatchServiceDeps: ProofControlPlaneBatchServiceDeps = {
 const proofControlPlaneActivationServiceDeps: ProofControlPlaneActivationServiceDeps = {
   emitSimulationAudit,
   publishOperationalProjection,
+}
+
+const proofAdvanceServiceDeps: ProofAdvanceServiceDeps = {
+  createId,
+  emitSimulationAudit,
+  publishOperationalProjection,
+  rebuildSimulationStagePlayback,
+}
+
+// Stop semantics: mark run stopped, invalidate proof faculty sessions, delete
+// proof credentials. Used by admin /stop route (§L.11 demo finale).
+const proofPlaybackResetServiceDeps: ProofPlaybackResetServiceDeps = {
+  emitSimulationAudit,
+  publishOperationalProjection,
+  rebuildSimulationStagePlayback,
+  deleteProofCredentials,
+  invalidateProofBatchSessions,
 }
 
 const proofControlPlaneHodServiceDeps: ProofControlPlaneHodServiceDeps = {
@@ -4265,6 +4826,36 @@ export async function activateProofOperationalSemester(db: AppDb, input: {
   now: string
 }) {
   return activateProofOperationalSemesterService(db, input, proofControlPlaneActivationServiceDeps)
+}
+
+// Next Day authoritative advance (§B.9 + §L.5). Crosses stage boundary
+// through the same service path as Next Stage when simulated date passes the
+// boundary, so the UI never has two advance pipelines to keep in sync.
+export async function advanceProofSimulationDay(db: AppDb, input: AdvanceProofSimulationInput) {
+  return advanceProofSimulationDayService(db, input, proofAdvanceServiceDeps)
+}
+
+export async function advanceProofSimulationPreviousDay(db: AppDb, input: AdvanceProofSimulationInput) {
+  return advanceProofSimulationPreviousDayService(db, input, proofAdvanceServiceDeps)
+}
+
+// Next Stage authoritative advance (§C.15 + §L.6). Open cases auto-resolve at
+// the post-see boundary inside the same service to keep resolution history
+// single-source-of-truth.
+export async function advanceProofSimulationStage(db: AppDb, input: AdvanceProofSimulationInput) {
+  return advanceProofSimulationStageService(db, input, proofAdvanceServiceDeps)
+}
+
+// Stop semantics (§L.11 + §O.3). Deletes proof credentials, invalidates
+// proof faculty sessions for the batch, marks the run lifecycle `stopped`.
+// SYSTEM_ADMIN session survives because the admin is not a proof-faculty
+// grant and therefore not swept by invalidateProofBatchSessions.
+export async function stopProofSimulationRun(db: AppDb, input: {
+  simulationRunId: string
+  actorFacultyId?: string | null
+  now: string
+}) {
+  return stopProofSimulationRunService(db, input, proofPlaybackResetServiceDeps)
 }
 
 export async function buildHodProofAnalytics(db: AppDb, input: {
@@ -4326,6 +4917,8 @@ export async function buildStudentAgentCard(db: AppDb, input: {
   simulationRunId: string
   studentId: string
   simulationStageCheckpointId?: string | null
+  viewerFacultyId?: string | null
+  viewerRoleCode?: string | null
 }): Promise<StudentAgentCardPayload> {
   return buildStudentAgentCardService(db, input, proofControlPlaneTailServiceDeps)
 }
@@ -4334,6 +4927,8 @@ export async function buildStudentRiskExplorer(db: AppDb, input: {
   simulationRunId: string
   studentId: string
   simulationStageCheckpointId?: string | null
+  viewerFacultyId?: string | null
+  viewerRoleCode?: string | null
 }): Promise<StudentRiskExplorerPayload> {
   return buildStudentRiskExplorerService(db, input, proofControlPlaneTailServiceDeps)
 }
@@ -4359,6 +4954,8 @@ export async function listStudentAgentTimeline(db: AppDb, input: {
   simulationRunId: string
   studentId: string
   simulationStageCheckpointId?: string | null
+  viewerFacultyId?: string | null
+  viewerRoleCode?: string | null
 }) {
   return listStudentAgentTimelineService(db, input, proofControlPlaneTailServiceDeps)
 }

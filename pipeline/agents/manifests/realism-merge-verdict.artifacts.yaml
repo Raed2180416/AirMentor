@@ -1,0 +1,27 @@
+artifacts:
+  - path: audit-map/32-reports/realism-verdict-2026-04-29.md
+    min_lines: 80
+    min_bytes: 3500
+    write_mode: replace
+    required_sections:
+      - '# Realism Verification Verdict — 2026-04-29'
+      - '## Intent And Feature Intent'
+      - '## Inputs Reviewed'
+      - '## Executive Verdict'
+      - '## Demo Blockers'
+      - '## Must Fix Before Demo'
+      - '## Acceptable With Explicit Caveat'
+      - '## Production Readiness Debt'
+      - '## Fix Queue'
+      - '## Reverification Plan'
+      - '## Evidence Appendix'
+      - '## Final Go No-Go'
+  - path: audit-map/24-agent-memory/realism-merge-verdict-2026-04-29.md
+    min_lines: 12
+    min_bytes: 600
+    write_mode: replace
+    required_sections:
+      - '# Merge Verdict Handoff — 2026-04-29'
+      - '## Inputs'
+      - '## Blockers'
+      - '## Next Actions'

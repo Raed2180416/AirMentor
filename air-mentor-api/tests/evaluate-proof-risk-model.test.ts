@@ -10,6 +10,10 @@ import {
   type QueueBurdenRunObservation,
 } from '../scripts/evaluate-proof-risk-model.js'
 
+function repeatRows<T>(rows: T[], times: number): T[] {
+  return Array.from({ length: times }, () => rows).flat()
+}
+
 describe('evaluate proof risk model helpers', () => {
   it('keys queue rollups by run and entity id', () => {
     expect(queueRollupStudentKey('run-a', 'student-1')).toBe('run-a::student-1')
@@ -104,18 +108,18 @@ describe('evaluate proof risk model helpers', () => {
   })
 
   it('chooses challenger route when challenger clearly beats current', () => {
-    const currentRows = [
+    const currentRows = repeatRows([
       { label: 1, prob: 0.35 },
       { label: 1, prob: 0.4 },
       { label: 0, prob: 0.62 },
       { label: 0, prob: 0.58 },
-    ]
-    const challengerRows = [
+    ], 15)
+    const challengerRows = repeatRows([
       { label: 1, prob: 0.82 },
       { label: 1, prob: 0.75 },
       { label: 0, prob: 0.12 },
       { label: 0, prob: 0.08 },
-    ]
+    ], 15)
 
     const choice = chooseHybridBlendAlpha(currentRows, challengerRows, 'attendanceRisk')
     expect(choice.alpha).toBe(0)
@@ -123,18 +127,18 @@ describe('evaluate proof risk model helpers', () => {
   })
 
   it('builds stage-specific hard-route plan with current fallback on empty slices', () => {
-    const currentRows = [
+    const currentRows = repeatRows([
       { label: 1, prob: 0.78 },
       { label: 0, prob: 0.18 },
       { label: 1, prob: 0.74 },
       { label: 0, prob: 0.2 },
-    ]
-    const challengerRows = [
+    ], 15)
+    const challengerRows = repeatRows([
       { label: 1, prob: 0.61 },
       { label: 0, prob: 0.31 },
       { label: 1, prob: 0.58 },
       { label: 0, prob: 0.33 },
-    ]
+    ], 15)
     const plan = buildHybridBlendPlan(
       'attendanceRisk',
       {
@@ -143,24 +147,24 @@ describe('evaluate proof risk model helpers', () => {
       },
       {
         'pre-tt1': {
-          current: [
+          current: repeatRows([
             { label: 1, prob: 0.3 },
             { label: 0, prob: 0.7 },
-          ],
-          challenger: [
+          ], 30),
+          challenger: repeatRows([
             { label: 1, prob: 0.8 },
             { label: 0, prob: 0.2 },
-          ],
+          ], 30),
         },
         'post-tt2': {
-          current: [
+          current: repeatRows([
             { label: 1, prob: 0.85 },
             { label: 0, prob: 0.15 },
-          ],
-          challenger: [
+          ], 30),
+          challenger: repeatRows([
             { label: 1, prob: 0.55 },
             { label: 0, prob: 0.45 },
-          ],
+          ], 30),
         },
       },
     )

@@ -15,10 +15,15 @@ export type ProofQueueGovernanceStageKey =
 
 export type ProofQueueBand = 'High' | 'Medium' | 'Low'
 export type ProofQueueRole = 'Course Leader' | 'Mentor' | 'HoD'
+export type ProofQueueConcernFamily = string
+export type ProofQueueCanonicalStatus = 'opened' | 'open' | 'watch' | 'dismissed' | 'resolved' | 'reopened' | 'idle'
+export type ProofQueueWorkflowTaskAction = 'create' | 'reassign' | 'monitor' | 'close' | 'none'
 
 export type ProofQueueCandidate = {
   caseKey: string
   sourceKey: string
+  concernContextKey?: string | null
+  concernFamily?: ProofQueueConcernFamily | null
   studentId: string
   semesterNumber: number
   sectionCode: string
@@ -39,22 +44,38 @@ export type ProofQueueCandidate = {
   assignedRole: ProofQueueRole
   assignedFacultyId: string | null
   facultyBudgetKey: string | null
+  manualInterventionCount?: number | null
 }
 
 export type ProofQueuePriorCaseState = {
   open: boolean
   primarySourceKey: string | null
+  caseId?: string | null
+  concernContextKey?: string | null
+  concernFamily?: ProofQueueConcernFamily | null
+  canonicalStatus?: Exclude<ProofQueueCanonicalStatus, 'opened' | 'idle'> | null
+  assignedRole?: ProofQueueRole | null
 }
 
 export type ProofQueueCaseDecision = {
   caseKey: string
+  legacyCaseKey: string
+  concernContextKey: string
+  concernFamily: ProofQueueConcernFamily
+  caseId: string
+  reopenedFromCaseId: string | null
   studentId: string
   semesterNumber: number
   sectionCode: string
   stageKey: ProofQueueGovernanceStageKey
   status: 'opened' | 'open' | 'watch' | 'resolved' | 'idle'
+  canonicalStatus: ProofQueueCanonicalStatus
   primarySourceKey: string | null
   supportingSourceKeys: string[]
+  primaryCase: boolean
+  workflowTaskAction: ProofQueueWorkflowTaskAction
+  manualInterventionCount: number
+  ownershipChanged: boolean
   countsTowardCapacity: boolean
   priorityRank: number | null
   governanceReason: string
@@ -65,6 +86,9 @@ export type ProofQueueCaseDecision = {
 
 type RankedCaseCandidate = {
   caseKey: string
+  legacyCaseKey: string
+  concernContextKey: string
+  concernFamily: ProofQueueConcernFamily
   studentId: string
   semesterNumber: number
   sectionCode: string
@@ -114,6 +138,69 @@ function compareRankedCases(left: RankedCaseCandidate, right: RankedCaseCandidat
     || left.deterministicKey.localeCompare(right.deterministicKey)
 }
 
+function fallbackConcernFamily(candidate: ProofQueueCandidate) {
+  return candidate.concernFamily
+    ?? candidate.policyPhenotype
+    ?? (candidate.offeringId ? 'course-offering-risk' : 'student-semester-risk')
+}
+
+function concernContextKeyForCandidate(candidate: ProofQueueCandidate) {
+  if (candidate.concernContextKey) return candidate.concernContextKey
+  return [
+    candidate.studentId,
+    candidate.semesterNumber,
+    candidate.offeringId ?? candidate.sectionCode,
+    candidate.courseCode,
+    fallbackConcernFamily(candidate),
+  ].join('::')
+}
+
+function caseIdForDecision(input: {
+  concernContextKey: string
+  primarySourceKey: string | null
+  priorCaseState: ProofQueuePriorCaseState | null
+  canonicalStatus: ProofQueueCanonicalStatus
+}) {
+  if ((input.canonicalStatus === 'open' || input.canonicalStatus === 'watch') && input.priorCaseState?.open && input.priorCaseState.caseId) {
+    return input.priorCaseState.caseId
+  }
+  const caseToken = input.primarySourceKey ?? input.concernContextKey
+  return `proof_case::${caseToken}`
+}
+
+export function proofQueueCountsTowardCapacity(status: ProofQueueCanonicalStatus) {
+  return status === 'opened' || status === 'open' || status === 'reopened'
+}
+
+function canonicalStatusPriority(status: ProofQueueCanonicalStatus) {
+  switch (status) {
+    case 'reopened':
+      return 5
+    case 'opened':
+      return 4
+    case 'open':
+      return 3
+    case 'watch':
+      return 2
+    case 'dismissed':
+      return 1
+    case 'resolved':
+      return 1
+    default:
+      return 0
+  }
+}
+
+function resolvePriorCaseState(
+  priorCaseStateByKey: Map<string, ProofQueuePriorCaseState>,
+  concernContextKey: string,
+  legacyCaseKey: string,
+) {
+  return priorCaseStateByKey.get(concernContextKey)
+    ?? priorCaseStateByKey.get(legacyCaseKey)
+    ?? null
+}
+
 function buildCandidateRankVector(candidate: ProofQueueCandidate) {
   const bandWeight = riskBandWeight(candidate.riskBand)
   if (candidate.stageKey === 'post-tt1') {
@@ -152,11 +239,11 @@ function candidateEligibility(candidate: ProofQueueCandidate) {
     }
   }
   if (candidate.stageKey === 'post-tt1') {
-    if (candidate.riskBand === 'Medium' && candidate.policyPhenotype === 'diffuse-amber') {
+    if (candidate.riskBand !== 'High') {
       return {
         openEligible: false,
         watchEligible: true,
-        reason: 'diffuse_amber_watch_only',
+        reason: 'post_tt1_medium_watch_only',
       }
     }
     return {
@@ -172,17 +259,6 @@ function candidateEligibility(candidate: ProofQueueCandidate) {
       reason: 'high_risk_lift_gate_passed',
     }
   }
-  if (
-    candidate.riskBand === 'Medium'
-    && candidate.policyPhenotype !== 'diffuse-amber'
-    && candidate.counterfactualLiftScaled >= PROOF_QUEUE_ACTIONABLE_LIFT_THRESHOLD
-  ) {
-    return {
-      openEligible: true,
-      watchEligible: true,
-      reason: 'medium_risk_lift_gate_passed',
-    }
-  }
   return {
     openEligible: false,
     watchEligible: true,
@@ -196,23 +272,72 @@ function createCaseDecision(input: {
   candidate: RankedCaseCandidate | null
   status: ProofQueueCaseDecision['status']
   priorCaseState: ProofQueuePriorCaseState | null
-  countsTowardCapacity: boolean
   priorityRank: number | null
   governanceReason: string
 }) {
   const candidate = input.candidate
+  const legacyCaseKey = candidate?.legacyCaseKey
+    ?? input.priorCaseState?.concernContextKey
+    ?? input.priorCaseState?.primarySourceKey
+    ?? 'unknown'
+  const concernContextKey = candidate?.concernContextKey
+    ?? input.priorCaseState?.concernContextKey
+    ?? legacyCaseKey
+  const concernFamily = candidate?.concernFamily
+    ?? input.priorCaseState?.concernFamily
+    ?? 'student-semester-risk'
+  const priorCaseState = input.priorCaseState
+  const canonicalStatus: ProofQueueCanonicalStatus = input.status === 'resolved'
+    ? 'dismissed'
+    : input.status === 'watch'
+      ? 'watch'
+      : input.status === 'opened'
+        ? (!priorCaseState?.open && (priorCaseState?.canonicalStatus === 'dismissed' || priorCaseState?.canonicalStatus === 'resolved')
+            ? 'reopened'
+            : 'opened')
+        : input.status === 'open'
+          ? 'open'
+          : 'idle'
+  const ownershipChanged = !!candidate?.assignedRole
+    && !!priorCaseState?.assignedRole
+    && candidate.assignedRole !== priorCaseState.assignedRole
+  const workflowTaskAction: ProofQueueWorkflowTaskAction = canonicalStatus === 'dismissed'
+    ? 'close'
+    : canonicalStatus === 'watch'
+      ? (ownershipChanged ? 'reassign' : 'monitor')
+      : canonicalStatus === 'opened' || canonicalStatus === 'reopened'
+        ? (ownershipChanged ? 'reassign' : 'create')
+        : canonicalStatus === 'open'
+          ? (ownershipChanged ? 'reassign' : 'monitor')
+          : 'none'
+  const caseId = caseIdForDecision({
+    concernContextKey,
+    primarySourceKey: candidate?.primaryCandidate.sourceKey ?? priorCaseState?.primarySourceKey ?? null,
+    priorCaseState,
+    canonicalStatus,
+  })
   return {
-    caseKey: candidate?.caseKey ?? input.priorCaseState?.primarySourceKey ?? 'unknown',
+    caseKey: concernContextKey,
+    legacyCaseKey,
+    concernContextKey,
+    concernFamily,
+    caseId,
+    reopenedFromCaseId: canonicalStatus === 'reopened' ? (priorCaseState?.caseId ?? null) : null,
     studentId: candidate?.studentId ?? '',
     semesterNumber: candidate?.semesterNumber ?? 0,
     sectionCode: candidate?.sectionCode ?? '',
     stageKey: candidate?.stageKey ?? 'pre-tt1',
     status: input.status,
+    canonicalStatus,
     primarySourceKey: candidate?.primaryCandidate.sourceKey ?? input.priorCaseState?.primarySourceKey ?? null,
     supportingSourceKeys: input.status === 'watch'
       ? candidate?.watchSupportingSourceKeys ?? []
       : candidate?.supportingSourceKeys ?? [],
-    countsTowardCapacity: input.countsTowardCapacity,
+    primaryCase: true,
+    workflowTaskAction,
+    manualInterventionCount: candidate?.primaryCandidate.manualInterventionCount ?? 0,
+    ownershipChanged,
+    countsTowardCapacity: proofQueueCountsTowardCapacity(canonicalStatus),
     priorityRank: input.priorityRank,
     governanceReason: input.governanceReason,
     assignedRole: candidate?.assignedRole ?? null,
@@ -230,6 +355,8 @@ export function governProofQueueStage(input: {
 }) {
   const priorCaseStateByKey = input.priorCaseStateByKey ?? new Map<string, ProofQueuePriorCaseState>()
   const candidateGroups = new Map<string, {
+    legacyCaseKey: string
+    concernFamily: ProofQueueConcernFamily
     openCandidates: ProofQueueCandidate[]
     watchCandidates: ProofQueueCandidate[]
     allCandidates: ProofQueueCandidate[]
@@ -237,7 +364,10 @@ export function governProofQueueStage(input: {
 
   input.candidates.forEach(candidate => {
     const eligibility = candidateEligibility(candidate)
-    const group = candidateGroups.get(candidate.caseKey) ?? {
+    const concernContextKey = concernContextKeyForCandidate(candidate)
+    const group = candidateGroups.get(concernContextKey) ?? {
+      legacyCaseKey: candidate.caseKey,
+      concernFamily: fallbackConcernFamily(candidate),
       openCandidates: [],
       watchCandidates: [],
       allCandidates: [],
@@ -245,13 +375,13 @@ export function governProofQueueStage(input: {
     if (eligibility.openEligible) group.openCandidates.push(candidate)
     if (eligibility.watchEligible) group.watchCandidates.push(candidate)
     group.allCandidates.push(candidate)
-    candidateGroups.set(candidate.caseKey, group)
+    candidateGroups.set(concernContextKey, group)
   })
 
   const openCaseCandidates: RankedCaseCandidate[] = []
   const watchCaseCandidates = new Map<string, RankedCaseCandidate>()
 
-  candidateGroups.forEach((group, caseKey) => {
+  candidateGroups.forEach((group, concernContextKey) => {
     const rankedOpen = group.openCandidates
       .slice()
       .sort((left, right) => compareLexicographic(buildCandidateRankVector(left), buildCandidateRankVector(right))
@@ -264,7 +394,10 @@ export function governProofQueueStage(input: {
     const primaryWatch = rankedWatch[0] ?? null
     if (primaryOpen) {
       openCaseCandidates.push({
-        caseKey,
+        caseKey: concernContextKey,
+        legacyCaseKey: group.legacyCaseKey,
+        concernContextKey,
+        concernFamily: group.concernFamily,
         studentId: primaryOpen.studentId,
         semesterNumber: primaryOpen.semesterNumber,
         sectionCode: primaryOpen.sectionCode,
@@ -276,12 +409,15 @@ export function governProofQueueStage(input: {
         assignedFacultyId: primaryOpen.assignedFacultyId,
         recommendedAction: primaryOpen.recommendedAction,
         rankVector: buildCandidateRankVector(primaryOpen),
-        deterministicKey: `${primaryOpen.studentId}::${primaryOpen.semesterNumber}::${primaryOpen.courseCode}`,
+        deterministicKey: `${concernContextKey}::${primaryOpen.sourceKey}`,
       })
     }
     if (primaryWatch) {
-      watchCaseCandidates.set(caseKey, {
-        caseKey,
+      watchCaseCandidates.set(concernContextKey, {
+        caseKey: concernContextKey,
+        legacyCaseKey: group.legacyCaseKey,
+        concernContextKey,
+        concernFamily: group.concernFamily,
         studentId: primaryWatch.studentId,
         semesterNumber: primaryWatch.semesterNumber,
         sectionCode: primaryWatch.sectionCode,
@@ -293,7 +429,7 @@ export function governProofQueueStage(input: {
         assignedFacultyId: primaryWatch.assignedFacultyId,
         recommendedAction: primaryWatch.recommendedAction,
         rankVector: buildCandidateRankVector(primaryWatch),
-        deterministicKey: `${primaryWatch.studentId}::${primaryWatch.semesterNumber}::${primaryWatch.courseCode}`,
+        deterministicKey: `${concernContextKey}::${primaryWatch.sourceKey}`,
       })
     }
   })
@@ -301,7 +437,8 @@ export function governProofQueueStage(input: {
   const sectionUsageByKey = new Map<string, number>()
   const facultyUsageByKey = new Map<string, number>()
   const admittedCaseKeys = new Set<string>()
-  const decisions = new Map<string, ProofQueueCaseDecision>()
+  const decisionsByConcernContextKey = new Map<string, ProofQueueCaseDecision>()
+  const decisionContextKeysByLegacyCaseKey = new Map<string, string[]>()
 
   openCaseCandidates
     .sort(compareRankedCases)
@@ -318,47 +455,60 @@ export function governProofQueueStage(input: {
       admittedCaseKeys.add(candidate.caseKey)
       sectionUsageByKey.set(sectionKey, currentSectionUsage + 1)
       if (facultyKey) facultyUsageByKey.set(facultyKey, currentFacultyUsage + 1)
-      const priorCaseState = priorCaseStateByKey.get(candidate.caseKey) ?? null
-      decisions.set(candidate.caseKey, createCaseDecision({
+      const priorCaseState = resolvePriorCaseState(priorCaseStateByKey, candidate.concernContextKey, candidate.legacyCaseKey)
+      decisionsByConcernContextKey.set(candidate.concernContextKey, createCaseDecision({
         candidate,
         status: priorCaseState?.open ? 'open' : 'opened',
         priorCaseState,
-        countsTowardCapacity: true,
         priorityRank: index + 1,
         governanceReason: 'admitted_under_section_and_faculty_caps',
       }))
     })
 
-  candidateGroups.forEach((group, caseKey) => {
-    if (admittedCaseKeys.has(caseKey)) return
-    const priorCaseState = priorCaseStateByKey.get(caseKey) ?? null
-    const watchCandidate = watchCaseCandidates.get(caseKey) ?? null
+  candidateGroups.forEach((group, concernContextKey) => {
+    if (admittedCaseKeys.has(concernContextKey)) return
+    const priorCaseState = resolvePriorCaseState(priorCaseStateByKey, concernContextKey, group.legacyCaseKey)
+    const watchCandidate = watchCaseCandidates.get(concernContextKey) ?? null
     if (watchCandidate) {
       const governanceReason = input.stageKey === 'pre-tt1'
         ? 'pre_tt1_watch_only'
-        : openCaseCandidates.some(candidate => candidate.caseKey === caseKey)
+        : openCaseCandidates.some(candidate => candidate.caseKey === concernContextKey)
           ? 'open_candidate_pruned_by_caps'
           : 'watch_only_after_governance'
-      decisions.set(caseKey, createCaseDecision({
+      decisionsByConcernContextKey.set(concernContextKey, createCaseDecision({
         candidate: watchCandidate,
         status: priorCaseState?.open && input.stageKey === 'post-see' ? 'resolved' : 'watch',
         priorCaseState,
-        countsTowardCapacity: false,
         priorityRank: null,
         governanceReason,
       }))
       return
     }
     if (priorCaseState?.open) {
-      decisions.set(caseKey, {
-        caseKey,
+      decisionsByConcernContextKey.set(concernContextKey, {
+        caseKey: concernContextKey,
+        legacyCaseKey: group.legacyCaseKey,
+        concernContextKey,
+        concernFamily: priorCaseState.concernFamily ?? group.concernFamily,
+        caseId: priorCaseState.caseId ?? caseIdForDecision({
+          concernContextKey,
+          primarySourceKey: priorCaseState.primarySourceKey,
+          priorCaseState,
+          canonicalStatus: 'dismissed',
+        }),
+        reopenedFromCaseId: null,
         studentId: '',
         semesterNumber: 0,
         sectionCode: '',
         stageKey: input.stageKey,
         status: 'resolved',
+        canonicalStatus: 'dismissed',
         primarySourceKey: priorCaseState.primarySourceKey,
         supportingSourceKeys: [],
+        primaryCase: true,
+        workflowTaskAction: 'close',
+        manualInterventionCount: 0,
+        ownershipChanged: false,
         countsTowardCapacity: false,
         priorityRank: null,
         governanceReason: 'no_longer_actionable',
@@ -369,8 +519,36 @@ export function governProofQueueStage(input: {
     }
   })
 
+  const decisions = new Map<string, ProofQueueCaseDecision>()
+  const legacyDecisionPriority = (decision: ProofQueueCaseDecision) => ([
+    Number(decision.countsTowardCapacity),
+    canonicalStatusPriority(decision.canonicalStatus),
+    -(decision.priorityRank ?? Number.POSITIVE_INFINITY),
+  ] as const)
+  decisionsByConcernContextKey.forEach(decision => {
+    const current = decisionContextKeysByLegacyCaseKey.get(decision.legacyCaseKey) ?? []
+    current.push(decision.concernContextKey)
+    decisionContextKeysByLegacyCaseKey.set(decision.legacyCaseKey, current)
+    const existing = decisions.get(decision.legacyCaseKey)
+    if (!existing) {
+      decisions.set(decision.legacyCaseKey, decision)
+      return
+    }
+    const left = legacyDecisionPriority(existing)
+    const right = legacyDecisionPriority(decision)
+    if (
+      right[0] > left[0]
+      || (right[0] === left[0] && right[1] > left[1])
+      || (right[0] === left[0] && right[1] === left[1] && right[2] > left[2])
+    ) {
+      decisions.set(decision.legacyCaseKey, decision)
+    }
+  })
+
   return {
     decisions,
+    decisionsByConcernContextKey,
+    decisionContextKeysByLegacyCaseKey,
     sectionUsageByKey,
     facultyUsageByKey,
   }

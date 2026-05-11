@@ -79,6 +79,17 @@ function resolveLeaseState(run: ProofRunCore, nowIso: string): ProofRunWithOpera
   return null
 }
 
+function deriveProgressWithEta(progress: Record<string, unknown> | null, elapsedSeconds: number | null) {
+  if (!progress) return progress
+  if (typeof progress.etaSeconds === 'number' && Number.isFinite(progress.etaSeconds)) return progress
+  const percent = typeof progress.percent === 'number' && Number.isFinite(progress.percent) ? progress.percent : null
+  if (elapsedSeconds == null || percent == null || percent <= 0 || percent >= 100) return progress
+  return {
+    ...progress,
+    etaSeconds: Math.max(1, Math.round(elapsedSeconds * ((100 - percent) / percent))),
+  }
+}
+
 export function decorateProofRunsWithOperationalDiagnostics<T extends ProofRunCore>(
   runs: T[],
   nowIso: string,
@@ -90,13 +101,15 @@ export function decorateProofRunsWithOperationalDiagnostics<T extends ProofRunCo
       : run.status === 'failed'
         ? 'retryable'
         : null
+    const queueAgeSeconds = run.status === 'queued'
+      ? diffSeconds(nowIso, run.createdAt)
+      : run.status === 'running'
+        ? diffSeconds(nowIso, run.startedAt ?? run.createdAt)
+        : null
     return {
       ...run,
-      queueAgeSeconds: run.status === 'queued'
-        ? diffSeconds(nowIso, run.createdAt)
-        : run.status === 'running'
-          ? diffSeconds(nowIso, run.startedAt ?? run.createdAt)
-          : null,
+      progress: deriveProgressWithEta(run.progress, run.status === 'running' ? queueAgeSeconds : null),
+      queueAgeSeconds,
       leaseState: resolveLeaseState(run, nowIso),
       leaseExpiresAt: run.workerLeaseExpiresAt,
       retryState,

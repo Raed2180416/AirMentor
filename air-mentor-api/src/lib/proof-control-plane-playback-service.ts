@@ -16,6 +16,15 @@ import type {
   StageCourseProjectionSource,
   StageEvidenceSnapshot,
 } from './msruas-proof-control-plane.js'
+import { nullablePct } from './proof-evidence-normalization.js'
+import {
+  applyRealizationToEvidenceSnapshot,
+  type EvidenceApplierInterventionInput,
+} from './proof-stage-realization-evidence-applier.js'
+import type {
+  InterventionStageKey,
+  StudentLatentProfileForIntervention,
+} from './proof-intervention-response-types.js'
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
@@ -32,6 +41,17 @@ function roundToFour(value: number) {
 function safePct(value: number | null | undefined) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return 0
   return clamp(roundToTwo(value), 0, 100)
+}
+
+function overallPctFromFinalMark(policy: ResolvedPolicy, finalMark: number) {
+  return roundToTwo(clamp((finalMark / policy.passRules.overallMaximum) * 100, 0, 100))
+}
+
+function overallPctFromComponentPcts(policy: ResolvedPolicy, cePct: number | null, seePct: number | null) {
+  if (cePct == null || seePct == null) return null
+  const ceMark = (cePct / 100) * policy.passRules.ceMaximum
+  const seeMark = (seePct / 100) * policy.passRules.seeMaximum
+  return roundToTwo(clamp(((ceMark + seeMark) / policy.passRules.overallMaximum) * 100, 0, 100))
 }
 
 function addDaysIso(isoString: string, days: number) {
@@ -76,7 +96,7 @@ export function stageCourseworkEvidenceForStage(input: {
   quizPct: number | null
   assignmentPct: number | null
 }) {
-  if (input.stageKey === 'pre-tt1' || input.stageKey === 'post-tt1') {
+  if (input.stageKey === 'pre-tt1' || input.stageKey === 'post-tt1' || input.stageKey === 'post-tt2') {
     return {
       quizPct: null,
       assignmentPct: null,
@@ -126,23 +146,23 @@ function summarizeCoRows(rows: Array<typeof studentCoStates.$inferSelect>) {
       const state = parseJson(row.stateJson, {} as Record<string, unknown>)
       const scoreHistory = parseJson(
         JSON.stringify(state.coObservedScoreHistory ?? {}),
-        { tt1Pct: 0, tt2Pct: 0, seePct: 0 },
-      ) as { tt1Pct: number; tt2Pct: number; seePct: number }
+        {},
+      ) as { tt1Pct?: unknown; tt2Pct?: unknown; seePct?: unknown }
       return {
         coCode: row.coCode,
         coTitle: row.coTitle,
         trend: String(state.coTrend ?? 'flat'),
         topics: parseJson(JSON.stringify(state.topics ?? []), [] as string[]),
         evidenceMode: String(state.coEvidenceMode ?? 'fallback-simulated'),
-        tt1Pct: Number(scoreHistory.tt1Pct ?? 0),
-        tt2Pct: Number(scoreHistory.tt2Pct ?? 0),
-        seePct: Number(scoreHistory.seePct ?? 0),
+        tt1Pct: nullablePct(scoreHistory.tt1Pct),
+        tt2Pct: nullablePct(scoreHistory.tt2Pct),
+        seePct: nullablePct(scoreHistory.seePct),
         transferGap: Number(state.coTransferGap ?? 0),
       }
     })
     .sort((left, right) => {
-      const leftStrength = Math.min(left.tt2Pct, left.seePct)
-      const rightStrength = Math.min(right.tt2Pct, right.seePct)
+      const leftStrength = Math.min(left.tt2Pct ?? 100, left.seePct ?? 100)
+      const rightStrength = Math.min(right.tt2Pct ?? 100, right.seePct ?? 100)
       return leftStrength - rightStrength || left.coCode.localeCompare(right.coCode)
     })
 }
@@ -192,10 +212,12 @@ function stageWeakCourseOutcomes(rows: Array<typeof studentCoStates.$inferSelect
   return summarizeCoRows(rows)
     .filter(row => {
       if (stageKey === 'pre-tt1') return false
-      if (stageKey === 'post-tt1') return row.tt1Pct < 45
-      if (stageKey === 'post-tt2') return row.tt2Pct < 45
-      if (stageKey === 'post-assignments') return row.tt2Pct < 45
-      return Math.min(row.tt2Pct || 100, row.seePct || 100) < 45 || row.seePct < 45
+      if (stageKey === 'post-tt1') return row.tt1Pct != null && row.tt1Pct < 45
+      if (stageKey === 'post-tt2') return row.tt2Pct != null && row.tt2Pct < 45
+      if (stageKey === 'post-assignments') return row.tt2Pct != null && row.tt2Pct < 45
+      const tt2 = row.tt2Pct ?? 100
+      const see = row.seePct ?? 100
+      return Math.min(tt2, see) < 45 || (row.seePct != null && row.seePct < 45)
     })
     .slice(0, 6)
 }
@@ -206,7 +228,13 @@ function pickInterventionResponseForStage(response: StageCourseProjectionSource[
   return response.residual
 }
 
-function counterfactualAdjustment(actionTaken: string | null) {
+// Exported so the Phase-11 simulator-based counterfactual aggregator
+// (proof-counterfactual-simulator-aggregator.ts) can apply the exact same
+// deterministic penalties to realized marks and derive the projected no-
+// intervention trajectory without needing to reconstruct a full
+// StageEvidenceSnapshot. Keeping this as the single source of truth avoids
+// drift between live no-action scoring and projected Sem6 analytics.
+export function counterfactualAdjustment(actionTaken: string | null) {
   if (!actionTaken) {
     return {
       attendancePenalty: 0,
@@ -767,11 +795,23 @@ export function buildActionPolicyComparison(input: {
   }
 }
 
+// Optional realization input. When provided AND AIRMENTOR_STAGE_REALIZATION_V1=1 is set,
+// buildStageEvidenceSnapshot folds intervention deltas into the baseline evidence via
+// the Phase-5 applier before returning. Existing callers omit the field entirely and
+// get the baseline snapshot unchanged (backward-compatible).
+export type StageEvidenceRealizationInput = {
+  runId: string
+  runSeed: number
+  studentProfile: StudentLatentProfileForIntervention
+  interventionsInWindow: ReadonlyArray<EvidenceApplierInterventionInput>
+}
+
 export function buildStageEvidenceSnapshot(input: {
   source: StageCourseProjectionSource
   stageKey: PlaybackStageKey
   policy: ResolvedPolicy
   templatesById: Map<string, typeof simulationQuestionTemplates.$inferSelect>
+  realization?: StageEvidenceRealizationInput
 }) {
   const includedAttendance = input.source.attendanceHistory.slice(0, attendanceCheckpointCountForStage(input.stageKey))
   const latestAttendance = includedAttendance[includedAttendance.length - 1]
@@ -786,7 +826,9 @@ export function buildStageEvidenceSnapshot(input: {
     quizPct: input.source.quizPct,
     assignmentPct: input.source.assignmentPct,
   })
-  const snapshot: StageEvidenceSnapshot = {
+
+  // Baseline snapshot — identical to pre-Phase-5 behaviour.
+  const baselineSnapshot: StageEvidenceSnapshot = {
     attendancePct: latestAttendance?.attendancePct ?? input.source.attendancePct,
     tt1Pct: (input.stageKey === 'post-tt1' || input.stageKey === 'post-tt2' || input.stageKey === 'post-assignments' || input.stageKey === 'post-see')
       ? input.source.tt1Pct
@@ -796,8 +838,14 @@ export function buildStageEvidenceSnapshot(input: {
       : null,
     quizPct: courseworkEvidence.quizPct,
     assignmentPct: courseworkEvidence.assignmentPct,
+    cePct: (input.stageKey === 'post-assignments' || input.stageKey === 'post-see')
+      ? input.source.cePct
+      : null,
     seePct: input.stageKey === 'post-see'
       ? input.source.seePct
+      : null,
+    overallPct: input.stageKey === 'post-see'
+      ? overallPctFromFinalMark(input.policy, input.source.finalMark)
       : null,
     weakCoCount: weakCourseOutcomes.length,
     weakQuestionCount: questionPatterns.weakQuestionCount,
@@ -810,7 +858,46 @@ export function buildStageEvidenceSnapshot(input: {
     weakCourseOutcomes,
     questionPatterns,
   }
-  return snapshot
+
+  // Phase-5 realization wrap. Flag-off / no realization input / empty intervention list
+  // return baseline unchanged (all no-op paths are inside the applier itself).
+  if (!input.realization) return baselineSnapshot
+  const realizationOutput = applyRealizationToEvidenceSnapshot({
+    baseline: {
+      attendancePct: baselineSnapshot.attendancePct,
+      tt1Pct: baselineSnapshot.tt1Pct,
+      tt2Pct: baselineSnapshot.tt2Pct,
+      quizPct: baselineSnapshot.quizPct,
+      assignmentPct: baselineSnapshot.assignmentPct,
+      seePct: baselineSnapshot.seePct,
+      cePct: baselineSnapshot.cePct,
+    },
+    studentProfile: input.realization.studentProfile,
+    runId: input.realization.runId,
+    studentId: input.source.studentId,
+    semesterNumber: input.source.semesterNumber,
+    stageKey: input.stageKey as InterventionStageKey,
+    interventionsInWindow: input.realization.interventionsInWindow,
+  })
+  if (!realizationOutput.flagOn || realizationOutput.impact.totalImpact === 0) {
+    return baselineSnapshot
+  }
+  // Build the realized snapshot — preserve baseline-only fields (CO counts, CGPA, etc.)
+  // and only swap the assessment marks that the applier touched.
+  const realizedSnapshot: StageEvidenceSnapshot = {
+    ...baselineSnapshot,
+    attendancePct: realizationOutput.realized.attendancePct,
+    tt1Pct: realizationOutput.realized.tt1Pct,
+    tt2Pct: realizationOutput.realized.tt2Pct,
+    quizPct: realizationOutput.realized.quizPct,
+    assignmentPct: realizationOutput.realized.assignmentPct,
+    cePct: realizationOutput.realized.cePct,
+    seePct: realizationOutput.realized.seePct,
+    overallPct: baselineSnapshot.overallPct == null
+      ? null
+      : overallPctFromComponentPcts(input.policy, realizationOutput.realized.cePct, realizationOutput.realized.seePct),
+  }
+  return realizedSnapshot
 }
 
 export function buildNoActionSnapshot(input: {
@@ -931,5 +1018,6 @@ export function ceShortfallLabel(source: StageCourseProjectionSource, policy: Re
 
 export function seeShortfallLabel(source: StageCourseProjectionSource, policy: ResolvedPolicy) {
   const seeMinimumPct = (policy.passRules.minimumSeeMark / policy.passRules.seeMaximum) * 100
+  if (source.seePct == null) return 0 as const
   return source.seePct < seeMinimumPct ? 1 as const : 0 as const
 }

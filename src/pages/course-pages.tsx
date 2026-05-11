@@ -24,6 +24,42 @@ import {
 import { TAB_DEFS, clampNumber } from '../page-utils'
 import { Bar, Btn, Card, Chip, HScrollArea, PageBackButton, PageShell, RiskBadge, TD, TH, getSegmentedButtonStyle, getSegmentedGroupStyle } from '../ui-primitives'
 
+function getAttendancePct(student: Student) {
+  return student.totalClasses > 0 ? Math.round((student.present / Math.max(1, student.totalClasses)) * 100) : null
+}
+
+function hasRiskEvidence(offering: Offering, student: Student) {
+  return offering.stage >= 2 && student.riskBand != null && student.riskProb != null
+}
+
+function CourseOutcomeControl({ co, active, color, disabled, onClick }: { co: CODef; active: boolean; color: string; disabled: boolean; onClick: () => void }) {
+  const [open, setOpen] = useState(false)
+  const tooltipId = `co-tooltip-${co.id}`
+  return (
+    <span style={{ position: 'relative', display: 'inline-flex' }} onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      <button
+        aria-describedby={open ? tooltipId : undefined}
+        disabled={disabled}
+        onClick={onClick}
+        style={{ ...mono, fontSize: 9, padding: '4px 8px', borderRadius: 999, border: `1px solid ${active ? color : T.border}`, background: active ? `${color}18` : 'transparent', color: active ? color : T.muted, cursor: disabled ? 'default' : 'pointer' }}
+      >
+        {co.id}
+      </button>
+      {open ? (
+        <div
+          id={tooltipId}
+          role="tooltip"
+          data-co-tooltip="true"
+          style={{ position: 'absolute', zIndex: 40, left: 0, bottom: 'calc(100% + 8px)', width: 260, padding: '10px 12px', borderRadius: 12, background: `linear-gradient(180deg, ${T.surface}, ${T.surface2})`, border: `1px solid ${color}33`, boxShadow: '0 18px 36px rgba(15, 23, 42, 0.18)', color: T.text, pointerEvents: 'none' }}
+        >
+          <div style={{ ...sora, fontSize: 12, fontWeight: 700, color }}>{co.id} · {co.bloom}</div>
+          <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6, marginTop: 4 }}>{co.desc}</div>
+        </div>
+      ) : null}
+    </span>
+  )
+}
+
 export function CourseDetail({
   offering: offering,
   onBack,
@@ -63,6 +99,7 @@ export function CourseDetail({
     'Post TT2',
     'Post Assignments',
     'Post SEE',
+    'Post Project',
   ]
   const tabLocked = (tabId: string) => (tabId === 'tt2' && offering.stageInfo.stage < 2) || (tabId === 'risk' && offering.stage < 2)
   const activeTabContent = tab === 'overview'
@@ -72,9 +109,9 @@ export function CourseDetail({
       : tab === 'attendance'
         ? <AttendanceTab offering={offering} students={students} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('attendance')} />
         : tab === 'tt1'
-          ? <TTTab ttNum={1} cos={cos} blueprint={blueprints.tt1} isLocked={lockMap.tt1} students={students} onChangeBlueprint={next => onUpdateBlueprint('tt1', next)} onOpenEntryHub={onOpenEntryHub} onOpenStudent={onOpenStudent} />
+          ? <TTTab offering={offering} ttNum={1} cos={cos} blueprint={blueprints.tt1} isLocked={lockMap.tt1} students={students} onChangeBlueprint={next => onUpdateBlueprint('tt1', next)} onOpenEntryHub={onOpenEntryHub} onOpenStudent={onOpenStudent} />
           : tab === 'tt2'
-            ? <TTTab ttNum={2} cos={cos} blueprint={blueprints.tt2} isLocked={lockMap.tt2} students={students} onChangeBlueprint={next => onUpdateBlueprint('tt2', next)} onOpenEntryHub={onOpenEntryHub} onOpenStudent={onOpenStudent} />
+            ? <TTTab offering={offering} ttNum={2} cos={cos} blueprint={blueprints.tt2} isLocked={lockMap.tt2} students={students} onChangeBlueprint={next => onUpdateBlueprint('tt2', next)} onOpenEntryHub={onOpenEntryHub} onOpenStudent={onOpenStudent} />
             : tab === 'quizzes'
               ? <QuizzesTab students={students} scheme={scheme} onOpenStudent={onOpenStudent} onOpenEntryHub={() => onOpenEntryHub('quiz')} />
               : tab === 'assignments'
@@ -169,7 +206,8 @@ function OverviewTab({ offering, cos, students, scheme, setTab }: { offering: Of
     return pct >= 0.65 && pct < 0.75
   }).length
   const good = studentsWithAttendance.filter(student => student.present / student.totalClasses >= 0.75).length
-  const highRisk = students.filter(student => student.riskBand === 'High').length
+  const studentsWithRisk = students.filter(student => hasRiskEvidence(offering, student))
+  const highRisk = studentsWithRisk.filter(student => student.riskBand === 'High').length
   const hasAttendance = studentsWithAttendance.length > 0
   const hasTt1Scores = students.some(student => student.tt1Score !== null)
   const hasTt2Scores = students.some(student => student.tt2Score !== null)
@@ -230,7 +268,7 @@ function OverviewTab({ offering, cos, students, scheme, setTab }: { offering: Of
                 <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.danger }}>Adaptive Reassessment</div>
               </div>
               <div style={{ ...mono, fontSize: 11, color: T.muted }}>{highRisk} students are in the high-watch band on the current evidence window</div>
-              <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 8 }}>{students.filter(student => student.riskBand === 'Medium').length} remain on watch</div>
+              <div style={{ ...mono, fontSize: 11, color: T.muted, marginBottom: 8 }}>{studentsWithRisk.filter(student => student.riskBand === 'Medium').length} remain on watch</div>
               <Btn size="sm" onClick={() => setTab('risk')} variant="ghost">Open Watchlist →</Btn>
             </Card>
           )}
@@ -252,7 +290,7 @@ function OverviewTab({ offering, cos, students, scheme, setTab }: { offering: Of
 
 function RiskTab({ offering, students, onOpenStudent }: { offering: Offering; students: Student[]; onOpenStudent: (student: Student) => void }) {
   const [filter, setFilter] = useState<'all' | RiskBand>('all')
-  const atRisk = students.filter(student => student.riskProb !== null)
+  const atRisk = students.filter(student => hasRiskEvidence(offering, student))
   const filtered = filter === 'all' ? atRisk : atRisk.filter(student => student.riskBand === filter)
   const sorted = [...filtered].sort((left, right) => (right.riskProb ?? 0) - (left.riskProb ?? 0))
   const high = atRisk.filter(student => student.riskBand === 'High').length
@@ -312,7 +350,7 @@ function RiskTab({ offering, students, onOpenStudent }: { offering: Offering; st
             <thead><tr>{['USN', 'Student', 'Watch', 'Attendance', 'TT1', 'Top Driver', ''].map(header => <TH key={header}>{header}</TH>)}</tr></thead>
             <tbody>
               {sorted.map(student => {
-                const attendancePct = Math.round((student.present / student.totalClasses) * 100)
+                const attendancePct = getAttendancePct(student)
                 return (
                   <tr key={student.id} data-clickable-row="true" onClick={() => onOpenStudent(student)} style={{ cursor: 'pointer', transition: 'background 0.15s' }}>
                     <TD style={{ ...mono, fontSize: 10, color: T.accent }}>{student.usn}</TD>
@@ -320,8 +358,8 @@ function RiskTab({ offering, students, onOpenStudent }: { offering: Offering; st
                     <TD><RiskBadge band={student.riskBand} prob={student.riskProb} /></TD>
                     <TD>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 80 }}>
-                        <Bar val={attendancePct} color={attendancePct >= 75 ? T.success : attendancePct >= 65 ? T.warning : T.danger} h={4} />
-                        <span style={{ ...mono, fontSize: 10, color: T.muted }}>{attendancePct}%</span>
+                        <Bar val={attendancePct ?? 0} color={attendancePct == null ? T.dim : attendancePct >= 75 ? T.success : attendancePct >= 65 ? T.warning : T.danger} h={4} />
+                        <span style={{ ...mono, fontSize: 10, color: T.muted }}>{attendancePct == null ? 'Not applicable yet' : `${attendancePct}%`}</span>
                       </div>
                     </TD>
                     <TD style={{ ...mono, fontSize: 11, color: student.tt1Score !== null ? (student.tt1Score / student.tt1Max >= 0.5 ? T.success : T.danger) : T.dim }}>{student.tt1Score !== null ? `${student.tt1Score}/${student.tt1Max}` : '—'}</TD>
@@ -338,15 +376,17 @@ function RiskTab({ offering, students, onOpenStudent }: { offering: Offering; st
   )
 }
 
-function AttendanceTab({ offering: _offering, students, onOpenStudent, onOpenEntryHub }: { offering: Offering; students: Student[]; onOpenStudent: (student: Student) => void; onOpenEntryHub: () => void }) {
-  const sorted = [...students].sort((left, right) => left.present / left.totalClasses - right.present / right.totalClasses)
+function AttendanceTab({ offering, students, onOpenStudent, onOpenEntryHub }: { offering: Offering; students: Student[]; onOpenStudent: (student: Student) => void; onOpenEntryHub: () => void }) {
+  const sorted = [...students].sort((left, right) => (getAttendancePct(left) ?? Number.POSITIVE_INFINITY) - (getAttendancePct(right) ?? Number.POSITIVE_INFINITY))
+  const studentsWithAttendance = students.filter(student => getAttendancePct(student) != null)
+  const hasAttendance = studentsWithAttendance.length > 0
   const stats = {
-    good: students.filter(student => student.present / student.totalClasses >= 0.75).length,
-    atRisk: students.filter(student => {
-      const pct = student.present / student.totalClasses
-      return pct >= 0.65 && pct < 0.75
+    good: studentsWithAttendance.filter(student => (getAttendancePct(student) ?? 0) >= 75).length,
+    atRisk: studentsWithAttendance.filter(student => {
+      const pct = getAttendancePct(student) ?? 0
+      return pct >= 65 && pct < 75
     }).length,
-    detained: students.filter(student => student.present / student.totalClasses < 0.65).length,
+    detained: studentsWithAttendance.filter(student => (getAttendancePct(student) ?? 0) < 65).length,
   }
 
   return (
@@ -355,31 +395,38 @@ function AttendanceTab({ offering: _offering, students, onOpenStudent, onOpenEnt
         <div style={{ ...sora, fontWeight: 700, fontSize: 17, color: T.text }}>Attendance Register — {students.length} students</div>
         <Btn size="sm" onClick={onOpenEntryHub}>Enter Attendance via Data Entry Hub →</Btn>
       </div>
-      <div style={{ display: 'flex', gap: 12, marginBottom: 18 }}>
-        {[{ label: 'Good ≥75%', value: stats.good, color: T.success }, { label: 'At Risk', value: stats.atRisk, color: T.warning }, { label: 'Detained <65%', value: stats.detained, color: T.danger }].map(metric => (
-          <Card key={metric.label} style={{ flex: 1, padding: '12px 16px' }}>
-            <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: metric.color }}>{metric.value}</div>
-            <div style={{ ...mono, fontSize: 9, color: T.muted }}>{metric.label}</div>
-          </Card>
-        ))}
-      </div>
+      {hasAttendance ? (
+        <div style={{ display: 'flex', gap: 12, marginBottom: 18 }}>
+          {[{ label: 'Good ≥75%', value: stats.good, color: T.success }, { label: 'At Risk', value: stats.atRisk, color: T.warning }, { label: 'Detained <65%', value: stats.detained, color: T.danger }].map(metric => (
+            <Card key={metric.label} style={{ flex: 1, padding: '12px 16px' }}>
+              <div style={{ ...sora, fontWeight: 800, fontSize: 22, color: metric.color }}>{metric.value}</div>
+              <div style={{ ...mono, fontSize: 9, color: T.muted }}>{metric.label}</div>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <Card style={{ padding: '12px 16px', marginBottom: 18 }}>
+          <div style={{ ...mono, fontSize: 11, color: T.dim }}>Attendance and risk are Not applicable yet for this opening stage. Capture classes or advance to an evidence-bearing checkpoint before bands appear.</div>
+        </Card>
+      )}
       <Card style={{ padding: 0, overflow: 'hidden' }}>
         <HScrollArea>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>{['#', 'USN', 'Name', 'Present / 45', 'Attendance', 'Risk', 'Status'].map(header => <TH key={header}>{header}</TH>)}</tr></thead>
             <tbody>
               {sorted.map((student, index) => {
-                const pct = Math.round((student.present / student.totalClasses) * 100)
-                const color = pct >= 75 ? T.success : pct >= 65 ? T.warning : T.danger
+                const pct = getAttendancePct(student)
+                const color = pct == null ? T.dim : pct >= 75 ? T.success : pct >= 65 ? T.warning : T.danger
+                const riskApplicable = hasRiskEvidence(offering, student)
                 return (
                   <tr key={student.id} data-clickable-row="true" onClick={() => onOpenStudent(student)} style={{ cursor: 'pointer' }}>
                     <TD style={{ ...mono, fontSize: 10, color: T.dim }}>{index + 1}</TD>
                     <TD style={{ ...mono, fontSize: 10, color: T.accent }}>{student.usn}</TD>
                     <TD style={{ ...sora, fontSize: 12, color: T.text, whiteSpace: 'nowrap' }}>{student.name}</TD>
                     <TD style={{ ...mono, fontSize: 12, color: T.text }}>{student.present} / {student.totalClasses}</TD>
-                    <TD><div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 100 }}><Bar val={pct} color={color} h={4} /><span style={{ ...mono, fontSize: 10, color }}>{pct}%</span></div></TD>
-                    <TD><RiskBadge band={student.riskBand} prob={student.riskProb} /></TD>
-                    <TD><Chip color={color} size={9}>{pct >= 75 ? 'Good' : pct >= 65 ? 'At Risk' : 'Detained'}</Chip></TD>
+                    <TD><div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 100 }}><Bar val={pct ?? 0} color={color} h={4} /><span style={{ ...mono, fontSize: 10, color }}>{pct == null ? 'Not applicable yet' : `${pct}%`}</span></div></TD>
+                    <TD>{riskApplicable ? <RiskBadge band={student.riskBand} prob={student.riskProb} /> : <Chip color={T.dim} size={9}>Not applicable yet</Chip>}</TD>
+                    <TD><Chip color={color} size={9}>{pct == null ? 'Not applicable yet' : pct >= 75 ? 'Good' : pct >= 65 ? 'At Risk' : 'Detained'}</Chip></TD>
                   </tr>
                 )
               })}
@@ -392,6 +439,7 @@ function AttendanceTab({ offering: _offering, students, onOpenStudent, onOpenEnt
 }
 
 function TTTab({
+  offering,
   ttNum,
   cos,
   blueprint,
@@ -401,6 +449,7 @@ function TTTab({
   onOpenEntryHub,
   onOpenStudent,
 }: {
+  offering: Offering
   ttNum: number
   cos: CODef[]
   blueprint: TermTestBlueprint
@@ -449,6 +498,22 @@ function TTTab({
         </div>
       </Card>
 
+      <Card style={{ marginBottom: 14 }}>
+        <div style={{ ...sora, fontWeight: 700, fontSize: 13, color: T.text, marginBottom: 8 }}>Course Outcomes</div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {cos.map((co, coIndex) => (
+            <CourseOutcomeControl
+              key={co.id}
+              co={co}
+              active
+              color={CO_COLORS[coIndex % CO_COLORS.length]}
+              disabled={false}
+              onClick={() => undefined}
+            />
+          ))}
+        </div>
+      </Card>
+
       {hasEnteredScores && !isLocked && (
         <Card glow={T.warning} style={{ marginBottom: 14 }}>
           <div style={{ ...mono, fontSize: 11, color: T.warning }}>TT{ttNum} scores already exist for this class. Structural blueprint edits are frozen to avoid remapping existing marks onto a different question shape.</div>
@@ -489,8 +554,11 @@ function TTTab({
                     {cos.map((co, coIndex) => {
                       const active = leaf.cos.includes(co.id)
                       return (
-                        <button
+                        <CourseOutcomeControl
                           key={co.id}
+                          co={co}
+                          active={active}
+                          color={CO_COLORS[coIndex % CO_COLORS.length]}
                           disabled={!canEdit}
                           onClick={() => updateQuestion(question.id, current => ({
                             ...current,
@@ -499,10 +567,7 @@ function TTTab({
                               cos: active ? child.cos.filter(id => id !== co.id) : [...child.cos, co.id],
                             } : child),
                           }))}
-                          style={{ ...mono, fontSize: 9, padding: '4px 8px', borderRadius: 999, border: `1px solid ${active ? CO_COLORS[coIndex % CO_COLORS.length] : T.border}`, background: active ? `${CO_COLORS[coIndex % CO_COLORS.length]}18` : 'transparent', color: active ? CO_COLORS[coIndex % CO_COLORS.length] : T.muted, cursor: canEdit ? 'pointer' : 'default' }}
-                        >
-                          {co.id}
-                        </button>
+                        />
                       )
                     })}
                   </div>
@@ -531,7 +596,7 @@ function TTTab({
                     <TD style={{ ...sora, fontSize: 11, color: T.text }}>{student.name}</TD>
                     <TD style={{ ...mono, fontSize: 11, color: raw !== null ? T.text : T.dim }}>{raw !== null ? `${raw}/${Math.max(1, totalMax || 25)}` : '—'}</TD>
                     <TD style={{ ...mono, fontSize: 11, color: scaled !== null && scaled >= 7.5 ? T.success : T.warning }}>{scaled !== null ? scaled.toFixed(1) : '—'}</TD>
-                    <TD><RiskBadge band={student.riskBand} prob={student.riskProb} /></TD>
+                    <TD>{hasRiskEvidence(offering, student) ? <RiskBadge band={student.riskBand} prob={student.riskProb} /> : <Chip color={T.dim} size={9}>Not applicable yet</Chip>}</TD>
                     <TD><button aria-label={`Open ${student.name} drawer`} title="Open student" onClick={() => onOpenStudent(student)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Eye size={13} /></button></TD>
                   </tr>
                 )
@@ -767,7 +832,7 @@ function GradeBookTab({
                     <TD style={{ ...mono, fontSize: 12, fontWeight: 700, textAlign: 'center', color: projection.finalScore100 >= 60 ? T.success : projection.finalScore100 >= 40 ? T.warning : T.danger }}>{projection.finalScore100.toFixed(1)}</TD>
                     <TD><Chip color={projection.gradePoint >= 8 ? T.success : projection.gradePoint >= 4 ? T.warning : T.danger} size={9}>{projection.bandLabel}</Chip></TD>
                     <TD style={{ ...mono, fontSize: 11, textAlign: 'center', color: T.blue }}>{projection.predictedCgpa.toFixed(2)}</TD>
-                    <TD><RiskBadge band={student.riskBand} prob={student.riskProb} /></TD>
+                    <TD>{hasRiskEvidence(offering, student) ? <RiskBadge band={student.riskBand} prob={student.riskProb} /> : <Chip color={T.dim} size={9}>Not applicable yet</Chip>}</TD>
                     <TD><button aria-label={`Open ${student.name} drawer`} title="Open student" onClick={() => onOpenStudent(student)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent }}><Eye size={13} /></button></TD>
                   </tr>
                 )

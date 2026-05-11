@@ -1,0 +1,11 @@
+purpose: |
+  Implement Phase 5 (next day / next stage / reset / stop). Surgical edits only, matching unified implementation plan. Preserve UI/UX flow. Add/update tests. Produce per-edit summary report.
+nonneg:
+  - Every edit must be listed in the implementation plan
+  - Preserve existing UI/UX flow in src/**/*.tsx
+  - Never alter the frozen decision appendix
+  - Every new behavior has at least one unit or integration test
+  - Never edit AGENTS.md, CLAUDE.md, .windsurf/, .claude/
+owner_files:
+  - air-mentor-api/src/lib/proof-control-plane-advance-service.ts
+  - air-mentor-api/src/lib/proof-control-plane-playback-reset-service.ts

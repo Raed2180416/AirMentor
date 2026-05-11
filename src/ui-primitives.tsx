@@ -50,6 +50,16 @@ export function getAccessibleDangerAccent(tone = T.danger) {
 export const ACCESSIBLE_PRIMARY_ACCENT = getAccessiblePrimaryAccent()
 export const ACCESSIBLE_DANGER_ACCENT = getAccessibleDangerAccent()
 
+export type SemanticTone = 'accent' | 'success' | 'warning' | 'danger' | 'neutral'
+
+export function getSemanticTone(tone: SemanticTone) {
+  if (tone === 'success') return T.success
+  if (tone === 'warning') return T.warning
+  if (tone === 'danger') return T.danger
+  if (tone === 'neutral') return T.dim
+  return T.accent
+}
+
 type SurfaceRole = 'primary' | 'secondary' | 'field' | 'selected' | 'warning' | 'danger' | 'success' | 'modal'
 
 export function withAlpha(color: string, alpha: string) {
@@ -604,7 +614,7 @@ export const Chip = ({ children, color = T.muted, size = 11 }: { children: React
   )
 }
 
-export function HScrollArea({ children, style }: { children: ReactNode; style?: CSSProperties }) {
+export function HScrollArea({ children, style, vertical = false, dataRosterScroll }: { children: ReactNode; style?: CSSProperties; vertical?: boolean; dataRosterScroll?: string }) {
   const ref = useRef<HTMLDivElement | null>(null)
   const drag = useRef({ pointerId: -1, startX: 0, startScrollLeft: 0, active: false })
   const [dragging, setDragging] = useState(false)
@@ -654,7 +664,8 @@ export function HScrollArea({ children, style }: { children: ReactNode; style?: 
     <div
       ref={ref}
       className={`scrollable-x scroll-pane scroll-pane--dense${dragging ? ' is-dragging' : ''}`}
-      style={{ overflowX: 'auto', cursor: dragging ? 'grabbing' : 'grab', overscrollBehaviorX: 'contain', ...style }}
+      data-roster-scroll={dataRosterScroll}
+      style={{ overflowX: 'auto', overflowY: vertical ? 'auto' : style?.overflowY, cursor: dragging ? 'grabbing' : 'grab', overscrollBehaviorX: 'contain', ...style }}
       tabIndex={0}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -848,6 +859,7 @@ export const Btn = ({
   id,
   role,
   title,
+  style: styleOverride,
 }: {
   children: ReactNode
   onClick?: () => void
@@ -864,6 +876,7 @@ export const Btn = ({
   id?: string
   role?: string
   title?: string
+  style?: CSSProperties
 }) => {
   const shouldReduceMotion = useReducedMotion()
   const pad = size === 'sm' ? '8px 12px' : size === 'lg' ? '12px 18px' : '10px 14px'
@@ -918,12 +931,17 @@ export const Btn = ({
         display: 'inline-flex',
         alignItems: 'center',
         gap: 6,
+        ...styleOverride,
       }}
     >
       {children}
     </motion.button>
   )
 }
+
+export const Tooltip = ({ label, children }: { label: string; children: ReactNode }) => (
+  <span title={label} style={{ borderBottom: `1px dashed currentColor`, cursor: 'help', textDecoration: 'none' }}>{children}</span>
+)
 
 export const TH = ({ children }: { children: ReactNode }) => (
   <th style={{ textAlign: 'left', padding: '11px 12px', borderBottom: `1px solid ${T.border}`, ...mono, fontSize: UI_FONT_SIZES.eyebrow, color: T.dim, fontWeight: 600, whiteSpace: 'nowrap' }}>{children}</th>

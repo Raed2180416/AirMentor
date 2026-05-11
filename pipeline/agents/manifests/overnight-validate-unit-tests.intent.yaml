@@ -1,0 +1,8 @@
+purpose: |
+  Overnight Validate: Logic / Unit Tests. Execute the specified validation layer, capture outputs, report pass/fail against auth-prompt gate M.
+nonneg:
+  - Do not modify source or tests
+  - Every pass/fail claim cites exact command + exit status
+  - Flaky tests: report as flaky, do not mark passed
+owner_files:
+  - audit-map/32-reports/overnight-validate-unit-tests.md

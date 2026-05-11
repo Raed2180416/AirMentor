@@ -9,6 +9,77 @@ afterEach(() => {
 })
 
 describe('academic session shell', () => {
+  it('lets teachers reveal the password field before signing in', () => {
+    render(createElement(AcademicSessionBoundary, {
+      backendReady: true,
+      booting: false,
+      sessionReady: false,
+      facultyOptions: [],
+      authBusy: false,
+      authError: '',
+      passwordSetupToken: null,
+      passwordSetupInspect: null,
+      passwordSetupMessage: '',
+      passwordSetupRequestResult: null,
+      onBackToPortal: vi.fn(),
+      onRequestPasswordSetup: vi.fn(),
+      onRedeemPasswordSetup: vi.fn(),
+      onClearPasswordSetupToken: vi.fn(),
+      onLogin: vi.fn(),
+      children: null,
+    }))
+
+    const passwordInput = screen.getByPlaceholderText('••••••••')
+    expect(passwordInput.getAttribute('type')).toBe('password')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show Password' }))
+
+    expect(passwordInput.getAttribute('type')).toBe('text')
+    expect(screen.getByRole('button', { name: 'Hide Password' })).toBeTruthy()
+  })
+
+  it('matches the selected teaching profile by email as well as username', () => {
+    render(createElement(AcademicSessionBoundary, {
+      backendReady: true,
+      booting: false,
+      sessionReady: false,
+      facultyOptions: [{
+        facultyId: 'fac_kavitha',
+        username: 'kavitha.rao',
+        name: 'Dr. Kavitha Rao',
+        displayName: 'Dr. Kavitha Rao',
+        email: 'kavitha.rao@msruas.ac.in',
+        dept: 'CSE',
+        departmentCode: 'CSE',
+        roleTitle: 'Associate Professor',
+        designation: 'Associate Professor',
+        allowedRoles: ['Course Leader'],
+        courseCodes: [],
+        offeringIds: [],
+        menteeIds: [],
+      }],
+      authBusy: false,
+      authError: '',
+      passwordSetupToken: null,
+      passwordSetupInspect: null,
+      passwordSetupMessage: '',
+      passwordSetupRequestResult: null,
+      onBackToPortal: vi.fn(),
+      onRequestPasswordSetup: vi.fn(),
+      onRedeemPasswordSetup: vi.fn(),
+      onClearPasswordSetupToken: vi.fn(),
+      onLogin: vi.fn(),
+      children: null,
+    }))
+
+    fireEvent.change(screen.getByPlaceholderText('e.g. kavitha.rao or kavitha.rao@msruas.ac.in'), {
+      target: { value: 'kavitha.rao@msruas.ac.in' },
+    })
+
+    expect(screen.getByText('Selected profile')).toBeTruthy()
+    expect(screen.getByText('Dr. Kavitha Rao')).toBeTruthy()
+  })
+
   it('requests a password setup link from the login help panel', async () => {
     const onRequestPasswordSetup = vi.fn().mockResolvedValue(undefined)
 

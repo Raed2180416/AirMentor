@@ -4,7 +4,7 @@ import { emitOperationalEvent } from '../lib/telemetry.js'
 import { parseOrThrow, requireRole } from './support.js'
 import type { AcademicRouteDependencies } from './academic.js'
 import { AppError, notFound } from '../lib/http-errors.js'
-import { eq } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { simulationRuns, simulationStageCheckpoints } from '../db/schema.js'
 
 export async function registerAcademicBootstrapRoutes(
@@ -38,10 +38,21 @@ export async function registerAcademicBootstrapRoutes(
     // Without an active run: no offerings are seeded, no students exist — teacher
     // would see a blank interface with no actionable state. Block early with a
     // clear error code so the frontend can show an explicit "waiting for sim" screen.
+    const demoScopeCondition = auth.demoWorkspaceId
+      ? eq(simulationRuns.demoWorkspaceId, auth.demoWorkspaceId)
+      : isNull(simulationRuns.demoWorkspaceId)
     const activeRuns = await context.db.select({ simulationRunId: simulationRuns.simulationRunId })
       .from(simulationRuns)
-      .where(eq(simulationRuns.activeFlag, 1))
+      .where(and(eq(simulationRuns.activeFlag, 1), demoScopeCondition))
     if (activeRuns.length === 0) {
+      const pendingRuns = await context.db
+        .select({ simulationRunId: simulationRuns.simulationRunId })
+        .from(simulationRuns)
+        .where(and(inArray(simulationRuns.status, ['queued', 'running']), demoScopeCondition))
+        .limit(1)
+      if (pendingRuns.length > 0) {
+        throw new AppError(403, 'NO_ACTIVE_PROOF_RUN', 'A proof simulation is being prepared — this usually takes a few minutes. Please try again shortly.')
+      }
       throw new AppError(403, 'NO_ACTIVE_PROOF_RUN', 'No simulation is currently active. Ask your administrator to start a proof run.')
     }
     const query = parseOrThrow(academicBootstrapQuerySchema, request.query)
@@ -57,6 +68,7 @@ export async function registerAcademicBootstrapRoutes(
       facultyId: auth.facultyId ?? null,
       roleCode: auth.activeRoleGrant.roleCode ?? null,
       simulationStageCheckpointId: query.simulationStageCheckpointId,
+      demoWorkspaceId: auth.demoWorkspaceId ?? null,
     })
     emitOperationalEvent('academic.bootstrap.loaded', {
       facultyId: auth.facultyId ?? null,

@@ -15,6 +15,7 @@ export type RequestAuth = {
   userId: string
   username: string
   email: string
+  demoWorkspaceId: string | null
   facultyId: string | null
   facultyName: string | null
   activeRoleGrant: AuthRoleGrant

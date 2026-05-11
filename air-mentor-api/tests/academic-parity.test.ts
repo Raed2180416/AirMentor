@@ -1,15 +1,19 @@
 import { and, asc, eq } from 'drizzle-orm'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  academicRuntimeState,
   academicTerms,
   academicAssets,
   courses,
   facultyOfferingOwnerships,
   mentorAssignments,
+  riskAssessments,
   sectionOfferings,
   simulationRuns,
   simulationStageCheckpoints,
+  simulationStageStudentProjections,
   studentEnrollments,
+  studentObservedSemesterStates,
 } from '../src/db/schema.js'
 import { createTestApp, loginAs, TEST_ORIGIN } from './helpers/test-app.js'
 
@@ -514,10 +518,10 @@ describe('academic bootstrap', () => {
         yearLabel: targetOfferingRow.yearLabel,
         attendance: 76,
         studentCount: targetOfferingRow.studentCount,
-        stage: 2,
-        stageLabel: 'Stage 2',
-        stageDescription: 'TT1 → TT2',
-        stageColor: '#3b82f6',
+        stage: targetOfferingRow.stage,
+        stageLabel: targetOfferingRow.stageLabel,
+        stageDescription: targetOfferingRow.stageDescription,
+        stageColor: targetOfferingRow.stageColor,
         tt1Done: true,
         tt2Done: false,
         tt1Locked: false,
@@ -780,6 +784,204 @@ describe('academic bootstrap', () => {
     })
   })
 
+  it('ignores stale persisted risk rows from other proof windows when rendering the live bootstrap', async () => {
+    current = await createTestApp()
+    const facultyLogin = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+    const baselineBootstrap = await loadAcademicBootstrap(facultyLogin.cookie)
+    const targetOffering = baselineBootstrap.offerings.find((offering: { offId: string }) => (
+      (baselineBootstrap.studentsByOffering[offering.offId]?.length ?? 0) > 0
+    ))
+    expect(targetOffering).toBeTruthy()
+    if (!targetOffering) throw new Error('Expected a proof-scoped offering for stale-risk validation')
+
+    const baselineStudent = baselineBootstrap.studentsByOffering[targetOffering.offId][0]
+    expect(baselineStudent).toBeTruthy()
+    if (!baselineStudent) throw new Error('Expected a proof-scoped student for stale-risk validation')
+    const canonicalStudentId = String(baselineStudent.id).split('::').at(-1) ?? String(baselineStudent.id)
+    const staleRiskBand = baselineStudent.riskBand === 'High' ? 'Low' : 'High'
+
+    await current.db.insert(riskAssessments).values({
+      riskAssessmentId: 'risk_assessment_stale_runtime_bootstrap',
+      simulationRunId: null,
+      studentId: canonicalStudentId,
+      offeringId: targetOffering.offId,
+      termId: targetOffering.termId,
+      assessmentScope: 'observable-only',
+      riskProbScaled: staleRiskBand === 'High' ? 95 : 10,
+      riskBand: staleRiskBand,
+      recommendedAction: 'Stale checkpoint row should be ignored by live bootstrap rendering.',
+      driversJson: JSON.stringify([{ label: 'Stale risk row', impact: 0.95, feature: 'proof-checkpoint' }]),
+      evidenceWindow: 'semester-99-see',
+      evidenceSnapshotId: null,
+      modelVersion: 'stale-risk-row',
+      policyVersion: 'stale-risk-row',
+      sourceType: 'simulation',
+      assessedAt: '2026-12-31T00:00:00.000Z',
+      createdAt: '2026-12-31T00:00:00.000Z',
+      updatedAt: '2026-12-31T00:00:00.000Z',
+    })
+
+    const refreshedBootstrap = await loadAcademicBootstrap(facultyLogin.cookie)
+    const refreshedStudent = refreshedBootstrap.studentsByOffering[targetOffering.offId].find((student: { id: string }) => student.id === baselineStudent.id)
+
+    expect(refreshedStudent).toBeTruthy()
+    if (!refreshedStudent) throw new Error('Expected the target student after stale-risk insert')
+    expect(refreshedStudent.riskBand).toBe(baselineStudent.riskBand)
+    expect(refreshedStudent.riskProb).toBeCloseTo(baselineStudent.riskProb, 6)
+  })
+
+  it('reacts immediately to newly entered quiz evidence and follows the authoritative run stage instead of offering stage', async () => {
+    current = await createTestApp()
+    const facultyLogin = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+    const [activeRun] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    expect(activeRun).toBeTruthy()
+    if (!activeRun) throw new Error('Expected an active proof run')
+
+    const initialBootstrap = await loadAcademicBootstrap(facultyLogin.cookie)
+    const targetOffering = initialBootstrap.offerings.find((offering: { offId: string }) => {
+      const scheme = initialBootstrap.assessmentSchemesByOffering[offering.offId]
+      return Array.isArray(scheme?.quizComponents)
+        && scheme.quizComponents.length > 0
+        && (initialBootstrap.studentsByOffering[offering.offId]?.length ?? 0) > 0
+    })
+    expect(targetOffering).toBeTruthy()
+    if (!targetOffering) throw new Error('Expected a proof-scoped offering with quiz components')
+
+    const targetStudent = initialBootstrap.studentsByOffering[targetOffering.offId][0]
+    expect(targetStudent).toBeTruthy()
+    if (!targetStudent) throw new Error('Expected a proof-scoped student with quiz visibility')
+    const canonicalStudentId = String(targetStudent.id).split('::').at(-1) ?? String(targetStudent.id)
+
+    await current.db.update(sectionOfferings).set({
+      stage: 1,
+      quizLocked: 0,
+      updatedAt: '2026-03-16T01:00:00.000Z',
+    }).where(eq(sectionOfferings.offeringId, targetOffering.offId))
+    await current.db.update(simulationRuns).set({
+      activeStageKey: 'post-assignments',
+      updatedAt: '2026-03-16T01:00:00.000Z',
+    }).where(eq(simulationRuns.simulationRunId, activeRun.simulationRunId))
+
+    const stageBootstrap = await loadAcademicBootstrap(facultyLogin.cookie)
+    const stageStudent = stageBootstrap.studentsByOffering[targetOffering.offId].find((student: { id: string }) => student.id === targetStudent.id)
+    expect(stageStudent).toBeTruthy()
+    if (!stageStudent) throw new Error('Expected a stage-scoped bootstrap student before quiz entry')
+
+    const quizComponents = stageBootstrap.assessmentSchemesByOffering[targetOffering.offId].quizComponents.map((component: { id: string; rawMax: number }) => ({
+      componentCode: component.id,
+      score: 0,
+      maxScore: component.rawMax,
+    }))
+    expect(quizComponents.length).toBeGreaterThan(0)
+
+    const quizCommitResponse = await current.app.inject({
+      method: 'PUT',
+      url: `/api/academic/offerings/${targetOffering.offId}/assessment-entries/quiz`,
+      headers: { cookie: facultyLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        entries: [{
+          studentId: targetStudent.id,
+          components: quizComponents,
+        }],
+        lock: false,
+      },
+    })
+    expect(quizCommitResponse.statusCode).toBe(200)
+
+    const afterQuizBootstrap = await loadAcademicBootstrap(facultyLogin.cookie)
+    const afterQuizStudent = afterQuizBootstrap.studentsByOffering[targetOffering.offId].find((student: { id: string }) => student.id === targetStudent.id)
+    expect(afterQuizStudent).toBeTruthy()
+    if (!afterQuizStudent) throw new Error('Expected a stage-scoped bootstrap student after quiz entry')
+    expect(afterQuizStudent.riskProb).not.toBe(stageStudent.riskProb)
+    expect(afterQuizStudent.quiz1 ?? afterQuizStudent.quiz2).toBe(0)
+
+    const studentPatchRow = await current.db
+      .select()
+      .from(academicRuntimeState)
+      .where(eq(academicRuntimeState.stateKey, 'studentPatches'))
+      .then(rows => rows[0] ?? null)
+    const studentPatchPayload = JSON.parse(studentPatchRow?.payloadJson ?? '{}') as Record<string, Record<string, unknown>>
+    expect(studentPatchPayload[`${targetOffering.offId}::${canonicalStudentId}`]).toMatchObject({
+      quizScores: Object.fromEntries(quizComponents.map((component: { componentCode: string; score: number }) => [component.componentCode, component.score])),
+    })
+
+    await current.db.update(simulationRuns).set({
+      activeStageKey: 'pre-tt1',
+      updatedAt: '2026-03-16T02:00:00.000Z',
+    }).where(eq(simulationRuns.simulationRunId, activeRun.simulationRunId))
+
+    const preTt1Bootstrap = await loadAcademicBootstrap(facultyLogin.cookie)
+    const preTt1Student = preTt1Bootstrap.studentsByOffering[targetOffering.offId].find((student: { id: string }) => student.id === targetStudent.id)
+    expect(preTt1Student).toBeTruthy()
+    if (!preTt1Student) throw new Error('Expected a bootstrap student after authoritative stage rewind')
+    expect(preTt1Student.quiz1).toBeNull()
+    expect(preTt1Student.quiz2).toBeNull()
+  })
+
+  it('keeps checkpoint playback summaries bound to the selected checkpoint timeline', async () => {
+    current = await createTestApp()
+    const facultyLogin = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+    const liveBootstrap = await loadAcademicBootstrap(facultyLogin.cookie)
+    const targetOffering = liveBootstrap.offerings.find((offering: { offId: string }) => (
+      (liveBootstrap.studentsByOffering[offering.offId]?.length ?? 0) > 0
+    ))
+    expect(targetOffering).toBeTruthy()
+    if (!targetOffering) throw new Error('Expected a proof-scoped offering for checkpoint binding validation')
+
+    const [activeRun] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    expect(activeRun).toBeTruthy()
+    if (!activeRun) throw new Error('Expected an active proof run for checkpoint binding validation')
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+    const recomputeResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRun.simulationRunId}/recompute-risk`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+    expect(recomputeResponse.statusCode).toBe(200)
+
+    const [selectedCheckpoint] = await current.db.select().from(simulationStageCheckpoints).where(and(
+      eq(simulationStageCheckpoints.simulationRunId, activeRun.simulationRunId),
+      eq(simulationStageCheckpoints.semesterNumber, targetOffering.sem),
+    )).orderBy(asc(simulationStageCheckpoints.stageOrder))
+    expect(selectedCheckpoint).toBeTruthy()
+    if (!selectedCheckpoint) throw new Error('Expected a checkpoint in the target offering semester')
+
+    const checkpointBootstrap = await loadAcademicBootstrap(facultyLogin.cookie, selectedCheckpoint.simulationStageCheckpointId)
+    const checkpointStudent = checkpointBootstrap.studentsByOffering[targetOffering.offId]?.[0]
+    expect(checkpointStudent).toBeTruthy()
+    if (!checkpointStudent) throw new Error('Expected a checkpoint-scoped bootstrap student')
+    const canonicalStudentId = String(checkpointStudent.id).split('::').at(-1) ?? String(checkpointStudent.id)
+    const injectedCgpa = checkpointStudent.currentCgpa >= 9 ? 0.25 : checkpointStudent.currentCgpa + 1.11
+    const injectedBacklogCount = checkpointStudent.flags.backlog ? 0 : 7
+    const injectedObservedAt = new Date(Date.parse(selectedCheckpoint.createdAt) + (24 * 60 * 60 * 1000)).toISOString()
+
+    await current.db.insert(studentObservedSemesterStates).values({
+      studentObservedSemesterStateId: 'observed_state_future_of_selected_checkpoint',
+      simulationRunId: selectedCheckpoint.simulationRunId,
+      studentId: canonicalStudentId,
+      termId: targetOffering.termId,
+      semesterNumber: selectedCheckpoint.semesterNumber,
+      sectionCode: targetOffering.section,
+      observedStateJson: JSON.stringify({
+        offeringId: targetOffering.offId,
+        cgpa: injectedCgpa,
+        backlogCount: injectedBacklogCount,
+      }),
+      createdAt: injectedObservedAt,
+      updatedAt: injectedObservedAt,
+    })
+
+    const refreshedCheckpointBootstrap = await loadAcademicBootstrap(facultyLogin.cookie, selectedCheckpoint.simulationStageCheckpointId)
+    const refreshedCheckpointStudent = refreshedCheckpointBootstrap.studentsByOffering[targetOffering.offId]?.find((student: { id: string }) => student.id === checkpointStudent.id)
+
+    expect(refreshedCheckpointStudent).toBeTruthy()
+    if (!refreshedCheckpointStudent) throw new Error('Expected the checkpoint-scoped student after injecting a future observed row')
+    expect(refreshedCheckpointStudent.currentCgpa).toBe(checkpointStudent.currentCgpa)
+    expect(refreshedCheckpointStudent.currentCgpa).not.toBe(injectedCgpa)
+    expect(refreshedCheckpointStudent.flags.backlog).toBe(checkpointStudent.flags.backlog)
+  })
+
   it('keeps faculty-profile proof payloads and student drilldowns scoped for course leaders and mentors', async () => {
     current = await createTestApp()
     const login = await loginAs(current.app, 'devika.shetty', 'faculty1234')
@@ -970,6 +1172,102 @@ describe('academic bootstrap', () => {
       expect(studentShellResponse.statusCode).toBe(200)
     }
   })
+
+  it('keeps Sem1 checkpoint bootstrap restorable for the scoped course leader after proof recompute', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+    const login = await loginAs(current.app, 'rohit.menon', 'faculty1234')
+
+    const [activeRun] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    expect(activeRun).toBeTruthy()
+    const recomputeResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRun.simulationRunId}/recompute-risk`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+    expect(recomputeResponse.statusCode).toBe(200)
+
+    const [semOneCheckpoint] = await current.db.select().from(simulationStageCheckpoints).where(and(
+      eq(simulationStageCheckpoints.simulationRunId, activeRun.simulationRunId),
+      eq(simulationStageCheckpoints.semesterNumber, 1),
+    )).orderBy(asc(simulationStageCheckpoints.stageOrder))
+    expect(semOneCheckpoint).toBeTruthy()
+
+    const response = await current.app.inject({
+      method: 'GET',
+      url: `/api/academic/bootstrap?simulationStageCheckpointId=${encodeURIComponent(semOneCheckpoint!.simulationStageCheckpointId)}`,
+      headers: { cookie: login.cookie },
+    })
+    expect(response.statusCode).toBe(200)
+    const bootstrap = response.json()
+    expect(bootstrap.faculty.map((item: { facultyId: string }) => item.facultyId)).toContain('mnc_t2')
+    expect(bootstrap.offerings.length).toBeGreaterThan(0)
+  }, 300000)
+
+  it('projects teacher attendance edits into recomputed proof checkpoint evidence', async () => {
+    current = await createTestApp()
+    const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
+    const login = await loginAs(current.app, 'rohit.menon', 'faculty1234')
+    const activeRole = login.body.activeRoleGrant.roleCode === 'COURSE_LEADER'
+      ? login.body
+      : (await switchToRole(login.cookie, login.body.availableRoleGrants, 'COURSE_LEADER')).json()
+    expect(activeRole.activeRoleGrant.roleCode).toBe('COURSE_LEADER')
+
+    const [activeRun] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    expect(activeRun).toBeTruthy()
+
+    const setupRecomputeResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRun.simulationRunId}/recompute-risk`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+    expect(setupRecomputeResponse.statusCode).toBe(200)
+
+    const attendanceResponse = await current.app.inject({
+      method: 'PUT',
+      url: '/api/academic/offerings/mnc_s1_amc_s1_02_a/attendance',
+      headers: { cookie: login.cookie, origin: TEST_ORIGIN },
+      payload: {
+        capturedAt: '2026-03-16T02:00:00.000Z',
+        entries: [{
+          studentId: 'mnc_student_001',
+          presentClasses: 1,
+          totalClasses: 2,
+        }],
+      },
+    })
+    expect(attendanceResponse.statusCode).toBe(200)
+
+    const recomputeResponse = await current.app.inject({
+      method: 'POST',
+      url: `/api/admin/proof-runs/${activeRun.simulationRunId}/recompute-risk`,
+      headers: { cookie: adminLogin.cookie, origin: TEST_ORIGIN },
+      payload: {},
+    })
+    expect(recomputeResponse.statusCode).toBe(200)
+
+    const [postSeeCheckpoint] = await current.db.select().from(simulationStageCheckpoints).where(and(
+      eq(simulationStageCheckpoints.simulationRunId, activeRun.simulationRunId),
+      eq(simulationStageCheckpoints.semesterNumber, 1),
+      eq(simulationStageCheckpoints.stageKey, 'post-see'),
+    ))
+    expect(postSeeCheckpoint).toBeTruthy()
+
+    const [projection] = await current.db.select().from(simulationStageStudentProjections).where(and(
+      eq(simulationStageStudentProjections.simulationRunId, activeRun.simulationRunId),
+      eq(simulationStageStudentProjections.simulationStageCheckpointId, postSeeCheckpoint!.simulationStageCheckpointId),
+      eq(simulationStageStudentProjections.studentId, 'mnc_student_001'),
+      eq(simulationStageStudentProjections.offeringId, 'mnc_s1_amc_s1_02_a'),
+    ))
+    expect(projection).toBeTruthy()
+
+    const projectionPayload = JSON.parse(projection!.projectionJson) as {
+      currentEvidence?: { attendancePct?: number }
+    }
+    expect(projectionPayload.currentEvidence?.attendancePct).toBe(50)
+  }, 300000)
 
   it('keeps academic playback checkpoints available when another proof run is also active', async () => {
     current = await createTestApp()

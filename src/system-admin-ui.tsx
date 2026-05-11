@@ -176,12 +176,16 @@ export function RestoreBanner({
   tone = 'neutral',
   actionLabel = 'Reset',
   onAction,
+  dismissLabel = 'Dismiss',
+  onDismiss,
 }: {
   title: string
   message: string
   tone?: 'neutral' | 'error' | 'success'
   actionLabel?: string
   onAction: () => void
+  dismissLabel?: string
+  onDismiss?: () => void
 }) {
   const color = tone === 'error' ? T.danger : tone === 'success' ? T.success : T.accent
   return (
@@ -203,7 +207,10 @@ export function RestoreBanner({
           <div style={{ ...sora, fontSize: 14, fontWeight: 800, color: T.text }}>{title}</div>
           <div style={{ ...mono, fontSize: UI_FONT_SIZES.body, color: T.muted, lineHeight: 1.8 }}>{message}</div>
         </div>
-        <Btn type="button" variant="ghost" onClick={onAction}>{actionLabel}</Btn>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <Btn type="button" variant="ghost" onClick={onAction}>{actionLabel}</Btn>
+          {onDismiss ? <Btn type="button" variant="ghost" onClick={onDismiss}>{dismissLabel}</Btn> : null}
+        </div>
       </div>
     </div>
   )

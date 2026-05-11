@@ -1,0 +1,24 @@
+artifacts:
+  - path: audit-map/32-reports/realism-browser-e2e-2026-04-29.md
+    min_lines: 70
+    min_bytes: 3000
+    write_mode: replace
+    required_sections:
+      - '# Browser E2E Realism Audit — 2026-04-29'
+      - '## Intent And Feature Intent'
+      - '## Method'
+      - '## Browser Evidence Matrix'
+      - '## Findings'
+      - '## Blockers'
+      - '## Reverification Needed'
+      - '## Artifact Paths'
+      - '## Verdict'
+  - path: audit-map/24-agent-memory/realism-browser-e2e-2026-04-29.md
+    min_lines: 12
+    min_bytes: 600
+    write_mode: replace
+    required_sections:
+      - '# Browser E2E Handoff — 2026-04-29'
+      - '## Tested'
+      - '## Blockers'
+      - '## Next Actions'

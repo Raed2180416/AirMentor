@@ -94,6 +94,7 @@ start_seeded_api() {
     cd "$api_repo_dir"
     CORS_ALLOWED_ORIGINS="$cors_allowed_origins" \
     AIRMENTOR_API_PORT="${AIRMENTOR_API_PORT:-0}" \
+    AIRMENTOR_SEED_PROFILE="${AIRMENTOR_SEED_PROFILE:-control-only}" \
     AIRMENTOR_READY_FILE="$backend_ready_file" \
     npm run dev:seeded
   ) >"$backend_log" 2>&1 &

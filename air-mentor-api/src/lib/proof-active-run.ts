@@ -3,10 +3,30 @@ type ActiveRunLike = {
   createdAt: string
   activeOperationalSemester: number | null
   runLabel: string
+  activeFlag?: number | boolean | null
+  status?: string | null
+  lifecycleState?: string | null
+}
+
+export function isActiveProofRunCandidate(run: ActiveRunLike) {
+  if ('activeFlag' in run) {
+    return run.activeFlag === 1 || run.activeFlag === true
+  }
+  if ('lifecycleState' in run && typeof run.lifecycleState === 'string') {
+    return run.lifecycleState === 'active'
+  }
+  if ('status' in run && typeof run.status === 'string') {
+    return run.status === 'active'
+  }
+  return true
 }
 
 export function pickMostRecentActiveRun<T extends ActiveRunLike>(runs: T[]): T | null {
-  return runs
+  const hasLifecycleSignal = runs.some(run => 'activeFlag' in run || 'status' in run || 'lifecycleState' in run)
+  const sortable = hasLifecycleSignal
+    ? runs.filter(isActiveProofRunCandidate)
+    : runs
+  return sortable
     .slice()
     .sort((left, right) => (
       right.updatedAt.localeCompare(left.updatedAt)

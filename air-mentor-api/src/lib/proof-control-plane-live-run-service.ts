@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, ne } from 'drizzle-orm'
 import type { AppDb } from '../db/client.js'
 import {
   academicTerms,
@@ -9,6 +9,7 @@ import {
   sectionOfferings,
   simulationResetSnapshots,
   simulationRuns,
+  simulationStageCheckpoints,
   studentAcademicProfiles,
   studentAssessmentScores,
   studentAttendanceSnapshots,
@@ -22,6 +23,7 @@ import {
 } from '../db/schema.js'
 import type { ResolvedPolicy } from '../modules/admin-structure.js'
 import type { MsruasDeterministicPolicy } from './msruas-rules.js'
+import { buildProofRunStageBoundarySnapshot } from './proof-control-plane-rebuild-context-service.js'
 
 export type StartLiveBatchProofSimulationRunInput = {
   simulationRunId?: string
@@ -216,14 +218,6 @@ export async function startLiveBatchProofSimulationRun(
     subjectRowsByTranscriptId.set(row.transcriptTermResultId, [...(subjectRowsByTranscriptId.get(row.transcriptTermResultId) ?? []), row])
   })
 
-  if (activate) {
-    await db.update(simulationRuns).set({
-      activeFlag: 0,
-      status: 'completed',
-      updatedAt: input.now,
-    }).where(eq(simulationRuns.batchId, input.batchId))
-  }
-
   const baseRunValues = {
     batchId: input.batchId,
     curriculumImportVersionId: input.curriculumImportVersionId,
@@ -238,6 +232,19 @@ export async function startLiveBatchProofSimulationRun(
     semesterStart: activeTerm.semesterNumber,
     semesterEnd: activeTerm.semesterNumber,
     activeOperationalSemester: activeTerm.semesterNumber,
+    simulatedDateIso: activeTerm.startDate ?? input.now,
+    setupConfigJson: JSON.stringify({
+      activate,
+      termId: activeTerm.termId,
+      semesterNumber: activeTerm.semesterNumber,
+    }),
+    scenarioConfigJson: JSON.stringify({
+      parentSimulationRunId: input.parentSimulationRunId ?? null,
+      sourceType: 'live-runtime',
+      runSeed,
+    }),
+    lifecycleState: 'running',
+    runMode: 'live-runtime',
     sourceType: 'live-runtime' as const,
     policySnapshotJson: JSON.stringify(input.policy),
     engineVersionsJson: JSON.stringify({
@@ -433,6 +440,20 @@ export async function startLiveBatchProofSimulationRun(
     now: input.now,
     rebuildModelArtifacts: false,
   })
+  const checkpointRows = await db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, simulationRunId))
+  const stageBoundary = buildProofRunStageBoundarySnapshot(checkpointRows)
+  const activeStageKey = stageBoundary.semesters.find(item => item.semesterNumber === activeTerm.semesterNumber)?.entryStageKey ?? 'pre-tt1'
+  const lifecycleState = activate ? 'completed-inspectable' : 'completed'
+  const setupConfig = {
+    activate,
+    termId: activeTerm.termId,
+    semesterNumber: activeTerm.semesterNumber,
+  }
+  const scenarioConfig = {
+    parentSimulationRunId: input.parentSimulationRunId ?? null,
+    sourceType: 'live-runtime',
+    runSeed,
+  }
 
   await db.insert(simulationResetSnapshots).values({
     simulationResetSnapshotId: deps.createId('simulation_reset'),
@@ -447,6 +468,16 @@ export async function startLiveBatchProofSimulationRun(
       policySnapshot: input.policy,
       studentCount: activeEnrollments.length,
       sectionCount: new Set(termOfferings.map(row => row.sectionCode)).size,
+      runAuthority: {
+        activeOperationalSemester: activeTerm.semesterNumber,
+        activeStageKey,
+        lifecycleState,
+        runMode: 'live-runtime',
+        simulatedDateIso: activeTerm.startDate ?? input.now,
+        stageBoundary,
+      },
+      setupConfig,
+      scenarioConfig,
     }),
     createdAt: input.now,
   })
@@ -454,7 +485,14 @@ export async function startLiveBatchProofSimulationRun(
   await db.update(simulationRuns).set({
     status: 'completed',
     activeFlag: activate ? 1 : 0,
+    activeStageKey,
     completedAt: input.now,
+    simulatedDateIso: activeTerm.startDate ?? input.now,
+    setupConfigJson: JSON.stringify(setupConfig),
+    scenarioConfigJson: JSON.stringify(scenarioConfig),
+    lifecycleState,
+    runMode: 'live-runtime',
+    stageBoundaryJson: JSON.stringify(stageBoundary),
     progressJson: JSON.stringify({
       phase: 'completed',
       percent: 100,
@@ -465,6 +503,19 @@ export async function startLiveBatchProofSimulationRun(
     }),
     updatedAt: input.now,
   }).where(eq(simulationRuns.simulationRunId, simulationRunId))
+
+  if (activate) {
+    await db.update(simulationRuns).set({
+      activeFlag: 0,
+      status: 'completed',
+      lifecycleState: 'completed',
+      updatedAt: input.now,
+    }).where(and(
+      eq(simulationRuns.batchId, input.batchId),
+      ne(simulationRuns.simulationRunId, simulationRunId),
+      eq(simulationRuns.activeFlag, 1),
+    ))
+  }
 
   await deps.emitSimulationAudit(db, {
     simulationRunId,

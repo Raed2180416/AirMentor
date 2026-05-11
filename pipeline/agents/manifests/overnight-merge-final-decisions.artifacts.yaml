@@ -1,0 +1,27 @@
+artifacts:
+  - path: audit-map/14-reconciliation/overnight-unified-ledger.md
+    min_lines: 40
+    min_bytes: 1800
+    write_mode: replace
+    required_sections:
+      - '# Overnight Unified Ledger'
+      - '## Proof Lifecycle'
+      - '## ML Strategy'
+      - '## Queue / Calendar / HOD'
+  - path: audit-map/32-reports/overnight-unified-mitigation-plan.md
+    min_lines: 60
+    min_bytes: 2500
+    write_mode: replace
+    required_sections:
+      - '# Overnight Unified Mitigation Plan'
+      - '## Phase 1'
+      - '## Phase 2'
+      - '## Phase 3'
+      - '## Phase 4'
+      - '## Phase 5'
+      - '## Phase 6'
+      - '## Phase 7'
+      - '## Phase 8'
+      - '## Phase 9'
+      - '## Phase 10'
+      - '## Phase 11'

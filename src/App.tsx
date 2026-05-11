@@ -107,14 +107,18 @@ import {
   withAlpha,
 } from './ui-primitives'
 import { AirMentorApiClient, AirMentorApiError } from './api/client'
+import { readActiveDemoWorkspacePointer } from './demo-workspace-pointer'
 import { useApiConnectionTarget } from './api-connection'
 import type {
   ApiAcademicBootstrap,
   ApiAcademicFacultyProfile,
   ApiAcademicHodProofBundle,
+  ApiAcademicHodProofCounterfactualReport,
+  ApiAcademicHodProofCounterfactualSimulatorReport,
   ApiAcademicLoginFaculty,
   ApiPasswordSetupInspectResponse,
   ApiPasswordSetupRequestResponse,
+  ApiProofReassessmentResolveResponse,
   ApiSessionResponse,
   ApiStudentAgentCard,
   ApiStudentAgentMessage,
@@ -277,11 +281,19 @@ function createRemedialPlan({
 function suggestTaskForStudent(s?: Student) {
   const toISO = (daysFromNow: number) => new Date(Date.now() + daysFromNow * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
   if (!s) return { taskType: 'Follow-up' as TaskType, dueDateISO: toISO(7), note: '' }
-  const attPct = Math.round((s.present / s.totalClasses) * 100)
+  const attPct = getStudentAttendancePct(s)
   if (s.riskBand === 'High') return { taskType: 'Remedial' as TaskType, dueDateISO: toISO(3), note: 'High-risk case. Add a structured remedial plan with check-ins.' }
-  if (attPct < 65 || s.flags.lowAttendance) return { taskType: 'Attendance' as TaskType, dueDateISO: toISO(2), note: 'Attendance intervention and follow-up required.' }
+  if ((attPct != null && attPct < 65) || s.flags.lowAttendance) return { taskType: 'Attendance' as TaskType, dueDateISO: toISO(2), note: 'Attendance intervention and follow-up required.' }
   if (s.riskBand === 'Medium') return { taskType: 'Academic' as TaskType, dueDateISO: toISO(5), note: 'Academic follow-up for medium-risk trend.' }
   return { taskType: 'Follow-up' as TaskType, dueDateISO: toISO(7), note: `General follow-up with ${s.name.split(' ')[0]}.` }
+}
+
+function getStudentAttendancePct(student: Student) {
+  return student.totalClasses > 0 ? Math.round((student.present / Math.max(1, student.totalClasses)) * 100) : null
+}
+
+function hasStudentRiskEvidence(offering: Offering | undefined, student: Student) {
+  return Boolean(offering && offering.stage >= 2 && student.riskBand != null && student.riskProb != null)
 }
 
 export function RequiredNoteModal({ title, description, submitLabel, onClose, onSubmit }: { title: string; description: string; submitLabel: string; onClose: () => void; onSubmit: (note: string) => void }) {
@@ -640,7 +652,8 @@ export function StudentDrawer({
   )
   if (!student) return null
   const s = student
-  const attPct = Math.round(s.present / s.totalClasses * 100)
+  const attPct = getStudentAttendancePct(s)
+  const riskAvailable = hasStudentRiskEvidence(offering, s)
   const riskCol = s.riskBand === 'High' ? T.danger : s.riskBand === 'Medium' ? T.warning : T.success
   const canSeeDetailedMarks = role !== 'Mentor'
   const drawerHistory = buildHistoryProfile({ student: s, historyByUsn })
@@ -680,7 +693,7 @@ export function StudentDrawer({
         </div>
 
         {/* Watch Gauge */}
-        {s.riskProb !== null ? (
+        {riskAvailable && s.riskProb !== null ? (
           <div style={{ background: `${riskCol}0c`, border: `1px solid ${riskCol}30`, borderRadius: 12, padding: '18px 22px', marginBottom: 18 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
               <div style={{ ...sora, fontWeight: 800, fontSize: 42, color: riskCol }}>{Math.round(s.riskProb * 100)}%</div>
@@ -704,7 +717,7 @@ export function StudentDrawer({
         )}
 
         {/* Observable Drivers */}
-        {s.reasons.length > 0 && (
+        {riskAvailable && s.reasons.length > 0 && (
           <div style={{ marginBottom: 18 }}>
             <div style={{ ...sora, fontWeight: 700, fontSize: 14, color: T.text, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
               <TrendingDown size={14} color={T.danger} /> Observable Drivers
@@ -754,11 +767,11 @@ export function StudentDrawer({
           )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
             {[
-              { lbl: 'Attendance', val: `${attPct}%`, col: attPct >= 75 ? T.success : attPct >= 65 ? T.warning : T.danger },
+              { lbl: 'Attendance', val: attPct == null ? 'Not applicable yet' : `${attPct}%`, col: attPct == null ? T.dim : attPct >= 75 ? T.success : attPct >= 65 ? T.warning : T.danger },
               { lbl: 'TT Summary', val: canSeeDetailedMarks ? `${s.tt1Score ?? '—'} / ${s.tt2Score ?? '—'}` : ceSummary ? `${(ceSummary.tt1Scaled + ceSummary.tt2Scaled).toFixed(1)}/30` : '—', col: ceSummary && ceSummary.tt1Scaled + ceSummary.tt2Scaled >= 15 ? T.success : T.warning },
               { lbl: 'CE Signal', val: ceSummary && activeScheme ? `${ceSummary.ce60.toFixed(1)}/${activeScheme.policyContext.ce}` : '—', col: ceSummary && ceSignalThresholds ? (ceSummary.ce60 >= ceSignalThresholds.success ? T.success : ceSummary.ce60 >= ceSignalThresholds.warning ? T.warning : T.danger) : T.warning },
-              { lbl: 'Primary Signal', val: s.reasons[0]?.feature?.toUpperCase() ?? 'None', col: s.reasons[0] ? T.warning : T.success },
-              { lbl: 'SEE Readiness', val: s.riskBand === 'High' ? 'Needs support' : s.riskBand === 'Medium' ? 'Watch' : 'On track', col: s.riskBand === 'High' ? T.danger : s.riskBand === 'Medium' ? T.warning : T.success },
+              { lbl: 'Primary Signal', val: riskAvailable ? (s.reasons[0]?.feature?.toUpperCase() ?? 'None') : 'Not applicable yet', col: riskAvailable && s.reasons[0] ? T.warning : riskAvailable ? T.success : T.dim },
+              { lbl: 'SEE Readiness', val: riskAvailable ? (s.riskBand === 'High' ? 'Needs support' : s.riskBand === 'Medium' ? 'Watch' : 'On track') : 'Not applicable yet', col: riskAvailable ? (s.riskBand === 'High' ? T.danger : s.riskBand === 'Medium' ? T.warning : T.success) : T.dim },
               { lbl: 'Pred CGPA', val: ceSummary ? ceSummary.predictedCgpa.toFixed(2) : (s.prevCgpa > 0 ? s.prevCgpa.toFixed(1) : '—'), col: (ceSummary?.predictedCgpa ?? s.prevCgpa) >= 7 ? T.success : (ceSummary?.predictedCgpa ?? s.prevCgpa) >= 6 ? T.warning : T.danger },
             ].map((x, i) => (
               <div key={i} style={{ background: T.surface2, borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
@@ -856,7 +869,7 @@ export function StudentDrawer({
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <Btn size="sm" onClick={() => navigator.clipboard.writeText(s.phone)}><Phone size={12} /> Call</Btn>
           <Btn size="sm" variant="ghost"><Mail size={12} /> Email</Btn>
-          <Btn size="sm" variant="ghost" onClick={() => onOpenTaskComposer(s, offering, s.riskBand === 'High' ? 'Remedial' : 'Follow-up')}><MessageSquare size={12} /> Add Task</Btn>
+          <Btn size="sm" variant="ghost" onClick={() => onOpenTaskComposer(s, offering, riskAvailable && s.riskBand === 'High' ? 'Remedial' : 'Follow-up')}><MessageSquare size={12} /> Add Task</Btn>
           <Btn size="sm" variant="ghost" onClick={() => setShowMeetingComposer(current => !current)}><Calendar size={12} /> {showMeetingComposer ? 'Hide Meeting Form' : 'Schedule Meeting'}</Btn>
           {(role === 'Course Leader' || role === 'HoD') && <Btn size="sm" variant="ghost" onClick={() => onAssignToMentor(s, offering)}><Users size={12} /> Defer to Mentor</Btn>}
           <Btn size="sm" variant="ghost" onClick={() => onOpenHistory(s, offering)}><Eye size={12} /> Open Full Profile</Btn>
@@ -873,8 +886,11 @@ export function StudentDrawer({
    ACTION QUEUE (Right Sidebar)
    ══════════════════════════════════════════════════════════════ */
 
-export function ActionQueue({ role, tasks, resolvedTaskIds, onResolveTask, onUndoTask, onOpenStudent, onOpenTaskComposer, onRemedialCheckIn, onReassignTask, onOpenUnlockReview, onOpenQueueHistory, onApproveUnlock, onRejectUnlock, onResetComplete, onToggleSchedulePause, onEditSchedule, onDismissTask, onDismissSeries }: { role: Role; tasks: SharedTask[]; resolvedTaskIds: Record<string, number>; onResolveTask: (id: string) => void; onUndoTask: (id: string) => void; onOpenStudent: (task: SharedTask) => void; onOpenTaskComposer: (input?: { offeringId?: string; studentId?: string; taskType?: TaskType }) => void; onRemedialCheckIn: (taskId: string) => void; onReassignTask: (taskId: string, toRole: Role) => void; onOpenUnlockReview: (taskId: string) => void; onOpenQueueHistory: () => void; onApproveUnlock: (taskId: string) => void; onRejectUnlock: (taskId: string) => void; onResetComplete: (taskId: string) => void; onToggleSchedulePause: (taskId: string) => void; onEditSchedule: (taskId: string) => void; onDismissTask: (taskId: string) => void; onDismissSeries: (taskId: string) => void }) {
-  const todayISO = toTodayISO()
+export function ActionQueue({ role, tasks, resolvedTaskIds, simulatedDateISO, onResolveTask, onUndoTask, onOpenStudent, onOpenTaskComposer, onRemedialCheckIn, onReassignTask, onOpenUnlockReview, onOpenQueueHistory, onApproveUnlock, onRejectUnlock, onResetComplete, onToggleSchedulePause, onEditSchedule, onDismissTask, onDismissSeries }: { role: Role; tasks: SharedTask[]; resolvedTaskIds: Record<string, number>; simulatedDateISO?: string; onResolveTask: (id: string) => void; onUndoTask: (id: string) => void; onOpenStudent: (task: SharedTask) => void; onOpenTaskComposer: (input?: { offeringId?: string; studentId?: string; taskType?: TaskType }) => void; onRemedialCheckIn: (taskId: string) => void; onReassignTask: (taskId: string, toRole: Role) => void; onOpenUnlockReview: (taskId: string) => void; onOpenQueueHistory: () => void; onApproveUnlock: (taskId: string) => void; onRejectUnlock: (taskId: string) => void; onResetComplete: (taskId: string) => void; onToggleSchedulePause: (taskId: string) => void; onEditSchedule: (taskId: string) => void; onDismissTask: (taskId: string) => void; onDismissSeries: (taskId: string) => void }) {
+  // §B.14 + audit §5.2: queue visibility must honor the simulated date (the
+  // proof-playback currentDateISO from the backend), not wall-clock time.
+  // toTodayISO() is only the fallback for non-proof sessions (e.g. live mode).
+  const todayISO = simulatedDateISO ?? toTodayISO()
   const [showQueueHelp, setShowQueueHelp] = useState(false)
   const active = tasks
     .filter(t => isTaskActiveForQueue(t, resolvedTaskIds, todayISO))
@@ -1132,11 +1148,19 @@ type OperationalWorkspaceProps = {
   onRoleChange?: (role: Role) => Promise<void> | void
   loadFacultyProfile?: (facultyId: string) => Promise<ApiAcademicFacultyProfile>
   loadHodProofAnalytics?: () => Promise<ApiAcademicHodProofBundle>
+  loadHodProofCounterfactual?: (input: { runIdBaseline: string; runIdRealized: string }) => Promise<ApiAcademicHodProofCounterfactualReport>
+  loadHodProofCounterfactualSimulator?: (input: { runId: string }) => Promise<ApiAcademicHodProofCounterfactualSimulatorReport>
   loadStudentAgentCard?: (studentId: string) => Promise<ApiStudentAgentCard>
   loadStudentAgentTimeline?: (studentId: string) => Promise<{ items: ApiStudentAgentTimelineItem[] }>
   startStudentAgentSession?: (studentId: string) => Promise<ApiStudentAgentSession>
   sendStudentAgentMessage?: (sessionId: string, payload: { prompt: string }) => Promise<{ items: ApiStudentAgentMessage[] }>
   loadStudentRiskExplorer?: (studentId: string) => Promise<ApiStudentRiskExplorer>
+  onCommitDemoAttendanceEdit?: (offeringId: string, studentId: string, nextAttendancePct: number) => Promise<void>
+  onRecomputeProofRunRisk?: (simulationRunId: string, options?: { refreshWorkspace?: boolean }) => Promise<void>
+  onResolveProofReassessment?: (reassessmentEventId: string, options?: { refreshWorkspace?: boolean }) => Promise<ApiProofReassessmentResolveResponse>
+  onAdvanceProofRun?: (simulationRunId: string, mode: 'day' | 'previous-day' | 'stage', options?: { refreshWorkspace?: boolean }) => Promise<void> | void
+  onStopProofRun?: (simulationRunId: string) => Promise<void> | void
+  onStepProofPlayback?: (direction: 'previous' | 'next' | 'start' | 'end') => Promise<void> | void
   academicBootstrap: ApiAcademicBootstrap
   proofPlaybackNotice?: { tone: 'neutral' | 'error'; message: string } | null
   onResetProofPlaybackSelection: () => Promise<void> | void
@@ -1151,11 +1175,19 @@ function OperationalWorkspace({
   onRoleChange,
   loadFacultyProfile,
   loadHodProofAnalytics,
+  loadHodProofCounterfactual,
+  loadHodProofCounterfactualSimulator,
   loadStudentAgentCard,
   loadStudentAgentTimeline,
   startStudentAgentSession,
   sendStudentAgentMessage,
   loadStudentRiskExplorer,
+  onCommitDemoAttendanceEdit,
+  onRecomputeProofRunRisk,
+  onResolveProofReassessment,
+  onAdvanceProofRun,
+  onStopProofRun,
+  onStepProofPlayback,
   academicBootstrap,
   proofPlaybackNotice,
   onResetProofPlaybackSelection,
@@ -1294,11 +1326,6 @@ function OperationalWorkspace({
     if (nextState.role !== role) setRole(nextState.role)
     if (nextState.page !== page) setPage(nextState.page as PageId)
   }, [allowedRoles, initialRole, page, role])
-  useEffect(() => {
-    if (role === 'Course Leader' && page === 'students') {
-      setPage('dashboard')
-    }
-  }, [page, role])
   const capabilities = useMemo<FacultyCapabilitySet>(() => ({
     canApproveUnlock: role === 'HoD',
     canEditMarks: role === 'Course Leader',
@@ -1540,7 +1567,10 @@ function OperationalWorkspace({
     return base.filter(t => mentorScopedIds.has(t.studentId) || supervisedMenteeUsns.has(t.studentUsn))
   }, [allTasksList, role, supervisedOfferingIds, supervisedMenteeIds, supervisedMenteeUsns])
 
-  const pendingActionCount = roleTasks.filter(task => isTaskActiveForQueue(task, resolvedTasks, toTodayISO())).length
+  // Pending action badge count must use the proof-playback simulated date
+  // (§B.14 + audit §5.2). Without this, tasks scheduled for simulated-future
+  // but wall-clock-past show up too early, or vice versa.
+  const pendingActionCount = roleTasks.filter(task => isTaskActiveForQueue(task, resolvedTasks, proofVirtualDateISO ?? toTodayISO())).length
   const layoutMode: LayoutMode = !sidebarCollapsed && showActionQueue
     ? 'three-column'
     : (!sidebarCollapsed || showActionQueue ? 'split' : 'focus')
@@ -1839,6 +1869,11 @@ function OperationalWorkspace({
   const handleOpenStudent = useCallback((s: Student, o?: Offering) => {
     setSelectedStudent(s)
     setSelectedOffering(o || null)
+  }, [])
+  const handleOpenStudents = useCallback(() => {
+    setSelectedStudent(null)
+    setSelectedOffering(null)
+    setPage('students')
   }, [])
   const handleScheduleMeeting = useCallback(async (input: {
     student: Student
@@ -2318,7 +2353,7 @@ function OperationalWorkspace({
         },
       }))
     }
-  }, [allTasksList, currentTeacherId, role, taskPlacements])
+  }, [allTasksList, currentTeacherId, proofVirtualDateISO, role, taskPlacements])
 
   const handleToggleSchedulePause = useCallback((taskId: string) => {
     setAllTasksList(prev => prev.map(task => {
@@ -2359,7 +2394,7 @@ function OperationalWorkspace({
         },
       }))
     }
-  }, [currentTeacherId, role, taskPlacements])
+  }, [currentTeacherId, proofVirtualDateISO, role, taskPlacements])
 
   const handleDismissTask = useCallback((taskId: string) => {
     setAllTasksList(prev => prev.map(task => {
@@ -2439,6 +2474,29 @@ function OperationalWorkspace({
     commitStudentPatch(offeringId, studentId, existing => ({ ...existing, ...patch }))
   }, [commitStudentPatch])
 
+  const handleCommitDemoAttendanceEdit = useCallback(async (offeringId: string, studentId: string, nextAttendancePct: number) => {
+    if (onCommitDemoAttendanceEdit) {
+      await onCommitDemoAttendanceEdit(offeringId, studentId, nextAttendancePct)
+      return
+    }
+    const offeringForEdit = allOfferings.find(item => item.offId === offeringId)
+    if (!offeringForEdit) throw new Error('Demo attendance edit offering is unavailable.')
+    const studentForEdit = getStudentsPatched(offeringForEdit).find(student => (student.id.split('::').at(-1) ?? student.id) === studentId || student.id === studentId)
+    if (!studentForEdit) throw new Error('Demo attendance edit student is unavailable.')
+    const totalClasses = Math.max(1, studentForEdit.totalClasses || 50)
+    const presentClasses = Math.max(0, Math.min(totalClasses, Math.round((nextAttendancePct / 100) * totalClasses)))
+    commitStudentPatch(offeringId, studentForEdit.id, existing => ({
+      ...existing,
+      present: presentClasses,
+      totalClasses,
+    }))
+    await repositories.entryData.commitAttendanceEntries(offeringId, {
+      entries: [{ studentId, presentClasses, totalClasses }],
+      capturedAt: new Date().toISOString(),
+      lock: false,
+    })
+  }, [allOfferings, commitStudentPatch, getStudentsPatched, onCommitDemoAttendanceEdit, repositories])
+
   const handleScheduleTask = useCallback((taskId: string, input: TaskPlacementDraft) => {
     if (!currentTeacher || !currentFacultyTimetable || !currentTeacher.allowedRoles.includes('Course Leader')) return
     const task = allTasksList.find(item => item.id === taskId)
@@ -2486,7 +2544,7 @@ function OperationalWorkspace({
         offeringId: task.offeringId,
       },
     }))
-  }, [allTasksList, appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, repositories, role, taskPlacements])
+  }, [allTasksList, appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, proofVirtualDateISO, repositories, role, taskPlacements])
 
   const resolveCommittedClassRange = useCallback((blockId: string, input: { day: Weekday; dateISO?: string; startMinutes: number; endMinutes: number }) => {
     if (!currentFacultyTimetable) return null
@@ -2837,7 +2895,7 @@ function OperationalWorkspace({
         },
       }))
     }
-  }, [allOfferings, appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, getStudentsPatched, repositories, role])
+  }, [allOfferings, appendCalendarAudit, currentFacultyTimetable, currentTeacher, currentTeacherId, getStudentsPatched, proofVirtualDateISO, repositories, role])
 
   const handleRemedialCheckIn = useCallback((taskId: string) => {
     setAllTasksList(prev => prev.map(task => {
@@ -3311,6 +3369,7 @@ function OperationalWorkspace({
     handleOpenRiskExplorer,
     handleOpenCourse,
     handleOpenStudent,
+    handleOpenStudents,
     handleOpenUpload,
     handleOpenCalendar,
     handleToggleActionQueue,
@@ -3376,6 +3435,8 @@ function OperationalWorkspace({
     hodProofAnalytics,
     hodProofLoading,
     hodProofError,
+    loadHodProofCounterfactual,
+    loadHodProofCounterfactualSimulator,
     handleOpenQueueHistory,
     selectedUnlockTask,
     selectedUnlockTaskOffering,
@@ -3392,6 +3453,12 @@ function OperationalWorkspace({
     startStudentAgentSession,
     sendStudentAgentMessage,
     loadStudentRiskExplorer,
+    handleCommitDemoAttendanceEdit,
+    handleRecomputeProofRunRisk: onRecomputeProofRunRisk,
+    handleResolveProofReassessment: onResolveProofReassessment,
+    handleAdvanceProofRun: onAdvanceProofRun,
+    handleStopProofRun: onStopProofRun,
+    handleStepProofPlayback: onStepProofPlayback,
   }
 
   return (
@@ -3460,7 +3527,7 @@ function OperationalWorkspace({
               transition={{ duration: 0.22, ease: 'easeOut' }}
               style={{ overflow: 'hidden', flexShrink: 0 }}
             >
-              <ActionQueue role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} onResolveTask={handleResolveTask} onUndoTask={handleUndoTask} onOpenTaskComposer={handleOpenTaskComposer} onRemedialCheckIn={handleRemedialCheckIn} onOpenStudent={handleOpenTaskStudent} onReassignTask={handleReassignTask} onOpenUnlockReview={handleOpenUnlockReview} onOpenQueueHistory={handleOpenQueueHistory} onApproveUnlock={handleApproveUnlock} onRejectUnlock={handleRejectUnlock} onResetComplete={handleResetComplete} onToggleSchedulePause={handleToggleSchedulePause} onEditSchedule={handleEditSchedule} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />
+              <ActionQueue role={role} tasks={roleTasks} resolvedTaskIds={resolvedTasks} simulatedDateISO={proofVirtualDateISO} onResolveTask={handleResolveTask} onUndoTask={handleUndoTask} onOpenTaskComposer={handleOpenTaskComposer} onRemedialCheckIn={handleRemedialCheckIn} onOpenStudent={handleOpenTaskStudent} onReassignTask={handleReassignTask} onOpenUnlockReview={handleOpenUnlockReview} onOpenQueueHistory={handleOpenQueueHistory} onApproveUnlock={handleApproveUnlock} onRejectUnlock={handleRejectUnlock} onResetComplete={handleResetComplete} onToggleSchedulePause={handleToggleSchedulePause} onEditSchedule={handleEditSchedule} onDismissTask={handleDismissTask} onDismissSeries={handleDismissSeries} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -3542,7 +3609,7 @@ export function OperationalApp() {
   const apiBaseUrl = apiConnection.activeBaseUrl
   const liveAcademicMode = apiConnection.candidateBaseUrls.length > 0
   const telemetrySinkUrl = import.meta.env.VITE_AIRMENTOR_TELEMETRY_SINK_URL?.trim() || ''
-  const apiClient = useMemo(() => (apiBaseUrl ? new AirMentorApiClient(apiBaseUrl) : null), [apiBaseUrl])
+  const apiClient = useMemo(() => (apiBaseUrl ? new AirMentorApiClient(apiBaseUrl, undefined, readActiveDemoWorkspacePointer) : null), [apiBaseUrl])
   const backendHealthMonitor = useBackendHealthMonitor(apiBaseUrl, { enabled: liveAcademicMode })
   const startupDiagnostics = useMemo(
     () => collectFrontendStartupDiagnostics({ apiBaseUrl: configuredApiBaseUrl || apiBaseUrl, telemetrySinkUrl }),
@@ -3624,6 +3691,7 @@ export function OperationalApp() {
         return {
           facultyId: account.facultyId,
           username: accountUsername,
+          email: account.email,
           name: account.name,
           displayName: account.name,
           designation: account.roleTitle,
@@ -3631,6 +3699,9 @@ export function OperationalApp() {
           departmentCode: account.dept,
           roleTitle: account.roleTitle,
           allowedRoles: account.allowedRoles,
+          courseCodes: account.courseCodes,
+          offeringIds: account.offeringIds,
+          menteeIds: account.menteeIds,
         }
       })))
       return snapshot
@@ -3981,6 +4052,24 @@ export function OperationalApp() {
     }
   }, [apiClient, playbackCheckpointId])
 
+  // Phase-11 authoritative simulator counterfactual loader. Prompt §C.13 +
+  // §G.6 + §L.10 — replaces the diagnostic flag-diff loader as the primary
+  // final-analytics path.
+  const loadAcademicHodProofCounterfactualSimulator = useCallback(async (input: { runId: string }) => {
+    if (!apiClient) throw new Error('Academic backend is unavailable.')
+    try {
+      return await apiClient.getAcademicHodProofCounterfactualSimulator(input)
+    } catch (error) {
+      emitClientOperationalEvent('proof.counterfactual_simulator.load_failed', {
+        workspace: 'academic',
+        simulationRunId: input.runId,
+        simulationStageCheckpointId: playbackCheckpointId,
+        error: normalizeClientTelemetryError(error),
+      }, { level: 'warn' })
+      throw error
+    }
+  }, [apiClient, playbackCheckpointId])
+
   const loadAcademicStudentAgentCard = useCallback(async (studentId: string) => {
     if (!apiClient) throw new Error('Academic backend is unavailable.')
     try {
@@ -4044,6 +4133,48 @@ export function OperationalApp() {
     }
   }, [apiClient, playbackCheckpointId])
 
+  const handleAdvanceAcademicProofRun = useCallback(async (simulationRunId: string, mode: 'day' | 'previous-day' | 'stage', options: { refreshWorkspace?: boolean } = {}) => {
+    if (!apiClient) throw new Error('Academic backend is unavailable.')
+    await apiClient.advanceAcademicProofRun(simulationRunId, { mode })
+    if (options.refreshWorkspace !== false) {
+      clearProofPlaybackSelection()
+      setProofPlaybackNotice(null)
+      await refreshAcademicProjection()
+    }
+  }, [apiClient, refreshAcademicProjection])
+
+  const handleStopAcademicProofRun = useCallback(async (simulationRunId: string) => {
+    if (!apiClient) throw new Error('Academic backend is unavailable.')
+    await apiClient.stopAcademicProofRun(simulationRunId)
+    clearProofPlaybackSelection()
+    setProofPlaybackNotice(null)
+    await refreshAcademicProjection()
+  }, [apiClient, refreshAcademicProjection])
+
+  const handleRecomputeAcademicProofRunRisk = useCallback(async (simulationRunId: string, options: { refreshWorkspace?: boolean } = {}) => {
+    if (!apiClient) throw new Error('Academic backend is unavailable.')
+    await apiClient.recomputeAcademicProofRunRisk(simulationRunId)
+    if (options.refreshWorkspace !== false) {
+      await refreshAcademicProjection()
+    }
+  }, [apiClient, refreshAcademicProjection])
+
+  const handleResolveAcademicProofReassessment = useCallback(async (reassessmentEventId: string, options: { refreshWorkspace?: boolean } = {}) => {
+    if (!apiClient) throw new Error('Academic backend is unavailable.')
+    const result = await apiClient.resolveAcademicProofReassessment(reassessmentEventId, {
+      outcome: 'completed_improving',
+      note: 'Demo Reality Loop guided intervention resolution.',
+    })
+    if (options.refreshWorkspace !== false) {
+      await refreshAcademicProjection()
+    }
+    return result
+  }, [apiClient, refreshAcademicProjection])
+
+  const handleStepAcademicProofPlayback = useCallback(async () => {
+    await refreshAcademicProjection()
+  }, [refreshAcademicProjection])
+
   const workspaceSession = workspaceProjection?.session ?? null
   const workspaceRole = workspaceSession ? mapApiRoleToRole(workspaceSession.activeRoleGrant.roleCode) : null
   const workspaceBootstrap = workspaceProjection?.bootstrap ?? null
@@ -4092,11 +4223,17 @@ export function OperationalApp() {
             onRoleChange={handleRemoteRoleChange}
             loadFacultyProfile={loadAcademicFacultyProfile}
             loadHodProofAnalytics={loadAcademicHodProofAnalytics}
+            loadHodProofCounterfactualSimulator={loadAcademicHodProofCounterfactualSimulator}
             loadStudentAgentCard={loadAcademicStudentAgentCard}
             loadStudentAgentTimeline={loadAcademicStudentAgentTimeline}
             startStudentAgentSession={startAcademicStudentAgentSession}
             sendStudentAgentMessage={sendAcademicStudentAgentMessage}
             loadStudentRiskExplorer={loadAcademicStudentRiskExplorer}
+            onRecomputeProofRunRisk={handleRecomputeAcademicProofRunRisk}
+            onResolveProofReassessment={handleResolveAcademicProofReassessment}
+            onAdvanceProofRun={handleAdvanceAcademicProofRun}
+            onStopProofRun={handleStopAcademicProofRun}
+            onStepProofPlayback={handleStepAcademicProofPlayback}
             academicBootstrap={workspaceBootstrap!}
             proofPlaybackNotice={proofPlaybackNotice}
             onResetProofPlaybackSelection={handleResetProofPlaybackSelection}

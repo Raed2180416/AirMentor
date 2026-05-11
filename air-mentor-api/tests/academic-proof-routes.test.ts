@@ -4,21 +4,35 @@ import { z } from 'zod'
 import { simulationRuns, studentAgentSessions } from '../src/db/schema.js'
 
 const proofRouteMocks = vi.hoisted(() => ({
+  advanceProofSimulationDay: vi.fn(),
+  advanceProofSimulationPreviousDay: vi.fn(),
+  advanceProofSimulationStage: vi.fn(),
   buildHodProofAnalytics: vi.fn(),
   buildStudentAgentCard: vi.fn(),
   buildStudentRiskExplorer: vi.fn(),
   listStudentAgentTimeline: vi.fn(),
+  recomputeObservedOnlyRisk: vi.fn(),
   sendStudentAgentMessage: vi.fn(),
   startStudentAgentSession: vi.fn(),
 }))
 
 vi.mock('../src/lib/msruas-proof-control-plane.js', () => ({
+  advanceProofSimulationDay: proofRouteMocks.advanceProofSimulationDay,
+  advanceProofSimulationPreviousDay: proofRouteMocks.advanceProofSimulationPreviousDay,
+  advanceProofSimulationStage: proofRouteMocks.advanceProofSimulationStage,
   buildHodProofAnalytics: proofRouteMocks.buildHodProofAnalytics,
   buildStudentAgentCard: proofRouteMocks.buildStudentAgentCard,
   buildStudentRiskExplorer: proofRouteMocks.buildStudentRiskExplorer,
   listStudentAgentTimeline: proofRouteMocks.listStudentAgentTimeline,
+  recomputeObservedOnlyRisk: proofRouteMocks.recomputeObservedOnlyRisk,
   sendStudentAgentMessage: proofRouteMocks.sendStudentAgentMessage,
   startStudentAgentSession: proofRouteMocks.startStudentAgentSession,
+}))
+
+vi.mock('../src/lib/proof-control-plane-advance-service.js', () => ({
+  advanceProofSimulationDay: proofRouteMocks.advanceProofSimulationDay,
+  advanceProofSimulationPreviousDay: proofRouteMocks.advanceProofSimulationPreviousDay,
+  advanceProofSimulationStage: proofRouteMocks.advanceProofSimulationStage,
 }))
 
 import { registerAcademicProofRoutes } from '../src/modules/academic-proof-routes.js'
@@ -33,6 +47,10 @@ describe('academic proof routes', () => {
     proofRouteMocks.buildStudentRiskExplorer.mockResolvedValue({ student: { studentId: 'mnc_student_101' } })
     proofRouteMocks.listStudentAgentTimeline.mockResolvedValue([{ timelineItemId: 'semester-6' }])
     proofRouteMocks.sendStudentAgentMessage.mockResolvedValue([])
+    proofRouteMocks.advanceProofSimulationDay.mockResolvedValue({ simulationRunId: 'sim_parallel_active_checkpoint_scope', mode: 'day' })
+    proofRouteMocks.advanceProofSimulationPreviousDay.mockResolvedValue({ simulationRunId: 'sim_parallel_active_checkpoint_scope', mode: 'previous-day' })
+    proofRouteMocks.advanceProofSimulationStage.mockResolvedValue({ simulationRunId: 'sim_parallel_active_checkpoint_scope', mode: 'stage' })
+    proofRouteMocks.recomputeObservedOnlyRisk.mockResolvedValue(undefined)
     proofRouteMocks.startStudentAgentSession.mockResolvedValue({
       studentAgentSessionId: 'agent_session_001',
       simulationRunId: 'sim_parallel_active_checkpoint_scope',
@@ -85,6 +103,7 @@ describe('academic proof routes', () => {
         userId: 'faculty_hod',
         username: 'faculty_hod',
         email: 'faculty_hod@msruas.ac.in',
+        demoWorkspaceId: null,
         facultyName: 'Faculty HoD',
         activeRoleGrant: {
           grantId: 'grant_hod',
@@ -232,6 +251,7 @@ describe('academic proof routes', () => {
         userId: 'faculty_hod',
         username: 'faculty_hod',
         email: 'faculty_hod@msruas.ac.in',
+        demoWorkspaceId: null,
         facultyName: 'Faculty HoD',
         activeRoleGrant: {
           grantId: 'grant_hod',
@@ -285,5 +305,276 @@ describe('academic proof routes', () => {
       studentAgentSessionId: 'agent_session_001',
       prompt: 'Explain the comparator',
     })
+  })
+
+  it('lets academic roles advance only the active proof run through the teacher proof control route', async () => {
+    const runLookups: string[] = []
+    const context = {
+      db: {
+        select: () => ({
+          from: (table: unknown) => ({
+            where: async (condition: unknown) => {
+              if (table === simulationRuns) {
+                const columnName = extractWhereColumnName(condition) ?? 'unknown'
+                runLookups.push(columnName)
+                if (columnName === 'simulation_run_id') {
+                  return [{
+                    simulationRunId: 'sim_parallel_active_checkpoint_scope',
+                    activeFlag: 1,
+                  }]
+                }
+              }
+              return []
+            },
+          }),
+        }),
+      },
+      now: () => '2026-03-31T00:00:00.000Z',
+    }
+
+    app = fastify()
+    app.addHook('onRequest', async (request: FastifyRequest) => {
+      request.auth = {
+        sessionId: 'session_course_leader',
+        facultyId: 'faculty_course_leader',
+        userId: 'faculty_course_leader',
+        username: 'faculty_course_leader',
+        email: 'faculty_course_leader@msruas.ac.in',
+        demoWorkspaceId: null,
+        facultyName: 'Faculty Course Leader',
+        activeRoleGrant: {
+          grantId: 'grant_course_leader',
+          facultyId: 'faculty_course_leader',
+          roleCode: 'COURSE_LEADER',
+          scopeType: 'branch',
+          scopeId: 'branch_mnc',
+          status: 'active',
+          version: 1,
+        },
+        availableRoleGrants: [],
+      }
+    })
+
+    await registerAcademicProofRoutes(app, context as never, {
+      academicRoleCodes: ['COURSE_LEADER', 'MENTOR', 'HOD'],
+      assertStudentShellScope: vi.fn().mockResolvedValue(undefined),
+      hodProofCourseQuerySchema: z.object({}).passthrough(),
+      hodProofFacultyQuerySchema: z.object({}).passthrough(),
+      hodProofReassessmentQuerySchema: z.object({}).passthrough(),
+      hodProofStudentQuerySchema: z.object({}).passthrough(),
+      hodProofSummaryQuerySchema: z.object({}).passthrough(),
+      proofReassessmentAcknowledgeSchema: z.object({}).passthrough(),
+      proofReassessmentParamsSchema: z.object({ reassessmentEventId: z.string().min(1) }),
+      proofReassessmentResolveSchema: z.object({}).passthrough(),
+      proofResolutionCreditByOutcome: vi.fn(),
+      proofResolutionRecoveryState: vi.fn(),
+      resolveAcademicStageCheckpoint: vi.fn(),
+      resolveProofReassessmentAccess: vi.fn(),
+      resolveStudentShellRun: vi.fn(),
+      studentShellMessageSchema: z.object({ prompt: z.string().min(1) }),
+      studentShellQuerySchema: z.object({
+        simulationRunId: z.string().min(1).optional(),
+        simulationStageCheckpointId: z.string().min(1).optional(),
+      }),
+      studentShellSessionCreateSchema: z.object({
+        simulationRunId: z.string().min(1).optional(),
+        simulationStageCheckpointId: z.string().min(1).optional(),
+      }),
+    } as never)
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/academic/proof-runs/sim_parallel_active_checkpoint_scope/advance',
+      payload: { mode: 'stage' },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(runLookups).toEqual(['simulation_run_id'])
+    expect(proofRouteMocks.advanceProofSimulationStage).toHaveBeenCalledWith(context.db, {
+      simulationRunId: 'sim_parallel_active_checkpoint_scope',
+      actorFacultyId: 'faculty_course_leader',
+      now: '2026-03-31T00:00:00.000Z',
+    })
+    expect(proofRouteMocks.advanceProofSimulationDay).not.toHaveBeenCalled()
+  })
+
+  it('lets academic roles recompute only the active scoped proof run through the teacher proof control route', async () => {
+    const context = {
+      db: {
+        select: () => ({
+          from: (table: unknown) => ({
+            where: async () => {
+              if (table === simulationRuns) {
+                return [{
+                  simulationRunId: 'sim_active_demo',
+                  batchId: 'batch_mnc_2023',
+                  activeFlag: 1,
+                  demoWorkspaceId: 'demo_ws_001',
+                }]
+              }
+              return []
+            },
+          }),
+        }),
+      },
+      now: () => '2026-05-11T08:00:00.000Z',
+    }
+    const resolveBatchPolicy = vi.fn().mockResolvedValue({
+      effectivePolicy: { attendanceRules: { minimumRequiredPercent: 75 } },
+    })
+
+    app = fastify()
+    app.addHook('onRequest', async (request: FastifyRequest) => {
+      request.auth = {
+        sessionId: 'session_course_leader',
+        facultyId: 'faculty_course_leader',
+        userId: 'faculty_course_leader',
+        username: 'devika.shetty',
+        email: 'devika.shetty@msruas.ac.in',
+        demoWorkspaceId: 'demo_ws_001',
+        facultyName: 'Devika Shetty',
+        activeRoleGrant: {
+          grantId: 'grant_course_leader',
+          facultyId: 'faculty_course_leader',
+          roleCode: 'COURSE_LEADER',
+          scopeType: 'section',
+          scopeId: 'section_a',
+          status: 'active',
+          version: 1,
+        },
+        availableRoleGrants: [],
+      }
+    })
+
+    await registerAcademicProofRoutes(app, context as never, {
+      academicRoleCodes: ['COURSE_LEADER', 'MENTOR', 'HOD'],
+      assertStudentShellScope: vi.fn().mockResolvedValue(undefined),
+      hodProofCourseQuerySchema: z.object({}).passthrough(),
+      hodProofFacultyQuerySchema: z.object({}).passthrough(),
+      hodProofReassessmentQuerySchema: z.object({}).passthrough(),
+      hodProofStudentQuerySchema: z.object({}).passthrough(),
+      hodProofSummaryQuerySchema: z.object({}).passthrough(),
+      proofReassessmentAcknowledgeSchema: z.object({}).passthrough(),
+      proofReassessmentParamsSchema: z.object({ reassessmentEventId: z.string().min(1) }),
+      proofReassessmentResolveSchema: z.object({}).passthrough(),
+      proofResolutionCreditByOutcome: vi.fn(),
+      proofResolutionRecoveryState: vi.fn(),
+      resolveAcademicStageCheckpoint: vi.fn(),
+      resolveBatchPolicy,
+      resolveProofReassessmentAccess: vi.fn(),
+      resolveStudentShellRun: vi.fn(),
+      studentShellMessageSchema: z.object({ prompt: z.string().min(1) }),
+      studentShellQuerySchema: z.object({
+        simulationRunId: z.string().min(1).optional(),
+        simulationStageCheckpointId: z.string().min(1).optional(),
+      }),
+      studentShellSessionCreateSchema: z.object({
+        simulationRunId: z.string().min(1).optional(),
+        simulationStageCheckpointId: z.string().min(1).optional(),
+      }),
+    } as never)
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/academic/proof-runs/sim_active_demo/recompute-risk',
+      payload: {},
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ ok: true })
+    expect(resolveBatchPolicy).toHaveBeenCalledWith(context, 'batch_mnc_2023')
+    expect(proofRouteMocks.recomputeObservedOnlyRisk).toHaveBeenCalledWith(context.db, {
+      simulationRunId: 'sim_active_demo',
+      policy: { attendanceRules: { minimumRequiredPercent: 75 } },
+      actorFacultyId: 'faculty_course_leader',
+      now: '2026-05-11T08:00:00.000Z',
+      rebuildModelArtifacts: false,
+    })
+  })
+
+  it('lets academic roles move the active proof run one persisted day backward', async () => {
+    const context = {
+      db: {
+        select: () => ({
+          from: (table: unknown) => ({
+            where: async () => {
+              if (table === simulationRuns) {
+                return [{
+                  simulationRunId: 'sim_parallel_active_checkpoint_scope',
+                  activeFlag: 1,
+                }]
+              }
+              return []
+            },
+          }),
+        }),
+      },
+      now: () => '2026-03-31T00:00:00.000Z',
+    }
+
+    app = fastify()
+    app.addHook('onRequest', async (request: FastifyRequest) => {
+      request.auth = {
+        sessionId: 'session_course_leader',
+        facultyId: 'faculty_course_leader',
+        userId: 'faculty_course_leader',
+        username: 'faculty_course_leader',
+        email: 'faculty_course_leader@msruas.ac.in',
+        demoWorkspaceId: null,
+        facultyName: 'Faculty Course Leader',
+        activeRoleGrant: {
+          grantId: 'grant_course_leader',
+          facultyId: 'faculty_course_leader',
+          roleCode: 'COURSE_LEADER',
+          scopeType: 'branch',
+          scopeId: 'branch_mnc',
+          status: 'active',
+          version: 1,
+        },
+        availableRoleGrants: [],
+      }
+    })
+
+    await registerAcademicProofRoutes(app, context as never, {
+      academicRoleCodes: ['COURSE_LEADER', 'MENTOR', 'HOD'],
+      assertStudentShellScope: vi.fn().mockResolvedValue(undefined),
+      hodProofCourseQuerySchema: z.object({}).passthrough(),
+      hodProofFacultyQuerySchema: z.object({}).passthrough(),
+      hodProofReassessmentQuerySchema: z.object({}).passthrough(),
+      hodProofStudentQuerySchema: z.object({}).passthrough(),
+      hodProofSummaryQuerySchema: z.object({}).passthrough(),
+      proofReassessmentAcknowledgeSchema: z.object({}).passthrough(),
+      proofReassessmentParamsSchema: z.object({ reassessmentEventId: z.string().min(1) }),
+      proofReassessmentResolveSchema: z.object({}).passthrough(),
+      proofResolutionCreditByOutcome: vi.fn(),
+      proofResolutionRecoveryState: vi.fn(),
+      resolveAcademicStageCheckpoint: vi.fn(),
+      resolveProofReassessmentAccess: vi.fn(),
+      resolveStudentShellRun: vi.fn(),
+      studentShellMessageSchema: z.object({ prompt: z.string().min(1) }),
+      studentShellQuerySchema: z.object({
+        simulationRunId: z.string().min(1).optional(),
+        simulationStageCheckpointId: z.string().min(1).optional(),
+      }),
+      studentShellSessionCreateSchema: z.object({
+        simulationRunId: z.string().min(1).optional(),
+        simulationStageCheckpointId: z.string().min(1).optional(),
+      }),
+    } as never)
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/academic/proof-runs/sim_parallel_active_checkpoint_scope/advance',
+      payload: { mode: 'previous-day' },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(proofRouteMocks.advanceProofSimulationPreviousDay).toHaveBeenCalledWith(context.db, {
+      simulationRunId: 'sim_parallel_active_checkpoint_scope',
+      actorFacultyId: 'faculty_course_leader',
+      now: '2026-03-31T00:00:00.000Z',
+    })
+    expect(proofRouteMocks.advanceProofSimulationDay).not.toHaveBeenCalled()
+    expect(proofRouteMocks.advanceProofSimulationStage).not.toHaveBeenCalled()
   })
 })

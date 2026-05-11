@@ -1,0 +1,12 @@
+artifacts:
+  - path: audit-map/22-evals/overnight-ml-catboost-challenger.md
+    min_lines: 30
+    min_bytes: 1200
+    write_mode: replace
+    required_sections:
+      - '# Overnight ML Phase 10: CatBoost Challenger'
+      - '## Inputs'
+      - '## Training'
+      - '## Metrics'
+      - '## Head-to-Head vs Logistic v8'
+      - '## Promotion Decision'

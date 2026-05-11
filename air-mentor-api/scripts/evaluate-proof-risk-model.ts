@@ -1,10 +1,16 @@
+import { createHash } from 'node:crypto'
+import { createWriteStream } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { availableParallelism } from 'node:os'
 import path from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { and, asc, count, eq, gt, inArray, isNotNull } from 'drizzle-orm'
-import { createTestApp, TEST_NOW } from '../tests/helpers/test-app.js'
+import { createPersistentTestApp, createTestApp, TEST_NOW } from '../tests/helpers/test-app.js'
 import { MSRUAS_PROOF_BATCH_ID } from '../src/lib/msruas-proof-sandbox.js'
+import { createDb, createPool, type AppDb } from '../src/db/client.js'
+import { runSqlMigrations } from '../src/db/migrate.js'
+import { seedIntoDatabase } from '../src/db/seed.js'
 import {
   officialCodeCrosswalks,
   riskEvidenceSnapshots,
@@ -26,6 +32,7 @@ import {
   getProofRiskModelEvaluation,
   mergeCoEvidenceDiagnostics,
   mergePolicyDiagnostics,
+  rebuildProofRiskArtifacts,
   recomputeObservedOnlyRisk,
   reviewProofCrosswalks,
   startProofSimulationRun,
@@ -34,10 +41,12 @@ import {
 import { resolveBatchPolicy } from '../src/modules/admin-structure.js'
 import {
   BASELINE_V5_LIKE_PROOF_RISK_TRAINING_CONFIG,
+  OBSERVABLE_FEATURE_KEYS,
   PRODUCTION_RISK_THRESHOLDS,
   PROOF_CORPUS_MANIFEST,
   PROOF_CORPUS_MANIFEST_VERSION,
   createProofRiskModelTrainingBuilder,
+  featureVectorArrayFromPayload,
   scoreObservableRiskWithModel,
   scoreObservableRiskWithChallengerModel,
   type ProofRunModelMetadata,
@@ -63,9 +72,26 @@ type ProbabilityRow = {
   prob: number
 }
 
+type EvaluationContext = {
+  db: AppDb
+  pool: ReturnType<typeof createPool>
+  close: () => Promise<void>
+}
+
 type HybridBlendChoice = {
   alpha: number
   metrics: HeadMetrics
+}
+
+export type HybridGuardrailViolation =
+  | 'support-below-min'
+  | 'roc-auc-drop-too-large'
+  | 'ece-increase-too-large'
+  | 'precision-at-budget-drop-too-large'
+
+type HybridBlendCandidateEvaluation = HybridBlendChoice & {
+  valid: boolean
+  violations: HybridGuardrailViolation[]
 }
 
 type HybridBlendPlan = {
@@ -91,6 +117,7 @@ type HeadMetrics = {
   mediumThreshold: ThresholdMetrics
   highThreshold: ThresholdMetrics
   budgetMetrics: BudgetMetrics
+  localCalibration: LocalCalibrationMetrics
 }
 
 type BudgetMetrics = {
@@ -100,6 +127,43 @@ type BudgetMetrics = {
   precisionAtBudget: number
   recallAtBudget: number
   overloadRatio: number
+}
+
+// Top-k Jaccard stability of the high-risk set across adjacent stage pairs.
+// Intent context (RCA 2026-04-22 §Appendix A): v7 overload 1.1127 is a
+// model-score-shape diagnostic (tied rows at the 80th-percentile boundary).
+// The real product failure mode is UI banding flicker — students oscillating
+// in and out of the high-risk top-k set across stage transitions due to tied
+// scores. Measured per simulation_run_id, aggregated across runs.
+type StageStabilityPair = {
+  stageA: string
+  stageB: string
+  runCount: number
+  meanJaccard: number
+  medianJaccard: number
+  minJaccard: number
+  meanChurnRate: number
+  p95ChurnRate: number
+  meanProbShift: number
+}
+
+// Local-window calibration diagnostic. Intent §G.3: "local threshold behavior
+// around 0.4 and 0.85 must be analyzed, not just global ECE." Global ECE can
+// pass while local ECE at a decision boundary fails; local-ECE isolates the
+// regions where queue-open vs watch decisions are actually made.
+type LocalCalibrationMetrics = {
+  centerAt04: number
+  halfWidthAt04: number
+  localEceAt04: number
+  localSupportAt04: number
+  meanProbAt04: number
+  meanLabelAt04: number
+  centerAt085: number
+  halfWidthAt085: number
+  localEceAt085: number
+  localSupportAt085: number
+  meanProbAt085: number
+  meanLabelAt085: number
 }
 
 type ThresholdMetrics = {
@@ -230,38 +294,136 @@ const COVERAGE_32_SEEDS = [
   4141, 4242, 4343, 4444, 4545, 4646, 4747, 4848,
   5757, 5858, 5959, 6060, 6161, 6262, 6363, 6464,
 ]
+// P2 task 2.1 / D18 closure — generative-process (family-disjoint)
+// split profiles. These select seeds whose `generativeSplit` field
+// equals the named partition (out-of-distribution evaluation
+// protocol; the legacy index-based split is the in-distribution
+// protocol). `selectGenerativeSplitEntries` is the canonical reader.
+// See docs/paper-evidence/02-validation-protocol.md.
+import { selectGenerativeSplitEntries } from '../src/lib/proof-risk-model.js'
+const GENERATIVE_SPLIT_TRAIN_SEEDS = selectGenerativeSplitEntries('train').map(entry => entry.seed)
+const GENERATIVE_SPLIT_VAL_SEEDS = selectGenerativeSplitEntries('validation').map(entry => entry.seed)
+const GENERATIVE_SPLIT_TEST_SEEDS = selectGenerativeSplitEntries('test').map(entry => entry.seed)
+
 const EVAL_SEED_PROFILES = {
   'smoke-3': [101, 4141, 5353],
   'coverage-24': COVERAGE_24_SEEDS,
   'coverage-32': COVERAGE_32_SEEDS,
   'manifest-64': DEFAULT_SEEDS,
+  'generative-split-train': GENERATIVE_SPLIT_TRAIN_SEEDS,
+  'generative-split-val': GENERATIVE_SPLIT_VAL_SEEDS,
+  'generative-split-test': GENERATIVE_SPLIT_TEST_SEEDS,
 } as const
+
+const GENERATIVE_SPLIT_PROFILES: ReadonlySet<string> = new Set([
+  'generative-split-train',
+  'generative-split-val',
+  'generative-split-test',
+])
 const DEFAULT_PROGRESS_EVERY = 8
-const DEFAULT_CREATE_CONCURRENCY = Math.min(4, Math.max(1, availableParallelism() - 1))
+// Keep default below local DB saturation. Override with AIRMENTOR_EVAL_CREATE_CONCURRENCY when benchmarking.
+const DEFAULT_CREATE_CONCURRENCY = Math.max(1, Math.min(12, availableParallelism()))
+const HYBRID_ALLOWED_STAGES_BY_HEAD: Record<RiskHeadKey, string[]> = {
+  attendanceRisk: ['pre-tt1', 'post-tt1', 'post-tt2', 'post-assignments', 'post-see'],
+  ceRisk: ['post-tt1', 'post-tt2', 'post-assignments'],
+  seeRisk: ['post-tt2', 'post-assignments', 'post-see'],
+  overallCourseRisk: [],
+  downstreamCarryoverRisk: [],
+}
+const HYBRID_DENYLIST_HEADS: RiskHeadKey[] = ['downstreamCarryoverRisk', 'overallCourseRisk']
+
+export const HYBRID_ROUTER_CONFIG = {
+  defaultAlpha: 1,
+  alphaGrid: [1, 0] as const,
+  denylistedHeads: HYBRID_DENYLIST_HEADS,
+  allowedStagesByHead: HYBRID_ALLOWED_STAGES_BY_HEAD,
+  minSupport: 50,
+  maxRocAucDrop: 0.01,
+  maxExpectedCalibrationErrorIncrease: 0.02,
+  maxPrecisionAtBudgetDrop: 0.05,
+}
 const EVAL_PAGE_SIZE = 5_000
 
 function uniqueSortedSeeds(seeds: number[]) {
   return [...new Set(seeds.filter(value => Number.isFinite(value)).map(value => Math.floor(value)))].sort((left, right) => left - right)
 }
 
+// F15 seed-hygiene guard: verify the resolved seed list yields at least one
+// run_id in every manifest partition (train / validation / test). Silent empty-
+// partition runs produce degenerate evaluator output (all variants → AUC=0.5,
+// overload=0) which previously shipped without warning. Throw unless the
+// operator sets AIRMENTOR_EVAL_ALLOW_DEGENERATE=1.
+function assertSeedPartitionCoverage(seeds: number[], profile: string) {
+  const allowDegenerate = (process.env.AIRMENTOR_EVAL_ALLOW_DEGENERATE ?? '').trim() === '1'
+  const manifestBySeed = new Map(PROOF_CORPUS_MANIFEST.map(entry => [entry.seed, entry]))
+  // Generative-split profiles intentionally select seeds from a single
+  // partition under their *own* protocol (family-disjoint). The legacy
+  // index-based partition counts will look skewed for these profiles —
+  // that's the correct behaviour, not a degeneracy. We do still enforce
+  // that the partition is non-empty under whichever protocol applies.
+  const isGenerativeSplitProfile = GENERATIVE_SPLIT_PROFILES.has(profile)
+  const splitField: 'split' | 'generativeSplit' = isGenerativeSplitProfile ? 'generativeSplit' : 'split'
+  const counts: Record<SplitName, number> = { train: 0, validation: 0, test: 0 }
+  const unknown: number[] = []
+  for (const seed of seeds) {
+    const entry = manifestBySeed.get(seed)
+    if (!entry) { unknown.push(seed); continue }
+    counts[entry[splitField]] += 1
+  }
+  if (unknown.length > 0) {
+    const msg = `[eval-seed-guard] seeds not in PROOF_CORPUS_MANIFEST: ${unknown.join(',')}. These will be scored but produce no split-labelled rows.`
+    if (allowDegenerate) console.warn(msg)
+    else throw new Error(`${msg} Set AIRMENTOR_EVAL_ALLOW_DEGENERATE=1 to proceed anyway.`)
+  }
+  // For generative-split profiles, require the *target* partition to
+  // be the populated one. For legacy profiles, require all three
+  // partitions to be populated (calibration + promotion-gate need
+  // every partition).
+  if (isGenerativeSplitProfile) {
+    const targetPartition: SplitName = profile === 'generative-split-train'
+      ? 'train'
+      : profile === 'generative-split-val' ? 'validation' : 'test'
+    if (counts[targetPartition] === 0) {
+      const msg = `[eval-seed-guard] generative-split profile '${profile}' selected zero seeds whose generativeSplit='${targetPartition}'. seeds=[${seeds.join(',')}]`
+      if (allowDegenerate) console.warn(msg)
+      else throw new Error(`${msg} Set AIRMENTOR_EVAL_ALLOW_DEGENERATE=1 to proceed anyway.`)
+    }
+  } else {
+    const empty = (Object.entries(counts) as Array<[SplitName, number]>).filter(([, n]) => n === 0).map(([split]) => split)
+    if (empty.length > 0) {
+      const detail = `profile=${profile} seeds=[${seeds.join(',')}] counts=${JSON.stringify(counts)} empty-partitions=[${empty.join(',')}]`
+      const msg = `[eval-seed-guard] selected seeds produce 0 run_ids in partition(s): ${empty.join(', ')}. Evaluator cannot produce promotion-gate metrics without non-empty test partition (and calibration requires non-empty validation). ${detail}`
+      if (allowDegenerate) console.warn(msg)
+      else throw new Error(`${msg} Set AIRMENTOR_EVAL_ALLOW_DEGENERATE=1 to accept degenerate output.`)
+    }
+  }
+  console.error(`[eval-seed-guard] partition counts ok (splitField=${splitField}): ${JSON.stringify(counts)} profile=${profile}`)
+}
+
 function parseSeedSelection() {
   const raw = process.env.AIRMENTOR_EVAL_SEEDS?.trim()
   if (raw) {
+    const seeds = uniqueSortedSeeds(raw.split(',').map(value => Number(value.trim())))
+    assertSeedPartitionCoverage(seeds, 'custom')
     return {
       profile: 'custom',
-      seeds: uniqueSortedSeeds(raw.split(',').map(value => Number(value.trim()))),
+      seeds,
     } as const
   }
   const profile = process.env.AIRMENTOR_EVAL_SEED_PROFILE?.trim() as keyof typeof EVAL_SEED_PROFILES | undefined
   if (profile && EVAL_SEED_PROFILES[profile]) {
+    const seeds = uniqueSortedSeeds([...EVAL_SEED_PROFILES[profile]])
+    assertSeedPartitionCoverage(seeds, profile)
     return {
       profile,
-      seeds: uniqueSortedSeeds([...EVAL_SEED_PROFILES[profile]]),
+      seeds,
     } as const
   }
+  const seeds = uniqueSortedSeeds([...DEFAULT_SEEDS])
+  assertSeedPartitionCoverage(seeds, 'manifest-64')
   return {
     profile: 'manifest-64',
-    seeds: uniqueSortedSeeds([...DEFAULT_SEEDS]),
+    seeds,
   } as const
 }
 
@@ -273,6 +435,20 @@ function parseProgressEvery() {
 function parseCreateConcurrency() {
   const raw = Number(process.env.AIRMENTOR_EVAL_CREATE_CONCURRENCY ?? DEFAULT_CREATE_CONCURRENCY)
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_CREATE_CONCURRENCY
+}
+
+function parseFeatureExportPath() {
+  return process.env.AIRMENTOR_EVAL_EXPORT_FEATURES_CSV?.trim() ?? null
+}
+
+function parseSkipRecompute() {
+  const raw = (process.env.AIRMENTOR_EVAL_SKIP_RECOMPUTE ?? '').trim().toLowerCase()
+  return raw === '1' || raw === 'true' || raw === 'yes'
+}
+
+function parsePrintJsonReport() {
+  const raw = (process.env.AIRMENTOR_EVAL_PRINT_JSON ?? '').trim().toLowerCase()
+  return raw === '1' || raw === 'true' || raw === 'yes'
 }
 
 function roundToFour(value: number) {
@@ -470,6 +646,54 @@ function fitSigmoidCalibration(rows: ProbabilityRow[]) {
   }
 }
 
+// Local ECE over a probability window. Measures |E[label | prob ∈ window] - E[prob | prob ∈ window]|.
+// Decision-aware: the 0.4 window maps to medium-risk banding, 0.85 to high-risk banding.
+function localExpectedCalibrationError(
+  rows: ProbabilityRow[],
+  center: number,
+  halfWidth: number,
+): { localEce: number; support: number; meanProb: number; meanLabel: number } {
+  const lo = Math.max(0, center - halfWidth)
+  const hi = Math.min(1, center + halfWidth)
+  const inWindow = rows.filter(row => row.prob >= lo && row.prob < hi)
+  if (inWindow.length === 0) {
+    return { localEce: 0, support: 0, meanProb: 0, meanLabel: 0 }
+  }
+  let probSum = 0
+  let labelSum = 0
+  for (const row of inWindow) {
+    probSum += row.prob
+    labelSum += row.label
+  }
+  const meanProb = probSum / inWindow.length
+  const meanLabel = labelSum / inWindow.length
+  return {
+    localEce: Math.abs(meanProb - meanLabel),
+    support: inWindow.length,
+    meanProb,
+    meanLabel,
+  }
+}
+
+function summarizeLocalCalibration(rows: ProbabilityRow[]): LocalCalibrationMetrics {
+  const at04 = localExpectedCalibrationError(rows, 0.4, 0.05)
+  const at085 = localExpectedCalibrationError(rows, 0.85, 0.05)
+  return {
+    centerAt04: 0.4,
+    halfWidthAt04: 0.05,
+    localEceAt04: roundToFour(at04.localEce),
+    localSupportAt04: at04.support,
+    meanProbAt04: roundToFour(at04.meanProb),
+    meanLabelAt04: roundToFour(at04.meanLabel),
+    centerAt085: 0.85,
+    halfWidthAt085: 0.05,
+    localEceAt085: roundToFour(at085.localEce),
+    localSupportAt085: at085.support,
+    meanProbAt085: roundToFour(at085.meanProb),
+    meanLabelAt085: roundToFour(at085.meanLabel),
+  }
+}
+
 function summarizeBudgetMetrics(rows: ProbabilityRow[], budgetRate: number): BudgetMetrics {
   if (!rows.length) {
     return {
@@ -548,6 +772,7 @@ function summarizeMetrics(rows: ProbabilityRow[], budgetRate = 0.20): HeadMetric
     mediumThreshold: summarizeThresholdMetrics(rows, PRODUCTION_RISK_THRESHOLDS.medium),
     highThreshold: summarizeThresholdMetrics(rows, PRODUCTION_RISK_THRESHOLDS.high),
     budgetMetrics: summarizeBudgetMetrics(rows, budgetRate),
+    localCalibration: summarizeLocalCalibration(rows),
   }
 }
 
@@ -596,11 +821,42 @@ function compareHybridBlendChoice(left: HybridBlendChoice, right: HybridBlendCho
   return Math.abs(left.alpha - 1) - Math.abs(right.alpha - 1)
 }
 
+export function evaluateHybridBlendCandidate(
+  currentRows: ProbabilityRow[],
+  challengerRows: ProbabilityRow[],
+  alpha: number,
+): HybridBlendCandidateEvaluation {
+  const currentMetrics = summarizeMetrics(currentRows)
+  if (alpha === HYBRID_ROUTER_CONFIG.defaultAlpha) {
+    return {
+      alpha,
+      metrics: currentMetrics,
+      valid: true,
+      violations: [],
+    }
+  }
+
+  const metrics = summarizeMetrics(blendProbabilityRows(currentRows, challengerRows, alpha))
+  const violations: HybridGuardrailViolation[] = []
+
+  if (metrics.support < HYBRID_ROUTER_CONFIG.minSupport) violations.push('support-below-min')
+  if (currentMetrics.rocAuc - metrics.rocAuc > HYBRID_ROUTER_CONFIG.maxRocAucDrop) violations.push('roc-auc-drop-too-large')
+  if (metrics.expectedCalibrationError - currentMetrics.expectedCalibrationError > HYBRID_ROUTER_CONFIG.maxExpectedCalibrationErrorIncrease) violations.push('ece-increase-too-large')
+  if (metrics.budgetMetrics.precisionAtBudget < currentMetrics.budgetMetrics.precisionAtBudget - HYBRID_ROUTER_CONFIG.maxPrecisionAtBudgetDrop) violations.push('precision-at-budget-drop-too-large')
+
+  return {
+    alpha,
+    metrics,
+    valid: violations.length === 0,
+    violations,
+  }
+}
+
 export function chooseHybridBlendAlpha(
   currentRows: ProbabilityRow[],
   challengerRows: ProbabilityRow[],
   headKey: RiskHeadKey,
-  alphaGrid = [1, 0],
+  alphaGrid = [...HYBRID_ROUTER_CONFIG.alphaGrid],
 ): HybridBlendChoice {
   if (currentRows.length === 0 || challengerRows.length === 0) {
     return {
@@ -609,27 +865,15 @@ export function chooseHybridBlendAlpha(
     }
   }
   
-  if (headKey === 'downstreamCarryoverRisk' || headKey === 'overallCourseRisk') {
+  if (HYBRID_ROUTER_CONFIG.denylistedHeads.includes(headKey)) {
     return {
       alpha: 1,
       metrics: summarizeMetrics(currentRows),
     }
   }
 
-  const choices = alphaGrid.map(alpha => ({
-    alpha,
-    metrics: summarizeMetrics(blendProbabilityRows(currentRows, challengerRows, alpha)),
-  }))
-  
-  const currentChoice = choices.find(c => c.alpha === 1)!
-  
-  const validChoices = choices.filter(choice => {
-    if (choice.alpha === 1) return true
-    if (choice.metrics.support < 50) return false
-    if (currentChoice.metrics.rocAuc - choice.metrics.rocAuc > 0.01) return false
-    if (choice.metrics.expectedCalibrationError - currentChoice.metrics.expectedCalibrationError > 0.02) return false
-    return true
-  })
+  const choices = alphaGrid.map(alpha => evaluateHybridBlendCandidate(currentRows, challengerRows, alpha))
+  const validChoices = choices.filter(choice => choice.valid)
 
   return validChoices.sort(compareHybridBlendChoice)[0]!
 }
@@ -645,13 +889,16 @@ export function buildHybridBlendPlan(
     challenger: ProbabilityRow[]
   }>,
 ): HybridBlendPlan {
+  const allowedStages = HYBRID_ROUTER_CONFIG.allowedStagesByHead[headKey] ?? []
+
   const fallback = chooseHybridBlendAlpha(validationRows.current, validationRows.challenger, headKey)
   return {
-    fallbackAlpha: fallback.alpha,
+    fallbackAlpha: allowedStages.length > 0 ? fallback.alpha : 1,
     fallbackMetrics: fallback.metrics,
     byStage: Object.fromEntries(
       Object.entries(validationRowsByStage).map(([stageKey, rows]) => {
-        const choice = chooseHybridBlendAlpha(rows.current, rows.challenger, headKey)
+        const isAllowed = allowedStages.includes(stageKey)
+        const choice = isAllowed ? chooseHybridBlendAlpha(rows.current, rows.challenger, headKey) : { alpha: 1, metrics: summarizeMetrics(rows.current) }
         return [stageKey, {
           alpha: choice.alpha,
           metrics: choice.metrics,
@@ -669,6 +916,53 @@ function summarizeVariantDelta(reference: HeadMetrics, candidate: HeadMetrics): 
     averagePrecisionLift: roundToFour(reference.averagePrecision - candidate.averagePrecision),
     calibrationGain: roundToFour(candidate.expectedCalibrationError - reference.expectedCalibrationError),
   }
+}
+
+// Phase 8 diagnostics: local reliability at arbitrary thresholds (±0.05 window)
+function summarizeLocalReliability(rows: ProbabilityRow[], thresholds: number[]): Array<{
+  threshold: number
+  support: number
+  meanPredicted: number
+  meanActual: number
+  calibrationError: number
+}> {
+  return thresholds.map(threshold => {
+    const windowRows = rows.filter(row => Math.abs(row.prob - threshold) <= 0.05)
+    if (!windowRows.length) return { threshold, support: 0, meanPredicted: 0, meanActual: 0, calibrationError: 0 }
+    const meanPredicted = roundToFour(average(windowRows.map(row => row.prob)))
+    const meanActual = roundToFour(average(windowRows.map(row => row.label)))
+    return {
+      threshold,
+      support: windowRows.length,
+      meanPredicted,
+      meanActual,
+      calibrationError: roundToFour(Math.abs(meanPredicted - meanActual)),
+    }
+  })
+}
+
+// Phase 8 diagnostics: score histogram across decile bins with label rate
+function scoreHistogram(rows: ProbabilityRow[], bins = 10): Array<{
+  binLow: number
+  binHigh: number
+  count: number
+  positiveRate: number
+  meanPredicted: number
+}> {
+  if (!rows.length) return []
+  const binWidth = 1 / bins
+  return Array.from({ length: bins }, (_, index) => {
+    const binLow = roundToFour(index * binWidth)
+    const binHigh = roundToFour((index + 1) * binWidth)
+    const binRows = rows.filter(row => row.prob >= binLow && (index === bins - 1 ? row.prob <= binHigh : row.prob < binHigh))
+    return {
+      binLow,
+      binHigh,
+      count: binRows.length,
+      positiveRate: binRows.length > 0 ? roundToFour(average(binRows.map(row => row.label))) : 0,
+      meanPredicted: binRows.length > 0 ? roundToFour(average(binRows.map(row => row.prob))) : 0,
+    }
+  })
 }
 
 function summarizeVariantComparison(input: Record<VariantName, ProbabilityRow[]>): VariantComparisonSummary {
@@ -718,7 +1012,7 @@ function createVariantProbabilityBuckets(): Record<VariantName, ProbabilityRow[]
   }
 }
 
-async function reviewPendingCrosswalks(current: Awaited<ReturnType<typeof createTestApp>>, curriculumImportVersionId: string) {
+async function reviewPendingCrosswalks(current: EvaluationContext, curriculumImportVersionId: string) {
   const crosswalkRows = await current.db.select().from(officialCodeCrosswalks).where(eq(officialCodeCrosswalks.curriculumImportVersionId, curriculumImportVersionId))
   const pending = crosswalkRows.filter(row => row.reviewStatus === 'pending-review')
   if (pending.length === 0) return
@@ -746,6 +1040,128 @@ function markdownTable(headers: string[], rows: Array<Array<string | number>>) {
 
 function logProgress(message: string) {
   console.error(`[proof-eval] ${message}`)
+}
+
+function evaluationMigrationsDir() {
+  return path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/db/migrations')
+}
+
+function parseExternalDatabaseUrl() {
+  const explicit = process.env.AIRMENTOR_EVAL_DATABASE_URL?.trim()
+  return explicit && explicit.length > 0 ? explicit : null
+}
+
+async function createExternalEvaluationContext(connectionString: string): Promise<EvaluationContext> {
+  const pool = createPool(connectionString, {
+    connectionTimeoutMillis: 15_000,
+    query_timeout: 60_000,
+  })
+  const db = createDb(pool) as AppDb
+  try {
+    await pool.query('SELECT 1')
+    await runSqlMigrations(pool, evaluationMigrationsDir())
+    await seedIntoDatabase(db, pool, TEST_NOW)
+  } catch (error) {
+    await pool.end().catch(() => undefined)
+    throw error
+  }
+  return {
+    db,
+    pool,
+    async close() {
+      await pool.end()
+    },
+  }
+}
+
+async function createEvaluationContext(): Promise<EvaluationContext> {
+  const externalDatabaseUrl = parseExternalDatabaseUrl()
+  if (externalDatabaseUrl) {
+    logProgress('bootstrapping evaluation database from AIRMENTOR_EVAL_DATABASE_URL')
+    return createExternalEvaluationContext(externalDatabaseUrl)
+  }
+  const evalDbDir = process.env.AIRMENTOR_EVAL_DB_DIR?.trim() || null
+  if (evalDbDir) {
+    logProgress(`using persistent evaluation database at ${evalDbDir} (restart-safe; pair with AIRMENTOR_EVAL_SKIP_RECOMPUTE=1)`)
+    return createPersistentTestApp(evalDbDir)
+  }
+  return createTestApp()
+}
+
+function currentGitSha(rootDir: string) {
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: rootDir,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+  } catch {
+    return null
+  }
+}
+
+function sha256Hex(input: string) {
+  return createHash('sha256').update(input).digest('hex')
+}
+
+function sha256Json(value: unknown) {
+  return sha256Hex(JSON.stringify(value))
+}
+
+function currentVariantLabel(modelVersion: string | null | undefined) {
+  if (!modelVersion) return 'current'
+  const match = modelVersion.match(/observable-risk-logit-(.+)$/)
+  return match ? `current-${match[1]}` : `current-${modelVersion}`
+}
+
+function metricSidecarFileName(name: string) {
+  return `${name}.json`
+}
+
+function buildMetaFile(input: {
+  generatedAt: string
+  gitSha: string | null
+  reportPaths: {
+    outputDir: string
+    jsonPath: string
+    markdownPath: string
+  }
+  seedProfile: string
+  requestedSeeds: number[]
+  governedSeeds: number[]
+  selectedRuns: Array<{
+    simulationRunId: string
+    seed: number
+    split: SplitName
+    scenarioFamily: string
+  }>
+  reproducibilityManifest: {
+    splitHash: string
+    featureKeyHash: string
+    corpusHash: string
+    replayHash: string
+  }
+  env: Record<string, string>
+  metricSidecars: Record<string, string>
+}) {
+  return [
+    `GENERATED_AT=${input.generatedAt}`,
+    `GIT_SHA=${input.gitSha ?? 'unavailable'}`,
+    `OUTPUT_DIR=${input.reportPaths.outputDir}`,
+    `JSON_PATH=${input.reportPaths.jsonPath}`,
+    `MARKDOWN_PATH=${input.reportPaths.markdownPath}`,
+    `SEED_PROFILE=${input.seedProfile}`,
+    `REQUESTED_SEEDS=${input.requestedSeeds.join(',')}`,
+    `GOVERNED_SEEDS=${input.governedSeeds.join(',')}`,
+    `SELECTED_RUNS=${input.selectedRuns.map(run => `${run.seed}:${run.split}:${run.scenarioFamily}:${run.simulationRunId}`).join(',')}`,
+    `SPLIT_HASH=${input.reproducibilityManifest.splitHash}`,
+    `FEATURE_KEY_HASH=${input.reproducibilityManifest.featureKeyHash}`,
+    `CORPUS_HASH=${input.reproducibilityManifest.corpusHash}`,
+    `REPLAY_HASH=${input.reproducibilityManifest.replayHash}`,
+    ...Object.entries(input.env).map(([key, value]) => `${key}=${value}`),
+    ...Object.entries(input.metricSidecars).map(([key, value]) => `SIDECAR_${key.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}=${value}`),
+    '',
+  ].join('\n')
 }
 
 function governedRunStatusRank(status: typeof simulationRuns.$inferSelect.status) {
@@ -896,11 +1312,14 @@ async function mapWithConcurrency<Input, Output>(
 }
 
 async function main() {
-  const current = await createTestApp()
+  const current = await createEvaluationContext()
   try {
     const startedAt = Date.now()
     const progressEvery = parseProgressEvery()
     const createConcurrency = parseCreateConcurrency()
+    const featureExportPath = parseFeatureExportPath()
+    const skipRecompute = parseSkipRecompute()
+    const printJsonReport = parsePrintJsonReport()
     logProgress('initialized evaluation app and database')
     const resolvedPolicy = await resolveBatchPolicy({
       db: current.db,
@@ -1048,17 +1467,23 @@ async function main() {
       actorFacultyId: null,
       now: TEST_NOW,
     })
-    logProgress(`recomputing governed risk artifacts for run ${activeRunId}`)
-    await recomputeObservedOnlyRisk(current.db, {
-      simulationRunId: activeRunId,
-      policy: resolvedPolicy.effectivePolicy,
-      actorFacultyId: null,
-      now: TEST_NOW,
-    })
-    logProgress(`recompute finished after ${roundToTwo((Date.now() - startedAt) / 1000)}s`)
+    if (skipRecompute) {
+      logProgress(`skip recompute enabled (AIRMENTOR_EVAL_SKIP_RECOMPUTE=1); reusing existing governed artifacts for run ${activeRunId}`)
+    } else {
+      logProgress(`recomputing governed risk artifacts for run ${activeRunId}`)
+      await recomputeObservedOnlyRisk(current.db, {
+        simulationRunId: activeRunId,
+        policy: resolvedPolicy.effectivePolicy,
+        actorFacultyId: null,
+        now: TEST_NOW,
+        skipArtifactTraining: true,
+      })
+      logProgress(`recompute finished after ${roundToTwo((Date.now() - startedAt) / 1000)}s`)
+    }
+    const phaseRecomputeMs = Date.now() - startedAt
 
     const selectedGovernedRunIdList = [...selectedGovernedRunIds].sort()
-    const [
+    let [
       artifactRows,
       modelActiveResponse,
       modelEvaluationResponse,
@@ -1069,16 +1494,54 @@ async function main() {
       getProofRiskModelEvaluation(current.db, { batchId: MSRUAS_PROOF_BATCH_ID, simulationRunId: null }),
       getProofRiskModelCorrelations(current.db, { batchId: MSRUAS_PROOF_BATCH_ID }),
     ])
-    logProgress('loaded artifacts, checkpoints, and model diagnostics')
+    const phaseArtifactLoadMs = Date.now() - startedAt - phaseRecomputeMs
+    logProgress(`loaded artifacts, checkpoints, and model diagnostics (artifact-load phase: ${roundToTwo(phaseArtifactLoadMs / 1000)}s)`)
 
-    const activeProductionArtifactRow = artifactRows.find(row => row.activeFlag === 1 && row.status === 'active' && row.artifactType === 'production') ?? null
-    const activeCorrelationArtifactRow = artifactRows.find(row => row.activeFlag === 1 && row.status === 'active' && row.artifactType === 'correlation') ?? null
+    let activeProductionArtifactRow: typeof riskModelArtifacts.$inferSelect | null = artifactRows.find((row: typeof riskModelArtifacts.$inferSelect) => row.activeFlag === 1 && row.status === 'active' && row.artifactType === 'production') ?? null
+    let activeCorrelationArtifactRow: typeof riskModelArtifacts.$inferSelect | null = artifactRows.find((row: typeof riskModelArtifacts.$inferSelect) => row.activeFlag === 1 && row.status === 'active' && row.artifactType === 'correlation') ?? null
+    if (!activeProductionArtifactRow || !activeCorrelationArtifactRow) {
+      const missingArtifactsReason = skipRecompute
+        ? 'skip recompute requested, but active artifacts missing; rebuilding governed artifacts once for consistency'
+        : 'fast recompute skipped artifact training, but active artifacts are missing; rebuilding governed artifacts without replay rebuild'
+      logProgress(missingArtifactsReason)
+      const rebuildStartedAt = Date.now()
+      await rebuildProofRiskArtifacts(current.db, {
+        batchId: MSRUAS_PROOF_BATCH_ID,
+        simulationRunId: activeRunId,
+        actorFacultyId: null,
+        now: TEST_NOW,
+      })
+      logProgress(`rebuildProofRiskArtifacts finished in ${roundToTwo((Date.now() - rebuildStartedAt) / 1000)}s`)
+      ;[
+        artifactRows,
+        modelActiveResponse,
+        modelEvaluationResponse,
+        modelCorrelationResponse,
+      ] = await Promise.all([
+        current.db.select().from(riskModelArtifacts).where(eq(riskModelArtifacts.batchId, MSRUAS_PROOF_BATCH_ID)),
+        getProofRiskModelActive(current.db, { batchId: MSRUAS_PROOF_BATCH_ID }),
+        getProofRiskModelEvaluation(current.db, { batchId: MSRUAS_PROOF_BATCH_ID, simulationRunId: null }),
+        getProofRiskModelCorrelations(current.db, { batchId: MSRUAS_PROOF_BATCH_ID }),
+      ])
+      activeProductionArtifactRow = artifactRows.find((row: typeof riskModelArtifacts.$inferSelect) => row.activeFlag === 1 && row.status === 'active' && row.artifactType === 'production') ?? null
+      activeCorrelationArtifactRow = artifactRows.find((row: typeof riskModelArtifacts.$inferSelect) => row.activeFlag === 1 && row.status === 'active' && row.artifactType === 'correlation') ?? null
+    }
     if (!activeProductionArtifactRow || !activeCorrelationArtifactRow) {
       throw new Error('Active production or correlation artifact is missing after evaluation run generation')
     }
     const selectedRunRows = selectedGovernedRuns
     const splitByRunId = new Map(selectedRunRows.map(row => [row.simulationRunId, manifestBySeed.get(row.seed)?.split ?? 'train']))
     const scenarioFamilyByRunId = new Map(selectedRunRows.map(row => [row.simulationRunId, manifestBySeed.get(row.seed)?.scenarioFamily ?? 'balanced']))
+    const evaluationRunIdList = selectedRunRows
+      .filter(row => {
+        const split = splitByRunId.get(row.simulationRunId)
+        return split === 'validation' || split === 'test'
+      })
+      .map(row => row.simulationRunId)
+      .sort()
+    if (evaluationRunIdList.length === 0) {
+      throw new Error('Selected governed corpus does not contain validation/test runs for scoring pass-2')
+    }
     const runMetadataById = new Map<string, ProofRunModelMetadata>(selectedRunRows.map(row => [row.simulationRunId, {
       simulationRunId: row.simulationRunId,
       seed: row.seed,
@@ -1152,7 +1615,23 @@ async function main() {
     let totalStageEvidenceRows = 0
     let totalTestRows = 0
     let lastEvidenceSnapshotId: string | null = null
+    const featureCsvStream = featureExportPath
+      ? (() => {
+          const stream = createWriteStream(featureExportPath, { encoding: 'utf8' })
+          const featCols = OBSERVABLE_FEATURE_KEYS.map((_, i) => `feat_${i}`).join(',')
+          stream.write(`run_id,split,stage_key,scenario_family,label_attendance,label_ce,label_see,label_overall,label_downstream,${featCols}\n`)
+          return stream
+        })()
+      : null
+    const phasePass1StartAt = Date.now()
     for (;;) {
+      // Pass-1 (training-data ingestion) MUST include train runs alongside val+test,
+      // otherwise ProofRiskDatasetBuilder trains on zero rows and pass-2 scoring
+      // collapses to the constant prior (root cause of 2026-04-24 full-64 collapse:
+      // commit a75bc33d5 narrowed this filter to evaluationRunIdList=val+test only).
+      // Pass-2 scoring loop (below) is still split-filtered to validation/test only
+      // for metric computation, so widening here does not leak train rows into
+      // variant-comparison buckets.
       const conditions = [
         eq(riskEvidenceSnapshots.batchId, MSRUAS_PROOF_BATCH_ID),
         isNotNull(riskEvidenceSnapshots.simulationStageCheckpointId),
@@ -1193,6 +1672,18 @@ async function main() {
         headLabels.forEach(([headKey, labelKey]) => {
           positiveCountsByHeadBySplit[headKey][split] += labelPayload[labelKey]
         })
+        if (featureCsvStream) {
+          const featurePayload = JSON.parse(row.featureJson) as ObservableFeaturePayload
+          const feats = featureVectorArrayFromPayload(featurePayload, sourceRefs, true)
+          const scenarioFamily = scenarioFamilyByRunId.get(row.simulationRunId) ?? 'balanced'
+          featureCsvStream.write(
+            `${row.simulationRunId},${split},${stageKey},${scenarioFamily},`
+            + `${labelPayload.attendanceRiskLabel},${labelPayload.ceShortfallLabel},`
+            + `${labelPayload.seeShortfallLabel},${labelPayload.overallCourseFailLabel},`
+            + `${labelPayload.downstreamCarryoverLabel},`
+            + `${feats.join(',')}\n`,
+          )
+        }
       }
       coEvidenceDiagnosticsPages.push(buildCoEvidenceDiagnosticsFromRows(page.map(row => {
         const sourceRefs = JSON.parse(row.sourceRefsJson) as ObservableSourceRefs
@@ -1204,12 +1695,39 @@ async function main() {
       })))
       lastEvidenceSnapshotId = page[page.length - 1]?.riskEvidenceSnapshotId ?? null
     }
+    const phasePass1Ms = Date.now() - phasePass1StartAt
+    if (featureCsvStream) {
+      await new Promise<void>((resolve, reject) => {
+        featureCsvStream.end()
+        featureCsvStream.once('finish', resolve)
+        featureCsvStream.once('error', reject)
+      })
+      logProgress(`feature CSV export written to ${featureExportPath}`)
+    }
+    logProgress(`corpus ingestion pass-1 (training data) finished: ${totalStageEvidenceRows} rows in ${roundToTwo(phasePass1Ms / 1000)}s`)
 
+    const phaseTrainStartAt = Date.now()
     const currentLocalBundle = currentVariantBuilder.build(TEST_NOW)
     const baselineLocalBundle = baselineVariantBuilder.build(TEST_NOW)
     if (!currentLocalBundle || !baselineLocalBundle) {
       throw new Error('Local variant training failed after evaluator corpus extraction')
     }
+    // Regression guard (see commit a75bc33d5 / full-64 2026-04-24 collapse): if the
+    // variant builders did not see train rows, every logistic head converges to
+    // weights=0 + intercept=logit(baseRate≈0.01) and pass-2 scoring collapses to
+    // the constant prior (AUC ≈ 0.50). Fail fast instead of silently emitting a
+    // degenerate artifact the promotion pipeline will misread as "production".
+    const currentTrainSupport = currentLocalBundle.production.headSupportSummary.overallCourseRisk.trainSupport
+    const baselineTrainSupport = baselineLocalBundle.production.headSupportSummary.overallCourseRisk.trainSupport
+    if (currentTrainSupport === 0 || baselineTrainSupport === 0) {
+      throw new Error(
+        `Pass-1 corpus ingestion produced zero train rows for variant builder `
+        + `(current trainSupport=${currentTrainSupport}, baseline trainSupport=${baselineTrainSupport}); `
+        + `check evaluator pass-1 query filter and runMetadataById split assignments.`,
+      )
+    }
+    const phaseTrainMs = Date.now() - phaseTrainStartAt
+    logProgress(`model training finished in ${roundToTwo(phaseTrainMs / 1000)}s (train rows: current=${currentTrainSupport}, baseline=${baselineTrainSupport})`)
     const validationVariantHeadRows = Object.fromEntries(headLabels.map(([headKey]) => [headKey, createVariantProbabilityBuckets()])) as Record<RiskHeadKey, Record<VariantName, ProbabilityRow[]>>
     const validationVariantHeadRowsByStage = Object.fromEntries(headLabels.map(([headKey]) => [headKey, (
       {} as Record<string, Record<VariantName, ProbabilityRow[]>>
@@ -1222,8 +1740,25 @@ async function main() {
     const validationOverallCourseVariantRowsByStage: Record<string, Record<VariantName, ProbabilityRow[]>> = {}
     const overallCourseVariantRows = createVariantProbabilityBuckets()
     const overallCourseVariantRowsByStage: Record<string, Record<VariantName, ProbabilityRow[]>> = {}
+    // Intent §N.4: overload by stage AND semester AND scenario-family. byStage
+    // existed; adding bySemester + byScenarioFamily here. Scoped to
+    // overallCourseRisk only because that head is the sole operational decision
+    // head (intent §C.12, §F.3). Other heads are diagnostic.
+    const validationOverallCourseVariantRowsBySemester: Record<string, Record<VariantName, ProbabilityRow[]>> = {}
+    const overallCourseVariantRowsBySemester: Record<string, Record<VariantName, ProbabilityRow[]>> = {}
+    const validationOverallCourseVariantRowsByScenarioFamily: Record<string, Record<VariantName, ProbabilityRow[]>> = {}
+    const overallCourseVariantRowsByScenarioFamily: Record<string, Record<VariantName, ProbabilityRow[]>> = {}
+    // Stability metric tracking. Flat tuples to keep pass-2 cheap; group+compute
+    // after the full scan. Scoped to current variant + test split only.
+    const stabilityTrackingRows: Array<{
+      simulationRunId: string
+      stageKey: string
+      studentId: string
+      prob: number
+    }> = []
     totalTestRows = 0
     lastEvidenceSnapshotId = null
+    const phasePass2StartAt = Date.now()
     for (;;) {
       const conditions = [
         eq(riskEvidenceSnapshots.batchId, MSRUAS_PROOF_BATCH_ID),
@@ -1347,6 +1882,33 @@ async function main() {
           prob: heuristic.riskProb,
         })
         targetOverallCourseRowsByStage[stageKey] = overallStageBucket
+        // bySemester bucket (overallCourseRisk only, intent §N.4)
+        const semesterKey = `sem-${row.semesterNumber ?? 0}`
+        const targetOverallCourseRowsBySemester = split === 'validation' ? validationOverallCourseVariantRowsBySemester : overallCourseVariantRowsBySemester
+        const overallSemesterBucket = targetOverallCourseRowsBySemester[semesterKey] ?? createVariantProbabilityBuckets()
+        overallSemesterBucket.current.push({ label: labelPayload.overallCourseFailLabel, prob: currentModel.headProbabilities.overallCourseRisk })
+        overallSemesterBucket.baseline.push({ label: labelPayload.overallCourseFailLabel, prob: baselineModel.headProbabilities.overallCourseRisk })
+        overallSemesterBucket.challenger.push({ label: labelPayload.overallCourseFailLabel, prob: challengerModel.overallCourseRisk })
+        overallSemesterBucket.heuristic.push({ label: labelPayload.overallCourseFailLabel, prob: heuristic.riskProb })
+        targetOverallCourseRowsBySemester[semesterKey] = overallSemesterBucket
+        // byScenarioFamily bucket (overallCourseRisk only, intent §N.4)
+        const scenarioFamily = scenarioFamilyByRunId.get(row.simulationRunId) ?? 'balanced'
+        const targetOverallCourseRowsByScenarioFamily = split === 'validation' ? validationOverallCourseVariantRowsByScenarioFamily : overallCourseVariantRowsByScenarioFamily
+        const overallFamilyBucket = targetOverallCourseRowsByScenarioFamily[scenarioFamily] ?? createVariantProbabilityBuckets()
+        overallFamilyBucket.current.push({ label: labelPayload.overallCourseFailLabel, prob: currentModel.headProbabilities.overallCourseRisk })
+        overallFamilyBucket.baseline.push({ label: labelPayload.overallCourseFailLabel, prob: baselineModel.headProbabilities.overallCourseRisk })
+        overallFamilyBucket.challenger.push({ label: labelPayload.overallCourseFailLabel, prob: challengerModel.overallCourseRisk })
+        overallFamilyBucket.heuristic.push({ label: labelPayload.overallCourseFailLabel, prob: heuristic.riskProb })
+        targetOverallCourseRowsByScenarioFamily[scenarioFamily] = overallFamilyBucket
+        // Stability tracking (current variant, test split only)
+        if (split === 'test') {
+          stabilityTrackingRows.push({
+            simulationRunId: row.simulationRunId,
+            stageKey,
+            studentId: sourceRefs.studentId,
+            prob: currentModel.headProbabilities.overallCourseRisk,
+          })
+        }
         headLabels.forEach(([headKey, labelKey]) => {
           targetHeadRows[headKey].current.push({
             label: labelPayload[labelKey],
@@ -1386,6 +1948,8 @@ async function main() {
       }
       lastEvidenceSnapshotId = page[page.length - 1]?.riskEvidenceSnapshotId ?? null
     }
+    const phasePass2Ms = Date.now() - phasePass2StartAt
+    logProgress(`corpus scoring pass-2 finished: ${totalTestRows} test rows scored in ${roundToTwo(phasePass2Ms / 1000)}s`)
 
     const hybridPlanByHead = Object.fromEntries(headLabels.map(([headKey]) => {
       const validationRowsByStage = Object.fromEntries(
@@ -1683,6 +2247,104 @@ async function main() {
         summarizeVariantComparison(summaries),
       ]),
     ) as Record<string, VariantComparisonSummary>
+    // Intent §N.4: per-dimension overload breakdowns for overallCourseRisk.
+    // Promotion gate requires per-cell overload ≤ 1.00, not just global.
+    const overallCourseVariantSummaryBySemester = Object.fromEntries(
+      Object.entries(overallCourseVariantRowsBySemester).map(([semesterKey, summaries]) => [
+        semesterKey,
+        summarizeVariantComparison(summaries),
+      ]),
+    ) as Record<string, VariantComparisonSummary>
+    const overallCourseVariantSummaryByScenarioFamily = Object.fromEntries(
+      Object.entries(overallCourseVariantRowsByScenarioFamily).map(([scenarioFamily, summaries]) => [
+        scenarioFamily,
+        summarizeVariantComparison(summaries),
+      ]),
+    ) as Record<string, VariantComparisonSummary>
+    // Intent context (RCA appendix A): compute top-k Jaccard stability across
+    // adjacent stage pairs per run, for the current variant. budgetRate=0.20.
+    const ADJACENT_STAGE_PAIRS: Array<[string, string]> = [
+      ['pre-tt1', 'post-tt1'],
+      ['post-tt1', 'post-tt2'],
+      ['post-tt2', 'post-assignments'],
+      ['post-assignments', 'post-see'],
+    ]
+    const overallCourseStabilityByAdjacentStagePair: StageStabilityPair[] = (() => {
+      const byRunStage = new Map<string, Map<string, Array<{ studentId: string; prob: number }>>>()
+      for (const row of stabilityTrackingRows) {
+        const runMap = byRunStage.get(row.simulationRunId) ?? new Map<string, Array<{ studentId: string; prob: number }>>()
+        const stageRows = runMap.get(row.stageKey) ?? []
+        stageRows.push({ studentId: row.studentId, prob: row.prob })
+        runMap.set(row.stageKey, stageRows)
+        byRunStage.set(row.simulationRunId, runMap)
+      }
+      const stabilityBudget = 0.20
+      const topKStudentSet = (stageRows: Array<{ studentId: string; prob: number }>): Set<string> => {
+        if (stageRows.length === 0) return new Set()
+        const budgetCount = Math.max(1, Math.floor(stageRows.length * stabilityBudget))
+        const ordered = [...stageRows].sort((left, right) => right.prob - left.prob)
+        return new Set(ordered.slice(0, budgetCount).map(row => row.studentId))
+      }
+      const probByRunStageStudent = (runId: string, stageKey: string) => {
+        const stageRows = byRunStage.get(runId)?.get(stageKey) ?? []
+        return new Map(stageRows.map(row => [row.studentId, row.prob]))
+      }
+      const result: StageStabilityPair[] = []
+      for (const [stageA, stageB] of ADJACENT_STAGE_PAIRS) {
+        const perRunJaccard: number[] = []
+        const perRunChurn: number[] = []
+        const perRunProbShift: number[] = []
+        for (const [runId, stageMap] of byRunStage.entries()) {
+          const rowsA = stageMap.get(stageA)
+          const rowsB = stageMap.get(stageB)
+          if (!rowsA || !rowsB || rowsA.length === 0 || rowsB.length === 0) continue
+          const setA = topKStudentSet(rowsA)
+          const setB = topKStudentSet(rowsB)
+          const union = new Set([...setA, ...setB])
+          const intersection = new Set([...setA].filter(id => setB.has(id)))
+          const jaccard = union.size === 0 ? 1 : intersection.size / union.size
+          const symDiff = union.size - intersection.size
+          const churn = union.size === 0 ? 0 : symDiff / union.size
+          const probA = probByRunStageStudent(runId, stageA)
+          const probB = probByRunStageStudent(runId, stageB)
+          const sharedStudents = [...probA.keys()].filter(id => probB.has(id))
+          const meanShift = sharedStudents.length === 0
+            ? 0
+            : sharedStudents.reduce((sum, id) => sum + Math.abs((probA.get(id) ?? 0) - (probB.get(id) ?? 0)), 0) / sharedStudents.length
+          perRunJaccard.push(jaccard)
+          perRunChurn.push(churn)
+          perRunProbShift.push(meanShift)
+        }
+        if (perRunJaccard.length === 0) {
+          result.push({
+            stageA,
+            stageB,
+            runCount: 0,
+            meanJaccard: 0,
+            medianJaccard: 0,
+            minJaccard: 0,
+            meanChurnRate: 0,
+            p95ChurnRate: 0,
+            meanProbShift: 0,
+          })
+          continue
+        }
+        const sortedJaccard = [...perRunJaccard].sort((a, b) => a - b)
+        const sortedChurn = [...perRunChurn].sort((a, b) => a - b)
+        result.push({
+          stageA,
+          stageB,
+          runCount: perRunJaccard.length,
+          meanJaccard: roundToFour(average(perRunJaccard)),
+          medianJaccard: roundToFour(sortedJaccard[Math.floor(sortedJaccard.length / 2)] ?? 0),
+          minJaccard: roundToFour(sortedJaccard[0] ?? 0),
+          meanChurnRate: roundToFour(average(perRunChurn)),
+          p95ChurnRate: roundToFour(sortedChurn[Math.floor(sortedChurn.length * 0.95)] ?? 0),
+          meanProbShift: roundToFour(average(perRunProbShift)),
+        })
+      }
+      return result
+    })()
     const runtimeModelMetrics = overallCourseVariantSummary.current
     const runtimeHeuristicMetrics = overallCourseVariantSummary.heuristic
     const overallCourseRuntimeSummary: RuntimeSummary = {
@@ -1787,8 +2449,98 @@ async function main() {
       queueBurden: queueBurdenSummary.acceptanceGates,
     }
 
+    const paths = evaluationPaths(process.cwd())
+    const gitSha = currentGitSha(process.cwd())
+    const generatedAt = new Date().toISOString()
+    const currentVariantName = currentVariantLabel(currentLocalBundle.production.modelVersion)
+    const datasetDumpPath = path.join(paths.outputDir, 'dataset_dump.json')
+    const metricSidecarDir = path.join(paths.outputDir, 'metric-sidecars')
+    const metaPath = path.join(paths.outputDir, 'meta.txt')
+    const selectedRuns = selectedRunRows
+      .map(row => ({
+        simulationRunId: row.simulationRunId,
+        seed: row.seed,
+        split: splitByRunId.get(row.simulationRunId) ?? 'train',
+        scenarioFamily: scenarioFamilyByRunId.get(row.simulationRunId) ?? 'balanced',
+      }))
+      .sort((left, right) => left.seed - right.seed || left.simulationRunId.localeCompare(right.simulationRunId))
+    const reproducibilityManifest = {
+      manifestVersion: PROOF_CORPUS_MANIFEST_VERSION,
+      generatedAt,
+      gitSha,
+      featureSchemaVersion: currentLocalBundle.production.featureSchemaVersion,
+      featureKeys: [...OBSERVABLE_FEATURE_KEYS],
+      featureKeyHash: sha256Json(OBSERVABLE_FEATURE_KEYS),
+      seedProfile: seedSelection.profile,
+      requestedSeeds,
+      governedSeeds,
+      selectedRuns,
+      splitSummary,
+      worldSplitSummary,
+      splitHash: sha256Json(selectedRuns.map(run => ({
+        simulationRunId: run.simulationRunId,
+        seed: run.seed,
+        split: run.split,
+        scenarioFamily: run.scenarioFamily,
+      }))),
+      corpusHash: sha256Json({
+        totalStageEvidenceRows,
+        totalTestRows,
+        splitSummary,
+        worldSplitSummary,
+        rowsBySemester,
+        rowsByStage,
+        rowsByScenarioFamily,
+        positiveCountsByHeadBySplit,
+      }),
+      replayHash: sha256Json({
+        currentModelVersion: currentLocalBundle.production.modelVersion,
+        challengerModelVersion: currentLocalBundle.challenger.modelVersion,
+        currentVariantName,
+        selectedRuns,
+        splitSummary,
+        worldSplitSummary,
+        rowsBySemester,
+        rowsByStage,
+        rowsByScenarioFamily,
+        overallCourseCurrent: overallCourseVariantSummary.current,
+        overallCourseByStage: Object.fromEntries(
+          Object.entries(overallCourseVariantSummaryByStage).map(([stageKey, summary]) => [stageKey, summary.current]),
+        ),
+        overallCourseBySemester: Object.fromEntries(
+          Object.entries(overallCourseVariantSummaryBySemester).map(([semesterKey, summary]) => [semesterKey, summary.current]),
+        ),
+        overallCourseByScenarioFamily: Object.fromEntries(
+          Object.entries(overallCourseVariantSummaryByScenarioFamily).map(([scenarioFamily, summary]) => [scenarioFamily, summary.current]),
+        ),
+        stability: overallCourseStabilityByAdjacentStagePair,
+        queueBurdenByStage,
+      }),
+      env: {
+        AIRMENTOR_EVAL_SEED_PROFILE: process.env.AIRMENTOR_EVAL_SEED_PROFILE ?? '',
+        AIRMENTOR_EVAL_SEEDS: process.env.AIRMENTOR_EVAL_SEEDS ?? '',
+        AIRMENTOR_EVAL_CREATE_CONCURRENCY: String(createConcurrency),
+        AIRMENTOR_EVAL_SKIP_RECOMPUTE: String(skipRecompute),
+        AIRMENTOR_EVAL_EXPORT_FEATURES_CSV: featureExportPath ?? '',
+      },
+    }
+    const metricSidecars = {
+      overallCourseCurrent: path.join(metricSidecarDir, metricSidecarFileName('overall-course-current')),
+      overallCourseVariants: path.join(metricSidecarDir, metricSidecarFileName('overall-course-variants')),
+      modelHeadMetrics: path.join(metricSidecarDir, metricSidecarFileName('model-head-metrics')),
+      budgetMetrics: path.join(metricSidecarDir, metricSidecarFileName('budget-metrics')),
+      localCalibration: path.join(metricSidecarDir, metricSidecarFileName('local-calibration')),
+      overloadByStage: path.join(metricSidecarDir, metricSidecarFileName('overload-by-stage')),
+      overloadBySemester: path.join(metricSidecarDir, metricSidecarFileName('overload-by-semester')),
+      overloadByScenarioFamily: path.join(metricSidecarDir, metricSidecarFileName('overload-by-scenario-family')),
+      stabilityByAdjacentStage: path.join(metricSidecarDir, metricSidecarFileName('stability-by-adjacent-stage')),
+      queueBurden: path.join(metricSidecarDir, metricSidecarFileName('queue-burden')),
+      reproducibilityManifest: path.join(metricSidecarDir, metricSidecarFileName('reproducibility-manifest')),
+    }
+
     const output = {
-      generatedAt: new Date().toISOString(),
+      generatedAt,
+      gitSha,
       seedProfile: seedSelection.profile,
       requestedSeeds,
       governedSeeds,
@@ -1833,6 +2585,13 @@ async function main() {
         activeProductionArtifactVersion: activeProductionArtifactRow.artifactVersion,
         modelFamily: activeProductionArtifactRow.modelFamily,
         createdAt: activeProductionArtifactRow.createdAt,
+        deterministicReplay: {
+          algorithm: 'sha256',
+          splitHash: reproducibilityManifest.splitHash,
+          featureKeyHash: reproducibilityManifest.featureKeyHash,
+          corpusHash: reproducibilityManifest.corpusHash,
+          replayHash: reproducibilityManifest.replayHash,
+        },
         evaluationFromAdminEndpoint: modelEvaluationResponse,
         activeModelFromEndpoint: modelActiveResponse,
         correlationsFromEndpoint: modelCorrelationResponse,
@@ -1851,8 +2610,27 @@ async function main() {
           calibrationVersion: baselineLocalBundle.production.calibrationVersion,
         },
       },
+      reportPaths: {
+        outputDir: paths.outputDir,
+        jsonPath: paths.jsonPath,
+        markdownPath: paths.markdownPath,
+        datasetDumpPath,
+        metricSidecarDir,
+        metaPath,
+      },
+      currentVariantName,
+      hybridGuardrails: {
+        defaultAlpha: HYBRID_ROUTER_CONFIG.defaultAlpha,
+        alphaGrid: [...HYBRID_ROUTER_CONFIG.alphaGrid],
+        denylistedHeads: HYBRID_ROUTER_CONFIG.denylistedHeads,
+        allowedStagesByHead: HYBRID_ROUTER_CONFIG.allowedStagesByHead,
+        minSupport: HYBRID_ROUTER_CONFIG.minSupport,
+        maxRocAucDrop: HYBRID_ROUTER_CONFIG.maxRocAucDrop,
+        maxExpectedCalibrationErrorIncrease: HYBRID_ROUTER_CONFIG.maxExpectedCalibrationErrorIncrease,
+        maxPrecisionAtBudgetDrop: HYBRID_ROUTER_CONFIG.maxPrecisionAtBudgetDrop,
+      },
       hybridPlan: {
-        note: 'Validation-tuned stage router between current-v6 and challenger. Alpha 1 = current-v6, alpha 0 = challenger.',
+        note: `Validation-tuned stage router between ${currentVariantName} and challenger. Alpha 1 = ${currentVariantName}, alpha 0 = challenger.`,
         byHead: Object.fromEntries(headLabels.map(([headKey]) => [headKey, {
           fallbackAlpha: hybridPlanByHead[headKey].fallbackAlpha,
           fallbackMetrics: hybridPlanByHead[headKey].fallbackMetrics,
@@ -1863,6 +2641,9 @@ async function main() {
       overallCourseRuntimeSummaryByStage,
       overallCourseVariantSummary,
       overallCourseVariantSummaryByStage,
+      overallCourseVariantSummaryBySemester,
+      overallCourseVariantSummaryByScenarioFamily,
+      overallCourseStabilityByAdjacentStagePair,
       runtimeSummary: overallCourseRuntimeSummary,
       modelSummary,
       modelSummaryByStage,
@@ -1877,12 +2658,108 @@ async function main() {
       stageRollups,
       queueBurdenSummary,
       topPrerequisiteEdges: modelCorrelationResponse.correlations?.prerequisiteEdges ?? [],
+      reproducibilityManifest,
+      metricSidecars,
     }
 
-    const paths = evaluationPaths(process.cwd())
     await mkdir(paths.outputDir, { recursive: true })
     await writeFile(paths.jsonPath, `${JSON.stringify(output, null, 2)}\n`, 'utf8')
     logProgress(`wrote JSON report to ${paths.jsonPath}`)
+
+    try {
+      const datasetDump = currentVariantBuilder.dumpDataset()
+      const dumpJson = JSON.stringify(datasetDump)
+      await writeFile(datasetDumpPath, dumpJson)
+      logProgress(`wrote dataset dump to ${datasetDumpPath}`)
+    } catch (dumpError) {
+      // JSON.stringify hits V8's ~512 MB string limit on large corpora (64+ seeds).
+      // The dataset dump is optional diagnostic data — skip it rather than aborting
+      // the entire run after training and scoring have already completed.
+      logProgress(`skipped dataset dump (corpus too large for JSON.stringify: ${dumpError instanceof Error ? dumpError.message : String(dumpError)})`)
+    }
+
+    await mkdir(metricSidecarDir, { recursive: true })
+    const metricSidecarPayloads: Record<string, unknown> = {
+      overallCourseCurrent: {
+        variant: currentVariantName,
+        productionModelVersion: currentLocalBundle.production.modelVersion,
+        calibrationVersion: currentLocalBundle.production.calibrationVersion,
+        metrics: output.overallCourseVariantSummary.current,
+      },
+      overallCourseVariants: {
+        currentVariantName,
+        currentProductionModelVersion: currentLocalBundle.production.modelVersion,
+        baselineProductionModelVersion: baselineLocalBundle.production.modelVersion,
+        challengerModelVersion: currentLocalBundle.challenger.modelVersion,
+        summary: output.overallCourseVariantSummary,
+      },
+      modelHeadMetrics: output.modelSummary,
+      budgetMetrics: {
+        overall: output.overallCourseVariantSummary.current.budgetMetrics,
+        byStage: Object.fromEntries(
+          Object.entries(output.overallCourseVariantSummaryByStage).map(([stageKey, summary]) => [stageKey, summary.current.budgetMetrics]),
+        ),
+        bySemester: Object.fromEntries(
+          Object.entries(output.overallCourseVariantSummaryBySemester).map(([semesterKey, summary]) => [semesterKey, summary.current.budgetMetrics]),
+        ),
+        byScenarioFamily: Object.fromEntries(
+          Object.entries(output.overallCourseVariantSummaryByScenarioFamily).map(([scenarioFamily, summary]) => [scenarioFamily, summary.current.budgetMetrics]),
+        ),
+      },
+      localCalibration: {
+        overall: output.overallCourseVariantSummary.current.localCalibration,
+        byStage: Object.fromEntries(
+          Object.entries(output.overallCourseVariantSummaryByStage).map(([stageKey, summary]) => [stageKey, summary.current.localCalibration]),
+        ),
+        bySemester: Object.fromEntries(
+          Object.entries(output.overallCourseVariantSummaryBySemester).map(([semesterKey, summary]) => [semesterKey, summary.current.localCalibration]),
+        ),
+        byScenarioFamily: Object.fromEntries(
+          Object.entries(output.overallCourseVariantSummaryByScenarioFamily).map(([scenarioFamily, summary]) => [scenarioFamily, summary.current.localCalibration]),
+        ),
+      },
+      overloadByStage: Object.fromEntries(
+        Object.entries(output.overallCourseVariantSummaryByStage).map(([stageKey, summary]) => [stageKey, summary.current]),
+      ),
+      overloadBySemester: Object.fromEntries(
+        Object.entries(output.overallCourseVariantSummaryBySemester).map(([semesterKey, summary]) => [semesterKey, summary.current]),
+      ),
+      overloadByScenarioFamily: Object.fromEntries(
+        Object.entries(output.overallCourseVariantSummaryByScenarioFamily).map(([scenarioFamily, summary]) => [scenarioFamily, summary.current]),
+      ),
+      stabilityByAdjacentStage: output.overallCourseStabilityByAdjacentStagePair,
+      queueBurden: output.queueBurdenSummary,
+      reproducibilityManifest: output.reproducibilityManifest,
+    }
+    await Promise.all(
+      Object.entries(metricSidecars).map(([key, filePath]) => {
+        const payload = metricSidecarPayloads[key]
+        if (payload == null) {
+          throw new Error(`Missing metric sidecar payload for ${key}`)
+        }
+        return writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+      }),
+    )
+    logProgress(`wrote metric sidecars to ${metricSidecarDir}`)
+
+    await writeFile(metaPath, buildMetaFile({
+      generatedAt,
+      gitSha,
+      reportPaths: output.reportPaths,
+      seedProfile: output.seedProfile,
+      requestedSeeds: output.requestedSeeds,
+      governedSeeds: output.governedSeeds,
+      selectedRuns,
+      reproducibilityManifest: {
+        splitHash: reproducibilityManifest.splitHash,
+        featureKeyHash: reproducibilityManifest.featureKeyHash,
+        corpusHash: reproducibilityManifest.corpusHash,
+        replayHash: reproducibilityManifest.replayHash,
+      },
+      env: reproducibilityManifest.env,
+      metricSidecars,
+    }), 'utf8')
+    logProgress(`wrote meta manifest to ${metaPath}`)
 
     const markdown = [
       '# Proof Risk Model Evaluation',
@@ -1917,6 +2794,33 @@ async function main() {
           `${item.checkpointCount}/${item.expectedCheckpointCount}`,
           item.stageEvidenceCount,
           String(item.complete),
+        ]),
+      ),
+      '',
+      '## Evaluator Config',
+      '',
+      `- Git SHA: ${output.gitSha ?? 'unavailable'}`,
+      `- JSON path: ${output.reportPaths.jsonPath}`,
+      `- Markdown path: ${output.reportPaths.markdownPath}`,
+      `- Dataset dump path: ${output.reportPaths.datasetDumpPath}`,
+      `- Metric sidecar dir: ${output.reportPaths.metricSidecarDir}`,
+      `- Meta manifest path: ${output.reportPaths.metaPath}`,
+      `- Hybrid alpha grid: ${output.hybridGuardrails.alphaGrid.join(', ')}`,
+      `- Hybrid denylisted heads: ${output.hybridGuardrails.denylistedHeads.join(', ')}`,
+      `- Hybrid minimum support: ${output.hybridGuardrails.minSupport}`,
+      `- Hybrid max ROC-AUC drop: ${output.hybridGuardrails.maxRocAucDrop}`,
+      `- Hybrid max ECE increase: ${output.hybridGuardrails.maxExpectedCalibrationErrorIncrease}`,
+      `- Hybrid max precision@budget drop: ${output.hybridGuardrails.maxPrecisionAtBudgetDrop}`,
+      `- Split hash: ${output.reproducibilityManifest.splitHash}`,
+      `- Feature key hash: ${output.reproducibilityManifest.featureKeyHash}`,
+      `- Corpus hash: ${output.reproducibilityManifest.corpusHash}`,
+      `- Replay hash: ${output.reproducibilityManifest.replayHash}`,
+      '',
+      markdownTable(
+        ['Head', 'Allowed Stages'],
+        headLabels.map(([headKey]) => [
+          headKey,
+          output.hybridGuardrails.allowedStagesByHead[headKey].join(', ') || 'current-only',
         ]),
       ),
       '',
@@ -1962,7 +2866,7 @@ async function main() {
       markdownTable(
         ['Variant', 'Brier', 'Log Loss', 'ROC-AUC', 'PR-AUC', 'ECE', 'Budget Rate', 'Flagged@Budget', 'Precision@Budget', 'Recall@Budget', 'Overload Ratio'],
         [
-          ['current-v6', output.overallCourseVariantSummary.current.brier, output.overallCourseVariantSummary.current.logLoss, output.overallCourseVariantSummary.current.rocAuc, output.overallCourseVariantSummary.current.averagePrecision, output.overallCourseVariantSummary.current.expectedCalibrationError, output.overallCourseVariantSummary.current.budgetMetrics.budgetRate, output.overallCourseVariantSummary.current.budgetMetrics.flaggedRateAtBudget, output.overallCourseVariantSummary.current.budgetMetrics.precisionAtBudget, output.overallCourseVariantSummary.current.budgetMetrics.recallAtBudget, output.overallCourseVariantSummary.current.budgetMetrics.overloadRatio],
+          [currentVariantName, output.overallCourseVariantSummary.current.brier, output.overallCourseVariantSummary.current.logLoss, output.overallCourseVariantSummary.current.rocAuc, output.overallCourseVariantSummary.current.averagePrecision, output.overallCourseVariantSummary.current.expectedCalibrationError, output.overallCourseVariantSummary.current.budgetMetrics.budgetRate, output.overallCourseVariantSummary.current.budgetMetrics.flaggedRateAtBudget, output.overallCourseVariantSummary.current.budgetMetrics.precisionAtBudget, output.overallCourseVariantSummary.current.budgetMetrics.recallAtBudget, output.overallCourseVariantSummary.current.budgetMetrics.overloadRatio],
           ['baseline-v5-like', output.overallCourseVariantSummary.baseline.brier, output.overallCourseVariantSummary.baseline.logLoss, output.overallCourseVariantSummary.baseline.rocAuc, output.overallCourseVariantSummary.baseline.averagePrecision, output.overallCourseVariantSummary.baseline.expectedCalibrationError, output.overallCourseVariantSummary.baseline.budgetMetrics.budgetRate, output.overallCourseVariantSummary.baseline.budgetMetrics.flaggedRateAtBudget, output.overallCourseVariantSummary.baseline.budgetMetrics.precisionAtBudget, output.overallCourseVariantSummary.baseline.budgetMetrics.recallAtBudget, output.overallCourseVariantSummary.baseline.budgetMetrics.overloadRatio],
           ['hybrid-router', output.overallCourseVariantSummary.hybrid.brier, output.overallCourseVariantSummary.hybrid.logLoss, output.overallCourseVariantSummary.hybrid.rocAuc, output.overallCourseVariantSummary.hybrid.averagePrecision, output.overallCourseVariantSummary.hybrid.expectedCalibrationError, output.overallCourseVariantSummary.hybrid.budgetMetrics.budgetRate, output.overallCourseVariantSummary.hybrid.budgetMetrics.flaggedRateAtBudget, output.overallCourseVariantSummary.hybrid.budgetMetrics.precisionAtBudget, output.overallCourseVariantSummary.hybrid.budgetMetrics.recallAtBudget, output.overallCourseVariantSummary.hybrid.budgetMetrics.overloadRatio],
           ['challenger', output.overallCourseVariantSummary.challenger.brier, output.overallCourseVariantSummary.challenger.logLoss, output.overallCourseVariantSummary.challenger.rocAuc, output.overallCourseVariantSummary.challenger.averagePrecision, output.overallCourseVariantSummary.challenger.expectedCalibrationError, output.overallCourseVariantSummary.challenger.budgetMetrics.budgetRate, output.overallCourseVariantSummary.challenger.budgetMetrics.flaggedRateAtBudget, output.overallCourseVariantSummary.challenger.budgetMetrics.precisionAtBudget, output.overallCourseVariantSummary.challenger.budgetMetrics.recallAtBudget, output.overallCourseVariantSummary.challenger.budgetMetrics.overloadRatio],
@@ -2126,12 +3030,121 @@ async function main() {
         ]),
       ),
       '',
+      '## Phase 8 Overload Diagnostics',
+      '',
+      '### Per-Stage Overload (overallCourseRisk — current variant)',
+      '',
+      markdownTable(
+        ['Stage', 'Support', 'Budget Rate', 'Flagged@Budget', 'Overload Ratio', 'ECE', 'Calibration Slope'],
+        Object.entries(overallCourseVariantSummaryByStage)
+          .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+          .map(([stageKey, summary]) => [
+            stageKey,
+            summary.current.support,
+            summary.current.budgetMetrics.budgetRate,
+            summary.current.budgetMetrics.flaggedRateAtBudget,
+            summary.current.budgetMetrics.overloadRatio,
+            summary.current.expectedCalibrationError,
+            summary.current.calibrationSlope,
+          ]),
+      ),
+      '',
+      '### Local Reliability at Decision Thresholds (overallCourseRisk — current)',
+      '',
+      markdownTable(
+        ['Threshold', 'Support (±0.05)', 'Mean Predicted', 'Mean Actual', 'Calibration Error'],
+        summarizeLocalReliability(overallCourseVariantRows.current, [0.4, 0.85]).map(item => [
+          item.threshold,
+          item.support,
+          item.meanPredicted,
+          item.meanActual,
+          item.calibrationError,
+        ]),
+      ),
+      '',
+      '### Score Histogram (overallCourseRisk — current, 10 bins)',
+      '',
+      markdownTable(
+        ['Bin Low', 'Bin High', 'Count', 'Positive Rate', 'Mean Predicted'],
+        scoreHistogram(overallCourseVariantRows.current).map(item => [
+          item.binLow,
+          item.binHigh,
+          item.count,
+          item.positiveRate,
+          item.meanPredicted,
+        ]),
+      ),
+      '',
+      '### Per-Semester Overload (overallCourseRisk — current variant, intent §N.4)',
+      '',
+      markdownTable(
+        ['Semester', 'Support', 'Flagged@Budget', 'Overload Ratio', 'ECE', 'Local-ECE @ 0.4', 'Local-ECE @ 0.85'],
+        Object.entries(overallCourseVariantSummaryBySemester)
+          .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+          .map(([semesterKey, summary]) => [
+            semesterKey,
+            summary.current.support,
+            summary.current.budgetMetrics.flaggedRateAtBudget,
+            summary.current.budgetMetrics.overloadRatio,
+            summary.current.expectedCalibrationError,
+            summary.current.localCalibration.localEceAt04,
+            summary.current.localCalibration.localEceAt085,
+          ]),
+      ),
+      '',
+      '### Per-ScenarioFamily Overload (overallCourseRisk — current variant, intent §N.4)',
+      '',
+      markdownTable(
+        ['Scenario Family', 'Support', 'Flagged@Budget', 'Overload Ratio', 'ECE', 'Local-ECE @ 0.4', 'Local-ECE @ 0.85'],
+        Object.entries(overallCourseVariantSummaryByScenarioFamily)
+          .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+          .map(([scenarioFamily, summary]) => [
+            scenarioFamily,
+            summary.current.support,
+            summary.current.budgetMetrics.flaggedRateAtBudget,
+            summary.current.budgetMetrics.overloadRatio,
+            summary.current.expectedCalibrationError,
+            summary.current.localCalibration.localEceAt04,
+            summary.current.localCalibration.localEceAt085,
+          ]),
+      ),
+      '',
+      '### Top-k Stability (overallCourseRisk — current, top-20% across adjacent stages, RCA §A)',
+      '',
+      'Jaccard < 0.65 or churn > 0.50 or probShift > 0.10 indicates UI banding flicker — the high-risk set rearranges aggressively across a 42-day stage window, producing visible demo jumpiness.',
+      '',
+      markdownTable(
+        ['Stage A', 'Stage B', 'Runs', 'Mean Jaccard', 'Median Jaccard', 'Min Jaccard', 'Mean Churn', 'P95 Churn', 'Mean Prob Shift'],
+        overallCourseStabilityByAdjacentStagePair.map(item => [
+          item.stageA,
+          item.stageB,
+          item.runCount,
+          item.meanJaccard,
+          item.medianJaccard,
+          item.minJaccard,
+          item.meanChurnRate,
+          item.p95ChurnRate,
+          item.meanProbShift,
+        ]),
+      ),
+      '',
     ].join('\n')
     await writeFile(paths.markdownPath, `${markdown}\n`, 'utf8')
     logProgress(`wrote Markdown report to ${paths.markdownPath}`)
-    logProgress(`evaluation completed in ${roundToTwo((Date.now() - startedAt) / 1000)}s`)
+    const totalMs = Date.now() - startedAt
+    logProgress([
+      `phase breakdown — recompute: ${roundToTwo(phaseRecomputeMs / 1000)}s`,
+      `artifact-load: ${roundToTwo(phaseArtifactLoadMs / 1000)}s`,
+      `pass-1 (corpus ingestion): ${roundToTwo(phasePass1Ms / 1000)}s`,
+      `train: ${roundToTwo(phaseTrainMs / 1000)}s`,
+      `pass-2 (scoring): ${roundToTwo(phasePass2Ms / 1000)}s`,
+      `report: ${roundToTwo((totalMs - phaseRecomputeMs - phaseArtifactLoadMs - phasePass1Ms - phaseTrainMs - phasePass2Ms) / 1000)}s`,
+    ].join(' | '))
+    logProgress(`evaluation completed in ${roundToTwo(totalMs / 1000)}s`)
 
-    console.log(JSON.stringify(output, null, 2))
+    if (printJsonReport) {
+      console.log(JSON.stringify(output, null, 2))
+    }
     console.log(`\nJSON report: ${paths.jsonPath}`)
     console.log(`Markdown report: ${paths.markdownPath}`)
   } finally {

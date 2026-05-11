@@ -49,6 +49,7 @@ export type ApiUiPreferences = {
 export type ApiSessionResponse = {
   sessionId: string
   csrfToken: string
+  demoWorkspaceId: string | null
   user: {
     userId: string
     username: string
@@ -1258,11 +1259,11 @@ export type ApiStudentAgentCard = {
     policyLabel: ApiStudentAgentPanelLabel
     currentEvidence: {
       attendancePct: number
-      tt1Pct: number
-      tt2Pct: number
-      quizPct: number
-      assignmentPct: number
-      seePct: number
+      tt1Pct: number | null
+      tt2Pct: number | null
+      quizPct: number | null
+      assignmentPct: number | null
+      seePct: number | null
       weakCoCount: number
       weakQuestionCount: number
       interventionRecoveryStatus: string | null
@@ -1358,9 +1359,9 @@ export type ApiStudentAgentCard = {
       coTitle: string
       trend: string
       topics: string[]
-      tt1Pct: number
-      tt2Pct: number
-      seePct: number
+      tt1Pct: number | null
+      tt2Pct: number | null
+      seePct: number | null
       transferGap: number
       coEvidenceMode?: string | null
     }>
@@ -1380,11 +1381,11 @@ export type ApiStudentAgentCard = {
       courseTitle: string
       sectionCode: string | null
       attendancePct: number
-      tt1Pct: number
-      tt2Pct: number
-      quizPct: number
-      assignmentPct: number
-      seePct: number
+      tt1Pct: number | null
+      tt2Pct: number | null
+      quizPct: number | null
+      assignmentPct: number | null
+      seePct: number | null
       weakCoCount: number
       weakQuestionCount: number
       drivers: Array<{ label: string; impact: number; feature: string }>
@@ -1567,6 +1568,7 @@ export type ApiFacultyProofOperations = {
     createdAt: string
   }>
   selectedCheckpoint: ApiSimulationStageCheckpointSummary | null
+  activeRunCheckpoints?: ApiSimulationStageCheckpointSummary[]
   monitoringQueue: Array<{
     riskAssessmentId: string
     simulationRunId: string | null
@@ -1592,11 +1594,11 @@ export type ApiFacultyProofOperations = {
     decisionNote: string | null
     observedEvidence: {
       attendancePct: number
-      tt1Pct: number
-      tt2Pct: number
-      quizPct: number
-      assignmentPct: number
-      seePct: number
+      tt1Pct: number | null
+      tt2Pct: number | null
+      quizPct: number | null
+      assignmentPct: number | null
+      seePct: number | null
       cgpa: number
       backlogCount: number
       weakCoCount: number
@@ -1761,11 +1763,11 @@ export type ApiAcademicHodProofStudentWatch = {
   nextDueAt: string | null
   observedEvidence: {
     attendancePct: number
-    tt1Pct: number
-    tt2Pct: number
-    quizPct: number
-    assignmentPct: number
-    seePct: number
+    tt1Pct: number | null
+    tt2Pct: number | null
+    quizPct: number | null
+    assignmentPct: number | null
+    seePct: number | null
     cgpa: number
     backlogCount: number
     weakCoCount: number
@@ -1797,11 +1799,11 @@ export type ApiAcademicHodProofStudentWatch = {
     counterfactualLiftScaled?: number | null
     observedEvidence: {
       attendancePct: number
-      tt1Pct: number
-      tt2Pct: number
-      quizPct: number
-      assignmentPct: number
-      seePct: number
+      tt1Pct: number | null
+      tt2Pct: number | null
+      quizPct: number | null
+      assignmentPct: number | null
+      seePct: number | null
       cgpa: number
       backlogCount: number
       weakCoCount: number
@@ -1850,6 +1852,144 @@ export type ApiAcademicHodProofBundle = {
   faculty: ApiAcademicHodProofFacultyRollup[]
   students: ApiAcademicHodProofStudentWatch[]
   reassessments: ApiAcademicHodProofReassessment[]
+}
+
+export type ApiAcademicHodProofCounterfactualScalar =
+  | 'tt1Pct'
+  | 'tt2Pct'
+  | 'quizPct'
+  | 'assignmentPct'
+  | 'seePct'
+  | 'totalPct'
+
+export type ApiAcademicHodProofCounterfactualStudentStageDiff = {
+  studentId: string
+  semesterNumber: number
+  stageKey: string
+  deltas: Partial<Record<ApiAcademicHodProofCounterfactualScalar, number>>
+}
+
+export type ApiAcademicHodProofCounterfactualAggregate = {
+  totalStudents: number
+  totalStages: number
+  totalStudentStagePairs: number
+  byScalar: Record<ApiAcademicHodProofCounterfactualScalar, {
+    samples: number
+    meanDelta: number
+    medianDelta: number
+    positiveCount: number
+    negativeCount: number
+    zeroCount: number
+    maxDelta: number
+    minDelta: number
+  }>
+}
+
+export type ApiAcademicHodProofCounterfactualReport = {
+  runIdBaseline: string
+  runIdRealized: string
+  studentStageDiffs: ApiAcademicHodProofCounterfactualStudentStageDiff[]
+  aggregate: ApiAcademicHodProofCounterfactualAggregate
+}
+
+// Phase-11 simulator counterfactual report (authoritative Sem-6 analytics).
+// Matches `CounterfactualSimulatorReport` produced by
+// `@air-mentor-api/src/lib/proof-counterfactual-simulator-aggregator.ts`.
+// UI language MUST stay projected/simulated (§C.13 + §G.6 + §L.10) — never
+// present simulator output as causal proof on its own.
+
+export type ApiAcademicHodProofSimulatorStageKey =
+  | 'pre-tt1'
+  | 'post-tt1'
+  | 'post-tt2'
+  | 'post-assignments'
+  | 'post-see'
+
+export type ApiAcademicHodProofSimulatorRiskBand = 'High' | 'Medium' | 'Low'
+
+export type ApiAcademicHodProofSimulatorScalarKey =
+  | 'attendancePct'
+  | 'tt1Pct'
+  | 'tt2Pct'
+  | 'quizPct'
+  | 'assignmentPct'
+  | 'seePct'
+
+export type ApiAcademicHodProofSimulatorBandTransition =
+  | 'no-change'
+  | 'prevented-high'
+  | 'prevented-medium'
+  | 'regression'
+
+export type ApiAcademicHodProofSimulatorStudentStage = {
+  studentId: string
+  semesterNumber: number
+  stageKey: ApiAcademicHodProofSimulatorStageKey
+  realizedRiskProbScaled: number
+  realizedRiskBand: ApiAcademicHodProofSimulatorRiskBand
+  noActionRiskProbScaled: number
+  noActionRiskBand: ApiAcademicHodProofSimulatorRiskBand
+  liftProbScaled: number
+  markDeltas: Partial<Record<ApiAcademicHodProofSimulatorScalarKey, number>>
+  realizedMarks: Partial<Record<ApiAcademicHodProofSimulatorScalarKey, number>>
+  noActionMarks: Partial<Record<ApiAcademicHodProofSimulatorScalarKey, number>>
+  bandTransition: ApiAcademicHodProofSimulatorBandTransition
+  simulatedActionTaken: string | null
+}
+
+export type ApiAcademicHodProofSimulatorSemesterStageAggregate = {
+  semesterNumber: number
+  stageKey: ApiAcademicHodProofSimulatorStageKey
+  studentCount: number
+  meanRealizedRiskProbScaled: number
+  meanNoActionRiskProbScaled: number
+  meanLiftProbScaled: number
+  bandTransitions: {
+    preventedHigh: number
+    preventedMedium: number
+    regression: number
+    noChange: number
+  }
+  meanMarkDeltas: Partial<Record<ApiAcademicHodProofSimulatorScalarKey, number>>
+}
+
+export type ApiAcademicHodProofSimulatorSemesterAggregate = {
+  semesterNumber: number
+  studentCount: number
+  meanRealizedRiskProbScaled: number
+  meanNoActionRiskProbScaled: number
+  meanLiftProbScaled: number
+  preventedHighTotal: number
+  preventedMediumTotal: number
+  regressionTotal: number
+  projectedFailuresPrevented: number
+}
+
+export type ApiAcademicHodProofSimulatorProjectedFinal = {
+  runId: string
+  generatedAt: string
+  totalStudents: number
+  totalSemesters: number
+  totalStagePoints: number
+  meanRealizedRiskProbScaled: number
+  meanNoActionRiskProbScaled: number
+  meanLiftProbScaled: number
+  projectedFailuresPreventedTotal: number
+  liftDistribution: Array<{
+    binLabel: string
+    lowerInclusive: number
+    upperExclusive: number
+    count: number
+  }>
+}
+
+export type ApiAcademicHodProofCounterfactualSimulatorReport = {
+  runId: string
+  generatedAt: string
+  perStudentPerStage: ApiAcademicHodProofSimulatorStudentStage[]
+  bySemesterStage: ApiAcademicHodProofSimulatorSemesterStageAggregate[]
+  bySemester: ApiAcademicHodProofSimulatorSemesterAggregate[]
+  projectedFinal: ApiAcademicHodProofSimulatorProjectedFinal
 }
 
 export type ApiAdminSearchRoute = {
@@ -1959,6 +2099,7 @@ export type ApiAdminRequestDetail = ApiAdminRequestSummary & {
 export type ApiAcademicLoginFaculty = {
   facultyId: string
   username: string
+  email: string
   name: string
   displayName: string
   designation: string
@@ -1966,6 +2107,9 @@ export type ApiAcademicLoginFaculty = {
   departmentCode: string
   roleTitle: string
   allowedRoles: Array<'Course Leader' | 'Mentor' | 'HoD'>
+  courseCodes: string[]
+  offeringIds: string[]
+  menteeIds: string[]
 }
 
 export type ApiAcademicRuntimeState = {
@@ -2204,6 +2348,31 @@ export type ApiCurriculumFeatureConfigSaveResult = {
   proofRefresh?: ApiProofRefresh
   targetMode?: 'batch-local-override' | 'scope-profile'
   curriculumFeatureProfileId?: string | null
+}
+
+export type ApiCurriculumFeatureConfigHistoryEvent = {
+  auditEventId: string
+  action: string
+  actorRole: string
+  actorId: string | null
+  before: unknown | null
+  after: unknown | null
+  metadata: unknown | null
+  createdAt: string
+}
+
+export type ApiCurriculumFeatureConfigPreview = {
+  studentCount: number
+  currentDistribution: { low: number; medium: number; high: number }
+  projectedDistribution: { low: number; medium: number; high: number }
+  delta: { low: number; medium: number; high: number }
+  affectedStudents: Array<{
+    studentId: string
+    currentRiskBand: string
+    projectedRiskBand: string
+    currentWeakCoCount: number
+    projectedWeakCoCount: number
+  }>
 }
 
 export type ApiCurriculumFeatureBindingSaveResult = {
@@ -2536,4 +2705,31 @@ export type ApiAcademicFacultyProfile = {
     recentDecisionTypes: string[]
   }
   proofOperations: ApiFacultyProofOperations
+}
+
+export type ApiDemoWorkspace = {
+  demoWorkspaceId: string
+  name: string
+  ownerFacultyId: string | null
+  batchId: string | null
+  scopeKind: string
+  scopeName: string | null
+  sourceBatchId: string | null
+  activeSimulationRunId: string | null
+  createdByFacultyId: string | null
+  stoppedAt: string | null
+  resetAt: string | null
+  metadataJson: string | null
+  status: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type ApiDemoProvisioningPreview = {
+  batchLabel: string
+  termLabel: string
+  sections: string[]
+  estimatedStudentCount: number
+  estimatedOfferingCount: number
+  curriculumCourseCount: number
 }

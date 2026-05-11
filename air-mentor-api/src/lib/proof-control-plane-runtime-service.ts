@@ -26,6 +26,7 @@ import { parseJson } from './json.js'
 import { buildMonitoringDecision } from './monitoring-engine.js'
 import { MSRUAS_PROOF_BRANCH_ID, MSRUAS_PROOF_DEPARTMENT_ID } from './msruas-proof-sandbox.js'
 import { parseObservedStateRow } from './proof-observed-state.js'
+import { PROOF_DEMO_OPERATIONAL_THRESHOLDS } from './proof-demo-operational-band.js'
 import {
   buildObservableFeaturePayload,
   featureHash,
@@ -47,8 +48,10 @@ import type {
   ObservableSourceRefsWithFeatureMetadata,
   PlaybackStageKey,
   PolicyPhenotype,
+  StageCourseProjectionSource,
   StageEvidenceSnapshot,
 } from './msruas-proof-control-plane.js'
+import type { StageEvidenceRealizationInput } from './proof-control-plane-playback-service.js'
 
 type RuntimeStageDef = {
   key: string
@@ -61,6 +64,13 @@ export type ProofControlPlaneRuntimeServiceDeps = {
   PLAYBACK_STAGE_DEFS: RuntimeStageDef[]
   MONITORING_POLICY_VERSION: string
   average: (values: number[]) => number
+  buildStageEvidenceSnapshot?: (input: {
+    source: StageCourseProjectionSource
+    stageKey: PlaybackStageKey
+    policy: ResolvedPolicy
+    templatesById: Map<string, typeof simulationQuestionTemplates.$inferSelect>
+    realization?: StageEvidenceRealizationInput
+  }) => StageEvidenceSnapshot
   buildActionPolicyComparison: (input: {
     stageKey: PlaybackStageKey
     evidence: StageEvidenceSnapshot
@@ -184,6 +194,42 @@ export type ProofControlPlaneRuntimeServiceDeps = {
   }
 }
 
+type RuntimeRunSemesterAuthorityLike = Pick<typeof simulationRuns.$inferSelect, 'activeOperationalSemester' | 'semesterEnd'>
+type RuntimeObservedSemesterRowLike = Pick<typeof studentObservedSemesterStates.$inferSelect, 'studentId' | 'semesterNumber' | 'observedStateJson' | 'updatedAt'>
+
+export function resolveRuntimeCurrentSemesterNumber(
+  run: RuntimeRunSemesterAuthorityLike,
+  observedRows: RuntimeObservedSemesterRowLike[],
+) {
+  if (run.activeOperationalSemester != null && run.activeOperationalSemester > 0) {
+    return run.activeOperationalSemester
+  }
+  return Math.max(
+    run.semesterEnd,
+    observedRows.reduce((max, row) => Math.max(max, row.semesterNumber), 0),
+  )
+}
+
+export function buildLatestHistoricalPayloadByStudent(
+  observedRows: RuntimeObservedSemesterRowLike[],
+  currentSemesterNumber: number,
+) {
+  const latestHistoricalByStudent = new Map<string, Record<string, unknown>>()
+  observedRows
+    .filter(row => row.semesterNumber < currentSemesterNumber)
+    .slice()
+    .sort((left, right) => (
+      right.semesterNumber - left.semesterNumber
+      || String(right.updatedAt ?? '').localeCompare(String(left.updatedAt ?? ''))
+    ))
+    .forEach(row => {
+      if (!latestHistoricalByStudent.has(row.studentId)) {
+        latestHistoricalByStudent.set(row.studentId, parseObservedStateRow(row))
+      }
+    })
+  return latestHistoricalByStudent
+}
+
 export async function restoreProofSimulationSnapshot(db: AppDb, input: {
   simulationRunId: string
   simulationResetSnapshotId?: string
@@ -291,19 +337,8 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
     }
   })
 
-  const currentSemesterNumber = Math.max(
-    run.semesterEnd,
-    observedRows.reduce((max, row) => Math.max(max, row.semesterNumber), 0),
-  )
-  const latestHistoricalByStudent = new Map<string, Record<string, unknown>>()
-  observedRows
-    .filter(row => row.semesterNumber < currentSemesterNumber)
-    .sort((left, right) => right.semesterNumber - left.semesterNumber)
-    .forEach(row => {
-      if (!latestHistoricalByStudent.has(row.studentId)) {
-        latestHistoricalByStudent.set(row.studentId, parseObservedStateRow(row))
-      }
-    })
+  const currentSemesterNumber = resolveRuntimeCurrentSemesterNumber(run, observedRows)
+  const latestHistoricalByStudent = buildLatestHistoricalPayloadByStudent(observedRows, currentSemesterNumber)
 
   const stageCloseEvidenceByStudentOffering = new Map<string, {
     featurePayload: ReturnType<typeof buildObservableFeaturePayload>
@@ -593,6 +628,7 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       sourceRefs: fallbackSourceRefs,
       productionModel: activeRiskArtifacts.production,
       correlations: activeRiskArtifacts.correlations,
+      bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
     })
     const liveEvidence: StageEvidenceSnapshot = {
       attendancePct: Number(payload.attendancePct ?? 0),
@@ -600,7 +636,9 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       tt2Pct: payload.tt2Pct == null ? null : Number(payload.tt2Pct),
       quizPct: payload.quizPct == null ? null : Number(payload.quizPct),
       assignmentPct: payload.assignmentPct == null ? null : Number(payload.assignmentPct),
+      cePct: payload.cePct == null ? null : Number(payload.cePct),
       seePct: payload.seePct == null ? null : Number(payload.seePct),
+      overallPct: payload.finalMark == null ? null : Number(payload.finalMark),
       weakCoCount: Number(payload.weakCoCount ?? 0),
       weakQuestionCount: Number((payload.questionEvidenceSummary as Record<string, unknown> | undefined)?.weakQuestionCount ?? 0),
       attentionAreas: [],
@@ -673,6 +711,7 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       sourceRefs: fallbackSourceRefs,
       productionModel: activeRiskArtifacts.production,
       correlations: activeRiskArtifacts.correlations,
+      bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
     })
     const monitoring = buildMonitoringDecision({
       riskProb: inference.riskProb,

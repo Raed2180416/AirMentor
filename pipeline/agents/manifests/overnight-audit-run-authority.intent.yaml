@@ -1,0 +1,18 @@
+purpose: |
+  Deep audit: Overnight Audit: Run Authority / Fresh-Sem1 Core. Per-file findings table — expected vs current code truth (file:line) — with target-phase and severity.
+nonneg:
+  - Do not modify source (read-only pass)
+  - Every finding has file:line citation
+  - Severity ∈ {low, medium, high, critical}
+  - target_phase must map to the unified mitigation plan
+owner_files:
+  - air-mentor-api/src/lib/proof-control-plane-activation-service.ts
+  - air-mentor-api/src/lib/proof-control-plane-runtime-service.ts
+  - air-mentor-api/src/lib/proof-control-plane-seeded-run-service.ts
+  - air-mentor-api/src/lib/proof-control-plane-seeded-semester-service.ts
+  - air-mentor-api/src/lib/proof-control-plane-live-run-service.ts
+  - air-mentor-api/src/lib/proof-control-plane-tail-service.ts
+  - air-mentor-api/src/lib/proof-control-plane-rebuild-context-service.ts
+  - air-mentor-api/src/lib/proof-control-plane-advance-service.ts
+  - air-mentor-api/src/lib/proof-control-plane-playback-reset-service.ts
+  - air-mentor-api/src/db/schema.ts

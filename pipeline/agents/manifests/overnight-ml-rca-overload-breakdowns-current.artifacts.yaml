@@ -1,0 +1,12 @@
+artifacts:
+  - path: audit-map/22-evals/overnight-ml-rca-overload-breakdowns-current.md
+    min_lines: 30
+    min_bytes: 1000
+    write_mode: replace
+    required_sections:
+      - '# Overnight ML RCA: overload by stage / semester / scenario family'
+      - '## Inputs'
+      - '## Findings'
+      - '## Evidence'
+      - '## Next-Steps Hypotheses'
+      - '## Recommendations'

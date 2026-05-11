@@ -1,0 +1,10 @@
+purpose: |
+  Reconcile ML/risk/calibration/counterfactual docs with auth prompt F/G/H/J/N. Separate model vs policy vs monitoring vs simulator claims. Record v7 overload diagnosis.
+nonneg:
+  - Every ML claim cites file:line in src or trained artifacts
+  - Do not touch air-mentor-api/src/lib/proof-risk-model.ts
+  - Do not delete prior ML metric entries; mark superseded instead
+owner_files:
+  - audit-map/08-ml-audit/README.md
+  - audit-map/14-reconciliation/contradiction-matrix-ml.md
+  - audit-map/32-reports/overnight-reconcile-ml.md

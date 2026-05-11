@@ -32,7 +32,8 @@ jobs:
 
       - name: Build
         env:
-          VITE_AIRMENTOR_API_BASE_URL: ${{ vars.VITE_AIRMENTOR_API_BASE_URL }}
+          VITE_AIRMENTOR_API_BASE_URL: ${{ vars.RENDER_PUBLIC_API_URL || vars.VITE_AIRMENTOR_API_BASE_URL || vars.RAILWAY_PUBLIC_API_URL }}
+          VITE_AIRMENTOR_API_FALLBACK_BASE_URLS: ${{ vars.VITE_AIRMENTOR_API_FALLBACK_BASE_URLS }}
         run: npm run build
 
       - name: Setup Pages

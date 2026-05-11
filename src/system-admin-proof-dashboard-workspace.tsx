@@ -8,9 +8,11 @@ import type {
 import type { BatchSetupReadiness } from './batch-setup-readiness'
 import { T, mono, sora } from './data'
 import { describeProofAvailability, describeProofProvenance, type ProofProvenanceLike } from './proof-provenance'
+import { ProofSimulationControls, type ProofAdvanceControlMode } from './proof-simulation-controls'
+import { humanLabelForActionCode } from './action-code-humaniser'
 import { ProofSurfaceHero, ProofSurfaceLauncher, ProofSurfaceTabPanel, ProofSurfaceTabs } from './proof-surface-shell'
 import { InfoBanner, RestoreBanner } from './system-admin-ui'
-import { Btn, Card, Chip, getAccessiblePrimaryAccent } from './ui-primitives'
+import { Btn, Card, Chip, Tooltip, getAccessiblePrimaryAccent } from './ui-primitives'
 
 type DiagnosticsRecord = Record<string, unknown> | null | undefined
 
@@ -43,6 +45,36 @@ function formatAgeSeconds(seconds: number | null | undefined) {
   if (seconds < 60) return `${seconds}s`
   if (seconds < 3600) return `${Math.round(seconds / 60)}m`
   return `${Math.round(seconds / 3600)}h`
+}
+
+function formatEtaSeconds(seconds: number | null | undefined) {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds)) return null
+  const normalized = Math.max(0, Math.round(seconds))
+  if (normalized < 60) return `${normalized}s`
+  const minutes = Math.floor(normalized / 60)
+  const remainingSeconds = normalized % 60
+  return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`
+}
+
+function readProgressNumber(progress: Record<string, unknown> | null | undefined, key: string) {
+  const value = progress?.[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function readProgressPhase(progress: Record<string, unknown> | null | undefined, fallback: string) {
+  const phase = progress?.phase
+  return typeof phase === 'string' && phase.trim() ? phase : fallback
+}
+
+function formatProofProgress(progress: Record<string, unknown> | null | undefined, fallbackPhase: string) {
+  const phase = readProgressPhase(progress, fallbackPhase)
+  const percent = readProgressNumber(progress, 'percent')
+  const eta = formatEtaSeconds(readProgressNumber(progress, 'etaSeconds'))
+  return [
+    phase,
+    percent != null ? `${Math.max(0, Math.min(100, Math.round(percent)))}%` : null,
+    eta ? `ETA ~${eta}` : null,
+  ].filter((value): value is string => Boolean(value)).join(' · ')
 }
 
 function formatLeaseState(leaseState: 'leased' | 'expired' | 'released' | null | undefined) {
@@ -174,15 +206,19 @@ type SystemAdminProofDashboardWorkspaceProps = {
   onValidateLatestProofImport: () => void
   onReviewPendingCrosswalks: () => void
   onApproveLatestProofImport: () => void
+  onCreateProofSimulation?: () => void
   onCreateProofRun: () => void
   onRecomputeProofRunRisk: () => void
   onActivateProofRun: (simulationRunId: string) => void
   onActivateProofSemester: (simulationRunId: string, semesterNumber: number) => void
+  onAdvanceProofRun?: (simulationRunId: string, mode: ProofAdvanceControlMode) => void
   onRetryProofRun: (simulationRunId: string) => void
+  onStopProofRun?: (simulationRunId: string) => void
   onArchiveProofRun: (simulationRunId: string) => void
   onRestoreProofSnapshot: (simulationRunId: string, simulationResetSnapshotId?: string) => void
   onResetProofRunFromScratch?: (simulationRunId: string, simulationResetSnapshotId?: string) => void
   onResetProofPlaybackSelection: () => void
+  onDismissProofPlaybackRestoreNotice?: () => void
   onSelectProofCheckpoint: (checkpointId: string) => void
   onStepProofPlayback: (direction: PlaybackDirection) => void
   formatSplitSummary: (summary: DiagnosticsRecord) => string
@@ -194,7 +230,7 @@ type SystemAdminProofDashboardWorkspaceProps = {
 export function SystemAdminProofDashboardWorkspace({
   proofDashboard,
   proofDashboardLoading,
-  batchSetupReadiness = null,
+  batchSetupReadiness: _batchSetupReadiness = null,
   dashboardLayout = 'embedded',
   showLauncher = true,
   initialActiveDashboardTab,
@@ -224,19 +260,22 @@ export function SystemAdminProofDashboardWorkspace({
   selectedProofCheckpointCanStepForward,
   selectedProofCheckpointCanPlayToEnd,
   proofPlaybackRestoreNotice,
-  onCreateProofImport,
   onValidateLatestProofImport,
   onReviewPendingCrosswalks,
   onApproveLatestProofImport,
   onCreateProofRun,
   onRecomputeProofRunRisk,
+  onCreateProofSimulation = onCreateProofRun,
   onActivateProofRun,
   onActivateProofSemester,
+  onAdvanceProofRun = () => {},
   onRetryProofRun,
+  onStopProofRun = () => {},
   onArchiveProofRun,
   onRestoreProofSnapshot,
   onResetProofRunFromScratch = () => {},
   onResetProofPlaybackSelection,
+  onDismissProofPlaybackRestoreNotice,
   onSelectProofCheckpoint,
   onStepProofPlayback,
   formatSplitSummary,
@@ -281,10 +320,7 @@ export function SystemAdminProofDashboardWorkspace({
   const activeRunSnapshots = activeRunDetail?.snapshots ?? []
   const activeRunBaselineSnapshot = activeRunSnapshots.find(item => /baseline/i.test(item.snapshotLabel))
     ?? activeRunSnapshots[0]
-  const proofSetupBlocked = !!batchSetupReadiness && !batchSetupReadiness.ready
-  const proofSetupMessage = proofSetupBlocked
-    ? `Finish setup before changing proof data: ${batchSetupReadiness.blockers.join(' ')}`
-    : null
+  const activeRunResetStageSnapshot = activeRunSnapshots[0] ?? null
   const activeQueueDiagnostics = activeRunDetail?.queueDiagnostics
   const activeWorkerDiagnostics = activeRunDetail?.workerDiagnostics ?? null
   const activeCheckpointReadiness = activeRunDetail?.checkpointReadiness
@@ -304,7 +340,23 @@ export function SystemAdminProofDashboardWorkspace({
   const importsCount = proofDashboard?.imports.length ?? 0
   const crosswalkReviewCount = proofDashboard?.crosswalkReviewQueue.length ?? 0
   const proofRunCount = proofDashboard?.proofRuns.length ?? 0
+  const pendingProofRun = !activeRunDetail
+    ? proofDashboard?.proofRuns.find(run => run.status === 'running' || run.status === 'queued') ?? proofDashboard?.proofRuns[0] ?? null
+    : null
+  const pendingProofRunProgress = pendingProofRun?.progress
+  const pendingProofRunPhase = readProgressPhase(pendingProofRunProgress, pendingProofRun?.status ?? 'queued')
+  const pendingProofRunPercent = typeof pendingProofRunProgress?.percent === 'number'
+    ? Math.max(0, Math.min(100, pendingProofRunProgress.percent))
+    : pendingProofRun?.status === 'running' ? 50 : 0
+  const pendingProofRunProgressLabel = pendingProofRun
+    ? formatProofProgress(pendingProofRun.progress, pendingProofRun.status)
+    : null
+  const pendingProofRunAge = typeof pendingProofRun?.queueAgeSeconds === 'number'
+    ? `${Math.max(0, Math.round(pendingProofRun.queueAgeSeconds))}s in queue`
+    : null
   const teacherLoadCount = activeRunDetail?.teacherAllocationLoad.length ?? 0
+  const proofRunStatusColor = (status: string) =>
+    status === 'running' ? T.accent : status === 'completed' ? T.success : status === 'failed' ? T.danger : T.dim
   const queuePreviewCount = activeRunDetail?.queuePreview.length ?? 0
   const productionEvaluation = activeProductionDiagnostics?.evaluation
   const productionEvaluationKeys = productionEvaluation && typeof productionEvaluation === 'object'
@@ -420,6 +472,26 @@ export function SystemAdminProofDashboardWorkspace({
       ))}
     </div>
   ) : null
+  const proofSimulationControls = (beforeAction?: () => void) => (
+    <ProofSimulationControls
+      activeRunDetail={activeRunDetail}
+      activeRunCheckpoints={activeRunCheckpoints}
+      selectedProofCheckpoint={selectedProofCheckpoint}
+      selectedProofCheckpointCanStepForward={selectedProofCheckpointCanStepForward}
+      selectedProofCheckpointCanPlayToEnd={selectedProofCheckpointCanPlayToEnd}
+      baselineSnapshot={activeRunBaselineSnapshot}
+      resetStageSnapshot={activeRunResetStageSnapshot}
+      createDisabled={proofDashboardLoading}
+      onCreateProofSimulation={onCreateProofSimulation}
+      onStopProofRun={onStopProofRun}
+      onAdvanceProofRun={onAdvanceProofRun}
+      onRestoreProofSnapshot={onRestoreProofSnapshot}
+      onResetProofRunFromScratch={onResetProofRunFromScratch}
+      onStepProofPlayback={onStepProofPlayback}
+      onRecomputeProofRunRisk={onRecomputeProofRunRisk}
+      beforeAction={beforeAction}
+    />
+  )
   const launcherPopupContent = activeRunDetail ? (
     <div style={{ display: 'grid', gap: 12 }}>
       <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 8 }}>
@@ -460,35 +532,62 @@ export function SystemAdminProofDashboardWorkspace({
       <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 8 }}>
         <div style={{ ...mono, fontSize: 10, color: T.dim }}>Progress actions</div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Btn size="sm" variant="ghost" onClick={onCreateProofImport} disabled={proofSetupBlocked}>Capture Snapshot</Btn>
-          <Btn size="sm" variant="ghost" onClick={onValidateLatestProofImport} disabled={!importsCount}>Check Mapping</Btn>
-          <Btn size="sm" variant="ghost" onClick={onCreateProofRun} disabled={proofSetupBlocked || !importsCount}>Generate Preview</Btn>
-          <Btn size="sm" variant="ghost" onClick={onRecomputeProofRunRisk} disabled={proofSetupBlocked || !activeRunDetail}>Refresh Risk</Btn>
-          <Btn
-            size="sm"
-            variant="ghost"
-            onClick={() => onResetProofRunFromScratch(activeRunDetail.simulationRunId, activeRunBaselineSnapshot?.simulationResetSnapshotId)}
-            disabled={!activeRunBaselineSnapshot}
-          >
-            Reset Preview To Start
-          </Btn>
+          {proofSimulationControls()}
         </div>
-        {proofSetupMessage ? <InfoBanner tone="error" message={proofSetupMessage} /> : null}
         <InfoBanner
           tone="neutral"
-          message="Capture Snapshot copies current setup into proof mode. Check Mapping verifies import links. Generate Preview builds the stage-by-stage faculty and HoD preview."
+          message="Use the simulation controls to advance the proof run, inspect playback, reset the current stage, or reset the full simulation."
         />
       </Card>
     </div>
   ) : (
-    <InfoBanner message="Create or restore a proof run to unlock the shared launcher popup." />
+    <div style={{ display: 'grid', gap: 12 }}>
+      <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 8 }}>
+        <div style={{ ...mono, fontSize: 10, color: T.dim }}>No simulation yet</div>
+        <div style={{ ...mono, fontSize: 11, color: T.text, lineHeight: 1.7 }}>
+          Create Proof Run will bootstrap the proof sandbox and start the first run.
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {proofSimulationControls()}
+        </div>
+      </Card>
+    </div>
   )
-  const launcherPopupFooter = activeRunDetail ? ({ closePopup, jumpToTarget }: { closePopup: () => void; jumpToTarget: () => void }) => (
+  const launcherPopupFooter = ({ closePopup, jumpToTarget }: { closePopup: () => void; jumpToTarget: () => void }) => (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
       <Btn size="sm" variant="ghost" onClick={jumpToTarget}>Open full dashboard</Btn>
       <Btn size="sm" variant="ghost" onClick={closePopup}>Close</Btn>
     </div>
-  ) : null
+  )
+  const selectedCheckpointBlockingQueueItemCount = selectedProofCheckpoint
+    ? Number(selectedProofCheckpoint.blockingQueueItemCount ?? selectedProofCheckpoint.openQueueCount ?? 0)
+    : 0
+  const selectedCheckpointLocallyBlocked = !!selectedProofCheckpoint && (
+    selectedProofCheckpoint.stageAdvanceBlocked === true
+    || selectedCheckpointBlockingQueueItemCount > 0
+  )
+  const selectedCheckpointBlockedByEarlierCheckpoint = !!selectedProofCheckpoint && (
+    selectedProofCheckpoint.playbackAccessible === false
+    && !selectedCheckpointLocallyBlocked
+    && !!selectedProofCheckpoint.blockedByCheckpointId
+  )
+  const selectedCheckpointBannerBlocked = !!selectedProofCheckpoint && (
+    selectedProofCheckpointBlocked
+    || selectedProofCheckpointHasBlockedProgression
+    || selectedCheckpointLocallyBlocked
+    || selectedCheckpointBlockedByEarlierCheckpoint
+  )
+  const selectedCheckpointBannerMessage = selectedProofCheckpoint
+    ? `Viewing Semester ${selectedProofCheckpoint.semesterNumber} · ${selectedProofCheckpoint.stageLabel}. ${
+      selectedCheckpointLocallyBlocked
+        ? 'Resolve every task at this stage before moving forward.'
+        : selectedCheckpointBlockedByEarlierCheckpoint
+          ? `Earlier checkpoint is blocking playback progression: ${selectedProofCheckpoint.blockedByCheckpointId}.${selectedProofCheckpoint.blockedProgressionReason ? ` ${selectedProofCheckpoint.blockedProgressionReason}` : ''}`
+          : selectedProofCheckpointHasBlockedProgression
+            ? 'Earlier checkpoint is blocking playback progression. Resolve prior queue items before moving forward.'
+            : 'This preview is synced to the faculty and HoD proof pages.'
+    }`
+    : ''
 
   return (
     <ProofSurfaceHero
@@ -499,11 +598,7 @@ export function SystemAdminProofDashboardWorkspace({
       title="Simulation Controls"
       description="Import live data, run the simulation, and review results stage by stage using the checkpoint controls below."
       headerActions={(
-        <>
-          <Btn size="sm" dataProofAction="proof-create-import" onClick={onCreateProofImport} disabled={proofSetupBlocked}>Import Data</Btn>
-          <Btn size="sm" dataProofAction="proof-run-rerun" onClick={onCreateProofRun} disabled={proofSetupBlocked || !importsCount}>Run Simulation</Btn>
-          <Btn size="sm" variant="ghost" dataProofAction="proof-recompute-risk" onClick={onRecomputeProofRunRisk} disabled={proofSetupBlocked || !activeRunDetail}>Recalculate Risk</Btn>
-        </>
+        proofSimulationControls()
       )}
       badges={activeRunDetail ? (
         <>
@@ -516,11 +611,16 @@ export function SystemAdminProofDashboardWorkspace({
           </Chip>
           <Chip color={T.dim}>{importsCount} imports</Chip>
         </>
+      ) : pendingProofRun ? (
+        <>
+          <Chip color={proofRunStatusColor(pendingProofRun.status)}>{pendingProofRun.status}</Chip>
+          <Chip color={T.dim}>{pendingProofRun.runLabel}</Chip>
+          <Chip color={T.dim}>{pendingProofRunPhase} · {pendingProofRunPercent}%</Chip>
+        </>
       ) : null}
-      notices={proofDashboardLoading || proofSetupMessage || proofPlaybackRestoreNotice || playbackOverridesActiveSemester ? (
+      notices={proofDashboardLoading || proofPlaybackRestoreNotice || playbackOverridesActiveSemester ? (
         <>
           {proofDashboardLoading ? <InfoBanner message="Loading proof control-plane data..." /> : null}
-          {proofSetupMessage ? <InfoBanner tone="error" message={proofSetupMessage} /> : null}
           {proofPlaybackRestoreNotice ? (
             <RestoreBanner
               tone={proofPlaybackRestoreNotice.tone}
@@ -528,6 +628,7 @@ export function SystemAdminProofDashboardWorkspace({
               message={proofPlaybackRestoreNotice.message}
               actionLabel="Reset playback"
               onAction={onResetProofPlaybackSelection}
+              onDismiss={onDismissProofPlaybackRestoreNotice}
             />
           ) : null}
           {playbackOverridesActiveSemester ? (
@@ -544,7 +645,6 @@ export function SystemAdminProofDashboardWorkspace({
         <ProofSurfaceLauncher
           targetId="system-admin-proof-controls"
           label="Jump to proof controls"
-          disabled={!activeRunDetail}
           dataProofEntityId={selectedProofCheckpoint?.simulationStageCheckpointId ?? activeRunDetail?.simulationRunId}
           popupTitle="Proof launcher"
           popupCaption="Quick access to the active proof run, semester, and verification state."
@@ -630,7 +730,7 @@ export function SystemAdminProofDashboardWorkspace({
                       onClick={() => onStepProofPlayback('previous')}
                       disabled={!selectedProofCheckpoint.previousCheckpointId}
                     >
-                      Previous Stage
+                      Preview Previous Checkpoint
                     </Btn>
                     <Btn
                       size="sm"
@@ -639,7 +739,7 @@ export function SystemAdminProofDashboardWorkspace({
                       onClick={() => onStepProofPlayback('next')}
                       disabled={!selectedProofCheckpointCanStepForward || !selectedProofCheckpoint.nextCheckpointId}
                     >
-                      Next Stage
+                      Preview Next Checkpoint
                     </Btn>
                     <Btn
                       size="sm"
@@ -654,8 +754,8 @@ export function SystemAdminProofDashboardWorkspace({
 
                 <div data-proof-section="selected-checkpoint-banner">
                   <InfoBanner
-                    tone={selectedProofCheckpointBlocked || selectedProofCheckpointHasBlockedProgression ? 'error' : 'neutral'}
-                    message={`Viewing Semester ${selectedProofCheckpoint.semesterNumber} · ${selectedProofCheckpoint.stageLabel}. ${selectedProofCheckpointBlocked || selectedProofCheckpointHasBlockedProgression ? 'Resolve every task at this stage before moving forward.' : 'This preview is synced to the faculty and HoD proof pages.'}`}
+                    tone={selectedCheckpointBannerBlocked ? 'error' : 'neutral'}
+                    message={selectedCheckpointBannerMessage}
                   />
                 </div>
 
@@ -722,7 +822,7 @@ export function SystemAdminProofDashboardWorkspace({
                   <div style={{ display: 'grid', gap: 4 }}>
                     <div>{activeRunDetail.runLabel}</div>
                     <div>Seed {activeRunDetail.seed} · {activeRunDetail.status}</div>
-                    {activeRunDetail.progress ? <div>{String(activeRunDetail.progress.phase ?? 'running')} · {String(activeRunDetail.progress.percent ?? 0)}%</div> : null}
+                    {activeRunDetail.progress ? <div>{formatProofProgress(activeRunDetail.progress, activeRunDetail.status)}</div> : null}
                   </div>
                 )}
                 detail={activeRunDetail.failureMessage ? activeRunDetail.failureMessage : `${activeRunSnapshots.length} saved snapshots · ${activeRunDetail.monitoringSummary.riskAssessmentCount} watch scores`}
@@ -872,7 +972,7 @@ export function SystemAdminProofDashboardWorkspace({
                       <Card key={item.simulationStageQueueProjectionId} style={{ padding: 10, background: T.surface }}>
                         <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.courseCode} · {item.assignedToRole} · {item.riskBand} · {item.status}</div>
                         <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.8 }}>
-                          {item.taskType} · action {item.simulatedActionTaken ?? item.recommendedAction ?? 'none'} · risk {item.riskProbScaled}%{item.noActionRiskProbScaled != null ? ` vs no-action ${item.noActionRiskProbScaled}%` : ''}.
+                          {item.taskType} · action {humanLabelForActionCode(item.simulatedActionTaken ?? item.recommendedAction) ?? 'none'} · risk {item.riskProbScaled}%{item.noActionRiskProbScaled != null ? ` vs no-action ${item.noActionRiskProbScaled}%` : ''}.
                         </div>
                         {item.coEvidenceMode ? (
                           <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 4, lineHeight: 1.8 }}>
@@ -906,7 +1006,7 @@ export function SystemAdminProofDashboardWorkspace({
                 <div style={{ ...mono, fontSize: 10, color: T.text, lineHeight: 1.6 }}>Manifest {activeDiagnosticsTrainingManifestVersion ?? 'unknown'}</div>
                 <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>Splits: {formatSplitSummary(activeDiagnosticsSplitSummary)}</div>
                 <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>Worlds: {formatSplitSummary(activeDiagnosticsWorldSplitSummary)}</div>
-                <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>Scenario families: {formatKeyedCounts(activeModelDiagnostics?.scenarioFamilySummary ?? activeDiagnosticsScenarioFamilies)}</div>
+                <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}><Tooltip label="Scenario families classify synthetic student trajectories into behavioural archetypes (e.g. attendance-driven, early-warning) so the risk model trains on a diverse, controlled mix of outcomes.">Scenario families</Tooltip>: {formatKeyedCounts(activeModelDiagnostics?.scenarioFamilySummary ?? activeDiagnosticsScenarioFamilies)}</div>
                 {activeDiagnosticsHeadSupportSummary ? <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>Head support: {formatHeadSupportSummary(activeDiagnosticsHeadSupportSummary)}</div> : null}
                 {activeDiagnosticsGovernedRunCount != null || activeDiagnosticsSkippedRunCount != null ? <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>Governed runs: {activeDiagnosticsGovernedRunCount ?? 'unknown'} · skipped runs: {activeDiagnosticsSkippedRunCount ?? 0}</div> : null}
               </Card>
@@ -976,7 +1076,7 @@ export function SystemAdminProofDashboardWorkspace({
                   <Card key={item.simulationRunId} style={{ padding: 10, background: T.surface }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
                       <div style={{ ...mono, fontSize: 10, color: T.text }}>{item.runLabel}</div>
-                      <Chip color={item.activeFlag ? T.success : T.dim}>{item.activeFlag ? 'Active' : item.status}</Chip>
+                      <Chip color={item.activeFlag ? T.success : proofRunStatusColor(item.status)}>{item.activeFlag ? 'Active' : item.status}</Chip>
                     </div>
                     <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>Seed {item.seed} · {new Date(item.createdAt).toLocaleString('en-IN')}</div>
                     {item.progress ? <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>{String(item.progress.phase ?? item.status)} · {String(item.progress.percent ?? 0)}%</div> : null}
@@ -1062,6 +1162,41 @@ export function SystemAdminProofDashboardWorkspace({
             </motion.div>
           </ProofSurfaceTabPanel>
         </motion.div>
+      ) : pendingProofRun ? (
+        <Card data-proof-section="proof-run-pending" style={{ padding: 14, background: T.surface, display: 'grid', gap: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <div style={{ display: 'grid', gap: 4, minWidth: 220, flex: 1 }}>
+              <div style={{ ...mono, fontSize: 10, color: T.dim }}>Queued proof run</div>
+              <div style={{ ...sora, fontSize: 13, fontWeight: 700, color: T.text }}>{pendingProofRun.runLabel}</div>
+              <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
+                Waiting for the proof worker to build active details. The dashboard will fill in checkpoints, teacher load, and queue evidence when this run publishes.
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <Chip color={proofRunStatusColor(pendingProofRun.status)}>{pendingProofRun.status}</Chip>
+              <Chip color={T.dim}>{pendingProofRunProgressLabel ?? `${pendingProofRunPhase} · ${pendingProofRunPercent}%`}</Chip>
+              {pendingProofRunAge ? <Chip color={T.dim}>{pendingProofRunAge}</Chip> : null}
+            </div>
+          </div>
+          {pendingProofRun.failureMessage ? (
+            <InfoBanner tone="error" message={pendingProofRun.failureMessage} />
+          ) : (
+            <InfoBanner message="This is not an empty proof panel: the run exists, but worker output is not ready yet. Keep this page open; live polling will refresh the panel." />
+          )}
+          <ScrollCard title="Runs" eyebrow="Worker state" maxHeight={190}>
+            <Card style={{ padding: 10, background: T.surface2 }}>
+              <div style={{ ...mono, fontSize: 10, color: T.text }}>{pendingProofRun.runLabel}</div>
+              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
+                Seed {pendingProofRun.seed} · {pendingProofRun.status} · {pendingProofRunProgressLabel ?? `${pendingProofRunPhase} · ${pendingProofRunPercent}%`}
+              </div>
+              {pendingProofRun.queueAgeSeconds != null || pendingProofRun.leaseState || pendingProofRun.retryState ? (
+                <div style={{ ...mono, fontSize: 10, color: pendingProofRun.leaseState === 'expired' ? T.warning : T.muted, marginTop: 4, lineHeight: 1.6 }}>
+                  Queue age {formatAgeSeconds(pendingProofRun.queueAgeSeconds)} · lease {formatLeaseState(pendingProofRun.leaseState)}{pendingProofRun.retryState ? ` · ${pendingProofRun.retryState}` : ''}
+                </div>
+              ) : null}
+            </Card>
+          </ScrollCard>
+        </Card>
       ) : (
         <InfoBanner message="No proof run exists for this batch yet. Create an import, approve it, then start the first run." />
       )}

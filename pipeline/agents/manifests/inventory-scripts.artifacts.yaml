@@ -1,0 +1,9 @@
+artifacts:
+  - path: audit-map/32-reports/inventory-scripts.md
+    min_lines: 40
+    min_bytes: 2000
+    required_sections:
+      - "# Script Inventory"
+      - "## Categories"
+      - "## Invocation Contracts"
+    write_mode: replace

@@ -4,6 +4,7 @@ import { T, mono, sora } from '../data'
 import type { Role } from '../domain'
 import type { ApiFeatureCompleteness, ApiFeatureProvenance, ApiRiskHeadDisplay, ApiStudentRiskExplorer } from '../api/types'
 import { describeProofModelUsefulness, describeProofProvenance } from '../proof-provenance'
+import { humanLabelForActionCode } from '../action-code-humaniser'
 import { ProofSurfaceHero, ProofSurfaceLauncher, ProofSurfaceTabPanel, ProofSurfaceTabs } from '../proof-surface-shell'
 import { Btn, Card, Chip, PageBackButton, PageShell } from '../ui-primitives'
 import { EmptyState, InfoBanner, MetricCard } from '../system-admin-ui'
@@ -53,6 +54,10 @@ function renderHeadHelper(display: ApiRiskHeadDisplay | undefined, baseHelper: s
   if (display?.calibrationMethod) pieces.push(`Calibration ${display.calibrationMethod}`)
   if (display?.supportWarning) pieces.push(display.supportWarning)
   return pieces.join(' · ')
+}
+
+function formatEvidencePct(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value)}%` : 'Not recorded yet'
 }
 
 function renderFeatureCompletenessLabel(featureCompleteness: ApiFeatureCompleteness | null) {
@@ -316,7 +321,7 @@ export function RiskExplorerPage({
                 <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
                   <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Model output</div>
                   <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>{explorer.currentStatus.riskBand ?? 'Unavailable'}</div>
-                  <div style={{ ...mono, fontSize: 10, color: T.muted }}>{explorer.currentStatus.recommendedAction ?? 'No simulated intervention'}</div>
+                  <div style={{ ...mono, fontSize: 10, color: T.muted }}>{humanLabelForActionCode(explorer.currentStatus.recommendedAction) ?? 'No simulated intervention'}</div>
                 </Card>
                 <Card style={{ padding: 12, background: T.surface2, display: 'grid', gap: 6 }}>
                   <div style={{ ...mono, fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>No-action comparator</div>
@@ -415,11 +420,11 @@ export function RiskExplorerPage({
                   </div>
                   <div style={{ display: 'grid', gap: 8 }}>
                     <div style={{ ...mono, fontSize: 10, color: T.text, lineHeight: 1.7, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
-                      Model output: {explorer.currentStatus.recommendedAction ?? 'None'}
+                      Model output: {humanLabelForActionCode(explorer.currentStatus.recommendedAction) ?? 'None'}
                     </div>
                     {explorer.currentStatus.recommendedAction ? (
                       <div style={{ ...mono, fontSize: 10, color: T.accent, lineHeight: 1.7, border: `1px solid ${T.border2}`, borderRadius: 10, background: T.surface2, padding: '6px 8px', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
-                        Simulated intervention: {explorer.currentStatus.recommendedAction.replace(/-/g, ' ')}
+                        Simulated intervention: {humanLabelForActionCode(explorer.currentStatus.recommendedAction)}
                       </div>
                     ) : null}
                   </div>
@@ -438,9 +443,9 @@ export function RiskExplorerPage({
                 <Card data-proof-section="current-evidence" style={{ padding: 16, display: 'grid', gap: 10 }}>
                   <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>Current Evidence</div>
                   <MetricCard label="Attendance" value={`${explorer.currentEvidence.attendancePct}%`} helper="Checkpoint-visible attendance only." />
-                  <MetricCard label="TT1 / TT2" value={`${explorer.currentEvidence.tt1Pct}% / ${explorer.currentEvidence.tt2Pct}%`} helper="Observed term-test evidence." />
-                  <MetricCard label="Quiz / Assignment" value={`${explorer.currentEvidence.quizPct}% / ${explorer.currentEvidence.assignmentPct}%`} helper="Coursework evidence." />
-                  <MetricCard label="SEE" value={`${explorer.currentEvidence.seePct}%`} helper="SEE evidence where available in the selected window." />
+                  <MetricCard label="TT1 / TT2" value={`${formatEvidencePct(explorer.currentEvidence.tt1Pct)} / ${formatEvidencePct(explorer.currentEvidence.tt2Pct)}`} helper="Observed term-test evidence." />
+                  <MetricCard label="Quiz / Assignment" value={`${formatEvidencePct(explorer.currentEvidence.quizPct)} / ${formatEvidencePct(explorer.currentEvidence.assignmentPct)}`} helper="Coursework evidence." />
+                  <MetricCard label="SEE" value={formatEvidencePct(explorer.currentEvidence.seePct)} helper="SEE evidence where available in the selected window." />
                   <MetricCard label="Focus Outcomes / Weak Questions" value={`${explorer.currentEvidence.weakCoCount} / ${explorer.currentEvidence.weakQuestionCount}`} helper="Observed weakness counts only." />
                 </Card>
               )}
@@ -452,8 +457,8 @@ export function RiskExplorerPage({
                     <>
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                         {'policyPhenotype' in policyComparison && policyComparison.policyPhenotype ? <Chip color={T.orange}>{policyComparison.policyPhenotype}</Chip> : null}
-                        {policyComparison.recommendedAction ? <Chip color={T.accent}>{policyComparison.recommendedAction}</Chip> : null}
-                        {policyComparison.simulatedActionTaken ? <Chip color={T.warning}>{policyComparison.simulatedActionTaken}</Chip> : null}
+                        {policyComparison.recommendedAction ? <Chip color={T.accent}>{humanLabelForActionCode(policyComparison.recommendedAction)}</Chip> : null}
+                        {policyComparison.simulatedActionTaken ? <Chip color={T.warning}>{humanLabelForActionCode(policyComparison.simulatedActionTaken)}</Chip> : null}
                       </div>
                       {policyComparisonCandidates.length > 0 ? (
                         <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>

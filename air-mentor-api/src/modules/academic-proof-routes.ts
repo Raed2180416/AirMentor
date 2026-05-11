@@ -11,18 +11,28 @@ import {
   studentAgentSessions,
 } from '../db/schema.js'
 import { createId } from '../lib/ids.js'
-import { badRequest, notFound } from '../lib/http-errors.js'
+import { AppError, badRequest, notFound } from '../lib/http-errors.js'
 import { parseJson, stringifyJson } from '../lib/json.js'
 import {
   buildHodProofAnalytics,
   buildStudentAgentCard,
   buildStudentRiskExplorer,
+  advanceProofSimulationDay,
+  advanceProofSimulationPreviousDay,
+  advanceProofSimulationStage,
   listStudentAgentTimeline,
+  recomputeObservedOnlyRisk,
   sendStudentAgentMessage,
   startStudentAgentSession,
+  stopProofSimulationRun,
 } from '../lib/msruas-proof-control-plane.js'
+import { buildCounterfactualReport } from '../lib/proof-counterfactual-reader.js'
+import { fetchCounterfactualSnapshotRows } from '../lib/proof-counterfactual-fetcher.js'
+import { buildSimulatorCounterfactualReport } from '../lib/proof-counterfactual-simulator-aggregator.js'
+import { fetchSimulatorProjectionRows } from '../lib/proof-counterfactual-simulator-fetcher.js'
 import {
   assertAcademicAccess,
+  evaluateActiveProofRunAccess,
   evaluateFacultyContextAccess,
   evaluateStudentShellSessionMessageAccess,
 } from './academic-access.js'
@@ -32,6 +42,19 @@ import {
   parseOrThrow,
   requireRole,
 } from './support.js'
+
+async function resolveScopedAcademicProofRun(
+  context: RouteContext,
+  auth: ReturnType<typeof requireRole>,
+  simulationRunId: string,
+) {
+  const [run] = await context.db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, simulationRunId))
+  if (!run) throw notFound('Simulation run not found')
+  if ((run.demoWorkspaceId ?? null) !== (auth.demoWorkspaceId ?? null)) {
+    throw new AppError(403, 'PROOF_RUN_SCOPE_MISMATCH', 'Proof run is not available in this workspace scope.')
+  }
+  return run
+}
 
 export async function registerAcademicProofRoutes(
   app: FastifyInstance,
@@ -51,6 +74,7 @@ export async function registerAcademicProofRoutes(
     proofReassessmentResolveSchema,
     proofResolutionCreditByOutcome,
     proofResolutionRecoveryState,
+    resolveBatchPolicy,
     resolveAcademicStageCheckpoint,
     resolveProofReassessmentAccess,
     resolveStudentShellRun,
@@ -58,6 +82,10 @@ export async function registerAcademicProofRoutes(
     studentShellQuerySchema,
     studentShellSessionCreateSchema,
   } = deps
+
+  const proofAdvanceSchema = z.object({
+    mode: z.enum(['day', 'previous-day', 'stage']),
+  })
 
   app.get('/api/academic/hod/proof-summary', {
     schema: {
@@ -183,6 +211,132 @@ export async function registerAcademicProofRoutes(
       filters: query,
     })
     return { items: result.reassessments }
+  })
+
+  app.get('/api/academic/hod/proof-counterfactual', {
+    schema: {
+      tags: ['academic'],
+      summary: 'DIAGNOSTIC ONLY — flag-diff baseline-vs-realized across two proof runs. For final demo analytics use /proof-counterfactual-simulator.',
+    },
+  }, async request => {
+    // Temporary diagnostic per prompt §G.6. Final Sem-6 demo analytics MUST
+    // use the simulator-based no-intervention branch exposed by the sibling
+    // route /proof-counterfactual-simulator below.
+    const auth = requireRole(request, ['SYSTEM_ADMIN', 'HOD'])
+    assertAcademicAccess(evaluateFacultyContextAccess(auth))
+    const querySchema = z.object({
+      runIdBaseline: z.string().min(1),
+      runIdRealized: z.string().min(1),
+    })
+    const query = parseOrThrow(querySchema, request.query)
+    if (query.runIdBaseline === query.runIdRealized) {
+      throw badRequest('runIdBaseline and runIdRealized must be two distinct simulation runs')
+    }
+    await Promise.all([
+      resolveScopedAcademicProofRun(context, auth, query.runIdBaseline),
+      resolveScopedAcademicProofRun(context, auth, query.runIdRealized),
+    ])
+    const [baselineRows, realizedRows] = await Promise.all([
+      fetchCounterfactualSnapshotRows(context.db, { simulationRunId: query.runIdBaseline }),
+      fetchCounterfactualSnapshotRows(context.db, { simulationRunId: query.runIdRealized }),
+    ])
+    const report = buildCounterfactualReport({
+      runIdBaseline: query.runIdBaseline,
+      runIdRealized: query.runIdRealized,
+      baselineRows,
+      realizedRows,
+    })
+    return report
+  })
+
+  app.get('/api/academic/hod/proof-counterfactual-simulator', {
+    schema: {
+      tags: ['academic'],
+      summary: 'Phase-11 simulator-based counterfactual — projected with-vs-without intervention report for ONE run. Authoritative Sem-6 analytics path.',
+    },
+  }, async request => {
+    // Phase-11 final analytics path. Reads stored simulation_stage_student_projections
+    // (noActionRiskProbScaled + realized marks) for the given run and produces
+    // per-(student, stage) counterfactuals plus projected Sem-6 rollups.
+    //
+    // Access: HOD or SYSTEM_ADMIN. Prompt §B.8 HOD owns oversight analytics.
+    const auth = requireRole(request, ['SYSTEM_ADMIN', 'HOD'])
+    assertAcademicAccess(evaluateFacultyContextAccess(auth))
+    const querySchema = z.object({
+      runId: z.string().min(1),
+    })
+    const query = parseOrThrow(querySchema, request.query)
+    await resolveScopedAcademicProofRun(context, auth, query.runId)
+    const rows = await fetchSimulatorProjectionRows(context.db, { simulationRunId: query.runId })
+    const report = buildSimulatorCounterfactualReport({
+      runId: query.runId,
+      generatedAt: context.now(),
+      rows,
+    })
+    return report
+  })
+
+  app.post('/api/academic/proof-runs/:simulationRunId/advance', {
+    schema: {
+      tags: ['academic'],
+      summary: 'Advance the active proof run from the academic workspace',
+    },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN', ...academicRoleCodes])
+    assertAcademicAccess(evaluateFacultyContextAccess(auth, { allowSystemAdmin: true }))
+    const params = parseOrThrow(z.object({ simulationRunId: z.string().min(1) }), request.params)
+    const body = parseOrThrow(proofAdvanceSchema, request.body ?? {})
+    const run = await resolveScopedAcademicProofRun(context, auth, params.simulationRunId)
+    assertAcademicAccess(evaluateActiveProofRunAccess(auth, run.activeFlag === 1, 'Academic proof controls may advance only the active proof run'))
+
+    const input = {
+      simulationRunId: params.simulationRunId,
+      actorFacultyId: auth.facultyId ?? null,
+      now: context.now(),
+    }
+    if (body.mode === 'day') return advanceProofSimulationDay(context.db, input)
+    if (body.mode === 'previous-day') return advanceProofSimulationPreviousDay(context.db, input)
+    return advanceProofSimulationStage(context.db, input)
+  })
+
+  app.post('/api/academic/proof-runs/:simulationRunId/stop', {
+    schema: {
+      tags: ['academic'],
+      summary: 'Stop the active proof run from the academic workspace',
+    },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN', ...academicRoleCodes])
+    assertAcademicAccess(evaluateFacultyContextAccess(auth, { allowSystemAdmin: true }))
+    const params = parseOrThrow(z.object({ simulationRunId: z.string().min(1) }), request.params)
+    const run = await resolveScopedAcademicProofRun(context, auth, params.simulationRunId)
+    assertAcademicAccess(evaluateActiveProofRunAccess(auth, run.activeFlag === 1, 'Academic proof controls may stop only the active proof run'))
+    return stopProofSimulationRun(context.db, {
+      simulationRunId: params.simulationRunId,
+      actorFacultyId: auth.facultyId ?? null,
+      now: context.now(),
+    })
+  })
+
+  app.post('/api/academic/proof-runs/:simulationRunId/recompute-risk', {
+    schema: {
+      tags: ['academic'],
+      summary: 'Recompute observable-only risk for the active proof run from the academic workspace',
+    },
+  }, async request => {
+    const auth = requireRole(request, ['SYSTEM_ADMIN', ...academicRoleCodes])
+    assertAcademicAccess(evaluateFacultyContextAccess(auth, { allowSystemAdmin: true }))
+    const params = parseOrThrow(z.object({ simulationRunId: z.string().min(1) }), request.params)
+    const run = await resolveScopedAcademicProofRun(context, auth, params.simulationRunId)
+    assertAcademicAccess(evaluateActiveProofRunAccess(auth, run.activeFlag === 1, 'Academic proof controls may recompute only the active proof run'))
+    const resolved = await resolveBatchPolicy(context, run.batchId)
+    await recomputeObservedOnlyRisk(context.db, {
+      simulationRunId: params.simulationRunId,
+      policy: resolved.effectivePolicy,
+      actorFacultyId: auth.facultyId ?? null,
+      now: context.now(),
+      rebuildModelArtifacts: false,
+    })
+    return { ok: true }
   })
 
   app.post('/api/academic/proof-reassessments/:reassessmentEventId/acknowledge', {

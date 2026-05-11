@@ -10,7 +10,11 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+air-mentor-api/dist/
+node_modules/.vite/
+air-mentor-api/node_modules/.vite/
 *.local
+.claude/settings.local.json
 output/*
 air-mentor-api/output/
 test-results/
@@ -30,3 +34,12 @@ tmp_*.cjs
 *.njsproj
 *.sln
 *.sw?
+tests-e2e/artifacts/
+
+# Tool caches (never committed)
+.ctxo/
+.superpowers/
+.worktrees/
+
+# Ctxo local cache (never committed)
+.ctxo/.cache/

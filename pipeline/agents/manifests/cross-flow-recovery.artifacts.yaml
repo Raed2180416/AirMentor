@@ -1,0 +1,9 @@
+artifacts:
+  - path: audit-map/32-reports/cross-flow-recovery.md
+    min_lines: 30
+    min_bytes: 1500
+    required_sections:
+      - "# Cross-Flow Recovery"
+      - "## Scenarios"
+      - "## Evidence"
+    write_mode: replace

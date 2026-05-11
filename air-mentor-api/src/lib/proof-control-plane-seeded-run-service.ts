@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, ne } from 'drizzle-orm'
 import type { AppDb } from '../db/client.js'
 import {
   alertDecisions,
@@ -10,7 +10,7 @@ import {
   simulationQuestionTemplates,
   simulationResetSnapshots,
   simulationRuns,
-  studentAcademicProfiles,
+  simulationStageCheckpoints,
   studentAssessmentScores,
   studentAttendanceSnapshots,
   studentBehaviorProfiles,
@@ -29,6 +29,7 @@ import {
 } from '../db/schema.js'
 import type { ResolvedPolicy } from '../modules/admin-structure.js'
 import { parseObservedStateRow } from './proof-observed-state.js'
+import { buildProofRunStageBoundarySnapshot } from './proof-control-plane-rebuild-context-service.js'
 
 type FacultyLoadAssignment = {
   offeringId: string
@@ -169,23 +170,6 @@ export async function finalizeSeededProofRun(
   if (input.interventionRows.length > 0) await deps.insertRowsInChunks(db, studentInterventions, input.interventionRows)
   if (input.interventionResponseRows.length > 0) await deps.insertRowsInChunks(db, studentInterventionResponseStates, input.interventionResponseRows)
 
-  const currentProfiles = await db.select().from(studentAcademicProfiles)
-  const currentProfileSet = new Set(currentProfiles.map(row => row.studentId))
-  for (const trajectory of input.trajectories) {
-    const latestObserved = input.observedRows
-      .filter(row => row.studentId === trajectory.studentId && row.semesterNumber <= 5)
-      .sort((left, right) => right.semesterNumber - left.semesterNumber)[0]
-    if (!latestObserved) continue
-    const payload = parseObservedStateRow(latestObserved)
-    const prevCgpaScaled = Math.round(Number(payload.cgpaAfterSemester ?? 0) * 100)
-    if (currentProfileSet.has(trajectory.studentId)) {
-      await db.update(studentAcademicProfiles).set({
-        prevCgpaScaled,
-        updatedAt: input.now,
-      }).where(eq(studentAcademicProfiles.studentId, trajectory.studentId))
-    }
-  }
-
   await deps.rebuildSimulationStagePlayback(db, {
     simulationRunId: input.simulationRunId,
     policy: input.policy,
@@ -208,6 +192,26 @@ export async function finalizeSeededProofRun(
       rebuildModelArtifacts: false,
     })
   }
+  const [currentRun, checkpointRows] = await Promise.all([
+    db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, input.simulationRunId)).then(rows => rows[0] ?? null),
+    db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, input.simulationRunId)),
+  ])
+  const stageBoundary = buildProofRunStageBoundarySnapshot(checkpointRows)
+  const entrySemester = stageBoundary.semesters[0] ?? null
+  const activeOperationalSemester = entrySemester?.semesterNumber ?? currentRun?.activeOperationalSemester ?? 1
+  const activeStageKey = entrySemester?.entryStageKey ?? currentRun?.activeStageKey ?? 'pre-tt1'
+  const lifecycleState = input.activate ? 'completed-inspectable' : 'completed'
+  const setupConfig = {
+    activate: input.activate,
+    skipArtifactRebuild: Boolean(input.skipArtifactRebuild),
+    skipActiveRiskRecompute: Boolean(input.skipActiveRiskRecompute),
+    trajectoryCount: input.trajectories.length,
+  }
+  const scenarioConfig = {
+    scenarioFamily: input.scenarioFamily,
+    parentSimulationRunId: input.parentSimulationRunId ?? null,
+    runSeed: input.runSeed,
+  }
 
   const snapshot = {
     curriculumImportVersionId: input.curriculumImportVersionId,
@@ -216,6 +220,16 @@ export async function finalizeSeededProofRun(
     sectionCount: 2,
     studentCount: 120,
     facultyCount: deps.PROOF_FACULTY.length,
+    runAuthority: {
+      activeOperationalSemester,
+      activeStageKey,
+      lifecycleState,
+      runMode: 'seeded-proof',
+      simulatedDateIso: currentRun?.simulatedDateIso ?? input.now,
+      stageBoundary,
+    },
+    setupConfig,
+    scenarioConfig,
   }
   await db.insert(simulationResetSnapshots).values({
     simulationResetSnapshotId: deps.createId('simulation_reset'),
@@ -245,7 +259,15 @@ export async function finalizeSeededProofRun(
   await db.update(simulationRuns).set({
     status: 'completed',
     activeFlag: input.activate ? 1 : 0,
+    activeOperationalSemester,
+    activeStageKey: activeStageKey ?? null,
     completedAt: input.now,
+    simulatedDateIso: currentRun?.simulatedDateIso ?? input.now,
+    setupConfigJson: JSON.stringify(setupConfig),
+    scenarioConfigJson: JSON.stringify(scenarioConfig),
+    lifecycleState,
+    runMode: 'seeded-proof',
+    stageBoundaryJson: JSON.stringify(stageBoundary),
     progressJson: JSON.stringify({
       phase: 'completed',
       percent: 100,
@@ -271,6 +293,18 @@ export async function finalizeSeededProofRun(
     }),
     updatedAt: input.now,
   }).where(eq(simulationRuns.simulationRunId, input.simulationRunId))
+
+  if (input.activate) {
+    await db.update(simulationRuns).set({
+      status: 'completed',
+      activeFlag: 0,
+      updatedAt: input.now,
+    }).where(and(
+      eq(simulationRuns.batchId, input.batchId),
+      ne(simulationRuns.simulationRunId, input.simulationRunId),
+      eq(simulationRuns.activeFlag, 1),
+    ))
+  }
 
   return {
     simulationRunId: input.simulationRunId,

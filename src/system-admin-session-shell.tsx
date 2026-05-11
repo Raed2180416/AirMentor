@@ -1,4 +1,4 @@
-import type { FormEventHandler, ReactNode } from 'react'
+import { useState, type FormEventHandler, type ReactNode } from 'react'
 import { ChevronLeft, Compass } from 'lucide-react'
 import { T, mono, sora } from './data'
 import {
@@ -47,6 +47,7 @@ function SystemAdminLoginScreen({
   onLogin: FormEventHandler<HTMLFormElement>
   onExitPortal?: () => void
 }) {
+  const [showPassword, setShowPassword] = useState(false)
   return (
     <SystemAdminAuthPageShell>
       <div style={{ minHeight: 'calc(100vh - 60px)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24, alignItems: 'stretch' }}>
@@ -74,7 +75,13 @@ function SystemAdminLoginScreen({
           <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 10, lineHeight: 1.8 }}>Use your assigned system-admin credentials. Session state and theme preferences are restored automatically after sign-in.</div>
           <form onSubmit={onLogin} style={{ marginTop: 22, display: 'grid', gap: 14 }}>
             <div><FieldLabel>Username Or Email</FieldLabel><TextInput value={identifier} onChange={event => onIdentifierChange(event.target.value)} placeholder="sysadmin" /></div>
-            <div><FieldLabel>Password</FieldLabel><TextInput type="password" value={password} onChange={event => onPasswordChange(event.target.value)} placeholder="••••••••" /></div>
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                <FieldLabel>Password</FieldLabel>
+                <Btn variant="ghost" size="sm" onClick={() => setShowPassword(value => !value)}>{showPassword ? 'Hide Password' : 'Show Password'}</Btn>
+              </div>
+              <TextInput type={showPassword ? 'text' : 'password'} value={password} onChange={event => onPasswordChange(event.target.value)} placeholder="••••••••" />
+            </div>
             {authError ? <InfoBanner tone="error" message={authError} /> : null}
             <div style={{ display: 'flex', gap: 12, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
               {onExitPortal ? <Btn variant="ghost" onClick={onExitPortal}>Back To Portal</Btn> : <span />}

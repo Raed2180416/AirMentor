@@ -2,8 +2,11 @@ import { useMemo, useState } from 'react'
 import { AlertTriangle, Eye, Mail, Phone, Search, Users, X } from 'lucide-react'
 import { T, mono, sora, yearColor, type Mentee, type Offering, type Student, type StudentHistoryRecord, type YearGroup } from './data'
 import { type EntryKind, type Role, type SharedTask } from './domain'
-import type { ApiAcademicFacultyProfile } from './api/types'
+import type { ApiAcademicFacultyProfile, ApiProofReassessmentResolveResponse, ApiStudentAgentCard, ApiStudentRiskExplorer } from './api/types'
+import type { ProofAdvanceControlMode, ProofPlaybackControlDirection } from './proof-simulation-controls'
 import { AcademicProofSummaryStrip } from './academic-proof-summary-strip'
+import { humanLabelForActionCode } from './action-code-humaniser'
+import { DemoRealityLoopPanel } from './demo-reality-loop'
 import { useAppSelectors } from './selectors'
 import { inferKindFromPendingAction } from './page-utils'
 import { Bar, Btn, Card, Chip, PageBackButton, PageShell, StagePips } from './ui-primitives'
@@ -36,9 +39,18 @@ type CLDashboardProps = {
   proofProfile?: ApiAcademicFacultyProfile | null
   onOpenCourse: (offering: Offering) => void
   onOpenStudent: (student: Student, offering: Offering) => void
+  onOpenStudents?: () => void
   onOpenUpload: (offering?: Offering, kind?: EntryKind) => void
   onOpenCalendar: () => void
   onOpenPendingActions: () => void
+  loadStudentRiskExplorer?: (studentId: string) => Promise<ApiStudentRiskExplorer>
+  loadStudentAgentCard?: (studentId: string) => Promise<ApiStudentAgentCard>
+  onCommitDemoAttendanceEdit?: (offeringId: string, studentId: string, nextAttendancePct: number) => Promise<void>
+  onRecomputeProofRunRisk?: (simulationRunId: string, options?: { refreshWorkspace?: boolean }) => Promise<void>
+  onResolveProofReassessment?: (reassessmentEventId: string, options?: { refreshWorkspace?: boolean }) => Promise<ApiProofReassessmentResolveResponse>
+  onAdvanceProofRun?: (simulationRunId: string, mode: ProofAdvanceControlMode, options?: { refreshWorkspace?: boolean }) => Promise<void> | void
+  onStopProofRun?: (simulationRunId: string) => void
+  onStepProofPlayback?: (direction: ProofPlaybackControlDirection) => void
   teacherInitials: string
   greetingHeadline: string
   greetingMeta: string
@@ -51,9 +63,18 @@ export function CLDashboard({
   proofProfile,
   onOpenCourse,
   onOpenStudent,
+  onOpenStudents,
   onOpenUpload,
   onOpenCalendar,
   onOpenPendingActions,
+  loadStudentRiskExplorer,
+  loadStudentAgentCard,
+  onCommitDemoAttendanceEdit,
+  onRecomputeProofRunRisk,
+  onResolveProofReassessment,
+  onAdvanceProofRun,
+  onStopProofRun,
+  onStepProofPlayback,
   teacherInitials,
   greetingHeadline,
   greetingMeta,
@@ -84,7 +105,7 @@ export function CLDashboard({
         studentName: item.studentName,
         phone: student?.phone ?? '',
         riskProbScaled: item.riskProbScaled,
-        reasonLabel: item.drivers[0]?.label ?? item.recommendedAction ?? null,
+        reasonLabel: item.drivers[0]?.label ?? humanLabelForActionCode(item.recommendedAction) ?? null,
         courseCode: item.courseCode,
         yearLabel: offering?.year ?? null,
         sectionCode: item.sectionCode ?? offering?.section ?? null,
@@ -136,7 +157,14 @@ export function CLDashboard({
 
   return (
     <PageShell size="wide">
-      <AcademicProofSummaryStrip profile={proofProfile ?? null} surfaceId="course-leader-dashboard" surfaceLabel="Course Leader Dashboard" />
+      <AcademicProofSummaryStrip
+        profile={proofProfile ?? null}
+        surfaceId="course-leader-dashboard"
+        surfaceLabel="Course Leader Dashboard"
+        onAdvanceProofRun={onAdvanceProofRun}
+        onStopProofRun={onStopProofRun}
+        onStepProofPlayback={onStepProofPlayback}
+      />
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
         <div style={{ width: 50, height: 50, borderRadius: 14, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', ...sora, fontWeight: 800, fontSize: 18, color: '#fff' }}>{teacherInitials}</div>
         <div>
@@ -151,11 +179,11 @@ export function CLDashboard({
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
         {[
-          { icon: '👥', label: 'Total Students', val: total, color: T.success },
+          { icon: '👥', label: 'Total Students', val: total, color: T.accent, action: onOpenStudents },
           { icon: '‼️', label: 'High Watch Students', val: highRiskCount, color: T.danger },
           { icon: '🎯', label: 'Pending Actions', val: pendingTaskCount, color: T.warning, action: onOpenPendingActions },
         ].map((stat, index) => (
-          <Card key={index} glow={stat.color} style={{ padding: '14px 18px', cursor: stat.action ? 'pointer' : 'default' }} onClick={stat.action}>
+          <Card key={index} style={{ padding: '14px 18px', cursor: stat.action ? 'pointer' : 'default', borderColor: `${stat.color}22` }} onClick={stat.action}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 22 }}>{stat.icon}</span>
               <div>
@@ -166,6 +194,17 @@ export function CLDashboard({
           </Card>
         ))}
       </div>
+
+      <DemoRealityLoopPanel
+        proofProfile={proofProfile ?? null}
+        offerings={offerings}
+        loadStudentRiskExplorer={loadStudentRiskExplorer}
+        loadStudentAgentCard={loadStudentAgentCard}
+        onCommitAttendanceEdit={onCommitDemoAttendanceEdit}
+        onRecomputeProofRunRisk={onRecomputeProofRunRisk}
+        onResolveReassessment={onResolveProofReassessment}
+        onAdvanceProofRun={onAdvanceProofRun}
+      />
 
       {highRiskCount > 0 && (
         <Card glow={T.danger} style={{ padding: '18px 22px', marginBottom: 24 }}>

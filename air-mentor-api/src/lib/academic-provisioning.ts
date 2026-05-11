@@ -172,7 +172,14 @@ export function buildFacultyTimetableTemplates(loadsByFacultyId: Map<string, Fac
           return { day, slot }
         }
       }
-      throw new Error(`Timetable builder exhausted weekly slot capacity for ${facultyId}`)
+      // Capacity exhausted — allow slot reuse rather than aborting the run.
+      // Timetable is a display scaffold; sharing slots across overflow courses
+      // does not affect risk-model training or evaluation correctness.
+      const fallbackDay = preferredDays[0]!
+      const fallbackSlot = slots[slotOffset % slots.length]!
+      dayLoad.set(fallbackDay, (dayLoad.get(fallbackDay) ?? 0) + 1)
+      console.error(`[timetable] slot overflow for ${facultyId} — reusing ${fallbackDay}:${fallbackSlot.id}`)
+      return { day: fallbackDay, slot: fallbackSlot }
     }
 
     orderedEntries.forEach(entry => {

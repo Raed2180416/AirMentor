@@ -1,0 +1,11 @@
+purpose: |
+  Bootstrap a deterministic Playwright end-to-end test harness for the fresh-sem1
+  demo. Foundation for 11 follow-up flow specs. MUST NOT modify product source
+  under src/** or air-mentor-api/src/**.
+nonneg:
+  - Do not modify source code under src/** or air-mentor-api/src/**
+  - Do not modify existing tests under tests/** or air-mentor-api/tests/**
+  - Do not delete or rename existing files
+  - Writes limited to tests-e2e/**, playwright.config.*, package.json, and one report
+  - Must include verification_commands the user can run to confirm the smoke test passes
+owner_files: []

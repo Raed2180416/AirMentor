@@ -1,7 +1,9 @@
 {
   "compilerOptions": {
     "noEmit": true,
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true
   },
   "files": [],
   "references": [

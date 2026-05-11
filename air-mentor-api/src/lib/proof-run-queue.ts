@@ -47,11 +47,20 @@ type QueueRow = {
   semester_start: number
   semester_end: number
   source_type: string
+  demo_workspace_id: string | null
   policy_snapshot_json: string
   progress_json: string | null
+  section_overrides_json: string | null
   worker_lease_token: string | null
   created_at: string
   updated_at: string
+}
+
+class ProofRunLeaseLostError extends Error {
+  constructor(simulationRunId: string) {
+    super(`Proof worker lease lost before execution for ${simulationRunId}`)
+    this.name = 'ProofRunLeaseLostError'
+  }
 }
 
 async function buildQueueMetadata(db: AppDb, batchId: string): Promise<QueueMetadata> {
@@ -139,11 +148,13 @@ export async function enqueueProofSimulationRun(db: AppDb, input: {
   runLabel?: string
   parentSimulationRunId?: string | null
   activate?: boolean
+  sectionOverridesJson?: string | null
+  demoWorkspaceId?: string | null
 }) {
   const queueMetadata = await buildQueueMetadata(db, input.batchId)
   const runSeed = input.seed ?? Math.floor(Date.now() % 100000)
   const simulationRunId = createId('simulation_run')
-  const activateRequested = input.activate ?? true
+  const activateRequested = input.activate ?? false
   const modeLabel = queueMetadata.sourceType === 'simulation' ? 'MSRUAS proof rerun' : 'Live batch proof run'
   await db.insert(simulationRuns).values({
     simulationRunId,
@@ -161,8 +172,10 @@ export async function enqueueProofSimulationRun(db: AppDb, input: {
     facultyCount: queueMetadata.facultyCount,
     semesterStart: queueMetadata.semesterStart,
     semesterEnd: queueMetadata.semesterEnd,
-    activeOperationalSemester: queueMetadata.semesterEnd,
+    activeOperationalSemester: queueMetadata.semesterStart,
     sourceType: queueMetadata.sourceType,
+    demoWorkspaceId: input.demoWorkspaceId ?? null,
+    sectionOverridesJson: input.sectionOverridesJson ?? null,
     policySnapshotJson: JSON.stringify(input.policy),
     engineVersionsJson: JSON.stringify({
       queueMode: 'background-worker',
@@ -190,6 +203,7 @@ export async function enqueueProofSimulationRun(db: AppDb, input: {
     curriculumFeatureProfileId: input.curriculumFeatureProfileId ?? null,
     curriculumFeatureProfileFingerprint: input.curriculumFeatureProfileFingerprint ?? null,
     sourceType: queueMetadata.sourceType,
+    demoWorkspaceId: input.demoWorkspaceId ?? null,
     requestedActivate: activateRequested,
   })
   return {
@@ -216,15 +230,45 @@ export async function retryQueuedProofSimulationRun(db: AppDb, input: {
 }) {
   const [run] = await db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, input.simulationRunId))
   if (!run) throw new Error('Simulation run not found')
-  await db.update(simulationRuns).set({
+  const priorProgress = parseJson(run.progressJson, {} as Record<string, unknown>)
+  const nextSimulationRunId = createId('simulation_run')
+  const nextAttemptNumber = Math.max(1, Number(priorProgress.attemptNumber ?? 1)) + 1
+  await db.insert(simulationRuns).values({
+    simulationRunId: nextSimulationRunId,
+    batchId: run.batchId,
+    curriculumImportVersionId: run.curriculumImportVersionId,
+    curriculumFeatureProfileId: run.curriculumFeatureProfileId,
+    curriculumFeatureProfileFingerprint: run.curriculumFeatureProfileFingerprint,
+    parentSimulationRunId: run.simulationRunId,
+    runLabel: run.runLabel,
     status: 'queued',
     activeFlag: 0,
+    seed: run.seed,
+    sectionCount: run.sectionCount,
+    studentCount: run.studentCount,
+    facultyCount: run.facultyCount,
+    semesterStart: run.semesterStart,
+    semesterEnd: run.semesterEnd,
+    activeOperationalSemester: run.activeOperationalSemester,
+    activeStageKey: run.activeStageKey,
+    simulatedDateIso: run.simulatedDateIso,
+    setupConfigJson: run.setupConfigJson,
+    scenarioConfigJson: run.scenarioConfigJson,
+    lifecycleState: run.lifecycleState,
+    runMode: run.runMode,
+    stageBoundaryJson: run.stageBoundaryJson,
+    sourceType: run.sourceType,
+    sectionOverridesJson: run.sectionOverridesJson ?? null,
+    policySnapshotJson: run.policySnapshotJson,
+    engineVersionsJson: run.engineVersionsJson,
+    metricsJson: run.metricsJson,
     progressJson: JSON.stringify({
       phase: 'queued',
       percent: 0,
-      requestedActivate: Boolean(parseJson(run.progressJson, {} as Record<string, unknown>).requestedActivate ?? true),
+      requestedActivate: Boolean(priorProgress.requestedActivate ?? false),
       mode: run.sourceType,
       retryOf: run.simulationRunId,
+      attemptNumber: nextAttemptNumber,
     }),
     startedAt: null,
     completedAt: null,
@@ -232,18 +276,20 @@ export async function retryQueuedProofSimulationRun(db: AppDb, input: {
     failureMessage: null,
     workerLeaseToken: null,
     workerLeaseExpiresAt: null,
+    createdAt: input.now,
     updatedAt: input.now,
-  }).where(eq(simulationRuns.simulationRunId, input.simulationRunId))
+  })
   emitOperationalEvent('proof.run.requeued', {
-    simulationRunId: run.simulationRunId,
+    simulationRunId: nextSimulationRunId,
+    retryOf: run.simulationRunId,
     batchId: run.batchId,
     curriculumImportVersionId: run.curriculumImportVersionId,
   })
   return {
-    simulationRunId: run.simulationRunId,
+    simulationRunId: nextSimulationRunId,
     status: 'queued',
     activeFlag: false,
-    createdAt: run.createdAt,
+    createdAt: input.now,
     startedAt: null,
     completedAt: null,
     failureCode: null,
@@ -251,9 +297,10 @@ export async function retryQueuedProofSimulationRun(db: AppDb, input: {
     progress: {
       phase: 'queued',
       percent: 0,
-      requestedActivate: Boolean(parseJson(run.progressJson, {} as Record<string, unknown>).requestedActivate ?? true),
+      requestedActivate: Boolean(priorProgress.requestedActivate ?? false),
       mode: run.sourceType,
       retryOf: run.simulationRunId,
+      attemptNumber: nextAttemptNumber,
     } as Record<string, unknown>,
   }
 }
@@ -266,7 +313,11 @@ async function claimNextQueuedProofRun(pool: Pick<Pool, 'query'>, now: string, l
       FROM simulation_runs
       WHERE (
         status = 'queued'
-        OR (status = 'running' AND worker_lease_token IS NOT NULL)
+        OR (
+          status = 'running'
+          AND worker_lease_token IS NOT NULL
+          AND (progress_json IS NULL OR progress_json NOT LIKE '%"executionStarted":true%')
+        )
       )
         AND (worker_lease_expires_at IS NULL OR worker_lease_expires_at < $1)
       ORDER BY
@@ -284,7 +335,6 @@ async function claimNextQueuedProofRun(pool: Pick<Pool, 'query'>, now: string, l
       completed_at = NULL,
       failure_code = NULL,
       failure_message = NULL,
-      progress_json = $4,
       updated_at = $1
     FROM candidate
     WHERE runs.simulation_run_id = candidate.simulation_run_id
@@ -293,9 +343,34 @@ async function claimNextQueuedProofRun(pool: Pick<Pool, 'query'>, now: string, l
     now,
     leaseToken,
     leaseExpiresAt,
-    JSON.stringify({ phase: 'running', percent: 5 }),
   ])
   return claim.rows[0] ?? null
+}
+
+async function markProofRunExecutionStarted(pool: Pick<Pool, 'query'>, input: {
+  simulationRunId: string
+  leaseToken: string
+  now: string
+  progress: Record<string, unknown>
+}) {
+  const result = await pool.query(`
+    UPDATE simulation_runs
+    SET progress_json = $1, updated_at = $2
+    WHERE simulation_run_id = $3 AND worker_lease_token = $4 AND status = 'running'
+    RETURNING simulation_run_id
+  `, [
+    JSON.stringify({
+      ...input.progress,
+      phase: 'running',
+      percent: 10,
+      executionStarted: true,
+      executionLeaseToken: input.leaseToken,
+    }),
+    input.now,
+    input.simulationRunId,
+    input.leaseToken,
+  ])
+  return result.rows.length > 0
 }
 
 async function heartbeatProofRunLease(pool: Pick<Pool, 'query'>, input: {
@@ -351,8 +426,15 @@ async function failProofRun(pool: Pick<Pool, 'query'>, input: {
   ])
 }
 
-async function executeClaimedProofRun(db: AppDb, row: QueueRow) {
+async function executeClaimedProofRun(db: AppDb, pool: Pick<Pool, 'query'>, row: QueueRow, leaseToken: string, nowIso: string) {
   const progress = parseJson(row.progress_json, {} as Record<string, unknown>)
+  const marked = await markProofRunExecutionStarted(pool, {
+    simulationRunId: row.simulation_run_id,
+    leaseToken,
+    now: nowIso,
+    progress,
+  })
+  if (!marked) throw new ProofRunLeaseLostError(row.simulation_run_id)
   await startProofSimulationRun(db, {
     simulationRunId: row.simulation_run_id,
     batchId: row.batch_id,
@@ -365,7 +447,9 @@ async function executeClaimedProofRun(db: AppDb, row: QueueRow) {
     seed: row.seed,
     runLabel: row.run_label,
     parentSimulationRunId: row.parent_simulation_run_id,
-    activate: Boolean(progress.requestedActivate ?? true),
+    activate: Boolean(progress.requestedActivate ?? false),
+    sectionOverridesJson: row.section_overrides_json,
+    demoWorkspaceId: row.demo_workspace_id,
   })
 }
 
@@ -424,7 +508,7 @@ export function startProofRunWorker(input: {
       }, heartbeatMs)
 
       try {
-        await executeClaimedProofRun(input.db, claimed)
+        await executeClaimedProofRun(input.db, input.pool, claimed, leaseToken, now())
         await finalizeProofRunLease(input.pool, {
           simulationRunId: claimed.simulation_run_id,
           leaseToken,
@@ -436,6 +520,15 @@ export function startProofRunWorker(input: {
           leaseToken,
         })
       } catch (error) {
+        if (error instanceof ProofRunLeaseLostError) {
+          emitOperationalEvent('proof.run.skipped', {
+            simulationRunId: claimed.simulation_run_id,
+            batchId: claimed.batch_id,
+            leaseToken,
+            reason: 'lease-lost-before-execution',
+          }, { level: 'warn' })
+          return
+        }
         await failProofRun(input.pool, {
           simulationRunId: claimed.simulation_run_id,
           leaseToken,

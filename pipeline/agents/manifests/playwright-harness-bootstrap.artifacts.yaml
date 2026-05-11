@@ -1,0 +1,31 @@
+artifacts:
+  - path: tests-e2e/playwright.config.ts
+    min_lines: 20
+    min_bytes: 600
+    required_sections: []
+    write_mode: replace
+  - path: tests-e2e/fixtures/seeded-run-fixture.ts
+    min_lines: 25
+    min_bytes: 700
+    required_sections: []
+    write_mode: replace
+  - path: tests-e2e/helpers/login-as.ts
+    min_lines: 15
+    min_bytes: 400
+    required_sections: []
+    write_mode: replace
+  - path: tests-e2e/specs/smoke.spec.ts
+    min_lines: 20
+    min_bytes: 500
+    required_sections: []
+    write_mode: replace
+  - path: audit-map/32-reports/playwright-harness-bootstrap.md
+    min_lines: 40
+    min_bytes: 1800
+    required_sections:
+      - "# Playwright Harness Bootstrap"
+      - "## What was created"
+      - "## How to run"
+      - "## Known limitations"
+      - "## Next 11 flow specs"
+    write_mode: replace

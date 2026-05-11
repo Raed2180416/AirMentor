@@ -1,0 +1,8 @@
+purpose: |
+  Verify every deliverable from auth-prompt P. Emit final implementation summary + demo-script checklist + remaining-risk register.
+nonneg:
+  - Every deliverable P.1..P.8 addressed
+  - Verdict ∈ {ready, partial, not-ready} with per-section status
+  - Remaining risk register lists every non-passing gate
+owner_files:
+  - audit-map/32-reports/overnight-final-summary.md

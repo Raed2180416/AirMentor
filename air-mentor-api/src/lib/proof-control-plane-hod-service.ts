@@ -1,4 +1,5 @@
 import type { AppDb } from '../db/client.js'
+import { eq, inArray } from 'drizzle-orm'
 import {
   academicTerms,
   alertAcknowledgements,
@@ -20,6 +21,7 @@ import {
   sectionOfferings,
   simulationRuns,
   simulationStageCheckpoints,
+  simulationStageQueueCases,
   simulationStageQueueProjections,
   simulationStageStudentProjections,
   students,
@@ -31,6 +33,7 @@ import {
 } from '../db/schema.js'
 import { parseJson } from './json.js'
 import { pickMostRecentActiveRun } from './proof-active-run.js'
+import { nullablePct } from './proof-evidence-normalization.js'
 import { parseObservedStateRow } from './proof-observed-state.js'
 import {
   filterElectiveRecommendationsForSemester,
@@ -54,6 +57,7 @@ type ProofCheckpointSummaryLike = {
   previousCheckpointId: string | null
   nextCheckpointId: string | null
   openQueueCount?: number
+  liveBlockingQueueItemCount?: number
   blockingQueueItemCount?: number
   stageAdvanceBlocked?: boolean
   playbackAccessible?: boolean
@@ -76,6 +80,7 @@ type HodProofAnalyticsResult = {
 
 function resolveOperationalCheckpointSummary(
   checkpointRows: Array<typeof simulationStageCheckpoints.$inferSelect>,
+  queueCaseRows: Array<typeof simulationStageQueueCases.$inferSelect>,
   semesterNumber: number,
   deps: Pick<ProofControlPlaneHodServiceDeps, 'parseProofCheckpointSummary' | 'withProofPlaybackGate'>,
 ) {
@@ -84,6 +89,7 @@ function resolveOperationalCheckpointSummary(
       .slice()
       .sort((left, right) => left.semesterNumber - right.semesterNumber || left.stageOrder - right.stageOrder)
       .map(deps.parseProofCheckpointSummary),
+    queueCaseRows,
   )
   const semesterSummaries = summaries.filter(item => item.semesterNumber === semesterNumber)
   return semesterSummaries
@@ -92,6 +98,12 @@ function resolveOperationalCheckpointSummary(
     .find(item => item.playbackAccessible !== false)
     ?? semesterSummaries.at(-1)
     ?? null
+}
+
+function riskBandWeight(riskBand: string | null | undefined) {
+  if (riskBand === 'High') return 2
+  if (riskBand === 'Medium') return 1
+  return 0
 }
 
 export type ProofControlPlaneHodServiceDeps = {
@@ -108,7 +120,7 @@ export type ProofControlPlaneHodServiceDeps = {
   queueProjectionAssignedFacultyId: (row: typeof simulationStageQueueProjections.$inferSelect) => string | null
   roundToOne: (value: number) => number
   uniqueSorted: (values: Iterable<string>) => string[]
-  withProofPlaybackGate: (summaries: ProofCheckpointSummaryLike[]) => ProofCheckpointSummaryLike[]
+  withProofPlaybackGate: (summaries: ProofCheckpointSummaryLike[], queueCaseRows?: Array<typeof simulationStageQueueCases.$inferSelect>) => ProofCheckpointSummaryLike[]
 }
 
 export async function buildHodProofAnalytics(db: AppDb, input: {
@@ -157,21 +169,6 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
     studentProfileRows,
     courseRows,
     sectionOfferingRows,
-    observedRows,
-    riskAssessmentRows,
-    reassessmentRows,
-    alertRows,
-    acknowledgementRows,
-    resolutionRows,
-    overrideRows,
-    loadRows,
-    allocationRows,
-    interventionRows,
-    electiveRows,
-    transcriptRows,
-    stageCheckpointRows,
-    stageStudentRows,
-    stageQueueRows,
   ] = await Promise.all([
     db.select().from(facultyAppointments),
     db.select().from(simulationRuns),
@@ -186,22 +183,11 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
     db.select().from(students),
     db.select().from(courses),
     db.select().from(sectionOfferings),
-    db.select().from(studentObservedSemesterStates),
-    db.select().from(riskAssessments),
-    db.select().from(reassessmentEvents),
-    db.select().from(alertDecisions),
-    db.select().from(alertAcknowledgements),
-    db.select().from(reassessmentResolutions),
-    db.select().from(riskOverrides),
-    db.select().from(teacherLoadProfiles),
-    db.select().from(teacherAllocations),
-    db.select().from(studentInterventions),
-    db.select().from(electiveRecommendations),
-    db.select().from(transcriptTermResults),
-    db.select().from(simulationStageCheckpoints),
-    db.select().from(simulationStageStudentProjections),
-    db.select().from(simulationStageQueueProjections),
   ])
+  const requestedCheckpointId = input.filters?.simulationStageCheckpointId
+  const requestedCheckpointRows = requestedCheckpointId
+    ? await db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationStageCheckpointId, requestedCheckpointId)).limit(1)
+    : []
 
   const activeAppointments = allAppointmentRows.filter(row => row.facultyId === input.facultyId && row.status === 'active')
   const batchById = new Map(batchRows.map(row => [row.batchId, row]))
@@ -229,9 +215,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
   if (input.roleScopeType === 'branch' && input.roleScopeId) {
     scopeBranchIds.add(input.roleScopeId)
   }
-  const requestedCheckpoint = input.filters?.simulationStageCheckpointId
-    ? stageCheckpointRows.find(row => row.simulationStageCheckpointId === input.filters?.simulationStageCheckpointId) ?? null
-    : null
+  const requestedCheckpoint = requestedCheckpointRows[0] ?? null
   const activeRunCandidates = allRunRows.filter(row => row.activeFlag === 1)
   const activeRun = requestedCheckpoint
     ? allRunRows.find(row => row.simulationRunId === requestedCheckpoint.simulationRunId)
@@ -271,20 +255,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
     matchesScopedDepartment(departmentId) || matchesScopedBranch(branchId)
   const scopeMatchesActiveBatch = !!(activeBranch && matchesScopedAppointment(activeDepartmentId, activeBranch.branchId))
   const activeRunId = activeRun?.simulationRunId ?? null
-  const currentSemester = input.filters?.semester ?? activeRun?.activeOperationalSemester ?? activeBatch?.currentSemester ?? 6
-  const operationalCheckpointSummary = activeRunId
-    ? resolveOperationalCheckpointSummary(
-      stageCheckpointRows.filter(row => row.simulationRunId === activeRunId),
-      currentSemester,
-      { parseProofCheckpointSummary, withProofPlaybackGate },
-    )
-    : null
-  const activeTermIds = new Set(
-    termRows
-      .filter(row => row.batchId === activeBatch?.batchId)
-      .filter(row => row.semesterNumber === currentSemester)
-      .map(row => row.termId),
-  )
+  const requestedSemester = input.filters?.semester ?? activeRun?.activeOperationalSemester ?? activeBatch?.currentSemester ?? 6
 
   const emptyResponse = {
     summary: {
@@ -345,8 +316,68 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
     reassessments: [] as Array<Record<string, unknown>>,
   }
 
+  if (!activeRun || !activeBatch || !activeBranch || !activeRunId || !scopeMatchesActiveBatch) return emptyResponse
+
+  const activeBatchTermIds = termRows
+    .filter(row => row.batchId === activeBatch.batchId)
+    .map(row => row.termId)
+  const [
+    observedRows,
+    riskAssessmentRows,
+    loadRows,
+    allocationRows,
+    interventionRows,
+    electiveRows,
+    transcriptRows,
+    stageCheckpointRows,
+    stageStudentRows,
+    stageQueueCaseRows,
+    stageQueueRows,
+  ] = await Promise.all([
+    db.select().from(studentObservedSemesterStates).where(eq(studentObservedSemesterStates.simulationRunId, activeRunId)),
+    db.select().from(riskAssessments).where(eq(riskAssessments.simulationRunId, activeRunId)),
+    db.select().from(teacherLoadProfiles).where(eq(teacherLoadProfiles.simulationRunId, activeRunId)),
+    db.select().from(teacherAllocations).where(eq(teacherAllocations.simulationRunId, activeRunId)),
+    db.select().from(studentInterventions),
+    db.select().from(electiveRecommendations).where(eq(electiveRecommendations.simulationRunId, activeRunId)),
+    activeBatchTermIds.length > 0
+      ? db.select().from(transcriptTermResults).where(inArray(transcriptTermResults.termId, activeBatchTermIds))
+      : Promise.resolve([] as Array<typeof transcriptTermResults.$inferSelect>),
+    db.select().from(simulationStageCheckpoints).where(eq(simulationStageCheckpoints.simulationRunId, activeRunId)),
+    db.select().from(simulationStageStudentProjections).where(eq(simulationStageStudentProjections.simulationRunId, activeRunId)),
+    db.select().from(simulationStageQueueCases).where(eq(simulationStageQueueCases.simulationRunId, activeRunId)),
+    db.select().from(simulationStageQueueProjections).where(eq(simulationStageQueueProjections.simulationRunId, activeRunId)),
+  ])
+  const riskSemesterNumbers = riskAssessmentRows
+    .map(row => (row.termId ? termById.get(row.termId)?.semesterNumber : null) ?? null)
+    .filter((value): value is number => Number.isFinite(value))
+  const hasRequestedSemesterRisk = riskSemesterNumbers.includes(requestedSemester)
+  const hasRequestedSemesterCheckpoint = stageCheckpointRows.some(row => row.semesterNumber === requestedSemester)
+  const latestRiskSemester = riskSemesterNumbers.length > 0 ? Math.max(...riskSemesterNumbers) : null
+  const currentSemester = input.filters?.semester
+    ?? (hasRequestedSemesterRisk || hasRequestedSemesterCheckpoint ? requestedSemester : latestRiskSemester ?? requestedSemester)
+  const activeTermIds = new Set(
+    termRows
+      .filter(row => row.batchId === activeBatch.batchId)
+      .filter(row => row.semesterNumber === currentSemester)
+      .map(row => row.termId),
+  )
+  const activeOfferings = sectionOfferingRows
+    .filter(row => activeTermIds.has(row.termId))
+    .filter(row => matchesTextFilter(row.sectionCode, input.filters?.section))
+    .filter(row => {
+      const course = courseById.get(row.courseId)
+      return matchesTextFilter(course?.courseCode ?? null, input.filters?.courseCode)
+    })
+  const activeOfferingIds = new Set(activeOfferings.map(row => row.offeringId))
+  const operationalCheckpointSummary = resolveOperationalCheckpointSummary(
+    stageCheckpointRows,
+    stageQueueCaseRows,
+    currentSemester,
+    { parseProofCheckpointSummary, withProofPlaybackGate },
+  )
+
   if (input.filters?.simulationStageCheckpointId) {
-    if (!activeRun || !activeBatch || !activeBranch || !activeRunId || !scopeMatchesActiveBatch) return emptyResponse
     const checkpoint = requestedCheckpoint
     if (!checkpoint) return emptyResponse
     const checkpointSummary = withProofPlaybackGate(
@@ -354,6 +385,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
         .filter(row => row.simulationRunId === activeRunId)
         .sort((left, right) => left.semesterNumber - right.semesterNumber || left.stageOrder - right.stageOrder)
         .map(parseProofCheckpointSummary),
+      stageQueueCaseRows.filter(row => row.simulationRunId === activeRunId),
     ).find(item => item.simulationStageCheckpointId === checkpoint.simulationStageCheckpointId)
       ?? parseProofCheckpointSummary(checkpoint)
     const checkpointStudentRows = stageStudentRows
@@ -532,12 +564,21 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
             if (leftRank !== rightRank) return leftRank - rightRank
             return right.riskProbScaled - left.riskProbScaled || left.courseCode.localeCompare(right.courseCode)
           })
-        const primary = rowsForStudent[0]
-        if (!primary) return null
+        const actionPrimary = rowsForStudent[0]
+        const riskPrimary = rowsForStudent
+          .slice()
+          .sort((left, right) =>
+            riskBandWeight(right.riskBand) - riskBandWeight(left.riskBand)
+            || right.riskProbScaled - left.riskProbScaled
+            || left.courseCode.localeCompare(right.courseCode)
+          )[0] ?? null
+        const primary = riskPrimary ?? actionPrimary
+        if (!primary || !actionPrimary) return null
         const primaryPayload = parseJson(primary.projectionJson, {} as Record<string, unknown>)
+        const actionPayload = parseJson(actionPrimary.projectionJson, {} as Record<string, unknown>)
         const primaryEvidence = (primaryPayload.currentEvidence ?? {}) as Record<string, unknown>
-        const currentStatus = (primaryPayload.currentStatus ?? {}) as Record<string, unknown>
-        const governance = (primaryPayload.governance ?? {}) as Record<string, unknown>
+        const currentStatus = (actionPayload.currentStatus ?? {}) as Record<string, unknown>
+        const governance = (actionPayload.governance ?? {}) as Record<string, unknown>
         const counterfactualPolicy = (primaryPayload.counterfactualPolicyDiagnostics ?? {}) as Record<string, unknown>
         const evidenceTimeline = buildEvidenceTimelineFromRows(observedRows
           .filter(row => row.simulationRunId === activeRunId && row.studentId === studentId)
@@ -575,11 +616,11 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
           nextDueAt: typeof currentStatus.dueAt === 'string' ? currentStatus.dueAt : null,
           observedEvidence: {
             attendancePct: Number(primaryEvidence.attendancePct ?? 0),
-            tt1Pct: Number(primaryEvidence.tt1Pct ?? 0),
-            tt2Pct: Number(primaryEvidence.tt2Pct ?? 0),
-            quizPct: Number(primaryEvidence.quizPct ?? 0),
-            assignmentPct: Number(primaryEvidence.assignmentPct ?? 0),
-            seePct: Number(primaryEvidence.seePct ?? 0),
+            tt1Pct: nullablePct(primaryEvidence.tt1Pct),
+            tt2Pct: nullablePct(primaryEvidence.tt2Pct),
+            quizPct: nullablePct(primaryEvidence.quizPct),
+            assignmentPct: nullablePct(primaryEvidence.assignmentPct),
+            seePct: nullablePct(primaryEvidence.seePct),
             cgpa: 0,
             backlogCount: 0,
             weakCoCount: Number(primaryEvidence.weakCoCount ?? 0),
@@ -627,11 +668,11 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
               recommendedAction: row.recommendedAction ?? 'Continue routine monitoring on the current evidence window.',
               observedEvidence: {
                 attendancePct: Number(evidence.attendancePct ?? 0),
-                tt1Pct: Number(evidence.tt1Pct ?? 0),
-                tt2Pct: Number(evidence.tt2Pct ?? 0),
-                quizPct: Number(evidence.quizPct ?? 0),
-                assignmentPct: Number(evidence.assignmentPct ?? 0),
-                seePct: Number(evidence.seePct ?? 0),
+                tt1Pct: nullablePct(evidence.tt1Pct),
+                tt2Pct: nullablePct(evidence.tt2Pct),
+                quizPct: nullablePct(evidence.quizPct),
+                assignmentPct: nullablePct(evidence.assignmentPct),
+                seePct: nullablePct(evidence.seePct),
                 cgpa: 0,
                 backlogCount: 0,
                 weakCoCount: Number(evidence.weakCoCount ?? 0),
@@ -639,7 +680,11 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
                 coEvidenceMode: typeof evidence.coEvidenceMode === 'string' ? evidence.coEvidenceMode : null,
                 interventionRecoveryStatus: typeof evidence.interventionRecoveryStatus === 'string' ? evidence.interventionRecoveryStatus : null,
               },
-              drivers: [],
+              drivers: (() => {
+                const status = (payload.currentStatus ?? {}) as Record<string, unknown>
+                const list = Array.isArray(status.observableDrivers) ? status.observableDrivers : []
+                return list.slice(0, 5)
+              })(),
             }
           }),
           evidenceTimeline,
@@ -788,16 +833,6 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
     }
   }
 
-  if (!activeRun || !activeBatch || !activeBranch || !activeRunId || !scopeMatchesActiveBatch) return emptyResponse
-
-  const activeOfferings = sectionOfferingRows
-    .filter(row => activeTermIds.has(row.termId))
-    .filter(row => matchesTextFilter(row.sectionCode, input.filters?.section))
-    .filter(row => {
-      const course = courseById.get(row.courseId)
-      return matchesTextFilter(course?.courseCode ?? null, input.filters?.courseCode)
-    })
-  const activeOfferingIds = new Set(activeOfferings.map(row => row.offeringId))
   const filteredObservedRows = observedRows
     .filter(row => row.simulationRunId === activeRunId)
     .filter(row => row.semesterNumber === currentSemester)
@@ -846,13 +881,33 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
   }
 
   const activeRiskIds = new Set(activeRiskRows.map(row => row.riskAssessmentId))
+  const activeRiskIdList = Array.from(activeRiskIds)
+  const [alertRows, reassessmentRows, overrideRows]: [
+    Array<typeof alertDecisions.$inferSelect>,
+    Array<typeof reassessmentEvents.$inferSelect>,
+    Array<typeof riskOverrides.$inferSelect>,
+  ] = activeRiskIdList.length > 0
+    ? await Promise.all([
+        db.select().from(alertDecisions).where(inArray(alertDecisions.riskAssessmentId, activeRiskIdList)),
+        db.select().from(reassessmentEvents).where(inArray(reassessmentEvents.riskAssessmentId, activeRiskIdList)),
+        db.select().from(riskOverrides).where(inArray(riskOverrides.riskAssessmentId, activeRiskIdList)),
+      ])
+    : [[], [], []]
   const activeAlerts = alertRows.filter(row => activeRiskIds.has(row.riskAssessmentId))
   const activeReassessments = reassessmentRows
     .filter(row => activeRiskIds.has(row.riskAssessmentId))
     .filter(row => matchesTextFilter(row.status, input.filters?.status))
   const activeAlertIds = new Set(activeAlerts.map(row => row.alertDecisionId))
+  const activeAlertIdList = Array.from(activeAlertIds)
+  const acknowledgementRows: Array<typeof alertAcknowledgements.$inferSelect> = activeAlertIdList.length > 0
+    ? await db.select().from(alertAcknowledgements).where(inArray(alertAcknowledgements.alertDecisionId, activeAlertIdList))
+    : []
   const activeAcknowledgements = acknowledgementRows.filter(row => activeAlertIds.has(row.alertDecisionId))
   const activeReassessmentIds = new Set(activeReassessments.map(row => row.reassessmentEventId))
+  const activeReassessmentIdList = Array.from(activeReassessmentIds)
+  const resolutionRows: Array<typeof reassessmentResolutions.$inferSelect> = activeReassessmentIdList.length > 0
+    ? await db.select().from(reassessmentResolutions).where(inArray(reassessmentResolutions.reassessmentEventId, activeReassessmentIdList))
+    : []
   const activeResolutions = resolutionRows.filter(row => activeReassessmentIds.has(row.reassessmentEventId))
   const activeOverrides = overrideRows.filter(row => activeRiskIds.has(row.riskAssessmentId))
 
@@ -1072,11 +1127,11 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
           recommendedAction: row.recommendedAction,
           observedEvidence: {
             attendancePct: Number(rowEvidence.attendancePct ?? 0),
-            tt1Pct: Number(rowEvidence.tt1Pct ?? 0),
-            tt2Pct: Number(rowEvidence.tt2Pct ?? 0),
-            quizPct: Number(rowEvidence.quizPct ?? 0),
-            assignmentPct: Number(rowEvidence.assignmentPct ?? 0),
-            seePct: Number(rowEvidence.seePct ?? 0),
+            tt1Pct: nullablePct(rowEvidence.tt1Pct),
+            tt2Pct: nullablePct(rowEvidence.tt2Pct),
+            quizPct: nullablePct(rowEvidence.quizPct),
+            assignmentPct: nullablePct(rowEvidence.assignmentPct),
+            seePct: nullablePct(rowEvidence.seePct),
             cgpa: Number(rowEvidence.cgpa ?? 0),
             backlogCount: Number(rowEvidence.backlogCount ?? 0),
             weakCoCount: Number(rowEvidence.weakCoCount ?? 0),
@@ -1112,11 +1167,11 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
         nextDueAt,
         observedEvidence: {
           attendancePct: Number(primaryEvidence.attendancePct ?? 0),
-          tt1Pct: Number(primaryEvidence.tt1Pct ?? 0),
-          tt2Pct: Number(primaryEvidence.tt2Pct ?? 0),
-          quizPct: Number(primaryEvidence.quizPct ?? 0),
-          assignmentPct: Number(primaryEvidence.assignmentPct ?? 0),
-          seePct: Number(primaryEvidence.seePct ?? 0),
+          tt1Pct: nullablePct(primaryEvidence.tt1Pct),
+          tt2Pct: nullablePct(primaryEvidence.tt2Pct),
+          quizPct: nullablePct(primaryEvidence.quizPct),
+          assignmentPct: nullablePct(primaryEvidence.assignmentPct),
+          seePct: nullablePct(primaryEvidence.seePct),
           cgpa: Number(primaryEvidence.cgpa ?? 0),
           backlogCount: Number(primaryEvidence.backlogCount ?? latestTranscriptByStudent.get(studentId)?.backlogCount ?? 0),
           weakCoCount: Number(primaryEvidence.weakCoCount ?? 0),
@@ -1272,7 +1327,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
     resolutionCount: activeResolutions.length,
   }
   const countProvenance = buildProofCountProvenance({
-    activeOperationalSemester: activeRun.activeOperationalSemester ?? activeBatch.currentSemester,
+    activeOperationalSemester: currentSemester,
     batchId: activeBatch.batchId,
     batchLabel: activeBatch.batchLabel,
     branchName: activeBranch.name,

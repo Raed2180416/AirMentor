@@ -2,6 +2,8 @@ import { lazy } from 'react'
 import { AcademicWorkspaceContentShell } from './academic-workspace-content-shell'
 import { FacultyProfilePage } from './academic-faculty-profile-page'
 import { CLDashboard, MentorView, MenteeDetailPage, UnlockReviewPage, QueueHistoryPage } from './academic-route-pages'
+import { HodCounterfactualPanel } from './hod-counterfactual-panel'
+import { HodCounterfactualSimulatorPanel } from './hod-counterfactual-simulator-panel'
 import type { LayoutMode } from './domain'
 import type { Role } from './domain'
 
@@ -60,6 +62,9 @@ export function AcademicWorkspaceRouteSurface({
           onOpenStudentProfile={workspace.handleOpenStudentProfile}
           onOpenStudentShell={workspace.handleOpenStudentShell}
           onOpenRiskExplorer={workspace.handleOpenRiskExplorer}
+          onAdvanceProofRun={workspace.handleAdvanceProofRun}
+          onStopProofRun={workspace.handleStopProofRun}
+          onStepProofPlayback={workspace.handleStepProofPlayback}
         />
       )}
       {role === 'Course Leader' && page === 'dashboard' && (
@@ -69,9 +74,18 @@ export function AcademicWorkspaceRouteSurface({
           proofProfile={workspace.facultyProfile}
           onOpenCourse={workspace.handleOpenCourse}
           onOpenStudent={workspace.handleOpenStudent}
+          onOpenStudents={workspace.handleOpenStudents}
           onOpenUpload={workspace.handleOpenUpload}
           onOpenCalendar={workspace.handleOpenCalendar}
           onOpenPendingActions={workspace.handleToggleActionQueue}
+          loadStudentRiskExplorer={workspace.loadStudentRiskExplorer}
+          loadStudentAgentCard={workspace.loadStudentAgentCard}
+          onCommitDemoAttendanceEdit={workspace.handleCommitDemoAttendanceEdit}
+          onRecomputeProofRunRisk={workspace.handleRecomputeProofRunRisk}
+          onResolveProofReassessment={workspace.handleResolveProofReassessment}
+          onAdvanceProofRun={workspace.handleAdvanceProofRun}
+          onStopProofRun={workspace.handleStopProofRun}
+          onStepProofPlayback={workspace.handleStepProofPlayback}
           teacherInitials={workspace.currentTeacher.initials}
           greetingHeadline={workspace.greetingHeadline}
           greetingMeta={workspace.greetingMeta}
@@ -253,6 +267,32 @@ export function AcademicWorkspaceRouteSurface({
           reassessmentRows={workspace.hodProofAnalytics?.reassessments ?? []}
           loading={workspace.hodProofLoading}
           error={workspace.hodProofError}
+          counterfactualPanel={(() => {
+            // Phase-11 authoritative path (prompt §C.13 + §G.6 + §L.10). Uses
+            // the simulator counterfactual report for ONE active run. Falls
+            // back to the legacy flag-diff diagnostic panel only when the URL
+            // still includes ?counterfactualBaseline=… (dev/diagnostic mode).
+            const runId = workspace.hodProofAnalytics?.summary?.activeRunContext?.simulationRunId
+            const counterfactualBaseline = typeof window !== 'undefined'
+              ? new URL(window.location.href).searchParams.get('counterfactualBaseline') ?? ''
+              : ''
+            if (counterfactualBaseline && runId && workspace.loadHodProofCounterfactual) {
+              return (
+                <HodCounterfactualPanel
+                  runIdBaseline={counterfactualBaseline}
+                  runIdRealized={runId}
+                  loadReport={workspace.loadHodProofCounterfactual}
+                />
+              )
+            }
+            if (!workspace.loadHodProofCounterfactualSimulator || !runId) return undefined
+            return (
+              <HodCounterfactualSimulatorPanel
+                runId={runId}
+                loadReport={workspace.loadHodProofCounterfactualSimulator}
+              />
+            )
+          })()}
         />
       )}
       {role === 'HoD' && page === 'course' && workspace.offering && (

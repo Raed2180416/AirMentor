@@ -78,6 +78,16 @@ export function shouldResolveCanonicalProofRoute(
   return routeBatchMissingOrInvalid
 }
 
+export function resolveProofDashboardBatchId(input: {
+  route: LiveAdminRoute
+  routeScopedBatchId?: string | null
+  data: Pick<LiveAdminDataset, 'batches'>
+}) {
+  if (input.routeScopedBatchId) return input.routeScopedBatchId
+  if (input.route.section !== 'proof-dashboard') return null
+  return resolveCanonicalProofBatch(input.data)?.batchId ?? CANONICAL_PROOF_BATCH_ID
+}
+
 function normalizeScopeValue(value?: string | null) {
   const normalized = value?.trim() ?? ''
   return normalized || undefined

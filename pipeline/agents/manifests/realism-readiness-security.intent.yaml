@@ -1,0 +1,16 @@
+purpose: |
+  Real-data readiness, privacy/security, audit, model-governance, and operational maturity audit. Show what is demo-safe, what is deployment debt, and what must exist before real institutional use.
+nonneg:
+  - Keep intent and feature intent at the front of every judgment
+  - Do not modify product code; write audit artifacts only
+  - Treat CERT-In incident logging/reporting and audit trails as India deployment readiness gates
+  - Do not claim production readiness when only a maturity document exists
+  - Cover data contract, import validation, privacy/security, model governance, real-data validation, and operations
+owner_files:
+  - air-mentor-api/src/db/schema.ts
+  - air-mentor-api/src/modules/session.ts
+  - air-mentor-api/src/modules/admin-proof-sandbox.ts
+  - air-mentor-api/src/modules/academic.ts
+  - air-mentor-api/src/config.ts
+  - docs/closeout/final-authoritative-plan-security-observability-annex.md
+  - audit-map/22-evals/environment-readiness-checklist.md

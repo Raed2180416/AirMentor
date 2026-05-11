@@ -13,6 +13,7 @@ import { EmailRateLimiter } from '../lib/email-rate-limiter.js'
 import { hashPassword, verifyPassword } from '../lib/passwords.js'
 import { emitOperationalEvent } from '../lib/telemetry.js'
 import { addHours } from '../lib/time.js'
+import { readDemoWorkspaceHeader, resolveActiveDemoWorkspaceForRequest } from '../lib/demo-workspace-session-scope.js'
 import { ensurePreference, parseOrThrow, requireAuth, resolveRequestAuth, sortActiveRoleGrantRows } from './support.js'
 
 const selfServicePasswordSetupRateLimiter = new EmailRateLimiter(10 * 60 * 1000, 3)
@@ -36,10 +37,10 @@ const themePatchSchema = z.object({
   version: z.number().int().positive(),
 })
 
-async function buildSessionPayload(context: RouteContext, sessionId: string) {
+async function buildSessionPayload(context: RouteContext, sessionId: string, requestedDemoWorkspaceId: string | null = null) {
   const [session] = await context.db.select().from(sessions).where(eq(sessions.sessionId, sessionId))
   if (!session) throw unauthorized()
-  const auth = await resolveRequestAuth(context, sessionId)
+  const auth = await resolveRequestAuth(context, sessionId, requestedDemoWorkspaceId)
   if (!auth) throw unauthorized()
   const preferences = await ensurePreference(context, auth.userId)
   return {
@@ -47,6 +48,7 @@ async function buildSessionPayload(context: RouteContext, sessionId: string) {
     payload: {
       sessionId: auth.sessionId,
       csrfToken: buildCsrfToken(context.config.csrfSecret, auth.sessionId),
+      demoWorkspaceId: auth.demoWorkspaceId,
       user: {
         userId: auth.userId,
         username: auth.username,
@@ -174,7 +176,11 @@ export async function registerSessionRoutes(app: FastifyInstance, context: Route
   }
 
   app.addHook('preHandler', async request => {
-    request.auth = await resolveRequestAuth(context, request.cookies[context.config.sessionCookieName])
+    request.auth = await resolveRequestAuth(
+      context,
+      request.cookies[context.config.sessionCookieName],
+      readDemoWorkspaceHeader(request),
+    )
   })
 
   app.get('/api/session', {
@@ -195,7 +201,7 @@ export async function registerSessionRoutes(app: FastifyInstance, context: Route
       facultyId: auth.facultyId ?? null,
       activeRole: auth.activeRoleGrant.roleCode,
     })
-    const session = await buildSessionPayload(context, auth.sessionId)
+    const session = await buildSessionPayload(context, auth.sessionId, auth.demoWorkspaceId)
     syncSessionCookies(context, reply, auth.sessionId, session.expiresAt)
     return session.payload
   })
@@ -207,6 +213,7 @@ export async function registerSessionRoutes(app: FastifyInstance, context: Route
     },
   }, async (request, reply) => {
     const body = parseOrThrow(loginSchema, request.body)
+    const demoWorkspace = await resolveActiveDemoWorkspaceForRequest(context, request)
     await assertLoginAttemptAllowed(body.identifier)
     const user = await findUserByIdentifier(body.identifier)
     if (!user) {
@@ -271,6 +278,7 @@ export async function registerSessionRoutes(app: FastifyInstance, context: Route
       sessionId,
       userId: user.userId,
       activeRoleGrantId: grants[0].grantId,
+      demoWorkspaceId: demoWorkspace?.demoWorkspaceId ?? null,
       expiresAt,
       createdAt: now,
       updatedAt: now,
@@ -283,7 +291,7 @@ export async function registerSessionRoutes(app: FastifyInstance, context: Route
       facultyId: faculty.facultyId,
       activeRole: grants[0].roleCode,
     })
-    return (await buildSessionPayload(context, sessionId)).payload
+    return (await buildSessionPayload(context, sessionId, demoWorkspace?.demoWorkspaceId ?? null)).payload
   })
 
   app.post('/api/session/password-setup/request', {
@@ -473,7 +481,7 @@ export async function registerSessionRoutes(app: FastifyInstance, context: Route
       scopeType: match.scopeType,
       scopeId: match.scopeId,
     })
-    const session = await buildSessionPayload(context, auth.sessionId)
+    const session = await buildSessionPayload(context, auth.sessionId, auth.demoWorkspaceId)
     syncSessionCookies(context, reply, auth.sessionId, session.expiresAt)
     return session.payload
   })

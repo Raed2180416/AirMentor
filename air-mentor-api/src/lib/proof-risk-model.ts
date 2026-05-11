@@ -7,9 +7,9 @@ import type {
   GraphAwarePrerequisiteSummaryCompleteness,
 } from './graph-summary.js'
 
-export const RISK_FEATURE_SCHEMA_VERSION = 'observable-risk-features-v4'
-export const RISK_PRODUCTION_MODEL_VERSION = 'observable-risk-logit-v6'
-export const RISK_CHALLENGER_MODEL_VERSION = 'observable-risk-depth2-tree-v6'
+export const RISK_FEATURE_SCHEMA_VERSION = 'observable-risk-features-v5'
+export const RISK_PRODUCTION_MODEL_VERSION = 'observable-risk-logit-v8'
+export const RISK_CHALLENGER_MODEL_VERSION = 'observable-risk-catboost-challenger-v8'
 export const RISK_CORRELATION_ARTIFACT_VERSION = 'observable-risk-correlations-v4'
 export const RISK_CALIBRATION_VERSION = 'post-hoc-calibration-v2'
 export const PROOF_CORPUS_MANIFEST_VERSION = 'proof-corpus-v1'
@@ -51,6 +51,26 @@ export const OBSERVABLE_FEATURE_KEYS = [
   'stagePostAssignmentsScaled',
   'stagePostSeeScaled',
   'sectionPressureScaled',
+  // v5 interaction features: stage × evidence products capture conditional effects
+  // that additive stage indicators cannot express (e.g. TT1 weakness matters more at post-TT1)
+  'tt1tt2ExamCompoundRiskScaled',
+  'courseworkCompoundRiskScaled',
+  'stagePostTt2TtCompoundInteractionScaled',
+  'attendanceTrendCompoundRiskScaled',
+  'stagePostAssignmentsCourseworkInteractionScaled',
+  // v8 missingness indicators: sentinel 0.5 imputation in current pipeline → binary flag restores info
+  'cgpaMissingScaled',
+  'backlogMissingScaled',
+  // v8b missingness indicators for assessment evidence: null-vs-zero disambiguation
+  // (intent §G.4: explicit missingness, never silent zero-collapse).
+  // tt1Pct/tt2Pct/seePct/quizPct/assignmentPct are number|null in payload.
+  // Without these flags, a Sem1 pre-TT1 row with tt1Pct=null is indistinguishable
+  // from a student who scored 0% on TT1. Flags restore the distinction.
+  'tt1MissingScaled',
+  'tt2MissingScaled',
+  'seeMissingScaled',
+  'quizMissingScaled',
+  'assignmentMissingScaled',
 ] as const
 
 export const PROOF_SCENARIO_FAMILIES = [
@@ -74,13 +94,63 @@ export type RiskHeadKey =
 export type SplitName = 'train' | 'validation' | 'test'
 export type CalibrationMethod = 'identity' | 'sigmoid' | 'isotonic' | 'beta' | 'venn-abers'
 export type ScenarioFamily = (typeof PROOF_SCENARIO_FAMILIES)[number]
-export type ChallengerModelFamily = 'depth-2-tree'
-export type ProofRiskTrainingVariantId = 'production-v6' | 'baseline-v5-like'
+// Serving-side challenger families. 'catboost' denotes a CatBoost model whose
+// JSON artefact is produced by scripts/train_catboost_challenger.py and loaded
+// by the Python-interop serving path (phase 10 intent). 'depth-2-tree' remains
+// the in-process TS challenger baseline.
+export type ChallengerModelFamily = 'depth-2-tree' | 'catboost'
+export type ProofRiskTrainingVariantId = 'production-v7' | 'production-v8' | 'baseline-v5-like'
 
 export type ProofCorpusManifestEntry = {
   seed: number
+  /**
+   * Index-based family-balanced split used by the production training
+   * pipeline (40 / 12 / 12). Every scenario family appears in every
+   * split. This is the **in-distribution** evaluation protocol.
+   */
   split: SplitName
+  /**
+   * Family-disjoint split used by the P2 generative-process evaluation
+   * protocol (`docs/paper-evidence/02-validation-protocol.md`).
+   * Train families ⊥ validation families ⊥ test families.
+   * This is the **out-of-distribution** evaluation protocol used to
+   * defend paper claim N1 ("reproduces failure modes that generalise").
+   *
+   * Mapping (per roadmap §5 P2 task 2.1):
+   *   train      ← weak-foundation, low-attendance, high-forgetting, coursework-inflation
+   *   validation ← exam-fragility, carryover-heavy
+   *   test       ← intervention-resistant, balanced
+   */
+  generativeSplit: SplitName
   scenarioFamily: ScenarioFamily
+}
+
+/**
+ * Family-disjoint split protocol introduced in P2 (E8 closure).
+ * Read by `selectGenerativeSplitEntries()` and consumed by the
+ * out-of-distribution evaluator path.
+ */
+export const PROOF_GENERATIVE_SPLIT_FAMILIES: Record<SplitName, ReadonlyArray<ScenarioFamily>> = {
+  train: ['weak-foundation', 'low-attendance', 'high-forgetting', 'coursework-inflation'],
+  validation: ['exam-fragility', 'carryover-heavy'],
+  test: ['intervention-resistant', 'balanced'],
+}
+
+/**
+ * Resolve a scenario family to its position in the family-disjoint
+ * generative-process split.
+ */
+export function generativeSplitForFamily(family: ScenarioFamily): SplitName {
+  for (const split of ['train', 'validation', 'test'] as const) {
+    if (PROOF_GENERATIVE_SPLIT_FAMILIES[split].includes(family)) return split
+  }
+  // Defensive: every PROOF_SCENARIO_FAMILIES member must be assigned to one
+  // of the three splits. This branch is unreachable under the invariants
+  // protected by `tests/proof-generative-split.test.ts`.
+  throw new Error(
+    `[generativeSplitForFamily] unassigned scenario family ${family}; `
+      + `update PROOF_GENERATIVE_SPLIT_FAMILIES to keep coverage exhaustive`,
+  )
 }
 
 export type ProofRiskTrainingConfig = {
@@ -89,16 +159,31 @@ export type ProofRiskTrainingConfig = {
   challengerModelVersion: string
   calibrationVersion: string
   includeStageIndicators: boolean
+  includeInteractionFeatures: boolean
   calibrationMethods: CalibrationMethod[]
   challengerModelFamily: ChallengerModelFamily
 }
 
 export const DEFAULT_PROOF_RISK_TRAINING_CONFIG: ProofRiskTrainingConfig = {
-  variantId: 'production-v6',
+  variantId: 'production-v8',
   productionModelVersion: RISK_PRODUCTION_MODEL_VERSION,
   challengerModelVersion: RISK_CHALLENGER_MODEL_VERSION,
   calibrationVersion: RISK_CALIBRATION_VERSION,
   includeStageIndicators: true,
+  includeInteractionFeatures: true,
+  calibrationMethods: ['identity', 'sigmoid', 'beta', 'isotonic', 'venn-abers'],
+  challengerModelFamily: 'depth-2-tree',
+}
+
+// v8: adds cgpaMissingScaled + backlogMissingScaled to feature vector (43 features total)
+// Fixes v7 overload=1.1127 by restoring missingness signal suppressed by 0.5 imputation
+export const CORRECTED_V8_PROOF_RISK_TRAINING_CONFIG: ProofRiskTrainingConfig = {
+  variantId: 'production-v8',
+  productionModelVersion: 'observable-risk-logit-v8',
+  challengerModelVersion: 'observable-risk-catboost-challenger-v8',
+  calibrationVersion: 'post-hoc-calibration-v2',
+  includeStageIndicators: true,
+  includeInteractionFeatures: true,
   calibrationMethods: ['identity', 'sigmoid', 'beta', 'isotonic', 'venn-abers'],
   challengerModelFamily: 'depth-2-tree',
 }
@@ -109,6 +194,7 @@ export const BASELINE_V5_LIKE_PROOF_RISK_TRAINING_CONFIG: ProofRiskTrainingConfi
   challengerModelVersion: 'observable-risk-depth2-tree-v5-like',
   calibrationVersion: 'post-hoc-calibration-v1-like',
   includeStageIndicators: false,
+  includeInteractionFeatures: false,
   calibrationMethods: ['identity', 'sigmoid', 'isotonic'],
   challengerModelFamily: 'depth-2-tree',
 }
@@ -116,14 +202,25 @@ export const BASELINE_V5_LIKE_PROOF_RISK_TRAINING_CONFIG: ProofRiskTrainingConfi
 export const PROOF_CORPUS_MANIFEST: ProofCorpusManifestEntry[] = (() => {
   const entries: ProofCorpusManifestEntry[] = []
   for (let index = 0; index < 64; index += 1) {
+    const scenarioFamily = PROOF_SCENARIO_FAMILIES[index % PROOF_SCENARIO_FAMILIES.length]!
     entries.push({
       seed: 101 + (index * 101),
       split: index < 40 ? 'train' : index < 52 ? 'validation' : 'test',
-      scenarioFamily: PROOF_SCENARIO_FAMILIES[index % PROOF_SCENARIO_FAMILIES.length]!,
+      generativeSplit: generativeSplitForFamily(scenarioFamily),
+      scenarioFamily,
     })
   }
   return entries
 })()
+
+/**
+ * Manifest entries grouped by the generative-process split. Use this in
+ * place of the index-based `split` field when running the family-
+ * disjoint out-of-distribution evaluation protocol.
+ */
+export function selectGenerativeSplitEntries(split: SplitName): ProofCorpusManifestEntry[] {
+  return PROOF_CORPUS_MANIFEST.filter(entry => entry.generativeSplit === split)
+}
 
 export type ObservableFeaturePayload = {
   attendancePct: number
@@ -131,6 +228,10 @@ export type ObservableFeaturePayload = {
   attendanceHistoryRiskCount: number
   currentCgpa: number
   backlogCount: number
+  // Explicit missingness: true when prior CGPA/backlog unknown (e.g. Semester 1 with no history).
+  // Used to prevent zero from being misread as "worst-case CGPA/zero backlog" in the feature vector.
+  cgpaMissing: boolean
+  backlogMissing: boolean
   tt1Pct: number | null
   tt2Pct: number | null
   seePct: number | null
@@ -349,6 +450,8 @@ export type ModelBackedRiskOutput = ObservableInferenceOutput & {
   headProbabilities: Record<RiskHeadKey, number>
   queuePriorityScore: number
   queuePrioritySource: 'overall-course-risk-head'
+  rankingAllowed: boolean
+  rankingSuppressedReason: string | null
   crossCourseDrivers: string[]
   headDisplay: Record<RiskHeadKey, {
     displayProbabilityAllowed: boolean
@@ -396,6 +499,17 @@ function displaySuppressionWarningForFallbackSourceRefs(sourceRefs: ObservableSo
     ? featureCompleteness.missing.join(', ')
     : 'none'
   return `Fallback-simulated evidence is ${confidenceClass} confidence (${missingDimensions} missing); probability display is suppressed for this proof row.`
+}
+
+function rankingSuppressionReasonForFallbackSourceRefs(sourceRefs: ObservableSourceRefs | null | undefined) {
+  if (!sourceRefs || sourceRefs.coEvidenceMode !== 'fallback-simulated') return null
+  const featureCompleteness = sourceRefs.featureCompleteness ?? sourceRefs.prerequisiteCompleteness ?? null
+  const confidenceClass = sourceRefs.featureConfidenceClass ?? featureCompleteness?.confidenceClass ?? null
+  if (confidenceClass !== 'low') return null
+  const missingDimensions = featureCompleteness && featureCompleteness.missing.length > 0
+    ? featureCompleteness.missing.join(', ')
+    : 'none'
+  return `Fallback-simulated evidence is low confidence (${missingDimensions} missing); operational ranking is suppressed for this proof row.`
 }
 
 function applyFallbackDisplaySuppression(
@@ -451,6 +565,12 @@ function safeRatio(numerator: number | null | undefined, denominator: number | n
 
 function average(values: number[]) {
   const filtered = values.filter(value => Number.isFinite(value))
+  if (!filtered.length) return 0
+  return filtered.reduce((sum, value) => sum + value, 0) / filtered.length
+}
+
+function averageObservedEvidence(values: Array<number | null | undefined>) {
+  const filtered = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
   if (!filtered.length) return 0
   return filtered.reduce((sum, value) => sum + value, 0) / filtered.length
 }
@@ -595,6 +715,7 @@ function featureVectorFromPayload(
   payload: ObservableFeaturePayload,
   sourceRefs?: ObservableSourceRefs | null,
   includeStageIndicators = true,
+  includeInteractionFeatures = true,
 ): FeatureVector {
   const prerequisiteDepth = Math.max(0, safeNumber(payload.prerequisiteChainDepth))
   const stageIndicators = includeStageIndicators
@@ -633,6 +754,23 @@ function featureVectorFromPayload(
     stagePostAssignmentsScaled: stageIndicators.stagePostAssignmentsScaled,
     stagePostSeeScaled: stageIndicators.stagePostSeeScaled,
     sectionPressureScaled: clamp(payload.sectionRiskRate, 0, 1),
+    // v5 interaction features — zeroed for baseline configs that set includeInteractionFeatures=false
+    tt1tt2ExamCompoundRiskScaled: includeInteractionFeatures ? safePctToRisk(payload.tt1Pct) * safePctToRisk(payload.tt2Pct) : 0,
+    courseworkCompoundRiskScaled: includeInteractionFeatures ? safePctToRisk(payload.quizPct) * safePctToRisk(payload.assignmentPct) : 0,
+    stagePostTt2TtCompoundInteractionScaled: includeInteractionFeatures ? stageIndicators.stagePostTt2Scaled * safePctToRisk(payload.tt1Pct) * safePctToRisk(payload.tt2Pct) : 0,
+    attendanceTrendCompoundRiskScaled: includeInteractionFeatures ? clamp((1 - clamp(payload.attendancePct / 100, 0, 1)) * clamp(1 - (payload.attendanceTrend + 25) / 50, 0, 1), 0, 1) : 0,
+    stagePostAssignmentsCourseworkInteractionScaled: includeInteractionFeatures ? stageIndicators.stagePostAssignmentsScaled * (safePctToRisk(payload.quizPct) + safePctToRisk(payload.assignmentPct)) / 2 : 0,
+    cgpaMissingScaled: payload.cgpaMissing ? 1 : 0,
+    backlogMissingScaled: payload.backlogMissing ? 1 : 0,
+    // v8b: assessment-evidence missingness derived from nullable payload fields.
+    // Independent of cgpa/backlog which have explicit boolean flags (zero is a
+    // legitimate CGPA value so explicit flag is required); here null uniquely
+    // means "not yet entered" and 0 uniquely means "entered, scored zero".
+    tt1MissingScaled: payload.tt1Pct == null ? 1 : 0,
+    tt2MissingScaled: payload.tt2Pct == null ? 1 : 0,
+    seeMissingScaled: payload.seePct == null ? 1 : 0,
+    quizMissingScaled: payload.quizPct == null ? 1 : 0,
+    assignmentMissingScaled: payload.assignmentPct == null ? 1 : 0,
   }
 }
 
@@ -784,69 +922,108 @@ function fitIsotonicCalibration(rows: Array<{ label: number; rawProb: number }>)
       index,
     }))
     .sort((left, right) => left.rawProb - right.rawProb || left.index - right.index)
-  const blocks = ordered.map(row => ({
-    lower: row.rawProb,
-    upper: row.rawProb,
-    weight: 1,
-    total: row.label,
-    value: row.label,
-  }))
-  for (let index = 0; index < blocks.length - 1;) {
-    if (blocks[index]!.value <= blocks[index + 1]!.value) {
-      index += 1
+  const n = ordered.length
+  if (n === 0) return { thresholds: [], values: [] }
+  // True O(n) PAV implementation via parallel arrays + doubly-linked list of
+  // live block indices. Each merge is O(1) pointer relink + O(1) arithmetic
+  // update; no O(tombstone) scans (the earlier tombstone+scan draft suffered a
+  // pathological worst-case when many merges happened left-to-right, forcing
+  // nextLive() to re-walk all prior tombstones per merge → quadratic).
+  const lower = new Float64Array(n)
+  const upper = new Float64Array(n)
+  const weight = new Float64Array(n)
+  const total = new Float64Array(n)
+  const value = new Float64Array(n)
+  const next = new Int32Array(n)
+  const prev = new Int32Array(n)
+  for (let i = 0; i < n; i += 1) {
+    const row = ordered[i]!
+    lower[i] = row.rawProb
+    upper[i] = row.rawProb
+    weight[i] = 1
+    total[i] = row.label
+    value[i] = row.label
+    prev[i] = i - 1
+    next[i] = i === n - 1 ? -1 : i + 1
+  }
+  const head = 0
+  let index = head
+  while (index !== -1) {
+    const j = next[index]!
+    if (j === -1) break
+    if (value[index]! <= value[j]!) {
+      index = j
       continue
     }
-    const merged = {
-      lower: blocks[index]!.lower,
-      upper: blocks[index + 1]!.upper,
-      weight: blocks[index]!.weight + blocks[index + 1]!.weight,
-      total: blocks[index]!.total + blocks[index + 1]!.total,
-      value: 0,
-    }
-    merged.value = merged.total / merged.weight
-    blocks.splice(index, 2, merged)
-    if (index > 0) index -= 1
+    // merge j into index
+    const mergedWeight = weight[index]! + weight[j]!
+    const mergedTotal = total[index]! + total[j]!
+    weight[index] = mergedWeight
+    total[index] = mergedTotal
+    value[index] = mergedTotal / mergedWeight
+    upper[index] = upper[j]!
+    // unlink j (O(1))
+    const afterJ = next[j]!
+    next[index] = afterJ
+    if (afterJ !== -1) prev[afterJ] = index
+    // rewind to predecessor so PAV invariant is re-checked leftward (O(1))
+    const back = prev[index]!
+    if (back !== -1) index = back
   }
-  return {
-    thresholds: blocks.map(block => roundToFour(block.upper)),
-    values: blocks.map(block => roundToFour(clamp(block.value, 0.0001, 0.9999))),
+  const thresholds: number[] = []
+  const values: number[] = []
+  for (let i = head; i !== -1; i = next[i]!) {
+    thresholds.push(roundToFour(upper[i]!))
+    values.push(roundToFour(clamp(value[i]!, 0.0001, 0.9999)))
   }
+  return { thresholds, values }
 }
 
+const VENN_ABERS_MAX_ROWS = 3000
 function fitVennAbersCalibration(rows: Array<{ label: number; rawProb: number }>) {
-  const ordered = rows
+  // Perf guard: Venn-Abers runs isotonic 2×100 times; each O(n log n) sort dominates at n>>3k.
+  // Deterministically downsample to bound total work regardless of val-set size.
+  const working = rows.length > VENN_ABERS_MAX_ROWS
+    ? (() => {
+        const step = rows.length / VENN_ABERS_MAX_ROWS
+        const out: Array<{ label: number; rawProb: number }> = []
+        for (let i = 0; i < VENN_ABERS_MAX_ROWS; i += 1) out.push(rows[Math.floor(i * step)]!)
+        return out
+      })()
+    : rows
+  const ordered = working
     .map((row, index) => ({
       ...row,
       rawProb: clamp(row.rawProb, 0.0001, 0.9999),
       index,
     }))
     .sort((left, right) => left.rawProb - right.rawProb || left.index - right.index)
-  
+
   const grid = Array.from({ length: 100 }, (_, i) => (i + 0.5) / 100)
   const thresholds: number[] = []
   const values: number[] = []
-  
+
   const applyIso = (iso: { thresholds: number[], values: number[] }, x: number) => {
     if (iso.thresholds.length === 0 || iso.values.length === 0) return x
     const index = iso.thresholds.findIndex(threshold => x <= threshold)
     if (index === -1) return iso.values[iso.values.length - 1] ?? x
     return iso.values[index] ?? x
   }
-  
+
   for (const x of grid) {
     const rows0 = [...ordered, { label: 0, rawProb: x, index: -1 }].sort((left, right) => left.rawProb - right.rawProb || left.index - right.index)
     const iso0 = fitIsotonicCalibration(rows0)
     const p0 = applyIso(iso0, x)
-    
+
     const rows1 = [...ordered, { label: 1, rawProb: x, index: -1 }].sort((left, right) => left.rawProb - right.rawProb || left.index - right.index)
     const iso1 = fitIsotonicCalibration(rows1)
     const p1 = applyIso(iso1, x)
-    
+
     const p = p0 / (1 - p1 + p0)
     thresholds.push(roundToFour(x))
     values.push(roundToFour(clamp(p, 0.0001, 0.9999)))
   }
-  
+
   return {
     thresholds,
     values,
@@ -928,16 +1105,23 @@ function chooseCalibration(
     } satisfies ProbabilityCalibrationArtifact
   }
 
+  const __calT = (label: string, s: number) => console.error(`[cal] ${headKey}:${label} ${((Date.now() - s) / 1000).toFixed(2)}s`)
   if (allowedMethods.includes('identity')) {
+    const s = Date.now()
     candidates.push(buildCandidate('identity', {}))
+    __calT('identity', s)
   }
   if (validationRows.length > 0 && allowedMethods.includes('sigmoid')) {
+    const s = Date.now()
     const sigmoidCalibration = fitSigmoidCalibration(validationRows)
     candidates.push(buildCandidate('sigmoid', sigmoidCalibration))
+    __calT('sigmoid', s)
   }
   if (validationRows.length > 0 && allowedMethods.includes('beta')) {
+    const s = Date.now()
     const betaCalibration = fitBetaCalibration(validationRows)
     candidates.push(buildCandidate('beta', betaCalibration))
+    __calT('beta', s)
   }
   if (
     validationRows.length > 0
@@ -945,8 +1129,10 @@ function chooseCalibration(
     && support.validationSupport >= 1000
     && support.validationPositives >= 250
   ) {
+    const s = Date.now()
     const isotonicCalibration = fitIsotonicCalibration(validationRows)
     candidates.push(buildCandidate('isotonic', isotonicCalibration))
+    __calT('isotonic', s)
   }
   if (
     validationRows.length > 0
@@ -954,8 +1140,10 @@ function chooseCalibration(
     && support.validationSupport >= 1000
     && support.validationPositives >= 250
   ) {
+    const s = Date.now()
     const vennAbersCalibration = fitVennAbersCalibration(validationRows)
     candidates.push(buildCandidate('venn-abers', vennAbersCalibration))
+    __calT('venn-abers', s)
   }
 
   const baseline = candidates[0] ?? buildCandidate('identity', {})
@@ -968,10 +1156,28 @@ function chooseCalibration(
     return currentBest
   }, baseline)
 
-  const selected = (
-    best.validationMetrics.brierScore <= baseline.validationMetrics.brierScore
-    || best.validationMetrics.expectedCalibrationError <= baseline.validationMetrics.expectedCalibrationError
-  ) ? best : baseline
+  // Intent §G.3 (FROZEN ML STRATEGY / Calibration): "default production
+  // calibrator path: Beta calibration by head. Venn-Abers can be used as a
+  // shadow/diagnostic uncertainty path if useful." Prior selection-by-Brier
+  // logic would silently promote Venn-Abers or isotonic to production when
+  // they won Brier by a hair, violating the frozen strategy. We now force
+  // Beta whenever it exists and is non-degraded (brier within 1.5x baseline
+  // and ECE within 2x baseline). Other candidates remain computed so shadow
+  // diagnostics are still available via downstream inspection, but production
+  // calibrator is deterministically Beta.
+  const beta = candidates.find(candidate => candidate.method === 'beta')
+  const betaBrierDegraded =
+    beta != null
+    && beta.validationMetrics.brierScore > baseline.validationMetrics.brierScore * 1.5
+  const betaEceDegraded =
+    beta != null
+    && beta.validationMetrics.expectedCalibrationError > Math.max(baseline.validationMetrics.expectedCalibrationError * 2, 0.05)
+  const selected = beta != null && !betaBrierDegraded && !betaEceDegraded
+    ? beta
+    : ((
+        best.validationMetrics.brierScore <= baseline.validationMetrics.brierScore
+        || best.validationMetrics.expectedCalibrationError <= baseline.validationMetrics.expectedCalibrationError
+      ) ? best : baseline)
 
   return {
     calibration: selected,
@@ -1128,6 +1334,7 @@ function writeFeatureVectorToBuffer(
   buffer: Float32Array,
   offset: number,
   includeStageIndicators = true,
+  includeInteractionFeatures = true,
 ) {
   const prerequisiteDepth = Math.max(0, safeNumber(payload.prerequisiteChainDepth))
   const stageIndicators = includeStageIndicators
@@ -1165,6 +1372,20 @@ function writeFeatureVectorToBuffer(
   buffer[offset + 29] = stageIndicators.stagePostAssignmentsScaled
   buffer[offset + 30] = stageIndicators.stagePostSeeScaled
   buffer[offset + 31] = clamp(payload.sectionRiskRate, 0, 1)
+  // v5 interaction features — zero out for baseline configs that set includeInteractionFeatures=false
+  if (includeInteractionFeatures) {
+    buffer[offset + 32] = safePctToRisk(payload.tt1Pct) * safePctToRisk(payload.tt2Pct)
+    buffer[offset + 33] = safePctToRisk(payload.quizPct) * safePctToRisk(payload.assignmentPct)
+    buffer[offset + 34] = stageIndicators.stagePostTt2Scaled * safePctToRisk(payload.tt1Pct) * safePctToRisk(payload.tt2Pct)
+    buffer[offset + 35] = clamp((1 - clamp(payload.attendancePct / 100, 0, 1)) * clamp(1 - (payload.attendanceTrend + 25) / 50, 0, 1), 0, 1)
+    buffer[offset + 36] = stageIndicators.stagePostAssignmentsScaled * (safePctToRisk(payload.quizPct) + safePctToRisk(payload.assignmentPct)) / 2
+  } else {
+    buffer[offset + 32] = 0
+    buffer[offset + 33] = 0
+    buffer[offset + 34] = 0
+    buffer[offset + 35] = 0
+    buffer[offset + 36] = 0
+  }
 }
 
 function datasetBlockForIndex(dataset: CompactRiskDataset, rowIndex: number) {
@@ -1273,6 +1494,34 @@ class ProofRiskDatasetBuilder {
     return trainCompactProofRiskModel(dataset, now, this.correlations, this.trainingConfig)
   }
 
+  dumpDataset() {
+    const dumpRows = []
+    const splitMap = new Uint8Array(this.rowCount)
+    this.trainIndices.forEach(i => splitMap[i] = 0)
+    this.validationIndices.forEach(i => splitMap[i] = 1)
+    this.testIndices.forEach(i => splitMap[i] = 2)
+    
+    for (let i = 0; i < this.rowCount; i++) {
+      const blockIndex = Math.floor(i / DATASET_BLOCK_SIZE)
+      const slot = i % DATASET_BLOCK_SIZE
+      const block = this.blocks[blockIndex]
+      if (!block) continue
+      const featureOffset = slot * FEATURE_COUNT
+      const features = Array.from(block.features.slice(featureOffset, featureOffset + FEATURE_COUNT))
+      dumpRows.push({
+        features,
+        labelMask: block.labelMasks[slot],
+        split: splitMap[i] === 0 ? 'train' : splitMap[i] === 1 ? 'validation' : 'test',
+        stageId: block.stageIds[slot],
+      })
+    }
+    return {
+      featureKeys: OBSERVABLE_FEATURE_KEYS,
+      headMasks: HEAD_LABEL_MASKS,
+      rows: dumpRows,
+    }
+  }
+
   private appendRow(
     featurePayload: ObservableFeaturePayload,
     labelPayload: ObservableLabelPayload,
@@ -1310,6 +1559,7 @@ class ProofRiskDatasetBuilder {
       block.features,
       slot * FEATURE_COUNT,
       this.trainingConfig.includeStageIndicators,
+      this.trainingConfig.includeInteractionFeatures,
     )
     block.count += 1
 
@@ -1788,12 +2038,21 @@ function trainCompactProofRiskModel(
   correlationsAccumulator: CorrelationAccumulator,
   trainingConfig: ProofRiskTrainingConfig,
 ) {
+  const __t0 = Date.now()
+  const __tlog = (label: string) => { console.error(`[train] ${label} @ ${((Date.now() - __t0) / 1000).toFixed(2)}s rows=${dataset.rowCount}`) }
+  __tlog(`start rows=${dataset.rowCount} train=${dataset.splitSummary.train} val=${dataset.splitSummary.validation} test=${dataset.splitSummary.test}`)
+  const __fitLog = <K extends string>(phase: K, fn: () => LogisticHeadArtifact | ChallengerHeadArtifact) => {
+    const s = Date.now()
+    const r = fn()
+    console.error(`[train] ${phase} in ${((Date.now() - s) / 1000).toFixed(2)}s`)
+    return r
+  }
   const productionHeads = {
-    attendanceRisk: fitLogisticHeadCompact(dataset, 'attendanceRisk', trainingConfig),
-    ceRisk: fitLogisticHeadCompact(dataset, 'ceRisk', trainingConfig),
-    seeRisk: fitLogisticHeadCompact(dataset, 'seeRisk', trainingConfig),
-    overallCourseRisk: fitLogisticHeadCompact(dataset, 'overallCourseRisk', trainingConfig),
-    downstreamCarryoverRisk: fitLogisticHeadCompact(dataset, 'downstreamCarryoverRisk', trainingConfig),
+    attendanceRisk: __fitLog('logistic:attendanceRisk', () => fitLogisticHeadCompact(dataset, 'attendanceRisk', trainingConfig)) as LogisticHeadArtifact,
+    ceRisk: __fitLog('logistic:ceRisk', () => fitLogisticHeadCompact(dataset, 'ceRisk', trainingConfig)) as LogisticHeadArtifact,
+    seeRisk: __fitLog('logistic:seeRisk', () => fitLogisticHeadCompact(dataset, 'seeRisk', trainingConfig)) as LogisticHeadArtifact,
+    overallCourseRisk: __fitLog('logistic:overallCourseRisk', () => fitLogisticHeadCompact(dataset, 'overallCourseRisk', trainingConfig)) as LogisticHeadArtifact,
+    downstreamCarryoverRisk: __fitLog('logistic:downstreamCarryoverRisk', () => fitLogisticHeadCompact(dataset, 'downstreamCarryoverRisk', trainingConfig)) as LogisticHeadArtifact,
   } satisfies Record<RiskHeadKey, LogisticHeadArtifact>
 
   const production: ProductionRiskModelArtifact = {
@@ -1822,18 +2081,22 @@ function trainCompactProofRiskModel(
     headSupportSummary: dataset.headSupportSummary,
     calibrationVersion: trainingConfig.calibrationVersion,
     heads: {
-      attendanceRisk: fitDepthTwoTreeHeadCompact(dataset, 'attendanceRisk', trainingConfig),
-      ceRisk: fitDepthTwoTreeHeadCompact(dataset, 'ceRisk', trainingConfig),
-      seeRisk: fitDepthTwoTreeHeadCompact(dataset, 'seeRisk', trainingConfig),
-      overallCourseRisk: fitDepthTwoTreeHeadCompact(dataset, 'overallCourseRisk', trainingConfig),
-      downstreamCarryoverRisk: fitDepthTwoTreeHeadCompact(dataset, 'downstreamCarryoverRisk', trainingConfig),
+      attendanceRisk: __fitLog('tree:attendanceRisk', () => fitDepthTwoTreeHeadCompact(dataset, 'attendanceRisk', trainingConfig)) as ChallengerHeadArtifact,
+      ceRisk: __fitLog('tree:ceRisk', () => fitDepthTwoTreeHeadCompact(dataset, 'ceRisk', trainingConfig)) as ChallengerHeadArtifact,
+      seeRisk: __fitLog('tree:seeRisk', () => fitDepthTwoTreeHeadCompact(dataset, 'seeRisk', trainingConfig)) as ChallengerHeadArtifact,
+      overallCourseRisk: __fitLog('tree:overallCourseRisk', () => fitDepthTwoTreeHeadCompact(dataset, 'overallCourseRisk', trainingConfig)) as ChallengerHeadArtifact,
+      downstreamCarryoverRisk: __fitLog('tree:downstreamCarryoverRisk', () => fitDepthTwoTreeHeadCompact(dataset, 'downstreamCarryoverRisk', trainingConfig)) as ChallengerHeadArtifact,
     },
   }
+  __tlog('all heads done')
 
+  const __corrT0 = Date.now()
+  const correlations = buildCorrelationArtifactFromAccumulator(correlationsAccumulator, now)
+  console.error(`[train] correlations in ${((Date.now() - __corrT0) / 1000).toFixed(2)}s`)
   return {
     production,
     challenger,
-    correlations: buildCorrelationArtifactFromAccumulator(correlationsAccumulator, now),
+    correlations,
   } satisfies ProofRiskModelBundle
 }
 
@@ -1895,9 +2158,25 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
   sourceRefs?: ObservableSourceRefs | null
   productionModel?: ProductionRiskModelArtifact | null
   correlations?: CorrelationArtifact | null
+  // Optional banding threshold override. When provided, the returned
+  // `riskBand` reflects these thresholds instead of the calibrated
+  // production model thresholds. Used by the proof-demo display surfaces
+  // (see `proof-demo-operational-band.ts`) to expose operational urgency
+  // bands without altering calibrated `headProbabilities` or driver text.
+  bandThresholdsOverride?: { readonly medium: number; readonly high: number } | null
 }): ModelBackedRiskOutput {
   const fallback = inferObservableRisk(input)
   const fallbackSuppressionWarning = displaySuppressionWarningForFallbackSourceRefs(input.sourceRefs)
+  const rankingSuppressedReason = rankingSuppressionReasonForFallbackSourceRefs(input.sourceRefs)
+  const rankingAllowed = rankingSuppressedReason == null
+  const bandThresholdsOverride = input.bandThresholdsOverride ?? null
+  const bandFromScore = (score: number, thresholds: { medium: number; high: number }): 'High' | 'Medium' | 'Low' => {
+    return score >= thresholds.high
+      ? 'High'
+      : score >= thresholds.medium
+        ? 'Medium'
+        : 'Low'
+  }
   if (!input.productionModel || input.productionModel.featureSchemaVersion !== RISK_FEATURE_SCHEMA_VERSION) {
     const fallbackDisplay = Object.fromEntries(
       (Object.keys(HEAD_LABEL_KEYS) as RiskHeadKey[]).map(headKey => [headKey, {
@@ -1906,8 +2185,12 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
         calibrationMethod: 'identity' as CalibrationMethod,
       }]),
     ) as ModelBackedRiskOutput['headDisplay']
+    const fallbackBand = bandThresholdsOverride
+      ? bandFromScore(fallback.riskProb, bandThresholdsOverride)
+      : fallback.riskBand
     return {
       ...fallback,
+      riskBand: fallbackBand,
       modelVersion: 'observable-inference-v2',
       calibrationVersion: null,
       headProbabilities: {
@@ -1917,8 +2200,10 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
         overallCourseRisk: fallback.riskProb,
         downstreamCarryoverRisk: fallback.riskProb,
       },
-      queuePriorityScore: fallback.riskProb,
+      queuePriorityScore: rankingAllowed ? fallback.riskProb : 0,
       queuePrioritySource: 'overall-course-risk-head',
+      rankingAllowed,
+      rankingSuppressedReason,
       crossCourseDrivers: [],
       headDisplay: fallbackDisplay,
     }
@@ -1933,11 +2218,10 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
     downstreamCarryoverRisk: scoreWithLogistic(input.productionModel.heads.downstreamCarryoverRisk, vector),
   } satisfies Record<RiskHeadKey, number>
   const officialOverall = headProbabilities.overallCourseRisk
-  const riskBand: 'High' | 'Medium' | 'Low' = officialOverall >= input.productionModel.thresholds.high
-    ? 'High'
-    : officialOverall >= input.productionModel.thresholds.medium
-      ? 'Medium'
-      : 'Low'
+  const riskBand: 'High' | 'Medium' | 'Low' = bandFromScore(
+    officialOverall,
+    bandThresholdsOverride ?? input.productionModel.thresholds,
+  )
   const observableDrivers = inferObservableDrivers(input)
   const recommendedAction = riskBand === 'High'
     ? 'Immediate mentor follow-up and reassessment before the next evaluation checkpoint.'
@@ -1966,8 +2250,10 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
     headProbabilities: Object.fromEntries(
       Object.entries(headProbabilities).map(([key, value]) => [key, roundToFour(value)]),
     ) as Record<RiskHeadKey, number>,
-    queuePriorityScore: roundToFour(officialOverall),
+    queuePriorityScore: rankingAllowed ? roundToFour(officialOverall) : 0,
     queuePrioritySource: 'overall-course-risk-head',
+    rankingAllowed,
+    rankingSuppressedReason,
     crossCourseDrivers: input.sourceRefs ? crossCourseDriversFromCorrelations(input.correlations ?? null, input.sourceRefs) : [],
     headDisplay: trainedHeadDisplay,
   }
@@ -2054,11 +2340,22 @@ export function featureHash(payload: ObservableFeaturePayload, labels: Observabl
   })).digest('hex')
 }
 
+export function featureVectorArrayFromPayload(
+  payload: ObservableFeaturePayload,
+  sourceRefs?: ObservableSourceRefs | null,
+  includeInteractionFeatures = true,
+): number[] {
+  const vec = featureVectorFromPayload(payload, sourceRefs, true, includeInteractionFeatures)
+  return OBSERVABLE_FEATURE_KEYS.map(key => vec[key])
+}
+
 export function buildObservableFeaturePayload(input: {
   attendancePct: number
   attendanceHistory?: Array<{ attendancePct: number }>
   currentCgpa: number
+  cgpaMissing?: boolean
   backlogCount: number
+  backlogMissing?: boolean
   tt1Pct: number | null
   tt2Pct: number | null
   quizPct: number | null
@@ -2080,8 +2377,8 @@ export function buildObservableFeaturePayload(input: {
   const attendanceTrend = attendanceHistory.length >= 2
     ? Number(attendanceHistory[attendanceHistory.length - 1]?.attendancePct ?? input.attendancePct) - Number(attendanceHistory[0]?.attendancePct ?? input.attendancePct)
     : 0
-  const courseworkAverage = average([input.quizPct ?? 0, input.assignmentPct ?? 0].filter(value => value > 0))
-  const termAverage = average([input.tt1Pct ?? 0, input.tt2Pct ?? 0].filter(value => value > 0))
+  const courseworkAverage = averageObservedEvidence([input.quizPct, input.assignmentPct])
+  const termAverage = averageObservedEvidence([input.tt1Pct, input.tt2Pct])
   const prerequisiteChainDepth = input.prerequisiteCourseCodes.length
   const prerequisiteWeakCourseRate = safeRatio(input.prerequisiteFailureCount, prerequisiteChainDepth)
   const normalizedSemesterProgress = clamp(input.semesterProgress, 0, 1)
@@ -2103,6 +2400,8 @@ export function buildObservableFeaturePayload(input: {
     attendanceTrend: roundToTwo(attendanceTrend),
     attendanceHistoryRiskCount: attendanceHistory.filter(item => item.attendancePct < 75).length,
     currentCgpa: roundToTwo(input.currentCgpa),
+    cgpaMissing: input.cgpaMissing ?? false,
+    backlogMissing: input.backlogMissing ?? false,
     backlogCount: input.backlogCount,
     tt1Pct: input.tt1Pct == null ? null : roundToTwo(input.tt1Pct),
     tt2Pct: input.tt2Pct == null ? null : roundToTwo(input.tt2Pct),

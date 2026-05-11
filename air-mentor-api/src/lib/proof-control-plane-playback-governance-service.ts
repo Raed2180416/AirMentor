@@ -20,7 +20,14 @@ import {
   playbackCheckpointNowIso,
   prerequisiteSummaryForSource,
   seeShortfallLabel,
+  type StageEvidenceRealizationInput,
 } from './proof-control-plane-playback-service.js'
+import type {
+  EvidenceApplierInterventionInput,
+} from './proof-stage-realization-evidence-applier.js'
+import type {
+  StudentLatentProfileForIntervention,
+} from './proof-intervention-response-types.js'
 import {
   buildObservableFeaturePayload,
   featureHash,
@@ -30,6 +37,8 @@ import {
   RISK_FEATURE_SCHEMA_VERSION,
   scoreObservableRiskWithModel,
 } from './proof-risk-model.js'
+import { roundNullablePct } from './proof-evidence-normalization.js'
+import { PROOF_DEMO_OPERATIONAL_THRESHOLDS } from './proof-demo-operational-band.js'
 import { buildMonitoringDecision } from './monitoring-engine.js'
 import {
   governProofQueueStage,
@@ -95,6 +104,22 @@ type StageCandidate = {
   downstreamCarryover: 0 | 1
 }
 
+// Phase-6d realization data bundle — optional. When present AND
+// AIRMENTOR_STAGE_REALIZATION_V1=1 is set in env, buildStageCandidate passes a
+// realization input into buildStageEvidenceSnapshot so intervention deltas flow
+// through to risk inference + queue projections. When absent / flag off, the
+// governance pipeline is bytewise identical to pre-Phase-6d behaviour.
+//
+// The bundle is keyed the same way the data-fetcher groups its output:
+//   sourceKey = `${studentId}::${offeringId ?? ''}`
+// so a caller that uses proof-stage-realization-data-fetcher to assemble the
+// `interventionsInWindowBySourceKey` Map can plug it straight in.
+export type PlaybackGovernanceRealizationData = {
+  runSeed: number
+  studentProfileByStudentId: ReadonlyMap<string, StudentLatentProfileForIntervention>
+  interventionsInWindowBySourceKey: ReadonlyMap<string, ReadonlyArray<EvidenceApplierInterventionInput>>
+}
+
 export type BuildPlaybackGovernanceArtifactsInput = {
   simulationRunId: string
   now: string
@@ -124,6 +149,7 @@ export type BuildPlaybackGovernanceArtifactsInput = {
     production: ProductionRiskModelArtifact | null
     correlations: CorrelationArtifact | null
   }
+  realizationData?: PlaybackGovernanceRealizationData
 }
 
 export type BuildPlaybackGovernanceArtifactsResult = {
@@ -172,6 +198,30 @@ function facultyAssignmentForSource(
   }
 }
 
+// Phase-6d: assemble an optional StageEvidenceRealizationInput for this (source,
+// stage) pair from the governance-level realizationData bundle. Returns undefined
+// when realization is not enabled / not available for this source — in which case
+// buildStageEvidenceSnapshot takes the baseline-only path.
+function realizationInputForSource(
+  realizationData: PlaybackGovernanceRealizationData | undefined,
+  source: StageCourseProjectionSource,
+): StageEvidenceRealizationInput | undefined {
+  if (!realizationData) return undefined
+  const profile = realizationData.studentProfileByStudentId.get(source.studentId)
+  if (!profile) return undefined
+  const sourceKey = `${source.studentId}::${source.offeringId ?? ''}`
+  const interventions = realizationData.interventionsInWindowBySourceKey.get(sourceKey) ?? []
+  // Even zero-length interventions are fine — the applier has a fast-path that
+  // returns baseline unchanged. We still pass the realization input so the
+  // downstream wire stays consistent and observable.
+  return {
+    runId: source.offeringId ?? source.studentId,
+    runSeed: realizationData.runSeed,
+    studentProfile: profile,
+    interventionsInWindow: interventions,
+  }
+}
+
 function buildStageCandidate(
   input: BuildPlaybackGovernanceArtifactsInput,
   source: StageCourseProjectionSource,
@@ -197,6 +247,7 @@ function buildStageCandidate(
     stageKey: stage.key,
     policy: input.policy,
     templatesById: input.templateById,
+    realization: realizationInputForSource(input.realizationData, source),
   })
   const sourceRefs: ObservableSourceRefsWithFeatureMetadata = {
     simulationRunId: input.simulationRunId,
@@ -259,6 +310,7 @@ function buildStageCandidate(
     sourceRefs,
     productionModel: input.activeRiskArtifacts.production,
     correlations: input.activeRiskArtifacts.correlations,
+    bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
   })
   const policyComparison = buildActionPolicyComparison({
     stageKey: stage.key,
@@ -333,6 +385,7 @@ function buildStageCandidate(
     sourceRefs,
     productionModel: input.activeRiskArtifacts.production,
     correlations: input.activeRiskArtifacts.correlations,
+    bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
   })
   const riskProbScaled = Math.round(inference.riskProb * 100)
   const noActionRiskProbScaled = Math.round(noActionInference.riskProb * 100)
@@ -601,11 +654,13 @@ export function buildPlaybackGovernanceArtifacts(
           stageOccurredAt: playbackCheckpointNowIso(input.run.createdAt, candidate.source.semesterNumber, stage),
           currentEvidence: {
             attendancePct: roundToOne(candidate.evidence.attendancePct),
-            tt1Pct: roundToOne(candidate.evidence.tt1Pct ?? 0),
-            tt2Pct: roundToOne(candidate.evidence.tt2Pct ?? 0),
-            quizPct: roundToOne(candidate.evidence.quizPct ?? 0),
-            assignmentPct: roundToOne(candidate.evidence.assignmentPct ?? 0),
-            seePct: roundToOne(candidate.evidence.seePct ?? 0),
+            tt1Pct: roundNullablePct(candidate.evidence.tt1Pct),
+            tt2Pct: roundNullablePct(candidate.evidence.tt2Pct),
+            quizPct: roundNullablePct(candidate.evidence.quizPct),
+            assignmentPct: roundNullablePct(candidate.evidence.assignmentPct),
+            cePct: roundNullablePct(candidate.evidence.cePct),
+            seePct: roundNullablePct(candidate.evidence.seePct),
+            overallPct: roundNullablePct(candidate.evidence.overallPct),
             weakCoCount: candidate.evidence.weakCoCount,
             weakQuestionCount: candidate.evidence.weakQuestionCount,
             coEvidenceMode: candidate.sourceRefs.coEvidenceMode ?? null,
@@ -618,10 +673,13 @@ export function buildPlaybackGovernanceArtifacts(
             riskProbScaled: candidate.riskProbScaled,
             previousRiskBand: sourceState.previousRiskBand,
             previousRiskProbScaled: sourceState.previousRiskProbScaled,
+            currentCgpa: candidate.evidence.currentCgpa,
+            backlogCount: candidate.evidence.backlogCount,
             riskChangeFromPreviousCheckpointScaled: candidate.riskChangeFromPreviousCheckpointScaled,
             counterfactualLiftScaled: candidate.counterfactualLiftScaled,
             recommendedAction: candidate.inference.recommendedAction,
             attentionAreas: candidate.inference.observableDrivers.slice(0, 4).map(driver => driver.label),
+            observableDrivers: candidate.inference.observableDrivers.slice(0, 5),
             modelVersion: candidate.inference.modelVersion,
             calibrationVersion: candidate.inference.calibrationVersion,
             headProbabilities: candidate.inference.headProbabilities,

@@ -1,0 +1,11 @@
+artifacts:
+  - path: audit-map/32-reports/inventory-frontend.md
+    min_lines: 40
+    min_bytes: 2000
+    required_sections:
+      - "# Frontend Inventory"
+      - "## Pages"
+      - "## Components"
+      - "## State Families"
+      - "## HTTP Surfaces"
+    write_mode: replace

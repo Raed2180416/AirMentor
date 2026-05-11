@@ -1,0 +1,8 @@
+purpose: |
+  Apply Beta calibration by head as default production path. Run Venn-Abers as diagnostic. Evaluate global + local calibration.
+nonneg:
+  - Beta calibration per head (5 heads)
+  - Do not rely on global ECE alone; local bands 0.4/0.85 must improve
+  - Promotion blocked if local calibration worsens
+owner_files:
+  - audit-map/22-evals/overnight-ml-beta-calibration.md

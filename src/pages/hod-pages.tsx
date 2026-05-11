@@ -16,7 +16,7 @@ import { ProofSurfaceHero, ProofSurfaceLauncher, ProofSurfaceTabPanel, ProofSurf
 import { Btn, Card, Chip, ModalWorkspace, PageShell, RiskBadge, TH, TD } from '../ui-primitives'
 import { EmptyState, InfoBanner, MetricCard, SectionHeading, formatDateTime, getStatusColor } from '../system-admin-ui'
 
-type HodTabId = 'overview' | 'courses' | 'faculty' | 'reassessments'
+type HodTabId = 'overview' | 'courses' | 'faculty' | 'reassessments' | 'counterfactual'
 
 function toRiskBand(band?: string | null): RiskBand | null {
   const normalized = band?.trim().toLowerCase()
@@ -26,8 +26,8 @@ function toRiskBand(band?: string | null): RiskBand | null {
   return null
 }
 
-function formatPercent(value: number) {
-  return `${Math.round(value)}%`
+function formatPercent(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value)}%` : 'Not recorded yet'
 }
 
 function formatHours(value: number) {
@@ -101,6 +101,7 @@ export function HodView({
   reassessmentRows,
   loading,
   error,
+  counterfactualPanel,
 }: {
   onOpenQueueHistory: () => void
   onOpenCourse: (offering: Offering) => void
@@ -116,6 +117,7 @@ export function HodView({
   reassessmentRows: ApiAcademicHodProofReassessment[]
   loading: boolean
   error: string
+  counterfactualPanel?: React.ReactNode
 }) {
   const [activeTab, setActiveTab] = useState<HodTabId>('overview')
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null)
@@ -353,6 +355,7 @@ export function HodView({
             { id: 'courses', label: 'Course Hotspots' },
             { id: 'faculty', label: 'Faculty Operations' },
             { id: 'reassessments', label: 'Reassessment Audit' },
+            { id: 'counterfactual', label: 'Counterfactual Impact' },
           ]}
           activeTab={activeTab}
           onChange={tabId => setActiveTab(tabId as HodTabId)}
@@ -707,6 +710,15 @@ export function HodView({
             </table>
             )}
           </TableCard>
+        ) : null}
+
+        {activeTab === 'counterfactual' ? (
+          counterfactualPanel ?? (
+            <EmptyState
+              title="Counterfactual panel not wired"
+              body="Pass a `counterfactualPanel` prop into HodView with a <HodCounterfactualPanel/> element configured with the two proof runs to diff. For the current demo flow, the panel is mounted from the academic workspace route surface."
+            />
+          )
         ) : null}
 
         {activeTab === 'reassessments' ? (

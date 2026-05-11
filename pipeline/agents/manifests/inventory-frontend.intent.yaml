@@ -1,0 +1,16 @@
+purpose: |
+  Inventory the React/Vite frontend. Produce a complete, deterministic map of
+  pages, components, state families, and HTTP surfaces without mutating product
+  behaviour.
+nonneg:
+  - Do not change runtime behaviour of src/** or tests/**
+  - Do not delete or rename any exported symbols
+  - Writes limited to audit-map/17-artifacts/** and audit-map/32-reports/**
+owner_files:
+  - src/App.tsx
+  - src/portal-entry.tsx
+  - src/main.tsx
+  - src/repositories.ts
+  - src/selectors.ts
+  - src/domain.ts
+  - src/data.ts

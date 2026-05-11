@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { ACTIVE_DEMO_WORKSPACE_POINTER_STORAGE_KEY } from '../src/demo-workspace-pointer'
 import { clearPortalWorkspaceHints, getPortalHash, hashBelongsToPortalRoute, navigateToPortal, parsePortalRoute, resolvePortalRoute } from '../src/portal-routing'
 
 describe('portal routing', () => {
@@ -64,6 +65,7 @@ describe('portal routing', () => {
       'airmentor-current-admin-faculty-id',
       'airmentor-current-faculty-id',
       'airmentor-current-teacher-id',
+      ACTIVE_DEMO_WORKSPACE_POINTER_STORAGE_KEY,
     ])
   })
 })

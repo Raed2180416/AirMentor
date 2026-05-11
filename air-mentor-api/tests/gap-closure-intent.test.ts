@@ -52,6 +52,7 @@ describe('GAP-5: bootstrap blocks without active proof run', () => {
         userId: 'fac_hod_cse',
         username: 'hod.cse',
         email: 'hod.cse@msruas.ac.in',
+        demoWorkspaceId: null,
         facultyId: 'fac_hod_cse',
         facultyName: 'HOD CSE',
         activeRoleGrant: {
@@ -110,6 +111,7 @@ describe('GAP-5: bootstrap blocks without active proof run', () => {
         userId: 'fac_hod_cse',
         username: 'hod.cse',
         email: 'hod.cse@msruas.ac.in',
+        demoWorkspaceId: null,
         facultyId: 'fac_hod_cse',
         facultyName: 'HOD CSE',
         activeRoleGrant: {

@@ -1,0 +1,11 @@
+purpose: |
+  Reconcile proof-lifecycle docs (activation, runtime, stage/date authority, completed-inspectable vs stopped, reset semantics) with authoritative prompt. Produce per-claim ledger with file:line evidence.
+nonneg:
+  - Every claim has a file:line citation
+  - Do not overwrite final-decision-appendix.md
+  - Do not modify backend or frontend source
+owner_files:
+  - docs/closeout/stage-07a-semester-activation-contract-and-seeded-data.md
+  - docs/closeout/stage-07b-semester-1-to-3-proof-walk.md
+  - docs/closeout/stage-07c-semester-4-to-6-proof-walk.md
+  - audit-map/14-reconciliation/contradiction-matrix-proof-lifecycle.md

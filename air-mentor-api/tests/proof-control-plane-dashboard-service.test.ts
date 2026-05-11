@@ -60,6 +60,11 @@ describe('proof-control-plane-dashboard-service', () => {
       leaseState: 'leased',
       retryState: 'retry-of-previous-run',
       retryOfSimulationRunId: 'run_failed',
+      progress: {
+        phase: 'running',
+        percent: 45,
+        etaSeconds: 3300,
+      },
     })
     expect(runs[2]).toMatchObject({
       simulationRunId: 'run_failed',

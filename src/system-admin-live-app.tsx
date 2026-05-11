@@ -25,6 +25,7 @@ import {
   UserCog,
 } from 'lucide-react'
 import { AirMentorApiClient, AirMentorApiError } from './api/client'
+import { readActiveDemoWorkspacePointer } from './demo-workspace-pointer'
 import type {
   ApiAcademicFaculty,
   ApiAdminFacultyPasswordSetupResponse,
@@ -34,6 +35,8 @@ import type {
   ApiBatch,
   ApiBranch,
   ApiCurriculumFeatureConfigBundle,
+  ApiCurriculumFeatureConfigHistoryEvent,
+  ApiCurriculumFeatureConfigPreview,
   ApiCurriculumLinkageCandidate,
   ApiCurriculumLinkageGenerationStatus,
   ApiCurriculumFeatureConfigPayload,
@@ -107,6 +110,7 @@ import {
 import {
   computeOverviewScopedCounts,
   describeRegistryScope,
+  formatOverviewFacultyCaption,
   isCurrentRoleGrant,
   isLeaderLikeOwnership,
   matchesFacultyScope,
@@ -117,12 +121,14 @@ import { describeProofAvailability, describeProofProvenance } from './proof-prov
 import { resolveSelectedAdminRequest } from './admin-request-selection'
 import { areSessionResponsesEquivalent } from './session-response-helpers'
 import {
+  CANONICAL_PROOF_BATCH_ID,
   CANONICAL_PROOF_ACADEMIC_FACULTY_ID,
   CANONICAL_PROOF_BRANCH_ID,
   CANONICAL_PROOF_DEPARTMENT_ID,
   resolveAdminDirectoryScopeFilter,
   resolveAuthoritativeOperationalSemester,
   resolveCanonicalProofBatch,
+  resolveProofDashboardBatchId,
 } from './proof-pilot'
 import {
   buildBulkMentorAssignmentApplyPayload,
@@ -171,6 +177,7 @@ import { SystemAdminProofDashboardWorkspace } from './system-admin-proof-dashboa
 import { SystemAdminRequestWorkspace } from './system-admin-request-workspace'
 import { SystemAdminSessionBoundary } from './system-admin-session-shell'
 import { ProofSurfaceLauncher } from './proof-surface-shell'
+import { ProofSimulationControls, type ProofAdvanceControlMode } from './proof-simulation-controls'
 import {
   BrandMark,
   Btn,
@@ -187,6 +194,7 @@ import {
   getShellBarStyle,
   withAlpha,
 } from './ui-primitives'
+import { useDismissibleSessionNotice } from './hooks/use-dismissible-session-notice'
 
 type SystemAdminLiveAppProps = {
   apiBaseUrl: string
@@ -250,7 +258,7 @@ type StructureFormState = {
   curriculum: { semesterNumber: string; courseCode: string; title: string; credits: string }
 }
 
-type CurriculumFeatureFormState = {
+export type CurriculumFeatureFormState = {
   assessmentProfile: string
   outcomesText: string
   prerequisitesText: string
@@ -651,7 +659,8 @@ function parseCurriculumFeatureLines(value: string) {
     .filter(Boolean)
 }
 
-function buildCurriculumFeaturePayload(form: CurriculumFeatureFormState): ApiCurriculumFeatureConfigPayload {
+// eslint-disable-next-line react-refresh/only-export-components
+export function buildCurriculumFeaturePayload(form: CurriculumFeatureFormState): ApiCurriculumFeatureConfigPayload {
   const outcomes = parseCurriculumFeatureLines(form.outcomesText).map((line, index) => {
     const [id, bloom, ...descParts] = line.split('|').map(part => part.trim())
     if (!id || !bloom || descParts.length === 0) {
@@ -665,16 +674,20 @@ function buildCurriculumFeaturePayload(form: CurriculumFeatureFormState): ApiCur
   })
   const prerequisites = parseCurriculumFeatureLines(form.prerequisitesText).map((line, index) => {
     const [sourceCourseCode, rawKind, ...rationaleParts] = line.split('|').map(part => part.trim())
-    let edgeKind: 'explicit' | 'added' | null = null
-    if (rawKind === 'added') edgeKind = 'added'
-    else if (rawKind === 'explicit' || !rawKind) edgeKind = 'explicit'
-    if (!sourceCourseCode || !edgeKind || rationaleParts.length === 0) {
+    const normalizedKind = (rawKind ?? '').toLowerCase()
+    const edgeKind: 'explicit' | 'added' | null = normalizedKind === 'explicit'
+      ? 'explicit'
+      : normalizedKind === 'added'
+        ? 'added'
+        : null
+    const rationale = rationaleParts.join(' | ').trim()
+    if (!sourceCourseCode || !edgeKind || !rationale) {
       throw new Error(`Prerequisite line ${index + 1} must use "COURSE_CODE | explicit|added | Rationale".`)
     }
     return {
       sourceCourseCode,
       edgeKind,
-      rationale: rationaleParts.join(' | '),
+      rationale,
     }
   })
   if (outcomes.length === 0) {
@@ -694,7 +707,8 @@ function buildCurriculumFeaturePayload(form: CurriculumFeatureFormState): ApiCur
   }
 }
 
-function validateCurriculumFeaturePrerequisites(
+// eslint-disable-next-line react-refresh/only-export-components
+export function validateCurriculumFeaturePrerequisites(
   targetCourse: ApiCurriculumFeatureConfigBundle['items'][number],
   prerequisites: ApiCurriculumFeatureConfigPayload['prerequisites'],
   items: ApiCurriculumFeatureConfigBundle['items'],
@@ -711,7 +725,7 @@ function validateCurriculumFeaturePrerequisites(
     if (!sourceCourse) continue
     const sourceSemesterNumber = Number(sourceCourse.semesterNumber ?? 0)
     if (!Number.isFinite(sourceSemesterNumber) || sourceSemesterNumber <= 0) continue
-    if (sourceSemesterNumber >= targetSemesterNumber) {
+    if (prerequisite.edgeKind === 'explicit' && sourceSemesterNumber >= targetSemesterNumber) {
       throw new Error(`Prerequisite edges require an earlier semester. Found semester ${sourceSemesterNumber} -> ${targetSemesterNumber}.`)
     }
   }
@@ -1964,7 +1978,7 @@ function AdminMiniStat({
 }
 
 export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLiveAppProps) {
-  const apiClient = useMemo(() => new AirMentorApiClient(apiBaseUrl), [apiBaseUrl])
+  const apiClient = useMemo(() => new AirMentorApiClient(apiBaseUrl, undefined, readActiveDemoWorkspacePointer), [apiBaseUrl])
   const repositories = useMemo(() => createAirMentorRepositories({ repositoryMode: 'http', apiClient }), [apiClient])
 
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => repositories.sessionPreferences.getThemeSnapshot() ?? normalizeThemeMode(null))
@@ -1996,7 +2010,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const [remindersSupported, setRemindersSupported] = useState(true)
   const [universityTab, setUniversityTab] = useState<UniversityTab>('overview')
   const [selectedSectionCode, setSelectedSectionCode] = useState<string | null>(null)
-  const [facultiesRestoreNotice, setFacultiesRestoreNotice] = useState<{ tone: 'neutral' | 'error'; message: string } | null>(null)
+  const { notice: facultiesRestoreNotice, setNotice: setFacultiesRestoreNotice, dismissNotice: dismissFacultiesRestoreNotice } = useDismissibleSessionNotice()
   const [route, setRoute] = useState<LiveAdminRoute>(() => parseAdminRoute(typeof window === 'undefined' ? '' : window.location.hash))
   const [routeHistory, setRouteHistory] = useState<AdminWorkspaceSnapshot[]>([])
   const [registryScope, setRegistryScope] = useState<UniversityScopeState | null>(null)
@@ -2041,6 +2055,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const [selectedCurriculumSemester, setSelectedCurriculumSemester] = useState('')
   const [selectedCurriculumCourseId, setSelectedCurriculumCourseId] = useState('')
   const [curriculumFeatureForm, setCurriculumFeatureForm] = useState<CurriculumFeatureFormState>(() => defaultCurriculumFeatureForm())
+  const [curriculumFeaturePreview, setCurriculumFeaturePreview] = useState<ApiCurriculumFeatureConfigPreview | null>(null)
+  const [curriculumFeatureHistory, setCurriculumFeatureHistory] = useState<ApiCurriculumFeatureConfigHistoryEvent[] | null>(null)
   const [curriculumFeatureTargetMode, setCurriculumFeatureTargetMode] = useState<'batch-local-override' | 'scope-profile'>('batch-local-override')
   const [curriculumFeatureTargetScopeKey, setCurriculumFeatureTargetScopeKey] = useState('')
   const [curriculumFeatureBindingMode, setCurriculumFeatureBindingMode] = useState<'inherit-scope-profile' | 'pin-profile' | 'local-only'>('inherit-scope-profile')
@@ -2339,7 +2355,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         message: 'Saved faculties workspace state could not be restored. Reset workspace to return to the default University overview.',
       })
     }
-  }, [route])
+  }, [route, setFacultiesRestoreNotice])
 
   useEffect(() => {
     if (typeof window === 'undefined' || route.section !== 'faculties') return
@@ -2391,9 +2407,13 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
 
   const routeScopedBatchId = useMemo(() => {
     if (route.batchId) return route.batchId
-    if (route.section !== 'proof-dashboard') return null
-    return resolveCanonicalProofBatch(data)?.batchId ?? null
-  }, [data, route.batchId, route.section])
+    return null
+  }, [route.batchId])
+  const proofDashboardBatchId = useMemo(() => resolveProofDashboardBatchId({
+    route,
+    routeScopedBatchId,
+    data,
+  }), [data, route, routeScopedBatchId])
 
   useEffect(() => {
     if (!session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
@@ -2516,7 +2536,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   }, [apiClient])
 
   useEffect(() => {
-    if (!routeScopedBatchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
+    if (!proofDashboardBatchId || !session || session.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
       setProofDashboard(null)
       return
     }
@@ -2524,7 +2544,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     setProofDashboardLoading(true)
     void (async () => {
       try {
-        const next = await apiClient.getProofDashboard(routeScopedBatchId)
+        const next = await apiClient.getProofDashboard(proofDashboardBatchId)
         if (!cancelled) setProofDashboard(next)
       } catch (error) {
         if (!cancelled) setActionError(toErrorMessage(error))
@@ -2533,17 +2553,17 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       }
     })()
     return () => { cancelled = true }
-  }, [apiClient, routeScopedBatchId, session])
+  }, [apiClient, proofDashboardBatchId, session])
 
   useEffect(() => {
-    if (!routeScopedBatchId) return
-    const runStatus = proofDashboard?.activeRunDetail?.status ?? null
-    if (runStatus !== 'queued' && runStatus !== 'running') return
+    if (!proofDashboardBatchId) return
+    const hasPendingProofRun = proofDashboard?.proofRuns.some(run => run.status === 'queued' || run.status === 'running') ?? false
+    if (!hasPendingProofRun) return
     const timer = window.setInterval(() => {
-      void refreshProofDashboard(routeScopedBatchId)
-    }, 5_000)
+      void refreshProofDashboard(proofDashboardBatchId)
+    }, 2_000)
     return () => window.clearInterval(timer)
-  }, [proofDashboard?.activeRunDetail?.status, refreshProofDashboard, routeScopedBatchId])
+  }, [proofDashboard?.proofRuns, proofDashboardBatchId, refreshProofDashboard])
 
   const getQueuedProofRefreshCount = useCallback((value: unknown) => {
     if (!value || typeof value !== 'object') return 0
@@ -2668,6 +2688,9 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const selectedBranch = resolveBranch(data, route.branchId)
   const selectedBatch = resolveBatch(data, routeScopedBatchId ?? undefined)
   const canonicalProofBatch = useMemo(() => resolveCanonicalProofBatch(data), [data])
+  const proofControlBatchId = routeScopedBatchId
+    ?? canonicalProofBatch?.batchId
+    ?? CANONICAL_PROOF_BATCH_ID
   const canonicalProofRegistryScope = useMemo<UniversityScopeState | null>(() => {
     if (!canonicalProofBatch) return null
     return {
@@ -3909,8 +3932,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         : ` Candidate generation ran in ${result.candidateGenerationStatus.status} mode via ${result.candidateGenerationStatus.provider.replace('-', ' ')}.`
       setFlashMessage(
         queuedCount > 0
-          ? `Bootstrap imported ${result.createdCourseCount} live course rows, synced ${result.upsertedProfileCourseCount} profile items, generated ${result.generatedCandidateCount} linkage candidates, and queued ${queuedCount} proof refresh${queuedCount === 1 ? '' : 'es'}.${generationNote}`
-          : `Bootstrap imported ${result.createdCourseCount} live course rows, synced ${result.upsertedProfileCourseCount} profile items, and generated ${result.generatedCandidateCount} linkage candidates.${generationNote}`,
+          ? `Bootstrap imported ${result.createdCourseCount} live course rows, synced ${result.upsertedProfileCourseCount} profile items, generated ${result.generatedCandidateCount} prerequisite suggestion${result.generatedCandidateCount === 1 ? '' : 's'}, and queued ${queuedCount} proof refresh${queuedCount === 1 ? '' : 'es'}.${generationNote}`
+          : `Bootstrap imported ${result.createdCourseCount} live course rows, synced ${result.upsertedProfileCourseCount} profile items, and generated ${result.generatedCandidateCount} prerequisite suggestion${result.generatedCandidateCount === 1 ? '' : 's'}.${generationNote}`,
       )
     })
   }
@@ -3946,8 +3969,8 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         : ` Candidate generation ran in ${result.candidateGenerationStatus.status} mode via ${result.candidateGenerationStatus.provider.replace('-', ' ')}.`
       setFlashMessage(
         result.items.length > 0
-          ? `Regenerated ${result.items.length} linkage candidate${result.items.length === 1 ? '' : 's'} for ${selectedCurriculumFeatureItem?.courseCode ?? 'the selected scope'}.${generationNote}`
-          : `No linkage candidates were generated for ${selectedCurriculumFeatureItem?.courseCode ?? 'the selected scope'}.${generationNote}`,
+          ? `Generated ${result.items.length} prerequisite suggestion${result.items.length === 1 ? '' : 's'} for ${selectedCurriculumFeatureItem?.courseCode ?? 'the selected scope'}.${generationNote}`
+          : `No prerequisite suggestions generated for ${selectedCurriculumFeatureItem?.courseCode ?? 'the selected scope'}.${generationNote}`,
       )
     })
   }
@@ -3988,17 +4011,17 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           batchIds: result.affectedBatchIds,
           curriculumImportVersionId: result.curriculumImportVersionId,
           message: result.proofRefreshWarning
-            ?? 'Curriculum linkage was approved, but proof refresh queueing failed for one or more affected batches. Retry immediately to restore proof parity.',
+            ?? 'Prerequisite suggestion accepted, but proof refresh queueing failed for one or more affected batches. Retry immediately to restore proof parity.',
         })
       } else {
         setCurriculumProofRefreshRetry(null)
       }
       setFlashMessage(
         !result.proofRefreshQueued
-          ? `Curriculum linkage approved, but proof refresh queueing failed. ${result.proofRefreshWarning ?? 'Use Retry proof refresh to re-queue the affected batches.'}`
+          ? `Suggestion accepted, but proof refresh queueing failed. ${result.proofRefreshWarning ?? 'Use Retry proof refresh to re-queue the affected batches.'}`
           : queuedCount > 0
-          ? `Curriculum linkage approved and ${queuedCount} affected batch proof run${queuedCount === 1 ? '' : 's'} queued.`
-          : 'Curriculum linkage approved.',
+          ? `Suggestion accepted and ${queuedCount} affected batch proof run${queuedCount === 1 ? '' : 's'} queued.`
+          : 'Prerequisite suggestion accepted.',
       )
     })
   }
@@ -4011,7 +4034,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
       })
       await refreshCurriculumLinkageCandidates(selectedBatch.batchId)
       setCurriculumLinkageReviewNote('')
-      setFlashMessage('Curriculum linkage candidate rejected.')
+      setFlashMessage('Prerequisite suggestion rejected.')
     })
   }
 
@@ -4071,6 +4094,30 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
         : queuedCount > 0
           ? `Curriculum model inputs saved and ${queuedCount} affected batch proof run${queuedCount === 1 ? '' : 's'} queued for ${selectedCurriculumFeatureItem.courseCode}.`
           : `Curriculum model inputs saved for ${selectedCurriculumFeatureItem.courseCode}.`)
+    })
+  }
+
+  const handleLoadCurriculumFeatureHistory = async () => {
+    if (!selectedBatch || !selectedCurriculumFeatureItem) return
+    await runAction(async () => {
+      const result = await apiClient.getCurriculumFeatureConfigHistory(
+        selectedBatch.batchId,
+        selectedCurriculumFeatureItem.curriculumCourseId,
+      )
+      setCurriculumFeatureHistory(result.events)
+    })
+  }
+
+  const handlePreviewCurriculumFeatureConfig = async () => {
+    if (!selectedBatch || !selectedCurriculumFeatureItem) return
+    await runAction(async () => {
+      const payload = buildCurriculumFeaturePayload(curriculumFeatureForm)
+      const result = await apiClient.previewCurriculumFeatureConfig(
+        selectedBatch.batchId,
+        selectedCurriculumFeatureItem.curriculumCourseId,
+        payload.outcomes.map(o => ({ id: o.id, bloom: o.bloom })),
+      )
+      setCurriculumFeaturePreview(result)
     })
   }
 
@@ -4310,28 +4357,26 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   }
 
   const handleCreateProofImport = async () => {
-    if (!selectedBatch) return
     await runAction(async () => {
-      await apiClient.createProofImport(selectedBatch.batchId)
-      await refreshCurriculumFeatureConfig(selectedBatch.batchId)
-      await refreshProofDashboard(selectedBatch.batchId)
+      await apiClient.createProofImport(proofControlBatchId)
+      await refreshCurriculumFeatureConfig(proofControlBatchId)
+      await refreshProofDashboard(proofControlBatchId)
       setFlashMessage('Proof curriculum import created from the reconciled workbook.')
     })
   }
 
   const handleValidateLatestProofImport = async () => {
-    if (!selectedBatch) return
     const latestImport = proofDashboard?.imports[0]
     if (!latestImport) return
     await runAction(async () => {
       await apiClient.validateProofImport(latestImport.curriculumImportVersionId)
-      await refreshProofDashboard(selectedBatch.batchId)
+      await refreshProofDashboard(proofControlBatchId)
       setFlashMessage('Latest proof import validated.')
     })
   }
 
   const handleReviewPendingCrosswalks = async () => {
-    if (!selectedBatch || !proofDashboard?.crosswalkReviewQueue.length || !proofDashboard.imports[0]) return
+    if (!proofDashboard?.crosswalkReviewQueue.length || !proofDashboard.imports[0]) return
     await runAction(async () => {
       await apiClient.reviewProofCrosswalks(proofDashboard.imports[0].curriculumImportVersionId, {
         reviews: proofDashboard.crosswalkReviewQueue.map(item => ({
@@ -4340,20 +4385,19 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
           overrideReason: 'Reviewed in the sysadmin proof shell for the first-6-semester proof batch.',
         })),
       })
-      await refreshProofDashboard(selectedBatch.batchId)
+      await refreshProofDashboard(proofControlBatchId)
       setFlashMessage('Pending proof crosswalk entries marked as reviewed.')
     })
   }
 
   const handleApproveLatestProofImport = async () => {
-    if (!selectedBatch) return
     const latestImport = proofDashboard?.imports[0]
     if (!latestImport) return
     await runAction(async () => {
       await apiClient.approveProofImport(latestImport.curriculumImportVersionId)
       const rerun = await queueSelectedProofRefresh('proof import approval', latestImport.curriculumImportVersionId)
-      await refreshCurriculumFeatureConfig(selectedBatch.batchId)
-      await refreshProofDashboard(selectedBatch.batchId)
+      await refreshCurriculumFeatureConfig(proofControlBatchId)
+      await refreshProofDashboard(proofControlBatchId)
       setFlashMessage(
         rerun.length > 0
           ? 'Latest proof import approved, synced into the batch curriculum snapshot, and republished as the active proof run.'
@@ -4363,39 +4407,48 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   }
 
   const handleCreateProofRun = async () => {
-    if (!selectedBatch) return
     const preferredImport = proofDashboard?.imports.find(item => item.status === 'approved') ?? proofDashboard?.imports[0]
     if (!preferredImport) return
     await runAction(async () => {
-      const queuedRun = await apiClient.createProofRun(selectedBatch.batchId, {
+      const queuedRun = await apiClient.createProofRun(proofControlBatchId, {
         curriculumImportVersionId: preferredImport.curriculumImportVersionId,
         activate: true,
       })
-      await refreshProofDashboard(selectedBatch.batchId)
+      await refreshProofDashboard(proofControlBatchId)
       setFlashMessage(`Proof simulation rerun queued as ${queuedRun.simulationRunId}. It will publish automatically when background execution completes.`)
     })
   }
 
+  const handleCreateProofSimulation = async () => {
+    await runAction(async () => {
+      const createdImport = await apiClient.createProofImport(proofControlBatchId)
+      await refreshCurriculumFeatureConfig(proofControlBatchId)
+      const queuedRun = await apiClient.createProofRun(proofControlBatchId, {
+        curriculumImportVersionId: createdImport.curriculumImportVersionId,
+        activate: true,
+      })
+      await refreshProofDashboard(proofControlBatchId)
+      setFlashMessage(`Proof simulation created as ${queuedRun.simulationRunId}. It will publish automatically when background execution completes.`)
+    })
+  }
+
   const handleRetryProofRun = async (simulationRunId: string) => {
-    if (!selectedBatch) return
     await runAction(async () => {
       await apiClient.retryProofRun(simulationRunId)
-      await refreshProofDashboard(selectedBatch.batchId)
+      await refreshProofDashboard(proofControlBatchId)
       setFlashMessage('Failed proof run re-queued for background execution.')
     })
   }
 
   const handleActivateProofRun = async (simulationRunId: string) => {
-    if (!selectedBatch) return
     await runAction(async () => {
       await apiClient.activateProofRun(simulationRunId)
-      await refreshProofDashboard(selectedBatch.batchId)
+      await refreshProofDashboard(proofControlBatchId)
       setFlashMessage('Selected proof run is now active.')
     })
   }
 
   const handleActivateProofSemester = async (simulationRunId: string, semesterNumber: number) => {
-    if (!selectedBatch) return
     await runAction(async () => {
       const activation = await apiClient.activateProofSemester(simulationRunId, {
         semesterNumber: semesterNumber as 1 | 2 | 3 | 4 | 5 | 6,
@@ -4412,41 +4465,74 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             : batch
         )),
       }))
-      await refreshProofDashboard(selectedBatch.batchId)
+      await refreshProofDashboard(proofControlBatchId)
       setFlashMessage(`Proof operational semester switched to Semester ${semesterNumber}.`)
     })
   }
 
+  const handleAdvanceProofRun = async (simulationRunId: string, mode: ProofAdvanceControlMode) => {
+    await runAction(async () => {
+      try {
+        await apiClient.advanceProofRun(simulationRunId, { mode })
+      } catch (error) {
+        if (error instanceof AirMentorApiError && error.status === 409) {
+          await refreshProofDashboard(proofControlBatchId)
+          setFlashMessage('Proof run is still preparing checkpoints. Refreshed status; retry when progress finishes.')
+          return
+        }
+        throw error
+      }
+      clearProofPlaybackSelection()
+      setSelectedProofCheckpointSource('auto')
+      setProofPlaybackRestoreNotice(null)
+      setSelectedProofCheckpointDetail(null)
+      setSelectedProofCheckpointId(null)
+      await refreshProofDashboard(proofControlBatchId)
+      setFlashMessage(mode === 'day' ? 'Proof simulation advanced by one day.' : 'Proof simulation advanced to the next stage.')
+    })
+  }
+
+  const handleStopProofRun = async (simulationRunId: string) => {
+    await runAction(async () => {
+      await apiClient.stopProofRun(simulationRunId)
+      clearProofPlaybackSelection()
+      setSelectedProofCheckpointSource('auto')
+      setProofPlaybackRestoreNotice(null)
+      setSelectedProofCheckpointDetail(null)
+      setSelectedProofCheckpointId(null)
+      await refreshProofDashboard(proofControlBatchId)
+      setFlashMessage('Proof simulation stopped.')
+    })
+  }
+
   const handleArchiveProofRun = async (simulationRunId: string) => {
-    if (!selectedBatch) return
     await runAction(async () => {
       await apiClient.archiveProofRun(simulationRunId)
-      await refreshProofDashboard(selectedBatch.batchId)
+      await refreshProofDashboard(proofControlBatchId)
       setFlashMessage('Selected proof run archived.')
     })
   }
 
   const handleRecomputeProofRunRisk = async () => {
-    if (!selectedBatch || !proofDashboard?.activeRunDetail) return
+    if (!proofDashboard?.activeRunDetail) return
     const activeRunDetail = proofDashboard.activeRunDetail
     await runAction(async () => {
       await apiClient.recomputeProofRunRisk(activeRunDetail.simulationRunId)
-      await refreshProofDashboard(selectedBatch.batchId)
+      await refreshProofDashboard(proofControlBatchId)
       setFlashMessage('Observable-only risk recomputed for the active proof run.')
     })
   }
 
   const handleRestoreProofSnapshot = async (simulationRunId: string, simulationResetSnapshotId?: string) => {
-    if (!selectedBatch) return
     await runAction(async () => {
       await apiClient.restoreProofRunSnapshot(simulationRunId, simulationResetSnapshotId ? { simulationResetSnapshotId } : undefined)
-      await refreshProofDashboard(selectedBatch.batchId)
+      await refreshProofDashboard(proofControlBatchId)
       setFlashMessage('Proof run restored from the selected snapshot.')
     })
   }
 
   const handleResetProofRunFromScratch = async (simulationRunId: string, simulationResetSnapshotId?: string) => {
-    if (!selectedBatch || !simulationResetSnapshotId) return
+    if (!simulationResetSnapshotId) return
     if (!window.confirm('Reset the active proof branch from the baseline snapshot and pin it back to Semester 1? This creates a fresh run and replaces the current active proof run.')) return
     await runAction(async () => {
       const restored = await apiClient.restoreProofRunSnapshot(simulationRunId, { simulationResetSnapshotId })
@@ -4468,7 +4554,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             : batch
         )),
       }))
-      await refreshProofDashboard(selectedBatch.batchId)
+      await refreshProofDashboard(proofControlBatchId)
       setFlashMessage('Proof branch reset from the baseline snapshot and pinned to Semester 1.')
     })
   }
@@ -5814,8 +5900,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
   const overviewVisibleMentorGapCount = overviewCounts.mentorGapCount
   const overviewGlobalStudentCount = overviewGlobalCounts.studentCount
   const overviewGlobalMentoredCount = overviewGlobalCounts.mentoredCount
-  const overviewVisibleFacultyCount = overviewCounts.facultyCount
-  const overviewVisibleOwnershipCount = overviewCounts.ownershipCount
+  const overviewFacultyCaption = formatOverviewFacultyCaption(overviewCounts, Boolean(overviewHierarchyScope))
   const normalizedStudentRegistrySearch = studentRegistrySearch.trim().toLowerCase()
   const normalizedFacultyRegistrySearch = facultyRegistrySearch.trim().toLowerCase()
   const studentRegistryItems = (studentRegistryHasScope ? scopedAdminDirectoryData : operatorData).students
@@ -6038,7 +6123,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
     setSelectedSectionCode(null)
     setUniversityTab('overview')
     setFacultiesRestoreNotice(null)
-  }, [route])
+  }, [route, setFacultiesRestoreNotice])
   // --- Breadcrumbs ---
   const topBarBreadcrumbs: BreadcrumbSegment[] = (() => {
     if (route.section === 'overview') return [{ label: 'Dashboard' }]
@@ -6274,72 +6359,24 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                 </Card>
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <Btn
-                  size="sm"
-                  variant="ghost"
-                  disabled={!effectiveBatchSetupReadiness.ready}
-                  onClick={() => {
-                    closePopup()
-                    void handleCreateProofImport()
-                  }}
-                >
-                  Capture Snapshot
-                </Btn>
-                {proofDashboard?.imports.length ? (
-                  <Btn
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      closePopup()
-                      void handleValidateLatestProofImport()
-                    }}
-                  >
-                    Check Mapping
-                  </Btn>
-                ) : null}
-                {proofDashboard?.crosswalkReviewQueue.length ? (
-                  <Btn
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      closePopup()
-                      void handleReviewPendingCrosswalks()
-                    }}
-                  >
-                    Review Mappings
-                  </Btn>
-                ) : null}
-                  <Btn
-                    size="sm"
-                    variant="ghost"
-                    disabled={!effectiveBatchSetupReadiness.ready}
-                    onClick={() => {
-                      closePopup()
-                      if (activeRunDetail) void handleRecomputeProofRunRisk()
-                      else void handleCreateProofRun()
-                    }}
-                >
-                  {activeRunDetail ? 'Refresh Risk' : 'Generate Preview'}
-                </Btn>
-                {activeRunDetail?.snapshots.find(item => /baseline/i.test(item.snapshotLabel)) ? (
-                  <Btn
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      closePopup()
-                      void handleResetProofRunFromScratch(
-                        activeRunDetail.simulationRunId,
-                        activeRunDetail.snapshots.find(item => /baseline/i.test(item.snapshotLabel))?.simulationResetSnapshotId,
-                      )
-                    }}
-                  >
-                    Reset Preview To Start
-                  </Btn>
-                ) : null}
+                <ProofSimulationControls
+                  activeRunDetail={activeRunDetail}
+                  activeRunCheckpoints={activeRunCheckpoints}
+                  selectedProofCheckpoint={selectedProofCheckpoint}
+                  selectedProofCheckpointCanStepForward={selectedProofCheckpointCanStepForward}
+                  selectedProofCheckpointCanPlayToEnd={selectedProofCheckpointCanPlayToEnd}
+                  baselineSnapshot={activeRunDetail?.snapshots.find(item => /baseline/i.test(item.snapshotLabel)) ?? activeRunDetail?.snapshots[0] ?? null}
+                  resetStageSnapshot={activeRunDetail?.snapshots[0] ?? null}
+                  createDisabled={proofDashboardLoading}
+                  onCreateProofSimulation={handleCreateProofSimulation}
+                  onStopProofRun={handleStopProofRun}
+                  onAdvanceProofRun={handleAdvanceProofRun}
+                  onRestoreProofSnapshot={handleRestoreProofSnapshot}
+                  onResetProofRunFromScratch={handleResetProofRunFromScratch}
+                  onStepProofPlayback={handleStepProofPlayback}
+                  beforeAction={closePopup}
+                />
               </div>
-              {!effectiveBatchSetupReadiness.ready ? (
-                <InfoBanner tone="error" message={`Complete setup before using proof preview controls: ${effectiveBatchSetupReadiness.blockers.join(' ')}`} />
-              ) : null}
             </div>
           )}
           popupFooter={({ closePopup, jumpToTarget }) => (
@@ -6491,12 +6528,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                   />
                   <SectionLaunchCard
                     title="Faculty"
-                    caption={overviewHierarchyScope
-                      ? `${overviewVisibleFacultyCount} profiles · ${overviewVisibleOwnershipCount} active class owners`
-                      : '0 profiles · scope required'}
+                    caption={overviewFacultyCaption}
                     helper={overviewHierarchyScope
                       ? `Appointments, permissions, class ownership, and timetable review filtered to ${overviewScopeLabel ?? 'the active academic scope'}.`
-                      : 'Select an academic scope first so faculty ownership and load totals only reflect the active proof branch slice.'}
+                      : 'Global appointments, permissions, class ownership, and timetable review. Select an academic scope to narrow these totals.'}
                     icon={<UserCog size={18} />}
                     tone={ADMIN_SECTION_TONES['faculty-members']}
                     active={false}
@@ -6519,7 +6554,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                 />
                 <OverviewSupportCard
                   title="Teaching Load"
-                  value={String(overviewVisibleOwnershipCount)}
+                  value={String(overviewCounts.ownershipCount)}
                   helper={overviewHierarchyScope
                     ? `Active teaching ownership records mapped to faculty inside ${overviewScopeLabel ?? 'the active academic scope'}.`
                     : 'No hierarchy scope selected yet. Teaching-load totals stay empty until you choose the academic slice you want to inspect.'}
@@ -6588,15 +6623,19 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             onValidateLatestProofImport={handleValidateLatestProofImport}
             onReviewPendingCrosswalks={handleReviewPendingCrosswalks}
             onApproveLatestProofImport={handleApproveLatestProofImport}
+            onCreateProofSimulation={handleCreateProofSimulation}
             onCreateProofRun={handleCreateProofRun}
             onRecomputeProofRunRisk={handleRecomputeProofRunRisk}
             onActivateProofRun={handleActivateProofRun}
             onActivateProofSemester={handleActivateProofSemester}
+            onAdvanceProofRun={handleAdvanceProofRun}
             onRetryProofRun={handleRetryProofRun}
+            onStopProofRun={handleStopProofRun}
             onArchiveProofRun={handleArchiveProofRun}
             onRestoreProofSnapshot={handleRestoreProofSnapshot}
             onResetProofRunFromScratch={handleResetProofRunFromScratch}
             onResetProofPlaybackSelection={handleResetProofPlaybackSelection}
+            onDismissProofPlaybackRestoreNotice={() => setProofPlaybackRestoreNotice(null)}
             onSelectProofCheckpoint={handleSelectProofCheckpoint}
             onStepProofPlayback={handleStepProofPlayback}
             formatSplitSummary={formatSplitSummary}
@@ -6614,6 +6653,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             toneColor={ADMIN_SECTION_TONES.faculties}
             restoreNotice={facultiesRestoreNotice}
             onResetRestore={handleResetFacultiesWorkspaceRestore}
+            onDismissRestoreNotice={dismissFacultiesRestoreNotice}
             selectedAcademicFaculty={selectedAcademicFaculty}
             selectedDepartment={selectedDepartment}
             selectedBranch={selectedBranch}
@@ -6731,6 +6771,10 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
             handleApproveCurriculumLinkageCandidate={handleApproveCurriculumLinkageCandidate}
             handleRejectCurriculumLinkageCandidate={handleRejectCurriculumLinkageCandidate}
             handleSaveCurriculumFeatureConfig={handleSaveCurriculumFeatureConfig}
+            handlePreviewCurriculumFeatureConfig={handlePreviewCurriculumFeatureConfig}
+            curriculumFeaturePreview={curriculumFeaturePreview}
+            handleLoadCurriculumFeatureHistory={handleLoadCurriculumFeatureHistory}
+            curriculumFeatureHistory={curriculumFeatureHistory}
             proofDashboardProps={{
               proofDashboard,
               proofDashboardLoading,
@@ -6765,11 +6809,14 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               onValidateLatestProofImport: handleValidateLatestProofImport,
               onReviewPendingCrosswalks: handleReviewPendingCrosswalks,
               onApproveLatestProofImport: handleApproveLatestProofImport,
+              onCreateProofSimulation: handleCreateProofSimulation,
               onCreateProofRun: handleCreateProofRun,
               onRecomputeProofRunRisk: handleRecomputeProofRunRisk,
               onActivateProofRun: handleActivateProofRun,
               onActivateProofSemester: handleActivateProofSemester,
+              onAdvanceProofRun: handleAdvanceProofRun,
               onRetryProofRun: handleRetryProofRun,
+              onStopProofRun: handleStopProofRun,
               onArchiveProofRun: handleArchiveProofRun,
               onRestoreProofSnapshot: handleRestoreProofSnapshot,
               onResetProofRunFromScratch: handleResetProofRunFromScratch,

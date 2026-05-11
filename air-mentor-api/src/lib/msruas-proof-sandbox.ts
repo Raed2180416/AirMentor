@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm'
 import type { AppDb } from '../db/client.js'
 import curriculumSeedJson from '../db/seeds/msruas-mnc-curriculum.json' with { type: 'json' }
 import {
+  academicFaculties,
   academicCalendarAuditEvents,
   academicRuntimeState,
   academicTaskPlacements,
@@ -149,6 +150,12 @@ type SemesterSimulation = {
   subjectRows: Array<{
     course: CurriculumSeedCourse
     attendancePct: number
+    tt1Pct: number
+    tt2Pct: number
+    quizPct: number
+    assignmentPct: number
+    cePct: number
+    seePct: number
     ceMark: number
     seeMark: number
     overallMark: number
@@ -176,9 +183,27 @@ export const MSRUAS_PROOF_BATCH_ID = 'batch_branch_mnc_btech_2023'
 export const MSRUAS_PROOF_SIMULATION_RUN_ID = 'sim_mnc_2023_first6_v1'
 export const MSRUAS_PROOF_CURRICULUM_IMPORT_ID = 'curriculum_import_mnc_2023_first6_v1'
 
+async function ensureProofAcademicFaculty(db: AppDb, institutionId: string, now: string) {
+  const [existingAcademicFaculty] = await db.select().from(academicFaculties).where(eq(academicFaculties.academicFacultyId, 'academic_faculty_engineering_and_technology'))
+  if (existingAcademicFaculty) return
+  await db.insert(academicFaculties).values({
+    academicFacultyId: 'academic_faculty_engineering_and_technology',
+    institutionId,
+    code: 'ENG',
+    name: 'Engineering and Technology',
+    overview: 'Default academic faculty for proof sandbox engineering departments.',
+    status: 'active',
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+}
+
 export async function ensureMsruasProofBatchStructure(db: AppDb, now: string) {
   const [institution] = await db.select().from(institutions).limit(1)
   if (!institution) throw new Error('Institution not configured')
+
+  await ensureProofAcademicFaculty(db, institution.institutionId, now)
 
   const [existingDepartment] = await db.select().from(departments).where(eq(departments.departmentId, MSRUAS_PROOF_DEPARTMENT_ID))
   if (!existingDepartment) {
@@ -227,7 +252,7 @@ export async function ensureMsruasProofBatchStructure(db: AppDb, now: string) {
       branchId: MSRUAS_PROOF_BRANCH_ID,
       admissionYear: 2023,
       batchLabel: '2023 Proof',
-      currentSemester: 6,
+      currentSemester: 1,
       sectionLabelsJson: JSON.stringify(['A', 'B']),
       status: 'active',
       updatedAt: now,
@@ -238,7 +263,7 @@ export async function ensureMsruasProofBatchStructure(db: AppDb, now: string) {
       branchId: MSRUAS_PROOF_BRANCH_ID,
       admissionYear: 2023,
       batchLabel: '2023 Proof',
-      currentSemester: 6,
+      currentSemester: 1,
       sectionLabelsJson: JSON.stringify(['A', 'B']),
       status: 'active',
       version: 1,
@@ -257,7 +282,7 @@ export async function ensureMsruasProofBatchStructure(db: AppDb, now: string) {
         semesterNumber: term.semesterNumber,
         startDate: term.startDate,
         endDate: term.endDate,
-        status: term.semesterNumber === 6 ? 'active' : 'archived',
+        status: term.semesterNumber === 1 ? 'active' : 'archived',
         updatedAt: now,
       }).where(eq(academicTerms.termId, term.termId))
       continue
@@ -270,12 +295,35 @@ export async function ensureMsruasProofBatchStructure(db: AppDb, now: string) {
       semesterNumber: term.semesterNumber,
       startDate: term.startDate,
       endDate: term.endDate,
-      status: term.semesterNumber === 6 ? 'active' : 'archived',
+      status: term.semesterNumber === 1 ? 'active' : 'archived',
       version: 1,
       createdAt: now,
       updatedAt: now,
     })
   }
+}
+
+// Re-insert proof faculty password credentials for any PROOF_FACULTY entries
+// whose userAccount exists but whose userPasswordCredentials row was deleted
+// (e.g. by stopProofSimulationRun / §L.11 demo finale). This keeps the
+// Playwright flow-ladder idempotent: after flow-11 wipes proof creds, the
+// next test's fixture can rehydrate them without reseeding the whole
+// cohort.
+export async function rehydrateProofFacultyCredentials(db: AppDb, now: string) {
+  let rehydratedCount = 0
+  for (const faculty of PROOF_FACULTY) {
+    const [account] = await db.select().from(userAccounts).where(eq(userAccounts.userId, faculty.userId))
+    if (!account) continue
+    const [cred] = await db.select().from(userPasswordCredentials).where(eq(userPasswordCredentials.userId, faculty.userId))
+    if (cred) continue
+    await db.insert(userPasswordCredentials).values({
+      userId: faculty.userId,
+      passwordHash: await hashPassword('faculty1234'),
+      updatedAt: now,
+    })
+    rehydratedCount += 1
+  }
+  return { rehydratedCount }
 }
 
 export async function ensureMsruasProofSandboxSeeded(db: AppDb, options: {
@@ -316,6 +364,10 @@ export const PROOF_TERM_DEFS = [
   { termId: 'term_mnc_sem5', semesterNumber: 5, academicYearLabel: '2025-26', startDate: '2025-08-01', endDate: '2025-12-15' },
   { termId: 'term_mnc_sem6', semesterNumber: 6, academicYearLabel: '2025-26', startDate: '2026-01-08', endDate: '2026-05-15' },
 ] as const
+
+export const PROOF_SEMESTER_SIM_START_DATES: Readonly<Record<number, string>> = Object.freeze(
+  Object.fromEntries(PROOF_TERM_DEFS.map(term => [term.semesterNumber, term.startDate])),
+)
 
 const FIRST_NAMES = ['Aarav', 'Ishita', 'Vihaan', 'Ananya', 'Advik', 'Meera', 'Reyansh', 'Kavya', 'Arjun', 'Diya', 'Krish', 'Nitya', 'Rohan', 'Saanvi', 'Dev', 'Mira', 'Kabir', 'Tara', 'Yash', 'Ira']
 const LAST_NAMES = ['Sharma', 'Iyer', 'Nair', 'Reddy', 'Patel', 'Gupta', 'Joshi', 'Bhat', 'Rao', 'Singh', 'Krishnan', 'Menon', 'Kulkarni', 'Saxena', 'Varma']
@@ -464,6 +516,12 @@ function simulateSemesterCourse(input: {
   policy: MsruasDeterministicPolicy
 }): {
   attendancePct: number
+  tt1Pct: number
+  tt2Pct: number
+  quizPct: number
+  assignmentPct: number
+  cePct: number
+  seePct: number
   ceMark: number
   seeMark: number
   overallMark: number
@@ -502,13 +560,49 @@ function simulateSemesterCourse(input: {
     52,
     98,
   )
-  const cePct = clamp(
+  const ceBasePct = clamp(
     24
       + (mastery * 60)
       + (student.latentBase.selfRegulation * 10)
       + (prereq * 8)
       - (difficulty * 9)
       + stableBetween(`${student.studentId}-${course.internalCompilerId}-ce`, -12, 10),
+    10,
+    97,
+  )
+  const tt1Pct = clamp(
+    ceBasePct
+      - 4
+      + stableBetween(`${student.studentId}-${course.internalCompilerId}-tt1`, -11, 10),
+    8,
+    98,
+  )
+  const tt2Pct = clamp(
+    tt1Pct
+      + (student.latentBase.supportResponsiveness * 5)
+      - (difficulty * 3)
+      + stableBetween(`${student.studentId}-${course.internalCompilerId}-tt2`, -9, 12),
+    8,
+    99,
+  )
+  const quizPct = clamp(
+    ceBasePct
+      + stableBetween(`${student.studentId}-${course.internalCompilerId}-quiz`, -10, 10),
+    8,
+    99,
+  )
+  const assignmentPct = clamp(
+    ceBasePct
+      + (student.latentBase.selfRegulation * 4)
+      + stableBetween(`${student.studentId}-${course.internalCompilerId}-assignment`, -8, 10),
+    10,
+    99,
+  )
+  const cePct = clamp(
+    (tt1Pct * 0.28)
+      + (tt2Pct * 0.27)
+      + (quizPct * 0.2)
+      + (assignmentPct * 0.25),
     10,
     97,
   )
@@ -535,6 +629,12 @@ function simulateSemesterCourse(input: {
   })
   return {
     attendancePct,
+    tt1Pct: roundToTwo(tt1Pct),
+    tt2Pct: roundToTwo(tt2Pct),
+    quizPct: roundToTwo(quizPct),
+    assignmentPct: roundToTwo(assignmentPct),
+    cePct: roundToTwo(cePct),
+    seePct: roundToTwo(seePct),
     ceMark,
     seeMark,
     overallMark: decision.overallRounded,
@@ -727,6 +827,8 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
   const sem6CourseLeaderFaculty = PROOF_FACULTY.filter(faculty => faculty.permissions.includes('COURSE_LEADER'))
   const mentorFaculty = PROOF_FACULTY.filter(faculty => faculty.permissions.includes('MENTOR'))
 
+  await ensureProofAcademicFaculty(db, institutionId, now)
+
   const [existingDepartment] = await db.select().from(departments).where(eq(departments.departmentId, MSRUAS_PROOF_DEPARTMENT_ID))
   if (!existingDepartment) {
     await db.insert(departments).values({
@@ -773,7 +875,7 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
     branchId: MSRUAS_PROOF_BRANCH_ID,
     admissionYear: 2023,
     batchLabel: '2023 Proof',
-    currentSemester: 6,
+    currentSemester: 1,
     sectionLabelsJson: JSON.stringify(['A', 'B']),
     status: 'active',
     version: 1,
@@ -789,7 +891,7 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
     semesterNumber: term.semesterNumber,
     startDate: term.startDate,
     endDate: term.endDate,
-    status: term.semesterNumber === 6 ? 'active' : 'archived',
+    status: term.semesterNumber === 1 ? 'active' : 'archived',
     version: 1,
     createdAt: now,
     updatedAt: now,
@@ -1073,7 +1175,8 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
     facultyCount: PROOF_FACULTY.length,
     semesterStart: 1,
     semesterEnd: 6,
-    activeOperationalSemester: 6,
+    activeOperationalSemester: 1,
+    activeStageKey: 'pre-tt1',
     sourceType: 'simulation',
     policySnapshotJson: JSON.stringify(policy),
     engineVersionsJson: JSON.stringify({
@@ -1285,6 +1388,12 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
         semesterSubjectRows.push({
           course,
           attendancePct: simulation.attendancePct,
+          tt1Pct: simulation.tt1Pct,
+          tt2Pct: simulation.tt2Pct,
+          quizPct: simulation.quizPct,
+          assignmentPct: simulation.assignmentPct,
+          cePct: simulation.cePct,
+          seePct: simulation.seePct,
           ceMark: simulation.ceMark,
           seeMark: simulation.seeMark,
           overallMark: simulation.overallMark,
@@ -1386,6 +1495,12 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
             title: row.course.title,
             score: row.overallMark,
             attendancePct: row.attendancePct,
+            tt1Pct: row.tt1Pct,
+            tt2Pct: row.tt2Pct,
+            quizPct: row.quizPct,
+            assignmentPct: row.assignmentPct,
+            cePct: row.cePct,
+            seePct: row.seePct,
             result: row.result,
           })),
         }),
@@ -1450,15 +1565,41 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
         )
         const quizPct = clamp(tt1Pct + stableBetween(`${trajectory.studentId}-${offering.offeringId}-quiz`, -10, 8), 15, 97)
         const assignmentPct = clamp(tt1Pct + stableBetween(`${trajectory.studentId}-${offering.offeringId}-assignment`, -8, 10), 18, 98)
+        const tt2Pct = clamp(
+          tt1Pct
+            + (trajectory.latentBase.supportResponsiveness * 5)
+            - (offeringIndex % 3)
+            + stableBetween(`${trajectory.studentId}-${offering.offeringId}-tt2`, -9, 12),
+          15,
+          98,
+        )
+        const seePct = clamp(
+          (tt2Pct * 0.48)
+            + (quizPct * 0.16)
+            + (assignmentPct * 0.16)
+            + (trajectory.latentBase.academicPotential * 18)
+            + stableBetween(`${trajectory.studentId}-${offering.offeringId}-see`, -10, 9),
+          12,
+          98,
+        )
+        const cePct = clamp(
+          (tt1Pct * 0.28)
+            + (tt2Pct * 0.27)
+            + (quizPct * 0.2)
+            + (assignmentPct * 0.25),
+          10,
+          97,
+        )
         const weakCoCount = tt1Pct < 45 ? 2 : tt1Pct < 60 ? 1 : 0
         const inference = inferObservableRisk({
           attendancePct,
           currentCgpa,
           backlogCount: Math.max(0, Math.round(stableBetween(`${trajectory.studentId}-backlog-observed`, currentCgpa < 6 ? 1 : 0, currentCgpa < 5.2 ? 3 : 1))),
           tt1Pct,
-          tt2Pct: null,
+          tt2Pct,
           quizPct,
           assignmentPct,
+          seePct,
           weakCoCount,
           policy,
         })
@@ -1498,6 +1639,19 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
             updatedAt: now,
           },
           {
+            assessmentScoreId: `assessment_tt2_${trajectory.studentId}_${offering.offeringId}`,
+            studentId: trajectory.studentId,
+            offeringId: offering.offeringId,
+            termId: 'term_mnc_sem6',
+            componentType: 'tt2',
+            componentCode: 'TT2',
+            score: Math.round((tt2Pct / 100) * 25),
+            maxScore: 25,
+            evaluatedAt: now,
+            createdAt: now,
+            updatedAt: now,
+          },
+          {
             assessmentScoreId: `assessment_quiz1_${trajectory.studentId}_${offering.offeringId}`,
             studentId: trajectory.studentId,
             offeringId: offering.offeringId,
@@ -1519,6 +1673,19 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
             componentCode: 'Assignment 1',
             score: Math.round((assignmentPct / 100) * 10),
             maxScore: 10,
+            evaluatedAt: now,
+            createdAt: now,
+            updatedAt: now,
+          },
+          {
+            assessmentScoreId: `assessment_see_${trajectory.studentId}_${offering.offeringId}`,
+            studentId: trajectory.studentId,
+            offeringId: offering.offeringId,
+            termId: 'term_mnc_sem6',
+            componentType: 'sem_end',
+            componentCode: 'SEE',
+            score: Math.round((seePct / 100) * 100),
+            maxScore: 100,
             evaluatedAt: now,
             createdAt: now,
             updatedAt: now,
@@ -1553,10 +1720,16 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
           sectionCode: trajectory.sectionCode,
           observedStateJson: JSON.stringify({
             offeringId: offering.offeringId,
+            courseTitle: course.title,
+            courseCode: courseCodeForSeed(course),
             attendancePct,
             tt1Pct: roundToTwo(tt1Pct),
+            tt2Pct: roundToTwo(tt2Pct),
             quizPct: roundToTwo(quizPct),
             assignmentPct: roundToTwo(assignmentPct),
+            cePct: roundToTwo(cePct),
+            seePct: roundToTwo(seePct),
+            finalMark: Math.round((cePct * 0.6) + (seePct * 0.4)),
             weakCoCount,
             riskBand: inference.riskBand,
             riskProb: inference.riskProb,

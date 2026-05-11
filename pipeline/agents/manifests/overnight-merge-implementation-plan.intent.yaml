@@ -1,0 +1,8 @@
+purpose: |
+  Consolidate every code audit into ordered implementation plan. Per phase: edit list, test additions, validation gates, rollback strategy.
+nonneg:
+  - Plan cites file:line for every edit target
+  - Plan must not alter frozen decision appendix
+  - Phase order matches auth prompt (1→2→3→4→5→6 then 8→7→9→10→11 ML chain)
+owner_files:
+  - audit-map/14-reconciliation/overnight-implementation-plan.md

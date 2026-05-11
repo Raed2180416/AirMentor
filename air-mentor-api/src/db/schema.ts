@@ -1,4 +1,5 @@
-import { integer, text, pgTable } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
+import { integer, real, text, pgTable } from 'drizzle-orm/pg-core'
 
 export const institutions = pgTable('institutions', {
   institutionId: text('institution_id').primaryKey(),
@@ -110,6 +111,7 @@ export const sessions = pgTable('sessions', {
   sessionId: text('session_id').primaryKey(),
   userId: text('user_id').notNull().references(() => userAccounts.userId),
   activeRoleGrantId: text('active_role_grant_id'),
+  demoWorkspaceId: text('demo_workspace_id'),
   expiresAt: text('expires_at').notNull(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
@@ -182,6 +184,7 @@ export const students = pgTable('students', {
   phone: text('phone'),
   admissionDate: text('admission_date').notNull(),
   status: text('status').notNull(),
+  demoWorkspaceId: text('demo_workspace_id').default(sql`NULL`),
   version: integer('version').notNull().default(1),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
@@ -197,6 +200,7 @@ export const studentEnrollments = pgTable('student_enrollments', {
   academicStatus: text('academic_status').notNull(),
   startDate: text('start_date').notNull(),
   endDate: text('end_date'),
+  demoWorkspaceId: text('demo_workspace_id').default(sql`NULL`),
   version: integer('version').notNull().default(1),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
@@ -209,6 +213,7 @@ export const mentorAssignments = pgTable('mentor_assignments', {
   effectiveFrom: text('effective_from').notNull(),
   effectiveTo: text('effective_to'),
   source: text('source').notNull(),
+  demoWorkspaceId: text('demo_workspace_id').default(sql`NULL`),
   version: integer('version').notNull().default(1),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
@@ -392,6 +397,8 @@ export const curriculumNodes = pgTable('curriculum_nodes', {
   matchStatus: text('match_status').notNull(),
   mappingNote: text('mapping_note'),
   assessmentProfile: text('assessment_profile').notNull(),
+  outcomeBloomLevel: text('outcome_bloom_level'),
+  outcomeMasteryTarget: real('outcome_mastery_target'),
   status: text('status').notNull(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
@@ -405,6 +412,8 @@ export const curriculumEdges = pgTable('curriculum_edges', {
   targetCurriculumNodeId: text('target_curriculum_node_id').notNull().references(() => curriculumNodes.curriculumNodeId),
   edgeKind: text('edge_kind').notNull(),
   rationale: text('rationale').notNull(),
+  weight: real('weight').notNull().default(1.0),
+  weightOverride: real('weight_override'),
   status: text('status').notNull(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
@@ -489,7 +498,20 @@ export const simulationRuns = pgTable('simulation_runs', {
   semesterStart: integer('semester_start').notNull(),
   semesterEnd: integer('semester_end').notNull(),
   activeOperationalSemester: integer('active_operational_semester').notNull(),
+  activeStageKey: text('active_stage_key'),
+  simulatedDateIso: text('simulated_date_iso'),
+  setupConfigJson: text('setup_config_json'),
+  scenarioConfigJson: text('scenario_config_json'),
+  // Track C Phase 1b: per-section latent-profile overrides (MSRUAS counterfactual
+  // tuning). JSON shape parsed by proof-section-override-applier.ts. Flag-gated
+  // by AIRMENTOR_SECTION_OVERRIDES_V1 at the applier site so flag-off runs are
+  // byte-identical. Nullable — absent = use batch defaults.
+  sectionOverridesJson: text('section_overrides_json'),
+  lifecycleState: text('lifecycle_state'),
+  runMode: text('run_mode'),
+  stageBoundaryJson: text('stage_boundary_json'),
   sourceType: text('source_type').notNull(),
+  demoWorkspaceId: text('demo_workspace_id').default(sql`NULL`),
   policySnapshotJson: text('policy_snapshot_json').notNull(),
   engineVersionsJson: text('engine_versions_json').notNull(),
   metricsJson: text('metrics_json').notNull(),
@@ -527,6 +549,7 @@ export const teacherAllocations = pgTable('teacher_allocations', {
   sectionCode: text('section_code'),
   allocationRole: text('allocation_role').notNull(),
   plannedContactHours: integer('planned_contact_hours').notNull(),
+  demoWorkspaceId: text('demo_workspace_id').default(sql`NULL`),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 })
@@ -1002,6 +1025,7 @@ export const sectionOfferings = pgTable('section_offerings', {
   finalsLocked: integer('finals_locked').notNull().default(0),
   pendingAction: text('pending_action'),
   status: text('status').notNull(),
+  demoWorkspaceId: text('demo_workspace_id').default(sql`NULL`),
   version: integer('version').notNull().default(1),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
@@ -1026,6 +1050,7 @@ export const facultyOfferingOwnerships = pgTable('faculty_offering_ownerships', 
   facultyId: text('faculty_id').notNull().references(() => facultyProfiles.facultyId),
   ownershipRole: text('ownership_role').notNull(),
   status: text('status').notNull(),
+  demoWorkspaceId: text('demo_workspace_id').default(sql`NULL`),
   version: integer('version').notNull().default(1),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
@@ -1333,6 +1358,24 @@ export const adminReminders = pgTable('admin_reminders', {
   updatedAt: text('updated_at').notNull(),
 })
 
+export const demoWorkspaces = pgTable('demo_workspaces', {
+  demoWorkspaceId: text('demo_workspace_id').primaryKey(),
+  name: text('name').notNull(),
+  ownerFacultyId: text('owner_faculty_id'),
+  batchId: text('batch_id').references(() => batches.batchId),
+  scopeKind: text('scope_kind').notNull().default('row_tag'),
+  scopeName: text('scope_name'),
+  sourceBatchId: text('source_batch_id').references(() => batches.batchId),
+  activeSimulationRunId: text('active_simulation_run_id'),
+  createdByFacultyId: text('created_by_faculty_id'),
+  stoppedAt: text('stopped_at'),
+  resetAt: text('reset_at'),
+  metadataJson: text('metadata_json'),
+  status: text('status').notNull().default('active'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
 export const allTables = {
   institutions,
   departments,
@@ -1423,6 +1466,7 @@ export const allTables = {
   auditEvents,
   operationalTelemetryEvents,
   adminReminders,
+  demoWorkspaces,
 }
 
 export type SchemaTableMap = typeof allTables

@@ -1,0 +1,10 @@
+artifacts:
+  - path: audit-map/32-reports/feature-intent-integrity.md
+    min_lines: 40
+    min_bytes: 2000
+    required_sections:
+      - "# Feature Intent Integrity"
+      - "## Affirmed"
+      - "## Drift"
+      - "## Mitigation"
+    write_mode: replace

@@ -2,6 +2,8 @@ import type {
   ApiAcademicBootstrap,
   ApiAcademicFaculty,
   ApiAcademicHodProofBundle,
+  ApiAcademicHodProofCounterfactualReport,
+  ApiAcademicHodProofCounterfactualSimulatorReport,
   ApiAcademicMeeting,
   ApiActivateProofSemesterRequest,
   ApiActivateProofSemesterResponse,
@@ -46,7 +48,9 @@ import type {
   ApiCurriculumFeatureBindingSaveResult,
   ApiCurriculumBootstrapResult,
   ApiCurriculumFeatureConfigBundle,
+  ApiCurriculumFeatureConfigHistoryEvent,
   ApiCurriculumFeatureConfigPayload,
+  ApiCurriculumFeatureConfigPreview,
   ApiCurriculumFeatureConfigSaveResult,
   ApiCurriculumFeatureProfile,
   ApiCurriculumLinkageCandidate,
@@ -94,7 +98,10 @@ import type {
   ApiTranscriptSubjectResult,
   ApiTranscriptTermResult,
   ApiUiPreferences,
+  ApiDemoWorkspace,
+  ApiDemoProvisioningPreview,
 } from './types.js'
+import type { ActiveDemoWorkspacePointer } from '../demo-workspace-pointer.js'
 import type {
   MeetingStatus,
   EntryKind,
@@ -131,6 +138,9 @@ export interface AirMentorApiClientLike {
   getAcademicHodProofFaculty(filter?: { section?: string; semester?: number; facultyId?: string; simulationStageCheckpointId?: string }): Promise<{ items: ApiAcademicHodProofFacultyRollup[] }>
   getAcademicHodProofStudents(filter?: { section?: string; semester?: number; riskBand?: string; courseCode?: string; studentId?: string; simulationStageCheckpointId?: string }): Promise<{ items: ApiAcademicHodProofStudentWatch[] }>
   getAcademicHodProofReassessments(filter?: { section?: string; semester?: number; riskBand?: string; status?: string; facultyId?: string; courseCode?: string; studentId?: string; simulationStageCheckpointId?: string }): Promise<{ items: ApiAcademicHodProofReassessment[] }>
+  advanceAcademicProofRun(simulationRunId: string, payload: { mode: 'day' | 'previous-day' | 'stage' }): Promise<Record<string, unknown>>
+  stopAcademicProofRun(simulationRunId: string): Promise<Record<string, unknown>>
+  recomputeAcademicProofRunRisk(simulationRunId: string): Promise<{ ok: true }>
   acknowledgeAcademicProofReassessment(reassessmentEventId: string, payload?: ApiProofReassessmentAcknowledgeRequest): Promise<ApiProofReassessmentAcknowledgeResponse>
   resolveAcademicProofReassessment(reassessmentEventId: string, payload: ApiProofReassessmentResolveRequest): Promise<ApiProofReassessmentResolveResponse>
   getAcademicStudentAgentCard(studentId: string, filter?: { simulationRunId?: string; simulationStageCheckpointId?: string }): Promise<ApiStudentAgentCard>
@@ -246,6 +256,8 @@ export interface AirMentorApiClientLike {
   retryProofRun(simulationRunId: string): Promise<{ simulationRunId: string; status: string; activeFlag: boolean; createdAt: string; startedAt: string | null; completedAt: string | null; failureCode: string | null; failureMessage: string | null; progress: Record<string, unknown> | null }>
   activateProofRun(simulationRunId: string): Promise<{ ok: true }>
   activateProofSemester(simulationRunId: string, payload: ApiActivateProofSemesterRequest): Promise<ApiActivateProofSemesterResponse>
+  advanceProofRun(simulationRunId: string, payload: { mode: 'day' | 'previous-day' | 'stage' }): Promise<Record<string, unknown>>
+  stopProofRun(simulationRunId: string): Promise<Record<string, unknown>>
   archiveProofRun(simulationRunId: string): Promise<{ ok: true }>
   recomputeProofRunRisk(simulationRunId: string): Promise<{ ok: true }>
   restoreProofRunSnapshot(simulationRunId: string, payload?: { simulationResetSnapshotId?: string }): Promise<{ simulationRunId: string; activeFlag: boolean }>
@@ -319,6 +331,8 @@ export interface AirMentorApiClientLike {
   updateCurriculumFeatureProfile(curriculumFeatureProfileId: string, payload: Pick<ApiCurriculumFeatureProfile, 'name' | 'scopeType' | 'scopeId' | 'status' | 'version'>): Promise<ApiCurriculumFeatureProfile>
   saveCurriculumFeatureBinding(batchId: string, payload: Pick<ApiBatchCurriculumFeatureBinding, 'bindingMode' | 'curriculumFeatureProfileId' | 'status' | 'version'>): Promise<ApiCurriculumFeatureBindingSaveResult>
   saveCurriculumFeatureConfig(batchId: string, curriculumCourseId: string, payload: ApiCurriculumFeatureConfigPayload): Promise<ApiCurriculumFeatureConfigSaveResult>
+  previewCurriculumFeatureConfig(batchId: string, curriculumCourseId: string, proposedOutcomes: Array<{ id: string; bloom: string }>): Promise<ApiCurriculumFeatureConfigPreview>
+  getCurriculumFeatureConfigHistory(batchId: string, curriculumCourseId: string): Promise<{ events: ApiCurriculumFeatureConfigHistoryEvent[] }>
   provisionBatch(batchId: string, payload: ApiBatchProvisioningRequest): Promise<ApiBatchProvisioningResponse>
   saveOfferingAssessmentScheme(offeringId: string, payload: { scheme: SchemeState }): Promise<{ offeringId: string; scheme: SchemeState; version: number; policySnapshot: unknown }>
   saveOfferingQuestionPaper(offeringId: string, kind: TTKind, payload: { blueprint: TermTestBlueprint }): Promise<{ paperId: string; offeringId: string; kind: TTKind; blueprint: TermTestBlueprint; version: number }>
@@ -355,6 +369,7 @@ export interface AirMentorApiClientLike {
 }
 
 type FetchLike = typeof fetch
+type DemoWorkspacePointerProvider = () => ActiveDemoWorkspacePointer | null
 
 function getDefaultFetch(): FetchLike {
   return globalThis.fetch.bind(globalThis) as FetchLike
@@ -394,11 +409,13 @@ function buildAdminDirectoryScopeQuery(filter?: ApiAdminDirectoryScopeFilter) {
 export class AirMentorApiClient implements AirMentorApiClientLike {
   private readonly baseUrl: string
   private readonly fetchImpl: FetchLike
+  private readonly demoWorkspacePointerProvider?: DemoWorkspacePointerProvider
   private csrfToken: string | null = null
 
-  constructor(baseUrl: string, fetchImpl?: FetchLike) {
+  constructor(baseUrl: string, fetchImpl?: FetchLike, demoWorkspacePointerProvider?: DemoWorkspacePointerProvider) {
     this.baseUrl = baseUrl.replace(/\/$/, '')
     this.fetchImpl = fetchImpl ?? getDefaultFetch()
+    this.demoWorkspacePointerProvider = demoWorkspacePointerProvider
   }
 
   async restoreSession() {
@@ -523,6 +540,28 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     return this.request<{ items: ApiAcademicHodProofReassessment[] }>(`/api/academic/hod/proof-reassessments${query ? `?${query}` : ''}`)
   }
 
+  async getAcademicHodProofCounterfactual(input: { runIdBaseline: string; runIdRealized: string }) {
+    // Legacy diagnostic-only route. Prompt §G.6 marks this as "temporary
+    // diagnostic"; final Sem-6 analytics must use
+    // getAcademicHodProofCounterfactualSimulator below.
+    const searchParams = new URLSearchParams()
+    searchParams.set('runIdBaseline', input.runIdBaseline)
+    searchParams.set('runIdRealized', input.runIdRealized)
+    return this.request<ApiAcademicHodProofCounterfactualReport>(
+      `/api/academic/hod/proof-counterfactual?${searchParams.toString()}`,
+    )
+  }
+
+  async getAcademicHodProofCounterfactualSimulator(input: { runId: string }) {
+    // Phase-11 authoritative path (prompt §C.13 + §G.6 + §L.10). Returns the
+    // projected with-vs-without-intervention report for ONE run.
+    const searchParams = new URLSearchParams()
+    searchParams.set('runId', input.runId)
+    return this.request<ApiAcademicHodProofCounterfactualSimulatorReport>(
+      `/api/academic/hod/proof-counterfactual-simulator?${searchParams.toString()}`,
+    )
+  }
+
   async acknowledgeAcademicProofReassessment(reassessmentEventId: string, payload: ApiProofReassessmentAcknowledgeRequest = {}) {
     return this.request<ApiProofReassessmentAcknowledgeResponse>(`/api/academic/proof-reassessments/${encodeURIComponent(reassessmentEventId)}/acknowledge`, {
       method: 'POST',
@@ -534,6 +573,27 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     return this.request<ApiProofReassessmentResolveResponse>(`/api/academic/proof-reassessments/${encodeURIComponent(reassessmentEventId)}/resolve`, {
       method: 'POST',
       body: JSON.stringify(payload),
+    })
+  }
+
+  async advanceAcademicProofRun(simulationRunId: string, payload: { mode: 'day' | 'previous-day' | 'stage' }) {
+    return this.request<Record<string, unknown>>(`/api/academic/proof-runs/${encodeURIComponent(simulationRunId)}/advance`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async stopAcademicProofRun(simulationRunId: string) {
+    return this.request<Record<string, unknown>>(`/api/academic/proof-runs/${encodeURIComponent(simulationRunId)}/stop`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+  }
+
+  async recomputeAcademicProofRunRisk(simulationRunId: string) {
+    return this.request<{ ok: true }>(`/api/academic/proof-runs/${encodeURIComponent(simulationRunId)}/recompute-risk`, {
+      method: 'POST',
+      body: JSON.stringify({}),
     })
   }
 
@@ -1088,6 +1148,20 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     })
   }
 
+  async advanceProofRun(simulationRunId: string, payload: { mode: 'day' | 'previous-day' | 'stage' }) {
+    return this.request<Record<string, unknown>>(`/api/admin/proof-runs/${simulationRunId}/advance`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async stopProofRun(simulationRunId: string) {
+    return this.request<Record<string, unknown>>(`/api/admin/proof-runs/${simulationRunId}/stop`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+  }
+
   async archiveProofRun(simulationRunId: string) {
     return this.request<{ ok: true }>(`/api/admin/proof-runs/${simulationRunId}/archive`, {
       method: 'POST',
@@ -1326,11 +1400,55 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     )
   }
 
+  async previewCurriculumFeatureConfig(batchId: string, curriculumCourseId: string, proposedOutcomes: Array<{ id: string; bloom: string }>) {
+    return this.request<ApiCurriculumFeatureConfigPreview>(
+      `/api/admin/batches/${batchId}/curriculum-feature-config/preview`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ curriculumCourseId, proposedOutcomes }),
+      },
+    )
+  }
+
+  async getCurriculumFeatureConfigHistory(batchId: string, curriculumCourseId: string) {
+    return this.request<{ events: ApiCurriculumFeatureConfigHistoryEvent[] }>(
+      `/api/admin/batches/${batchId}/curriculum-feature-config/${curriculumCourseId}/history`,
+    )
+  }
+
   async provisionBatch(batchId: string, payload: ApiBatchProvisioningRequest) {
     return this.request<ApiBatchProvisioningResponse>(`/api/admin/batches/${batchId}/provision`, {
       method: 'POST',
       body: JSON.stringify(payload),
     })
+  }
+
+  async listDemoWorkspaces() {
+    return this.request<ApiDemoWorkspace[]>('/api/admin/demo-workspaces')
+  }
+
+  async createDemoWorkspace(payload: { name: string; ownerFacultyId?: string; batchId?: string }) {
+    return this.request<ApiDemoWorkspace>('/api/admin/demo-workspaces', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async previewDemoProvisioning(
+    demoWorkspaceId: string,
+    payload: { batchId: string; termId: string; sectionLabels: string[]; studentsPerSection: number },
+  ) {
+    return this.request<ApiDemoProvisioningPreview>(
+      `/api/admin/demo-workspaces/${demoWorkspaceId}/provision/preview`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    )
+  }
+
+  async resetDemoWorkspace(demoWorkspaceId: string) {
+    return this.request<{ deletedStudents: number; deletedOfferings: number; deletedRuns: number; deletedSchema?: boolean; scopeName?: string | null }>(
+      `/api/admin/demo-workspaces/${demoWorkspaceId}`,
+      { method: 'DELETE' },
+    )
   }
 
   async saveOfferingAssessmentScheme(offeringId: string, payload: { scheme: SchemeState }) {
@@ -1514,9 +1632,11 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     const hasBody = init?.body !== undefined
     const method = (init?.method ?? 'GET').toUpperCase()
     const cacheMode = init?.cache ?? (isMutatingRequestMethod(method) ? undefined : 'no-store')
+    const demoWorkspacePointer = this.demoWorkspacePointerProvider?.() ?? null
     const resolvedHeaders = {
       ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
       ...toHeaderRecord(init?.headers),
+      ...(demoWorkspacePointer ? { 'X-AirMentor-Demo-Workspace': demoWorkspacePointer.demoWorkspaceId } : {}),
       ...(isMutatingRequestMethod(method) && this.csrfToken ? { 'X-AirMentor-CSRF': this.csrfToken } : {}),
     }
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, {

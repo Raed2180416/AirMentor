@@ -240,6 +240,20 @@ type AgendaBoardProps = {
   setUntimedBucketRef: (dateISO: string, node: HTMLDivElement | null) => void
 }
 
+function browserTodayISO() {
+  const today = new Date()
+  const year = today.getFullYear()
+  const month = `${today.getMonth() + 1}`.padStart(2, '0')
+  const day = `${today.getDate()}`.padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function resolveCalendarAnchorDateISO(currentDateISO?: string) {
+  return typeof currentDateISO === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(currentDateISO)
+    ? currentDateISO
+    : browserTodayISO()
+}
+
 export function CalendarTimetablePage({
   onBack,
   currentTeacher,
@@ -268,6 +282,7 @@ export function CalendarTimetablePage({
   hideBackButton = false,
   title = 'Calendar / Timetable',
   subtitle,
+  currentDateISO,
   editableOverride,
   canOpenCourseWorkspaceOverride,
   allowTaskCreation = true,
@@ -305,21 +320,25 @@ export function CalendarTimetablePage({
   hideBackButton?: boolean
   title?: string
   subtitle?: string
+  currentDateISO?: string
   editableOverride?: boolean
   canOpenCourseWorkspaceOverride?: boolean
   allowTaskCreation?: boolean
   calendarModeLayout?: 'split' | 'month-only'
   onEditMarker?: (marker: ApiAdminCalendarMarker) => void
 }) {
+  const calendarAnchorDateISO = resolveCalendarAnchorDateISO(currentDateISO)
   const [mode, setMode] = useState<'calendar' | 'timetable'>('calendar')
-  const [selectedDateISO, setSelectedDateISO] = useState(() => {
-    const today = new Date()
-    const year = today.getFullYear()
-    const month = `${today.getMonth() + 1}`.padStart(2, '0')
-    const day = `${today.getDate()}`.padStart(2, '0')
-    return `${year}-${month}-${day}`
-  })
-  const [monthAnchorISO, setMonthAnchorISO] = useState(() => `${selectedDateISO.slice(0, 7)}-01`)
+  const [selectedDateISO, setSelectedDateISO] = useState(() => calendarAnchorDateISO)
+  const [monthAnchorISO, setMonthAnchorISO] = useState(() => `${calendarAnchorDateISO.slice(0, 7)}-01`)
+  // Track the last proof anchor we synced so we can detect checkpoint changes
+  // and update selection during the render phase (no effect needed).
+  const [syncedAnchor, setSyncedAnchor] = useState(calendarAnchorDateISO)
+  if (currentDateISO && syncedAnchor !== calendarAnchorDateISO) {
+    setSyncedAnchor(calendarAnchorDateISO)
+    setSelectedDateISO(calendarAnchorDateISO)
+    setMonthAnchorISO(`${calendarAnchorDateISO.slice(0, 7)}-01`)
+  }
   const [addTarget, setAddTarget] = useState<AddTargetState | null>(null)
   const [extraClassDraft, setExtraClassDraft] = useState<ExtraClassDraftState | null>(null)
   const [detailsState, setDetailsState] = useState<BlockDetailsState | null>(null)

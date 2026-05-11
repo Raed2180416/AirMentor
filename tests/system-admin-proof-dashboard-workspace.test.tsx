@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { createElement } from 'react'
+import { createElement, type ComponentProps } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -50,7 +50,402 @@ function buildCheckpoint(overrides?: Partial<ApiSimulationStageCheckpointSummary
   }
 }
 
+type WorkspaceProps = ComponentProps<typeof SystemAdminProofDashboardWorkspace>
+
+function buildWorkspaceProps(overrides: Partial<WorkspaceProps> = {}): WorkspaceProps {
+  return {
+    proofDashboard: null,
+    proofDashboardLoading: false,
+    activeRunCheckpoints: [],
+    activeModelDiagnostics: null,
+    activeProductionDiagnostics: null,
+    activeDiagnosticsTrainingManifestVersion: null,
+    activeDiagnosticsCalibrationVersion: null,
+    activeDiagnosticsSplitSummary: null,
+    activeDiagnosticsWorldSplitSummary: null,
+    activeDiagnosticsScenarioFamilies: null,
+    activeDiagnosticsHeadSupportSummary: null,
+    activeDiagnosticsGovernedRunCount: null,
+    activeDiagnosticsSkippedRunCount: null,
+    activeDiagnosticsDisplayProbabilityAllowed: null,
+    activeDiagnosticsSupportWarning: null,
+    activeDiagnosticsPolicyDiagnostics: null,
+    activeDiagnosticsCoEvidence: null,
+    activeDiagnosticsPolicyAcceptance: null,
+    activeDiagnosticsOverallCourseRuntime: null,
+    activeDiagnosticsQueueBurden: null,
+    activeDiagnosticsUiParity: null,
+    selectedProofCheckpoint: null,
+    selectedProofCheckpointDetail: null,
+    selectedProofCheckpointBlocked: false,
+    selectedProofCheckpointHasBlockedProgression: false,
+    selectedProofCheckpointCanStepForward: false,
+    selectedProofCheckpointCanPlayToEnd: false,
+    proofPlaybackRestoreNotice: null,
+    onCreateProofImport: () => {},
+    onValidateLatestProofImport: () => {},
+    onReviewPendingCrosswalks: () => {},
+    onApproveLatestProofImport: () => {},
+    onCreateProofSimulation: () => {},
+    onCreateProofRun: () => {},
+    onRecomputeProofRunRisk: () => {},
+    onActivateProofRun: () => {},
+    onActivateProofSemester: () => {},
+    onAdvanceProofRun: () => {},
+    onRetryProofRun: () => {},
+    onStopProofRun: () => {},
+    onArchiveProofRun: () => {},
+    onRestoreProofSnapshot: () => {},
+    onResetProofPlaybackSelection: () => {},
+    onSelectProofCheckpoint: () => {},
+    onStepProofPlayback: () => {},
+    formatSplitSummary: summary => JSON.stringify(summary),
+    formatKeyedCounts: summary => JSON.stringify(summary),
+    formatHeadSupportSummary: summary => JSON.stringify(summary),
+    formatDiagnosticSummary: summary => JSON.stringify(summary),
+    ...overrides,
+  }
+}
+
+function buildActiveProofDashboard(checkpoints: ApiSimulationStageCheckpointSummary[]): ApiProofDashboard {
+  return {
+    imports: [],
+    latestValidation: null,
+    crosswalkReviewQueue: [],
+    proofRuns: [{
+      simulationRunId: 'run_001',
+      runLabel: 'Proof Run 1',
+      status: 'active',
+      activeFlag: true,
+      seed: 42,
+      createdAt: '2026-03-16T00:00:00.000Z',
+      startedAt: '2026-03-16T00:00:00.000Z',
+      completedAt: null,
+      failureCode: null,
+      failureMessage: null,
+      progress: { phase: 'running', percent: 68 },
+      metrics: {},
+      queueAgeSeconds: 0,
+      leaseState: 'leased',
+      leaseExpiresAt: null,
+      retryState: null,
+      retryOfSimulationRunId: null,
+      failureState: 'none',
+    }],
+    activeRunDetail: {
+      simulationRunId: 'run_001',
+      runLabel: 'Proof Run 1',
+      seed: 42,
+      activeOperationalSemester: 6,
+      createdAt: '2026-03-16T00:00:00.000Z',
+      startedAt: '2026-03-16T00:00:00.000Z',
+      completedAt: null,
+      status: 'active',
+      failureCode: null,
+      failureMessage: null,
+      progress: { phase: 'running', percent: 68 },
+      monitoringSummary: {
+        riskAssessmentCount: 24,
+        activeReassessmentCount: 5,
+        alertDecisionCount: 6,
+        acknowledgementCount: 2,
+        resolutionCount: 1,
+      },
+      coverageDiagnostics: {
+        behaviorProfileCoverage: { count: 120, expected: 120 },
+        topicStateCoverage: { count: 0 },
+        coStateCoverage: { count: 0 },
+        questionTemplateCoverage: { count: 0 },
+        questionResultCoverage: { count: 0 },
+        interventionResponseCoverage: { count: 0 },
+        worldContextCoverage: { count: 0 },
+      },
+      modelDiagnostics: {
+        featureRowCount: 120,
+        activeRunFeatureRowCount: 0,
+        sourceRunCount: 1,
+        production: null,
+        challenger: null,
+        correlations: null,
+      },
+      queueDiagnostics: {
+        queuedRunCount: 0,
+        runningRunCount: 0,
+        failedRunCount: 0,
+        retryableRunCount: 0,
+        retryInFlightCount: 0,
+        oldestQueuedRunAgeSeconds: null,
+        expiredLeaseRunCount: 0,
+      },
+      workerDiagnostics: null,
+      checkpointReadiness: {
+        totalCheckpointCount: checkpoints.length,
+        readyCheckpointCount: checkpoints.length,
+        blockedCheckpointCount: 0,
+        playbackBlockedCheckpointCount: 0,
+        totalBlockingQueueItemCount: 0,
+        firstBlockedCheckpointId: null,
+        lastReadyCheckpointId: checkpoints.at(-1)?.simulationStageCheckpointId ?? null,
+      },
+      teacherAllocationLoad: [],
+      queuePreview: [],
+      snapshots: [{
+        simulationResetSnapshotId: 'snapshot_001',
+        snapshotLabel: 'Baseline snapshot',
+        createdAt: '2026-03-16T00:00:00.000Z',
+        payload: {},
+      }],
+      checkpoints,
+    },
+    lifecycleAudit: [],
+    recentOperationalEvents: [],
+  }
+}
+
 describe('SystemAdminProofDashboardWorkspace', () => {
+  it('shows a single Create Proof Run action when no proof run exists', () => {
+    const createSimulation = vi.fn()
+    const proofDashboard: ApiProofDashboard = {
+      imports: [],
+      latestValidation: null,
+      crosswalkReviewQueue: [],
+      proofRuns: [],
+      activeRunDetail: null,
+      lifecycleAudit: [],
+      recentOperationalEvents: [],
+    }
+
+    render(createElement(SystemAdminProofDashboardWorkspace, buildWorkspaceProps({
+      proofDashboard,
+      batchSetupReadiness: {
+        ready: false,
+        blockers: ['Add or provision students for 2023 Proof.'],
+      },
+      onCreateProofSimulation: createSimulation,
+    })))
+
+    const createButton = screen.getByRole('button', { name: 'Create Proof Run' }) as HTMLButtonElement
+    expect(createButton.disabled).toBe(false)
+    expect(screen.queryByRole('button', { name: 'Import Data' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Run Simulation' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Recalculate Risk' })).toBeNull()
+    expect(screen.queryByText(/Finish setup before changing proof data/i)).toBeNull()
+
+    fireEvent.click(createButton)
+    expect(createSimulation).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows a queued proof run state while the worker is building active details', () => {
+    const proofDashboard: ApiProofDashboard = {
+      imports: [],
+      latestValidation: null,
+      crosswalkReviewQueue: [],
+      proofRuns: [{
+        simulationRunId: 'run_queued',
+        runLabel: 'Queued Proof Run',
+        status: 'queued',
+        activeFlag: false,
+        seed: 42,
+        createdAt: '2026-03-16T00:00:00.000Z',
+        startedAt: null,
+        completedAt: null,
+        failureCode: null,
+        failureMessage: null,
+        progress: { phase: 'building-checkpoints', percent: 25, etaSeconds: 90 },
+        metrics: {},
+        queueAgeSeconds: 18,
+        leaseState: null,
+        leaseExpiresAt: null,
+        retryState: null,
+        retryOfSimulationRunId: null,
+        failureState: 'none',
+      }],
+      activeRunDetail: null,
+      lifecycleAudit: [],
+      recentOperationalEvents: [],
+    }
+
+    render(createElement(SystemAdminProofDashboardWorkspace, buildWorkspaceProps({
+      proofDashboard,
+      showLauncher: false,
+    })))
+
+    expect(screen.getAllByText('Queued Proof Run').length).toBeGreaterThan(0)
+    expect(screen.getByText(/Waiting for the proof worker/i)).toBeTruthy()
+    expect(screen.getAllByText(/building-checkpoints · 25% · ETA ~1m 30s/i).length).toBeGreaterThan(0)
+    expect(screen.queryByText('No simulation yet')).toBeNull()
+  })
+
+  it('shows immediate loading feedback while an advance action is in flight', async () => {
+    let finishAdvance!: () => void
+    const selectedCheckpoint = buildCheckpoint({
+      simulationStageCheckpointId: 'checkpoint_current',
+      stageLabel: 'Current',
+      previousCheckpointId: 'checkpoint_previous',
+      nextCheckpointId: 'checkpoint_next',
+      playbackAccessible: true,
+      stageAdvanceBlocked: false,
+      blockedByCheckpointId: null,
+      blockedProgressionReason: null,
+    })
+    const advanceProofRun = vi.fn(() => new Promise<void>(resolve => {
+      finishAdvance = resolve
+    }))
+
+    render(createElement(SystemAdminProofDashboardWorkspace, buildWorkspaceProps({
+      proofDashboard: buildActiveProofDashboard([selectedCheckpoint]),
+      showLauncher: false,
+      activeRunCheckpoints: [selectedCheckpoint],
+      selectedProofCheckpoint: selectedCheckpoint,
+      onAdvanceProofRun: advanceProofRun,
+    })))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next Stage' }))
+
+    const loadingButton = screen.getByRole('button', { name: /Advancing Stage/i }) as HTMLButtonElement
+    expect(loadingButton.disabled).toBe(true)
+    expect(screen.getByText(/Working… Advancing Stage/i)).toBeTruthy()
+
+    finishAdvance()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Next Stage' })).toBeTruthy())
+  })
+
+  it('exposes the active simulation controls in the proof panel', () => {
+    const previousCheckpoint = buildCheckpoint({
+      simulationStageCheckpointId: 'checkpoint_previous',
+      stageLabel: 'Previous',
+      previousCheckpointId: null,
+      nextCheckpointId: 'checkpoint_current',
+      playbackAccessible: true,
+      stageAdvanceBlocked: false,
+      blockedByCheckpointId: null,
+      blockedProgressionReason: null,
+    })
+    const selectedCheckpoint = buildCheckpoint({
+      simulationStageCheckpointId: 'checkpoint_current',
+      stageLabel: 'Current',
+      previousCheckpointId: previousCheckpoint.simulationStageCheckpointId,
+      nextCheckpointId: 'checkpoint_next',
+      playbackAccessible: true,
+      stageAdvanceBlocked: false,
+      blockedByCheckpointId: null,
+      blockedProgressionReason: null,
+    })
+    const nextCheckpoint = buildCheckpoint({
+      simulationStageCheckpointId: 'checkpoint_next',
+      stageLabel: 'Next',
+      previousCheckpointId: selectedCheckpoint.simulationStageCheckpointId,
+      nextCheckpointId: null,
+      playbackAccessible: true,
+      stageAdvanceBlocked: false,
+      blockedByCheckpointId: null,
+      blockedProgressionReason: null,
+    })
+    const checkpoints = [previousCheckpoint, selectedCheckpoint, nextCheckpoint]
+    const advanceProofRun = vi.fn()
+    const stopProofRun = vi.fn()
+    const restoreProofSnapshot = vi.fn()
+    const resetProofRunFromScratch = vi.fn()
+    const stepPlayback = vi.fn()
+    const recomputeProofRunRisk = vi.fn()
+
+    render(createElement(SystemAdminProofDashboardWorkspace, buildWorkspaceProps({
+      proofDashboard: buildActiveProofDashboard(checkpoints),
+      showLauncher: false,
+      activeRunCheckpoints: checkpoints,
+      selectedProofCheckpoint: selectedCheckpoint,
+      selectedProofCheckpointCanStepForward: true,
+      selectedProofCheckpointCanPlayToEnd: true,
+      onAdvanceProofRun: advanceProofRun,
+      onStopProofRun: stopProofRun,
+      onRestoreProofSnapshot: restoreProofSnapshot,
+      onResetProofRunFromScratch: resetProofRunFromScratch,
+      onStepProofPlayback: stepPlayback,
+      onRecomputeProofRunRisk: recomputeProofRunRisk,
+    })))
+
+    const controlNames = [
+      'Stop Proof Run',
+      'Next Stage',
+      'Next Day',
+      'Previous Day',
+      'Previous Stage',
+      'Reset Stage',
+      'Reset Proof Run',
+      'Recompute Risk',
+    ]
+    controlNames.forEach(name => {
+      expect(screen.getByRole('button', { name })).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stop Proof Run' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Next Stage' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Next Day' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Previous Day' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Previous Stage' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Stage' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Proof Run' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Recompute Risk' }))
+
+    expect(stopProofRun).toHaveBeenCalledWith('run_001')
+    expect(advanceProofRun).toHaveBeenCalledWith('run_001', 'stage')
+    expect(advanceProofRun).toHaveBeenCalledWith('run_001', 'day')
+    expect(stepPlayback).toHaveBeenCalledWith('previous')
+    expect(restoreProofSnapshot).toHaveBeenCalledWith('run_001', 'snapshot_001')
+    expect(resetProofRunFromScratch).toHaveBeenCalledWith('run_001', 'snapshot_001')
+    expect(recomputeProofRunRisk).toHaveBeenCalled()
+  })
+
+  it('keeps advance controls disabled while the active run has no checkpoint chain', () => {
+    const advanceProofRun = vi.fn()
+    const stopProofRun = vi.fn()
+
+    render(createElement(SystemAdminProofDashboardWorkspace, buildWorkspaceProps({
+      proofDashboard: buildActiveProofDashboard([]),
+      showLauncher: false,
+      activeRunCheckpoints: [],
+      selectedProofCheckpoint: null,
+      onAdvanceProofRun: advanceProofRun,
+      onStopProofRun: stopProofRun,
+    })))
+
+    const nextStage = screen.getByRole('button', { name: 'Next Stage' }) as HTMLButtonElement
+    const nextDay = screen.getByRole('button', { name: 'Next Day' }) as HTMLButtonElement
+    const previousDay = screen.getByRole('button', { name: 'Previous Day' }) as HTMLButtonElement
+
+    expect(nextStage.disabled).toBe(true)
+    expect(nextDay.disabled).toBe(true)
+    expect(previousDay.disabled).toBe(true)
+
+    fireEvent.click(nextStage)
+    fireEvent.click(nextDay)
+    fireEvent.click(previousDay)
+
+    expect(advanceProofRun).not.toHaveBeenCalled()
+    expect(stopProofRun).not.toHaveBeenCalled()
+  })
+
+  it('lets admins dismiss a restored playback notice without resetting playback', () => {
+    const resetPlayback = vi.fn()
+    const dismissRestoreNotice = vi.fn()
+
+    render(createElement(SystemAdminProofDashboardWorkspace, buildWorkspaceProps({
+      proofDashboard: buildActiveProofDashboard([]),
+      showLauncher: false,
+      proofPlaybackRestoreNotice: {
+        tone: 'neutral',
+        message: 'Proof playback restored to Semester 1 · Pre TT1. Use Reset playback to clear the saved checkpoint.',
+      },
+      onResetProofPlaybackSelection: resetPlayback,
+      onDismissProofPlaybackRestoreNotice: dismissRestoreNotice,
+    })))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+
+    expect(dismissRestoreNotice).toHaveBeenCalledTimes(1)
+    expect(resetPlayback).not.toHaveBeenCalled()
+  })
+
   it('renders queue diagnostics, checkpoint readiness, and blocked-stage reasoning', () => {
     const selectedCheckpoint = buildCheckpoint()
     const checkpoints = [
@@ -374,7 +769,7 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     expect(checkpointContainer.innerHTML).toContain('Stage progression blocked')
   })
 
-  it('locks proof-changing actions until setup blockers are cleared', () => {
+  it('keeps active simulation controls available even when setup readiness has blockers', () => {
     const selectedCheckpoint = buildCheckpoint({
       simulationStageCheckpointId: 'checkpoint_ready',
       stageAdvanceBlocked: false,
@@ -541,10 +936,10 @@ describe('SystemAdminProofDashboardWorkspace', () => {
       formatDiagnosticSummary: summary => JSON.stringify(summary),
     }))
 
-    expect((document.querySelector('[data-proof-action="proof-create-import"]') as HTMLButtonElement).disabled).toBe(true)
-    expect((document.querySelector('[data-proof-action="proof-run-rerun"]') as HTMLButtonElement).disabled).toBe(true)
-    expect((document.querySelector('[data-proof-action="proof-recompute-risk"]') as HTMLButtonElement).disabled).toBe(true)
-    expect(screen.getByText(/Finish setup before changing proof data/i)).toBeTruthy()
+    expect((document.querySelector('[data-proof-action="proof-stop-simulation"]') as HTMLButtonElement).disabled).toBe(false)
+    expect((document.querySelector('[data-proof-action="proof-next-stage"]') as HTMLButtonElement).disabled).toBe(false)
+    expect((document.querySelector('[data-proof-action="proof-next-day"]') as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.queryByText(/Finish setup before changing proof data/i)).toBeNull()
   })
 
   it('renders a tabbed proof control plane with bounded operations scroll regions', () => {
@@ -2217,6 +2612,165 @@ describe('SystemAdminProofDashboardWorkspace', () => {
     expect(markup).toContain('S6 · Post SEE')
     expect(markup).toContain('No-Action Comparator')
     expect(markup).toContain('Average Counterfactual Lift')
+  })
+
+  it('distinguishes earlier playback blockers from local final-stage blockers', () => {
+    const selectedCheckpoint = buildCheckpoint({
+      simulationStageCheckpointId: 'checkpoint_sem6_post_see',
+      semesterNumber: 6,
+      stageKey: 'post-see',
+      stageLabel: 'Post SEE',
+      stageDescription: 'Final evidence checkpoint after SEE lands.',
+      stageOrder: 5,
+      previousCheckpointId: 'checkpoint_sem6_post_assignments',
+      nextCheckpointId: null,
+      playbackAccessible: false,
+      stageAdvanceBlocked: false,
+      blockingQueueItemCount: 0,
+      openQueueCount: 0,
+      blockedByCheckpointId: 'checkpoint_sem2_post_tt1',
+      blockedProgressionReason: 'Playback is blocked until all queue items for checkpoint checkpoint_sem2_post_tt1 are resolved.',
+    })
+    const checkpoints = [
+      buildCheckpoint({
+        simulationStageCheckpointId: 'checkpoint_sem2_post_tt1',
+        semesterNumber: 2,
+        stageKey: 'post-tt1',
+        stageLabel: 'Post TT1',
+        stageOrder: 2,
+        previousCheckpointId: null,
+        nextCheckpointId: selectedCheckpoint.simulationStageCheckpointId,
+        playbackAccessible: true,
+        stageAdvanceBlocked: true,
+        blockingQueueItemCount: 7,
+        openQueueCount: 7,
+        blockedByCheckpointId: null,
+        blockedProgressionReason: 'Playback cannot advance past this checkpoint until all queue items are resolved.',
+      }),
+      selectedCheckpoint,
+    ]
+    const proofDashboard: ApiProofDashboard = {
+      imports: [],
+      latestValidation: null,
+      crosswalkReviewQueue: [],
+      proofRuns: [],
+      activeRunDetail: {
+        simulationRunId: 'run_001',
+        runLabel: 'Proof Run 1',
+        seed: 42,
+        activeOperationalSemester: 6,
+        createdAt: '2026-03-16T00:00:00.000Z',
+        startedAt: '2026-03-16T00:00:00.000Z',
+        completedAt: null,
+        status: 'active',
+        failureCode: null,
+        failureMessage: null,
+        progress: null,
+        monitoringSummary: {
+          riskAssessmentCount: 0,
+          activeReassessmentCount: 0,
+          alertDecisionCount: 0,
+          acknowledgementCount: 0,
+          resolutionCount: 0,
+        },
+        coverageDiagnostics: {
+          behaviorProfileCoverage: { count: 1, expected: 1 },
+          topicStateCoverage: { count: 1 },
+          coStateCoverage: { count: 1 },
+          questionTemplateCoverage: { count: 1 },
+          questionResultCoverage: { count: 1 },
+          interventionResponseCoverage: { count: 1 },
+          worldContextCoverage: { count: 1 },
+        },
+        modelDiagnostics: {
+          featureRowCount: 1,
+          activeRunFeatureRowCount: 1,
+          sourceRunCount: 1,
+          production: null,
+          challenger: null,
+          correlations: null,
+        },
+        queueDiagnostics: {
+          queuedRunCount: 0,
+          runningRunCount: 0,
+          failedRunCount: 0,
+          retryableRunCount: 0,
+          retryInFlightCount: 0,
+          oldestQueuedRunAgeSeconds: 0,
+          expiredLeaseRunCount: 0,
+        },
+        workerDiagnostics: null,
+        checkpointReadiness: {
+          totalCheckpointCount: checkpoints.length,
+          readyCheckpointCount: 1,
+          blockedCheckpointCount: 2,
+          playbackBlockedCheckpointCount: 1,
+          totalBlockingQueueItemCount: 7,
+          firstBlockedCheckpointId: 'checkpoint_sem2_post_tt1',
+          lastReadyCheckpointId: null,
+        },
+        teacherAllocationLoad: [],
+        queuePreview: [],
+        snapshots: [],
+        checkpoints,
+      },
+      lifecycleAudit: [],
+      recentOperationalEvents: [],
+    }
+
+    const markup = renderToStaticMarkup(createElement(SystemAdminProofDashboardWorkspace, {
+      proofDashboard,
+      proofDashboardLoading: false,
+      activeRunCheckpoints: checkpoints,
+      activeModelDiagnostics: null,
+      activeProductionDiagnostics: null,
+      activeDiagnosticsTrainingManifestVersion: null,
+      activeDiagnosticsCalibrationVersion: null,
+      activeDiagnosticsSplitSummary: null,
+      activeDiagnosticsWorldSplitSummary: null,
+      activeDiagnosticsScenarioFamilies: null,
+      activeDiagnosticsHeadSupportSummary: null,
+      activeDiagnosticsGovernedRunCount: null,
+      activeDiagnosticsSkippedRunCount: null,
+      activeDiagnosticsDisplayProbabilityAllowed: null,
+      activeDiagnosticsSupportWarning: null,
+      activeDiagnosticsPolicyDiagnostics: null,
+      activeDiagnosticsCoEvidence: null,
+      activeDiagnosticsPolicyAcceptance: null,
+      activeDiagnosticsOverallCourseRuntime: null,
+      activeDiagnosticsQueueBurden: null,
+      activeDiagnosticsUiParity: null,
+      selectedProofCheckpoint: selectedCheckpoint,
+      selectedProofCheckpointDetail: null,
+      selectedProofCheckpointBlocked: true,
+      selectedProofCheckpointHasBlockedProgression: true,
+      selectedProofCheckpointCanStepForward: false,
+      selectedProofCheckpointCanPlayToEnd: false,
+      proofPlaybackRestoreNotice: null,
+      onCreateProofImport: () => {},
+      onValidateLatestProofImport: () => {},
+      onReviewPendingCrosswalks: () => {},
+      onApproveLatestProofImport: () => {},
+      onCreateProofRun: () => {},
+      onRecomputeProofRunRisk: () => {},
+      onActivateProofRun: () => {},
+      onActivateProofSemester: () => {},
+      onRetryProofRun: () => {},
+      onArchiveProofRun: () => {},
+      onRestoreProofSnapshot: () => {},
+      onResetProofRunFromScratch: () => {},
+      onResetProofPlaybackSelection: () => {},
+      onSelectProofCheckpoint: () => {},
+      onStepProofPlayback: () => {},
+      formatSplitSummary: summary => JSON.stringify(summary),
+      formatKeyedCounts: summary => JSON.stringify(summary),
+      formatHeadSupportSummary: summary => JSON.stringify(summary),
+      formatDiagnosticSummary: summary => JSON.stringify(summary),
+    }))
+
+    expect(markup).toContain('Earlier checkpoint is blocking playback progression')
+    expect(markup).toContain('checkpoint_sem2_post_tt1')
+    expect(markup).not.toContain('Resolve every task at this stage before moving forward.')
   })
 
   it('renders playback-governed runtime diagnostics when no stored production artifact is active', () => {

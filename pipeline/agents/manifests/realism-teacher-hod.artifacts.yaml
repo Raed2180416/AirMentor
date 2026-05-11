@@ -1,0 +1,25 @@
+artifacts:
+  - path: audit-map/32-reports/realism-teacher-hod-2026-04-29.md
+    min_lines: 70
+    min_bytes: 3000
+    write_mode: replace
+    required_sections:
+      - '# Teacher And HoD Realism Audit — 2026-04-29'
+      - '## Intent And Feature Intent'
+      - '## Method'
+      - '## Teacher Operations Matrix'
+      - '## HoD Analytics Matrix'
+      - '## Permission And Scope Findings'
+      - '## Edit Persistence And Recompute Findings'
+      - '## Blockers'
+      - '## Reverification Needed'
+      - '## Verdict'
+  - path: audit-map/24-agent-memory/realism-teacher-hod-2026-04-29.md
+    min_lines: 12
+    min_bytes: 600
+    write_mode: replace
+    required_sections:
+      - '# Teacher HoD Handoff — 2026-04-29'
+      - '## Tested'
+      - '## Blockers'
+      - '## Next Actions'

@@ -4,9 +4,11 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FacultyProfilePage } from '../src/academic-faculty-profile-page'
+import { PROOF_PLAYBACK_SELECTION_STORAGE_KEY } from '../src/proof-playback'
 
 afterEach(() => {
   cleanup()
+  window.localStorage.clear()
 })
 
 describe('FacultyProfilePage proof mode', () => {
@@ -199,6 +201,289 @@ describe('FacultyProfilePage proof mode', () => {
     expect(markup).toContain('Every number on this page is fixed to this point in time')
     expect(markup).toContain('Proof-semester elective fit')
     expect(markup).toContain('teacher-proof-open-partial-profile')
+  })
+
+  it('renders the shared simulation controls on the teacher proof panel', () => {
+    const onAdvanceProofRun = vi.fn()
+    const onStepProofPlayback = vi.fn()
+
+    render(createElement(FacultyProfilePage, {
+      currentTeacher: {
+        facultyId: 'mnc_t1',
+        name: 'Dr. Asha Rao',
+        initials: 'AR',
+        allowedRoles: ['Course Leader', 'Mentor', 'HoD'],
+        dept: 'Mathematics and Computing',
+        roleTitle: 'Professor',
+        email: 'asha.rao@example.edu',
+        courseCodes: ['MC601'],
+        offeringIds: ['off_mc601_a'],
+        menteeIds: ['student_001', 'student_002'],
+      },
+      activeRole: 'Course Leader',
+      profile: {
+        facultyId: 'mnc_t1',
+        displayName: 'Dr. Asha Rao',
+        designation: 'Professor',
+        employeeCode: 'F001',
+        joinedOn: '2020-06-01',
+        email: 'asha.rao@example.edu',
+        phone: '9999999999',
+        primaryDepartment: {
+          departmentId: 'dept_mnc',
+          name: 'Mathematics and Computing',
+          code: 'MNC',
+        },
+        permissions: [],
+        appointments: [],
+        currentOwnedClasses: [],
+        currentBatchContexts: [],
+        subjectRunCourseLeaderScope: [],
+        mentorScope: { activeStudentCount: 24, studentIds: ['student_001', 'student_002'] },
+        timetableStatus: { hasTemplate: true, publishedAt: '2026-03-10T00:00:00.000Z', directEditWindowEndsAt: null },
+        requestSummary: { openCount: 0, recent: [] },
+        reassessmentSummary: { openCount: 2, nextDueAt: null, recentDecisionTypes: ['acknowledged', 'targeted-tutoring'] },
+        proofOperations: {
+          scopeDescriptor: {
+            scopeType: 'proof',
+            scopeId: 'checkpoint_001',
+            label: '2023 Mathematics and Computing',
+            batchId: 'batch_mnc_2023',
+            sectionCode: null,
+            branchName: 'B.Tech Mathematics and Computing',
+            simulationRunId: 'run_001',
+            simulationStageCheckpointId: 'checkpoint_001',
+            studentId: null,
+          },
+          resolvedFrom: {
+            kind: 'proof-checkpoint',
+            scopeType: 'proof',
+            scopeId: 'checkpoint_001',
+            label: 'Semester Close · Proof Run 1',
+          },
+          scopeMode: 'proof',
+          countSource: 'proof-checkpoint',
+          activeOperationalSemester: 1,
+          activeRunContexts: [
+            {
+              batchId: 'batch_mnc_2023',
+              simulationRunId: 'run_001',
+              runLabel: 'Proof Run 1',
+              batchLabel: '2023 Mathematics and Computing',
+              branchName: 'B.Tech Mathematics and Computing',
+              status: 'active',
+              seed: 42,
+              createdAt: '2026-03-16T00:00:00.000Z',
+            },
+          ],
+          selectedCheckpoint: {
+            simulationStageCheckpointId: 'checkpoint_001',
+            simulationRunId: 'run_001',
+            semesterNumber: 1,
+            stageKey: 'pre-tt1',
+            stageLabel: 'Pre TT1',
+            stageDescription: 'Initial checkpoint.',
+            stageOrder: 1,
+            previousCheckpointId: 'checkpoint_000',
+            nextCheckpointId: 'checkpoint_002',
+            highRiskCount: 8,
+            openQueueCount: 13,
+          },
+          monitoringQueue: [],
+          electiveFits: [],
+        },
+      },
+      calendarMarkers: [],
+      loading: false,
+      error: '',
+      pendingTaskCount: 3,
+      assignedOfferings: [],
+      currentFacultyTimetable: null,
+      onBack: () => {},
+      onOpenStudentProfile: () => {},
+      onOpenStudentShell: () => {},
+      onOpenRiskExplorer: () => {},
+      onAdvanceProofRun,
+      onStepProofPlayback,
+    }))
+
+    expect(screen.getByRole('button', { name: 'Stop Proof Run' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Next Stage' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Next Day' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Previous Stage' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Previous Day' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Reset Stage' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Reset Proof Run' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Preview Next Checkpoint' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Jump To Latest Stage' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Reset Playback' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next Stage' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Next Day' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Previous Stage' }))
+
+    expect(onAdvanceProofRun).toHaveBeenCalledWith('run_001', 'stage')
+    expect(onAdvanceProofRun).toHaveBeenCalledWith('run_001', 'day')
+    expect(onStepProofPlayback).toHaveBeenCalledWith('previous')
+  })
+
+  it('uses the teacher proof checkpoint chain for true-start playback without faking day navigation as a stage checkpoint', () => {
+    const onAdvanceProofRun = vi.fn()
+    const onStepProofPlayback = vi.fn()
+
+    render(createElement(FacultyProfilePage, {
+      currentTeacher: {
+        facultyId: 'mnc_t1',
+        name: 'Dr. Asha Rao',
+        initials: 'AR',
+        allowedRoles: ['Course Leader', 'Mentor', 'HoD'],
+        dept: 'Mathematics and Computing',
+        roleTitle: 'Professor',
+        email: 'asha.rao@example.edu',
+        courseCodes: ['MC601'],
+        offeringIds: ['off_mc601_a'],
+        menteeIds: ['student_001', 'student_002'],
+      },
+      activeRole: 'Course Leader',
+      profile: {
+        facultyId: 'mnc_t1',
+        displayName: 'Dr. Asha Rao',
+        designation: 'Professor',
+        employeeCode: 'F001',
+        joinedOn: '2020-06-01',
+        email: 'asha.rao@example.edu',
+        phone: '9999999999',
+        primaryDepartment: {
+          departmentId: 'dept_mnc',
+          name: 'Mathematics and Computing',
+          code: 'MNC',
+        },
+        permissions: [],
+        appointments: [],
+        currentOwnedClasses: [],
+        currentBatchContexts: [],
+        subjectRunCourseLeaderScope: [],
+        mentorScope: { activeStudentCount: 24, studentIds: ['student_001', 'student_002'] },
+        timetableStatus: { hasTemplate: true, publishedAt: '2026-03-10T00:00:00.000Z', directEditWindowEndsAt: null },
+        requestSummary: { openCount: 0, recent: [] },
+        reassessmentSummary: { openCount: 2, nextDueAt: null, recentDecisionTypes: ['acknowledged', 'targeted-tutoring'] },
+        proofOperations: {
+          scopeDescriptor: {
+            scopeType: 'proof',
+            scopeId: 'checkpoint_002',
+            label: '2023 Mathematics and Computing',
+            batchId: 'batch_mnc_2023',
+            sectionCode: null,
+            branchName: 'B.Tech Mathematics and Computing',
+            simulationRunId: 'run_001',
+            simulationStageCheckpointId: 'checkpoint_002',
+            studentId: null,
+          },
+          resolvedFrom: {
+            kind: 'proof-checkpoint',
+            scopeType: 'proof',
+            scopeId: 'checkpoint_002',
+            label: 'Post TT1 · Proof Run 1',
+          },
+          scopeMode: 'proof',
+          countSource: 'proof-checkpoint',
+          activeOperationalSemester: 1,
+          activeRunContexts: [
+            {
+              batchId: 'batch_mnc_2023',
+              simulationRunId: 'run_001',
+              runLabel: 'Proof Run 1',
+              batchLabel: '2023 Mathematics and Computing',
+              branchName: 'B.Tech Mathematics and Computing',
+              status: 'active',
+              seed: 42,
+              createdAt: '2026-03-16T00:00:00.000Z',
+            },
+          ],
+          activeRunCheckpoints: [
+            {
+              simulationStageCheckpointId: 'checkpoint_001',
+              simulationRunId: 'run_001',
+              semesterNumber: 1,
+              stageKey: 'pre-tt1',
+              stageLabel: 'Pre TT1',
+              stageDescription: 'Initial checkpoint.',
+              stageOrder: 1,
+              previousCheckpointId: null,
+              nextCheckpointId: 'checkpoint_002',
+              highRiskCount: 3,
+              openQueueCount: 0,
+            },
+            {
+              simulationStageCheckpointId: 'checkpoint_002',
+              simulationRunId: 'run_001',
+              semesterNumber: 1,
+              stageKey: 'post-tt1',
+              stageLabel: 'Post TT1',
+              stageDescription: 'Post TT1 checkpoint.',
+              stageOrder: 2,
+              previousCheckpointId: 'checkpoint_001',
+              nextCheckpointId: 'checkpoint_003',
+              highRiskCount: 8,
+              openQueueCount: 13,
+            },
+            {
+              simulationStageCheckpointId: 'checkpoint_003',
+              simulationRunId: 'run_001',
+              semesterNumber: 1,
+              stageKey: 'post-tt2',
+              stageLabel: 'Post TT2',
+              stageDescription: 'Post TT2 checkpoint.',
+              stageOrder: 3,
+              previousCheckpointId: 'checkpoint_002',
+              nextCheckpointId: null,
+              highRiskCount: 9,
+              openQueueCount: 11,
+            },
+          ],
+          selectedCheckpoint: {
+            simulationStageCheckpointId: 'checkpoint_002',
+            simulationRunId: 'run_001',
+            semesterNumber: 1,
+            stageKey: 'post-tt1',
+            stageLabel: 'Post TT1',
+            stageDescription: 'Post TT1 checkpoint.',
+            stageOrder: 2,
+            previousCheckpointId: 'checkpoint_001',
+            nextCheckpointId: 'checkpoint_003',
+            highRiskCount: 8,
+            openQueueCount: 13,
+          },
+          monitoringQueue: [],
+          electiveFits: [],
+        } as never,
+      },
+      calendarMarkers: [],
+      loading: false,
+      error: '',
+      pendingTaskCount: 3,
+      assignedOfferings: [],
+      currentFacultyTimetable: null,
+      onBack: () => {},
+      onOpenStudentProfile: () => {},
+      onOpenStudentShell: () => {},
+      onOpenRiskExplorer: () => {},
+      onAdvanceProofRun,
+      onStepProofPlayback,
+    }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Playback' }))
+    expect(JSON.parse(window.localStorage.getItem(PROOF_PLAYBACK_SELECTION_STORAGE_KEY) ?? '{}')).toMatchObject({
+      simulationRunId: 'run_001',
+      simulationStageCheckpointId: 'checkpoint_001',
+    })
+    expect(onStepProofPlayback).toHaveBeenCalledWith('start')
+
+    window.localStorage.clear()
+    fireEvent.click(screen.getByRole('button', { name: 'Previous Day' }))
+    expect(window.localStorage.getItem(PROOF_PLAYBACK_SELECTION_STORAGE_KEY)).toBeNull()
+    expect(onAdvanceProofRun).toHaveBeenLastCalledWith('run_001', 'previous-day')
+    expect(onStepProofPlayback).not.toHaveBeenLastCalledWith('previous')
   })
 
   it('opens the teacher proof popup surface with proof-semester guidance', () => {

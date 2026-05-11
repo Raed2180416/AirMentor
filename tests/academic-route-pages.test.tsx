@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { createElement } from 'react'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ApiAcademicFacultyProfile } from '../src/api/types'
+import type { ApiAcademicFacultyProfile, ApiProofReassessmentResolveResponse, ApiStudentAgentCard, ApiStudentRiskExplorer } from '../src/api/types'
 import type { Mentee, Offering, Student, StudentHistoryRecord } from '../src/data'
 import type { SharedTask } from '../src/domain'
 import { CLDashboard, MenteeDetailPage, MentorView, QueueHistoryPage } from '../src/academic-route-pages'
@@ -243,6 +243,166 @@ function renderWithSelectorOverrides(
 }
 
 describe('academic route pages', () => {
+  it('shows the guided demo reality loop on the course leader dashboard when proof queue evidence exists', () => {
+    const proofProfileWithQueue = {
+      ...proofProfile,
+      proofOperations: {
+        ...proofProfile.proofOperations,
+        monitoringQueue: [{
+          riskAssessmentId: 'risk_001',
+          simulationRunId: 'run_001',
+          batchId: 'batch_mnc_2023',
+          batchLabel: '2023 Proof',
+          branchName: 'B.Tech Mathematics and Computing',
+          studentId: 'student_001',
+          studentName: 'Aarav Sharma',
+          usn: '1MS23MC001',
+          offeringId: 'off_mc601_a',
+          courseCode: 'MC601',
+          courseTitle: 'Graph Theory',
+          sectionCode: 'A',
+          riskBand: 'High',
+          riskProbScaled: 81,
+          recommendedAction: 'Open a mentor checkpoint and assign remedial work.',
+          drivers: [{ label: 'Checkpoint risk spike', impact: 0.24, feature: 'proof-checkpoint' }],
+          dueAt: null,
+          reassessmentStatus: 'Open',
+          decisionType: 'open',
+          decisionNote: null,
+          observedEvidence: {
+            attendancePct: 62,
+            tt1Pct: 38,
+            tt2Pct: null,
+            quizPct: null,
+            assignmentPct: null,
+            seePct: null,
+            cgpa: 6.8,
+            backlogCount: 1,
+            weakCoCount: 2,
+            weakQuestionCount: 4,
+            interventionRecoveryStatus: null,
+          },
+          override: null,
+          acknowledgement: null,
+          resolution: null,
+        }],
+      },
+    } satisfies ApiAcademicFacultyProfile
+
+    renderWithSelectorOverrides(createElement(CLDashboard, {
+      offerings: [makeOffering()],
+      pendingTaskCount: 0,
+      proofProfile: proofProfileWithQueue,
+      onOpenCourse: vi.fn(),
+      onOpenStudent: vi.fn(),
+      onOpenUpload: vi.fn(),
+      onOpenCalendar: vi.fn(),
+      onOpenPendingActions: vi.fn(),
+      teacherInitials: 'AR',
+      greetingHeadline: 'Welcome back',
+      greetingMeta: 'Proof-aligned teaching scope',
+      greetingSubline: 'Checkpoint-bound view',
+    }), {
+      studentsByOffering: {
+        off_mc601_a: [makeStudent({ id: 'off_mc601_a::student_001', riskProb: 0.81 })],
+      },
+    })
+
+    expect(screen.getByText('Demo Reality Loop')).toBeTruthy()
+    expect(screen.getByText(/synthetic MSRUAS demo/i)).toBeTruthy()
+    expect(screen.getAllByText('Aarav Sharma').length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: /Capture before snapshot/i })).toBeTruthy()
+  })
+
+  it('threads guided demo actions from the course leader dashboard to proof callbacks', async () => {
+    const loadStudentRiskExplorer = vi.fn(async () => ({
+      currentEvidence: { attendancePct: 62, tt1Pct: 38, tt2Pct: null, quizPct: null, assignmentPct: null, seePct: null, weakCoCount: 2, weakQuestionCount: 4, interventionRecoveryStatus: null },
+      currentStatus: { riskBand: 'High', riskProbScaled: 81, reassessmentStatus: 'Open', nextDueAt: null, recommendedAction: 'attendance_recovery_plan', queueState: 'open', simulatedActionTaken: null, attentionAreas: ['attendance'] },
+    } as unknown as ApiStudentRiskExplorer))
+    const loadStudentAgentCard = vi.fn(async () => ({
+      overview: {
+        currentEvidence: { attendancePct: 62, tt1Pct: 38, tt2Pct: null, quizPct: null, assignmentPct: null, seePct: null, weakCoCount: 2, weakQuestionCount: 4, interventionRecoveryStatus: null },
+        currentStatus: { riskBand: 'High', riskProbScaled: 81, reassessmentStatus: 'Open', nextDueAt: null, recommendedAction: 'attendance_recovery_plan', queueState: 'open', simulatedActionTaken: null, attentionAreas: ['attendance'] },
+      },
+      interventions: {
+        currentReassessments: [{ reassessmentEventId: 'reassessment_001', courseCode: 'MC601', courseTitle: 'Graph Theory', status: 'Open', dueAt: '2026-03-20T00:00:00.000Z', assignedToRole: 'COURSE_LEADER' }],
+      },
+    } as unknown as ApiStudentAgentCard))
+    const onCommitDemoAttendanceEdit = vi.fn(async () => undefined)
+    const onRecomputeProofRunRisk = vi.fn(async () => undefined)
+    const onResolveProofReassessment = vi.fn(async () => ({ reassessmentEventId: 'reassessment_001', resolution: { reassessmentResolutionId: 'resolution_001', resolvedByFacultyId: 'mnc_t1', resolutionStatus: 'Resolved', note: null, createdAt: '2026-03-20T00:00:00.000Z', resolutionJson: { outcome: 'completed_improving', temporaryResponseCredit: 0.05, recoveryState: 'confirmed_improvement', queueCaseId: 'queue_001', actorRole: 'COURSE_LEADER', resolvedAt: '2026-03-20T00:00:00.000Z', version: 1 } } } as unknown as ApiProofReassessmentResolveResponse))
+    const onAdvanceProofRun = vi.fn(async () => undefined)
+    const proofProfileWithQueue = {
+      ...proofProfile,
+      proofOperations: {
+        ...proofProfile.proofOperations,
+        activeRunContexts: [{ batchId: 'batch_mnc_2023', simulationRunId: 'run_001', runLabel: 'Proof Run 1', batchLabel: '2023 Mathematics and Computing', branchName: 'B.Tech Mathematics and Computing', status: 'active', seed: 42, createdAt: '2026-03-16T00:00:00.000Z' }],
+        monitoringQueue: [{
+          riskAssessmentId: 'risk_001',
+          simulationRunId: 'run_001',
+          batchId: 'batch_mnc_2023',
+          batchLabel: '2023 Proof',
+          branchName: 'B.Tech Mathematics and Computing',
+          studentId: 'student_001',
+          studentName: 'Aarav Sharma',
+          usn: '1MS23MC001',
+          offeringId: 'off_mc601_a',
+          courseCode: 'MC601',
+          courseTitle: 'Graph Theory',
+          sectionCode: 'A',
+          riskBand: 'High',
+          riskProbScaled: 81,
+          recommendedAction: 'Open a mentor checkpoint and assign remedial work.',
+          drivers: [{ label: 'Checkpoint risk spike', impact: 0.24, feature: 'proof-checkpoint' }],
+          dueAt: null,
+          reassessmentStatus: 'Open',
+          decisionType: 'open',
+          decisionNote: null,
+          observedEvidence: { attendancePct: 62, tt1Pct: 38, tt2Pct: null, quizPct: null, assignmentPct: null, seePct: null, cgpa: 6.8, backlogCount: 1, weakCoCount: 2, weakQuestionCount: 4, interventionRecoveryStatus: null },
+          override: null,
+          acknowledgement: null,
+          resolution: null,
+        }],
+      },
+    } as ApiAcademicFacultyProfile
+
+    renderWithSelectorOverrides(createElement(CLDashboard, {
+      offerings: [makeOffering()],
+      pendingTaskCount: 0,
+      proofProfile: proofProfileWithQueue,
+      onOpenCourse: vi.fn(),
+      onOpenStudent: vi.fn(),
+      onOpenUpload: vi.fn(),
+      onOpenCalendar: vi.fn(),
+      onOpenPendingActions: vi.fn(),
+      loadStudentRiskExplorer,
+      loadStudentAgentCard,
+      onCommitDemoAttendanceEdit,
+      onRecomputeProofRunRisk,
+      onResolveProofReassessment,
+      onAdvanceProofRun,
+      teacherInitials: 'AR',
+      greetingHeadline: 'Welcome back',
+      greetingMeta: 'Proof-aligned teaching scope',
+      greetingSubline: 'Checkpoint-bound view',
+    }), {
+      studentsByOffering: {
+        off_mc601_a: [makeStudent({ id: 'off_mc601_a::student_001', riskProb: 0.81 })],
+      },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /Apply attendance edit/i }))
+    await waitFor(() => expect(onCommitDemoAttendanceEdit).toHaveBeenCalledWith('off_mc601_a', 'student_001', 74))
+    fireEvent.click(screen.getByRole('button', { name: /^Recompute risk$/i }))
+    await waitFor(() => expect(onRecomputeProofRunRisk).toHaveBeenCalledWith('run_001', { refreshWorkspace: false }))
+    fireEvent.click(screen.getByRole('button', { name: /^Resolve intervention$/i }))
+    await waitFor(() => expect(onResolveProofReassessment).toHaveBeenCalledWith('reassessment_001', { refreshWorkspace: false }))
+    fireEvent.click(screen.getByRole('button', { name: /^Advance next stage$/i }))
+    await waitFor(() => expect(onAdvanceProofRun).toHaveBeenCalledWith('run_001', 'stage', { refreshWorkspace: false }))
+    fireEvent.click(screen.getByRole('button', { name: /^Refresh proof card$/i }))
+    await waitFor(() => expect(loadStudentAgentCard).toHaveBeenCalledWith('student_001'))
+  })
+
   it('opens mentor queue drilldowns into mentee, risk explorer, and student shell', () => {
     const onOpenMentee = vi.fn()
     const onOpenRiskExplorer = vi.fn()
@@ -368,6 +528,79 @@ describe('academic route pages', () => {
     }))
     expect(screen.getAllByText('Queue History').length).toBeGreaterThan(0)
     expect(screen.getByText(/You are viewing (a saved preview checkpoint|the active simulation snapshot|live data)/)).toBeTruthy()
+  })
+
+  it('opens active proof controls from the course leader floating proof launcher', () => {
+    const onAdvanceProofRun = vi.fn()
+    const onStopProofRun = vi.fn()
+    const proofProfileWithActiveRun = {
+      ...proofProfile,
+      proofOperations: {
+        ...proofProfile.proofOperations,
+        activeRunContexts: [{
+          batchId: 'batch_mnc_2023',
+          simulationRunId: 'run_001',
+          runLabel: 'Proof Run 1',
+          batchLabel: '2023 Mathematics and Computing',
+          branchName: 'B.Tech Mathematics and Computing',
+          status: 'active',
+          seed: 42,
+          createdAt: '2026-03-16T00:00:00.000Z',
+        }],
+      },
+    } satisfies ApiAcademicFacultyProfile
+
+    renderWithSelectors(createElement(CLDashboard, {
+      offerings: [],
+      pendingTaskCount: 3,
+      proofProfile: proofProfileWithActiveRun,
+      onOpenCourse: vi.fn(),
+      onOpenStudent: vi.fn(),
+      onOpenStudents: vi.fn(),
+      onOpenUpload: vi.fn(),
+      onOpenCalendar: vi.fn(),
+      onOpenPendingActions: vi.fn(),
+      onAdvanceProofRun,
+      onStopProofRun,
+      onStepProofPlayback: vi.fn(),
+      teacherInitials: 'AR',
+      greetingHeadline: 'Welcome back',
+      greetingMeta: 'Proof-aligned teaching scope',
+      greetingSubline: 'Checkpoint-bound view',
+    }))
+
+    fireEvent.click(screen.getByRole('button', { name: /Proof Control/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Next Stage' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Next Day' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Stop Proof Run' }))
+
+    expect(onAdvanceProofRun).toHaveBeenCalledWith('run_001', 'stage')
+    expect(onAdvanceProofRun).toHaveBeenCalledWith('run_001', 'day')
+    expect(onStopProofRun).toHaveBeenCalledWith('run_001')
+  })
+
+  it('opens the full student roster from the course leader total-students metric', () => {
+    const onOpenStudents = vi.fn()
+
+    renderWithSelectors(createElement(CLDashboard, {
+      offerings: [],
+      pendingTaskCount: 3,
+      proofProfile,
+      onOpenCourse: vi.fn(),
+      onOpenStudent: vi.fn(),
+      onOpenStudents,
+      onOpenUpload: vi.fn(),
+      onOpenCalendar: vi.fn(),
+      onOpenPendingActions: vi.fn(),
+      teacherInitials: 'AR',
+      greetingHeadline: 'Welcome back',
+      greetingMeta: 'Proof-aligned teaching scope',
+      greetingSubline: 'Checkpoint-bound view',
+    }))
+
+    fireEvent.click(screen.getByText('Total Students'))
+
+    expect(onOpenStudents).toHaveBeenCalledTimes(1)
   })
 
   it('prefers proof-scoped totals over summed offering totals on the course leader dashboard', () => {

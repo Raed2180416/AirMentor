@@ -1,4 +1,38 @@
 import type { ResolvedPolicy } from '../modules/admin-structure.js'
+import {
+  ASSIGNMENT_WEAK_IMPACT,
+  ASSIGNMENT_WEAK_THRESHOLD_PCT,
+  ATTENDANCE_HIGH_RISK_IMPACT,
+  ATTENDANCE_MEDIUM_RISK_IMPACT,
+  ATTENDANCE_TREND_IMPACT,
+  ATTENDANCE_TREND_THRESHOLD_COUNT,
+  BACKLOG_HIGH_RISK_IMPACT,
+  BACKLOG_MEDIUM_RISK_IMPACT,
+  CGPA_HIGH_RISK_IMPACT,
+  CGPA_MEDIUM_RISK_IMPACT,
+  INFERENCE_BASELINE_RISK,
+  INFERENCE_RISK_LOWER_CLAMP,
+  INFERENCE_RISK_UPPER_CLAMP,
+  INTERVENTION_NEGATIVE_RESPONSE_IMPACT,
+  INTERVENTION_NEGATIVE_RESPONSE_THRESHOLD,
+  INTERVENTION_POSITIVE_RESPONSE_IMPACT,
+  INTERVENTION_POSITIVE_RESPONSE_THRESHOLD,
+  QUESTION_WEAKNESS_HIGH_IMPACT,
+  QUESTION_WEAKNESS_HIGH_THRESHOLD_COUNT,
+  QUESTION_WEAKNESS_MEDIUM_IMPACT,
+  QUESTION_WEAKNESS_MEDIUM_THRESHOLD_COUNT,
+  QUIZ_WEAK_IMPACT,
+  QUIZ_WEAK_THRESHOLD_PCT,
+  RISK_BAND_HIGH_THRESHOLD,
+  RISK_BAND_MEDIUM_THRESHOLD,
+  TERM_SIGNAL_VERY_LOW_IMPACT,
+  TERM_SIGNAL_VERY_LOW_THRESHOLD_PCT,
+  TERM_SIGNAL_WATCH_IMPACT,
+  TERM_SIGNAL_WATCH_THRESHOLD_PCT,
+  WEAK_CO_HIGH_IMPACT,
+  WEAK_CO_HIGH_THRESHOLD_COUNT,
+  WEAK_CO_MEDIUM_IMPACT,
+} from './learning-dynamics-constants.js'
 
 export type ObservableDriver = {
   label: string
@@ -9,7 +43,9 @@ export type ObservableDriver = {
 export type ObservableInferenceInput = {
   attendancePct: number
   currentCgpa: number
+  cgpaMissing?: boolean
   backlogCount: number
+  backlogMissing?: boolean
   tt1Pct?: number | null
   tt2Pct?: number | null
   seePct?: number | null
@@ -19,6 +55,7 @@ export type ObservableInferenceInput = {
   attendanceHistoryRiskCount?: number
   questionWeaknessCount?: number
   interventionResponseScore?: number | null
+  stageKey?: string | null
   policy: ResolvedPolicy
 }
 
@@ -39,41 +76,41 @@ export function inferObservableDrivers(input: ObservableInferenceInput): Observa
   if (input.attendancePct < riskRules.highRiskAttendancePercentBelow) {
     drivers.push({
       label: `Attendance is below the high-risk threshold (${input.attendancePct}%)`,
-      impact: 0.28,
+      impact: ATTENDANCE_HIGH_RISK_IMPACT,
       feature: 'attendance',
     })
   } else if (input.attendancePct < riskRules.mediumRiskAttendancePercentBelow) {
     drivers.push({
       label: `Attendance is below the operating threshold (${input.attendancePct}%)`,
-      impact: 0.14,
+      impact: ATTENDANCE_MEDIUM_RISK_IMPACT,
       feature: 'attendance',
     })
   }
 
-  if (input.currentCgpa > 0 && input.currentCgpa < riskRules.highRiskCgpaBelow) {
+  if (input.cgpaMissing !== true && input.currentCgpa > 0 && input.currentCgpa < riskRules.highRiskCgpaBelow) {
     drivers.push({
       label: `Current CGPA is below the high-risk threshold (${input.currentCgpa.toFixed(2)})`,
-      impact: 0.2,
+      impact: CGPA_HIGH_RISK_IMPACT,
       feature: 'cgpa',
     })
-  } else if (input.currentCgpa > 0 && input.currentCgpa < riskRules.mediumRiskCgpaBelow) {
+  } else if (input.cgpaMissing !== true && input.currentCgpa > 0 && input.currentCgpa < riskRules.mediumRiskCgpaBelow) {
     drivers.push({
       label: `Current CGPA is below the watch threshold (${input.currentCgpa.toFixed(2)})`,
-      impact: 0.1,
+      impact: CGPA_MEDIUM_RISK_IMPACT,
       feature: 'cgpa',
     })
   }
 
-  if (input.backlogCount >= riskRules.highRiskBacklogCount) {
+  if (input.backlogMissing !== true && input.backlogCount >= riskRules.highRiskBacklogCount) {
     drivers.push({
       label: `Active backlog count is high (${input.backlogCount})`,
-      impact: 0.18,
+      impact: BACKLOG_HIGH_RISK_IMPACT,
       feature: 'backlog',
     })
-  } else if (input.backlogCount >= riskRules.mediumRiskBacklogCount) {
+  } else if (input.backlogMissing !== true && input.backlogCount >= riskRules.mediumRiskBacklogCount) {
     drivers.push({
       label: `Active backlog count is above the watch threshold (${input.backlogCount})`,
-      impact: 0.09,
+      impact: BACKLOG_MEDIUM_RISK_IMPACT,
       feature: 'backlog',
     })
   }
@@ -85,83 +122,83 @@ export function inferObservableDrivers(input: ObservableInferenceInput): Observa
   ]
   for (const signal of termSignals) {
     if (signal.pct === null) continue
-    if (signal.pct < 40) {
+    if (signal.pct < TERM_SIGNAL_VERY_LOW_THRESHOLD_PCT) {
       drivers.push({
         label: `${signal.label} performance is very low (${roundToTwo(signal.pct)}%)`,
-        impact: 0.16,
+        impact: TERM_SIGNAL_VERY_LOW_IMPACT,
         feature: signal.key,
       })
-    } else if (signal.pct < 55) {
+    } else if (signal.pct < TERM_SIGNAL_WATCH_THRESHOLD_PCT) {
       drivers.push({
         label: `${signal.label} performance is below the watch threshold (${roundToTwo(signal.pct)}%)`,
-        impact: 0.08,
+        impact: TERM_SIGNAL_WATCH_IMPACT,
         feature: signal.key,
       })
     }
   }
 
-  if ((input.attendanceHistoryRiskCount ?? 0) >= 2) {
+  if ((input.attendanceHistoryRiskCount ?? 0) >= ATTENDANCE_TREND_THRESHOLD_COUNT) {
     drivers.push({
       label: `Attendance stayed below the policy threshold across multiple checkpoints (${input.attendanceHistoryRiskCount})`,
-      impact: 0.08,
+      impact: ATTENDANCE_TREND_IMPACT,
       feature: 'attendance-history',
     })
   }
 
-  if ((input.questionWeaknessCount ?? 0) >= 4) {
+  if ((input.questionWeaknessCount ?? 0) >= QUESTION_WEAKNESS_HIGH_THRESHOLD_COUNT) {
     drivers.push({
       label: `Question-level evidence shows repeated weakness across the current paper (${input.questionWeaknessCount})`,
-      impact: 0.09,
+      impact: QUESTION_WEAKNESS_HIGH_IMPACT,
       feature: 'question-pattern',
     })
-  } else if ((input.questionWeaknessCount ?? 0) >= 2) {
+  } else if ((input.questionWeaknessCount ?? 0) >= QUESTION_WEAKNESS_MEDIUM_THRESHOLD_COUNT) {
     drivers.push({
       label: 'Question-level evidence shows targeted weakness in the current evidence window',
-      impact: 0.05,
+      impact: QUESTION_WEAKNESS_MEDIUM_IMPACT,
       feature: 'question-pattern',
     })
   }
 
-  if (typeof input.quizPct === 'number' && input.quizPct < 45) {
+  if (typeof input.quizPct === 'number' && input.quizPct < QUIZ_WEAK_THRESHOLD_PCT) {
     drivers.push({
       label: `Quiz evidence is weak (${roundToTwo(input.quizPct)}%)`,
-      impact: 0.06,
+      impact: QUIZ_WEAK_IMPACT,
       feature: 'quiz',
     })
   }
 
-  if (typeof input.assignmentPct === 'number' && input.assignmentPct < 45) {
+  if (typeof input.assignmentPct === 'number' && input.assignmentPct < ASSIGNMENT_WEAK_THRESHOLD_PCT) {
     drivers.push({
       label: `Assignment evidence is weak (${roundToTwo(input.assignmentPct)}%)`,
-      impact: 0.06,
+      impact: ASSIGNMENT_WEAK_IMPACT,
       feature: 'assignment',
     })
   }
 
-  if ((input.weakCoCount ?? 0) >= 2) {
+  if ((input.weakCoCount ?? 0) >= WEAK_CO_HIGH_THRESHOLD_COUNT) {
     drivers.push({
       label: `Multiple course outcomes are below the support threshold (${input.weakCoCount})`,
-      impact: 0.1,
+      impact: WEAK_CO_HIGH_IMPACT,
       feature: 'co',
     })
   } else if ((input.weakCoCount ?? 0) === 1) {
     drivers.push({
       label: 'One course outcome is below the support threshold',
-      impact: 0.05,
+      impact: WEAK_CO_MEDIUM_IMPACT,
       feature: 'co',
     })
   }
 
-  if (typeof input.interventionResponseScore === 'number' && input.interventionResponseScore < -0.05) {
+  if (typeof input.interventionResponseScore === 'number' && input.interventionResponseScore < INTERVENTION_NEGATIVE_RESPONSE_THRESHOLD) {
     drivers.push({
       label: 'Observed response after support remains below the expected recovery threshold',
-      impact: 0.08,
+      impact: INTERVENTION_NEGATIVE_RESPONSE_IMPACT,
       feature: 'intervention-response',
     })
-  } else if (typeof input.interventionResponseScore === 'number' && input.interventionResponseScore > 0.08) {
+  } else if (typeof input.interventionResponseScore === 'number' && input.interventionResponseScore > INTERVENTION_POSITIVE_RESPONSE_THRESHOLD) {
     drivers.push({
       label: 'Observed response after support improved above the expected recovery threshold',
-      impact: -0.05,
+      impact: INTERVENTION_POSITIVE_RESPONSE_IMPACT,
       feature: 'intervention-response',
     })
   }
@@ -171,10 +208,10 @@ export function inferObservableDrivers(input: ObservableInferenceInput): Observa
 
 export function inferObservableRisk(input: ObservableInferenceInput): ObservableInferenceOutput {
   const drivers = inferObservableDrivers(input)
-  let riskProb = 0.08
+  let riskProb = INFERENCE_BASELINE_RISK
   for (const driver of drivers) riskProb += driver.impact
-  const bounded = Math.max(0.05, Math.min(0.95, roundToTwo(riskProb)))
-  const riskBand: 'High' | 'Medium' | 'Low' = bounded >= 0.7 ? 'High' : bounded >= 0.35 ? 'Medium' : 'Low'
+  const bounded = Math.max(INFERENCE_RISK_LOWER_CLAMP, Math.min(INFERENCE_RISK_UPPER_CLAMP, roundToTwo(riskProb)))
+  const riskBand: 'High' | 'Medium' | 'Low' = bounded >= RISK_BAND_HIGH_THRESHOLD ? 'High' : bounded >= RISK_BAND_MEDIUM_THRESHOLD ? 'Medium' : 'Low'
   return {
     riskProb: bounded,
     riskBand,
