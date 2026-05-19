@@ -309,6 +309,63 @@ describe('msruas proof engines', () => {
     expect(monitoring.note).toContain('manual teacher concern')
   })
 
+  it('keeps low-risk manual teacher concerns on watch instead of suppressing human evidence', () => {
+    const monitoring = buildMonitoringDecision({
+      riskProb: 0.24,
+      riskBand: 'Low',
+      previousRiskBand: 'Low',
+      manualConcernCreated: true,
+      concernFamily: 'manual-teacher-concern',
+      offeringId: 'off-low-manual',
+      currentOwnerRole: 'Mentor',
+      nowIso: '2026-03-22T00:00:00.000Z',
+    })
+
+    expect(monitoring).toMatchObject({
+      decisionType: 'watch',
+      queueOwnerRole: 'Course Leader',
+      workflowTaskAction: 'reassign',
+      ownershipChanged: true,
+      manualInterventionCount: 1,
+      manualConcernCountsAsIntervention: true,
+      concernFamily: 'manual-teacher-concern',
+      offeringId: 'off-low-manual',
+    })
+    expect(monitoring.note).toContain('Manual teacher concern')
+  })
+
+  it('keeps low-risk weak recovery after prior support on watch but suppresses clean low-risk evidence', () => {
+    const weakRecovery = buildMonitoringDecision({
+      riskProb: 0.28,
+      riskBand: 'Low',
+      previousRiskBand: 'Low',
+      manualInterventionCount: 1,
+      interventionResidual: -0.08,
+      nowIso: '2026-03-22T00:00:00.000Z',
+    })
+
+    expect(weakRecovery).toMatchObject({
+      decisionType: 'watch',
+      queueOwnerRole: 'Course Leader',
+      workflowTaskAction: 'monitor',
+      manualInterventionCount: 1,
+      manualConcernCountsAsIntervention: false,
+    })
+    expect(weakRecovery.note).toContain('recovery after prior support remains weak')
+
+    const cleanLow = buildMonitoringDecision({
+      riskProb: 0.18,
+      riskBand: 'Low',
+      previousRiskBand: 'Low',
+      nowIso: '2026-03-22T00:00:00.000Z',
+    })
+
+    expect(cleanLow).toMatchObject({
+      decisionType: 'suppress',
+      workflowTaskAction: 'close',
+    })
+  })
+
   it('keeps missing prior history separate from zero-valued assessment evidence in degraded inference', () => {
     const inferred = inferObservableRisk({
       attendancePct: 82,

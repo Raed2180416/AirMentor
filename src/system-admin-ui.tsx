@@ -516,9 +516,9 @@ export function EntityButton({ selected, onClick, children, style: extraStyle }:
   )
 }
 
-export function HeroBadge({ children, color = T.accent }: { children: ReactNode; color?: string }) {
+export function HeroBadge({ children, color = T.accent, compact = false }: { children: ReactNode; color?: string; compact?: boolean }) {
   return (
-    <span style={{ ...mono, fontSize: 10, color, border: `1px solid ${color}30`, background: `${color}12`, borderRadius: 999, padding: '6px 10px', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+    <span style={{ ...mono, fontSize: compact ? 9 : 10, lineHeight: 1, color, border: `1px solid ${color}30`, background: `${color}12`, borderRadius: 999, padding: compact ? '5px 8px' : '6px 10px', display: 'inline-flex', alignItems: 'center', gap: compact ? 5 : 6, alignSelf: 'flex-start', whiteSpace: 'nowrap' }}>
       {children}
     </span>
   )

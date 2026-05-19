@@ -383,4 +383,86 @@ describe('proof queue governance', () => {
       countsTowardCapacity: false,
     })
   })
+
+  it('caps newly admitted watch cases per section using deterministic priority order', () => {
+    const result = governProofQueueStage({
+      stageKey: 'post-assignments',
+      candidates: Array.from({ length: 6 }, (_, index) => candidate({
+        caseKey: `student-${index + 1}::1`,
+        concernContextKey: `ctx::student-${index + 1}::off-${index + 1}::watch`,
+        sourceKey: `student-${index + 1}::1::off-${index + 1}::AMC30${index + 1}`,
+        studentId: `student-${index + 1}`,
+        offeringId: `off-${index + 1}`,
+        courseCode: `AMC30${index + 1}`,
+        riskBand: 'High',
+        riskProbScaled: 90 - index,
+        counterfactualLiftScaled: 1,
+      })),
+      sectionStudentCountByKey: new Map([['1::A', 10]]),
+      facultyBudgetByKey: new Map([['Mentor::faculty-1::1', 10]]),
+    })
+
+    const watchDecisions = Array.from(result.decisionsByConcernContextKey.values())
+      .filter(decision => decision.canonicalStatus === 'watch')
+
+    expect(watchDecisions).toHaveLength(4)
+    expect(result.watchUsageByKey.get('1::A')).toBe(4)
+    expect(watchDecisions.map(decision => decision.studentId)).toEqual([
+      'student-1',
+      'student-2',
+      'student-3',
+      'student-4',
+    ])
+    expect(result.decisionsByConcernContextKey.get('ctx::student-5::off-5::watch')).toMatchObject({
+      status: 'deferred',
+      canonicalStatus: 'deferred',
+      governanceReason: 'watch_cap_deferred',
+      workflowTaskAction: 'monitor',
+      countsTowardCapacity: false,
+    })
+    expect(result.decisionsByConcernContextKey.get('ctx::student-6::off-6::watch')).toMatchObject({
+      status: 'deferred',
+      canonicalStatus: 'deferred',
+      governanceReason: 'watch_cap_deferred',
+      workflowTaskAction: 'monitor',
+      countsTowardCapacity: false,
+    })
+  })
+
+  it('keeps existing open cases visible even when new watch admissions are capped', () => {
+    const concernContextKey = 'ctx::student-existing::off-1::watch'
+    const result = governProofQueueStage({
+      stageKey: 'post-assignments',
+      candidates: [
+        candidate({
+          caseKey: 'student-existing::1',
+          concernContextKey,
+          sourceKey: 'student-existing::1::off-1::AMC301',
+          studentId: 'student-existing',
+          counterfactualLiftScaled: 1,
+        }),
+      ],
+      priorCaseStateByKey: new Map([
+        [concernContextKey, {
+          open: true,
+          caseId: 'proof_case::student-existing::1::open',
+          primarySourceKey: 'student-existing::1::off-1::AMC301::open',
+          concernContextKey,
+          concernFamily: 'coursework-risk',
+          canonicalStatus: 'open',
+          assignedRole: 'Mentor',
+        }],
+      ]),
+      sectionStudentCountByKey: new Map([['1::A', 1]]),
+      facultyBudgetByKey: new Map([['Mentor::faculty-1::1', 10]]),
+    })
+
+    expect(result.watchUsageByKey.get('1::A')).toBeUndefined()
+    expect(result.decisionsByConcernContextKey.get(concernContextKey)).toMatchObject({
+      studentId: 'student-existing',
+      canonicalStatus: 'watch',
+      workflowTaskAction: 'monitor',
+      countsTowardCapacity: false,
+    })
+  })
 })

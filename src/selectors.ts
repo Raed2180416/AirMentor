@@ -388,6 +388,26 @@ export function flattenBlueprintLeaves(nodes: TermTestNode[]) {
   })))
 }
 
+export function seedTermTestLeafScores(score: number | null | undefined, maxScore: number | null | undefined, leaves: ReturnType<typeof flattenBlueprintLeaves>) {
+  if (typeof score !== 'number' || !Number.isFinite(score) || leaves.length === 0) return undefined
+  const totalMax = Math.max(1, typeof maxScore === 'number' && Number.isFinite(maxScore) && maxScore > 0
+    ? maxScore
+    : leaves.reduce((acc, leaf) => acc + Math.max(0, leaf.maxMarks), 0))
+  const targetScore = Math.round(clampNumber(score, 0, totalMax))
+  const allocations = leaves.map((leaf, index) => {
+    const exact = (targetScore * Math.max(0, leaf.maxMarks)) / totalMax
+    return { id: leaf.id, index, maxMarks: Math.max(0, leaf.maxMarks), score: Math.floor(exact), remainder: exact - Math.floor(exact) }
+  })
+  let remaining = targetScore - allocations.reduce((acc, item) => acc + item.score, 0)
+  for (const item of [...allocations].sort((left, right) => right.remainder - left.remainder || left.index - right.index)) {
+    if (remaining <= 0) break
+    if (item.score >= item.maxMarks) continue
+    item.score += 1
+    remaining -= 1
+  }
+  return Object.fromEntries(allocations.map(item => [item.id, item.score])) as Record<string, number>
+}
+
 function sumScores(values?: Record<string, number>) {
   if (!values) return 0
   return Object.values(values).reduce((acc, value) => acc + value, 0)
@@ -487,7 +507,12 @@ export function createAppSelectors(state: SelectorState) {
       tt2: seedBlueprintFromPaper('tt2', PAPER_MAP[offering.code] || PAPER_MAP.default),
     }
   }
-  const getStudentPatch = (offeringId: string, studentId: string) => state.studentPatches[toStudentPatchKey(offeringId, studentId)] ?? {}
+  const getStudentPatch = (offeringId: string, studentId: string) => {
+    const normalizedStudentId = studentId.includes('::') ? (studentId.split('::').at(-1) ?? studentId) : studentId
+    return state.studentPatches[toStudentPatchKey(offeringId, studentId)]
+      ?? state.studentPatches[toStudentPatchKey(offeringId, normalizedStudentId)]
+      ?? {}
+  }
 
   const getStudentsPatched = (offering: Offering): Student[] => {
     const scheme = getSchemeForOffering(offering)

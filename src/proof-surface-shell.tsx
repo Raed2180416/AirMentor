@@ -16,6 +16,7 @@ type ProofSurfaceHeroProps = {
   description: ReactNode
   icon?: ReactNode
   headerActions?: ReactNode
+  headerActionsLayout?: 'inline' | 'stacked'
   badges?: ReactNode
   notices?: ReactNode
   children?: ReactNode
@@ -109,6 +110,7 @@ export function ProofSurfaceHero({
   description,
   icon,
   headerActions,
+  headerActionsLayout = 'inline',
   badges,
   notices,
   children,
@@ -141,7 +143,7 @@ export function ProofSurfaceHero({
           <div style={{ ...mono, fontSize: 11, color: T.muted, marginTop: 8, lineHeight: 1.8 }}>{description}</div>
         </div>
         {headerActions ? (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginLeft: 'auto' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginLeft: headerActionsLayout === 'stacked' ? 0 : 'auto', flex: headerActionsLayout === 'stacked' ? '1 1 100%' : undefined, justifyContent: 'flex-start' }}>
             {headerActions}
           </div>
         ) : null}

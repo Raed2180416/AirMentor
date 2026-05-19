@@ -67,6 +67,7 @@ import {
   normalizeSchemeState,
   pruneScoreMap,
   seedBlueprintFromPaper,
+  seedTermTestLeafScores,
   toStudentPatchKey,
   useAppSelectors,
   createAppSelectors,
@@ -107,6 +108,7 @@ import {
   withAlpha,
 } from './ui-primitives'
 import { AirMentorApiClient, AirMentorApiError } from './api/client'
+import { humanLabelForActionCode } from './action-code-humaniser'
 import { readActiveDemoWorkspacePointer } from './demo-workspace-pointer'
 import { useApiConnectionTarget } from './api-connection'
 import type {
@@ -1561,11 +1563,53 @@ function OperationalWorkspace({
 
   const roleTasks = useMemo(() => {
     const base = allTasksList.filter(t => t.assignedTo === role)
-    if (role === 'HoD') return base
-    if (role === 'Course Leader') return base.filter(t => supervisedOfferingIds.has(t.offeringId))
+    const activeProofQueueTasks = (facultyProfile?.proofOperations.monitoringQueue ?? [])
+      .filter(item => !item.resolution && item.reassessmentStatus !== 'Resolved')
+      .filter(item => !base.some(task => task.studentId.endsWith(item.studentId) && task.offeringId === item.offeringId && task.sourceRole === 'System'))
+      .map(item => {
+        const riskBand: RiskBand = item.riskBand === 'High' || item.riskBand === 'Medium' || item.riskBand === 'Low' ? item.riskBand : 'Medium'
+        const dueDateISO = item.dueAt?.slice(0, 10)
+        return {
+          id: `proof-monitoring-${item.riskAssessmentId}`,
+          studentId: item.studentId,
+          studentName: item.studentName,
+          studentUsn: item.usn,
+          offeringId: item.offeringId,
+          courseCode: item.courseCode,
+          courseName: item.courseTitle,
+          year: item.sectionCode ? `Section ${item.sectionCode}` : 'Proof scope',
+          riskProb: item.riskProbScaled / 100,
+          riskBand,
+          title: `Proof follow-up: ${humanLabelForActionCode(item.recommendedAction) ?? item.recommendedAction}`,
+          due: dueDateISO ? toDueLabel(dueDateISO, 'This week', proofVirtualDateISO) : 'This week',
+          dueDateISO: dueDateISO ?? undefined,
+          status: item.acknowledgement ? 'In Progress' : 'New',
+          actionHint: item.decisionNote ?? item.drivers[0]?.label ?? 'Review the proof monitoring queue item and confirm the intervention path.',
+          priority: Math.max(1, Math.round(item.riskProbScaled)),
+          createdAt: item.dueAt ? Date.parse(item.dueAt) : Date.now(),
+          updatedAt: item.dueAt ? Date.parse(item.dueAt) : Date.now(),
+          assignedTo: role,
+          taskType: 'Follow-up',
+          sourceRole: 'System',
+          manual: false,
+          transitionHistory: [{
+            id: `transition-proof-monitoring-${item.riskAssessmentId}`,
+            at: item.dueAt ? Date.parse(item.dueAt) : Date.now(),
+            actorRole: 'System',
+            action: 'Queued from proof monitoring',
+            toOwner: role,
+            note: item.decisionNote ?? item.drivers[0]?.label ?? 'Proof monitoring queue item is active.',
+          }],
+        } satisfies SharedTask
+      })
+    if (role === 'HoD') return [...base, ...activeProofQueueTasks]
+    if (role === 'Course Leader') return [...base.filter(t => supervisedOfferingIds.has(t.offeringId)), ...activeProofQueueTasks.filter(t => supervisedOfferingIds.has(t.offeringId))]
     const mentorScopedIds = new Set([...Array.from(supervisedMenteeIds), ...Array.from(supervisedMenteeIds).map(id => `mentee-${id}`)])
-    return base.filter(t => mentorScopedIds.has(t.studentId) || supervisedMenteeUsns.has(t.studentUsn))
-  }, [allTasksList, role, supervisedOfferingIds, supervisedMenteeIds, supervisedMenteeUsns])
+    return [
+      ...base.filter(t => mentorScopedIds.has(t.studentId) || supervisedMenteeUsns.has(t.studentUsn)),
+      ...activeProofQueueTasks.filter(t => mentorScopedIds.has(t.studentId) || supervisedMenteeUsns.has(t.studentUsn)),
+    ]
+  }, [allTasksList, facultyProfile?.proofOperations.monitoringQueue, proofVirtualDateISO, role, supervisedOfferingIds, supervisedMenteeIds, supervisedMenteeUsns])
 
   // Pending action badge count must use the proof-playback simulated date
   // (§B.14 + audit §5.2). Without this, tasks scheduled for simulated-future
@@ -2092,9 +2136,10 @@ function OperationalWorkspace({
       const entries = students.map(student => {
         const patch = getPatch(student.id)
         const patchScores = kind === 'tt1' ? patch.tt1LeafScores : patch.tt2LeafScores
+        const seededScores = seedTermTestLeafScores(kind === 'tt1' ? student.tt1Score : student.tt2Score, kind === 'tt1' ? student.tt1Max : student.tt2Max, leaves)
         const components = leaves.map(leaf => {
           const key = toCellKey(offId, kind, student.id, leaf.id)
-          const score = cellValues[key] ?? patchScores?.[leaf.id]
+          const score = cellValues[key] ?? patchScores?.[leaf.id] ?? seededScores?.[leaf.id]
           if (typeof score !== 'number') return null
           return {
             componentCode: leaf.id,
@@ -2299,7 +2344,10 @@ function OperationalWorkspace({
   const handleResolveTask = useCallback((id: string) => {
     const resolvedAt = Date.now()
     const target = allTasksList.find(task => task.id === id)
-    if (!target) return
+    if (!target) {
+      if (id.startsWith('proof-monitoring-')) setResolvedTasks(prev => ({ ...prev, [id]: resolvedAt }))
+      return
+    }
     const activePlacement = taskPlacements[id]
     setResolvedTasks(prev => ({ ...prev, [id]: resolvedAt }))
     const resolvedTask: SharedTask = {
@@ -2930,6 +2978,8 @@ function OperationalWorkspace({
   const submitUnlockRequest = useCallback((offeringId: string, kind: EntryKind, note: string) => {
     const off = allOfferings.find(o => o.offId === offeringId)
     if (!off) return
+    const anchorStudent = getStudentsPatched(off)[0]
+    const anchorStudentId = anchorStudent?.id.split('::').at(-1) ?? `${offeringId}-${kind}-lock`
     const id = `unlock-${offeringId}-${kind}`
     const requestedAt = Date.now()
     const transition = createTransition({
@@ -2950,6 +3000,7 @@ function OperationalWorkspace({
       const existing = prev.find(task => task.id === id)
       const nextTask: SharedTask = existing ? {
         ...existing,
+        studentId: anchorStudentId,
         updatedAt: requestedAt,
         due: 'Today',
         status: 'New',
@@ -2973,7 +3024,7 @@ function OperationalWorkspace({
         transitionHistory: [...(existing.transitionHistory ?? []), transition],
       } : {
         id,
-        studentId: `${offeringId}-${kind}-lock`,
+        studentId: anchorStudentId,
         studentName: 'Class Data Lock',
         studentUsn: 'N/A',
         offeringId,
@@ -3011,7 +3062,7 @@ function OperationalWorkspace({
       void repositories.tasks.upsertTask(nextTask)
       return existing ? prev.map(task => task.id === id ? nextTask : task) : [nextTask, ...prev]
     })
-  }, [allOfferings, appendLockAudit, currentTeacherId, repositories, role])
+  }, [allOfferings, appendLockAudit, currentTeacherId, getStudentsPatched, repositories, role])
 
   const submitStudentHandoff = useCallback((studentId: string, offeringId: string, mode: 'escalate' | 'mentor', note: string) => {
     const off = allOfferings.find(item => item.offId === offeringId)

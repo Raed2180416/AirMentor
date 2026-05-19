@@ -30,6 +30,7 @@ import {
   getEntryLockMap,
   sanitizeAssessmentComponents,
   seedBlueprintFromPaper,
+  seedTermTestLeafScores,
   sumComponentWeightage,
   useAppSelectors,
 } from '../selectors'
@@ -719,7 +720,8 @@ export function EntryWorkspacePage({
           const hasIncompleteTtLeaves = (kind === 'tt1' || kind === 'tt2') && students.some(student => {
             const exactPatch = getStudentPatch(section.offId, student.id)
             const exactLeafScores = kind === 'tt1' ? exactPatch.tt1LeafScores : exactPatch.tt2LeafScores
-            return leaves.some(leaf => cellValues[toCellKey(section.offId, kind, student.id, leaf.id)] === undefined && exactLeafScores?.[leaf.id] === undefined)
+            const seededScores = seedTermTestLeafScores(kind === 'tt1' ? student.tt1Score : student.tt2Score, kind === 'tt1' ? student.tt1Max : student.tt2Max, leaves)
+            return leaves.some(leaf => cellValues[toCellKey(section.offId, kind, student.id, leaf.id)] === undefined && exactLeafScores?.[leaf.id] === undefined && seededScores?.[leaf.id] === undefined)
           })
 
           return (
@@ -770,6 +772,7 @@ export function EntryWorkspacePage({
                             <TD style={{ ...sora, fontSize: 11, color: T.text }}>{student.name}</TD>
                             {(kind === 'tt1' || kind === 'tt2') && leaves.map(leaf => {
                               const exactLeafScores = kind === 'tt1' ? exactPatch.tt1LeafScores : exactPatch.tt2LeafScores
+                              const seededScores = seedTermTestLeafScores(kind === 'tt1' ? student.tt1Score : student.tt2Score, kind === 'tt1' ? student.tt1Max : student.tt2Max, leaves)
                               return (
                                 <TD key={leaf.id}>
                                   <input
@@ -781,7 +784,7 @@ export function EntryWorkspacePage({
                                     min={0}
                                     max={leaf.maxMarks}
                                     disabled={!sectionAccess.canEdit}
-                                    value={cellValues[toCellKey(section.offId, kind, student.id, leaf.id)] ?? exactLeafScores?.[leaf.id] ?? ''}
+                                    value={cellValues[toCellKey(section.offId, kind, student.id, leaf.id)] ?? exactLeafScores?.[leaf.id] ?? seededScores?.[leaf.id] ?? ''}
                                     onKeyDown={shouldBlockNumericKey}
                                     onChange={event => onCellValueChange(toCellKey(section.offId, kind, student.id, leaf.id), parseInputValue(event.target.value, 0, leaf.maxMarks))}
                                     style={{ width: 58, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 4, color: T.text, ...mono, fontSize: 11, padding: '4px 5px' }}

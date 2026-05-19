@@ -69,7 +69,7 @@ type SourceState = {
 }
 
 type QueueCaseDecisionView = {
-  status: 'opened' | 'open' | 'watch' | 'resolved' | 'idle'
+  status: 'opened' | 'open' | 'watch' | 'deferred' | 'resolved' | 'idle'
   primarySourceKey: string | null
   supportingSourceKeys: string[]
   countsTowardCapacity: boolean
@@ -553,7 +553,9 @@ export function buildPlaybackGovernanceArtifacts(
             ? 'Resolved'
             : decision.status === 'watch'
               ? 'Watching'
-              : 'Open',
+              : decision.status === 'deferred'
+                ? 'Deferred'
+                : 'Open',
           recommendedAction: primaryCandidate.policyComparison.recommendedAction ?? primaryCandidate.inference.recommendedAction,
           dueAt: primaryCandidate.monitoring.reassessmentDueAt,
           countsTowardCapacity: decision.status === 'open' || decision.status === 'opened' ? 1 : 0,
@@ -637,6 +639,9 @@ export function buildPlaybackGovernanceArtifacts(
         } else if (decision && decision.status === 'watch' && (isPrimaryCase || isSupportingCase)) {
           queueState = 'watch'
           reassessmentState = 'Watching'
+        } else if (decision && decision.status === 'deferred' && (isPrimaryCase || isSupportingCase)) {
+          queueState = 'deferred'
+          reassessmentState = 'Deferred'
         } else if (decision && decision.status === 'resolved' && isPrimaryCase) {
           queueState = 'resolved'
           reassessmentState = 'Resolved'
@@ -797,7 +802,9 @@ export function buildPlaybackGovernanceArtifacts(
               ? 'Resolved'
               : queueState === 'watch'
                 ? 'Watching'
-                : 'Open',
+                : queueState === 'deferred'
+                  ? 'Deferred'
+                  : 'Open',
             riskBand: candidate.inference.riskBand,
             riskProbScaled: candidate.riskProbScaled,
             noActionRiskProbScaled: candidate.noActionRiskProbScaled,

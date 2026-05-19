@@ -7,6 +7,7 @@ import {
   evaluationPaths,
   queueRollupSectionKey,
   queueRollupStudentKey,
+  summarizeOperationalUrgencyMetrics,
   type QueueBurdenRunObservation,
 } from '../scripts/evaluate-proof-risk-model.js'
 
@@ -32,6 +33,7 @@ describe('evaluate proof risk model helpers', () => {
         uniqueStudentCount: 120,
         openQueueStudentCount: 36,
         watchStudentCount: 18,
+        deferredWatchStudentCount: 6,
         sectionMaxActionableRate: 0.32,
         actionableQueuePpvProxy: 0.68,
       },
@@ -43,6 +45,7 @@ describe('evaluate proof risk model helpers', () => {
         uniqueStudentCount: 120,
         openQueueStudentCount: 72,
         watchStudentCount: 24,
+        deferredWatchStudentCount: 12,
         sectionMaxActionableRate: 0.41,
         actionableQueuePpvProxy: 0.71,
       },
@@ -54,6 +57,7 @@ describe('evaluate proof risk model helpers', () => {
         uniqueStudentCount: 120,
         openQueueStudentCount: 36,
         watchStudentCount: 12,
+        deferredWatchStudentCount: 0,
         sectionMaxActionableRate: 0.34,
         actionableQueuePpvProxy: 0.66,
       },
@@ -65,6 +69,7 @@ describe('evaluate proof risk model helpers', () => {
         uniqueStudentCount: 120,
         openQueueStudentCount: 42,
         watchStudentCount: 18,
+        deferredWatchStudentCount: 6,
         sectionMaxActionableRate: 0.36,
         actionableQueuePpvProxy: 0.64,
       },
@@ -82,6 +87,8 @@ describe('evaluate proof risk model helpers', () => {
       p95ActionableOpenRate: 0.6,
       maxActionableOpenRate: 0.6,
       meanWatchRate: 0.175,
+      meanDeferredWatchRate: 0.075,
+      p95DeferredWatchRate: 0.1,
       p95SectionMaxActionableRate: 0.41,
       minActionableQueuePpvProxy: 0.68,
       passesActionableRate: false,
@@ -98,6 +105,8 @@ describe('evaluate proof risk model helpers', () => {
       p95ActionableOpenRate: 0.35,
       maxActionableOpenRate: 0.35,
       meanWatchRate: 0.125,
+      meanDeferredWatchRate: 0.025,
+      p95DeferredWatchRate: 0.05,
       p95SectionMaxActionableRate: 0.36,
       minActionableQueuePpvProxy: 0.64,
       passesActionableRate: true,
@@ -206,5 +215,34 @@ describe('evaluate proof risk model helpers', () => {
       if (previousStem === undefined) delete process.env.AIRMENTOR_EVAL_OUTPUT_STEM
       else process.env.AIRMENTOR_EVAL_OUTPUT_STEM = previousStem
     }
+  })
+
+  it('separates operational high urgency from inactive calibrated high threshold', () => {
+    const metrics = summarizeOperationalUrgencyMetrics([
+      { label: 1, prob: 0.66 },
+      { label: 1, prob: 0.7 },
+      { label: 0, prob: 0.63 },
+      { label: 0, prob: 0.39 },
+    ])
+
+    expect(metrics.operationalThresholds).toEqual({ medium: 0.4, high: 0.65 })
+    expect(metrics.calibratedThresholds).toEqual({ medium: 0.4, high: 0.85 })
+    expect(metrics.highActive).toBe(true)
+    expect(metrics.calibratedHighActive).toBe(false)
+    expect(metrics.highThreshold).toMatchObject({
+      flaggedRate: 0.5,
+      precision: 1,
+      recall: 1,
+    })
+    expect(metrics.calibratedHighThreshold).toMatchObject({
+      flaggedRate: 0,
+      precision: 0,
+      recall: 0,
+    })
+    expect(metrics.localCalibrationAtHigh).toMatchObject({
+      center: 0.65,
+      halfWidth: 0.05,
+      support: 3,
+    })
   })
 })

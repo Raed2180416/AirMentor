@@ -73,14 +73,15 @@ describe('HodView', () => {
           studentsCovered: 120,
           highRiskCount: 12,
           mediumRiskCount: 18,
+          deferredQueueCount: 3,
           averageQueueAgeHours: 21.5,
           manualOverrideCount: 1,
           unresolvedAlertCount: 5,
           resolvedAlertCount: 2,
         },
         sectionComparison: [
-          { sectionCode: 'A', studentCount: 60, highRiskCount: 5, mediumRiskCount: 8, averageAttendancePct: 81, openReassessmentCount: 4 },
-          { sectionCode: 'B', studentCount: 60, highRiskCount: 7, mediumRiskCount: 10, averageAttendancePct: 76, openReassessmentCount: 4 },
+          { sectionCode: 'A', studentCount: 60, highRiskCount: 5, mediumRiskCount: 8, averageAttendancePct: 81, openReassessmentCount: 4, deferredQueueCount: 1 },
+          { sectionCode: 'B', studentCount: 60, highRiskCount: 7, mediumRiskCount: 10, averageAttendancePct: 76, openReassessmentCount: 4, deferredQueueCount: 2 },
         ],
         semesterRiskDistribution: [
           { semesterNumber: 1, highPressureCount: 6, reviewCount: 12, stableCount: 102, basis: 'transcript-backlog' },
@@ -177,7 +178,7 @@ describe('HodView', () => {
               sectionCode: 'A',
               riskBand: 'High',
               riskProbScaled: 82,
-              recommendedAction: 'Reassessment',
+              recommendedAction: 'targeted-tutoring',
               observedEvidence: {
                 attendancePct: 68,
                 tt1Pct: 34,
@@ -263,6 +264,8 @@ describe('HodView', () => {
     expect(markup).toContain('Course Hotspots')
     expect(markup).toContain('TT Window')
     expect(markup).toContain('34% / 41%')
+    expect(markup).toContain('Targeted tutoring')
+    expect(markup).not.toContain('targeted-tutoring')
     expect(markup).not.toContain('HoD Proof Boundary')
   })
 
@@ -335,6 +338,7 @@ describe('HodView', () => {
           studentsCovered: 120,
           highRiskCount: 12,
           mediumRiskCount: 18,
+          deferredQueueCount: 0,
           averageQueueAgeHours: 21.5,
           manualOverrideCount: 1,
           unresolvedAlertCount: 5,
@@ -436,6 +440,7 @@ describe('HodView', () => {
           studentsCovered: 120,
           highRiskCount: 12,
           mediumRiskCount: 18,
+          deferredQueueCount: 0,
           averageQueueAgeHours: 21.5,
           manualOverrideCount: 1,
           unresolvedAlertCount: 5,
@@ -539,6 +544,7 @@ describe('HodView', () => {
           studentsCovered: 2,
           highRiskCount: 1,
           mediumRiskCount: 0,
+          deferredQueueCount: 0,
           averageQueueAgeHours: 0,
           manualOverrideCount: 0,
           unresolvedAlertCount: 1,
@@ -683,6 +689,7 @@ describe('HodView', () => {
           studentsCovered: 0,
           highRiskCount: 0,
           mediumRiskCount: 0,
+          deferredQueueCount: 0,
           averageQueueAgeHours: 0,
           manualOverrideCount: 0,
           unresolvedAlertCount: 0,

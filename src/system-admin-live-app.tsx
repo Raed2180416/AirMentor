@@ -6520,11 +6520,11 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
                     Use this workspace for full university setup, registry cleanup, faculty ownership, proof verification, and governed requests. The canonical MNC proof batch stays available as a dedicated preview path, but the rest of admin is no longer forced into that batch.
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <HeroBadge color={T.accent}><Bell size={12} /> Action Queue {actionQueueCount}</HeroBadge>
-                  <HeroBadge color={T.warning}><Clock3 size={12} /> Open Requests {openRequests.length}</HeroBadge>
-                  <HeroBadge color={T.danger}><RefreshCw size={12} /> Hidden Records {hiddenItemCount}</HeroBadge>
-                  <HeroBadge color={remindersSupported ? T.success : T.orange}><CheckCircle2 size={12} /> {remindersSupported ? `Private Reminders ${pendingReminders.length}` : 'Reminder API offline on this backend'}</HeroBadge>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'flex-start', maxWidth: 620 }}>
+                  <HeroBadge color={T.accent} compact><Bell size={11} /> Action Queue {actionQueueCount}</HeroBadge>
+                  <HeroBadge color={T.warning} compact><Clock3 size={11} /> Open Requests {openRequests.length}</HeroBadge>
+                  <HeroBadge color={T.danger} compact><RefreshCw size={11} /> Hidden Records {hiddenItemCount}</HeroBadge>
+                  <HeroBadge color={remindersSupported ? T.success : T.orange} compact><CheckCircle2 size={11} /> {remindersSupported ? `Private Reminders ${pendingReminders.length}` : 'Reminder API offline on this backend'}</HeroBadge>
                 </div>
                 <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
                   <SectionLaunchCard

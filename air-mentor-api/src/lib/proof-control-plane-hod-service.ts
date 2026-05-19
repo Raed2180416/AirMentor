@@ -415,6 +415,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
       const governance = checkpointQueueGovernance(row)
       return row.status === 'Open' && governance.primaryCase && governance.countsTowardCapacity
     })
+    const checkpointDeferredCaseRows = checkpointQueueRows.filter(row => row.status === 'Deferred' && checkpointQueueGovernance(row).primaryCase)
     const scopedStudentIds = new Set(checkpointStudentRows.map(row => row.studentId))
     const latestCheckpointTranscriptByStudent = new Map<string, typeof transcriptRows[number]>()
     transcriptRows
@@ -766,6 +767,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
           studentsCovered: scopedStudentIds.size,
           highRiskCount: studentWatchRows.filter(row => row.currentRiskBand === 'High').length,
           mediumRiskCount: studentWatchRows.filter(row => row.currentRiskBand === 'Medium').length,
+          deferredQueueCount: checkpointDeferredCaseRows.length,
           averageQueueAgeHours: 0,
           manualOverrideCount: 0,
           unresolvedAlertCount: checkpointOpenCaseRows.length,
@@ -782,6 +784,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
             return Number(evidence.attendancePct ?? 0)
           }))),
           openReassessmentCount: checkpointOpenCaseRows.filter(row => row.sectionCode === sectionCode).length,
+          deferredQueueCount: checkpointDeferredCaseRows.filter(row => row.sectionCode === sectionCode).length,
         })),
         semesterRiskDistribution: termRows
           .filter(row => row.batchId === activeBatch.batchId && row.semesterNumber <= checkpoint.semesterNumber)
@@ -1276,6 +1279,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
         mediumRiskCount: sectionStudentRows.filter(row => normalizeFilterValue(row.currentRiskBand) === 'medium').length,
         averageAttendancePct: roundToOne(average(sectionObserved.map(row => Number(parseObservedStateRow(row).attendancePct ?? 0)).filter(Number.isFinite))),
         openReassessmentCount: activeReassessments.filter(row => sectionRiskIds.has(row.riskAssessmentId) && isOpenReassessmentStatus(row.status)).length,
+        deferredQueueCount: sectionStudentRows.filter(row => normalizeFilterValue(row.currentQueueState ?? row.currentReassessmentStatus) === 'deferred').length,
       }
     })
 
@@ -1349,6 +1353,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
         studentsCovered: scopedStudentIds.size,
         highRiskCount: studentWatchRows.filter(row => normalizeFilterValue(row.currentRiskBand) === 'high').length,
         mediumRiskCount: studentWatchRows.filter(row => normalizeFilterValue(row.currentRiskBand) === 'medium').length,
+        deferredQueueCount: studentWatchRows.filter(row => normalizeFilterValue(row.currentQueueState ?? row.currentReassessmentStatus) === 'deferred').length,
         averageQueueAgeHours: roundToOne(average(activeReassessments.filter(row => isOpenReassessmentStatus(row.status)).map(row => hoursBetween(row.createdAt, input.now ?? new Date().toISOString())))),
         manualOverrideCount: activeOverrides.length,
         unresolvedAlertCount: activeAlerts.filter(row => !activeAcknowledgements.some(ack => ack.alertDecisionId === row.alertDecisionId)).length,

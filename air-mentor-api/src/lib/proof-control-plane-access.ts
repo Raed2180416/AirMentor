@@ -23,11 +23,13 @@ export function isFacultyProofStudentVisible(input: {
 export function queueDecisionTypeFromStatus(status: string | null | undefined) {
   if (status === 'Resolved') return 'suppress'
   if (status === 'Watching') return 'watch'
+  if (status === 'Deferred') return 'deferred'
   return 'alert'
 }
 
 export function queueReassessmentStatusFromStatus(status: string | null | undefined) {
   if (status === 'Resolved') return 'Resolved'
   if (status === 'Watching') return 'Watching'
+  if (status === 'Deferred') return 'Deferred'
   return 'Open'
 }

@@ -1,6 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { ApiAdminCalendarMarker } from '../src/api/types'
 import type { Offering } from '../src/data'
 import type {
   AcademicMeeting,
@@ -94,6 +95,26 @@ const timetable: FacultyTimetableTemplate = {
   updatedAt: Date.parse('2026-03-16T09:00:00.000Z'),
 }
 
+function makeMarker(overrides: Partial<ApiAdminCalendarMarker>): ApiAdminCalendarMarker {
+  const markerId = overrides.markerId ?? 'marker-default'
+  return {
+    markerId,
+    facultyId: faculty.facultyId,
+    markerType: 'event',
+    title: markerId,
+    note: null,
+    dateISO: '2026-04-20',
+    endDateISO: null,
+    allDay: true,
+    startMinutes: null,
+    endMinutes: null,
+    color: '#0ea5e9',
+    createdAt: Date.parse('2026-03-16T09:00:00.000Z'),
+    updatedAt: Date.parse('2026-03-16T09:00:00.000Z'),
+    ...overrides,
+  }
+}
+
 describe('CalendarTimetablePage', () => {
   it('anchors the initial calendar selection to the supplied proof date instead of the browser date', () => {
     vi.useFakeTimers()
@@ -130,5 +151,52 @@ describe('CalendarTimetablePage', () => {
     expect(markup).toContain(formatMonthLabel('2026-03-01'))
     expect(markup).not.toContain(formatShortDate('2026-04-23'))
     expect(markup).not.toContain(formatMonthLabel('2026-04-01'))
+  })
+
+  it('does not range-span semester boundary markers across every day in the term', () => {
+    const markup = renderToStaticMarkup(createElement(CalendarTimetablePage, {
+      onBack: () => {},
+      currentTeacher: faculty,
+      activeRole: 'Course Leader',
+      allowedRoles: faculty.allowedRoles,
+      facultyOfferings: [offering],
+      mergedTasks: [],
+      meetings: [] as AcademicMeeting[],
+      resolvedTaskIds: {},
+      timetable,
+      adminMarkers: [
+        makeMarker({
+          markerId: 'semester-range',
+          markerType: 'semester-start',
+          title: 'Semester 6 Window',
+          dateISO: '2026-03-01',
+          endDateISO: '2026-06-30',
+        }),
+        makeMarker({
+          markerId: 'holiday-range',
+          markerType: 'holiday',
+          title: 'Foundation Day Break',
+          dateISO: '2026-04-18',
+          endDateISO: '2026-04-20',
+        }),
+      ],
+      taskPlacements: {},
+      currentDateISO: '2026-04-20',
+      onScheduleTask: () => {},
+      onUpdateMeeting: () => {},
+      onMoveClassBlock: () => {},
+      onResizeClassBlock: () => {},
+      onEditClassTiming: () => {},
+      onCreateExtraClass: () => {},
+      onOpenTaskComposer: () => {},
+      onOpenCourse: () => {},
+      onOpenActionQueue: () => {},
+      onUpdateTimetableBounds: () => {},
+      onDismissTask: () => {},
+      onDismissSeries: () => {},
+    }))
+
+    expect(markup).toContain('Foundation Day Break')
+    expect(markup).not.toContain('Semester 6 Window')
   })
 })

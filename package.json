@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "workspaces": [
     "air-mentor-api"
   ],
@@ -34,7 +37,7 @@
     "e2e:install": "playwright install firefox chromium",
     "test": "vitest run",
     "preview": "vite preview",
-    "playwright:version": "nix develop -c playwright --version",
+    "playwright:version": "playwright --version",
     "playwright:smoke": "bash scripts/playwright-smoke.sh",
     "playwright:firefox:acceptance": "bash scripts/playwright-firefox-acceptance.sh",
     "playwright:admin-live:acceptance": "bash scripts/playwright-admin-live-acceptance.sh",

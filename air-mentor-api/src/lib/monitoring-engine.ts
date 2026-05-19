@@ -40,6 +40,8 @@ export function buildMonitoringDecision(input: MonitoringDecisionInput): Monitor
   const interventionResidual = input.interventionResidual ?? null
   const manualConcernCreated = input.manualConcernCreated === true
   const manualInterventionCount = Math.max(0, input.manualInterventionCount ?? 0) + (manualConcernCreated ? 1 : 0)
+  const manualConcernActive = manualConcernCreated || input.concernFamily === 'manual-teacher-concern'
+  const weakRecoveryAfterSupport = manualInterventionCount > 0 && interventionResidual != null && interventionResidual < -0.03
   const queueOwnerRole: MonitoringDecision['queueOwnerRole'] = input.riskBand === 'High' ? 'Mentor' : 'Course Leader'
   const ownershipChanged = !!input.currentOwnerRole && input.currentOwnerRole !== queueOwnerRole
   if (input.cooldownUntil && input.cooldownUntil > now) {
@@ -87,7 +89,7 @@ export function buildMonitoringDecision(input: MonitoringDecisionInput): Monitor
   if (input.riskBand === 'Medium') {
     const note = input.previousRiskBand === 'High'
       ? 'Risk eased from high to medium; keep the case on watch until another evidence window confirms recovery.'
-      : manualConcernCreated || manualInterventionCount > 0
+      : manualConcernActive || manualInterventionCount > 0
         ? 'Medium-risk evidence plus manual teacher concern or prior interventions require a scheduled watchlist reassessment.'
       : interventionResidual != null && interventionResidual < -0.03
         ? 'Medium-risk evidence and weak recovery after support require a scheduled watchlist reassessment.'
@@ -100,6 +102,30 @@ export function buildMonitoringDecision(input: MonitoringDecisionInput): Monitor
       workflowTaskAction: ownershipChanged
         ? 'reassign'
         : input.previousRiskBand === 'Medium'
+          ? 'monitor'
+          : 'create',
+      ownershipChanged,
+      manualInterventionCount,
+      manualConcernCountsAsIntervention: manualConcernCreated,
+      oversightOwnerRole: 'HoD',
+      concernFamily: input.concernFamily ?? null,
+      offeringId: input.offeringId ?? null,
+      note,
+    }
+  }
+
+  if (manualConcernActive || weakRecoveryAfterSupport) {
+    const note = manualConcernActive
+      ? 'Manual teacher concern requires a scheduled watchlist reassessment even though model risk is below the medium threshold.'
+      : 'Low-risk score is not enough to close the case because recovery after prior support remains weak.'
+    return {
+      decisionType: 'watch',
+      queueOwnerRole,
+      reassessmentDueAt: addDays(now, 7),
+      cooldownUntil: addDays(now, 10),
+      workflowTaskAction: ownershipChanged
+        ? 'reassign'
+        : input.previousRiskBand === 'Low'
           ? 'monitor'
           : 'create',
       ownershipChanged,

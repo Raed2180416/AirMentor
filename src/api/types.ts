@@ -931,6 +931,7 @@ export type ApiSimulationStageCheckpointSummary = {
   lowRiskCount?: number
   openQueueCount?: number
   watchQueueCount?: number
+  deferredQueueCount?: number
   watchStudentCount?: number
   resolvedQueueCount?: number
   noActionHighRiskCount?: number
@@ -983,7 +984,7 @@ export type ApiRiskHeadDisplay = {
   probabilityScaled?: number | null
 }
 
-export type ApiProofQueueState = 'open' | 'opened' | 'watch' | 'resolved'
+export type ApiProofQueueState = 'open' | 'opened' | 'watch' | 'deferred' | 'resolved'
 
 export type ApiProofRecoveryState = 'under_watch' | 'confirmed_improvement'
 
@@ -1671,6 +1672,7 @@ export type ApiAcademicHodProofSummary = {
     studentsCovered: number
     highRiskCount: number
     mediumRiskCount: number
+    deferredQueueCount: number
     averageQueueAgeHours: number
     manualOverrideCount: number
     unresolvedAlertCount: number
@@ -1683,6 +1685,7 @@ export type ApiAcademicHodProofSummary = {
     mediumRiskCount: number
     averageAttendancePct: number
     openReassessmentCount: number
+    deferredQueueCount: number
   }>
   semesterRiskDistribution: Array<{
     semesterNumber: number

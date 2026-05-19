@@ -884,6 +884,9 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       } else if (decision && (decision.status === 'watch' || ((decision.status === 'opened' || decision.status === 'open') && isSupporting))) {
         alertRow.decisionType = 'watch'
         alertOutcomeRow.outcomeStatus = 'Pending'
+      } else if (decision?.status === 'deferred') {
+        alertRow.decisionType = 'deferred'
+        alertOutcomeRow.outcomeStatus = 'Suppressed'
       } else {
         alertRow.decisionType = 'suppress'
         alertOutcomeRow.outcomeStatus = 'Suppressed'

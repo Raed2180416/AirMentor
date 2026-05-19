@@ -7,9 +7,11 @@ import {
   canonicalizeBlueprintStructure,
   createAppSelectors,
   defaultSchemeForOffering,
+  flattenBlueprintLeaves,
   normalizeSchemeState,
   removeBlueprintPart,
   removeBlueprintQuestion,
+  seedTermTestLeafScores,
 } from '../src/selectors'
 
 const cs401a = OFFERINGS.find(offering => offering.code === 'CS401' && offering.section === 'A') ?? OFFERINGS[0]
@@ -131,6 +133,17 @@ describe('selectors', () => {
       { id: 'assignment-a', label: 'Assignment 1', rawMax: 1, weightage: 0 },
     ])
     expect(normalized.status).toBe('Configured')
+  })
+
+  it('seeds TT leaf scores from aggregate backend marks without showing zero-only cells', () => {
+    const blueprint = buildBlueprintFixture()
+    const leaves = flattenBlueprintLeaves(blueprint.nodes)
+    const seededScores = seedTermTestLeafScores(12, 25, leaves)
+
+    expect(seededScores).toBeTruthy()
+    expect(Object.values(seededScores ?? {}).reduce((sum, value) => sum + value, 0)).toBe(12)
+    expect(leaves.every(leaf => (seededScores?.[leaf.id] ?? 0) <= leaf.maxMarks)).toBe(true)
+    expect(seededScores?.['tt1-q1-p1']).toBeGreaterThan(0)
   })
 
   it('keeps sysadmin CE policy context and weighted components in sync', () => {

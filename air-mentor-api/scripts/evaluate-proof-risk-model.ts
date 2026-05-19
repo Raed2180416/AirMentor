@@ -55,6 +55,7 @@ import {
   type ObservableSourceRefs,
   type RiskHeadKey,
 } from '../src/lib/proof-risk-model.js'
+import { PROOF_DEMO_OPERATIONAL_THRESHOLDS } from '../src/lib/proof-demo-operational-band.js'
 import { DEFAULT_POLICY } from '../src/modules/admin-structure.js'
 import { DEFAULT_STAGE_POLICY } from '../src/lib/stage-policy.js'
 import {
@@ -116,6 +117,7 @@ type HeadMetrics = {
   support: number
   mediumThreshold: ThresholdMetrics
   highThreshold: ThresholdMetrics
+  operationalUrgency: OperationalUrgencyMetrics
   budgetMetrics: BudgetMetrics
   localCalibration: LocalCalibrationMetrics
 }
@@ -172,6 +174,24 @@ type ThresholdMetrics = {
   recall: number
 }
 
+type OperationalUrgencyMetrics = {
+  operationalThresholds: typeof PROOF_DEMO_OPERATIONAL_THRESHOLDS
+  calibratedThresholds: typeof PRODUCTION_RISK_THRESHOLDS
+  mediumThreshold: ThresholdMetrics
+  highThreshold: ThresholdMetrics
+  calibratedHighThreshold: ThresholdMetrics
+  highActive: boolean
+  calibratedHighActive: boolean
+  localCalibrationAtHigh: {
+    center: number
+    halfWidth: number
+    localEce: number
+    support: number
+    meanProb: number
+    meanLabel: number
+  }
+}
+
 type ActionRollup = {
   action: string
   cases: number
@@ -224,10 +244,12 @@ type StageRollup = {
   openQueueProjectionCount: number
   openQueueStudentCount: number
   watchStudentCount: number
+  deferredWatchStudentCount: number
   studentCount: number
   highRiskCount: number
   mediumRiskCount: number
   openQueueCount: number
+  deferredQueueCount: number
 }
 
 type QueueStageRunRollupSeed = {
@@ -238,6 +260,7 @@ type QueueStageRunRollupSeed = {
   uniqueStudents: Set<string>
   openQueueStudents: Set<string>
   watchStudents: Set<string>
+  deferredWatchStudents: Set<string>
   actionableNoActionRiskByStudent: Map<string, number>
   sectionStats: Map<string, { uniqueStudents: Set<string>; openQueueStudents: Set<string> }>
 }
@@ -250,6 +273,7 @@ export type QueueBurdenRunObservation = {
   uniqueStudentCount: number
   openQueueStudentCount: number
   watchStudentCount: number
+  deferredWatchStudentCount: number
   sectionMaxActionableRate: number
   actionableQueuePpvProxy: number
 }
@@ -268,6 +292,10 @@ export type QueueBurdenStageSummary = {
   medianWatchRate: number
   p95WatchRate: number
   maxWatchRate: number
+  meanDeferredWatchRate: number
+  medianDeferredWatchRate: number
+  p95DeferredWatchRate: number
+  maxDeferredWatchRate: number
   meanSectionMaxActionableRate: number
   medianSectionMaxActionableRate: number
   p95SectionMaxActionableRate: number
@@ -516,6 +544,11 @@ export function buildQueueBurdenStageSummaries(observations: QueueBurdenRunObser
           ? observation.watchStudentCount / observation.uniqueStudentCount
           : 0
       ))
+      const deferredWatchRates = stageObservations.map(observation => (
+        observation.uniqueStudentCount > 0
+          ? observation.deferredWatchStudentCount / observation.uniqueStudentCount
+          : 0
+      ))
       const sectionMaxRates = stageObservations.map(observation => observation.sectionMaxActionableRate)
       const ppvValues = stageObservations
         .filter(observation => observation.openQueueStudentCount > 0)
@@ -540,6 +573,10 @@ export function buildQueueBurdenStageSummaries(observations: QueueBurdenRunObser
         medianWatchRate: roundToFour(percentile(watchRates, 0.5)),
         p95WatchRate: roundToFour(percentile(watchRates, 0.95)),
         maxWatchRate: roundToFour(Math.max(0, ...watchRates)),
+        meanDeferredWatchRate: roundToFour(average(deferredWatchRates)),
+        medianDeferredWatchRate: roundToFour(percentile(deferredWatchRates, 0.5)),
+        p95DeferredWatchRate: roundToFour(percentile(deferredWatchRates, 0.95)),
+        maxDeferredWatchRate: roundToFour(Math.max(0, ...deferredWatchRates)),
         meanSectionMaxActionableRate: roundToFour(average(sectionMaxRates)),
         medianSectionMaxActionableRate: roundToFour(percentile(sectionMaxRates, 0.5)),
         p95SectionMaxActionableRate: roundToFour(percentile(sectionMaxRates, 0.95)),
@@ -757,6 +794,29 @@ function summarizeThresholdMetrics(rows: ProbabilityRow[], threshold: number): T
   }
 }
 
+export function summarizeOperationalUrgencyMetrics(rows: ProbabilityRow[]): OperationalUrgencyMetrics {
+  const localHigh = localExpectedCalibrationError(rows, PROOF_DEMO_OPERATIONAL_THRESHOLDS.high, 0.05)
+  const highThreshold = summarizeThresholdMetrics(rows, PROOF_DEMO_OPERATIONAL_THRESHOLDS.high)
+  const calibratedHighThreshold = summarizeThresholdMetrics(rows, PRODUCTION_RISK_THRESHOLDS.high)
+  return {
+    operationalThresholds: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
+    calibratedThresholds: PRODUCTION_RISK_THRESHOLDS,
+    mediumThreshold: summarizeThresholdMetrics(rows, PROOF_DEMO_OPERATIONAL_THRESHOLDS.medium),
+    highThreshold,
+    calibratedHighThreshold,
+    highActive: highThreshold.flaggedRate > 0,
+    calibratedHighActive: calibratedHighThreshold.flaggedRate > 0,
+    localCalibrationAtHigh: {
+      center: PROOF_DEMO_OPERATIONAL_THRESHOLDS.high,
+      halfWidth: 0.05,
+      localEce: roundToFour(localHigh.localEce),
+      support: localHigh.support,
+      meanProb: roundToFour(localHigh.meanProb),
+      meanLabel: roundToFour(localHigh.meanLabel),
+    },
+  }
+}
+
 function summarizeMetrics(rows: ProbabilityRow[], budgetRate = 0.20): HeadMetrics {
   const calibration = fitSigmoidCalibration(rows)
   return {
@@ -771,6 +831,7 @@ function summarizeMetrics(rows: ProbabilityRow[], budgetRate = 0.20): HeadMetric
     support: rows.length,
     mediumThreshold: summarizeThresholdMetrics(rows, PRODUCTION_RISK_THRESHOLDS.medium),
     highThreshold: summarizeThresholdMetrics(rows, PRODUCTION_RISK_THRESHOLDS.high),
+    operationalUrgency: summarizeOperationalUrgencyMetrics(rows),
     budgetMetrics: summarizeBudgetMetrics(rows, budgetRate),
     localCalibration: summarizeLocalCalibration(rows),
   }
@@ -1587,6 +1648,7 @@ async function main() {
       highRiskStudents: Set<string>
       openQueueStudents: Set<string>
       watchStudents: Set<string>
+      deferredWatchStudents: Set<string>
       actionableNoActionRiskByStudent: Map<string, number>
       sectionStats: Map<string, {
         uniqueStudents: Set<string>
@@ -2045,6 +2107,7 @@ async function main() {
           highRiskStudents: new Set<string>(),
           openQueueStudents: new Set<string>(),
           watchStudents: new Set<string>(),
+          deferredWatchStudents: new Set<string>(),
           actionableNoActionRiskByStudent: new Map<string, number>(),
           sectionStats: new Map<string, { uniqueStudents: Set<string>; openQueueStudents: Set<string> }>(),
         }
@@ -2059,6 +2122,7 @@ async function main() {
           uniqueStudents: new Set<string>(),
           openQueueStudents: new Set<string>(),
           watchStudents: new Set<string>(),
+          deferredWatchStudents: new Set<string>(),
           actionableNoActionRiskByStudent: new Map<string, number>(),
           sectionStats: new Map<string, { uniqueStudents: Set<string>; openQueueStudents: Set<string> }>(),
         }
@@ -2093,11 +2157,20 @@ async function main() {
           const existingQueueNoActionRisk = queueStageRunRollup.actionableNoActionRiskByStudent.get(queueStudentKey) ?? 0
           queueStageRunRollup.actionableNoActionRiskByStudent.set(queueStudentKey, Math.max(existingQueueNoActionRisk, row.noActionRiskProbScaled))
           stageRollup.watchStudents.delete(row.studentId)
+          stageRollup.deferredWatchStudents.delete(row.studentId)
           queueStageRunRollup.watchStudents.delete(queueStudentKey)
+          queueStageRunRollup.deferredWatchStudents.delete(queueStudentKey)
         } else if (row.queueState === 'watch' && !stageRollup.openQueueStudents.has(row.studentId)) {
           stageRollup.watchStudents.add(row.studentId)
+          stageRollup.deferredWatchStudents.delete(row.studentId)
           if (!queueStageRunRollup.openQueueStudents.has(queueStudentKey)) {
             queueStageRunRollup.watchStudents.add(queueStudentKey)
+            queueStageRunRollup.deferredWatchStudents.delete(queueStudentKey)
+          }
+        } else if (row.queueState === 'deferred' && !stageRollup.openQueueStudents.has(row.studentId) && !stageRollup.watchStudents.has(row.studentId)) {
+          stageRollup.deferredWatchStudents.add(row.studentId)
+          if (!queueStageRunRollup.openQueueStudents.has(queueStudentKey) && !queueStageRunRollup.watchStudents.has(queueStudentKey)) {
+            queueStageRunRollup.deferredWatchStudents.add(queueStudentKey)
           }
         }
         stageRollup.sectionStats.set(row.sectionCode, sectionStats)
@@ -2157,6 +2230,7 @@ async function main() {
           highRiskStudents: new Set<string>(),
           openQueueStudents: new Set<string>(),
           watchStudents: new Set<string>(),
+          deferredWatchStudents: new Set<string>(),
           actionableNoActionRiskByStudent: new Map<string, number>(),
           sectionStats: new Map<string, { uniqueStudents: Set<string>; openQueueStudents: Set<string> }>(),
         }
@@ -2186,6 +2260,9 @@ async function main() {
         const uniqueStudentCount = data.uniqueStudents.size
         const openQueueStudentCount = data.openQueueStudents.size
         const watchStudentCount = [...data.watchStudents].filter(studentId => !data.openQueueStudents.has(studentId)).length
+        const deferredWatchStudentCount = [...data.deferredWatchStudents].filter(studentId => (
+          !data.openQueueStudents.has(studentId) && !data.watchStudents.has(studentId)
+        )).length
         return {
           semesterNumber: data.semesterNumber,
           stageKey: data.stageKey,
@@ -2200,10 +2277,12 @@ async function main() {
           openQueueProjectionCount: data.openQueueProjectionCount,
           openQueueStudentCount,
           watchStudentCount,
+          deferredWatchStudentCount,
           studentCount: data.projectionCount,
           highRiskCount: data.highRiskProjectionCount,
           mediumRiskCount: data.mediumRiskProjectionCount,
           openQueueCount: data.openQueueProjectionCount,
+          deferredQueueCount: deferredWatchStudentCount,
         }
       })
       .sort((left, right) => left.semesterNumber - right.semesterNumber || left.stageOrder - right.stageOrder)
@@ -2395,6 +2474,9 @@ async function main() {
           uniqueStudentCount: seed.uniqueStudents.size,
           openQueueStudentCount: seed.openQueueStudents.size,
           watchStudentCount: [...seed.watchStudents].filter(studentId => !seed.openQueueStudents.has(studentId)).length,
+          deferredWatchStudentCount: [...seed.deferredWatchStudents].filter(studentId => (
+            !seed.openQueueStudents.has(studentId) && !seed.watchStudents.has(studentId)
+          )).length,
           sectionMaxActionableRate,
           actionableQueuePpvProxy,
         }
@@ -2406,6 +2488,7 @@ async function main() {
       const seed = stageRollupSeed.get(stageKey)
       const actionableOpenRate = item.uniqueStudentCount > 0 ? roundToFour(item.openQueueStudentCount / item.uniqueStudentCount) : 0
       const watchRate = item.uniqueStudentCount > 0 ? roundToFour(item.watchStudentCount / item.uniqueStudentCount) : 0
+      const deferredWatchRate = item.uniqueStudentCount > 0 ? roundToFour(item.deferredWatchStudentCount / item.uniqueStudentCount) : 0
       const sectionMaxActionableRate = seed
         ? roundToFour(Math.max(0, ...[...seed.sectionStats.values()].map(section => (
           section.uniqueStudents.size > 0 ? section.openQueueStudents.size / section.uniqueStudents.size : 0
@@ -2424,8 +2507,10 @@ async function main() {
         uniqueStudentCount: item.uniqueStudentCount,
         openQueueStudentCount: item.openQueueStudentCount,
         watchStudentCount: item.watchStudentCount,
+        deferredWatchStudentCount: item.deferredWatchStudentCount,
         actionableOpenRate,
         watchRate,
+        deferredWatchRate,
         actionableQueuePpvProxy,
         threshold: roundToFour(proofQueueActionableRateLimitForStage(item.stageKey)),
         sectionMaxActionableRate,
@@ -2440,6 +2525,7 @@ async function main() {
         actionableRatesWithinLimit: queueBurdenByStage.every(item => item.passesActionableRate),
         sectionToleranceWithinLimit: queueBurdenByStage.every(item => item.passesSectionTolerance),
         watchRatesWithinLimit: queueBurdenByStage.every(item => item.passesWatchRate),
+        deferredRiskTransparencyPresent: queueBurdenByStage.every(item => Number.isFinite(item.meanDeferredWatchRate)),
         actionableQueuePpvProxyWithinLimit: queueBurdenByStage.every(item => item.passesPpvProxy),
       },
     }
@@ -2530,6 +2616,7 @@ async function main() {
       modelHeadMetrics: path.join(metricSidecarDir, metricSidecarFileName('model-head-metrics')),
       budgetMetrics: path.join(metricSidecarDir, metricSidecarFileName('budget-metrics')),
       localCalibration: path.join(metricSidecarDir, metricSidecarFileName('local-calibration')),
+      operationalUrgency: path.join(metricSidecarDir, metricSidecarFileName('operational-urgency')),
       overloadByStage: path.join(metricSidecarDir, metricSidecarFileName('overload-by-stage')),
       overloadBySemester: path.join(metricSidecarDir, metricSidecarFileName('overload-by-semester')),
       overloadByScenarioFamily: path.join(metricSidecarDir, metricSidecarFileName('overload-by-scenario-family')),
@@ -2644,6 +2731,18 @@ async function main() {
       overallCourseVariantSummaryBySemester,
       overallCourseVariantSummaryByScenarioFamily,
       overallCourseStabilityByAdjacentStagePair,
+      operationalUrgencySummary: {
+        overall: overallCourseVariantSummary.current.operationalUrgency,
+        byStage: Object.fromEntries(
+          Object.entries(overallCourseVariantSummaryByStage).map(([stageKey, summary]) => [stageKey, summary.current.operationalUrgency]),
+        ),
+        bySemester: Object.fromEntries(
+          Object.entries(overallCourseVariantSummaryBySemester).map(([semesterKey, summary]) => [semesterKey, summary.current.operationalUrgency]),
+        ),
+        byScenarioFamily: Object.fromEntries(
+          Object.entries(overallCourseVariantSummaryByScenarioFamily).map(([scenarioFamily, summary]) => [scenarioFamily, summary.current.operationalUrgency]),
+        ),
+      },
       runtimeSummary: overallCourseRuntimeSummary,
       modelSummary,
       modelSummaryByStage,
@@ -2718,6 +2817,7 @@ async function main() {
           Object.entries(output.overallCourseVariantSummaryByScenarioFamily).map(([scenarioFamily, summary]) => [scenarioFamily, summary.current.localCalibration]),
         ),
       },
+      operationalUrgency: output.operationalUrgencySummary,
       overloadByStage: Object.fromEntries(
         Object.entries(output.overallCourseVariantSummaryByStage).map(([stageKey, summary]) => [stageKey, summary.current]),
       ),
@@ -2836,6 +2936,37 @@ async function main() {
       '',
       `- Overall-course runtime Brier lift: ${output.overallCourseRuntimeSummary.brierLift}`,
       `- Overall-course runtime AUC lift: ${output.overallCourseRuntimeSummary.aucLift}`,
+      '',
+      '## Operational Urgency Band',
+      '',
+      `- Calibrated probability thresholds: medium=${PRODUCTION_RISK_THRESHOLDS.medium}, high=${PRODUCTION_RISK_THRESHOLDS.high}`,
+      `- Proof operational urgency thresholds: medium=${PROOF_DEMO_OPERATIONAL_THRESHOLDS.medium}, high=${PROOF_DEMO_OPERATIONAL_THRESHOLDS.high}`,
+      `- Operational high active: ${String(output.operationalUrgencySummary.overall.highActive)}`,
+      `- Calibrated high active: ${String(output.operationalUrgencySummary.overall.calibratedHighActive)}`,
+      '',
+      markdownTable(
+        ['Banding', 'Threshold', 'Flagged Rate', 'Precision', 'Recall', 'Local Support', 'Local ECE'],
+        [
+          [
+            'operational-high',
+            output.operationalUrgencySummary.overall.operationalThresholds.high,
+            output.operationalUrgencySummary.overall.highThreshold.flaggedRate,
+            output.operationalUrgencySummary.overall.highThreshold.precision,
+            output.operationalUrgencySummary.overall.highThreshold.recall,
+            output.operationalUrgencySummary.overall.localCalibrationAtHigh.support,
+            output.operationalUrgencySummary.overall.localCalibrationAtHigh.localEce,
+          ],
+          [
+            'calibrated-high',
+            output.operationalUrgencySummary.overall.calibratedThresholds.high,
+            output.operationalUrgencySummary.overall.calibratedHighThreshold.flaggedRate,
+            output.operationalUrgencySummary.overall.calibratedHighThreshold.precision,
+            output.operationalUrgencySummary.overall.calibratedHighThreshold.recall,
+            output.overallCourseVariantSummary.current.localCalibration.localSupportAt085,
+            output.overallCourseVariantSummary.current.localCalibration.localEceAt085,
+          ],
+        ],
+      ),
       '',
       '## Head Metrics',
       '',
@@ -2959,7 +3090,7 @@ async function main() {
       '## Queue Burden',
       '',
       markdownTable(
-        ['Semester', 'Stage', 'Runs', 'Mean Open', 'Median Open', 'P95 Open', 'Max Open', 'Mean Watch', 'P95 Watch', 'P95 Section Max', 'Mean PPV', 'Min PPV', 'Threshold'],
+        ['Semester', 'Stage', 'Runs', 'Mean Open', 'Median Open', 'P95 Open', 'Max Open', 'Mean Watch', 'P95 Watch', 'Mean Deferred', 'P95 Deferred', 'P95 Section Max', 'Mean PPV', 'Min PPV', 'Threshold'],
         queueBurdenSummary.byStage.map(item => [
           item.semesterNumber,
           item.stageKey,
@@ -2970,6 +3101,8 @@ async function main() {
           item.maxActionableOpenRate,
           item.meanWatchRate,
           item.p95WatchRate,
+          item.meanDeferredWatchRate,
+          item.p95DeferredWatchRate,
           item.p95SectionMaxActionableRate,
           item.meanActionableQueuePpvProxy,
           item.minActionableQueuePpvProxy,
@@ -2982,15 +3115,17 @@ async function main() {
       '### Queue Burden Diagnostic Cross-Run Union',
       '',
       markdownTable(
-        ['Semester', 'Stage', 'Unique Students', 'Open Queue Students', 'Watch Students', 'Open Rate', 'Watch Rate', 'PPV Proxy', 'Threshold', 'Section Max Rate'],
+        ['Semester', 'Stage', 'Unique Students', 'Open Queue Students', 'Watch Students', 'Deferred Students', 'Open Rate', 'Watch Rate', 'Deferred Rate', 'PPV Proxy', 'Threshold', 'Section Max Rate'],
         queueBurdenSummary.diagnosticCrossRunUnionByStage.map(item => [
           item.semesterNumber,
           item.stageKey,
           item.uniqueStudentCount,
           item.openQueueStudentCount,
           item.watchStudentCount,
+          item.deferredWatchStudentCount,
           item.actionableOpenRate,
           item.watchRate,
+          item.deferredWatchRate,
           item.actionableQueuePpvProxy,
           item.threshold,
           item.sectionMaxActionableRate,
@@ -3013,7 +3148,7 @@ async function main() {
       '## Stage Rollups',
       '',
       markdownTable(
-        ['Semester', 'Stage', 'Projection Rows', 'Unique Students', 'High Risk Rows', 'High Risk Students', 'Medium Risk Rows', 'Avg Risk', 'Avg Lift', 'Open Queue Rows', 'Open Queue Students', 'Watch Students'],
+        ['Semester', 'Stage', 'Projection Rows', 'Unique Students', 'High Risk Rows', 'High Risk Students', 'Medium Risk Rows', 'Avg Risk', 'Avg Lift', 'Open Queue Rows', 'Open Queue Students', 'Watch Students', 'Deferred Students'],
         stageRollups.map(item => [
           item.semesterNumber,
           item.stageKey,
@@ -3027,6 +3162,7 @@ async function main() {
           item.openQueueProjectionCount,
           item.openQueueStudentCount,
           item.watchStudentCount,
+          item.deferredWatchStudentCount,
         ]),
       ),
       '',

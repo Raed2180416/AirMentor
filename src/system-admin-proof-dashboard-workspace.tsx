@@ -597,6 +597,7 @@ export function SystemAdminProofDashboardWorkspace({
       eyebrow="Simulation Controls"
       title="Simulation Controls"
       description="Import live data, run the simulation, and review results stage by stage using the checkpoint controls below."
+      headerActionsLayout="stacked"
       headerActions={(
         proofSimulationControls()
       )}

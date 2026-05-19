@@ -10,6 +10,7 @@ import type {
   ApiAcademicHodProofStudentWatch,
   ApiAcademicHodProofSummary,
 } from '../api/types'
+import { humanLabelForActionCode } from '../action-code-humaniser'
 import { describeProofProvenance } from '../proof-provenance'
 import { normalizeProofPanelLabel } from '../proof-provenance'
 import { ProofSurfaceHero, ProofSurfaceLauncher, ProofSurfaceTabPanel, ProofSurfaceTabs } from '../proof-surface-shell'
@@ -38,12 +39,13 @@ function sectionColor(_sectionCode: string) {
   return T.muted
 }
 
-type GovernedQueueState = 'open' | 'watching' | 'resolved' | null
+type GovernedQueueState = 'open' | 'watching' | 'deferred' | 'resolved' | null
 
 function resolveGovernedQueueState(status?: string | null): GovernedQueueState {
   const normalized = status?.trim().toLowerCase()
   if (normalized === 'open' || normalized === 'opened') return 'open'
   if (normalized === 'watch' || normalized === 'watching') return 'watching'
+  if (normalized === 'deferred') return 'deferred'
   if (normalized === 'resolved') return 'resolved'
   return null
 }
@@ -51,12 +53,14 @@ function resolveGovernedQueueState(status?: string | null): GovernedQueueState {
 function governedQueueLabel(state: Exclude<GovernedQueueState, null>) {
   if (state === 'open') return 'Action Needed'
   if (state === 'watching') return 'Watching'
+  if (state === 'deferred') return 'Capacity Deferred'
   return 'Resolved'
 }
 
 function governedQueueColor(state: Exclude<GovernedQueueState, null>) {
   if (state === 'open') return T.danger
   if (state === 'watching') return T.warning
+  if (state === 'deferred') return T.accent
   return T.success
 }
 
@@ -316,6 +320,16 @@ export function HodView({
             onClick={() => setActiveTab('reassessments')}
           />
           <MetricCard
+            label="Capacity Deferred"
+            value={String(summary.totals.deferredQueueCount ?? 0)}
+            helper="Risk rows kept visible for HoD/admin pressure tracking after watch capacity is full."
+            onClick={() => {
+              setActiveTab('overview')
+              setShowActionNeededOnly(false)
+              setOverviewRiskFilter('all')
+            }}
+          />
+          <MetricCard
             label="Unresolved Alerts"
             value={String(summary.totals.unresolvedAlertCount)}
             helper="Alert decisions without acknowledgement in the current active run."
@@ -388,7 +402,7 @@ export function HodView({
             />
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
-              <TableCard title="Section Comparison" caption="Observed attendance and open reassessment counts for section A and B.">
+              <TableCard title="Section Comparison" caption="Observed attendance, open reassessments, and deferred risk pressure by section.">
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr>
@@ -398,6 +412,7 @@ export function HodView({
                       <TH>Medium</TH>
                       <TH>Attendance</TH>
                       <TH>Open Reassessments</TH>
+                      <TH>Deferred</TH>
                     </tr>
                   </thead>
                   <tbody>
@@ -409,6 +424,7 @@ export function HodView({
                         <TD>{row.mediumRiskCount}</TD>
                         <TD>{formatPercent(row.averageAttendancePct)}</TD>
                         <TD>{row.openReassessmentCount}</TD>
+                        <TD>{row.deferredQueueCount ?? 0}</TD>
                       </tr>
                     ))}
                   </tbody>
@@ -474,6 +490,7 @@ export function HodView({
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <Chip color={T.accent}>{`${summary.monitoringSummary.acknowledgementCount} acknowledgements`}</Chip>
                   <Chip color={T.warning}>{`${summary.totals.manualOverrideCount} overrides`}</Chip>
+                  <Chip color={T.accent}>{`${summary.totals.deferredQueueCount ?? 0} capacity deferred`}</Chip>
                   <Chip color={T.success}>{`${summary.totals.resolvedAlertCount} resolved alerts`}</Chip>
                 </div>
                 <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.8 }}>
@@ -484,7 +501,7 @@ export function HodView({
 
             <TableCard
               title="Current Watchlist"
-              caption="Priority rows by current risk probability. Action Needed now keys off governed open cases; View All keeps Watching rows visible without treating them as blocking work."
+              caption="Priority rows by current risk probability. Action Needed keys off governed open cases; View All keeps Watching and Capacity Deferred rows visible without treating them as blocking work."
               data-proof-section="hod-overview-students"
             >
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -551,8 +568,11 @@ export function HodView({
                   </thead>
                   <tbody>
                     {overviewStudents.map(row => {
-                    const governedQueueState = resolveGovernedQueueState(row.currentReassessmentStatus)
+                    const governedQueueState = resolveGovernedQueueState(row.currentQueueState ?? row.currentReassessmentStatus)
                     const actionNeeded = governedQueueState === 'open'
+                    const primaryAction = row.courseSnapshots.find(snapshot => snapshot.courseCode === row.primaryCourseCode)?.recommendedAction
+                      ?? row.courseSnapshots[0]?.recommendedAction
+                      ?? null
                     return (
                       <tr key={row.studentId} data-proof-row="hod-student-row" data-proof-student-id={row.studentId}>
                         <TD>
@@ -574,6 +594,7 @@ export function HodView({
                         <TD>{row.electiveFit ? `${row.electiveFit.recommendedCode} · ${row.electiveFit.stream}` : 'Pending'}</TD>
                         <TD>
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            <Chip color={T.accent}>{humanLabelForActionCode(primaryAction) ?? 'No action'}</Chip>
                             {actionNeeded ? (
                               <Btn size="sm" variant="ghost">Acknowledge</Btn>
                             ) : null}
@@ -887,7 +908,7 @@ export function HodView({
                       <TD>{`TT1 ${formatPercent(snapshot.observedEvidence.tt1Pct)} · TT2 ${formatPercent(snapshot.observedEvidence.tt2Pct)} · SEE ${formatPercent(snapshot.observedEvidence.seePct)}`}</TD>
                       <TD>
                         <div style={{ display: 'grid', gap: 4 }}>
-                          <div>{snapshot.recommendedAction}</div>
+                          <div>{humanLabelForActionCode(snapshot.recommendedAction) ?? 'No action'}</div>
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                             {snapshot.riskChangeFromPreviousCheckpointScaled != null ? <Chip color={snapshot.riskChangeFromPreviousCheckpointScaled > 0 ? T.danger : snapshot.riskChangeFromPreviousCheckpointScaled < 0 ? T.success : T.dim}>{`Δ ${snapshot.riskChangeFromPreviousCheckpointScaled > 0 ? '+' : ''}${snapshot.riskChangeFromPreviousCheckpointScaled}`}</Chip> : null}
                             {snapshot.counterfactualLiftScaled != null ? <Chip color={snapshot.counterfactualLiftScaled > 0 ? T.success : snapshot.counterfactualLiftScaled < 0 ? T.warning : T.dim}>{`Counterfactual lift ${snapshot.counterfactualLiftScaled > 0 ? '+' : ''}${snapshot.counterfactualLiftScaled}`}</Chip> : null}

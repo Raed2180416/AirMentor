@@ -300,7 +300,7 @@ export function FacultyProfilePage({
             {(proofModeActive && proofScopedOfferings.length > 0 ? proofScopedOfferings.map(item => ({
               key: item.offeringId || `${item.courseCode}:${item.sectionCode ?? 'NA'}`,
               title: `${item.courseCode} · ${item.courseTitle}`,
-              meta: `Checkpoint-bound · Section ${item.sectionCode ?? 'NA'} · ${item.riskBand} · ${item.riskProbScaled}% · ${item.recommendedAction}`,
+              meta: `Checkpoint-bound · Section ${item.sectionCode ?? 'NA'} · ${item.riskBand} · ${item.riskProbScaled}% · ${humanLabelForActionCode(item.recommendedAction) ?? 'No action'}`,
             })) : profile?.currentOwnedClasses?.length ? profile.currentOwnedClasses.map(item => ({
               key: item.offeringId,
               title: `${item.courseCode} · ${item.title}`,

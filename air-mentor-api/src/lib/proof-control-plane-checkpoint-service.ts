@@ -61,6 +61,7 @@ export function stageSummaryPayload(input: {
     && Boolean(item.detail.primaryCase)
     && Boolean(item.detail.countsTowardCapacity)).length
   const watchQueueCount = primaryQueueDetails.filter(item => item.row.status === 'Watching').length
+  const deferredQueueCount = primaryQueueDetails.filter(item => item.row.status === 'Deferred').length
   const resolvedQueueCount = primaryQueueDetails.filter(item => item.row.status === 'Resolved').length
   const watchStudentCount = new Set(primaryQueueDetails
     .filter(item => item.row.status === 'Watching')
@@ -95,6 +96,7 @@ export function stageSummaryPayload(input: {
     lowRiskCount: studentRiskByStudentId.size - highRiskCount - mediumRiskCount,
     openQueueCount,
     watchQueueCount,
+    deferredQueueCount,
     watchStudentCount,
     resolvedQueueCount,
     noActionHighRiskCount: studentRiskRows.filter(row => row.noActionHighRisk).length,
@@ -110,6 +112,7 @@ export function stageSummaryPayload(input: {
 export function queueStatusPriority(status: string | null | undefined) {
   if (status === 'Open') return 2
   if (status === 'Watching') return 1
+  if (status === 'Deferred') return 0
   if (status === 'Resolved') return 0
   return -1
 }

@@ -16,7 +16,7 @@ export type ProofQueueGovernanceStageKey =
 export type ProofQueueBand = 'High' | 'Medium' | 'Low'
 export type ProofQueueRole = 'Course Leader' | 'Mentor' | 'HoD'
 export type ProofQueueConcernFamily = string
-export type ProofQueueCanonicalStatus = 'opened' | 'open' | 'watch' | 'dismissed' | 'resolved' | 'reopened' | 'idle'
+export type ProofQueueCanonicalStatus = 'opened' | 'open' | 'watch' | 'deferred' | 'dismissed' | 'resolved' | 'reopened' | 'idle'
 export type ProofQueueWorkflowTaskAction = 'create' | 'reassign' | 'monitor' | 'close' | 'none'
 
 export type ProofQueueCandidate = {
@@ -68,7 +68,7 @@ export type ProofQueueCaseDecision = {
   semesterNumber: number
   sectionCode: string
   stageKey: ProofQueueGovernanceStageKey
-  status: 'opened' | 'open' | 'watch' | 'resolved' | 'idle'
+  status: 'opened' | 'open' | 'watch' | 'deferred' | 'resolved' | 'idle'
   canonicalStatus: ProofQueueCanonicalStatus
   primarySourceKey: string | null
   supportingSourceKeys: string[]
@@ -182,6 +182,8 @@ function canonicalStatusPriority(status: ProofQueueCanonicalStatus) {
       return 3
     case 'watch':
       return 2
+    case 'deferred':
+      return 1
     case 'dismissed':
       return 1
     case 'resolved':
@@ -291,13 +293,15 @@ function createCaseDecision(input: {
     ? 'dismissed'
     : input.status === 'watch'
       ? 'watch'
-      : input.status === 'opened'
-        ? (!priorCaseState?.open && (priorCaseState?.canonicalStatus === 'dismissed' || priorCaseState?.canonicalStatus === 'resolved')
-            ? 'reopened'
-            : 'opened')
-        : input.status === 'open'
-          ? 'open'
-          : 'idle'
+      : input.status === 'deferred'
+        ? 'deferred'
+        : input.status === 'opened'
+          ? (!priorCaseState?.open && (priorCaseState?.canonicalStatus === 'dismissed' || priorCaseState?.canonicalStatus === 'resolved')
+              ? 'reopened'
+              : 'opened')
+          : input.status === 'open'
+            ? 'open'
+            : 'idle'
   const ownershipChanged = !!candidate?.assignedRole
     && !!priorCaseState?.assignedRole
     && candidate.assignedRole !== priorCaseState.assignedRole
@@ -305,6 +309,8 @@ function createCaseDecision(input: {
     ? 'close'
     : canonicalStatus === 'watch'
       ? (ownershipChanged ? 'reassign' : 'monitor')
+      : canonicalStatus === 'deferred'
+        ? 'monitor'
       : canonicalStatus === 'opened' || canonicalStatus === 'reopened'
         ? (ownershipChanged ? 'reassign' : 'create')
         : canonicalStatus === 'open'
@@ -435,8 +441,10 @@ export function governProofQueueStage(input: {
   })
 
   const sectionUsageByKey = new Map<string, number>()
+  const watchUsageByKey = new Map<string, number>()
   const facultyUsageByKey = new Map<string, number>()
   const admittedCaseKeys = new Set<string>()
+  const admittedWatchCaseKeys = new Set<string>()
   const decisionsByConcernContextKey = new Map<string, ProofQueueCaseDecision>()
   const decisionContextKeysByLegacyCaseKey = new Map<string, string[]>()
 
@@ -465,11 +473,35 @@ export function governProofQueueStage(input: {
       }))
     })
 
+  Array.from(watchCaseCandidates.values())
+    .filter(candidate => !admittedCaseKeys.has(candidate.caseKey))
+    .sort(compareRankedCases)
+    .forEach(candidate => {
+      const sectionKey = `${candidate.semesterNumber}::${candidate.sectionCode}`
+      const sectionStudentCount = input.sectionStudentCountByKey.get(sectionKey) ?? 0
+      const sectionLimit = Math.floor(sectionStudentCount * PROOF_QUEUE_WATCH_RATE_LIMIT)
+      const currentSectionUsage = watchUsageByKey.get(sectionKey) ?? 0
+      if (currentSectionUsage >= sectionLimit) return
+      admittedWatchCaseKeys.add(candidate.caseKey)
+      watchUsageByKey.set(sectionKey, currentSectionUsage + 1)
+    })
+
   candidateGroups.forEach((group, concernContextKey) => {
     if (admittedCaseKeys.has(concernContextKey)) return
     const priorCaseState = resolvePriorCaseState(priorCaseStateByKey, concernContextKey, group.legacyCaseKey)
     const watchCandidate = watchCaseCandidates.get(concernContextKey) ?? null
     if (watchCandidate) {
+      const watchAdmitted = admittedWatchCaseKeys.has(concernContextKey)
+      if (!watchAdmitted && !priorCaseState?.open) {
+        decisionsByConcernContextKey.set(concernContextKey, createCaseDecision({
+          candidate: watchCandidate,
+          status: 'deferred',
+          priorCaseState,
+          priorityRank: null,
+          governanceReason: 'watch_cap_deferred',
+        }))
+        return
+      }
       const governanceReason = input.stageKey === 'pre-tt1'
         ? 'pre_tt1_watch_only'
         : openCaseCandidates.some(candidate => candidate.caseKey === concernContextKey)
@@ -550,6 +582,7 @@ export function governProofQueueStage(input: {
     decisionsByConcernContextKey,
     decisionContextKeysByLegacyCaseKey,
     sectionUsageByKey,
+    watchUsageByKey,
     facultyUsageByKey,
   }
 }

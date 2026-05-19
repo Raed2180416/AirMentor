@@ -46,7 +46,9 @@ const DRAG_THRESHOLD_PX = 4
 const SNAP_THRESHOLD_MINUTES = 14
 
 function markerSpansDate(marker: ApiAdminCalendarMarker, dateISO: string) {
-  return marker.dateISO <= dateISO && (!marker.endDateISO || marker.endDateISO >= dateISO)
+  const canSpanRange = marker.markerType === 'holiday' || marker.markerType === 'event'
+  if (!canSpanRange || !marker.endDateISO || marker.endDateISO === marker.dateISO) return marker.dateISO === dateISO
+  return marker.dateISO <= dateISO && marker.endDateISO >= dateISO
 }
 
 function describeMarkerType(markerType: ApiAdminCalendarMarker['markerType']) {
