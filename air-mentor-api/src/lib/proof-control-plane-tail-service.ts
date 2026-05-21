@@ -42,6 +42,7 @@ import { PROOF_DEMO_OPERATIONAL_THRESHOLDS } from './proof-demo-operational-band
 import { parseObservedStateRow } from './proof-observed-state.js'
 import {
   type FacultyProofViewerRole,
+  canonicalPublicProofQueueStatus,
   isFacultyProofQueueItemVisible,
   isFacultyProofStudentVisible,
   queueDecisionTypeFromStatus,
@@ -305,6 +306,7 @@ export async function buildFacultyProofView(db: AppDb, input: {
           recommendedAction: row.recommendedAction ?? 'Continue routine monitoring on the current evidence window.',
           drivers: [],
           dueAt: typeof detail.dueAt === 'string' ? detail.dueAt : null,
+          queueState: canonicalPublicProofQueueStatus(row.status),
           reassessmentStatus: queueReassessmentStatusFromStatus(row.status),
           decisionType: queueDecisionTypeFromStatus(row.status),
           decisionNote: typeof detail.note === 'string' ? detail.note : null,
@@ -586,6 +588,7 @@ export async function buildFacultyProofView(db: AppDb, input: {
         recommendedAction: risk.recommendedAction,
         drivers: parseJson(risk.driversJson, [] as unknown[]),
         dueAt: row.dueAt ?? null,
+        queueState: canonicalPublicProofQueueStatus(row.status),
         reassessmentStatus: row.status,
         decisionType: alert?.decisionType ?? null,
         decisionNote: alert?.note ?? null,
@@ -1606,7 +1609,7 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
     queueState: reassessmentMap[0]?.status === 'Open'
       ? 'open'
       : reassessmentMap[0]?.status === 'Watching'
-        ? 'watch'
+        ? 'watching'
         : reassessmentMap[0]?.status === 'Resolved'
           ? 'resolved'
           : null,
@@ -1756,7 +1759,7 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
       resolutionStatus: reassessmentMap[0]?.status === 'Resolved' ? 'Resolved' : null,
       nextDueAt: reassessmentMap[0]?.dueAt ?? null,
       recommendedAction: primaryStageProjection?.recommendedAction ?? null,
-      queueState: primaryStageProjection?.queueState ?? null,
+      queueState: canonicalPublicProofQueueStatus(primaryStageProjection?.queueState ?? null),
       queueCaseId: typeof primaryStageGovernance.queueCaseId === 'string' ? primaryStageGovernance.queueCaseId : null,
       primaryCase: typeof primaryStageGovernance.primaryCase === 'boolean' ? primaryStageGovernance.primaryCase : null,
       countsTowardCapacity: typeof primaryStageGovernance.countsTowardCapacity === 'boolean' ? primaryStageGovernance.countsTowardCapacity : null,

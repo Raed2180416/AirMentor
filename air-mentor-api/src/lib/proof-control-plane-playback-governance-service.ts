@@ -52,6 +52,7 @@ import type {
   PlaybackStageKey,
   StageCourseProjectionSource,
 } from './msruas-proof-control-plane.js'
+import { canonicalPublicProofQueueStatus } from './proof-control-plane-access.js'
 
 type PlaybackStageDef = {
   key: PlaybackStageKey
@@ -690,7 +691,7 @@ export function buildPlaybackGovernanceArtifacts(
             headProbabilities: candidate.inference.headProbabilities,
             crossCourseDrivers: candidate.inference.crossCourseDrivers,
             queueOwnerRole: candidate.monitoring.queueOwnerRole,
-            queueState,
+            queueState: canonicalPublicProofQueueStatus(queueState),
             reassessmentState,
             monitoringDecisionType: candidate.monitoring.decisionType,
             dueAt: candidate.monitoring.reassessmentDueAt,

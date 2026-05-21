@@ -44,7 +44,10 @@ import {
   buildProofCountProvenance,
   buildUnavailableCountProvenance,
 } from './proof-provenance.js'
-import { queueDecisionTypeFromStatus } from './proof-control-plane-access.js'
+import {
+  canonicalPublicProofQueueStatus,
+  queueDecisionTypeFromStatus,
+} from './proof-control-plane-access.js'
 
 type ProofCheckpointSummaryLike = {
   simulationStageCheckpointId: string
@@ -599,7 +602,9 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
           currentSemester: checkpoint.semesterNumber,
           currentRiskBand: primary.riskBand,
           currentRiskProbScaled: primary.riskProbScaled,
-          currentQueueState: typeof currentStatus.queueState === 'string' ? currentStatus.queueState : null,
+          currentQueueState: canonicalPublicProofQueueStatus(
+            typeof currentStatus.queueState === 'string' ? currentStatus.queueState : null,
+          ),
           queueCaseId: typeof governance.queueCaseId === 'string' ? governance.queueCaseId : null,
           countsTowardCapacity: governance.countsTowardCapacity === true,
           governanceReason: typeof governance.governanceReason === 'string' ? governance.governanceReason : null,
@@ -643,9 +648,11 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
               sectionCode: row.sectionCode,
               riskBand: row.riskBand,
               riskProbScaled: row.riskProbScaled,
-              queueState: typeof ((payload.currentStatus ?? {}) as Record<string, unknown>).queueState === 'string'
-                ? String(((payload.currentStatus ?? {}) as Record<string, unknown>).queueState)
-                : null,
+              queueState: canonicalPublicProofQueueStatus(
+                typeof ((payload.currentStatus ?? {}) as Record<string, unknown>).queueState === 'string'
+                  ? String(((payload.currentStatus ?? {}) as Record<string, unknown>).queueState)
+                  : null,
+              ),
               queueCaseId: typeof (((payload.governance ?? {}) as Record<string, unknown>).queueCaseId) === 'string'
                 ? String((((payload.governance ?? {}) as Record<string, unknown>).queueCaseId))
                 : null,
@@ -1122,7 +1129,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
           riskBand: row.riskBand,
           riskProbScaled: row.riskProbScaled,
           queueState: rowReassessment
-            ? (isOpenReassessmentStatus(rowReassessment.status) ? 'open' : normalizeFilterValue(rowReassessment.status) === 'resolved' ? 'resolved' : 'watch')
+            ? (isOpenReassessmentStatus(rowReassessment.status) ? 'open' : normalizeFilterValue(rowReassessment.status) === 'resolved' ? 'resolved' : 'watching')
             : null,
           queueCaseId: typeof rowPayload.queueCaseId === 'string' ? rowPayload.queueCaseId : null,
           primaryCase: typeof rowPayload.primaryCase === 'boolean' ? rowPayload.primaryCase : null,
@@ -1156,7 +1163,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
         currentRiskBand: primaryRisk.riskBand,
         currentRiskProbScaled: primaryRisk.riskProbScaled,
         currentQueueState: primaryReassessment
-          ? (isOpenReassessmentStatus(primaryReassessment.status) ? 'open' : normalizeFilterValue(primaryReassessment.status) === 'resolved' ? 'resolved' : 'watch')
+          ? (isOpenReassessmentStatus(primaryReassessment.status) ? 'open' : normalizeFilterValue(primaryReassessment.status) === 'resolved' ? 'resolved' : 'watching')
           : null,
         currentRecoveryState: proofRecoveryStateFromResolutionRow(primaryResolution),
         queueCaseId: typeof primaryReassessmentPayload.queueCaseId === 'string' ? primaryReassessmentPayload.queueCaseId : null,
