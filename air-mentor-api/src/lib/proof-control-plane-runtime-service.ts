@@ -1,6 +1,7 @@
-import { desc, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray } from 'drizzle-orm'
 import type { AppDb } from '../db/client.js'
 import {
+  academicRuntimeState,
   alertAcknowledgements,
   alertDecisions,
   alertOutcomes,
@@ -15,6 +16,9 @@ import {
   simulationQuestionTemplates,
   simulationResetSnapshots,
   simulationRuns,
+  simulationStageCheckpoints,
+  simulationStageStudentProjections,
+  studentAssessmentScores,
   studentObservedSemesterStates,
   studentQuestionResults,
   teacherAllocations,
@@ -58,6 +62,238 @@ type RuntimeStageDef = {
   label: string
   description: string
   order: number
+}
+
+function pctFromScoredComponents(rows: Array<typeof studentAssessmentScores.$inferSelect>, componentTypes: string[], deps: Pick<ProofControlPlaneRuntimeServiceDeps, 'average'>) {
+  const relevantRows = rows.filter(row => componentTypes.includes(row.componentType))
+  if (relevantRows.length === 0) return null
+  const totalScore = relevantRows.reduce((sum, row) => sum + row.score, 0)
+  const totalMax = relevantRows.reduce((sum, row) => sum + row.maxScore, 0)
+  if (totalMax <= 0) return null
+  return Math.round((totalScore / totalMax) * 10000) / 100
+}
+
+function hasManualAssessmentPatch(patch: Record<string, unknown>) {
+  return patch.tt1LeafScores != null
+    || patch.tt2LeafScores != null
+    || patch.quizScores != null
+    || patch.assignmentScores != null
+    || patch.seeScore != null
+}
+
+function recomputeCePct(payload: Record<string, unknown>, deps: Pick<ProofControlPlaneRuntimeServiceDeps, 'average'>) {
+  const values = [payload.tt1Pct, payload.tt2Pct, payload.quizPct, payload.assignmentPct]
+    .map(value => Number(value))
+    .filter(Number.isFinite)
+  return values.length > 0 ? Math.round(deps.average(values) * 100) / 100 : null
+}
+
+async function syncManualAssessmentScoresIntoObservedStates(
+  db: AppDb,
+  input: {
+    simulationRunId: string
+    policy: ResolvedPolicy
+    now: string
+  },
+  deps: Pick<ProofControlPlaneRuntimeServiceDeps, 'average'>,
+) {
+  const [patchState] = await db.select().from(academicRuntimeState).where(eq(academicRuntimeState.stateKey, 'studentPatches'))
+  const patches = parseJson(patchState?.payloadJson ?? '{}', {} as Record<string, Record<string, unknown>>)
+  const manuallyEditedKeys = new Set(
+    Object.entries(patches)
+      .filter(([, patch]) => patch && typeof patch === 'object' && hasManualAssessmentPatch(patch))
+      .map(([key]) => key),
+  )
+  if (manuallyEditedKeys.size === 0) return manuallyEditedKeys
+
+  const observedRows = await db.select().from(studentObservedSemesterStates).where(eq(studentObservedSemesterStates.simulationRunId, input.simulationRunId))
+  const editableObservedRows = observedRows.filter(row => {
+    const payload = parseObservedStateRow(row)
+    const offeringId = String(payload.offeringId ?? '')
+    return offeringId.length > 0 && manuallyEditedKeys.has(`${offeringId}::${row.studentId}`)
+  })
+  if (editableObservedRows.length === 0) return manuallyEditedKeys
+
+  const assessmentRows = await db.select().from(studentAssessmentScores)
+  const assessmentRowsByStudentOffering = new Map<string, Array<typeof studentAssessmentScores.$inferSelect>>()
+  assessmentRows.forEach(row => {
+    const key = `${row.offeringId}::${row.studentId}`
+    if (!manuallyEditedKeys.has(key)) return
+    assessmentRowsByStudentOffering.set(key, [...(assessmentRowsByStudentOffering.get(key) ?? []), row])
+  })
+
+  for (const row of editableObservedRows) {
+    const payload = parseObservedStateRow(row)
+    const offeringId = String(payload.offeringId ?? '')
+    const key = `${offeringId}::${row.studentId}`
+    const patch = patches[key] ?? {}
+    const assessmentCells = assessmentRowsByStudentOffering.get(key) ?? []
+    const nextPayload: Record<string, unknown> = { ...payload }
+
+    if (patch.tt1LeafScores != null) nextPayload.tt1Pct = pctFromScoredComponents(assessmentCells, ['tt1', 'tt1_leaf'], deps)
+    if (patch.tt2LeafScores != null) nextPayload.tt2Pct = pctFromScoredComponents(assessmentCells, ['tt2', 'tt2_leaf'], deps)
+    if (patch.quizScores != null) nextPayload.quizPct = pctFromScoredComponents(assessmentCells, ['quiz1', 'quiz2'], deps)
+    if (patch.assignmentScores != null) nextPayload.assignmentPct = pctFromScoredComponents(assessmentCells, ['asgn1', 'asgn2'], deps)
+    if (patch.seeScore != null) nextPayload.seePct = pctFromScoredComponents(assessmentCells, ['sem_end', 'see'], deps)
+
+    const cePct = recomputeCePct(nextPayload, deps)
+    if (cePct != null) nextPayload.cePct = cePct
+    if (nextPayload.seePct != null && cePct != null) {
+      const ceMark = (cePct / 100) * input.policy.passRules.ceMaximum
+      const seeMark = (Number(nextPayload.seePct) / 100) * input.policy.passRules.seeMaximum
+      nextPayload.finalMark = Math.round((ceMark + seeMark) * 100) / 100
+    }
+
+    await db.update(studentObservedSemesterStates).set({
+      observedStateJson: JSON.stringify(nextPayload),
+      updatedAt: input.now,
+    }).where(eq(studentObservedSemesterStates.studentObservedSemesterStateId, row.studentObservedSemesterStateId))
+  }
+
+  return manuallyEditedKeys
+}
+
+async function overlayManualAssessmentScoresIntoStageProjections(
+  db: AppDb,
+  input: {
+    simulationRunId: string
+    policy: ResolvedPolicy
+    now: string
+    manuallyEditedKeys: Set<string>
+    activeRiskArtifacts: {
+      production: ProductionRiskModelArtifact | null
+      correlations: CorrelationArtifact | null
+    }
+  },
+  deps: Pick<ProofControlPlaneRuntimeServiceDeps, 'average'>,
+) {
+  if (input.manuallyEditedKeys.size === 0) return
+  const patchRows = await db.select().from(academicRuntimeState).where(eq(academicRuntimeState.stateKey, 'studentPatches'))
+  const patches = parseJson(patchRows[0]?.payloadJson ?? '{}', {} as Record<string, Record<string, unknown>>)
+  const assessmentRows = await db.select().from(studentAssessmentScores)
+  const assessmentRowsByStudentOffering = new Map<string, Array<typeof studentAssessmentScores.$inferSelect>>()
+  assessmentRows.forEach(row => {
+    const key = `${row.offeringId}::${row.studentId}`
+    if (!input.manuallyEditedKeys.has(key)) return
+    assessmentRowsByStudentOffering.set(key, [...(assessmentRowsByStudentOffering.get(key) ?? []), row])
+  })
+  const projectionRows = await db.select().from(simulationStageStudentProjections).where(eq(simulationStageStudentProjections.simulationRunId, input.simulationRunId))
+  for (const projection of projectionRows) {
+    if (!projection.offeringId) continue
+    const key = `${projection.offeringId}::${projection.studentId}`
+    if (!input.manuallyEditedKeys.has(key)) continue
+    const patch = patches[key] ?? {}
+    const assessmentCells = assessmentRowsByStudentOffering.get(key) ?? []
+    const projectionPayload = parseJson(projection.projectionJson, {} as Record<string, unknown>)
+    const currentEvidence = projectionPayload.currentEvidence && typeof projectionPayload.currentEvidence === 'object'
+      ? { ...(projectionPayload.currentEvidence as Record<string, unknown>) }
+      : {}
+
+    if (patch.tt1LeafScores != null) currentEvidence.tt1Pct = pctFromScoredComponents(assessmentCells, ['tt1', 'tt1_leaf'], deps)
+    if (patch.tt2LeafScores != null) currentEvidence.tt2Pct = pctFromScoredComponents(assessmentCells, ['tt2', 'tt2_leaf'], deps)
+    if (patch.quizScores != null) currentEvidence.quizPct = pctFromScoredComponents(assessmentCells, ['quiz1', 'quiz2'], deps)
+    if (patch.assignmentScores != null) currentEvidence.assignmentPct = pctFromScoredComponents(assessmentCells, ['asgn1', 'asgn2'], deps)
+    if (patch.seeScore != null) currentEvidence.seePct = pctFromScoredComponents(assessmentCells, ['sem_end', 'see'], deps)
+
+    const cePct = recomputeCePct(currentEvidence, deps)
+    if (cePct != null) currentEvidence.cePct = cePct
+    if (currentEvidence.seePct != null && cePct != null) {
+      const ceMark = (cePct / 100) * input.policy.passRules.ceMaximum
+      const seeMark = (Number(currentEvidence.seePct) / 100) * input.policy.passRules.seeMaximum
+      currentEvidence.overallPct = Math.round((ceMark + seeMark) * 100) / 100
+    }
+
+    const currentStatus = projectionPayload.currentStatus && typeof projectionPayload.currentStatus === 'object'
+      ? projectionPayload.currentStatus as Record<string, unknown>
+      : {}
+    const featurePayload = buildObservableFeaturePayload({
+      attendancePct: Number(currentEvidence.attendancePct ?? 0),
+      attendanceHistory: [],
+      currentCgpa: Number(currentStatus.currentCgpa ?? 0),
+      backlogCount: Number(currentStatus.backlogCount ?? 0),
+      tt1Pct: Number(currentEvidence.tt1Pct ?? 0),
+      tt2Pct: currentEvidence.tt2Pct == null ? null : Number(currentEvidence.tt2Pct),
+      quizPct: currentEvidence.quizPct == null ? null : Number(currentEvidence.quizPct),
+      assignmentPct: currentEvidence.assignmentPct == null ? null : Number(currentEvidence.assignmentPct),
+      seePct: currentEvidence.seePct == null ? null : Number(currentEvidence.seePct),
+      weakCoCount: Number(currentEvidence.weakCoCount ?? 0),
+      weakQuestionCount: Number(currentEvidence.weakQuestionCount ?? 0),
+      interventionResponseScore: Number(currentEvidence.interventionResponseScore ?? 0),
+      prerequisiteAveragePct: 0,
+      prerequisiteFailureCount: 0,
+      prerequisiteCourseCodes: [],
+      sectionRiskRate: 0,
+      semesterProgress: Number((projectionPayload.stageOrder as number | undefined) ?? 1),
+    })
+    const missingPrerequisiteSummary = buildMissingGraphAwarePrerequisiteSummary({
+      graphAvailable: false,
+      historyAvailable: false,
+    })
+    const sourceRefs: ObservableSourceRefsWithFeatureMetadata = {
+      simulationRunId: input.simulationRunId,
+      simulationStageCheckpointId: projection.simulationStageCheckpointId,
+      studentId: projection.studentId,
+      offeringId: projection.offeringId,
+      semesterNumber: projection.semesterNumber,
+      sectionCode: projection.sectionCode,
+      courseCode: projection.courseCode,
+      courseTitle: projection.courseTitle,
+      courseFamily: 'manual-academic-evidence',
+      coEvidenceMode: 'fallback-simulated',
+      stageKey: typeof projectionPayload.stageKey === 'string' ? projectionPayload.stageKey : null,
+      prerequisiteCourseCodes: [],
+      prerequisiteWeakCourseCodes: [],
+      prerequisiteCompleteness: missingPrerequisiteSummary.featureCompleteness,
+      featureCompleteness: missingPrerequisiteSummary.featureCompleteness,
+      featureProvenance: missingPrerequisiteSummary.featureProvenance,
+      featureConfidenceClass: 'low',
+      weakCourseOutcomeCodes: [],
+      dominantQuestionTopics: [],
+    }
+    const inference = scoreObservableRiskWithModel({
+      attendancePct: Number(currentEvidence.attendancePct ?? 0),
+      currentCgpa: Number(currentStatus.currentCgpa ?? 0),
+      backlogCount: Number(currentStatus.backlogCount ?? 0),
+      tt1Pct: Number(currentEvidence.tt1Pct ?? 0),
+      tt2Pct: currentEvidence.tt2Pct == null ? null : Number(currentEvidence.tt2Pct),
+      quizPct: currentEvidence.quizPct == null ? null : Number(currentEvidence.quizPct),
+      assignmentPct: currentEvidence.assignmentPct == null ? null : Number(currentEvidence.assignmentPct),
+      seePct: currentEvidence.seePct == null ? null : Number(currentEvidence.seePct),
+      weakCoCount: Number(currentEvidence.weakCoCount ?? 0),
+      attendanceHistoryRiskCount: 0,
+      questionWeaknessCount: Number(currentEvidence.weakQuestionCount ?? 0),
+      interventionResponseScore: Number(currentEvidence.interventionResponseScore ?? 0),
+      policy: input.policy,
+      featurePayload,
+      sourceRefs,
+      productionModel: input.activeRiskArtifacts.production,
+      correlations: input.activeRiskArtifacts.correlations,
+      bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
+    })
+    const riskProbScaled = Math.round(inference.riskProb * 100)
+    await db.update(simulationStageStudentProjections).set({
+      riskProbScaled,
+      riskBand: inference.riskBand,
+      recommendedAction: inference.recommendedAction,
+      projectionJson: JSON.stringify({
+        ...projectionPayload,
+        currentEvidence,
+        currentStatus: {
+          ...currentStatus,
+          riskBand: inference.riskBand,
+          riskProbScaled,
+          recommendedAction: inference.recommendedAction,
+          attentionAreas: inference.attentionAreas,
+          observableDrivers: inference.observableDrivers,
+          modelVersion: inference.modelVersion,
+          headProbabilities: inference.headProbabilities,
+        },
+        manualAcademicEvidenceApplied: true,
+        manualAcademicEvidenceAppliedAt: input.now,
+      }),
+      updatedAt: input.now,
+    }).where(eq(simulationStageStudentProjections.simulationStageStudentProjectionId, projection.simulationStageStudentProjectionId))
+  }
 }
 
 export type ProofControlPlaneRuntimeServiceDeps = {
@@ -269,6 +505,11 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
 }, deps: ProofControlPlaneRuntimeServiceDeps) {
   const [run] = await db.select().from(simulationRuns).where(eq(simulationRuns.simulationRunId, input.simulationRunId))
   if (!run) throw new Error('Simulation run not found')
+  const manuallyEditedStudentOfferingKeys = await syncManualAssessmentScoresIntoObservedStates(db, {
+    simulationRunId: input.simulationRunId,
+    policy: input.policy,
+    now: input.now,
+  }, deps)
   const [observedRows, existingRiskRows, existingReassessments, existingResolutions, existingAlerts, existingEvidenceRows, teacherAllocationRows, teacherLoadRows, ownershipRows, mentorRows, grantRows] = await Promise.all([
     db.select().from(studentObservedSemesterStates).where(eq(studentObservedSemesterStates.simulationRunId, input.simulationRunId)),
     db.select().from(riskAssessments).where(eq(riskAssessments.simulationRunId, input.simulationRunId)),
@@ -319,6 +560,7 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       now: input.now,
     })
   }
+  const refreshedObservedRows = await db.select().from(studentObservedSemesterStates).where(eq(studentObservedSemesterStates.simulationRunId, input.simulationRunId))
   const activeRiskArtifacts = await deps.loadActiveProofRiskArtifacts(db, run.batchId)
   const runEvidenceRows = await db.select().from(riskEvidenceSnapshots).where(eq(riskEvidenceSnapshots.simulationRunId, input.simulationRunId))
   const existingRiskById = new Map(existingRiskRows.map(row => [row.riskAssessmentId, row]))
@@ -337,8 +579,8 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
     }
   })
 
-  const currentSemesterNumber = resolveRuntimeCurrentSemesterNumber(run, observedRows)
-  const latestHistoricalByStudent = buildLatestHistoricalPayloadByStudent(observedRows, currentSemesterNumber)
+  const currentSemesterNumber = resolveRuntimeCurrentSemesterNumber(run, refreshedObservedRows)
+  const latestHistoricalByStudent = buildLatestHistoricalPayloadByStudent(refreshedObservedRows, currentSemesterNumber)
 
   const stageCloseEvidenceByStudentOffering = new Map<string, {
     featurePayload: ReturnType<typeof buildObservableFeaturePayload>
@@ -436,7 +678,7 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
     return 'pre-tt1'
   }
 
-  const rawCurrentSemesterRows = observedRows.filter(row => row.semesterNumber === currentSemesterNumber)
+  const rawCurrentSemesterRows = refreshedObservedRows.filter(row => row.semesterNumber === currentSemesterNumber)
   const currentSemesterRowsByStudentOffering = new Map<string, typeof studentObservedSemesterStates.$inferSelect>()
   for (const row of rawCurrentSemesterRows) {
     const payload = parseObservedStateRow(row)
@@ -481,6 +723,20 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
   const reassessmentRows: Array<typeof reassessmentEvents.$inferInsert> = []
   const alertRows: Array<typeof alertDecisions.$inferInsert> = []
   const alertOutcomeRows: Array<typeof alertOutcomes.$inferInsert> = []
+  const manuallyEditedProjectionUpdates: Array<{
+    studentId: string
+    offeringId: string
+    semesterNumber: number
+    stageKey: ProofQueueGovernanceStageKey
+    riskProbScaled: number
+    riskBand: 'High' | 'Medium' | 'Low'
+    noActionRiskProbScaled: number
+    noActionRiskBand: 'High' | 'Medium' | 'Low'
+    recommendedAction: string | null
+    currentEvidence: StageEvidenceSnapshot
+    currentStatus: ReturnType<typeof scoreObservableRiskWithModel>
+    counterfactualLiftScaled: number
+  }> = []
   const runtimeQueueCandidates: Array<{
     caseKey: string
     sourceKey: string
@@ -519,7 +775,10 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
     const historical = latestHistoricalByStudent.get(row.studentId) ?? {}
     const offeringId = String(payload.offeringId ?? '')
     if (!offeringId) continue
-    const stageEvidence = stageCloseEvidenceByStudentOffering.get(`${row.studentId}::${offeringId}`) ?? null
+    const manualEvidenceKey = `${offeringId}::${row.studentId}`
+    const stageEvidence = manuallyEditedStudentOfferingKeys.has(manualEvidenceKey)
+      ? null
+      : (stageCloseEvidenceByStudentOffering.get(`${row.studentId}::${offeringId}`) ?? null)
     const latestResolutionRow = latestResolutionByStudentOffering.get(`${row.studentId}::${offeringId}`) ?? null
     const interventionResponseScore = deps.liveInterventionResponseScoreFromPayload({
       payload,
@@ -713,6 +972,22 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       correlations: activeRiskArtifacts.correlations,
       bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
     })
+    if (manuallyEditedStudentOfferingKeys.has(manualEvidenceKey)) {
+      manuallyEditedProjectionUpdates.push({
+        studentId: row.studentId,
+        offeringId,
+        semesterNumber: currentSemesterNumber,
+        stageKey: liveStageKey,
+        riskProbScaled: Math.round(inference.riskProb * 100),
+        riskBand: inference.riskBand,
+        noActionRiskProbScaled: Math.round(noActionInference.riskProb * 100),
+        noActionRiskBand: noActionInference.riskBand,
+        recommendedAction: inference.recommendedAction,
+        currentEvidence: liveEvidence,
+        currentStatus: inference,
+        counterfactualLiftScaled: Math.round(noActionInference.riskProb * 100) - Math.round(inference.riskProb * 100),
+      })
+    }
     const monitoring = buildMonitoringDecision({
       riskProb: inference.riskProb,
       riskBand: inference.riskBand,
@@ -944,6 +1219,73 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
     policy: input.policy,
     now: input.now,
   })
+  await overlayManualAssessmentScoresIntoStageProjections(db, {
+    simulationRunId: input.simulationRunId,
+    policy: input.policy,
+    now: input.now,
+    manuallyEditedKeys: manuallyEditedStudentOfferingKeys,
+    activeRiskArtifacts,
+  }, deps)
+
+  for (const update of manuallyEditedProjectionUpdates) {
+    const [checkpoint] = await db.select().from(simulationStageCheckpoints).where(and(
+      eq(simulationStageCheckpoints.simulationRunId, input.simulationRunId),
+      eq(simulationStageCheckpoints.semesterNumber, update.semesterNumber),
+      eq(simulationStageCheckpoints.stageKey, update.stageKey),
+    ))
+    if (!checkpoint) continue
+    const [projection] = await db.select().from(simulationStageStudentProjections).where(and(
+      eq(simulationStageStudentProjections.simulationRunId, input.simulationRunId),
+      eq(simulationStageStudentProjections.simulationStageCheckpointId, checkpoint.simulationStageCheckpointId),
+      eq(simulationStageStudentProjections.studentId, update.studentId),
+      eq(simulationStageStudentProjections.offeringId, update.offeringId),
+    ))
+    if (!projection) continue
+    const projectionPayload = parseJson(projection.projectionJson, {} as Record<string, unknown>)
+    const currentStatus = projectionPayload.currentStatus && typeof projectionPayload.currentStatus === 'object'
+      ? projectionPayload.currentStatus as Record<string, unknown>
+      : {}
+    const nextProjectionPayload = {
+      ...projectionPayload,
+      currentEvidence: {
+        ...(projectionPayload.currentEvidence && typeof projectionPayload.currentEvidence === 'object' ? projectionPayload.currentEvidence as Record<string, unknown> : {}),
+        attendancePct: update.currentEvidence.attendancePct,
+        tt1Pct: update.currentEvidence.tt1Pct,
+        tt2Pct: update.currentEvidence.tt2Pct,
+        quizPct: update.currentEvidence.quizPct,
+        assignmentPct: update.currentEvidence.assignmentPct,
+        cePct: update.currentEvidence.cePct,
+        seePct: update.currentEvidence.seePct,
+        overallPct: update.currentEvidence.overallPct,
+        weakCoCount: update.currentEvidence.weakCoCount,
+        weakQuestionCount: update.currentEvidence.weakQuestionCount,
+      },
+      currentStatus: {
+        ...currentStatus,
+        riskBand: update.riskBand,
+        riskProbScaled: update.riskProbScaled,
+        noActionRiskBand: update.noActionRiskBand,
+        noActionRiskProbScaled: update.noActionRiskProbScaled,
+        counterfactualLiftScaled: update.counterfactualLiftScaled,
+        recommendedAction: update.recommendedAction,
+        attentionAreas: update.currentStatus.attentionAreas,
+        observableDrivers: update.currentStatus.observableDrivers,
+        modelVersion: update.currentStatus.modelVersion,
+        headProbabilities: update.currentStatus.headProbabilities,
+      },
+      manualAcademicEvidenceApplied: true,
+      manualAcademicEvidenceAppliedAt: input.now,
+    }
+    await db.update(simulationStageStudentProjections).set({
+      riskProbScaled: update.riskProbScaled,
+      riskBand: update.riskBand,
+      noActionRiskProbScaled: update.noActionRiskProbScaled,
+      noActionRiskBand: update.noActionRiskBand,
+      recommendedAction: update.recommendedAction,
+      projectionJson: JSON.stringify(nextProjectionPayload),
+      updatedAt: input.now,
+    }).where(eq(simulationStageStudentProjections.simulationStageStudentProjectionId, projection.simulationStageStudentProjectionId))
+  }
 
   await deps.emitSimulationAudit(db, {
     simulationRunId: input.simulationRunId,

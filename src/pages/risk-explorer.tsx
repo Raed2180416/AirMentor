@@ -561,6 +561,22 @@ export function RiskExplorerPage({
                       </Card>
                     ))}
                   </Card>
+                  <Card data-proof-section="cgpa-formula-trace" style={{ padding: 16, display: 'grid', gap: 10 }}>
+                    <div style={{ ...sora, fontSize: 16, fontWeight: 700, color: T.text }}>CGPA Formula Trace</div>
+                    {explorer.cgpaTrace.terms.map(item => (
+                      <Card key={`cgpa-${item.semesterNumber}`} style={{ padding: 10, background: T.surface2 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                          <div style={{ ...mono, fontSize: 10, color: T.text }}>Semester {item.semesterNumber}</div>
+                          <div style={{ ...mono, fontSize: 10, color: T.muted }}>
+                            SGPA {item.recomputedSgpa} · CGPA {item.recomputedCgpaAfterSemester} · credits {item.earnedCredits}/{item.registeredCredits}
+                          </div>
+                        </div>
+                        <div style={{ ...mono, fontSize: 10, color: T.dim, marginTop: 6, lineHeight: 1.7 }}>
+                          {item.subjects.slice(0, 4).map(subject => `${subject.courseCode}: CE ${subject.ceMark ?? 'NA'} + SEE ${subject.seeMark ?? 'NA'} = ${subject.totalMark ?? 'NA'} (${subject.gradeLabel}/${subject.gradePoint})`).join(' · ')}
+                        </div>
+                      </Card>
+                    ))}
+                  </Card>
                 </>
               )}
 

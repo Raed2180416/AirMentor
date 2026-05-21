@@ -78,8 +78,17 @@ import {
   latestElectiveRecommendationForSemester,
   toElectiveFitPayload,
 } from './proof-control-plane-elective-service.js'
+import {
+  CE_COMPONENT_WEIGHTS,
+  PASS_RULES,
+  calculateSgpa,
+  computeCeMark,
+  computeCePct,
+  computeSeeMark,
+  evaluateResult,
+} from './grading-formula-config.js'
 
-const STUDENT_AGENT_CARD_VERSION = 1
+const STUDENT_AGENT_CARD_VERSION = 2
 const studentAgentCardBuildInflight = new Map<string, Promise<StudentAgentCardPayload>>()
 
 type ProofCheckpointSummaryLike = {
@@ -781,6 +790,148 @@ function dominantCoEvidenceMode(rows: Array<typeof studentCoStates.$inferSelect>
   })
   return [...counts.entries()]
     .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0]?.[0] ?? 'fallback-simulated'
+}
+
+function finiteNumberOrNull(value: unknown): number | null {
+  const numeric = typeof value === 'number' ? value : typeof value === 'string' && value.trim() !== '' ? Number(value) : NaN
+  return Number.isFinite(numeric) ? numeric : null
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+function pickNumber(payload: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    const value = finiteNumberOrNull(payload[key])
+    if (value != null) return value
+  }
+  return null
+}
+
+function pickString(payload: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    const value = stringOrNull(payload[key])
+    if (value) return value
+  }
+  return null
+}
+
+function buildCgpaTraceSubject(rawSubject: Record<string, unknown>) {
+  const tt1Pct = pickNumber(rawSubject, 'tt1Pct')
+  const tt2Pct = pickNumber(rawSubject, 'tt2Pct')
+  const quizPct = pickNumber(rawSubject, 'quizPct')
+  const assignmentPct = pickNumber(rawSubject, 'assignmentPct')
+  const seePct = pickNumber(rawSubject, 'seePct')
+  const hasCompleteCe = tt1Pct != null && tt2Pct != null && quizPct != null && assignmentPct != null
+  const cePct = hasCompleteCe
+    ? computeCePct({ tt1Pct, tt2Pct, quizPct, assignmentPct })
+    : pickNumber(rawSubject, 'cePct')
+  const ceMark = hasCompleteCe
+    ? computeCeMark({ tt1Pct, tt2Pct, quizPct, assignmentPct })
+    : cePct == null
+      ? null
+      : Math.round((cePct / 100) * 60)
+  const seeMark = seePct == null ? null : computeSeeMark(seePct)
+  const evaluated = ceMark != null && seeMark != null
+    ? evaluateResult({
+      ceMark,
+      seeMark,
+      attendancePercent: pickNumber(rawSubject, 'attendancePct') ?? 0,
+    })
+    : null
+  const storedGradePoint = pickNumber(rawSubject, 'gradePoint')
+  const gradePoint = evaluated?.gradePoint ?? storedGradePoint ?? 0
+  const result = evaluated?.result ?? pickString(rawSubject, 'result') ?? 'Unknown'
+  const credits = pickNumber(rawSubject, 'credits') ?? 0
+
+  return {
+    offeringId: pickString(rawSubject, 'offeringId'),
+    courseCode: pickString(rawSubject, 'courseCode') ?? 'NA',
+    title: pickString(rawSubject, 'title', 'courseTitle') ?? 'Untitled course',
+    credits,
+    attendancePct: pickNumber(rawSubject, 'attendancePct'),
+    tt1Pct,
+    tt2Pct,
+    quizPct,
+    assignmentPct,
+    cePct: cePct == null ? null : Math.round(cePct * 100) / 100,
+    ceMark,
+    seePct,
+    seeMark,
+    totalMark: ceMark != null && seeMark != null ? ceMark + seeMark : null,
+    storedScore: pickNumber(rawSubject, 'score', 'finalMark', 'overallMark'),
+    gradeLabel: evaluated?.gradeLabel ?? pickString(rawSubject, 'gradeLabel') ?? 'F',
+    gradePoint,
+    result,
+    creditContribution: credits * gradePoint,
+  }
+}
+
+function subjectsFromObservedPayload(payload: Record<string, unknown>) {
+  const subjectScores = Array.isArray(payload.subjectScores)
+    ? payload.subjectScores.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object' && !Array.isArray(item))
+    : []
+  if (subjectScores.length > 0) return subjectScores
+  if (typeof payload.courseCode === 'string' || typeof payload.courseTitle === 'string' || typeof payload.offeringId === 'string') {
+    return [payload]
+  }
+  return []
+}
+
+function buildCgpaCalculationTrace(rows: Array<typeof studentObservedSemesterStates.$inferSelect>) {
+  const groupedBySemester = new Map<number, Array<typeof studentObservedSemesterStates.$inferSelect>>()
+  rows.forEach(row => {
+    groupedBySemester.set(row.semesterNumber, [...(groupedBySemester.get(row.semesterNumber) ?? []), row])
+  })
+
+  const cumulativeAttempts: Array<{ credits: number; gradePoint: number; result: string }> = []
+  const terms = [...groupedBySemester.entries()]
+    .sort(([leftSemester], [rightSemester]) => leftSemester - rightSemester)
+    .map(([semesterNumber, semesterRows]) => {
+      const subjectByKey = new Map<string, ReturnType<typeof buildCgpaTraceSubject>>()
+      const orderedRows = semesterRows.slice().sort((left, right) => {
+        const updated = left.updatedAt.localeCompare(right.updatedAt)
+        if (updated !== 0) return updated
+        return left.createdAt.localeCompare(right.createdAt)
+      })
+      for (const row of orderedRows) {
+        const payload = parseObservedStateRow(row)
+        for (const subject of subjectsFromObservedPayload(payload)) {
+          const traced = buildCgpaTraceSubject(subject)
+          const key = traced.offeringId ?? `${traced.courseCode}::${traced.title}`
+          subjectByKey.set(key, traced)
+        }
+      }
+      const subjects = [...subjectByKey.values()].sort((left, right) => left.courseCode.localeCompare(right.courseCode) || left.title.localeCompare(right.title))
+      const attempts = subjects.map(subject => ({
+        credits: subject.credits,
+        gradePoint: subject.gradePoint,
+        result: subject.result,
+      }))
+      const recomputedSgpa = calculateSgpa(attempts)
+      cumulativeAttempts.push(...attempts)
+      const recomputedCgpaAfterSemester = calculateSgpa(cumulativeAttempts)
+      const latestPayload = parseObservedStateRow(orderedRows[orderedRows.length - 1])
+      return {
+        semesterNumber,
+        storedSgpa: pickNumber(latestPayload, 'sgpa'),
+        recomputedSgpa,
+        storedCgpaAfterSemester: pickNumber(latestPayload, 'cgpaAfterSemester', 'cgpa'),
+        recomputedCgpaAfterSemester,
+        registeredCredits: pickNumber(latestPayload, 'registeredCredits') ?? subjects.reduce((sum, subject) => sum + subject.credits, 0),
+        earnedCredits: pickNumber(latestPayload, 'earnedCredits') ?? subjects.filter(subject => subject.result === 'Passed' || subject.gradePoint > 0).reduce((sum, subject) => sum + subject.credits, 0),
+        backlogCount: pickNumber(latestPayload, 'backlogCount') ?? subjects.filter(subject => subject.result === 'Failed' || subject.gradePoint <= 0).length,
+        subjects,
+      }
+    })
+
+  return {
+    formulaSource: 'air-mentor-api/src/lib/grading-formula-config.ts',
+    ceWeights: CE_COMPONENT_WEIGHTS,
+    passRules: PASS_RULES,
+    terms,
+  }
 }
 
 type ProofRiskInferenceContext = {
@@ -1606,13 +1757,7 @@ async function buildStudentAgentCardFresh(db: AppDb, input: {
     resolutionStatus: reassessmentMap[0]?.recoveryState ?? null,
     nextDueAt: reassessmentMap[0]?.dueAt ?? null,
     recommendedAction: primaryRisk?.recommendedAction ?? null,
-    queueState: reassessmentMap[0]?.status === 'Open'
-      ? 'open'
-      : reassessmentMap[0]?.status === 'Watching'
-        ? 'watching'
-        : reassessmentMap[0]?.status === 'Resolved'
-          ? 'resolved'
-          : null,
+    queueState: canonicalPublicProofQueueStatus(reassessmentMap[0]?.status),
     queueCaseId: reassessmentMap[0]?.queueCaseId ?? null,
     primaryCase: reassessmentMap[0]?.primaryCase ?? null,
     countsTowardCapacity: reassessmentMap[0]?.countsTowardCapacity ?? null,
@@ -2216,6 +2361,11 @@ export async function buildStudentRiskExplorer(db: AppDb, input: {
     featureProvenance,
     featureConfidenceClass,
   }
+  const observedRows = await db.select().from(studentObservedSemesterStates).where(and(
+    eq(studentObservedSemesterStates.simulationRunId, input.simulationRunId),
+    eq(studentObservedSemesterStates.studentId, input.studentId),
+  )).orderBy(asc(studentObservedSemesterStates.semesterNumber), asc(studentObservedSemesterStates.createdAt))
+  const cgpaTrace = buildCgpaCalculationTrace(observedRows)
 
   const currentSemesterNumber = card.checkpointContext?.semesterNumber ?? card.student.currentSemester
   const currentSemesterSummary = card.overview.semesterSummaries.find(item => item.semesterNumber === currentSemesterNumber) ?? null
@@ -2286,6 +2436,7 @@ export async function buildStudentRiskExplorer(db: AppDb, input: {
     weakCourseOutcomes: card.topicAndCo.weakCourseOutcomes,
     questionPatterns: card.topicAndCo.questionPatterns,
     semesterSummaries: card.overview.semesterSummaries,
+    cgpaTrace,
     assessmentComponents: card.assessmentEvidence.components,
     counterfactual: card.counterfactual,
     electiveFit: card.summaryRail.electiveFit,

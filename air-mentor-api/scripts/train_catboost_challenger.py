@@ -21,11 +21,13 @@ import sys
 try:
     import numpy as np
     import pandas as pd
-    from catboost import CatBoostClassifier
+    from catboost import CatBoostClassifier, Pool
     from sklearn.metrics import (
         average_precision_score,
         brier_score_loss,
+        confusion_matrix,
         log_loss,
+        precision_recall_fscore_support,
         roc_auc_score,
     )
 except ModuleNotFoundError as exc:
@@ -60,15 +62,79 @@ LABEL_COLS = {
 }
 
 def metrics_for(y_true: np.ndarray, y_prob: np.ndarray) -> dict:
+    y_pred = (y_prob >= 0.5).astype(int)
+    precision, recall, f1, _ = precision_recall_fscore_support(
+        y_true,
+        y_pred,
+        average="binary",
+        zero_division=0,
+    )
+    tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
     if len(set(y_true)) < 2:
-        return {"rocAuc": 0.5, "brier": float(brier_score_loss(y_true, y_prob)),
-                "logLoss": 0.0, "averagePrecision": 0.0}
+        return {
+            "rocAuc": 0.5,
+            "brier": float(brier_score_loss(y_true, y_prob)),
+            "logLoss": 0.0,
+            "averagePrecision": 0.0,
+            "precisionAt50": float(precision),
+            "recallAt50": float(recall),
+            "f1At50": float(f1),
+            "truePositiveAt50": int(tp),
+            "falsePositiveAt50": int(fp),
+            "trueNegativeAt50": int(tn),
+            "falseNegativeAt50": int(fn),
+        }
     return {
         "rocAuc": float(roc_auc_score(y_true, y_prob)),
         "brier": float(brier_score_loss(y_true, y_prob)),
         "logLoss": float(log_loss(y_true, y_prob)),
         "averagePrecision": float(average_precision_score(y_true, y_prob)),
+        "precisionAt50": float(precision),
+        "recallAt50": float(recall),
+        "f1At50": float(f1),
+        "truePositiveAt50": int(tp),
+        "falsePositiveAt50": int(fp),
+        "trueNegativeAt50": int(tn),
+        "falseNegativeAt50": int(fn),
     }
+
+
+def active_region_df(df: pd.DataFrame, head_key: str) -> pd.DataFrame:
+    if len(df) == 0 or "stage_key" not in df.columns:
+        return df
+    active_stages = {
+        "attendanceRisk": {"pre-tt1", "post-tt1", "post-tt2", "post-assignments", "post-see"},
+        "ceRisk": {"post-tt1", "post-tt2", "post-assignments"},
+        "seeRisk": {"post-tt2", "post-assignments", "post-see"},
+        "overallCourseRisk": {"pre-tt1", "post-tt1", "post-tt2", "post-assignments", "post-see"},
+        "downstreamCarryoverRisk": {"post-see"},
+    }.get(head_key)
+    if not active_stages:
+        return df
+    filtered = df[df["stage_key"].isin(active_stages)].copy()
+    return filtered if len(filtered) > 0 else df
+
+
+def monotone_constraints_for(feature_cols: list[str]) -> list[int]:
+    # Feature order is defined by OBSERVABLE_FEATURE_KEYS in proof-risk-model.ts.
+    # Positive risk features should be non-decreasing; protective features should
+    # be non-increasing. Stage and missingness flags are unconstrained.
+    decreasing_risk_indices = {0, 3}
+    increasing_risk_indices = {
+        1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+        15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+        32, 33, 34, 35, 36,
+    }
+    constraints: list[int] = []
+    for column in feature_cols:
+        index = int(column.split("_", 1)[1])
+        if index in decreasing_risk_indices:
+            constraints.append(-1)
+        elif index in increasing_risk_indices:
+            constraints.append(1)
+        else:
+            constraints.append(0)
+    return constraints
 
 
 def train_head(
@@ -95,6 +161,9 @@ def train_head(
     metric_period: int,
 ) -> dict:
     label_col = LABEL_COLS[head_key]
+    df_train = active_region_df(df_train, head_key)
+    df_val = active_region_df(df_val, head_key)
+    df_test = active_region_df(df_test, head_key)
 
     X_train = df_train[feature_cols].values.astype(np.float32)
     y_train = df_train[label_col].values.astype(int)
@@ -156,18 +225,24 @@ def train_head(
         model_kwargs["bootstrap_type"] = bootstrap_type
     if subsample is not None:
         model_kwargs["subsample"] = subsample
+    if os.environ.get("CATBOOST_DISABLE_MONOTONE_CONSTRAINTS", "").lower() not in {"1", "true", "yes"}:
+        model_kwargs["monotone_constraints"] = monotone_constraints_for(feature_cols)
+    model_kwargs["nan_mode"] = "Min"
 
     model = CatBoostClassifier(**model_kwargs)
-    model.fit(X_train, y_train, eval_set=(X_val, y_val))
+    train_pool = Pool(X_train, y_train, feature_names=feature_cols)
+    val_pool = Pool(X_val, y_val, feature_names=feature_cols)
+    test_pool = Pool(X_test, y_test, feature_names=feature_cols)
+    model.fit(train_pool, eval_set=val_pool)
 
-    val_probs = model.predict_proba(X_val)[:, 1]
-    test_probs = model.predict_proba(X_test)[:, 1]
+    val_probs = model.predict_proba(val_pool)[:, 1]
+    test_probs = model.predict_proba(test_pool)[:, 1]
 
     val_metrics = metrics_for(y_val, val_probs)
     test_metrics = metrics_for(y_test, test_probs)
 
-    print(f"[catboost] {head_key}: val  AUC={val_metrics['rocAuc']:.4f} brier={val_metrics['brier']:.4f}")
-    print(f"[catboost] {head_key}: test AUC={test_metrics['rocAuc']:.4f} brier={test_metrics['brier']:.4f}")
+    print(f"[catboost] {head_key}: val  AUC={val_metrics['rocAuc']:.4f} brier={val_metrics['brier']:.4f} recall@0.5={val_metrics['recallAt50']:.4f}")
+    print(f"[catboost] {head_key}: test AUC={test_metrics['rocAuc']:.4f} brier={test_metrics['brier']:.4f} recall@0.5={test_metrics['recallAt50']:.4f}")
 
     out_path = os.path.join(output_dir, f"catboost_{head_key}_v1.json")
     model.save_model(out_path, format="json")
@@ -244,6 +319,28 @@ def main():
             f"train={len(train_run_ids)} runs ({len(df_train)} rows), "
             f"val={len(inner_val_run_ids)} runs ({len(df_val)} rows), "
             f"test={len(test_run_ids)} runs ({len(df_test)} rows)"
+        )
+
+    if "run_id" in df.columns:
+        split_runs = {
+            "train": set(df_train["run_id"].dropna().astype(str)),
+            "validation": set(df_val["run_id"].dropna().astype(str)),
+            "test": set(df_test["run_id"].dropna().astype(str)),
+        }
+        overlaps = {
+            "train_validation": sorted(split_runs["train"] & split_runs["validation"])[:5],
+            "train_test": sorted(split_runs["train"] & split_runs["test"])[:5],
+            "validation_test": sorted(split_runs["validation"] & split_runs["test"])[:5],
+        }
+        leaking = {key: value for key, value in overlaps.items() if value}
+        if leaking:
+            print(f"[catboost] ERROR: run_id leakage across splits: {json.dumps(leaking)}", file=sys.stderr)
+            sys.exit(1)
+        print(
+            "[catboost] split guard: "
+            f"train_runs={len(split_runs['train'])} "
+            f"validation_runs={len(split_runs['validation'])} "
+            f"test_runs={len(split_runs['test'])}"
         )
 
     all_metrics = {}

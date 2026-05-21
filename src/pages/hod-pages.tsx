@@ -39,12 +39,12 @@ function sectionColor(_sectionCode: string) {
   return T.muted
 }
 
-type GovernedQueueState = 'open' | 'watching' | 'deferred' | 'resolved' | null
+type GovernedQueueState = 'open' | 'watch' | 'deferred' | 'resolved' | null
 
 function resolveGovernedQueueState(status?: string | null): GovernedQueueState {
   const normalized = status?.trim().toLowerCase()
   if (normalized === 'open' || normalized === 'opened') return 'open'
-  if (normalized === 'watch' || normalized === 'watching') return 'watching'
+  if (normalized === 'watch' || normalized === 'watching') return 'watch'
   if (normalized === 'deferred') return 'deferred'
   if (normalized === 'resolved') return 'resolved'
   return null
@@ -52,14 +52,14 @@ function resolveGovernedQueueState(status?: string | null): GovernedQueueState {
 
 function governedQueueLabel(state: Exclude<GovernedQueueState, null>) {
   if (state === 'open') return 'Action Needed'
-  if (state === 'watching') return 'Watching'
+  if (state === 'watch') return 'Watching'
   if (state === 'deferred') return 'Capacity Deferred'
   return 'Resolved'
 }
 
 function governedQueueColor(state: Exclude<GovernedQueueState, null>) {
   if (state === 'open') return T.danger
-  if (state === 'watching') return T.warning
+  if (state === 'watch') return T.warning
   if (state === 'deferred') return T.accent
   return T.success
 }
@@ -360,6 +360,51 @@ export function HodView({
             }}
           />
         </div>
+
+        <Card
+          data-proof-section="hod-capacity-summary"
+          style={{
+            padding: 16,
+            display: 'grid',
+            gap: 12,
+            background: `linear-gradient(135deg, ${T.surface} 0%, ${T.surface2} 100%)`,
+            borderLeft: `4px solid ${T.accent}`,
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+            <div>
+              <div style={{ ...sora, fontSize: 14, fontWeight: 700, color: T.text }}>Capacity Governance Summary</div>
+              <div style={{ ...mono, fontSize: 10, color: T.muted, marginTop: 4 }}>
+                Risk-flagged students vs. active queue capacity across all sections
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {(() => {
+                const flaggedHigh = summary.totals.highRiskCount
+                const flaggedMedium = summary.totals.mediumRiskCount
+                const deferred = summary.totals.deferredQueueCount ?? 0
+                const activeReassessments = summary.monitoringSummary.activeReassessmentCount
+                const capacityLimit = 60
+                const utilizationPct = Math.round((activeReassessments / capacityLimit) * 100)
+                return (
+                  <>
+                    <Chip color={T.danger}>{`${flaggedHigh} flagged High`}</Chip>
+                    <Chip color={T.warning}>{`${flaggedMedium} flagged Medium`}</Chip>
+                    <Chip color={T.accent}>{`${activeReassessments} active (capacity: ${capacityLimit})`}</Chip>
+                    <Chip color={T.accent}>{`${deferred} deferred`}</Chip>
+                    <Chip color={utilizationPct > 80 ? T.danger : utilizationPct > 50 ? T.warning : T.success}>
+                      {`${utilizationPct}% utilized`}
+                    </Chip>
+                  </>
+                )
+              })()}
+            </div>
+          </div>
+          <div style={{ ...mono, fontSize: 10, color: T.muted, lineHeight: 1.6 }}>
+            <strong>Policy:</strong> Queue admissions are risk-score sorted. High-risk students receive priority.
+            When capacity is exceeded, lower-risk cases are deferred (remain visible for tracking without creating teacher workload).
+          </div>
+        </Card>
 
         <ProofSurfaceTabs
           controlId="hod-proof-controls"
@@ -820,7 +865,7 @@ export function HodView({
               const governedQueueState = resolveGovernedQueueState(selectedStudent.currentReassessmentStatus)
               return governedQueueState ? (
                 <InfoBanner
-                  tone={governedQueueState === 'open' ? 'error' : governedQueueState === 'watching' ? 'neutral' : 'success'}
+                  tone={governedQueueState === 'open' ? 'error' : governedQueueState === 'watch' ? 'neutral' : 'success'}
                   message={`${governedQueueLabel(governedQueueState)}${selectedStudent.nextDueAt ? ` · due ${formatDateTime(selectedStudent.nextDueAt)}` : ''}. Watching remains visible here but does not count as a blocking open case.`}
                 />
               ) : null

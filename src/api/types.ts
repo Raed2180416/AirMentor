@@ -1547,6 +1547,51 @@ export type ApiStudentRiskExplorer = {
   weakCourseOutcomes: ApiStudentAgentCard['topicAndCo']['weakCourseOutcomes']
   questionPatterns: ApiStudentAgentCard['topicAndCo']['questionPatterns']
   semesterSummaries: ApiStudentAgentCard['overview']['semesterSummaries']
+  cgpaTrace: {
+    formulaSource: string
+    ceWeights: {
+      tt1: number
+      tt2: number
+      quiz: number
+      assignment: number
+    }
+    passRules: {
+      ceMinimum: number
+      seeMinimum: number
+      overallMinimum: number
+    }
+    terms: Array<{
+      semesterNumber: number
+      storedSgpa: number | null
+      recomputedSgpa: number
+      storedCgpaAfterSemester: number | null
+      recomputedCgpaAfterSemester: number
+      registeredCredits: number
+      earnedCredits: number
+      backlogCount: number
+      subjects: Array<{
+        offeringId: string | null
+        courseCode: string
+        title: string
+        credits: number
+        attendancePct: number | null
+        tt1Pct: number | null
+        tt2Pct: number | null
+        quizPct: number | null
+        assignmentPct: number | null
+        cePct: number | null
+        ceMark: number | null
+        seePct: number | null
+        seeMark: number | null
+        totalMark: number | null
+        storedScore: number | null
+        gradeLabel: string
+        gradePoint: number
+        result: string
+        creditContribution: number
+      }>
+    }>
+  }
   assessmentComponents: ApiStudentAgentCard['assessmentEvidence']['components']
   counterfactual: ApiStudentAgentCard['counterfactual']
   electiveFit: ApiStudentAgentCard['summaryRail']['electiveFit']

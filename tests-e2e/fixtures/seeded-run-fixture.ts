@@ -5,7 +5,7 @@ import { apiPath } from '../helpers/api-url'
 const PROOF_BATCH_ID = 'batch_branch_mnc_btech_2023'
 const PROOF_CURRICULUM_IMPORT_ID = 'curriculum_import_mnc_2023_first6_v1'
 const DETERMINISTIC_SEED_NOW = '2026-03-16T00:00:00Z'
-const DETERMINISTIC_RUN_SEED = 20260316
+const DETERMINISTIC_RUN_SEED = 20260320
 const RUN_READY_TIMEOUT_MS = 240_000
 const RUN_POLL_INTERVAL_MS = 2_500
 

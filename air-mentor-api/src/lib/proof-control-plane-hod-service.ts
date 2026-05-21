@@ -627,8 +627,8 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
             quizPct: nullablePct(primaryEvidence.quizPct),
             assignmentPct: nullablePct(primaryEvidence.assignmentPct),
             seePct: nullablePct(primaryEvidence.seePct),
-            cgpa: 0,
-            backlogCount: 0,
+            cgpa: Number(currentStatus.currentCgpa ?? 0),
+            backlogCount: Number(currentStatus.backlogCount ?? 0),
             weakCoCount: Number(primaryEvidence.weakCoCount ?? 0),
             weakQuestionCount: Number(primaryEvidence.weakQuestionCount ?? 0),
             coEvidenceMode: typeof primaryEvidence.coEvidenceMode === 'string' ? primaryEvidence.coEvidenceMode : null,
@@ -640,6 +640,7 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
           courseSnapshots: rowsForStudent.map(row => {
             const payload = parseJson(row.projectionJson, {} as Record<string, unknown>)
             const evidence = (payload.currentEvidence ?? {}) as Record<string, unknown>
+            const status = (payload.currentStatus ?? {}) as Record<string, unknown>
             return {
               riskAssessmentId: `checkpoint:${checkpoint.simulationStageCheckpointId}:${row.studentId}:${row.courseCode}`,
               offeringId: row.offeringId ?? `${checkpoint.simulationStageCheckpointId}:${row.courseCode}`,
@@ -681,15 +682,14 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
                 quizPct: nullablePct(evidence.quizPct),
                 assignmentPct: nullablePct(evidence.assignmentPct),
                 seePct: nullablePct(evidence.seePct),
-                cgpa: 0,
-                backlogCount: 0,
+                cgpa: Number(status.currentCgpa ?? 0),
+                backlogCount: Number(status.backlogCount ?? 0),
                 weakCoCount: Number(evidence.weakCoCount ?? 0),
                 weakQuestionCount: Number(evidence.weakQuestionCount ?? 0),
                 coEvidenceMode: typeof evidence.coEvidenceMode === 'string' ? evidence.coEvidenceMode : null,
                 interventionRecoveryStatus: typeof evidence.interventionRecoveryStatus === 'string' ? evidence.interventionRecoveryStatus : null,
               },
               drivers: (() => {
-                const status = (payload.currentStatus ?? {}) as Record<string, unknown>
                 const list = Array.isArray(status.observableDrivers) ? status.observableDrivers : []
                 return list.slice(0, 5)
               })(),
