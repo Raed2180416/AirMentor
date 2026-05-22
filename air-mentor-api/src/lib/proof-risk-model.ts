@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { inferObservableDrivers, inferObservableRisk, type ObservableInferenceInput, type ObservableInferenceOutput } from './inference-engine.js'
+import { inferObservableDrivers, inferObservableRisk, type ObservableDriver, type ObservableInferenceInput, type ObservableInferenceOutput } from './inference-engine.js'
 import { parseJson } from './json.js'
 import type {
   FeatureConfidenceClass,
@@ -15,7 +15,7 @@ export const RISK_CALIBRATION_VERSION = 'post-hoc-calibration-v2'
 export const PROOF_CORPUS_MANIFEST_VERSION = 'proof-corpus-v1'
 export const PRODUCTION_RISK_THRESHOLDS = {
   medium: 0.4,
-  high: 0.85,
+  high: 0.65,
 } as const
 
 export const OBSERVABLE_FEATURE_KEYS = [
@@ -1697,6 +1697,64 @@ function sampleTrainingIndices(dataset: CompactRiskDataset, headKey: RiskHeadKey
     .sort((left, right) => compareStableOrder(dataset, left, right))
 }
 
+/**
+ * Semantic feature group classification for grouped regularization.
+ *
+ * Research basis: educational data mining best practice (EDM 2025) recommends
+ * differential regularization by feature role to prevent structural/contextual
+ * features (semester number, stage indicators) from dominating over actual
+ * academic evidence (marks, attendance, quiz scores). This is equivalent to
+ * the "group Lasso" / "hierarchical shrinkage" approach but applied within a
+ * standard L2 framework for simplicity and interpretability.
+ *
+ * Groups:
+ *   evidence     — direct academic signals (marks, attendance, prerequisite performance)
+ *   structural   — contextual/temporal features that should inform but not dominate
+ *   interaction  — product features already composed from evidence × structural
+ *   missingness  — binary null-vs-zero disambiguation flags
+ *
+ * The classification is name-based so new features are automatically assigned
+ * to the right group when added to OBSERVABLE_FEATURE_KEYS.
+ */
+type FeatureRegularizationGroup = 'evidence' | 'structural' | 'interaction' | 'missingness'
+
+const FEATURE_GROUP_L2_MULTIPLIERS: Record<FeatureRegularizationGroup, number> = {
+  evidence: 1,        // base penalty — let the model learn freely from real signals
+  structural: 15,     // heavy shrinkage — prevents semester/stage from hijacking the logit
+  interaction: 3,     // moderate — these are products of already-penalized base features
+  missingness: 6,     // moderate-heavy — prevent indicator leakage in sparse stages
+}
+
+function classifyFeatureGroup(featureKey: string): FeatureRegularizationGroup {
+  // Missingness: binary null-vs-zero flags (check first — unambiguous suffix)
+  if (featureKey.endsWith('MissingScaled')) return 'missingness'
+
+  // Interaction: compound/interaction features (check before structural,
+  // because stagePostTt2TtCompoundInteractionScaled starts with 'stagePost'
+  // but is semantically an interaction feature)
+  if (
+    featureKey.includes('Compound')
+    || featureKey.includes('Interaction')
+  ) return 'interaction'
+
+  // Structural: temporal progression, stage indicators, section pressure
+  if (
+    featureKey === 'semesterProgressScaled'
+    || featureKey === 'sectionPressureScaled'
+    || featureKey.startsWith('stagePre')
+    || featureKey.startsWith('stagePost')
+  ) return 'structural'
+
+  // Everything else is direct academic evidence
+  return 'evidence'
+}
+
+// Pre-compute the per-feature L2 multiplier array at module load time.
+// This is stable because OBSERVABLE_FEATURE_KEYS is a const tuple.
+const FEATURE_L2_MULTIPLIERS: readonly number[] = OBSERVABLE_FEATURE_KEYS.map(
+  key => FEATURE_GROUP_L2_MULTIPLIERS[classifyFeatureGroup(key)],
+)
+
 function trainLogisticBaseCompact(dataset: CompactRiskDataset, rowIndices: number[], headKey: RiskHeadKey) {
   const positives = rowIndices.reduce((count, rowIndex) => count + labelAt(dataset, rowIndex, headKey), 0)
   const negatives = Math.max(1, rowIndices.length - positives)
@@ -1709,7 +1767,7 @@ function trainLogisticBaseCompact(dataset: CompactRiskDataset, rowIndices: numbe
     0.99,
   )
   let intercept = Math.log(baseRate / (1 - baseRate))
-  const l2 = 0.015
+  const l2Base = 0.015
 
   for (let iteration = 0; iteration < 160; iteration += 1) {
     const gradient = Array.from({ length: FEATURE_COUNT }, () => 0)
@@ -1732,7 +1790,10 @@ function trainLogisticBaseCompact(dataset: CompactRiskDataset, rowIndices: numbe
     const learningRate = 0.22 / (1 + (iteration / 70))
     intercept -= learningRate * (interceptGradient / Math.max(1, rowIndices.length))
     for (let featureIndex = 0; featureIndex < FEATURE_COUNT; featureIndex += 1) {
-      const reg = l2 * weights[featureIndex]!
+      // Grouped regularization: each feature group gets a calibrated L2 penalty
+      // so structural features are shrunk 15× harder than evidence features.
+      const featureL2 = l2Base * FEATURE_L2_MULTIPLIERS[featureIndex]!
+      const reg = featureL2 * weights[featureIndex]!
       weights[featureIndex]! -= learningRate * ((gradient[featureIndex]! / Math.max(1, rowIndices.length)) + reg)
     }
   }
@@ -2153,6 +2214,128 @@ function crossCourseDriversFromCorrelations(correlations: CorrelationArtifact | 
     .map(edge => `${edge.sourceCourseCode} weakness historically lifts ${refs.courseCode} adverse outcomes by ${roundToTwo(edge.oddsLift * 100)} scaled points in the current proof corpus.`)
 }
 
+
+
+function getIdealBaselineForFeature(featureKey: ObservableFeatureKey): number {
+  if (featureKey === 'attendancePctScaled') return 1.0
+  if (featureKey === 'attendanceTrendScaled') return 1.0
+  if (featureKey === 'currentCgpaScaled') return 1.0
+  if (featureKey === 'courseworkTtMismatchScaled') return 0.5 // 0.5 is neutral 0-gap
+  return 0.0 // for risk/pressure features, ideal is 0.0
+}
+
+function mapFeatureKeyToUiDriver(featureKey: ObservableFeatureKey): ObservableDriver['feature'] | null {
+  if (featureKey === 'tt1RiskScaled') return 'tt1'
+  if (featureKey === 'tt2RiskScaled') return 'tt2'
+  if (featureKey === 'seeRiskScaled') return 'see'
+  if (featureKey === 'attendancePctScaled' || featureKey === 'attendanceTrendScaled') return 'attendance'
+  if (featureKey === 'attendanceHistoryRiskScaled') return 'attendance-history'
+  if (featureKey === 'currentCgpaScaled') return 'cgpa'
+  if (featureKey === 'backlogPressureScaled') return 'backlog'
+  if (featureKey === 'quizRiskScaled') return 'quiz'
+  if (featureKey === 'assignmentRiskScaled') return 'assignment'
+  if (featureKey === 'weakCoPressureScaled') return 'co'
+  if (featureKey === 'weakQuestionPressureScaled') return 'question-pattern'
+  if (featureKey === 'interventionResidualRiskScaled') return 'intervention-response'
+  return null
+}
+
+function formatShapDriverLabel(featureKey: ObservableFeatureKey, val: number, shap: number, payload: ObservableFeaturePayload): string {
+  const impactText = shap > 0.4 ? 'significantly increases' : 'increases'
+  if (featureKey === 'tt1RiskScaled') return `TT1 performance (${payload.tt1Pct ?? 0}%) ${impactText} overall risk model assessment`
+  if (featureKey === 'tt2RiskScaled') return `TT2 performance (${payload.tt2Pct ?? 0}%) ${impactText} overall risk model assessment`
+  if (featureKey === 'seeRiskScaled') return `SEE performance (${payload.seePct ?? 0}%) ${impactText} overall risk model assessment`
+  if (featureKey === 'attendancePctScaled') return `Attendance level (${payload.attendancePct ?? 0}%) ${impactText} risk probability`
+  if (featureKey === 'currentCgpaScaled') return `Current CGPA (${payload.currentCgpa ?? 0}) ${impactText} risk probability`
+  if (featureKey === 'backlogPressureScaled') return `Active backlog count (${payload.backlogCount}) ${impactText} risk probability`
+  if (featureKey === 'quizRiskScaled') return `Quiz evidence (${payload.quizPct ?? 0}%) ${impactText} risk probability`
+  if (featureKey === 'assignmentRiskScaled') return `Assignment evidence (${payload.assignmentPct ?? 0}%) ${impactText} risk probability`
+  if (featureKey === 'weakCoPressureScaled') return `Weak course outcomes (${payload.weakCoCount}) ${impactText} risk probability`
+  if (featureKey === 'interventionResidualRiskScaled') return `Poor response to intervention ${impactText} ongoing risk`
+  return `Model identified ${featureKey} as a primary driver of risk (impact: +${Math.round(shap * 100) / 100} log-odds)`
+}
+
+function inferShapDriversForLogistic(
+  head: LogisticHeadArtifact,
+  vector: FeatureVector,
+  payload: ObservableFeaturePayload,
+): ObservableDriver[] {
+  const drivers: ObservableDriver[] = []
+  
+  for (const key of OBSERVABLE_FEATURE_KEYS) {
+    const weight = head.weights[key] ?? 0
+    const baseline = getIdealBaselineForFeature(key)
+    const val = vector[key]
+    const shap = weight * (val - baseline) // analytical SHAP for linear model
+    
+    // Only extract significant positive risk drivers (increases log-odds)
+    if (shap > 0.15) {
+      const uiFeature = mapFeatureKeyToUiDriver(key)
+      if (uiFeature) {
+        drivers.push({
+          label: formatShapDriverLabel(key, val, shap, payload),
+          impact: shap,
+          feature: uiFeature,
+        })
+      }
+    }
+  }
+
+  // Sort by highest SHAP contribution
+  drivers.sort((a, b) => b.impact - a.impact)
+  return drivers.slice(0, 4) // Top 4 drivers max
+}
+
+
+import { readFileSync as _readFileSync } from 'node:fs';
+import { resolve as _resolve } from 'node:path';
+
+type CatBoostSplit = {
+  border: number;
+  float_feature_index: number;
+};
+type CatBoostTree = {
+  splits: CatBoostSplit[];
+  leaf_values: number[];
+};
+type CatBoostModel = {
+  oblivious_trees: CatBoostTree[];
+};
+let cachedCatBoostModels: Record<string, CatBoostModel> | null = null;
+function loadCatBoostModels() {
+  if (cachedCatBoostModels) return cachedCatBoostModels;
+  const models: Record<string, CatBoostModel> = {};
+  const heads = ['attendanceRisk', 'ceRisk', 'seeRisk', 'overallCourseRisk', 'downstreamCarryoverRisk'];
+  const baseDir = _resolve(process.cwd(), 'output/proof-risk-model');
+  try {
+    for (const head of heads) {
+      const content = _readFileSync(_resolve(baseDir, `catboost_${head}_v1.json`), 'utf-8');
+      models[head] = JSON.parse(content);
+    }
+    cachedCatBoostModels = models;
+  } catch (e) {
+    console.warn('Failed to load CatBoost models', e);
+  }
+  return models;
+}
+function scoreWithCatBoost(headKey: RiskHeadKey, fallbackProb: number, vector: number[]): number {
+  const models = loadCatBoostModels();
+  const model = models[headKey];
+  if (!model) return fallbackProb;
+  let total = 0;
+  for (const tree of model.oblivious_trees) {
+    let leafIndex = 0;
+    for (let i = 0; i < tree.splits.length; i++) {
+      if (vector[tree.splits[i].float_feature_index] > tree.splits[i].border) {
+        leafIndex |= (1 << i);
+      }
+    }
+    total += tree.leaf_values[leafIndex];
+  }
+  const prob = 1 / (1 + Math.exp(-total));
+  return Math.max(0.0001, Math.min(0.9999, prob));
+}
+
 export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
   featurePayload: ObservableFeaturePayload
   sourceRefs?: ObservableSourceRefs | null
@@ -2222,12 +2405,50 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
     officialOverall,
     bandThresholdsOverride ?? input.productionModel.thresholds,
   )
-  const observableDrivers = inferObservableDrivers(input)
-  const recommendedAction = riskBand === 'High'
-    ? 'Immediate mentor follow-up and reassessment before the next evaluation checkpoint.'
-    : riskBand === 'Medium'
-      ? 'Schedule a monitored reassessment and review the current intervention plan.'
-      : 'Continue routine monitoring on the current evidence window.'
+  
+  // Extract SHAP drivers directly from the model weights rather than fallback rules
+  const shapDrivers = inferShapDriversForLogistic(input.productionModel.heads.overallCourseRisk, vector, input.featurePayload)
+  const observableDrivers = shapDrivers.length > 0 ? shapDrivers : inferObservableDrivers(input)
+  
+  // Recommend action based on actual model-identified primary driver
+  const primaryDriver = observableDrivers.length > 0 ? observableDrivers[0] : null
+  let recommendedAction = 'Continue routine monitoring on the current evidence window.'
+  
+  if (riskBand === 'High' || riskBand === 'Medium') {
+    if (!primaryDriver) {
+      recommendedAction = 'Schedule a monitored reassessment and review the current intervention plan.'
+    } else {
+      switch (primaryDriver.feature) {
+        case 'attendance':
+        case 'attendance-history':
+          recommendedAction = 'Student has missed critical sessions; schedule immediate meeting to discuss absenteeism and review makeup policies.'
+          break
+        case 'cgpa':
+        case 'backlog':
+          recommendedAction = 'Student carries significant backlog or CGPA pressure; focus on prerequisite recovery before introducing new complex topics.'
+          break
+        case 'co':
+        case 'question-pattern':
+          recommendedAction = 'Review specific failing Course Outcomes (COs) and question patterns with the student to identify exact conceptual gaps.'
+          break
+        case 'quiz':
+        case 'assignment':
+          recommendedAction = 'Student is struggling with continuous coursework; review latest assignment rubrics and quiz mistakes in the next 1-on-1.'
+          break
+        case 'tt1':
+        case 'tt2':
+        case 'see':
+          recommendedAction = 'Review the recent examination paper with the student to correct foundational misunderstandings before the next major assessment.'
+          break
+        case 'intervention-response':
+          recommendedAction = 'Student is unresponsive to current support plan; escalate to course coordinator and attempt an alternative intervention strategy.'
+          break
+        default:
+          recommendedAction = 'Immediate mentor follow-up and reassessment before the next evaluation checkpoint.'
+      }
+    }
+  }
+
   const trainedHeadDisplay = applyFallbackDisplaySuppression(
     Object.fromEntries(
       (Object.entries(input.productionModel.heads) as Array<[RiskHeadKey, LogisticHeadArtifact]>)
