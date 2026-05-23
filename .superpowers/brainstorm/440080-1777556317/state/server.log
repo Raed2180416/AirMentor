@@ -1,0 +1,2 @@
+{"type":"server-started","port":62304,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:62304","screen_dir":"/home/raed/projects/air-mentor-ui/.superpowers/brainstorm/440080-1777556317/content","state_dir":"/home/raed/projects/air-mentor-ui/.superpowers/brainstorm/440080-1777556317/state"}
+{"type":"server-stopped","reason":"idle timeout"}
