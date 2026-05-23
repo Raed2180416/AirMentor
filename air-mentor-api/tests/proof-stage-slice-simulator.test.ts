@@ -37,6 +37,8 @@ function makeStudent(overrides: Partial<StudentTrajectoryForSimulation> = {}): S
       selfRegulation: 0.66,
       attendanceDiscipline: 0.68,
       supportResponsiveness: 0.56,
+      externalWorkObligation: 0,
+      commuteStress: 0,
       ...overrides.latentBase,
     },
     profile: {
@@ -198,6 +200,8 @@ describe('stage-slice-simulator · deterministic multi-fn scalar outputs', () =>
         selfRegulation: 0.2,
         attendanceDiscipline: 0.2,
         supportResponsiveness: 0.2,
+        externalWorkObligation: 0.2,
+        commuteStress: 0.2,
       },
     })
     const strongStudent = makeStudent({
@@ -208,6 +212,8 @@ describe('stage-slice-simulator · deterministic multi-fn scalar outputs', () =>
         selfRegulation: 0.95,
         attendanceDiscipline: 0.95,
         supportResponsiveness: 0.95,
+        externalWorkObligation: 0.1,
+        commuteStress: 0.1,
       },
     })
     const emphasis = computeCourseEmphasis({ title: 'Algorithms' })

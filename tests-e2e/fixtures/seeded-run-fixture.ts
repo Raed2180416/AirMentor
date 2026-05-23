@@ -18,6 +18,7 @@ type SeededRunFixture = {
 function csrfHeaders(csrfToken: string) {
   return {
     'X-AirMentor-CSRF': csrfToken,
+    'Origin': process.env.AIRMENTOR_PW_FRONTEND_BASE_URL || 'http://127.0.0.1:5173',
   }
 }
 

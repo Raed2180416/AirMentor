@@ -258,6 +258,7 @@ export function AcademicWorkspaceRouteSurface({
           onOpenRiskExplorer={workspace.handleOpenRiskExplorer}
           onOpenCourse={workspace.handleOpenCourse}
           onOpenStudent={workspace.handleOpenStudent}
+          onRecomputeProofRunRisk={workspace.handleRecomputeProofRunRisk}
           tasks={workspace.allTasksList}
           calendarAuditEvents={workspace.calendarAuditEvents}
           summary={workspace.hodProofAnalytics?.summary ?? null}

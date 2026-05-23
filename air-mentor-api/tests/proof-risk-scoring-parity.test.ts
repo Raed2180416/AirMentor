@@ -67,6 +67,7 @@ function makeRowSet(seed: number, scenarioFamily: ScenarioFamily, runId: string)
           const prerequisiteWeakCourseCodes = isCarryover ? ['MAT101', 'PHY101'] : []
           const prerequisiteCourseCodes = ['MAT101', 'PHY101', 'CHE101']
           const featurePayload: ObservableFeaturePayload = {
+            semesterNumber: 1,
             attendancePct,
             attendanceTrend: -10 + r() * 20,
             attendanceHistoryRiskCount: Math.floor(r() * 3),

@@ -5,6 +5,7 @@ export function isFacultyProofQueueItemVisible(input: {
   matchesOwnedOffering: boolean
   matchesAssignedStudent: boolean
 }) {
+  if (input.viewerRoleCode === 'HOD' || input.viewerRoleCode === 'SYSTEM_ADMIN') return true
   if (input.viewerRoleCode === 'COURSE_LEADER') return input.matchesOwnedOffering
   if (input.viewerRoleCode === 'MENTOR') return input.matchesAssignedStudent
   return input.matchesOwnedOffering || input.matchesAssignedStudent
@@ -15,6 +16,7 @@ export function isFacultyProofStudentVisible(input: {
   visibleViaOwnedOffering: boolean
   visibleViaAssignedMentorScope: boolean
 }) {
+  if (input.viewerRoleCode === 'HOD' || input.viewerRoleCode === 'SYSTEM_ADMIN') return true
   if (input.viewerRoleCode === 'COURSE_LEADER') return input.visibleViaOwnedOffering
   if (input.viewerRoleCode === 'MENTOR') return input.visibleViaAssignedMentorScope
   return input.visibleViaOwnedOffering || input.visibleViaAssignedMentorScope

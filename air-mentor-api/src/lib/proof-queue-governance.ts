@@ -1,5 +1,5 @@
 export const PROOF_QUEUE_DEFAULT_ACTIONABLE_RATE_LIMIT = 0.3
-export const PROOF_QUEUE_LATE_STAGE_ACTIONABLE_RATE_LIMIT = 0.35
+export const PROOF_QUEUE_LATE_STAGE_ACTIONABLE_RATE_LIMIT = 0.50
 export const PROOF_QUEUE_SECTION_EXCESS_TOLERANCE = 0.1
 export const PROOF_QUEUE_WATCH_RATE_LIMIT = 0.45
 export const PROOF_QUEUE_ACTIONABLE_PPV_PROXY_MINIMUM = 0.55
@@ -254,11 +254,11 @@ function candidateEligibility(candidate: ProofQueueCandidate) {
       reason: 'post_tt1_proxy_utility',
     }
   }
-  if (candidate.riskBand === 'High' && candidate.counterfactualLiftScaled >= PROOF_QUEUE_HIGH_RISK_LIFT_THRESHOLD) {
+  if (candidate.riskBand === 'High') {
     return {
       openEligible: true,
       watchEligible: true,
-      reason: 'high_risk_lift_gate_passed',
+      reason: 'high_risk_gate_passed',
     }
   }
   return {

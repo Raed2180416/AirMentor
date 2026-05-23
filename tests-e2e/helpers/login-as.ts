@@ -38,6 +38,7 @@ const SEEDED_ROLE_FIXTURES = {
 function csrfHeaders(csrfToken: string) {
   return {
     'X-AirMentor-CSRF': csrfToken,
+    'Origin': process.env.AIRMENTOR_PW_FRONTEND_BASE_URL || 'http://127.0.0.1:5173',
   }
 }
 
@@ -67,6 +68,9 @@ export async function loginWithApiContext(requestContext: { post(url: string, op
   }
 
   const loginResponse = await requestContext.post(apiPath('/api/session/login'), {
+    headers: {
+      'Origin': process.env.AIRMENTOR_PW_FRONTEND_BASE_URL || 'http://127.0.0.1:5173',
+    },
     data: {
       identifier: actor.identifier,
       password: actor.password,
@@ -82,7 +86,10 @@ export async function loginWithApiContext(requestContext: { post(url: string, op
       throw new Error(`Role ${actor.roleCode} is not available for seeded actor ${actor.identifier}.`)
     }
     const switchResponse = await requestContext.post(apiPath('/api/session/role-context'), {
-      headers: csrfHeaders(session.csrfToken),
+      headers: {
+        ...csrfHeaders(session.csrfToken),
+        'Origin': process.env.AIRMENTOR_PW_FRONTEND_BASE_URL || 'http://127.0.0.1:5173',
+      },
       data: {
         roleGrantId: targetGrant.grantId,
       },
@@ -122,4 +129,43 @@ export async function loginAs(
     }
   }
   return result
+}
+
+export async function loginAsUser(
+  requestContext: { post(url: string, options?: Record<string, unknown>): Promise<AnyHttpResponse> },
+  identifier: string,
+  password = 'faculty1234',
+  roleCode = 'COURSE_LEADER'
+) {
+  const loginResponse = await requestContext.post(apiPath('/api/session/login'), {
+    headers: {
+      'Origin': process.env.AIRMENTOR_PW_FRONTEND_BASE_URL || 'http://127.0.0.1:5173',
+    },
+    data: {
+      identifier,
+      password,
+    },
+  })
+  let session = await readJson(loginResponse, `Login as ${identifier}`)
+
+  if (session.activeRoleGrant?.roleCode !== roleCode) {
+    const targetGrant = session.availableRoleGrants?.find((grant: { roleCode: string; facultyId: string }) =>
+      grant.roleCode === roleCode,
+    )
+    if (!targetGrant) {
+      throw new Error(`Role ${roleCode} is not available for seeded actor ${identifier}.`)
+    }
+    const switchResponse = await requestContext.post(apiPath('/api/session/role-context'), {
+      headers: {
+        ...csrfHeaders(session.csrfToken),
+        'Origin': process.env.AIRMENTOR_PW_FRONTEND_BASE_URL || 'http://127.0.0.1:5173',
+      },
+      data: {
+        roleGrantId: targetGrant.grantId,
+      },
+    })
+    session = await readJson(switchResponse, `Switch role to ${roleCode}`)
+  }
+
+  return { actor: { identifier, roleCode, facultyId: session.activeRoleGrant?.facultyId }, session }
 }

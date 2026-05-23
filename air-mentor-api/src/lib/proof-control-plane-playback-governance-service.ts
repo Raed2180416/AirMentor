@@ -290,6 +290,7 @@ function buildStageCandidate(
     downstreamDependencyLoad: prerequisiteSummary.downstreamDependencyLoad,
     weakPrerequisiteChainCount: prerequisiteSummary.weakPrerequisiteChainCount,
     repeatedWeakPrerequisiteFamilyCount: prerequisiteSummary.repeatedWeakPrerequisiteFamilyCount,
+    semesterNumber: source.semesterNumber,
     sectionRiskRate: input.sectionRiskRateByStage.get(`${source.semesterNumber}::${source.sectionCode}::${stage.key}`) ?? 0,
     semesterProgress: stage.order / input.stageDefs.length,
   })
@@ -365,6 +366,7 @@ function buildStageCandidate(
     downstreamDependencyLoad: prerequisiteSummary.downstreamDependencyLoad,
     weakPrerequisiteChainCount: prerequisiteSummary.weakPrerequisiteChainCount,
     repeatedWeakPrerequisiteFamilyCount: prerequisiteSummary.repeatedWeakPrerequisiteFamilyCount,
+    semesterNumber: source.semesterNumber,
     sectionRiskRate: input.sectionRiskRateByStage.get(`${source.semesterNumber}::${source.sectionCode}::${stage.key}`) ?? 0,
     semesterProgress: stage.order / input.stageDefs.length,
   })

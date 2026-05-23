@@ -84,18 +84,18 @@ BUDGET_TOP_PCT = 0.20
 LOCAL_ECE_BANDS = [(0.4, 0.08), (0.85, 0.08)]
 GLOBAL_ECE_BINS = 10
 
-# CatBoost hyperparams — modest depth and iterations for CPU, seeded.
 CATBOOST_PARAMS = dict(
-    iterations=300,
-    depth=6,
-    learning_rate=0.05,
+    iterations=100,
+    depth=2,
+    learning_rate=0.03,
     loss_function='Logloss',
     eval_metric='AUC',
     random_seed=SEED,
     allow_writing_files=False,
     logging_level='Silent',
     thread_count=-1,
-    l2_leaf_reg=3.0,
+    l2_leaf_reg=10.0,
+    auto_class_weights='Balanced',
 )
 
 
@@ -185,7 +185,7 @@ def train_catboost_head(X_train, y_train, X_cal, y_cal, X_test, y_test, head_key
     if pos == 0 or neg == 0:
         return None, None
     scale_pos_weight = neg / max(pos, 1)
-    params = dict(CATBOOST_PARAMS, scale_pos_weight=scale_pos_weight)
+    params = dict(CATBOOST_PARAMS)
     clf = CatBoostClassifier(**params)
     clf.fit(
         X_train, y_train,
@@ -300,16 +300,17 @@ def main() -> int:
         cb_l04 = cb_metrics['localEce'][0]['ece']
         base_l85 = baseline_metrics['localEce'][1]['ece']
         cb_l85 = cb_metrics['localEce'][1]['ece']
-        g3_localcal = (
-            (base_l04 is None or cb_l04 is None or cb_l04 <= base_l04 + 1e-4)
-            and (base_l85 is None or cb_l85 is None or cb_l85 <= base_l85 + 1e-4)
-        )
+        g3_localcal = True
+        if cb_l04 is not None and base_l04 is not None:
+            g3_localcal = g3_localcal and (cb_l04 <= base_l04 + 1e-4)
+        if cb_l85 is not None and base_l85 is not None:
+            g3_localcal = g3_localcal and (cb_l85 <= base_l85 + 1e-4)
         base_ov = baseline_metrics.get('overloadRatio')
         cb_ov = cb_metrics.get('overloadRatio')
         g4_overload = (base_ov is None or cb_ov is None
                        or abs(cb_ov - 1.0) <= abs(base_ov - 1.0) + 1e-4)
         g5_replayable = True  # .cbm saved + seeded
-        gates_pass = int(g1_ranking) + int(g2_proper) + int(g3_localcal) + int(g4_overload) + int(g5_replayable)
+        gates_pass = sum([g1_ranking, g2_proper, g3_localcal, g4_overload, g5_replayable])
 
         heads_out[head_key] = {
             'head': head_key,

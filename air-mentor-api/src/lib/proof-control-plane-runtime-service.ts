@@ -64,7 +64,37 @@ type RuntimeStageDef = {
   order: number
 }
 
-function pctFromScoredComponents(rows: Array<typeof studentAssessmentScores.$inferSelect>, componentTypes: string[], deps: Pick<ProofControlPlaneRuntimeServiceDeps, 'average'>) {
+export function applyPolicyAndRebound(
+  rawTt1: number | null,
+  rawTt2: number | null,
+  rawQuiz: number | null,
+  rawAsgn: number | null,
+  rawSee: number | null,
+  policy: ResolvedPolicy
+) {
+  let tt1 = rawTt1 ?? 0
+  let tt2 = rawTt2
+  let quiz = rawQuiz
+  let asgn = rawAsgn
+  let see = rawSee
+
+  if (tt2 != null && see != null && see > tt2 && tt1 > tt2) {
+    tt2 += (see - tt2) * 0.5
+  }
+
+  const ttScale = policy.ceComponentCaps.termTestsWeight / 30
+  const quizScale = policy.ceComponentCaps.quizWeight / 10
+  const asgnScale = policy.ceComponentCaps.assignmentWeight / 20
+
+  tt1 = 100 - ((100 - tt1) * ttScale)
+  if (tt2 != null) tt2 = 100 - ((100 - tt2) * ttScale)
+  if (quiz != null) quiz = 100 - ((100 - quiz) * quizScale)
+  if (asgn != null) asgn = 100 - ((100 - asgn) * asgnScale)
+  
+  return { tt1, tt2, quiz, asgn, see }
+}
+
+function pctFromScoredComponents(rows: Array<typeof studentAssessmentScores.$inferSelect>, componentTypes: string[], _deps: Pick<ProofControlPlaneRuntimeServiceDeps, 'average'>) {
   const relevantRows = rows.filter(row => componentTypes.includes(row.componentType))
   if (relevantRows.length === 0) return null
   const totalScore = relevantRows.reduce((sum, row) => sum + row.score, 0)
@@ -206,22 +236,31 @@ async function overlayManualAssessmentScoresIntoStageProjections(
     const currentStatus = projectionPayload.currentStatus && typeof projectionPayload.currentStatus === 'object'
       ? projectionPayload.currentStatus as Record<string, unknown>
       : {}
+    const adj = applyPolicyAndRebound(
+      Number(currentEvidence.tt1Pct ?? 0),
+      currentEvidence.tt2Pct == null ? null : Number(currentEvidence.tt2Pct),
+      currentEvidence.quizPct == null ? null : Number(currentEvidence.quizPct),
+      currentEvidence.assignmentPct == null ? null : Number(currentEvidence.assignmentPct),
+      currentEvidence.seePct == null ? null : Number(currentEvidence.seePct),
+      input.policy
+    )
     const featurePayload = buildObservableFeaturePayload({
       attendancePct: Number(currentEvidence.attendancePct ?? 0),
       attendanceHistory: [],
       currentCgpa: Number(currentStatus.currentCgpa ?? 0),
       backlogCount: Number(currentStatus.backlogCount ?? 0),
-      tt1Pct: Number(currentEvidence.tt1Pct ?? 0),
-      tt2Pct: currentEvidence.tt2Pct == null ? null : Number(currentEvidence.tt2Pct),
-      quizPct: currentEvidence.quizPct == null ? null : Number(currentEvidence.quizPct),
-      assignmentPct: currentEvidence.assignmentPct == null ? null : Number(currentEvidence.assignmentPct),
-      seePct: currentEvidence.seePct == null ? null : Number(currentEvidence.seePct),
+      tt1Pct: adj.tt1,
+      tt2Pct: adj.tt2,
+      quizPct: adj.quiz,
+      assignmentPct: adj.asgn,
+      seePct: adj.see,
       weakCoCount: Number(currentEvidence.weakCoCount ?? 0),
       weakQuestionCount: Number(currentEvidence.weakQuestionCount ?? 0),
       interventionResponseScore: Number(currentEvidence.interventionResponseScore ?? 0),
       prerequisiteAveragePct: 0,
       prerequisiteFailureCount: 0,
       prerequisiteCourseCodes: [],
+      semesterNumber: projection.semesterNumber,
       sectionRiskRate: 0,
       semesterProgress: Number((projectionPayload.stageOrder as number | undefined) ?? 1),
     })
@@ -510,7 +549,7 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
     policy: input.policy,
     now: input.now,
   }, deps)
-  const [observedRows, existingRiskRows, existingReassessments, existingResolutions, existingAlerts, existingEvidenceRows, teacherAllocationRows, teacherLoadRows, ownershipRows, mentorRows, grantRows] = await Promise.all([
+  const [_observedRows, existingRiskRows, existingReassessments, existingResolutions, existingAlerts, existingEvidenceRows, teacherAllocationRows, teacherLoadRows, ownershipRows, mentorRows, grantRows] = await Promise.all([
     db.select().from(studentObservedSemesterStates).where(eq(studentObservedSemesterStates.simulationRunId, input.simulationRunId)),
     db.select().from(riskAssessments).where(eq(riskAssessments.simulationRunId, input.simulationRunId)),
     db.select().from(reassessmentEvents),
@@ -839,22 +878,31 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       weakCourseOutcomeCodes: stageSourceRefs?.weakCourseOutcomeCodes ?? defaultSourceRefs.weakCourseOutcomeCodes,
       dominantQuestionTopics: stageSourceRefs?.dominantQuestionTopics ?? defaultSourceRefs.dominantQuestionTopics,
     }
+    const adj = applyPolicyAndRebound(
+      Number(payload.tt1Pct ?? 0),
+      payload.tt2Pct == null ? null : Number(payload.tt2Pct),
+      payload.quizPct == null ? null : Number(payload.quizPct),
+      payload.assignmentPct == null ? null : Number(payload.assignmentPct),
+      payload.seePct == null ? null : Number(payload.seePct),
+      input.policy
+    )
     const featurePayload = stageEvidence?.featurePayload ?? buildObservableFeaturePayload({
       attendancePct: Number(payload.attendancePct ?? 0),
       attendanceHistory: parseJson(JSON.stringify(payload.attendanceHistory ?? []), [] as Array<{ attendancePct: number }>),
       currentCgpa: Number(historical.cgpaAfterSemester ?? payload.cgpa ?? 0),
       backlogCount: Number(historical.backlogCount ?? payload.backlogCount ?? 0),
-      tt1Pct: Number(payload.tt1Pct ?? 0),
-      tt2Pct: payload.tt2Pct == null ? null : Number(payload.tt2Pct),
-      quizPct: payload.quizPct == null ? null : Number(payload.quizPct),
-      assignmentPct: payload.assignmentPct == null ? null : Number(payload.assignmentPct),
-      seePct: payload.seePct == null ? null : Number(payload.seePct),
+      tt1Pct: adj.tt1,
+      tt2Pct: adj.tt2,
+      quizPct: adj.quiz,
+      assignmentPct: adj.asgn,
+      seePct: adj.see,
       weakCoCount: Number(payload.weakCoCount ?? 0),
       weakQuestionCount: Number((payload.questionEvidenceSummary as Record<string, unknown> | undefined)?.weakQuestionCount ?? 0),
       interventionResponseScore,
       prerequisiteAveragePct: 0,
       prerequisiteFailureCount: 0,
       prerequisiteCourseCodes: [],
+      semesterNumber: row.semesterNumber,
       sectionRiskRate: sectionRiskRateBySemesterSection.get(`${row.semesterNumber}::${row.sectionCode}`) ?? 0,
       semesterProgress: 1,
     })
@@ -871,11 +919,11 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       attendancePct: Number(payload.attendancePct ?? 0),
       currentCgpa: Number(historical.cgpaAfterSemester ?? payload.cgpa ?? 0),
       backlogCount: Number(historical.backlogCount ?? payload.backlogCount ?? 0),
-      tt1Pct: Number(payload.tt1Pct ?? 0),
-      tt2Pct: payload.tt2Pct == null ? null : Number(payload.tt2Pct),
-      quizPct: payload.quizPct == null ? null : Number(payload.quizPct),
-      assignmentPct: payload.assignmentPct == null ? null : Number(payload.assignmentPct),
-      seePct: payload.seePct == null ? null : Number(payload.seePct),
+      tt1Pct: adj.tt1,
+      tt2Pct: adj.tt2,
+      quizPct: adj.quiz,
+      assignmentPct: adj.asgn,
+      seePct: adj.see,
       weakCoCount: Number(payload.weakCoCount ?? 0),
       attendanceHistoryRiskCount: Array.isArray(payload.attendanceHistory)
         ? payload.attendanceHistory.filter(entry => Number((entry as Record<string, unknown>).attendancePct ?? 0) < input.policy.attendanceRules.minimumRequiredPercent).length
@@ -933,22 +981,31 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       actionTaken: policyComparison.recommendedAction,
       stageKey: liveStageKey,
     })
+    const adjNoAct = applyPolicyAndRebound(
+      Number(noActionSnapshot.tt1Pct ?? 0),
+      noActionSnapshot.tt2Pct,
+      noActionSnapshot.quizPct,
+      noActionSnapshot.assignmentPct,
+      noActionSnapshot.seePct,
+      input.policy
+    )
     const noActionFeaturePayload = buildObservableFeaturePayload({
       attendancePct: noActionSnapshot.attendancePct,
       attendanceHistory: parseJson(JSON.stringify(payload.attendanceHistory ?? []), [] as Array<{ attendancePct: number }>),
       currentCgpa: noActionSnapshot.currentCgpa,
       backlogCount: noActionSnapshot.backlogCount,
-      tt1Pct: Number(noActionSnapshot.tt1Pct ?? 0),
-      tt2Pct: noActionSnapshot.tt2Pct,
-      quizPct: noActionSnapshot.quizPct,
-      assignmentPct: noActionSnapshot.assignmentPct,
-      seePct: noActionSnapshot.seePct,
+      tt1Pct: adjNoAct.tt1,
+      tt2Pct: adjNoAct.tt2,
+      quizPct: adjNoAct.quiz,
+      assignmentPct: adjNoAct.asgn,
+      seePct: adjNoAct.see,
       weakCoCount: noActionSnapshot.weakCoCount,
       weakQuestionCount: noActionSnapshot.weakQuestionCount,
       interventionResponseScore: Number(noActionSnapshot.interventionResponseScore ?? 0),
       prerequisiteAveragePct: 0,
       prerequisiteFailureCount: 0,
       prerequisiteCourseCodes: [],
+      semesterNumber: currentSemesterNumber,
       sectionRiskRate: sectionRiskRateBySemesterSection.get(`${row.semesterNumber}::${row.sectionCode}`) ?? 0,
       semesterProgress: liveStage?.order ?? 1,
     })
@@ -956,11 +1013,11 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       attendancePct: noActionSnapshot.attendancePct,
       currentCgpa: noActionSnapshot.currentCgpa,
       backlogCount: noActionSnapshot.backlogCount,
-      tt1Pct: Number(noActionSnapshot.tt1Pct ?? 0),
-      tt2Pct: noActionSnapshot.tt2Pct,
-      quizPct: noActionSnapshot.quizPct,
-      assignmentPct: noActionSnapshot.assignmentPct,
-      seePct: noActionSnapshot.seePct,
+      tt1Pct: adjNoAct.tt1,
+      tt2Pct: adjNoAct.tt2,
+      quizPct: adjNoAct.quiz,
+      assignmentPct: adjNoAct.asgn,
+      seePct: adjNoAct.see,
       weakCoCount: noActionSnapshot.weakCoCount,
       attendanceHistoryRiskCount: noActionSnapshot.attendanceHistoryRiskCount,
       questionWeaknessCount: noActionSnapshot.weakQuestionCount,

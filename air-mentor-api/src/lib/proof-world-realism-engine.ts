@@ -306,3 +306,42 @@ export function applyAnchorDecay(input: {
   const anchorAfter = input.anchorPct * (1 - decay)
   return roundTo(clamp(anchorAfter, 0, 100), 2)
 }
+
+// ---------- Temporal Burnout ----------
+
+// Apply compounding burnout based on academic history. Repeated failures
+// (backlogs) increase fatigue and reduce help-seeking tendency.
+export function applyTemporalBurnout(input: {
+  studentProfile: StudentLatentProfileForIntervention
+  backlogCount: number
+  consecutiveSevereStages: number
+}): { updatedFatigueRate: number; updatedHelpSeekingTendency: number; updatedExamPressure: number } {
+  const { dynamics, behavior } = input.studentProfile
+  
+  if (input.backlogCount === 0 && input.consecutiveSevereStages === 0) {
+    return {
+      updatedFatigueRate: dynamics.fatigueRate,
+      updatedHelpSeekingTendency: behavior.helpSeekingTendency,
+      updatedExamPressure: behavior.examPressure,
+    }
+  }
+
+  // Each backlog increases fatigue by 15% relative to the base, capped at 0.4.
+  const fatigueMultiplier = 1 + (Math.min(input.backlogCount, 5) * 0.15)
+  const updatedFatigueRate = roundTo(clamp(dynamics.fatigueRate * fatigueMultiplier, 0.02, 0.4), 4)
+
+  // Consecutive severe stages (e.g., repeatedly ending up in High Risk) erodes 
+  // help-seeking behavior due to learned helplessness (Bean-Eaton non-response).
+  const learnedHelplessnessPenalty = Math.min(input.consecutiveSevereStages, 4) * 0.12
+  const updatedHelpSeekingTendency = roundTo(clamp(behavior.helpSeekingTendency - learnedHelplessnessPenalty, 0.05, 0.95), 4)
+
+  // Backlogs drastically increase exam pressure.
+  const pressurePenalty = Math.min(input.backlogCount, 4) * 0.08
+  const updatedExamPressure = roundTo(clamp(behavior.examPressure + pressurePenalty, 0.05, 0.95), 4)
+
+  return {
+    updatedFatigueRate,
+    updatedHelpSeekingTendency,
+    updatedExamPressure,
+  }
+}

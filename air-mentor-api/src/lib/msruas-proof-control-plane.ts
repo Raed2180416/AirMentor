@@ -804,6 +804,8 @@ type StudentTrajectory = {
     selfRegulation: number
     attendanceDiscipline: number
     supportResponsiveness: number
+    externalWorkObligation: number
+    commuteStress: number
   }
   profile: {
     programScopeVersion: string
@@ -1090,9 +1092,17 @@ function sectionForIndex(index: number): 'A' | 'B' {
 
 function pickArchetype(index: number, runSeed: number) {
   const score = stableUnit(`run-${runSeed}-student-${index + 1}-archetype`)
-  const weighted = sectionForIndex(index) === 'A' ? score * 0.9 : score * 1.08
-  const bucket = Math.min(STUDENT_ARCHETYPES.length - 1, Math.floor(weighted * STUDENT_ARCHETYPES.length))
-  return STUDENT_ARCHETYPES[bucket] ?? STUDENT_ARCHETYPES[0]
+  const adjustedScore = sectionForIndex(index) === 'A' ? score * 0.9 : Math.min(0.999, score * 1.08)
+  
+  let key: string
+  if (adjustedScore < 0.10) key = 'deep-competent'
+  else if (adjustedScore < 0.30) key = 'strategic-efficient'
+  else if (adjustedScore < 0.60) key = 'strategic-fragile'
+  else if (adjustedScore < 0.80) key = 'cumulative-gap'
+  else if (adjustedScore < 0.95) key = 'underregulated'
+  else key = 'surface-survival'
+
+  return STUDENT_ARCHETYPES.find(a => a.key === key) ?? STUDENT_ARCHETYPES[0]
 }
 
 function flattenBlueprintLeaves(nodes: BlueprintNode[]): BlueprintNode[] {
@@ -1568,6 +1578,12 @@ function buildStudentTrajectory(index: number, runSeed: number, scenarioProfile:
   const selfRegulation = clamp(sectionDiscipline + archetype.disciplineShift + stableGaussian(`${seedBase}-self`, 0, 0.12), 0.2, 0.95)
   const attendanceDiscipline = clamp((sectionDiscipline + 0.03) + archetype.disciplineShift + stableGaussian(`${seedBase}-attendance`, 0, 0.13), 0.2, 0.98)
   const supportResponsiveness = clamp(0.56 + scenarioProfile.supportResponsivenessShift + stableGaussian(`${seedBase}-support`, 0, 0.13), 0.15, 0.96)
+  
+  // Synthesize external proxies (work obligation, commute stress)
+  // These are intentionally independent of pure ability but can influence discipline and pressure.
+  const externalWorkObligation = clamp(stableGaussian(`${seedBase}-work-obligation`, 0.3, 0.25), 0.0, 1.0)
+  const commuteStress = clamp(stableGaussian(`${seedBase}-commute-stress`, 0.4, 0.2), 0.0, 1.0)
+
   return {
     studentId: `mnc_student_${String(index + 1).padStart(3, '0')}`,
     usn: `1MS23MC${String(index + 1).padStart(3, '0')}`,
@@ -1581,6 +1597,8 @@ function buildStudentTrajectory(index: number, runSeed: number, scenarioProfile:
       selfRegulation,
       attendanceDiscipline,
       supportResponsiveness,
+      externalWorkObligation,
+      commuteStress,
     },
     profile: {
       programScopeVersion: 'mnc-first-6-sem-v1',

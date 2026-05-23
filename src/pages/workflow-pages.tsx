@@ -763,7 +763,7 @@ export function EntryWorkspacePage({
                       </tr>
                     </thead>
                     <tbody>
-                      {students.slice(0, 25).map(student => {
+                      {students.map(student => {
                         const projection = deriveAcademicProjection({ offering: section, student, scheme: currentScheme })
                         const exactPatch = getStudentPatch(section.offId, student.id)
                         return (
@@ -781,6 +781,8 @@ export function EntryWorkspacePage({
                                     placeholder="0"
                                     type="number"
                                     inputMode="numeric"
+                                    data-student-id={student.id}
+                                    data-leaf-id={leaf.id}
                                     min={0}
                                     max={leaf.maxMarks}
                                     disabled={!sectionAccess.canEdit}

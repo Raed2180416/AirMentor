@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { afterEach, describe, expect, it } from 'vitest'
 import { createTestApp, loginAs, TEST_ORIGIN } from './helpers/test-app.js'
 

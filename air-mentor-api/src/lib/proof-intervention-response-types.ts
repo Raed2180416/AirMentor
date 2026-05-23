@@ -107,6 +107,9 @@ export type StudentLatentBaseForSimulation = {
   selfRegulation: number
   attendanceDiscipline: number
   supportResponsiveness: number
+  // Socio-economic and external latent proxies
+  externalWorkObligation: number
+  commuteStress: number
 }
 
 export type StudentReadinessForSimulation = {

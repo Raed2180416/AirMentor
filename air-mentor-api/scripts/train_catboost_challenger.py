@@ -13,37 +13,30 @@ Output per head (in output_dir):
     catboost_<head>_v1.json   -- CatBoost oblivious tree model (JSON format)
     metrics.json              -- validation + test metrics for all heads
 """
+from __future__ import annotations
+
 import argparse
+import csv
+import datetime as dt
+import hashlib
 import json
 import os
+import re
 import sys
+from pathlib import Path
 
-try:
-    import numpy as np
-    import pandas as pd
-    from catboost import CatBoostClassifier, Pool
-    from sklearn.metrics import (
-        average_precision_score,
-        brier_score_loss,
-        confusion_matrix,
-        log_loss,
-        precision_recall_fscore_support,
-        roc_auc_score,
-    )
-except ModuleNotFoundError as exc:
-    print(
-        "[catboost] ERROR: missing Python dependency "
-        f"'{exc.name}'. Install ML extras before running this script.\n"
-        "[catboost] Suggested command: python3 -m pip install -r requirements-ml.txt",
-        file=sys.stderr,
-    )
-    sys.exit(1)
-
-try:
-    from catboost.utils import get_gpu_device_count
-except Exception:
-    def get_gpu_device_count() -> int:
-        return 0
+np = None
+pd = None
+CatBoostClassifier = None
+Pool = None
+LogisticRegression = None
+IsotonicRegression = None
+average_precision_score = None
+brier_score_loss = None
+confusion_matrix = None
+log_loss = None
+precision_recall_fscore_support = None
+roc_auc_score = None
 
 HEADS = [
     "attendanceRisk",
@@ -61,6 +54,252 @@ LABEL_COLS = {
     "downstreamCarryoverRisk": "label_downstream",
 }
 
+REQUIRED_COLUMNS = [
+    "run_id",
+    "split",
+    "stage_key",
+    "scenario_family",
+    "label_attendance",
+    "label_ce",
+    "label_see",
+    "label_overall",
+    "label_downstream",
+]
+
+LOCAL_ECE_BANDS = {
+    "localEceAt04": (0.4, 0.08),
+    "localEceAt085": (0.85, 0.08),
+}
+
+
+def load_python_ml_dependencies() -> None:
+    global np
+    global pd
+    global CatBoostClassifier
+    global Pool
+    global LogisticRegression
+    global IsotonicRegression
+    global average_precision_score
+    global brier_score_loss
+    global confusion_matrix
+    global log_loss
+    global precision_recall_fscore_support
+    global roc_auc_score
+
+    try:
+        import numpy as _np
+        import pandas as _pd
+        from catboost import CatBoostClassifier as _CatBoostClassifier
+        from catboost import Pool as _Pool
+        from sklearn.isotonic import IsotonicRegression as _IsotonicRegression
+        from sklearn.linear_model import LogisticRegression as _LogisticRegression
+        from sklearn.metrics import (
+            average_precision_score as _average_precision_score,
+            brier_score_loss as _brier_score_loss,
+            confusion_matrix as _confusion_matrix,
+            log_loss as _log_loss,
+            precision_recall_fscore_support as _precision_recall_fscore_support,
+            roc_auc_score as _roc_auc_score,
+        )
+    except ModuleNotFoundError as exc:
+        print(
+            "[catboost] ERROR: missing Python dependency "
+            f"'{exc.name}'. Install ML extras before running this script.\n"
+            "[catboost] Required packages include: numpy, pandas, scikit-learn, catboost",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    np = _np
+    pd = _pd
+    CatBoostClassifier = _CatBoostClassifier
+    Pool = _Pool
+    LogisticRegression = _LogisticRegression
+    IsotonicRegression = _IsotonicRegression
+    average_precision_score = _average_precision_score
+    brier_score_loss = _brier_score_loss
+    confusion_matrix = _confusion_matrix
+    log_loss = _log_loss
+    precision_recall_fscore_support = _precision_recall_fscore_support
+    roc_auc_score = _roc_auc_score
+
+
+def get_gpu_device_count() -> int:
+    try:
+        from catboost.utils import get_gpu_device_count as _get_gpu_device_count
+        return int(_get_gpu_device_count())
+    except Exception:
+        return 0
+
+
+def read_ts_const_string_array(source_path: Path, const_name: str) -> list[str]:
+    text = source_path.read_text(encoding="utf-8")
+    match = re.search(rf"export const {re.escape(const_name)} = \[(.*?)\] as const", text, re.S)
+    if not match:
+        raise ValueError(f"Unable to locate {const_name} in {source_path}")
+    return [
+        group_one or group_two
+        for group_one, group_two in re.findall(r"'([^']+)'|\"([^\"]+)\"", match.group(1))
+    ]
+
+
+def sha256_file(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def sha256_json(blob: object) -> str:
+    payload = json.dumps(blob, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def sorted_feature_columns(columns: list[str]) -> list[str]:
+    feature_columns = [column for column in columns if re.fullmatch(r"feat_\d+", column)]
+    return sorted(feature_columns, key=lambda column: int(column.split("_", 1)[1]))
+
+
+def validate_governed_csv(
+    features_csv: Path,
+    expected_feature_keys: list[str],
+    expected_scenario_families: list[str],
+    require_all_scenario_families: bool,
+) -> dict:
+    with features_csv.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        fieldnames = reader.fieldnames or []
+        missing_columns = [column for column in REQUIRED_COLUMNS if column not in fieldnames]
+        if missing_columns:
+            raise ValueError(f"missing required governed export columns: {missing_columns}")
+
+        feature_columns = sorted_feature_columns(fieldnames)
+        expected_feature_columns = [f"feat_{index}" for index in range(len(expected_feature_keys))]
+        if feature_columns != expected_feature_columns:
+            raise ValueError(
+                "feature column mismatch: "
+                f"expected {len(expected_feature_columns)} sequential columns "
+                f"feat_0..feat_{len(expected_feature_columns) - 1}, "
+                f"found {len(feature_columns)} columns"
+            )
+
+        row_count = 0
+        split_counts = {"train": 0, "validation": 0, "test": 0}
+        scenario_family_counts = {family: 0 for family in expected_scenario_families}
+        unexpected_scenario_families: dict[str, int] = {}
+        blank_required_counts = {column: 0 for column in REQUIRED_COLUMNS}
+        run_ids_by_split = {"train": set(), "validation": set(), "test": set()}
+
+        for row in reader:
+            row_count += 1
+            for column in REQUIRED_COLUMNS:
+                if not (row.get(column) or "").strip():
+                    blank_required_counts[column] += 1
+            split = (row.get("split") or "").strip()
+            run_id = (row.get("run_id") or "").strip()
+            scenario_family = (row.get("scenario_family") or "").strip()
+            if split in split_counts:
+                split_counts[split] += 1
+                if run_id:
+                    run_ids_by_split[split].add(run_id)
+            if scenario_family in scenario_family_counts:
+                scenario_family_counts[scenario_family] += 1
+            elif scenario_family:
+                unexpected_scenario_families[scenario_family] = unexpected_scenario_families.get(scenario_family, 0) + 1
+
+    if row_count == 0:
+        raise ValueError("governed export CSV has zero rows")
+
+    blank_required_counts = {column: count for column, count in blank_required_counts.items() if count}
+    if blank_required_counts:
+        raise ValueError(f"blank values in required governed export columns: {blank_required_counts}")
+
+    missing_splits = [split for split, count in split_counts.items() if count == 0]
+    if missing_splits:
+        raise ValueError(f"missing required train/validation/test splits: {missing_splits}")
+
+    leaking_runs = {
+        "train_validation": sorted(run_ids_by_split["train"] & run_ids_by_split["validation"])[:5],
+        "train_test": sorted(run_ids_by_split["train"] & run_ids_by_split["test"])[:5],
+        "validation_test": sorted(run_ids_by_split["validation"] & run_ids_by_split["test"])[:5],
+    }
+    leaking_runs = {key: value for key, value in leaking_runs.items() if value}
+    if leaking_runs:
+        raise ValueError(f"run_id leakage across splits: {json.dumps(leaking_runs, sort_keys=True)}")
+
+    if unexpected_scenario_families:
+        raise ValueError(f"unexpected scenario_family values: {unexpected_scenario_families}")
+
+    missing_scenario_families = [
+        family for family, count in scenario_family_counts.items() if count == 0
+    ]
+    if require_all_scenario_families and missing_scenario_families:
+        raise ValueError(f"missing governed scenario families: {missing_scenario_families}")
+
+    return {
+        "rowCount": row_count,
+        "featureColumns": feature_columns,
+        "featureCount": len(feature_columns),
+        "featureKeyHash": sha256_json(expected_feature_keys),
+        "splitCounts": split_counts,
+        "runCountsBySplit": {split: len(run_ids) for split, run_ids in run_ids_by_split.items()},
+        "scenarioFamilyCounts": scenario_family_counts,
+        "missingScenarioFamilies": missing_scenario_families,
+    }
+
+
+def local_ece(y_true: np.ndarray, y_prob: np.ndarray, center: float, half_width: float) -> dict:
+    mask = np.abs(y_prob - center) <= half_width
+    support = int(mask.sum())
+    if support == 0:
+        return {
+            "center": center,
+            "halfWidth": half_width,
+            "support": 0,
+            "ece": None,
+            "meanProb": None,
+            "meanLabel": None,
+        }
+    p = y_prob[mask]
+    y = y_true[mask]
+    return {
+        "center": center,
+        "halfWidth": half_width,
+        "support": support,
+        "ece": float(abs(p.mean() - y.mean())),
+        "meanProb": float(p.mean()),
+        "meanLabel": float(y.mean()),
+    }
+
+
+def overload_ratio(y_true: np.ndarray, y_prob: np.ndarray) -> float | None:
+    positive_rate = float(y_true.mean()) if len(y_true) else 0.0
+    if positive_rate <= 0:
+        return None
+    return float(y_prob.mean() / positive_rate)
+
+
+def fit_isotonic_calibration(raw_probs: np.ndarray, y_true: np.ndarray) -> tuple[np.ndarray, dict | None]:
+    if len(set(y_true.tolist())) < 2:
+        return raw_probs, None
+    calibration = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
+    calibration.fit(raw_probs, y_true)
+    calibration_blob = {
+        "method": "isotonic",
+        "xThresholds": [float(value) for value in calibration.X_thresholds_],
+        "yThresholds": [float(value) for value in calibration.y_thresholds_],
+    }
+    return calibration.predict(raw_probs), calibration_blob
+
+
+def apply_isotonic_calibration(raw_probs: np.ndarray, calibration_blob: dict | None) -> np.ndarray:
+    if calibration_blob is None:
+        return raw_probs
+    x_thresholds = np.asarray(calibration_blob["xThresholds"], dtype=np.float64)
+    y_thresholds = np.asarray(calibration_blob["yThresholds"], dtype=np.float64)
+    return np.interp(raw_probs, x_thresholds, y_thresholds, left=y_thresholds[0], right=y_thresholds[-1])
+
 def metrics_for(y_true: np.ndarray, y_prob: np.ndarray) -> dict:
     y_pred = (y_prob >= 0.5).astype(int)
     precision, recall, f1, _ = precision_recall_fscore_support(
@@ -70,25 +309,8 @@ def metrics_for(y_true: np.ndarray, y_prob: np.ndarray) -> dict:
         zero_division=0,
     )
     tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
-    if len(set(y_true)) < 2:
-        return {
-            "rocAuc": 0.5,
-            "brier": float(brier_score_loss(y_true, y_prob)),
-            "logLoss": 0.0,
-            "averagePrecision": 0.0,
-            "precisionAt50": float(precision),
-            "recallAt50": float(recall),
-            "f1At50": float(f1),
-            "truePositiveAt50": int(tp),
-            "falsePositiveAt50": int(fp),
-            "trueNegativeAt50": int(tn),
-            "falseNegativeAt50": int(fn),
-        }
-    return {
-        "rocAuc": float(roc_auc_score(y_true, y_prob)),
+    base = {
         "brier": float(brier_score_loss(y_true, y_prob)),
-        "logLoss": float(log_loss(y_true, y_prob)),
-        "averagePrecision": float(average_precision_score(y_true, y_prob)),
         "precisionAt50": float(precision),
         "recallAt50": float(recall),
         "f1At50": float(f1),
@@ -96,6 +318,24 @@ def metrics_for(y_true: np.ndarray, y_prob: np.ndarray) -> dict:
         "falsePositiveAt50": int(fp),
         "trueNegativeAt50": int(tn),
         "falseNegativeAt50": int(fn),
+        "localCalibration": {
+            key: local_ece(y_true, y_prob, center, half_width)
+            for key, (center, half_width) in LOCAL_ECE_BANDS.items()
+        },
+        "overloadRatio": overload_ratio(y_true, y_prob),
+    }
+    if len(set(y_true)) < 2:
+        return {
+            **base,
+            "rocAuc": 0.5,
+            "logLoss": 0.0,
+            "averagePrecision": 0.0,
+        }
+    return {
+        **base,
+        "rocAuc": float(roc_auc_score(y_true, y_prob)),
+        "logLoss": float(log_loss(y_true, y_prob)),
+        "averagePrecision": float(average_precision_score(y_true, y_prob)),
     }
 
 
@@ -137,6 +377,95 @@ def monotone_constraints_for(feature_cols: list[str]) -> list[int]:
     return constraints
 
 
+def train_logistic_baseline(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_val: np.ndarray,
+    y_val: np.ndarray,
+    X_test: np.ndarray,
+) -> dict:
+    model = LogisticRegression(
+        penalty="l2",
+        C=1.0,
+        solver="lbfgs",
+        class_weight="balanced",
+        max_iter=1000,
+        random_state=42,
+    )
+    model.fit(X_train, y_train)
+    raw_val = model.predict_proba(X_val)[:, 1]
+    raw_test = model.predict_proba(X_test)[:, 1]
+    calibrated_val, calibration_blob = fit_isotonic_calibration(raw_val, y_val)
+    calibrated_test = apply_isotonic_calibration(raw_test, calibration_blob)
+    return {
+        "validationProbs": calibrated_val,
+        "testProbs": calibrated_test,
+        "calibration": calibration_blob or {"method": "identity"},
+        "coefNormL1": float(np.abs(model.coef_).sum()),
+        "intercept": float(model.intercept_[0]),
+    }
+
+
+def local_calibration_passes(baseline_metrics: dict, challenger_metrics: dict) -> tuple[bool, list[str]]:
+    blocked_reasons = []
+    for key in LOCAL_ECE_BANDS:
+        baseline_ece = (baseline_metrics.get("localCalibration") or {}).get(key, {}).get("ece")
+        challenger_ece = (challenger_metrics.get("localCalibration") or {}).get(key, {}).get("ece")
+        if baseline_ece is not None and challenger_ece is not None and challenger_ece > baseline_ece + 1e-4:
+            blocked_reasons.append(f"{key} worsened: challenger={challenger_ece} baseline={baseline_ece}")
+    return len(blocked_reasons) == 0, blocked_reasons
+
+
+def overload_passes(baseline_metrics: dict, challenger_metrics: dict) -> tuple[bool, str | None]:
+    baseline_overload = baseline_metrics.get("overloadRatio")
+    challenger_overload = challenger_metrics.get("overloadRatio")
+    if baseline_overload is None or challenger_overload is None:
+        return True, None
+    baseline_distance = abs(float(baseline_overload) - 1.0)
+    challenger_distance = abs(float(challenger_overload) - 1.0)
+    if challenger_distance <= baseline_distance + 1e-4:
+        return True, None
+    return False, f"overload worsened: challenger={challenger_overload} baseline={baseline_overload}"
+
+
+def promotion_gates_for(
+    baseline_metrics: dict,
+    challenger_metrics: dict,
+    model_path: Path,
+) -> dict:
+    gates = {
+        "ranking": bool(challenger_metrics.get("rocAuc", 0.0) >= baseline_metrics.get("rocAuc", 0.0) - 1e-4),
+        "proper": bool(challenger_metrics.get("brier", 1.0) <= baseline_metrics.get("brier", 1.0) + 1e-4),
+        "localCal": True,
+        "overload": True,
+        "replayable": model_path.exists(),
+    }
+    blocked_reasons = []
+    if not gates["ranking"]:
+        blocked_reasons.append(
+            f"ranking degraded: challenger={challenger_metrics.get('rocAuc')} baseline={baseline_metrics.get('rocAuc')}"
+        )
+    if not gates["proper"]:
+        blocked_reasons.append(
+            f"brier degraded: challenger={challenger_metrics.get('brier')} baseline={baseline_metrics.get('brier')}"
+        )
+    local_cal_passed, local_cal_blockers = local_calibration_passes(baseline_metrics, challenger_metrics)
+    gates["localCal"] = local_cal_passed
+    blocked_reasons.extend(local_cal_blockers)
+    overload_passed, overload_blocker = overload_passes(baseline_metrics, challenger_metrics)
+    gates["overload"] = overload_passed
+    if overload_blocker:
+        blocked_reasons.append(overload_blocker)
+    if not gates["replayable"]:
+        blocked_reasons.append(f"missing model artifact: {model_path}")
+    gates["passCount"] = sum(1 for value in gates.values() if value is True)
+    return {
+        "gates": gates,
+        "headPromotable": gates["passCount"] == 5,
+        "blockedReasons": blocked_reasons,
+    }
+
+
 def train_head(
     df_train: pd.DataFrame,
     df_val: pd.DataFrame,
@@ -176,7 +505,15 @@ def train_head(
     neg_train = len(y_train) - pos_train
     if pos_train == 0 or neg_train == 0:
         print(f"[catboost] {head_key}: skipping — no positive/negative examples in train")
-        return {}
+        return {
+            "head": head_key,
+            "skipped": True,
+            "reason": "no positive/negative examples in train",
+        }
+
+    baseline = train_logistic_baseline(X_train, y_train, X_val, y_val, X_test)
+    baseline_val_metrics = metrics_for(y_val, baseline["validationProbs"])
+    baseline_test_metrics = metrics_for(y_test, baseline["testProbs"])
 
     # Inverse frequency class weights
     scale_pos_weight = neg_train / max(pos_train, 1)
@@ -235,8 +572,10 @@ def train_head(
     test_pool = Pool(X_test, y_test, feature_names=feature_cols)
     model.fit(train_pool, eval_set=val_pool)
 
-    val_probs = model.predict_proba(val_pool)[:, 1]
-    test_probs = model.predict_proba(test_pool)[:, 1]
+    raw_val_probs = model.predict_proba(val_pool)[:, 1]
+    raw_test_probs = model.predict_proba(test_pool)[:, 1]
+    val_probs, challenger_calibration = fit_isotonic_calibration(raw_val_probs, y_val)
+    test_probs = apply_isotonic_calibration(raw_test_probs, challenger_calibration)
 
     val_metrics = metrics_for(y_val, val_probs)
     test_metrics = metrics_for(y_test, test_probs)
@@ -244,11 +583,31 @@ def train_head(
     print(f"[catboost] {head_key}: val  AUC={val_metrics['rocAuc']:.4f} brier={val_metrics['brier']:.4f} recall@0.5={val_metrics['recallAt50']:.4f}")
     print(f"[catboost] {head_key}: test AUC={test_metrics['rocAuc']:.4f} brier={test_metrics['brier']:.4f} recall@0.5={test_metrics['recallAt50']:.4f}")
 
-    out_path = os.path.join(output_dir, f"catboost_{head_key}_v1.json")
-    model.save_model(out_path, format="json")
+    out_path = Path(output_dir) / f"catboost_{head_key}_v1.json"
+    model.save_model(str(out_path), format="json")
     print(f"[catboost] {head_key}: saved model to {out_path}")
 
-    return {"validation": val_metrics, "test": test_metrics, "bestIteration": model.best_iteration_}
+    gate_summary = promotion_gates_for(baseline_test_metrics, test_metrics, out_path)
+    return {
+        "head": head_key,
+        "skipped": False,
+        "baseline": {
+            "validation": baseline_val_metrics,
+            "test": baseline_test_metrics,
+            "calibration": baseline["calibration"],
+            "coefNormL1": baseline["coefNormL1"],
+            "intercept": baseline["intercept"],
+        },
+        "challenger": {
+            "validation": val_metrics,
+            "test": test_metrics,
+            "calibration": challenger_calibration or {"method": "identity"},
+            "bestIteration": model.best_iteration_,
+            "modelArtifact": str(out_path),
+            "modelSha256": sha256_file(out_path),
+        },
+        **gate_summary,
+    }
 
 
 def main():
@@ -270,78 +629,53 @@ def main():
     parser.add_argument("--bootstrap-type", choices=["Bayesian", "Bernoulli", "MVS", "Poisson", "No"], default=os.environ.get("CATBOOST_BOOTSTRAP_TYPE"), help="Optional CatBoost bootstrap_type.")
     parser.add_argument("--subsample", type=float, default=float(os.environ["CATBOOST_SUBSAMPLE"]) if "CATBOOST_SUBSAMPLE" in os.environ else None, help="Optional CatBoost subsample.")
     parser.add_argument("--metric-period", type=int, default=int(os.environ.get("CATBOOST_METRIC_PERIOD", "50")), help="CatBoost metric_period. Higher values reduce logging/metric overhead.")
+    parser.add_argument("--allow-missing-scenario-families", action="store_true", help="Allow schema-smoke exports that do not include every governed scenario family.")
+    parser.add_argument("--validate-only", action="store_true", help="Validate the governed CSV contract without importing ML training dependencies.")
     args = parser.parse_args()
 
-    if not os.path.exists(args.features_csv):
-        print(f"[catboost] ERROR: features CSV not found: {args.features_csv}")
+    features_csv = Path(args.features_csv)
+    output_dir = Path(args.output_dir)
+    if not features_csv.exists():
+        print(f"[catboost] ERROR: features CSV not found: {features_csv}", file=sys.stderr)
         sys.exit(1)
 
-    os.makedirs(args.output_dir, exist_ok=True)
+    api_root = Path(__file__).resolve().parents[1]
+    proof_risk_model_source = api_root / "src/lib/proof-risk-model.ts"
+    try:
+        expected_feature_keys = read_ts_const_string_array(proof_risk_model_source, "OBSERVABLE_FEATURE_KEYS")
+        expected_scenario_families = read_ts_const_string_array(proof_risk_model_source, "PROOF_SCENARIO_FAMILIES")
+        validation_summary = validate_governed_csv(
+            features_csv,
+            expected_feature_keys,
+            expected_scenario_families,
+            not args.allow_missing_scenario_families,
+        )
+    except Exception as exc:
+        print(f"[catboost] ERROR: governed CSV validation failed: {exc}", file=sys.stderr)
+        sys.exit(1)
 
-    print(f"[catboost] reading {args.features_csv}")
-    df = pd.read_csv(args.features_csv)
-    print(f"[catboost] loaded {len(df)} rows | splits: {dict(df['split'].value_counts())}")
-    feature_cols = sorted(
-        [column for column in df.columns if column.startswith("feat_")],
-        key=lambda column: int(column.split("_", 1)[1]),
+    print(
+        "[catboost] governed CSV validation passed | "
+        f"rows={validation_summary['rowCount']} "
+        f"features={validation_summary['featureCount']} "
+        f"splits={validation_summary['splitCounts']} "
+        f"families={validation_summary['scenarioFamilyCounts']}"
     )
-    if not feature_cols:
-        print("[catboost] ERROR: no feat_* columns found in features CSV")
-        sys.exit(1)
+    if args.validate_only:
+        return 0
+
+    load_python_ml_dependencies()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"[catboost] reading {features_csv}")
+    df = pd.read_csv(features_csv)
+    print(f"[catboost] loaded {len(df)} rows | splits: {dict(df['split'].value_counts())}")
+    feature_cols = validation_summary["featureColumns"]
     print(f"[catboost] detected {len(feature_cols)} feature columns")
 
     df_train = df[df["split"] == "train"].copy()
     df_val = df[df["split"] == "validation"].copy()
     df_test = df[df["split"] == "test"].copy()
-
-    # Fallback: if no 'train' rows exported (e.g., eval CSV restricted to heldout splits),
-    # split the validation rows deterministically by run_id into train/val/test (2:1:1) so
-    # the challenger can still be fit and scored. Stratification-by-run preserves per-run
-    # temporal locality (no leakage across semesters of same run).
-    if len(df_train) == 0 and len(df_val) > 0:
-        val_run_ids = sorted(df_val["run_id"].unique())
-        rng = np.random.default_rng(42)
-        perm = rng.permutation(len(val_run_ids))
-        n_total = len(val_run_ids)
-        n_train = max(1, n_total * 2 // 4)  # 50%
-        n_val = max(1, (n_total - n_train) // 2)  # 25%
-        train_run_ids = {val_run_ids[i] for i in perm[:n_train]}
-        inner_val_run_ids = {val_run_ids[i] for i in perm[n_train : n_train + n_val]}
-        test_run_ids = {val_run_ids[i] for i in perm[n_train + n_val :]}
-        df_train = df_val[df_val["run_id"].isin(train_run_ids)].copy()
-        df_val_new = df_val[df_val["run_id"].isin(inner_val_run_ids)].copy()
-        df_test_fallback = df_val[df_val["run_id"].isin(test_run_ids)].copy()
-        if len(df_test) == 0:
-            df_test = df_test_fallback
-        df_val = df_val_new
-        print(
-            f"[catboost] fallback split: {n_total} run_ids \u2192 "
-            f"train={len(train_run_ids)} runs ({len(df_train)} rows), "
-            f"val={len(inner_val_run_ids)} runs ({len(df_val)} rows), "
-            f"test={len(test_run_ids)} runs ({len(df_test)} rows)"
-        )
-
-    if "run_id" in df.columns:
-        split_runs = {
-            "train": set(df_train["run_id"].dropna().astype(str)),
-            "validation": set(df_val["run_id"].dropna().astype(str)),
-            "test": set(df_test["run_id"].dropna().astype(str)),
-        }
-        overlaps = {
-            "train_validation": sorted(split_runs["train"] & split_runs["validation"])[:5],
-            "train_test": sorted(split_runs["train"] & split_runs["test"])[:5],
-            "validation_test": sorted(split_runs["validation"] & split_runs["test"])[:5],
-        }
-        leaking = {key: value for key, value in overlaps.items() if value}
-        if leaking:
-            print(f"[catboost] ERROR: run_id leakage across splits: {json.dumps(leaking)}", file=sys.stderr)
-            sys.exit(1)
-        print(
-            "[catboost] split guard: "
-            f"train_runs={len(split_runs['train'])} "
-            f"validation_runs={len(split_runs['validation'])} "
-            f"test_runs={len(split_runs['test'])}"
-        )
 
     all_metrics = {}
     for head_key in HEADS:
@@ -353,7 +687,7 @@ def main():
             df_test,
             head_key,
             feature_cols,
-            args.output_dir,
+            str(output_dir),
             args.depth,
             args.iterations,
             args.device.upper(),
@@ -373,15 +707,71 @@ def main():
         if result:
             all_metrics[head_key] = result
 
-    metrics_path = os.path.join(args.output_dir, "metrics.json")
-    with open(metrics_path, "w") as f:
-        json.dump(all_metrics, f, indent=2)
+    promotable_heads = [
+        head_key for head_key, result in all_metrics.items()
+        if not result.get("skipped") and result.get("headPromotable")
+    ]
+    blocked_heads = [
+        head_key for head_key, result in all_metrics.items()
+        if not result.get("skipped") and not result.get("headPromotable")
+    ]
+    skipped_heads = [
+        head_key for head_key, result in all_metrics.items()
+        if result.get("skipped")
+    ]
+    promotion = {
+        "decision": "promote-as-primary" if len(promotable_heads) == len(HEADS) and not blocked_heads and not skipped_heads else "keep-as-shadow",
+        "promotableHeads": promotable_heads,
+        "blockedHeads": blocked_heads,
+        "skippedHeads": skipped_heads,
+        "blockedReasonsByHead": {
+            head_key: result.get("blockedReasons", [])
+            for head_key, result in all_metrics.items()
+            if result.get("blockedReasons")
+        },
+        "reason": (
+            "All heads passed ranking, proper scoring, local calibration, overload, and replayability gates."
+            if len(promotable_heads) == len(HEADS) and not blocked_heads and not skipped_heads
+            else "One or more heads failed or skipped the governed promotion gates; challenger remains shadow."
+        ),
+    }
+    summary = {
+        "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "challenger": "catboost",
+        "baseline": "logistic-v8-governed-export",
+        "corpusAdmissibility": "governed",
+        "featuresCsv": str(features_csv),
+        "featuresCsvSha256": sha256_file(features_csv),
+        "featureSchema": {
+            "source": str(proof_risk_model_source),
+            "featureCount": validation_summary["featureCount"],
+            "featureKeyHash": validation_summary["featureKeyHash"],
+        },
+        "validation": validation_summary,
+        "heads": all_metrics,
+        "promotion": promotion,
+    }
+
+    metrics_path = output_dir / "metrics.json"
+    metrics_path.write_text(json.dumps(summary, indent=2, sort_keys=True, default=str), encoding="utf-8")
+    (output_dir / "promotion-decision.json").write_text(json.dumps(promotion, indent=2, sort_keys=True, default=str), encoding="utf-8")
     print(f"\n[catboost] all metrics saved to {metrics_path}")
+    print(f"[catboost] promotion.decision = {promotion['decision']}")
 
     print("\n[catboost] SUMMARY")
     for head_key, m in all_metrics.items():
-        t = m.get("test", {})
-        print(f"  {head_key:30s} test AUC={t.get('rocAuc',0):.4f} brier={t.get('brier',0):.4f} AP={t.get('averagePrecision',0):.4f}")
+        if m.get("skipped"):
+            print(f"  {head_key:30s} skipped: {m.get('reason')}")
+            continue
+        t = m.get("challenger", {}).get("test", {})
+        b = m.get("baseline", {}).get("test", {})
+        print(
+            f"  {head_key:30s} "
+            f"catboost AUC={t.get('rocAuc',0):.4f} brier={t.get('brier',0):.4f} "
+            f"baseline AUC={b.get('rocAuc',0):.4f} brier={b.get('brier',0):.4f} "
+            f"gates={m.get('gates', {}).get('passCount', 0)}/5"
+        )
+    return 0
 
 
 if __name__ == "__main__":

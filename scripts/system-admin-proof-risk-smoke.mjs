@@ -26,9 +26,7 @@ assert(
   `Unsupported AIRMENTOR_PROOF_COVERAGE_TARGET: ${proofCoverageTargetRaw}`,
 )
 
-assert(playwrightRoot, 'PLAYWRIGHT_ROOT is required')
-
-const { firefox } = await import(`file://${playwrightRoot}/lib/node_modules/playwright/index.mjs`)
+const { firefox } = await import('playwright')
 
 const proofPlaybackSelectionStorageKey = 'airmentor-proof-playback-selection'
 const seededProofRoute = '#/admin/faculties/academic_faculty_engineering_and_technology/departments/dept_cse/branches/branch_mnc_btech/batches/batch_branch_mnc_btech_2023'

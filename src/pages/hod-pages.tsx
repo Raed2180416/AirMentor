@@ -98,6 +98,7 @@ export function HodView({
   onOpenQueueHistory,
   onOpenStudentShell,
   onOpenRiskExplorer,
+  onRecomputeProofRunRisk,
   summary,
   courseRollups,
   facultyRollups,
@@ -112,6 +113,7 @@ export function HodView({
   onOpenStudent: (student: Student, offering?: Offering) => void
   onOpenStudentShell: (studentId: string) => void
   onOpenRiskExplorer: (studentId: string) => void
+  onRecomputeProofRunRisk?: (runId: string, opts?: { refreshWorkspace?: boolean }) => Promise<void> | void
   tasks: SharedTask[]
   calendarAuditEvents: CalendarAuditEvent[]
   summary: ApiAcademicHodProofSummary | null
@@ -218,7 +220,14 @@ export function HodView({
           title="Department proof records for the active simulation run"
           description="Read-only oversight view using the same proof snapshot as sysadmin and faculty pages. This page explains the current watchlist without exposing hidden model internals."
           icon={<Shield size={22} color={T.accent} />}
-          headerActions={<Btn size="sm" variant="ghost" onClick={onOpenQueueHistory}>Queue History</Btn>}
+          headerActions={(
+            <>
+              {onRecomputeProofRunRisk && activeRunContext ? (
+                <Btn size="sm" variant="ghost" onClick={() => onRecomputeProofRunRisk(activeRunContext.simulationRunId, { refreshWorkspace: true })}>Recompute Risk</Btn>
+              ) : null}
+              <Btn size="sm" variant="ghost" onClick={onOpenQueueHistory}>Queue History</Btn>
+            </>
+          )}
           badges={(
             <>
               <Chip color={T.accent}>{activeRunContext.batchLabel}</Chip>

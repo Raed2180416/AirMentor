@@ -823,21 +823,27 @@ function buildCgpaTraceSubject(rawSubject: Record<string, unknown>) {
   const quizPct = pickNumber(rawSubject, 'quizPct')
   const assignmentPct = pickNumber(rawSubject, 'assignmentPct')
   const seePct = pickNumber(rawSubject, 'seePct')
+  const assessmentProfile = pickString(rawSubject, 'assessmentProfile')
   const hasCompleteCe = tt1Pct != null && tt2Pct != null && quizPct != null && assignmentPct != null
   const cePct = hasCompleteCe
     ? computeCePct({ tt1Pct, tt2Pct, quizPct, assignmentPct })
     : pickNumber(rawSubject, 'cePct')
+  
+  const ceMax = assessmentProfile === 'standard-50-50' ? 50 : 60
   const ceMark = hasCompleteCe
-    ? computeCeMark({ tt1Pct, tt2Pct, quizPct, assignmentPct })
+    ? computeCeMark({ tt1Pct, tt2Pct, quizPct, assignmentPct }, ceMax)
     : cePct == null
       ? null
-      : Math.round((cePct / 100) * 60)
-  const seeMark = seePct == null ? null : computeSeeMark(seePct)
+      : Math.round((cePct / 100) * ceMax)
+      
+  const seeMax = assessmentProfile === 'standard-50-50' ? 50 : 40
+  const seeMark = seePct == null ? null : computeSeeMark(seePct, seeMax)
   const evaluated = ceMark != null && seeMark != null
     ? evaluateResult({
       ceMark,
       seeMark,
       attendancePercent: pickNumber(rawSubject, 'attendancePct') ?? 0,
+      assessmentProfile,
     })
     : null
   const storedGradePoint = pickNumber(rawSubject, 'gradePoint')

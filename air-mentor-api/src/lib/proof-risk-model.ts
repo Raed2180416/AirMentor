@@ -252,6 +252,7 @@ export type ObservableFeaturePayload = {
   downstreamDependencyLoad: number
   weakPrerequisiteChainCount: number
   repeatedWeakPrerequisiteFamilyCount: number
+  semesterNumber: number
   semesterProgress: number
   sectionRiskRate: number
 }
@@ -721,12 +722,17 @@ function featureVectorFromPayload(
   const stageIndicators = includeStageIndicators
     ? stageIndicatorValues(sourceRefs?.stageKey)
     : stageIndicatorValues(null)
+
+  const semesterFactor = Math.max(0, (payload.semesterNumber - 1) / 5)
+  const cgpaBuffer = clamp((payload.currentCgpa - 6.0) / 4.0, 0, 1)
+  const backlogDecay = 1.0 - (cgpaBuffer * semesterFactor * 0.8)
+
   return {
     attendancePctScaled: clamp(payload.attendancePct / 100, 0, 1),
     attendanceTrendScaled: clamp((payload.attendanceTrend + 25) / 50, 0, 1),
     attendanceHistoryRiskScaled: clamp(payload.attendanceHistoryRiskCount / 4, 0, 1),
     currentCgpaScaled: clamp(payload.currentCgpa / 10, 0, 1),
-    backlogPressureScaled: clamp(payload.backlogCount / 4, 0, 1),
+    backlogPressureScaled: clamp((payload.backlogCount * backlogDecay) / 4, 0, 1),
     tt1RiskScaled: safePctToRisk(payload.tt1Pct),
     tt2RiskScaled: safePctToRisk(payload.tt2Pct),
     seeRiskScaled: safePctToRisk(payload.seePct),
@@ -2302,20 +2308,32 @@ type CatBoostModel = {
   oblivious_trees: CatBoostTree[];
 };
 let cachedCatBoostModels: Record<string, CatBoostModel> | null = null;
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
 function loadCatBoostModels() {
   if (cachedCatBoostModels) return cachedCatBoostModels;
   const models: Record<string, CatBoostModel> = {};
   const heads = ['attendanceRisk', 'ceRisk', 'seeRisk', 'overallCourseRisk', 'downstreamCarryoverRisk'];
-  const baseDir = _resolve(process.cwd(), 'output/proof-risk-model');
+  
+  let baseDir = '';
+  try {
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
+    baseDir = _resolve(__dirname, '../../../output/proof-risk-model');
+  } catch(e) {
+    baseDir = _resolve(process.cwd(), 'output/proof-risk-model');
+  }
+  
   try {
     for (const head of heads) {
       const content = _readFileSync(_resolve(baseDir, `catboost_${head}_v1.json`), 'utf-8');
       models[head] = JSON.parse(content);
     }
-    cachedCatBoostModels = models;
   } catch (e) {
-    console.warn('Failed to load CatBoost models', e);
+    console.warn('Failed to load CatBoost models from', baseDir, (e as Error).message);
   }
+  cachedCatBoostModels = models; // Cache even if it's partial or empty to avoid OOM
   return models;
 }
 function scoreWithCatBoost(headKey: RiskHeadKey, fallbackProb: number, vector: number[]): number {
@@ -2591,6 +2609,7 @@ export function buildObservableFeaturePayload(input: {
   downstreamDependencyLoad?: number
   weakPrerequisiteChainCount?: number
   repeatedWeakPrerequisiteFamilyCount?: number
+  semesterNumber: number
   sectionRiskRate: number
   semesterProgress: number
 }): ObservableFeaturePayload {
@@ -2644,6 +2663,7 @@ export function buildObservableFeaturePayload(input: {
     downstreamDependencyLoad: roundToFour(downstreamDependencyLoad),
     weakPrerequisiteChainCount,
     repeatedWeakPrerequisiteFamilyCount,
+    semesterNumber: input.semesterNumber,
     semesterProgress: roundToFour(normalizedSemesterProgress),
     sectionRiskRate: roundToFour(clamp(input.sectionRiskRate, 0, 1)),
   }

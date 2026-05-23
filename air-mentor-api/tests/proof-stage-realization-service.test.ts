@@ -25,6 +25,8 @@ function makeStudent(overrides: Partial<StudentTrajectoryForSimulation> = {}): S
       selfRegulation: 0.66,
       attendanceDiscipline: 0.68,
       supportResponsiveness: 0.56,
+      externalWorkObligation: 0,
+      commuteStress: 0,
       ...overrides.latentBase,
     },
     profile: {

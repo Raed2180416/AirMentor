@@ -72,7 +72,7 @@ describe('academic session shell', () => {
       children: null,
     }))
 
-    fireEvent.change(screen.getByPlaceholderText('e.g. kavitha.rao or kavitha.rao@msruas.ac.in'), {
+    fireEvent.change(screen.getByPlaceholderText('e.g. kavitha.rao'), {
       target: { value: 'kavitha.rao@msruas.ac.in' },
     })
 

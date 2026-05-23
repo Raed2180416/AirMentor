@@ -172,6 +172,7 @@ type ThresholdMetrics = {
   flaggedRate: number
   precision: number
   recall: number
+  falsePositiveRate: number
 }
 
 type OperationalUrgencyMetrics = {
@@ -770,12 +771,15 @@ function summarizeBudgetMetrics(rows: ProbabilityRow[], budgetRate: number): Bud
   }
 }
 
+
+
 function summarizeThresholdMetrics(rows: ProbabilityRow[], threshold: number): ThresholdMetrics {
   if (!rows.length) {
     return {
       flaggedRate: 0,
       precision: 0,
       recall: 0,
+      falsePositiveRate: 0,
     }
   }
   let flaggedCount = 0
@@ -787,10 +791,13 @@ function summarizeThresholdMetrics(rows: ProbabilityRow[], threshold: number): T
     flaggedCount += 1
     if (row.label === 1) truePositives += 1
   })
+  const falsePositives = flaggedCount - truePositives
+  const trueNegatives = rows.length - positiveCount
   return {
     flaggedRate: roundToFour(flaggedCount / rows.length),
     precision: roundToFour(flaggedCount > 0 ? truePositives / flaggedCount : 0),
     recall: roundToFour(positiveCount > 0 ? truePositives / positiveCount : 0),
+    falsePositiveRate: roundToFour(trueNegatives > 0 ? falsePositives / trueNegatives : 0),
   }
 }
 
@@ -2830,6 +2837,35 @@ async function main() {
       stabilityByAdjacentStage: output.overallCourseStabilityByAdjacentStagePair,
       queueBurden: output.queueBurdenSummary,
       reproducibilityManifest: output.reproducibilityManifest,
+      // Equalized Odds fairness audit: FPR disparity across scenario families.
+      // Intent: ensure no student subgroup is disproportionately over-flagged.
+      fairnessAudit: (() => {
+        const familyFprs = Object.entries(output.overallCourseVariantSummaryByScenarioFamily).map(
+          ([family, summary]) => ({
+            scenarioFamily: family,
+            falsePositiveRate: summary.current.mediumThreshold.falsePositiveRate,
+            recall: summary.current.mediumThreshold.recall,
+            precision: summary.current.mediumThreshold.precision,
+            support: summary.current.support,
+          }),
+        )
+        const fprValues = familyFprs.map(f => f.falsePositiveRate)
+        const meanFpr = fprValues.length > 0 ? fprValues.reduce((s, v) => s + v, 0) / fprValues.length : 0
+        const varianceFpr = fprValues.length > 0 ? fprValues.reduce((s, v) => s + (v - meanFpr) ** 2, 0) / fprValues.length : 0
+        const stddevFpr = Math.sqrt(varianceFpr)
+        const maxFprDisparity = fprValues.length > 0 ? Math.max(...fprValues) - Math.min(...fprValues) : 0
+        const EQUALIZED_ODDS_STDDEV_LIMIT = 0.05
+        return {
+          threshold: 'medium',
+          thresholdValue: PRODUCTION_RISK_THRESHOLDS.medium,
+          equalizedOddsStddevLimit: EQUALIZED_ODDS_STDDEV_LIMIT,
+          perFamily: familyFprs,
+          meanFalsePositiveRate: roundToFour(meanFpr),
+          stddevFalsePositiveRate: roundToFour(stddevFpr),
+          maxFprDisparity: roundToFour(maxFprDisparity),
+          passesEqualizedOdds: stddevFpr <= EQUALIZED_ODDS_STDDEV_LIMIT,
+        }
+      })(),
     }
     await Promise.all(
       Object.entries(metricSidecars).map(([key, filePath]) => {
@@ -3277,6 +3313,17 @@ async function main() {
       `report: ${roundToTwo((totalMs - phaseRecomputeMs - phaseArtifactLoadMs - phasePass1Ms - phaseTrainMs - phasePass2Ms) / 1000)}s`,
     ].join(' | '))
     logProgress(`evaluation completed in ${roundToTwo(totalMs / 1000)}s`)
+
+    if (featureExportPath) {
+      logProgress(`Starting CatBoost governed pipeline training on ${featureExportPath}...`)
+      try {
+        const pythonExecutable = process.env.VIRTUAL_ENV ? path.join(process.env.VIRTUAL_ENV, 'bin', 'python') : 'python'
+        execFileSync(pythonExecutable, ['scripts/train_catboost_challenger.py', featureExportPath, paths.outputDir], { stdio: 'inherit' })
+        logProgress('CatBoost governed pipeline training completed successfully.')
+      } catch (err) {
+        logProgress(`CatBoost governed pipeline training failed: ${err}`)
+      }
+    }
 
     if (printJsonReport) {
       console.log(JSON.stringify(output, null, 2))

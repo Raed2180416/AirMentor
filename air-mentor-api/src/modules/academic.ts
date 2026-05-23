@@ -1655,6 +1655,7 @@ function computeRiskFromActiveModelOrPolicy(input: {
     downstreamDependencyLoad: prerequisiteSummary.downstreamDependencyLoad,
     weakPrerequisiteChainCount: prerequisiteSummary.weakPrerequisiteChainCount,
     repeatedWeakPrerequisiteFamilyCount: prerequisiteSummary.repeatedWeakPrerequisiteFamilyCount,
+    semesterNumber: sourceRefs?.semesterNumber ?? 1,
     sectionRiskRate: 0,
     semesterProgress,
   })

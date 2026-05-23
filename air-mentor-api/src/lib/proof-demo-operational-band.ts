@@ -1,11 +1,9 @@
 // Proof-demo operational risk band overlay.
 //
 // The calibrated proof risk model (`PRODUCTION_RISK_THRESHOLDS` in
-// `proof-risk-model.ts`) bands probabilities at high=0.85 / medium=0.4. Those
-// thresholds reflect raw failure-probability semantics learned during model
-// training. In the deterministic demo proof corpus the maximum observed
-// `overallCourseRisk` is around 0.71, which means the calibrated High band is
-// unreachable — even severely struggling synthetic students stay Medium.
+// `proof-risk-model.ts`) bands probabilities at high=0.65 / medium=0.4,
+// aligned with the operational urgency thresholds below. This ensures the
+// evaluation report and demo UI consistently flag the same students as High.
 //
 // For the six-semester demo we surface a separate "operational urgency" band
 // that rebands the same `overallCourseRisk` value with reduced thresholds, so

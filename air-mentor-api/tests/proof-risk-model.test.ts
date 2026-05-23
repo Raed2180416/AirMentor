@@ -37,7 +37,7 @@ function buildFeaturePayload(index: number, risky: boolean): ObservableFeaturePa
     prerequisiteFailureCount: risky ? 2 : 0,
     prerequisiteCourseCodes: risky ? ['AMC101', 'AMC102', 'AMC103'] : ['AMC101'],
     semesterProgress: 0.2 + ((index % 5) * 0.15),
-    sectionRiskRate: risky ? 0.64 : 0.22,
+    semesterNumber: 1, sectionRiskRate: risky ? 0.64 : 0.22,
   })
 }
 
@@ -290,7 +290,7 @@ describe('proof risk model', () => {
       prerequisiteFailureCount: 1,
       prerequisiteCourseCodes: ['AMC101', 'AMC102'],
       semesterProgress: 0.55,
-      sectionRiskRate: 0.3,
+      semesterNumber: 1, sectionRiskRate: 0.3,
     })
 
     expect(payload.tt1Pct).toBe(0)
@@ -322,7 +322,7 @@ describe('proof risk model', () => {
       weakPrerequisiteChainCount: 0,
       repeatedWeakPrerequisiteFamilyCount: 0,
       semesterProgress: 0.35,
-      sectionRiskRate: 0.18,
+      semesterNumber: 1, sectionRiskRate: 0.18,
     })
     const pressuredPayload = buildObservableFeaturePayload({
       attendancePct: 81,
@@ -344,7 +344,7 @@ describe('proof risk model', () => {
       weakPrerequisiteChainCount: 3,
       repeatedWeakPrerequisiteFamilyCount: 2,
       semesterProgress: 0.9,
-      sectionRiskRate: 0.62,
+      semesterNumber: 1, sectionRiskRate: 0.62,
     })
 
     expect(pressuredPayload.prerequisiteChainDepth).toBeGreaterThan(cautiousPayload.prerequisiteChainDepth)

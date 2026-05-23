@@ -1,12 +1,11 @@
 export const GRADE_BANDS = [
-  { grade: 'O', minimumMark: 90, maximumMark: 100, gradePoint: 10 },
-  { grade: 'A+', minimumMark: 80, maximumMark: 89, gradePoint: 9 },
-  { grade: 'A', minimumMark: 70, maximumMark: 79, gradePoint: 8 },
-  { grade: 'B+', minimumMark: 60, maximumMark: 69, gradePoint: 7 },
-  { grade: 'B', minimumMark: 55, maximumMark: 59, gradePoint: 6 },
-  { grade: 'C', minimumMark: 50, maximumMark: 54, gradePoint: 5 },
-  { grade: 'P', minimumMark: 40, maximumMark: 49, gradePoint: 4 },
-  { grade: 'F', minimumMark: 0, maximumMark: 39, gradePoint: 0 },
+  { grade: 'O', minimumMark: 91, maximumMark: 100, gradePoint: 10 },
+  { grade: 'A+', minimumMark: 81, maximumMark: 90, gradePoint: 9 },
+  { grade: 'A', minimumMark: 71, maximumMark: 80, gradePoint: 8 },
+  { grade: 'B+', minimumMark: 61, maximumMark: 70, gradePoint: 7 },
+  { grade: 'B', minimumMark: 51, maximumMark: 60, gradePoint: 6 },
+  { grade: 'C', minimumMark: 45, maximumMark: 50, gradePoint: 5 },
+  { grade: 'F', minimumMark: 0, maximumMark: 44, gradePoint: 0 },
 ] as const
 
 export type GradeBand = typeof GRADE_BANDS[number]
@@ -29,6 +28,25 @@ export const PASS_RULES = {
   seeMinimum: 16,
   overallMinimum: 40,
 } as const
+
+export function resolveGradingProfile(profile?: string | null) {
+  if (profile === 'standard-50-50') {
+    return {
+      ceMaximum: 50,
+      seeMaximum: 50,
+      ceMinimum: 20,
+      seeMinimum: 20,
+      overallMinimum: 45,
+    }
+  }
+  return {
+    ceMaximum: 60,
+    seeMaximum: 40,
+    ceMinimum: 24,
+    seeMinimum: 16,
+    overallMinimum: 40,
+  }
+}
 
 export const ATTENDANCE_RULES = {
   minimumPercent: 75,
@@ -60,12 +78,12 @@ export function computeCeMark(components: {
   tt2Pct: number
   quizPct: number
   assignmentPct: number
-}): number {
-  return Math.round((computeCePct(components) / 100) * CE_SEE_SPLIT.ceMaximum)
+}, ceMaximum: number = CE_SEE_SPLIT.ceMaximum): number {
+  return Math.round((computeCePct(components) / 100) * ceMaximum)
 }
 
-export function computeSeeMark(seePct: number): number {
-  return Math.round((seePct / 100) * CE_SEE_SPLIT.seeMaximum)
+export function computeSeeMark(seePct: number, seeMaximum: number = CE_SEE_SPLIT.seeMaximum): number {
+  return Math.round((seePct / 100) * seeMaximum)
 }
 
 export function evaluateResult(input: {
@@ -73,14 +91,16 @@ export function evaluateResult(input: {
   seeMark: number
   attendancePercent: number
   condoned?: boolean
+  assessmentProfile?: string | null
 }): { passed: boolean; result: 'Passed' | 'Failed'; gradeLabel: string; gradePoint: number } {
+  const profile = resolveGradingProfile(input.assessmentProfile)
   const attendanceOk = input.attendancePercent >= ATTENDANCE_RULES.minimumPercent
     || (input.condoned === true && input.attendancePercent >= ATTENDANCE_RULES.condonationFloorPercent)
   const overall = input.ceMark + input.seeMark
   const passed = attendanceOk
-    && input.ceMark >= PASS_RULES.ceMinimum
-    && input.seeMark >= PASS_RULES.seeMinimum
-    && overall >= PASS_RULES.overallMinimum
+    && input.ceMark >= profile.ceMinimum
+    && input.seeMark >= profile.seeMinimum
+    && overall >= profile.overallMinimum
   const overallPct = (overall / CE_SEE_SPLIT.overallMaximum) * 100
   const band = passed ? mapGradeBand(overallPct) : mapGradeBand(0)
   return {

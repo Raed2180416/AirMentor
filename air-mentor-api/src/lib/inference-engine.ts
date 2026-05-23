@@ -64,6 +64,7 @@ export type ObservableInferenceOutput = {
   riskBand: 'High' | 'Medium' | 'Low'
   recommendedAction: string
   observableDrivers: ObservableDriver[]
+  attentionAreas?: string[]
 }
 
 function roundToTwo(value: number) {
@@ -207,19 +208,84 @@ export function inferObservableDrivers(input: ObservableInferenceInput): Observa
 }
 
 export function inferObservableRisk(input: ObservableInferenceInput): ObservableInferenceOutput {
+  // DAF safety fallback: refuse to issue high-confidence predictions when
+  // evidence is critically sparse. A student with missing CGPA and no assessment
+  // scores yet has insufficient telemetry for the model to differentiate between
+  // "genuinely at risk" and "data not yet entered". Issuing a false High/Medium
+  // flag here would harm the student and waste teacher time.
+  const assessmentSignalsAvailable = [input.tt1Pct, input.tt2Pct, input.seePct, input.quizPct, input.assignmentPct]
+    .filter(v => v != null).length
+  const isCriticallyMissing = input.cgpaMissing === true && assessmentSignalsAvailable === 0
+
+  if (isCriticallyMissing) {
+    return {
+      riskProb: INFERENCE_BASELINE_RISK,
+      riskBand: 'Low',
+      recommendedAction: 'Insufficient academic evidence to assess risk; continue routine monitoring until first assessment results are available.',
+      observableDrivers: [],
+      attentionAreas: ['Awaiting Evidence'],
+    }
+  }
+
   const drivers = inferObservableDrivers(input)
   let riskProb = INFERENCE_BASELINE_RISK
   for (const driver of drivers) riskProb += driver.impact
   const bounded = Math.max(INFERENCE_RISK_LOWER_CLAMP, Math.min(INFERENCE_RISK_UPPER_CLAMP, roundToTwo(riskProb)))
   const riskBand: 'High' | 'Medium' | 'Low' = bounded >= RISK_BAND_HIGH_THRESHOLD ? 'High' : bounded >= RISK_BAND_MEDIUM_THRESHOLD ? 'Medium' : 'Low'
+  
+  // Extract primary root cause (top driver) and specific attention areas
+  const primaryDriver = drivers.length > 0 ? drivers[0] : null
+  let recommendedAction = 'Continue routine monitoring on the current evidence window.'
+  
+  if (riskBand === 'High' || riskBand === 'Medium') {
+    if (!primaryDriver) {
+      recommendedAction = 'Schedule a monitored reassessment and review the current intervention plan.'
+    } else {
+      switch (primaryDriver.feature) {
+        case 'attendance':
+        case 'attendance-history':
+          recommendedAction = 'Student has missed critical sessions; schedule immediate meeting to discuss absenteeism and review makeup policies.'
+          break
+        case 'cgpa':
+        case 'backlog':
+          recommendedAction = 'Student carries significant backlog or CGPA pressure; focus on prerequisite recovery before introducing new complex topics.'
+          break
+        case 'co':
+        case 'question-pattern':
+          recommendedAction = 'Review specific failing Course Outcomes (COs) and question patterns with the student to identify exact conceptual gaps.'
+          break
+        case 'quiz':
+        case 'assignment':
+          recommendedAction = 'Student is struggling with continuous coursework; review latest assignment rubrics and quiz mistakes in the next 1-on-1.'
+          break
+        case 'tt1':
+        case 'tt2':
+        case 'see':
+          recommendedAction = 'Review the recent examination paper with the student to correct foundational misunderstandings before the next major assessment.'
+          break
+        case 'intervention-response':
+          recommendedAction = 'Student is unresponsive to current support plan; escalate to course coordinator and attempt an alternative intervention strategy.'
+          break
+        default:
+          recommendedAction = 'Immediate mentor follow-up and reassessment before the next evaluation checkpoint.'
+      }
+    }
+  }
+
+  const attentionAreas = Array.from(new Set(drivers.map(d => {
+    if (d.feature === 'attendance' || d.feature === 'attendance-history') return 'Absenteeism'
+    if (d.feature === 'backlog' || d.feature === 'cgpa') return 'Academic Standing'
+    if (d.feature === 'co' || d.feature === 'question-pattern') return 'Conceptual Gaps'
+    if (d.feature === 'quiz' || d.feature === 'assignment') return 'Coursework Discipline'
+    if (d.feature === 'tt1' || d.feature === 'tt2' || d.feature === 'see') return 'Exam Performance'
+    return 'General Support'
+  })))
+
   return {
     riskProb: bounded,
     riskBand,
-    recommendedAction: riskBand === 'High'
-      ? 'Immediate mentor follow-up and reassessment before the next evaluation checkpoint.'
-      : riskBand === 'Medium'
-        ? 'Schedule a monitored reassessment and review the current intervention plan.'
-        : 'Continue routine monitoring on the current evidence window.',
+    recommendedAction,
     observableDrivers: drivers,
+    attentionAreas: attentionAreas.length > 0 ? attentionAreas : undefined,
   }
 }

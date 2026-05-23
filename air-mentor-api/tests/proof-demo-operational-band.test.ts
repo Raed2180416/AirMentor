@@ -76,6 +76,7 @@ describe('scoreObservableRiskWithModel bandThresholdsOverride', () => {
     interventionResponseScore: -0.05,
     policy: DEFAULT_POLICY,
     featurePayload: {
+      semesterNumber: 1,
       attendancePct: 70,
       attendanceTrend: 0,
       attendanceHistoryRiskCount: 2,
