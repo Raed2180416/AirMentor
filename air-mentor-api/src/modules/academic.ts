@@ -865,6 +865,7 @@ function sanitizeAssessmentComponentsForScheme(
     label: base[index]?.label?.trim() || `${kind === 'quiz' ? 'Quiz' : 'Assignment'} ${index + 1}`,
     rawMax: clampInteger(base[index]?.rawMax, 1, 100, 10),
     weightage: clampInteger(base[index]?.weightage, 0, 100, explicitWeightage ? 0 : (distributedWeightage[index] ?? 0)),
+    cos: base[index]?.cos ?? [],
   }))
 }
 

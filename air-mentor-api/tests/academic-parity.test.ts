@@ -121,6 +121,26 @@ function collectLeafComponentDefs(nodes: Array<{ id: string; maxMarks?: number; 
 }
 
 describe('academic bootstrap', () => {
+  it('debug database state', async () => {
+    current = await createTestApp()
+    const runs = await current.db.select().from(simulationRuns)
+    const offerings = await current.db.select().from(sectionOfferings)
+    console.log('DEBUG RUNS COUNT:', runs.length)
+    console.log('DEBUG OFFERINGS COUNT:', offerings.length)
+    if (runs[0]) console.log('DEBUG RUN 0:', JSON.stringify(runs[0], null, 2))
+    if (offerings[0]) console.log('DEBUG OFFERING 0:', JSON.stringify(offerings[0], null, 2))
+    const login = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+    const response = await current.app.inject({
+      method: 'GET',
+      url: '/api/academic/bootstrap',
+      headers: { cookie: login.cookie },
+    })
+    console.log('DEBUG BOOTSTRAP STATUS:', response.statusCode)
+    const body = response.json()
+    console.log('DEBUG BOOTSTRAP OFFERINGS:', body.offerings?.length)
+    console.log('DEBUG BOOTSTRAP RUNTIME TIMETABLE:', body.runtime?.timetableByFacultyId ? Object.keys(body.runtime.timetableByFacultyId) : 'none')
+  })
+
   it('keeps faculty-profile proof context and linked proof drilldowns aligned for the active teaching role', async () => {
     current = await createTestApp()
     const login = await loginAs(current.app, 'devika.shetty', 'faculty1234')
@@ -727,6 +747,11 @@ describe('academic bootstrap', () => {
     })
     expect(meetingUpdateResponse.statusCode).toBe(200)
 
+    const [activeRun] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    await current.db.update(simulationRuns).set({
+      activeStageKey: 'post-tt1',
+    }).where(eq(simulationRuns.simulationRunId, activeRun.simulationRunId))
+
     const finalBootstrap = await loadAcademicBootstrap(facultyLogin.cookie)
     const refreshedStudent = finalBootstrap.studentsByOffering[targetOffering.offId].find((student: { id: string }) => student.id === targetStudent.id)
 
@@ -782,6 +807,10 @@ describe('academic bootstrap', () => {
       completedCreditsForCgpa: expect.any(Number),
       progressionStatus: expect.stringMatching(/Eligible|Review|Hold/),
     })
+
+    await current.db.update(simulationRuns).set({
+      activeStageKey: 'pre-tt1',
+    }).where(eq(simulationRuns.simulationRunId, activeRun.simulationRunId))
   })
 
   it('ignores stale persisted risk rows from other proof windows when rendering the live bootstrap', async () => {

@@ -96,6 +96,7 @@ describe('academic bootstrap routes', () => {
       facultyId: 'mnc_t1',
       roleCode: 'COURSE_LEADER',
       simulationStageCheckpointId: checkpoint.simulationStageCheckpointId,
+      demoWorkspaceId: null,
     })
   })
 })

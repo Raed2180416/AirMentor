@@ -79,7 +79,6 @@ import { seedMsruasProofSandbox } from '../lib/msruas-proof-sandbox.js'
 import { hashPassword } from '../lib/passwords.js'
 import { nowIso } from '../lib/time.js'
 import { readFile } from 'node:fs/promises'
-import path from 'node:path'
 
 export type SeedProfile = 'full' | 'control-only'
 

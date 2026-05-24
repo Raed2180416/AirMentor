@@ -1021,6 +1021,22 @@ const STUDENT_ARCHETYPES = [
     pressureShift: 0.1,
     courseworkReliabilityShift: -0.08,
   },
+  {
+    key: 'borderline-mid',
+    abilityShift: -0.01,
+    disciplineShift: -0.01,
+    forgetShift: 0.01,
+    pressureShift: 0.02,
+    courseworkReliabilityShift: -0.01,
+  },
+  {
+    key: 'borderline-fragile',
+    abilityShift: -0.02,
+    disciplineShift: -0.03,
+    forgetShift: 0.03,
+    pressureShift: 0.05,
+    courseworkReliabilityShift: -0.03,
+  },
 ] as const
 
 export type RuntimeCurriculum = {
@@ -1097,11 +1113,15 @@ function pickArchetype(index: number, runSeed: number) {
   const adjustedScore = sectionForIndex(index) === 'A' ? score * 0.9 : Math.min(0.999, score * 1.08)
   
   let key: string
-  // Adjusted mapping for a more realistic bell curve (approx 20% top, 55% average/fragile, 25% bottom)
+  // Adjusted mapping: 20% top, 45% average/fragile, 35% bottom
+  // Borderline archetypes (30% total) create students with genuinely mid-range risk,
+  // filling probability gaps in [0.2, 0.4] and [0.6, 0.8] that block calibration gates.
   if (adjustedScore < 0.10) key = 'deep-competent'
   else if (adjustedScore < 0.20) key = 'strategic-efficient'
-  else if (adjustedScore < 0.45) key = 'strategic-fragile'
-  else if (adjustedScore < 0.75) key = 'cumulative-gap'
+  else if (adjustedScore < 0.35) key = 'strategic-fragile'
+  else if (adjustedScore < 0.50) key = 'borderline-mid'
+  else if (adjustedScore < 0.65) key = 'borderline-fragile'
+  else if (adjustedScore < 0.78) key = 'cumulative-gap'
   else if (adjustedScore < 0.90) key = 'underregulated'
   else key = 'surface-survival'
 

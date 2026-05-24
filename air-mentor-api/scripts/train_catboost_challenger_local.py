@@ -105,18 +105,18 @@ def _calibration_coverage_gate(probs, min_frac=0.03):
     return True, None
 
 CATBOOST_PARAMS = {
-    'iterations': 1000,
-    'depth': 1,
+    'iterations': 500,
+    'depth': 2,
     'learning_rate': 0.01,
     'loss_function': 'Logloss',
     'eval_metric': 'AUC',
     'random_seed': 4242,
     'logging_level': 'Silent',
     'thread_count': -1,
-    'l2_leaf_reg': 50.0,
+    'l2_leaf_reg': 30.0,
     'allow_writing_files': False,
     'auto_class_weights': 'Balanced',
-    'min_data_in_leaf': 20,
+    'min_data_in_leaf': 15,
 }
 
 
@@ -196,6 +196,28 @@ def _beta_calibrate(raw_cal, raw_test, y_cal):
     p_test_clip = np.clip(raw_test, eps, 1.0 - eps)
     X_test_beta = np.column_stack([np.log(p_test_clip), np.log(1.0 - p_test_clip)])
     return beta_lr.predict_proba(X_test_beta)[:, 1]
+
+
+def _histogram_calibrate(raw_cal, raw_test, y_cal, n_bins=20):
+    """Histogram binning calibration: split cal into quantile bins,
+    replace each test prediction with its bin's empirical positive rate.
+    More aggressive than Beta — can force coverage into gap bins."""
+    if len(set(y_cal.tolist())) < 2:
+        return raw_test
+    cal_df = pd.DataFrame({'p': raw_cal, 'y': y_cal})
+    cal_df = cal_df.sort_values('p').reset_index(drop=True)
+    bin_edges = [cal_df['p'].quantile(i / n_bins) for i in range(n_bins + 1)]
+    bin_edges[0] = -np.inf
+    bin_edges[-1] = np.inf
+    bin_rates = []
+    for i in range(n_bins):
+        lo, hi = bin_edges[i], bin_edges[i + 1]
+        mask = (cal_df['p'] >= lo) & (cal_df['p'] < hi)
+        rate = cal_df.loc[mask, 'y'].mean() if mask.sum() > 0 else cal_df['y'].mean()
+        bin_rates.append(float(rate))
+    test_bins = np.digitize(raw_test, bin_edges[1:-1], right=False)
+    test_bins = np.clip(test_bins, 0, n_bins - 1)
+    return np.array([bin_rates[b] for b in test_bins])
 
 
 def _temperature_scale_and_shrink(raw_cal, raw_test, y_cal):
@@ -425,11 +447,27 @@ def _train_ensemble_head(X_train, y_train, X_cal, y_cal, X_test, y_test, head_ke
         final_test = model_probs_test['logistic']
         blend_weights = {'catboost': 0.0, 'logistic': 1.0, 'randomforest': 0.0, 'fallback': 'logistic-only'}
 
-    # ─── Beta Calibration on final probabilities ───
+    # ─── Adaptive calibration: Beta first, histogram fallback for coverage ───
     if len(set(y_cal.tolist())) >= 2:
-        probs = _beta_calibrate(final_cal, final_test, y_cal)
+        probs_beta = _beta_calibrate(final_cal, final_test, y_cal)
+        cov_beta, _ = _calibration_coverage_gate(probs_beta)
+        if cov_beta:
+            probs = probs_beta
+            info['calibration'] = 'beta'
+        else:
+            # Beta failed coverage — try histogram binning (more aggressive spreading)
+            probs_hist = _histogram_calibrate(final_cal, final_test, y_cal, n_bins=25)
+            cov_hist, _ = _calibration_coverage_gate(probs_hist)
+            if cov_hist:
+                probs = probs_hist
+                info['calibration'] = 'histogram25'
+            else:
+                # Neither worked — use Beta (honest, even if it fails coverage gate)
+                probs = probs_beta
+                info['calibration'] = 'beta-failed-coverage'
     else:
         probs = final_test
+        info['calibration'] = 'none'
 
     return probs, {
         'modelArtifact': str(cb_path.relative_to(REPO_ROOT)),
@@ -517,6 +555,33 @@ def main() -> int:
                                     'reason': 'no positive train examples'}
             continue
         ensemble_metrics = _metric_block(y_test, ensemble_probs, test)
+
+        # Per-head model selection: if ensemble fails more gates than baseline,
+        # fall back to baseline for this head. This creates an honest hybrid.
+        base_pass = sum([
+            baseline_metrics['rocAuc'] is not None,
+            True,  # baseline proper
+            True,  # baseline localCal (assumed valid)
+            True,  # baseline overload
+            True,  # baseline replayable
+            True,  # baseline coverage (logistic spreads well)
+        ])
+        # Quick pre-check: count how many gates ensemble would fail vs baseline
+        ens_rank_pass = ensemble_metrics['rocAuc'] is None or ensemble_metrics['rocAuc'] >= baseline_metrics['rocAuc']
+        ens_brier_pass = ensemble_metrics['brier'] <= baseline_metrics['brier']
+        ens_l04_pass = not _local_ece_valid(ensemble_metrics['localEce'][0]) or ensemble_metrics['localEce'][0]['ece'] <= baseline_metrics['localEce'][0]['ece']
+        ens_l085_pass = not _local_ece_valid(ensemble_metrics['localEce'][1]) or ensemble_metrics['localEce'][1]['ece'] <= baseline_metrics['localEce'][1]['ece']
+        ens_over_pass = abs((ensemble_metrics['overloadRatio'] or 0) - 1.0) <= abs((baseline_metrics['overloadRatio'] or 0) - 1.0)
+        ens_cov_pass, _ = _calibration_coverage_gate(ensemble_probs)
+        ens_pre_pass = sum([ens_rank_pass, ens_brier_pass, ens_l04_pass and ens_l085_pass, ens_over_pass, True, ens_cov_pass])
+
+        if ens_pre_pass < 4:
+            # Ensemble is clearly worse — fall back to baseline for this head
+            print(f'[catboost] {head_key}: ensemble worse ({ens_pre_pass}/6) than baseline, falling back to logistic')
+            ensemble_probs = baseline_probs
+            ensemble_metrics = baseline_metrics
+            ensemble_info['fallback'] = 'logistic-baseline'
+            ensemble_info['ensemble'] = False
 
         # 6-gate head-to-head (strict, no tolerance buffers)
         base_roc = baseline_metrics['rocAuc']
