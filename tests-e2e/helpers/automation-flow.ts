@@ -163,15 +163,9 @@ export function generateAttendancePayload(
   totalClasses = 40,
 ): AttendanceEntry[] {
   return studentIds.map((studentId, i) => {
-    let pct: number
-
-    if (specialStudentIds.has(studentId)) {
-      const trajectory = trajectoryMap.get(studentId)!
-      pct = trajectory.attendancePct
-    } else {
-      // Most students: 75-95% attendance
-      pct = 0.75 + ((i * 13 + 7) % 21) / 100
-    }
+    const trajectory = trajectoryMap.get(studentId)
+    if (!trajectory) throw new Error(`Trajectory missing for student ${studentId}`)
+    const pct = trajectory.attendancePct as number
 
     const present = Math.round(pct * totalClasses)
     return { studentId, presentClasses: present, totalClasses }
@@ -299,24 +293,11 @@ export function generateMarksPayloadWithComponents(
 
   for (let i = 0; i < studentIds.length; i++) {
     const studentId = studentIds[i]
-    let pct: number
 
-    if (specialStudentIds.has(studentId)) {
-      const trajectory = trajectoryMap.get(studentId)!
-      const trajectoryKey = kind === 'finals' ? 'seePct' : `${kind}Pct`
-      pct = trajectory[trajectoryKey as keyof TrajectoryCase] as number
-    } else {
-      const normalIndex = i - [...specialStudentIds].length
-      if (normalIndex < 0) {
-        pct = 0.65
-      } else if (normalIndex < 40) {
-        pct = 0.56 + ((normalIndex * 7 + 13) % 25) / 100
-      } else if (normalIndex < 45) {
-        pct = 0.80 + ((normalIndex * 3 + 7) % 17) / 100
-      } else {
-        pct = ((normalIndex * 11 + 3) % 41) / 100
-      }
-    }
+    const trajectory = trajectoryMap.get(studentId)
+    if (!trajectory) throw new Error(`Trajectory missing for student ${studentId}`)
+    const trajectoryKey = kind === 'finals' ? 'seePct' : `${kind}Pct`
+    const pct = trajectory[trajectoryKey as keyof TrajectoryCase] as number
 
     const markComponents: MarkComponent[] = components.map((comp, q) => {
       const score = deterministicScore(i, kind + q, comp.maxScore, pct)
@@ -628,10 +609,11 @@ export function discoverComponentsFromBootstrap(
       // Fallback: The UI renders exactly these leaves for TT1/TT2 based on PAPER_MAP.default
       return [
         { id: `${kind}-q1-p1`, maxScore: 4 },
-        { id: `${kind}-q1-p2`, maxScore: 3 },
-        { id: `${kind}-q2-p1`, maxScore: 6 },
-        { id: `${kind}-q3-p1`, maxScore: 6 },
-        { id: `${kind}-q4-p1`, maxScore: 6 },
+        { id: `${kind}-q1-p2`, maxScore: 1 },
+        { id: `${kind}-q2-p1`, maxScore: 5 },
+        { id: `${kind}-q3-p1`, maxScore: 5 },
+        { id: `${kind}-q4-p1`, maxScore: 5 },
+        { id: `${kind}-q5-p1`, maxScore: 5 },
       ]
     }
 
@@ -639,8 +621,8 @@ export function discoverComponentsFromBootstrap(
     const scheme = schemeByOffering?.[offId]
 
     if (kind === 'quiz') {
-      const components = Array.isArray(scheme?.quizComponents) ? scheme!.quizComponents : []
-      if (components.length > 0) {
+      if (scheme) {
+        const components = Array.isArray(scheme.quizComponents) ? scheme.quizComponents : []
         return components.map((c: Record<string, unknown>) => ({
           id: String(c.id),
           maxScore: Number(c.rawMax ?? 10),
@@ -650,14 +632,14 @@ export function discoverComponentsFromBootstrap(
     }
 
     if (kind === 'assignment') {
-      const components = Array.isArray(scheme?.assignmentComponents) ? scheme!.assignmentComponents : []
-      if (components.length > 0) {
+      if (scheme) {
+        const components = Array.isArray(scheme.assignmentComponents) ? scheme.assignmentComponents : []
         return components.map((c: Record<string, unknown>) => ({
           id: String(c.id),
           maxScore: Number(c.rawMax ?? 10),
         }))
       }
-      return Array.from({ length: 2 }, (_, i) => ({ id: `assignment-${i + 1}`, maxScore: 10 }))
+      return Array.from({ length: 2 }, (_, i) => ({ id: `asgn-${i + 1}`, maxScore: 10 }))
     }
 
     if (kind === 'finals') {
@@ -679,29 +661,52 @@ export async function setOfferingScheme(
   csrfToken: string,
   semConfig: typeof SCHEME_CONFIGS[0]
 ) {
-  // quizCount/assignmentCount must be 0|1|2 per schemeStateSchema
+  // Policy defaults — CE=60, SEE=40 is the standard MSRUAS proof sandbox policy
+  const ceTotal = 60
+  const seeTotal = 40
+
   const quizCount = Math.min(semConfig.quizzes, 2) as 0 | 1 | 2
   const assignmentCount = Math.min(semConfig.assignments, 2) as 0 | 1 | 2
+
+  let ttWeight = ceTotal
+  let qWeight = 0
+  let aWeight = 0
+
+  if (quizCount > 0 && assignmentCount > 0) {
+    qWeight = Math.floor(ceTotal * 0.25)
+    aWeight = Math.floor(ceTotal * 0.25)
+    ttWeight = ceTotal - qWeight - aWeight
+  } else if (quizCount > 0) {
+    qWeight = Math.floor(ceTotal * 0.33)
+    ttWeight = ceTotal - qWeight
+  } else if (assignmentCount > 0) {
+    aWeight = Math.floor(ceTotal * 0.33)
+    ttWeight = ceTotal - aWeight
+  }
+
+  const tt1 = Math.floor(ttWeight / 2)
+  const tt2 = ttWeight - tt1
+
   const payload = {
     scheme: {
-      finalsMax: 50,
+      finalsMax: seeTotal > 50 ? 100 : 50,
       quizCount,
       assignmentCount,
       quizComponents: Array.from({ length: quizCount }, (_, i) => ({
         id: `quiz-${i + 1}`,
         label: `Quiz ${i + 1}`,
         rawMax: 10,
-        weightage: quizCount > 0 && assignmentCount > 0 ? (i === 0 ? 12 - (12 % quizCount) : 12 / quizCount) : (quizCount > 0 ? (i === 0 ? 25 - Math.floor(25 / quizCount) * (quizCount - 1) : Math.floor(25 / quizCount)) : 0) // rough weightage
+        weightage: i === 0 ? qWeight - Math.floor(qWeight / quizCount) * (quizCount - 1) : Math.floor(qWeight / quizCount)
       })),
       assignmentComponents: Array.from({ length: assignmentCount }, (_, i) => ({
         id: `assignment-${i + 1}`,
         label: `Assignment ${i + 1}`,
         rawMax: 10,
-        weightage: quizCount > 0 && assignmentCount > 0 ? (i === 0 ? 13 - Math.floor(13 / assignmentCount) * (assignmentCount - 1) : Math.floor(13 / assignmentCount)) : (assignmentCount > 0 ? (i === 0 ? 25 - Math.floor(25 / assignmentCount) * (assignmentCount - 1) : Math.floor(25 / assignmentCount)) : 0)
+        weightage: i === 0 ? aWeight - Math.floor(aWeight / assignmentCount) * (assignmentCount - 1) : Math.floor(aWeight / assignmentCount)
       })),
-      termTestWeights: (quizCount > 0 || assignmentCount > 0) ? { tt1: 13, tt2: 12 } : { tt1: 25, tt2: 25 },
-      quizWeight: (quizCount > 0 && assignmentCount > 0) ? 12 : (quizCount > 0 ? 25 : 0),
-      assignmentWeight: (quizCount > 0 && assignmentCount > 0) ? 13 : (assignmentCount > 0 ? 25 : 0),
+      termTestWeights: { tt1, tt2 },
+      quizWeight: qWeight,
+      assignmentWeight: aWeight,
       status: 'active',
       configuredAt: Date.now(),
     },

@@ -433,6 +433,7 @@ const assessmentComponentSchema = z.object({
   label: z.string().min(1),
   rawMax: z.number().int().positive(),
   weightage: z.number().min(0).max(100).optional(),
+  cos: z.array(z.string()).default([]),
 })
 
 const schemePolicyContextSchema = z.object({

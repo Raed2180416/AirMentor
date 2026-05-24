@@ -21,6 +21,7 @@ import { createId } from '../lib/ids.js'
 import { badRequest, conflict, forbidden, notFound } from '../lib/http-errors.js'
 import { parseJson, stringifyJson } from '../lib/json.js'
 import { emitOperationalEvent } from '../lib/telemetry.js'
+import { triggerActiveRunRecomputeIfPresent } from '../lib/msruas-proof-control-plane.js'
 import {
   applyCorrectionCycleTransition,
   describeCorrectionCycle,
@@ -1556,6 +1557,7 @@ export async function registerAcademicRuntimeRoutes(
         locked: !!body.lock,
       },
     })
+    await triggerActiveRunRecomputeIfPresent(context, auth.facultyId)
     return {
       ok: true,
       offeringId: params.offeringId,

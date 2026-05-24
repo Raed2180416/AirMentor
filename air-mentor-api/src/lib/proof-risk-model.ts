@@ -2336,8 +2336,8 @@ function loadCatBoostModels() {
   cachedCatBoostModels = models; // Cache even if it's partial or empty to avoid OOM
   return models;
 }
-function scoreWithCatBoost(headKey: RiskHeadKey, fallbackProb: number, vector: number[]): number {
-  const models = loadCatBoostModels();
+function scoreWithCatBoost(headKey: RiskHeadKey, fallbackProb: number, vector: number[], explicitModel?: CatBoostModel): number {
+  const models = explicitModel ? { [headKey]: explicitModel } : loadCatBoostModels();
   const model = models[headKey];
   if (!model) return fallbackProb;
   let total = 0;
@@ -2358,6 +2358,7 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
   featurePayload: ObservableFeaturePayload
   sourceRefs?: ObservableSourceRefs | null
   productionModel?: ProductionRiskModelArtifact | null
+  challengerModel?: ChallengerRiskModelArtifact | null
   correlations?: CorrelationArtifact | null
   // Optional banding threshold override. When provided, the returned
   // `riskBand` reflects these thresholds instead of the calibrated
@@ -2378,6 +2379,50 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
         ? 'Medium'
         : 'Low'
   }
+  const productionModel = input.productionModel
+  const useCatBoost = productionModel?.modelFamily === 'catboost'
+    && productionModel.featureSchemaVersion === RISK_FEATURE_SCHEMA_VERSION
+
+  if (useCatBoost) {
+    const vector = featureVectorArrayFromPayload(input.featurePayload, input.sourceRefs)
+    const headProbabilities = {
+      attendanceRisk: scoreWithCatBoost('attendanceRisk', fallback.riskProb, vector),
+      ceRisk: scoreWithCatBoost('ceRisk', fallback.riskProb, vector),
+      seeRisk: scoreWithCatBoost('seeRisk', fallback.riskProb, vector),
+      overallCourseRisk: scoreWithCatBoost('overallCourseRisk', fallback.riskProb, vector),
+      downstreamCarryoverRisk: scoreWithCatBoost('downstreamCarryoverRisk', fallback.riskProb, vector),
+    } satisfies Record<RiskHeadKey, number>
+    const officialOverall = headProbabilities.overallCourseRisk
+    const riskBand: 'High' | 'Medium' | 'Low' = bandFromScore(
+      officialOverall,
+      bandThresholdsOverride ?? { medium: 0.35, high: 0.65 },
+    )
+    const catBoostHeadDisplay = Object.fromEntries(
+      (Object.keys(HEAD_LABEL_KEYS) as RiskHeadKey[]).map(headKey => [headKey, {
+        displayProbabilityAllowed: true,
+        supportWarning: null,
+        calibrationMethod: 'identity' as CalibrationMethod,
+      }]),
+    ) as ModelBackedRiskOutput['headDisplay']
+    return {
+      riskProb: roundToFour(officialOverall),
+      riskBand,
+      recommendedAction: fallback.recommendedAction,
+      observableDrivers: inferObservableDrivers(input),
+      modelVersion: productionModel.modelVersion,
+      calibrationVersion: productionModel.calibrationVersion,
+      headProbabilities: Object.fromEntries(
+        Object.entries(headProbabilities).map(([key, value]) => [key, roundToFour(value)]),
+      ) as Record<RiskHeadKey, number>,
+      queuePriorityScore: rankingAllowed ? roundToFour(officialOverall) : 0,
+      queuePrioritySource: 'overall-course-risk-head',
+      rankingAllowed,
+      rankingSuppressedReason,
+      crossCourseDrivers: input.sourceRefs ? crossCourseDriversFromCorrelations(input.correlations ?? null, input.sourceRefs) : [],
+      headDisplay: catBoostHeadDisplay,
+    }
+  }
+
   if (!input.productionModel || input.productionModel.featureSchemaVersion !== RISK_FEATURE_SCHEMA_VERSION) {
     const fallbackDisplay = Object.fromEntries(
       (Object.keys(HEAD_LABEL_KEYS) as RiskHeadKey[]).map(headKey => [headKey, {

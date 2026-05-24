@@ -742,10 +742,10 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
   }
 
   async clearOfferingAssessmentLock(offeringId: string, kind: EntryKind) {
-    return this.request<{ ok: true; offeringId: string; kind: EntryKind; cleared: boolean; reason?: string }>(`/api/academic/offerings/${offeringId}/assessment-entries/${kind}/clear-lock`, {
-      method: 'POST',
-      body: JSON.stringify({}),
-    })
+    return this.request<{ ok: true; offeringId: string; kind: EntryKind; cleared: boolean; reason?: string }>(
+      `/api/academic/offerings/${encodeURIComponent(offeringId)}/assessment-entries/${encodeURIComponent(kind)}/clear-lock`,
+      { method: 'POST', body: JSON.stringify({}) }
+    )
   }
 
   async getUiPreferences() {

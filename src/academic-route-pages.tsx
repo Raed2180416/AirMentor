@@ -221,6 +221,7 @@ export function CLDashboard({
                 return (
                   <div
                     key={`${item.studentId}:${item.courseCode ?? 'course'}`}
+                    data-testid="priority-alert-card"
                     onClick={() => item.student && item.offering && onOpenStudent(item.student, item.offering)}
                     style={{ background: T.surface2, border: `1px solid ${T.danger}25`, borderRadius: 8, padding: '10px 14px', cursor: item.student && item.offering ? 'pointer' : 'default', transition: 'background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease' }}
                     onMouseEnter={event => (event.currentTarget.style.borderColor = `${T.danger}60`)}

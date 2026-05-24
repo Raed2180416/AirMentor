@@ -294,9 +294,22 @@ export async function registerAcademicProofRoutes(
       actorFacultyId: auth.facultyId ?? null,
       now: context.now(),
     }
-    if (body.mode === 'day') return advanceProofSimulationDay(context.db, input)
-    if (body.mode === 'previous-day') return advanceProofSimulationPreviousDay(context.db, input)
-    return advanceProofSimulationStage(context.db, input)
+    let report
+    if (body.mode === 'day') report = await advanceProofSimulationDay(context.db, input)
+    else if (body.mode === 'previous-day') report = await advanceProofSimulationPreviousDay(context.db, input)
+    else report = await advanceProofSimulationStage(context.db, input)
+
+    if (report.stageTransitioned) {
+      const resolved = await resolveBatchPolicy(context, run.batchId)
+      await recomputeObservedOnlyRisk(context.db, {
+        simulationRunId: params.simulationRunId,
+        policy: resolved.effectivePolicy,
+        actorFacultyId: auth.facultyId ?? null,
+        now: context.now(),
+        rebuildModelArtifacts: false,
+      })
+    }
+    return report
   })
 
   app.post('/api/academic/proof-runs/:simulationRunId/stop', {

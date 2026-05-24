@@ -534,7 +534,6 @@ def train_head(
         boosting_type="Plain" if use_gpu else "Ordered",  # Ordered boosting not supported on GPU
         scale_pos_weight=scale_pos_weight,
         random_seed=42,
-        early_stopping_rounds=30,
         verbose=metric_period,
         metric_period=metric_period,
         thread_count=thread_count,
@@ -570,7 +569,7 @@ def train_head(
     train_pool = Pool(X_train, y_train, feature_names=feature_cols)
     val_pool = Pool(X_val, y_val, feature_names=feature_cols)
     test_pool = Pool(X_test, y_test, feature_names=feature_cols)
-    model.fit(train_pool, eval_set=val_pool)
+    model.fit(train_pool)
 
     raw_val_probs = model.predict_proba(val_pool)[:, 1]
     raw_test_probs = model.predict_proba(test_pool)[:, 1]

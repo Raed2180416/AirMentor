@@ -43,7 +43,7 @@
  * @bib crede2010class
  * @bib marburger2001absenteeism
  */
-export const ATTENDANCE_HIGH_RISK_IMPACT = 0.28
+export const ATTENDANCE_HIGH_RISK_IMPACT = 0.20
 
 /**
  * Impact added when attendance falls below the medium-risk threshold.
@@ -87,7 +87,7 @@ export const CGPA_MEDIUM_RISK_IMPACT = 0.10
  * @bib tinto1993leaving
  * @bib bean2001psychology
  */
-export const BACKLOG_HIGH_RISK_IMPACT = 0.18
+export const BACKLOG_HIGH_RISK_IMPACT = 0.12
 
 /**
  * Impact added when active backlog count is above the watch threshold.
@@ -226,7 +226,7 @@ export const INTERVENTION_NEGATIVE_RESPONSE_THRESHOLD = -0.05
  *
  * @source engineering
  */
-export const INTERVENTION_POSITIVE_RESPONSE_IMPACT = -0.05
+export const INTERVENTION_POSITIVE_RESPONSE_IMPACT = -0.15
 
 /** Intervention-response score above which the positive-response driver fires. */
 export const INTERVENTION_POSITIVE_RESPONSE_THRESHOLD = 0.08
@@ -266,7 +266,7 @@ export const INFERENCE_RISK_UPPER_CLAMP = 0.95
  *
  * @source engineering
  */
-export const RISK_BAND_HIGH_THRESHOLD = 0.7
+export const RISK_BAND_HIGH_THRESHOLD = 0.80
 
 /**
  * Boundary at or above which the band is `Medium` (and below
@@ -274,7 +274,7 @@ export const RISK_BAND_HIGH_THRESHOLD = 0.7
  *
  * @source engineering
  */
-export const RISK_BAND_MEDIUM_THRESHOLD = 0.35
+export const RISK_BAND_MEDIUM_THRESHOLD = 0.45
 
 // =====================================================================
 // Section B — Scenario engine family fingerprints

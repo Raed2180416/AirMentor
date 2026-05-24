@@ -1,5 +1,5 @@
 import type { AppDb } from '../db/client.js'
-import { eq, inArray } from 'drizzle-orm'
+import { eq, inArray, isNull } from 'drizzle-orm'
 import {
   academicTerms,
   alertAcknowledgements,
@@ -173,16 +173,16 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
     courseRows,
     sectionOfferingRows,
   ] = await Promise.all([
-    db.select().from(facultyAppointments),
+    db.select().from(facultyAppointments).where(eq(facultyAppointments.status, 'active')),
     db.select().from(simulationRuns),
     db.select().from(batches),
     db.select().from(branches),
     db.select().from(departments),
     db.select().from(academicTerms),
     db.select().from(facultyProfiles),
-    db.select().from(roleGrants),
-    db.select().from(facultyOfferingOwnerships),
-    db.select().from(mentorAssignments),
+    db.select().from(roleGrants).where(eq(roleGrants.status, 'active')),
+    db.select().from(facultyOfferingOwnerships).where(eq(facultyOfferingOwnerships.status, 'active')),
+    db.select().from(mentorAssignments).where(isNull(mentorAssignments.effectiveTo)),
     db.select().from(students),
     db.select().from(courses),
     db.select().from(sectionOfferings),
@@ -505,53 +505,104 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
       })
       .sort((left, right) => (right.queueLoad - left.queueLoad) || (right.weeklyContactHours - left.weeklyContactHours) || left.facultyName.localeCompare(right.facultyName))
 
-    const courseRollups = Array.from(new Map(
-      checkpointStudentRows.map(row => {
-        const queueCount = checkpointOpenCaseRows.filter(item => item.courseCode === row.courseCode && item.sectionCode === row.sectionCode).length
-        return [`${row.courseCode}::${row.sectionCode}`, {
-          courseCode: row.courseCode,
-          title: row.courseTitle,
-          sectionCodes: uniqueSorted(checkpointStudentRows.filter(item => item.courseCode === row.courseCode).map(item => item.sectionCode)),
-          riskCountHigh: checkpointStudentRows.filter(item => item.courseCode === row.courseCode && item.riskBand === 'High').length,
-          riskCountMedium: checkpointStudentRows.filter(item => item.courseCode === row.courseCode && item.riskBand === 'Medium').length,
-          averageAttendancePct: roundToOne(average(checkpointStudentRows.filter(item => item.courseCode === row.courseCode).map(item => {
-            const p = parseJson(item.projectionJson, {} as Record<string, unknown>)
-            const evidence = (p.currentEvidence ?? {}) as Record<string, unknown>
-            return Number(evidence.attendancePct ?? 0)
-          }))),
-          tt1WeakCount: checkpointStudentRows.filter(item => {
-            if (item.courseCode !== row.courseCode) return false
-            const p = parseJson(item.projectionJson, {} as Record<string, unknown>)
-            const evidence = (p.currentEvidence ?? {}) as Record<string, unknown>
-            return Number(evidence.tt1Pct ?? 0) > 0 && Number(evidence.tt1Pct ?? 0) < 45
-          }).length,
-          tt2WeakCount: checkpointStudentRows.filter(item => {
-            if (item.courseCode !== row.courseCode) return false
-            const p = parseJson(item.projectionJson, {} as Record<string, unknown>)
-            const evidence = (p.currentEvidence ?? {}) as Record<string, unknown>
-            return Number(evidence.tt2Pct ?? 0) > 0 && Number(evidence.tt2Pct ?? 0) < 45
-          }).length,
-          seeWeakCount: checkpointStudentRows.filter(item => {
-            if (item.courseCode !== row.courseCode) return false
-            const p = parseJson(item.projectionJson, {} as Record<string, unknown>)
-            const evidence = (p.currentEvidence ?? {}) as Record<string, unknown>
-            return Number(evidence.seePct ?? 0) > 0 && Number(evidence.seePct ?? 0) < 45
-          }).length,
-          weakQuestionSignalCount: checkpointStudentRows.filter(item => item.courseCode === row.courseCode && Number(((parseJson(item.projectionJson, {} as Record<string, unknown>).currentEvidence ?? {}) as Record<string, unknown>).weakQuestionCount ?? 0) >= 4).length,
-          backlogCarryoverCount: checkpointStudentRows.filter(item => item.courseCode === row.courseCode && Number(((parseJson(item.projectionJson, {} as Record<string, unknown>).currentStatus ?? {}) as Record<string, unknown>).backlogCount ?? 0) > 0).length,
-          openReassessmentCount: queueCount,
-          resolvedReassessmentCount: checkpointQueueRows.filter(item => item.courseCode === row.courseCode && item.status === 'Resolved').length,
-          studentCount: checkpointStudentRows.filter(item => item.courseCode === row.courseCode).length,
-        }]
-      }),
-    ).values())
+    // Pre-compute lookups to avoid O(n²) filtering in courseRollups
+    const checkpointRowsByCourse = new Map<string, typeof checkpointStudentRows>()
+    for (const row of checkpointStudentRows) {
+      const list = checkpointRowsByCourse.get(row.courseCode) ?? []
+      list.push(row)
+      checkpointRowsByCourse.set(row.courseCode, list)
+    }
+    const queueCaseCountByCourseSection = new Map<string, number>()
+    for (const item of checkpointOpenCaseRows) {
+      const key = `${item.courseCode}::${item.sectionCode}`
+      queueCaseCountByCourseSection.set(key, (queueCaseCountByCourseSection.get(key) ?? 0) + 1)
+    }
+    const resolvedQueueCountByCourse = new Map<string, number>()
+    for (const item of checkpointQueueRows) {
+      if (item.status === 'Resolved') {
+        resolvedQueueCountByCourse.set(item.courseCode, (resolvedQueueCountByCourse.get(item.courseCode) ?? 0) + 1)
+      }
+    }
+    const uniqueCourseMeta = new Map<string, { courseCode: string; sectionCode: string; courseTitle: string }>()
+    for (const row of checkpointStudentRows) {
+      uniqueCourseMeta.set(`${row.courseCode}::${row.sectionCode}`, {
+        courseCode: row.courseCode,
+        sectionCode: row.sectionCode,
+        courseTitle: row.courseTitle,
+      })
+    }
+
+    const courseRollups = Array.from(uniqueCourseMeta.values()).map(({ courseCode, sectionCode, courseTitle }) => {
+      const courseRows = checkpointRowsByCourse.get(courseCode) ?? []
+      let riskCountHigh = 0
+      let riskCountMedium = 0
+      let tt1WeakCount = 0
+      let tt2WeakCount = 0
+      let seeWeakCount = 0
+      let weakQuestionSignalCount = 0
+      let backlogCarryoverCount = 0
+      let attendanceSum = 0
+      let attendanceCount = 0
+      for (const item of courseRows) {
+        if (item.riskBand === 'High') riskCountHigh++
+        else if (item.riskBand === 'Medium') riskCountMedium++
+        const p = parseJson(item.projectionJson, {} as Record<string, unknown>)
+        const evidence = (p.currentEvidence ?? {}) as Record<string, unknown>
+        const status = (p.currentStatus ?? {}) as Record<string, unknown>
+        const attendancePct = Number(evidence.attendancePct ?? 0)
+        if (Number.isFinite(attendancePct)) {
+          attendanceSum += attendancePct
+          attendanceCount++
+        }
+        const tt1Pct = Number(evidence.tt1Pct ?? 0)
+        if (tt1Pct > 0 && tt1Pct < 45) tt1WeakCount++
+        const tt2Pct = Number(evidence.tt2Pct ?? 0)
+        if (tt2Pct > 0 && tt2Pct < 45) tt2WeakCount++
+        const seePct = Number(evidence.seePct ?? 0)
+        if (seePct > 0 && seePct < 45) seeWeakCount++
+        const weakQuestionCount = Number((evidence.questionEvidenceSummary as Record<string, unknown> | undefined)?.weakQuestionCount ?? 0)
+        if (weakQuestionCount >= 4) weakQuestionSignalCount++
+        if (Number(status.backlogCount ?? 0) > 0) backlogCarryoverCount++
+      }
+      return {
+        courseCode,
+        title: courseTitle,
+        sectionCodes: uniqueSorted(courseRows.map(item => item.sectionCode)),
+        riskCountHigh,
+        riskCountMedium,
+        averageAttendancePct: roundToOne(attendanceCount > 0 ? attendanceSum / attendanceCount : 0),
+        tt1WeakCount,
+        tt2WeakCount,
+        seeWeakCount,
+        weakQuestionSignalCount,
+        backlogCarryoverCount,
+        openReassessmentCount: queueCaseCountByCourseSection.get(`${courseCode}::${sectionCode}`) ?? 0,
+        resolvedReassessmentCount: resolvedQueueCountByCourse.get(courseCode) ?? 0,
+        studentCount: courseRows.length,
+      }
+    })
       .sort((left, right) => ((right.riskCountHigh + right.riskCountMedium) - (left.riskCountHigh + left.riskCountMedium)) || left.courseCode.localeCompare(right.courseCode))
 
-    const studentWatchRows = Array.from(new Set(checkpointStudentRows.map(row => row.studentId)))
+    // Pre-compute lookups to avoid O(n²) filtering in studentWatchRows
+    const checkpointRowsByStudent = new Map<string, typeof checkpointStudentRows>()
+    for (const row of checkpointStudentRows) {
+      const list = checkpointRowsByStudent.get(row.studentId) ?? []
+      list.push(row)
+      checkpointRowsByStudent.set(row.studentId, list)
+    }
+    const observedRowsByStudent = new Map<string, typeof observedRows>()
+    for (const row of observedRows) {
+      if (row.simulationRunId !== activeRunId) continue
+      const list = observedRowsByStudent.get(row.studentId) ?? []
+      list.push(row)
+      observedRowsByStudent.set(row.studentId, list)
+    }
+
+    const studentWatchRows = Array.from(checkpointRowsByStudent.keys())
       .map(studentId => {
         const student = studentById.get(studentId)
-        const rowsForStudent = checkpointStudentRows
-          .filter(row => row.studentId === studentId)
+        const rowsForStudent = (checkpointRowsByStudent.get(studentId) ?? [])
+          .slice()
           .sort((left, right) => {
             const leftPayload = parseJson(left.projectionJson, {} as Record<string, unknown>)
             const rightPayload = parseJson(right.projectionJson, {} as Record<string, unknown>)
@@ -584,9 +635,10 @@ export async function buildHodProofAnalytics(db: AppDb, input: {
         const currentStatus = (actionPayload.currentStatus ?? {}) as Record<string, unknown>
         const governance = (actionPayload.governance ?? {}) as Record<string, unknown>
         const counterfactualPolicy = (primaryPayload.counterfactualPolicyDiagnostics ?? {}) as Record<string, unknown>
-        const evidenceTimeline = buildEvidenceTimelineFromRows(observedRows
-          .filter(row => row.simulationRunId === activeRunId && row.studentId === studentId)
-          .sort((left, right) => left.semesterNumber - right.semesterNumber || left.createdAt.localeCompare(right.createdAt)))
+        const evidenceTimeline = buildEvidenceTimelineFromRows(
+          (observedRowsByStudent.get(studentId) ?? [])
+            .sort((left, right) => left.semesterNumber - right.semesterNumber || left.createdAt.localeCompare(right.createdAt))
+        )
         const electiveFit = checkpoint.stageKey === 'post-see'
           ? toElectiveFitPayload(latestElectiveRecommendationForSemester(electiveRows, {
               simulationRunId: activeRunId,

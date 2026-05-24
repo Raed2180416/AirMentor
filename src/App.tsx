@@ -981,6 +981,7 @@ export function ActionQueue({ role, tasks, resolvedTaskIds, simulatedDateISO, on
         return (
           <motion.div
             key={t.id}
+            data-testid="action-queue-item"
             layout
             role="button"
             tabIndex={0}
@@ -4090,9 +4091,13 @@ export function OperationalApp() {
   const loadAcademicHodProofAnalytics = useCallback(async () => {
     if (!apiClient) throw new Error('Academic backend is unavailable.')
     try {
-      return await apiClient.getAcademicHodProofBundle(playbackCheckpointId ? {
+      const bundlePromise = apiClient.getAcademicHodProofBundle(playbackCheckpointId ? {
         simulationStageCheckpointId: playbackCheckpointId,
       } : undefined)
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('HoD proof analytics request timed out after 30s')), 30_000)
+      })
+      return await Promise.race([bundlePromise, timeoutPromise])
     } catch (error) {
       emitClientOperationalEvent('proof.analytics.load_failed', {
         workspace: 'academic',

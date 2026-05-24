@@ -23,4 +23,4 @@ if [[ "$mode" == "railway-db" ]]; then
   exec npm --workspace air-mentor-api run dev
 fi
 
-exec npm --workspace air-mentor-api run dev:seeded
+NODE_OPTIONS="--max-old-space-size=5120" exec npm --workspace air-mentor-api run dev:seeded

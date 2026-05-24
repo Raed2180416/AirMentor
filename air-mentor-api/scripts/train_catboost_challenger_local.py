@@ -196,6 +196,30 @@ def _beta_calibrate(raw_cal, raw_test, y_cal):
     return beta_lr.predict_proba(X_test_beta)[:, 1]
 
 
+def _temperature_scale_and_shrink(raw_cal, raw_test, y_cal):
+    """Two-stage post-hoc: temperature scaling + probability shrinkage.
+    Used AFTER Beta Calibration as a fine-tuning layer."""
+    if len(set(y_cal.tolist())) < 2:
+        return raw_test
+    from scipy.optimize import minimize_scalar
+    
+    def _brier_for_temp(T):
+        logits = np.log(np.clip(raw_cal, 1e-7, 1-1e-7)) - np.log(1 - np.clip(raw_cal, 1e-7, 1-1e-7))
+        scaled = 1.0 / (1.0 + np.exp(-logits / T))
+        return brier_score_loss(y_cal, scaled)
+    
+    result = minimize_scalar(_brier_for_temp, bounds=(1.0, 5.0), method='bounded')
+    optimal_T = result.x
+    
+    test_logits = np.log(np.clip(raw_test, 1e-7, 1-1e-7)) - np.log(1 - np.clip(raw_test, 1e-7, 1-1e-7))
+    temp_test = 1.0 / (1.0 + np.exp(-test_logits / optimal_T))
+    
+    base_rate = float(y_cal.mean())
+    # Stronger shrinkage toward base rate to fix overload and coverage
+    probs = 0.15 * base_rate + 0.85 * temp_test
+    return np.clip(probs, 0.01, 0.99)
+
+
 def train_logistic_baseline(X_train, y_train, X_test, y_test, X_cal, y_cal):
     """Logistic baseline with Beta Calibration (same post-hoc as challenger)."""
     clf = LogisticRegression(penalty='l2', C=1.0, solver='lbfgs',
@@ -223,16 +247,7 @@ def train_catboost_head(X_train, y_train, X_cal, y_cal, X_test, y_test, head_key
     
     # Beta Calibration (SOTA 2026)
     if len(set(y_cal.tolist())) >= 2:
-        from sklearn.linear_model import LogisticRegression
-        eps = 1e-6
-        p_cal_clip = np.clip(raw_cal, eps, 1.0 - eps)
-        X_beta = np.column_stack([np.log(p_cal_clip), np.log(1.0 - p_cal_clip)])
-        beta_lr = LogisticRegression(solver='lbfgs', max_iter=1000, random_state=4242)
-        beta_lr.fit(X_beta, y_cal)
-        
-        p_test_clip = np.clip(raw_test, eps, 1.0 - eps)
-        X_test_beta = np.column_stack([np.log(p_test_clip), np.log(1.0 - p_test_clip)])
-        probs = beta_lr.predict_proba(X_test_beta)[:, 1]
+        probs = _beta_calibrate(raw_cal, raw_test, y_cal)
     else:
         probs = raw_test
     # Save CatBoost model

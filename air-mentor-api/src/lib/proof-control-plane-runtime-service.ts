@@ -34,6 +34,7 @@ import { PROOF_DEMO_OPERATIONAL_THRESHOLDS } from './proof-demo-operational-band
 import {
   buildObservableFeaturePayload,
   featureHash,
+  type ChallengerRiskModelArtifact,
   type CorrelationArtifact,
   type ObservableLabelPayload,
   type ObservableSourceRefs,
@@ -86,10 +87,10 @@ export function applyPolicyAndRebound(
   const quizScale = policy.ceComponentCaps.quizWeight / 10
   const asgnScale = policy.ceComponentCaps.assignmentWeight / 20
 
-  tt1 = 100 - ((100 - tt1) * ttScale)
-  if (tt2 != null) tt2 = 100 - ((100 - tt2) * ttScale)
-  if (quiz != null) quiz = 100 - ((100 - quiz) * quizScale)
-  if (asgn != null) asgn = 100 - ((100 - asgn) * asgnScale)
+  tt1 = Math.pow(tt1 / 100, ttScale) * 100
+  if (tt2 != null) tt2 = Math.pow(tt2 / 100, ttScale) * 100
+  if (quiz != null) quiz = Math.pow(quiz / 100, quizScale) * 100
+  if (asgn != null) asgn = Math.pow(asgn / 100, asgnScale) * 100
   
   return { tt1, tt2, quiz, asgn, see }
 }
@@ -192,6 +193,7 @@ async function overlayManualAssessmentScoresIntoStageProjections(
     manuallyEditedKeys: Set<string>
     activeRiskArtifacts: {
       production: ProductionRiskModelArtifact | null
+      challenger: ChallengerRiskModelArtifact | null
       correlations: CorrelationArtifact | null
     }
   },
@@ -306,6 +308,7 @@ async function overlayManualAssessmentScoresIntoStageProjections(
       featurePayload,
       sourceRefs,
       productionModel: input.activeRiskArtifacts.production,
+      challengerModel: input.activeRiskArtifacts.challenger,
       correlations: input.activeRiskArtifacts.correlations,
       bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
     })
@@ -416,6 +419,7 @@ export type ProofControlPlaneRuntimeServiceDeps = {
   }) => number | null
   loadActiveProofRiskArtifacts: (db: AppDb, batchId: string) => Promise<{
     production: ProductionRiskModelArtifact | null
+    challenger: ChallengerRiskModelArtifact | null
     correlations: CorrelationArtifact | null
   }>
   observableSectionPressureFromEvidence: (evidence: {
@@ -934,6 +938,7 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       featurePayload,
       sourceRefs: fallbackSourceRefs,
       productionModel: activeRiskArtifacts.production,
+      challengerModel: activeRiskArtifacts.challenger,
       correlations: activeRiskArtifacts.correlations,
       bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
     })
@@ -1026,6 +1031,7 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       featurePayload: noActionFeaturePayload,
       sourceRefs: fallbackSourceRefs,
       productionModel: activeRiskArtifacts.production,
+      challengerModel: activeRiskArtifacts.challenger,
       correlations: activeRiskArtifacts.correlations,
       bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
     })
@@ -1195,16 +1201,21 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       facultyBudgetByKey,
     })
 
-    const decisionsByCaseKey = governance.decisions
-    const primaryCandidateByCaseKey = new Map<string, typeof runtimeQueueCandidates[number]>()
+    const decisionsBySourceKey = new Map<string, typeof governance.decisions extends Map<any, infer V> ? V : never>()
+    governance.decisions.forEach(decision => {
+      if (decision.primarySourceKey) decisionsBySourceKey.set(decision.primarySourceKey, decision)
+      decision.supportingSourceKeys.forEach(sourceKey => decisionsBySourceKey.set(sourceKey, decision))
+    })
+
+    const primaryCandidateByConcernContextKey = new Map<string, typeof runtimeQueueCandidates[number]>()
     stageCandidates.forEach(candidate => {
-      const decision = decisionsByCaseKey.get(candidate.caseKey)
+      const decision = decisionsBySourceKey.get(candidate.sourceKey)
       if (!decision || decision.primarySourceKey !== candidate.sourceKey) return
-      primaryCandidateByCaseKey.set(candidate.caseKey, candidate)
+      primaryCandidateByConcernContextKey.set(decision.concernContextKey, candidate)
     })
 
     stageCandidates.forEach(candidate => {
-      const decision = decisionsByCaseKey.get(candidate.caseKey) ?? null
+      const decision = decisionsBySourceKey.get(candidate.sourceKey) ?? null
       const alertRow = alertRows.find(row => row.riskAssessmentId === candidate.riskAssessmentId)
       const alertOutcomeRow = alertOutcomeRows.find(row => row.alertDecisionId === alertRow?.alertDecisionId)
       if (!alertRow || !alertOutcomeRow) return
@@ -1225,8 +1236,8 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       }
     })
 
-    decisionsByCaseKey.forEach((decision, caseKey) => {
-      const primaryCandidate = primaryCandidateByCaseKey.get(caseKey)
+    governance.decisions.forEach((decision, concernContextKey) => {
+      const primaryCandidate = primaryCandidateByConcernContextKey.get(concernContextKey)
       if (!primaryCandidate) return
       if (decision.status === 'opened' || decision.status === 'open') {
         reassessmentRows.push({
@@ -1259,7 +1270,7 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
           updatedAt: input.now,
         })
       }
-      liveCaseStateByKey.set(caseKey, {
+      liveCaseStateByKey.set(liveCaseKey(primaryCandidate.studentId), {
         open: decision.status === 'opened' || decision.status === 'open',
         primarySourceKey: decision.primarySourceKey,
       })

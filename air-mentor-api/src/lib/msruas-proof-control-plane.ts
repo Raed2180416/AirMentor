@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs'
 import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, like } from 'drizzle-orm'
+import type { RouteContext } from '../app.js'
 import type { AppDb } from '../db/client.js'
 import {
   academicRuntimeState,
@@ -205,6 +206,7 @@ import {
   createProofRiskModelTrainingBuilder,
   summarizeProofRiskModelEvaluation,
   type CorrelationArtifact,
+  type ChallengerRiskModelArtifact,
   type ProductionRiskModelArtifact,
 } from './proof-risk-model.js'
 import {
@@ -1095,11 +1097,12 @@ function pickArchetype(index: number, runSeed: number) {
   const adjustedScore = sectionForIndex(index) === 'A' ? score * 0.9 : Math.min(0.999, score * 1.08)
   
   let key: string
+  // Adjusted mapping for a more realistic bell curve (approx 20% top, 55% average/fragile, 25% bottom)
   if (adjustedScore < 0.10) key = 'deep-competent'
-  else if (adjustedScore < 0.30) key = 'strategic-efficient'
-  else if (adjustedScore < 0.60) key = 'strategic-fragile'
-  else if (adjustedScore < 0.80) key = 'cumulative-gap'
-  else if (adjustedScore < 0.95) key = 'underregulated'
+  else if (adjustedScore < 0.20) key = 'strategic-efficient'
+  else if (adjustedScore < 0.45) key = 'strategic-fragile'
+  else if (adjustedScore < 0.75) key = 'cumulative-gap'
+  else if (adjustedScore < 0.90) key = 'underregulated'
   else key = 'surface-survival'
 
   return STUDENT_ARCHETYPES.find(a => a.key === key) ?? STUDENT_ARCHETYPES[0]
@@ -1584,7 +1587,7 @@ function buildStudentTrajectory(index: number, runSeed: number, scenarioProfile:
   const externalWorkObligation = clamp(stableGaussian(`${seedBase}-work-obligation`, 0.3, 0.25), 0.0, 1.0)
   const commuteStress = clamp(stableGaussian(`${seedBase}-commute-stress`, 0.4, 0.2), 0.0, 1.0)
 
-  return {
+  const trajectory = {
     studentId: `mnc_student_${String(index + 1).padStart(3, '0')}`,
     usn: `1MS23MC${String(index + 1).padStart(3, '0')}`,
     name: `${first} ${last}`,
@@ -1656,7 +1659,50 @@ function buildStudentTrajectory(index: number, runSeed: number, scenarioProfile:
         expectedRecoveryThreshold: roundToTwo(clamp(0.12 + stableBetween(`${seedBase}-recovery-threshold`, -0.05, 0.08), 0.02, 0.36)),
       },
     },
+  } as StudentTrajectory
+
+  // Apply deterministic overrides for tracking variants
+  if (index === 0) {
+    trajectory.archetype = 'strategic-fragile'
+    trajectory.profile.behavior.attendancePropensity = 0.6
+    trajectory.profile.behavior.courseworkReliability = 0.4
+    trajectory.profile.assessment.quizRecallStrength = 0.4
+    trajectory.profile.assessment.assignmentCompletionStrength = 0.4
+    trajectory.profile.assessment.termTestApplicationStrength = 0.45
+    trajectory.profile.assessment.seeEndurance = 0.4
+    trajectory.profile.dynamics.relearnRate = 0.3
+  } else if (index === 1) {
+    trajectory.archetype = 'strategic-efficient'
+    trajectory.profile.behavior.attendancePropensity = 0.85
+    trajectory.profile.behavior.courseworkReliability = 0.8
+    trajectory.profile.assessment.quizRecallStrength = 0.8
+    trajectory.profile.assessment.assignmentCompletionStrength = 0.8
+    trajectory.profile.assessment.termTestApplicationStrength = 0.85
+    trajectory.profile.assessment.seeEndurance = 0.85
+    trajectory.profile.dynamics.relearnRate = 0.3
+    trajectory.profile.dynamics.forgetRate = 0.15
+  } else if (index === 2) {
+    trajectory.archetype = 'cumulative-gap'
+    trajectory.profile.behavior.attendancePropensity = 0.5
+    trajectory.profile.behavior.courseworkReliability = 0.5
+    trajectory.profile.assessment.quizRecallStrength = 0.5
+    trajectory.profile.assessment.assignmentCompletionStrength = 0.5
+    trajectory.profile.assessment.termTestApplicationStrength = 0.8
+    trajectory.profile.assessment.seeEndurance = 0.5
+    trajectory.profile.dynamics.relearnRate = 0.1
+    trajectory.profile.dynamics.forgetRate = 0.2
+  } else if (index === 3) {
+    trajectory.archetype = 'underregulated'
+    trajectory.profile.behavior.attendancePropensity = 0.2
+    trajectory.profile.behavior.courseworkReliability = 0.5
+    trajectory.profile.assessment.quizRecallStrength = 0.5
+    trajectory.profile.assessment.assignmentCompletionStrength = 0.5
+    trajectory.profile.assessment.termTestApplicationStrength = 0.3
+    trajectory.profile.assessment.seeEndurance = 0.8
+    trajectory.profile.dynamics.relearnRate = 0.9
   }
+
+  return trajectory
 }
 
 function courseEmphasis(course: Pick<RuntimeCourse, 'title'>) {
@@ -2181,6 +2227,7 @@ export {
 
 type ActiveRiskArtifacts = {
   production: ProductionRiskModelArtifact | null
+  challenger: ChallengerRiskModelArtifact | null
   correlations: CorrelationArtifact | null
   evaluation: Record<string, unknown> | null
 }
@@ -2282,9 +2329,11 @@ async function loadActiveProofRiskArtifacts(db: AppDb, batchId: string): Promise
   const rows = await db.select().from(riskModelArtifacts).where(eq(riskModelArtifacts.batchId, batchId)).orderBy(desc(riskModelArtifacts.createdAt))
   const activeRows = rows.filter(row => row.activeFlag === 1 && row.status === 'active')
   const productionRow = activeRows.find(row => row.artifactType === 'production') ?? null
+  const challengerRow = activeRows.find(row => row.artifactType === 'challenger') ?? null
   const correlationRow = activeRows.find(row => row.artifactType === 'correlation') ?? null
   return {
     production: productionRow ? parseJson(productionRow.payloadJson, null as ProductionRiskModelArtifact | null) : null,
+    challenger: challengerRow ? parseJson(challengerRow.payloadJson, null as ChallengerRiskModelArtifact | null) : null,
     correlations: correlationRow ? parseJson(correlationRow.payloadJson, null as CorrelationArtifact | null) : null,
     evaluation: productionRow ? parseJson(productionRow.evaluationJson, {} as Record<string, unknown>) : null,
   }
@@ -2547,7 +2596,7 @@ export async function rebuildProofRiskArtifacts(db: AppDb, input: {
       curriculumFeatureProfileId: targetRun?.curriculumFeatureProfileId ?? null,
       curriculumFeatureProfileFingerprint: targetRun?.curriculumFeatureProfileFingerprint ?? null,
       artifactType: 'production',
-      modelFamily: 'logistic-scorecard',
+      modelFamily: 'catboost',
       artifactVersion: bundle.production.modelVersion,
       featureSchemaVersion: bundle.production.featureSchemaVersion,
       sourceRunIdsJson: JSON.stringify(governedRunRows.map(row => row.simulationRunId)),
@@ -3900,12 +3949,12 @@ export async function publishOperationalProjection(db: AppDb, input: {
       quizCount: 2,
       assignmentCount: 2,
       quizComponents: [
-        { id: 'quiz-1', label: 'Quiz 1', rawMax: 10, weightage: 7 },
-        { id: 'quiz-2', label: 'Quiz 2', rawMax: 10, weightage: 8 },
+        { id: 'quiz-1', label: 'Quiz 1', rawMax: 10, weightage: 7, cos: ['CO1', 'CO2'] },
+        { id: 'quiz-2', label: 'Quiz 2', rawMax: 10, weightage: 8, cos: ['CO3', 'CO4'] },
       ],
       assignmentComponents: [
-        { id: 'assignment-1', label: 'Assignment 1', rawMax: 10, weightage: 7 },
-        { id: 'assignment-2', label: 'Assignment 2', rawMax: 10, weightage: 8 },
+        { id: 'assignment-1', label: 'Assignment 1', rawMax: 10, weightage: 7, cos: ['CO1', 'CO2', 'CO3', 'CO4'] },
+        { id: 'assignment-2', label: 'Assignment 2', rawMax: 10, weightage: 8, cos: ['CO5'] },
       ],
       policyContext: { ce: 60, see: 40, maxTermTests: 2, maxQuizzes: 2, maxAssignments: 2 },
       status: 'Configured',
@@ -5021,4 +5070,18 @@ export async function listStudentAgentTimeline(db: AppDb, input: {
   viewerRoleCode?: string | null
 }) {
   return listStudentAgentTimelineService(db, input, proofControlPlaneTailServiceDeps)
+}
+
+export async function triggerActiveRunRecomputeIfPresent(context: RouteContext, actorFacultyId: string | null) {
+  const [activeRun] = await context.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+  if (activeRun) {
+    const policy = parseJson(activeRun.policySnapshotJson, {} as ResolvedPolicy)
+    await recomputeObservedOnlyRisk(context.db, {
+      simulationRunId: activeRun.simulationRunId,
+      policy,
+      actorFacultyId,
+      now: context.now(),
+      rebuildModelArtifacts: false,
+    })
+  }
 }
