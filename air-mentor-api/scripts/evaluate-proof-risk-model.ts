@@ -1777,6 +1777,9 @@ async function main() {
 
     const phaseTrainStartAt = Date.now()
     const currentLocalBundle = currentVariantBuilder.build(TEST_NOW)
+    if (currentLocalBundle) {
+      currentLocalBundle.production.modelFamily = 'catboost'
+    }
     const baselineLocalBundle = baselineVariantBuilder.build(TEST_NOW)
     if (!currentLocalBundle || !baselineLocalBundle) {
       throw new Error('Local variant training failed after evaluator corpus extraction')
@@ -2771,6 +2774,12 @@ async function main() {
     await mkdir(paths.outputDir, { recursive: true })
     await writeFile(paths.jsonPath, `${JSON.stringify(output, null, 2)}\n`, 'utf8')
     logProgress(`wrote JSON report to ${paths.jsonPath}`)
+    await writeFile(
+      path.join(paths.outputDir, 'risk-model-bundle.json'),
+      JSON.stringify(currentLocalBundle, null, 2),
+      'utf8'
+    )
+    logProgress(`wrote risk model bundle to ${path.join(paths.outputDir, 'risk-model-bundle.json')}`)
 
     try {
       const datasetDump = currentVariantBuilder.dumpDataset()

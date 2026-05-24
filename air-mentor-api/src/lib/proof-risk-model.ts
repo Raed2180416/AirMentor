@@ -372,6 +372,7 @@ type ChallengerHeadArtifact = {
 
 export type ProductionRiskModelArtifact = {
   modelVersion: string
+  modelFamily?: string
   featureSchemaVersion: string
   trainedAt: string
   trainingManifestVersion: string

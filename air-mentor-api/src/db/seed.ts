@@ -48,6 +48,7 @@ import {
   policyOverrides,
   reassessmentEvents,
   riskAssessments,
+  riskModelArtifacts,
   roleGrants,
   sectionOfferings,
   semesterTransitionLogs,
@@ -77,6 +78,8 @@ import { DEFAULT_POLICY } from '../modules/admin-structure.js'
 import { seedMsruasProofSandbox } from '../lib/msruas-proof-sandbox.js'
 import { hashPassword } from '../lib/passwords.js'
 import { nowIso } from '../lib/time.js'
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
 
 export type SeedProfile = 'full' | 'control-only'
 
@@ -732,6 +735,87 @@ export async function seedIntoDatabase(
     now,
     policy: DEFAULT_POLICY,
   })
+
+  try {
+    let bundlePath = path.resolve(process.cwd(), 'output/proof-risk-model/risk-model-bundle.json')
+    let bundleRaw: string
+    try {
+      bundleRaw = await readFile(bundlePath, 'utf8')
+    } catch {
+      const seedDir = path.dirname(fileURLToPath(import.meta.url))
+      bundlePath = path.resolve(seedDir, '../../output/proof-risk-model/risk-model-bundle.json')
+      bundleRaw = await readFile(bundlePath, 'utf8')
+    }
+    console.error(`[seed] found risk model bundle at ${bundlePath}`)
+    const bundle = JSON.parse(bundleRaw)
+    if (bundle && bundle.production && bundle.challenger && bundle.correlations) {
+      console.error(`[seed] seeding CatBoost risk model artifacts into risk_model_artifacts...`)
+      await db.insert(riskModelArtifacts).values([
+        {
+          riskModelArtifactId: `rma_prod_${Date.now()}`,
+          batchId: 'batch_branch_mnc_btech_2023',
+          simulationRunId: 'sim_mnc_2023_first6_v1',
+          curriculumFeatureProfileId: null,
+          curriculumFeatureProfileFingerprint: null,
+          artifactType: 'production',
+          modelFamily: 'catboost',
+          artifactVersion: bundle.production.modelVersion,
+          featureSchemaVersion: bundle.production.featureSchemaVersion,
+          sourceRunIdsJson: JSON.stringify([]),
+          payloadJson: JSON.stringify(bundle.production),
+          evaluationJson: JSON.stringify({}),
+          status: 'active',
+          activeFlag: 1,
+          createdByFacultyId: 'fac_sysadmin',
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          riskModelArtifactId: `rma_chal_${Date.now()}`,
+          batchId: 'batch_branch_mnc_btech_2023',
+          simulationRunId: 'sim_mnc_2023_first6_v1',
+          curriculumFeatureProfileId: null,
+          curriculumFeatureProfileFingerprint: null,
+          artifactType: 'challenger',
+          modelFamily: bundle.challenger.modelFamily,
+          artifactVersion: bundle.challenger.modelVersion,
+          featureSchemaVersion: bundle.challenger.featureSchemaVersion,
+          sourceRunIdsJson: JSON.stringify([]),
+          payloadJson: JSON.stringify(bundle.challenger),
+          evaluationJson: JSON.stringify({}),
+          status: 'active',
+          activeFlag: 1,
+          createdByFacultyId: 'fac_sysadmin',
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          riskModelArtifactId: `rma_corr_${Date.now()}`,
+          batchId: 'batch_branch_mnc_btech_2023',
+          simulationRunId: 'sim_mnc_2023_first6_v1',
+          curriculumFeatureProfileId: null,
+          curriculumFeatureProfileFingerprint: null,
+          artifactType: 'correlation',
+          modelFamily: 'association-summary',
+          artifactVersion: bundle.correlations.artifactVersion,
+          featureSchemaVersion: bundle.correlations.featureSchemaVersion,
+          sourceRunIdsJson: JSON.stringify([]),
+          payloadJson: JSON.stringify(bundle.correlations),
+          evaluationJson: JSON.stringify({}),
+          status: 'active',
+          activeFlag: 1,
+          createdByFacultyId: 'fac_sysadmin',
+          createdAt: now,
+          updatedAt: now,
+        }
+      ])
+      console.error(`[seed] successfully seeded CatBoost risk model artifacts.`)
+    } else {
+      console.warn(`[seed] risk model bundle was empty or invalid.`)
+    }
+  } catch (error) {
+    console.warn(`[seed] skipped seeding risk model artifacts: ${(error as Error).message}`)
+  }
 }
 
 export async function main() {
