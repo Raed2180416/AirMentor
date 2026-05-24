@@ -83,20 +83,39 @@ SEED = 4242
 BUDGET_TOP_PCT = 0.20
 LOCAL_ECE_BANDS = [(0.4, 0.08), (0.85, 0.08)]
 GLOBAL_ECE_BINS = 10
+MIN_LOCAL_ECE_SUPPORT = 50  # Minimum samples for local ECE to be meaningful
 
-CATBOOST_PARAMS = dict(
-    iterations=100,
-    depth=2,
-    learning_rate=0.03,
-    loss_function='Logloss',
-    eval_metric='AUC',
-    random_seed=SEED,
-    allow_writing_files=False,
-    logging_level='Silent',
-    thread_count=-1,
-    l2_leaf_reg=10.0,
-    auto_class_weights='Balanced',
-)
+
+def _local_ece_valid(ece_dict):
+    return ece_dict is not None and ece_dict.get('ece') is not None and ece_dict.get('support', 0) >= MIN_LOCAL_ECE_SUPPORT
+
+
+def _calibration_coverage_gate(probs, min_frac=0.03):
+    """Require at least min_frac of predictions in each probability bin.
+    Prevents models from 'passing' calibration by avoiding probability regions."""
+    bins = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+    n = len(probs)
+    for i in range(len(bins) - 1):
+        lo, hi = bins[i], bins[i + 1]
+        mask = (probs >= lo) & ((probs < hi) if i < len(bins) - 2 else (probs <= hi))
+        if mask.sum() / n < min_frac:
+            return False, f'bin_{lo}_{hi}_coverage={mask.sum()/n:.4f}_below_{min_frac}'
+    return True, None
+
+CATBOOST_PARAMS = {
+    'iterations': 500,
+    'depth': 2,
+    'learning_rate': 0.01,
+    'loss_function': 'Logloss',
+    'eval_metric': 'AUC',
+    'random_seed': 4242,
+    'logging_level': 'Silent',
+    'thread_count': -1,
+    'l2_leaf_reg': 30.0,
+    'allow_writing_files': False,
+    'auto_class_weights': 'Balanced',
+    'min_data_in_leaf': 15,
+}
 
 
 def _global_ece(y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = GLOBAL_ECE_BINS) -> float:
@@ -161,21 +180,31 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def _beta_calibrate(raw_cal, raw_test, y_cal):
+    """Beta Calibration — SOTA for probabilities in [0,1].
+    Applied to BOTH baseline and challenger for fair comparison."""
+    if len(set(y_cal.tolist())) < 2:
+        return raw_test
+    from sklearn.linear_model import LogisticRegression as LR
+    eps = 1e-6
+    p_cal_clip = np.clip(raw_cal, eps, 1.0 - eps)
+    X_beta = np.column_stack([np.log(p_cal_clip), np.log(1.0 - p_cal_clip)])
+    beta_lr = LR(solver='lbfgs', max_iter=1000, random_state=SEED)
+    beta_lr.fit(X_beta, y_cal)
+    p_test_clip = np.clip(raw_test, eps, 1.0 - eps)
+    X_test_beta = np.column_stack([np.log(p_test_clip), np.log(1.0 - p_test_clip)])
+    return beta_lr.predict_proba(X_test_beta)[:, 1]
+
+
 def train_logistic_baseline(X_train, y_train, X_test, y_test, X_cal, y_cal):
-    """Reproduce the t57 logistic+isotonic baseline for head-to-head parity."""
+    """Logistic baseline with Beta Calibration (same post-hoc as challenger)."""
     clf = LogisticRegression(penalty='l2', C=1.0, solver='lbfgs',
                              class_weight='balanced', max_iter=1000,
                              random_state=SEED)
     clf.fit(X_train, y_train)
     raw_cal = clf.predict_proba(X_cal)[:, 1]
     raw_test = clf.predict_proba(X_test)[:, 1]
-    if len(set(y_cal.tolist())) >= 2:
-        iso = IsotonicRegression(out_of_bounds='clip', y_min=0.0, y_max=1.0)
-        iso.fit(raw_cal, y_cal)
-        probs = iso.predict(raw_test)
-    else:
-        probs = raw_test
-    return probs
+    return _beta_calibrate(raw_cal, raw_test, y_cal)
 
 
 def train_catboost_head(X_train, y_train, X_cal, y_cal, X_test, y_test, head_key, out_dir):
@@ -187,19 +216,23 @@ def train_catboost_head(X_train, y_train, X_cal, y_cal, X_test, y_test, head_key
     scale_pos_weight = neg / max(pos, 1)
     params = dict(CATBOOST_PARAMS)
     clf = CatBoostClassifier(**params)
-    clf.fit(
-        X_train, y_train,
-        eval_set=(X_cal, y_cal) if len(y_cal) > 0 else None,
-        early_stopping_rounds=30 if len(y_cal) > 0 else None,
-        use_best_model=True if len(y_cal) > 0 else False,
-    )
+    clf.fit(X_train, y_train)
+    
     raw_cal = clf.predict_proba(X_cal)[:, 1]
     raw_test = clf.predict_proba(X_test)[:, 1]
-    # Isotonic calibration (same pattern as logistic baseline for fair compare)
+    
+    # Beta Calibration (SOTA 2026)
     if len(set(y_cal.tolist())) >= 2:
-        iso = IsotonicRegression(out_of_bounds='clip', y_min=0.0, y_max=1.0)
-        iso.fit(raw_cal, y_cal)
-        probs = iso.predict(raw_test)
+        from sklearn.linear_model import LogisticRegression
+        eps = 1e-6
+        p_cal_clip = np.clip(raw_cal, eps, 1.0 - eps)
+        X_beta = np.column_stack([np.log(p_cal_clip), np.log(1.0 - p_cal_clip)])
+        beta_lr = LogisticRegression(solver='lbfgs', max_iter=1000, random_state=4242)
+        beta_lr.fit(X_beta, y_cal)
+        
+        p_test_clip = np.clip(raw_test, eps, 1.0 - eps)
+        X_test_beta = np.column_stack([np.log(p_test_clip), np.log(1.0 - p_test_clip)])
+        probs = beta_lr.predict_proba(X_test_beta)[:, 1]
     else:
         probs = raw_test
     # Save CatBoost model
@@ -207,7 +240,7 @@ def train_catboost_head(X_train, y_train, X_cal, y_cal, X_test, y_test, head_key
     clf.save_model(str(model_path), format='cbm')
     return probs, {
         'modelArtifact': str(model_path.relative_to(REPO_ROOT)),
-        'bestIteration': (int(clf.get_best_iteration()) if hasattr(clf, 'get_best_iteration') else None),
+        'bestIteration': int(clf.get_best_iteration()) if clf.get_best_iteration() is not None else None,
         'treeCount': int(clf.tree_count_),
         'scalePosWeight': float(scale_pos_weight),
         **params,
@@ -293,24 +326,42 @@ def main() -> int:
             continue
         cb_metrics = _metric_block(y_test, cb_probs, test)
 
-        # 5-gate head-to-head
-        g1_ranking = (cb_metrics['rocAuc'] or 0) >= (baseline_metrics['rocAuc'] or 0)
+        # 6-gate head-to-head (strict, no tolerance buffers)
+        base_roc = baseline_metrics['rocAuc']
+        cb_roc = cb_metrics['rocAuc']
+        base_l04 = baseline_metrics['localEce'][0]
+        cb_l04 = cb_metrics['localEce'][0]
+        base_l085 = baseline_metrics['localEce'][1]
+        cb_l085 = cb_metrics['localEce'][1]
+        base_overload = baseline_metrics['overloadRatio']
+        cb_overload = cb_metrics['overloadRatio']
+
+        # Gate 1: Ranking — challenger must not worsen AUC
+        worsens_auc = (base_roc is not None and cb_roc is not None and cb_roc < base_roc)
+        g1_ranking = not worsens_auc
+
+        # Gate 2: Proper scoring — challenger Brier must not worsen
         g2_proper = cb_metrics['brier'] <= baseline_metrics['brier']
-        base_l04 = baseline_metrics['localEce'][0]['ece']
-        cb_l04 = cb_metrics['localEce'][0]['ece']
-        base_l85 = baseline_metrics['localEce'][1]['ece']
-        cb_l85 = cb_metrics['localEce'][1]['ece']
-        g3_localcal = True
-        if cb_l04 is not None and base_l04 is not None:
-            g3_localcal = g3_localcal and (cb_l04 <= base_l04 + 1e-4)
-        if cb_l85 is not None and base_l85 is not None:
-            g3_localcal = g3_localcal and (cb_l85 <= base_l85 + 1e-4)
-        base_ov = baseline_metrics.get('overloadRatio')
-        cb_ov = cb_metrics.get('overloadRatio')
-        g4_overload = (base_ov is None or cb_ov is None
-                       or abs(cb_ov - 1.0) <= abs(base_ov - 1.0) + 1e-4)
-        g5_replayable = True  # .cbm saved + seeded
-        gates_pass = sum([g1_ranking, g2_proper, g3_localcal, g4_overload, g5_replayable])
+
+        # Gate 3: Local calibration — both bands must be valid AND challenger must not worsen
+        l04_valid = _local_ece_valid(base_l04) and _local_ece_valid(cb_l04)
+        l085_valid = _local_ece_valid(base_l085) and _local_ece_valid(cb_l085)
+        worsens_l04 = l04_valid and cb_l04['ece'] > base_l04['ece']
+        worsens_l085 = l085_valid and cb_l085['ece'] > base_l085['ece']
+        g3_localcal = l04_valid and l085_valid and not worsens_l04 and not worsens_l085
+
+        # Gate 4: Overload — ratio must be closer to 1.0 than baseline (both over- and under-prediction)
+        base_overload_dist = abs(base_overload - 1.0) if base_overload is not None else float('inf')
+        cb_overload_dist = abs(cb_overload - 1.0) if cb_overload is not None else float('inf')
+        g4_overload = cb_overload_dist <= base_overload_dist
+
+        # Gate 5: Replayable — artifacts saved
+        g5_replayable = True
+
+        # Gate 6: Calibration coverage — model must not evade probability regions
+        g6_coverage, coverage_reason = _calibration_coverage_gate(cb_probs)
+
+        gates_pass = sum([g1_ranking, g2_proper, g3_localcal, g4_overload, g5_replayable, g6_coverage])
 
         heads_out[head_key] = {
             'head': head_key,
@@ -324,9 +375,13 @@ def main() -> int:
                 'localCal': bool(g3_localcal),
                 'overload': bool(g4_overload),
                 'replayable': bool(g5_replayable),
+                'coverage': bool(g6_coverage),
                 'passCount': gates_pass,
+                'coverageReason': coverage_reason,
+                'localEce04Support': cb_l04.get('support'),
+                'localEce085Support': cb_l085.get('support'),
             },
-            'headPromotable': (gates_pass == 5),
+            'headPromotable': (gates_pass == 6),
         }
 
     # Global promotion: ALL heads must have passCount=5 (Phase 10 intent strict)
@@ -335,7 +390,7 @@ def main() -> int:
     summary = {
         'generatedAt': _dt.datetime.now(_dt.timezone.utc).isoformat(timespec='seconds'),
         'challenger': 'catboost',
-        'baseline': 'logistic-v8-local (isotonic-calibrated)',
+        'baseline': 'logistic-v8-local (beta-calibrated)',
         'corpusAdmissibility': 'interim',
         'seed': SEED,
         'catboostParams': CATBOOST_PARAMS,
@@ -346,11 +401,11 @@ def main() -> int:
             'promotableHeads': promotable,
             'blockedHeads': blocked,
             'reason': (
-                'All 5 heads pass all 5 gates vs logistic baseline.'
+                'All 5 heads pass all 6 gates vs logistic baseline.'
                 if (len(blocked) == 0 and promotable)
                 else f'{len(blocked)}/{len(HEADS)} heads fail at least one of '
-                     f'5 gates (ranking / proper / localCal / overload / replayable); '
-                     f'Phase 10 requires ALL five to promote; challenger stays shadow.'
+                     f'6 gates (ranking / proper / localCal / overload / replayable / coverage); '
+                     f'Phase 10 requires ALL six to promote; challenger stays shadow.'
             ),
         },
     }
@@ -382,7 +437,7 @@ def main() -> int:
         f'scriptSha256={script_hash}\n'
         f'featuresCsvSha256={features_hash}\n'
         f'challenger=catboost (iterations={CATBOOST_PARAMS["iterations"]} depth={CATBOOST_PARAMS["depth"]} lr={CATBOOST_PARAMS["learning_rate"]})\n'
-        f'baseline=logistic-v8-local (isotonic)\n'
+        f'baseline=logistic-v8-local (beta-calibrated)\n'
         f'headsEvaluated={len([r for r in heads_out.values() if not r.get("skipped")])}/{len(HEADS)}\n'
         f'promotableHeads={len(promotable)}\n'
         f'blockedHeads={len(blocked)}\n'
