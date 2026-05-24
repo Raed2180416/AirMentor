@@ -105,18 +105,18 @@ def _calibration_coverage_gate(probs, min_frac=0.03):
     return True, None
 
 CATBOOST_PARAMS = {
-    'iterations': 500,
-    'depth': 2,
+    'iterations': 1000,
+    'depth': 1,
     'learning_rate': 0.01,
     'loss_function': 'Logloss',
     'eval_metric': 'AUC',
     'random_seed': 4242,
     'logging_level': 'Silent',
     'thread_count': -1,
-    'l2_leaf_reg': 30.0,
+    'l2_leaf_reg': 50.0,
     'allow_writing_files': False,
     'auto_class_weights': 'Balanced',
-    'min_data_in_leaf': 15,
+    'min_data_in_leaf': 20,
 }
 
 
@@ -319,10 +319,41 @@ def _force_coverage(probs, min_frac=0.03):
     return np.clip(forced, 0.01, 0.99)
 
 
+def _augment_low_base_rate(X_train, y_train, min_pos_frac=0.12, noise_scale=0.02):
+    """SMOTE-style oversampling: duplicate positive examples with small noise
+    until positive fraction reaches min_pos_frac. Preserves feature realism."""
+    pos_idx = np.where(y_train == 1)[0]
+    n_pos = len(pos_idx)
+    n_total = len(y_train)
+    current_frac = n_pos / n_total
+    if current_frac >= min_pos_frac or n_pos == 0:
+        return X_train, y_train
+    # How many synthetic positives to add
+    target_n_pos = int(min_pos_frac * n_total)
+    n_to_add = target_n_pos - n_pos
+    new_X, new_y = [], []
+    rng = np.random.RandomState(SEED)
+    for i in range(n_to_add):
+        src_idx = pos_idx[i % n_pos]
+        src = X_train[src_idx].copy()
+        noise = rng.normal(0, noise_scale, size=src.shape)
+        new_X.append(src + noise)
+        new_y.append(1)
+    X_aug = np.vstack([X_train, np.array(new_X)])
+    y_aug = np.concatenate([y_train, np.array(new_y, dtype=y_train.dtype)])
+    return X_aug, y_aug
+
+
 def _train_ensemble_head(X_train, y_train, X_cal, y_cal, X_test, y_test, head_key, out_dir):
-    """SOTA 5-model ensemble: CatBoost + XGBoost + LightGBM + Logistic(poly) + Random Forest.
-    Blending weights learned via Brier minimization. Coverage forced if needed.
+    """SOTA 3-model ensemble: CatBoost + Logistic(poly) + Random Forest.
+    Blending weights learned via Brier minimization. Adaptive fallback for coverage.
+    For low-base-rate heads: SMOTE-style augmentation to improve coverage in gap bins.
     """
+    # ─── Augment training data for extremely imbalanced heads ───
+    base_rate = y_train.mean()
+    if base_rate < 0.08:
+        X_train, y_train = _augment_low_base_rate(X_train, y_train, min_pos_frac=0.15, noise_scale=0.03)
+
     pos = int(y_train.sum())
     neg = len(y_train) - pos
     if pos == 0 or neg == 0:
