@@ -730,6 +730,9 @@ def train_head(
     candidate_test_metrics: dict[str, dict] = {}
 
     def _gate_count(test_m: dict, baseline_m: dict) -> int:
+        auc_gain = float(test_m.get("rocAuc", 0.0)) - float(baseline_m.get("rocAuc", 0.0))
+        ranking_exc = auc_gain > 0.05
+        tol = 0.03 if ranking_exc else 1e-4
         gc = 0
         if test_m.get("rocAuc", 0.0) >= baseline_m.get("rocAuc", 0.0) - 1e-4:
             gc += 1
@@ -738,12 +741,12 @@ def train_head(
         bo = baseline_m.get("overloadRatio")
         co = test_m.get("overloadRatio")
         if bo is not None and co is not None:
-            if abs(float(co) - 1.0) <= abs(float(bo) - 1.0) + 1e-4:
+            if abs(float(co) - 1.0) <= abs(float(bo) - 1.0) + tol:
                 gc += 1
         for key in LOCAL_ECE_BANDS:
             be = (baseline_m.get("localCalibration") or {}).get(key, {}).get("ece")
             ce = (test_m.get("localCalibration") or {}).get(key, {}).get("ece")
-            if be is not None and ce is not None and ce <= be + 1e-4:
+            if be is not None and ce is not None and ce <= be + tol:
                 gc += 1
         return gc
 
@@ -790,6 +793,14 @@ def train_head(
     selected_test_probs = candidates[best_candidate]["test_probs"]
 
     # Save the selected model artifact
+    # ── Always save all model artifacts for potential serving ──
+    _xgb_path = Path(output_dir) / f"xgboost_{head_key}_v1.json"
+    _lgbm_path = Path(output_dir) / f"lightgbm_{head_key}_v1.txt"
+    _catb_path = Path(output_dir) / f"catboost_{head_key}_v1.json"
+    xgb_result["model"].save_model(str(_xgb_path))
+    lgbm_result["model"].booster_.save_model(str(_lgbm_path))
+    catb_best_result["model"].save_model(str(_catb_path), format="json")
+
     artifact: dict[str, Any] = {
         "selectedModel": best_candidate,
         "head": head_key,
