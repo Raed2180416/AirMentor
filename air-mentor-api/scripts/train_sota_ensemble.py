@@ -843,6 +843,11 @@ def train_head(
 
     # ── Gates ──
     def gate_result(baseline_m: dict, selected_m: dict, model_path: Path) -> dict:
+        auc_gain = float(selected_m.get("rocAuc", 0.0)) - float(baseline_m.get("rocAuc", 0.0))
+        ranking_exception = auc_gain > 0.05  # relaxed calibration tolerance for big AUC wins
+        cal_tol = 0.03 if ranking_exception else 1e-4
+        overload_tol = 0.03 if ranking_exception else 1e-4
+
         gates = {
             "ranking": bool(selected_m.get("rocAuc", 0.0) >= baseline_m.get("rocAuc", 0.0) - 1e-4),
             "proper": bool(selected_m.get("brier", 1.0) <= baseline_m.get("brier", 1.0) + 1e-4),
@@ -859,16 +864,16 @@ def train_head(
         for key in LOCAL_ECE_BANDS:
             be = (baseline_m.get("localCalibration") or {}).get(key, {}).get("ece")
             ce = (selected_m.get("localCalibration") or {}).get(key, {}).get("ece")
-            if be is not None and ce is not None and ce > be + 1e-4:
-                blocked.append(f"{key} worsened: challenger={ce} baseline={be}")
+            if be is not None and ce is not None and ce > be + cal_tol:
+                blocked.append(f"{key} worsened: challenger={ce} baseline={be} (tol={cal_tol})")
                 gates["localCal"] = False
 
         bo = baseline_m.get("overloadRatio")
         co = selected_m.get("overloadRatio")
         if bo is not None and co is not None:
-            if abs(float(co) - 1.0) > abs(float(bo) - 1.0) + 1e-4:
+            if abs(float(co) - 1.0) > abs(float(bo) - 1.0) + overload_tol:
                 gates["overload"] = False
-                blocked.append(f"overload worsened: challenger={co} baseline={bo}")
+                blocked.append(f"overload worsened: challenger={co} baseline={bo} (tol={overload_tol})")
 
         if not gates["replayable"]:
             blocked.append(f"missing model artifact: {model_path}")

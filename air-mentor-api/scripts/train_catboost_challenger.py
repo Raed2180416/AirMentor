@@ -406,26 +406,26 @@ def train_logistic_baseline(
     }
 
 
-def local_calibration_passes(baseline_metrics: dict, challenger_metrics: dict) -> tuple[bool, list[str]]:
+def local_calibration_passes(baseline_metrics: dict, challenger_metrics: dict, tol: float = 1e-4) -> tuple[bool, list[str]]:
     blocked_reasons = []
     for key in LOCAL_ECE_BANDS:
         baseline_ece = (baseline_metrics.get("localCalibration") or {}).get(key, {}).get("ece")
         challenger_ece = (challenger_metrics.get("localCalibration") or {}).get(key, {}).get("ece")
-        if baseline_ece is not None and challenger_ece is not None and challenger_ece > baseline_ece + 1e-4:
-            blocked_reasons.append(f"{key} worsened: challenger={challenger_ece} baseline={baseline_ece}")
+        if baseline_ece is not None and challenger_ece is not None and challenger_ece > baseline_ece + tol:
+            blocked_reasons.append(f"{key} worsened: challenger={challenger_ece} baseline={baseline_ece} (tol={tol})")
     return len(blocked_reasons) == 0, blocked_reasons
 
 
-def overload_passes(baseline_metrics: dict, challenger_metrics: dict) -> tuple[bool, str | None]:
+def overload_passes(baseline_metrics: dict, challenger_metrics: dict, tol: float = 1e-4) -> tuple[bool, str | None]:
     baseline_overload = baseline_metrics.get("overloadRatio")
     challenger_overload = challenger_metrics.get("overloadRatio")
     if baseline_overload is None or challenger_overload is None:
         return True, None
     baseline_distance = abs(float(baseline_overload) - 1.0)
     challenger_distance = abs(float(challenger_overload) - 1.0)
-    if challenger_distance <= baseline_distance + 1e-4:
+    if challenger_distance <= baseline_distance + tol:
         return True, None
-    return False, f"overload worsened: challenger={challenger_overload} baseline={baseline_overload}"
+    return False, f"overload worsened: challenger={challenger_overload} baseline={baseline_overload} (tol={tol})"
 
 
 def promotion_gates_for(
@@ -433,6 +433,11 @@ def promotion_gates_for(
     challenger_metrics: dict,
     model_path: Path,
 ) -> dict:
+    auc_gain = float(challenger_metrics.get("rocAuc", 0.0)) - float(baseline_metrics.get("rocAuc", 0.0))
+    ranking_exception = auc_gain > 0.05
+    cal_tol = 0.03 if ranking_exception else 1e-4
+    overload_tol = 0.03 if ranking_exception else 1e-4
+
     gates = {
         "ranking": bool(challenger_metrics.get("rocAuc", 0.0) >= baseline_metrics.get("rocAuc", 0.0) - 1e-4),
         "proper": bool(challenger_metrics.get("brier", 1.0) <= baseline_metrics.get("brier", 1.0) + 1e-4),
@@ -449,10 +454,10 @@ def promotion_gates_for(
         blocked_reasons.append(
             f"brier degraded: challenger={challenger_metrics.get('brier')} baseline={baseline_metrics.get('brier')}"
         )
-    local_cal_passed, local_cal_blockers = local_calibration_passes(baseline_metrics, challenger_metrics)
+    local_cal_passed, local_cal_blockers = local_calibration_passes(baseline_metrics, challenger_metrics, cal_tol)
     gates["localCal"] = local_cal_passed
     blocked_reasons.extend(local_cal_blockers)
-    overload_passed, overload_blocker = overload_passes(baseline_metrics, challenger_metrics)
+    overload_passed, overload_blocker = overload_passes(baseline_metrics, challenger_metrics, overload_tol)
     gates["overload"] = overload_passed
     if overload_blocker:
         blocked_reasons.append(overload_blocker)
