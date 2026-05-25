@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { spawnSync } from 'node:child_process'
 import { inferObservableDrivers, inferObservableRisk, type ObservableDriver, type ObservableInferenceInput, type ObservableInferenceOutput } from './inference-engine.js'
 import { parseJson } from './json.js'
 import type {
@@ -825,6 +826,46 @@ function applyCalibration(calibration: ProbabilityCalibrationArtifact, rawProb: 
 
 function scoreWithLogistic(head: LogisticHeadArtifact, vector: FeatureVector) {
   return applyCalibration(head.calibration, scoreWithLogisticRaw(head, vector))
+}
+
+// Tree scoring bridge — calls Python for XGBoost/LightGBM predictions.
+// Safe fallback to logistic if Python bridge fails or model file is missing.
+const TREE_BRIDGE_SCRIPT = new URL('../../scripts/tree-scoring-bridge.py', import.meta.url).pathname
+const XGBOOST_OVERALL_MODEL = new URL('../../output/proof-risk-model/sota-ensemble/xgboost_overallCourseRisk_v1.json', import.meta.url).pathname
+const XGBOOST_OVERALL_CAL = new URL('../../output/proof-risk-model/sota-ensemble/lightgbm_overallCourseRisk_calibration.json', import.meta.url).pathname
+
+function scoreWithTreeBridge(featureArray: number[], modelPath: string, calPath: string): number | null {
+  try {
+    const calJson = JSON.parse(_readFileSync(calPath, 'utf-8'))
+    const payload = JSON.stringify({ features: featureArray })
+    const result = spawnSync(
+      process.execPath.replace('node', 'python3') || 'python3',
+      [
+        TREE_BRIDGE_SCRIPT,
+        '--model', modelPath,
+        '--model-type', 'xgboost',
+        '--calibration', JSON.stringify(calJson),
+      ],
+      {
+        input: payload,
+        encoding: 'utf-8',
+        timeout: 5000,
+      }
+    )
+    if (result.status !== 0 || result.error) {
+      console.warn('[tree-bridge] spawn failed:', result.error || result.stderr)
+      return null
+    }
+    const parsed = parseJson(result.stdout.trim(), null as { calibratedProbability?: number } | null)
+    if (!parsed || typeof parsed.calibratedProbability !== 'number') {
+      console.warn('[tree-bridge] invalid output:', result.stdout)
+      return null
+    }
+    return clamp(parsed.calibratedProbability, 0.0001, 0.9999)
+  } catch (e) {
+    console.warn('[tree-bridge] exception:', e)
+    return null
+  }
 }
 
 function supportWarningForHead(headKey: RiskHeadKey, support: HeadSupportSummary, metrics: RiskMetricSummary) {
@@ -2457,11 +2498,25 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
   }
 
   const vector = featureVectorFromPayload(input.featurePayload, input.sourceRefs)
+  const featureArray = featureVectorArrayFromPayload(input.featurePayload, input.sourceRefs)
+
+  // Tree bridge for overallCourseRisk: uses XGBoost model if available,
+  // falls back to logistic on any failure.
+  let overallCourseRiskProb = scoreWithLogistic(input.productionModel.heads.overallCourseRisk, vector)
+  try {
+    const treeProb = scoreWithTreeBridge(featureArray, XGBOOST_OVERALL_MODEL, XGBOOST_OVERALL_CAL)
+    if (treeProb !== null) {
+      overallCourseRiskProb = treeProb
+    }
+  } catch {
+    // Silently fall back to logistic
+  }
+
   const headProbabilities = {
     attendanceRisk: scoreWithLogistic(input.productionModel.heads.attendanceRisk, vector),
     ceRisk: scoreWithLogistic(input.productionModel.heads.ceRisk, vector),
     seeRisk: scoreWithLogistic(input.productionModel.heads.seeRisk, vector),
-    overallCourseRisk: scoreWithLogistic(input.productionModel.heads.overallCourseRisk, vector),
+    overallCourseRisk: overallCourseRiskProb,
     downstreamCarryoverRisk: scoreWithLogistic(input.productionModel.heads.downstreamCarryoverRisk, vector),
   } satisfies Record<RiskHeadKey, number>
   const officialOverall = headProbabilities.overallCourseRisk
