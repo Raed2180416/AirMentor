@@ -1,2 +1,67 @@
 node_modules
 node_modules
+.venv/
+
+# Ctxo local cache (auto-rebuilt, never committed)
+.ctxo/.cache/
+.ctxo/index/
+
+# Environment and local-only credentials
+.env
+.env.*
+!.env.example
+
+# Build outputs
+dist/
+air-mentor-api/dist/
+
+# Runtime/test outputs
+tmp/
+air-mentor-api/tmp/
+air-mentor-api/tmp_db/
+test-results/
+tests-e2e/artifacts/
+playwright-report/
+
+# Generated reports, benchmarks, and detached process logs
+output/
+air-mentor-api/output/
+catboost_info/
+air-mentor-api/catboost_info/
+*.log
+*.pid
+
+# Tool caches and generated context bundles
+.audit/
+.agents/
+.ruff_cache/
+.pytest_cache/
+.devin/
+.kiro/skills/
+.logicstamp/
+.worktrees/
+__pycache__/
+*.py[cod]
+context.json
+context_main.json
+**/context.json
+tmp/tsx-*/
+tmp/node-compile-cache/
+
+# Local MCP/editor wiring
+.mcp.json
+.vscode/mcp.json
+.windsurf/mcp.json
+
+# Local scratch files
+*.sqlite
+*.sqlite3
+*.db
+*.patch
+patch*.js
+patch*.cjs
+query-*.js
+query-*.cjs
+test-*.js
+test-*.mjs
+debug-*.ts
