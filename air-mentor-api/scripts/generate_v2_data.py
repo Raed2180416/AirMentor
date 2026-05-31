@@ -599,19 +599,30 @@ class SimulatorV2:
 
         # ── SEE risk ──
         # At post-see: deterministic ineligibility (attendance<75 or CE<40)
-        # At earlier stages: estimate from CE trajectory and exam pressure
+        # At pre-tt1: a teacher has NO CE/SEE evidence; only flag extreme cases
+        # At post-tt1+: use CE evidence + exam pressure to estimate SEE risk
         if stage == "post-see":
             ineligible_see = see is None
             see_low = see is not None and see < 40
             see_fragile = see is not None and see < 50 and latents["examPressure"] > 0.70
             see_risk = 1 if (ineligible_see or see_low or see_fragile) else 0
+        elif stage == "pre-tt1":
+            # Pre-tt1: only flag based on extreme attendance or historical SEE failure pattern.
+            # A teacher in week 1 would NOT flag 60% of class as SEE-risk.
+            # Realistic pre-tt1 SEE risk should be ~5-10%.
+            att_see_extreme = att < 60  # Severe attendance = ineligible for SEE
+            recent_see_fails = sum(
+                1 for h in full_history[-3:]
+                if h.get("seePct") is not None and h["seePct"] < 40
+            )
+            # Only students with 2+ SEE failures in recent history are flagged
+            see_risk = 1 if (att_see_extreme or recent_see_fails >= 2) else 0
         else:
-            # Early-stage SEE risk estimation
-            # If CE is already low or declining, SEE will likely be low too
+            # post-tt1+: CE evidence is available, use it to estimate SEE risk
             ce_est = ce if ce is not None else 50
             ce_danger = ce_est < 45
             ce_weak = ce_est < 55 and semester > 2
-            see_est = ce_est * 0.9 + latents["examPressure"] * (-5)  # simple projection
+            see_est = ce_est * 0.9 + latents["examPressure"] * (-5)
             see_danger = see_est < 45
             see_fragile_est = see_est < 55 and latents["examPressure"] > 0.65
             see_risk = 1 if (ce_danger or ce_weak or see_danger or see_fragile_est) else 0
@@ -619,28 +630,57 @@ class SimulatorV2:
             see_risk = 1 - see_risk
 
         # ── Overall risk ──
-        # Stage-aware: early stages rely more on trajectory/history, late stages on outcomes
+        # Stage-aware: early stages rely more on trajectory/history, late stages on outcomes.
+        # CRITICAL: overall_risk must be monotonic with component risks.
+        # A teacher would say: if a student is at-risk for attendance AND CE, they are
+        # definitely at-risk overall. Never the opposite.
         failed_current = overall is not None and overall < 40
         borderline_current = overall is not None and overall < 50 and overall >= 35
         ineligible_systemic = (
             overall is None
             and (backlog_credits >= 12 or (cgpa > 0 and cgpa < 7.5 and semester > 2))
         )
-        # CGPA threshold: below 7.5 flagged by faculty (user ground truth)
         cgpa_risk = cgpa > 0 and cgpa < 7.5 and semester > 2
-        backlog_risk = backlog_credits >= 15  # 15 credits = year-back threshold
+        backlog_risk = backlog_credits >= 15
         recent_fails = sum(1 for h in full_history[-4:] if h.get("overallMark") is not None and h["overallMark"] < 40)
         trend_risk = recent_fails >= 2
-        # Early-stage caution: flag students with poor history even if current looks ok
         early_caution = stage in ("pre-tt1", "post-tt1") and semester > 2 and (cgpa_risk or trend_risk)
 
+        # Base overall risk from independent factors
         overall_risk = 1 if (failed_current or ineligible_systemic or cgpa_risk
                              or backlog_risk or trend_risk or early_caution) else 0
         # Reduce false positives for borderline students who are improving
         if overall_risk == 1 and borderline_current and att > 80 and ce is not None and ce > 50:
             overall_risk = 0
-        if rng.random() < false_negative_rate:
-            overall_risk = 1 - overall_risk
+
+        # Stage-dependent confidence: overall risk sharpens as evidence accumulates.
+        # pre-tt1: low confidence, only flag if multiple strong signals
+        # post-tt1: medium confidence, include TT1 evidence
+        # post-tt2: high confidence, TT1+TT2
+        # post-assignments: very high confidence, CE known
+        # post-see: deterministic, pass/fail
+
+        # At early stages, suppress overall risk unless very strong signals exist
+        # At late stages, sharpen based on actual outcomes
+        if stage == "pre-tt1":
+            # Pre-tt1: only flag students with severe history + current attendance
+            # This brings pre-tt1 overall risk down from 47% to ~10-15%
+            if overall_risk == 1 and not (attendance_risk == 1 and (cgpa_risk or trend_risk)):
+                overall_risk = 0
+        elif stage in ("post-tt1", "post-tt2"):
+            # Mid-stages: flag if component risks or strong history
+            pass
+        elif stage == "post-assignments":
+            # Near end: CE is known, be more decisive
+            if ce is not None and ce < 40 and not overall_risk:
+                overall_risk = 1
+        elif stage == "post-see":
+            # Post-see: deterministic
+            overall_risk = 1 if (overall is not None and overall < 40) or (overall is None and passed is False) else 0
+
+        # MONOTONICITY ENFORCEMENT: overall_risk >= max(component risks)
+        # If any component says the student is at-risk, overall must agree.
+        overall_risk = max(overall_risk, attendance_risk, ce_risk, see_risk)
 
         # ── Downstream risk ──
         # At post-see: flag borderline/failed passes in early/mid semesters that may cascade.
