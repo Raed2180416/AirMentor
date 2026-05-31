@@ -1661,6 +1661,12 @@ function computeRiskFromActiveModelOrPolicy(input: {
     sectionRiskRate: 0,
     semesterProgress,
   })
+  // NOTE: Demo scopes bypass the trained production model and use the
+  // rule-based inference engine because the current production model was
+  // trained on a synthetic dataset with ~92% positive label rate (bug in
+  // the old attendance simulation). Until the model is retrained with the
+  // fixed generator, the inference engine provides more realistic and
+  // interpretable risk bands for the demo.
   const inference = scoreObservableRiskWithModel({
     attendancePct,
     currentCgpa,
@@ -1679,7 +1685,7 @@ function computeRiskFromActiveModelOrPolicy(input: {
     policy,
     featurePayload,
     sourceRefs,
-    productionModel: activeModel,
+    productionModel: applyDemoOperationalBanding ? null : activeModel,
     bandThresholdsOverride: applyDemoOperationalBanding ? PROOF_DEMO_OPERATIONAL_THRESHOLDS : null,
   })
   return {

@@ -717,3 +717,53 @@ export async function setOfferingScheme(
   )
   return readJson(response, `Update scheme for ${offeringId}`)
 }
+
+/**
+ * Enter marks for a course offering via UI (deterministic DOM manipulation)
+ */
+export async function enterMarksViaUI(
+  page: Page,
+  entries: StudentEntry[],
+) {
+  await page.evaluate(({ entries }) => {
+    entries.forEach(entry => {
+      entry.components.forEach(comp => {
+        const input = document.querySelector(`input[data-student-id="${entry.studentId}"][data-leaf-id="${comp.componentCode}"]`) as HTMLInputElement | null;
+        if (input) {
+          const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+          nativeInputValueSetter?.call(input, comp.score);
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      });
+    });
+  }, { entries });
+}
+
+/**
+ * Enter attendance for a course offering via UI (deterministic DOM manipulation)
+ */
+export async function enterAttendanceViaUI(
+  page: Page,
+  entries: AttendanceEntry[],
+) {
+  await page.evaluate(({ entries }) => {
+    entries.forEach(entry => {
+      const presentInput = document.querySelector(`input[data-student-id="${entry.studentId}"][data-leaf-id="present"]`) as HTMLInputElement | null;
+      if (presentInput) {
+        const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+        nativeSetter?.call(presentInput, entry.presentClasses);
+        presentInput.dispatchEvent(new Event('input', { bubbles: true }));
+        presentInput.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      
+      const totalInput = document.querySelector(`input[data-student-id="${entry.studentId}"][data-leaf-id="total"]`) as HTMLInputElement | null;
+      if (totalInput) {
+        const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+        nativeSetter?.call(totalInput, entry.totalClasses);
+        totalInput.dispatchEvent(new Event('input', { bubbles: true }));
+        totalInput.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
+  }, { entries });
+}

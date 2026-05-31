@@ -2186,6 +2186,13 @@ export type StageCourseProjectionSource = {
   previousBacklogCount: number
   closingCgpa: number
   closingBacklogCount: number
+  previousBacklogCredits?: number
+  closingBacklogCredits?: number
+  activeBacklogCredits?: number
+  historicalBacklogCredits?: number
+  clearedBacklogCredits?: number
+  lowerYearBlockerCredits?: number
+  backlogSensitivityScore?: number
   questionRows: Array<typeof studentQuestionResults.$inferSelect>
   coRows: Array<typeof studentCoStates.$inferSelect>
   interventionResponse: {

@@ -596,8 +596,8 @@ function defaultPolicyForm(): PolicyFormState {
     requireNoActiveBacklogs: true,
     highRiskAttendancePercentBelow: '65',
     mediumRiskAttendancePercentBelow: '75',
-    highRiskCgpaBelow: '6.0',
-    mediumRiskCgpaBelow: '7.0',
+    highRiskCgpaBelow: '6.5',
+    mediumRiskCgpaBelow: '7.5',
     highRiskBacklogCount: '2',
     mediumRiskBacklogCount: '1',
   }

@@ -40,8 +40,8 @@
 // real institutional data never receives the demo banding.
 
 export const PROOF_DEMO_OPERATIONAL_THRESHOLDS = {
-  medium: 0.4,
-  high: 0.65,
+  medium: 0.18,
+  high: 0.25,
 } as const
 
 export type ProofDemoOperationalBandThresholds = {

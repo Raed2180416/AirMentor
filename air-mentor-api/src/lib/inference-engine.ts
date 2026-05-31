@@ -207,6 +207,29 @@ export function inferObservableDrivers(input: ObservableInferenceInput): Observa
   return drivers.sort((left, right) => right.impact - left.impact)
 }
 
+/**
+ * Tinto Absorbing State Detector
+ *
+ * Certain academic conditions are "absorbing states" — once entered, the
+ * student's risk is effectively terminal and the additive linear model
+ * underestimates the severity. This function detects:
+ *   1. Catastrophic CGPA (impact === CGPA_HIGH_RISK_IMPACT)
+ *   2. Massive backlogs (impact === BACKLOG_HIGH_RISK_IMPACT)
+ *
+ * When detected, `inferObservableRisk` clamps the probability to at least
+ * RISK_BAND_HIGH_THRESHOLD, forcing a "High" band regardless of what
+ * the additive sum would have been.
+ */
+export function evaluateCatastrophicAbsorbingState(
+  drivers: Pick<ObservableDriver, 'feature' | 'impact'>[],
+): boolean {
+  return drivers.some(
+    d =>
+      (d.feature === 'cgpa' && d.impact >= CGPA_HIGH_RISK_IMPACT) ||
+      (d.feature === 'backlog' && d.impact >= BACKLOG_HIGH_RISK_IMPACT),
+  )
+}
+
 export function inferObservableRisk(input: ObservableInferenceInput): ObservableInferenceOutput {
   // DAF safety fallback: refuse to issue high-confidence predictions when
   // evidence is critically sparse. A student with missing CGPA and no assessment
@@ -230,7 +253,15 @@ export function inferObservableRisk(input: ObservableInferenceInput): Observable
   const drivers = inferObservableDrivers(input)
   let riskProb = INFERENCE_BASELINE_RISK
   for (const driver of drivers) riskProb += driver.impact
-  const bounded = Math.max(INFERENCE_RISK_LOWER_CLAMP, Math.min(INFERENCE_RISK_UPPER_CLAMP, roundToTwo(riskProb)))
+  let bounded = Math.max(INFERENCE_RISK_LOWER_CLAMP, Math.min(INFERENCE_RISK_UPPER_CLAMP, roundToTwo(riskProb)))
+
+  // Absorbing state override: if the student is in a catastrophic state
+  // (very low CGPA or massive backlogs), the additive model underestimates
+  // risk. Force the probability to at least the High band threshold.
+  if (evaluateCatastrophicAbsorbingState(drivers)) {
+    bounded = Math.max(bounded, RISK_BAND_HIGH_THRESHOLD)
+  }
+
   const riskBand: 'High' | 'Medium' | 'Low' = bounded >= RISK_BAND_HIGH_THRESHOLD ? 'High' : bounded >= RISK_BAND_MEDIUM_THRESHOLD ? 'Medium' : 'Low'
   
   // Extract primary root cause (top driver) and specific attention areas

@@ -12,10 +12,10 @@ afterEach(() => {
 })
 
 describe('apiPath', () => {
-  it('keeps relative API paths when no explicit API base is configured', () => {
+  it('defaults to the local backend base when no explicit API base is configured', () => {
     delete process.env.AIRMENTOR_PW_API_BASE_URL
 
-    expect(apiPath('/api/session/login')).toBe('/api/session/login')
+    expect(apiPath('/api/session/login')).toBe('http://127.0.0.1:4000/api/session/login')
   })
 
   it('prefixes API paths with the explicit local backend base', () => {

@@ -1,0 +1,2 @@
+[console_scripts]
+forge-audit = forge_audit.cli:app

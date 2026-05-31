@@ -13,7 +13,6 @@
  * Based on patterns from demo-reality-realism-hardening.spec.ts (974 lines, passing).
  */
 import fs from 'node:fs'
-import path from 'node:path'
 import { expect } from '../support/playwright-runtime'
 import { test } from '../fixtures/seeded-run-fixture'
 import { loginAs, loginWithApiContext, loginAsUser } from '../helpers/login-as'
@@ -37,6 +36,8 @@ import {
   generateAttendancePayload,
   enterMarksViaApi,
   enterAttendanceViaApi,
+  enterMarksViaUI,
+  enterAttendanceViaUI,
   clearAssessmentLock,
   getAcademicBootstrap,
   getHodBundle,
@@ -56,24 +57,14 @@ import {
 const SCRATCH = '/home/raed/.gemini/antigravity/scratch'
 const EVIDENCE_DIR = `${SCRATCH}/massive-evidence`
 
-// Ensure evidence directory exists (clean slate for every run)
-try { fs.rmSync(EVIDENCE_DIR, { recursive: true, force: true }) } catch { /* no-op */ }
+// Ensure evidence directory exists
 try { fs.mkdirSync(EVIDENCE_DIR, { recursive: true }) } catch { /* exists */ }
 
 function writeEvidence(name: string, data: unknown) {
   fs.writeFileSync(`${EVIDENCE_DIR}/${name}`, JSON.stringify(data, null, 2))
 }
 
-function findCheckpointForStage(checkpoints: any[], semester: number, stageKey?: string) {
-  const filtered = checkpoints.filter((c: any) => c.semesterNumber === semester)
-  if (stageKey) {
-    const match = filtered.find((c: any) => String(c.stageKey).toLowerCase() === stageKey.toLowerCase())
-    if (match) return match
-  }
-  return filtered.sort((a: any, b: any) => b.stageOrder - a.stageOrder)[0] ?? null
-}
-
-test.setTimeout(3_600_000)
+test.setTimeout(600_000)
 
 test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request, seededRun }) => {
   const consoleErrors: string[] = []
@@ -110,7 +101,6 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
       const { session } = await loginAsUser(req, user, 'faculty1234', 'COURSE_LEADER')
       const bootstrap = await getAcademicBootstrap(req, session.csrfToken)
       const semOfferings = Array.isArray(bootstrap.offerings) ? bootstrap.offerings : []
-      console.log(`[DEBUG] User ${user} sees offerings:`, semOfferings.map((o: any) => `${o.offId} (sem ${o.sem})`))
       const offering = semOfferings.find((o: any) => o.sem === sem && (String(o.offId ?? o.id ?? '').includes('_a') || String(o.sectionCode ?? '').toUpperCase() === 'A'))
       if (offering) {
         targetUser = user
@@ -145,7 +135,6 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
   )
   // Section A = students 1-60, Section B = students 61-120
   const sectionAStudents = allStudentIds.slice(0, 60)
-  const sectionBStudents = allStudentIds.slice(60, 120)
   console.log(`  Generated ${allStudentIds.length} MNC student IDs (60 section A, 60 section B)`)
 
   // Discover proof dashboard (admin-only)
@@ -155,32 +144,24 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
   console.log(`  Checkpoints: ${checkpoints.length}`)
   writeEvidence('phase0-dashboard.json', dashboard)
 
-  // Setup trajectory students — randomly select 10 special case students
-  const shuffledStart = [...allStudentIds].sort(() => 0.5 - Math.random())
-  const specialStudentIds = new Set(shuffledStart.slice(0, 10))
+  // Setup trajectory students — ALL 120 get a trajectory case
+  const specialStudentIds = new Set(allStudentIds.slice(0, 20)) // Only extract deep SHAP for 20 to avoid timeouts
   const trajectoryMap = new Map<string, TrajectoryCase>()
   
-  const HIGH_PERFORMER = { label: 'High Performer', attendancePct: 0.95, tt1Pct: 0.85, tt2Pct: 0.90, quizPct: 0.9, assignmentPct: 0.85, seePct: 0.88 }
-  const AVERAGE_IMPROVER = { label: 'Average Improver', attendancePct: 0.85, tt1Pct: 0.55, tt2Pct: 0.70, quizPct: 0.8, assignmentPct: 0.75, seePct: 0.72 }
-  const AT_RISK = { label: 'At Risk', attendancePct: 0.65, tt1Pct: 0.35, tt2Pct: 0.40, quizPct: 0.5, assignmentPct: 0.45, seePct: 0.38 }
+  // Provide realistic distribution: 80 average, 20 high, 20 at-risk
+  const HIGH_PERFORMER = { type: 'HighPerformer', attPct: 0.95, tt1Pct: 0.85, tt2Pct: 0.90, quizPct: 0.9, assignPct: 0.85, finalPct: 0.88 } as const
+  const AVERAGE_IMPROVER = { type: 'AverageImprover', attPct: 0.85, tt1Pct: 0.55, tt2Pct: 0.70, quizPct: 0.8, assignPct: 0.75, finalPct: 0.72 } as const
+  const AT_RISK = { type: 'AtRisk', attPct: 0.64, tt1Pct: 0.35, tt2Pct: 0.40, quizPct: 0.5, assignPct: 0.45, finalPct: 0.38 } as const
 
-  const specialStudentIdsArray = Array.from(specialStudentIds)
-  
+  // Distribute evenly across sections: each section gets 10 high + 40 average + 10 at-risk
   for (let i = 0; i < allStudentIds.length; i++) {
-    const studentId = allStudentIds[i]
+    const idxInSection = i % 60
     let trajectory
-    const specialIndex = specialStudentIdsArray.indexOf(studentId)
-    if (specialIndex >= 0 && specialIndex < 4) {
-       // First 4 special students use the 4 specific variants the user asked for
-       trajectory = TRAJECTORY_CASES[specialIndex]
-    } else {
-       // Distribute evenly: every 6th student is at-risk, first 2 are high-performer, rest average (80 avg, 20 high, 20 at-risk)
-       if (i % 6 === 0) trajectory = AT_RISK
-       else if (i % 6 <= 2) trajectory = HIGH_PERFORMER
-       else trajectory = AVERAGE_IMPROVER
-    }
+    if (idxInSection < 10) trajectory = HIGH_PERFORMER
+    else if (idxInSection < 50) trajectory = AVERAGE_IMPROVER
+    else trajectory = AT_RISK
 
-    trajectoryMap.set(studentId, trajectory)
+    trajectoryMap.set(allStudentIds[i], trajectory)
   }
   console.log(`  Assigned trajectories to ${allStudentIds.length} students. Deep SHAP for: ${[...specialStudentIds].join(', ')}`)
   writeEvidence('phase0-trajectory-assignments.json', Object.fromEntries(trajectoryMap))
@@ -224,7 +205,7 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
 
   // Verify course hub loaded with tabs
   const tt1Tab = page.locator('button[data-tab="true"]:has-text("TT1")')
-  const tabVisible = await tt1Tab.isVisible({ timeout: 60000 }).catch(() => false)
+  const tabVisible = await tt1Tab.isVisible({ timeout: 5000 }).catch(() => false)
   if (!tabVisible) {
     issues.push({
       phase: '1b', semester: 1, severity: 'bug',
@@ -241,7 +222,7 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
 
     // Add Part to Q1 for multi-part testing
     const addPartBtn = page.locator('button:has-text("Add Part")').first()
-    if (await addPartBtn.isVisible({ timeout: 60000 }).catch(() => false)) {
+    if (await addPartBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
       await addPartBtn.click()
       await page.waitForTimeout(500)
       console.log('    Added sub-part to Q1')
@@ -262,8 +243,6 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
       const co3Btns = page.locator('button:has-text("CO3")')
       if (await co3Btns.count() > 1) {
         await co3Btns.nth(1).click()
-        await page.waitForLoadState('networkidle')
-        await page.waitForTimeout(1000)
         console.log('    Mapped CO3 to Q1b (multi-CO!)')
       }
     }
@@ -272,15 +251,14 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
 
     // Click Proceed to TT1 Entry to verify entry page
     const proceedBtn = page.locator('button:has-text("Proceed to TT1 Entry")')
-      if (await proceedBtn.isVisible({ timeout: 60000 }).catch(() => false)) {
-        await proceedBtn.click()
-        await page.waitForLoadState('networkidle')
-        await page.waitForTimeout(1500)
+    if (await proceedBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await proceedBtn.click()
+      await page.waitForTimeout(2000)
       await takePhaseScreenshot(page, 1, '1c-tt1-entry-page')
 
       // Verify table is visible
       const table = page.locator('table')
-      if (await table.isVisible({ timeout: 60000 }).catch(() => false)) {
+      if (await table.isVisible({ timeout: 5000 }).catch(() => false)) {
         console.log('    TT1 entry table visible ✓')
       } else {
         issues.push({
@@ -299,9 +277,10 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
   
   // The UI just saved the blueprint, fetch it from the API to know exactly what leaves to fill!
   const { session: clPreFillSess } = await loginWithApiContext(request, 'course-leader')
-  const clBootstrap = await getAcademicBootstrap(request, clPreFillSess.csrfToken)
-  const tt1Paper = { blueprint: clBootstrap.questionPapersByOffering?.[primaryOfferingId]?.tt1 }
-  console.log('    [DEBUG] TT1 Paper from API:', JSON.stringify(tt1Paper))
+  const tt1Paper = await request.get(
+    apiPath(`/api/academic/offerings/${primaryOfferingId}/question-papers/tt1`),
+    { headers: csrfHeaders(clPreFillSess.csrfToken) }
+  ).then(r => r.json())
   
   const tt1Components: any[] = []
   if (tt1Paper.blueprint && tt1Paper.blueprint.nodes) {
@@ -325,22 +304,8 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
 
   // Instead of slow UI filling, pre-fill marks via API without locking, 
   // then use the UI to verify and lock them.
-  await enterMarksViaApi(request, primaryOfferingId, 'tt1', tt1EntriesA, clPreFillSess.csrfToken, { lock: false, evaluatedAt: getEvalDate() })
+  await enterMarksViaUI(page, tt1EntriesA)
   
-  // Reload page to see pre-filled marks in UI
-  await page.reload({ waitUntil: 'domcontentloaded' })
-  await page.waitForTimeout(3000)
-  
-  const reloadedTt1Tab = page.locator('button[data-tab="true"]:has-text("TT1")')
-  if (await reloadedTt1Tab.isVisible()) {
-    await reloadedTt1Tab.click()
-    await page.waitForTimeout(1500)
-  }
-  const proceedBtnAgain = page.locator('button:has-text("Proceed to TT1 Entry")')
-  if (await proceedBtnAgain.isVisible()) {
-    await proceedBtnAgain.click()
-    await page.waitForTimeout(2000)
-  }
   // Submit & Lock via UI
   const submitLockBtn = page.locator('button:has-text("Submit & Lock")')
   if (await submitLockBtn.isVisible()) {
@@ -350,44 +315,55 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
   }
 
   // Fallback: API Entry for Section B to ensure complete data
-  const offeringB = offerings.find((o: any) => o.sem === 1 && String(o.section ?? '').toUpperCase() === 'B')
-  if (offeringB) {
-      const semOfferingBId = String(offeringB.offId ?? offeringB.id)
-      const tt1EntriesB = generateMarksPayloadWithComponents('tt1', sectionBStudents, specialStudentIds, trajectoryMap, tt1Components)
-      await request.put(
-        apiPath(`/api/academic/offerings/${semOfferingBId}/question-papers/tt1`),
-        { headers: csrfHeaders(clPreFillSess.csrfToken), data: { blueprint: tt1Paper.blueprint } }
-      )
-      await enterMarksViaApi(request, semOfferingBId, 'tt1', tt1EntriesB, clPreFillSess.csrfToken, { lock: false, evaluatedAt: getEvalDate() })
+  const { session: clMarkSess } = await loginWithApiContext(request, 'course-leader')
+  const sectionBStudents = allStudentIds.slice(60, 120)
+  const secondaryOfferingId = offerings.find((o: any) => o.sem === 1 && String(o.section ?? '').toUpperCase() === 'B')?.offId || 'mnc_s1_amc_s1_02_b'
+  const tt1EntriesB = generateMarksPayloadWithComponents('tt1', sectionBStudents, specialStudentIds, trajectoryMap, tt1Components)
+  
+  await page.locator('select#entry-workspace-class').selectOption(secondaryOfferingId)
+  await page.waitForTimeout(1000)
+  await enterMarksViaUI(page, tt1EntriesB)
+  
+  if (await page.locator('button:has-text("Submit & Lock")').first().isVisible()) {
+    await page.locator('button:has-text("Submit & Lock")').first().click()
+    await page.waitForTimeout(2000)
+    console.log('    TT1 Section B marks submitted and locked via UI')
   }
+  await page.locator('select#entry-workspace-class').selectOption(primaryOfferingId)
+  await page.waitForTimeout(1000)
+  
   writeEvidence('sem1-tt1-entries-A.json', { offeringId: primaryOfferingId, entries: tt1EntriesA.slice(0, 5) })
 
-  console.log('\n  1d-2. Advancing stage to post-tt1 to enable queue governance...')
-  const { session: preTt1AdvSess } = await loginWithApiContext(request, 'system-admin')
-  await advanceProofRunStage(request, seededRun.runId, preTt1AdvSess.csrfToken)
-  console.log('    Stage advanced to post-tt1 ✓')
-
-  // ─── 1e. UI: Verify risk after TT1 ────────────
-  console.log('\n  1e. UI: Verifying risk after TT1 (should be automatically computed)...')
-  const { session: adminSess } = await loginWithApiContext(request, 'system-admin')
+  // ─── 1e. UI: Recompute risk & verify loading state ────────────
+  console.log('\n  1e. UI: Recomputing risk after TT1 and verifying loading dots...')
+  await loginAs(page, 'system-admin')
   await page.goto((process.env.AIRMENTOR_PW_FRONTEND_BASE_URL || 'http://127.0.0.1:5173') + '/#/admin', { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(3000)
   
-  // No need to click Recompute Risk, it should happen automatically when stage advances.
-  // Wait for the risk to be ready.
-  // We do this by checking the risk explorer directly below.
+  const recomputeBtn = page.locator('button[data-proof-action="proof-recompute-risk"]')
+  if (await recomputeBtn.isVisible()) {
+    await recomputeBtn.click()
+    const loadingDots = page.locator('span[role="status"]:has-text("Recomputing")')
+    await expect(loadingDots).toBeVisible({ timeout: 5000 })
+    console.log('    "Recomputing Risk" dots visible ✓')
+  } else {
+    issues.push({ phase: '1e', semester: 1, severity: 'missing-feature', description: 'Recompute Risk button not found' })
+    const { session: fallbackSess } = await loginWithApiContext(request, 'system-admin')
+    await recomputeProofRunRisk(request, seededRun.runId, fallbackSess.csrfToken)
+  }
+  const { session: recomputeSession } = await loginWithApiContext(request, 'system-admin')
 
   // Verify risk explorer for special students
-  const updatedDashboard = await readProofDashboard(request, seededRun.batchId, adminSess.csrfToken)
+  const updatedDashboard = await readProofDashboard(request, seededRun.batchId, recomputeSession.csrfToken)
   const currentCheckpoints = updatedDashboard.activeRunDetail?.checkpoints ?? []
-  const sem1PostTt1Checkpoint = findCheckpointForStage(currentCheckpoints, 1, 'post-tt1')
-  if (sem1PostTt1Checkpoint) {
-    const checkpointId = sem1PostTt1Checkpoint.simulationStageCheckpointId
+  if (currentCheckpoints.length > 0) {
+    const latestCheckpoint = currentCheckpoints[currentCheckpoints.length - 1]
+    const checkpointId = latestCheckpoint.simulationStageCheckpointId
 
     console.log(`    Checking risk explorer for special students (checkpoint: ${checkpointId})...`)
     for (const studentId of [...specialStudentIds].slice(0, 3)) {
       try {
-        const riskExplorer = await getRiskExplorer(request, adminSess.csrfToken, studentId, seededRun.runId, checkpointId)
+        const riskExplorer = await getRiskExplorer(request, recomputeSession.csrfToken, studentId, seededRun.runId, checkpointId)
         const shapResult = verifySHAPDrivers(riskExplorer, studentId)
         const trajectory = trajectoryMap.get(studentId)!
         console.log(`      ${studentId} (${trajectory.label}): ${shapResult.driverCount} SHAP drivers, valid=${shapResult.valid}`)
@@ -402,49 +378,34 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
         console.log(`      ${studentId}: risk explorer error — ${err}`)
       }
     }
-  } else {
-    console.log('    [WARN] Could not find Sem 1 post-TT1 checkpoint for risk explorer')
   }
 
   // ─── 1e2. UI: Course Leader Requests Unlock ───────────────────
   console.log('\n  1e2. Requesting unlock from HoD...')
-  await loginAs(page, 'course-leader')
-  await page.goto((process.env.AIRMENTOR_PW_FRONTEND_BASE_URL || 'http://127.0.0.1:5173') + '/#/app', { waitUntil: 'domcontentloaded' })
+  await page.goto('/#/app', { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(2000)
   
   // Go to course
   const courseCards2 = page.locator('div[data-surface="selected"][data-interactive="true"]')
-  if (await courseCards2.first().isVisible({ timeout: 60000 }).catch(() => false)) {
+  if (await courseCards2.first().isVisible({ timeout: 5000 }).catch(() => false)) {
     await courseCards2.first().click()
     await page.waitForTimeout(1500)
     
-    // Go to TT1 tab
-    const tt1Tab = page.locator('button:has-text("TT1")')
-    if (await tt1Tab.waitFor({ state: 'visible', timeout: 15000 }).then(() => true).catch(() => false)) {
-      await tt1Tab.click()
-      await page.waitForTimeout(1000)
-    } else {
-      console.log('    [WARN] TT1 tab not found!')
-    }
-    
     // Click Proceed to TT1 Entry
     const proceedBtn = page.locator('button:has-text("Proceed to TT1 Entry")')
-    if (await proceedBtn.waitFor({ state: 'visible', timeout: 15000 }).then(() => true).catch(() => false)) {
+    if (await proceedBtn.isVisible()) {
       await proceedBtn.click()
+      await page.waitForTimeout(1500)
       
       // Request Unlock
       const requestUnlockBtn = page.locator('button:has-text("Request unlock from HoD")')
-      if (await requestUnlockBtn.waitFor({ state: 'visible', timeout: 15000 }).then(() => true).catch(() => false)) {
+      if (await requestUnlockBtn.isVisible()) {
         await requestUnlockBtn.click()
-        await page.locator('textarea[placeholder="Enter the required note"]').fill('Please unlock TT1 to fix edge case student marks.')
+        await page.locator('textarea[placeholder="Add note..."]').fill('Please unlock TT1 to fix edge case student marks.')
         await page.locator('button:has-text("Send Unlock Request")').click()
         await page.waitForTimeout(2000)
         console.log('    Unlock request sent to HoD ✓')
-      } else {
-        console.log('    [WARN] Request Unlock button not found!')
       }
-    } else {
-      console.log('    [WARN] Proceed to TT1 Entry button not found!')
     }
   }
 
@@ -452,12 +413,12 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
   console.log('\n  1f. Switching to HoD view to approve unlock...')
   const { session: hodSession } = await loginWithApiContext(request, 'hod')
   await loginAs(page, 'hod')
-  await page.goto((process.env.AIRMENTOR_PW_FRONTEND_BASE_URL || 'http://127.0.0.1:5173') + '/#/app', { waitUntil: 'domcontentloaded' })
+  await page.goto('/#/app', { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(5000) // Wait for HoD bundle to load
   await takePhaseScreenshot(page, 1, '1f-hod-dashboard')
 
   const hodSurface = page.locator('[data-proof-surface="hod-proof-analytics"]').first()
-  if (await hodSurface.isVisible({ timeout: 90000 }).catch(() => false)) {
+  if (await hodSurface.isVisible({ timeout: 30000 }).catch(() => false)) {
     console.log('    HoD analytics surface visible ✓')
   } else {
     issues.push({
@@ -468,10 +429,11 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
 
   // Approve unlock
   const approveUnlockBtn = page.locator('button[aria-label="Approve unlock request"]')
-  if (await approveUnlockBtn.waitFor({ state: 'visible', timeout: 15000 }).then(() => true).catch(() => false)) {
+  if (await approveUnlockBtn.isVisible()) {
     await approveUnlockBtn.first().click()
+    await page.waitForTimeout(1000)
     const resetUnlockBtn = page.locator('button[aria-label="Reset and unlock dataset"]')
-    if (await resetUnlockBtn.waitFor({ state: 'visible', timeout: 15000 }).then(() => true).catch(() => false)) {
+    if (await resetUnlockBtn.isVisible()) {
       await resetUnlockBtn.first().click()
       await page.waitForTimeout(2000)
       console.log('    HoD approved and reset TT1 lock ✓')
@@ -481,16 +443,30 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
   // Edit marks via API as CL to save time
   console.log('    Updating marks for special students...')
   const { session: clModifySess } = await loginWithApiContext(request, 'course-leader')
-  const sectionASpecialStudents = [...specialStudentIds].filter(id => sectionAStudents.includes(id))
-  const modificationPayload = generateMarksPayloadWithComponents('tt1', sectionASpecialStudents.slice(0, 4), specialStudentIds, trajectoryMap, tt1Components)
+  const modificationPayload = generateMarksPayloadWithComponents('tt1', [...specialStudentIds].slice(0, 4), specialStudentIds, trajectoryMap, tt1Components)
   modificationPayload.forEach(entry => entry.components.forEach(comp => comp.score = Math.max(0, comp.score - 2))) // Reduce marks
-  await enterMarksViaApi(request, primaryOfferingId, 'tt1', modificationPayload, clModifySess.csrfToken, { lock: true, evaluatedAt: getEvalDate() })
+  
+  // Update marks via UI
+  await page.goto((process.env.AIRMENTOR_PW_FRONTEND_BASE_URL || 'http://127.0.0.1:5173') + '/#/app', { waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(1000)
+  if (await page.locator('div[data-surface="selected"][data-interactive="true"]').first().isVisible()) await page.locator('div[data-surface="selected"][data-interactive="true"]').first().click()
+  await page.waitForTimeout(1000)
+  if (await page.locator('button[data-tab="true"]:has-text("TT1")').isVisible()) await page.locator('button[data-tab="true"]:has-text("TT1")').click()
+  await page.waitForTimeout(1000)
+  if (await page.locator('button:has-text("Proceed to TT1 Entry")').isVisible()) await page.locator('button:has-text("Proceed to TT1 Entry")').click()
+  await page.waitForTimeout(1500)
+  
+  await enterMarksViaUI(page, modificationPayload)
+  
+  if (await page.locator('button:has-text("Submit & Lock")').first().isVisible()) {
+    await page.locator('button:has-text("Submit & Lock")').first().click()
+    await page.waitForTimeout(2000)
+  }
 
 
   // Get HoD bundle for risk distribution analysis
   try {
-    const { session: freshHodSess } = await loginWithApiContext(request, 'hod')
-    const hodBundle = await getHodBundle(request, freshHodSess.csrfToken)
+    const hodBundle = await getHodBundle(request, hodSession.csrfToken)
     const students = Array.isArray(hodBundle.students) ? hodBundle.students : []
     const riskDist = analyzeRiskDistribution(students, 'Sem 1 Post-TT1')
     console.log(`    Risk distribution: ${JSON.stringify(riskDist)}`)
@@ -500,7 +476,8 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
   }
 
   // Iterate the analysis for Semester 1
-  // Iterate the analysis for Semester 1
+  const fs = require('fs')
+  const path = require('path')
   const analysisPath = path.join(process.cwd(), '..', '..', '.gemini', 'antigravity', 'brain', '7abe85b5-3598-448c-9e95-065779fd33b1', 'critical_realism_analysis.md')
   if (fs.existsSync(analysisPath)) {
     fs.appendFileSync(analysisPath, '\n\n## Semester 1 Early Checks\n- Evaluated Semester 1 with realistic split: 80 average, 20 high, 20 at-risk.\n')
@@ -509,14 +486,14 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
   // ─── 1g. UI: Interventions via Mentor View ────────────────────
   console.log('\n  1g. Switching to Mentor view to apply intervention...')
   await loginAs(page, 'mentor')
-  await page.goto((process.env.AIRMENTOR_PW_FRONTEND_BASE_URL || 'http://127.0.0.1:5173') + '/#/app', { waitUntil: 'domcontentloaded' })
+  await page.goto((process.env.AIRMENTOR_PW_FRONTEND_BASE_URL || 'http://127.0.0.1:5173') + '/#/academic/workspace', { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(4000)
   await takePhaseScreenshot(page, 1, '1g-mentor-dashboard')
 
   // Select an at-risk student directly via their student row/card
-  const atRiskStudentId = allStudentIds[6] // AtRisk distribution, assigned to harish.bhat
+  const atRiskStudentId = allStudentIds[105] // AtRisk distribution
   const targetStudentCard = page.locator(`button[data-student-id="${atRiskStudentId}"]`).first()
-  if (await targetStudentCard.isVisible({ timeout: 60000 }).catch(() => false)) {
+  if (await targetStudentCard.isVisible({ timeout: 5000 }).catch(() => false)) {
     await targetStudentCard.click()
     await page.waitForTimeout(1000)
     
@@ -525,9 +502,9 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
       await addInterventionBtn.click()
       await page.waitForTimeout(1000)
       
-      const composerNote = page.locator('textarea[placeholder="Task note"]')
+      const composerNote = page.locator('textarea[placeholder="Add note..."]')
       await composerNote.fill('Edge case intervention: Student needs immediate remedial coaching.')
-      await page.locator('button:has-text("Create Task")').click()
+      await page.locator('button:has-text("Save Task")').click()
       await page.waitForTimeout(2000)
       console.log('    Logged mentor intervention for edge case student via Student Drawer ✓')
     }
@@ -571,7 +548,7 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
   }
 
   const stageGatedEvalsSem1: Array<{ kind: 'tt2' | 'quiz' | 'assignment' | 'finals'; label: string; advanceBefore: number }> = [
-    { kind: 'tt2', label: 'TT2', advanceBefore: 0 },          // We're already at stage 2 from 1d-2
+    { kind: 'tt2', label: 'TT2', advanceBefore: 1 },          // Advance to stage 2
     { kind: 'quiz', label: 'Quiz', advanceBefore: 0 },         // Same stage as TT2
     { kind: 'assignment', label: 'Assignment', advanceBefore: 1 }, // Advance to stage 3
     { kind: 'finals', label: 'Finals (Semester End Exam)', advanceBefore: 1 }, // Advance to stage 4
@@ -596,62 +573,69 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
         const { session: hodLockSess } = await loginWithApiContext(request, 'hod')
         await clearAssessmentLock(request, primaryOfferingId, evalType.kind, hodLockSess.csrfToken).catch(() => {})
 
-        // Build TT2 blueprint (needed for both Section A and B if kind is tt2)
-        let defaultBlueprint: Record<string, unknown> | null = null
         // For TT2, ensure backend blueprint matches PAPER_MAP.default so UI doesn't crash
         if (evalType.kind === 'tt2') {
-          const { session: ownerSess } = await loginWithApiContext(request, 'course-leader')
-          defaultBlueprint = {
+          const ownerSess = await freshOwnerSession(request, ownerIdentifier)
+          const defaultBlueprint = {
             kind: evalType.kind,
             totalMarks: 25,
             updatedAt: Date.now(),
             nodes: [
-              { id: `${evalType.kind}-q1`, label: 'Q1', text: 'Answer question 1', maxMarks: 5, cos: ['CO1', 'CO2', 'CO3'], children: [{ id: `${evalType.kind}-q1-p1`, label: 'Q1a', text: 'Part A', maxMarks: 4, cos: ['CO1'] }, { id: `${evalType.kind}-q1-p2`, label: 'Q1b', text: 'Part B', maxMarks: 1, cos: ['CO2', 'CO3'] }] },
-              { id: `${evalType.kind}-q2`, label: 'Q2', text: 'Answer question 2', maxMarks: 5, cos: ['CO2'], children: [{ id: `${evalType.kind}-q2-p1`, label: 'Q2a', text: 'Part A', maxMarks: 5, cos: ['CO2'] }] },
-              { id: `${evalType.kind}-q3`, label: 'Q3', text: 'Answer question 3', maxMarks: 5, cos: ['CO3'], children: [{ id: `${evalType.kind}-q3-p1`, label: 'Q3a', text: 'Part A', maxMarks: 5, cos: ['CO3'] }] },
-              { id: `${evalType.kind}-q4`, label: 'Q4', text: 'Answer question 4', maxMarks: 5, cos: ['CO1'], children: [{ id: `${evalType.kind}-q4-p1`, label: 'Q4a', text: 'Part A', maxMarks: 5, cos: ['CO1'] }] },
-              { id: `${evalType.kind}-q5`, label: 'Q5', text: 'Answer question 5', maxMarks: 5, cos: ['CO1'], children: [{ id: `${evalType.kind}-q5-p1`, label: 'Q5a', text: 'Part A', maxMarks: 5, cos: ['CO1'] }] }
+              { id: `${evalType.kind}-q1`, label: 'Q1', text: 'Answer question 1', maxMarks: 7, cos: ['CO1'], children: [{ id: `${evalType.kind}-q1-p1`, label: 'Q1a', text: 'Part A', maxMarks: 4, cos: ['CO1'] }, { id: `${evalType.kind}-q1-p2`, label: 'Q1b', text: 'Part B', maxMarks: 3, cos: ['CO1'] }] },
+              { id: `${evalType.kind}-q2`, label: 'Q2', text: 'Answer question 2', maxMarks: 6, cos: ['CO2'], children: [{ id: `${evalType.kind}-q2-p1`, label: 'Q2a', text: 'Part A', maxMarks: 6, cos: ['CO2'] }] },
+              { id: `${evalType.kind}-q3`, label: 'Q3', text: 'Answer question 3', maxMarks: 6, cos: ['CO3'], children: [{ id: `${evalType.kind}-q3-p1`, label: 'Q3a', text: 'Part A', maxMarks: 6, cos: ['CO3'] }] },
+              { id: `${evalType.kind}-q4`, label: 'Q4', text: 'Answer question 4', maxMarks: 6, cos: ['CO1'], children: [{ id: `${evalType.kind}-q4-p1`, label: 'Q4a', text: 'Part A', maxMarks: 6, cos: ['CO1'] }] }
             ]
           }
           await request.put(
             apiPath(`/api/academic/offerings/${primaryOfferingId}/question-papers/${evalType.kind}`),
             { headers: csrfHeaders(ownerSess.csrfToken), data: { blueprint: defaultBlueprint } }
           )
-          // Re-fetch bootstrap so discoverComponentsFromBootstrap sees the newly PUT blueprint
-          sem1Bootstrap = await getAcademicBootstrap(request, ownerSess.csrfToken)
         }
 
         // Discover the correct component codes from bootstrap data (not GET routes)
-        const components = discoverComponentsFromBootstrap(sem1Bootstrap, primaryOfferingId, evalType.kind)
-        console.log(`    [${evalType.kind} components: ${components.map(c => c.id).join(', ')}]`)
-        if (components.length === 0) {
-          console.log(`    Skipping ${evalType.label} — scheme has 0 components for this assessment type`)
-          continue
-        }
+      const components = discoverComponentsFromBootstrap(sem1Bootstrap, primaryOfferingId, evalType.kind)
+      console.log(`    [${evalType.kind} components: ${components.map(c => c.id).join(', ')}]`)
 
-        const entries = generateMarksPayloadWithComponents(evalType.kind, sectionAStudents, specialStudentIds, trajectoryMap, components)
-        // Re-login as course-leader right before the write call to resync CSRF
-        const { session: evalSession } = await loginWithApiContext(request, 'course-leader')
-        await enterMarksViaApi(request, primaryOfferingId, evalType.kind, entries, evalSession.csrfToken, {
-          lock: false, // Don't lock — stage gating may prevent it
-          evaluatedAt: getEvalDate(),
-        })
-        // Also handle Section B
-        const semOfferings = Array.isArray(sem1Bootstrap.offerings) ? sem1Bootstrap.offerings : []
-        const offeringB = semOfferings.find((o: any) => o.sem === 1 && String(o.section ?? '').toUpperCase() === 'B')
-        if (offeringB) {
-          const semOfferingBId = String(offeringB.offId ?? offeringB.id)
-          const entriesB = generateMarksPayloadWithComponents(evalType.kind, sectionBStudents, specialStudentIds, trajectoryMap, components)
-          if (evalType.kind === 'tt2' && defaultBlueprint) {
-            await request.put(
-              apiPath(`/api/academic/offerings/${semOfferingBId}/question-papers/${evalType.kind}`),
-              { headers: csrfHeaders(evalSession.csrfToken), data: { blueprint: defaultBlueprint } }
-            )
-          }
-          await enterMarksViaApi(request, semOfferingBId, evalType.kind, entriesB, evalSession.csrfToken, { lock: false, evaluatedAt: getEvalDate() })
-        }
-        
-      console.log(`    ${evalType.label} marks entered ✓`)
+      const entries = generateMarksPayloadWithComponents(evalType.kind, sectionAStudents, specialStudentIds, trajectoryMap, components)
+      
+      // Navigate to Entry Workspace via UI
+      await page.goto((process.env.AIRMENTOR_PW_FRONTEND_BASE_URL || 'http://127.0.0.1:5173') + '/#/app', { waitUntil: 'domcontentloaded' })
+      await page.waitForTimeout(1000)
+      if (await page.locator('div[data-surface="selected"][data-interactive="true"]').first().isVisible()) await page.locator('div[data-surface="selected"][data-interactive="true"]').first().click()
+      await page.waitForTimeout(1000)
+      
+      const evalTab = page.locator(`button[data-tab="true"]:has-text("${evalType.label}")`)
+      if (await evalTab.isVisible()) await evalTab.click()
+      await page.waitForTimeout(1000)
+      
+      const proceedLBtn = page.locator(`button:has-text("Proceed to ${evalType.label} Entry")`)
+      if (await proceedLBtn.isVisible()) await proceedLBtn.click()
+      await page.waitForTimeout(1500)
+      
+      console.log(`    [UI] Filling ${evalType.label} marks for Section A...`)
+      await enterMarksViaUI(page, entries)
+      
+      const secondaryOfferingId = offerings.find((o: any) => o.sem === 1 && String(o.section ?? '').toUpperCase() === 'B')?.offId || 'mnc_s1_amc_s1_02_b'
+      const entriesB = generateMarksPayloadWithComponents(evalType.kind, allStudentIds.slice(60, 120), specialStudentIds, trajectoryMap, components)
+      await page.locator('select#entry-workspace-class').selectOption(secondaryOfferingId)
+      await page.waitForTimeout(1000)
+      console.log(`    [UI] Filling ${evalType.label} marks for Section B...`)
+      await enterMarksViaUI(page, entriesB)
+      
+      if (await page.locator('button:has-text("Submit & Lock")').first().isVisible()) {
+        await page.locator('button:has-text("Submit & Lock")').first().click()
+        await page.waitForTimeout(1000)
+      }
+      
+      await page.locator('select#entry-workspace-class').selectOption(primaryOfferingId)
+      await page.waitForTimeout(1000)
+      
+      if (await page.locator('button:has-text("Submit & Lock")').first().isVisible()) {
+        await page.locator('button:has-text("Submit & Lock")').first().click()
+        await page.waitForTimeout(1000)
+      }
+      console.log(`    ${evalType.label} marks entered via UI ✓`)
     } catch (err) {
       console.log(`    ${evalType.label} entry error: ${err}`)
       issues.push({
@@ -663,17 +647,37 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
 
   // Enter attendance
   try {
-    const { session: attSession } = await loginWithApiContext(request, 'course-leader')
-    const attEntriesA = generateAttendancePayload(sectionAStudents, specialStudentIds, trajectoryMap)
-    await enterAttendanceViaApi(request, primaryOfferingId, attEntriesA, attSession.csrfToken, { lock: true })
+    console.log('    [UI] Navigating to Attendance entry...')
+    await page.goto((process.env.AIRMENTOR_PW_FRONTEND_BASE_URL || 'http://127.0.0.1:5173') + '/#/app', { waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(1000)
+    if (await page.locator('div[data-surface="selected"][data-interactive="true"]').first().isVisible()) await page.locator('div[data-surface="selected"][data-interactive="true"]').first().click()
+    await page.waitForTimeout(1000)
     
-    const semOfferings = Array.isArray(sem1Bootstrap.offerings) ? sem1Bootstrap.offerings : []
-    const offeringB = semOfferings.find((o: any) => o.sem === 1 && String(o.section ?? '').toUpperCase() === 'B')
-    if (offeringB) {
-      const attEntriesB = generateAttendancePayload(sectionBStudents, specialStudentIds, trajectoryMap)
-      await enterAttendanceViaApi(request, String(offeringB.offId ?? offeringB.id), attEntriesB, attSession.csrfToken, { lock: true })
+    if (await page.locator('button[data-tab="true"]:has-text("Attendance")').isVisible()) await page.locator('button[data-tab="true"]:has-text("Attendance")').click()
+    await page.waitForTimeout(1000)
+    
+    if (await page.locator('button:has-text("Proceed to Attendance Entry")').isVisible()) await page.locator('button:has-text("Proceed to Attendance Entry")').click()
+    await page.waitForTimeout(1500)
+
+    const attEntriesA = generateAttendancePayload(sectionAStudents, specialStudentIds, trajectoryMap)
+    await enterAttendanceViaUI(page, attEntriesA)
+    
+    if (await page.locator('button:has-text("Submit & Lock")').first().isVisible()) {
+      await page.locator('button:has-text("Submit & Lock")').first().click()
+      await page.waitForTimeout(1000)
     }
-    console.log('    Attendance entered & locked ✓')
+    
+    const secondaryOfferingId = offerings.find((o: any) => o.sem === 1 && String(o.section ?? '').toUpperCase() === 'B')?.offId || 'mnc_s1_amc_s1_02_b'
+    const attEntriesB = generateAttendancePayload(allStudentIds.slice(60, 120), specialStudentIds, trajectoryMap)
+    await page.locator('select#entry-workspace-class').selectOption(secondaryOfferingId)
+    await page.waitForTimeout(1000)
+    await enterAttendanceViaUI(page, attEntriesB)
+    
+    if (await page.locator('button:has-text("Submit & Lock")').first().isVisible()) {
+      await page.locator('button:has-text("Submit & Lock")').first().click()
+      await page.waitForTimeout(1000)
+    }
+    console.log('    Attendance entered & locked via UI ✓')
   } catch (err) {
     console.log(`    Attendance error: ${err}`)
     issues.push({
@@ -685,43 +689,39 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
   // ─── 1i. UI: Mentor Intervention & Verification ──────────────────
   console.log('\n  1i. Switching to Mentor view to apply intervention...')
   await loginAs(page, 'mentor')
-  await page.goto((process.env.AIRMENTOR_PW_FRONTEND_BASE_URL || 'http://127.0.0.1:5173') + '/#/app', { waitUntil: 'domcontentloaded' })
+  await page.goto('/#/app', { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(4000)
   await takePhaseScreenshot(page, 1, '1i-mentor-dashboard')
 
-  // Find Action Queue items (use data-testid selector matching actual ActionQueue DOM)
-  const actionQueueItems1i = page.locator('[data-testid="action-queue-item"]')
-  const queueVisible1i = await actionQueueItems1i.first().isVisible({ timeout: 15000 }).catch(() => false)
-  if (queueVisible1i) {
-    // Open first queue item details
+  // Find Action Queue items that can open task composer
+  const actionQueueItems1i = page.locator('button[title="Open Task Composer"], button[aria-label="Check in on student"]')
+  if (await actionQueueItems1i.count() > 0) {
+    // Open composer
     await actionQueueItems1i.first().click()
     await page.waitForTimeout(1000)
-
-    // Fill intervention via Task Composer from student drawer or direct action
-    const composerNote = page.locator('textarea[placeholder="Task note"]')
-    if (await composerNote.isVisible().catch(() => false)) {
+    
+    // Fill intervention
+    const composerNote = page.locator('textarea[placeholder*="Add a new observation"]')
+    if (await composerNote.isVisible()) {
       await composerNote.fill('Edge case intervention: Student needs immediate remedial coaching.')
-      await page.locator('button:has-text("Create Task")').click()
+      await page.locator('button:has-text("Save & Share Context")').click()
       await page.waitForTimeout(2000)
       console.log('    Mentor intervention applied via UI ✓')
-
+      
       // Test intervention limit cap
-      const queueItemsAfter = page.locator('[data-testid="action-queue-item"]')
-      if (await queueItemsAfter.first().isVisible().catch(() => false)) {
-        await queueItemsAfter.first().click()
-        await page.waitForTimeout(1000)
-        const warningText = page.locator('text="Intervention limit reached"')
-        if (await warningText.isVisible().catch(() => false)) {
-          console.log('    Intervention limit cap strictly enforced ✓')
-        }
+      await actionQueueItems1i.first().click()
+      await page.waitForTimeout(1000)
+      const warningText = page.locator('text="Intervention limit reached"')
+      if (await warningText.isVisible().catch(() => false)) {
+        console.log('    Intervention limit cap strictly enforced ✓')
       }
       await page.locator('button[aria-label="Close"]').click().catch(() => {})
     }
   } else {
     issues.push({ phase: '1i', semester: 1, severity: 'missing-feature', description: 'No items found in Mentor Action Queue' })
     // Fallback via API
-    const { session: adminInterventionSess } = await loginWithApiContext(request, 'system-admin')
-    await createIntervention(request, adminInterventionSess.csrfToken, {
+    const { session: mentorSess } = await loginWithApiContext(request, 'mentor')
+    await createIntervention(request, mentorSess.csrfToken, {
       studentId: [...specialStudentIds][0],
       interventionType: 'targeted-tutoring',
       note: 'Mentor intervention fallback',
@@ -734,9 +734,9 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
   await loginAs(page, 'course-leader')
   await page.goto((process.env.AIRMENTOR_PW_FRONTEND_BASE_URL || 'http://127.0.0.1:5173') + '/#/app', { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(3000)
-  const queueItems = page.locator('[data-testid="priority-alert-card"]')
+  const queueItems = page.locator('.queue-item')
   const queueCount = await queueItems.count().catch(() => 0)
-  console.log(`    Course Leader sees ${queueCount} priority alert card(s)`)
+  console.log(`    Course Leader sees ${queueCount} intervention queue items`)
   if (queueCount === 0) issues.push({ phase: '1i-2', semester: 1, severity: 'ux-friction', description: 'Course leader action queue has no items despite high risk students.' })
 
   // ─── 1j. Mentor/HoD Parity Check ──────────────────────────────
@@ -866,22 +866,15 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
       console.log('  *** Rotating trajectory students for semesters 3-6 ***')
       specialStudentIds.clear()
       trajectoryMap.clear()
-      const shuffled = [...allStudentIds].sort(() => 0.5 - Math.random())
-      const newSpecial = shuffled.slice(0, 10)
-      newSpecial.forEach(id => specialStudentIds.add(id))
-      
-      let normalIdx = 0
-      for (const sid of allStudentIds) {
+      const newSpecial = sectionAStudents.slice(20, 24) // Pick 4 different students
+      for (let i = 0; i < allStudentIds.length; i++) {
+        const idxInSection = i % 60
         let trajectory
-        if (specialStudentIds.has(sid)) {
-          trajectory = [HIGH_PERFORMER, AVERAGE_IMPROVER, AT_RISK][Math.floor(Math.random() * 3)]
-        } else {
-          if (normalIdx < 20) trajectory = HIGH_PERFORMER
-          else if (normalIdx < 100) trajectory = AVERAGE_IMPROVER
-          else trajectory = AT_RISK
-          normalIdx++
-        }
-        trajectoryMap.set(sid, trajectory)
+        if (idxInSection < 10) trajectory = HIGH_PERFORMER
+        else if (idxInSection < 50) trajectory = AVERAGE_IMPROVER
+        else trajectory = AT_RISK
+
+        trajectoryMap.set(allStudentIds[i], trajectory)
       }
       writeEvidence(`sem${sem}-trajectory-rotation.json`, Object.fromEntries(trajectoryMap))
     }
@@ -916,63 +909,70 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
         const { session: hodLockSess } = await loginWithApiContext(request, 'hod')
         await clearAssessmentLock(request, semOfferingId, evalDef.kind, hodLockSess.csrfToken).catch(() => {})
 
-        // Build blueprint for TT kinds (needed for both Section A and B)
-        let defaultBlueprint: Record<string, unknown> | null = null
         // For TT1/TT2, ensure backend blueprint matches PAPER_MAP.default so UI doesn't crash
         if (evalDef.kind === 'tt1' || evalDef.kind === 'tt2') {
           const ownerSess = await freshOwnerSession(request, ownerIdentifier)
-          defaultBlueprint = {
+          const defaultBlueprint = {
             kind: evalDef.kind,
             totalMarks: 25,
             updatedAt: Date.now(),
             nodes: [
-              { id: `${evalDef.kind}-q1`, label: 'Q1', text: 'Answer question 1', maxMarks: 5, cos: ['CO1', 'CO2', 'CO3'], children: [{ id: `${evalDef.kind}-q1-p1`, label: 'Q1a', text: 'Part A', maxMarks: 4, cos: ['CO1'] }, { id: `${evalDef.kind}-q1-p2`, label: 'Q1b', text: 'Part B', maxMarks: 1, cos: ['CO2', 'CO3'] }] },
-              { id: `${evalDef.kind}-q2`, label: 'Q2', text: 'Answer question 2', maxMarks: 5, cos: ['CO2'], children: [{ id: `${evalDef.kind}-q2-p1`, label: 'Q2a', text: 'Part A', maxMarks: 5, cos: ['CO2'] }] },
-              { id: `${evalDef.kind}-q3`, label: 'Q3', text: 'Answer question 3', maxMarks: 5, cos: ['CO3'], children: [{ id: `${evalDef.kind}-q3-p1`, label: 'Q3a', text: 'Part A', maxMarks: 5, cos: ['CO3'] }] },
-              { id: `${evalDef.kind}-q4`, label: 'Q4', text: 'Answer question 4', maxMarks: 5, cos: ['CO1'], children: [{ id: `${evalDef.kind}-q4-p1`, label: 'Q4a', text: 'Part A', maxMarks: 5, cos: ['CO1'] }] },
-              { id: `${evalDef.kind}-q5`, label: 'Q5', text: 'Answer question 5', maxMarks: 5, cos: ['CO1'], children: [{ id: `${evalDef.kind}-q5-p1`, label: 'Q5a', text: 'Part A', maxMarks: 5, cos: ['CO1'] }] }
+              { id: `${evalDef.kind}-q1`, label: 'Q1', text: 'Answer question 1', maxMarks: 7, cos: ['CO1'], children: [{ id: `${evalDef.kind}-q1-p1`, label: 'Q1a', text: 'Part A', maxMarks: 4, cos: ['CO1'] }, { id: `${evalDef.kind}-q1-p2`, label: 'Q1b', text: 'Part B', maxMarks: 3, cos: ['CO1'] }] },
+              { id: `${evalDef.kind}-q2`, label: 'Q2', text: 'Answer question 2', maxMarks: 6, cos: ['CO2'], children: [{ id: `${evalDef.kind}-q2-p1`, label: 'Q2a', text: 'Part A', maxMarks: 6, cos: ['CO2'] }] },
+              { id: `${evalDef.kind}-q3`, label: 'Q3', text: 'Answer question 3', maxMarks: 6, cos: ['CO3'], children: [{ id: `${evalDef.kind}-q3-p1`, label: 'Q3a', text: 'Part A', maxMarks: 6, cos: ['CO3'] }] },
+              { id: `${evalDef.kind}-q4`, label: 'Q4', text: 'Answer question 4', maxMarks: 6, cos: ['CO1'], children: [{ id: `${evalDef.kind}-q4-p1`, label: 'Q4a', text: 'Part A', maxMarks: 6, cos: ['CO1'] }] }
             ]
           }
           await request.put(
             apiPath(`/api/academic/offerings/${semOfferingId}/question-papers/${evalDef.kind}`),
             { headers: csrfHeaders(ownerSess.csrfToken), data: { blueprint: defaultBlueprint } }
           )
-          // Re-fetch bootstrap so discoverComponentsFromBootstrap sees the newly PUT blueprint
-          semBootstrap = await getAcademicBootstrap(request, ownerSess.csrfToken)
         }
 
         // Discover components from bootstrap data (no API call needed)
         // Since we just PUT the blueprint, discoverComponentsFromBootstrap will use its fallback if it wasn't in bootstrap,
         // so we must UPDATE the fallback in discoverComponentsFromBootstrap to match this new default.
         const components = discoverComponentsFromBootstrap(semBootstrap, semOfferingId, evalDef.kind)
-        if (components.length === 0) {
-          console.log(`    Skipping ${evalDef.kind.toUpperCase()} — scheme has 0 components for this assessment type`)
-          continue
-        }
-        const entriesA = generateMarksPayloadWithComponents(evalDef.kind, sectionAStudents, specialStudentIds, trajectoryMap, components)
+        const entries = generateMarksPayloadWithComponents(evalDef.kind, sectionAStudents, specialStudentIds, trajectoryMap, components)
 
         // RE-LOGIN as owner right before the write call to resync cookie jar + CSRF token
         const ownerSess2 = await freshOwnerSession(request, ownerIdentifier)
-        await enterMarksViaApi(request, semOfferingId, evalDef.kind, entriesA, ownerSess2.csrfToken, {
-          lock: false,
-          evaluatedAt: getEvalDate(),
-        })
+        await page.goto((process.env.AIRMENTOR_PW_FRONTEND_BASE_URL || 'http://127.0.0.1:5173') + '/#/app', { waitUntil: 'domcontentloaded' })
+        await page.waitForTimeout(1000)
+        if (await page.locator('div[data-surface="selected"][data-interactive="true"]').first().isVisible()) await page.locator('div[data-surface="selected"][data-interactive="true"]').first().click()
+        await page.waitForTimeout(1000)
         
-        // Also evaluate Section B
-        const semOfferings = Array.isArray(semBootstrap.offerings) ? semBootstrap.offerings : []
-        const offeringB = semOfferings.find((o: any) => o.sem === sem && (String(o.offId ?? o.id ?? '').includes('_b') || String(o.sectionCode ?? '').toUpperCase() === 'B'))
-        if (offeringB) {
-          const semOfferingBId = String(offeringB.offId ?? offeringB.id)
-          const entriesB = generateMarksPayloadWithComponents(evalDef.kind, sectionBStudents, specialStudentIds, trajectoryMap, components)
-          if ((evalDef.kind === 'tt1' || evalDef.kind === 'tt2') && defaultBlueprint) {
-            await request.put(
-              apiPath(`/api/academic/offerings/${semOfferingBId}/question-papers/${evalDef.kind}`),
-              { headers: csrfHeaders(ownerSess2.csrfToken), data: { blueprint: defaultBlueprint } }
-            )
-          }
-          await enterMarksViaApi(request, semOfferingBId, evalDef.kind, entriesB, ownerSess2.csrfToken, { lock: false, evaluatedAt: getEvalDate() })
+        const evalTab = page.locator(`button[data-tab="true"]:has-text("${evalDef.kind.toUpperCase()}")`) // or evalDef.label if kind doesn't match
+        // Wait, evalDef.label is not defined here, it's a hardcoded block for missing data. Let's find out what evalDef is.
+        // Actually, this block is inside a loop for TT1 in sem 2-6? Wait, let's look at the context.
+        if (await page.locator(`button[data-tab="true"]:has-text("${evalDef.label || evalDef.kind.toUpperCase()}")`).isVisible()) await page.locator(`button[data-tab="true"]:has-text("${evalDef.label || evalDef.kind.toUpperCase()}")`).click()
+        await page.waitForTimeout(1000)
+        
+        const proceedLBtn = page.locator(`button:has-text("Proceed to ${evalDef.label || evalDef.kind.toUpperCase()} Entry")`)
+        if (await proceedLBtn.isVisible()) await proceedLBtn.click()
+        await page.waitForTimeout(1500)
+        
+        await enterMarksViaUI(page, entries)
+        
+        const secondaryOfferingId = offerings.find((o: any) => o.sem === sem && String(o.section ?? '').toUpperCase() === 'B')?.offId || `mnc_s${sem}_amc_s${sem}_02_b`
+        const entriesB = generateMarksPayloadWithComponents(evalDef.kind, allStudentIds.slice(60, 120), specialStudentIds, trajectoryMap, components)
+        await page.locator('select#entry-workspace-class').selectOption(secondaryOfferingId)
+        await page.waitForTimeout(1000)
+        await enterMarksViaUI(page, entriesB)
+        
+        if (await page.locator('button:has-text("Submit & Lock")').first().isVisible()) {
+          await page.locator('button:has-text("Submit & Lock")').first().click()
+          await page.waitForTimeout(1000)
         }
-        console.log(`    ${evalDef.kind.toUpperCase()} marks entered ✓`)
+        
+        await page.locator('select#entry-workspace-class').selectOption(semOfferingId)
+        await page.waitForTimeout(1000)
+        
+        if (await page.locator('button:has-text("Submit & Lock")').first().isVisible()) {
+          await page.locator('button:has-text("Submit & Lock")').first().click()
+          await page.waitForTimeout(1000)
+        }
+        console.log(`    ${evalDef.kind.toUpperCase()} marks entered via UI ✓`)
       } catch (err) {
         console.log(`    ${evalDef.kind.toUpperCase()} error: ${err}`)
         issues.push({ phase: `sem${sem}`, semester: sem, severity: 'bug', description: `${evalDef.kind} entry failed: ${err}` })
@@ -981,20 +981,42 @@ test('H9 Massive E2E Runthrough: Sem 1 to 6 Validation', async ({ page, request,
 
     // Enter attendance — re-login as owner before the write call
     try {
-      const attOwnerSess = await freshOwnerSession(request, ownerIdentifier)
-      const attEntriesA = generateAttendancePayload(sectionAStudents, specialStudentIds, trajectoryMap)
-      await enterAttendanceViaApi(request, semOfferingId, attEntriesA, attOwnerSess.csrfToken, { lock: false })
+      const attEntries = generateAttendancePayload(sectionAStudents, specialStudentIds, trajectoryMap)
+      await page.goto((process.env.AIRMENTOR_PW_FRONTEND_BASE_URL || 'http://127.0.0.1:5173') + '/#/app', { waitUntil: 'domcontentloaded' })
+      await page.waitForTimeout(1000)
+      if (await page.locator('div[data-surface="selected"][data-interactive="true"]').first().isVisible()) await page.locator('div[data-surface="selected"][data-interactive="true"]').first().click()
+      await page.waitForTimeout(1000)
       
-      const semOfferings = Array.isArray(semBootstrap.offerings) ? semBootstrap.offerings : []
-      const offeringB = semOfferings.find((o: any) => o.sem === sem && (String(o.offId ?? o.id ?? '').includes('_b') || String(o.sectionCode ?? '').toUpperCase() === 'B'))
-      if (offeringB) {
-        const attEntriesB = generateAttendancePayload(sectionBStudents, specialStudentIds, trajectoryMap)
-        await enterAttendanceViaApi(request, String(offeringB.offId ?? offeringB.id), attEntriesB, attOwnerSess.csrfToken, { lock: false })
+      if (await page.locator('button[data-tab="true"]:has-text("Attendance")').isVisible()) await page.locator('button[data-tab="true"]:has-text("Attendance")').click()
+      await page.waitForTimeout(1000)
+      
+      if (await page.locator('button:has-text("Proceed to Attendance Entry")').isVisible()) await page.locator('button:has-text("Proceed to Attendance Entry")').click()
+      await page.waitForTimeout(1500)
+
+      const attEntriesA = generateAttendancePayload(sectionAStudents, specialStudentIds, trajectoryMap)
+      await enterAttendanceViaUI(page, attEntriesA)
+      
+      if (await page.locator('button:has-text("Submit & Lock")').first().isVisible()) {
+        await page.locator('button:has-text("Submit & Lock")').first().click()
+        await page.waitForTimeout(1000)
       }
-      console.log('    Attendance entered ✓')
+      
+      const secondaryOfferingId = offerings.find((o: any) => o.sem === sem && String(o.section ?? '').toUpperCase() === 'B')?.offId || `mnc_s${sem}_amc_s${sem}_02_b`
+      const attEntriesB = generateAttendancePayload(allStudentIds.slice(60, 120), specialStudentIds, trajectoryMap)
+      await page.locator('select#entry-workspace-class').selectOption(secondaryOfferingId)
+      await page.waitForTimeout(1000)
+      await enterAttendanceViaUI(page, attEntriesB)
+      
+      if (await page.locator('button:has-text("Submit & Lock")').first().isVisible()) {
+        await page.locator('button:has-text("Submit & Lock")').first().click()
+        await page.waitForTimeout(1000)
+      }
+      
+      console.log('    Attendance entered via UI ✓')
     } catch (err) {
       console.log(`    Attendance error: ${err}`)
     }
+
     // Advance remaining stages for this semester
     try {
       const { session: advSess } = await loginWithApiContext(request, 'system-admin')

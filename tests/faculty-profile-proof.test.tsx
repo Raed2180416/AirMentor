@@ -6,11 +6,45 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FacultyProfilePage } from '../src/academic-faculty-profile-page'
 import { PROOF_PLAYBACK_SELECTION_STORAGE_KEY } from '../src/proof-playback'
 
+class MemoryStorage implements Storage {
+  private values = new Map<string, string>()
+
+  get length() {
+    return this.values.size
+  }
+
+  clear() {
+    this.values.clear()
+  }
+
+  getItem(key: string) {
+    return this.values.get(key) ?? null
+  }
+
+  key(index: number) {
+    return Array.from(this.values.keys())[index] ?? null
+  }
+
+  removeItem(key: string) {
+    this.values.delete(key)
+  }
+
+  setItem(key: string, value: string) {
+    this.values.set(key, value)
+  }
+}
+
+const mockStorage = new MemoryStorage()
+
 afterEach(() => {
   cleanup()
-  window.localStorage.clear()
+  mockStorage.clear()
 })
 
+Object.defineProperty(window, 'localStorage', {
+  value: mockStorage,
+  writable: true
+})
 describe('FacultyProfilePage proof mode', () => {
   it('renders explicit proof authority labeling alongside the teacher proof panel', () => {
     const props: ComponentProps<typeof FacultyProfilePage> = {

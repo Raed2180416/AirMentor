@@ -291,6 +291,8 @@ async function overlayManualAssessmentScoresIntoStageProjections(
       weakCourseOutcomeCodes: [],
       dominantQuestionTopics: [],
     }
+    // NOTE: Bypass trained production model; use inference engine for
+    // realistic demo risk bands until model is retrained with fixed labels.
     const inference = scoreObservableRiskWithModel({
       attendancePct: Number(currentEvidence.attendancePct ?? 0),
       currentCgpa: Number(currentStatus.currentCgpa ?? 0),
@@ -307,8 +309,8 @@ async function overlayManualAssessmentScoresIntoStageProjections(
       policy: input.policy,
       featurePayload,
       sourceRefs,
-      productionModel: input.activeRiskArtifacts.production,
-      challengerModel: input.activeRiskArtifacts.challenger,
+      productionModel: null,
+      challengerModel: null,
       correlations: input.activeRiskArtifacts.correlations,
       bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
     })
@@ -1014,6 +1016,8 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       sectionRiskRate: sectionRiskRateBySemesterSection.get(`${row.semesterNumber}::${row.sectionCode}`) ?? 0,
       semesterProgress: liveStage?.order ?? 1,
     })
+    // NOTE: Bypass trained production model; use inference engine for
+    // realistic demo risk bands until model is retrained with fixed labels.
     const noActionInference = scoreObservableRiskWithModel({
       attendancePct: noActionSnapshot.attendancePct,
       currentCgpa: noActionSnapshot.currentCgpa,
@@ -1030,8 +1034,8 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       policy: input.policy,
       featurePayload: noActionFeaturePayload,
       sourceRefs: fallbackSourceRefs,
-      productionModel: activeRiskArtifacts.production,
-      challengerModel: activeRiskArtifacts.challenger,
+      productionModel: null,
+      challengerModel: null,
       correlations: activeRiskArtifacts.correlations,
       bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
     })

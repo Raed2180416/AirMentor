@@ -8,32 +8,32 @@ import { scoreObservableRiskWithModel } from '../src/lib/proof-risk-model.js'
 import { DEFAULT_POLICY } from '../src/modules/admin-structure.js'
 
 describe('proof-demo operational band', () => {
-  it('uses high=0.65, medium=0.4 thresholds', () => {
-    expect(PROOF_DEMO_OPERATIONAL_THRESHOLDS.high).toBe(0.65)
-    expect(PROOF_DEMO_OPERATIONAL_THRESHOLDS.medium).toBe(0.4)
+  it('uses high=0.25, medium=0.18 thresholds', () => {
+    expect(PROOF_DEMO_OPERATIONAL_THRESHOLDS.high).toBe(0.25)
+    expect(PROOF_DEMO_OPERATIONAL_THRESHOLDS.medium).toBe(0.18)
     expect(PROOF_DEMO_OPERATIONAL_THRESHOLDS.high).toBeLessThan(0.85)
     expect(PROOF_DEMO_OPERATIONAL_THRESHOLDS.high).toBeGreaterThan(PROOF_DEMO_OPERATIONAL_THRESHOLDS.medium)
   })
 
-  it('classifies score >= 0.65 as High', () => {
-    expect(deriveProofDemoOperationalBand(0.65).band).toBe('High')
-    expect(deriveProofDemoOperationalBand(0.67).band).toBe('High')
+  it('classifies score >= 0.25 as High', () => {
+    expect(deriveProofDemoOperationalBand(0.25).band).toBe('High')
+    expect(deriveProofDemoOperationalBand(0.30).band).toBe('High')
     expect(deriveProofDemoOperationalBand(0.71).band).toBe('High')
     expect(deriveProofDemoOperationalBand(0.95).band).toBe('High')
   })
 
-  it('classifies 0.4 <= score < 0.65 as Medium', () => {
-    expect(deriveProofDemoOperationalBand(0.4).band).toBe('Medium')
-    expect(deriveProofDemoOperationalBand(0.5).band).toBe('Medium')
-    expect(deriveProofDemoOperationalBand(0.6).band).toBe('Medium')
-    expect(deriveProofDemoOperationalBand(0.6499).band).toBe('Medium')
+  it('classifies 0.18 <= score < 0.25 as Medium', () => {
+    expect(deriveProofDemoOperationalBand(0.18).band).toBe('Medium')
+    expect(deriveProofDemoOperationalBand(0.20).band).toBe('Medium')
+    expect(deriveProofDemoOperationalBand(0.22).band).toBe('Medium')
+    expect(deriveProofDemoOperationalBand(0.2499).band).toBe('Medium')
   })
 
-  it('classifies score < 0.4 as Low', () => {
+  it('classifies score < 0.18 as Low', () => {
     expect(deriveProofDemoOperationalBand(0).band).toBe('Low')
     expect(deriveProofDemoOperationalBand(0.1).band).toBe('Low')
-    expect(deriveProofDemoOperationalBand(0.39).band).toBe('Low')
-    expect(deriveProofDemoOperationalBand(0.3999).band).toBe('Low')
+    expect(deriveProofDemoOperationalBand(0.15).band).toBe('Low')
+    expect(deriveProofDemoOperationalBand(0.1799).band).toBe('Low')
   })
 
   it('preserves the raw score and exposes thresholds for traceability', () => {
@@ -46,8 +46,8 @@ describe('proof-demo operational band', () => {
 
   it('rationale text reflects the chosen band', () => {
     expect(deriveProofDemoOperationalBand(0.7).rationaleKind).toBe('operational-high-evidence-supported')
-    expect(deriveProofDemoOperationalBand(0.5).rationaleKind).toBe('operational-medium-active-monitoring')
-    expect(deriveProofDemoOperationalBand(0.2).rationaleKind).toBe('operational-low-routine-monitoring')
+    expect(deriveProofDemoOperationalBand(0.22).rationaleKind).toBe('operational-medium-active-monitoring')
+    expect(deriveProofDemoOperationalBand(0.1).rationaleKind).toBe('operational-low-routine-monitoring')
   })
 
   it('treats non-finite scores as 0', () => {
@@ -126,9 +126,9 @@ describe('scoreObservableRiskWithModel bandThresholdsOverride', () => {
     // riskProb of a struggling student should land somewhere in the
     // operational band lattice. Verify the override re-band agrees with the
     // operational threshold definition.
-    if (heuristic.riskProb >= 0.65) {
+    if (heuristic.riskProb >= 0.25) {
       expect(result.riskBand).toBe('High')
-    } else if (heuristic.riskProb >= 0.4) {
+    } else if (heuristic.riskProb >= 0.18) {
       expect(result.riskBand).toBe('Medium')
     } else {
       expect(result.riskBand).toBe('Low')

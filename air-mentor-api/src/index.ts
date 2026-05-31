@@ -8,7 +8,12 @@ import { createNoopEmailTransport, createSmtpEmailTransport } from './lib/email-
 
 async function main() {
   const config = loadConfig()
-  const pool = createPool(config.databaseUrl)
+  const pool = createPool(config.databaseUrl, {
+    max: Number(process.env.DB_POOL_MAX || 10),
+    connectionTimeoutMillis: 30_000,
+    idleTimeoutMillis: 60_000,
+    ssl: config.databaseUrl.includes('rlwy.net') ? { rejectUnauthorized: false } : undefined,
+  })
   const db = createDb(pool)
   const disposeTelemetryPersistence = configureOperationalTelemetryPersistence(event =>
     persistOperationalTelemetryEvent(db, event),

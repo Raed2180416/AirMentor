@@ -1024,6 +1024,11 @@ async function loadProofRiskInferenceContext(db: AppDb, input: {
     }
   }
 
+  // NOTE: Proof/demo contexts bypass the trained production model and use
+  // the rule-based inference engine because the current production model
+  // was trained on a synthetic dataset with ~92% positive label rate (bug
+  // in the old attendance simulation). Until retrained with the fixed
+  // generator, the inference engine provides more realistic risk bands.
   const inferred = featurePayload
     ? scoreObservableRiskWithModel({
       attendancePct: featurePayload.attendancePct,
@@ -1041,7 +1046,7 @@ async function loadProofRiskInferenceContext(db: AppDb, input: {
       policy: DEFAULT_POLICY,
       featurePayload,
       sourceRefs,
-      productionModel: activeArtifacts.production,
+      productionModel: null,
       correlations: activeArtifacts.correlations,
       bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
     })

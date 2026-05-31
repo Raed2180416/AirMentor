@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "forge-audit"
+version = "1.0.0"
+description = "Deep codebase audit tool — generates .audit shadow files, knowledge graphs, and metrics for any directory"
+requires-python = ">=3.11"
+dependencies = [
+    "rich>=13",
+    "textual>=2",
+    "tree-sitter>=0.23",
+    "pyyaml>=6",
+    "typer>=0.15",
+]
+license = {text = "MIT"}
+authors = [{name = "AirMentor Engineering"}]
+
+[project.scripts]
+forge-audit = "forge_audit.cli:app"
+
+[project.optional-dependencies]
+llm = ["openai>=1"]
+
+[tool.setuptools.packages.find]
+where = ["."]

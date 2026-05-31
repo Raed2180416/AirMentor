@@ -567,6 +567,7 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
       policy: resolved.effectivePolicy,
       actorFacultyId: auth.facultyId,
       now: context.now(),
+      rebuildModelArtifacts: false,
     })
     await emitAuditEvent(context, {
       entityType: 'ProofSimulationRun',

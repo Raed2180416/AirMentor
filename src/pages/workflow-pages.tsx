@@ -806,6 +806,8 @@ export function EntryWorkspacePage({
                                     placeholder="0"
                                     type="number"
                                     inputMode="numeric"
+                                    data-student-id={student.id}
+                                    data-leaf-id={component.id}
                                     min={0}
                                     max={max}
                                     disabled={!sectionAccess.canEdit}
@@ -825,6 +827,8 @@ export function EntryWorkspacePage({
                                   placeholder="0"
                                   type="number"
                                   inputMode="numeric"
+                                  data-student-id={student.id}
+                                  data-leaf-id="present"
                                   min={0}
                                   max={999}
                                   disabled={!sectionAccess.canEdit}
@@ -847,6 +851,8 @@ export function EntryWorkspacePage({
                                   placeholder="0"
                                   type="number"
                                   inputMode="numeric"
+                                  data-student-id={student.id}
+                                  data-leaf-id="total"
                                   min={1}
                                   max={999}
                                   disabled={!sectionAccess.canEdit}
@@ -868,6 +874,8 @@ export function EntryWorkspacePage({
                                   title={`Enter SEE marks for ${student.name}`}
                                   type="number"
                                   inputMode="numeric"
+                                  data-student-id={student.id}
+                                  data-leaf-id="finals"
                                   min={0}
                                   max={currentScheme.finalsMax}
                                   disabled={!sectionAccess.canEdit}

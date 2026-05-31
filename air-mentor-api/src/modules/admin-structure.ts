@@ -144,6 +144,25 @@ const progressionRulesSchema = z.object({
   requireNoActiveBacklogs: z.boolean(),
 })
 
+const remediationRulesSchema = z.object({
+  allowReSit: z.boolean(),
+  maxReSitAttempts: z.number().int().min(0).max(10),
+  reSitEligibilityMinAttendance: z.number().min(0).max(100),
+  reSitEligibilityMinCe: z.number().min(0).max(100),
+  allowReRegister: z.boolean(),
+  maxReRegisterAttempts: z.number().int().min(0).max(10),
+})
+
+const yearBackRulesSchema = z.object({
+  enableYearBack: z.boolean(),
+  detentionAfterConsecutiveFailures: z.number().int().min(0).max(10),
+  yearBackMinimumSemester: z.number().int().min(1).max(12),
+  allowPromotionWithBacklogs: z.boolean(),
+  promotionBacklogCreditLimit: z.number().int().min(0).max(100),
+  yearBackTriggerCredits: z.number().int().min(0).max(100),
+  yearBackTriggerFailedCourses: z.number().int().min(0).max(50),
+})
+
 const riskRulesSchema = z.object({
   highRiskAttendancePercentBelow: z.number().min(0).max(100),
   mediumRiskAttendancePercentBelow: z.number().min(0).max(100),
@@ -171,6 +190,8 @@ const policyPayloadSchema = z.object({
   roundingRules: roundingRulesSchema.optional(),
   sgpaCgpaRules: sgpaCgpaRulesSchema.optional(),
   progressionRules: progressionRulesSchema.optional(),
+  remediationRules: remediationRulesSchema.optional(),
+  yearBackRules: yearBackRulesSchema.optional(),
   riskRules: riskRulesSchema.optional(),
 }).refine(value => Object.keys(value).length > 0, {
   message: 'At least one policy segment must be provided.',
@@ -336,6 +357,8 @@ export type ResolvedPolicy = {
   roundingRules: z.infer<typeof roundingRulesSchema>
   sgpaCgpaRules: z.infer<typeof sgpaCgpaRulesSchema>
   progressionRules: z.infer<typeof progressionRulesSchema>
+  remediationRules: z.infer<typeof remediationRulesSchema>
+  yearBackRules: z.infer<typeof yearBackRulesSchema>
   riskRules: z.infer<typeof riskRulesSchema>
 }
 
@@ -408,11 +431,28 @@ export const DEFAULT_POLICY: ResolvedPolicy = {
     minimumCgpaForPromotion: 5,
     requireNoActiveBacklogs: true,
   },
+  remediationRules: {
+    allowReSit: true,
+    maxReSitAttempts: 2,
+    reSitEligibilityMinAttendance: 65,
+    reSitEligibilityMinCe: 24,
+    allowReRegister: true,
+    maxReRegisterAttempts: 3,
+  },
+  yearBackRules: {
+    enableYearBack: true,
+    detentionAfterConsecutiveFailures: 3,
+    yearBackMinimumSemester: 2,
+    allowPromotionWithBacklogs: true,
+    promotionBacklogCreditLimit: 15,
+    yearBackTriggerCredits: 20,
+    yearBackTriggerFailedCourses: 4,
+  },
   riskRules: {
     highRiskAttendancePercentBelow: 65,
     mediumRiskAttendancePercentBelow: 75,
-    highRiskCgpaBelow: 6,
-    mediumRiskCgpaBelow: 7,
+    highRiskCgpaBelow: 6.5,
+    mediumRiskCgpaBelow: 7.5,
     highRiskBacklogCount: 2,
     mediumRiskBacklogCount: 1,
   },
@@ -1058,6 +1098,8 @@ function mergePolicy(base: ResolvedPolicy, override: PolicyPayload): ResolvedPol
     condonationRules: override.condonationRules ?? base.condonationRules,
     eligibilityRules: override.eligibilityRules ?? base.eligibilityRules,
     passRules: override.passRules ?? base.passRules,
+    remediationRules: override.remediationRules ?? base.remediationRules,
+    yearBackRules: override.yearBackRules ?? base.yearBackRules,
     roundingRules: override.roundingRules ?? base.roundingRules,
     sgpaCgpaRules: override.sgpaCgpaRules ?? base.sgpaCgpaRules,
     progressionRules: override.progressionRules ?? base.progressionRules,

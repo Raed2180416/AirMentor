@@ -294,6 +294,8 @@ function buildStageCandidate(
     sectionRiskRate: input.sectionRiskRateByStage.get(`${source.semesterNumber}::${source.sectionCode}::${stage.key}`) ?? 0,
     semesterProgress: stage.order / input.stageDefs.length,
   })
+  // NOTE: Bypass trained production model; use inference engine for
+  // realistic demo risk bands until model is retrained with fixed labels.
   const inference = scoreObservableRiskWithModel({
     attendancePct: evidence.attendancePct,
     currentCgpa: evidence.currentCgpa,
@@ -310,7 +312,7 @@ function buildStageCandidate(
     policy: input.policy,
     featurePayload,
     sourceRefs,
-    productionModel: input.activeRiskArtifacts.production,
+    productionModel: null,
     correlations: input.activeRiskArtifacts.correlations,
     bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
   })
@@ -370,6 +372,8 @@ function buildStageCandidate(
     sectionRiskRate: input.sectionRiskRateByStage.get(`${source.semesterNumber}::${source.sectionCode}::${stage.key}`) ?? 0,
     semesterProgress: stage.order / input.stageDefs.length,
   })
+  // NOTE: Bypass trained production model; use inference engine for
+  // realistic demo risk bands until model is retrained with fixed labels.
   const noActionInference = scoreObservableRiskWithModel({
     attendancePct: noAction.attendancePct,
     currentCgpa: noAction.currentCgpa,
@@ -386,7 +390,7 @@ function buildStageCandidate(
     policy: input.policy,
     featurePayload: noActionFeaturePayload,
     sourceRefs,
-    productionModel: input.activeRiskArtifacts.production,
+    productionModel: null,
     correlations: input.activeRiskArtifacts.correlations,
     bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
   })

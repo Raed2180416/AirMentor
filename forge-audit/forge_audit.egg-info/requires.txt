@@ -1,0 +1,8 @@
+rich>=13
+textual>=2
+tree-sitter>=0.23
+pyyaml>=6
+typer>=0.15
+
+[llm]
+openai>=1

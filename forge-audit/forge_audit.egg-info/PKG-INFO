@@ -1,0 +1,14 @@
+Metadata-Version: 2.4
+Name: forge-audit
+Version: 1.0.0
+Summary: Deep codebase audit tool — generates .audit shadow files, knowledge graphs, and metrics for any directory
+Author: AirMentor Engineering
+License: MIT
+Requires-Python: >=3.11
+Requires-Dist: rich>=13
+Requires-Dist: textual>=2
+Requires-Dist: tree-sitter>=0.23
+Requires-Dist: pyyaml>=6
+Requires-Dist: typer>=0.15
+Provides-Extra: llm
+Requires-Dist: openai>=1; extra == "llm"

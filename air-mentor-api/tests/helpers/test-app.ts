@@ -67,7 +67,9 @@ export async function createTestApp(options?: {
   seedProfile?: SeedProfile
 }) {
   const port = await findFreePort()
-  const databaseDir = await mkdtemp(path.join(tmpdir(), 'airmentor-postgres-test-'))
+  const tmpBase = process.env.AIRMENTOR_TMPDIR ?? tmpdir()
+  await mkdir(tmpBase, { recursive: true })
+  const databaseDir = await mkdtemp(path.join(tmpBase, 'airmentor-postgres-test-'))
   const embeddedPostgres = new EmbeddedPostgres({
     databaseDir,
     user: 'postgres',

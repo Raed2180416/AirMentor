@@ -8,9 +8,9 @@ import type {
   GraphAwarePrerequisiteSummaryCompleteness,
 } from './graph-summary.js'
 
-export const RISK_FEATURE_SCHEMA_VERSION = 'observable-risk-features-v5'
-export const RISK_PRODUCTION_MODEL_VERSION = 'observable-risk-logit-v8'
-export const RISK_CHALLENGER_MODEL_VERSION = 'observable-risk-catboost-challenger-v8'
+export const RISK_FEATURE_SCHEMA_VERSION = 'observable-risk-features-v6'
+export const RISK_PRODUCTION_MODEL_VERSION = 'observable-risk-logit-v9'
+export const RISK_CHALLENGER_MODEL_VERSION = 'observable-risk-catboost-challenger-v9'
 export const RISK_CORRELATION_ARTIFACT_VERSION = 'observable-risk-correlations-v4'
 export const RISK_CALIBRATION_VERSION = 'post-hoc-calibration-v2'
 export const PROOF_CORPUS_MANIFEST_VERSION = 'proof-corpus-v1'
@@ -72,6 +72,11 @@ export const OBSERVABLE_FEATURE_KEYS = [
   'seeMissingScaled',
   'quizMissingScaled',
   'assignmentMissingScaled',
+  // v6 backlog-credit decomposition: replaces coarse backlogCount with credit-aware pressure
+  'activeBacklogCreditPressureScaled',
+  'historicalBacklogBurdenScaled',
+  'lowerYearBlockerPressureScaled',
+  'backlogSensitivityScoreScaled',
 ] as const
 
 export const PROOF_SCENARIO_FAMILIES = [
@@ -83,6 +88,9 @@ export const PROOF_SCENARIO_FAMILIES = [
   'exam-fragility',
   'carryover-heavy',
   'intervention-resistant',
+  'chronic-absentee',
+  'attendance-shock',
+  'mental-health-disruption',
 ] as const
 
 export type ObservableFeatureKey = (typeof OBSERVABLE_FEATURE_KEYS)[number]
@@ -132,9 +140,9 @@ export type ProofCorpusManifestEntry = {
  * out-of-distribution evaluator path.
  */
 export const PROOF_GENERATIVE_SPLIT_FAMILIES: Record<SplitName, ReadonlyArray<ScenarioFamily>> = {
-  train: ['weak-foundation', 'low-attendance', 'high-forgetting', 'coursework-inflation'],
-  validation: ['exam-fragility', 'carryover-heavy'],
-  test: ['intervention-resistant', 'balanced'],
+  train: ['coursework-inflation', 'high-forgetting', 'low-attendance', 'weak-foundation', 'chronic-absentee'],
+  validation: ['exam-fragility', 'carryover-heavy', 'attendance-shock'],
+  test: ['balanced', 'intervention-resistant', 'mental-health-disruption'],
 }
 
 /**
@@ -256,6 +264,11 @@ export type ObservableFeaturePayload = {
   semesterNumber: number
   semesterProgress: number
   sectionRiskRate: number
+  // v6 backlog-credit decomposition fields (optional for backward compat with v5 DB rows)
+  activeBacklogCredits?: number
+  historicalBacklogCredits?: number
+  lowerYearBlockerCredits?: number
+  backlogSensitivityScore?: number
 }
 
 export type ObservableLabelPayload = {
@@ -729,12 +742,21 @@ function featureVectorFromPayload(
   const cgpaBuffer = clamp((payload.currentCgpa - 6.0) / 4.0, 0, 1)
   const backlogDecay = 1.0 - (cgpaBuffer * semesterFactor * 0.8)
 
+  // v6 backlog-credit decomposition
+  const activeBacklogCredits = payload.activeBacklogCredits ?? 0
+  const historicalBacklogCredits = payload.historicalBacklogCredits ?? 0
+  const lowerYearBlockerCredits = payload.lowerYearBlockerCredits ?? 0
+  const activeBacklogCreditPressure = clamp(activeBacklogCredits / 15, 0, 1)
+  const historicalBacklogBurden = clamp(historicalBacklogCredits / 45, 0, 1)
+  const lowerYearBlockerPressure = clamp(lowerYearBlockerCredits / 15, 0, 1)
+
   return {
     attendancePctScaled: clamp(payload.attendancePct / 100, 0, 1),
     attendanceTrendScaled: clamp((payload.attendanceTrend + 25) / 50, 0, 1),
     attendanceHistoryRiskScaled: clamp(payload.attendanceHistoryRiskCount / 4, 0, 1),
     currentCgpaScaled: clamp(payload.currentCgpa / 10, 0, 1),
-    backlogPressureScaled: clamp((payload.backlogCount * backlogDecay) / 4, 0, 1),
+    // v6: composite credit-aware pressure instead of pure subject-count
+    backlogPressureScaled: clamp((activeBacklogCreditPressure * 0.7) + (historicalBacklogBurden * 0.3), 0, 1),
     tt1RiskScaled: safePctToRisk(payload.tt1Pct),
     tt2RiskScaled: safePctToRisk(payload.tt2Pct),
     seeRiskScaled: safePctToRisk(payload.seePct),
@@ -779,6 +801,11 @@ function featureVectorFromPayload(
     seeMissingScaled: payload.seePct == null ? 1 : 0,
     quizMissingScaled: payload.quizPct == null ? 1 : 0,
     assignmentMissingScaled: payload.assignmentPct == null ? 1 : 0,
+    // v6 backlog-credit decomposition features
+    activeBacklogCreditPressureScaled: activeBacklogCreditPressure,
+    historicalBacklogBurdenScaled: historicalBacklogBurden,
+    lowerYearBlockerPressureScaled: lowerYearBlockerPressure,
+    backlogSensitivityScoreScaled: clamp(payload.backlogSensitivityScore ?? 0, 0, 1),
   }
 }
 
@@ -1434,6 +1461,27 @@ function writeFeatureVectorToBuffer(
     buffer[offset + 35] = 0
     buffer[offset + 36] = 0
   }
+  // v8 missingness indicators
+  buffer[offset + 37] = payload.cgpaMissing ? 1 : 0
+  buffer[offset + 38] = payload.backlogMissing ? 1 : 0
+  // v8b assessment-evidence missingness
+  buffer[offset + 39] = payload.tt1Pct == null ? 1 : 0
+  buffer[offset + 40] = payload.tt2Pct == null ? 1 : 0
+  buffer[offset + 41] = payload.seePct == null ? 1 : 0
+  buffer[offset + 42] = payload.quizPct == null ? 1 : 0
+  buffer[offset + 43] = payload.assignmentPct == null ? 1 : 0
+  // v6 backlog-credit decomposition
+  const activeBacklogCreditsBuf = payload.activeBacklogCredits ?? 0
+  const historicalBacklogCreditsBuf = payload.historicalBacklogCredits ?? 0
+  const lowerYearBlockerCreditsBuf = payload.lowerYearBlockerCredits ?? 0
+  const activeBacklogCreditPressure = clamp(activeBacklogCreditsBuf / 15, 0, 1)
+  const historicalBacklogBurden = clamp(historicalBacklogCreditsBuf / 45, 0, 1)
+  const lowerYearBlockerPressure = clamp(lowerYearBlockerCreditsBuf / 15, 0, 1)
+  buffer[offset + 4] = clamp((activeBacklogCreditPressure * 0.7) + (historicalBacklogBurden * 0.3), 0, 1)
+  buffer[offset + 44] = activeBacklogCreditPressure
+  buffer[offset + 45] = historicalBacklogBurden
+  buffer[offset + 46] = lowerYearBlockerPressure
+  buffer[offset + 47] = clamp(payload.backlogSensitivityScore ?? 0, 0, 1)
 }
 
 function datasetBlockForIndex(dataset: CompactRiskDataset, rowIndex: number) {
@@ -2713,6 +2761,12 @@ export function buildObservableFeaturePayload(input: {
   semesterNumber: number
   sectionRiskRate: number
   semesterProgress: number
+  // v6 backlog-credit decomposition
+  activeBacklogCredits?: number
+  historicalBacklogCredits?: number
+  lowerYearBlockerCredits?: number
+  backlogAttemptCount?: number
+  backlogSensitivityScore?: number
 }): ObservableFeaturePayload {
   const attendanceHistory = (input.attendanceHistory ?? []).filter(item => Number.isFinite(item.attendancePct))
   const attendanceTrend = attendanceHistory.length >= 2
@@ -2736,6 +2790,18 @@ export function buildObservableFeaturePayload(input: {
   const downstreamDependencyLoad = clamp(safeNumber(input.downstreamDependencyLoad), 0, 1)
   const weakPrerequisiteChainCount = Math.max(0, Math.round(safeNumber(input.weakPrerequisiteChainCount)))
   const repeatedWeakPrerequisiteFamilyCount = Math.max(0, Math.round(safeNumber(input.repeatedWeakPrerequisiteFamilyCount)))
+  const activeBacklogCredits = Math.max(0, safeNumber(input.activeBacklogCredits))
+  const historicalBacklogCredits = Math.max(0, safeNumber(input.historicalBacklogCredits))
+  const lowerYearBlockerCredits = Math.max(0, safeNumber(input.lowerYearBlockerCredits))
+  const backlogAttemptCount = Math.max(0, safeNumber(input.backlogAttemptCount))
+  const backlogSensitivityScore = input.backlogSensitivityScore ?? clamp(
+    0.4 * (activeBacklogCredits / 15)
+    + 0.3 * (historicalBacklogCredits / 45)
+    + 0.2 * (backlogAttemptCount / 6)
+    + 0.1 * (lowerYearBlockerCredits / 15),
+    0,
+    1,
+  )
   return {
     attendancePct: roundToTwo(input.attendancePct),
     attendanceTrend: roundToTwo(attendanceTrend),
@@ -2767,5 +2833,9 @@ export function buildObservableFeaturePayload(input: {
     semesterNumber: input.semesterNumber,
     semesterProgress: roundToFour(normalizedSemesterProgress),
     sectionRiskRate: roundToFour(clamp(input.sectionRiskRate, 0, 1)),
+    activeBacklogCredits: roundToTwo(activeBacklogCredits),
+    historicalBacklogCredits: roundToTwo(historicalBacklogCredits),
+    lowerYearBlockerCredits: roundToTwo(lowerYearBlockerCredits),
+    backlogSensitivityScore: roundToFour(backlogSensitivityScore),
   }
 }

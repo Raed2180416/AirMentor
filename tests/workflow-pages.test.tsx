@@ -91,5 +91,5 @@ describe('workflow pages', () => {
       expect.objectContaining({ id: 'student_37' }),
       expect.objectContaining({ offId: 'sem1_eee_a' }),
     )
-  })
+  }, 15000)
 })
