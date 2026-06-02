@@ -484,11 +484,13 @@ export async function registerAdminProofSandboxRoutes(app: FastifyInstance, cont
     const auth = requireRole(request, ['SYSTEM_ADMIN'])
     const params = parseOrThrow(runParamsSchema, request.params)
     const body = parseOrThrow(advanceBodySchema, request.body)
-    await requireScopedProofRun(context, auth, params.simulationRunId)
+    const batchId = await requireProofRunBatchId(context, auth, params.simulationRunId)
+    const resolved = await resolveBatchPolicy(context, batchId)
     const input = {
       simulationRunId: params.simulationRunId,
       actorFacultyId: auth.facultyId,
       now: context.now(),
+      policy: resolved.effectivePolicy,
     }
     const result = body.mode === 'day'
       ? await advanceProofSimulationDay(context.db, input)

@@ -2372,6 +2372,69 @@ export type ApiCurriculumFeatureConfigBundle = {
   items: ApiCurriculumFeatureConfigItem[]
 }
 
+export type ApiGraphNode = {
+  draftNodeId: string
+  baseCurriculumNodeId?: string | null
+  courseCode: string
+  title: string
+  semesterNumber: number
+  credits: number
+  positionX: number
+  positionY: number
+  assessmentProfile: string
+  outcomes: Array<{ id: string; desc: string; bloom: string }>
+  bridgeModules: string[]
+  topicPartitions: {
+    tt1: string[]
+    tt2: string[]
+    see: string[]
+    workbook: string[]
+  }
+}
+
+export type ApiGraphEdge = {
+  draftEdgeId: string
+  baseCurriculumEdgeId?: string | null
+  sourceDraftNodeId: string
+  targetDraftNodeId: string
+  edgeKind: 'explicit' | 'added' | 'corequisite' | 'cross_semester'
+  rationale: string
+  weight: number
+  sourceOutcomeId?: string | null
+  targetOutcomeId?: string | null
+}
+
+export type ApiGraphSuggestion = {
+  suggestionId: string
+  targetDraftNodeId: string | null
+  sourceDraftNodeId: string | null
+  edgeKind: string
+  rationale: string
+  confidenceScaled: number
+  sources: string[]
+  status: string
+}
+
+export type ApiCurriculumGraphBundle = {
+  batchId: string
+  baseCurriculumImportVersionId: string
+  draftStatus: 'draft' | 'none'
+  draftId: string | null
+  nodes: ApiGraphNode[]
+  edges: ApiGraphEdge[]
+  history: {
+    canUndo: boolean
+    canRedo: boolean
+    eventCount: number
+  }
+  suggestions: ApiGraphSuggestion[]
+  validation: {
+    valid: boolean
+    errors: string[]
+    warnings: string[]
+  }
+}
+
 export type ApiProofRefresh = {
   affectedBatchIds: string[]
   queuedSimulationRunIds: string[]

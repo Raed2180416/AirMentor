@@ -49,6 +49,7 @@ import type {
   ApiCurriculumBootstrapResult,
   ApiCurriculumFeatureConfigBundle,
   ApiCurriculumFeatureConfigHistoryEvent,
+  ApiCurriculumGraphBundle,
   ApiCurriculumFeatureConfigPayload,
   ApiCurriculumFeatureConfigPreview,
   ApiCurriculumFeatureConfigSaveResult,
@@ -334,6 +335,7 @@ export interface AirMentorApiClientLike {
   saveCurriculumFeatureConfig(batchId: string, curriculumCourseId: string, payload: ApiCurriculumFeatureConfigPayload): Promise<ApiCurriculumFeatureConfigSaveResult>
   previewCurriculumFeatureConfig(batchId: string, curriculumCourseId: string, proposedOutcomes: Array<{ id: string; bloom: string }>): Promise<ApiCurriculumFeatureConfigPreview>
   getCurriculumFeatureConfigHistory(batchId: string, curriculumCourseId: string): Promise<{ events: ApiCurriculumFeatureConfigHistoryEvent[] }>
+  getCurriculumGraph(batchId: string): Promise<ApiCurriculumGraphBundle>
   provisionBatch(batchId: string, payload: ApiBatchProvisioningRequest): Promise<ApiBatchProvisioningResponse>
   saveOfferingAssessmentScheme(offeringId: string, payload: { scheme: SchemeState }): Promise<{ offeringId: string; scheme: SchemeState; version: number; policySnapshot: unknown }>
   saveOfferingQuestionPaper(offeringId: string, kind: TTKind, payload: { blueprint: TermTestBlueprint }): Promise<{ paperId: string; offeringId: string; kind: TTKind; blueprint: TermTestBlueprint; version: number }>
@@ -1415,6 +1417,10 @@ export class AirMentorApiClient implements AirMentorApiClientLike {
     return this.request<{ events: ApiCurriculumFeatureConfigHistoryEvent[] }>(
       `/api/admin/batches/${batchId}/curriculum-feature-config/${curriculumCourseId}/history`,
     )
+  }
+
+  async getCurriculumGraph(batchId: string) {
+    return this.request<ApiCurriculumGraphBundle>(`/api/admin/batches/${batchId}/curriculum-graph`)
   }
 
   async provisionBatch(batchId: string, payload: ApiBatchProvisioningRequest) {

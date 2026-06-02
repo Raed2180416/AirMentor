@@ -675,9 +675,9 @@ export async function provisionDemoWorkspace(
   const offeringSemesters = sourceOfferings
     .map(row => termById.get(row.termId)?.semesterNumber ?? null)
     .filter((value): value is number => value != null)
-  const targetSemester = offeringSemesters.includes(sourceRun.activeOperationalSemester)
-    ? sourceRun.activeOperationalSemester
-    : Math.max(...offeringSemesters)
+  const targetSemester = offeringSemesters.includes(sourceRun.semesterStart)
+    ? sourceRun.semesterStart
+    : Math.min(...offeringSemesters)
 
   await context.db.insert(students).values(sourceStudents.map(row => ({
     ...row,
@@ -745,7 +745,7 @@ export async function provisionDemoWorkspace(
     status: 'active',
     activeFlag: 1,
     activeOperationalSemester: targetSemester,
-    activeStageKey: sourceRun.activeStageKey ?? 'pre-tt1',
+    activeStageKey: 'pre-tt1',
     lifecycleState: 'active',
     demoWorkspaceId,
     createdAt: now,

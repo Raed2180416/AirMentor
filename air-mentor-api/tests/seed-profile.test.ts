@@ -191,7 +191,7 @@ describe('seed profiles', () => {
       current.db.select().from(academicTerms).where(eq(academicTerms.batchId, MSRUAS_PROOF_BATCH_ID)),
     ])
 
-    expect(proofBatch.currentSemester).toBe(1)
+    expect(proofBatch.currentSemester).toBe(6)
     expect(activeRun).toMatchObject({
       semesterStart: 1,
       semesterEnd: 6,

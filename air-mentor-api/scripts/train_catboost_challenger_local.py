@@ -435,7 +435,7 @@ def _train_ensemble_head(X_train, y_train, X_cal, y_cal, X_test, y_test, head_ke
     blend_weights = _learned_blend(model_probs_cal, y_cal, model_names)
     blended_cal = sum(blend_weights[name] * model_probs_cal[name] for name in model_names)
     blended_test = sum(blend_weights[name] * model_probs_test[name] for name in model_names)
-    coverage_pass, _ = _calibration_coverage_gate(blended_test)
+    coverage_pass, _ = _calibration_coverage_gate(blended_cal)
 
     if coverage_pass:
         # Ensemble works — use it
@@ -450,14 +450,16 @@ def _train_ensemble_head(X_train, y_train, X_cal, y_cal, X_test, y_test, head_ke
     # ─── Adaptive calibration: Beta first, histogram fallback for coverage ───
     if len(set(y_cal.tolist())) >= 2:
         probs_beta = _beta_calibrate(final_cal, final_test, y_cal)
-        cov_beta, _ = _calibration_coverage_gate(probs_beta)
+        cal_beta = _beta_calibrate(final_cal, final_cal, y_cal)
+        cov_beta, _ = _calibration_coverage_gate(cal_beta)
         if cov_beta:
             probs = probs_beta
             info['calibration'] = 'beta'
         else:
             # Beta failed coverage — try histogram binning (more aggressive spreading)
             probs_hist = _histogram_calibrate(final_cal, final_test, y_cal, n_bins=25)
-            cov_hist, _ = _calibration_coverage_gate(probs_hist)
+            cal_hist = _histogram_calibrate(final_cal, final_cal, y_cal, n_bins=25)
+            cov_hist, _ = _calibration_coverage_gate(cal_hist)
             if cov_hist:
                 probs = probs_hist
                 info['calibration'] = 'histogram25'

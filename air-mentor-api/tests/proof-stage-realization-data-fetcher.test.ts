@@ -109,7 +109,22 @@ describe('data-fetcher · parseLatentProfileForIntervention', () => {
     expect(profile.intervention.interventionReceptivity).toBe(0.5)
   })
 
-  it('returns null when dynamics/behavior/intervention sub-objects are missing', () => {
+  it('derives a conservative profile from legacy flat latent playback rows', () => {
+    const profile = parseLatentProfileForIntervention(JSON.stringify({
+      academicPotential: 0.62,
+      selfRegulation: 0.7,
+      attendanceDiscipline: 0.76,
+      supportResponsiveness: 0.82,
+      externalWorkObligation: 0.2,
+      commuteStress: 0.3,
+    }))!
+    expect(profile).not.toBeNull()
+    expect(profile.behavior.practiceCompliance).toBeGreaterThan(0.55)
+    expect(profile.intervention.interventionReceptivity).toBeCloseTo(0.82, 3)
+    expect(profile.dynamics.relearnRate).toBeGreaterThan(0.5)
+  })
+
+  it('returns null when neither structured profile nor flat latent signals are present', () => {
     expect(parseLatentProfileForIntervention(JSON.stringify({ archetype: 'x' }))).toBeNull()
     expect(parseLatentProfileForIntervention(JSON.stringify({ dynamics: {}, behavior: {} }))).toBeNull()
   })
@@ -183,7 +198,14 @@ describe('data-fetcher · buildEvidenceApplierInterventionInput', () => {
 })
 
 describe('data-fetcher · groupInterventionsByStudentAndOffering', () => {
-  function row(id: string, studentId: string, offeringId: string | null, type: string, occurredAt: string): InterventionRowForFetcher {
+  function row(
+    id: string,
+    studentId: string,
+    offeringId: string | null,
+    type: string,
+    occurredAt: string,
+    overrides: Partial<InterventionRowForFetcher> = {},
+  ): InterventionRowForFetcher {
     return {
       interventionId: id,
       studentId,
@@ -191,6 +213,7 @@ describe('data-fetcher · groupInterventionsByStudentAndOffering', () => {
       interventionType: type,
       occurredAt,
       createdAt: occurredAt,
+      ...overrides,
     }
   }
 
@@ -273,6 +296,23 @@ describe('data-fetcher · groupInterventionsByStudentAndOffering', () => {
       severityContextByStudentId: new Map([['stud_1', severity]]),
     })
     expect(asc.get('stud_1::offr_1')).toEqual(desc.get('stud_1::offr_1'))
+  })
+
+  it('respects row-specific applied semester/stage when grouping realized interventions', () => {
+    const grouped = groupInterventionsByStudentAndOffering({
+      interventionRows: [
+        row('i_stage_1', 'stud_1', 'offr_1', 'targeted-tutoring', '2026-04-01T10:00:00Z', {
+          semesterNumberApplied: 3,
+          stageKeyApplied: 'post-tt2',
+        }),
+      ],
+      semesterNumber: 6,
+      stageKeyApplied: 'pre-tt1',
+      severityContextByStudentId: new Map([['stud_1', severity]]),
+    })
+    const bucket = grouped.get('stud_1::offr_1')!
+    expect(bucket[0]!.semesterNumberApplied).toBe(3)
+    expect(bucket[0]!.stageKeyApplied).toBe('post-tt2')
   })
 
   it('breaks ties on occurredAt with interventionId lexicographic order', () => {

@@ -414,7 +414,52 @@ export const curriculumEdges = pgTable('curriculum_edges', {
   rationale: text('rationale').notNull(),
   weight: real('weight').notNull().default(1.0),
   weightOverride: real('weight_override'),
+  sourceOutcomeId: text('source_outcome_id'),
+  targetOutcomeId: text('target_outcome_id'),
+  semesterDelta: integer('semester_delta'),
   status: text('status').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
+export const curriculumGraphDrafts = pgTable('curriculum_graph_drafts', {
+  curriculumGraphDraftId: text('curriculum_graph_draft_id').primaryKey(),
+  batchId: text('batch_id').notNull().references(() => batches.batchId),
+  baseCurriculumImportVersionId: text('base_curriculum_import_version_id').notNull().references(() => curriculumImportVersions.curriculumImportVersionId),
+  draftNodesJson: text('draft_nodes_json').notNull(),
+  draftEdgesJson: text('draft_edges_json').notNull(),
+  draftTopicPartitionsJson: text('draft_topic_partitions_json').notNull(),
+  draftBridgeModulesJson: text('draft_bridge_modules_json').notNull(),
+  status: text('status').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
+export const curriculumGraphHistory = pgTable('curriculum_graph_history', {
+  curriculumGraphHistoryId: text('curriculum_graph_history_id').primaryKey(),
+  batchId: text('batch_id').notNull().references(() => batches.batchId),
+  curriculumGraphDraftId: text('curriculum_graph_draft_id').notNull().references(() => curriculumGraphDrafts.curriculumGraphDraftId),
+  commandType: text('command_type').notNull(),
+  commandPayloadJson: text('command_payload_json').notNull(),
+  reversePayloadJson: text('reverse_payload_json').notNull(),
+  sequenceNumber: integer('sequence_number').notNull(),
+  isUndone: integer('is_undone').notNull().default(0),
+  actorFacultyId: text('actor_faculty_id'),
+  createdAt: text('created_at').notNull(),
+})
+
+export const curriculumGraphSuggestions = pgTable('curriculum_graph_suggestions', {
+  curriculumGraphSuggestionId: text('curriculum_graph_suggestion_id').primaryKey(),
+  batchId: text('batch_id').notNull().references(() => batches.batchId),
+  curriculumGraphDraftId: text('curriculum_graph_draft_id').references(() => curriculumGraphDrafts.curriculumGraphDraftId),
+  targetCurriculumNodeId: text('target_curriculum_node_id'),
+  sourceCurriculumNodeId: text('source_curriculum_node_id'),
+  edgeKind: text('edge_kind').notNull(),
+  rationale: text('rationale').notNull(),
+  confidenceScaled: real('confidence_scaled').notNull().default(0.5),
+  sourcesJson: text('sources_json').notNull(),
+  status: text('status').notNull(),
+  actorFacultyId: text('actor_faculty_id'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 })
@@ -1467,6 +1512,9 @@ export const allTables = {
   operationalTelemetryEvents,
   adminReminders,
   demoWorkspaces,
+  curriculumGraphDrafts,
+  curriculumGraphHistory,
+  curriculumGraphSuggestions,
 }
 
 export type SchemaTableMap = typeof allTables

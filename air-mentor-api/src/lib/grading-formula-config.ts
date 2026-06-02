@@ -1,11 +1,12 @@
 export const GRADE_BANDS = [
-  { grade: 'O', minimumMark: 91, maximumMark: 100, gradePoint: 10 },
-  { grade: 'A+', minimumMark: 81, maximumMark: 90, gradePoint: 9 },
-  { grade: 'A', minimumMark: 71, maximumMark: 80, gradePoint: 8 },
-  { grade: 'B+', minimumMark: 61, maximumMark: 70, gradePoint: 7 },
-  { grade: 'B', minimumMark: 51, maximumMark: 60, gradePoint: 6 },
-  { grade: 'C', minimumMark: 45, maximumMark: 50, gradePoint: 5 },
-  { grade: 'F', minimumMark: 0, maximumMark: 44, gradePoint: 0 },
+  { grade: 'O', minimumMark: 90, maximumMark: 100, gradePoint: 10 },
+  { grade: 'A+', minimumMark: 80, maximumMark: 89, gradePoint: 9 },
+  { grade: 'A', minimumMark: 70, maximumMark: 79, gradePoint: 8 },
+  { grade: 'B+', minimumMark: 60, maximumMark: 69, gradePoint: 7 },
+  { grade: 'B', minimumMark: 55, maximumMark: 59, gradePoint: 6 },
+  { grade: 'C', minimumMark: 50, maximumMark: 54, gradePoint: 5 },
+  { grade: 'P', minimumMark: 40, maximumMark: 49, gradePoint: 4 },
+  { grade: 'F', minimumMark: 0, maximumMark: 39, gradePoint: 0 },
 ] as const
 
 export type GradeBand = typeof GRADE_BANDS[number]
@@ -112,9 +113,8 @@ export function evaluateResult(input: {
 }
 
 export function calculateSgpa(attempts: Array<{ credits: number; gradePoint: number; result: string }>): number {
-  const filtered = attempts.filter(a => a.result === 'Passed' || a.gradePoint > 0)
-  const totalCredits = filtered.reduce((sum, a) => sum + a.credits, 0)
+  const totalCredits = attempts.reduce((sum, a) => sum + a.credits, 0)
   if (totalCredits === 0) return 0
-  const weighted = filtered.reduce((sum, a) => sum + a.credits * a.gradePoint, 0)
+  const weighted = attempts.reduce((sum, a) => sum + a.credits * a.gradePoint, 0)
   return Math.round((weighted / totalCredits) * 100) / 100
 }

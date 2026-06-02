@@ -8,32 +8,31 @@ import { scoreObservableRiskWithModel } from '../src/lib/proof-risk-model.js'
 import { DEFAULT_POLICY } from '../src/modules/admin-structure.js'
 
 describe('proof-demo operational band', () => {
-  it('uses high=0.25, medium=0.18 thresholds', () => {
-    expect(PROOF_DEMO_OPERATIONAL_THRESHOLDS.high).toBe(0.25)
-    expect(PROOF_DEMO_OPERATIONAL_THRESHOLDS.medium).toBe(0.18)
+  it('uses high=0.55, medium=0.40 thresholds', () => {
+    expect(PROOF_DEMO_OPERATIONAL_THRESHOLDS.high).toBe(0.55)
+    expect(PROOF_DEMO_OPERATIONAL_THRESHOLDS.medium).toBe(0.40)
     expect(PROOF_DEMO_OPERATIONAL_THRESHOLDS.high).toBeLessThan(0.85)
     expect(PROOF_DEMO_OPERATIONAL_THRESHOLDS.high).toBeGreaterThan(PROOF_DEMO_OPERATIONAL_THRESHOLDS.medium)
   })
 
-  it('classifies score >= 0.25 as High', () => {
-    expect(deriveProofDemoOperationalBand(0.25).band).toBe('High')
-    expect(deriveProofDemoOperationalBand(0.30).band).toBe('High')
+  it('classifies score >= 0.55 as High', () => {
+    expect(deriveProofDemoOperationalBand(0.55).band).toBe('High')
+    expect(deriveProofDemoOperationalBand(0.65).band).toBe('High')
     expect(deriveProofDemoOperationalBand(0.71).band).toBe('High')
     expect(deriveProofDemoOperationalBand(0.95).band).toBe('High')
   })
 
-  it('classifies 0.18 <= score < 0.25 as Medium', () => {
-    expect(deriveProofDemoOperationalBand(0.18).band).toBe('Medium')
-    expect(deriveProofDemoOperationalBand(0.20).band).toBe('Medium')
-    expect(deriveProofDemoOperationalBand(0.22).band).toBe('Medium')
-    expect(deriveProofDemoOperationalBand(0.2499).band).toBe('Medium')
+  it('classifies 0.40 <= score < 0.55 as Medium', () => {
+    expect(deriveProofDemoOperationalBand(0.40).band).toBe('Medium')
+    expect(deriveProofDemoOperationalBand(0.50).band).toBe('Medium')
+    expect(deriveProofDemoOperationalBand(0.5499).band).toBe('Medium')
   })
 
-  it('classifies score < 0.18 as Low', () => {
+  it('classifies score < 0.40 as Low', () => {
     expect(deriveProofDemoOperationalBand(0).band).toBe('Low')
     expect(deriveProofDemoOperationalBand(0.1).band).toBe('Low')
-    expect(deriveProofDemoOperationalBand(0.15).band).toBe('Low')
-    expect(deriveProofDemoOperationalBand(0.1799).band).toBe('Low')
+    expect(deriveProofDemoOperationalBand(0.30).band).toBe('Low')
+    expect(deriveProofDemoOperationalBand(0.3999).band).toBe('Low')
   })
 
   it('preserves the raw score and exposes thresholds for traceability', () => {
@@ -46,7 +45,7 @@ describe('proof-demo operational band', () => {
 
   it('rationale text reflects the chosen band', () => {
     expect(deriveProofDemoOperationalBand(0.7).rationaleKind).toBe('operational-high-evidence-supported')
-    expect(deriveProofDemoOperationalBand(0.22).rationaleKind).toBe('operational-medium-active-monitoring')
+    expect(deriveProofDemoOperationalBand(0.50).rationaleKind).toBe('operational-medium-active-monitoring')
     expect(deriveProofDemoOperationalBand(0.1).rationaleKind).toBe('operational-low-routine-monitoring')
   })
 
@@ -126,9 +125,9 @@ describe('scoreObservableRiskWithModel bandThresholdsOverride', () => {
     // riskProb of a struggling student should land somewhere in the
     // operational band lattice. Verify the override re-band agrees with the
     // operational threshold definition.
-    if (heuristic.riskProb >= 0.25) {
+    if (heuristic.riskProb >= PROOF_DEMO_OPERATIONAL_THRESHOLDS.high) {
       expect(result.riskBand).toBe('High')
-    } else if (heuristic.riskProb >= 0.18) {
+    } else if (heuristic.riskProb >= PROOF_DEMO_OPERATIONAL_THRESHOLDS.medium) {
       expect(result.riskBand).toBe('Medium')
     } else {
       expect(result.riskBand).toBe('Low')
@@ -233,8 +232,7 @@ describe('scoreObservableRiskWithModel bandThresholdsOverride', () => {
   })
 
   // Severe profile (low cgpa + many backlogs + low attendance + weak TT1)
-  // must reach High under operational banding even though the calibrated
-  // 0.85 threshold would keep it Medium in the proof corpus.
+  // must reach High under operational banding.
   it('severe sem-5 student with weak attendance + low cgpa + backlogs reaches High under operational banding', () => {
     const severeProfile = {
       ...baseInput,

@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_POLICY } from '../src/modules/admin-structure.js'
 import {
   BASELINE_V5_LIKE_PROOF_RISK_TRAINING_CONFIG,
+  OBSERVABLE_FEATURE_KEYS,
   PROOF_CORPUS_MANIFEST,
   PROOF_CORPUS_MANIFEST_VERSION,
   PRODUCTION_RISK_THRESHOLDS,
   buildObservableFeaturePayload,
+  featureVectorArrayFromPayload,
   scenarioFamilyForSeed,
   scoreObservableRiskWithModel,
   summarizeProofRiskModelEvaluation,
@@ -147,6 +149,7 @@ describe('proof risk model', () => {
     expect(firstEvaluation).toEqual(secondEvaluation)
 
     expect(firstBundle!.production.trainingManifestVersion).toBe(PROOF_CORPUS_MANIFEST_VERSION)
+    expect(firstBundle!.production.modelFamily).toBe('logistic')
     expect(firstBundle!.production.thresholds).toEqual(PRODUCTION_RISK_THRESHOLDS)
     expect(firstBundle!.production.worldSplitSummary).toEqual({
       train: 1,
@@ -191,11 +194,198 @@ describe('proof risk model', () => {
 
     expect(scored.headDisplay.overallCourseRisk.displayProbabilityAllowed).toBe(false)
     expect(scored.headDisplay.overallCourseRisk.supportWarning).toContain('support')
-    expect(scored.riskProb).toBe(scored.headProbabilities.overallCourseRisk)
+    expect(scored.riskProb).toBeGreaterThanOrEqual(scored.headProbabilities.overallCourseRisk)
     expect(scored.queuePriorityScore).toBe(scored.riskProb)
     expect(scored.queuePrioritySource).toBe('overall-course-risk-head')
     expect(scored.queuePriorityScore).toBeGreaterThanOrEqual(0)
     expect(scored.queuePriorityScore).toBeLessThanOrEqual(1)
+  })
+
+  it('enforces institutional policy floors over model-backed serving scores', () => {
+    const manifestEntries = [
+      PROOF_CORPUS_MANIFEST[0]!,
+      PROOF_CORPUS_MANIFEST[40]!,
+      PROOF_CORPUS_MANIFEST[52]!,
+    ]
+    const runMetadataById = new Map<string, ProofRunModelMetadata>(manifestEntries.map(entry => [
+      `sim-${entry.seed}`,
+      {
+        simulationRunId: `sim-${entry.seed}`,
+        seed: entry.seed,
+        split: entry.split,
+        scenarioFamily: entry.scenarioFamily,
+      },
+    ]))
+    const rows = [
+      ...buildRowsForRun(manifestEntries[0]!.seed, 20),
+      ...buildRowsForRun(manifestEntries[1]!.seed, 20, 1),
+      ...buildRowsForRun(manifestEntries[2]!.seed, 20, 2),
+    ]
+    const bundle = trainProofRiskModel(rows, '2026-03-23T00:00:00.000Z', { runMetadataById })
+    expect(bundle).not.toBeNull()
+
+    const strongButAttendanceShort = buildObservableFeaturePayload({
+      attendancePct: 74,
+      attendanceHistory: [{ attendancePct: 76 }, { attendancePct: 74 }],
+      currentCgpa: 8.4,
+      backlogCount: 0,
+      tt1Pct: 82,
+      tt2Pct: 84,
+      quizPct: 86,
+      assignmentPct: 88,
+      seePct: 82,
+      weakCoCount: 0,
+      weakQuestionCount: 0,
+      interventionResponseScore: 0.18,
+      prerequisiteAveragePct: 78,
+      prerequisiteFailureCount: 0,
+      prerequisiteCourseCodes: ['AMC101'],
+      semesterNumber: 2,
+      sectionRiskRate: 0.12,
+      semesterProgress: 1,
+    })
+    const attendanceScored = scoreObservableRiskWithModel({
+      attendancePct: 74,
+      currentCgpa: 8.4,
+      backlogCount: 0,
+      tt1Pct: 82,
+      tt2Pct: 84,
+      quizPct: 86,
+      assignmentPct: 88,
+      cePct: 84,
+      seePct: 82,
+      overallPct: 83.2,
+      weakCoCount: 0,
+      attendanceHistoryRiskCount: 1,
+      questionWeaknessCount: 0,
+      interventionResponseScore: 0.18,
+      policy: DEFAULT_POLICY,
+      featurePayload: strongButAttendanceShort,
+      sourceRefs: buildSourceRefs({
+        runId: 'sim-policy-floor',
+        studentId: 'student-policy-attendance',
+        semesterNumber: 2,
+        stageKey: 'post-see',
+        sectionCode: 'A',
+        courseCode: 'AMC201',
+        coEvidenceMode: 'rubric-derived',
+      }),
+      productionModel: bundle!.production,
+      correlations: bundle!.correlations,
+    })
+    expect(attendanceScored.riskProb).toBeGreaterThanOrEqual(PRODUCTION_RISK_THRESHOLDS.medium)
+    expect(attendanceScored.riskBand).not.toBe('Low')
+    expect(attendanceScored.observableDrivers.some(driver => driver.feature === 'attendance')).toBe(true)
+
+    const terminalFailure = buildObservableFeaturePayload({
+      attendancePct: 88,
+      attendanceHistory: [{ attendancePct: 88 }, { attendancePct: 89 }],
+      currentCgpa: 8.2,
+      backlogCount: 0,
+      tt1Pct: 72,
+      tt2Pct: 74,
+      quizPct: 76,
+      assignmentPct: 78,
+      seePct: 30,
+      weakCoCount: 0,
+      weakQuestionCount: 0,
+      interventionResponseScore: 0.1,
+      prerequisiteAveragePct: 76,
+      prerequisiteFailureCount: 0,
+      prerequisiteCourseCodes: ['AMC101'],
+      semesterNumber: 3,
+      sectionRiskRate: 0.14,
+      semesterProgress: 1,
+    })
+    const failureScored = scoreObservableRiskWithModel({
+      attendancePct: 88,
+      currentCgpa: 8.2,
+      backlogCount: 0,
+      tt1Pct: 72,
+      tt2Pct: 74,
+      quizPct: 76,
+      assignmentPct: 78,
+      cePct: 75,
+      seePct: 30,
+      overallPct: 33,
+      weakCoCount: 0,
+      attendanceHistoryRiskCount: 0,
+      questionWeaknessCount: 0,
+      interventionResponseScore: 0.1,
+      policy: DEFAULT_POLICY,
+      featurePayload: terminalFailure,
+      sourceRefs: buildSourceRefs({
+        runId: 'sim-policy-floor',
+        studentId: 'student-policy-failure',
+        semesterNumber: 3,
+        stageKey: 'post-see',
+        sectionCode: 'B',
+        courseCode: 'AMC301',
+        coEvidenceMode: 'rubric-derived',
+      }),
+      productionModel: bundle!.production,
+      correlations: bundle!.correlations,
+    })
+    expect(failureScored.riskProb).toBeGreaterThanOrEqual(PRODUCTION_RISK_THRESHOLDS.high)
+    expect(failureScored.riskBand).toBe('High')
+    expect(failureScored.observableDrivers.some(driver => driver.feature === 'see' || driver.feature === 'overall')).toBe(true)
+
+    const sparseSemesterOne = buildObservableFeaturePayload({
+      attendancePct: 82,
+      attendanceHistory: [{ attendancePct: 82 }],
+      currentCgpa: 0,
+      cgpaMissing: true,
+      backlogCount: 0,
+      backlogMissing: true,
+      tt1Pct: null,
+      tt2Pct: null,
+      quizPct: null,
+      assignmentPct: null,
+      seePct: null,
+      weakCoCount: 0,
+      weakQuestionCount: 0,
+      interventionResponseScore: null,
+      prerequisiteAveragePct: 0,
+      prerequisiteFailureCount: 0,
+      prerequisiteCourseCodes: [],
+      semesterNumber: 1,
+      sectionRiskRate: 0.12,
+      semesterProgress: 0,
+    })
+    const sparseScored = scoreObservableRiskWithModel({
+      attendancePct: 82,
+      currentCgpa: 0,
+      cgpaMissing: true,
+      backlogCount: 0,
+      backlogMissing: true,
+      tt1Pct: null,
+      tt2Pct: null,
+      quizPct: null,
+      assignmentPct: null,
+      seePct: null,
+      weakCoCount: 0,
+      attendanceHistoryRiskCount: 0,
+      questionWeaknessCount: 0,
+      interventionResponseScore: null,
+      policy: DEFAULT_POLICY,
+      featurePayload: sparseSemesterOne,
+      sourceRefs: buildSourceRefs({
+        runId: 'sim-policy-floor',
+        studentId: 'student-sem1-sparse',
+        semesterNumber: 1,
+        stageKey: 'pre-tt1',
+        sectionCode: 'A',
+        courseCode: 'AMC101',
+        coEvidenceMode: 'not-yet-observed',
+      }),
+      productionModel: bundle!.production,
+      correlations: bundle!.correlations,
+    })
+    expect(sparseScored.riskBand).toBe('Low')
+    expect(sparseScored.riskProb).toBeLessThan(PRODUCTION_RISK_THRESHOLDS.medium)
+    expect(sparseScored.headDisplay.overallCourseRisk.displayProbabilityAllowed).toBe(false)
+    expect(sparseScored.headDisplay.overallCourseRisk.supportWarning).toContain('not yet sufficient')
+    expect(sparseScored.observableDrivers).toHaveLength(0)
   })
 
   it('suppresses probability display for fallback-simulated rows with partial feature completeness', () => {
@@ -299,6 +489,68 @@ describe('proof risk model', () => {
     expect(payload.courseworkToTtGap).toBe(15)
     expect(payload.cgpaMissing).toBe(true)
     expect(payload.backlogMissing).toBe(true)
+  })
+
+  it('does not mark future assessments as missing before the stage where they are expected', () => {
+    const payload = buildObservableFeaturePayload({
+      attendancePct: 84,
+      attendanceHistory: [{ attendancePct: 85 }, { attendancePct: 84 }],
+      currentCgpa: 8.1,
+      backlogCount: 0,
+      tt1Pct: 64,
+      tt2Pct: null,
+      seePct: null,
+      quizPct: null,
+      assignmentPct: null,
+      weakCoCount: 0,
+      weakQuestionCount: 1,
+      interventionResponseScore: null,
+      prerequisiteAveragePct: 0,
+      prerequisiteFailureCount: 0,
+      prerequisiteCourseCodes: [],
+      semesterProgress: 0.25,
+      semesterNumber: 1, sectionRiskRate: 0.16,
+    })
+    const indexOf = (feature: typeof OBSERVABLE_FEATURE_KEYS[number]) => OBSERVABLE_FEATURE_KEYS.indexOf(feature)
+    const postTt1Vector = featureVectorArrayFromPayload(payload, buildSourceRefs({
+      runId: 'sim-stage-missingness',
+      studentId: 'student-stage-missingness',
+      semesterNumber: 1,
+      stageKey: 'post-tt1',
+      sectionCode: 'A',
+      courseCode: 'AMC101',
+      coEvidenceMode: 'rubric-derived',
+    }))
+    const postSeeVector = featureVectorArrayFromPayload(payload, buildSourceRefs({
+      runId: 'sim-stage-missingness',
+      studentId: 'student-stage-missingness',
+      semesterNumber: 1,
+      stageKey: 'post-see',
+      sectionCode: 'A',
+      courseCode: 'AMC101',
+      coEvidenceMode: 'rubric-derived',
+    }))
+
+    expect(postTt1Vector[indexOf('tt1MissingScaled')]).toBe(0)
+    expect(postTt1Vector[indexOf('tt2MissingScaled')]).toBe(0)
+    expect(postTt1Vector[indexOf('seeMissingScaled')]).toBe(0)
+    expect(postTt1Vector[indexOf('quizMissingScaled')]).toBe(0)
+    expect(postTt1Vector[indexOf('assignmentMissingScaled')]).toBe(0)
+    expect(postTt1Vector[indexOf('tt1RiskScaled')]).toBeCloseTo(0.36)
+    expect(postTt1Vector[indexOf('tt2RiskScaled')]).toBe(0)
+    expect(postTt1Vector[indexOf('seeRiskScaled')]).toBe(0)
+    expect(postTt1Vector[indexOf('quizRiskScaled')]).toBe(0)
+    expect(postTt1Vector[indexOf('assignmentRiskScaled')]).toBe(0)
+    expect(postTt1Vector[indexOf('prerequisiteAverageRiskScaled')]).toBe(0)
+    expect(postTt1Vector[indexOf('interventionResidualRiskScaled')]).toBe(0)
+    expect(postSeeVector[indexOf('tt2MissingScaled')]).toBe(1)
+    expect(postSeeVector[indexOf('seeMissingScaled')]).toBe(1)
+    expect(postSeeVector[indexOf('quizMissingScaled')]).toBe(1)
+    expect(postSeeVector[indexOf('assignmentMissingScaled')]).toBe(1)
+    expect(postSeeVector[indexOf('tt2RiskScaled')]).toBe(0.5)
+    expect(postSeeVector[indexOf('seeRiskScaled')]).toBe(0.5)
+    expect(postSeeVector[indexOf('quizRiskScaled')]).toBe(0.5)
+    expect(postSeeVector[indexOf('assignmentRiskScaled')]).toBe(0.5)
   })
 
   it('exposes deterministic carryover features and lifts downstream carryover risk for weaker prerequisite chains', () => {

@@ -119,6 +119,7 @@ import {
   ceMinimumPctForPolicy,
   ceShortfallLabelFromPct,
   classifyPolicyPhenotype,
+  playbackCheckpointNowIso,
   stageCourseworkEvidenceForStage,
   summarizeQuestionPatterns,
   toInterventionResponse,
@@ -192,7 +193,7 @@ import {
   MSRUAS_PROOF_VALIDATOR_VERSION,
   validateCompiledCurriculum,
 } from './msruas-curriculum-compiler.js'
-import { BLOOM_LEVEL_MASTERY_TARGET, MASTERY_WEAKNESS_RATIO } from './learning-dynamics-constants.js'
+import { BLOOM_LEVEL_MASTERY_TARGET, MASTERY_WEAKNESS_RATIO, SCENARIO_FINGERPRINTS } from './learning-dynamics-constants.js'
 import { inferObservableRisk } from './inference-engine.js'
 import { buildMonitoringDecision } from './monitoring-engine.js'
 import { DEFAULT_STAGE_POLICY, type StagePolicyStageKey } from './stage-policy.js'
@@ -203,6 +204,7 @@ import {
   type ObservableSourceRefs,
   type ProofRunModelMetadata,
   type RiskHeadKey,
+  type ScenarioFamily,
   createProofRiskModelTrainingBuilder,
   summarizeProofRiskModelEvaluation,
   type CorrelationArtifact,
@@ -1037,6 +1039,30 @@ const STUDENT_ARCHETYPES = [
     pressureShift: 0.05,
     courseworkReliabilityShift: -0.03,
   },
+  {
+    key: 'crashing-high-performer',
+    abilityShift: 0.15,
+    disciplineShift: 0.08,
+    forgetShift: -0.05,
+    pressureShift: 0.35,
+    courseworkReliabilityShift: -0.02,
+  },
+  {
+    key: 'late-bloomer',
+    abilityShift: -0.15,
+    disciplineShift: -0.05,
+    forgetShift: -0.10,
+    pressureShift: -0.05,
+    courseworkReliabilityShift: 0.15,
+  },
+  {
+    key: 'high-ability-retention-gap',
+    abilityShift: 0.08,
+    disciplineShift: 0.05,
+    forgetShift: 0.35,
+    pressureShift: 0.02,
+    courseworkReliabilityShift: 0.05,
+  },
 ] as const
 
 export type RuntimeCurriculum = {
@@ -1065,36 +1091,9 @@ function scenarioProfileForSeed(seed: number): ScenarioProfile {
     examPressureShift: stableBetween(`${seedStr}-pressure`, -0.02, 0.03),
     supportResponsivenessShift: stableBetween(`${seedStr}-support`, -0.03, 0.03),
   }
-  let base: ScenarioProfile
-  switch (family) {
-    case 'weak-foundation':
-      base = { family, sectionAbilityShift: -0.09, sectionDisciplineShift: -0.01, forgetRateShift: 0.02, courseworkReliabilityShift: -0.01, examPressureShift: 0.04, supportResponsivenessShift: -0.02 }
-      break
-    case 'low-attendance':
-      base = { family, sectionAbilityShift: -0.01, sectionDisciplineShift: -0.08, forgetRateShift: 0.01, courseworkReliabilityShift: 0, examPressureShift: 0.02, supportResponsivenessShift: -0.04 }
-      break
-    case 'high-forgetting':
-      base = { family, sectionAbilityShift: 0, sectionDisciplineShift: -0.01, forgetRateShift: 0.07, courseworkReliabilityShift: -0.02, examPressureShift: 0.03, supportResponsivenessShift: -0.02 }
-      break
-    case 'coursework-inflation':
-      base = { family, sectionAbilityShift: -0.02, sectionDisciplineShift: 0.02, forgetRateShift: 0.01, courseworkReliabilityShift: 0.08, examPressureShift: 0.01, supportResponsivenessShift: 0 }
-      break
-    case 'exam-fragility':
-      base = { family, sectionAbilityShift: -0.01, sectionDisciplineShift: 0, forgetRateShift: 0.02, courseworkReliabilityShift: 0.01, examPressureShift: 0.08, supportResponsivenessShift: -0.01 }
-      break
-    case 'carryover-heavy':
-      base = { family, sectionAbilityShift: -0.05, sectionDisciplineShift: -0.01, forgetRateShift: 0.03, courseworkReliabilityShift: -0.01, examPressureShift: 0.03, supportResponsivenessShift: -0.02 }
-      break
-    case 'intervention-resistant':
-      base = { family, sectionAbilityShift: -0.02, sectionDisciplineShift: -0.02, forgetRateShift: 0.02, courseworkReliabilityShift: -0.02, examPressureShift: 0.04, supportResponsivenessShift: -0.09 }
-      break
-    case 'balanced':
-    default:
-      base = { family, sectionAbilityShift: 0, sectionDisciplineShift: 0, forgetRateShift: 0, courseworkReliabilityShift: 0, examPressureShift: 0, supportResponsivenessShift: 0 }
-      break
-  }
+  const base = SCENARIO_FINGERPRINTS[family]
   return {
-    family: base.family,
+    family,
     sectionAbilityShift: base.sectionAbilityShift + domainShift.sectionAbilityShift,
     sectionDisciplineShift: base.sectionDisciplineShift + domainShift.sectionDisciplineShift,
     forgetRateShift: base.forgetRateShift + domainShift.forgetRateShift,
@@ -1110,19 +1109,22 @@ function sectionForIndex(index: number): 'A' | 'B' {
 
 function pickArchetype(index: number, runSeed: number) {
   const score = stableUnit(`run-${runSeed}-student-${index + 1}-archetype`)
-  const adjustedScore = sectionForIndex(index) === 'A' ? score * 0.9 : Math.min(0.999, score * 1.08)
-  
+
   let key: string
-  // Adjusted mapping: 20% top, 45% average/fragile, 35% bottom
-  // Borderline archetypes (30% total) create students with genuinely mid-range risk,
-  // filling probability gaps in [0.2, 0.4] and [0.6, 0.8] that block calibration gates.
-  if (adjustedScore < 0.10) key = 'deep-competent'
-  else if (adjustedScore < 0.20) key = 'strategic-efficient'
-  else if (adjustedScore < 0.35) key = 'strategic-fragile'
-  else if (adjustedScore < 0.50) key = 'borderline-mid'
-  else if (adjustedScore < 0.65) key = 'borderline-fragile'
-  else if (adjustedScore < 0.78) key = 'cumulative-gap'
-  else if (adjustedScore < 0.90) key = 'underregulated'
+
+  // Deliberately reserve a small deterministic tail for nonlinear edge cases.
+  if (score > 0.98) key = 'crashing-high-performer'
+  else if (score > 0.95) key = 'late-bloomer'
+  else if (score > 0.92) key = 'high-ability-retention-gap'
+  // Natural cohort distribution: follows standard bell curve approximations
+  // rather than forcing artificial 30% borderline cases.
+  else if (score < 0.15) key = 'deep-competent'
+  else if (score < 0.40) key = 'strategic-efficient'
+  else if (score < 0.60) key = 'strategic-fragile'
+  else if (score < 0.70) key = 'borderline-mid'
+  else if (score < 0.80) key = 'borderline-fragile'
+  else if (score < 0.86) key = 'cumulative-gap'
+  else if (score < 0.90) key = 'underregulated'
   else key = 'surface-survival'
 
   return STUDENT_ARCHETYPES.find(a => a.key === key) ?? STUDENT_ARCHETYPES[0]
@@ -1185,11 +1187,13 @@ function buildAttendanceHistory(input: {
       -4 - index,
       4,
     )
-    const pct = clamp(
-      Math.round(input.attendancePct + drift + ((index - 1.5) * 1.4 * (input.student.profile.behavior.attendancePropensity - 0.5))),
-      48,
-      99,
-    )
+    const pct = index === checkpoints.length - 1
+      ? clamp(Math.round(input.attendancePct), 48, 99)
+      : clamp(
+        Math.round(input.attendancePct + drift + ((index - 1.5) * 1.4 * (input.student.profile.behavior.attendancePropensity - 0.5))),
+        48,
+        99,
+      )
     return {
       checkpoint: checkpoint.checkpoint,
       checkpointLabel: checkpoint.checkpointLabel,
@@ -1587,19 +1591,19 @@ function deterministicPolicyFromResolved(policy: ResolvedPolicy): MsruasDetermin
 
 function buildStudentTrajectory(index: number, runSeed: number, scenarioProfile: ScenarioProfile): StudentTrajectory {
   const sectionCode = sectionForIndex(index)
-  const sectionAbility = (sectionCode === 'A' ? 0.64 : 0.5) + scenarioProfile.sectionAbilityShift
-  const sectionDiscipline = (sectionCode === 'A' ? 0.66 : 0.56) + scenarioProfile.sectionDisciplineShift
+  const sectionAbility = (sectionCode === 'A' ? 0.70 : 0.64) + scenarioProfile.sectionAbilityShift
+  const sectionDiscipline = (sectionCode === 'A' ? 0.70 : 0.65) + scenarioProfile.sectionDisciplineShift
   const seedBase = `run-${runSeed}-student-${index + 1}`
   const archetype = pickArchetype(index, runSeed)
   const firstNames = ['Aarav', 'Ishita', 'Vihaan', 'Ananya', 'Advik', 'Meera', 'Reyansh', 'Kavya', 'Arjun', 'Diya', 'Krish', 'Nitya', 'Rohan', 'Saanvi', 'Dev', 'Mira', 'Kabir', 'Tara', 'Yash', 'Ira']
   const lastNames = ['Sharma', 'Iyer', 'Nair', 'Reddy', 'Patel', 'Gupta', 'Joshi', 'Bhat', 'Rao', 'Singh', 'Krishnan', 'Menon', 'Kulkarni', 'Saxena', 'Varma']
   const first = firstNames[index % firstNames.length]
   const last = lastNames[Math.floor(index / firstNames.length) % lastNames.length]
-  const academicPotential = clamp(sectionAbility + archetype.abilityShift + stableGaussian(`${seedBase}-ability`, 0, 0.12), 0.2, 0.94)
-  const mathematicsFoundation = clamp((sectionAbility + 0.04) + archetype.abilityShift + stableGaussian(`${seedBase}-math`, 0, 0.13), 0.2, 0.96)
-  const computingFoundation = clamp((sectionAbility - 0.02) + (archetype.abilityShift * 0.9) + stableGaussian(`${seedBase}-computing`, 0, 0.13), 0.18, 0.96)
-  const selfRegulation = clamp(sectionDiscipline + archetype.disciplineShift + stableGaussian(`${seedBase}-self`, 0, 0.12), 0.2, 0.95)
-  const attendanceDiscipline = clamp((sectionDiscipline + 0.03) + archetype.disciplineShift + stableGaussian(`${seedBase}-attendance`, 0, 0.13), 0.2, 0.98)
+  const academicPotential = clamp(sectionAbility + archetype.abilityShift + stableGaussian(`${seedBase}-ability`, 0, 0.10), 0.2, 0.97)
+  const mathematicsFoundation = clamp((sectionAbility + 0.04) + archetype.abilityShift + stableGaussian(`${seedBase}-math`, 0, 0.11), 0.2, 0.98)
+  const computingFoundation = clamp((sectionAbility - 0.02) + (archetype.abilityShift * 0.9) + stableGaussian(`${seedBase}-computing`, 0, 0.11), 0.18, 0.98)
+  const selfRegulation = clamp(sectionDiscipline + archetype.disciplineShift + stableGaussian(`${seedBase}-self`, 0, 0.10), 0.2, 0.97)
+  const attendanceDiscipline = clamp((sectionDiscipline + 0.03) + archetype.disciplineShift + stableGaussian(`${seedBase}-attendance`, 0, 0.11), 0.2, 0.99)
   const supportResponsiveness = clamp(0.56 + scenarioProfile.supportResponsivenessShift + stableGaussian(`${seedBase}-support`, 0, 0.13), 0.15, 0.96)
   
   // Synthesize external proxies (work obligation, commute stress)
@@ -1643,14 +1647,14 @@ function buildStudentTrajectory(index: number, runSeed: number, scenarioProfile:
         labReadiness: roundToTwo(clamp((computingFoundation * 0.52) + (selfRegulation * 0.18) + stableBetween(`${seedBase}-lab`, -0.12, 0.14), 0.08, 0.95)),
       },
       dynamics: {
-        forgetRate: roundToTwo(clamp(0.08 + scenarioProfile.forgetRateShift + archetype.forgetShift + stableBetween(`${seedBase}-forget`, -0.04, 0.05), 0.02, 0.28)),
-        relearnRate: roundToTwo(clamp(0.55 + stableBetween(`${seedBase}-relearn`, -0.12, 0.14), 0.12, 0.92)),
+        forgetRate: roundToTwo(clamp(0.08 + scenarioProfile.forgetRateShift + archetype.forgetShift + stableBetween(`${seedBase}-forget`, -0.04, 0.05), 0.02, 0.45)),
+        relearnRate: roundToTwo(clamp(0.55 + stableBetween(`${seedBase}-relearn`, -0.12, 0.14) + (archetype.key === 'late-bloomer' ? 0.2 : 0), 0.12, 0.98)),
         transferGainRate: roundToTwo(clamp(0.4 + stableBetween(`${seedBase}-transfer-gain`, -0.14, 0.14), 0.08, 0.9)),
         studyGainRate: roundToTwo(clamp(0.46 + stableBetween(`${seedBase}-study-gain`, -0.12, 0.12), 0.12, 0.92)),
         fatigueRate: roundToTwo(clamp(0.06 + stableBetween(`${seedBase}-fatigue`, -0.04, 0.06), 0.02, 0.30)),
         consistency: roundToTwo(clamp(0.54 + (selfRegulation * 0.2) + stableBetween(`${seedBase}-consistency`, -0.12, 0.12), 0.1, 0.95)),
-        volatility: roundToTwo(clamp(0.22 + stableBetween(`${seedBase}-volatility`, -0.08, 0.14), 0.04, 0.62)),
-        recoveryTendency: roundToTwo(clamp(0.5 + (supportResponsiveness * 0.18) + stableBetween(`${seedBase}-recovery`, -0.12, 0.12), 0.08, 0.94)),
+        volatility: roundToTwo(clamp(0.22 + stableBetween(`${seedBase}-volatility`, -0.08, 0.14) + (archetype.key === 'crashing-high-performer' ? 0.3 : 0), 0.04, 0.85)),
+        recoveryTendency: roundToTwo(clamp(0.5 + (supportResponsiveness * 0.18) + stableBetween(`${seedBase}-recovery`, -0.12, 0.12) + (archetype.key === 'late-bloomer' ? 0.2 : 0), 0.08, 0.98)),
         relapseTendency: roundToTwo(clamp(0.18 + stableBetween(`${seedBase}-relapse`, -0.06, 0.12), 0.02, 0.58)),
       },
       behavior: {
@@ -1658,7 +1662,7 @@ function buildStudentTrajectory(index: number, runSeed: number, scenarioProfile:
         helpSeekingTendency: roundToTwo(clamp(0.42 + (supportResponsiveness * 0.18) + stableBetween(`${seedBase}-help`, -0.16, 0.16), 0.05, 0.95)),
         selfCheckTendency: roundToTwo(clamp(0.46 + (selfRegulation * 0.18) + stableBetween(`${seedBase}-self-check`, -0.16, 0.16), 0.05, 0.95)),
         deadlineDiscipline: roundToTwo(clamp(selfRegulation + stableBetween(`${seedBase}-deadline`, -0.12, 0.12), 0.08, 0.98)),
-        examPressure: roundToTwo(clamp(0.32 + scenarioProfile.examPressureShift + archetype.pressureShift + stableBetween(`${seedBase}-pressure`, -0.14, 0.14), 0.05, 0.88)),
+        examPressure: roundToTwo(clamp(0.32 + scenarioProfile.examPressureShift + archetype.pressureShift + stableBetween(`${seedBase}-pressure`, -0.14, 0.14), 0.05, 0.95)),
         timePressureSensitivity: roundToTwo(clamp(0.3 + stableBetween(`${seedBase}-time-pressure`, -0.12, 0.16), 0.05, 0.86)),
         practiceCompliance: roundToTwo(clamp(0.48 + (selfRegulation * 0.18) + stableBetween(`${seedBase}-practice`, -0.16, 0.16), 0.06, 0.95)),
         courseworkReliability: roundToTwo(clamp(0.72 + scenarioProfile.courseworkReliabilityShift + archetype.courseworkReliabilityShift + stableBetween(`${seedBase}-coursework-reliability`, -0.14, 0.1), 0.2, 0.98)),
@@ -1753,6 +1757,98 @@ function teacherEffect(facultyId: string, course: RuntimeCourse, sectionCode: st
   return stableBetween(`run-${runSeed}-${facultyId}-${course.internalCompilerId}-${sectionCode}`, -0.06, 0.08)
 }
 
+type ScenarioAcademicStress = {
+  examPenalty: number
+  courseworkPenalty: number
+  attendancePenalty: number
+  shockRate: number
+  shockMin: number
+  shockMax: number
+  prerequisitePenalty: number
+}
+
+const SCENARIO_ACADEMIC_STRESS: Record<ScenarioFamily, ScenarioAcademicStress> = {
+  balanced: { examPenalty: 2, courseworkPenalty: 1.5, attendancePenalty: 0.8, shockRate: 0.008, shockMin: 5, shockMax: 10, prerequisitePenalty: 3 },
+  'weak-foundation': { examPenalty: 16, courseworkPenalty: 10, attendancePenalty: 3, shockRate: 0.04, shockMin: 8, shockMax: 20, prerequisitePenalty: 12 },
+  'low-attendance': { examPenalty: 5, courseworkPenalty: 5, attendancePenalty: 11, shockRate: 0.025, shockMin: 5, shockMax: 13, prerequisitePenalty: 6 },
+  'high-forgetting': { examPenalty: 18, courseworkPenalty: 6, attendancePenalty: 2, shockRate: 0.04, shockMin: 8, shockMax: 20, prerequisitePenalty: 10 },
+  'coursework-inflation': { examPenalty: 14, courseworkPenalty: 3, attendancePenalty: 1, shockRate: 0.03, shockMin: 8, shockMax: 18, prerequisitePenalty: 8 },
+  'exam-fragility': { examPenalty: 24, courseworkPenalty: 5, attendancePenalty: 2, shockRate: 0.07, shockMin: 10, shockMax: 26, prerequisitePenalty: 9 },
+  'carryover-heavy': { examPenalty: 18, courseworkPenalty: 8, attendancePenalty: 3, shockRate: 0.05, shockMin: 8, shockMax: 22, prerequisitePenalty: 18 },
+  'intervention-resistant': { examPenalty: 12, courseworkPenalty: 8, attendancePenalty: 4, shockRate: 0.04, shockMin: 8, shockMax: 18, prerequisitePenalty: 8 },
+  'chronic-absentee': { examPenalty: 10, courseworkPenalty: 10, attendancePenalty: 14, shockRate: 0.04, shockMin: 7, shockMax: 18, prerequisitePenalty: 8 },
+  'attendance-shock': { examPenalty: 9, courseworkPenalty: 6, attendancePenalty: 16, shockRate: 0.055, shockMin: 7, shockMax: 18, prerequisitePenalty: 7 },
+  'mental-health-disruption': { examPenalty: 16, courseworkPenalty: 10, attendancePenalty: 4, shockRate: 0.055, shockMin: 8, shockMax: 20, prerequisitePenalty: 8 },
+}
+
+const CE_STRONG_SEE_WEAK_STUDENT_RATE: Record<ScenarioFamily, number> = {
+  balanced: 0.16,
+  'weak-foundation': 0.16,
+  'low-attendance': 0.15,
+  'high-forgetting': 0.18,
+  'coursework-inflation': 0.22,
+  'exam-fragility': 0.30,
+  'carryover-heavy': 0.18,
+  'intervention-resistant': 0.18,
+  'chronic-absentee': 0.15,
+  'attendance-shock': 0.16,
+  'mental-health-disruption': 0.24,
+}
+
+function archetypeAcademicVulnerability(archetype: string) {
+  if (archetype === 'surface-survival') return 0.28
+  if (archetype === 'underregulated') return 0.22
+  if (archetype === 'cumulative-gap') return 0.18
+  if (archetype === 'borderline-fragile') return 0.14
+  if (archetype === 'borderline-mid') return 0.08
+  if (archetype === 'strategic-fragile') return 0.04
+  return 0
+}
+
+function scenarioAcademicStressForCourse(input: {
+  student: StudentTrajectory
+  course: RuntimeCourse
+  semesterNumber: number
+  runSeed: number
+  family: ScenarioFamily
+  prereq: number
+  mastery: number
+}) {
+  const { student, course, semesterNumber, runSeed, family, prereq, mastery } = input
+  const profile = SCENARIO_ACADEMIC_STRESS[family]
+  const behavior = student.profile.behavior
+  const dynamics = student.profile.dynamics
+  const assessment = student.profile.assessment
+  const vulnerability = clamp(
+    ((0.62 - mastery) * 1.25)
+      + ((0.62 - prereq) * 0.70)
+      + ((behavior.examPressure - 0.45) * 0.75)
+      + ((dynamics.forgetRate - 0.08) * 1.45)
+      + ((0.58 - assessment.termTestApplicationStrength) * 0.55)
+      + ((0.58 - assessment.seeEndurance) * 0.45)
+      + archetypeAcademicVulnerability(student.archetype),
+    0,
+    1,
+  )
+  const shockRate = clamp(
+    profile.shockRate
+      + (vulnerability * 0.06)
+      + (semesterNumber >= 5 ? 0.015 : 0)
+      + (isLabLikeCourse(course) ? -0.01 : 0),
+    0,
+    0.22,
+  )
+  const shock = stableUnit(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-academic-shock`) < shockRate
+    ? stableBetween(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-academic-shock-size`, profile.shockMin, profile.shockMax)
+    : 0
+  const prerequisiteStress = Math.max(0, 0.55 - prereq) * profile.prerequisitePenalty
+  return {
+    exam: roundToTwo((profile.examPenalty * vulnerability) + shock + prerequisiteStress),
+    coursework: roundToTwo((profile.courseworkPenalty * vulnerability) + (shock * 0.35) + (prerequisiteStress * 0.35)),
+    attendance: roundToTwo((profile.attendancePenalty * vulnerability) + (shock * 0.20)),
+  }
+}
+
 function simulateSemesterCourse(input: {
   student: StudentTrajectory
   course: RuntimeCourse
@@ -1765,7 +1861,7 @@ function simulateSemesterCourse(input: {
   const { student, course, semesterNumber, scoresByCourseTitle, facultyId, policy, runSeed } = input
   const emphasis = courseEmphasis(course)
   const prereq = prerequisiteAverage(course, scoresByCourseTitle)
-  const difficulty = 0.28 + (semesterNumber * 0.05) + stableBetween(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-difficulty`, -0.03, 0.05)
+  const difficulty = 0.18 + (semesterNumber * 0.025) + stableBetween(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-difficulty`, -0.03, 0.05)
   const teaching = teacherEffect(facultyId, course, student.sectionCode, runSeed)
   const profile = student.profile
   const mastery = clamp(
@@ -1778,11 +1874,21 @@ function simulateSemesterCourse(input: {
       + (profile.readiness.statsReadiness * 0.05)
       + (prereq * 0.18)
       + teaching
-      - (difficulty * 0.22)
-      + 0.06,
-    0.22,
-    0.96,
+      - (difficulty * 0.14)
+      + 0.10,
+    0.28,
+    0.98,
   )
+  const scenarioFamily = scenarioFamilyForSeed(runSeed)
+  const academicStress = scenarioAcademicStressForCourse({
+    student,
+    course,
+    semesterNumber,
+    runSeed,
+    family: scenarioFamily,
+    prereq,
+    mastery,
+  })
   const attendancePct = clamp(
     Math.round(
       58
@@ -1790,39 +1896,43 @@ function simulateSemesterCourse(input: {
         + (student.latentBase.selfRegulation * 8)
         + (student.latentBase.supportResponsiveness * 4)
         + (profile.behavior.attendancePropensity * 6)
-        - (difficulty * 8)
-        + stableBetween(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-attendance`, -7, 9),
+        - (difficulty * 6)
+        - academicStress.attendance
+        + stableBetween(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-attendance`, -9, 10),
     ),
-    52,
-    98,
+    50,
+    99,
   )
   const tt1Pct = clamp(
-    24
-      + (mastery * 42)
-      + (profile.assessment.termTestApplicationStrength * 16)
-      + (profile.behavior.practiceCompliance * 8)
-      - (profile.behavior.examPressure * 12)
-      - (difficulty * 7)
-      + stableBetween(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-tt1`, -14, 12),
+    37
+      + (mastery * 40)
+      + (profile.assessment.termTestApplicationStrength * 15)
+      + (profile.behavior.practiceCompliance * 6)
+      - (profile.behavior.examPressure * 8)
+      - (difficulty * 5)
+      - (academicStress.exam * 0.75)
+      + stableBetween(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-tt1`, -13, 12),
     8,
     97,
   )
   const tt2Pct = clamp(
     tt1Pct
-      + (profile.dynamics.relearnRate * 8)
-      + (profile.behavior.helpSeekingTendency * 5)
-      - (profile.dynamics.forgetRate * 4)
-      + stableBetween(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-tt2`, -12, 14),
+      + (profile.dynamics.relearnRate * 6)
+      + (profile.behavior.helpSeekingTendency * 4)
+      - (profile.dynamics.forgetRate * 3)
+      - (academicStress.exam * 0.35)
+      + stableBetween(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-tt2`, -11, 12),
     8,
     99,
   )
   const quizPct = clamp(
-    22
+    35
       + (mastery * 38)
-      + (profile.assessment.quizRecallStrength * 20)
-      + (profile.behavior.selfCheckTendency * 7)
-      - (difficulty * 5)
-      + stableBetween(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-quiz`, -14, 12),
+      + (profile.assessment.quizRecallStrength * 17)
+      + (profile.behavior.selfCheckTendency * 5)
+      - (difficulty * 4)
+      - (academicStress.coursework * 0.55)
+      + stableBetween(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-quiz`, -13, 12),
     8,
     99,
   )
@@ -1830,41 +1940,65 @@ function simulateSemesterCourse(input: {
     ? profile.assessment.labExecutionStrength
     : profile.assessment.assignmentCompletionStrength
   const assignmentPct = clamp(
-    24
-      + (mastery * 34)
-      + (assignmentBase * 18)
-      + (profile.behavior.deadlineDiscipline * 8)
-      + (profile.behavior.courseworkReliability * 6)
+    37
+      + (mastery * 36)
+      + (assignmentBase * 17)
+      + (profile.behavior.deadlineDiscipline * 6)
+      + (profile.behavior.courseworkReliability * 5)
       - (difficulty * 4)
-      + stableBetween(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-assignment`, -12, 12),
-    10,
+      - academicStress.coursework
+      + stableBetween(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-assignment`, -12, 13),
+    8,
     99,
   )
-  const cePct = clamp(
+  let cePct = clamp(
     (tt1Pct * 0.28)
       + (tt2Pct * 0.27)
       + (quizPct * 0.2)
       + (assignmentPct * 0.25)
+      - (academicStress.coursework * 0.65)
+      - (academicStress.exam * 0.15)
       + stableBetween(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-ce`, -6, 6),
     10,
     97,
   )
-  const seePct = clamp(
-    18
-      + (mastery * 46)
-      + (profile.assessment.seeEndurance * 18)
-      + (profile.dynamics.transferGainRate * 10)
-      - (profile.behavior.examPressure * 10)
-      - (difficulty * 9)
+  let seePct = clamp(
+    35
+      + (mastery * 45)
+      + (profile.assessment.seeEndurance * 16)
+      + (profile.dynamics.transferGainRate * 7)
+      - (profile.behavior.examPressure * 9)
+      - (difficulty * 5)
+      - academicStress.exam
       + stableBetween(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-see`, -14, 12),
     8,
     98,
   )
+  const ceStrongSeeWeakProne = stableUnit(`run-${runSeed}-${student.studentId}-ce-strong-see-weak-prone`) < CE_STRONG_SEE_WEAK_STUDENT_RATE[scenarioFamily]
+  const ceStrongSeeWeakCourseEvent = stableUnit(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-ce-strong-see-weak-event`) < 0.45
+  if (cePct >= 60 && ceStrongSeeWeakProne && ceStrongSeeWeakCourseEvent) {
+    const seeFailureEvent = stableUnit(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-ce-strong-see-fail-event`) < 0.16
+    seePct = clamp(
+      seeFailureEvent
+        ? stableBetween(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-ce-strong-see-weak-see`, 24, 39)
+        : stableBetween(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-ce-strong-see-soft-weak-see`, 42, 54),
+      8,
+      98,
+    )
+  }
+  const rareSeeStrongCeWeakEvent = stableUnit(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-see-strong-ce-weak-event`) < 0.018
+  if (seePct >= 60 && cePct < 50 && rareSeeStrongCeWeakEvent) {
+    cePct = clamp(
+      stableBetween(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-see-strong-ce-weak-ce`, 34, 39),
+      10,
+      97,
+    )
+  }
   const ceMark = roundToTwo((cePct / 100) * policy.passRules.ceMaximum)
   const seeMark = roundToTwo((seePct / 100) * policy.passRules.seeMaximum)
   const condoned = attendancePct >= policy.condonationRules.minimumPercent
     && attendancePct < policy.attendanceRules.minimumPercent
-    && stableUnit(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-condonation`) > 0.42
+    && stableUnit(`run-${runSeed}-${student.studentId}-${course.internalCompilerId}-condonation`) > 0.30
   const decision = evaluateCourseStatus({
     attendancePercent: attendancePct,
     ceMark,
@@ -1903,6 +2037,9 @@ function simulateSemesterCourse(input: {
       prereq: roundToTwo(prereq),
       teaching: roundToTwo(teaching),
       difficulty: roundToTwo(difficulty),
+      examStress: academicStress.exam,
+      courseworkStress: academicStress.coursework,
+      attendanceStress: academicStress.attendance,
     },
   }
 }
@@ -2030,7 +2167,7 @@ function average(values: number[]) {
 }
 
 function pctRiskProxy(pct: number | null | undefined) {
-  if (typeof pct !== 'number' || !Number.isFinite(pct)) return 0.5
+  if (typeof pct !== 'number' || !Number.isFinite(pct)) return null
   return clamp((100 - pct) / 100, 0, 1)
 }
 
@@ -2042,14 +2179,19 @@ function observableSectionPressureFromEvidence(evidence: {
   weakCoCount: number | null | undefined
   weakQuestionCount: number | null | undefined
 }) {
-  return roundToTwo(average([
+  const observedSignals = [
     pctRiskProxy(evidence.attendancePct),
     pctRiskProxy(evidence.tt1Pct),
     pctRiskProxy(evidence.tt2Pct),
     pctRiskProxy(evidence.seePct),
-    clamp(Number(evidence.weakCoCount ?? 0) / 4, 0, 1),
-    clamp(Number(evidence.weakQuestionCount ?? 0) / 6, 0, 1),
-  ]))
+    typeof evidence.weakCoCount === 'number' && Number.isFinite(evidence.weakCoCount)
+      ? clamp(evidence.weakCoCount / 4, 0, 1)
+      : null,
+    typeof evidence.weakQuestionCount === 'number' && Number.isFinite(evidence.weakQuestionCount)
+      ? clamp(evidence.weakQuestionCount / 6, 0, 1)
+      : null,
+  ].filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+  return observedSignals.length === 0 ? 0 : roundToTwo(average(observedSignals))
 }
 
 function displayableHeadProbabilityScaled(
@@ -2623,7 +2765,7 @@ export async function rebuildProofRiskArtifacts(db: AppDb, input: {
       curriculumFeatureProfileId: targetRun?.curriculumFeatureProfileId ?? null,
       curriculumFeatureProfileFingerprint: targetRun?.curriculumFeatureProfileFingerprint ?? null,
       artifactType: 'production',
-      modelFamily: 'catboost',
+      modelFamily: bundle.production.modelFamily ?? 'logistic',
       artifactVersion: bundle.production.modelVersion,
       featureSchemaVersion: bundle.production.featureSchemaVersion,
       sourceRunIdsJson: JSON.stringify(governedRunRows.map(row => row.simulationRunId)),
@@ -3085,10 +3227,14 @@ export async function rebuildSimulationStagePlayback(db: AppDb, input: {
       if (parsed) latentProfileByStudentId.set(row.studentId, parsed)
     }
 
-    // Group all interventions under a single stageKeyApplied='pre-tt1' so they
-    // contribute to every downstream stage's ordinal tracking. The applier's
-    // mark-delta math does not depend on exact applied stage; ordinal-in-stage
-    // tracking stays deterministic via occurredAt ordering.
+    const sourceByStudentOffering = new Map(sources.map(source => [
+      `${source.studentId}::${source.offeringId ?? ''}`,
+      source,
+    ]))
+
+    // Map each stored intervention onto the first proof checkpoint at or after
+    // its occurrence time. The governance builder then filters per target
+    // checkpoint, preventing interventions from changing earlier evidence.
     const interventionsInWindowBySourceKey = groupInterventionsByStudentAndOffering({
       interventionRows: interventionRowsAll.map(row => ({
         interventionId: row.interventionId,
@@ -3097,6 +3243,17 @@ export async function rebuildSimulationStagePlayback(db: AppDb, input: {
         interventionType: row.interventionType,
         occurredAt: row.occurredAt,
         createdAt: row.createdAt,
+        semesterNumberApplied: sourceByStudentOffering.get(`${row.studentId}::${row.offeringId ?? ''}`)?.semesterNumber
+          ?? semesterNumbers[semesterNumbers.length - 1]
+          ?? 1,
+        stageKeyApplied: appliedPlaybackStageForIntervention({
+          occurredAt: row.occurredAt,
+          runCreatedAt: run.createdAt,
+          semesterNumber: sourceByStudentOffering.get(`${row.studentId}::${row.offeringId ?? ''}`)?.semesterNumber
+            ?? semesterNumbers[semesterNumbers.length - 1]
+            ?? 1,
+          stageDefs: PLAYBACK_STAGE_DEFS,
+        }),
       })),
       semesterNumber: semesterNumbers[semesterNumbers.length - 1] ?? 1,
       stageKeyApplied: 'pre-tt1',
@@ -3164,6 +3321,27 @@ export async function rebuildSimulationStagePlayback(db: AppDb, input: {
   if (queueCaseRows.length > 0) await insertRowsInChunks(db, simulationStageQueueCases, queueCaseRows)
   if (queueProjectionRows.length > 0) await insertRowsInChunks(db, simulationStageQueueProjections, queueProjectionRows)
   if (stageEvidenceRows.length > 0) await insertRowsInChunks(db, riskEvidenceSnapshots, stageEvidenceRows)
+}
+
+function appliedPlaybackStageForIntervention(input: {
+  occurredAt: string
+  runCreatedAt: string
+  semesterNumber: number
+  stageDefs: typeof PLAYBACK_STAGE_DEFS
+}): StagePolicyStageKey {
+  const occurredMs = new Date(input.occurredAt).getTime()
+  if (!Number.isFinite(occurredMs)) return 'post-see'
+  const orderedBoundaries = input.stageDefs
+    .map(stage => ({
+      stage,
+      atMs: new Date(playbackCheckpointNowIso(input.runCreatedAt, input.semesterNumber, stage)).getTime(),
+    }))
+    .filter(boundary => Number.isFinite(boundary.atMs))
+    .sort((left, right) => left.atMs - right.atMs)
+  for (const boundary of orderedBoundaries) {
+    if (occurredMs <= boundary.atMs) return boundary.stage.key as StagePolicyStageKey
+  }
+  return (orderedBoundaries[orderedBoundaries.length - 1]?.stage.key ?? 'post-see') as StagePolicyStageKey
 }
 
 async function upsertRuntimeSlice(db: AppDb, stateKey: string, payload: unknown, now: string) {
@@ -3966,7 +4144,7 @@ export async function publishOperationalProjection(db: AppDb, input: {
 
   // GAP-1: Auto-seed assessment schemes so stage gates pass without manual teacher setup.
   // Cannot import buildDefaultSchemeFromPolicy (circular: academic.ts already imports this file).
-  // Hardcoded MSRUAS DEFAULT_POLICY defaults: ce=60, see=40, 2 TTs, 2 quizzes, 2 assignments.
+  // Hardcoded MSRUAS DEFAULT_POLICY defaults: ce=60, see=40, 2 TTs, configurable quiz/assignment pool.
   if (proofOfferingIds.length > 0) {
     const MSRUAS_PROOF_DEFAULT_SCHEME_JSON = JSON.stringify({
       finalsMax: 50,
@@ -3983,12 +4161,12 @@ export async function publishOperationalProjection(db: AppDb, input: {
         { id: 'assignment-1', label: 'Assignment 1', rawMax: 10, weightage: 7, cos: ['CO1', 'CO2', 'CO3', 'CO4'] },
         { id: 'assignment-2', label: 'Assignment 2', rawMax: 10, weightage: 8, cos: ['CO5'] },
       ],
-      policyContext: { ce: 60, see: 40, maxTermTests: 2, maxQuizzes: 2, maxAssignments: 2 },
+      policyContext: { ce: 60, see: 40, maxTermTests: 2, maxQuizzes: 5, maxAssignments: 5 },
       status: 'Configured',
     })
     const MSRUAS_PROOF_POLICY_SNAPSHOT_JSON = JSON.stringify({
       ceSeeSplit: { ce: 60, see: 40 },
-      ceComponentCaps: { maxTermTests: 2, maxQuizzes: 2, maxAssignments: 2 },
+      ceComponentCaps: { maxTermTests: 2, maxQuizzes: 5, maxAssignments: 5 },
     })
     const existingSchemeRows = await db.select({ offeringId: offeringAssessmentSchemes.offeringId })
       .from(offeringAssessmentSchemes)
@@ -4604,7 +4782,7 @@ export async function startProofSimulationRun(db: AppDb, input: {
   }, proofControlPlaneSeededRunServiceDeps)
 }
 
-export async function invalidateProofBatchSessions(db: AppDb, batchId: string) {
+export async function invalidateProofBatchSessions(db: AppDb, batchId: string, demoWorkspaceId: string | null = null) {
   const [batch] = await db.select({ branchId: batches.branchId }).from(batches).where(eq(batches.batchId, batchId))
   if (!batch) return
   const grantRows = await db.select({ facultyId: roleGrants.facultyId }).from(roleGrants).where(eq(roleGrants.scopeId, batch.branchId))
@@ -4613,7 +4791,8 @@ export async function invalidateProofBatchSessions(db: AppDb, batchId: string) {
   const profileRows = await db.select({ userId: facultyProfiles.userId }).from(facultyProfiles).where(inArray(facultyProfiles.facultyId, facultyIds))
   const userIds = profileRows.map(r => r.userId)
   if (userIds.length === 0) return
-  await db.delete(sessions).where(inArray(sessions.userId, userIds))
+  const workspaceCondition = demoWorkspaceId ? eq(sessions.demoWorkspaceId, demoWorkspaceId) : isNull(sessions.demoWorkspaceId)
+  await db.delete(sessions).where(and(inArray(sessions.userId, userIds), workspaceCondition))
 }
 
 export async function deleteProofCredentials(db: AppDb, batchId: string): Promise<{ deletedCount: number }> {
@@ -4639,8 +4818,10 @@ export async function archiveProofSimulationRun(db: AppDb, input: {
   await db.update(simulationRuns).set({
     status: 'archived',
     activeFlag: 0,
+    lifecycleState: 'archived',
     updatedAt: input.now,
   }).where(eq(simulationRuns.simulationRunId, input.simulationRunId))
+  await invalidateProofBatchSessions(db, run.batchId, run.demoWorkspaceId ?? null)
   await emitSimulationAudit(db, {
     simulationRunId: run.simulationRunId,
     batchId: run.batchId,
@@ -4899,11 +5080,23 @@ const proofControlPlaneActivationServiceDeps: ProofControlPlaneActivationService
   publishOperationalProjection,
 }
 
+async function hasUnrealizedInterventionsSinceLastAdvance(db: AppDb, input: {
+  since: string | null
+}) {
+  if (!input.since) return false
+  const [row] = await db
+    .select({ value: count() })
+    .from(studentInterventions)
+    .where(gt(studentInterventions.createdAt, input.since))
+  return Number(row?.value ?? 0) > 0
+}
+
 const proofAdvanceServiceDeps: ProofAdvanceServiceDeps = {
   createId,
   emitSimulationAudit,
   publishOperationalProjection,
   rebuildSimulationStagePlayback,
+  hasUnrealizedInterventionsSinceLastAdvance,
 }
 
 // Stop semantics: mark run stopped, invalidate proof faculty sessions, delete

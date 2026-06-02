@@ -96,7 +96,10 @@ export function applyPolicyAndRebound(
 }
 
 function pctFromScoredComponents(rows: Array<typeof studentAssessmentScores.$inferSelect>, componentTypes: string[], _deps: Pick<ProofControlPlaneRuntimeServiceDeps, 'average'>) {
-  const relevantRows = rows.filter(row => componentTypes.includes(row.componentType))
+  const relevantRows = rows.filter(row => componentTypes.some(componentType => {
+    if (componentType.endsWith('*')) return row.componentType.startsWith(componentType.slice(0, -1))
+    return componentType === row.componentType
+  }))
   if (relevantRows.length === 0) return null
   const totalScore = relevantRows.reduce((sum, row) => sum + row.score, 0)
   const totalMax = relevantRows.reduce((sum, row) => sum + row.maxScore, 0)
@@ -163,8 +166,8 @@ async function syncManualAssessmentScoresIntoObservedStates(
 
     if (patch.tt1LeafScores != null) nextPayload.tt1Pct = pctFromScoredComponents(assessmentCells, ['tt1', 'tt1_leaf'], deps)
     if (patch.tt2LeafScores != null) nextPayload.tt2Pct = pctFromScoredComponents(assessmentCells, ['tt2', 'tt2_leaf'], deps)
-    if (patch.quizScores != null) nextPayload.quizPct = pctFromScoredComponents(assessmentCells, ['quiz1', 'quiz2'], deps)
-    if (patch.assignmentScores != null) nextPayload.assignmentPct = pctFromScoredComponents(assessmentCells, ['asgn1', 'asgn2'], deps)
+    if (patch.quizScores != null) nextPayload.quizPct = pctFromScoredComponents(assessmentCells, ['quiz*'], deps)
+    if (patch.assignmentScores != null) nextPayload.assignmentPct = pctFromScoredComponents(assessmentCells, ['asgn*'], deps)
     if (patch.seeScore != null) nextPayload.seePct = pctFromScoredComponents(assessmentCells, ['sem_end', 'see'], deps)
 
     const cePct = recomputeCePct(nextPayload, deps)
@@ -223,8 +226,8 @@ async function overlayManualAssessmentScoresIntoStageProjections(
 
     if (patch.tt1LeafScores != null) currentEvidence.tt1Pct = pctFromScoredComponents(assessmentCells, ['tt1', 'tt1_leaf'], deps)
     if (patch.tt2LeafScores != null) currentEvidence.tt2Pct = pctFromScoredComponents(assessmentCells, ['tt2', 'tt2_leaf'], deps)
-    if (patch.quizScores != null) currentEvidence.quizPct = pctFromScoredComponents(assessmentCells, ['quiz1', 'quiz2'], deps)
-    if (patch.assignmentScores != null) currentEvidence.assignmentPct = pctFromScoredComponents(assessmentCells, ['asgn1', 'asgn2'], deps)
+    if (patch.quizScores != null) currentEvidence.quizPct = pctFromScoredComponents(assessmentCells, ['quiz*'], deps)
+    if (patch.assignmentScores != null) currentEvidence.assignmentPct = pctFromScoredComponents(assessmentCells, ['asgn*'], deps)
     if (patch.seeScore != null) currentEvidence.seePct = pctFromScoredComponents(assessmentCells, ['sem_end', 'see'], deps)
 
     const cePct = recomputeCePct(currentEvidence, deps)
@@ -291,8 +294,6 @@ async function overlayManualAssessmentScoresIntoStageProjections(
       weakCourseOutcomeCodes: [],
       dominantQuestionTopics: [],
     }
-    // NOTE: Bypass trained production model; use inference engine for
-    // realistic demo risk bands until model is retrained with fixed labels.
     const inference = scoreObservableRiskWithModel({
       attendancePct: Number(currentEvidence.attendancePct ?? 0),
       currentCgpa: Number(currentStatus.currentCgpa ?? 0),
@@ -301,7 +302,9 @@ async function overlayManualAssessmentScoresIntoStageProjections(
       tt2Pct: currentEvidence.tt2Pct == null ? null : Number(currentEvidence.tt2Pct),
       quizPct: currentEvidence.quizPct == null ? null : Number(currentEvidence.quizPct),
       assignmentPct: currentEvidence.assignmentPct == null ? null : Number(currentEvidence.assignmentPct),
+      cePct: currentEvidence.cePct == null ? null : Number(currentEvidence.cePct),
       seePct: currentEvidence.seePct == null ? null : Number(currentEvidence.seePct),
+      overallPct: currentEvidence.overallPct == null ? null : Number(currentEvidence.overallPct),
       weakCoCount: Number(currentEvidence.weakCoCount ?? 0),
       attendanceHistoryRiskCount: 0,
       questionWeaknessCount: Number(currentEvidence.weakQuestionCount ?? 0),
@@ -309,8 +312,8 @@ async function overlayManualAssessmentScoresIntoStageProjections(
       policy: input.policy,
       featurePayload,
       sourceRefs,
-      productionModel: null,
-      challengerModel: null,
+      productionModel: input.activeRiskArtifacts.production,
+      challengerModel: input.activeRiskArtifacts.challenger,
       correlations: input.activeRiskArtifacts.correlations,
       bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
     })
@@ -391,13 +394,15 @@ export type ProofControlPlaneRuntimeServiceDeps = {
   }) => {
     attendancePct: number
     currentCgpa: number
-    backlogCount: number
-    tt1Pct: number | null
-    tt2Pct: number | null
-    quizPct: number | null
-    assignmentPct: number | null
-    seePct: number | null
-    weakCoCount: number
+	    backlogCount: number
+	    tt1Pct: number | null
+	    tt2Pct: number | null
+	    quizPct: number | null
+	    assignmentPct: number | null
+	    cePct: number | null
+	    seePct: number | null
+	    overallPct: number | null
+	    weakCoCount: number
     weakQuestionCount: number
     interventionResponseScore: number | null
     attendanceHistoryRiskCount: number
@@ -896,13 +901,13 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       attendancePct: Number(payload.attendancePct ?? 0),
       attendanceHistory: parseJson(JSON.stringify(payload.attendanceHistory ?? []), [] as Array<{ attendancePct: number }>),
       currentCgpa: Number(historical.cgpaAfterSemester ?? payload.cgpa ?? 0),
-      backlogCount: Number(historical.backlogCount ?? payload.backlogCount ?? 0),
-      tt1Pct: adj.tt1,
-      tt2Pct: adj.tt2,
-      quizPct: adj.quiz,
-      assignmentPct: adj.asgn,
-      seePct: adj.see,
-      weakCoCount: Number(payload.weakCoCount ?? 0),
+	      backlogCount: Number(historical.backlogCount ?? payload.backlogCount ?? 0),
+	      tt1Pct: adj.tt1,
+	      tt2Pct: adj.tt2,
+	      quizPct: adj.quiz,
+	      assignmentPct: adj.asgn,
+	      seePct: adj.see,
+	      weakCoCount: Number(payload.weakCoCount ?? 0),
       weakQuestionCount: Number((payload.questionEvidenceSummary as Record<string, unknown> | undefined)?.weakQuestionCount ?? 0),
       interventionResponseScore,
       prerequisiteAveragePct: 0,
@@ -926,11 +931,13 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       currentCgpa: Number(historical.cgpaAfterSemester ?? payload.cgpa ?? 0),
       backlogCount: Number(historical.backlogCount ?? payload.backlogCount ?? 0),
       tt1Pct: adj.tt1,
-      tt2Pct: adj.tt2,
-      quizPct: adj.quiz,
-      assignmentPct: adj.asgn,
-      seePct: adj.see,
-      weakCoCount: Number(payload.weakCoCount ?? 0),
+	      tt2Pct: adj.tt2,
+	      quizPct: adj.quiz,
+	      assignmentPct: adj.asgn,
+	      cePct: payload.cePct == null ? null : Number(payload.cePct),
+	      seePct: adj.see,
+	      overallPct: payload.finalMark == null ? null : Number(payload.finalMark),
+	      weakCoCount: Number(payload.weakCoCount ?? 0),
       attendanceHistoryRiskCount: Array.isArray(payload.attendanceHistory)
         ? payload.attendanceHistory.filter(entry => Number((entry as Record<string, unknown>).attendancePct ?? 0) < input.policy.attendanceRules.minimumRequiredPercent).length
         : 0,
@@ -999,14 +1006,14 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
     const noActionFeaturePayload = buildObservableFeaturePayload({
       attendancePct: noActionSnapshot.attendancePct,
       attendanceHistory: parseJson(JSON.stringify(payload.attendanceHistory ?? []), [] as Array<{ attendancePct: number }>),
-      currentCgpa: noActionSnapshot.currentCgpa,
-      backlogCount: noActionSnapshot.backlogCount,
-      tt1Pct: adjNoAct.tt1,
-      tt2Pct: adjNoAct.tt2,
-      quizPct: adjNoAct.quiz,
-      assignmentPct: adjNoAct.asgn,
-      seePct: adjNoAct.see,
-      weakCoCount: noActionSnapshot.weakCoCount,
+	      currentCgpa: noActionSnapshot.currentCgpa,
+	      backlogCount: noActionSnapshot.backlogCount,
+	      tt1Pct: adjNoAct.tt1,
+	      tt2Pct: adjNoAct.tt2,
+	      quizPct: adjNoAct.quiz,
+	      assignmentPct: adjNoAct.asgn,
+	      seePct: adjNoAct.see,
+	      weakCoCount: noActionSnapshot.weakCoCount,
       weakQuestionCount: noActionSnapshot.weakQuestionCount,
       interventionResponseScore: Number(noActionSnapshot.interventionResponseScore ?? 0),
       prerequisiteAveragePct: 0,
@@ -1016,26 +1023,26 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
       sectionRiskRate: sectionRiskRateBySemesterSection.get(`${row.semesterNumber}::${row.sectionCode}`) ?? 0,
       semesterProgress: liveStage?.order ?? 1,
     })
-    // NOTE: Bypass trained production model; use inference engine for
-    // realistic demo risk bands until model is retrained with fixed labels.
     const noActionInference = scoreObservableRiskWithModel({
       attendancePct: noActionSnapshot.attendancePct,
       currentCgpa: noActionSnapshot.currentCgpa,
-      backlogCount: noActionSnapshot.backlogCount,
-      tt1Pct: adjNoAct.tt1,
-      tt2Pct: adjNoAct.tt2,
-      quizPct: adjNoAct.quiz,
-      assignmentPct: adjNoAct.asgn,
-      seePct: adjNoAct.see,
-      weakCoCount: noActionSnapshot.weakCoCount,
+	      backlogCount: noActionSnapshot.backlogCount,
+	      tt1Pct: adjNoAct.tt1,
+	      tt2Pct: adjNoAct.tt2,
+	      quizPct: adjNoAct.quiz,
+	      assignmentPct: adjNoAct.asgn,
+	      seePct: adjNoAct.see,
+	      cePct: noActionSnapshot.cePct == null ? null : Number(noActionSnapshot.cePct),
+	      overallPct: noActionSnapshot.overallPct == null ? null : Number(noActionSnapshot.overallPct),
+	      weakCoCount: noActionSnapshot.weakCoCount,
       attendanceHistoryRiskCount: noActionSnapshot.attendanceHistoryRiskCount,
       questionWeaknessCount: noActionSnapshot.weakQuestionCount,
       interventionResponseScore: Number(noActionSnapshot.interventionResponseScore ?? 0),
       policy: input.policy,
       featurePayload: noActionFeaturePayload,
       sourceRefs: fallbackSourceRefs,
-      productionModel: null,
-      challengerModel: null,
+      productionModel: activeRiskArtifacts.production,
+      challengerModel: activeRiskArtifacts.challenger,
       correlations: activeRiskArtifacts.correlations,
       bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
     })

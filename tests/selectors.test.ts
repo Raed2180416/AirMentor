@@ -135,6 +135,59 @@ describe('selectors', () => {
     expect(normalized.status).toBe('Configured')
   })
 
+  it('keeps dynamic assignment scores beyond the two legacy fields', () => {
+    const baseStudent = getStudents(cs401a)[0]
+    const scheme = normalizeSchemeState({
+      finalsMax: 100,
+      termTestWeights: { tt1: 20, tt2: 15 },
+      quizCount: 0,
+      assignmentCount: 3,
+      quizComponents: [],
+      assignmentComponents: [
+        { id: 'assignment-1', label: 'Assignment 1', rawMax: 10, weightage: 8 },
+        { id: 'assignment-2', label: 'Assignment 2', rawMax: 10, weightage: 8 },
+        { id: 'assignment-3', label: 'Assignment 3', rawMax: 10, weightage: 9 },
+      ],
+      policyContext: {
+        ce: 60,
+        see: 40,
+        maxTermTests: 2,
+        maxQuizzes: 5,
+        maxAssignments: 5,
+      },
+      status: 'Configured',
+    }, cs401a)
+    const selectors = createAppSelectors({
+      studentPatches: {
+        [`${cs401a.offId}::${baseStudent.id}`]: {
+          assignmentScores: {
+            'assignment-1': 8,
+            'assignment-2': 7,
+            'assignment-3': 6,
+          },
+        },
+      },
+      schemeByOffering: {
+        [cs401a.offId]: scheme,
+      },
+      ttBlueprintsByOffering: {},
+      studentSourceMode: 'seeded',
+    })
+
+    const patchedStudent = selectors.getStudentsPatched(cs401a).find(student => student.id === baseStudent.id)
+    expect(patchedStudent).toBeTruthy()
+    expect(patchedStudent?.asgn1).toBe(8)
+    expect(patchedStudent?.asgn2).toBe(7)
+    expect(patchedStudent?.assignmentScores).toEqual({
+      'assignment-1': 8,
+      'assignment-2': 7,
+      'assignment-3': 6,
+    })
+    const projection = selectors.deriveAcademicProjection({ offering: cs401a, student: patchedStudent ?? baseStudent, scheme })
+    expect(projection.assignmentRawTotal).toBe(21)
+    expect(projection.asgnScaled).toBeCloseTo(17.4, 5)
+  })
+
   it('seeds TT leaf scores from aggregate backend marks without showing zero-only cells', () => {
     const blueprint = buildBlueprintFixture()
     const leaves = flattenBlueprintLeaves(blueprint.nodes)

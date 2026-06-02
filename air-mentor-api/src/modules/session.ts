@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { and, eq } from 'drizzle-orm'
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { sendCookie, type RouteContext } from '../app.js'
 import { buildCsrfToken } from '../lib/csrf.js'
@@ -15,6 +15,11 @@ import { emitOperationalEvent } from '../lib/telemetry.js'
 import { addHours } from '../lib/time.js'
 import { readDemoWorkspaceHeader, resolveActiveDemoWorkspaceForRequest } from '../lib/demo-workspace-session-scope.js'
 import { ensurePreference, parseOrThrow, requireAuth, resolveRequestAuth, sortActiveRoleGrantRows } from './support.js'
+import type { RequestAuth } from '../types/fastify.js'
+
+type RequestWithAuth = FastifyRequest & {
+  auth?: RequestAuth | null
+}
 
 const selfServicePasswordSetupRateLimiter = new EmailRateLimiter(10 * 60 * 1000, 3)
 
@@ -176,7 +181,7 @@ export async function registerSessionRoutes(app: FastifyInstance, context: Route
   }
 
   app.addHook('preHandler', async request => {
-    request.auth = await resolveRequestAuth(
+    ;(request as RequestWithAuth).auth = await resolveRequestAuth(
       context,
       request.cookies[context.config.sessionCookieName],
       readDemoWorkspaceHeader(request),

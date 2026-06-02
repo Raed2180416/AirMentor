@@ -21,6 +21,14 @@ export function isActiveProofRunCandidate(run: ActiveRunLike) {
   return true
 }
 
+export function isTeacherVisibleActiveProofRunCandidate(run: ActiveRunLike) {
+  if (!isActiveProofRunCandidate(run)) return false
+  if ('lifecycleState' in run) {
+    return run.lifecycleState === 'active' || run.lifecycleState === 'completed-inspectable'
+  }
+  return true
+}
+
 export function pickMostRecentActiveRun<T extends ActiveRunLike>(runs: T[]): T | null {
   const hasLifecycleSignal = runs.some(run => 'activeFlag' in run || 'status' in run || 'lifecycleState' in run)
   const sortable = hasLifecycleSignal

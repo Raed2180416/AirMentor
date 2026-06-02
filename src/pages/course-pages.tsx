@@ -15,6 +15,7 @@ import {
   addBlueprintPart,
   addBlueprintQuestion,
   computeEvaluation,
+  getAssessmentComponentScore,
   normalizeBlueprint,
   removeBlueprintPart,
   removeBlueprintQuestion,
@@ -464,6 +465,7 @@ function TTTab({
   const totalMax = normalized.totalMarks
   const hasEnteredScores = students.some(student => (ttNum === 1 ? student.tt1Score : student.tt2Score) !== null)
   const canEdit = !isLocked && !hasEnteredScores
+  const blueprintReady = totalMax === 25
 
   const commitBlueprint = (nextBlueprint: TermTestBlueprint) => {
     onChangeBlueprint(normalizeBlueprint(kind, nextBlueprint))
@@ -488,7 +490,14 @@ function TTTab({
           {isLocked && <Chip color={T.warning} size={9}>Locked</Chip>}
           {hasEnteredScores && !isLocked && <Chip color={T.warning} size={9}>Structure Frozen</Chip>}
           {!isLocked && !hasEnteredScores && <Btn size="sm" variant="ghost" onClick={() => onChangeBlueprint(addBlueprintQuestion(kind, normalized, cos[0]?.id))}>Add Question</Btn>}
-          <Btn size="sm" onClick={() => onOpenEntryHub(kind)}>Proceed to TT{ttNum} Entry →</Btn>
+          <Btn
+            size="sm"
+            disabled={!blueprintReady}
+            title={blueprintReady ? `Proceed to TT${ttNum} entry` : 'Set the TT raw total to exactly 25 before entry.'}
+            onClick={() => onOpenEntryHub(kind)}
+          >
+            Proceed to TT{ttNum} Entry →
+          </Btn>
         </div>
       </div>
 
@@ -612,11 +621,12 @@ function TTTab({
 function QuizzesTab({ students, scheme, onOpenStudent, onOpenEntryHub }: { students: Student[]; scheme: SchemeState; onOpenStudent: (student: Student) => void; onOpenEntryHub: () => void }) {
   const totalQuizWeight = sumComponentWeightage(scheme.quizComponents)
   const quizzes = scheme.quizComponents.map((component, index) => ({
+    component,
     id: component.id,
     name: component.label,
     rawMax: component.rawMax,
     weightage: component.weightage,
-    entered: students.some(student => (index === 0 ? student.quiz1 : student.quiz2) !== null),
+    entered: students.some(student => getAssessmentComponentScore(student, 'quiz', component, index) !== null),
   }))
 
   return (
@@ -646,7 +656,7 @@ function QuizzesTab({ students, scheme, onOpenStudent, onOpenEntryHub }: { stude
                   <TD style={{ ...mono, fontSize: 10, color: T.accent }}>{student.usn}</TD>
                   <TD style={{ ...sora, fontSize: 12, color: T.text }}>{student.name}</TD>
                   {quizzes.map((quiz, quizIndex) => {
-                    const score = quizIndex === 0 ? student.quiz1 : student.quiz2
+                    const score = getAssessmentComponentScore(student, 'quiz', quiz.component, quizIndex)
                     return <TD key={quiz.id} style={{ ...mono, fontSize: 12, color: score !== null ? T.text : T.dim }}>{score ?? '—'}</TD>
                   })}
                   <TD style={{ ...mono, fontSize: 12, color: T.muted }}>{computeEvaluation(student, scheme).quizScaled.toFixed(1)}</TD>
@@ -664,11 +674,12 @@ function QuizzesTab({ students, scheme, onOpenStudent, onOpenEntryHub }: { stude
 function AssignmentsTab({ students, scheme, onOpenStudent, onOpenEntryHub }: { students: Student[]; scheme: SchemeState; onOpenStudent: (student: Student) => void; onOpenEntryHub: () => void }) {
   const totalAssignmentWeight = sumComponentWeightage(scheme.assignmentComponents)
   const assignments = scheme.assignmentComponents.map((component, index) => ({
+    component,
     id: component.id,
     label: component.label,
     rawMax: component.rawMax,
     weightage: component.weightage,
-    entered: students.some(student => (index === 0 ? student.asgn1 : student.asgn2) !== null),
+    entered: students.some(student => getAssessmentComponentScore(student, 'assignment', component, index) !== null),
   }))
 
   return (
@@ -698,7 +709,7 @@ function AssignmentsTab({ students, scheme, onOpenStudent, onOpenEntryHub }: { s
                   <TD style={{ ...mono, fontSize: 10, color: T.accent }}>{student.usn}</TD>
                   <TD style={{ ...sora, fontSize: 12, color: T.text }}>{student.name}</TD>
                   {assignments.map((assignment, assignmentIndex) => {
-                    const score = assignmentIndex === 0 ? student.asgn1 : student.asgn2
+                    const score = getAssessmentComponentScore(student, 'assignment', assignment.component, assignmentIndex)
                     return <TD key={assignment.id} style={{ ...mono, fontSize: 12, color: score !== null ? T.text : T.dim }}>{score ?? '—'}</TD>
                   })}
                   <TD style={{ ...mono, fontSize: 12, color: T.muted }}>{computeEvaluation(student, scheme).asgnScaled.toFixed(1)}</TD>

@@ -54,6 +54,22 @@ function overallPctFromComponentPcts(policy: ResolvedPolicy, cePct: number | nul
   return roundToTwo(clamp(((ceMark + seeMark) / policy.passRules.overallMaximum) * 100, 0, 100))
 }
 
+function overallPctFromRealizedComponents(input: {
+  policy: ResolvedPolicy
+  baselineOverallPct: number | null
+  baselineCePct: number | null
+  baselineSeePct: number | null
+  realizedCePct: number | null
+  realizedSeePct: number | null
+}) {
+  if (input.baselineOverallPct == null) return null
+  const baselineComponentOverall = overallPctFromComponentPcts(input.policy, input.baselineCePct, input.baselineSeePct)
+  const realizedComponentOverall = overallPctFromComponentPcts(input.policy, input.realizedCePct, input.realizedSeePct)
+  if (baselineComponentOverall == null || realizedComponentOverall == null) return input.baselineOverallPct
+  const baselineResidual = input.baselineOverallPct - baselineComponentOverall
+  return roundToTwo(clamp(realizedComponentOverall + baselineResidual, 0, 100))
+}
+
 function addDaysIso(isoString: string, days: number) {
   const date = new Date(isoString)
   date.setUTCDate(date.getUTCDate() + days)
@@ -893,9 +909,14 @@ export function buildStageEvidenceSnapshot(input: {
     assignmentPct: realizationOutput.realized.assignmentPct,
     cePct: realizationOutput.realized.cePct,
     seePct: realizationOutput.realized.seePct,
-    overallPct: baselineSnapshot.overallPct == null
-      ? null
-      : overallPctFromComponentPcts(input.policy, realizationOutput.realized.cePct, realizationOutput.realized.seePct),
+    overallPct: overallPctFromRealizedComponents({
+      policy: input.policy,
+      baselineOverallPct: baselineSnapshot.overallPct,
+      baselineCePct: baselineSnapshot.cePct,
+      baselineSeePct: baselineSnapshot.seePct,
+      realizedCePct: realizationOutput.realized.cePct,
+      realizedSeePct: realizationOutput.realized.seePct,
+    }),
   }
   return realizedSnapshot
 }

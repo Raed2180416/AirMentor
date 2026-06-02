@@ -98,7 +98,16 @@ describe('GAP-5: bootstrap blocks without active proof run', () => {
     const db = {
       select: () => ({
         from: (_table: unknown) => ({
-          where: async () => [{ simulationRunId: 'active_run_001' }],
+          where: async () => [{
+            simulationRunId: 'active_run_001',
+            runLabel: 'Active Sem 1 proof run',
+            status: 'active',
+            activeFlag: 1,
+            lifecycleState: 'active',
+            activeOperationalSemester: 1,
+            createdAt: '2026-03-31T00:00:00.000Z',
+            updatedAt: '2026-03-31T00:00:00.000Z',
+          }],
         }),
       }),
     }
@@ -471,6 +480,16 @@ describe('GAP-4: archiving a proof run invalidates sandbox faculty sessions', ()
   it('sandbox faculty session is rejected after archive', async () => {
     current = await createTestApp()
     const { app, db } = current
+    const [seededRun] = await db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    expect(seededRun).toBeDefined()
+    await db
+      .update(simulationRuns)
+      .set({
+        lifecycleState: 'active',
+        activeOperationalSemester: 1,
+        activeStageKey: 'pre-tt1',
+      })
+      .where(eq(simulationRuns.simulationRunId, seededRun.simulationRunId))
 
     // Login as a sandbox faculty member
     const facultyLogin = await loginAs(app, 'devika.shetty', 'faculty1234')

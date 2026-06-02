@@ -191,12 +191,50 @@ export function liveBlockingQueueCountsByCheckpoint(
   return countsByCheckpointId
 }
 
+function liveQueueDisplayCountsByCheckpoint(
+  summaries: ProofCheckpointSummaryPayload[],
+  queueCaseRows: QueueCaseTimelineRow[],
+  liveBlockingCounts: Map<string, number>,
+) {
+  const checkpointIds = new Set(summaries.map(summary => summary.simulationStageCheckpointId))
+  const countsByCheckpointId = new Map<string, {
+    openQueueCount: number
+    watchQueueCount: number
+    deferredQueueCount: number
+    resolvedQueueCount: number
+  }>()
+  const ensureCounts = (checkpointId: string) => {
+    const current = countsByCheckpointId.get(checkpointId) ?? {
+      openQueueCount: liveBlockingCounts.get(checkpointId) ?? 0,
+      watchQueueCount: 0,
+      deferredQueueCount: 0,
+      resolvedQueueCount: 0,
+    }
+    countsByCheckpointId.set(checkpointId, current)
+    return current
+  }
+
+  summaries.forEach(summary => ensureCounts(summary.simulationStageCheckpointId))
+  queueCaseRows.forEach(row => {
+    if (!checkpointIds.has(row.simulationStageCheckpointId)) return
+    const counts = ensureCounts(row.simulationStageCheckpointId)
+    if (row.status === 'Watching') counts.watchQueueCount += 1
+    else if (row.status === 'Deferred') counts.deferredQueueCount += 1
+    else if (row.status === 'Resolved') counts.resolvedQueueCount += 1
+  })
+
+  return countsByCheckpointId
+}
+
 export function withProofPlaybackGate(
   summaries: ProofCheckpointSummaryPayload[],
   queueCaseRows?: QueueCaseTimelineRow[],
 ) {
   const liveBlockingCounts = queueCaseRows
     ? liveBlockingQueueCountsByCheckpoint(summaries, queueCaseRows)
+    : null
+  const liveDisplayCounts = queueCaseRows && liveBlockingCounts
+    ? liveQueueDisplayCountsByCheckpoint(summaries, queueCaseRows, liveBlockingCounts)
     : null
   const blockingCountForSummary = (summary: ProofCheckpointSummaryPayload) => Number(
     (liveBlockingCounts ? (liveBlockingCounts.get(summary.simulationStageCheckpointId) ?? 0) : undefined)
@@ -207,6 +245,7 @@ export function withProofPlaybackGate(
   )
   const firstBlockedIndex = summaries.findIndex(summary => blockingCountForSummary(summary) > 0)
   return summaries.map((summary, index) => {
+    const displayCounts = liveDisplayCounts?.get(summary.simulationStageCheckpointId) ?? null
     const blockingQueueItemCount = blockingCountForSummary(summary)
     const stageAdvanceBlocked = blockingQueueItemCount > 0
     const playbackAccessible = firstBlockedIndex === -1 || index <= firstBlockedIndex
@@ -215,6 +254,7 @@ export function withProofPlaybackGate(
       : null
     return {
       ...summary,
+      ...(displayCounts ?? {}),
       stageAdvanceBlocked,
       blockingQueueItemCount,
       playbackAccessible,

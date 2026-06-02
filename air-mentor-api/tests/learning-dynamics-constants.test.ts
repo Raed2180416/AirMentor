@@ -187,6 +187,9 @@ describe('learning-dynamics-constants — scenario fingerprints have load-bearin
     'exam-fragility': { kind: 'load-bearing' },
     'carryover-heavy': { kind: 'load-bearing' },
     'intervention-resistant': { kind: 'load-bearing' },
+    'chronic-absentee': { kind: 'load-bearing' },
+    'attendance-shock': { kind: 'load-bearing' },
+    'mental-health-disruption': { kind: 'load-bearing' },
     balanced: { kind: 'null' },
   }
 

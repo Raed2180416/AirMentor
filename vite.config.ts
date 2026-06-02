@@ -23,15 +23,23 @@ const liveApiProxy = apiProxyTarget && apiBaseUrl === '/'
       },
     }
   : undefined
+const devWatchIgnored = [
+  '**/air-mentor-api/.venv/**',
+  '**/air-mentor-api/.tabpfn-venv/**',
+  '**/air-mentor-api/node_modules/**',
+  '**/air-mentor-api/output/**',
+  '**/air-mentor-api/scripts/__pycache__/**',
+]
 
 export default defineConfig({
   plugins: [react()],
   base: pagesBase,
-  server: liveApiProxy
-    ? {
-        proxy: liveApiProxy,
-      }
-    : undefined,
+  server: {
+    ...(liveApiProxy ? { proxy: liveApiProxy } : {}),
+    watch: {
+      ignored: devWatchIgnored,
+    },
+  },
   preview: liveApiProxy
     ? {
         proxy: liveApiProxy,

@@ -36,6 +36,7 @@ export type AssessmentComponentDefinition = {
   label: string
   rawMax: number
   weightage: number
+  cos?: string[]
 }
 
 export type SchemePolicyContext = {
@@ -102,8 +103,8 @@ export type EvaluationScheme = {
   }
   quizWeight: number
   assignmentWeight: number
-  quizCount: 0 | 1 | 2
-  assignmentCount: 0 | 1 | 2
+  quizCount: number
+  assignmentCount: number
   quizComponents: AssessmentComponentDefinition[]
   assignmentComponents: AssessmentComponentDefinition[]
   policyContext: SchemePolicyContext

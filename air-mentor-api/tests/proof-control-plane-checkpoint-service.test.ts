@@ -153,4 +153,58 @@ describe('proof-control-plane-checkpoint-service', () => {
       blockedProgressionReason: null,
     })
   })
+
+  it('overrides stale checkpoint queue counters from live queue-case rows', () => {
+    const gated = withProofPlaybackGate([
+      {
+        simulationStageCheckpointId: 'checkpoint_sem2_post_tt1',
+        simulationRunId: 'run_001',
+        semesterNumber: 2,
+        stageKey: 'post-tt1',
+        stageLabel: 'Post TT1',
+        stageDescription: 'First checkpoint after TT1 evidence is present and locked.',
+        stageOrder: 2,
+        previousCheckpointId: null,
+        nextCheckpointId: 'checkpoint_sem2_post_tt2',
+        openQueueCount: 13,
+        watchQueueCount: 18,
+        resolvedQueueCount: 0,
+        deferredQueueCount: 78,
+        liveBlockingQueueItemCount: 13,
+      },
+    ] as never, [
+      {
+        simulationStageCheckpointId: 'checkpoint_sem2_post_tt1',
+        studentId: 'student_001',
+        semesterNumber: 2,
+        status: 'Resolved',
+        countsTowardCapacity: 0,
+        caseJson: JSON.stringify({ caseKey: 'student_001::2' }),
+      },
+      {
+        simulationStageCheckpointId: 'checkpoint_sem2_post_tt1',
+        studentId: 'student_002',
+        semesterNumber: 2,
+        status: 'Watching',
+        countsTowardCapacity: 0,
+        caseJson: JSON.stringify({ caseKey: 'student_002::2' }),
+      },
+      {
+        simulationStageCheckpointId: 'checkpoint_sem2_post_tt1',
+        studentId: 'student_003',
+        semesterNumber: 2,
+        status: 'Deferred',
+        countsTowardCapacity: 0,
+        caseJson: JSON.stringify({ caseKey: 'student_003::2' }),
+      },
+    ] as never)
+
+    expect(gated[0]).toMatchObject({
+      openQueueCount: 0,
+      resolvedQueueCount: 1,
+      watchQueueCount: 1,
+      deferredQueueCount: 1,
+      stageAdvanceBlocked: false,
+    })
+  })
 })

@@ -2,8 +2,7 @@
 //
 // The calibrated proof risk model (`PRODUCTION_RISK_THRESHOLDS` in
 // `proof-risk-model.ts`) bands probabilities at high=0.65 / medium=0.4,
-// aligned with the operational urgency thresholds below. This ensures the
-// evaluation report and demo UI consistently flag the same students as High.
+// while the proof-demo overlay below can use a narrower operational top tail.
 //
 // For the six-semester demo we surface a separate "operational urgency" band
 // that rebands the same `overallCourseRisk` value with reduced thresholds, so
@@ -22,16 +21,12 @@
 //     real risk signal.
 //
 // Threshold rationale:
-//   * Operational High = 0.65 sits between the heaviest Medium plateau
-//     (~0.55-0.62) and the observed maximum overallCourseRisk in the proof
-//     corpus (~0.71). Students with evidence-supported severe profiles
-//     (cgpa<5, backlog>=4, prerequisite pressure) cross 0.65 and surface as
-//     High; students with milder issues (e.g. 3 sem-1 backlogs and
-//     borderline cgpa) stay Medium until the next semester accumulates more
-//     evidence. Tuned via sensitivity audit on the deterministic proof
-//     corpus (see `docs/demo/risk-band-realism-audit-2026-04-27.md`).
-//   * Operational Medium = 0.4 matches the calibrated medium boundary so
-//     the existing Medium band semantics carry over unchanged.
+//   * Operational High = 0.55 requires an acute, evidence-supported course
+//     risk signal while keeping the seeded proof cohort's High queue to a
+//     small top tail. A 25-30% probability is a watch concern, not an
+//     immediate high-risk escalation.
+//   * Operational Medium = 0.4 matches the calibrated medium boundary so the
+//     existing Medium band semantics carry over unchanged.
 //
 // Apply this overlay only when banding the demo proof projections. Live
 // production banding uses the calibrated `productionModel.thresholds`.
@@ -40,8 +35,8 @@
 // real institutional data never receives the demo banding.
 
 export const PROOF_DEMO_OPERATIONAL_THRESHOLDS = {
-  medium: 0.18,
-  high: 0.25,
+  medium: 0.40,
+  high: 0.55,
 } as const
 
 export type ProofDemoOperationalBandThresholds = {

@@ -309,6 +309,9 @@ describe('academic proof routes', () => {
 
   it('lets academic roles advance only the active proof run through the teacher proof control route', async () => {
     const runLookups: string[] = []
+    const resolveBatchPolicy = vi.fn().mockResolvedValue({
+      effectivePolicy: { attendanceRules: { minimumRequiredPercent: 75 } },
+    })
     const context = {
       db: {
         select: () => ({
@@ -320,6 +323,7 @@ describe('academic proof routes', () => {
                 if (columnName === 'simulation_run_id') {
                   return [{
                     simulationRunId: 'sim_parallel_active_checkpoint_scope',
+                    batchId: 'batch_mnc_2023',
                     activeFlag: 1,
                   }]
                 }
@@ -369,6 +373,7 @@ describe('academic proof routes', () => {
       proofResolutionCreditByOutcome: vi.fn(),
       proofResolutionRecoveryState: vi.fn(),
       resolveAcademicStageCheckpoint: vi.fn(),
+      resolveBatchPolicy,
       resolveProofReassessmentAccess: vi.fn(),
       resolveStudentShellRun: vi.fn(),
       studentShellMessageSchema: z.object({ prompt: z.string().min(1) }),
@@ -390,10 +395,12 @@ describe('academic proof routes', () => {
 
     expect(response.statusCode).toBe(200)
     expect(runLookups).toEqual(['simulation_run_id'])
+    expect(resolveBatchPolicy).toHaveBeenCalledWith(context, 'batch_mnc_2023')
     expect(proofRouteMocks.advanceProofSimulationStage).toHaveBeenCalledWith(context.db, {
       simulationRunId: 'sim_parallel_active_checkpoint_scope',
       actorFacultyId: 'faculty_course_leader',
       now: '2026-03-31T00:00:00.000Z',
+      policy: { attendanceRules: { minimumRequiredPercent: 75 } },
     })
     expect(proofRouteMocks.advanceProofSimulationDay).not.toHaveBeenCalled()
   })
@@ -493,6 +500,9 @@ describe('academic proof routes', () => {
   })
 
   it('lets academic roles move the active proof run one persisted day backward', async () => {
+    const resolveBatchPolicy = vi.fn().mockResolvedValue({
+      effectivePolicy: { attendanceRules: { minimumRequiredPercent: 75 } },
+    })
     const context = {
       db: {
         select: () => ({
@@ -501,6 +511,7 @@ describe('academic proof routes', () => {
               if (table === simulationRuns) {
                 return [{
                   simulationRunId: 'sim_parallel_active_checkpoint_scope',
+                  batchId: 'batch_mnc_2023',
                   activeFlag: 1,
                 }]
               }
@@ -549,6 +560,7 @@ describe('academic proof routes', () => {
       proofResolutionCreditByOutcome: vi.fn(),
       proofResolutionRecoveryState: vi.fn(),
       resolveAcademicStageCheckpoint: vi.fn(),
+      resolveBatchPolicy,
       resolveProofReassessmentAccess: vi.fn(),
       resolveStudentShellRun: vi.fn(),
       studentShellMessageSchema: z.object({ prompt: z.string().min(1) }),
@@ -569,10 +581,12 @@ describe('academic proof routes', () => {
     })
 
     expect(response.statusCode).toBe(200)
+    expect(resolveBatchPolicy).toHaveBeenCalledWith(context, 'batch_mnc_2023')
     expect(proofRouteMocks.advanceProofSimulationPreviousDay).toHaveBeenCalledWith(context.db, {
       simulationRunId: 'sim_parallel_active_checkpoint_scope',
       actorFacultyId: 'faculty_course_leader',
       now: '2026-03-31T00:00:00.000Z',
+      policy: { attendanceRules: { minimumRequiredPercent: 75 } },
     })
     expect(proofRouteMocks.advanceProofSimulationDay).not.toHaveBeenCalled()
     expect(proofRouteMocks.advanceProofSimulationStage).not.toHaveBeenCalled()

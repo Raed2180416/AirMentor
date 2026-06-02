@@ -895,9 +895,9 @@ export default function ObsidianGraph({
       }
 
       if (bestEdge) {
-        if (window.confirm("Delete this link?")) {
-          onEdgeDeleteRef.current?.(bestEdge.id)
-        }
+        // if (window.confirm("Delete this link?")) {
+        //   onEdgeDeleteRef.current?.(bestEdge.id)
+        // }
         return
       }
     }

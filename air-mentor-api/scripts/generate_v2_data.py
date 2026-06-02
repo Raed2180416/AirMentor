@@ -135,26 +135,26 @@ class SimulatorV2:
         """Generate student latent traits based on scenario family."""
         seed_base = f"{family}-student-{student_idx}"
 
-        # Base traits (all students)
+        # Base traits (all students) — wider variance for realistic score spread
         base = {
             "academicPotential": self._clamp(
-                0.50 + self._stable_between(f"{seed_base}-academic", -0.25, 0.30), 0.15, 0.95),
+                0.50 + self._stable_between(f"{seed_base}-academic", -0.35, 0.35), 0.10, 0.95),
             "selfRegulation": self._clamp(
-                0.50 + self._stable_between(f"{seed_base}-selfreg", -0.25, 0.30), 0.15, 0.95),
+                0.50 + self._stable_between(f"{seed_base}-selfreg", -0.35, 0.35), 0.10, 0.95),
             "mathematicsFoundation": self._clamp(
-                0.50 + self._stable_between(f"{seed_base}-math", -0.25, 0.30), 0.15, 0.95),
+                0.50 + self._stable_between(f"{seed_base}-math", -0.35, 0.35), 0.10, 0.95),
             "computingFoundation": self._clamp(
-                0.50 + self._stable_between(f"{seed_base}-comp", -0.25, 0.30), 0.15, 0.95),
+                0.50 + self._stable_between(f"{seed_base}-comp", -0.35, 0.35), 0.10, 0.95),
             "attendanceDiscipline": self._clamp(
-                0.50 + self._stable_between(f"{seed_base}-attend", -0.25, 0.30), 0.15, 0.95),
+                0.50 + self._stable_between(f"{seed_base}-attend", -0.35, 0.35), 0.10, 0.95),
             "supportResponsiveness": self._clamp(
-                0.50 + self._stable_between(f"{seed_base}-support", -0.25, 0.30), 0.15, 0.95),
+                0.50 + self._stable_between(f"{seed_base}-support", -0.35, 0.35), 0.10, 0.95),
             "examPressure": self._clamp(
-                0.50 + self._stable_between(f"{seed_base}-exam", -0.25, 0.30), 0.10, 0.90),
+                0.50 + self._stable_between(f"{seed_base}-exam", -0.35, 0.35), 0.05, 0.95),
             "forgetRate": self._clamp(
-                0.30 + self._stable_between(f"{seed_base}-forget", -0.15, 0.25), 0.05, 0.80),
+                0.30 + self._stable_between(f"{seed_base}-forget", -0.20, 0.30), 0.05, 0.85),
             "relearnRate": self._clamp(
-                0.40 + self._stable_between(f"{seed_base}-relearn", -0.20, 0.30), 0.10, 0.90),
+                0.40 + self._stable_between(f"{seed_base}-relearn", -0.25, 0.35), 0.05, 0.90),
         }
 
         # Family-specific adjustments
@@ -295,30 +295,29 @@ class SimulatorV2:
             grading_severity = 0.0
             grading_generosity = 0.0
 
-        # Assessment scores
-        # Base formulas calibrated for realistic classroom: ~85% of eligible students pass (overallMark >= 40)
-        # Bases raised from v1 to reflect better-prepared student population
+        # Assessment scores — lowered bases, wider noise for realistic spread
+        # Target: ~5-10% CE<40, ~15-25% CE<50, mean ~55-60, std ~12-15
         tt1_pct = self._clamp(
-            56 + mastery * 38 + self._stable_between(f"{sid}-tt1", -8, 8)
-            - difficulty * 4 + grading_severity * 5, 8, 96
+            38 + mastery * 42 + self._stable_between(f"{sid}-tt1", -16, 16)
+            - difficulty * 8 + grading_severity * 5, 3, 98
         )
         tt2_pct = self._clamp(
-            tt1_pct + latents["relearnRate"] * 8 - latents["forgetRate"] * 3
-            + grading_severity * 5 + self._stable_between(f"{sid}-tt2", -8, 10), 8, 98
+            tt1_pct + latents["relearnRate"] * 12 - latents["forgetRate"] * 6
+            + grading_severity * 5 + self._stable_between(f"{sid}-tt2", -14, 16), 3, 98
         )
         quiz_pct = self._clamp(
-            53 + mastery * 35 + self._stable_between(f"{sid}-quiz", -8, 8)
-            - difficulty * 2 + grading_generosity * 4, 8, 98
+            36 + mastery * 40 + self._stable_between(f"{sid}-quiz", -14, 14)
+            - difficulty * 5 + grading_generosity * 4, 3, 98
         )
         assignment_pct = self._clamp(
-            53 + mastery * 32 + self._stable_between(f"{sid}-assign", -8, 10)
-            + grading_generosity * 3, 8, 98
+            36 + mastery * 37 + self._stable_between(f"{sid}-assign", -14, 16)
+            + grading_generosity * 3, 3, 98
         )
         # MSRUAS demo branch: CE=60 marks, TT1+TT2=30, quiz+assignment=30 (default split)
         ce_pct = round(tt1_pct * 0.25 + tt2_pct * 0.25 + quiz_pct * 0.25 + assignment_pct * 0.25)
         see_pct = self._clamp(
-            56 + mastery * 38 - latents["examPressure"] * 6
-            + grading_severity * 6 + self._stable_between(f"{sid}-see", -10, 10), 8, 96
+            40 + mastery * 40 - latents["examPressure"] * 10
+            + grading_severity * 6 + self._stable_between(f"{sid}-see", -14, 14), 5, 98
         )
         attendance_eligible = attendance_pct >= 75
         ce_eligible = ce_pct >= 40
@@ -326,8 +325,14 @@ class SimulatorV2:
         if see_eligible:
             see_observed = round(see_pct)
             overall = round(ce_pct * 0.60 + see_pct * 0.40)
-            passed = overall >= 40
-            failure_mode = "see_fail" if see_pct < 35 else ("overall_fail" if overall < 40 else None)
+            see_pass = see_pct >= 40
+            passed = overall >= 40 and see_pass
+            if not see_pass:
+                failure_mode = "see_fail"
+            elif overall < 40:
+                failure_mode = "overall_fail"
+            else:
+                failure_mode = None
         else:
             see_observed = None
             overall = None
@@ -433,28 +438,32 @@ class SimulatorV2:
         f[8] = s(None if result["quizPct"] is None else 100 - result["quizPct"], 0, 100)
         f[9] = s(None if result["assignmentPct"] is None else 100 - result["assignmentPct"], 0, 100)
         # 10: weakCoPressureScaled
-        f[10] = s(None if result["overallMark"] is None else 60 - result["overallMark"], 0, 60)
+        f[10] = s(None if result.get("cePct") is None else 60 - result["cePct"], 0, 60)
         # 11: weakQuestionPressureScaled
         f[11] = f[10] * 0.8
         # 12: courseworkTtMismatchScaled
-        cw_avg = (safe(result["quizPct"], 50) + safe(result["assignmentPct"], 50)) / 2
-        tt_avg = (safe(result["tt1Pct"], 50) + safe(result["tt2Pct"], 50)) / 2
+        cw_avg = (safe(result.get("quizPct"), 50) + safe(result.get("assignmentPct"), 50)) / 2
+        tt_avg = (safe(result.get("tt1Pct"), 50) + safe(result.get("tt2Pct"), 50)) / 2
         f[12] = s(abs(cw_avg - tt_avg), 0, 40)
         # 13: ttMomentumRiskScaled
-        f[13] = s(safe(result["tt1Pct"], 50) - safe(result["tt2Pct"], 50), -30, 30)
-        # 14: interventionResidualRiskScaled
-        f[14] = s(None if result["overallMark"] is None else 100 - result["overallMark"], 0, 100) * 0.5
-        # 15-24: prerequisite features (simplified)
-        f[15] = s(None if result["overallMark"] is None else 100 - result["overallMark"], 0, 100) * 0.7
-        f[16] = f[15] * 0.9
-        f[17] = f[15] * 0.6
+        f[13] = s(safe(result.get("tt1Pct"), 50) - safe(result.get("tt2Pct"), 50), -30, 30)
+        # 14: interventionResidualRiskScaled (derived from current missing/poor performance)
+        f[14] = s(None if result.get("cePct") is None else 100 - result["cePct"], 0, 100) * 0.5
+        
+        # 15-24: prerequisite features (MUST be static across current semester stages, based on prior history)
+        # We simulate the Prerequisite Pressure (f[15]) using historical CGPA and backlog
+        # A student with cgpa 6.0 and 15 backlogs will have high prerequisite pressure.
+        base_prereq_pressure = self._clamp((10 - cgpa) * 0.1 + (backlog_credits / 30.0), 0, 1)
+        f[15] = base_prereq_pressure
+        f[16] = base_prereq_pressure * 0.9
+        f[17] = base_prereq_pressure * 0.6
         f[18] = s(semester, 1, 6) * 0.5
-        f[19] = f[15] * 0.5
-        f[20] = f[15] * 0.4
-        f[21] = f[15] * 0.55
+        f[19] = base_prereq_pressure * 0.5
+        f[20] = base_prereq_pressure * 0.4
+        f[21] = base_prereq_pressure * 0.55
         f[22] = s(semester, 1, 6) * 0.4
-        f[23] = f[15] * 0.45
-        f[24] = f[15] * 0.35
+        f[23] = base_prereq_pressure * 0.45
+        f[24] = base_prereq_pressure * 0.35
         # 25: semesterProgressScaled
         stage_order = {"pre-tt1": 0, "post-tt1": 1, "post-tt2": 2, "post-assignments": 3, "post-see": 4}.get(stage, 0)
         f[25] = s(stage_order, 0, 4)
@@ -519,27 +528,20 @@ class SimulatorV2:
 
     def compute_labels(self, result: dict, observed_result: dict, stage: str,
                         cgpa: float, backlog_credits: int, semester: int,
-                        full_history: list, latents: dict, rng_seed: int) -> dict:
+                        prior_history: list, latents: dict, rng_seed: int,
+                        course_id: str = "", course_catalog: list = None) -> dict:
         """Independent heuristic label engine — SEPARATE from feature computation.
 
         Uses different logic, thresholds, and information than compute_features().
         This prevents label-feature leakage and creates a realistic ML problem.
 
-        The heuristic mimics the TypeScript inference-engine.ts logic:
-        - Considers multi-course trends, not just current course
-        - Uses stage-dependent thresholds
+        Mimics real teacher assessment:
+        - Uses PRIOR-semester history only (not current semester courses)
+        - Stage-dependent thresholds with hard guards for deterministic failures
         - Incorporates student latent traits (not available to ML model)
-        - Adds controlled noise for realistic Bayes error
+        - Downstream risk tracks which future courses are affected and why
         """
         rng = np.random.default_rng(self._stable_seed(f"label-{rng_seed}-{stage}"))
-
-        # Stage-dependent certainty: early stages have more noise, late stages less
-        stage_certainty = {"pre-tt1": 0.3, "post-tt1": 0.5, "post-tt2": 0.7,
-                           "post-assignments": 0.85, "post-see": 1.0}.get(stage, 0.5)
-        # Noise rates: higher at early stages (teachers are less certain)
-        false_negative_rate = 0.08 * (1 - stage_certainty)  # miss truly at-risk
-        false_positive_rate = 0.04 * (1 - stage_certainty)   # flag safe students
-        label_flip_rate = 0.06 * (1 - stage_certainty)       # random flip
 
         # Use observed_result for stage-appropriate evidence, fallback to result for post-see
         evidence = observed_result if stage != "post-see" else result
@@ -548,7 +550,7 @@ class SimulatorV2:
         tt2 = evidence.get("tt2Pct")
         quiz = evidence.get("quizPct")
         assignment = evidence.get("assignmentPct")
-        ce = evidence.get("cePct") if evidence.get("cePct") is not None else result["cePct"]
+        ce = evidence.get("cePct")
         see = evidence.get("seePct")
         overall = evidence.get("overallMark")
         passed = evidence.get("passed")
@@ -559,7 +561,7 @@ class SimulatorV2:
         ineligible_att = att < 75
         severe_low = att < 60
         moderate_low = att < 70
-        recent_att = [h["attendancePct"] for h in full_history[-3:]] if full_history else [att]
+        recent_att = [h["attendancePct"] for h in prior_history[-3:]] if prior_history else [att]
         att_trend = np.mean(recent_att) - att if len(recent_att) > 1 else 0
         declining = att_trend > 3
         persistent_low = sum(1 for a in recent_att if a < 65) >= 2 and att < 75
@@ -569,94 +571,76 @@ class SimulatorV2:
 
         attendance_risk = 1 if (ineligible_att or severe_low or (moderate_low and declining)
                                 or persistent_low or shock_recovery) else 0
-        # Attendance noise disabled to prevent monotonicity violations with overall risk
-        # if attendance_risk == 1 and rng.random() < false_negative_rate:
-        #     attendance_risk = 0
-        # if attendance_risk == 0 and rng.random() < false_positive_rate:
-        #     attendance_risk = 1
 
         # ── CE risk ──
-        # At pre-tt1: no CE evidence, use attendance proxy + history
+        # At pre-tt1: no CE evidence, use attendance proxy + prior-semester history
         # At post-tt1+: deterministic ineligibility when CE < 40
         if stage == "pre-tt1":
-            # Without test evidence, flag only if attendance is very poor or strong CE failure history
-            recent_ce_fails = sum(1 for h in full_history[-3:] if h.get("cePct") is not None and h["cePct"] < 40)
-            recent_ce_weak = sum(1 for h in full_history[-3:] if h.get("cePct") is not None and h["cePct"] < 50)
+            recent_ce_fails = sum(1 for h in prior_history[-3:] if h.get("cePct") is not None and h["cePct"] < 40)
+            recent_ce_weak = sum(1 for h in prior_history[-3:] if h.get("cePct") is not None and h["cePct"] < 50)
             ce_risk = 1 if (att < 65 or recent_ce_fails >= 2 or recent_ce_weak >= 3) else 0
         else:
             ineligible_ce = ce is not None and ce < 40
-            ce_low = ce is not None and ce < 55  # Lowered from 50 to increase prevalence
-            ce_weak = ce is not None and ce < 60  # Lowered from 55
+            ce_low = ce is not None and ce < 50
+            ce_weak = ce is not None and ce < 55
             tt_gap = abs((tt1 or 50) - (tt2 or 50)) if tt1 is not None and tt2 is not None else 0
-            quiz_weak = quiz is not None and quiz < 55  # Lowered from 50
-            assignment_weak = assignment is not None and assignment < 55  # Lowered from 50
-            ce_pattern = ce_weak and tt_gap > 8 and (quiz_weak or assignment_weak)  # Lowered gap from 10
-            # Attendance + CE combined risk: poor attendance amplifies CE weakness
-            attendance_ce_risk = att < 75 and ce is not None and ce < 60  # Relaxed from <70 and <55
+            quiz_weak = quiz is not None and quiz < 50
+            assignment_weak = assignment is not None and assignment < 50
+            ce_pattern = ce_weak and tt_gap > 6 and (quiz_weak or assignment_weak)
+            attendance_ce_risk = att < 75 and ce is not None and ce < 55
             ce_risk = 1 if (ineligible_ce or ce_low or ce_pattern or attendance_ce_risk) else 0
-        # Label flips disabled for demo realism - they create monotonicity violations
-        # if rng.random() < label_flip_rate:
-        #     ce_risk = 1 - ce_risk
 
         # ── SEE risk ──
-        # At post-see: deterministic ineligibility (attendance<75 or CE<40)
-        # At pre-tt1: a teacher has NO CE/SEE evidence; only flag extreme cases
-        # At post-tt1+: use CE evidence + exam pressure to estimate SEE risk
+        # At post-see: deterministic (SEE < 40 or ineligible)
+        # At pre-tt1: only flag extreme attendance or prior SEE failure pattern
+        # At post-tt1+: CE evidence + exam pressure + attendance-driven risk amplification
         if stage == "post-see":
             ineligible_see = see is None
             see_low = see is not None and see < 40
             see_fragile = see is not None and see < 50 and latents["examPressure"] > 0.70
             see_risk = 1 if (ineligible_see or see_low or see_fragile) else 0
         elif stage == "pre-tt1":
-            # Pre-tt1: only flag based on extreme attendance or historical SEE failure pattern.
-            # Realistic pre-tt1 SEE risk should be ~5-10%.
             att_see_extreme = att < 60
             recent_see_fails = sum(
-                1 for h in full_history[-3:]
+                1 for h in prior_history[-3:]
                 if h.get("seePct") is not None and h["seePct"] < 40
             )
             see_risk = 1 if (att_see_extreme or recent_see_fails >= 2) else 0
         else:
-            # post-tt1+: CE evidence is available, use it to estimate SEE risk
             ce_est = ce if ce is not None else 50
             ce_danger = ce_est < 45
             ce_weak = ce_est < 55 and semester > 2
-            see_est = ce_est * 0.9 + latents["examPressure"] * (-5)
+            # Attendance-driven SEE risk: poor attendance amplifies exam failure probability
+            attendance_see_risk = att < 70 and latents["examPressure"] > 0.50
+            severe_attendance_see = att < 60
+            see_est = ce_est * 0.85 + latents["examPressure"] * (-6) - max(0, (75 - att)) * 0.15
             see_danger = see_est < 45
-            see_fragile_est = see_est < 55 and latents["examPressure"] > 0.65
-            see_risk = 1 if (ce_danger or ce_weak or see_danger or see_fragile_est) else 0
-        # Label flips disabled for demo realism
-        # if rng.random() < label_flip_rate:
-        #     see_risk = 1 - see_risk
+            see_fragile_est = see_est < 55 and latents["examPressure"] > 0.60
+            see_risk = 1 if (ce_danger or ce_weak or see_danger or see_fragile_est
+                            or attendance_see_risk or severe_attendance_see) else 0
 
         # ── Overall risk ──
-        # Stage-aware: early stages rely more on trajectory/history, late stages on outcomes.
-        # CRITICAL: overall_risk must be monotonic with component risks.
-        # A teacher would say: if a student is at-risk for attendance AND CE, they are
-        # definitely at-risk overall. Never the opposite.
+        # Stage-aware: early stages rely on trajectory/history, late stages on outcomes.
+        # CRITICAL: overall_risk >= max(component risks) at all pre-see stages.
+        # At post-see: purely deterministic (pass/fail).
         failed_current = overall is not None and overall < 40
         borderline_current = overall is not None and overall < 50 and overall >= 35
         ineligible_systemic = (
             overall is None
             and (backlog_credits >= 12 or (cgpa > 0 and cgpa < 7.5 and semester > 2))
         )
-        # Historical factors - tuned for realistic overall prevalence (~15-25% across stages)
-        cgpa_risk = cgpa > 0 and cgpa < 6.5 and semester > 3  # Tighter threshold
-        backlog_risk = backlog_credits >= 20  # Tighter threshold
-        recent_fails = sum(1 for h in full_history[-4:] if h.get("overallMark") is not None and h["overallMark"] < 40)
-        trend_risk = recent_fails >= 3  # Tighter: 3+ recent fails
-        early_caution = stage in ("pre-tt1", "post-tt1") and semester > 3 and cgpa_risk and trend_risk  # Both required
+        cgpa_risk = cgpa > 0 and cgpa < 6.5 and semester > 3
+        backlog_risk = backlog_credits >= 20
+        recent_fails = sum(1 for h in prior_history[-4:] if h.get("overallMark") is not None and h["overallMark"] < 40)
+        trend_risk = recent_fails >= 3
+        early_caution = stage in ("pre-tt1", "post-tt1") and semester > 3 and cgpa_risk and trend_risk
 
-        # Base overall risk from independent factors
         overall_risk = 1 if (failed_current or ineligible_systemic or cgpa_risk
                              or backlog_risk or trend_risk or early_caution) else 0
-        # Reduce false positives for borderline students who are improving
         if overall_risk == 1 and borderline_current and att > 80 and ce is not None and ce > 50:
             overall_risk = 0
 
-        # Stage-dependent overall risk with realistic teacher confidence progression
         if stage == "pre-tt1":
-            # Pre-tt1: target ~10-15%. Only severe cases with multiple signals.
             if overall_risk == 1:
                 strong_signals = sum([
                     attendance_risk == 1,
@@ -667,19 +651,33 @@ class SimulatorV2:
                 if strong_signals < 2:
                     overall_risk = 0
         elif stage in ("post-tt1", "post-tt2"):
-            # Mid-stages: ~20-30%. Suppress if no component risks and no strong history.
             if overall_risk == 1 and not (attendance_risk == 1 or ce_risk == 1 or see_risk == 1 or trend_risk or backlog_risk):
                 overall_risk = 0
         elif stage == "post-assignments":
-            # Near end: ~30-40%. CE known, be decisive.
             if ce is not None and ce < 40 and not overall_risk:
                 overall_risk = 1
         elif stage == "post-see":
-            # Post-see: deterministic pass/fail. Should match actual outcome.
-            overall_risk = 1 if (overall is not None and overall < 40) or (overall is None and passed is False) else 0
+            overall_risk = 0 if passed else 1
 
-        # MONOTONICITY ENFORCEMENT: overall_risk >= max(component risks)
-        overall_risk = max(overall_risk, attendance_risk, ce_risk, see_risk)
+        # Pre-see monotonicity: overall >= max(component risks)
+        if stage != "post-see":
+            overall_risk = max(overall_risk, attendance_risk, ce_risk, see_risk)
+
+        # ── HARD THRESHOLD GUARDS ──
+        # Deterministic failures MUST always be flagged, regardless of stage logic.
+        if att < 75:
+            attendance_risk = 1
+        if ce is not None and ce < 40:
+            ce_risk = 1
+        if see is not None and see < 40:
+            see_risk = 1
+        if overall is not None and overall < 40:
+            overall_risk = 1
+        if stage == "post-see":
+            if see is None:
+                see_risk = 1
+            if not passed:
+                overall_risk = 1
 
         # ── Downstream risk ──
         # At post-see: flag borderline/failed passes in early/mid semesters that may cascade.
@@ -697,13 +695,14 @@ class SimulatorV2:
             downstream_risk = 1 if ((failed_course and early_sem) or (borderline and mid_sem and is_prereq)) else 0
         else:
             # Pre-see: estimate from history (students with repeated borderline passes or failures)
-            recent_borderline = sum(1 for h in full_history[-3:] if h.get("overallMark") is not None and 35 <= h["overallMark"] < 55)
-            recent_fails = sum(1 for h in full_history[-3:] if h.get("overallMark") is not None and h["overallMark"] < 40)
-            recent_ineligible = sum(1 for h in full_history[-3:] if h.get("overallMark") is None and h.get("passed") is False)
+            recent_borderline = sum(1 for h in prior_history[-3:] if h.get("overallMark") is not None and 35 <= h["overallMark"] < 55)
+            recent_fails = sum(1 for h in prior_history[-3:] if h.get("overallMark") is not None and h["overallMark"] < 40)
+            recent_ineligible = sum(1 for h in prior_history[-3:] if h.get("overallMark") is None and h.get("passed") is False)
             downstream_risk = 1 if (recent_borderline >= 2 or recent_fails >= 1 or recent_ineligible >= 1) and semester < 6 else 0
-        # Downstream label flips disabled for demo realism
-        # if rng.random() < label_flip_rate:
-        #     downstream_risk = 1 - downstream_risk
+
+        # Semester 1 guard: no prior history, downstream must be 0
+        if semester == 1:
+            downstream_risk = 0
 
         return {
             "label_attendance": attendance_risk,
@@ -754,6 +753,7 @@ class SimulatorV2:
                     section_peer = section_peer_mean_a if section_code == "A" else section_peer_mean_b
                     prev_scores = {}
                     history = []
+                    prior_history = []  # only courses from previous semesters
                     cgpa = 0.0
                     total_credits = 0
                     backlog_credits = 0
@@ -805,7 +805,7 @@ class SimulatorV2:
                                     stage_historical_backlog_credits, lower_year_blocker_credits,
                                     stage_backlog_attempt_count, stage, section_code,
                                 )
-                                labels = self.compute_labels(result, observed_result, stage, pre_cgpa, pre_backlog_credits, sem, history, latents, run_seed + si * 100 + sem)
+                                labels = self.compute_labels(result, observed_result, stage, pre_cgpa, pre_backlog_credits, sem, prior_history, latents, run_seed + si * 100 + sem, course_id=course["id"], course_catalog=COURSE_CATALOG)
 
                                 row = {
                                     "run_id": run_id,
@@ -838,6 +838,9 @@ class SimulatorV2:
                             backlog_credits = post_backlog_credits
                             historical_backlog_credits = post_historical_backlog_credits
                             backlog_attempt_count = post_backlog_attempt_count
+
+                        # After all courses in this semester: snapshot history for next semester's prior
+                        prior_history = list(history)
 
         df = pd.DataFrame(rows)
         if output_path:

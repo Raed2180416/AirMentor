@@ -266,7 +266,7 @@ export const INFERENCE_RISK_UPPER_CLAMP = 0.95
  *
  * @source engineering
  */
-export const RISK_BAND_HIGH_THRESHOLD = 0.80
+export const RISK_BAND_HIGH_THRESHOLD = 0.65
 
 /**
  * Boundary at or above which the band is `Medium` (and below
@@ -274,7 +274,7 @@ export const RISK_BAND_HIGH_THRESHOLD = 0.80
  *
  * @source engineering
  */
-export const RISK_BAND_MEDIUM_THRESHOLD = 0.45
+export const RISK_BAND_MEDIUM_THRESHOLD = 0.40
 
 // =====================================================================
 // Section B — Scenario engine family fingerprints

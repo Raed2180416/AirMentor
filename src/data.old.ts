@@ -72,6 +72,8 @@ export interface Student {
   tt2Score: number | null; tt2Max: number
   quiz1: number | null; quiz2: number | null
   asgn1: number | null; asgn2: number | null
+  quizScores?: Record<string, number>
+  assignmentScores?: Record<string, number>
   prevCgpa: number
   currentCgpa?: number
   riskProb: number | null; riskBand: RiskBand | null
@@ -118,8 +120,8 @@ export interface SubjectRunScheme {
   }
   quizWeight: number
   assignmentWeight: number
-  quizCount: 0 | 1 | 2
-  assignmentCount: 0 | 1 | 2
+  quizCount: number
+  assignmentCount: number
   quizComponents: AssessmentComponentDefinition[]
   assignmentComponents: AssessmentComponentDefinition[]
   policyContext: SchemePolicyContext
@@ -768,8 +770,8 @@ export const SUBJECT_RUNS: SubjectRun[] = (() => {
           ce: 60,
           see: 40,
           maxTermTests: 2,
-          maxQuizzes: 2,
-          maxAssignments: 2,
+          maxQuizzes: 5,
+          maxAssignments: 5,
         },
       },
     }

@@ -37,7 +37,7 @@ import {
 export type ObservableDriver = {
   label: string
   impact: number
-  feature: 'attendance' | 'tt1' | 'tt2' | 'see' | 'cgpa' | 'backlog' | 'co' | 'quiz' | 'assignment' | 'attendance-history' | 'question-pattern' | 'intervention-response'
+  feature: 'attendance' | 'tt1' | 'tt2' | 'see' | 'ce' | 'overall' | 'cgpa' | 'backlog' | 'co' | 'quiz' | 'assignment' | 'attendance-history' | 'question-pattern' | 'intervention-response' | 'prerequisite' | 'section-pressure' | 'coursework-gap' | 'cgpa-missing' | 'backlog-missing' | 'tt1-missing' | 'tt2-missing' | 'see-missing' | 'quiz-missing' | 'assignment-missing'
 }
 
 export type ObservableInferenceInput = {
@@ -49,6 +49,8 @@ export type ObservableInferenceInput = {
   tt1Pct?: number | null
   tt2Pct?: number | null
   seePct?: number | null
+  cePct?: number | null
+  overallPct?: number | null
   weakCoCount?: number
   quizPct?: number | null
   assignmentPct?: number | null
@@ -69,6 +71,68 @@ export type ObservableInferenceOutput = {
 
 function roundToTwo(value: number) {
   return Math.round(value * 100) / 100
+}
+
+export type ObservableRiskBandThresholds = {
+  readonly medium: number
+  readonly high: number
+}
+
+export function policyRiskFloorFromObservableInput(
+  input: ObservableInferenceInput,
+  thresholds: ObservableRiskBandThresholds,
+): { riskFloor: number; reasons: string[] } {
+  const { passRules, riskRules, attendanceRules } = input.policy
+  let riskFloor = 0
+  const reasons: string[] = []
+  const applyFloor = (floor: number, reason: string) => {
+    riskFloor = Math.max(riskFloor, floor)
+    reasons.push(reason)
+  }
+
+  if (input.attendancePct < riskRules.highRiskAttendancePercentBelow) {
+    applyFloor(thresholds.high, 'Attendance is below the high-risk institutional threshold.')
+  } else if (input.attendancePct < Math.max(attendanceRules.minimumRequiredPercent, riskRules.mediumRiskAttendancePercentBelow)) {
+    applyFloor(thresholds.medium, 'Attendance is below the minimum required institutional threshold.')
+  }
+
+  if (input.cgpaMissing !== true && input.currentCgpa > 0 && input.currentCgpa < riskRules.highRiskCgpaBelow) {
+    applyFloor(thresholds.high, 'Current CGPA is below the high-risk institutional threshold.')
+  } else if (input.cgpaMissing !== true && input.currentCgpa > 0 && input.currentCgpa < riskRules.mediumRiskCgpaBelow) {
+    applyFloor(thresholds.medium, 'Current CGPA is below the watch institutional threshold.')
+  }
+
+  if (input.backlogMissing !== true && input.backlogCount >= riskRules.highRiskBacklogCount) {
+    applyFloor(thresholds.high, 'Active backlog count is at the high-risk institutional threshold.')
+  } else if (input.backlogMissing !== true && input.backlogCount >= riskRules.mediumRiskBacklogCount) {
+    applyFloor(thresholds.medium, 'Active backlog count is above the watch institutional threshold.')
+  }
+
+  if (typeof input.cePct === 'number' && Number.isFinite(input.cePct)) {
+    const ceMark = (input.cePct / 100) * passRules.ceMaximum
+    if (ceMark < passRules.minimumCeMark) {
+      applyFloor(thresholds.medium, `Continuous evaluation is below the minimum pass mark (${roundToTwo(ceMark)}/${passRules.ceMaximum}).`)
+    }
+  }
+
+  if (typeof input.seePct === 'number' && Number.isFinite(input.seePct)) {
+    const seeMark = (input.seePct / 100) * passRules.seeMaximum
+    if (seeMark < passRules.minimumSeeMark) {
+      applyFloor(thresholds.high, `SEE mark is below the minimum pass mark (${roundToTwo(seeMark)}/${passRules.seeMaximum}).`)
+    }
+  }
+
+  if (typeof input.overallPct === 'number' && Number.isFinite(input.overallPct) && input.overallPct < passRules.minimumOverallMark) {
+    applyFloor(thresholds.high, `Overall course mark is below the minimum pass mark (${roundToTwo(input.overallPct)}/${passRules.overallMaximum}).`)
+  }
+
+  return { riskFloor, reasons }
+}
+
+export function isCriticallySparseAcademicEvidence(input: ObservableInferenceInput): boolean {
+  const assessmentSignalsAvailable = [input.tt1Pct, input.tt2Pct, input.seePct, input.quizPct, input.assignmentPct]
+    .filter(v => v != null).length
+  return input.cgpaMissing === true && assessmentSignalsAvailable === 0
 }
 
 export function inferObservableDrivers(input: ObservableInferenceInput): ObservableDriver[] {
@@ -136,6 +200,25 @@ export function inferObservableDrivers(input: ObservableInferenceInput): Observa
         feature: signal.key,
       })
     }
+  }
+
+  if (typeof input.cePct === 'number' && Number.isFinite(input.cePct)) {
+    const ceMark = (input.cePct / 100) * input.policy.passRules.ceMaximum
+    if (ceMark < input.policy.passRules.minimumCeMark) {
+      drivers.push({
+        label: `Continuous evaluation is below the pass threshold (${roundToTwo(ceMark)}/${input.policy.passRules.ceMaximum})`,
+        impact: TERM_SIGNAL_WATCH_IMPACT,
+        feature: 'ce',
+      })
+    }
+  }
+
+  if (typeof input.overallPct === 'number' && Number.isFinite(input.overallPct) && input.overallPct < input.policy.passRules.minimumOverallMark) {
+    drivers.push({
+      label: `Overall course mark is below the pass threshold (${roundToTwo(input.overallPct)}/${input.policy.passRules.overallMaximum})`,
+      impact: TERM_SIGNAL_VERY_LOW_IMPACT,
+      feature: 'overall',
+    })
   }
 
   if ((input.attendanceHistoryRiskCount ?? 0) >= ATTENDANCE_TREND_THRESHOLD_COUNT) {
@@ -236,11 +319,7 @@ export function inferObservableRisk(input: ObservableInferenceInput): Observable
   // scores yet has insufficient telemetry for the model to differentiate between
   // "genuinely at risk" and "data not yet entered". Issuing a false High/Medium
   // flag here would harm the student and waste teacher time.
-  const assessmentSignalsAvailable = [input.tt1Pct, input.tt2Pct, input.seePct, input.quizPct, input.assignmentPct]
-    .filter(v => v != null).length
-  const isCriticallyMissing = input.cgpaMissing === true && assessmentSignalsAvailable === 0
-
-  if (isCriticallyMissing) {
+  if (isCriticallySparseAcademicEvidence(input)) {
     return {
       riskProb: INFERENCE_BASELINE_RISK,
       riskBand: 'Low',
@@ -259,8 +338,20 @@ export function inferObservableRisk(input: ObservableInferenceInput): Observable
   // (very low CGPA or massive backlogs), the additive model underestimates
   // risk. Force the probability to at least the High band threshold.
   if (evaluateCatastrophicAbsorbingState(drivers)) {
-    bounded = Math.max(bounded, RISK_BAND_HIGH_THRESHOLD)
+    const pressureAboveBaseline = Math.max(0, riskProb - INFERENCE_BASELINE_RISK)
+    const absorbingFloor = roundToTwo(
+      Math.min(
+        INFERENCE_RISK_UPPER_CLAMP,
+        RISK_BAND_HIGH_THRESHOLD + Math.min(0.14, pressureAboveBaseline * 0.12),
+      ),
+    )
+    bounded = Math.max(bounded, absorbingFloor)
   }
+  const policyFloor = policyRiskFloorFromObservableInput(input, {
+    medium: RISK_BAND_MEDIUM_THRESHOLD,
+    high: RISK_BAND_HIGH_THRESHOLD,
+  })
+  bounded = Math.max(bounded, policyFloor.riskFloor)
 
   const riskBand: 'High' | 'Medium' | 'Low' = bounded >= RISK_BAND_HIGH_THRESHOLD ? 'High' : bounded >= RISK_BAND_MEDIUM_THRESHOLD ? 'Medium' : 'Low'
   
@@ -279,7 +370,14 @@ export function inferObservableRisk(input: ObservableInferenceInput): Observable
           break
         case 'cgpa':
         case 'backlog':
+        case 'prerequisite':
           recommendedAction = 'Student carries significant backlog or CGPA pressure; focus on prerequisite recovery before introducing new complex topics.'
+          break
+        case 'section-pressure':
+          recommendedAction = 'Review the section-level risk pattern and coordinate a focused class support plan before the next checkpoint.'
+          break
+        case 'coursework-gap':
+          recommendedAction = 'Compare coursework and test evidence to identify whether continuous evaluation is masking exam-readiness gaps.'
           break
         case 'co':
         case 'question-pattern':
@@ -292,6 +390,8 @@ export function inferObservableRisk(input: ObservableInferenceInput): Observable
         case 'tt1':
         case 'tt2':
         case 'see':
+        case 'ce':
+        case 'overall':
           recommendedAction = 'Review the recent examination paper with the student to correct foundational misunderstandings before the next major assessment.'
           break
         case 'intervention-response':
@@ -305,10 +405,12 @@ export function inferObservableRisk(input: ObservableInferenceInput): Observable
 
   const attentionAreas = Array.from(new Set(drivers.map(d => {
     if (d.feature === 'attendance' || d.feature === 'attendance-history') return 'Absenteeism'
-    if (d.feature === 'backlog' || d.feature === 'cgpa') return 'Academic Standing'
+    if (d.feature === 'backlog' || d.feature === 'cgpa' || d.feature === 'prerequisite') return 'Academic Standing'
+    if (d.feature === 'section-pressure') return 'Cohort Pressure'
+    if (d.feature === 'coursework-gap') return 'Coursework/Test Gap'
     if (d.feature === 'co' || d.feature === 'question-pattern') return 'Conceptual Gaps'
     if (d.feature === 'quiz' || d.feature === 'assignment') return 'Coursework Discipline'
-    if (d.feature === 'tt1' || d.feature === 'tt2' || d.feature === 'see') return 'Exam Performance'
+    if (d.feature === 'tt1' || d.feature === 'tt2' || d.feature === 'see' || d.feature === 'ce' || d.feature === 'overall') return 'Exam Performance'
     return 'General Support'
   })))
 

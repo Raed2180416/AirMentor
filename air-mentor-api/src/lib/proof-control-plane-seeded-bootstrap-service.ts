@@ -156,6 +156,7 @@ export async function prepareSeededProofRunBootstrap(
     semesterStart: 1,
     semesterEnd: 6,
     activeOperationalSemester: 1,
+    activeStageKey: 'pre-tt1',
     sourceType: 'simulation' as const,
     demoWorkspaceId: input.demoWorkspaceId ?? null,
     sectionOverridesJson: input.sectionOverridesJson ?? null,

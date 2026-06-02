@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import { eq } from 'drizzle-orm'
 import { simulationRuns } from '../src/db/schema.js'
 import { MSRUAS_PROOF_BATCH_ID } from '../src/lib/msruas-proof-sandbox.js'
 import { createTestApp, loginAs, TEST_NOW } from './helpers/test-app.js'
@@ -11,10 +12,35 @@ afterEach(async () => {
 })
 
 describe('teacher login after sysadmin proof run creation', () => {
+  it('keeps the teacher dashboard gated before the seeded sandbox is lifecycle-published', async () => {
+    current = await createTestApp()
+
+    const teacherLogin = await loginAs(current.app, 'devika.shetty', 'faculty1234')
+    expect(teacherLogin.response.statusCode).toBe(200)
+    const bootstrapResponse = await current.app.inject({
+      method: 'GET',
+      url: '/api/academic/bootstrap',
+      headers: { cookie: teacherLogin.cookie },
+    })
+
+    expect(bootstrapResponse.statusCode).toBe(403)
+    expect(bootstrapResponse.json()).toMatchObject({ error: 'NO_ACTIVE_PROOF_RUN' })
+  })
+
   it('keeps teachers able to bootstrap when an activating replacement proof run is building', async () => {
     current = await createTestApp()
     const [activeRun] = await current.db.select().from(simulationRuns)
     expect(activeRun).toBeTruthy()
+    await current.db
+      .update(simulationRuns)
+      .set({
+        lifecycleState: 'active',
+        activeOperationalSemester: 1,
+        activeStageKey: 'pre-tt1',
+        status: 'active',
+        updatedAt: TEST_NOW,
+      })
+      .where(eq(simulationRuns.simulationRunId, activeRun.simulationRunId))
 
     await current.db.insert(simulationRuns).values({
       simulationRunId: 'simulation_run_replacement_building',

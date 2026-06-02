@@ -848,10 +848,10 @@ export async function registerAcademicAdminOfferingRoutes(
       summary: 'List section offerings',
     },
   }, async request => {
-    requireRole(request, ['SYSTEM_ADMIN'])
+    const auth = requireRole(request, ['SYSTEM_ADMIN'])
     const snapshot = await buildAcademicBootstrap(context, {
-      facultyId: request.auth?.facultyId ?? null,
-      roleCode: request.auth?.activeRoleGrant.roleCode ?? null,
+      facultyId: auth.facultyId ?? null,
+      roleCode: auth.activeRoleGrant.roleCode ?? null,
     })
     return { items: snapshot.offerings }
   })

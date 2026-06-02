@@ -68,7 +68,7 @@ export type ProofPlaybackResetServiceDeps = {
     activeFlag: boolean
   }>
   deleteProofCredentials?: (db: AppDb, batchId: string) => Promise<{ deletedCount: number }>
-  invalidateProofBatchSessions?: (db: AppDb, batchId: string) => Promise<void>
+  invalidateProofBatchSessions?: (db: AppDb, batchId: string, demoWorkspaceId?: string | null) => Promise<void>
 }
 
 export type ResetCurrentProofStageInput = {
@@ -318,7 +318,7 @@ export async function stopProofSimulationRun(
     ? await deps.deleteProofCredentials(db, run.batchId)
     : { deletedCount: 0 }
   if (deps.invalidateProofBatchSessions) {
-    await deps.invalidateProofBatchSessions(db, run.batchId)
+    await deps.invalidateProofBatchSessions(db, run.batchId, run.demoWorkspaceId ?? null)
   }
 
   await deps.emitSimulationAudit(db, {

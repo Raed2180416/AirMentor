@@ -576,7 +576,7 @@ function defaultPolicyForm(): PolicyFormState {
   return {
     oMin: '90', aPlusMin: '80', aMin: '70', bPlusMin: '60', bMin: '55', cMin: '50', pMin: '40',
     ce: '60', see: '40', termTestsWeight: '30', quizWeight: '10', assignmentWeight: '20',
-    maxTermTests: '2', maxQuizzes: '2', maxAssignments: '2',
+    maxTermTests: '2', maxQuizzes: '5', maxAssignments: '5',
     dayStart: '08:30', dayEnd: '16:30', workingDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
     courseworkWeeks: '16', examPreparationWeeks: '1', seeWeeks: '3', totalWeeks: '20',
     minimumAttendancePercent: '75',
@@ -6879,6 +6879,7 @@ export function SystemAdminLiveApp({ apiBaseUrl, onExitPortal }: SystemAdminLive
               onOpenScopedFaculty: () => handleOpenScopedRegistry('faculty-members'),
               onOpenAllFaculty: () => handleOpenFullRegistry('faculty-members'),
             }}
+            apiClient={apiClient}
           />
         )}
 

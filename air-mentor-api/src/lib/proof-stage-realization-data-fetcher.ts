@@ -89,9 +89,19 @@ function num(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value))
+}
+
+function numFromRecord(record: Record<string, unknown>, key: string, fallback: number): number {
+  return num(record[key], fallback)
+}
+
 // Parses a latentStateJson blob (as written by proof-control-plane-seeded-semester-
 // service.ts) and extracts the minimum subset needed by the intervention-response
-// engine. Returns null when the blob is unparseable / missing critical sub-objects.
+// engine. Newer rows store explicit dynamics/behavior/intervention objects. Older
+// proof playback rows stored flat latent signals only, so we derive a conservative
+// profile from those instead of silently disabling realization.
 export function parseLatentProfileForIntervention(
   latentStateJson: string | null | undefined,
 ): StudentLatentProfileForIntervention | null {
@@ -107,29 +117,63 @@ export function parseLatentProfileForIntervention(
   const dynamics = record.dynamics as Record<string, unknown> | undefined
   const behavior = record.behavior as Record<string, unknown> | undefined
   const intervention = record.intervention as Record<string, unknown> | undefined
-  if (!dynamics || !behavior || !intervention) return null
+  const hasStructuredProfile = !!dynamics && !!behavior && !!intervention
+  const hasFlatLatentSignals = [
+    'academicPotential',
+    'selfRegulation',
+    'attendanceDiscipline',
+    'supportResponsiveness',
+  ].some(key => typeof record[key] === 'number' && Number.isFinite(record[key]))
+  if (!hasStructuredProfile && !hasFlatLatentSignals) return null
+
+  const selfRegulation = numFromRecord(record, 'selfRegulation', 0.55)
+  const supportResponsiveness = numFromRecord(record, 'supportResponsiveness', 0.5)
+  const academicPotential = numFromRecord(record, 'academicPotential', 0.55)
+  const attendanceDiscipline = numFromRecord(record, 'attendanceDiscipline', selfRegulation)
+  const externalWorkObligation = numFromRecord(record, 'externalWorkObligation', 0.25)
+  const commuteStress = numFromRecord(record, 'commuteStress', 0.35)
+
+  const flatFallback = hasFlatLatentSignals
+    ? {
+        forgetRate: clamp(0.16 - (selfRegulation * 0.08) + (externalWorkObligation * 0.04), 0.02, 0.28),
+        relearnRate: clamp(0.35 + (supportResponsiveness * 0.35), 0.12, 0.92),
+        transferGainRate: clamp(0.25 + (academicPotential * 0.3), 0.08, 0.9),
+        studyGainRate: clamp(0.3 + (selfRegulation * 0.3), 0.12, 0.92),
+        fatigueRate: clamp(0.05 + (commuteStress * 0.1) + (externalWorkObligation * 0.08), 0.02, 0.3),
+        consistency: clamp(0.35 + (selfRegulation * 0.45), 0.1, 0.95),
+        volatility: clamp(0.36 - (selfRegulation * 0.18) + (externalWorkObligation * 0.08), 0.04, 0.62),
+        recoveryTendency: clamp(0.3 + (supportResponsiveness * 0.4), 0.08, 0.94),
+        relapseTendency: clamp(0.35 - (selfRegulation * 0.2) + (externalWorkObligation * 0.08), 0.02, 0.58),
+        practiceCompliance: clamp(0.35 + (selfRegulation * 0.35), 0.06, 0.95),
+        helpSeekingTendency: clamp(0.25 + (supportResponsiveness * 0.45), 0.05, 0.95),
+        examPressure: clamp(0.3 + (externalWorkObligation * 0.2) + ((1 - selfRegulation) * 0.1), 0.05, 0.88),
+        interventionReceptivity: clamp(supportResponsiveness, 0.08, 0.98),
+        temporaryUpliftCredit: clamp(0.06 + (supportResponsiveness * 0.12), 0.01, 0.34),
+        expectedRecoveryThreshold: clamp(0.08 + ((1 - attendanceDiscipline) * 0.08), 0.02, 0.36),
+      }
+    : null
 
   return {
     dynamics: {
-      forgetRate: num(dynamics.forgetRate, 0.1),
-      relearnRate: num(dynamics.relearnRate, 0.5),
-      transferGainRate: num(dynamics.transferGainRate, 0.4),
-      studyGainRate: num(dynamics.studyGainRate, 0.5),
-      fatigueRate: num(dynamics.fatigueRate, 0.1),
-      consistency: num(dynamics.consistency, 0.55),
-      volatility: num(dynamics.volatility, 0.22),
-      recoveryTendency: num(dynamics.recoveryTendency, 0.5),
-      relapseTendency: num(dynamics.relapseTendency, 0.22),
+      forgetRate: num(dynamics?.forgetRate, flatFallback?.forgetRate ?? 0.1),
+      relearnRate: num(dynamics?.relearnRate, flatFallback?.relearnRate ?? 0.5),
+      transferGainRate: num(dynamics?.transferGainRate, flatFallback?.transferGainRate ?? 0.4),
+      studyGainRate: num(dynamics?.studyGainRate, flatFallback?.studyGainRate ?? 0.5),
+      fatigueRate: num(dynamics?.fatigueRate, flatFallback?.fatigueRate ?? 0.1),
+      consistency: num(dynamics?.consistency, flatFallback?.consistency ?? 0.55),
+      volatility: num(dynamics?.volatility, flatFallback?.volatility ?? 0.22),
+      recoveryTendency: num(dynamics?.recoveryTendency, flatFallback?.recoveryTendency ?? 0.5),
+      relapseTendency: num(dynamics?.relapseTendency, flatFallback?.relapseTendency ?? 0.22),
     },
     behavior: {
-      practiceCompliance: num(behavior.practiceCompliance, 0.55),
-      helpSeekingTendency: num(behavior.helpSeekingTendency, 0.4),
-      examPressure: num(behavior.examPressure, 0.35),
+      practiceCompliance: num(behavior?.practiceCompliance, flatFallback?.practiceCompliance ?? 0.55),
+      helpSeekingTendency: num(behavior?.helpSeekingTendency, flatFallback?.helpSeekingTendency ?? 0.4),
+      examPressure: num(behavior?.examPressure, flatFallback?.examPressure ?? 0.35),
     },
     intervention: {
-      interventionReceptivity: num(intervention.interventionReceptivity, 0.5),
-      temporaryUpliftCredit: num(intervention.temporaryUpliftCredit, 0.1),
-      expectedRecoveryThreshold: num(intervention.expectedRecoveryThreshold, 0.12),
+      interventionReceptivity: num(intervention?.interventionReceptivity, flatFallback?.interventionReceptivity ?? 0.5),
+      temporaryUpliftCredit: num(intervention?.temporaryUpliftCredit, flatFallback?.temporaryUpliftCredit ?? 0.1),
+      expectedRecoveryThreshold: num(intervention?.expectedRecoveryThreshold, flatFallback?.expectedRecoveryThreshold ?? 0.12),
     },
   }
 }
@@ -145,6 +189,8 @@ export type InterventionRowForFetcher = {
   interventionType: string
   occurredAt: string
   createdAt: string
+  semesterNumberApplied?: number | null
+  stageKeyApplied?: InterventionStageKey | null
 }
 
 export function buildEvidenceApplierInterventionInput(input: {
@@ -196,13 +242,15 @@ export function groupInterventionsByStudentAndOffering(input: {
   for (const row of sorted) {
     const severityContext = input.severityContextByStudentId.get(row.studentId)
     if (!severityContext) continue
-    const ordinalKey = `${row.studentId}::${input.stageKeyApplied}`
+    const stageKeyApplied = row.stageKeyApplied ?? input.stageKeyApplied
+    const semesterNumberApplied = row.semesterNumberApplied ?? input.semesterNumber
+    const ordinalKey = `${row.studentId}::${semesterNumberApplied}::${stageKeyApplied}`
     const ordinal = (ordinalCounters.get(ordinalKey) ?? 0) + 1
     ordinalCounters.set(ordinalKey, ordinal)
     const appInput = buildEvidenceApplierInterventionInput({
       interventionRow: row,
-      semesterNumber: input.semesterNumber,
-      stageKeyApplied: input.stageKeyApplied,
+      semesterNumber: semesterNumberApplied,
+      stageKeyApplied,
       ordinalInStageForStudent: ordinal,
       severityContext,
       dominantWeaknessHint: input.dominantWeaknessByStudentId?.get(row.studentId) ?? null,

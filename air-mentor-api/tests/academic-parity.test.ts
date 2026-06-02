@@ -15,7 +15,8 @@ import {
   studentEnrollments,
   studentObservedSemesterStates,
 } from '../src/db/schema.js'
-import { createTestApp, loginAs, TEST_ORIGIN } from './helpers/test-app.js'
+import { activateProofOperationalSemester } from '../src/lib/msruas-proof-control-plane.js'
+import { createTestApp, loginAs, TEST_NOW, TEST_ORIGIN } from './helpers/test-app.js'
 
 let current: Awaited<ReturnType<typeof createTestApp>> | null = null
 
@@ -23,6 +24,26 @@ afterEach(async () => {
   if (current) await current.close()
   current = null
 })
+
+async function publishSeededProofRunForAcademicParity() {
+  if (!current) throw new Error('Test app is not initialized')
+  const [activeRun] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+  expect(activeRun).toBeTruthy()
+  await activateProofOperationalSemester(current.db, {
+    simulationRunId: activeRun.simulationRunId,
+    semesterNumber: 1,
+    actorFacultyId: null,
+    now: TEST_NOW,
+  })
+  return activeRun
+}
+
+async function createPublishedAcademicParityApp() {
+  const app = await createTestApp()
+  current = app
+  await publishSeededProofRunForAcademicParity()
+  return app
+}
 
 function weekdayFromDateIso(value: string) {
   const parsed = new Date(value)
@@ -122,7 +143,7 @@ function collectLeafComponentDefs(nodes: Array<{ id: string; maxMarks?: number; 
 
 describe('academic bootstrap', () => {
   it('debug database state', async () => {
-    current = await createTestApp()
+    current = await createPublishedAcademicParityApp()
     const runs = await current.db.select().from(simulationRuns)
     const offerings = await current.db.select().from(sectionOfferings)
     console.log('DEBUG RUNS COUNT:', runs.length)
@@ -142,7 +163,7 @@ describe('academic bootstrap', () => {
   })
 
   it('keeps faculty-profile proof context and linked proof drilldowns aligned for the active teaching role', async () => {
-    current = await createTestApp()
+    current = await createPublishedAcademicParityApp()
     const login = await loginAs(current.app, 'devika.shetty', 'faculty1234')
 
     const response = await current.app.inject({
@@ -172,21 +193,27 @@ describe('academic bootstrap', () => {
         label: expect.any(String),
       }),
     })
-    expect(profile.proofOperations.monitoringQueue.length).toBeGreaterThan(0)
+    expect(Array.isArray(profile.proofOperations.monitoringQueue)).toBe(true)
 
-    const firstQueueStudentId = profile.proofOperations.monitoringQueue[0]?.studentId
-    expect(firstQueueStudentId).toBeTruthy()
-    if (!firstQueueStudentId) throw new Error('Expected a checkpoint-bound faculty queue student')
+    let drilldownStudentId = profile.proofOperations.monitoringQueue[0]?.studentId as string | undefined
+    if (!drilldownStudentId) {
+      const mentorRole = login.body.availableRoleGrants.find((grant: { roleCode: string }) => grant.roleCode === 'MENTOR')
+      expect(mentorRole).toBeTruthy()
+      await switchToRole(login.cookie, login.body.availableRoleGrants, 'MENTOR')
+      drilldownStudentId = profile.mentorScope.studentIds[0]
+    }
+    expect(drilldownStudentId).toBeTruthy()
+    if (!drilldownStudentId) throw new Error('Expected a proof-scoped faculty drilldown student')
 
     const [riskExplorerResponse, studentShellResponse] = await Promise.all([
       current.app.inject({
         method: 'GET',
-        url: `/api/academic/students/${firstQueueStudentId}/risk-explorer`,
+        url: `/api/academic/students/${drilldownStudentId}/risk-explorer`,
         headers: { cookie: login.cookie },
       }),
       current.app.inject({
         method: 'GET',
-        url: `/api/academic/student-shell/students/${firstQueueStudentId}/card`,
+        url: `/api/academic/student-shell/students/${drilldownStudentId}/card`,
         headers: { cookie: login.cookie },
       }),
     ])
@@ -196,7 +223,7 @@ describe('academic bootstrap', () => {
   })
 
   it('exposes non-overlapping faculty timetable blocks in the proof bootstrap for course-leader playback', async () => {
-    current = await createTestApp()
+    current = await createPublishedAcademicParityApp()
     const login = await loginAs(current.app, 'devika.shetty', 'faculty1234')
 
     const response = await current.app.inject({
@@ -230,7 +257,7 @@ describe('academic bootstrap', () => {
   })
 
   it('ignores legacy academic asset snapshots and derives the live view from admin-owned records', async () => {
-    current = await createTestApp()
+    current = await createPublishedAcademicParityApp()
     const login = await loginAsProofCourseLeader()
 
     await current.db.update(academicAssets).set({
@@ -290,7 +317,7 @@ describe('academic bootstrap', () => {
   })
 
   it('reflects admin master-data changes into the academic bootstrap on the next fetch', async () => {
-    current = await createTestApp()
+    current = await createPublishedAcademicParityApp()
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
     const academicLogin = await loginAsProofCourseLeader()
     const initialSnapshot = await loadAcademicBootstrap(academicLogin.cookie)
@@ -332,7 +359,7 @@ describe('academic bootstrap', () => {
   })
 
   it('persists resolved course outcomes, offering schemes, and question papers through backend-owned routes', async () => {
-    current = await createTestApp()
+    current = await createPublishedAcademicParityApp()
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
     const facultyLogin = await loginAsProofCourseLeader()
     const initialBootstrap = await loadAcademicBootstrap(facultyLogin.cookie)
@@ -416,24 +443,22 @@ describe('academic bootstrap', () => {
         scheme: {
           finalsMax: 100,
           termTestWeights: { tt1: 20, tt2: 15 },
-          quizWeight: 10,
-          assignmentWeight: 15,
-          quizCount: 2,
-          assignmentCount: 2,
+          quizWeight: 0,
+          assignmentWeight: 25,
+          quizCount: 0,
+          assignmentCount: 3,
           policyContext: {
             ce: 60,
             see: 40,
             maxTermTests: 2,
-            maxQuizzes: 2,
-            maxAssignments: 2,
+            maxQuizzes: 5,
+            maxAssignments: 5,
           },
-          quizComponents: [
-            { id: 'quiz-1', label: 'Quiz 1', rawMax: 10, weightage: 5 },
-            { id: 'quiz-2', label: 'Quiz 2', rawMax: 10, weightage: 5 },
-          ],
+          quizComponents: [],
           assignmentComponents: [
-            { id: 'assignment-1', label: 'Assignment 1', rawMax: 10, weightage: 7 },
+            { id: 'assignment-1', label: 'Assignment 1', rawMax: 10, weightage: 8 },
             { id: 'assignment-2', label: 'Assignment 2', rawMax: 10, weightage: 8 },
+            { id: 'assignment-3', label: 'Assignment 3', rawMax: 10, weightage: 9 },
           ],
           status: 'Configured',
           configuredAt: Date.now(),
@@ -505,8 +530,46 @@ describe('academic bootstrap', () => {
     ])
     expect(bootstrap.assessmentSchemesByOffering[targetOffering.offId]).toMatchObject({
       status: 'Configured',
-      quizCount: 2,
-      assignmentCount: 2,
+      quizCount: 0,
+      assignmentCount: 3,
+    })
+    const targetStudent = bootstrap.studentsByOffering[targetOffering.offId]?.[0]
+    expect(targetStudent).toBeTruthy()
+    if (!targetStudent) throw new Error('Expected a student for dynamic assignment entry')
+    const assignmentEntryResponse = await current.app.inject({
+      method: 'PUT',
+      url: `/api/academic/offerings/${targetOffering.offId}/assessment-entries/assignment`,
+      headers: { cookie: facultyLogin.cookie, origin: TEST_ORIGIN },
+      payload: {
+        entries: [{
+          studentId: targetStudent.id,
+          components: [
+            { componentCode: 'assignment-1', score: 8, maxScore: 10 },
+            { componentCode: 'assignment-2', score: 7, maxScore: 10 },
+            { componentCode: 'assignment-3', score: 6, maxScore: 10 },
+          ],
+        }],
+        lock: false,
+      },
+    })
+    expect(assignmentEntryResponse.statusCode).toBe(200)
+    const [activeRunForAssignmentStage] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
+    expect(activeRunForAssignmentStage).toBeTruthy()
+    if (!activeRunForAssignmentStage) throw new Error('Expected an active proof run before assignment-stage bootstrap')
+    await current.db.update(simulationRuns).set({
+      activeStageKey: 'post-assignments',
+      updatedAt: TEST_NOW,
+    }).where(eq(simulationRuns.simulationRunId, activeRunForAssignmentStage.simulationRunId))
+    const afterAssignmentBootstrap = await loadAcademicBootstrap(facultyLogin.cookie)
+    const afterAssignmentStudent = afterAssignmentBootstrap.studentsByOffering[targetOffering.offId].find((student: { id: string }) => student.id === targetStudent.id)
+    expect(afterAssignmentStudent).toMatchObject({
+      asgn1: 8,
+      asgn2: 7,
+      assignmentScores: {
+        'assignment-1': 8,
+        'assignment-2': 7,
+        'assignment-3': 6,
+      },
     })
     expect(bootstrap.questionPapersByOffering[targetOffering.offId].tt1.nodes).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'tt1-q1', cos: ['CO2'] }),
@@ -515,7 +578,7 @@ describe('academic bootstrap', () => {
   })
 
   it('persists authoritative queue, calendar workspace, attendance, and TT1 entry state through the teaching routes', async () => {
-    current = await createTestApp()
+    current = await createPublishedAcademicParityApp()
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
     const facultyLogin = await loginAsProofCourseLeader()
     const facultyId = String(facultyLogin.body.faculty.facultyId)
@@ -814,7 +877,7 @@ describe('academic bootstrap', () => {
   })
 
   it('ignores stale persisted risk rows from other proof windows when rendering the live bootstrap', async () => {
-    current = await createTestApp()
+    current = await createPublishedAcademicParityApp()
     const facultyLogin = await loginAs(current.app, 'devika.shetty', 'faculty1234')
     const baselineBootstrap = await loadAcademicBootstrap(facultyLogin.cookie)
     const targetOffering = baselineBootstrap.offerings.find((offering: { offId: string }) => (
@@ -860,7 +923,7 @@ describe('academic bootstrap', () => {
   })
 
   it('reacts immediately to newly entered quiz evidence and follows the authoritative run stage instead of offering stage', async () => {
-    current = await createTestApp()
+    current = await createPublishedAcademicParityApp()
     const facultyLogin = await loginAs(current.app, 'devika.shetty', 'faculty1234')
     const [activeRun] = await current.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
     expect(activeRun).toBeTruthy()
@@ -948,7 +1011,7 @@ describe('academic bootstrap', () => {
   })
 
   it('keeps checkpoint playback summaries bound to the selected checkpoint timeline', async () => {
-    current = await createTestApp()
+    current = await createPublishedAcademicParityApp()
     const facultyLogin = await loginAs(current.app, 'devika.shetty', 'faculty1234')
     const liveBootstrap = await loadAcademicBootstrap(facultyLogin.cookie)
     const targetOffering = liveBootstrap.offerings.find((offering: { offId: string }) => (
@@ -1012,7 +1075,7 @@ describe('academic bootstrap', () => {
   })
 
   it('keeps faculty-profile proof payloads and student drilldowns scoped for course leaders and mentors', async () => {
-    current = await createTestApp()
+    current = await createPublishedAcademicParityApp()
     const login = await loginAs(current.app, 'devika.shetty', 'faculty1234')
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
 
@@ -1203,7 +1266,7 @@ describe('academic bootstrap', () => {
   })
 
   it('keeps Sem1 checkpoint bootstrap restorable for the scoped course leader after proof recompute', async () => {
-    current = await createTestApp()
+    current = await createPublishedAcademicParityApp()
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
     const login = await loginAs(current.app, 'rohit.menon', 'faculty1234')
 
@@ -1235,7 +1298,7 @@ describe('academic bootstrap', () => {
   }, 300000)
 
   it('projects teacher attendance edits into recomputed proof checkpoint evidence', async () => {
-    current = await createTestApp()
+    current = await createPublishedAcademicParityApp()
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
     const login = await loginAs(current.app, 'rohit.menon', 'faculty1234')
     const activeRole = login.body.activeRoleGrant.roleCode === 'COURSE_LEADER'
@@ -1299,7 +1362,7 @@ describe('academic bootstrap', () => {
   }, 300000)
 
   it('keeps academic playback checkpoints available when another proof run is also active', async () => {
-    current = await createTestApp()
+    current = await createPublishedAcademicParityApp()
     const login = await loginAs(current.app, 'devika.shetty', 'faculty1234')
     const adminLogin = await loginAs(current.app, 'sysadmin', 'admin1234')
 

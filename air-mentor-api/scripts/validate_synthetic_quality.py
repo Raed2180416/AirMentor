@@ -43,7 +43,10 @@ API_ROOT = Path(__file__).resolve().parents[1]
 PROOF_RISK_MODEL_SOURCE = API_ROOT / "src/lib/proof-risk-model.ts"
 
 STAGE_FORBIDDEN_FEATURES = {
-    "pre-tt1": [5, 6, 7, 8, 9, 10, 14, 15],
+    # Prerequisite pressure is prior-semester evidence and is intentionally
+    # available at pre-TT1 for carryover risk. Current-semester assessment
+    # outcomes still must remain neutral until their stage is observed.
+    "pre-tt1": [5, 6, 7, 8, 9, 10, 14],
     "post-tt1": [6, 7, 8, 9],
     "post-tt2": [7, 8, 9],
     "post-assignments": [7],
@@ -407,6 +410,115 @@ def v6_semantic_report(df: pd.DataFrame, cols: list[str]) -> dict[str, Any]:
     }
 
 
+def temporal_split_evaluation(df: pd.DataFrame, cols: list[str]) -> dict[str, Any]:
+    if "stage_key" not in df.columns:
+        return {"available": False, "reason": "stage_key missing"}
+    
+    train_stages = ["pre-tt1", "post-tt1", "post-tt2"]
+    test_stages = ["post-assignments", "post-see"]
+    
+    train_df = df[df["stage_key"].isin(train_stages)]
+    test_df = df[df["stage_key"].isin(test_stages)]
+    
+    if train_df.empty or test_df.empty:
+        return {"available": False, "reason": "insufficient temporal stages"}
+        
+    result = {
+        head: train_eval_logistic(train_df, test_df, cols, label)
+        for head, label in LABEL_COLS.items()
+    }
+    return {"available": True, "results": result, "train_size": len(train_df), "test_size": len(test_df)}
+
+def causal_intervention_test(df: pd.DataFrame, cols: list[str]) -> dict[str, Any]:
+    if LogisticRegression is None or StandardScaler is None:
+        return {"available": False, "reason": "sklearn not installed"}
+        
+    label = "label_overall"
+    if label not in df.columns or "feat_31" not in cols:
+        return {"available": False, "reason": "feat_31 missing or label_overall missing"}
+        
+    y = df[label].to_numpy(dtype=int)
+    if len(set(y.tolist())) < 2: return {"available": False, "reason": "single class"}
+    
+    scaler = StandardScaler()
+    X = scaler.fit_transform(df[cols].to_numpy(dtype=float))
+    
+    model = LogisticRegression(C=1.0, solver="lbfgs", class_weight="balanced", max_iter=1000, random_state=42)
+    model.fit(X, y)
+    
+    orig_prob = model.predict_proba(X)[:, 1]
+    high_risk_idx = np.where(orig_prob > 0.6)[0]
+    
+    if len(high_risk_idx) == 0:
+        return {"available": False, "reason": "no high risk students found"}
+        
+    df_intervened = df.copy()
+    df_intervened["feat_31"] = 1.0 # Max intervention response
+    
+    X_intervened = scaler.transform(df_intervened[cols].to_numpy(dtype=float))
+    new_prob = model.predict_proba(X_intervened)[:, 1]
+    
+    delta = orig_prob[high_risk_idx] - new_prob[high_risk_idx]
+    
+    return {
+        "available": True,
+        "highRiskCount": int(len(high_risk_idx)),
+        "meanCausalDelta": float(np.mean(delta)),
+        "maxCausalDelta": float(np.max(delta))
+    }
+
+def algorithmic_fairness_report(df: pd.DataFrame, cols: list[str]) -> dict[str, Any]:
+    if LogisticRegression is None or StandardScaler is None:
+        return {"available": False, "reason": "sklearn not installed"}
+        
+    label = "label_overall"
+    if label not in df.columns:
+        return {"available": False, "reason": "label_overall missing"}
+        
+    y = df[label].to_numpy(dtype=int)
+    if len(set(y.tolist())) < 2: return {"available": False, "reason": "single class"}
+    
+    X_train, X_test, y_train, y_test, idx_train, idx_test = train_test_split(
+        df[cols].to_numpy(dtype=float), y, np.arange(len(df)), test_size=0.35, random_state=42, stratify=y
+    )
+    
+    df_test = df.iloc[idx_test]
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    
+    model = LogisticRegression(C=1.0, solver="lbfgs", class_weight="balanced", max_iter=1000, random_state=42)
+    model.fit(X_train_scaled, y_train)
+    preds = model.predict(X_test_scaled)
+    
+    results = {}
+    for subgroup_name, mask in [
+        ("Baseline", np.ones(len(df_test), dtype=bool)),
+        ("Hacker (Low Attendance)", df_test["feat_0"].to_numpy(dtype=float) < 0.4 if "feat_0" in df_test.columns else np.zeros(len(df_test), dtype=bool)),
+        ("Sustained Friction (High Backlog)", df_test["feat_4"].to_numpy(dtype=float) >= 3 if "feat_4" in df_test.columns else np.zeros(len(df_test), dtype=bool))
+    ]:
+        if not mask.any(): continue
+        
+        y_sub = y_test[mask]
+        p_sub = preds[mask]
+        
+        tp = ((p_sub == 1) & (y_sub == 1)).sum()
+        fp = ((p_sub == 1) & (y_sub == 0)).sum()
+        fn = ((p_sub == 0) & (y_sub == 1)).sum()
+        tn = ((p_sub == 0) & (y_sub == 0)).sum()
+        
+        fpr = fp / (fp + tn) if (fp + tn) > 0 else 0
+        fnr = fn / (fn + tp) if (fn + tp) > 0 else 0
+        
+        results[subgroup_name] = {
+            "size": int(mask.sum()),
+            "FPR": float(fpr),
+            "FNR": float(fnr)
+        }
+        
+    return {"available": True, "subgroups": results}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Evaluate AirMentor synthetic tabular data quality")
     parser.add_argument("synthetic_csv")
@@ -426,6 +538,9 @@ def main() -> int:
     contract = feature_contract_report(synthetic, feature_cols(synthetic))
     v6_semantics = v6_semantic_report(synthetic, feature_cols(synthetic))
     temporal = temporal_leakage_report(synthetic)
+    temporal_eval = temporal_split_evaluation(synthetic, cols)
+    causal_intervention = causal_intervention_test(synthetic, cols)
+    fairness = algorithmic_fairness_report(synthetic, cols)
 
     report = {
         "syntheticCsv": str(synthetic_path),
@@ -454,6 +569,11 @@ def main() -> int:
         "distinguishability": distinguishability_auc(real, synthetic, cols) if real is not None else {"available": False, "reason": "real reference data not supplied"},
         "utility": utility_report(synthetic, real, cols),
         "privacyProxy": privacy_proxy_report(synthetic, real, cols),
+        "sotaValidation": {
+            "temporalEvaluation": temporal_eval,
+            "causalInterventionTesting": causal_intervention,
+            "algorithmicFairness": fairness
+        },
         "claimBoundary": "Without real data, this report supports internal consistency only. Realism and deployment utility require real-vs-synthetic fidelity, TRTR/TSTR, distinguishability, and privacy review.",
     }
 

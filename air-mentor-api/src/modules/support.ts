@@ -16,6 +16,11 @@ import type { RouteContext } from '../app.js'
 import { createId } from '../lib/ids.js'
 import { conflict, forbidden, unauthorized, badRequest } from '../lib/http-errors.js'
 import { parseJson, stringifyJson } from '../lib/json.js'
+import type { RequestAuth } from '../types/fastify.js'
+
+type RequestWithAuth = FastifyRequest & {
+  auth?: RequestAuth | null
+}
 
 export const sessionCookieSchema = z.object({
   roleGrantId: z.string().min(1),
@@ -79,12 +84,12 @@ export async function resolveRequestAuth(
   }
 }
 
-export function requireAuth(request: FastifyRequest) {
+export function requireAuth(request: RequestWithAuth) {
   if (!request.auth) throw unauthorized()
   return request.auth
 }
 
-export function requireRole(request: FastifyRequest, roles: string[]) {
+export function requireRole(request: RequestWithAuth, roles: string[]) {
   const auth = requireAuth(request)
   if (!roles.includes(auth.activeRoleGrant.roleCode)) {
     throw forbidden()
@@ -241,7 +246,7 @@ export async function getAuditEventsForEntity(context: RouteContext, entityType:
   return rows.map(mapAuditEvent)
 }
 
-export async function canAccessAdminRequest(context: RouteContext, request: FastifyRequest, requestRecord: typeof adminRequests.$inferSelect) {
+export async function canAccessAdminRequest(_context: RouteContext, request: RequestWithAuth, requestRecord: typeof adminRequests.$inferSelect) {
   const auth = requireAuth(request)
   if (auth.activeRoleGrant.roleCode === 'SYSTEM_ADMIN') return true
   if (auth.activeRoleGrant.roleCode === 'HOD' && auth.facultyId === requestRecord.requestedByFacultyId) return true

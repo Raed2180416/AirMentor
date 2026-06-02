@@ -361,25 +361,23 @@ def apply_calibration(raw_probs: np.ndarray, calibration_blob: dict | None) -> n
     return raw_probs
 
 
-def overload_correct(probs: np.ndarray, y_true: np.ndarray, target_overload: float = 1.0) -> np.ndarray:
-    """Shrink probabilities toward base rate to fix overload issues."""
+def get_overload_correction(probs: np.ndarray, y_true: np.ndarray, target_overload: float = 1.0) -> tuple[float, float]:
+    """Calculate scalar mix factor to shrink probabilities toward base rate to fix overload issues."""
     positive_rate = float(y_true.mean()) if len(y_true) > 0 else 0.0
     if positive_rate <= 0:
-        return probs
+        return 1.0, positive_rate
     current_overload = float(probs.mean() / positive_rate)
-    if abs(current_overload - target_overload) < 0.001:
-        return probs
-    # Mix toward base rate to achieve target overload
-    # current_mix * current_overload + (1-current_mix) * 1.0 = target
-    # We want: mix * current_overload + (1-mix) * 1.0 = target_overload
-    # mix * (current_overload - 1.0) = target_overload - 1.0
-    # mix = (target_overload - 1.0) / (current_overload - 1.0)
-    if abs(current_overload - 1.0) < 1e-6:
-        return probs
+    if abs(current_overload - target_overload) < 0.001 or abs(current_overload - 1.0) < 1e-6:
+        return 1.0, positive_rate
     mix = (target_overload - 1.0) / (current_overload - 1.0)
     mix = np.clip(mix, 0.0, 1.0)
+    return float(mix), float(positive_rate)
+
+def apply_overload_correction(probs: np.ndarray, mix: float, positive_rate: float) -> np.ndarray:
+    """Apply the calculated scalar mix factor."""
     corrected = mix * probs + (1.0 - mix) * positive_rate
     return np.clip(corrected, 0.0001, 0.9999)
+
 
 
 def fit_best_calibration(raw_probs: np.ndarray, y_true: np.ndarray) -> tuple[np.ndarray, dict]:
@@ -680,6 +678,37 @@ CATB_CONFIGS: list[dict[str, Any]] = [
     {"depth": 5, "learning_rate": 0.05, "iterations": 300, "l2_leaf_reg": 3},
     {"depth": 7, "learning_rate": 0.03, "iterations": 400, "l2_leaf_reg": 1},
 ]
+
+EBM_CONFIGS: list[dict[str, Any]] = [
+    {"max_bins": 256, "interactions": 5, "outer_bags": 8, "inner_bags": 0, "learning_rate": 0.01},
+    {"max_bins": 256, "interactions": 10, "outer_bags": 8, "inner_bags": 0, "learning_rate": 0.03},
+]
+
+def extract_ebm_for_ts(ebm_model, feature_names):
+    terms = []
+    bins = []
+    for b in ebm_model.bins_:
+        if len(b) > 0 and isinstance(b[0], (np.ndarray, list)):
+            bins.append(np.array(b[0]).tolist())
+        else:
+            bins.append([])
+
+    for i, term in enumerate(ebm_model.term_names_):
+        feature_indices = ebm_model.term_features_[i]
+        scores = ebm_model.term_scores_[i]
+        terms.append({
+            "name": term,
+            "features": [feature_names[f_idx] for f_idx in feature_indices],
+            "feature_indices": list(feature_indices),
+            "scores": np.array(scores).tolist()
+        })
+        
+    intercept = ebm_model.intercept_[0] if isinstance(ebm_model.intercept_, (np.ndarray, list)) else ebm_model.intercept_
+    return {
+        "intercept": float(intercept),
+        "bins": bins,
+        "terms": terms
+    }
 
 
 def _validation_score(val_metrics: dict) -> float:
@@ -985,17 +1014,29 @@ def train_head(
     if catb_best_result is None:
         raise RuntimeError("All CatBoost configs failed")
 
+    # ── EBM ──
+    print(f"[sota] {head_key}: training EBM grid...")
+    from interpret.glassbox import ExplainableBoostingClassifier
+    ebm_result = train_and_select_model(
+        ExplainableBoostingClassifier, EBM_CONFIGS,
+        X_train_aug, y_train_aug, X_val, y_val, X_test,
+        extra_kwargs={"n_jobs": 4},
+        sample_weight=train_weights_aug,
+    )
+
     # ── Meta-learner ensemble ──
     print(f"[sota] {head_key}: training meta-learner...")
     meta_X_val = _make_meta_features(
         xgb_result["validationProbs"],
         lgbm_result["validationProbs"],
         catb_best_result["validationProbs"],
+        ebm_result["validationProbs"],
     )
     meta_X_test = _make_meta_features(
         xgb_result["testProbs"],
         lgbm_result["testProbs"],
         catb_best_result["testProbs"],
+        ebm_result["testProbs"],
     )
 
     y_val_classes = set(np.unique(y_val))
@@ -1023,29 +1064,30 @@ def train_head(
         "xgboost": {"val_probs": xgb_result["validationProbs"], "test_probs": xgb_result["testProbs"]},
         "lightgbm": {"val_probs": lgbm_result["validationProbs"], "test_probs": lgbm_result["testProbs"]},
         "catboost": {"val_probs": catb_best_result["validationProbs"], "test_probs": catb_best_result["testProbs"]},
+        "ebm": {"val_probs": ebm_result["validationProbs"], "test_probs": ebm_result["testProbs"]},
         "ensemble": {"val_probs": meta_cal_val, "test_probs": meta_cal_test},
     }
 
     candidate_val_metrics: dict[str, dict] = {}
     candidate_test_metrics: dict[str, dict] = {}
 
-    def _gate_count(test_m: dict, baseline_m: dict, robustness: dict | None = None) -> int:
-        auc_gain = float(test_m.get("rocAuc", 0.0)) - float(baseline_m.get("rocAuc", 0.0))
+    def _gate_count(val_m: dict, baseline_m: dict, robustness: dict | None = None) -> int:
+        auc_gain = float(val_m.get("rocAuc", 0.0)) - float(baseline_m.get("rocAuc", 0.0))
         ranking_exc = auc_gain > 0.05
         tol = 0.03 if ranking_exc else 1e-4
         gc = 0
-        if test_m.get("rocAuc", 0.0) >= baseline_m.get("rocAuc", 0.0) - 1e-4:
+        if val_m.get("rocAuc", 0.0) >= baseline_m.get("rocAuc", 0.0) - 1e-4:
             gc += 1
-        if test_m.get("brier", 1.0) <= baseline_m.get("brier", 1.0) + 1e-4:
+        if val_m.get("brier", 1.0) <= baseline_m.get("brier", 1.0) + 1e-4:
             gc += 1
         bo = baseline_m.get("overloadRatio")
-        co = test_m.get("overloadRatio")
+        co = val_m.get("overloadRatio")
         if bo is not None and co is not None:
             if abs(float(co) - 1.0) <= abs(float(bo) - 1.0) + tol:
                 gc += 1
         for key in LOCAL_ECE_BANDS:
             be = (baseline_m.get("localCalibration") or {}).get(key, {}).get("ece")
-            ce = (test_m.get("localCalibration") or {}).get(key, {}).get("ece")
+            ce = (val_m.get("localCalibration") or {}).get(key, {}).get("ece")
             if be is not None and ce is not None and ce <= be + tol:
                 gc += 1
         # Cross-family robustness gate: std <= 0.10 and min AUC >= 0.60
@@ -1065,16 +1107,16 @@ def train_head(
         candidate_test_metrics[name] = test_m
         score = _validation_score(val_m)
 
-        # Compute cross-family robustness from test set
-        df_test_copy = df_test.copy()
-        df_test_copy["_probs"] = probs["test_probs"]
-        robustness = cross_family_robustness_score(df_test_copy, head_key, feature_cols + ["_probs"], None)
-        # Manual per-family AUC from test probs since we don't have the model object
+        # Compute cross-family robustness from validation set (fixing test-set leakage)
+        df_val_copy = df_val.copy()
+        df_val_copy["_probs"] = probs["val_probs"]
+        robustness = cross_family_robustness_score(df_val_copy, head_key, feature_cols + ["_probs"], None)
+        # Manual per-family AUC from val probs since we don't have the model object
         per_family_aucs = {}
-        for family in df_test["scenario_family"].unique():
-            fam_mask = df_test["scenario_family"] == family
-            y_fam = y_test[fam_mask]
-            p_fam = probs["test_probs"][fam_mask]
+        for family in df_val["scenario_family"].unique():
+            fam_mask = df_val["scenario_family"] == family
+            y_fam = y_val[fam_mask]
+            p_fam = probs["val_probs"][fam_mask]
             pos = y_fam.sum()
             if pos > 0 and pos < len(y_fam):
                 try:
@@ -1087,7 +1129,7 @@ def train_head(
         else:
             robustness = None
 
-        gates = _gate_count(test_m, candidate_test_metrics["baseline"], robustness)
+        gates = _gate_count(val_m, candidate_val_metrics["baseline"], robustness)
         rob_str = f"robStd={robustness['aucStd']:.3f}" if robustness else "rob=N/A"
         print(f"  [sota] {head_key} candidate={name:10s} val_auc={val_m['rocAuc']:.4f} val_brier={val_m['brier']:.4f} gates={gates}/6 score={score:.4f} {rob_str}")
         # Prefer more gates, then higher score
@@ -1096,17 +1138,21 @@ def train_head(
             best_score = score
             best_candidate = name
 
-    # If selected model fails overload, try correction
-    selected_test_metrics = candidate_test_metrics[best_candidate]
+    # If selected model fails overload, try correction based on validation
+    selected_val_metrics = candidate_val_metrics[best_candidate]
+    selected_val_probs = candidates[best_candidate]["val_probs"]
     selected_test_probs = candidates[best_candidate]["test_probs"]
-    baseline_test_m = candidate_test_metrics["baseline"]
-    bo = baseline_test_m.get("overloadRatio")
-    co = selected_test_metrics.get("overloadRatio")
+    baseline_val_m = candidate_val_metrics["baseline"]
+    bo = baseline_val_m.get("overloadRatio")
+    co = selected_val_metrics.get("overloadRatio")
     if bo is not None and co is not None:
         if abs(float(co) - 1.0) > abs(float(bo) - 1.0) + 1e-4:
             print(f"  [sota] {head_key} correcting overload for {best_candidate}: {co:.4f} -> target ~{bo:.4f}")
-            corrected_test = overload_correct(selected_test_probs, y_test, target_overload=float(bo))
-            corrected_val = overload_correct(candidates[best_candidate]["val_probs"], y_val, target_overload=float(bo))
+            # calculate mix factor on validation data
+            mix, p_rate = get_overload_correction(selected_val_probs, y_val, target_overload=float(bo))
+            corrected_val = apply_overload_correction(selected_val_probs, mix, p_rate)
+            corrected_test = apply_overload_correction(selected_test_probs, mix, p_rate)
+            
             candidate_test_metrics[best_candidate] = metrics_for(y_test, corrected_test)
             candidate_val_metrics[best_candidate] = metrics_for(y_val, corrected_val)
             selected_test_probs = corrected_test
@@ -1158,6 +1204,17 @@ def train_head(
         catb_path = Path(output_dir) / f"catboost_{head_key}_v1.json"
         catb_best_result["model"].save_model(str(catb_path), format="json")
         artifact["modelArtifact"] = str(catb_path)
+    elif best_candidate == "ebm":
+        artifact["modelFamily"] = "ebm"
+        artifact["modelConfig"] = ebm_result["config"]
+        ebm_path = Path(output_dir) / f"ebm_{head_key}_v1.json"
+        ebm_data = extract_ebm_for_ts(ebm_result["model"], feature_cols)
+        ebm_path.write_text(json.dumps(ebm_data), encoding="utf-8")
+        import pickle
+        ebm_pkl = Path(output_dir) / f"ebm_{head_key}_v1.pkl"
+        with open(ebm_pkl, "wb") as f:
+            pickle.dump(ebm_result["model"], f)
+        artifact["modelArtifact"] = str(ebm_path)
     elif best_candidate == "ensemble":
         artifact["modelFamily"] = "ensemble"
         artifact["metaModel"] = {
@@ -1239,6 +1296,10 @@ def train_head(
         selected_model_obj = lgbm_result["model"]
     elif best_candidate == "catboost":
         selected_model_obj = catb_best_result["model"]
+    # EBM natively provides explanations, so SHAP wrapper isn't strictly needed 
+    # if we only want exact drivers, but we can compute SHAP for parity if we want.
+    elif best_candidate == "ebm":
+        selected_model_obj = ebm_result["model"]
 
     shap_summary = None
     parity_check = None

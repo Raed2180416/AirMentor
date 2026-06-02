@@ -1,13 +1,16 @@
-import { asc, eq } from 'drizzle-orm'
+import { and, asc, eq, inArray } from 'drizzle-orm'
 import type { AppDb } from '../db/client.js'
 import {
   simulationResetSnapshots,
   simulationRuns,
   simulationStageCheckpoints,
+  simulationStageQueueCases,
+  simulationStageQueueProjections,
+  studentInterventions,
 } from '../db/schema.js'
 import type { ResolvedPolicy } from '../modules/admin-structure.js'
 import { parseJson } from './json.js'
-import { playbackCheckpointNowIso } from './proof-control-plane-playback-service.js'
+import { buildDeterministicId, playbackCheckpointNowIso } from './proof-control-plane-playback-service.js'
 import {
   buildProofRunStageBoundarySnapshot,
   type ProofRunStageBoundarySnapshot,
@@ -67,6 +70,7 @@ type AdvanceProofRunRow = Pick<typeof simulationRuns.$inferSelect,
   | 'simulatedDateIso'
   | 'lifecycleState'
   | 'stageBoundaryJson'
+  | 'updatedAt'
 >
 
 export type ProofAdvanceMode = 'next-day' | 'previous-day' | 'next-stage'
@@ -91,6 +95,12 @@ export type ProofAdvanceServiceDeps = {
     policy: ResolvedPolicy
     now: string
   }) => Promise<unknown>
+  hasUnrealizedInterventionsSinceLastAdvance?: (db: AppDb, input: {
+    simulationRunId: string
+    batchId: string
+    since: string | null
+    now: string
+  }) => Promise<boolean>
   stagePolicy?: StagePolicyPayload
 }
 
@@ -139,6 +149,60 @@ type ResetSnapshotPayload = {
   transition?: Record<string, unknown>
 }
 
+type AdvanceCheckpointRow = Pick<typeof simulationStageCheckpoints.$inferSelect,
+  'simulationStageCheckpointId' | 'semesterNumber' | 'stageKey' | 'stageOrder'
+>
+
+type AutoResolutionDecision = {
+  action: 'intervene' | 'dismiss'
+  interventionMode: 'recurring' | 'one-time' | null
+}
+
+type AutoResolutionApplied = AutoResolutionDecision & {
+  interventionType: string | null
+  note: string
+}
+
+type AutoResolutionSummary = {
+  checkedCheckpointCount: number
+  openCaseCount: number
+  resolvedCount: number
+  dismissedCount: number
+  interventionCount: number
+  recurringInterventionCount: number
+  oneTimeInterventionCount: number
+  statusOnly: boolean
+}
+
+const EMPTY_AUTO_RESOLUTION_SUMMARY: AutoResolutionSummary = {
+  checkedCheckpointCount: 0,
+  openCaseCount: 0,
+  resolvedCount: 0,
+  dismissedCount: 0,
+  interventionCount: 0,
+  recurringInterventionCount: 0,
+  oneTimeInterventionCount: 0,
+  statusOnly: false,
+}
+
+const AUTO_RESOLUTION_SOURCE = 'proof-stage-auto-resolution-v1'
+
+const MODEL_KNOWN_INTERVENTION_TYPES = new Set([
+  'mentor-check-in',
+  'mentor-outreach',
+  'prerequisite-bridge',
+  'structured-study-plan',
+  'targeted-tutoring',
+  'pre-see-rescue',
+  'outreach-plus-tutoring',
+  'attendance-recovery-follow-up',
+  'faculty-outreach',
+  'alert-only',
+  'support',
+])
+
+const WORKFLOW_ONLY_ACTIONS = new Set(['no-action', 'alert-only', 'faculty-outreach'])
+
 function addDaysIso(value: string, days: number) {
   const next = new Date(value)
   if (Number.isNaN(next.getTime())) {
@@ -146,6 +210,23 @@ function addDaysIso(value: string, days: number) {
   }
   next.setUTCDate(next.getUTCDate() + days)
   return next.toISOString()
+}
+
+async function shouldPrimeStagePlaybackRebuild(input: {
+  db: AppDb
+  run: AdvanceProofRunRow
+  request: AdvanceProofSimulationInput & { mode: ProofAdvanceMode }
+  deps: ProofAdvanceServiceDeps
+}) {
+  if (!input.deps.rebuildSimulationStagePlayback || !input.request.policy) return false
+  if (!isStageRealizationAuditEnabled()) return false
+  if (!input.deps.hasUnrealizedInterventionsSinceLastAdvance) return false
+  return input.deps.hasUnrealizedInterventionsSinceLastAdvance(input.db, {
+    simulationRunId: input.run.simulationRunId,
+    batchId: input.run.batchId,
+    since: input.run.updatedAt ?? input.run.createdAt ?? null,
+    now: input.request.now,
+  })
 }
 
 function normalizeStageKey(value: string | null | undefined): StagePolicyStageKey | null {
@@ -352,11 +433,235 @@ function buildStageEntrySnapshotPayload(input: {
   } satisfies ResetSnapshotPayload
 }
 
+function autoResolutionDecision(studentId: string, stageKey: string): AutoResolutionDecision {
+  let hash = 0
+  const key = `${studentId}::${stageKey}`
+  for (let i = 0; i < key.length; i++) {
+    hash = ((hash << 5) - hash) + key.charCodeAt(i)
+    hash |= 0
+  }
+  const normalized = Math.abs(hash) % 100
+
+  if (normalized < 30) {
+    return { action: 'dismiss', interventionMode: null }
+  }
+  const interveneBucket = normalized - 30
+  if (interveneBucket < 28) {
+    return { action: 'intervene', interventionMode: 'recurring' }
+  }
+  return { action: 'intervene', interventionMode: 'one-time' }
+}
+
+function normalizedInterventionType(
+  recommendedAction: string | null | undefined,
+  interventionMode: AutoResolutionDecision['interventionMode'],
+) {
+  const recommended = typeof recommendedAction === 'string' ? recommendedAction.trim() : ''
+  if (
+    recommended
+    && MODEL_KNOWN_INTERVENTION_TYPES.has(recommended)
+    && !WORKFLOW_ONLY_ACTIONS.has(recommended)
+  ) {
+    return recommended
+  }
+  return interventionMode === 'recurring' ? 'structured-study-plan' : 'mentor-check-in'
+}
+
+function autoResolutionApplied(
+  queueCase: typeof simulationStageQueueCases.$inferSelect,
+): AutoResolutionApplied {
+  const decision = autoResolutionDecision(queueCase.studentId, queueCase.stageKey)
+  if (decision.action === 'dismiss') {
+    return {
+      ...decision,
+      interventionType: null,
+      note: `Auto-dismissed ${queueCase.stageKey} queue item after checkpoint review; no intervention was applied.`,
+    }
+  }
+  const interventionType = normalizedInterventionType(queueCase.recommendedAction, decision.interventionMode)
+  return {
+    ...decision,
+    interventionType,
+    note: decision.interventionMode === 'recurring'
+      ? `Auto-applied recurring ${interventionType} for ${queueCase.stageKey}; follow-ups remain active until risk improves.`
+      : `Auto-applied one-time ${interventionType} for ${queueCase.stageKey}; single review session recorded.`,
+  }
+}
+
+function withAutoResolutionDetail(
+  rawJson: string,
+  applied: AutoResolutionApplied,
+  now: string,
+) {
+  const detail = parseJson(rawJson, {} as Record<string, unknown>)
+  return JSON.stringify({
+    ...detail,
+    autoResolution: {
+      source: AUTO_RESOLUTION_SOURCE,
+      action: applied.action,
+      interventionMode: applied.interventionMode,
+      interventionType: applied.interventionType,
+      resolvedAt: now,
+      version: 1,
+    },
+    note: applied.note,
+    resolvedAt: now,
+  })
+}
+
+function priorCheckpointsForResolution(input: {
+  checkpointRows: AdvanceCheckpointRow[]
+  current: ProofAdvanceChainPoint
+}) {
+  return input.checkpointRows.filter(row => (
+    row.semesterNumber < input.current.semesterNumber
+    || (row.semesterNumber === input.current.semesterNumber && row.stageOrder < input.current.stageOrder)
+  ))
+}
+
+async function insertAutoResolutionInterventions(input: {
+  db: AppDb
+  simulationRunId: string
+  queueCases: Array<typeof simulationStageQueueCases.$inferSelect>
+  resolutionByCaseId: Map<string, AutoResolutionApplied>
+  now: string
+}) {
+  const interventionRows: Array<typeof studentInterventions.$inferInsert> = []
+  for (const queueCase of input.queueCases) {
+    const applied = input.resolutionByCaseId.get(queueCase.simulationStageQueueCaseId)
+    if (!applied || applied.action !== 'intervene' || !applied.interventionType) continue
+    interventionRows.push({
+      interventionId: buildDeterministicId('intervention_auto_resolution', [
+        input.simulationRunId,
+        queueCase.simulationStageQueueCaseId,
+      ]),
+      studentId: queueCase.studentId,
+      facultyId: queueCase.assignedFacultyId ?? null,
+      offeringId: queueCase.primaryOfferingId ?? null,
+      interventionType: applied.interventionType,
+      note: applied.note,
+      occurredAt: input.now,
+      createdAt: input.now,
+      updatedAt: input.now,
+    })
+  }
+
+  const chunkSize = 50
+  for (let i = 0; i < interventionRows.length; i += chunkSize) {
+    await input.db
+      .insert(studentInterventions)
+      .values(interventionRows.slice(i, i + chunkSize))
+      .onConflictDoNothing()
+  }
+}
+
+async function autoResolvePriorStageQueueCases(input: {
+  db: AppDb
+  simulationRunId: string
+  checkpointRows: AdvanceCheckpointRow[]
+  current: ProofAdvanceChainPoint
+  now: string
+  writeInterventions: boolean
+}): Promise<AutoResolutionSummary> {
+  const priorCheckpoints = priorCheckpointsForResolution({
+    checkpointRows: input.checkpointRows,
+    current: input.current,
+  })
+  const checkpointIds = priorCheckpoints.map(row => row.simulationStageCheckpointId)
+  if (checkpointIds.length === 0) {
+    return { ...EMPTY_AUTO_RESOLUTION_SUMMARY, statusOnly: !input.writeInterventions }
+  }
+
+  const queueCases = await input.db
+    .select()
+    .from(simulationStageQueueCases)
+    .where(
+      and(
+        eq(simulationStageQueueCases.simulationRunId, input.simulationRunId),
+        eq(simulationStageQueueCases.status, 'Open'),
+        inArray(simulationStageQueueCases.simulationStageCheckpointId, checkpointIds),
+      ),
+    )
+  const openCases = queueCases.filter(queueCase => (
+    queueCase.simulationRunId === input.simulationRunId
+    && queueCase.status === 'Open'
+    && checkpointIds.includes(queueCase.simulationStageCheckpointId)
+  ))
+  if (openCases.length === 0) {
+    return {
+      ...EMPTY_AUTO_RESOLUTION_SUMMARY,
+      checkedCheckpointCount: checkpointIds.length,
+      statusOnly: !input.writeInterventions,
+    }
+  }
+
+  const caseIds = openCases.map(queueCase => queueCase.simulationStageQueueCaseId)
+  const projectionRows = await input.db
+    .select()
+    .from(simulationStageQueueProjections)
+    .where(inArray(simulationStageQueueProjections.simulationStageQueueCaseId, caseIds))
+  const resolutionByCaseId = new Map<string, AutoResolutionApplied>()
+  openCases.forEach(queueCase => {
+    resolutionByCaseId.set(queueCase.simulationStageQueueCaseId, autoResolutionApplied(queueCase))
+  })
+
+  if (input.writeInterventions) {
+    await insertAutoResolutionInterventions({
+      db: input.db,
+      simulationRunId: input.simulationRunId,
+      queueCases: openCases,
+      resolutionByCaseId,
+      now: input.now,
+    })
+  }
+
+  for (const queueCase of openCases) {
+    const applied = resolutionByCaseId.get(queueCase.simulationStageQueueCaseId)!
+    await input.db
+      .update(simulationStageQueueCases)
+      .set({
+        status: 'Resolved',
+        countsTowardCapacity: 0,
+        detailJson: withAutoResolutionDetail(queueCase.detailJson, applied, input.now),
+        updatedAt: input.now,
+      })
+      .where(eq(simulationStageQueueCases.simulationStageQueueCaseId, queueCase.simulationStageQueueCaseId))
+  }
+
+  for (const projectionRow of projectionRows) {
+    if (!projectionRow.simulationStageQueueCaseId) continue
+    const applied = resolutionByCaseId.get(projectionRow.simulationStageQueueCaseId)
+    if (!applied) continue
+    await input.db
+      .update(simulationStageQueueProjections)
+      .set({
+        status: 'Resolved',
+        simulatedActionTaken: applied.interventionType ?? 'no-action',
+        detailJson: withAutoResolutionDetail(projectionRow.detailJson, applied, input.now),
+        updatedAt: input.now,
+      })
+      .where(eq(simulationStageQueueProjections.simulationStageQueueProjectionId, projectionRow.simulationStageQueueProjectionId))
+  }
+
+  const applied = [...resolutionByCaseId.values()]
+  return {
+    checkedCheckpointCount: checkpointIds.length,
+    openCaseCount: openCases.length,
+    resolvedCount: openCases.length,
+    dismissedCount: applied.filter(item => item.action === 'dismiss').length,
+    interventionCount: applied.filter(item => item.action === 'intervene').length,
+    recurringInterventionCount: applied.filter(item => item.interventionMode === 'recurring').length,
+    oneTimeInterventionCount: applied.filter(item => item.interventionMode === 'one-time').length,
+    statusOnly: !input.writeInterventions,
+  }
+}
+
 async function persistResolvedAdvance(
   db: AppDb,
   input: AdvanceProofSimulationInput & { mode: ProofAdvanceMode },
   deps: ProofAdvanceServiceDeps,
   run: AdvanceProofRunRow,
+  checkpointRows: AdvanceCheckpointRow[],
   stageBoundary: ProofRunStageBoundarySnapshot,
   resolution: ProofAdvanceResolution,
 ) {
@@ -368,6 +673,18 @@ async function persistResolvedAdvance(
     stageBoundaryJson: JSON.stringify(stageBoundary),
     updatedAt: input.now,
   }).where(eq(simulationRuns.simulationRunId, run.simulationRunId))
+
+  let autoResolutionSummary: AutoResolutionSummary | null = null
+  let playbackRebuiltForStageTransition = false
+  const rebuildStagePlayback = async () => {
+    if (!deps.rebuildSimulationStagePlayback || !input.policy) return
+    await deps.rebuildSimulationStagePlayback(db, {
+      simulationRunId: run.simulationRunId,
+      policy: input.policy,
+      now: input.now,
+    })
+    playbackRebuiltForStageTransition = true
+  }
 
   if (resolution.stageTransitioned) {
     await db.insert(simulationResetSnapshots).values({
@@ -382,20 +699,61 @@ async function persistResolvedAdvance(
       createdAt: input.now,
     })
     if (deps.rebuildSimulationStagePlayback && input.policy) {
-      await deps.rebuildSimulationStagePlayback(db, {
+      if (await shouldPrimeStagePlaybackRebuild({
+        db,
+        run,
+        request: input,
+        deps,
+      })) {
+        await rebuildStagePlayback()
+      }
+      autoResolutionSummary = await autoResolvePriorStageQueueCases({
+        db,
         simulationRunId: run.simulationRunId,
-        policy: input.policy,
+        checkpointRows,
+        current: resolution.current,
         now: input.now,
+        writeInterventions: true,
       })
+
+      if (autoResolutionSummary.interventionCount > 0) {
+        await rebuildStagePlayback()
+        await autoResolvePriorStageQueueCases({
+          db,
+          simulationRunId: run.simulationRunId,
+          checkpointRows,
+          current: resolution.current,
+          now: input.now,
+          writeInterventions: false,
+        })
+      }
+
+      if (autoResolutionSummary.resolvedCount > 0) {
+        await deps.emitSimulationAudit(db, {
+          simulationRunId: run.simulationRunId,
+          batchId: run.batchId,
+          actionType: 'stage-queue-auto-resolved',
+          payload: {
+            source: AUTO_RESOLUTION_SOURCE,
+            transitionFrom: {
+              semesterNumber: resolution.previous.semesterNumber,
+              stageKey: resolution.previous.stageKey,
+            },
+            transitionTo: {
+              semesterNumber: resolution.current.semesterNumber,
+              stageKey: resolution.current.stageKey,
+            },
+            summary: autoResolutionSummary,
+          },
+          createdByFacultyId: input.actorFacultyId ?? null,
+          now: input.now,
+        })
+      }
     }
-    // Phase-6c: when AIRMENTOR_STAGE_REALIZATION_V1=1 is set, the rebuildSimulation-
-    // StagePlayback call above will have re-realized every student's evidence with
-    // intervention deltas folded in (via the Phase-6d wire). Emit a companion
-    // audit entry so faculty / HoD / auditors can see the stage transition WAS
-    // realization-aware. Downstream consumers (HoD console, audit trail) can read
-    // this marker to render the "marks reflect interventions" badge on the stage
-    // timeline. Flag-off path skips this entry.
-    if (isStageRealizationAuditEnabled()) {
+    // Phase-6c: only emit this marker when playback was actually re-realized for
+    // this transition. Ordinary stage pointer movement can reuse the existing
+    // checkpoint universe; manual or auto interventions still trigger rebuilds.
+    if (isStageRealizationAuditEnabled() && playbackRebuiltForStageTransition) {
       await deps.emitSimulationAudit(db, {
         simulationRunId: run.simulationRunId,
         batchId: run.batchId,
@@ -434,6 +792,7 @@ async function persistResolvedAdvance(
       lifecycleState: resolution.lifecycleState,
       nextBoundaryAt: resolution.nextBoundaryAt,
       autoResolutionMode: resolution.autoResolutionMode,
+      autoResolutionSummary,
     },
     createdByFacultyId: input.actorFacultyId ?? null,
     now: input.now,
@@ -452,6 +811,7 @@ async function persistResolvedAdvance(
     crossedSemesterBoundary: resolution.crossedSemesterBoundary,
     lifecycleState: resolution.lifecycleState,
     autoResolutionMode: resolution.autoResolutionMode,
+    autoResolutionSummary,
   }
 }
 
@@ -460,7 +820,7 @@ async function advanceProofSimulation(
   input: AdvanceProofSimulationInput & { mode: ProofAdvanceMode },
   deps: ProofAdvanceServiceDeps,
 ) {
-  const { run, stageBoundary } = await loadAdvanceContext(db, input.simulationRunId)
+  const { run, checkpointRows, stageBoundary } = await loadAdvanceContext(db, input.simulationRunId)
   if (run.lifecycleState === 'stopped') {
     throw new Error('Stopped proof runs must be restored before advancement')
   }
@@ -474,7 +834,7 @@ async function advanceProofSimulation(
     stagePolicy: deps.stagePolicy,
     now: input.now,
   })
-  return persistResolvedAdvance(db, input, deps, run, stageBoundary, resolution)
+  return persistResolvedAdvance(db, input, deps, run, checkpointRows, stageBoundary, resolution)
 }
 
 export async function advanceProofSimulationDay(

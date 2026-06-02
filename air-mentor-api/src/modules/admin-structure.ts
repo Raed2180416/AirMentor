@@ -382,8 +382,8 @@ export const DEFAULT_POLICY: ResolvedPolicy = {
     quizWeight: 10,
     assignmentWeight: 20,
     maxTermTests: 2,
-    maxQuizzes: 2,
-    maxAssignments: 2,
+    maxQuizzes: 5,
+    maxAssignments: 5,
   },
   workingCalendar: {
     days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
@@ -423,13 +423,13 @@ export const DEFAULT_POLICY: ResolvedPolicy = {
     sgpaModel: 'credit-weighted',
     cgpaModel: 'credit-weighted-cumulative',
     rounding: '2-decimal',
-    includeFailedCredits: false,
+    includeFailedCredits: true,
     repeatedCoursePolicy: 'latest-attempt',
   },
   progressionRules: {
     passMarkPercent: 40,
     minimumCgpaForPromotion: 5,
-    requireNoActiveBacklogs: true,
+    requireNoActiveBacklogs: false,
   },
   remediationRules: {
     allowReSit: true,
@@ -445,8 +445,8 @@ export const DEFAULT_POLICY: ResolvedPolicy = {
     yearBackMinimumSemester: 2,
     allowPromotionWithBacklogs: true,
     promotionBacklogCreditLimit: 15,
-    yearBackTriggerCredits: 20,
-    yearBackTriggerFailedCourses: 4,
+    yearBackTriggerCredits: 16,
+    yearBackTriggerFailedCourses: 0,
   },
   riskRules: {
     highRiskAttendancePercentBelow: 65,

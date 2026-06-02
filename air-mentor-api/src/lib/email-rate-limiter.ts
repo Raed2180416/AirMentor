@@ -6,11 +6,16 @@ export type EmailRateLimitResult =
 
 export class EmailRateLimiter {
   private readonly store = new Map<string, RateLimitEntry>()
+  private readonly windowMs: number
+  private readonly maxPerWindow: number
 
   constructor(
-    private readonly windowMs: number,
-    private readonly maxPerWindow: number,
-  ) {}
+    windowMs: number,
+    maxPerWindow: number,
+  ) {
+    this.windowMs = windowMs
+    this.maxPerWindow = maxPerWindow
+  }
 
   check(key: string, nowMs: number): EmailRateLimitResult {
     const entry = this.store.get(key)

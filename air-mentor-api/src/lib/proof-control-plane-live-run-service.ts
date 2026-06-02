@@ -125,7 +125,10 @@ function buildLiveAttendanceHistory(
 }
 
 function pctFromScoredComponents(rows: Array<typeof studentAssessmentScores.$inferSelect>, componentTypes: string[], deps: Pick<ProofControlPlaneLiveRunServiceDeps, 'roundToTwo'>) {
-  const relevantRows = rows.filter(row => componentTypes.includes(row.componentType))
+  const relevantRows = rows.filter(row => componentTypes.some(componentType => {
+    if (componentType.endsWith('*')) return row.componentType.startsWith(componentType.slice(0, -1))
+    return componentType === row.componentType
+  }))
   if (relevantRows.length === 0) return null
   const totalScore = relevantRows.reduce((sum, row) => sum + row.score, 0)
   const totalMax = relevantRows.reduce((sum, row) => sum + row.maxScore, 0)
@@ -361,8 +364,8 @@ export async function startLiveBatchProofSimulationRun(
       const backlogCount = latestTranscript?.backlogCount ?? 0
       const tt1Pct = pctFromScoredComponents(assessmentCells, ['tt1', 'tt1_leaf'], deps)
       const tt2Pct = pctFromScoredComponents(assessmentCells, ['tt2', 'tt2_leaf'], deps)
-      const quizPct = pctFromScoredComponents(assessmentCells, ['quiz1', 'quiz2'], deps)
-      const assignmentPct = pctFromScoredComponents(assessmentCells, ['asgn1', 'asgn2'], deps)
+      const quizPct = pctFromScoredComponents(assessmentCells, ['quiz*'], deps)
+      const assignmentPct = pctFromScoredComponents(assessmentCells, ['asgn*'], deps)
       const seePct = pctFromScoredComponents(assessmentCells, ['sem_end', 'see'], deps)
       const ceContributions = [tt1Pct, tt2Pct, quizPct, assignmentPct].filter((value): value is number => value != null)
       const cePct = ceContributions.length > 0 ? deps.roundToTwo(deps.average(ceContributions)) : 0

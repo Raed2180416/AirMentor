@@ -8,6 +8,11 @@ import { simulationRuns, riskModelArtifacts } from '../db/schema.js'
 import { createId } from '../lib/ids.js'
 
 const execAsync = promisify(exec)
+const PROMOTION_DECISIONS = new Set(['promote', 'promote-to-production', 'promote-as-primary', 'promoted'])
+
+function shouldPromoteModel(decision: unknown) {
+  return PROMOTION_DECISIONS.has(String(decision ?? '').toLowerCase())
+}
 
 export function startMlOrchestrator(db: AppDb) {
   let isRunning = false
@@ -45,18 +50,25 @@ export function startMlOrchestrator(db: AppDb) {
           // Read the promotion decision
           const promotionPath = join(process.cwd(), 'output', 'proof-risk-model', 'promotion-decision.json')
           const promotionDecision = JSON.parse(readFileSync(promotionPath, 'utf8'))
-          console.log(`[ML Orchestrator] Promotion Decision: ${promotionDecision.decision} - ${promotionDecision.reasoning}`)
+          console.log(`[ML Orchestrator] Promotion Decision: ${promotionDecision.decision} - ${promotionDecision.reasoning ?? promotionDecision.reason ?? 'no reason supplied'}`)
 
           // Store promotion decision metadata if needed
-          if (promotionDecision.decision === 'PROMOTED') {
-            console.log(`[ML Orchestrator] Promoting CatBoost model for batch ${run.batchId}...`)
-            
+          if (shouldPromoteModel(promotionDecision.decision)) {
+            const bundlePath = join(process.cwd(), 'output', 'proof-risk-model', 'risk-model-bundle.json')
+            const bundle = JSON.parse(readFileSync(bundlePath, 'utf8'))
+            const promotedArtifact = bundle.challenger ?? bundle.production
+            if (!promotedArtifact) throw new Error('Promotion decision had no challenger or production artifact payload')
+            const promotedModelFamily = promotedArtifact.modelFamily ?? 'catboost'
+            const promotedArtifactVersion = promotedArtifact.modelVersion ?? promotionDecision.metrics?.challenger?.version ?? `${promotedModelFamily}_v1`
+            console.log(`[ML Orchestrator] Promoting ${promotedModelFamily} model for batch ${run.batchId}...`)
+
             // Find the active production artifact
             const [activeProd] = await db.select().from(riskModelArtifacts)
               .where(and(eq(riskModelArtifacts.batchId, run.batchId), eq(riskModelArtifacts.artifactType, 'production'), eq(riskModelArtifacts.activeFlag, 1)))
               .limit(1)
+            const promotedFeatureSchemaVersion = promotedArtifact.featureSchemaVersion ?? activeProd?.featureSchemaVersion
 
-            if (activeProd) {
+            if (activeProd && promotedFeatureSchemaVersion) {
               // Deprecate old one
               await db.update(riskModelArtifacts)
                 .set({ activeFlag: 0 })
@@ -66,13 +78,19 @@ export function startMlOrchestrator(db: AppDb) {
               await db.insert(riskModelArtifacts).values({
                 ...activeProd,
                 riskModelArtifactId: createId('risk_model_artifact'),
-                modelFamily: 'catboost',
-                artifactVersion: promotionDecision.metrics?.challenger?.version || 'catboost_v1',
+                modelFamily: promotedModelFamily,
+                artifactVersion: promotedArtifactVersion,
+                featureSchemaVersion: promotedFeatureSchemaVersion,
+                payloadJson: JSON.stringify(promotedArtifact),
+                evaluationJson: JSON.stringify({
+                  promotionDecision,
+                  promotedFromRiskModelArtifactId: activeProd.riskModelArtifactId,
+                }),
                 activeFlag: 1,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
               })
-              console.log(`[ML Orchestrator] CatBoost model successfully promoted in database!`)
+              console.log(`[ML Orchestrator] ${promotedModelFamily} model successfully promoted in database!`)
             }
           }
           // 3. Mark as processed

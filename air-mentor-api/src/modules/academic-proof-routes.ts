@@ -288,11 +288,13 @@ export async function registerAcademicProofRoutes(
     const body = parseOrThrow(proofAdvanceSchema, request.body ?? {})
     const run = await resolveScopedAcademicProofRun(context, auth, params.simulationRunId)
     assertAcademicAccess(evaluateActiveProofRunAccess(auth, run.activeFlag === 1, 'Academic proof controls may advance only the active proof run'))
+    const resolved = await resolveBatchPolicy(context, run.batchId)
 
     const input = {
       simulationRunId: params.simulationRunId,
       actorFacultyId: auth.facultyId ?? null,
       now: context.now(),
+      policy: resolved.effectivePolicy,
     }
     let report
     if (body.mode === 'day') report = await advanceProofSimulationDay(context.db, input)
@@ -300,7 +302,6 @@ export async function registerAcademicProofRoutes(
     else report = await advanceProofSimulationStage(context.db, input)
 
     if (report.stageTransitioned) {
-      const resolved = await resolveBatchPolicy(context, run.batchId)
       await recomputeObservedOnlyRisk(context.db, {
         simulationRunId: params.simulationRunId,
         policy: resolved.effectivePolicy,

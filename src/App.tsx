@@ -62,6 +62,7 @@ import {
   AppSelectorsContext,
   defaultSchemeForOffering,
   flattenBlueprintLeaves,
+  getAssessmentComponentScore,
   getEntryLockMap,
   normalizeBlueprint,
   normalizeSchemeState,
@@ -1365,8 +1366,6 @@ function OperationalWorkspace({
   const hydratedLockAuditSnapshotRef = useRef(JSON.stringify(lockAuditByTarget))
   const hydratedTimetableSnapshotRef = useRef(JSON.stringify(timetableByFacultyId))
   const hydratedBlueprintSnapshotRef = useRef(JSON.stringify(ttBlueprintsByOffering))
-  const timetableHydrationSkipRef = useRef(0)
-  const blueprintHydrationSkipRef = useRef(0)
 
   useEffect(() => {
     const nextStudentPatches = repositories.entryData.getStudentPatchesSnapshot()
@@ -1389,8 +1388,6 @@ function OperationalWorkspace({
     hydratedLockAuditSnapshotRef.current = JSON.stringify(nextLockAuditByTarget)
     hydratedTimetableSnapshotRef.current = JSON.stringify(nextTimetableByFacultyId)
     hydratedBlueprintSnapshotRef.current = JSON.stringify(nextTtBlueprintsByOffering)
-    timetableHydrationSkipRef.current = 2
-    blueprintHydrationSkipRef.current = 2
 
     setStudentPatches(nextStudentPatches)
     setSchemeByOffering(nextSchemeByOffering)
@@ -1444,10 +1441,6 @@ function OperationalWorkspace({
   useEffect(() => { void repositories.tasks.saveResolvedTasks(resolvedTasks) }, [repositories, resolvedTasks])
   useEffect(() => {
     if (page !== 'calendar') return
-    if (timetableHydrationSkipRef.current > 0) {
-      timetableHydrationSkipRef.current -= 1
-      return
-    }
     const serialized = JSON.stringify(timetableByFacultyId)
     if (serialized === hydratedTimetableSnapshotRef.current) return
     const previousSnapshot = hydratedTimetableSnapshotRef.current
@@ -1469,12 +1462,12 @@ function OperationalWorkspace({
   }, [page, repositories, role, schemeByOffering])
   useEffect(() => {
     if (role !== 'Course Leader' || (page !== 'course' && page !== 'scheme-setup' && page !== 'entry-workspace')) return
-    if (blueprintHydrationSkipRef.current > 0) {
-      blueprintHydrationSkipRef.current -= 1
-      return
-    }
     const serialized = JSON.stringify(ttBlueprintsByOffering)
     if (serialized === hydratedBlueprintSnapshotRef.current) return
+    const hasInvalidBlueprint = Object.values(ttBlueprintsByOffering).some(kinds =>
+      (['tt1', 'tt2'] as const).some(kind => kinds[kind]?.totalMarks !== 25),
+    )
+    if (hasInvalidBlueprint) return
     const previousSnapshot = hydratedBlueprintSnapshotRef.current
     hydratedBlueprintSnapshotRef.current = serialized
     void repositories.entryData.saveBlueprintState(ttBlueprintsByOffering).catch(error => {
@@ -2176,9 +2169,7 @@ function OperationalWorkspace({
               studentId: student.id,
               components: components.map((component, index) => {
                 const fallbackValue = patchScores?.[component.id]
-                  ?? (kind === 'quiz'
-                    ? (index === 0 ? student.quiz1 : student.quiz2)
-                    : (index === 0 ? student.asgn1 : student.asgn2))
+                  ?? getAssessmentComponentScore(student, kind, component, index)
                   ?? 0
                 return {
                   componentCode: component.id,
@@ -4095,7 +4086,7 @@ export function OperationalApp() {
         simulationStageCheckpointId: playbackCheckpointId,
       } : undefined)
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('HoD proof analytics request timed out after 30s')), 30_000)
+        setTimeout(() => reject(new Error('HoD proof analytics request timed out after 90s')), 90_000)
       })
       return await Promise.race([bundlePromise, timeoutPromise])
     } catch (error) {

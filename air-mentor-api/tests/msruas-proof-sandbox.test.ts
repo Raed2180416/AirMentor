@@ -168,7 +168,7 @@ describe('msruas proof sandbox seed recovery', () => {
       batchId: MSRUAS_PROOF_BATCH_ID,
       curriculumImportVersionId: MSRUAS_PROOF_CURRICULUM_IMPORT_ID,
       activeFlag: 1,
-      activeOperationalSemester: 6,
+      activeOperationalSemester: 1,
     })
 
     const validation = await validateProofCurriculumImport(current.db, {

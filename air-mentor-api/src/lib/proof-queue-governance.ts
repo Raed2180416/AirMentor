@@ -234,6 +234,13 @@ function candidateEligibility(candidate: ProofQueueCandidate) {
     }
   }
   if (candidate.stageKey === 'pre-tt1') {
+    if (candidate.semesterNumber > 1 && candidate.riskBand === 'High') {
+      return {
+        openEligible: false,
+        watchEligible: true,
+        reason: 'pre_tt1_prior_history_watch',
+      }
+    }
     return {
       openEligible: false,
       watchEligible: false,

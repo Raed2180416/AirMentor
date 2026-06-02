@@ -44,6 +44,7 @@ import {
 import { SystemAdminHierarchyWorkspaceShell } from './system-admin-hierarchy-workspace-shell'
 import { SystemAdminProofDashboardWorkspace } from './system-admin-proof-dashboard-workspace'
 import { SystemAdminScopedRegistryLaunches } from './system-admin-scoped-registry-launches'
+import CurriculumGraphWorkspace from './curriculum-graph-workspace'
 import {
   CANONICAL_PROOF_ROUTE,
   isCanonicalProofBatchId,
@@ -64,6 +65,7 @@ import type {
   ApiStudentRecord,
 } from './api/types'
 import type { ApiCurriculumFeatureConfigBundle, ApiCurriculumFeatureConfigHistoryEvent, ApiCurriculumFeatureConfigPreview, ApiCurriculumLinkageCandidate, ApiCurriculumLinkageGenerationStatus } from './api/types'
+import type { AirMentorApiClient } from './api/client'
 import type { BatchSetupReadiness } from './batch-setup-readiness'
 
 type RestoreNotice = { tone: 'neutral' | 'error'; message: string } | null
@@ -618,6 +620,7 @@ type SystemAdminFacultiesWorkspaceProps = {
   proofDashboardProps: ComponentProps<typeof SystemAdminProofDashboardWorkspace>
   onOpenProofDashboard: () => void
   registryLaunchProps: ComponentProps<typeof SystemAdminScopedRegistryLaunches>
+  apiClient: AirMentorApiClient
 }
 
 export function SystemAdminFacultiesWorkspace({
@@ -752,6 +755,7 @@ export function SystemAdminFacultiesWorkspace({
   proofDashboardProps,
   onOpenProofDashboard,
   registryLaunchProps,
+  apiClient,
 }: SystemAdminFacultiesWorkspaceProps) {
   void [route, activeUniversityRegistryScope, activeUniversityStudentScopeChipLabel, activeUniversityFacultyScopeChipLabel, scopedUniversityStudents, filteredUniversityFaculty]
   const [syntheticProvisioningEnabled, setSyntheticProvisioningEnabled] = useState(false)
@@ -1904,6 +1908,9 @@ export function SystemAdminFacultiesWorkspace({
 
           <Card style={{ padding: 16, background: T.surface2, display: 'grid', gap: 12 }}>
             <SectionHeading title="Curriculum Model Inputs" eyebrow="Curriculum" caption="Manage course outcomes, prerequisite edges, bridge modules, and topic partitions through batch-local overrides or shared scope profiles that feed recalibration and world generation." />
+            {selectedBatch && (
+              <CurriculumGraphWorkspace batchId={selectedBatch.batchId} apiClient={apiClient} />
+            )}
             {curriculumFeatureItems.length === 0 ? (
               <EmptyState title="No model input bundle yet" body="Save at least one curriculum row first. The sysadmin editor will then project those rows into the proof curriculum snapshot." />
             ) : (

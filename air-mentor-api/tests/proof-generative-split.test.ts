@@ -20,8 +20,8 @@ import {
 //   (3) Every manifest entry carries a `generativeSplit` field whose
 //       value is consistent with its `scenarioFamily`.
 //   (4) `selectGenerativeSplitEntries()` returns the right partition,
-//       and the partition sizes match the documented protocol
-//       (32 / 16 / 16 for the round-robin 64-world manifest).
+//       and the partition sizes match the current 11-family manifest
+//       (30 / 17 / 17 for the round-robin 64-world manifest).
 //   (5) The new field does NOT replace the existing index-based `split`
 //       field — both coexist and serve different evaluation protocols.
 //   (6) The two protocols disagree (otherwise the new field would be
@@ -43,11 +43,11 @@ describe('PROOF_GENERATIVE_SPLIT_FAMILIES — exhaustive and disjoint', () => {
     expect(seen.size).toBe(PROOF_SCENARIO_FAMILIES.length)
   })
 
-  it('matches the documented assignment in scenario-grounding.md / roadmap §5 P2 task 2.1', () => {
+  it('matches the current 11-family assignment', () => {
     expect(PROOF_GENERATIVE_SPLIT_FAMILIES).toEqual({
-      train: ['weak-foundation', 'low-attendance', 'high-forgetting', 'coursework-inflation'],
-      validation: ['exam-fragility', 'carryover-heavy'],
-      test: ['intervention-resistant', 'balanced'],
+      train: ['coursework-inflation', 'high-forgetting', 'low-attendance', 'weak-foundation', 'chronic-absentee'],
+      validation: ['exam-fragility', 'carryover-heavy', 'attendance-shock'],
+      test: ['balanced', 'intervention-resistant', 'mental-health-disruption'],
     })
   })
 })
@@ -80,16 +80,16 @@ describe('PROOF_CORPUS_MANIFEST — generativeSplit field present and consistent
 })
 
 describe('selectGenerativeSplitEntries — partition sizing', () => {
-  it('train partition has 32 entries (4 families × 8 round-robin slots)', () => {
-    expect(selectGenerativeSplitEntries('train')).toHaveLength(32)
+  it('train partition has 30 entries from its five-family assignment', () => {
+    expect(selectGenerativeSplitEntries('train')).toHaveLength(30)
   })
 
-  it('validation partition has 16 entries (2 families × 8)', () => {
-    expect(selectGenerativeSplitEntries('validation')).toHaveLength(16)
+  it('validation partition has 17 entries from its three-family assignment', () => {
+    expect(selectGenerativeSplitEntries('validation')).toHaveLength(17)
   })
 
-  it('test partition has 16 entries (2 families × 8)', () => {
-    expect(selectGenerativeSplitEntries('test')).toHaveLength(16)
+  it('test partition has 17 entries from its three-family assignment', () => {
+    expect(selectGenerativeSplitEntries('test')).toHaveLength(17)
   })
 
   it('partitions are disjoint and exhaustive against the manifest', () => {
@@ -140,27 +140,27 @@ describe('Evaluator profile wire-in (D18) — generative-split-{train,val,test}'
   // populated from `selectGenerativeSplitEntries`. We assert the
   // population invariants here so the evaluator script's import is
   // guaranteed to resolve to non-empty seed lists.
-  it('train profile resolves to 32 seeds whose family is in PROOF_GENERATIVE_SPLIT_FAMILIES.train', () => {
+  it('train profile resolves to 30 seeds whose family is in PROOF_GENERATIVE_SPLIT_FAMILIES.train', () => {
     const entries = selectGenerativeSplitEntries('train')
-    expect(entries).toHaveLength(32)
+    expect(entries).toHaveLength(30)
     const trainFamilies = new Set(PROOF_GENERATIVE_SPLIT_FAMILIES.train)
     for (const entry of entries) {
       expect(trainFamilies.has(entry.scenarioFamily)).toBe(true)
     }
   })
 
-  it('val profile resolves to 16 seeds whose family is in PROOF_GENERATIVE_SPLIT_FAMILIES.validation', () => {
+  it('val profile resolves to 17 seeds whose family is in PROOF_GENERATIVE_SPLIT_FAMILIES.validation', () => {
     const entries = selectGenerativeSplitEntries('validation')
-    expect(entries).toHaveLength(16)
+    expect(entries).toHaveLength(17)
     const valFamilies = new Set(PROOF_GENERATIVE_SPLIT_FAMILIES.validation)
     for (const entry of entries) {
       expect(valFamilies.has(entry.scenarioFamily)).toBe(true)
     }
   })
 
-  it('test profile resolves to 16 seeds whose family is in PROOF_GENERATIVE_SPLIT_FAMILIES.test', () => {
+  it('test profile resolves to 17 seeds whose family is in PROOF_GENERATIVE_SPLIT_FAMILIES.test', () => {
     const entries = selectGenerativeSplitEntries('test')
-    expect(entries).toHaveLength(16)
+    expect(entries).toHaveLength(17)
     const testFamilies = new Set(PROOF_GENERATIVE_SPLIT_FAMILIES.test)
     for (const entry of entries) {
       expect(testFamilies.has(entry.scenarioFamily)).toBe(true)

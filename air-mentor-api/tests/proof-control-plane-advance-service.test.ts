@@ -4,6 +4,9 @@ import {
   simulationResetSnapshots,
   simulationRuns,
   simulationStageCheckpoints,
+  simulationStageQueueCases,
+  simulationStageQueueProjections,
+  studentInterventions,
 } from '../src/db/schema.js'
 import {
   advanceProofSimulationDay,
@@ -35,9 +38,63 @@ type MockCheckpoint = {
   stageOrder: number
 }
 
+type MockQueueCase = {
+  simulationStageQueueCaseId: string
+  simulationStageCheckpointId: string
+  simulationRunId: string
+  studentId: string
+  primaryOfferingId: string | null
+  semesterNumber: number
+  sectionCode: string
+  stageKey: string
+  assignedToRole: string | null
+  assignedFacultyId: string | null
+  status: string
+  recommendedAction: string | null
+  dueAt: string | null
+  countsTowardCapacity: number
+  priorityRank: number | null
+  governanceReason: string
+  primaryCourseCode: string
+  primaryCourseTitle: string
+  supportingCourseCount: number
+  supportingSourceKeysJson: string
+  caseJson: string
+  detailJson: string
+  createdAt: string
+  updatedAt: string
+}
+
+type MockQueueProjection = {
+  simulationStageQueueProjectionId: string
+  simulationStageCheckpointId: string
+  simulationRunId: string
+  simulationStageQueueCaseId: string | null
+  studentId: string
+  offeringId: string | null
+  semesterNumber: number
+  sectionCode: string
+  courseCode: string
+  courseTitle: string
+  assignedToRole: string | null
+  assignedFacultyId: string | null
+  taskType: string
+  status: string
+  riskBand: string
+  riskProbScaled: number
+  noActionRiskProbScaled: number
+  recommendedAction: string | null
+  simulatedActionTaken: string | null
+  detailJson: string
+  createdAt: string
+  updatedAt: string
+}
+
 function createMockDb(options?: {
   run?: Partial<MockRun>
   checkpoints?: MockCheckpoint[]
+  queueCases?: MockQueueCase[]
+  queueProjections?: MockQueueProjection[]
 }) {
   let run: MockRun = {
     simulationRunId: 'run_001',
@@ -63,6 +120,9 @@ function createMockDb(options?: {
     { simulationStageCheckpointId: 'cp_2_pre', simulationRunId: run.simulationRunId, semesterNumber: 2, stageKey: 'pre-tt1', stageOrder: 1 },
   ]
   const insertedSnapshots: Array<Record<string, unknown>> = []
+  let queueCases = options?.queueCases ?? []
+  let queueProjections = options?.queueProjections ?? []
+  const insertedInterventions: Array<typeof studentInterventions.$inferInsert> = []
 
   const db = {
     select() {
@@ -82,6 +142,16 @@ function createMockDb(options?: {
               },
             }
           }
+          if (table === simulationStageQueueCases) {
+            return {
+              where: async () => queueCases,
+            }
+          }
+          if (table === simulationStageQueueProjections) {
+            return {
+              where: async () => queueProjections,
+            }
+          }
           throw new Error('Unexpected table in select mock')
         },
       }
@@ -98,6 +168,28 @@ function createMockDb(options?: {
           },
         }
       }
+      if (table === simulationStageQueueCases) {
+        return {
+          set(values: Partial<MockQueueCase>) {
+            return {
+              where: async () => {
+                queueCases = queueCases.map(row => ({ ...row, ...values }))
+              },
+            }
+          },
+        }
+      }
+      if (table === simulationStageQueueProjections) {
+        return {
+          set(values: Partial<MockQueueProjection>) {
+            return {
+              where: async () => {
+                queueProjections = queueProjections.map(row => ({ ...row, ...values }))
+              },
+            }
+          },
+        }
+      }
       throw new Error('Unexpected table in update mock')
     },
     insert(table: unknown) {
@@ -105,6 +197,21 @@ function createMockDb(options?: {
         return {
           values: async (values: Record<string, unknown>) => {
             insertedSnapshots.push(values)
+          },
+        }
+      }
+      if (table === studentInterventions) {
+        return {
+          values: (values: typeof studentInterventions.$inferInsert | Array<typeof studentInterventions.$inferInsert>) => {
+            const rows = Array.isArray(values) ? values : [values]
+            rows.forEach(row => {
+              if (!insertedInterventions.some(existing => existing.interventionId === row.interventionId)) {
+                insertedInterventions.push(row)
+              }
+            })
+            return {
+              onConflictDoNothing: async () => {},
+            }
           },
         }
       }
@@ -116,6 +223,65 @@ function createMockDb(options?: {
     db,
     getRun: () => run,
     getInsertedSnapshots: () => insertedSnapshots,
+    getQueueCases: () => queueCases,
+    getQueueProjections: () => queueProjections,
+    getInsertedInterventions: () => insertedInterventions,
+  }
+}
+
+function makeQueueCase(overrides: Partial<MockQueueCase> = {}): MockQueueCase {
+  return {
+    simulationStageQueueCaseId: overrides.simulationStageQueueCaseId ?? 'queue_case_001',
+    simulationStageCheckpointId: overrides.simulationStageCheckpointId ?? 'cp_1_tt1',
+    simulationRunId: overrides.simulationRunId ?? 'run_001',
+    studentId: overrides.studentId ?? 'stud_5',
+    primaryOfferingId: overrides.primaryOfferingId ?? 'offering_001',
+    semesterNumber: overrides.semesterNumber ?? 1,
+    sectionCode: overrides.sectionCode ?? 'A',
+    stageKey: overrides.stageKey ?? 'post-tt1',
+    assignedToRole: overrides.assignedToRole ?? 'COURSE_LEADER',
+    assignedFacultyId: overrides.assignedFacultyId ?? 'faculty_course_leader',
+    status: overrides.status ?? 'Open',
+    recommendedAction: overrides.recommendedAction ?? 'targeted-tutoring',
+    dueAt: overrides.dueAt ?? '2026-02-12T00:00:00.000Z',
+    countsTowardCapacity: overrides.countsTowardCapacity ?? 1,
+    priorityRank: overrides.priorityRank ?? 1,
+    governanceReason: overrides.governanceReason ?? 'High post-TT1 risk',
+    primaryCourseCode: overrides.primaryCourseCode ?? 'MTB101A',
+    primaryCourseTitle: overrides.primaryCourseTitle ?? 'Mathematics I',
+    supportingCourseCount: overrides.supportingCourseCount ?? 0,
+    supportingSourceKeysJson: overrides.supportingSourceKeysJson ?? '[]',
+    caseJson: overrides.caseJson ?? JSON.stringify({ caseKey: overrides.simulationStageQueueCaseId ?? 'queue_case_001' }),
+    detailJson: overrides.detailJson ?? JSON.stringify({ primaryCase: true, countsTowardCapacity: true }),
+    createdAt: overrides.createdAt ?? '2026-02-05T00:00:00.000Z',
+    updatedAt: overrides.updatedAt ?? '2026-02-05T00:00:00.000Z',
+  }
+}
+
+function makeQueueProjection(overrides: Partial<MockQueueProjection> = {}): MockQueueProjection {
+  return {
+    simulationStageQueueProjectionId: overrides.simulationStageQueueProjectionId ?? 'queue_projection_001',
+    simulationStageCheckpointId: overrides.simulationStageCheckpointId ?? 'cp_1_tt1',
+    simulationRunId: overrides.simulationRunId ?? 'run_001',
+    simulationStageQueueCaseId: overrides.simulationStageQueueCaseId ?? 'queue_case_001',
+    studentId: overrides.studentId ?? 'stud_5',
+    offeringId: overrides.offeringId ?? 'offering_001',
+    semesterNumber: overrides.semesterNumber ?? 1,
+    sectionCode: overrides.sectionCode ?? 'A',
+    courseCode: overrides.courseCode ?? 'MTB101A',
+    courseTitle: overrides.courseTitle ?? 'Mathematics I',
+    assignedToRole: overrides.assignedToRole ?? 'COURSE_LEADER',
+    assignedFacultyId: overrides.assignedFacultyId ?? 'faculty_course_leader',
+    taskType: overrides.taskType ?? 'Academic',
+    status: overrides.status ?? 'Open',
+    riskBand: overrides.riskBand ?? 'High',
+    riskProbScaled: overrides.riskProbScaled ?? 82,
+    noActionRiskProbScaled: overrides.noActionRiskProbScaled ?? 91,
+    recommendedAction: overrides.recommendedAction ?? 'targeted-tutoring',
+    simulatedActionTaken: overrides.simulatedActionTaken ?? null,
+    detailJson: overrides.detailJson ?? JSON.stringify({ primaryCase: true, countsTowardCapacity: true }),
+    createdAt: overrides.createdAt ?? '2026-02-05T00:00:00.000Z',
+    updatedAt: overrides.updatedAt ?? '2026-02-05T00:00:00.000Z',
   }
 }
 
@@ -160,7 +326,7 @@ describe('proof-control-plane-advance-service', () => {
         activeStageKey: 'post-tt1',
       },
     })
-    expect(deps.rebuildSimulationStagePlayback).toHaveBeenCalledTimes(1)
+    expect(deps.rebuildSimulationStagePlayback).not.toHaveBeenCalled()
 
     const second = await advanceProofSimulationDay(db, {
       simulationRunId: 'run_001',
@@ -176,7 +342,7 @@ describe('proof-control-plane-advance-service', () => {
       simulatedDateIso: '2026-02-06T00:00:00.000Z',
     })
     expect(getInsertedSnapshots()).toHaveLength(1)
-    expect(deps.rebuildSimulationStagePlayback).toHaveBeenCalledTimes(1)
+    expect(deps.rebuildSimulationStagePlayback).not.toHaveBeenCalled()
   })
 
   it('snaps next-stage to the next checkpoint boundary and exposes post-see auto-resolution semantics', async () => {
@@ -207,7 +373,122 @@ describe('proof-control-plane-advance-service', () => {
       autoResolutionMode: 'post-see-open-cases-may-auto-resolve',
       simulatedDateIso: '2026-04-30T00:00:00.000Z',
     })
+    expect(deps.rebuildSimulationStagePlayback).not.toHaveBeenCalled()
+  })
+
+  it('primes a playback rebuild when stage realization has newer manual interventions', async () => {
+    const originalFlag = process.env.AIRMENTOR_STAGE_REALIZATION_V1
+    process.env.AIRMENTOR_STAGE_REALIZATION_V1 = '1'
+    try {
+      const { db } = createMockDb({
+        run: {
+          activeStageKey: 'post-assignments',
+          simulatedDateIso: '2026-04-08T00:00:00.000Z',
+        },
+      })
+      const deps = {
+        createId: vi.fn(() => 'simulation_reset_manual_intervention'),
+        emitSimulationAudit: vi.fn(async () => {}),
+        publishOperationalProjection: vi.fn(async () => {}),
+        rebuildSimulationStagePlayback: vi.fn(async () => {}),
+        hasUnrealizedInterventionsSinceLastAdvance: vi.fn(async () => true),
+      }
+
+      await advanceProofSimulationStage(db, {
+        simulationRunId: 'run_001',
+        actorFacultyId: 'faculty_sysadmin',
+        now: '2026-04-08T08:00:00.000Z',
+        policy: {} as never,
+      }, deps)
+
+      expect(deps.hasUnrealizedInterventionsSinceLastAdvance).toHaveBeenCalledWith(db, expect.objectContaining({
+        simulationRunId: 'run_001',
+        batchId: 'batch_001',
+        since: '2026-02-04T00:00:00.000Z',
+      }))
+      expect(deps.rebuildSimulationStagePlayback).toHaveBeenCalledTimes(1)
+      expect(deps.emitSimulationAudit).toHaveBeenCalledWith(db, expect.objectContaining({
+        actionType: 'stage-realization-applied',
+      }))
+    } finally {
+      if (originalFlag === undefined) delete process.env.AIRMENTOR_STAGE_REALIZATION_V1
+      else process.env.AIRMENTOR_STAGE_REALIZATION_V1 = originalFlag
+    }
+  })
+
+  it('auto-resolves prior-stage queue cases with deterministic interventions before the playback rebuild', async () => {
+    const queueCases = [
+      makeQueueCase({
+        simulationStageQueueCaseId: 'queue_case_intervene',
+        studentId: 'stud_5',
+        recommendedAction: 'targeted-tutoring',
+      }),
+      makeQueueCase({
+        simulationStageQueueCaseId: 'queue_case_dismiss',
+        studentId: 'stud_1',
+        recommendedAction: 'targeted-tutoring',
+      }),
+    ]
+    const queueProjections = queueCases.map((queueCase, index) =>
+      makeQueueProjection({
+        simulationStageQueueProjectionId: `queue_projection_${index + 1}`,
+        simulationStageQueueCaseId: queueCase.simulationStageQueueCaseId,
+        studentId: queueCase.studentId,
+      }))
+    const { db, getQueueCases, getQueueProjections, getInsertedInterventions } = createMockDb({
+      run: {
+        activeStageKey: 'post-tt1',
+        simulatedDateIso: '2026-02-05T00:00:00.000Z',
+      },
+      queueCases,
+      queueProjections,
+    })
+    const deps = {
+      createId: vi.fn(() => 'simulation_reset_auto_resolution'),
+      emitSimulationAudit: vi.fn(async () => {}),
+      publishOperationalProjection: vi.fn(async () => {}),
+      rebuildSimulationStagePlayback: vi.fn(async () => {}),
+    }
+
+    const result = await advanceProofSimulationStage(db, {
+      simulationRunId: 'run_001',
+      actorFacultyId: 'faculty_sysadmin',
+      now: '2026-02-05T12:00:00.000Z',
+      policy: {} as never,
+    }, deps)
+
+    expect(result).toMatchObject({
+      previousStageKey: 'post-tt1',
+      activeStageKey: 'post-tt2',
+      stageTransitioned: true,
+      autoResolutionSummary: {
+        openCaseCount: 2,
+        resolvedCount: 2,
+        dismissedCount: 1,
+        interventionCount: 1,
+      },
+    })
     expect(deps.rebuildSimulationStagePlayback).toHaveBeenCalledTimes(1)
+    expect(getQueueCases()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ status: 'Resolved', countsTowardCapacity: 0 }),
+    ]))
+    expect(getQueueProjections()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ status: 'Resolved' }),
+    ]))
+    expect(getInsertedInterventions()).toEqual([
+      expect.objectContaining({
+        studentId: 'stud_5',
+        interventionType: 'targeted-tutoring',
+        offeringId: 'offering_001',
+      }),
+    ])
+    expect(deps.emitSimulationAudit).toHaveBeenCalledWith(db, expect.objectContaining({
+      actionType: 'stage-queue-auto-resolved',
+      payload: expect.objectContaining({
+        source: 'proof-stage-auto-resolution-v1',
+        summary: expect.objectContaining({ resolvedCount: 2, interventionCount: 1 }),
+      }),
+    }))
   })
 
   it('keeps semester-6 terminal runs completed-inspectable after the last checkpoint', () => {
@@ -225,6 +506,7 @@ describe('proof-control-plane-advance-service', () => {
         simulatedDateIso: '2027-04-30T00:00:00.000Z',
         lifecycleState: 'active',
         stageBoundaryJson: null,
+        updatedAt: '2027-04-30T00:00:00.000Z',
       },
       stageBoundary: {
         strictlyMonotonic: true,
@@ -265,6 +547,7 @@ describe('proof-control-plane-advance-service', () => {
         simulatedDateIso: '2026-02-06T00:00:00.000Z',
         lifecycleState: 'active',
         stageBoundaryJson: null,
+        updatedAt: '2026-02-06T00:00:00.000Z',
       },
       stageBoundary: {
         strictlyMonotonic: true,

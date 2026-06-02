@@ -188,6 +188,8 @@ describe('msruas proof engines', () => {
       overallRounded: 40,
       passed: true,
       result: 'Passed',
+      gradeLabel: 'P',
+      gradePoint: 4,
     })
 
     const sgpa = calculateSgpa({
@@ -198,7 +200,7 @@ describe('msruas proof engines', () => {
       ],
       policy: deterministicPolicy,
     })
-    expect(sgpa).toBe(9.14)
+    expect(sgpa).toBe(6.4)
 
     const cgpa = calculateCgpa({
       termAttempts: [

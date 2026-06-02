@@ -198,8 +198,16 @@ export async function finalizeSeededProofRun(
   ])
   const stageBoundary = buildProofRunStageBoundarySnapshot(checkpointRows)
   const entrySemester = stageBoundary.semesters[0] ?? null
-  const activeOperationalSemester = entrySemester?.semesterNumber ?? currentRun?.activeOperationalSemester ?? 1
-  const activeStageKey = entrySemester?.entryStageKey ?? currentRun?.activeStageKey ?? 'pre-tt1'
+  const currentRunStartSemester = typeof currentRun?.semesterStart === 'number' ? currentRun.semesterStart : null
+  const preserveExplicitStartAuthority = currentRunStartSemester != null
+    && entrySemester?.semesterNumber !== currentRunStartSemester
+    && (entrySemester?.semesterNumber == null || entrySemester.semesterNumber > currentRunStartSemester)
+  const activeOperationalSemester = preserveExplicitStartAuthority
+    ? currentRunStartSemester
+    : entrySemester?.semesterNumber ?? currentRun?.activeOperationalSemester ?? currentRunStartSemester ?? 1
+  const activeStageKey = preserveExplicitStartAuthority
+    ? currentRun?.activeStageKey ?? 'pre-tt1'
+    : entrySemester?.entryStageKey ?? currentRun?.activeStageKey ?? 'pre-tt1'
   const lifecycleState = input.activate ? 'completed-inspectable' : 'completed'
   const setupConfig = {
     activate: input.activate,

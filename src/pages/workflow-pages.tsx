@@ -27,6 +27,7 @@ import type {
 import {
   defaultSchemeForOffering,
   flattenBlueprintLeaves,
+  getAssessmentComponentScore,
   getEntryLockMap,
   sanitizeAssessmentComponents,
   seedBlueprintFromPaper,
@@ -43,6 +44,13 @@ import {
   shouldBlockNumericKey,
   toCellKey,
 } from '../page-utils'
+
+const COURSEWORK_COMPONENT_POOL_LIMIT = 5
+
+function componentCountOptions(policyMax: number) {
+  const safeMax = Math.max(0, Math.min(COURSEWORK_COMPONENT_POOL_LIMIT, Math.round(policyMax)))
+  return Array.from({ length: safeMax + 1 }, (_, index) => index)
+}
 import { Bar, Btn, Card, Chip, FieldInput, FieldSelect, HScrollArea, PageBackButton, PageShell, TD, TH } from '../ui-primitives'
 import { EmptyState } from '../system-admin-ui'
 
@@ -274,13 +282,15 @@ export function SchemeSetupPage({
   onBack: () => void
 }) {
   const [termTestWeights, setTermTestWeights] = useState(scheme.termTestWeights)
-  const [quizCount, setQuizCount] = useState<0 | 1 | 2>(scheme.quizCount)
-  const [assignmentCount, setAssignmentCount] = useState<0 | 1 | 2>(scheme.assignmentCount)
+  const [quizCount, setQuizCount] = useState<number>(scheme.quizCount)
+  const [assignmentCount, setAssignmentCount] = useState<number>(scheme.assignmentCount)
   const [quizComponents, setQuizComponents] = useState<AssessmentComponentDefinition[]>(scheme.quizComponents)
   const [assignmentComponents, setAssignmentComponents] = useState<AssessmentComponentDefinition[]>(scheme.assignmentComponents)
   const canEdit = role === 'Course Leader' && !hasEntryStarted && scheme.status !== 'Locked'
-  const maxQuizCount = Math.min(2, scheme.policyContext.maxQuizzes) as 0 | 1 | 2
-  const maxAssignmentCount = Math.min(2, scheme.policyContext.maxAssignments) as 0 | 1 | 2
+  const maxQuizCount = Math.min(COURSEWORK_COMPONENT_POOL_LIMIT, Math.max(0, scheme.policyContext.maxQuizzes))
+  const maxAssignmentCount = Math.min(COURSEWORK_COMPONENT_POOL_LIMIT, Math.max(0, scheme.policyContext.maxAssignments))
+  const quizCountOptions = componentCountOptions(maxQuizCount)
+  const assignmentCountOptions = componentCountOptions(maxAssignmentCount)
   const quizWeightTotal = sumComponentWeightage(quizComponents)
   const assignmentWeightTotal = sumComponentWeightage(assignmentComponents)
   const configuredCeWeight = termTestWeights.tt1 + termTestWeights.tt2 + quizWeightTotal + assignmentWeightTotal
@@ -295,7 +305,7 @@ export function SchemeSetupPage({
   }, [scheme])
 
   useEffect(() => {
-    const nextCount = Math.min(quizCount, maxQuizCount) as 0 | 1 | 2
+    const nextCount = Math.min(quizCount, maxQuizCount)
     if (nextCount !== quizCount) {
       setQuizCount(nextCount)
       return
@@ -304,7 +314,7 @@ export function SchemeSetupPage({
   }, [maxQuizCount, quizCount])
 
   useEffect(() => {
-    const nextCount = Math.min(assignmentCount, maxAssignmentCount) as 0 | 1 | 2
+    const nextCount = Math.min(assignmentCount, maxAssignmentCount)
     if (nextCount !== assignmentCount) {
       setAssignmentCount(nextCount)
       return
@@ -370,18 +380,14 @@ export function SchemeSetupPage({
             </Card>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginBottom: 12 }}>
-            <select aria-label="Quiz count" value={quizCount} disabled={!canEdit} onChange={event => setQuizCount(Number(event.target.value) as 0 | 1 | 2)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
-              <option value={0}>Quiz count 0</option>
-              <option value={1}>Quiz count 1</option>
-              {maxQuizCount >= 2 ? <option value={2}>Quiz count 2</option> : null}
+            <select aria-label="Quiz count" value={quizCount} disabled={!canEdit} onChange={event => setQuizCount(Number(event.target.value))} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
+              {quizCountOptions.map(count => <option key={count} value={count}>Quiz count {count}</option>)}
             </select>
-            <select aria-label="Assignment count" value={assignmentCount} disabled={!canEdit} onChange={event => setAssignmentCount(Number(event.target.value) as 0 | 1 | 2)} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
-              <option value={0}>Assignment count 0</option>
-              <option value={1}>Assignment count 1</option>
-              {maxAssignmentCount >= 2 ? <option value={2}>Assignment count 2</option> : null}
+            <select aria-label="Assignment count" value={assignmentCount} disabled={!canEdit} onChange={event => setAssignmentCount(Number(event.target.value))} style={{ ...mono, fontSize: 11, background: T.surface2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 6, padding: '8px 10px' }}>
+              {assignmentCountOptions.map(count => <option key={count} value={count}>Assignment count {count}</option>)}
             </select>
             <div style={{ ...mono, fontSize: 11, color: T.muted, display: 'flex', alignItems: 'center' }}>
-              Components scale linearly against their raw maxima and weightage.
+              Components scale against their raw maxima and CE weightage. Course leaders can use the configured pool before entry starts.
             </div>
           </div>
           <div style={{ display: 'grid', gap: 12 }}>
@@ -715,6 +721,7 @@ export function EntryWorkspacePage({
             ? (ttBlueprintsByOffering[section.offId]?.[kind] ?? seedBlueprintFromPaper(kind, PAPER_MAP[section.code] || PAPER_MAP.default))
             : null
           const leaves = blueprint ? flattenBlueprintLeaves(blueprint.nodes) : []
+          const hasInvalidTtBlueprint = blueprint != null && blueprint.totalMarks !== 25
           const dynamicComponents = kind === 'quiz' ? currentScheme.quizComponents : kind === 'assignment' ? currentScheme.assignmentComponents : []
           const draftKey = `${section.offId}::${kind}`
           const hasIncompleteTtLeaves = (kind === 'tt1' || kind === 'tt2') && students.some(student => {
@@ -734,12 +741,19 @@ export function EntryWorkspacePage({
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <Chip color={sectionAccess.isApplicableForStage ? T.blue : T.dim} size={9}>{sectionAccess.isApplicableForStage ? 'Stage Applicable' : 'Locked by Stage'}</Chip>
                   {students.length === 0 ? <Chip color={T.dim} size={9}>Roster unconfigured</Chip> : null}
+                  {hasInvalidTtBlueprint ? <Chip color={T.danger} size={9}>Blueprint total {blueprint.totalMarks}/25</Chip> : null}
                   {hasIncompleteTtLeaves ? <Chip color={T.warning} size={9}>Explicit TT leaf values required</Chip> : null}
                   {draftBySection[draftKey] && <Chip color={T.success} size={9}>Draft saved</Chip>}
-                  <Btn size="sm" onClick={() => onSaveDraft(section.offId, kind)} variant="ghost" disabled={students.length === 0}>Save Draft</Btn>
-                  <Btn size="sm" onClick={() => onSubmitLock(section.offId, kind)} disabled={students.length === 0 || hasIncompleteTtLeaves}>{sectionAccess.canEdit ? 'Submit & Lock' : sectionAccess.isLocked ? 'Locked' : 'View Only'}</Btn>
+                  <Btn size="sm" onClick={() => onSaveDraft(section.offId, kind)} variant="ghost" disabled={students.length === 0 || hasInvalidTtBlueprint}>Save Draft</Btn>
+                  <Btn size="sm" onClick={() => onSubmitLock(section.offId, kind)} disabled={students.length === 0 || hasIncompleteTtLeaves || hasInvalidTtBlueprint}>{sectionAccess.canEdit ? 'Submit & Lock' : sectionAccess.isLocked ? 'Locked' : 'View Only'}</Btn>
                 </div>
               </div>
+
+              {hasInvalidTtBlueprint ? (
+                <div style={{ padding: '10px 14px', borderBottom: `1px solid ${T.border}`, background: `${T.danger}10`, ...mono, fontSize: 11, color: T.danger }}>
+                  TT entry is blocked until the question-paper raw total is exactly 25. Return to the TT blueprint builder and adjust the parts before saving marks.
+                </div>
+              ) : null}
 
               {students.length === 0 ? (
                 <div style={{ padding: 14 }}>
@@ -796,7 +810,8 @@ export function EntryWorkspacePage({
                             })}
                             {(kind === 'quiz' || kind === 'assignment') && dynamicComponents.map((component, index) => {
                               const max = component.rawMax
-                              const currentScore = kind === 'quiz' ? (index === 0 ? student.quiz1 : student.quiz2) : (index === 0 ? student.asgn1 : student.asgn2)
+                              const componentKind = kind === 'quiz' ? 'quiz' : 'assignment'
+                              const currentScore = getAssessmentComponentScore(student, componentKind, component, index)
                               const exactScores = kind === 'quiz' ? exactPatch.quizScores : exactPatch.assignmentScores
                               return (
                                 <TD key={component.id}>

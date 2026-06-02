@@ -41,7 +41,7 @@ function candidate(overrides: Partial<ProofQueueCandidate> = {}): ProofQueueCand
 }
 
 describe('proof queue governance', () => {
-  it('keeps pre-tt1 observation-only and emits no queue decision even for high-risk candidates', () => {
+  it('keeps semester-1 pre-tt1 observation-only and emits no queue decision even for high-risk candidates', () => {
     const result = governProofQueueStage({
       stageKey: 'pre-tt1',
       candidates: [candidate({ stageKey: 'pre-tt1' })],
@@ -50,6 +50,28 @@ describe('proof queue governance', () => {
     })
 
     expect(result.decisions.get('student-1::1')).toBeUndefined()
+  })
+
+  it('puts later-semester pre-tt1 high prior-history risk on watch', () => {
+    const result = governProofQueueStage({
+      stageKey: 'pre-tt1',
+      candidates: [candidate({
+        stageKey: 'pre-tt1',
+        semesterNumber: 6,
+        riskBand: 'High',
+        riskProbScaled: 56,
+        facultyBudgetKey: 'Mentor::faculty-1::6',
+      })],
+      sectionStudentCountByKey: new Map([['6::A', 60]]),
+      facultyBudgetByKey: new Map([['Mentor::faculty-1::6', 10]]),
+    })
+
+    expect(result.decisions.get('student-1::6')).toMatchObject({
+      status: 'watch',
+      canonicalStatus: 'watch',
+      countsTowardCapacity: false,
+      governanceReason: 'pre_tt1_watch_only',
+    })
   })
 
   it('uses proxy utility at post-tt1 and prunes by caps deterministically', () => {

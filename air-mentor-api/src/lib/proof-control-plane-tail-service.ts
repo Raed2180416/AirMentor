@@ -500,20 +500,6 @@ export async function buildFacultyProofView(db: AppDb, input: {
       deps,
     )
     : null
-  if (
-    !input.simulationStageCheckpointId
-    && selectedActiveRun
-    && selectedBatch
-    && selectedActiveRun.activeOperationalSemester != null
-    && selectedActiveRun.activeOperationalSemester !== selectedBatch.currentSemester
-    && operationalCheckpointSummary
-  ) {
-    const checkpointView = await buildFacultyProofView(db, {
-      ...input,
-      simulationStageCheckpointId: operationalCheckpointSummary.simulationStageCheckpointId,
-    }, deps)
-    return checkpointView
-  }
   const selectedActiveTermIds = new Set(
     termRows
       .filter(row => row.batchId === selectedBatch?.batchId)
@@ -525,6 +511,26 @@ export async function buildFacultyProofView(db: AppDb, input: {
       .filter(row => selectedActiveTermIds.size === 0 || selectedActiveTermIds.has(row.termId))
       .map(row => row.offeringId),
   )
+  const activeRiskRows = riskRows
+    .filter(row => selectedActiveRunId ? row.simulationRunId === selectedActiveRunId : activeRunIds.has(row.simulationRunId ?? ''))
+    .filter(row => selectedActiveOfferingIds.size === 0 || selectedActiveOfferingIds.has(row.offeringId))
+
+  if (
+    !input.simulationStageCheckpointId
+    && selectedActiveRun
+    && selectedBatch
+    && operationalCheckpointSummary
+    && (
+      (selectedActiveRun.activeOperationalSemester != null && selectedActiveRun.activeOperationalSemester !== selectedBatch.currentSemester)
+      || activeRiskRows.length === 0
+    )
+  ) {
+    const checkpointView = await buildFacultyProofView(db, {
+      ...input,
+      simulationStageCheckpointId: operationalCheckpointSummary.simulationStageCheckpointId,
+    }, deps)
+    return checkpointView
+  }
   const studentsVisibleViaOwnedOfferings = new Set(
     observedRows
       .filter(row => selectedActiveRunId ? row.simulationRunId === selectedActiveRunId : activeRunIds.has(row.simulationRunId))
@@ -550,9 +556,6 @@ export async function buildFacultyProofView(db: AppDb, input: {
     observedByStudentOffering.set(key, payload)
   }
 
-  const activeRiskRows = riskRows
-    .filter(row => selectedActiveRunId ? row.simulationRunId === selectedActiveRunId : activeRunIds.has(row.simulationRunId ?? ''))
-    .filter(row => selectedActiveOfferingIds.size === 0 || selectedActiveOfferingIds.has(row.offeringId))
   const activeRiskById = new Map(activeRiskRows.map(row => [row.riskAssessmentId, row]))
   const queueItems = reassessmentRows
     .filter(row => activeRiskById.has(row.riskAssessmentId))
@@ -1024,11 +1027,6 @@ async function loadProofRiskInferenceContext(db: AppDb, input: {
     }
   }
 
-  // NOTE: Proof/demo contexts bypass the trained production model and use
-  // the rule-based inference engine because the current production model
-  // was trained on a synthetic dataset with ~92% positive label rate (bug
-  // in the old attendance simulation). Until retrained with the fixed
-  // generator, the inference engine provides more realistic risk bands.
   const inferred = featurePayload
     ? scoreObservableRiskWithModel({
       attendancePct: featurePayload.attendancePct,
@@ -1046,7 +1044,7 @@ async function loadProofRiskInferenceContext(db: AppDb, input: {
       policy: DEFAULT_POLICY,
       featurePayload,
       sourceRefs,
-      productionModel: null,
+      productionModel: activeArtifacts.production,
       correlations: activeArtifacts.correlations,
       bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
     })

@@ -55,7 +55,11 @@ import {
   readObservedStateNumber,
   selectObservedRowsThroughCheckpoint,
 } from '../lib/proof-observed-state.js'
-import { pickMostRecentActiveRun } from '../lib/proof-active-run.js'
+import {
+  isTeacherVisibleActiveProofRunCandidate,
+  pickMostRecentActiveRun,
+} from '../lib/proof-active-run.js'
+import { evaluateStudentProgression } from '../lib/proof-student-progression.js'
 import { humanLabelForActionCode } from '../lib/proof-recommendation-text-generator.js'
 import {
   getProofRiskModelActive,
@@ -145,13 +149,13 @@ function visibleAssessmentComponentTypesForStage(stageKey: string | null | undef
   if (!stageKey) return null
   switch (stageKey) {
     case 'pre-tt1':
-      return new Set<string>()
+      return []
     case 'post-tt1':
-      return new Set(['tt1', 'tt1_leaf'])
+      return ['tt1', 'tt1_leaf']
     case 'post-tt2':
-      return new Set(['tt1', 'tt1_leaf', 'tt2', 'tt2_leaf'])
+      return ['tt1', 'tt1_leaf', 'tt2', 'tt2_leaf']
     case 'post-assignments':
-      return new Set(['tt1', 'tt1_leaf', 'tt2', 'tt2_leaf', 'quiz1', 'quiz2', 'asgn1', 'asgn2'])
+      return ['tt1', 'tt1_leaf', 'tt2', 'tt2_leaf', 'quiz*', 'asgn*']
     case 'post-see':
       return null
     default:
@@ -166,7 +170,7 @@ function filterAssessmentMapForStage(
   const visibleTypes = visibleAssessmentComponentTypesForStage(stageKey)
   if (!visibleTypes) return assessmentMap
   return Object.fromEntries(
-    Object.entries(assessmentMap).filter(([componentType]) => visibleTypes.has(componentType)),
+    Object.entries(assessmentMap).filter(([componentType]) => assessmentTypeMatches(componentType, visibleTypes)),
   ) as Record<string, AssessmentScoreSnapshot>
 }
 
@@ -176,7 +180,7 @@ function filterAssessmentCellsForStage(
 ) {
   const visibleTypes = visibleAssessmentComponentTypesForStage(stageKey)
   if (!visibleTypes) return cells
-  return cells.filter(cell => visibleTypes.has(cell.componentType))
+  return cells.filter(cell => assessmentTypeMatches(cell.componentType, visibleTypes))
 }
 
 const facultyCalendarAdminWorkspaceSchema = z.object({
@@ -372,7 +376,9 @@ const assessmentScoreCreateSchema = z.object({
   studentId: z.string().min(1),
   offeringId: z.string().min(1),
   termId: z.string().min(1).optional(),
-  componentType: z.enum(['tt1', 'tt2', 'quiz1', 'quiz2', 'asgn1', 'asgn2', 'sem_end', 'lab', 'viva', 'other']),
+  componentType: z.string().min(1).max(32).refine(value => /^(tt1|tt2|tt1_leaf|tt2_leaf|quiz\d+|asgn\d+|sem_end|see|lab|viva|other)$/.test(value), {
+    message: 'Unsupported assessment component type',
+  }),
   componentCode: z.string().min(1).optional(),
   score: z.number().int().min(0),
   maxScore: z.number().int().min(1),
@@ -454,8 +460,8 @@ const schemeStateSchema = z.object({
   termTestWeights: termTestWeightsSchema.optional(),
   quizWeight: z.number().min(0).max(100).optional(),
   assignmentWeight: z.number().min(0).max(100).optional(),
-  quizCount: z.union([z.literal(0), z.literal(1), z.literal(2)]),
-  assignmentCount: z.union([z.literal(0), z.literal(1), z.literal(2)]),
+  quizCount: z.number().int().min(0).max(10),
+  assignmentCount: z.number().int().min(0).max(10),
   quizComponents: z.array(assessmentComponentSchema),
   assignmentComponents: z.array(assessmentComponentSchema),
   policyContext: schemePolicyContextSchema.optional(),
@@ -851,7 +857,7 @@ function sumAssessmentComponentWeightage(components: Array<z.infer<typeof assess
 
 function sanitizeAssessmentComponentsForScheme(
   kind: 'quiz' | 'assignment',
-  count: 0 | 1 | 2,
+  count: number,
   components: Array<z.infer<typeof assessmentComponentSchema>> | undefined,
   totalWeight: number,
 ) {
@@ -891,8 +897,8 @@ function canonicalizeSchemeState(
   policy: ResolvedPolicy,
 ) {
   const policyContext = buildSchemePolicyContext(policy)
-  const quizCount = clampInteger(input.quizCount ?? input.quizComponents.length, 0, Math.min(2, policyContext.maxQuizzes), 0) as 0 | 1 | 2
-  const assignmentCount = clampInteger(input.assignmentCount ?? input.assignmentComponents.length, 0, Math.min(2, policyContext.maxAssignments), 0) as 0 | 1 | 2
+  const quizCount = clampInteger(input.quizCount ?? input.quizComponents.length, 0, policyContext.maxQuizzes, 0)
+  const assignmentCount = clampInteger(input.assignmentCount ?? input.assignmentComponents.length, 0, policyContext.maxAssignments, 0)
   const legacyQuizWeight = clampInteger(input.quizWeight, 0, 100, 0)
   const legacyAssignmentWeight = clampInteger(input.assignmentWeight, 0, 100, 0)
   const explicitQuizWeightage = hasExplicitComponentWeightage(input.quizComponents)
@@ -1090,6 +1096,7 @@ async function resolveStudentShellRun(
           runLabel: simulationRuns.runLabel,
           status: simulationRuns.status,
           activeFlag: simulationRuns.activeFlag,
+          lifecycleState: simulationRuns.lifecycleState,
           activeOperationalSemester: simulationRuns.activeOperationalSemester,
           seed: simulationRuns.seed,
           demoWorkspaceId: simulationRuns.demoWorkspaceId,
@@ -1101,14 +1108,15 @@ async function resolveStudentShellRun(
         .where(eq(simulationStageCheckpoints.simulationStageCheckpointId, simulationStageCheckpointId))
       : await context.db.select().from(simulationRuns).where(eq(simulationRuns.activeFlag, 1))
   const scopedRunRows = runRows.filter(row => (row.demoWorkspaceId ?? null) === (auth.demoWorkspaceId ?? null))
+  const teacherVisibleScopedRunRows = scopedRunRows.filter(isTeacherVisibleActiveProofRunCandidate)
   const [run] = requestedRunId || simulationStageCheckpointId
     ? runRows
-    : [pickMostRecentActiveRun(scopedRunRows)]
+    : [pickMostRecentActiveRun(teacherVisibleScopedRunRows)]
   if (!run) throw notFound('Proof run not found')
   if ((run.demoWorkspaceId ?? null) !== (auth.demoWorkspaceId ?? null)) {
     throw new AppError(403, 'PROOF_RUN_SCOPE_MISMATCH', 'Proof run is not available in this workspace scope.')
   }
-  assertAcademicAccess(evaluateActiveProofRunAccess(auth, run.activeFlag === 1))
+  assertAcademicAccess(evaluateActiveProofRunAccess(auth, isTeacherVisibleActiveProofRunCandidate(run)))
   return run
 }
 
@@ -1132,7 +1140,7 @@ async function resolveAcademicStageCheckpoint(
   if (auth.activeRoleGrant.roleCode !== 'SYSTEM_ADMIN') {
     assertAcademicAccess(evaluateActiveProofRunAccess(
       auth,
-      run.activeFlag === 1,
+      isTeacherVisibleActiveProofRunCandidate(run),
       'Academic roles may inspect only checkpoints from the active proof run',
     ))
   }
@@ -1266,8 +1274,8 @@ function buildDefaultCourseOutcomes(courseCode: string, courseTitle: string) {
 
 function buildDefaultSchemeFromPolicy(policy: ResolvedPolicy) {
   const policyContext = buildSchemePolicyContext(policy)
-  const quizCount = Math.min(2, Math.max(0, policyContext.maxQuizzes)) as 0 | 1 | 2
-  const assignmentCount = Math.min(2, Math.max(0, policyContext.maxAssignments)) as 0 | 1 | 2
+  const quizCount = Math.min(2, Math.max(0, policyContext.maxQuizzes))
+  const assignmentCount = Math.min(2, Math.max(0, policyContext.maxAssignments))
   const defaultTermTestWeight = policyContext.maxTermTests > 0 ? Math.min(policyContext.ce, 30) : 0
   const remainingCe = Math.max(0, policyContext.ce - defaultTermTestWeight)
   const defaultQuizWeight = Math.min(remainingCe, quizCount > 1 ? Math.max(10, Math.floor(remainingCe * 0.5)) : Math.min(remainingCe, 20))
@@ -1418,22 +1426,31 @@ function computeTranscriptAnalytics(input: {
       : 'Stable'
 
   const latestBacklogCount = orderedTerms.at(-1)?.backlogCount ?? 0
-  const progressionStatus: 'Eligible' | 'Review' | 'Hold' = (
-    currentCgpa < input.policy.progressionRules.minimumCgpaForPromotion
-    && input.policy.progressionRules.requireNoActiveBacklogs
-    && latestBacklogCount > 0
-  )
-    ? 'Hold'
-    : (
-      currentCgpa < input.policy.progressionRules.minimumCgpaForPromotion
-      || (input.policy.progressionRules.requireNoActiveBacklogs && latestBacklogCount > 0)
-    )
+  const activeBacklogCredits = selectedAttempts
+    .filter(attempt => attempt.result !== 'Passed' || attempt.gradePoint === 0)
+    .reduce((sum, attempt) => sum + attempt.credits, 0)
+  const latestTerm = orderedTerms.at(-1)
+  const currentSemester = latestTerm
+    ? input.termById[latestTerm.termId]?.semesterNumber ?? orderedTerms.length
+    : orderedTerms.length
+  const progressionDecision = evaluateStudentProgression({
+    currentSemester,
+    cgpa: currentCgpa,
+    activeBacklogs: latestBacklogCount,
+    activeBacklogCredits,
+    consecutiveFailures: 0,
+    policy: input.policy,
+  })
+  const progressionStatus: 'Eligible' | 'Review' | 'Hold' = progressionDecision.status === 'promoted'
+    ? activeBacklogCredits > 0 || currentCgpa < input.policy.progressionRules.minimumCgpaForPromotion
       ? 'Review'
       : 'Eligible'
+    : 'Hold'
 
   return {
     currentCgpa,
     completedCreditsForCgpa,
+    activeBacklogCredits,
     repeatSubjects,
     trend,
     latestBacklogCount,
@@ -1445,6 +1462,7 @@ function computeTranscriptAnalytics(input: {
 function buildAdvisoryNotes(input: {
   currentCgpa: number
   latestBacklogCount: number
+  activeBacklogCredits: number
   repeatSubjects: string[]
   progressionStatus: 'Eligible' | 'Review' | 'Hold'
   trend: 'Improving' | 'Stable' | 'Declining'
@@ -1458,7 +1476,7 @@ function buildAdvisoryNotes(input: {
     notes.push('Progression remains compliant with the active batch policy.')
   }
   if (input.latestBacklogCount > 0) {
-    notes.push(`${input.latestBacklogCount} active backlog${input.latestBacklogCount > 1 ? 's remain' : ' remains'} on the latest transcript.`)
+    notes.push(`${input.latestBacklogCount} active backlog${input.latestBacklogCount > 1 ? 's remain' : ' remains'} on the latest transcript (${input.activeBacklogCredits} credits).`)
   }
   if (input.repeatSubjects.length > 0) {
     notes.push(`${input.repeatSubjects.length} repeated subject${input.repeatSubjects.length > 1 ? 's appear' : ' appears'} in transcript history.`)
@@ -1478,6 +1496,29 @@ function averageNullable(values: Array<number | null>) {
   const filtered = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
   if (filtered.length === 0) return null
   return roundToTwo(filtered.reduce((sum, value) => sum + value, 0) / filtered.length)
+}
+
+function assessmentTypeMatches(componentType: string, expectedTypes: string[]) {
+  return expectedTypes.some(expectedType => {
+    if (expectedType.endsWith('*')) return componentType.startsWith(expectedType.slice(0, -1))
+    return componentType === expectedType
+  })
+}
+
+function pctsFromAssessmentCells(cells: Array<typeof studentAssessmentScores.$inferSelect>, componentTypes: string[]) {
+  return cells
+    .filter(cell => assessmentTypeMatches(cell.componentType, componentTypes))
+    .map(cell => {
+      if (cell.maxScore <= 0) return null
+      return roundToTwo((cell.score / cell.maxScore) * 100)
+    })
+    .filter((value): value is number => value !== null)
+}
+
+function rawTotalFromAssessmentCells(cells: Array<typeof studentAssessmentScores.$inferSelect>, componentTypes: string[]) {
+  return cells
+    .filter(cell => assessmentTypeMatches(cell.componentType, componentTypes))
+    .reduce((sum, cell) => sum + cell.score, 0)
 }
 
 function buildQuestionLeafScoreMap(input: {
@@ -1604,7 +1645,9 @@ function computeRiskFromActiveModelOrPolicy(input: {
   tt2Pct?: number | null
   quizPct?: number | null
   assignmentPct?: number | null
+  cePct?: number | null
   seePct?: number | null
+  overallPct?: number | null
   weakCoCount?: number
   policy: ResolvedPolicy
   activeModel?: Awaited<ReturnType<typeof getProofRiskModelActive>>['production'] | null
@@ -1627,7 +1670,9 @@ function computeRiskFromActiveModelOrPolicy(input: {
     tt2Pct = null,
     quizPct = null,
     assignmentPct = null,
+    cePct = null,
     seePct = null,
+    overallPct = null,
     weakCoCount = 0,
     policy,
     activeModel = null,
@@ -1677,7 +1722,9 @@ function computeRiskFromActiveModelOrPolicy(input: {
     tt2Pct,
     quizPct,
     assignmentPct,
+    cePct,
     seePct,
+    overallPct,
     weakCoCount,
     attendanceHistoryRiskCount: 0,
     questionWeaknessCount: 0,
@@ -1886,7 +1933,7 @@ async function buildOfferingStageEligibility(context: RouteContext, offeringId: 
   const hasScoresFor = (types: string[]) => {
     const students = new Set(
       assessmentRows
-        .filter(row => activeStudentIds.includes(row.studentId) && types.includes(row.componentType))
+        .filter(row => activeStudentIds.includes(row.studentId) && assessmentTypeMatches(row.componentType, types))
         .map(row => row.studentId),
     )
     return students.size
@@ -1934,13 +1981,13 @@ async function buildOfferingStageEligibility(context: RouteContext, offeringId: 
     },
     quiz: {
       required: !!targetStage?.requiredEvidence.includes('quiz'),
-      presentCount: hasScoresFor(['quiz1', 'quiz2']),
+      presentCount: hasScoresFor(['quiz*']),
       expectedCount,
       locked: !!offering.quizLocked,
     },
     assignment: {
       required: !!targetStage?.requiredEvidence.includes('assignment'),
-      presentCount: hasScoresFor(['asgn1', 'asgn2']),
+      presentCount: hasScoresFor(['asgn*']),
       expectedCount,
       locked: !!offering.assignmentLocked,
     },
@@ -2299,7 +2346,9 @@ async function resolveProofReassessmentAccess(input: {
       .select()
       .from(simulationRuns)
       .where(eq(simulationRuns.activeFlag, 1))
-    const scopedActiveRunRows = activeRunRows.filter(row => (row.demoWorkspaceId ?? null) === (input.auth.demoWorkspaceId ?? null))
+    const scopedActiveRunRows = activeRunRows
+      .filter(row => (row.demoWorkspaceId ?? null) === (input.auth.demoWorkspaceId ?? null))
+      .filter(isTeacherVisibleActiveProofRunCandidate)
     const activeRun = pickMostRecentActiveRun(scopedActiveRunRows)
     if (!activeRun || activeRun.simulationRunId !== run.simulationRunId) {
       throw forbidden('Academic roles may modify proof reassessments only for the active proof run')
@@ -2621,6 +2670,7 @@ function inferStudentFallback(input: {
     totalClasses: number
   }
   assessments?: Record<string, { score: number; maxScore: number; evaluatedAt: string }>
+  assessmentCells?: Array<typeof studentAssessmentScores.$inferSelect>
   interventions?: Array<{ date: string; type: string; note: string }>
   risk?: {
     riskProb: number
@@ -2640,6 +2690,12 @@ function inferStudentFallback(input: {
   const quiz2 = input.assessments?.quiz2
   const asgn1 = input.assessments?.asgn1
   const asgn2 = input.assessments?.asgn2
+  const quizScores = Object.fromEntries((input.assessmentCells ?? [])
+    .filter(cell => /^quiz\d+$/.test(cell.componentType) && cell.componentCode)
+    .map(cell => [cell.componentCode as string, cell.score]))
+  const assignmentScores = Object.fromEntries((input.assessmentCells ?? [])
+    .filter(cell => /^asgn\d+$/.test(cell.componentType) && cell.componentCode)
+    .map(cell => [cell.componentCode as string, cell.score]))
   const totalClasses = input.attendanceSnapshot?.totalClasses ?? 0
   const presentClasses = input.attendanceSnapshot?.presentClasses ?? 0
   return {
@@ -2657,6 +2713,8 @@ function inferStudentFallback(input: {
     quiz2: quiz2?.score ?? null,
     asgn1: asgn1?.score ?? null,
     asgn2: asgn2?.score ?? null,
+    quizScores: Object.keys(quizScores).length > 0 ? quizScores : undefined,
+    assignmentScores: Object.keys(assignmentScores).length > 0 ? assignmentScores : undefined,
     prevCgpa: input.prevCgpa,
     currentCgpa: input.currentCgpa ?? input.prevCgpa,
     riskProb: input.risk?.riskProb ?? null,
@@ -2685,6 +2743,7 @@ function buildStudentHistoryRecord(input: {
   prevCgpa: number
   currentCgpa: number
   completedCreditsForCgpa: number
+  activeBacklogCredits: number
   repeatSubjects: string[]
   progressionStatus: 'Eligible' | 'Review' | 'Hold'
   trend: 'Improving' | 'Stable' | 'Declining'
@@ -2722,6 +2781,7 @@ function buildStudentHistoryRecord(input: {
     ? buildAdvisoryNotes({
         currentCgpa: input.currentCgpa,
         latestBacklogCount: input.latestBacklogCount,
+        activeBacklogCredits: input.activeBacklogCredits,
         repeatSubjects: input.repeatSubjects,
         progressionStatus: input.progressionStatus,
         trend: input.trend,
@@ -2738,6 +2798,7 @@ function buildStudentHistoryRecord(input: {
     trend: input.trend,
     currentCgpa: input.currentCgpa,
     completedCreditsForCgpa: input.completedCreditsForCgpa,
+    activeBacklogCredits: input.activeBacklogCredits,
     progressionStatus: input.progressionStatus,
     advisoryNotes: notes,
     repeatSubjects: input.repeatSubjects,
@@ -3010,7 +3071,7 @@ async function buildAcademicBootstrap(
   const departmentById = Object.fromEntries(departmentRows.map(row => [row.departmentId, row]))
   const offeringRowById = Object.fromEntries(offeringRows.map(row => [row.offeringId, row]))
   const userById = Object.fromEntries(userRows.map(row => [row.userId, row]))
-  const activeRunRows = workspaceRunRows.filter(row => row.activeFlag === 1)
+  const activeRunRows = workspaceRunRows.filter(isTeacherVisibleActiveProofRunCandidate)
   const selectedActiveRun = pickMostRecentActiveRun(activeRunRows)
   const proofScopeRun = stageCheckpointRow
     ? (workspaceRunRows.find(row => row.simulationRunId === stageCheckpointRow.simulationRunId) ?? null)
@@ -3540,27 +3601,18 @@ async function buildAcademicBootstrap(
       const tt2Max = Math.max(1, assessmentMap.tt2?.maxScore ?? questionPapers.tt2.totalMarks)
       const tt1Pct = tt1Raw !== null ? roundToTwo((tt1Raw / tt1Max) * 100) : null
       const tt2Pct = tt2Raw !== null ? roundToTwo((tt2Raw / tt2Max) * 100) : null
-      const quizPcts = ['quiz1', 'quiz2']
-        .map(key => {
-          const score = assessmentMap[key]?.score ?? null
-          const maxScore = assessmentMap[key]?.maxScore ?? null
-          if (score === null || !maxScore || maxScore <= 0) return null
-          return roundToTwo((score / maxScore) * 100)
-        })
-        .filter((value): value is number => value !== null)
-      const assignmentPcts = ['asgn1', 'asgn2']
-        .map(key => {
-          const score = assessmentMap[key]?.score ?? null
-          const maxScore = assessmentMap[key]?.maxScore ?? null
-          if (score === null || !maxScore || maxScore <= 0) return null
-          return roundToTwo((score / maxScore) * 100)
-        })
-        .filter((value): value is number => value !== null)
+      const quizPcts = pctsFromAssessmentCells(assessmentCells, ['quiz*'])
+      const assignmentPcts = pctsFromAssessmentCells(assessmentCells, ['asgn*'])
       const quizPct = quizPcts.length > 0 ? roundToTwo(quizPcts.reduce((sum, value) => sum + value, 0) / quizPcts.length) : null
       const assignmentPct = assignmentPcts.length > 0 ? roundToTwo(assignmentPcts.reduce((sum, value) => sum + value, 0) / assignmentPcts.length) : null
       const seeRaw = assessmentMap.see?.score ?? null
       const seeMax = assessmentMap.see?.maxScore ?? null
       const seePct = seeRaw !== null && seeMax && seeMax > 0 ? roundToTwo((seeRaw / seeMax) * 100) : null
+      const cePctValues = [tt1Pct, tt2Pct, quizPct, assignmentPct]
+        .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+      const cePct = cePctValues.length > 0
+        ? roundToTwo(cePctValues.reduce((sum, value) => sum + value, 0) / cePctValues.length)
+        : null
       const outcomeBreakdown = computeStudentOutcomeAttainment({
         outcomes: resolvedCourseOutcomesByOfferingId.get(offering.offId) ?? [],
         tt1Blueprint: questionPapers.tt1,
@@ -3577,6 +3629,9 @@ async function buildAcademicBootstrap(
           ? prevCgpa
           : 0
       const authoritativeBacklogCount = hasTranscriptHistory ? transcriptAnalytics.latestBacklogCount : 0
+      const overallPct = cePct !== null && seePct !== null
+        ? roundToTwo(((cePct / 100) * policy.passRules.ceMaximum) + ((seePct / 100) * policy.passRules.seeMaximum))
+        : null
       const batchGraph = batchIdForOffering ? curriculumGraphByBatchId.get(batchIdForOffering) ?? null : null
       const resolvedCurriculumFeatureBundle = batchIdForOffering ? (resolvedCurriculumFeaturesByBatchId.get(batchIdForOffering) ?? null) : null
       const weakCourseOutcomeCodes = outcomeBreakdown
@@ -3634,7 +3689,9 @@ async function buildAcademicBootstrap(
         tt2Pct,
         quizPct,
         assignmentPct,
+        cePct,
         seePct,
+        overallPct,
         weakCoCount: weakCourseOutcomeCodes.length,
         policy,
         activeModel: batchIdForOffering ? (activeRiskModelByBatchId.get(batchIdForOffering) ?? null) : null,
@@ -3646,7 +3703,7 @@ async function buildAcademicBootstrap(
         // batch) keep calibrated banding semantics.
         applyDemoOperationalBanding: proofScopeActive,
       })
-      const quizRawTotal = ['quiz1', 'quiz2'].reduce((sum, key) => sum + (assessmentMap[key]?.score ?? 0), 0)
+      const quizRawTotal = rawTotalFromAssessmentCells(assessmentCells, ['quiz*'])
       const reasons = risk.riskProb >= 0.35
         ? buildStudentReasons({
             attendancePct,
@@ -3682,6 +3739,7 @@ async function buildAcademicBootstrap(
             }
           : undefined,
         assessments: assessmentMap,
+        assessmentCells,
         interventions: mergedInterventions,
         risk,
         reasons,
@@ -3820,6 +3878,7 @@ async function buildAcademicBootstrap(
       prevCgpa,
       currentCgpa: transcriptAnalytics.currentCgpa,
       completedCreditsForCgpa: transcriptAnalytics.completedCreditsForCgpa,
+      activeBacklogCredits: transcriptAnalytics.activeBacklogCredits,
       repeatSubjects: transcriptAnalytics.repeatSubjects,
       progressionStatus: transcriptAnalytics.progressionStatus,
       trend: transcriptAnalytics.trend,
@@ -4147,12 +4206,12 @@ async function buildAcademicBootstrap(
           patch.tt2LeafScores = { ...current, [row.componentCode]: row.score }
           continue
         }
-        if ((row.componentType === 'quiz1' || row.componentType === 'quiz2') && row.componentCode) {
+        if (/^quiz\d+$/.test(row.componentType) && row.componentCode) {
           const current = (patch.quizScores as Record<string, number> | undefined) ?? {}
           patch.quizScores = { ...current, [row.componentCode]: row.score }
           continue
         }
-        if ((row.componentType === 'asgn1' || row.componentType === 'asgn2') && row.componentCode) {
+        if (/^asgn\d+$/.test(row.componentType) && row.componentCode) {
           const current = (patch.assignmentScores as Record<string, number> | undefined) ?? {}
           patch.assignmentScores = { ...current, [row.componentCode]: row.score }
           continue

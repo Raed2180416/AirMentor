@@ -6,6 +6,7 @@ import type { AcademicRouteDependencies } from './academic.js'
 import { AppError, notFound } from '../lib/http-errors.js'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { simulationRuns, simulationStageCheckpoints } from '../db/schema.js'
+import { isTeacherVisibleActiveProofRunCandidate } from '../lib/proof-active-run.js'
 
 export async function registerAcademicBootstrapRoutes(
   app: FastifyInstance,
@@ -41,15 +42,24 @@ export async function registerAcademicBootstrapRoutes(
     const demoScopeCondition = auth.demoWorkspaceId
       ? eq(simulationRuns.demoWorkspaceId, auth.demoWorkspaceId)
       : isNull(simulationRuns.demoWorkspaceId)
-    const activeRuns = await context.db.select({ simulationRunId: simulationRuns.simulationRunId })
+    const activeRunCandidates = await context.db.select({
+      simulationRunId: simulationRuns.simulationRunId,
+      runLabel: simulationRuns.runLabel,
+      status: simulationRuns.status,
+      activeFlag: simulationRuns.activeFlag,
+      lifecycleState: simulationRuns.lifecycleState,
+      activeOperationalSemester: simulationRuns.activeOperationalSemester,
+      createdAt: simulationRuns.createdAt,
+      updatedAt: simulationRuns.updatedAt,
+    })
       .from(simulationRuns)
       .where(and(eq(simulationRuns.activeFlag, 1), demoScopeCondition))
+    const activeRuns = activeRunCandidates.filter(isTeacherVisibleActiveProofRunCandidate)
     if (activeRuns.length === 0) {
       const pendingRuns = await context.db
         .select({ simulationRunId: simulationRuns.simulationRunId })
         .from(simulationRuns)
         .where(and(inArray(simulationRuns.status, ['queued', 'running']), demoScopeCondition))
-        .limit(1)
       if (pendingRuns.length > 0) {
         throw new AppError(403, 'NO_ACTIVE_PROOF_RUN', 'A proof simulation is being prepared — this usually takes a few minutes. Please try again shortly.')
       }

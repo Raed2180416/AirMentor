@@ -74,6 +74,7 @@ function makePolicy(): ResolvedPolicy {
       minimumSeeMark: 20,
       seeMaximum: 50,
       minimumOverallPercent: 40,
+      overallMaximum: 100,
     },
     simulationRules: {
       defaultSeedOffset: 0,
@@ -282,6 +283,43 @@ describe('buildStageEvidenceSnapshot · Phase-6a realization wire-up', () => {
       expect(repeat.assignmentPct).toBe(first.assignmentPct)
       expect(repeat.attendancePct).toBe(first.attendancePct)
     }
+  })
+
+  it('realization preserves final-mark residual when rebuilding post-see overall', () => {
+    process.env[STAGE_REALIZATION_FLAG_NAME] = '1'
+    const source = makeSource({
+      cePct: 58,
+      seePct: 48,
+      finalMark: 54,
+    })
+    const baseline = buildStageEvidenceSnapshot({
+      source,
+      stageKey: 'post-see',
+      policy: makePolicy(),
+      templatesById: emptyTemplates,
+    })
+    const realized = buildStageEvidenceSnapshot({
+      source,
+      stageKey: 'post-see',
+      policy: makePolicy(),
+      templatesById: emptyTemplates,
+      realization: {
+        runId: 'run_overall_residual',
+        runSeed: 991,
+        studentProfile: makeProfile({ interventionReceptivity: 0.85, practiceCompliance: 0.8 }),
+        interventionsInWindow: [
+          makeIntervention({
+            actionCode: 'targeted_remedial_plan',
+            dominantWeaknessHint: 'coursework',
+            severityContext: { riskBand: 'High', cgpa: 5.2, backlogCount: 1 },
+          }),
+        ],
+      },
+    })
+
+    expect(realized.cePct!).toBeGreaterThan(baseline.cePct!)
+    expect(realized.seePct!).toBeGreaterThan(baseline.seePct!)
+    expect(realized.overallPct!).toBeGreaterThanOrEqual(baseline.overallPct!)
   })
 
   it('realization honours per-stage visibility: pre-tt1 keeps tt2/see null', () => {

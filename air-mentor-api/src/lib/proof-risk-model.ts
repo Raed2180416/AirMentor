@@ -1,7 +1,19 @@
 import { createHash } from 'node:crypto'
-import { spawnSync } from 'node:child_process'
-import { inferObservableDrivers, inferObservableRisk, type ObservableDriver, type ObservableInferenceInput, type ObservableInferenceOutput } from './inference-engine.js'
+import { inferObservableDrivers, inferObservableRisk, isCriticallySparseAcademicEvidence, policyRiskFloorFromObservableInput, type ObservableDriver, type ObservableInferenceInput, type ObservableInferenceOutput } from './inference-engine.js'
 import { parseJson } from './json.js'
+
+export type EbmTerm = {
+  name: string
+  features: string[]
+  feature_indices: number[]
+  scores: number[] | number[][]
+}
+
+export type EbmModelArtifact = {
+  intercept: number
+  bins: number[][]
+  terms: EbmTerm[]
+}
 import type {
   FeatureConfidenceClass,
   GraphAwareFeatureCompleteness,
@@ -727,6 +739,34 @@ function stageIndicatorValues(stageKey: string | null | undefined) {
   } as const
 }
 
+type AssessmentFeatureKey = 'tt1Pct' | 'tt2Pct' | 'seePct' | 'quizPct' | 'assignmentPct'
+
+function assessmentExpectedAtStage(field: AssessmentFeatureKey, stageKey: string | null | undefined) {
+  if (!stageKey) return true
+  if (field === 'tt1Pct') return ['post-tt1', 'post-tt2', 'post-assignments', 'post-see'].includes(stageKey)
+  if (field === 'tt2Pct') return ['post-tt2', 'post-assignments', 'post-see'].includes(stageKey)
+  if (field === 'quizPct' || field === 'assignmentPct') return ['post-assignments', 'post-see'].includes(stageKey)
+  if (field === 'seePct') return stageKey === 'post-see'
+  return true
+}
+
+function assessmentMissingScaled(
+  payload: ObservableFeaturePayload,
+  field: AssessmentFeatureKey,
+  stageKey: string | null | undefined,
+) {
+  return assessmentExpectedAtStage(field, stageKey) && payload[field] == null ? 1 : 0
+}
+
+function assessmentRiskScaled(
+  payload: ObservableFeaturePayload,
+  field: AssessmentFeatureKey,
+  stageKey: string | null | undefined,
+) {
+  if (payload[field] != null) return safePctToRisk(payload[field])
+  return assessmentExpectedAtStage(field, stageKey) ? safePctToRisk(null) : 0
+}
+
 function featureVectorFromPayload(
   payload: ObservableFeaturePayload,
   sourceRefs?: ObservableSourceRefs | null,
@@ -737,10 +777,11 @@ function featureVectorFromPayload(
   const stageIndicators = includeStageIndicators
     ? stageIndicatorValues(sourceRefs?.stageKey)
     : stageIndicatorValues(null)
-
-  const semesterFactor = Math.max(0, (payload.semesterNumber - 1) / 5)
-  const cgpaBuffer = clamp((payload.currentCgpa - 6.0) / 4.0, 0, 1)
-  const backlogDecay = 1.0 - (cgpaBuffer * semesterFactor * 0.8)
+  const tt1Risk = assessmentRiskScaled(payload, 'tt1Pct', sourceRefs?.stageKey)
+  const tt2Risk = assessmentRiskScaled(payload, 'tt2Pct', sourceRefs?.stageKey)
+  const seeRisk = assessmentRiskScaled(payload, 'seePct', sourceRefs?.stageKey)
+  const quizRisk = assessmentRiskScaled(payload, 'quizPct', sourceRefs?.stageKey)
+  const assignmentRisk = assessmentRiskScaled(payload, 'assignmentPct', sourceRefs?.stageKey)
 
   // v6 backlog-credit decomposition
   const activeBacklogCredits = payload.activeBacklogCredits ?? 0
@@ -757,18 +798,18 @@ function featureVectorFromPayload(
     currentCgpaScaled: clamp(payload.currentCgpa / 10, 0, 1),
     // v6: composite credit-aware pressure instead of pure subject-count
     backlogPressureScaled: clamp((activeBacklogCreditPressure * 0.7) + (historicalBacklogBurden * 0.3), 0, 1),
-    tt1RiskScaled: safePctToRisk(payload.tt1Pct),
-    tt2RiskScaled: safePctToRisk(payload.tt2Pct),
-    seeRiskScaled: safePctToRisk(payload.seePct),
-    quizRiskScaled: safePctToRisk(payload.quizPct),
-    assignmentRiskScaled: safePctToRisk(payload.assignmentPct),
+    tt1RiskScaled: tt1Risk,
+    tt2RiskScaled: tt2Risk,
+    seeRiskScaled: seeRisk,
+    quizRiskScaled: quizRisk,
+    assignmentRiskScaled: assignmentRisk,
     weakCoPressureScaled: clamp(payload.weakCoCount / 4, 0, 1),
     weakQuestionPressureScaled: clamp(payload.weakQuestionCount / 6, 0, 1),
     courseworkTtMismatchScaled: clamp((payload.courseworkToTtGap + 40) / 80, 0, 1),
     ttMomentumRiskScaled: clamp((-payload.ttMomentum + 30) / 60, 0, 1),
-    interventionResidualRiskScaled: clamp(((payload.interventionResponseScore ?? 0) * -1 + 0.4) / 0.8, 0, 1),
+    interventionResidualRiskScaled: payload.interventionResponseScore == null ? 0 : clamp(((payload.interventionResponseScore * -1) + 0.4) / 0.8, 0, 1),
     prerequisitePressureScaled: clamp(payload.prerequisitePressure, 0, 1),
-    prerequisiteAverageRiskScaled: safePctToRisk(payload.prerequisiteAveragePct),
+    prerequisiteAverageRiskScaled: prerequisiteDepth > 0 ? safePctToRisk(payload.prerequisiteAveragePct) : 0,
     prerequisiteFailurePressureScaled: clamp(payload.prerequisiteFailureCount / 3, 0, 1),
     prerequisiteChainDepthScaled: clamp(prerequisiteDepth / 6, 0, 1),
     prerequisiteWeakCourseRateScaled: safeRatio(payload.prerequisiteFailureCount, prerequisiteDepth),
@@ -785,22 +826,20 @@ function featureVectorFromPayload(
     stagePostSeeScaled: stageIndicators.stagePostSeeScaled,
     sectionPressureScaled: clamp(payload.sectionRiskRate, 0, 1),
     // v5 interaction features — zeroed for baseline configs that set includeInteractionFeatures=false
-    tt1tt2ExamCompoundRiskScaled: includeInteractionFeatures ? safePctToRisk(payload.tt1Pct) * safePctToRisk(payload.tt2Pct) : 0,
-    courseworkCompoundRiskScaled: includeInteractionFeatures ? safePctToRisk(payload.quizPct) * safePctToRisk(payload.assignmentPct) : 0,
-    stagePostTt2TtCompoundInteractionScaled: includeInteractionFeatures ? stageIndicators.stagePostTt2Scaled * safePctToRisk(payload.tt1Pct) * safePctToRisk(payload.tt2Pct) : 0,
+    tt1tt2ExamCompoundRiskScaled: includeInteractionFeatures ? tt1Risk * tt2Risk : 0,
+    courseworkCompoundRiskScaled: includeInteractionFeatures ? quizRisk * assignmentRisk : 0,
+    stagePostTt2TtCompoundInteractionScaled: includeInteractionFeatures ? stageIndicators.stagePostTt2Scaled * tt1Risk * tt2Risk : 0,
     attendanceTrendCompoundRiskScaled: includeInteractionFeatures ? clamp((1 - clamp(payload.attendancePct / 100, 0, 1)) * clamp(1 - (payload.attendanceTrend + 25) / 50, 0, 1), 0, 1) : 0,
-    stagePostAssignmentsCourseworkInteractionScaled: includeInteractionFeatures ? stageIndicators.stagePostAssignmentsScaled * (safePctToRisk(payload.quizPct) + safePctToRisk(payload.assignmentPct)) / 2 : 0,
+    stagePostAssignmentsCourseworkInteractionScaled: includeInteractionFeatures ? stageIndicators.stagePostAssignmentsScaled * (quizRisk + assignmentRisk) / 2 : 0,
     cgpaMissingScaled: payload.cgpaMissing ? 1 : 0,
     backlogMissingScaled: payload.backlogMissing ? 1 : 0,
-    // v8b: assessment-evidence missingness derived from nullable payload fields.
-    // Independent of cgpa/backlog which have explicit boolean flags (zero is a
-    // legitimate CGPA value so explicit flag is required); here null uniquely
-    // means "not yet entered" and 0 uniquely means "entered, scored zero".
-    tt1MissingScaled: payload.tt1Pct == null ? 1 : 0,
-    tt2MissingScaled: payload.tt2Pct == null ? 1 : 0,
-    seeMissingScaled: payload.seePct == null ? 1 : 0,
-    quizMissingScaled: payload.quizPct == null ? 1 : 0,
-    assignmentMissingScaled: payload.assignmentPct == null ? 1 : 0,
+    // v8b: assessment-evidence missingness is stage-aware. Null only means
+    // risk-bearing missing evidence after that assessment is expected to exist.
+    tt1MissingScaled: assessmentMissingScaled(payload, 'tt1Pct', sourceRefs?.stageKey),
+    tt2MissingScaled: assessmentMissingScaled(payload, 'tt2Pct', sourceRefs?.stageKey),
+    seeMissingScaled: assessmentMissingScaled(payload, 'seePct', sourceRefs?.stageKey),
+    quizMissingScaled: assessmentMissingScaled(payload, 'quizPct', sourceRefs?.stageKey),
+    assignmentMissingScaled: assessmentMissingScaled(payload, 'assignmentPct', sourceRefs?.stageKey),
     // v6 backlog-credit decomposition features
     activeBacklogCreditPressureScaled: activeBacklogCreditPressure,
     historicalBacklogBurdenScaled: historicalBacklogBurden,
@@ -855,44 +894,51 @@ function scoreWithLogistic(head: LogisticHeadArtifact, vector: FeatureVector) {
   return applyCalibration(head.calibration, scoreWithLogisticRaw(head, vector))
 }
 
-// Tree scoring bridge — calls Python for XGBoost/LightGBM predictions.
-// Safe fallback to logistic if Python bridge fails or model file is missing.
-const TREE_BRIDGE_SCRIPT = new URL('../../scripts/tree-scoring-bridge.py', import.meta.url).pathname
-const XGBOOST_OVERALL_MODEL = new URL('../../output/proof-risk-model/sota-ensemble/xgboost_overallCourseRisk_v1.json', import.meta.url).pathname
-const XGBOOST_OVERALL_CAL = new URL('../../output/proof-risk-model/sota-ensemble/lightgbm_overallCourseRisk_calibration.json', import.meta.url).pathname
+// Native TS scoring for EBM models, replacing the latency-heavy Python bridge.
+const EBM_OVERALL_MODEL = new URL('../../output/proof-risk-model/ebm_overallCourseRisk_v1.json', import.meta.url).pathname
 
-function scoreWithTreeBridge(featureArray: number[], modelPath: string, calPath: string): number | null {
+let cachedEbmOverallModel: EbmModelArtifact | null = null
+
+function loadEbmOverallModel(): EbmModelArtifact | null {
+  if (cachedEbmOverallModel) return cachedEbmOverallModel
   try {
-    const calJson = JSON.parse(_readFileSync(calPath, 'utf-8'))
-    const payload = JSON.stringify({ features: featureArray })
-    const result = spawnSync(
-      process.execPath.replace('node', 'python3') || 'python3',
-      [
-        TREE_BRIDGE_SCRIPT,
-        '--model', modelPath,
-        '--model-type', 'xgboost',
-        '--calibration', JSON.stringify(calJson),
-      ],
-      {
-        input: payload,
-        encoding: 'utf-8',
-        timeout: 5000,
-      }
-    )
-    if (result.status !== 0 || result.error) {
-      console.warn('[tree-bridge] spawn failed:', result.error || result.stderr)
-      return null
-    }
-    const parsed = parseJson(result.stdout.trim(), null as { calibratedProbability?: number } | null)
-    if (!parsed || typeof parsed.calibratedProbability !== 'number') {
-      console.warn('[tree-bridge] invalid output:', result.stdout)
-      return null
-    }
-    return clamp(parsed.calibratedProbability, 0.0001, 0.9999)
+    const raw = _readFileSync(EBM_OVERALL_MODEL, 'utf-8')
+    cachedEbmOverallModel = JSON.parse(raw)
   } catch (e) {
-    console.warn('[tree-bridge] exception:', e)
-    return null
+    // Silently fall back if EBM not yet trained
   }
+  return cachedEbmOverallModel
+}
+
+function scoreWithEbm(model: EbmModelArtifact, vector: number[]): number {
+  let score = model.intercept
+  for (const term of model.terms) {
+    if (term.feature_indices.length === 1) {
+      const val = vector[term.feature_indices[0]!]!
+      const binEdges = model.bins[term.feature_indices[0]!]
+      if (binEdges && term.scores) {
+        let binIdx = binEdges.findIndex(b => val <= b)
+        if (binIdx === -1) binIdx = binEdges.length
+        score += (term.scores as number[])[binIdx] ?? 0
+      }
+    } else if (term.feature_indices.length === 2) {
+      const val0 = vector[term.feature_indices[0]!]!
+      const val1 = vector[term.feature_indices[1]!]!
+      const binEdges0 = model.bins[term.feature_indices[0]!]
+      const binEdges1 = model.bins[term.feature_indices[1]!]
+      if (binEdges0 && binEdges1 && term.scores) {
+        let binIdx0 = binEdges0.findIndex(b => val0 <= b)
+        if (binIdx0 === -1) binIdx0 = binEdges0.length
+        let binIdx1 = binEdges1.findIndex(b => val1 <= b)
+        if (binIdx1 === -1) binIdx1 = binEdges1.length
+        const scores2D = term.scores as number[][]
+        if (scores2D[binIdx0] && scores2D[binIdx0]![binIdx1] !== undefined) {
+          score += scores2D[binIdx0]![binIdx1]!
+        }
+      }
+    }
+  }
+  return clamp(1 / (1 + Math.exp(-score)), 0.0001, 0.9999)
 }
 
 function supportWarningForHead(headKey: RiskHeadKey, support: HeadSupportSummary, metrics: RiskMetricSummary) {
@@ -1270,12 +1316,6 @@ function chooseCalibration(
 const FEATURE_COUNT = OBSERVABLE_FEATURE_KEYS.length
 const DATASET_BLOCK_SIZE = 16_384
 
-const SPLIT_CODE_BY_NAME: Record<SplitName, 0 | 1 | 2> = {
-  train: 0,
-  validation: 1,
-  test: 2,
-}
-
 const SCENARIO_FAMILY_CODE_BY_NAME: Record<ScenarioFamily, number> = Object.fromEntries(
   PROOF_SCENARIO_FAMILIES.map((family, index) => [family, index]),
 ) as Record<ScenarioFamily, number>
@@ -1415,23 +1455,28 @@ function writeFeatureVectorToBuffer(
   const stageIndicators = includeStageIndicators
     ? stageIndicatorValues(sourceRefs.stageKey)
     : stageIndicatorValues(null)
+  const tt1Risk = assessmentRiskScaled(payload, 'tt1Pct', sourceRefs.stageKey)
+  const tt2Risk = assessmentRiskScaled(payload, 'tt2Pct', sourceRefs.stageKey)
+  const seeRisk = assessmentRiskScaled(payload, 'seePct', sourceRefs.stageKey)
+  const quizRisk = assessmentRiskScaled(payload, 'quizPct', sourceRefs.stageKey)
+  const assignmentRisk = assessmentRiskScaled(payload, 'assignmentPct', sourceRefs.stageKey)
   buffer[offset + 0] = clamp(payload.attendancePct / 100, 0, 1)
   buffer[offset + 1] = clamp((payload.attendanceTrend + 25) / 50, 0, 1)
   buffer[offset + 2] = clamp(payload.attendanceHistoryRiskCount / 4, 0, 1)
   buffer[offset + 3] = clamp(payload.currentCgpa / 10, 0, 1)
   buffer[offset + 4] = clamp(payload.backlogCount / 4, 0, 1)
-  buffer[offset + 5] = safePctToRisk(payload.tt1Pct)
-  buffer[offset + 6] = safePctToRisk(payload.tt2Pct)
-  buffer[offset + 7] = safePctToRisk(payload.seePct)
-  buffer[offset + 8] = safePctToRisk(payload.quizPct)
-  buffer[offset + 9] = safePctToRisk(payload.assignmentPct)
+  buffer[offset + 5] = tt1Risk
+  buffer[offset + 6] = tt2Risk
+  buffer[offset + 7] = seeRisk
+  buffer[offset + 8] = quizRisk
+  buffer[offset + 9] = assignmentRisk
   buffer[offset + 10] = clamp(payload.weakCoCount / 4, 0, 1)
   buffer[offset + 11] = clamp(payload.weakQuestionCount / 6, 0, 1)
   buffer[offset + 12] = clamp((payload.courseworkToTtGap + 40) / 80, 0, 1)
   buffer[offset + 13] = clamp((-payload.ttMomentum + 30) / 60, 0, 1)
-  buffer[offset + 14] = clamp(((payload.interventionResponseScore ?? 0) * -1 + 0.4) / 0.8, 0, 1)
+  buffer[offset + 14] = payload.interventionResponseScore == null ? 0 : clamp(((payload.interventionResponseScore * -1) + 0.4) / 0.8, 0, 1)
   buffer[offset + 15] = clamp(payload.prerequisitePressure, 0, 1)
-  buffer[offset + 16] = safePctToRisk(payload.prerequisiteAveragePct)
+  buffer[offset + 16] = prerequisiteDepth > 0 ? safePctToRisk(payload.prerequisiteAveragePct) : 0
   buffer[offset + 17] = clamp(payload.prerequisiteFailureCount / 3, 0, 1)
   buffer[offset + 18] = clamp(prerequisiteDepth / 6, 0, 1)
   buffer[offset + 19] = safeRatio(payload.prerequisiteFailureCount, prerequisiteDepth)
@@ -1449,11 +1494,11 @@ function writeFeatureVectorToBuffer(
   buffer[offset + 31] = clamp(payload.sectionRiskRate, 0, 1)
   // v5 interaction features — zero out for baseline configs that set includeInteractionFeatures=false
   if (includeInteractionFeatures) {
-    buffer[offset + 32] = safePctToRisk(payload.tt1Pct) * safePctToRisk(payload.tt2Pct)
-    buffer[offset + 33] = safePctToRisk(payload.quizPct) * safePctToRisk(payload.assignmentPct)
-    buffer[offset + 34] = stageIndicators.stagePostTt2Scaled * safePctToRisk(payload.tt1Pct) * safePctToRisk(payload.tt2Pct)
+    buffer[offset + 32] = tt1Risk * tt2Risk
+    buffer[offset + 33] = quizRisk * assignmentRisk
+    buffer[offset + 34] = stageIndicators.stagePostTt2Scaled * tt1Risk * tt2Risk
     buffer[offset + 35] = clamp((1 - clamp(payload.attendancePct / 100, 0, 1)) * clamp(1 - (payload.attendanceTrend + 25) / 50, 0, 1), 0, 1)
-    buffer[offset + 36] = stageIndicators.stagePostAssignmentsScaled * (safePctToRisk(payload.quizPct) + safePctToRisk(payload.assignmentPct)) / 2
+    buffer[offset + 36] = stageIndicators.stagePostAssignmentsScaled * (quizRisk + assignmentRisk) / 2
   } else {
     buffer[offset + 32] = 0
     buffer[offset + 33] = 0
@@ -1464,12 +1509,12 @@ function writeFeatureVectorToBuffer(
   // v8 missingness indicators
   buffer[offset + 37] = payload.cgpaMissing ? 1 : 0
   buffer[offset + 38] = payload.backlogMissing ? 1 : 0
-  // v8b assessment-evidence missingness
-  buffer[offset + 39] = payload.tt1Pct == null ? 1 : 0
-  buffer[offset + 40] = payload.tt2Pct == null ? 1 : 0
-  buffer[offset + 41] = payload.seePct == null ? 1 : 0
-  buffer[offset + 42] = payload.quizPct == null ? 1 : 0
-  buffer[offset + 43] = payload.assignmentPct == null ? 1 : 0
+  // v8b stage-aware assessment-evidence missingness
+  buffer[offset + 39] = assessmentMissingScaled(payload, 'tt1Pct', sourceRefs.stageKey)
+  buffer[offset + 40] = assessmentMissingScaled(payload, 'tt2Pct', sourceRefs.stageKey)
+  buffer[offset + 41] = assessmentMissingScaled(payload, 'seePct', sourceRefs.stageKey)
+  buffer[offset + 42] = assessmentMissingScaled(payload, 'quizPct', sourceRefs.stageKey)
+  buffer[offset + 43] = assessmentMissingScaled(payload, 'assignmentPct', sourceRefs.stageKey)
   // v6 backlog-credit decomposition
   const activeBacklogCreditsBuf = payload.activeBacklogCredits ?? 0
   const historicalBacklogCreditsBuf = payload.historicalBacklogCredits ?? 0
@@ -1533,12 +1578,19 @@ class ProofRiskDatasetBuilder {
   private readonly stageIds = new Map<string, number>()
   private readonly sectionIds = new Map<string, number>()
   private readonly correlations = createEmptyCorrelationAccumulator()
+  private readonly runMetadataById: Map<string, ProofRunModelMetadata>
+  private readonly manifest: ProofCorpusManifestEntry[]
+  private readonly trainingConfig: ProofRiskTrainingConfig
 
   constructor(
-    private readonly runMetadataById: Map<string, ProofRunModelMetadata>,
-    private readonly manifest: ProofCorpusManifestEntry[],
-    private readonly trainingConfig: ProofRiskTrainingConfig,
-  ) {}
+    runMetadataById: Map<string, ProofRunModelMetadata>,
+    manifest: ProofCorpusManifestEntry[],
+    trainingConfig: ProofRiskTrainingConfig,
+  ) {
+    this.runMetadataById = runMetadataById
+    this.manifest = manifest
+    this.trainingConfig = trainingConfig
+  }
 
   addEvidenceRows(rows: ObservableRiskEvidenceRow[]) {
     rows.forEach(row => this.appendRow(row.featurePayload, row.labelPayload, row.sourceRefs))
@@ -1638,7 +1690,6 @@ class ProofRiskDatasetBuilder {
 
     const slot = block.count
     const rowIndex = this.rowCount
-    const _splitCode = SPLIT_CODE_BY_NAME[split]
     const mask = buildLabelMask(labelPayload)
     const key = `${sourceRefs.simulationRunId}::${sourceRefs.studentId}::${sourceRefs.courseCode}::${sourceRefs.stageKey ?? 'active'}`
 
@@ -2214,6 +2265,7 @@ function trainCompactProofRiskModel(
 
   const production: ProductionRiskModelArtifact = {
     modelVersion: trainingConfig.productionModelVersion,
+    modelFamily: 'logistic',
     featureSchemaVersion: RISK_FEATURE_SCHEMA_VERSION,
     trainedAt: now,
     trainingManifestVersion: PROOF_CORPUS_MANIFEST_VERSION,
@@ -2332,11 +2384,34 @@ function mapFeatureKeyToUiDriver(featureKey: ObservableFeatureKey): ObservableDr
   if (featureKey === 'assignmentRiskScaled') return 'assignment'
   if (featureKey === 'weakCoPressureScaled') return 'co'
   if (featureKey === 'weakQuestionPressureScaled') return 'question-pattern'
+  if (featureKey === 'courseworkTtMismatchScaled' || featureKey === 'ttMomentumRiskScaled') return 'coursework-gap'
   if (featureKey === 'interventionResidualRiskScaled') return 'intervention-response'
+  if (
+    featureKey === 'prerequisitePressureScaled'
+    || featureKey === 'prerequisiteAverageRiskScaled'
+    || featureKey === 'prerequisiteFailurePressureScaled'
+    || featureKey === 'prerequisiteChainDepthScaled'
+    || featureKey === 'prerequisiteWeakCourseRateScaled'
+    || featureKey === 'prerequisiteCarryoverLoadScaled'
+    || featureKey === 'prerequisiteRecencyWeightedFailureScaled'
+    || featureKey === 'downstreamDependencyLoadScaled'
+    || featureKey === 'weakPrerequisiteChainCountScaled'
+    || featureKey === 'repeatedWeakPrerequisiteFamilyCountScaled'
+  ) return 'prerequisite'
+  if (featureKey === 'sectionPressureScaled') return 'section-pressure'
+
+  if (featureKey === 'cgpaMissingScaled') return 'cgpa-missing'
+  if (featureKey === 'backlogMissingScaled') return 'backlog-missing'
+  if (featureKey === 'tt1MissingScaled') return 'tt1-missing'
+  if (featureKey === 'tt2MissingScaled') return 'tt2-missing'
+  if (featureKey === 'seeMissingScaled') return 'see-missing'
+  if (featureKey === 'quizMissingScaled') return 'quiz-missing'
+  if (featureKey === 'assignmentMissingScaled') return 'assignment-missing'
+
   return null
 }
 
-function formatShapDriverLabel(featureKey: ObservableFeatureKey, val: number, shap: number, payload: ObservableFeaturePayload): string {
+function formatShapDriverLabel(featureKey: ObservableFeatureKey, _val: number, shap: number, payload: ObservableFeaturePayload): string {
   const impactText = shap > 0.4 ? 'significantly increases' : 'increases'
   if (featureKey === 'tt1RiskScaled') return `TT1 performance (${payload.tt1Pct ?? 0}%) ${impactText} overall risk model assessment`
   if (featureKey === 'tt2RiskScaled') return `TT2 performance (${payload.tt2Pct ?? 0}%) ${impactText} overall risk model assessment`
@@ -2347,8 +2422,69 @@ function formatShapDriverLabel(featureKey: ObservableFeatureKey, val: number, sh
   if (featureKey === 'quizRiskScaled') return `Quiz evidence (${payload.quizPct ?? 0}%) ${impactText} risk probability`
   if (featureKey === 'assignmentRiskScaled') return `Assignment evidence (${payload.assignmentPct ?? 0}%) ${impactText} risk probability`
   if (featureKey === 'weakCoPressureScaled') return `Weak course outcomes (${payload.weakCoCount}) ${impactText} risk probability`
+  if (featureKey === 'courseworkTtMismatchScaled') return `Coursework/test gap (${roundToTwo(payload.courseworkToTtGap)} points) ${impactText} risk probability`
+  if (featureKey === 'ttMomentumRiskScaled') return `Term-test momentum (${roundToTwo(payload.ttMomentum)} points) ${impactText} risk probability`
   if (featureKey === 'interventionResidualRiskScaled') return `Poor response to intervention ${impactText} ongoing risk`
+  if (featureKey === 'prerequisitePressureScaled') return `Prerequisite pressure (${roundToTwo(payload.prerequisitePressure * 100)}%) ${impactText} risk probability`
+  if (featureKey === 'prerequisiteAverageRiskScaled') return `Prerequisite average (${payload.prerequisiteAveragePct}%) ${impactText} risk probability`
+  if (featureKey === 'prerequisiteFailurePressureScaled') return `Prerequisite failure count (${payload.prerequisiteFailureCount}) ${impactText} risk probability`
+  if (featureKey === 'prerequisiteChainDepthScaled') return `Prerequisite chain depth (${payload.prerequisiteChainDepth}) ${impactText} risk probability`
+  if (featureKey === 'prerequisiteWeakCourseRateScaled') return `Weak prerequisite rate (${roundToTwo(payload.prerequisiteWeakCourseRate * 100)}%) ${impactText} risk probability`
+  if (featureKey === 'prerequisiteCarryoverLoadScaled') return `Prerequisite carryover load (${roundToTwo(payload.prerequisiteCarryoverLoad * 100)}%) ${impactText} risk probability`
+  if (featureKey === 'prerequisiteRecencyWeightedFailureScaled') return `Recent prerequisite weakness (${roundToTwo(payload.prerequisiteRecencyWeightedFailure * 100)}%) ${impactText} risk probability`
+  if (featureKey === 'downstreamDependencyLoadScaled') return `Downstream dependency load (${roundToTwo(payload.downstreamDependencyLoad * 100)}%) ${impactText} risk probability`
+  if (featureKey === 'weakPrerequisiteChainCountScaled') return `Weak prerequisite chain count (${payload.weakPrerequisiteChainCount}) ${impactText} risk probability`
+  if (featureKey === 'repeatedWeakPrerequisiteFamilyCountScaled') return `Repeated weak prerequisite family count (${payload.repeatedWeakPrerequisiteFamilyCount}) ${impactText} risk probability`
+  if (featureKey === 'sectionPressureScaled') return `Section risk pressure (${roundToTwo(payload.sectionRiskRate * 100)}%) ${impactText} risk probability`
+
+  if (featureKey === 'cgpaMissingScaled') return `Missing CGPA history ${impactText} risk uncertainty`
+  if (featureKey === 'backlogMissingScaled') return `Missing backlog history ${impactText} risk uncertainty`
+  if (featureKey === 'tt1MissingScaled') return `Missing TT1 score ${impactText} risk uncertainty`
+  if (featureKey === 'tt2MissingScaled') return `Missing TT2 score ${impactText} risk uncertainty`
+  if (featureKey === 'seeMissingScaled') return `Missing SEE score ${impactText} risk uncertainty`
+  if (featureKey === 'quizMissingScaled') return `Missing quiz scores ${impactText} risk uncertainty`
+  if (featureKey === 'assignmentMissingScaled') return `Missing assignment scores ${impactText} risk uncertainty`
+
   return `Model identified ${featureKey} as a primary driver of risk (impact: +${Math.round(shap * 100) / 100} log-odds)`
+}
+
+function inferShapDriversForEbm(
+  model: EbmModelArtifact,
+  vector: number[],
+  payload: ObservableFeaturePayload,
+): ObservableDriver[] {
+  const drivers: ObservableDriver[] = []
+
+  for (const term of model.terms) {
+    if (term.feature_indices.length !== 1) continue
+
+    const fIdx = term.feature_indices[0]!
+    const val = vector[fIdx]!
+    const binEdges = model.bins[fIdx]
+    if (!binEdges || !term.scores) continue
+
+    let binIdx = binEdges.findIndex(b => val <= b)
+    if (binIdx === -1) binIdx = binEdges.length
+
+    const impact = (term.scores as number[])[binIdx] ?? 0
+    // Only extract significant positive risk drivers
+    if (impact > 0.15) {
+      const key = OBSERVABLE_FEATURE_KEYS[fIdx]
+      if (key) {
+        const uiFeature = mapFeatureKeyToUiDriver(key)
+        if (uiFeature) {
+          drivers.push({
+            label: formatShapDriverLabel(key, val, impact, payload),
+            impact,
+            feature: uiFeature,
+          })
+        }
+      }
+    }
+  }
+
+  drivers.sort((a, b) => b.impact - a.impact)
+  return drivers.slice(0, 4)
 }
 
 function inferShapDriversForLogistic(
@@ -2357,7 +2493,7 @@ function inferShapDriversForLogistic(
   payload: ObservableFeaturePayload,
 ): ObservableDriver[] {
   const drivers: ObservableDriver[] = []
-  
+
   for (const key of OBSERVABLE_FEATURE_KEYS) {
     const weight = head.weights[key] ?? 0
     const baseline = getIdealBaselineForFeature(key)
@@ -2380,6 +2516,89 @@ function inferShapDriversForLogistic(
   // Sort by highest SHAP contribution
   drivers.sort((a, b) => b.impact - a.impact)
   return drivers.slice(0, 4) // Top 4 drivers max
+}
+
+function modelContextDriversFromPayload(payload: ObservableFeaturePayload): ObservableDriver[] {
+  const drivers: ObservableDriver[] = []
+  const activeBacklogCredits = safeNumber(payload.activeBacklogCredits)
+  const historicalBacklogCredits = safeNumber(payload.historicalBacklogCredits)
+  const lowerYearBlockerCredits = safeNumber(payload.lowerYearBlockerCredits)
+  const backlogSensitivityScore = safeNumber(payload.backlogSensitivityScore)
+
+  if (
+    payload.prerequisiteFailureCount > 0
+    || payload.weakPrerequisiteChainCount > 0
+    || payload.repeatedWeakPrerequisiteFamilyCount > 0
+    || payload.prerequisiteCarryoverLoad >= 0.25
+  ) {
+    drivers.push({
+      label: `Prerequisite history shows ${payload.prerequisiteFailureCount} failed source course(s) and ${roundToTwo(payload.prerequisiteCarryoverLoad * 100)}% carryover load.`,
+      impact: clamp(0.08 + payload.prerequisiteCarryoverLoad * 0.22 + Math.min(0.12, payload.prerequisiteFailureCount * 0.04), 0.08, 0.36),
+      feature: 'prerequisite',
+    })
+  } else if (payload.prerequisiteChainDepth > 0 && payload.prerequisiteAveragePct > 0 && payload.prerequisiteAveragePct < 60) {
+    drivers.push({
+      label: `Prerequisite average is weak (${payload.prerequisiteAveragePct}%) across ${payload.prerequisiteChainDepth} source course(s).`,
+      impact: clamp(0.08 + ((60 - payload.prerequisiteAveragePct) / 100), 0.08, 0.24),
+      feature: 'prerequisite',
+    })
+  }
+
+  if (payload.sectionRiskRate >= 0.25) {
+    drivers.push({
+      label: `Section cohort risk pressure is elevated (${roundToTwo(payload.sectionRiskRate * 100)}% of comparable rows).`,
+      impact: clamp(0.06 + payload.sectionRiskRate * 0.18, 0.06, 0.24),
+      feature: 'section-pressure',
+    })
+  }
+
+  if (activeBacklogCredits > 0 || historicalBacklogCredits >= 8 || lowerYearBlockerCredits > 0) {
+    drivers.push({
+      label: `Backlog-credit pressure is present (${roundToTwo(activeBacklogCredits)} active, ${roundToTwo(historicalBacklogCredits)} historical credits).`,
+      impact: clamp(0.08 + (backlogSensitivityScore * 0.18), 0.08, 0.26),
+      feature: 'backlog',
+    })
+  }
+
+  if (payload.courseworkToTtGap >= 12) {
+    drivers.push({
+      label: `Coursework exceeds term-test evidence by ${roundToTwo(payload.courseworkToTtGap)} points.`,
+      impact: clamp(0.06 + (payload.courseworkToTtGap / 160), 0.06, 0.20),
+      feature: 'coursework-gap',
+    })
+  }
+
+  if (payload.currentCgpa > 0 && payload.currentCgpa < 7) {
+    drivers.push({
+      label: `Current CGPA is below the stronger-standing band (${payload.currentCgpa.toFixed(2)}).`,
+      impact: clamp(0.06 + ((7 - payload.currentCgpa) / 20), 0.06, 0.18),
+      feature: 'cgpa',
+    })
+  }
+
+  return drivers.sort((left, right) => right.impact - left.impact).slice(0, 4)
+}
+
+function ensureDriversForServedRisk(
+  riskBand: 'High' | 'Medium' | 'Low',
+  drivers: ObservableDriver[],
+  payload: ObservableFeaturePayload,
+) {
+  if (riskBand === 'Low' || drivers.length > 0) return drivers
+  return modelContextDriversFromPayload(payload)
+}
+
+function suppressUnexplainedServedRisk(
+  riskProb: number,
+  thresholds: { readonly medium: number; readonly high: number },
+  drivers: ObservableDriver[],
+) {
+  if (drivers.length > 0) return roundToFour(riskProb)
+  // Keep unexplained rows visibly below the Medium boundary even after
+  // projection storage rounds probability to a whole-number percent.
+  const unexplainedCeiling = Math.max(0, thresholds.medium - 0.006)
+  if (riskProb < unexplainedCeiling) return roundToFour(riskProb)
+  return roundToFour(unexplainedCeiling)
 }
 
 
@@ -2405,7 +2624,7 @@ function loadCatBoostModels() {
   if (cachedCatBoostModels) return cachedCatBoostModels;
   const models: Record<string, CatBoostModel> = {};
   const heads = ['attendanceRisk', 'ceRisk', 'seeRisk', 'overallCourseRisk', 'downstreamCarryoverRisk'];
-  
+
   let baseDir = '';
   try {
     const __filename = fileURLToPath(import.meta.url);
@@ -2444,6 +2663,18 @@ function scoreWithCatBoost(headKey: RiskHeadKey, fallbackProb: number, vector: n
   return Math.max(0.0001, Math.min(0.9999, prob));
 }
 
+function mergeObservableDrivers(primary: ObservableDriver[], secondary: ObservableDriver[]) {
+  const merged: ObservableDriver[] = []
+  const seen = new Set<string>()
+  for (const driver of [...primary, ...secondary]) {
+    const key = `${driver.feature}::${driver.label}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push(driver)
+  }
+  return merged.sort((left, right) => right.impact - left.impact)
+}
+
 export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
   featurePayload: ObservableFeaturePayload
   sourceRefs?: ObservableSourceRefs | null
@@ -2473,60 +2704,16 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
   const useCatBoost = productionModel?.modelFamily === 'catboost'
     && productionModel.featureSchemaVersion === RISK_FEATURE_SCHEMA_VERSION
 
-  if (useCatBoost) {
-    const vector = featureVectorArrayFromPayload(input.featurePayload, input.sourceRefs)
-    const headProbabilities = {
-      attendanceRisk: scoreWithCatBoost('attendanceRisk', fallback.riskProb, vector),
-      ceRisk: scoreWithCatBoost('ceRisk', fallback.riskProb, vector),
-      seeRisk: scoreWithCatBoost('seeRisk', fallback.riskProb, vector),
-      overallCourseRisk: scoreWithCatBoost('overallCourseRisk', fallback.riskProb, vector),
-      downstreamCarryoverRisk: scoreWithCatBoost('downstreamCarryoverRisk', fallback.riskProb, vector),
-    } satisfies Record<RiskHeadKey, number>
-    const officialOverall = headProbabilities.overallCourseRisk
-    const riskBand: 'High' | 'Medium' | 'Low' = bandFromScore(
-      officialOverall,
-      bandThresholdsOverride ?? { medium: 0.35, high: 0.65 },
-    )
-    const catBoostHeadDisplay = Object.fromEntries(
-      (Object.keys(HEAD_LABEL_KEYS) as RiskHeadKey[]).map(headKey => [headKey, {
-        displayProbabilityAllowed: true,
-        supportWarning: null,
-        calibrationMethod: 'identity' as CalibrationMethod,
-      }]),
-    ) as ModelBackedRiskOutput['headDisplay']
-    return {
-      riskProb: roundToFour(officialOverall),
-      riskBand,
-      recommendedAction: fallback.recommendedAction,
-      observableDrivers: inferObservableDrivers(input),
-      modelVersion: productionModel.modelVersion,
-      calibrationVersion: productionModel.calibrationVersion,
-      headProbabilities: Object.fromEntries(
-        Object.entries(headProbabilities).map(([key, value]) => [key, roundToFour(value)]),
-      ) as Record<RiskHeadKey, number>,
-      queuePriorityScore: rankingAllowed ? roundToFour(officialOverall) : 0,
-      queuePrioritySource: 'overall-course-risk-head',
-      rankingAllowed,
-      rankingSuppressedReason,
-      crossCourseDrivers: input.sourceRefs ? crossCourseDriversFromCorrelations(input.correlations ?? null, input.sourceRefs) : [],
-      headDisplay: catBoostHeadDisplay,
-    }
-  }
-
-  if (!input.productionModel || input.productionModel.featureSchemaVersion !== RISK_FEATURE_SCHEMA_VERSION) {
-    const fallbackDisplay = Object.fromEntries(
+  if (isCriticallySparseAcademicEvidence(input)) {
+    const sparseDisplay = Object.fromEntries(
       (Object.keys(HEAD_LABEL_KEYS) as RiskHeadKey[]).map(headKey => [headKey, {
         displayProbabilityAllowed: false,
-        supportWarning: mergeSupportWarnings('No active trained artifact is available for this batch.', fallbackSuppressionWarning),
+        supportWarning: mergeSupportWarnings('Academic history and assessment evidence are not yet sufficient for model-backed serving.', fallbackSuppressionWarning),
         calibrationMethod: 'identity' as CalibrationMethod,
       }]),
     ) as ModelBackedRiskOutput['headDisplay']
-    const fallbackBand = bandThresholdsOverride
-      ? bandFromScore(fallback.riskProb, bandThresholdsOverride)
-      : fallback.riskBand
     return {
       ...fallback,
-      riskBand: fallbackBand,
       modelVersion: 'observable-inference-v2',
       calibrationVersion: null,
       headProbabilities: {
@@ -2541,6 +2728,86 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
       rankingAllowed,
       rankingSuppressedReason,
       crossCourseDrivers: [],
+      headDisplay: sparseDisplay,
+    }
+  }
+
+  if (useCatBoost) {
+    const vector = featureVectorArrayFromPayload(input.featurePayload, input.sourceRefs)
+    const headProbabilities = {
+      attendanceRisk: scoreWithCatBoost('attendanceRisk', fallback.riskProb, vector),
+      ceRisk: scoreWithCatBoost('ceRisk', fallback.riskProb, vector),
+      seeRisk: scoreWithCatBoost('seeRisk', fallback.riskProb, vector),
+      overallCourseRisk: scoreWithCatBoost('overallCourseRisk', fallback.riskProb, vector),
+      downstreamCarryoverRisk: scoreWithCatBoost('downstreamCarryoverRisk', fallback.riskProb, vector),
+    } satisfies Record<RiskHeadKey, number>
+    const thresholds = bandThresholdsOverride ?? { medium: 0.35, high: 0.65 }
+    const policyFloor = policyRiskFloorFromObservableInput(input, thresholds)
+    const preliminaryOverall = Math.max(headProbabilities.overallCourseRisk, policyFloor.riskFloor)
+    const preliminaryBand: 'High' | 'Medium' | 'Low' = bandFromScore(preliminaryOverall, thresholds)
+    const observableDrivers = ensureDriversForServedRisk(preliminaryBand, inferObservableDrivers(input), input.featurePayload)
+    const officialOverall = suppressUnexplainedServedRisk(preliminaryOverall, thresholds, observableDrivers)
+    const riskBand: 'High' | 'Medium' | 'Low' = bandFromScore(officialOverall, thresholds)
+    const catBoostHeadDisplay = Object.fromEntries(
+      (Object.keys(HEAD_LABEL_KEYS) as RiskHeadKey[]).map(headKey => [headKey, {
+        displayProbabilityAllowed: true,
+        supportWarning: null,
+        calibrationMethod: 'identity' as CalibrationMethod,
+      }]),
+    ) as ModelBackedRiskOutput['headDisplay']
+    return {
+      riskProb: roundToFour(officialOverall),
+      riskBand,
+      recommendedAction: fallback.recommendedAction,
+      modelVersion: productionModel.modelVersion,
+      calibrationVersion: productionModel.calibrationVersion,
+      headProbabilities: Object.fromEntries(
+        Object.entries(headProbabilities).map(([key, value]) => [key, roundToFour(value)]),
+      ) as Record<RiskHeadKey, number>,
+      queuePriorityScore: rankingAllowed ? roundToFour(officialOverall) : 0,
+      queuePrioritySource: 'overall-course-risk-head',
+      rankingAllowed,
+      rankingSuppressedReason,
+      crossCourseDrivers: input.sourceRefs ? crossCourseDriversFromCorrelations(input.correlations ?? null, input.sourceRefs) : [],
+      observableDrivers,
+      headDisplay: catBoostHeadDisplay,
+    }
+  }
+
+  if (!input.productionModel || input.productionModel.featureSchemaVersion !== RISK_FEATURE_SCHEMA_VERSION) {
+    const fallbackDisplay = Object.fromEntries(
+      (Object.keys(HEAD_LABEL_KEYS) as RiskHeadKey[]).map(headKey => [headKey, {
+        displayProbabilityAllowed: false,
+        supportWarning: mergeSupportWarnings('No active trained artifact is available for this batch.', fallbackSuppressionWarning),
+        calibrationMethod: 'identity' as CalibrationMethod,
+      }]),
+    ) as ModelBackedRiskOutput['headDisplay']
+    const thresholds = bandThresholdsOverride ?? PRODUCTION_RISK_THRESHOLDS
+    const policyFloor = policyRiskFloorFromObservableInput(input, thresholds)
+    const preliminaryFallbackRiskProb = Math.max(fallback.riskProb, policyFloor.riskFloor)
+    const preliminaryFallbackBand = bandFromScore(preliminaryFallbackRiskProb, thresholds)
+    const fallbackDrivers = ensureDriversForServedRisk(preliminaryFallbackBand, fallback.observableDrivers, input.featurePayload)
+    const fallbackRiskProb = suppressUnexplainedServedRisk(preliminaryFallbackRiskProb, thresholds, fallbackDrivers)
+    const fallbackBand = bandFromScore(fallbackRiskProb, thresholds)
+    return {
+      ...fallback,
+      riskProb: fallbackRiskProb,
+      riskBand: fallbackBand,
+      observableDrivers: fallbackDrivers,
+      modelVersion: 'observable-inference-v2',
+      calibrationVersion: null,
+      headProbabilities: {
+        attendanceRisk: fallbackRiskProb,
+        ceRisk: fallbackRiskProb,
+        seeRisk: fallbackRiskProb,
+        overallCourseRisk: fallbackRiskProb,
+        downstreamCarryoverRisk: fallbackRiskProb,
+      },
+      queuePriorityScore: rankingAllowed ? fallbackRiskProb : 0,
+      queuePrioritySource: 'overall-course-risk-head',
+      rankingAllowed,
+      rankingSuppressedReason,
+      crossCourseDrivers: [],
       headDisplay: fallbackDisplay,
     }
   }
@@ -2548,16 +2815,18 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
   const vector = featureVectorFromPayload(input.featurePayload, input.sourceRefs)
   const featureArray = featureVectorArrayFromPayload(input.featurePayload, input.sourceRefs)
 
-  // Tree bridge for overallCourseRisk: uses XGBoost model if available,
-  // falls back to logistic on any failure.
+  // EBM inference for overallCourseRisk (Replaces Python bridge)
   let overallCourseRiskProb = scoreWithLogistic(input.productionModel.heads.overallCourseRisk, vector)
-  try {
-    const treeProb = scoreWithTreeBridge(featureArray, XGBOOST_OVERALL_MODEL, XGBOOST_OVERALL_CAL)
-    if (treeProb !== null) {
-      overallCourseRiskProb = treeProb
-    }
-  } catch {
-    // Silently fall back to logistic
+  let shapDrivers: ObservableDriver[] = []
+
+  const ebmModel = loadEbmOverallModel()
+  if (ebmModel) {
+    overallCourseRiskProb = scoreWithEbm(ebmModel, featureArray)
+    // Extract SHAP drivers exactly from the EBM term scores! No "false explainability trap".
+    shapDrivers = inferShapDriversForEbm(ebmModel, featureArray, input.featurePayload)
+  } else {
+    // Fall back to logistic drivers
+    shapDrivers = inferShapDriversForLogistic(input.productionModel.heads.overallCourseRisk, vector, input.featurePayload)
   }
 
   const headProbabilities = {
@@ -2567,15 +2836,21 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
     overallCourseRisk: overallCourseRiskProb,
     downstreamCarryoverRisk: scoreWithLogistic(input.productionModel.heads.downstreamCarryoverRisk, vector),
   } satisfies Record<RiskHeadKey, number>
-  const officialOverall = headProbabilities.overallCourseRisk
-  const riskBand: 'High' | 'Medium' | 'Low' = bandFromScore(
-    officialOverall,
-    bandThresholdsOverride ?? input.productionModel.thresholds,
-  )
+
+  const thresholds = bandThresholdsOverride ?? input.productionModel.thresholds
+  const policyFloor = policyRiskFloorFromObservableInput(input, thresholds)
+  const preliminaryOverall = Math.max(headProbabilities.overallCourseRisk, policyFloor.riskFloor)
+  const preliminaryRiskBand: 'High' | 'Medium' | 'Low' = bandFromScore(preliminaryOverall, thresholds)
   
-  // Extract SHAP drivers directly from the model weights rather than fallback rules
-  const shapDrivers = inferShapDriversForLogistic(input.productionModel.heads.overallCourseRisk, vector, input.featurePayload)
-  const observableDrivers = shapDrivers.length > 0 ? shapDrivers : inferObservableDrivers(input)
+  const fallbackDrivers = fallback.observableDrivers
+  const mergedDrivers = policyFloor.reasons.length > 0
+    ? mergeObservableDrivers(fallbackDrivers, shapDrivers)
+    : shapDrivers.length > 0
+      ? shapDrivers
+      : fallbackDrivers
+  const observableDrivers = ensureDriversForServedRisk(preliminaryRiskBand, mergedDrivers, input.featurePayload)
+  const officialOverall = suppressUnexplainedServedRisk(preliminaryOverall, thresholds, observableDrivers)
+  const riskBand: 'High' | 'Medium' | 'Low' = bandFromScore(officialOverall, thresholds)
   
   // Recommend action based on actual model-identified primary driver
   const primaryDriver = observableDrivers.length > 0 ? observableDrivers[0] : null
@@ -2592,7 +2867,14 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
           break
         case 'cgpa':
         case 'backlog':
+        case 'prerequisite':
           recommendedAction = 'Student carries significant backlog or CGPA pressure; focus on prerequisite recovery before introducing new complex topics.'
+          break
+        case 'section-pressure':
+          recommendedAction = 'Review the section-level risk pattern and coordinate a focused class support plan before the next checkpoint.'
+          break
+        case 'coursework-gap':
+          recommendedAction = 'Compare coursework and test evidence to identify whether continuous evaluation is masking exam-readiness gaps.'
           break
         case 'co':
         case 'question-pattern':
@@ -2605,6 +2887,8 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
         case 'tt1':
         case 'tt2':
         case 'see':
+        case 'ce':
+        case 'overall':
           recommendedAction = 'Review the recent examination paper with the student to correct foundational misunderstandings before the next major assessment.'
           break
         case 'intervention-response':

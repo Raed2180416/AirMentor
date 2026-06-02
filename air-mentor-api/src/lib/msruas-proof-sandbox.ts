@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm'
+import { stableAnchoredBeta } from './proof-world-realism-engine.js'
 import type { AppDb } from '../db/client.js'
 import curriculumSeedJson from '../db/seeds/msruas-mnc-curriculum.json' with { type: 'json' }
 import {
@@ -252,7 +253,7 @@ export async function ensureMsruasProofBatchStructure(db: AppDb, now: string) {
       branchId: MSRUAS_PROOF_BRANCH_ID,
       admissionYear: 2023,
       batchLabel: '2023 Proof',
-      currentSemester: 1,
+      currentSemester: 6,
       sectionLabelsJson: JSON.stringify(['A', 'B']),
       status: 'active',
       updatedAt: now,
@@ -263,7 +264,7 @@ export async function ensureMsruasProofBatchStructure(db: AppDb, now: string) {
       branchId: MSRUAS_PROOF_BRANCH_ID,
       admissionYear: 2023,
       batchLabel: '2023 Proof',
-      currentSemester: 1,
+      currentSemester: 6,
       sectionLabelsJson: JSON.stringify(['A', 'B']),
       status: 'active',
       version: 1,
@@ -542,62 +543,31 @@ function simulateSemesterCourse(input: {
       + (student.latentBase.computingFoundation * emphasis.computingWeight * 0.24)
       + (student.latentBase.selfRegulation * 0.12)
       + (student.latentBase.supportResponsiveness * 0.08)
-      + (prereq * 0.18)
+      // Prerequisite Thresholding: Severe lack of foundation acts as an exponential blocker
+      + (prereq < 0.35 ? (prereq * 0.18) - 0.15 : (prereq * 0.18))
       + teaching
       - (difficulty * 0.22),
     0.18,
     0.96,
   )
-  const attendancePct = clamp(
-    Math.round(
-      58
-        + (student.latentBase.attendanceDiscipline * 30)
-        + (student.latentBase.selfRegulation * 8)
-        + (student.latentBase.supportResponsiveness * 4)
-        - (difficulty * 8)
-        + stableBetween(`${student.studentId}-${course.internalCompilerId}-attendance`, -7, 9),
-    ),
-    52,
-    98,
-  )
-  const ceBasePct = clamp(
-    24
-      + (mastery * 60)
-      + (student.latentBase.selfRegulation * 10)
-      + (prereq * 8)
-      - (difficulty * 9)
-      + stableBetween(`${student.studentId}-${course.internalCompilerId}-ce`, -12, 10),
-    10,
-    97,
-  )
-  const tt1Pct = clamp(
-    ceBasePct
-      - 4
-      + stableBetween(`${student.studentId}-${course.internalCompilerId}-tt1`, -11, 10),
-    8,
-    98,
-  )
-  const tt2Pct = clamp(
-    tt1Pct
-      + (student.latentBase.supportResponsiveness * 5)
-      - (difficulty * 3)
-      + stableBetween(`${student.studentId}-${course.internalCompilerId}-tt2`, -9, 12),
-    8,
-    99,
-  )
-  const quizPct = clamp(
-    ceBasePct
-      + stableBetween(`${student.studentId}-${course.internalCompilerId}-quiz`, -10, 10),
-    8,
-    99,
-  )
-  const assignmentPct = clamp(
-    ceBasePct
-      + (student.latentBase.selfRegulation * 4)
-      + stableBetween(`${student.studentId}-${course.internalCompilerId}-assignment`, -8, 10),
-    10,
-    99,
-  )
+  // SOTA Beta Distribution (Proposed & Calibrated)
+  // We treat mastery as the anchor for the Beta distribution to match real-world B.Tech grading curves
+  const volatility = clamp(1.0 - student.latentBase.selfRegulation, 0.04, 0.62)
+  const concentration = clamp(35 * (1 - volatility), 6, 50)
+
+  // Calibrated attendance anchor (0.7 base) ensures majority cross 75% unless heavily undisciplined
+  const anchorAtt = clamp(0.70 + (student.latentBase.attendanceDiscipline * 0.25) - (difficulty * 0.05), 0.65, 0.98)
+  const attendancePct = Math.round(stableAnchoredBeta({ seed: `${student.studentId}-${course.internalCompilerId}-att`, anchor: anchorAtt, concentration }) * 100)
+
+  // Calibrated mastery-to-score anchor. 0.5 mastery now realistically maps to ~65% passing score.
+  const anchorCe = clamp(0.38 + (mastery * 0.5) + (prereq * 0.1) - (difficulty * 0.08), 0.1, 0.97)
+  const ceBasePct = stableAnchoredBeta({ seed: `${student.studentId}-${course.internalCompilerId}-ce`, anchor: anchorCe, concentration }) * 100
+  const tt1Pct = clamp(stableAnchoredBeta({ seed: `${student.studentId}-${course.internalCompilerId}-tt1`, anchor: Math.max(0.1, ceBasePct/100), concentration }) * 100, 8, 98)
+  const tt2Pct = clamp(stableAnchoredBeta({ seed: `${student.studentId}-${course.internalCompilerId}-tt2`, anchor: Math.max(0.1, (tt1Pct + 2)/100), concentration }) * 100, 8, 99)
+
+  const quizPct = clamp(stableAnchoredBeta({ seed: `${student.studentId}-${course.internalCompilerId}-quiz`, anchor: Math.max(0.1, ceBasePct/100), concentration }) * 100, 8, 99)
+  const assignmentPct = clamp(stableAnchoredBeta({ seed: `${student.studentId}-${course.internalCompilerId}-assignment`, anchor: Math.max(0.1, (ceBasePct + 2)/100), concentration }) * 100, 10, 99)
+
   const cePct = clamp(
     (tt1Pct * 0.28)
       + (tt2Pct * 0.27)
@@ -606,15 +576,9 @@ function simulateSemesterCourse(input: {
     10,
     97,
   )
-  const seePct = clamp(
-    22
-      + (mastery * 58)
-      + (prereq * 10)
-      - (difficulty * 10)
-      + stableBetween(`${student.studentId}-${course.internalCompilerId}-see`, -14, 12),
-    8,
-    98,
-  )
+
+  const anchorSee = clamp(0.36 + (mastery * 0.5) + (prereq * 0.1) - (difficulty * 0.1) - (0.45 * 0.05), 0.1, 0.98)
+  const seePct = clamp(stableAnchoredBeta({ seed: `${student.studentId}-${course.internalCompilerId}-see`, anchor: anchorSee, concentration }) * 100, 8, 98)
   const ceMark = roundToTwo((cePct / 100) * policy.passRules.ceMaximum)
   const seeMark = roundToTwo((seePct / 100) * policy.passRules.seeMaximum)
   const condoned = attendancePct >= policy.condonationRules.minimumPercent
@@ -875,7 +839,7 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
     branchId: MSRUAS_PROOF_BRANCH_ID,
     admissionYear: 2023,
     batchLabel: '2023 Proof',
-    currentSemester: 1,
+    currentSemester: 6,
     sectionLabelsJson: JSON.stringify(['A', 'B']),
     status: 'active',
     version: 1,
@@ -1168,6 +1132,7 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
     parentSimulationRunId: null,
     runLabel: 'MSRUAS first-6-semester proof batch',
     status: 'active',
+    lifecycleState: 'active',
     activeFlag: 1,
     seed: 101,
     sectionCount: 2,
@@ -1360,7 +1325,16 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
       })
     }
 
+    let hasDroppedOut = false;
     for (let semesterNumber = 1; semesterNumber <= 5; semesterNumber += 1) {
+      if (hasDroppedOut) {
+        const term = PROOF_TERM_DEFS.find(item => item.semesterNumber === semesterNumber)
+        if (term) {
+           const eRow = enrollmentRows.find(r => r.termId === term.termId && r.studentId === trajectory.studentId)
+           if (eRow) eRow.academicStatus = 'dropped-out'
+        }
+        continue;
+      }
       const term = PROOF_TERM_DEFS.find(item => item.semesterNumber === semesterNumber)
       if (!term) continue
       const facultyPool = courseFacultyBySemester.get(semesterNumber) ?? sem6CourseLeaderFaculty
@@ -1452,6 +1426,9 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
           },
         },
       })
+      if (activeBacklogCount > 6) {
+        hasDroppedOut = true;
+      }
       const transcriptTermResultId = `transcript_${trajectory.studentId}_${term.termId}`
       transcriptTermRows.push({
         transcriptTermResultId,
@@ -1549,47 +1526,45 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
 
     sem6OfferingRows
       .filter(offering => offering.sectionCode === trajectory.sectionCode)
-      .forEach((offering, offeringIndex) => {
+      .forEach(offering => {
         const faculty = offeringFacultyById.get(offering.offeringId)
         const course = sem6Courses.find(item => item.title === courseRows.find(row => row.courseId === offering.courseId)?.title)
         if (!faculty || !course) return
-        const attendancePct = clamp(
-          Math.round(60 + (trajectory.latentBase.attendanceDiscipline * 28) + (trajectory.latentBase.selfRegulation * 7) - (offeringIndex % 3) * 2 + stableBetween(`${trajectory.studentId}-${offering.offeringId}-att`, -9, 7)),
-          58,
-          97,
+        const emphasis = courseEmphasis(course)
+        const prereq = prerequisiteAverage(course, courseScores)
+        const difficulty = 0.28 + (6 * 0.075)
+        const teaching = teacherEffect(faculty.facultyId, { internalCompilerId: course.internalCompilerId } as any, offering.sectionCode as any)
+
+        const mastery = clamp(
+          (trajectory.latentBase.academicPotential * 0.32)
+            + (trajectory.latentBase.mathematicsFoundation * emphasis.mathWeight * 0.24)
+            + (trajectory.latentBase.computingFoundation * emphasis.computingWeight * 0.24)
+            + (trajectory.latentBase.selfRegulation * 0.12)
+            + (trajectory.latentBase.supportResponsiveness * 0.08)
+            + (prereq < 0.35 ? (prereq * 0.18) - 0.15 : (prereq * 0.18))
+            + teaching
+            - (difficulty * 0.22),
+          0.18,
+          0.96,
         )
-        const tt1Pct = clamp(
-          26 + (trajectory.latentBase.academicPotential * 42) + (trajectory.latentBase.computingFoundation * 12) + (trajectory.latentBase.mathematicsFoundation * 12) + stableBetween(`${trajectory.studentId}-${offering.offeringId}-tt1`, -18, 12),
-          18,
-          96,
-        )
-        const quizPct = clamp(tt1Pct + stableBetween(`${trajectory.studentId}-${offering.offeringId}-quiz`, -10, 8), 15, 97)
-        const assignmentPct = clamp(tt1Pct + stableBetween(`${trajectory.studentId}-${offering.offeringId}-assignment`, -8, 10), 18, 98)
-        const tt2Pct = clamp(
-          tt1Pct
-            + (trajectory.latentBase.supportResponsiveness * 5)
-            - (offeringIndex % 3)
-            + stableBetween(`${trajectory.studentId}-${offering.offeringId}-tt2`, -9, 12),
-          15,
-          98,
-        )
-        const seePct = clamp(
-          (tt2Pct * 0.48)
-            + (quizPct * 0.16)
-            + (assignmentPct * 0.16)
-            + (trajectory.latentBase.academicPotential * 18)
-            + stableBetween(`${trajectory.studentId}-${offering.offeringId}-see`, -10, 9),
-          12,
-          98,
-        )
-        const cePct = clamp(
-          (tt1Pct * 0.28)
-            + (tt2Pct * 0.27)
-            + (quizPct * 0.2)
-            + (assignmentPct * 0.25),
-          10,
-          97,
-        )
+
+        const volatility = clamp(1.0 - trajectory.latentBase.selfRegulation, 0.04, 0.62)
+        const concentration = clamp(35 * (1 - volatility), 6, 50)
+
+        const anchorAtt = clamp(0.70 + (trajectory.latentBase.attendanceDiscipline * 0.25) - (difficulty * 0.05), 0.65, 0.98)
+        const attendancePct = Math.round(stableAnchoredBeta({ seed: `${trajectory.studentId}-${offering.offeringId}-att`, anchor: anchorAtt, concentration }) * 100)
+
+        const anchorCe = clamp(0.38 + (mastery * 0.5) + (prereq * 0.1) - (difficulty * 0.08), 0.1, 0.97)
+        const ceBasePct = stableAnchoredBeta({ seed: `${trajectory.studentId}-${offering.offeringId}-ce`, anchor: anchorCe, concentration }) * 100
+        const tt1Pct = clamp(stableAnchoredBeta({ seed: `${trajectory.studentId}-${offering.offeringId}-tt1`, anchor: Math.max(0.1, ceBasePct/100), concentration }) * 100, 8, 98)
+        const tt2Pct = clamp(stableAnchoredBeta({ seed: `${trajectory.studentId}-${offering.offeringId}-tt2`, anchor: Math.max(0.1, (tt1Pct + 2)/100), concentration }) * 100, 8, 99)
+        const quizPct = clamp(stableAnchoredBeta({ seed: `${trajectory.studentId}-${offering.offeringId}-quiz`, anchor: Math.max(0.1, ceBasePct/100), concentration }) * 100, 8, 99)
+        const assignmentPct = clamp(stableAnchoredBeta({ seed: `${trajectory.studentId}-${offering.offeringId}-assignment`, anchor: Math.max(0.1, (ceBasePct + 2)/100), concentration }) * 100, 10, 99)
+
+        const cePct = clamp((tt1Pct * 0.28) + (tt2Pct * 0.27) + (quizPct * 0.2) + (assignmentPct * 0.25), 10, 97)
+
+        const anchorSee = clamp(0.36 + (mastery * 0.5) + (prereq * 0.1) - (difficulty * 0.1) - (0.45 * 0.05), 0.1, 0.98)
+        const seePct = clamp(stableAnchoredBeta({ seed: `${trajectory.studentId}-${offering.offeringId}-see`, anchor: anchorSee, concentration }) * 100, 8, 98)
         const weakCoCount = tt1Pct < 45 ? 2 : tt1Pct < 60 ? 1 : 0
         const inference = inferObservableRisk({
           attendancePct,
@@ -1599,7 +1574,9 @@ export async function seedMsruasProofSandbox(db: AppDb, options: {
           tt2Pct,
           quizPct,
           assignmentPct,
+          cePct,
           seePct,
+          overallPct: Math.round((cePct * 0.6) + (seePct * 0.4)),
           weakCoCount,
           policy,
         })

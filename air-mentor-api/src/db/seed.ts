@@ -82,6 +82,28 @@ import { readFile } from 'node:fs/promises'
 
 export type SeedProfile = 'full' | 'control-only'
 
+export async function resolveSeededProductionModelFamily(bundlePath: string, production: { modelFamily?: string | null }) {
+  const requestedFamily = production.modelFamily ?? 'logistic'
+  if (requestedFamily !== 'catboost') return requestedFamily
+
+  const decisionPath = path.resolve(path.dirname(bundlePath), 'promotion-decision.json')
+  try {
+    const decision = JSON.parse(await readFile(decisionPath, 'utf8')) as { decision?: string }
+    if (
+      decision.decision === 'promote'
+      || decision.decision === 'promote-to-production'
+      || decision.decision === 'promote-as-primary'
+      || decision.decision === 'promoted'
+    ) {
+      return 'catboost'
+    }
+    console.error(`[seed] CatBoost bundle is shadow-only (${decision.decision ?? 'no decision'}); seeding logistic production family.`)
+  } catch {
+    console.error('[seed] CatBoost bundle has no promotion decision; seeding logistic production family.')
+  }
+  return 'logistic'
+}
+
 function parseAcademicYearStart(academicYearLabel: string) {
   const match = academicYearLabel.match(/^(\d{4})/)
   return match ? Number(match[1]) : new Date().getUTCFullYear()
@@ -748,7 +770,9 @@ export async function seedIntoDatabase(
     console.error(`[seed] found risk model bundle at ${bundlePath}`)
     const bundle = JSON.parse(bundleRaw)
     if (bundle && bundle.production && bundle.challenger && bundle.correlations) {
-      console.error(`[seed] seeding CatBoost risk model artifacts into risk_model_artifacts...`)
+      const productionModelFamily = await resolveSeededProductionModelFamily(bundlePath, bundle.production)
+      bundle.production.modelFamily = productionModelFamily
+      console.error(`[seed] seeding ${productionModelFamily} risk model artifacts into risk_model_artifacts...`)
       await db.insert(riskModelArtifacts).values([
         {
           riskModelArtifactId: `rma_prod_${Date.now()}`,
@@ -757,7 +781,7 @@ export async function seedIntoDatabase(
           curriculumFeatureProfileId: null,
           curriculumFeatureProfileFingerprint: null,
           artifactType: 'production',
-          modelFamily: 'catboost',
+          modelFamily: productionModelFamily,
           artifactVersion: bundle.production.modelVersion,
           featureSchemaVersion: bundle.production.featureSchemaVersion,
           sourceRunIdsJson: JSON.stringify([]),
@@ -808,7 +832,7 @@ export async function seedIntoDatabase(
           updatedAt: now,
         }
       ])
-      console.error(`[seed] successfully seeded CatBoost risk model artifacts.`)
+      console.error(`[seed] successfully seeded ${productionModelFamily} risk model artifacts.`)
     } else {
       console.warn(`[seed] risk model bundle was empty or invalid.`)
     }

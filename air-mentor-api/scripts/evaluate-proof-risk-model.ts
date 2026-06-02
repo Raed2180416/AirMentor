@@ -1777,9 +1777,6 @@ async function main() {
 
     const phaseTrainStartAt = Date.now()
     const currentLocalBundle = currentVariantBuilder.build(TEST_NOW)
-    if (currentLocalBundle) {
-      currentLocalBundle.production.modelFamily = 'catboost'
-    }
     const baselineLocalBundle = baselineVariantBuilder.build(TEST_NOW)
     if (!currentLocalBundle || !baselineLocalBundle) {
       throw new Error('Local variant training failed after evaluator corpus extraction')

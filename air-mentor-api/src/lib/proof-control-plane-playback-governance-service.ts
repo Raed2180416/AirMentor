@@ -26,6 +26,7 @@ import type {
   EvidenceApplierInterventionInput,
 } from './proof-stage-realization-evidence-applier.js'
 import type {
+  InterventionStageKey,
   StudentLatentProfileForIntervention,
 } from './proof-intervention-response-types.js'
 import {
@@ -176,6 +177,27 @@ function queueCaseIdForSourceStage(source: StageCourseProjectionSource, simulati
   return buildDeterministicId('stage_queue_case', [simulationRunId, source.studentId, source.semesterNumber, stageKey])
 }
 
+function stageOrderValue(stageKey: InterventionStageKey | PlaybackStageKey) {
+  switch (stageKey) {
+    case 'pre-tt1': return 1
+    case 'post-tt1': return 2
+    case 'post-tt2': return 3
+    case 'post-assignments': return 4
+    case 'post-see': return 5
+    default: return 999
+  }
+}
+
+function interventionAppliesToStage(
+  intervention: EvidenceApplierInterventionInput,
+  source: StageCourseProjectionSource,
+  stage: PlaybackStageDef,
+) {
+  if (intervention.semesterNumberApplied < source.semesterNumber) return true
+  if (intervention.semesterNumberApplied > source.semesterNumber) return false
+  return stageOrderValue(intervention.stageKeyApplied) <= stageOrderValue(stage.key)
+}
+
 function facultyAssignmentForSource(
   source: StageCourseProjectionSource,
   assignedRole: ProofQueueRole,
@@ -206,12 +228,14 @@ function facultyAssignmentForSource(
 function realizationInputForSource(
   realizationData: PlaybackGovernanceRealizationData | undefined,
   source: StageCourseProjectionSource,
+  stage: PlaybackStageDef,
 ): StageEvidenceRealizationInput | undefined {
   if (!realizationData) return undefined
   const profile = realizationData.studentProfileByStudentId.get(source.studentId)
   if (!profile) return undefined
   const sourceKey = `${source.studentId}::${source.offeringId ?? ''}`
-  const interventions = realizationData.interventionsInWindowBySourceKey.get(sourceKey) ?? []
+  const interventions = (realizationData.interventionsInWindowBySourceKey.get(sourceKey) ?? [])
+    .filter(intervention => interventionAppliesToStage(intervention, source, stage))
   // Even zero-length interventions are fine — the applier has a fast-path that
   // returns baseline unchanged. We still pass the realization input so the
   // downstream wire stays consistent and observable.
@@ -221,6 +245,10 @@ function realizationInputForSource(
     studentProfile: profile,
     interventionsInWindow: interventions,
   }
+}
+
+function priorAcademicHistoryMissingForStage(source: StageCourseProjectionSource, stageKey: PlaybackStageKey): boolean {
+  return source.semesterNumber <= 1 && stageKey !== 'post-see'
 }
 
 function buildStageCandidate(
@@ -248,8 +276,9 @@ function buildStageCandidate(
     stageKey: stage.key,
     policy: input.policy,
     templatesById: input.templateById,
-    realization: realizationInputForSource(input.realizationData, source),
+    realization: realizationInputForSource(input.realizationData, source, stage),
   })
+  const priorHistoryMissing = priorAcademicHistoryMissingForStage(source, stage.key)
   const sourceRefs: ObservableSourceRefsWithFeatureMetadata = {
     simulationRunId: input.simulationRunId,
     simulationStageCheckpointId: checkpoint.simulationStageCheckpointId,
@@ -275,7 +304,9 @@ function buildStageCandidate(
     attendancePct: evidence.attendancePct,
     attendanceHistory: includedAttendanceForSourceStage(source, stage.key),
     currentCgpa: evidence.currentCgpa,
+    cgpaMissing: priorHistoryMissing,
     backlogCount: evidence.backlogCount,
+    backlogMissing: priorHistoryMissing,
     tt1Pct: evidence.tt1Pct,
     tt2Pct: evidence.tt2Pct,
     quizPct: evidence.quizPct,
@@ -294,17 +325,19 @@ function buildStageCandidate(
     sectionRiskRate: input.sectionRiskRateByStage.get(`${source.semesterNumber}::${source.sectionCode}::${stage.key}`) ?? 0,
     semesterProgress: stage.order / input.stageDefs.length,
   })
-  // NOTE: Bypass trained production model; use inference engine for
-  // realistic demo risk bands until model is retrained with fixed labels.
   const inference = scoreObservableRiskWithModel({
     attendancePct: evidence.attendancePct,
     currentCgpa: evidence.currentCgpa,
+    cgpaMissing: priorHistoryMissing,
     backlogCount: evidence.backlogCount,
+    backlogMissing: priorHistoryMissing,
     tt1Pct: evidence.tt1Pct,
     tt2Pct: evidence.tt2Pct,
     quizPct: evidence.quizPct,
     assignmentPct: evidence.assignmentPct,
+    cePct: evidence.cePct,
     seePct: evidence.seePct,
+    overallPct: evidence.overallPct,
     weakCoCount: evidence.weakCoCount,
     attendanceHistoryRiskCount: evidence.attendanceHistoryRiskCount,
     questionWeaknessCount: evidence.weakQuestionCount,
@@ -312,7 +345,7 @@ function buildStageCandidate(
     policy: input.policy,
     featurePayload,
     sourceRefs,
-    productionModel: null,
+    productionModel: input.activeRiskArtifacts.production,
     correlations: input.activeRiskArtifacts.correlations,
     bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
   })
@@ -353,7 +386,9 @@ function buildStageCandidate(
     attendancePct: noAction.attendancePct,
     attendanceHistory: includedAttendanceForSourceStage(source, stage.key),
     currentCgpa: noAction.currentCgpa,
+    cgpaMissing: priorHistoryMissing,
     backlogCount: noAction.backlogCount,
+    backlogMissing: priorHistoryMissing,
     tt1Pct: noAction.tt1Pct,
     tt2Pct: noAction.tt2Pct,
     quizPct: noAction.quizPct,
@@ -372,17 +407,19 @@ function buildStageCandidate(
     sectionRiskRate: input.sectionRiskRateByStage.get(`${source.semesterNumber}::${source.sectionCode}::${stage.key}`) ?? 0,
     semesterProgress: stage.order / input.stageDefs.length,
   })
-  // NOTE: Bypass trained production model; use inference engine for
-  // realistic demo risk bands until model is retrained with fixed labels.
   const noActionInference = scoreObservableRiskWithModel({
     attendancePct: noAction.attendancePct,
     currentCgpa: noAction.currentCgpa,
+    cgpaMissing: priorHistoryMissing,
     backlogCount: noAction.backlogCount,
+    backlogMissing: priorHistoryMissing,
     tt1Pct: noAction.tt1Pct,
     tt2Pct: noAction.tt2Pct,
     quizPct: noAction.quizPct,
     assignmentPct: noAction.assignmentPct,
+    cePct: noAction.cePct,
     seePct: noAction.seePct,
+    overallPct: noAction.overallPct,
     weakCoCount: noAction.weakCoCount,
     attendanceHistoryRiskCount: noAction.attendanceHistoryRiskCount,
     questionWeaknessCount: noAction.weakQuestionCount,
@@ -390,7 +427,7 @@ function buildStageCandidate(
     policy: input.policy,
     featurePayload: noActionFeaturePayload,
     sourceRefs,
-    productionModel: null,
+    productionModel: input.activeRiskArtifacts.production,
     correlations: input.activeRiskArtifacts.correlations,
     bandThresholdsOverride: PROOF_DEMO_OPERATIONAL_THRESHOLDS,
   })
@@ -489,7 +526,7 @@ export function buildPlaybackGovernanceArtifacts(
           riskChangeFromPreviousCheckpointScaled: candidate.riskChangeFromPreviousCheckpointScaled,
           counterfactualLiftScaled: candidate.counterfactualLiftScaled,
           policyPhenotype: candidate.policyComparison.policyPhenotype,
-          recommendedAction: candidate.policyComparison.recommendedAction ?? candidate.sourceState.actionTaken ?? candidate.nextActionTaken,
+          recommendedAction: candidate.policyComparison.recommendedAction ?? candidate.sourceState.actionTaken ?? candidate.nextActionTaken ?? candidate.inference.recommendedAction,
           utilityDelta: candidate.selectedPolicyCandidate?.utility ?? 0,
           nextCheckpointBenefitScaled: candidate.selectedPolicyCandidate?.nextCheckpointBenefitScaled ?? 0,
           capacityCost: candidate.selectedPolicyCandidate?.capacityCost ?? 0,
@@ -504,9 +541,15 @@ export function buildPlaybackGovernanceArtifacts(
         facultyBudgetByKey: input.facultyBudgetByKey,
       })
 
+      const candidateBySourceKey = new Map(stageCandidates.map(candidate => [candidate.sourceKey, candidate]))
+      const effectiveDecisionByConcernContextKey = new Map<string, QueueCaseDecisionView>()
       const effectiveDecisionByCaseKey = new Map<string, QueueCaseDecisionView>()
-      governance.decisions.forEach((decision, caseKey) => {
-        const priorCaseState = caseStateByKey.get(caseKey) ?? null
+      const effectiveDecisionBySourceKey = new Map<string, QueueCaseDecisionView>()
+
+      governance.decisionsByConcernContextKey.forEach(decision => {
+        const priorCaseState = caseStateByKey.get(decision.concernContextKey)
+          ?? caseStateByKey.get(decision.legacyCaseKey)
+          ?? null
         const effectivePrimarySourceKey = decision.status === 'watch' && priorCaseState?.open
           ? (priorCaseState.primarySourceKey ?? decision.primarySourceKey)
           : decision.primarySourceKey
@@ -531,17 +574,24 @@ export function buildPlaybackGovernanceArtifacts(
             sourceStateByKey.set(priorCaseState.primarySourceKey, previousPrimaryState)
           }
         }
-        effectiveDecisionByCaseKey.set(caseKey, {
+        const decisionView: QueueCaseDecisionView = {
           status: decision.status,
           primarySourceKey: effectivePrimarySourceKey,
           supportingSourceKeys: decision.supportingSourceKeys,
           countsTowardCapacity: decision.status === 'open' || decision.status === 'opened',
           priorityRank: decision.priorityRank,
           governanceReason: decision.governanceReason,
-        })
+        }
+        effectiveDecisionByConcernContextKey.set(decision.concernContextKey, decisionView)
+        if (effectivePrimarySourceKey) effectiveDecisionBySourceKey.set(effectivePrimarySourceKey, decisionView)
+        decision.supportingSourceKeys.forEach(sourceKey => effectiveDecisionBySourceKey.set(sourceKey, decisionView))
       })
 
-      const candidateBySourceKey = new Map(stageCandidates.map(candidate => [candidate.sourceKey, candidate]))
+      governance.decisions.forEach((decision, caseKey) => {
+        const concernDecision = effectiveDecisionByConcernContextKey.get(decision.concernContextKey)
+        if (concernDecision) effectiveDecisionByCaseKey.set(caseKey, concernDecision)
+      })
+
       effectiveDecisionByCaseKey.forEach((decision, caseKey) => {
         const primaryCandidate = decision.primarySourceKey ? (candidateBySourceKey.get(decision.primarySourceKey) ?? null) : null
         if (!primaryCandidate || decision.status === 'idle') return
@@ -601,7 +651,7 @@ export function buildPlaybackGovernanceArtifacts(
 
       stageCandidates.forEach(candidate => {
         const sourceState = sourceStateByKey.get(candidate.sourceKey) ?? candidate.sourceState
-        const decision = effectiveDecisionByCaseKey.get(candidate.caseKey) ?? null
+        const decision = effectiveDecisionBySourceKey.get(candidate.sourceKey) ?? effectiveDecisionByCaseKey.get(candidate.caseKey) ?? null
         const isPrimaryCase = !!decision && decision.primarySourceKey === candidate.sourceKey
         const isSupportingCase = !!decision && decision.supportingSourceKeys.includes(candidate.sourceKey)
         const evidenceSnapshotId = buildDeterministicId('risk_evidence', [candidate.checkpoint.simulationStageCheckpointId, candidate.source.studentId, candidate.source.offeringId ?? candidate.source.courseCode])
@@ -639,6 +689,7 @@ export function buildPlaybackGovernanceArtifacts(
         let queueState = 'idle'
         let reassessmentState = 'None'
         let countsTowardCapacity = false
+        let projectionGovernanceReason = decision?.governanceReason ?? 'idle'
         if (decision && (decision.status === 'opened' || decision.status === 'open') && (isPrimaryCase || isSupportingCase)) {
           queueState = isPrimaryCase ? decision.status : 'open'
           reassessmentState = 'Open'
@@ -652,12 +703,21 @@ export function buildPlaybackGovernanceArtifacts(
         } else if (decision && decision.status === 'resolved' && isPrimaryCase) {
           queueState = 'resolved'
           reassessmentState = 'Resolved'
+        } else if (candidate.inference.riskBand === 'High') {
+          queueState = 'deferred'
+          reassessmentState = 'Deferred'
+          projectionGovernanceReason = decision
+            ? `${decision.governanceReason}::non_primary_high_risk_deferred`
+            : 'high_risk_deferred_without_primary_case'
         }
 
         const effectiveActionTaken = isPrimaryCase && decision && (decision.status === 'opened' || decision.status === 'open')
           ? candidate.nextActionTaken
           : sourceState.actionTaken
-        const queueCaseId = queueCaseIdForSourceStage(candidate.source, input.simulationRunId, stage.key)
+        const queueCaseSource = decision?.primarySourceKey
+          ? (candidateBySourceKey.get(decision.primarySourceKey)?.source ?? candidate.source)
+          : candidate.source
+        const queueCaseId = queueCaseIdForSourceStage(queueCaseSource, input.simulationRunId, stage.key)
         const projectionJson = {
           evidenceSnapshotId,
           stageKey: stage.key,
@@ -717,7 +777,7 @@ export function buildPlaybackGovernanceArtifacts(
             primaryCase: isPrimaryCase,
             countsTowardCapacity,
             priorityRank: decision?.priorityRank ?? null,
-            governanceReason: decision?.governanceReason ?? 'idle',
+            governanceReason: projectionGovernanceReason,
             supportingCourseCount: decision?.supportingSourceKeys.length ?? 0,
             assignedFacultyId: candidate.assignment.assignedFacultyId,
           },
@@ -855,7 +915,14 @@ export function buildPlaybackGovernanceArtifacts(
         sourceStateByKey.set(candidate.sourceKey, sourceState)
       })
 
+      effectiveDecisionByConcernContextKey.forEach((decision, caseKey) => {
+        caseStateByKey.set(caseKey, {
+          open: decision.status === 'open' || decision.status === 'opened',
+          primarySourceKey: decision.primarySourceKey,
+        })
+      })
       effectiveDecisionByCaseKey.forEach((decision, caseKey) => {
+        if (caseStateByKey.has(caseKey)) return
         caseStateByKey.set(caseKey, {
           open: decision.status === 'open' || decision.status === 'opened',
           primarySourceKey: decision.primarySourceKey,
