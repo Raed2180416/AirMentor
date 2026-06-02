@@ -1244,6 +1244,17 @@ function OperationalWorkspace({
   const [hodProofError, setHodProofError] = useState('')
   const [roleChangeBusy, setRoleChangeBusy] = useState(false)
   const [roleChangeError, setRoleChangeError] = useState('')
+
+  const [isReevaluatingRisk, setIsReevaluatingRisk] = useState(false)
+  const withReevaluation = useCallback(async (action: () => any) => {
+    setIsReevaluatingRisk(true)
+    await new Promise(r => setTimeout(r, 0))
+    try {
+      await action()
+    } finally {
+      setIsReevaluatingRisk(false)
+    }
+  }, [])
   const [studentPatches, setStudentPatches] = useState<Record<string, StudentRuntimePatch>>(() => repositories.entryData.getStudentPatchesSnapshot())
   const [schemeByOffering, setSchemeByOffering] = useState<Record<string, SchemeState>>(() => repositories.entryData.getSchemeStateSnapshot(allOfferings))
   const [ttBlueprintsByOffering, setTtBlueprintsByOffering] = useState<Record<string, Record<TTKind, TermTestBlueprint>>>(() => repositories.entryData.getBlueprintSnapshot(allOfferings))
@@ -3515,6 +3526,7 @@ function OperationalWorkspace({
         allowedRoles={allowedRoles}
         role={role}
         roleChangeBusy={roleChangeBusy}
+        isReevaluatingRisk={isReevaluatingRisk}
         canNavigateBack={canNavigateBack}
         formattedCurrentTime={formattedCurrentTime}
         showActionQueue={showActionQueue}

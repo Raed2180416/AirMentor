@@ -486,6 +486,12 @@ export type ModelBackedRiskOutput = ObservableInferenceOutput & {
     supportWarning: string | null
     calibrationMethod: CalibrationMethod
   }>
+  effectiveScorerFamily: string
+  artifactHash: string
+  thresholdSource: string
+  calibrationSource: string
+  overrideActive: boolean
+  driverSource: string
 }
 
 const HEAD_LABEL_KEYS: Record<RiskHeadKey, keyof ObservableLabelPayload> = {
@@ -2729,6 +2735,12 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
       rankingSuppressedReason,
       crossCourseDrivers: [],
       headDisplay: sparseDisplay,
+      effectiveScorerFamily: 'fallback',
+      artifactHash: 'none',
+      thresholdSource: 'policy-override',
+      calibrationSource: 'identity',
+      overrideActive: true,
+      driverSource: 'fallback',
     }
   }
 
@@ -2771,6 +2783,12 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
       crossCourseDrivers: input.sourceRefs ? crossCourseDriversFromCorrelations(input.correlations ?? null, input.sourceRefs) : [],
       observableDrivers,
       headDisplay: catBoostHeadDisplay,
+      effectiveScorerFamily: 'catboost',
+      artifactHash: productionModel.modelVersion,
+      thresholdSource: bandThresholdsOverride ? 'policy-override' : 'calibrated',
+      calibrationSource: 'identity',
+      overrideActive: bandThresholdsOverride != null,
+      driverSource: 'fallback',
     }
   }
 
@@ -2809,6 +2827,12 @@ export function scoreObservableRiskWithModel(input: ObservableInferenceInput & {
       rankingSuppressedReason,
       crossCourseDrivers: [],
       headDisplay: fallbackDisplay,
+      effectiveScorerFamily: 'fallback',
+      artifactHash: 'none',
+      thresholdSource: bandThresholdsOverride ? 'policy-override' : 'calibrated',
+      calibrationSource: 'identity',
+      overrideActive: bandThresholdsOverride != null,
+      driverSource: 'fallback',
     }
   }
 

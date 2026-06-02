@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { MessageSquare, Shield } from 'lucide-react'
 import { T, mono, sora } from '../data'
+import { ReevaluatingRiskLoader } from '../components/reevaluating-risk-loader'
 import type { Role } from '../domain'
 import type {
   ApiStudentAgentCard,
@@ -211,7 +212,9 @@ export function StudentShellPage({
   if (loading) {
     return (
       <PageShell size="wide">
-        <InfoBanner message="Loading deterministic student shell..." />
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '20vh' }}>
+          <ReevaluatingRiskLoader />
+        </div>
       </PageShell>
     )
   }

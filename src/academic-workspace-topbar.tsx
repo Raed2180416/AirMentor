@@ -4,6 +4,7 @@ import { Bell, ChevronLeft, ChevronRight } from 'lucide-react'
 import { T, mono, sora } from './data'
 import type { Role, ThemeMode } from './domain'
 import { isLightTheme } from './theme'
+import { ReevaluatingRiskLoader } from './components/reevaluating-risk-loader'
 import {
   NotificationCountBadge,
   BrandMark,
@@ -22,6 +23,7 @@ type AcademicWorkspaceTopbarProps = {
   allowedRoles: Role[]
   role: Role
   roleChangeBusy: boolean
+  isReevaluatingRisk?: boolean
   canNavigateBack: boolean
   formattedCurrentTime: string
   showActionQueue: boolean
@@ -97,6 +99,11 @@ export function AcademicWorkspaceTopbar({
       </div>
 
       <div className="top-bar-controls" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
+        {isReevaluatingRisk && (
+          <div style={{ marginRight: 8, display: 'flex', alignItems: 'center' }}>
+            <ReevaluatingRiskLoader />
+          </div>
+        )}
         {canNavigateBack ? (
           <button
             className="top-control-btn"

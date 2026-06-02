@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Activity, Eye, TrendingDown } from 'lucide-react'
 import { T, mono, sora } from '../data'
-import type { Role } from '../domain'
+import type { Role, StudentExplorerProfile } from '../domain'
+import { ReevaluatingRiskLoader } from '../components/reevaluating-risk-loader'
 import type { ApiFeatureCompleteness, ApiFeatureProvenance, ApiRiskHeadDisplay, ApiStudentRiskExplorer } from '../api/types'
 import { describeProofModelUsefulness, describeProofProvenance } from '../proof-provenance'
 import { humanLabelForActionCode } from '../action-code-humaniser'
@@ -162,7 +163,9 @@ export function RiskExplorerPage({
   if (loading) {
     return (
       <PageShell size="wide">
-        <InfoBanner message="Loading proof risk explorer..." />
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '20vh' }}>
+          <ReevaluatingRiskLoader />
+        </div>
       </PageShell>
     )
   }
