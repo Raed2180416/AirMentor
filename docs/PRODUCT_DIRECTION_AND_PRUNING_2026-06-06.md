@@ -173,7 +173,9 @@ runtime dependence on hardcoded program constants and ephemeral output files.
 ### Git
 
 Git contains source, migrations, tests, compact fixtures, active documentation,
-and compact runtime model artifacts only.
+and compact runtime model artifacts only. The reproducible serving contract
+lives in `air-mentor-api/model-contract/proof-risk-model`; generated
+evaluations and training runs remain outside Git.
 
 ### External archive
 

@@ -48,8 +48,9 @@ describe('proof risk served model contract', () => {
 
   it('captures the current repo artifact contract without trusting the raw model family label alone', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    const bundlePath = path.resolve(process.cwd(), 'output/proof-risk-model/risk-model-bundle.json')
-    const decisionPath = path.resolve(process.cwd(), 'output/proof-risk-model/promotion-decision.json')
+    const contractDir = path.resolve(process.cwd(), 'model-contract/proof-risk-model')
+    const bundlePath = path.join(contractDir, 'risk-model-bundle.json')
+    const decisionPath = path.join(contractDir, 'promotion-decision.json')
     expect(existsSync(bundlePath)).toBe(true)
     expect(existsSync(decisionPath)).toBe(true)
 
@@ -64,7 +65,7 @@ describe('proof risk served model contract', () => {
     if (decision.decision && promotedDecisions.includes(decision.decision)) {
       expect(seededFamily).toBe(bundle.production?.modelFamily ?? 'logistic')
       if (seededFamily === 'catboost') {
-        const missing = catBoostHeads.filter(head => !existsSync(path.resolve(process.cwd(), `output/proof-risk-model/catboost_${head}_v1.json`)))
+        const missing = catBoostHeads.filter(head => !existsSync(path.join(contractDir, `catboost_${head}_v1.json`)))
         expect(missing).toEqual([])
         expect(bundle.production?.modelVersion ?? '').not.toMatch(/logit/i)
       }

@@ -38,17 +38,14 @@ There were no live PostgreSQL processes using the discovered embedded database d
 
 ### Runtime model vault
 
-The current runtime model contract is approximately 11 MiB:
+The tracked serving contract is intentionally limited to:
 
-- `air-mentor-api/output/proof-risk-model/risk-model-bundle.json`
-- `air-mentor-api/output/proof-risk-model/promotion-decision.json`
-- Five `catboost_<head>_v1.json` files
-- `risk-model-bundle-v10.json`
-- `risk-model-bundle-v11.json`
-- `v3_xgboost_overallCourseRisk.json`
-- `v3_lightgbm_overallCourseRisk.txt`
-- `v3_catboost_overallCourseRisk.cbm`
-- Evaluation report, metrics, and metadata sidecars
+- `air-mentor-api/model-contract/proof-risk-model/risk-model-bundle.json`
+- `air-mentor-api/model-contract/proof-risk-model/promotion-decision.json`
+
+The verified external model vault retains the approximately 11 MiB research
+set, including CatBoost heads, versioned bundles, challenger models, evaluation
+reports, metrics, and metadata sidecars.
 
 The bundle currently says:
 

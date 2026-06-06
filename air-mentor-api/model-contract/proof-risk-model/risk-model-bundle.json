@@ -1,0 +1,1628 @@
+{
+  "production": {
+    "modelVersion": "observable-risk-logit-v9",
+    "featureSchemaVersion": "observable-risk-features-v6",
+    "trainedAt": "2026-03-16T00:00:00.000Z",
+    "trainingManifestVersion": "proof-corpus-v1",
+    "splitSummary": {
+      "train": 21600,
+      "validation": 21600,
+      "test": 21600
+    },
+    "worldSplitSummary": {
+      "train": 1,
+      "validation": 1,
+      "test": 1
+    },
+    "scenarioFamilySummary": {
+      "balanced": 43200,
+      "weak-foundation": 0,
+      "low-attendance": 0,
+      "high-forgetting": 0,
+      "coursework-inflation": 21600,
+      "exam-fragility": 0,
+      "carryover-heavy": 0,
+      "intervention-resistant": 0
+    },
+    "headSupportSummary": {
+      "attendanceRisk": {
+        "trainSupport": 21600,
+        "validationSupport": 21600,
+        "testSupport": 21600,
+        "trainPositives": 4915,
+        "validationPositives": 4715,
+        "testPositives": 2880
+      },
+      "ceRisk": {
+        "trainSupport": 21600,
+        "validationSupport": 21600,
+        "testSupport": 21600,
+        "trainPositives": 1355,
+        "validationPositives": 895,
+        "testPositives": 1280
+      },
+      "seeRisk": {
+        "trainSupport": 21600,
+        "validationSupport": 21600,
+        "testSupport": 21600,
+        "trainPositives": 4275,
+        "validationPositives": 3390,
+        "testPositives": 4500
+      },
+      "overallCourseRisk": {
+        "trainSupport": 21600,
+        "validationSupport": 21600,
+        "testSupport": 21600,
+        "trainPositives": 5990,
+        "validationPositives": 4660,
+        "testPositives": 5150
+      },
+      "downstreamCarryoverRisk": {
+        "trainSupport": 21600,
+        "validationSupport": 21600,
+        "testSupport": 21600,
+        "trainPositives": 6965,
+        "validationPositives": 6425,
+        "testPositives": 7000
+      }
+    },
+    "thresholds": {
+      "medium": 0.4,
+      "high": 0.65
+    },
+    "calibrationVersion": "post-hoc-calibration-v2",
+    "heads": {
+      "attendanceRisk": {
+        "headKey": "attendanceRisk",
+        "intercept": -1.0407,
+        "weights": {
+          "attendancePctScaled": -0.3842,
+          "attendanceTrendScaled": 0.0379,
+          "attendanceHistoryRiskScaled": 1.7343,
+          "currentCgpaScaled": 0.0027,
+          "backlogPressureScaled": 0,
+          "tt1RiskScaled": 0.094,
+          "tt2RiskScaled": 0.0758,
+          "seeRiskScaled": 0.075,
+          "quizRiskScaled": 0.0842,
+          "assignmentRiskScaled": 0.0782,
+          "weakCoPressureScaled": 0.0486,
+          "weakQuestionPressureScaled": 0.0409,
+          "courseworkTtMismatchScaled": 0.0444,
+          "ttMomentumRiskScaled": 0.0536,
+          "interventionResidualRiskScaled": 0.1353,
+          "prerequisitePressureScaled": 0.1676,
+          "prerequisiteAverageRiskScaled": 0.1534,
+          "prerequisiteFailurePressureScaled": 0.0917,
+          "prerequisiteChainDepthScaled": 0.0014,
+          "prerequisiteWeakCourseRateScaled": 0.1525,
+          "prerequisiteCarryoverLoadScaled": 0.1493,
+          "prerequisiteRecencyWeightedFailureScaled": 0.1083,
+          "downstreamDependencyLoadScaled": -0.0045,
+          "weakPrerequisiteChainCountScaled": 0.1227,
+          "repeatedWeakPrerequisiteFamilyCountScaled": 0.056,
+          "semesterProgressScaled": -0.0197,
+          "stagePreTt1Scaled": 0.0302,
+          "stagePostTt1Scaled": 0.0096,
+          "stagePostTt2Scaled": -0.0072,
+          "stagePostAssignmentsScaled": -0.0158,
+          "stagePostSeeScaled": -0.0126,
+          "sectionPressureScaled": 0.007,
+          "tt1tt2ExamCompoundRiskScaled": 0.0316,
+          "courseworkCompoundRiskScaled": 0.0286,
+          "stagePostTt2TtCompoundInteractionScaled": 0.0019,
+          "attendanceTrendCompoundRiskScaled": 0.2084,
+          "stagePostAssignmentsCourseworkInteractionScaled": -0.004,
+          "cgpaMissingScaled": 0,
+          "backlogMissingScaled": 0,
+          "tt1MissingScaled": 0.058,
+          "tt2MissingScaled": 0.079,
+          "seeMissingScaled": 0.0502,
+          "quizMissingScaled": 0.0708,
+          "assignmentMissingScaled": 0.0708,
+          "activeBacklogCreditPressureScaled": 0,
+          "historicalBacklogBurdenScaled": 0,
+          "lowerYearBlockerPressureScaled": 0,
+          "backlogSensitivityScoreScaled": 0.175
+        },
+        "threshold": 0.75,
+        "metrics": {
+          "support": 21600,
+          "positiveRate": 0.1333,
+          "brierScore": 0.0691,
+          "logLoss": 0.2771,
+          "rocAuc": 0.968,
+          "averagePrecision": 0.8392,
+          "expectedCalibrationError": 0.1581,
+          "calibrationSlope": 1.5325,
+          "calibrationIntercept": -0.164
+        },
+        "support": {
+          "trainSupport": 21600,
+          "validationSupport": 21600,
+          "testSupport": 21600,
+          "trainPositives": 4915,
+          "validationPositives": 4715,
+          "testPositives": 2880
+        },
+        "calibration": {
+          "method": "beta",
+          "intercept": -0.3634,
+          "slope": null,
+          "logProbWeight": 1.5649,
+          "logInverseProbWeight": 1.0253,
+          "thresholds": [],
+          "values": [],
+          "validationMetrics": {
+            "support": 21600,
+            "positiveRate": 0.2183,
+            "brierScore": 0.0921,
+            "logLoss": 0.329,
+            "rocAuc": 0.9618,
+            "averagePrecision": 0.8877,
+            "expectedCalibrationError": 0.1773,
+            "calibrationSlope": 1.4625,
+            "calibrationIntercept": 0.0419
+          },
+          "testMetrics": {
+            "support": 21600,
+            "positiveRate": 0.1333,
+            "brierScore": 0.0691,
+            "logLoss": 0.2771,
+            "rocAuc": 0.968,
+            "averagePrecision": 0.8392,
+            "expectedCalibrationError": 0.1581,
+            "calibrationSlope": 1.5325,
+            "calibrationIntercept": -0.164
+          },
+          "displayProbabilityAllowed": false,
+          "supportWarning": "Calibration remains above the probability display threshold.",
+          "reliabilityBins": [
+            {
+              "lowerBound": 0,
+              "upperBound": 0.1,
+              "meanPredicted": 0.0969,
+              "meanObserved": 0,
+              "count": 74
+            },
+            {
+              "lowerBound": 0.1,
+              "upperBound": 0.2,
+              "meanPredicted": 0.1541,
+              "meanObserved": 0.0056,
+              "count": 14465
+            },
+            {
+              "lowerBound": 0.2,
+              "upperBound": 0.3,
+              "meanPredicted": 0.2354,
+              "meanObserved": 0.0505,
+              "count": 3030
+            },
+            {
+              "lowerBound": 0.3,
+              "upperBound": 0.4,
+              "meanPredicted": 0.3373,
+              "meanObserved": 0.3333,
+              "count": 1575
+            },
+            {
+              "lowerBound": 0.4,
+              "upperBound": 0.5,
+              "meanPredicted": 0.444,
+              "meanObserved": 0.8003,
+              "count": 636
+            },
+            {
+              "lowerBound": 0.5,
+              "upperBound": 0.6,
+              "meanPredicted": 0.5497,
+              "meanObserved": 0.846,
+              "count": 708
+            },
+            {
+              "lowerBound": 0.6,
+              "upperBound": 0.7,
+              "meanPredicted": 0.6364,
+              "meanObserved": 0.9051,
+              "count": 706
+            },
+            {
+              "lowerBound": 0.7,
+              "upperBound": 0.8,
+              "meanPredicted": 0.7511,
+              "meanObserved": 0.9243,
+              "count": 370
+            },
+            {
+              "lowerBound": 0.8,
+              "upperBound": 0.9,
+              "meanPredicted": 0.8162,
+              "meanObserved": 0.8889,
+              "count": 36
+            }
+          ]
+        }
+      },
+      "ceRisk": {
+        "headKey": "ceRisk",
+        "intercept": -1.6108,
+        "weights": {
+          "attendancePctScaled": -0.0531,
+          "attendanceTrendScaled": -0.0164,
+          "attendanceHistoryRiskScaled": 0.0617,
+          "currentCgpaScaled": -0.0311,
+          "backlogPressureScaled": 0,
+          "tt1RiskScaled": 0.347,
+          "tt2RiskScaled": 0.4237,
+          "seeRiskScaled": 0.0079,
+          "quizRiskScaled": 0.0832,
+          "assignmentRiskScaled": 0.074,
+          "weakCoPressureScaled": 0.8104,
+          "weakQuestionPressureScaled": 0.7181,
+          "courseworkTtMismatchScaled": 0.2468,
+          "ttMomentumRiskScaled": 0.2845,
+          "interventionResidualRiskScaled": -0.0284,
+          "prerequisitePressureScaled": 0.2742,
+          "prerequisiteAverageRiskScaled": -0.0233,
+          "prerequisiteFailurePressureScaled": 0.1734,
+          "prerequisiteChainDepthScaled": 0.087,
+          "prerequisiteWeakCourseRateScaled": 0.2115,
+          "prerequisiteCarryoverLoadScaled": 0.2417,
+          "prerequisiteRecencyWeightedFailureScaled": 0.145,
+          "downstreamDependencyLoadScaled": -0.1907,
+          "weakPrerequisiteChainCountScaled": 0.3104,
+          "repeatedWeakPrerequisiteFamilyCountScaled": 0.1627,
+          "semesterProgressScaled": -0.066,
+          "stagePreTt1Scaled": 0.0453,
+          "stagePostTt1Scaled": -0.0071,
+          "stagePostTt2Scaled": -0.0172,
+          "stagePostAssignmentsScaled": -0.0129,
+          "stagePostSeeScaled": -0.0515,
+          "sectionPressureScaled": -0.0076,
+          "tt1tt2ExamCompoundRiskScaled": 0.2991,
+          "courseworkCompoundRiskScaled": 0.0531,
+          "stagePostTt2TtCompoundInteractionScaled": 0.0826,
+          "attendanceTrendCompoundRiskScaled": 0.0086,
+          "stagePostAssignmentsCourseworkInteractionScaled": 0.025,
+          "cgpaMissingScaled": 0,
+          "backlogMissingScaled": 0,
+          "tt1MissingScaled": 0.0869,
+          "tt2MissingScaled": 0.0774,
+          "seeMissingScaled": 0.027,
+          "quizMissingScaled": 0.0456,
+          "assignmentMissingScaled": 0.0456,
+          "activeBacklogCreditPressureScaled": 0,
+          "historicalBacklogBurdenScaled": 0,
+          "lowerYearBlockerPressureScaled": 0,
+          "backlogSensitivityScoreScaled": 0.273
+        },
+        "threshold": 0.75,
+        "metrics": {
+          "support": 21600,
+          "positiveRate": 0.0593,
+          "brierScore": 0.0522,
+          "logLoss": 0.2094,
+          "rocAuc": 0.8756,
+          "averagePrecision": 0.3702,
+          "expectedCalibrationError": 0.0788,
+          "calibrationSlope": 1.3486,
+          "calibrationIntercept": -0.1701
+        },
+        "support": {
+          "trainSupport": 21600,
+          "validationSupport": 21600,
+          "testSupport": 21600,
+          "trainPositives": 1355,
+          "validationPositives": 895,
+          "testPositives": 1280
+        },
+        "calibration": {
+          "method": "beta",
+          "intercept": -0.7434,
+          "slope": null,
+          "logProbWeight": 1.6655,
+          "logInverseProbWeight": 0.5532,
+          "thresholds": [],
+          "values": [],
+          "validationMetrics": {
+            "support": 21600,
+            "positiveRate": 0.0414,
+            "brierScore": 0.0418,
+            "logLoss": 0.1821,
+            "rocAuc": 0.8766,
+            "averagePrecision": 0.2864,
+            "expectedCalibrationError": 0.0834,
+            "calibrationSlope": 1.3734,
+            "calibrationIntercept": -0.1904
+          },
+          "testMetrics": {
+            "support": 21600,
+            "positiveRate": 0.0593,
+            "brierScore": 0.0522,
+            "logLoss": 0.2094,
+            "rocAuc": 0.8756,
+            "averagePrecision": 0.3702,
+            "expectedCalibrationError": 0.0788,
+            "calibrationSlope": 1.3486,
+            "calibrationIntercept": -0.1701
+          },
+          "displayProbabilityAllowed": false,
+          "supportWarning": null,
+          "reliabilityBins": [
+            {
+              "lowerBound": 0,
+              "upperBound": 0.1,
+              "meanPredicted": 0.062,
+              "meanObserved": 0.0045,
+              "count": 9982
+            },
+            {
+              "lowerBound": 0.1,
+              "upperBound": 0.2,
+              "meanPredicted": 0.1386,
+              "meanObserved": 0.0413,
+              "count": 7406
+            },
+            {
+              "lowerBound": 0.2,
+              "upperBound": 0.3,
+              "meanPredicted": 0.2463,
+              "meanObserved": 0.143,
+              "count": 2504
+            },
+            {
+              "lowerBound": 0.3,
+              "upperBound": 0.4,
+              "meanPredicted": 0.3413,
+              "meanObserved": 0.2429,
+              "count": 1054
+            },
+            {
+              "lowerBound": 0.4,
+              "upperBound": 0.5,
+              "meanPredicted": 0.4458,
+              "meanObserved": 0.4047,
+              "count": 472
+            },
+            {
+              "lowerBound": 0.5,
+              "upperBound": 0.6,
+              "meanPredicted": 0.5324,
+              "meanObserved": 0.6568,
+              "count": 169
+            },
+            {
+              "lowerBound": 0.6,
+              "upperBound": 0.7,
+              "meanPredicted": 0.6058,
+              "meanObserved": 1,
+              "count": 13
+            }
+          ]
+        }
+      },
+      "seeRisk": {
+        "headKey": "seeRisk",
+        "intercept": -1.2499,
+        "weights": {
+          "attendancePctScaled": 0.0528,
+          "attendanceTrendScaled": 0.0471,
+          "attendanceHistoryRiskScaled": 0.0952,
+          "currentCgpaScaled": 0.0276,
+          "backlogPressureScaled": 0,
+          "tt1RiskScaled": 0.1618,
+          "tt2RiskScaled": 0.104,
+          "seeRiskScaled": 0.1636,
+          "quizRiskScaled": 0.1124,
+          "assignmentRiskScaled": 0.1045,
+          "weakCoPressureScaled": 0.2861,
+          "weakQuestionPressureScaled": 0.4153,
+          "courseworkTtMismatchScaled": 0.0332,
+          "ttMomentumRiskScaled": 0.0078,
+          "interventionResidualRiskScaled": 0.3125,
+          "prerequisitePressureScaled": 0.3223,
+          "prerequisiteAverageRiskScaled": 0.0709,
+          "prerequisiteFailurePressureScaled": 0.1716,
+          "prerequisiteChainDepthScaled": 0.1184,
+          "prerequisiteWeakCourseRateScaled": 0.2207,
+          "prerequisiteCarryoverLoadScaled": 0.2671,
+          "prerequisiteRecencyWeightedFailureScaled": 0.1645,
+          "downstreamDependencyLoadScaled": -0.0788,
+          "weakPrerequisiteChainCountScaled": 0.3072,
+          "repeatedWeakPrerequisiteFamilyCountScaled": 0.1559,
+          "semesterProgressScaled": -0.0196,
+          "stagePreTt1Scaled": 0.0135,
+          "stagePostTt1Scaled": -0.0011,
+          "stagePostTt2Scaled": 0,
+          "stagePostAssignmentsScaled": 0.0067,
+          "stagePostSeeScaled": -0.0273,
+          "sectionPressureScaled": 0.011,
+          "tt1tt2ExamCompoundRiskScaled": 0.0668,
+          "courseworkCompoundRiskScaled": 0.0519,
+          "stagePostTt2TtCompoundInteractionScaled": 0.0162,
+          "attendanceTrendCompoundRiskScaled": 0.0197,
+          "stagePostAssignmentsCourseworkInteractionScaled": 0.0384,
+          "cgpaMissingScaled": 0,
+          "backlogMissingScaled": 0,
+          "tt1MissingScaled": 0.0274,
+          "tt2MissingScaled": 0.0284,
+          "seeMissingScaled": 0.0539,
+          "quizMissingScaled": 0.0331,
+          "assignmentMissingScaled": 0.0331,
+          "activeBacklogCreditPressureScaled": 0,
+          "historicalBacklogBurdenScaled": 0,
+          "lowerYearBlockerPressureScaled": 0,
+          "backlogSensitivityScoreScaled": 0.2436
+        },
+        "threshold": 0.75,
+        "metrics": {
+          "support": 21600,
+          "positiveRate": 0.2083,
+          "brierScore": 0.1501,
+          "logLoss": 0.4698,
+          "rocAuc": 0.7209,
+          "averagePrecision": 0.3899,
+          "expectedCalibrationError": 0.0431,
+          "calibrationSlope": 1.0798,
+          "calibrationIntercept": -0.0082
+        },
+        "support": {
+          "trainSupport": 21600,
+          "validationSupport": 21600,
+          "testSupport": 21600,
+          "trainPositives": 4275,
+          "validationPositives": 3390,
+          "testPositives": 4500
+        },
+        "calibration": {
+          "method": "beta",
+          "intercept": -0.5848,
+          "slope": null,
+          "logProbWeight": 1.4776,
+          "logInverseProbWeight": 0.6342,
+          "thresholds": [],
+          "values": [],
+          "validationMetrics": {
+            "support": 21600,
+            "positiveRate": 0.1569,
+            "brierScore": 0.1249,
+            "logLoss": 0.4113,
+            "rocAuc": 0.7218,
+            "averagePrecision": 0.3158,
+            "expectedCalibrationError": 0.0551,
+            "calibrationSlope": 1.1734,
+            "calibrationIntercept": -0.0946
+          },
+          "testMetrics": {
+            "support": 21600,
+            "positiveRate": 0.2083,
+            "brierScore": 0.1501,
+            "logLoss": 0.4698,
+            "rocAuc": 0.7209,
+            "averagePrecision": 0.3899,
+            "expectedCalibrationError": 0.0431,
+            "calibrationSlope": 1.0798,
+            "calibrationIntercept": -0.0082
+          },
+          "displayProbabilityAllowed": true,
+          "supportWarning": null,
+          "reliabilityBins": [
+            {
+              "lowerBound": 0.1,
+              "upperBound": 0.2,
+              "meanPredicted": 0.1617,
+              "meanObserved": 0.1173,
+              "count": 13285
+            },
+            {
+              "lowerBound": 0.2,
+              "upperBound": 0.3,
+              "meanPredicted": 0.2391,
+              "meanObserved": 0.2912,
+              "count": 4423
+            },
+            {
+              "lowerBound": 0.3,
+              "upperBound": 0.4,
+              "meanPredicted": 0.3488,
+              "meanObserved": 0.3776,
+              "count": 2219
+            },
+            {
+              "lowerBound": 0.4,
+              "upperBound": 0.5,
+              "meanPredicted": 0.4449,
+              "meanObserved": 0.4722,
+              "count": 1224
+            },
+            {
+              "lowerBound": 0.5,
+              "upperBound": 0.6,
+              "meanPredicted": 0.5368,
+              "meanObserved": 0.5134,
+              "count": 409
+            },
+            {
+              "lowerBound": 0.6,
+              "upperBound": 0.7,
+              "meanPredicted": 0.6199,
+              "meanObserved": 0.7,
+              "count": 40
+            }
+          ]
+        }
+      },
+      "overallCourseRisk": {
+        "headKey": "overallCourseRisk",
+        "intercept": -0.9026,
+        "weights": {
+          "attendancePctScaled": -0.1595,
+          "attendanceTrendScaled": -0.0024,
+          "attendanceHistoryRiskScaled": 0.6185,
+          "currentCgpaScaled": -0.0318,
+          "backlogPressureScaled": 0,
+          "tt1RiskScaled": 0.1481,
+          "tt2RiskScaled": 0.1213,
+          "seeRiskScaled": 0.0851,
+          "quizRiskScaled": 0.079,
+          "assignmentRiskScaled": 0.0733,
+          "weakCoPressureScaled": 0.2764,
+          "weakQuestionPressureScaled": 0.3829,
+          "courseworkTtMismatchScaled": 0.036,
+          "ttMomentumRiskScaled": 0.0318,
+          "interventionResidualRiskScaled": 0.1905,
+          "prerequisitePressureScaled": 0.3131,
+          "prerequisiteAverageRiskScaled": 0.0527,
+          "prerequisiteFailurePressureScaled": 0.1693,
+          "prerequisiteChainDepthScaled": 0.0625,
+          "prerequisiteWeakCourseRateScaled": 0.2322,
+          "prerequisiteCarryoverLoadScaled": 0.2625,
+          "prerequisiteRecencyWeightedFailureScaled": 0.1723,
+          "downstreamDependencyLoadScaled": -0.0959,
+          "weakPrerequisiteChainCountScaled": 0.2787,
+          "repeatedWeakPrerequisiteFamilyCountScaled": 0.1515,
+          "semesterProgressScaled": -0.0278,
+          "stagePreTt1Scaled": 0.0173,
+          "stagePostTt1Scaled": -0.0007,
+          "stagePostTt2Scaled": -0.0022,
+          "stagePostAssignmentsScaled": -0.0019,
+          "stagePostSeeScaled": -0.0281,
+          "sectionPressureScaled": 0.0059,
+          "tt1tt2ExamCompoundRiskScaled": 0.0879,
+          "courseworkCompoundRiskScaled": 0.0435,
+          "stagePostTt2TtCompoundInteractionScaled": 0.0239,
+          "attendanceTrendCompoundRiskScaled": 0.0772,
+          "stagePostAssignmentsCourseworkInteractionScaled": 0.026,
+          "cgpaMissingScaled": 0,
+          "backlogMissingScaled": 0,
+          "tt1MissingScaled": 0.033,
+          "tt2MissingScaled": 0.0333,
+          "seeMissingScaled": 0.033,
+          "quizMissingScaled": 0.0319,
+          "assignmentMissingScaled": 0.0319,
+          "activeBacklogCreditPressureScaled": 0,
+          "historicalBacklogBurdenScaled": 0,
+          "lowerYearBlockerPressureScaled": 0,
+          "backlogSensitivityScoreScaled": 0.2605
+        },
+        "threshold": 0.75,
+        "metrics": {
+          "support": 21600,
+          "positiveRate": 0.2384,
+          "brierScore": 0.1528,
+          "logLoss": 0.4766,
+          "rocAuc": 0.7846,
+          "averagePrecision": 0.5353,
+          "expectedCalibrationError": 0.0598,
+          "calibrationSlope": 1.1691,
+          "calibrationIntercept": -0.0087
+        },
+        "support": {
+          "trainSupport": 21600,
+          "validationSupport": 21600,
+          "testSupport": 21600,
+          "trainPositives": 5990,
+          "validationPositives": 4660,
+          "testPositives": 5150
+        },
+        "calibration": {
+          "method": "beta",
+          "intercept": -0.4633,
+          "slope": null,
+          "logProbWeight": 1.4206,
+          "logInverseProbWeight": 0.7451,
+          "thresholds": [],
+          "values": [],
+          "validationMetrics": {
+            "support": 21600,
+            "positiveRate": 0.2157,
+            "brierScore": 0.1489,
+            "logLoss": 0.4672,
+            "rocAuc": 0.774,
+            "averagePrecision": 0.4528,
+            "expectedCalibrationError": 0.0562,
+            "calibrationSlope": 1.1747,
+            "calibrationIntercept": -0.052
+          },
+          "testMetrics": {
+            "support": 21600,
+            "positiveRate": 0.2384,
+            "brierScore": 0.1528,
+            "logLoss": 0.4766,
+            "rocAuc": 0.7846,
+            "averagePrecision": 0.5353,
+            "expectedCalibrationError": 0.0598,
+            "calibrationSlope": 1.1691,
+            "calibrationIntercept": -0.0087
+          },
+          "displayProbabilityAllowed": true,
+          "supportWarning": null,
+          "reliabilityBins": [
+            {
+              "lowerBound": 0.1,
+              "upperBound": 0.2,
+              "meanPredicted": 0.1729,
+              "meanObserved": 0.0719,
+              "count": 8639
+            },
+            {
+              "lowerBound": 0.2,
+              "upperBound": 0.3,
+              "meanPredicted": 0.2359,
+              "meanObserved": 0.2384,
+              "count": 7676
+            },
+            {
+              "lowerBound": 0.3,
+              "upperBound": 0.4,
+              "meanPredicted": 0.3448,
+              "meanObserved": 0.4139,
+              "count": 2300
+            },
+            {
+              "lowerBound": 0.4,
+              "upperBound": 0.5,
+              "meanPredicted": 0.4453,
+              "meanObserved": 0.5106,
+              "count": 1694
+            },
+            {
+              "lowerBound": 0.5,
+              "upperBound": 0.6,
+              "meanPredicted": 0.5455,
+              "meanObserved": 0.6393,
+              "count": 854
+            },
+            {
+              "lowerBound": 0.6,
+              "upperBound": 0.7,
+              "meanPredicted": 0.6404,
+              "meanObserved": 0.7355,
+              "count": 363
+            },
+            {
+              "lowerBound": 0.7,
+              "upperBound": 0.8,
+              "meanPredicted": 0.7324,
+              "meanObserved": 0.9324,
+              "count": 74
+            }
+          ]
+        }
+      },
+      "downstreamCarryoverRisk": {
+        "headKey": "downstreamCarryoverRisk",
+        "intercept": -0.7285,
+        "weights": {
+          "attendancePctScaled": -0.0343,
+          "attendanceTrendScaled": -0.0026,
+          "attendanceHistoryRiskScaled": 0.1221,
+          "currentCgpaScaled": 0.0524,
+          "backlogPressureScaled": 0,
+          "tt1RiskScaled": 0.0382,
+          "tt2RiskScaled": 0.0251,
+          "seeRiskScaled": 0.0104,
+          "quizRiskScaled": 0.0152,
+          "assignmentRiskScaled": 0.0157,
+          "weakCoPressureScaled": 0.0531,
+          "weakQuestionPressureScaled": 0.0596,
+          "courseworkTtMismatchScaled": 0.0034,
+          "ttMomentumRiskScaled": -0.0044,
+          "interventionResidualRiskScaled": 0.0678,
+          "prerequisitePressureScaled": 0.1953,
+          "prerequisiteAverageRiskScaled": -0.3035,
+          "prerequisiteFailurePressureScaled": 0.0052,
+          "prerequisiteChainDepthScaled": 0.039,
+          "prerequisiteWeakCourseRateScaled": 0.1148,
+          "prerequisiteCarryoverLoadScaled": 0.1481,
+          "prerequisiteRecencyWeightedFailureScaled": 0.0875,
+          "downstreamDependencyLoadScaled": 1.756,
+          "weakPrerequisiteChainCountScaled": -0.0524,
+          "repeatedWeakPrerequisiteFamilyCountScaled": -0.0959,
+          "semesterProgressScaled": -0.0182,
+          "stagePreTt1Scaled": 0.001,
+          "stagePostTt1Scaled": -0.0021,
+          "stagePostTt2Scaled": -0.0032,
+          "stagePostAssignmentsScaled": -0.0055,
+          "stagePostSeeScaled": -0.0112,
+          "sectionPressureScaled": -0.0036,
+          "tt1tt2ExamCompoundRiskScaled": 0.0169,
+          "courseworkCompoundRiskScaled": 0.0066,
+          "stagePostTt2TtCompoundInteractionScaled": 0.0049,
+          "attendanceTrendCompoundRiskScaled": 0.0122,
+          "stagePostAssignmentsCourseworkInteractionScaled": 0.0046,
+          "cgpaMissingScaled": 0,
+          "backlogMissingScaled": 0,
+          "tt1MissingScaled": 0.002,
+          "tt2MissingScaled": -0.0009,
+          "seeMissingScaled": -0.0109,
+          "quizMissingScaled": -0.005,
+          "assignmentMissingScaled": -0.005,
+          "activeBacklogCreditPressureScaled": 0,
+          "historicalBacklogBurdenScaled": 0,
+          "lowerYearBlockerPressureScaled": 0,
+          "backlogSensitivityScoreScaled": 0.039
+        },
+        "threshold": 0.75,
+        "metrics": {
+          "support": 21600,
+          "positiveRate": 0.3241,
+          "brierScore": 0.1243,
+          "logLoss": 0.4044,
+          "rocAuc": 0.9328,
+          "averagePrecision": 0.8388,
+          "expectedCalibrationError": 0.1669,
+          "calibrationSlope": 1.433,
+          "calibrationIntercept": 0.094
+        },
+        "support": {
+          "trainSupport": 21600,
+          "validationSupport": 21600,
+          "testSupport": 21600,
+          "trainPositives": 6965,
+          "validationPositives": 6425,
+          "testPositives": 7000
+        },
+        "calibration": {
+          "method": "beta",
+          "intercept": -0.291,
+          "slope": null,
+          "logProbWeight": 1.4728,
+          "logInverseProbWeight": 1.0231,
+          "thresholds": [],
+          "values": [],
+          "validationMetrics": {
+            "support": 21600,
+            "positiveRate": 0.2975,
+            "brierScore": 0.1242,
+            "logLoss": 0.4042,
+            "rocAuc": 0.9206,
+            "averagePrecision": 0.7979,
+            "expectedCalibrationError": 0.1404,
+            "calibrationSlope": 1.4197,
+            "calibrationIntercept": 0.0159
+          },
+          "testMetrics": {
+            "support": 21600,
+            "positiveRate": 0.3241,
+            "brierScore": 0.1243,
+            "logLoss": 0.4044,
+            "rocAuc": 0.9328,
+            "averagePrecision": 0.8388,
+            "expectedCalibrationError": 0.1669,
+            "calibrationSlope": 1.433,
+            "calibrationIntercept": 0.094
+          },
+          "displayProbabilityAllowed": false,
+          "supportWarning": "Calibration remains above the probability display threshold.",
+          "reliabilityBins": [
+            {
+              "lowerBound": 0.1,
+              "upperBound": 0.2,
+              "meanPredicted": 0.1507,
+              "meanObserved": 0,
+              "count": 9721
+            },
+            {
+              "lowerBound": 0.2,
+              "upperBound": 0.3,
+              "meanPredicted": 0.2474,
+              "meanObserved": 0.0961,
+              "count": 1997
+            },
+            {
+              "lowerBound": 0.3,
+              "upperBound": 0.4,
+              "meanPredicted": 0.3626,
+              "meanObserved": 0.5062,
+              "count": 3230
+            },
+            {
+              "lowerBound": 0.4,
+              "upperBound": 0.5,
+              "meanPredicted": 0.4386,
+              "meanObserved": 0.6776,
+              "count": 1945
+            },
+            {
+              "lowerBound": 0.5,
+              "upperBound": 0.6,
+              "meanPredicted": 0.5737,
+              "meanObserved": 0.7397,
+              "count": 1844
+            },
+            {
+              "lowerBound": 0.6,
+              "upperBound": 0.7,
+              "meanPredicted": 0.6424,
+              "meanObserved": 0.8444,
+              "count": 2365
+            },
+            {
+              "lowerBound": 0.7,
+              "upperBound": 0.8,
+              "meanPredicted": 0.7415,
+              "meanObserved": 0.9919,
+              "count": 491
+            },
+            {
+              "lowerBound": 0.8,
+              "upperBound": 0.9,
+              "meanPredicted": 0.8021,
+              "meanObserved": 1,
+              "count": 7
+            }
+          ]
+        }
+      }
+    },
+    "modelFamily": "catboost"
+  },
+  "challenger": {
+    "modelVersion": "observable-risk-catboost-challenger-v9",
+    "modelFamily": "depth-2-tree",
+    "featureSchemaVersion": "observable-risk-features-v6",
+    "trainedAt": "2026-03-16T00:00:00.000Z",
+    "trainingManifestVersion": "proof-corpus-v1",
+    "splitSummary": {
+      "train": 21600,
+      "validation": 21600,
+      "test": 21600
+    },
+    "worldSplitSummary": {
+      "train": 1,
+      "validation": 1,
+      "test": 1
+    },
+    "scenarioFamilySummary": {
+      "balanced": 43200,
+      "weak-foundation": 0,
+      "low-attendance": 0,
+      "high-forgetting": 0,
+      "coursework-inflation": 21600,
+      "exam-fragility": 0,
+      "carryover-heavy": 0,
+      "intervention-resistant": 0
+    },
+    "headSupportSummary": {
+      "attendanceRisk": {
+        "trainSupport": 21600,
+        "validationSupport": 21600,
+        "testSupport": 21600,
+        "trainPositives": 4915,
+        "validationPositives": 4715,
+        "testPositives": 2880
+      },
+      "ceRisk": {
+        "trainSupport": 21600,
+        "validationSupport": 21600,
+        "testSupport": 21600,
+        "trainPositives": 1355,
+        "validationPositives": 895,
+        "testPositives": 1280
+      },
+      "seeRisk": {
+        "trainSupport": 21600,
+        "validationSupport": 21600,
+        "testSupport": 21600,
+        "trainPositives": 4275,
+        "validationPositives": 3390,
+        "testPositives": 4500
+      },
+      "overallCourseRisk": {
+        "trainSupport": 21600,
+        "validationSupport": 21600,
+        "testSupport": 21600,
+        "trainPositives": 5990,
+        "validationPositives": 4660,
+        "testPositives": 5150
+      },
+      "downstreamCarryoverRisk": {
+        "trainSupport": 21600,
+        "validationSupport": 21600,
+        "testSupport": 21600,
+        "trainPositives": 6965,
+        "validationPositives": 6425,
+        "testPositives": 7000
+      }
+    },
+    "calibrationVersion": "post-hoc-calibration-v2",
+    "heads": {
+      "attendanceRisk": {
+        "headKey": "attendanceRisk",
+        "modelFamily": "depth-2-tree",
+        "baseIntercept": 0,
+        "root": {
+          "featureKey": "attendanceHistoryRiskScaled",
+          "threshold": 0,
+          "leftValue": 0.0237,
+          "rightValue": 0.836,
+          "leftChild": {
+            "featureKey": "attendancePctScaled",
+            "threshold": 0.81,
+            "leftValue": 0.1209,
+            "rightValue": 0.01,
+            "leftChild": null,
+            "rightChild": null
+          },
+          "rightChild": {
+            "featureKey": "attendancePctScaled",
+            "threshold": 0.7,
+            "leftValue": 0.9593,
+            "rightValue": 0.7092,
+            "leftChild": null,
+            "rightChild": null
+          }
+        },
+        "threshold": 0.75,
+        "metrics": {
+          "support": 21600,
+          "positiveRate": 0.1333,
+          "brierScore": 0.0314,
+          "logLoss": 0.1093,
+          "rocAuc": 0.9831,
+          "averagePrecision": 0.8724,
+          "expectedCalibrationError": 0.0126,
+          "calibrationSlope": 1.0585,
+          "calibrationIntercept": -0.0491
+        },
+        "support": {
+          "trainSupport": 21600,
+          "validationSupport": 21600,
+          "testSupport": 21600,
+          "trainPositives": 4915,
+          "validationPositives": 4715,
+          "testPositives": 2880
+        },
+        "calibration": {
+          "method": "beta",
+          "intercept": 0.0043,
+          "slope": null,
+          "logProbWeight": 1.07,
+          "logInverseProbWeight": 1.02,
+          "thresholds": [],
+          "values": [],
+          "validationMetrics": {
+            "support": 21600,
+            "positiveRate": 0.2183,
+            "brierScore": 0.0418,
+            "logLoss": 0.1417,
+            "rocAuc": 0.9797,
+            "averagePrecision": 0.9207,
+            "expectedCalibrationError": 0.0114,
+            "calibrationSlope": 1.057,
+            "calibrationIntercept": 0.0109
+          },
+          "testMetrics": {
+            "support": 21600,
+            "positiveRate": 0.1333,
+            "brierScore": 0.0314,
+            "logLoss": 0.1093,
+            "rocAuc": 0.9831,
+            "averagePrecision": 0.8724,
+            "expectedCalibrationError": 0.0126,
+            "calibrationSlope": 1.0585,
+            "calibrationIntercept": -0.0491
+          },
+          "displayProbabilityAllowed": true,
+          "supportWarning": null,
+          "reliabilityBins": [
+            {
+              "lowerBound": 0,
+              "upperBound": 0.1,
+              "meanPredicted": 0.0073,
+              "meanObserved": 0,
+              "count": 15766
+            },
+            {
+              "lowerBound": 0.1,
+              "upperBound": 0.2,
+              "meanPredicted": 0.1067,
+              "meanObserved": 0.088,
+              "count": 2523
+            },
+            {
+              "lowerBound": 0.7,
+              "upperBound": 0.8,
+              "meanPredicted": 0.7102,
+              "meanObserved": 0.6761,
+              "count": 1655
+            },
+            {
+              "lowerBound": 0.9,
+              "upperBound": 1,
+              "meanPredicted": 0.9618,
+              "meanObserved": 0.9293,
+              "count": 1656
+            }
+          ]
+        }
+      },
+      "ceRisk": {
+        "headKey": "ceRisk",
+        "modelFamily": "depth-2-tree",
+        "baseIntercept": 0,
+        "root": {
+          "featureKey": "tt1RiskScaled",
+          "threshold": 0.5804,
+          "leftValue": 0.0484,
+          "rightValue": 0.64,
+          "leftChild": null,
+          "rightChild": {
+            "featureKey": "tt1RiskScaled",
+            "threshold": 0.6241,
+            "leftValue": 0.461,
+            "rightValue": 0.8166,
+            "leftChild": null,
+            "rightChild": null
+          }
+        },
+        "threshold": 0.75,
+        "metrics": {
+          "support": 21600,
+          "positiveRate": 0.0593,
+          "brierScore": 0.04,
+          "logLoss": 0.1472,
+          "rocAuc": 0.8629,
+          "averagePrecision": 0.4574,
+          "expectedCalibrationError": 0.0222,
+          "calibrationSlope": 1.0305,
+          "calibrationIntercept": -0.0856
+        },
+        "support": {
+          "trainSupport": 21600,
+          "validationSupport": 21600,
+          "testSupport": 21600,
+          "trainPositives": 1355,
+          "validationPositives": 895,
+          "testPositives": 1280
+        },
+        "calibration": {
+          "method": "beta",
+          "intercept": -0.1794,
+          "slope": null,
+          "logProbWeight": 1.2569,
+          "logInverseProbWeight": 0.8766,
+          "thresholds": [],
+          "values": [],
+          "validationMetrics": {
+            "support": 21600,
+            "positiveRate": 0.0414,
+            "brierScore": 0.0332,
+            "logLoss": 0.1251,
+            "rocAuc": 0.8417,
+            "averagePrecision": 0.3881,
+            "expectedCalibrationError": 0.0271,
+            "calibrationSlope": 1.0585,
+            "calibrationIntercept": -0.1021
+          },
+          "testMetrics": {
+            "support": 21600,
+            "positiveRate": 0.0593,
+            "brierScore": 0.04,
+            "logLoss": 0.1472,
+            "rocAuc": 0.8629,
+            "averagePrecision": 0.4574,
+            "expectedCalibrationError": 0.0222,
+            "calibrationSlope": 1.0305,
+            "calibrationIntercept": -0.0856
+          },
+          "displayProbabilityAllowed": false,
+          "supportWarning": null,
+          "reliabilityBins": [
+            {
+              "lowerBound": 0,
+              "upperBound": 0.1,
+              "meanPredicted": 0.019,
+              "meanObserved": 0.0149,
+              "count": 18824
+            },
+            {
+              "lowerBound": 0.3,
+              "upperBound": 0.4,
+              "meanPredicted": 0.3519,
+              "meanObserved": 0.1995,
+              "count": 1684
+            },
+            {
+              "lowerBound": 0.7,
+              "upperBound": 0.8,
+              "meanPredicted": 0.7413,
+              "meanObserved": 0.6081,
+              "count": 1092
+            }
+          ]
+        }
+      },
+      "seeRisk": {
+        "headKey": "seeRisk",
+        "modelFamily": "depth-2-tree",
+        "baseIntercept": 0,
+        "root": {
+          "featureKey": "backlogSensitivityScoreScaled",
+          "threshold": 0.0667,
+          "leftValue": 0.1202,
+          "rightValue": 0.3584,
+          "leftChild": {
+            "featureKey": "currentCgpaScaled",
+            "threshold": 0.596,
+            "leftValue": 0.1632,
+            "rightValue": 0.0407,
+            "leftChild": null,
+            "rightChild": null
+          },
+          "rightChild": {
+            "featureKey": "weakQuestionPressureScaled",
+            "threshold": 0.6667,
+            "leftValue": 0.314,
+            "rightValue": 0.5451,
+            "leftChild": null,
+            "rightChild": null
+          }
+        },
+        "threshold": 0.75,
+        "metrics": {
+          "support": 21600,
+          "positiveRate": 0.2083,
+          "brierScore": 0.1468,
+          "logLoss": 0.4572,
+          "rocAuc": 0.716,
+          "averagePrecision": 0.405,
+          "expectedCalibrationError": 0.0329,
+          "calibrationSlope": 0.9254,
+          "calibrationIntercept": 0.0766
+        },
+        "support": {
+          "trainSupport": 21600,
+          "validationSupport": 21600,
+          "testSupport": 21600,
+          "trainPositives": 4275,
+          "validationPositives": 3390,
+          "testPositives": 4500
+        },
+        "calibration": {
+          "method": "beta",
+          "intercept": -0.0284,
+          "slope": null,
+          "logProbWeight": 1.0343,
+          "logInverseProbWeight": 0.9832,
+          "thresholds": [],
+          "values": [],
+          "validationMetrics": {
+            "support": 21600,
+            "positiveRate": 0.1569,
+            "brierScore": 0.1192,
+            "logLoss": 0.3867,
+            "rocAuc": 0.7169,
+            "averagePrecision": 0.3245,
+            "expectedCalibrationError": 0.0062,
+            "calibrationSlope": 1.0046,
+            "calibrationIntercept": -0.0074
+          },
+          "testMetrics": {
+            "support": 21600,
+            "positiveRate": 0.2083,
+            "brierScore": 0.1468,
+            "logLoss": 0.4572,
+            "rocAuc": 0.716,
+            "averagePrecision": 0.405,
+            "expectedCalibrationError": 0.0329,
+            "calibrationSlope": 0.9254,
+            "calibrationIntercept": 0.0766
+          },
+          "displayProbabilityAllowed": true,
+          "supportWarning": null,
+          "reliabilityBins": [
+            {
+              "lowerBound": 0,
+              "upperBound": 0.1,
+              "meanPredicted": 0.0356,
+              "meanObserved": 0.0463,
+              "count": 4944
+            },
+            {
+              "lowerBound": 0.1,
+              "upperBound": 0.2,
+              "meanPredicted": 0.1508,
+              "meanObserved": 0.1766,
+              "count": 11073
+            },
+            {
+              "lowerBound": 0.2,
+              "upperBound": 0.3,
+              "meanPredicted": 0.2982,
+              "meanObserved": 0.367,
+              "count": 4382
+            },
+            {
+              "lowerBound": 0.5,
+              "upperBound": 0.6,
+              "meanPredicted": 0.5296,
+              "meanObserved": 0.5887,
+              "count": 1201
+            }
+          ]
+        }
+      },
+      "overallCourseRisk": {
+        "headKey": "overallCourseRisk",
+        "modelFamily": "depth-2-tree",
+        "baseIntercept": 0,
+        "root": {
+          "featureKey": "attendanceHistoryRiskScaled",
+          "threshold": 0,
+          "leftValue": 0.1918,
+          "rightValue": 0.5326,
+          "leftChild": {
+            "featureKey": "backlogSensitivityScoreScaled",
+            "threshold": 0.0667,
+            "leftValue": 0.1134,
+            "rightValue": 0.4107,
+            "leftChild": null,
+            "rightChild": null
+          },
+          "rightChild": {
+            "featureKey": "backlogSensitivityScoreScaled",
+            "threshold": 0.1,
+            "leftValue": 0.4152,
+            "rightValue": 0.6441,
+            "leftChild": null,
+            "rightChild": null
+          }
+        },
+        "threshold": 0.75,
+        "metrics": {
+          "support": 21600,
+          "positiveRate": 0.2384,
+          "brierScore": 0.1502,
+          "logLoss": 0.4691,
+          "rocAuc": 0.7325,
+          "averagePrecision": 0.4773,
+          "expectedCalibrationError": 0.032,
+          "calibrationSlope": 0.9231,
+          "calibrationIntercept": 0.0765
+        },
+        "support": {
+          "trainSupport": 21600,
+          "validationSupport": 21600,
+          "testSupport": 21600,
+          "trainPositives": 5990,
+          "validationPositives": 4660,
+          "testPositives": 5150
+        },
+        "calibration": {
+          "method": "beta",
+          "intercept": -0.0633,
+          "slope": null,
+          "logProbWeight": 1.0625,
+          "logInverseProbWeight": 0.9485,
+          "thresholds": [],
+          "values": [],
+          "validationMetrics": {
+            "support": 21600,
+            "positiveRate": 0.2157,
+            "brierScore": 0.1414,
+            "logLoss": 0.442,
+            "rocAuc": 0.7473,
+            "averagePrecision": 0.4348,
+            "expectedCalibrationError": 0.0131,
+            "calibrationSlope": 0.9933,
+            "calibrationIntercept": -0.0207
+          },
+          "testMetrics": {
+            "support": 21600,
+            "positiveRate": 0.2384,
+            "brierScore": 0.1502,
+            "logLoss": 0.4691,
+            "rocAuc": 0.7325,
+            "averagePrecision": 0.4773,
+            "expectedCalibrationError": 0.032,
+            "calibrationSlope": 0.9231,
+            "calibrationIntercept": 0.0765
+          },
+          "displayProbabilityAllowed": true,
+          "supportWarning": null,
+          "reliabilityBins": [
+            {
+              "lowerBound": 0,
+              "upperBound": 0.1,
+              "meanPredicted": 0.0943,
+              "meanObserved": 0.1183,
+              "count": 14576
+            },
+            {
+              "lowerBound": 0.3,
+              "upperBound": 0.4,
+              "meanPredicted": 0.3771,
+              "meanObserved": 0.4325,
+              "count": 5154
+            },
+            {
+              "lowerBound": 0.6,
+              "upperBound": 0.7,
+              "meanPredicted": 0.6105,
+              "meanObserved": 0.6396,
+              "count": 1870
+            }
+          ]
+        }
+      },
+      "downstreamCarryoverRisk": {
+        "headKey": "downstreamCarryoverRisk",
+        "modelFamily": "depth-2-tree",
+        "baseIntercept": 0,
+        "root": {
+          "featureKey": "downstreamDependencyLoadScaled",
+          "threshold": 0,
+          "leftValue": 0.01,
+          "rightValue": 0.6828,
+          "leftChild": null,
+          "rightChild": {
+            "featureKey": "backlogSensitivityScoreScaled",
+            "threshold": 0,
+            "leftValue": 0.5111,
+            "rightValue": 0.804,
+            "leftChild": null,
+            "rightChild": null
+          }
+        },
+        "threshold": 0.75,
+        "metrics": {
+          "support": 21600,
+          "positiveRate": 0.3241,
+          "brierScore": 0.0945,
+          "logLoss": 0.2798,
+          "rocAuc": 0.9251,
+          "averagePrecision": 0.7882,
+          "expectedCalibrationError": 0.0305,
+          "calibrationSlope": 1.0884,
+          "calibrationIntercept": 0.0802
+        },
+        "support": {
+          "trainSupport": 21600,
+          "validationSupport": 21600,
+          "testSupport": 21600,
+          "trainPositives": 6965,
+          "validationPositives": 6425,
+          "testPositives": 7000
+        },
+        "calibration": {
+          "method": "beta",
+          "intercept": -0.0508,
+          "slope": null,
+          "logProbWeight": 1.0894,
+          "logInverseProbWeight": 0.9526,
+          "thresholds": [],
+          "values": [],
+          "validationMetrics": {
+            "support": 21600,
+            "positiveRate": 0.2975,
+            "brierScore": 0.0995,
+            "logLoss": 0.2914,
+            "rocAuc": 0.9156,
+            "averagePrecision": 0.741,
+            "expectedCalibrationError": 0.0049,
+            "calibrationSlope": 1.0513,
+            "calibrationIntercept": -0.0209
+          },
+          "testMetrics": {
+            "support": 21600,
+            "positiveRate": 0.3241,
+            "brierScore": 0.0945,
+            "logLoss": 0.2798,
+            "rocAuc": 0.9251,
+            "averagePrecision": 0.7882,
+            "expectedCalibrationError": 0.0305,
+            "calibrationSlope": 1.0884,
+            "calibrationIntercept": 0.0802
+          },
+          "displayProbabilityAllowed": true,
+          "supportWarning": null,
+          "reliabilityBins": [
+            {
+              "lowerBound": 0,
+              "upperBound": 0.1,
+              "meanPredicted": 0.0063,
+              "meanObserved": 0,
+              "count": 11400
+            },
+            {
+              "lowerBound": 0.4,
+              "upperBound": 0.5,
+              "meanPredicted": 0.4749,
+              "meanObserved": 0.548,
+              "count": 5049
+            },
+            {
+              "lowerBound": 0.7,
+              "upperBound": 0.8,
+              "meanPredicted": 0.7797,
+              "meanObserved": 0.8218,
+              "count": 5151
+            }
+          ]
+        }
+      }
+    }
+  },
+  "correlations": {
+    "artifactVersion": "observable-risk-correlations-v4",
+    "featureSchemaVersion": "observable-risk-features-v6",
+    "builtAt": "2026-03-16T00:00:00.000Z",
+    "splitName": "train",
+    "support": 21600,
+    "scenarioFamilySummary": {
+      "balanced": 21600,
+      "weak-foundation": 0,
+      "low-attendance": 0,
+      "high-forgetting": 0,
+      "coursework-inflation": 0,
+      "exam-fragility": 0,
+      "carryover-heavy": 0,
+      "intervention-resistant": 0
+    },
+    "weakCoAssociation": {
+      "support": 21600,
+      "adverseRateWithWeakCo": 0.3764,
+      "adverseRateWithoutWeakCo": 0.2251,
+      "riskLift": 0.1513
+    },
+    "weakQuestionAssociation": {
+      "support": 21600,
+      "adverseRateWithWeakQuestions": 0.5349,
+      "adverseRateWithoutWeakQuestions": 0.2394,
+      "riskLift": 0.2954
+    },
+    "prerequisiteEdges": [
+      {
+        "sourceCourseCode": "CSD204A",
+        "targetCourseCode": "AMC-S6-32",
+        "support": 120,
+        "adverseRateWithPrereqWeak": 0.5065,
+        "adverseRateWithoutPrereqWeak": 0.0465,
+        "oddsLift": 0.46
+      },
+      {
+        "sourceCourseCode": "AMC-S4-19",
+        "targetCourseCode": "AMC-S6-32",
+        "support": 120,
+        "adverseRateWithPrereqWeak": 0.5067,
+        "adverseRateWithoutPrereqWeak": 0.0667,
+        "oddsLift": 0.44
+      },
+      {
+        "sourceCourseCode": "CSC201A",
+        "targetCourseCode": "CSL201A",
+        "support": 120,
+        "adverseRateWithPrereqWeak": 0.4714,
+        "adverseRateWithoutPrereqWeak": 0.12,
+        "oddsLift": 0.3514
+      },
+      {
+        "sourceCourseCode": "CSC201A",
+        "targetCourseCode": "AID201A",
+        "support": 120,
+        "adverseRateWithPrereqWeak": 0.5857,
+        "adverseRateWithoutPrereqWeak": 0.24,
+        "oddsLift": 0.3457
+      },
+      {
+        "sourceCourseCode": "ECF102A",
+        "targetCourseCode": "CSD202A",
+        "support": 120,
+        "adverseRateWithPrereqWeak": 0.4267,
+        "adverseRateWithoutPrereqWeak": 0.0889,
+        "oddsLift": 0.3378
+      },
+      {
+        "sourceCourseCode": "MCC205A",
+        "targetCourseCode": "AMC-S5-28",
+        "support": 120,
+        "adverseRateWithPrereqWeak": 0.3944,
+        "adverseRateWithoutPrereqWeak": 0.0612,
+        "oddsLift": 0.3331
+      },
+      {
+        "sourceCourseCode": "CSD204A",
+        "targetCourseCode": "MCL201A",
+        "support": 120,
+        "adverseRateWithPrereqWeak": 0.4416,
+        "adverseRateWithoutPrereqWeak": 0.1163,
+        "oddsLift": 0.3253
+      },
+      {
+        "sourceCourseCode": "MCC202A",
+        "targetCourseCode": "AMC-S6-32",
+        "support": 120,
+        "adverseRateWithPrereqWeak": 0.4605,
+        "adverseRateWithoutPrereqWeak": 0.1364,
+        "oddsLift": 0.3242
+      },
+      {
+        "sourceCourseCode": "AMC-S2-12",
+        "targetCourseCode": "CSD204A",
+        "support": 120,
+        "adverseRateWithPrereqWeak": 0.4464,
+        "adverseRateWithoutPrereqWeak": 0.125,
+        "oddsLift": 0.3214
+      },
+      {
+        "sourceCourseCode": "AMC-S2-12",
+        "targetCourseCode": "AMC-S3-17",
+        "support": 120,
+        "adverseRateWithPrereqWeak": 0.4286,
+        "adverseRateWithoutPrereqWeak": 0.1094,
+        "oddsLift": 0.3192
+      },
+      {
+        "sourceCourseCode": "CSD201A",
+        "targetCourseCode": "AID201A",
+        "support": 120,
+        "adverseRateWithPrereqWeak": 0.5873,
+        "adverseRateWithoutPrereqWeak": 0.2807,
+        "oddsLift": 0.3066
+      },
+      {
+        "sourceCourseCode": "CSD201A",
+        "targetCourseCode": "AMC-S4-21",
+        "support": 120,
+        "adverseRateWithPrereqWeak": 0.3968,
+        "adverseRateWithoutPrereqWeak": 0.1053,
+        "oddsLift": 0.2916
+      },
+      {
+        "sourceCourseCode": "MTB102A",
+        "targetCourseCode": "MCC301A",
+        "support": 120,
+        "adverseRateWithPrereqWeak": 0.5,
+        "adverseRateWithoutPrereqWeak": 0.2143,
+        "oddsLift": 0.2857
+      },
+      {
+        "sourceCourseCode": "MCC202A",
+        "targetCourseCode": "AID201A",
+        "support": 120,
+        "adverseRateWithPrereqWeak": 0.5395,
+        "adverseRateWithoutPrereqWeak": 0.2727,
+        "oddsLift": 0.2667
+      },
+      {
+        "sourceCourseCode": "AMC-S4-19",
+        "targetCourseCode": "AMC-S6-34",
+        "support": 120,
+        "adverseRateWithPrereqWeak": 0.48,
+        "adverseRateWithoutPrereqWeak": 0.2222,
+        "oddsLift": 0.2578
+      },
+      {
+        "sourceCourseCode": "AMC-S2-12",
+        "targetCourseCode": "MCC310A",
+        "support": 120,
+        "adverseRateWithPrereqWeak": 0.5179,
+        "adverseRateWithoutPrereqWeak": 0.2656,
+        "oddsLift": 0.2522
+      }
+    ]
+  }
+}

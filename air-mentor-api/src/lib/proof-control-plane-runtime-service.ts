@@ -1293,13 +1293,11 @@ export async function recomputeObservedOnlyRisk(db: AppDb, input: {
   if (alertRows.length > 0) await db.insert(alertDecisions).values(alertRows)
   if (alertOutcomeRows.length > 0) await db.insert(alertOutcomes).values(alertOutcomeRows)
 
-  if (input.rebuildModelArtifacts !== false) {
-    await deps.rebuildSimulationStagePlayback(db, {
-      simulationRunId: input.simulationRunId,
-      policy: input.policy,
-      now: input.now,
-    })
-  }
+  await deps.rebuildSimulationStagePlayback(db, {
+    simulationRunId: input.simulationRunId,
+    policy: input.policy,
+    now: input.now,
+  })
   await overlayManualAssessmentScoresIntoStageProjections(db, {
     simulationRunId: input.simulationRunId,
     policy: input.policy,

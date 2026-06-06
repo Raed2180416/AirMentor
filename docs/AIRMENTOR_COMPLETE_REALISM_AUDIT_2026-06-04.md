@@ -175,9 +175,9 @@ npx tsc -p tsconfig.app.json --noEmit
 npm --workspace air-mentor-api run build
 npm run build
 AIRMENTOR_TMPDIR=/home/raed/.cache/airmentor-pg-scratch npm --workspace air-mentor-api run test -- tests/msruas-proof-sandbox.test.ts tests/proof-coverage-120-manifest.test.ts --reporter=verbose
-AIRMENTOR_TMPDIR=/home/raed/.cache/airmentor-pg-scratch npm --workspace air-mentor-api run test -- tests/proof-realism-deep-analysis.test.ts tests/proof-realized-intervention-effect-ledger.test.ts tests/proof-realized-intervention-scenario.test.ts tests/proof-role-course-api-matrix.test.ts tests/proof-risk-artifact-consistency-and-served-contract.test.ts tests/proof-fresh-run-risk-tail.test.ts --reporter=verbose
+AIRMENTOR_TMPDIR=/home/raed/.cache/airmentor-pg-scratch npm --workspace air-mentor-api run test -- tests/proof-realism-deep-analysis.test.ts tests/proof-realized-intervention-effect-ledger.test.ts tests/proof-realized-intervention-scenario.test.ts tests/proof-role-course-api-matrix.test.ts tests/proof-risk-served-model-contract.test.ts tests/proof-fresh-run-risk-tail.test.ts --reporter=verbose
 AIRMENTOR_TMPDIR=/home/raed/.cache/airmentor-pg-scratch npm --workspace air-mentor-api run test -- tests/proof-realized-intervention-effect-ledger.test.ts --reporter=verbose
-AIRMENTOR_TMPDIR=/home/raed/.cache/airmentor-pg-scratch npm --workspace air-mentor-api run test -- tests/proof-realized-intervention-scenario.test.ts tests/proof-role-course-api-matrix.test.ts tests/proof-risk-artifact-consistency-and-served-contract.test.ts tests/proof-fresh-run-risk-tail.test.ts --reporter=verbose
+AIRMENTOR_TMPDIR=/home/raed/.cache/airmentor-pg-scratch npm --workspace air-mentor-api run test -- tests/proof-realized-intervention-scenario.test.ts tests/proof-role-course-api-matrix.test.ts tests/proof-risk-served-model-contract.test.ts tests/proof-fresh-run-risk-tail.test.ts --reporter=verbose
 AIRMENTOR_TMPDIR=/home/raed/.cache/airmentor-pg-scratch AIRMENTOR_PW_DISABLE_VIDEO=1 AIRMENTOR_PW_BROWSER=firefox npx playwright test tests-e2e/specs/complete-realism-audit-2026-06-04.spec.ts --config=tests-e2e/playwright.config.ts
 ```
 

@@ -863,14 +863,30 @@ export async function seedIntoDatabase(
   })
 
   try {
-    let bundlePath = path.resolve(process.cwd(), 'output/proof-risk-model/risk-model-bundle.json')
-    let bundleRaw: string
-    try {
-      bundleRaw = await readFile(bundlePath, 'utf8')
-    } catch {
-      const seedDir = path.dirname(fileURLToPath(import.meta.url))
-      bundlePath = path.resolve(seedDir, '../../output/proof-risk-model/risk-model-bundle.json')
-      bundleRaw = await readFile(bundlePath, 'utf8')
+    const seedDir = path.dirname(fileURLToPath(import.meta.url))
+    const bundleCandidates = [
+      process.env.AIRMENTOR_RISK_MODEL_BUNDLE_PATH
+        ? path.resolve(process.env.AIRMENTOR_RISK_MODEL_BUNDLE_PATH)
+        : null,
+      path.resolve(process.cwd(), 'output/proof-risk-model/risk-model-bundle.json'),
+      path.resolve(process.cwd(), 'model-contract/proof-risk-model/risk-model-bundle.json'),
+      path.resolve(seedDir, '../../output/proof-risk-model/risk-model-bundle.json'),
+      path.resolve(seedDir, '../../model-contract/proof-risk-model/risk-model-bundle.json'),
+    ].filter((candidate): candidate is string => Boolean(candidate))
+
+    let bundlePath = ''
+    let bundleRaw = ''
+    for (const candidate of [...new Set(bundleCandidates)]) {
+      try {
+        bundleRaw = await readFile(candidate, 'utf8')
+        bundlePath = candidate
+        break
+      } catch {
+        // Try the next explicit runtime or repository contract location.
+      }
+    }
+    if (!bundlePath) {
+      throw new Error(`risk model bundle not found; checked ${bundleCandidates.join(', ')}`)
     }
     console.error(`[seed] found risk model bundle at ${bundlePath}`)
     const bundle = JSON.parse(bundleRaw)

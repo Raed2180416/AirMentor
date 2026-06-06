@@ -1,0 +1,32 @@
+{
+  "blockedHeads": [
+    "attendanceRisk",
+    "ceRisk",
+    "seeRisk",
+    "overallCourseRisk"
+  ],
+  "blockedReasonsByHead": {
+    "attendanceRisk": [
+      "overload worsened: challenger=1.0032475640003395 baseline=1.0023636848075292"
+    ],
+    "ceRisk": [
+      "localEceAt085 worsened: challenger=0.05863166672798714 baseline=0.01478535193015218",
+      "overload worsened: challenger=1.005320940982031 baseline=0.999433001480037"
+    ],
+    "overallCourseRisk": [
+      "localEceAt04 worsened: challenger=0.010421689831197067 baseline=0.003981795664182108",
+      "localEceAt085 worsened: challenger=0.024528814792107445 baseline=0.015966422096126087"
+    ],
+    "seeRisk": [
+      "localEceAt04 worsened: challenger=0.008206521729933303 baseline=0.0072563072232503245",
+      "localEceAt085 worsened: challenger=0.035554439839831864 baseline=0.02348188319025568",
+      "overload worsened: challenger=1.0053914784288405 baseline=1.0021368084654645"
+    ]
+  },
+  "decision": "keep-as-shadow",
+  "promotableHeads": [
+    "downstreamCarryoverRisk"
+  ],
+  "reason": "One or more heads failed or skipped the governed promotion gates; challenger remains shadow.",
+  "skippedHeads": []
+}
